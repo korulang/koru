@@ -6,6 +6,6 @@
 import std/io
 import std/control
 
-~std.control:if(cond: true)
-  | then |> std.io:println(text: "then branch")
-  | else |> std.io:println(text: "else branch")
+~std/control:if(cond: true)
+  | then |> std/io:print.ln("then branch")
+  | else |> std/io:print.ln("else branch")

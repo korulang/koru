@@ -23,4 +23,4 @@ import std/io
 
 ~get-input()
 | line s |> sanitize(input: s)
-    | clean c |> std.io:print.ln(c)
+    | clean c |> std/io:print.ln(c)

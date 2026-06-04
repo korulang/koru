@@ -10,17 +10,17 @@
 import std/kernel
 import std/io
 
-~std.kernel:shape(Body) {
+~std/kernel:shape(Body) {
     x: f64,
     y: f64,
     mass: f64,
 }
 
-~std.kernel:init(Body) {
+~std/kernel:init(Body) {
     { x: 0.0, y: 0.0, mass: 1.0 },
     { x: 1.0, y: 0.0, mass: 2.0 },
 }
-| kernel k |> std.kernel:self { k.mass *= 1.0 }
-| computed c |> std.io:print.blk {
+| kernel k |> std/kernel:self { k.mass *= 1.0 }
+| computed c |> std/io:print.blk {
         slice len={{ c.len:d }}, mass[0]={{ c[0].mass:f }}
     }

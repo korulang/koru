@@ -15,7 +15,7 @@ import std/compiler
 import testlib/mymod/sub
 
 // Use event from submodule (explicitly imported)
-~testlib.mymod.sub:sub-hello()
+~testlib/mymod/sub:sub-hello()
 
 // Use event from parent (auto-imported)
-~testlib.mymod:parent-hello()
+~testlib/mymod:parent-hello()

@@ -280,11 +280,28 @@
                     "step":                     {
                         "type": "invocation",
                         "invocation": {
-                            "event": ["println"],
+                            "event": ["print", "ln"],
                             "args": [
                                 {
-                                    "name": "text",
-                                    "value": "h.html"
+                                    "name": "expr",
+                                    "value": "h.html",
+                                    "expression_value": {
+                                        "text": "h.html",
+                                        "location": {
+                                            "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_009_source_with_scope_capture/input.kz",
+                                            "line": 39,
+                                            "col": 0
+                                        },
+                                        "scope": {
+                                            "bindings": [
+                                                {
+                                                    "name": "h",
+                                                    "type": "unknown",
+                                                    "value_ref": "h"
+                                                }
+                                            ]
+                                        }
+                                    }
                                 }
                             ],
                             "variant": null

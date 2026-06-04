@@ -52,5 +52,5 @@ import std/io
 | failure a_err => failed a_err
 
 ~process(input: 1)
-| success s |> std.io:print.ln("Success: {{ s:d }}")
-| failed f |> std.io:print.ln("Failed: {{ f:s }}")
+| success s |> std/io:print.ln("Success: {{ s:d }}")
+| failed f |> std/io:print.ln("Failed: {{ f:s }}")

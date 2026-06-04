@@ -35,7 +35,7 @@ pub const Params = struct {
 // This is what we WANT to work:
 // Pattern branches dispatch based on matching method + path
 ~incoming()
-| [GET /users/:id] p |> std.io:print.ln("user id: {{ p.id:s }}")
-| [GET /health] _ |> std.io:print.ln("health check")
-| [POST /users] _ |> std.io:print.ln("create user")
-| [*] _ |> std.io:print.ln("not found")
+| [GET /users/:id] p |> std/io:print.ln("user id: {{ p.id:s }}")
+| [GET /health] _ |> std/io:print.ln("health check")
+| [POST /users] _ |> std/io:print.ln("create user")
+| [*] _ |> std/io:print.ln("not found")

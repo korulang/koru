@@ -8,11 +8,11 @@
 import std/build
 
 // User overrides the default "run" step
-~std.build:step(name: "run") {
+~std/build:step(name: "run") {
     echo "USER VERSION: Running custom command"
 }
 
 // User defines a new step (no default exists)
-~std.build:step(name: "test") {
+~std/build:step(name: "test") {
     echo "Running tests"
 }

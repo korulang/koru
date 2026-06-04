@@ -1,9 +1,9 @@
 // Test 619: Basic build.requires
-// Validates that std.compiler:requires captures build dependencies using implicit Source blocks
+// Validates that std/compiler:requires captures build dependencies using implicit Source blocks
 //
 // This test demonstrates:
 // 1. Implicit Source blocks: { zig_code } instead of source: "zig_code"
-// 2. AST collection: Compiler walks AST to find std.compiler:requires
+// 2. AST collection: Compiler walks AST to find std/compiler:requires
 // 3. Zero boilerplate: just declare requirements, build.zig generated automatically
 
 import std/compiler
@@ -11,15 +11,15 @@ import std/compiler
 // Declare build dependencies using implicit Source blocks
 // The { } block is compiled to a Source parameter containing raw Zig code
 // The compiler's CompilerRequiresCollector walks the AST and collects these
-~std.compiler:requires {
+~std/compiler:requires {
     exe.linkSystemLibrary("sqlite3");
 }
 
-~std.compiler:requires {
+~std/compiler:requires {
     exe.linkSystemLibrary("zlib");
 }
 
-~std.compiler:requires {
+~std/compiler:requires {
     exe.addIncludePath(b.path("vendor/include"));
 }
 

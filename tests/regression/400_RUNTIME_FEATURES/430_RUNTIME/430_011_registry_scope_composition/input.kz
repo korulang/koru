@@ -36,18 +36,18 @@ const std = @import("std");
 // =============================================================================
 
 // Internal scope - basic operations
-~[registry:scope(internal)]std.runtime:register {
-    std.io:println
+~[registry:scope(internal)]std/runtime:register {
+    std/io:println
 }
 
 // User scope - all user events via glob
-~[registry:scope(user)]std.runtime:register {
+~[registry:scope(user)]std/runtime:register {
     scope(internal)     // Compose: include internal scope
     users:*             // Glob: all events under users.*
 }
 
 // Admin scope - includes user scope + admin events
-~[registry:scope(admin)]std.runtime:register {
+~[registry:scope(admin)]std/runtime:register {
     scope(user)         // Compose: include user scope
     admin:*             // Glob: all admin events
     [debug]debug:*      // Conditional: only with --debug flag
@@ -60,62 +60,62 @@ const std = @import("std");
 // User code - should work with "user" scope
 const USER_CODE =
     \\~users.get(id: 42)
-    \\| found |> std.io:println(text: "Found")
-    \\| not_found |> std.io:println(text: "Not found")
+    \\| found |> std/io:print.ln("Found")
+    \\| not_found |> std/io:print.ln("Not found")
 ;
 
 // Admin code - should work with "admin" scope, fail with "user" scope
 const ADMIN_CODE =
     \\~admin.delete_user(id: 42)
-    \\| deleted |> std.io:println(text: "User deleted")
+    \\| deleted |> std/io:print.ln("User deleted")
 ;
 
 // Debug code - should only work with "admin" scope AND --debug flag
 const DEBUG_CODE =
     \\~debug.dump_state()
-    \\| dumped |> std.io:println(text: "State")
+    \\| dumped |> std/io:print.ln("State")
 ;
 
 // Test user scope
-~std.runtime:parse.source(source: USER_CODE, file-name: "user.kz", allocator: std.heap.page_allocator)
-| parsed p |> std.runtime:eval(ast: p, scope: "user")
-    | result _ |> std.io:print.ln("User code OK")
-    | event-denied e |> std.io:print.ln("User denied: {{e:s}}")
-    | exhausted _ |> std.io:print.ln("User exhausted")
-    | validation-error _ |> std.io:print.ln("User validation error")
-    | dispatch-error _ |> std.io:print.ln("User dispatch error")
-    | scope-not-found _ |> std.io:print.ln("User scope missing")
-| parse-error e |> std.io:print.ln("Parse error: {{e:s}}")
+~std/runtime:parse.source(source: USER_CODE, file-name: "user.kz", allocator: std.heap.page_allocator)
+| parsed p |> std/runtime:eval(ast: p, scope: "user")
+    | result _ |> std/io:print.ln("User code OK")
+    | event-denied e |> std/io:print.ln("User denied: {{e:s}}")
+    | exhausted _ |> std/io:print.ln("User exhausted")
+    | validation-error _ |> std/io:print.ln("User validation error")
+    | dispatch-error _ |> std/io:print.ln("User dispatch error")
+    | scope-not-found _ |> std/io:print.ln("User scope missing")
+| parse-error e |> std/io:print.ln("Parse error: {{e:s}}")
 
 // Test debug scope in non-debug builds (should be denied)
-~std.runtime:parse.source(source: DEBUG_CODE, file-name: "debug.kz", allocator: std.heap.page_allocator)
-| parsed p |> std.runtime:eval(ast: p, scope: "admin")
-    | result _ |> std.io:print.ln("UNEXPECTED: Debug code ran without --debug")
-    | event-denied e |> std.io:print.ln("Debug denied: {{e:s}}")
-    | exhausted _ |> std.io:print.ln("Debug exhausted")
-    | validation-error _ |> std.io:print.ln("Debug validation error")
-    | dispatch-error _ |> std.io:print.ln("Debug dispatch error")
-    | scope-not-found _ |> std.io:print.ln("Debug scope missing")
-| parse-error e |> std.io:print.ln("Parse error: {{e:s}}")
+~std/runtime:parse.source(source: DEBUG_CODE, file-name: "debug.kz", allocator: std.heap.page_allocator)
+| parsed p |> std/runtime:eval(ast: p, scope: "admin")
+    | result _ |> std/io:print.ln("UNEXPECTED: Debug code ran without --debug")
+    | event-denied e |> std/io:print.ln("Debug denied: {{e:s}}")
+    | exhausted _ |> std/io:print.ln("Debug exhausted")
+    | validation-error _ |> std/io:print.ln("Debug validation error")
+    | dispatch-error _ |> std/io:print.ln("Debug dispatch error")
+    | scope-not-found _ |> std/io:print.ln("Debug scope missing")
+| parse-error e |> std/io:print.ln("Parse error: {{e:s}}")
 
 // Test admin scope with user code (should work - admin includes user)
-~std.runtime:parse.source(source: USER_CODE, file-name: "user2.kz", allocator: std.heap.page_allocator)
-| parsed p |> std.runtime:eval(ast: p, scope: "admin")
-    | result _ |> std.io:print.ln("User code with admin scope OK")
-    | event-denied e |> std.io:print.ln("Unexpected denial: {{e:s}}")
-    | exhausted _ |> std.io:print.ln("Admin exhausted")
-    | validation-error _ |> std.io:print.ln("Admin validation error")
-    | dispatch-error _ |> std.io:print.ln("Admin dispatch error")
-    | scope-not-found _ |> std.io:print.ln("Admin scope missing")
-| parse-error e |> std.io:print.ln("Parse error: {{e:s}}")
+~std/runtime:parse.source(source: USER_CODE, file-name: "user2.kz", allocator: std.heap.page_allocator)
+| parsed p |> std/runtime:eval(ast: p, scope: "admin")
+    | result _ |> std/io:print.ln("User code with admin scope OK")
+    | event-denied e |> std/io:print.ln("Unexpected denial: {{e:s}}")
+    | exhausted _ |> std/io:print.ln("Admin exhausted")
+    | validation-error _ |> std/io:print.ln("Admin validation error")
+    | dispatch-error _ |> std/io:print.ln("Admin dispatch error")
+    | scope-not-found _ |> std/io:print.ln("Admin scope missing")
+| parse-error e |> std/io:print.ln("Parse error: {{e:s}}")
 
 // Test admin code with user scope (should fail)
-~std.runtime:parse.source(source: ADMIN_CODE, file-name: "admin.kz", allocator: std.heap.page_allocator)
-| parsed p |> std.runtime:eval(ast: p, scope: "user")
-    | result _ |> std.io:print.ln("UNEXPECTED: Admin code ran with user scope!")
-    | event-denied e |> std.io:print.ln("Correctly denied admin event: {{e:s}}")
-    | exhausted _ |> std.io:print.ln("Admin code exhausted")
-    | validation-error _ |> std.io:print.ln("Admin code validation error")
-    | dispatch-error _ |> std.io:print.ln("Admin code dispatch error")
-    | scope-not-found _ |> std.io:print.ln("Admin code scope missing")
-| parse-error e |> std.io:print.ln("Parse error: {{e:s}}")
+~std/runtime:parse.source(source: ADMIN_CODE, file-name: "admin.kz", allocator: std.heap.page_allocator)
+| parsed p |> std/runtime:eval(ast: p, scope: "user")
+    | result _ |> std/io:print.ln("UNEXPECTED: Admin code ran with user scope!")
+    | event-denied e |> std/io:print.ln("Correctly denied admin event: {{e:s}}")
+    | exhausted _ |> std/io:print.ln("Admin code exhausted")
+    | validation-error _ |> std/io:print.ln("Admin code validation error")
+    | dispatch-error _ |> std/io:print.ln("Admin code dispatch error")
+    | scope-not-found _ |> std/io:print.ln("Admin code scope missing")
+| parse-error e |> std/io:print.ln("Parse error: {{e:s}}")

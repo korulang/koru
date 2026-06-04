@@ -4,7 +4,7 @@
 //
 // Usage:
 //   ~import "std/parser"
-//   ~std.parser:parse.source(source: code, file-name: "test.kz", allocator: allocator)
+//   ~std/parser:parse.source(source: code, file-name: "test.kz", allocator: allocator)
 //   | parsed p |> use(p.ast)
 //   | parse-error e |> handle(e.message)
 //
@@ -21,7 +21,7 @@ const parser_impl = @import("parser");
 const ast_serializer = @import("ast_serializer");
 
 // Re-export types for use with module:Type syntax
-// Usage: ~event my_event { result: std.parser:ParseResult }
+// Usage: ~event my_event { result: std/parser:ParseResult }
 pub const ParseResult = parser_impl.ParseResult;
 
 // =============================================================================
@@ -31,7 +31,7 @@ pub const ParseResult = parser_impl.ParseResult;
 // and the parser module (with all its dependencies) is included in the
 // final executable's build.zig.
 
-~std.build:requires {
+~std/build:requires {
     const REL_TO_ROOT = "${REL_TO_ROOT}";
 
     // Errors module - error reporting

@@ -1,0 +1,9 @@
+// Slash namespace resolves a REGULAR qualified event (not just keyword
+// transforms like print.ln). `std/io:print` must resolve to the same event as
+// `std/io:print` — the qualifier `/` is normalized to the internal `.` form
+// (parseQualifiedPath + canonicalize). Member access after `:` keeps `.`.
+import std/io
+
+const msg: []const u8 = "slash ok";
+
+~std/io:print(text: msg)

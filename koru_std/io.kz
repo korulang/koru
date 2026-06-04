@@ -22,17 +22,9 @@ const std = @import("std");
     process.stdout.write(text);
 }
 
-// Print text with newline
-~pub event println { text: []const u8 }
-
-~proc println|zig {
-    std.debug.print("{s}\n", .{text});
-}
-
-// JS variant: console.log appends the newline, matching println semantics.
-~proc println|js {
-    console.log(text);
-}
+// `println` REMOVED — subsumed by `print.ln` (the interpolating print). Calling
+// `std/io:println` is now an unknown-event error by design (greenfield: the old
+// form must fail loudly once removed).
 
 // Print formatted text
 // NOTE: printf with varargs would require runtime support - skipping for now
@@ -181,7 +173,7 @@ const std = @import("std");
 // PRINT.LN - Interpolated printing with Expression (ZERO OVERHEAD)
 // ============================================================================
 //
-// Syntax: std.io:print.ln("Hello {{ name }}! Count: {{ count }}")
+// Syntax: std/io:print.ln("Hello {{ name }}! Count: {{ count }}")
 //
 // ARCHITECTURE:
 // - ~print.ln is a comptime transform that generates inline Zig code
@@ -437,13 +429,13 @@ const std = @import("std");
     const inline_code = if (function_call_expr) |fn_expr|
         std.fmt.allocPrint(
             allocator,
-            "@compileError(\"std.io:print.ln: '{{{{ {s} }}}}' contains a function call — function calls are not allowed in expressions. Use event chaining instead.\");",
+            "@compileError(\"std/io:print.ln: '{{{{ {s} }}}}' contains a function call — function calls are not allowed in expressions. Use event chaining instead.\");",
             .{fn_expr}
         ) catch unreachable
     else if (missing_spec) |placeholder|
         std.fmt.allocPrint(
             allocator,
-            "@compileError(\"std.io:print.ln: '{{{{ {s} }}}}' requires a format specifier (:d, :s, :f, or :any)\");",
+            "@compileError(\"std/io:print.ln: '{{{{ {s} }}}}' requires a format specifier (:d, :s, :f, or :any)\");",
             .{placeholder}
         ) catch unreachable
     else
@@ -552,7 +544,7 @@ const std = @import("std");
 // PRINT.BLK - Multi-line block printing with Source block (ZERO OVERHEAD)
 // ============================================================================
 //
-// Syntax: std.io:print.blk {
+// Syntax: std/io:print.blk {
 //     Header: {{ title }}
 //     Value:  {{ count }}
 // }
@@ -878,13 +870,13 @@ const std = @import("std");
     const inline_code = if (function_call_expr) |fn_expr|
         std.fmt.allocPrint(
             allocator,
-            "@compileError(\"std.io:print.blk: '{{{{ {s} }}}}' contains a function call — function calls are not allowed in expressions. Use event chaining instead.\");",
+            "@compileError(\"std/io:print.blk: '{{{{ {s} }}}}' contains a function call — function calls are not allowed in expressions. Use event chaining instead.\");",
             .{fn_expr}
         ) catch unreachable
     else if (missing_spec) |placeholder|
         std.fmt.allocPrint(
             allocator,
-            "@compileError(\"std.io:print.blk: '{{{{ {s} }}}}' requires a format specifier (:d, :s, :f, or :any)\");",
+            "@compileError(\"std/io:print.blk: '{{{{ {s} }}}}' requires a format specifier (:d, :s, :f, or :any)\");",
             .{placeholder}
         ) catch unreachable
     else
@@ -965,7 +957,7 @@ const std = @import("std");
 // ============================================================================
 // PRINT.BLK|RAW_POSIX - raw I/O fast path variant for linux/macos
 // ============================================================================
-// Selected via ~[build(linux)] / ~[build(macos)] std.build:variants below.
+// Selected via ~[build(linux)] / ~[build(macos)] std/build:variants below.
 // Emits inline posix.write calls when all placeholders use :d or :s specifiers.
 // Falls back to std.debug.print only when complex format specifiers (:any, :f)
 // are used. The raw path produces ~1,728 B ELF binaries vs ~7 KB for stdlib.
@@ -1608,14 +1600,14 @@ const std = @import("std");
 // On windows, the bare ~proc print.blk (std.debug.print) is used by default.
 // build=<host_os> is auto-injected by koruc; users can override with --build=<other>.
 
-~[build(linux)]std.build:variants {
+~[build(linux)]std/build:variants {
     "std.io:print.blk": "raw_posix"
 }
 | configured _ |> _
 | skipped _ |> _
 | invalid_event _ |> _
 
-~[build(macos)]std.build:variants {
+~[build(macos)]std/build:variants {
     "std.io:print.blk": "raw_posix"
 }
 | configured _ |> _

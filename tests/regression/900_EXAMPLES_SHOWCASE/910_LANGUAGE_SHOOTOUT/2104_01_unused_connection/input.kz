@@ -13,6 +13,6 @@
 
 import app/db
 
-~app.db:connect(host: "localhost")
+~app/db:connect(host: "localhost")
 | ok _ |> _
 | err _ |> _

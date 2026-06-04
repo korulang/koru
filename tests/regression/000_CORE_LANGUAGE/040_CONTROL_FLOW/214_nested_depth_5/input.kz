@@ -27,4 +27,4 @@ import std/io
     | done b |> add-three(value: b)
         | done c |> add-four(value: c)
             | done d |> add-five(value: d)
-                | done e |> std.io:print.ln("{{e:d}}")
+                | done e |> std/io:print.ln("{{e:d}}")

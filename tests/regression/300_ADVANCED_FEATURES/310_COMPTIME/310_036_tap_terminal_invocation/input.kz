@@ -19,9 +19,9 @@ import std/taps
     std.debug.print("TAP: {s}\n", .{msg});
 }
 
-// Tap: observe std.io:print.ln completions
-~tap(std.io:print.ln -> *)
+// Tap: observe std/io:print.ln completions
+~tap(std/io:print.ln -> *)
 | Profile p |> log(msg: p.source)
 
 // Simple flow: just print.ln (terminal - no destination)
-~std.io:print.ln(text: "Hello")
+~std/io:print.ln(text: "Hello")

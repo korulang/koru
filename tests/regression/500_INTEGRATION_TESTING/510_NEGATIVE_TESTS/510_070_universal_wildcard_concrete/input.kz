@@ -26,6 +26,6 @@ import app/test_lib/logger
 
 // Universal tap using metatype - observes ALL events
 ~tap(* -> *)
-| Profile p |> app.test_lib.logger:log(msg: p.source)
+| Profile p |> app/test_lib/logger:log(msg: p.source)
 
 ~hello() |> goodbye()

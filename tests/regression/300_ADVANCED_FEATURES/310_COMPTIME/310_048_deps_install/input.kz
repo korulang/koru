@@ -15,7 +15,7 @@ import std/deps
 // A dep that is definitely not installed, with no brew package defined.
 // This ensures: (1) it shows as missing, (2) no actual brew call is made,
 // (3) the output is deterministic.
-~std.deps:requires.system {
+~std/deps:requires.system {
     "name": "nonexistent-no-brew",
     "check": "nonexistent-check-command --version",
     "apt": "nonexistent-apt-pkg"

@@ -10,6 +10,6 @@
 import app/mylib
 
 // The loop uses an event from the imported module
-~#loop app.mylib:tick()
+~#loop app/mylib:tick()
 | next _ |> @loop()
 | done |> _

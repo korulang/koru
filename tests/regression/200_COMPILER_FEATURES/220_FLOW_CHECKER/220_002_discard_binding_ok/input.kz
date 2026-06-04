@@ -11,7 +11,7 @@
 import app/fs
 
 // OK: _ is explicit discard - no KORU100 error
-~app.fs:open(path: "test.txt")
+~app/fs:open(path: "test.txt")
 | opened _ |> _
 
 pub fn main() void {}

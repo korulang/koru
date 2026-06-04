@@ -1,7 +1,7 @@
 import std/control
 import app/fs
-~app.fs:open(path: "outer.txt")
-| opened f |> std.control:for(0..3)
+~app/fs:open(path: "outer.txt")
+| opened f |> std/control:for(0..3)
     ! each _ |> _
-    | done |> app.fs:close(file: f)
+    | done |> app/fs:close(file: f)
 pub fn main() void {}

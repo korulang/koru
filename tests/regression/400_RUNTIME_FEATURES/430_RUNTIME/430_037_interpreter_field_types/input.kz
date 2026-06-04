@@ -16,7 +16,7 @@ const std = @import("std");
 }
 
 // Register scope
-~std.runtime:register(scope: "test") {
+~std/runtime:register(scope: "test") {
     produce-int
 }
 
@@ -27,11 +27,11 @@ const TEST_SOURCE =
     \\    | else |> lte {}
 ;
 
-~std.runtime:get_scope(name: "test")
-| scope s |> std.interpreter:run(source: TEST_SOURCE, s.dispatcher)
-    | result r |> std.io:print.ln("SUCCESS branch={{ r.value.branch:s }}")
-    | exhausted e |> std.io:print.ln("EXHAUSTED: {{ e.last_event:s }}")
-    | parse-error e |> std.io:print.ln("PARSE ERROR: {{ e.message:s }}")
-    | validation-error e |> std.io:print.ln("VALIDATION ERROR: {{ e:s }}")
-    | dispatch-error e |> std.io:print.ln("DISPATCH ERROR: {{ e.message:s }}")
-| not-found |> std.io:print.ln("SCOPE NOT FOUND")
+~std/runtime:get_scope(name: "test")
+| scope s |> std/interpreter:run(source: TEST_SOURCE, s.dispatcher)
+    | result r |> std/io:print.ln("SUCCESS branch={{ r.value.branch:s }}")
+    | exhausted e |> std/io:print.ln("EXHAUSTED: {{ e.last_event:s }}")
+    | parse-error e |> std/io:print.ln("PARSE ERROR: {{ e.message:s }}")
+    | validation-error e |> std/io:print.ln("VALIDATION ERROR: {{ e:s }}")
+    | dispatch-error e |> std/io:print.ln("DISPATCH ERROR: {{ e.message:s }}")
+| not-found |> std/io:print.ln("SCOPE NOT FOUND")

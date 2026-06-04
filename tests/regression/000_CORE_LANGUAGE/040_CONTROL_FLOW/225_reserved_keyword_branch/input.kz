@@ -32,5 +32,5 @@ import std/io
 
 // Test without inline flows - just test keyword escaping
 ~process-file(path: "/nonexistent/file.txt")
-| success _ |> std.io:println(text: "Unexpected file found")
-| error _ |> std.io:println(text: "✅ Reserved Zig keyword branch works!")
+| success _ |> std/io:print.ln("Unexpected file found")
+| error _ |> std/io:print.ln("✅ Reserved Zig keyword branch works!")

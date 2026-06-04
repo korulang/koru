@@ -131,7 +131,7 @@ const ZERO_DV = [5][3]f64{
 | n iters |> init()
     | bodies b[mutable] |> offset(bodies: b[0..])
         |> energy(bodies: b[0..])
-            | e e1 |> std.io:print.ln("{{ e1:d:.9 }}")
+            | e e1 |> std/io:print.ln("{{ e1:d:.9 }}")
                 |> for(0..iters)
                     | each |> capture({ dv: ZERO_DV })
                         | as acc |> for(0..5)
@@ -148,4 +148,4 @@ const ZERO_DV = [5][3]f64{
                                         }
                         | captured deltas |> apply(bodies: b[0..], dt: DT, deltas.dv)
                     |> energy(bodies: b[0..])
-                        | e e2 |> std.io:print.ln("{{ e2:d:.9 }}")
+                        | e e2 |> std/io:print.ln("{{ e2:d:.9 }}")

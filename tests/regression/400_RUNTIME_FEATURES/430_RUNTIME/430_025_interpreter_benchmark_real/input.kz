@@ -40,7 +40,7 @@ const std = @import("std");
 }
 
 // Register events for runtime dispatch
-~std.runtime:register(scope: "bench") {
+~std/runtime:register(scope: "bench") {
     compute
     print-result
 }
@@ -62,9 +62,9 @@ import std/io
 // Benchmark: Parse and execute the flow
 // ============================================================================
 
-~std.interpreter:run(source: FLOW_SOURCE, dispatcher: dispatch_bench)
-| result r |> std.io:print.ln("Success: branch {{ r.value.branch:s }}")
-| exhausted e |> std.io:print.ln("Exhausted: {{ e.last_event:s }}")
-| parse-error e |> std.io:print.ln("Error: {{ e.message:s }}")
-| validation-error e |> std.io:print.ln("Error: {{ e:s }}")
-| dispatch-error e |> std.io:print.ln("Error: {{ e.message:s }}")
+~std/interpreter:run(source: FLOW_SOURCE, dispatcher: dispatch_bench)
+| result r |> std/io:print.ln("Success: branch {{ r.value.branch:s }}")
+| exhausted e |> std/io:print.ln("Exhausted: {{ e.last_event:s }}")
+| parse-error e |> std/io:print.ln("Error: {{ e.message:s }}")
+| validation-error e |> std/io:print.ln("Error: {{ e:s }}")
+| dispatch-error e |> std/io:print.ln("Error: {{ e.message:s }}")

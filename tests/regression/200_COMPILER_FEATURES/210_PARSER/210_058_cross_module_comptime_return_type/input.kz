@@ -15,6 +15,6 @@
 
 import app/comptime_lib
 
-~[comptime] app.comptime_lib:sql(query: "CREATE TABLE test (id int)")
+~[comptime] app/comptime_lib:sql(query: "CREATE TABLE test (id int)")
 | ok |> _
 | err _ |> _

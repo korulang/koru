@@ -15,7 +15,7 @@ import std/kernel
 import std/io
 
 // Body shape: position, velocity, mass
-~std.kernel:shape(Body) {
+~std/kernel:shape(Body) {
     x: f64,
     y: f64,
     vx: f64,
@@ -24,13 +24,13 @@ import std/io
 }
 
 // Initialize 4 bodies in a square pattern
-~std.kernel:init(Body) {
+~std/kernel:init(Body) {
     { x: 0.0, y: 0.0, vx: 0.0, vy: 0.0, mass: 1.0 },
     { x: 1.0, y: 0.0, vx: 0.0, vy: 0.0, mass: 1.0 },
     { x: 0.0, y: 1.0, vx: 0.0, vy: 0.0, mass: 1.0 },
     { x: 1.0, y: 1.0, vx: 0.0, vy: 0.0, mass: 1.0 },
 }
-| kernel k |> std.kernel:pairwise { const dx = k.other.x - k.x; const dy = k.other.y - k.y; const dist_sq = dx*dx + dy*dy + 0.01; const f = k.mass * k.other.mass / dist_sq; k.vx += f * dx; k.vy += f * dy; k.other.vx -= f * dx; k.other.vy -= f * dy }
-| computed c |> std.io:print.blk {
+| kernel k |> std/kernel:pairwise { const dx = k.other.x - k.x; const dy = k.other.y - k.y; const dist_sq = dx*dx + dy*dy + 0.01; const f = k.mass * k.other.mass / dist_sq; k.vx += f * dx; k.vy += f * dy; k.other.vx -= f * dx; k.other.vy -= f * dy }
+| computed c |> std/io:print.blk {
         nbody simulation complete, mass[0]={{ c[0].mass:f }}
     }

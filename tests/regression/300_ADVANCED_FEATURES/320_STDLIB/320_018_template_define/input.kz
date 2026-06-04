@@ -1,4 +1,4 @@
-// Test: ~std.template:define parses and stores template in AST
+// Test: ~std/template:define parses and stores template in AST
 //
 // This test verifies that template definitions:
 // 1. Parse correctly (no syntax errors)
@@ -11,12 +11,12 @@
 import std/template
 
 // Define a simple template using implicit Source block syntax
-~std.template:define(name: "test_simple") {
+~std/template:define(name: "test_simple") {
     hello ${name}
 }
 
 // Define a template with continuation placeholders
-~std.template:define(name: "test_if") {
+~std/template:define(name: "test_if") {
     if (${cond}) { ${| then |} } else { ${| else |} }
 }
 

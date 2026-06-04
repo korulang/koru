@@ -11,10 +11,10 @@
 
 import app/db
 
-~app.db:connect(host: "localhost")
-| ok c |> app.db:begin(conn: c)
-    | ok t |> app.db:commit(tx: t)
-        | ok conn |> app.db:close(conn)
+~app/db:connect(host: "localhost")
+| ok c |> app/db:begin(conn: c)
+    | ok t |> app/db:commit(tx: t)
+        | ok conn |> app/db:close(conn)
             | err _ |> _
         | err _ |> _
     | err _ |> _

@@ -37,7 +37,7 @@ const SAMPLE =
 ;
 
 // Flow: parse → process → report
-~std.parser:parse.source(source: SAMPLE, file-name: "test.kz", allocator: std.heap.page_allocator)
+~std/parser:parse.source(source: SAMPLE, file-name: "test.kz", allocator: std.heap.page_allocator)
 | parsed p |> process-ast(result: p)
     | processed r |> report(count: r)
 | parse-error _ |> report(count: 0)

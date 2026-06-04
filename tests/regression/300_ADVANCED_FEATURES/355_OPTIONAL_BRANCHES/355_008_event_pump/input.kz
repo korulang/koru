@@ -39,7 +39,7 @@ const std = @import("std");
 
 // Event loop: only handle keyboard and mouse, |? catches the rest
 ~#loop pump(iteration: 0)
-| keyboard _ |> std.io:print.ln("KEYBOARD") |> @loop(iteration: iteration + 1)
-| mouse _ |> std.io:print.ln("MOUSE") |> @loop(iteration: iteration + 1)
-| quit _ |> std.io:print.ln("QUIT")
-|? |> std.io:print.ln("OTHER") |> @loop(iteration: iteration + 1)
+| keyboard _ |> std/io:print.ln("KEYBOARD") |> @loop(iteration: iteration + 1)
+| mouse _ |> std/io:print.ln("MOUSE") |> @loop(iteration: iteration + 1)
+| quit _ |> std/io:print.ln("QUIT")
+|? |> std/io:print.ln("OTHER") |> @loop(iteration: iteration + 1)

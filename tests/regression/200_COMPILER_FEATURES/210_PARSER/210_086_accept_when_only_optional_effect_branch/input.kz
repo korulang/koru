@@ -31,12 +31,12 @@ import std/io
 }
 
 ~tokenize(source: "x")
-! token t |> std.io:print.blk {
+! token t |> std/io:print.blk {
     token {{ t:s }}
 }
-! warning w when w.len > 0 |> std.io:print.blk {
+! warning w when w.len > 0 |> std/io:print.blk {
     warn {{ w:s }}
 }
-| done n |> std.io:print.blk {
+| done n |> std/io:print.blk {
     done {{ n:d }}
 }

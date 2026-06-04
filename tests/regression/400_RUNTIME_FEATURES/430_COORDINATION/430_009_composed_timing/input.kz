@@ -11,21 +11,21 @@ import std/io
 // WHOLE PIPELINE TIMING (outer layer)
 // ============================================================================
 
-~std.compiler:coordinate = std.time:now()
-| t pipeline_start |> std.compiler:coordinate.default(program_ast, allocator)
-    | coordinated c |> std.time:report(start: pipeline_start, label: "TOTAL PIPELINE") => coordinated c
+~std/compiler:coordinate = std/time:now()
+| t pipeline_start |> std/compiler:coordinate.default(program_ast, allocator)
+    | coordinated c |> std/time:report(start: pipeline_start, label: "TOTAL PIPELINE") => coordinated c
     | error e => error e
 
 // ============================================================================
 // FRONTEND PASS TIMING (inner layer - composes with above!)
 // ============================================================================
 
-~std.compiler:frontend = std.time:now()
-| t start |> std.compiler:frontend.default(ctx)
-    | ctx c |> std.time:report(start, label: "  frontend") => ctx c
+~std/compiler:frontend = std/time:now()
+| t start |> std/compiler:frontend.default(ctx)
+    | ctx c |> std/time:report(start, label: "  frontend") => ctx c
 
 // ============================================================================
 // THE PROGRAM
 // ============================================================================
 
-~std.io:print.ln("Compiled with composed timing!")
+~std/io:print.ln("Compiled with composed timing!")

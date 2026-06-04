@@ -35,4 +35,4 @@ const std = @import("std");
 ~get-params()
 | result p |> for(0..p.count)
     ! each i |> process-item(value: p.items[i])
-    | done |> std.io:println(text: "All items processed")
+    | done |> std/io:print.ln("All items processed")

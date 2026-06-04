@@ -226,8 +226,14 @@ fn canonicalizeBranchConstructor(ctx: *Context, bc: *ast.BranchConstructor) !voi
 
 /// The core canonicalization logic - qualify a DottedPath if needed
 fn canonicalizePath(ctx: *Context, path: *ast.DottedPath) !void {
-    // If already qualified, nothing to do
-    if (path.module_qualifier != null) {
+    // If already qualified, normalize the source namespace separator `/` -> `.`
+    // (the internal/registry canonical form) and we're done. This is the central
+    // safety net: every path flows through here, so a `/` qualifier left by any
+    // parse path (subflow-impl RHS, continuations, nested module refs) is caught.
+    if (path.module_qualifier) |mq| {
+        for (@constCast(mq)) |*c| {
+            if (c.* == '/') c.* = '.';
+        }
         return;
     }
 

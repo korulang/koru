@@ -5,4 +5,4 @@ import std/io
 const value: i32 = 42;
 const name: []const u8 = "World";
 
-~std.io:print.ln("Hello, {{ name:s }}! The answer is {{ value:d }}.")
+~std/io:print.ln("Hello, {{ name:s }}! The answer is {{ value:d }}.")

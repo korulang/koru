@@ -28,14 +28,14 @@ import std/io
 // Handler written for v1 — doesn't know about ?debug
 // |? silently catches the new branch
 ~process(value: 10)
-| success _ |> std.io:print.ln("SUCCESS")
-|? |> std.io:print.ln("OPTIONAL")
+| success _ |> std/io:print.ln("SUCCESS")
+|? |> std/io:print.ln("OPTIONAL")
 
 ~process(value: 150)
-| success _ |> std.io:print.ln("SUCCESS")
-|? |> std.io:print.ln("OPTIONAL")
+| success _ |> std/io:print.ln("SUCCESS")
+|? |> std/io:print.ln("OPTIONAL")
 
 // value=2 → returns ?debug (new in v2) — caught by |?
 ~process(value: 2)
-| success _ |> std.io:print.ln("SUCCESS")
-|? |> std.io:print.ln("OPTIONAL")
+| success _ |> std/io:print.ln("SUCCESS")
+|? |> std/io:print.ln("OPTIONAL")

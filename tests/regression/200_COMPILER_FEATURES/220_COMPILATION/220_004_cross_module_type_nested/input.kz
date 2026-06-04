@@ -29,6 +29,6 @@ import domain/user
 }
 
 // Create a domain user and grant access
-~domain.user:create(email: "admin@example.com", role: "administrator", permissions: 999)
+~domain/user:create(email: "admin@example.com", role: "administrator", permissions: 999)
 | created c |> grant-access(user-data: c)
     | granted _ |> _

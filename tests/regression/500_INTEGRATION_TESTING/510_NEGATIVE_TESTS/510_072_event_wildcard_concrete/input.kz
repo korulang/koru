@@ -20,7 +20,7 @@ import app/test_lib/logger
 
 // Event wildcard tap observes all compute events with metatype
 ~tap(*:compute -> *)
-| Profile p |> app.test_lib.logger:log(msg: p.source)
+| Profile p |> app/test_lib/logger:log(msg: p.source)
 
 ~compute(x: 42)
 | result _ |> _

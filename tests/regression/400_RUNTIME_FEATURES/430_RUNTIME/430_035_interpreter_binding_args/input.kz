@@ -24,9 +24,9 @@ const std = @import("std");
 ~pub event consume { n: []const u8 }
 | echoed []const u8
 
-~consume = std.io:print.ln("[consume] received n = '{{n:s}}'") => echoed n
+~consume = std/io:print.ln("[consume] received n = '{{n:s}}'") => echoed n
 
-~std.runtime:register(scope: "test") {
+~std/runtime:register(scope: "test") {
     produce
     consume
 }
@@ -42,9 +42,9 @@ const TEST_FLOW =
     \\| value v |> consume(n: v.num)
 ;
 
-~std.interpreter:run(source: TEST_FLOW, dispatcher: dispatch_test)
-| result r |> std.io:print.ln("Result: {{ r.value.branch:s }}")
-| exhausted e |> std.io:print.ln("Exhausted: {{ e.last_event:s }}")
-| parse-error e |> std.io:print.ln("Parse error: {{ e.message:s }}")
-| validation-error e |> std.io:print.ln("Validation error: {{ e:s }}")
-| dispatch-error e |> std.io:print.ln("Dispatch error: {{ e.message:s }}")
+~std/interpreter:run(source: TEST_FLOW, dispatcher: dispatch_test)
+| result r |> std/io:print.ln("Result: {{ r.value.branch:s }}")
+| exhausted e |> std/io:print.ln("Exhausted: {{ e.last_event:s }}")
+| parse-error e |> std/io:print.ln("Parse error: {{ e.message:s }}")
+| validation-error e |> std/io:print.ln("Validation error: {{ e:s }}")
+| dispatch-error e |> std/io:print.ln("Dispatch error: {{ e.message:s }}")

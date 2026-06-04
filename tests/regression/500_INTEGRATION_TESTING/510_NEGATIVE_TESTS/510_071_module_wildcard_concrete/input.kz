@@ -26,6 +26,6 @@ import app/test_lib/logger
 
 // Module wildcard tap observes all events in input module with metatype
 ~tap(input:* -> *)
-| Profile p |> app.test_lib.logger:log(msg: p.source)
+| Profile p |> app/test_lib/logger:log(msg: p.source)
 
 ~hello() |> goodbye()

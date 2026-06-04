@@ -17,9 +17,9 @@ import std/io
 }
 
 ~init(value: 42)
-! ready v |> std.io:print.blk {
+! ready v |> std/io:print.blk {
     ready {{ v:d }}
 }
-| done v |> std.io:print.blk {
+| done v |> std/io:print.blk {
     done {{ v:d }}
 }

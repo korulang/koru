@@ -15,12 +15,12 @@ const std = @import("std");
 ~pub event greet {}
 
 // Two semantically-different subflows under one canonical event name.
-~greet|en = std.io:println(text: "hello")
+~greet|en = std/io:print(text: "hello")
 
-~greet|no = std.io:println(text: "hei")
+~greet|no = std/io:print(text: "hei")
 
 // Register the |en variant program-wide.
-~std.build:variants {
+~std/build:variants {
     "input:greet": "en"
 }
 | configured _ |> _

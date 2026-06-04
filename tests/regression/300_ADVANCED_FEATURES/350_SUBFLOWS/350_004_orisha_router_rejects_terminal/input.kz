@@ -20,5 +20,5 @@ const req = TestRequest{ .method = "GET", .path = "/" };
 
 // `|` here is WRONG — these are dispatch handlers, must be `!`.
 ~orisha:router(req: &req)
-| [GET /] |> std.io:print.ln("matched GET /")
-| [*] |> std.io:print.ln("catch-all")
+| [GET /] |> std/io:print.ln("matched GET /")
+| [*] |> std/io:print.ln("catch-all")

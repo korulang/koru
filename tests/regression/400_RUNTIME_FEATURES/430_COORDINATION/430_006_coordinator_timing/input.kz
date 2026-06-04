@@ -10,8 +10,8 @@ import std/io
 const std = @import("std");
 
 // This should fail: allocPrint is a function call in a branch constructor
-~std.compiler:coordinate =
-    std.compiler:coordinate.default(program_ast, allocator)
+~std/compiler:coordinate =
+    std/compiler:coordinate.default(program_ast, allocator)
     | coordinated c => coordinated {
         c.ast,
         c.code,
@@ -19,4 +19,4 @@ const std = @import("std");
     }
     | error e => error { e.message }
 
-~std.io:print.ln("should not compile")
+~std/io:print.ln("should not compile")

@@ -4,5 +4,5 @@ const std = @import("std");
 const File = struct {
     handle: i32,
 };
-~app.fileops:open(path: "test.txt")
-| opened f |> app.fileops:close(file: f) |> std.io:println(text: "File closed successfully")
+~app/fileops:open(path: "test.txt")
+| opened f |> app/fileops:close(file: f) |> std/io:print.ln("File closed successfully")

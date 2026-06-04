@@ -18,8 +18,8 @@ import std/compiler
 // KERNEL OPTIMIZATION EVENT
 // ============================================================
 
-~pub event optimize { ctx: std.compiler:CompilerContext }
-| ctx std.compiler:CompilerContext
+~pub event optimize { ctx: std/compiler:CompilerContext }
+| ctx std/compiler:CompilerContext
 
 ~proc optimize|zig {
     // Phase 1: Infrastructure - pass through unchanged

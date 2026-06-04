@@ -24,4 +24,4 @@ import std/io
 ~accept-celsius => ok c
 
 ~accept-celsius(c: 32<celsius>)
-| ok v |> std.io:print.ln("{{ v:f }}")
+| ok v |> std/io:print.ln("{{ v:f }}")

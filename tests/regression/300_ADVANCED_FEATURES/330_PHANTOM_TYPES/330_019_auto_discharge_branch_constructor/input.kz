@@ -1,7 +1,7 @@
 import app/fs
 ~event check-file { path: []const u8 }
 | result []const u8
-~check-file = app.fs:open(path)
+~check-file = app/fs:open(path)
 | opened _ => result "file exists"  // obligation should be auto-discharged before returning!
 ~check-file(path: "test.txt")
 | result _ |> _

@@ -16,7 +16,7 @@ import std/io
 }
 
 // THIS SHOULD WORK (top-level flow)
-~std.io:println(text: "Top-level: This should call io.println.handler()")
+~std/io:print.ln("Top-level: This should call io.println.handler()")
 
 // THIS WORKS (continuation)
-~probe() |> std.io:println(text: "Continuation: This correctly calls io.println.handler()")
+~probe() |> std/io:print.ln("Continuation: This correctly calls io.println.handler()")

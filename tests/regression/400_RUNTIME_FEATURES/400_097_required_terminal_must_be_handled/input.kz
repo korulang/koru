@@ -20,4 +20,4 @@ import std/io
 }
 
 ~run()
-| err msg |> std.io:print.ln(msg)
+| err msg |> std/io:print.ln(msg)

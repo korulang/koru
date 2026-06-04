@@ -33,7 +33,7 @@ const std = @import("std");
 }
 
 // Register events including for
-~std.runtime:register(scope: "bench") {
+~std/runtime:register(scope: "bench") {
     for
     add
     init-sum

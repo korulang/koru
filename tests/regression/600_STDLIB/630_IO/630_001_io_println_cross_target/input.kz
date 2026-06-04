@@ -5,4 +5,4 @@
 // (std.debug.print). Same source, same output, two backends.
 import std/io
 
-~std.io:println(text: "Hello, world!")
+~std/io:print(text: "Hello, world!\n")

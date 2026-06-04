@@ -23,4 +23,4 @@ import std/io
 
 ~read-temp(sensor-id: 1)
 | reading c |> to-fahrenheit(c)
-    | result f |> std.io:print.ln("{{ f:f }} F")
+    | result f |> std/io:print.ln("{{ f:f }} F")

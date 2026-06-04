@@ -32,15 +32,15 @@ import std/io
 
 // Call 1: value=10 → even, <100 → success branch
 ~process(value: 10)
-| success _ |> std.io:print.ln("GOT SUCCESS")
-|? |> std.io:print.ln("GOT OPTIONAL")
+| success _ |> std/io:print.ln("GOT SUCCESS")
+|? |> std/io:print.ln("GOT OPTIONAL")
 
 // Call 2: value=150 → >100 → warning branch (caught by |?)
 ~process(value: 150)
-| success _ |> std.io:print.ln("GOT SUCCESS")
-|? |> std.io:print.ln("GOT OPTIONAL")
+| success _ |> std/io:print.ln("GOT SUCCESS")
+|? |> std/io:print.ln("GOT OPTIONAL")
 
 // Call 3: value=7 → odd → debug branch (caught by |?)
 ~process(value: 7)
-| success _ |> std.io:print.ln("GOT SUCCESS")
-|? |> std.io:print.ln("GOT OPTIONAL")
+| success _ |> std/io:print.ln("GOT SUCCESS")
+|? |> std/io:print.ln("GOT OPTIONAL")

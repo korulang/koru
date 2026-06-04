@@ -16,11 +16,11 @@
 // without it we get generic thumb (likely thumbv4t/thumbv6m) which
 // won't actually run on the M4 — but the comparison-table row will
 // still exist as a thumbv? ELF. mcpu pass-through is a follow-up.
-~[build("cortex_m4")]std.build:config {
+~[build("cortex_m4")]std/build:config {
     "target": "thumb-freestanding-eabihf"
 }
 
-~[build("cortex_m4")]std.build:variants {
+~[build("cortex_m4")]std/build:variants {
     "main": "cortex_m4"
 }
 

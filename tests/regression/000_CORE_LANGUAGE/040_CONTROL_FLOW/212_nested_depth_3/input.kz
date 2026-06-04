@@ -31,4 +31,4 @@ import std/io
 ~add-one(value: 10)
 | done a |> add-two(value: a)
     | done b |> add-three(value: b)
-        | done c |> std.io:print.ln("{{c:d}}")
+        | done c |> std/io:print.ln("{{c:d}}")

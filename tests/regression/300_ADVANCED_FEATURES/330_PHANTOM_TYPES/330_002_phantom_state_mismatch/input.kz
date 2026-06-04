@@ -4,8 +4,8 @@ const std = @import("std");
 const File = struct {
     handle: i32,
 };
-~event needs-fs-file { file: *File<app.lib.fs:open> }
+~event needs-fs-file { file: *File<app/lib/fs:open> }
 ~proc needs-fs-file|zig {
 }
-~app.lib.mipmap:load(path: "texture.png")
+~app/lib/mipmap:load(path: "texture.png")
 | loaded m |> needs-fs-file(file: m)

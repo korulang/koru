@@ -6,4 +6,4 @@ import std/control
 // Struct capture with typed init
 ~capture({ total: @as(i32, 0) })
 ! as acc |> captured({ total: acc.total + 42 })
-| captured final |> std.io:print.ln("{{ final.total:d }}")
+| captured final |> std/io:print.ln("{{ final.total:d }}")

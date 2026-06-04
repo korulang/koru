@@ -33,10 +33,10 @@ import std/io
 }
 
 ~#loop ramp(start: 0)
-! step v |> std.io:print.blk {
+! step v |> std/io:print.blk {
     step {{ v:d }}
 }
 | restart n |> @loop(start: n)
-| done total |> std.io:print.blk {
+| done total |> std/io:print.blk {
     done {{ total:d }}
 }

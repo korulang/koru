@@ -19,19 +19,19 @@ import std/io
 
 const std = @import("std");
 
-~std.runtime:register(scope: "test") {
+~std/runtime:register(scope: "test") {
     create(10)
     destroy(1)
 }
 
 const TEST_SOURCE = "~create()\n| handle h |> result { id: h }";
 
-~std.runtime:run(source: TEST_SOURCE, scope: "test", budget: 100)
-| result _ |> std.io:print.ln("PASS: got handle")
-| exhausted _ |> std.io:println(text: "FAIL: exhausted")
-| parse-error _ |> std.io:println(text: "FAIL: parse_error")
-| validation-error _ |> std.io:println(text: "FAIL: validation_error")
-| shape-error _ |> std.io:println(text: "FAIL: shape_error")
-| event-denied _ |> std.io:println(text: "FAIL: event_denied")
-| dispatch-error _ |> std.io:println(text: "FAIL: dispatch_error")
-| scope-not-found _ |> std.io:println(text: "FAIL: scope_not_found")
+~std/runtime:run(source: TEST_SOURCE, scope: "test", budget: 100)
+| result _ |> std/io:print.ln("PASS: got handle")
+| exhausted _ |> std/io:print.ln("FAIL: exhausted")
+| parse-error _ |> std/io:print.ln("FAIL: parse_error")
+| validation-error _ |> std/io:print.ln("FAIL: validation_error")
+| shape-error _ |> std/io:print.ln("FAIL: shape_error")
+| event-denied _ |> std/io:print.ln("FAIL: event_denied")
+| dispatch-error _ |> std/io:print.ln("FAIL: dispatch_error")
+| scope-not-found _ |> std/io:print.ln("FAIL: scope_not_found")

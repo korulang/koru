@@ -25,10 +25,10 @@ import std/io
 
 // All caught by |?
 ~process(value: 10)
-|? |> std.io:print.ln("OPTIONAL FIRED")
+|? |> std/io:print.ln("OPTIONAL FIRED")
 
 ~process(value: 150)
-|? |> std.io:print.ln("OPTIONAL FIRED")
+|? |> std/io:print.ln("OPTIONAL FIRED")
 
 ~process(value: 0)
-|? |> std.io:print.ln("OPTIONAL FIRED")
+|? |> std/io:print.ln("OPTIONAL FIRED")

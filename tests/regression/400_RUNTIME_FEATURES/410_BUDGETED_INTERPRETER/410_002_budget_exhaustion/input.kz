@@ -14,19 +14,19 @@ const std = @import("std");
 }
 
 // Register with high cost
-~std.runtime:register(scope: "test") {
+~std/runtime:register(scope: "test") {
     expensive(50)  // costs 50 tokens per call
 }
 
 const TEST_SOURCE = "~expensive(data: \"a\")\n| processed p1 |> expensive(data: \"b\")\n| processed p2 |> result { p2.result }";
 
 // Run with budget of 75 - second call should exhaust
-~std.runtime:run(source: TEST_SOURCE, scope: "test", budget: 75)
-| result _ |> std.io:println(text: "FAIL: should have exhausted")
-| exhausted e |> std.io:print.ln("PASS: exhausted after {{ e.used:d }} tokens, last event: {{ e.last_event:s }}")
-| parse-error _ |> std.io:println(text: "PARSE ERROR")
-| validation-error _ |> std.io:println(text: "VALIDATION ERROR")
-| shape-error _ |> std.io:println(text: "SHAPE ERROR")
-| event-denied _ |> std.io:println(text: "EVENT DENIED")
-| dispatch-error _ |> std.io:println(text: "DISPATCH ERROR")
-| scope-not-found _ |> std.io:println(text: "SCOPE NOT FOUND")
+~std/runtime:run(source: TEST_SOURCE, scope: "test", budget: 75)
+| result _ |> std/io:print.ln("FAIL: should have exhausted")
+| exhausted e |> std/io:print.ln("PASS: exhausted after {{ e.used:d }} tokens, last event: {{ e.last_event:s }}")
+| parse-error _ |> std/io:print.ln("PARSE ERROR")
+| validation-error _ |> std/io:print.ln("VALIDATION ERROR")
+| shape-error _ |> std/io:print.ln("SHAPE ERROR")
+| event-denied _ |> std/io:print.ln("EVENT DENIED")
+| dispatch-error _ |> std/io:print.ln("DISPATCH ERROR")
+| scope-not-found _ |> std/io:print.ln("SCOPE NOT FOUND")

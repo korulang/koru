@@ -10,14 +10,14 @@
 // Usage:
 //   ~import "std/eval"
 //
-//   ~std.eval:eval(expression: score > 50, bindings: env)
+//   ~std/eval:eval(expression: score > 50, bindings: env)
 //   | bool b |> ~if(b) ...
 //   | int n |> ...
 //   | string s |> ...
 //   | error e |> ...
 //
 //   // Or inline in conditionals:
-//   ~std.eval:eval-bool(expression: user.role == "admin", bindings: env)
+//   ~std/eval:eval-bool(expression: user.role == "admin", bindings: env)
 //   | true |> ...
 //   | false |> ...
 
@@ -25,7 +25,7 @@
 
 import std/build
 
-~std.build:requires {
+~std/build:requires {
     const REL_TO_ROOT = "/usr/local/lib/koru";
 
     // Errors module (needed by ast)

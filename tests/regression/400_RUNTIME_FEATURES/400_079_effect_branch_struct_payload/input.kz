@@ -18,6 +18,6 @@ import std/io
 }
 
 ~tokenize(source: "x")
-! token t |> std.io:print.blk {
+! token t |> std/io:print.blk {
     token kind={{ t.kind:d }} lex={{ t.lexeme:s }}
 }

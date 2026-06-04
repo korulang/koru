@@ -8,14 +8,14 @@ const std = @import("std");
 import std/kernel
 
 // Declare the shape
-~std.kernel:shape(Body) {
+~std/kernel:shape(Body) {
     x: f64,
     y: f64,
     mass: f64,
 }
 
 // Initialize multiple bodies - array mode!
-~std.kernel:init(Body) {
+~std/kernel:init(Body) {
     { x: 0.0, y: 0.0, mass: 1.0 },
     { x: 1.0, y: 0.0, mass: 0.5 },
     { x: 2.0, y: 0.0, mass: 0.25 },

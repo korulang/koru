@@ -16,19 +16,19 @@ import std/io
 // DUMP AST AFTER FRONTEND
 // ============================================================================
 
-~std.compiler:frontend = std.compiler:frontend.default(ctx)
-| ctx c |> std.compiler:ast_dump(ctx: c, flag: "post-frontend") => ctx c
+~std/compiler:frontend = std/compiler:frontend.default(ctx)
+| ctx c |> std/compiler:ast_dump(ctx: c, flag: "post-frontend") => ctx c
 
 // ============================================================================
 // DUMP AST AFTER ANALYSIS
 // ============================================================================
 
-~std.compiler:analysis = std.compiler:analysis.default(ctx)
-| ctx c |> std.compiler:ast_dump(ctx: c, flag: "post-analysis") => ctx c
+~std/compiler:analysis = std/compiler:analysis.default(ctx)
+| ctx c |> std/compiler:ast_dump(ctx: c, flag: "post-analysis") => ctx c
 | failed f => failed { f.ctx, f.message }
 
 // ============================================================================
 // THE PROGRAM
 // ============================================================================
 
-~std.io:print.ln("AST was dumped at 2 stages!")
+~std/io:print.ln("AST was dumped at 2 stages!")

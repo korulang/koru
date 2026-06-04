@@ -20,11 +20,11 @@ import std/io
     std.debug.print("Observed: {s}\n", .{source});
 }
 
-// Fully qualified - matches std.io:println via print* wildcard
+// Fully qualified - matches std/io:println via print* wildcard
 // Using Profile metatype for string-based source field
-~tap(std.io:print* -> *)
+~tap(std/io:print* -> *)
 | Profile p |> logger(p.source)
 
 // Flow: println (void) transitions to finish
 // Tap fires because println matches print* and transitions to finish
-~std.io:println(text: "From std.io") |> finish()
+~std/io:print.ln("From std.io") |> finish()

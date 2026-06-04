@@ -22,5 +22,5 @@ import std/io
 // Handler references a branch that doesn't exist on this event
 // "nonexistent" is not a branch of process — should fail compilation
 ~process(value: 150)
-| success _ |> std.io:print.ln("OK")
-| nonexistent _ |> std.io:print.ln("BAD")
+| success _ |> std/io:print.ln("OK")
+| nonexistent _ |> std/io:print.ln("BAD")

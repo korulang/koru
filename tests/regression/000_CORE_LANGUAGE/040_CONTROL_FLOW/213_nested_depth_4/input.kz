@@ -22,4 +22,4 @@ import std/io
 | done a |> add-two(value: a)
     | done b |> add-three(value: b)
         | done c |> add-four(value: c)
-            | done d |> std.io:print.ln("{{d:d}}")
+            | done d |> std/io:print.ln("{{d:d}}")

@@ -6,5 +6,5 @@ import app/input
 ~pub event from-b { msg: []const u8 }
 | relayed []const u8
 
-~from-b = app.input:from_a(msg)
+~from-b = app/input:from_a(msg)
     | received r => relayed r

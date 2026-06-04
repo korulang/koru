@@ -28,16 +28,16 @@ import std/io
 }
 
 // Mixed flow: void events, single-branch events, and multi-branch events
-~std.io:println(text: "Starting computation")
+~std/io:print.ln("Starting computation")
 
 ~compute(x: 5)
 | done d |> validate(n: d)
-    | valid |> std.io:println(text: "Valid result")
-    | invalid |> std.io:println(text: "Invalid result")
+    | valid |> std/io:print.ln("Valid result")
+    | invalid |> std/io:print.ln("Invalid result")
 
 ~compute(x: -3)
 | done d |> validate(n: d)
-    | valid |> std.io:println(text: "Valid result")
-    | invalid |> std.io:println(text: "Invalid result")
+    | valid |> std/io:print.ln("Valid result")
+    | invalid |> std/io:print.ln("Invalid result")
 
-~std.io:println(text: "Done")
+~std/io:print.ln("Done")

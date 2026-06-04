@@ -49,4 +49,4 @@ import std/io
     | value v1 |> print-value(v: v1) |> for(0..3)
         ! each _ |> step-one() |> step-two()
         | done |> get-result()
-            | value v2 |> std.io:print.ln("Result: {{ v2:d }}")
+            | value v2 |> std/io:print.ln("Result: {{ v2:d }}")

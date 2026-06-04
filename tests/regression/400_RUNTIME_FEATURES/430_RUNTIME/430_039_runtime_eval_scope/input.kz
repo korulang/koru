@@ -1,4 +1,4 @@
-// Test: std.runtime:eval uses scope lookup and parsed AST
+// Test: std/runtime:eval uses scope lookup and parsed AST
 
 import std/runtime
 import std/io
@@ -13,18 +13,18 @@ const std = @import("std");
     return .{ .greeted = msg };
 }
 
-~std.runtime:register(scope: "api") {
+~std/runtime:register(scope: "api") {
     greet(1)
 }
 
 const TEST_SOURCE = "~greet(name: \"World\")";
 
-~std.runtime:parse.source(source: TEST_SOURCE, file-name: "runtime_eval.kz", allocator: std.heap.page_allocator)
-| parsed p |> std.runtime:eval(ast: p, scope: "api")
-    | result _ |> std.io:print.ln("OK")
-    | event-denied _ |> std.io:print.ln("EVENT DENIED")
-    | exhausted _ |> std.io:print.ln("EXHAUSTED")
-    | validation-error _ |> std.io:print.ln("VALIDATION ERROR")
-    | dispatch-error _ |> std.io:print.ln("DISPATCH ERROR")
-    | scope-not-found _ |> std.io:print.ln("SCOPE NOT FOUND")
-| parse-error _ |> std.io:print.ln("PARSE ERROR")
+~std/runtime:parse.source(source: TEST_SOURCE, file-name: "runtime_eval.kz", allocator: std.heap.page_allocator)
+| parsed p |> std/runtime:eval(ast: p, scope: "api")
+    | result _ |> std/io:print.ln("OK")
+    | event-denied _ |> std/io:print.ln("EVENT DENIED")
+    | exhausted _ |> std/io:print.ln("EXHAUSTED")
+    | validation-error _ |> std/io:print.ln("VALIDATION ERROR")
+    | dispatch-error _ |> std/io:print.ln("DISPATCH ERROR")
+    | scope-not-found _ |> std/io:print.ln("SCOPE NOT FOUND")
+| parse-error _ |> std/io:print.ln("PARSE ERROR")

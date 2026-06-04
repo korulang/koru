@@ -19,4 +19,4 @@ import std/control
 ~capture({ acc: IntAcc{ .total = 0, .count = 0 } })
 | as state |> for(&[_]i32{10, 20, 30, 40})
     | each n => captured { acc: IntAcc{ .total = state.acc.total + n, .count = state.acc.count + 1 } }
-| captured final |> std.io:print.ln("Total: {{ final.acc.total:d }}, Count: {{ final.acc.count:d }}")
+| captured final |> std/io:print.ln("Total: {{ final.acc.total:d }}, Count: {{ final.acc.count:d }}")

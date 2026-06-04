@@ -34,6 +34,6 @@ import std/io
 }
 
 ~setup() |> emitter(n: 3)
-! item v |> std.io:print.blk {
+! item v |> std/io:print.blk {
     item {{ v:d }}
 }

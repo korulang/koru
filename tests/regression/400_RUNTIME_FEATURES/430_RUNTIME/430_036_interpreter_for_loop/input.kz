@@ -16,7 +16,7 @@ const std = @import("std");
 }
 
 // Register events including control flow
-~std.runtime:register(scope: "test") {
+~std/runtime:register(scope: "test") {
     for
     print-num
 }
@@ -28,9 +28,9 @@ const TEST_FLOW =
     \\| done |> result { status: "complete" }
 ;
 
-~std.interpreter:run(source: TEST_FLOW, dispatcher: dispatch_test)
-| result r |> std.io:print.ln("Result: {{ r.value.branch:s }}")
-| exhausted e |> std.io:print.ln("Exhausted: {{ e.last_event:s }}")
-| parse-error e |> std.io:print.ln("Parse error: {{ e.message:s }}")
-| validation-error e |> std.io:print.ln("Validation error: {{ e:s }}")
-| dispatch-error e |> std.io:print.ln("Dispatch error: {{ e.message:s }}")
+~std/interpreter:run(source: TEST_FLOW, dispatcher: dispatch_test)
+| result r |> std/io:print.ln("Result: {{ r.value.branch:s }}")
+| exhausted e |> std/io:print.ln("Exhausted: {{ e.last_event:s }}")
+| parse-error e |> std/io:print.ln("Parse error: {{ e.message:s }}")
+| validation-error e |> std/io:print.ln("Validation error: {{ e:s }}")
+| dispatch-error e |> std/io:print.ln("Dispatch error: {{ e.message:s }}")

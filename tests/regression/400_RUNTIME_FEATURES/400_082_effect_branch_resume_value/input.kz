@@ -24,6 +24,6 @@ const std = @import("std");
 
 ~prompt-user(question: "What's your name?")
 ! ask _ |> "Alice"
-| done r |> std.io:print.blk {
+| done r |> std/io:print.blk {
     reply was: {{ r:s }}
 }

@@ -6,4 +6,4 @@ const File = struct {
 ~event check-file { file: *File<unknown:open> }
 ~proc check-file|zig {
 }
-~std.io:println(text: "Test file - phantom checker should fail before this runs")
+~std/io:print.ln("Test file - phantom checker should fail before this runs")

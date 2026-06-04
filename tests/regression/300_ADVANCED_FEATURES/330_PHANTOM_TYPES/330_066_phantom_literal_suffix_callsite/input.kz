@@ -34,4 +34,4 @@ import std/io
 ~to-fahrenheit => result c * 9.0 / 5.0 + 32.0
 
 ~to-fahrenheit(c: 22.5<celsius>)
-| result f |> std.io:print.ln("{{ f:f }} F")
+| result f |> std/io:print.ln("{{ f:f }} F")

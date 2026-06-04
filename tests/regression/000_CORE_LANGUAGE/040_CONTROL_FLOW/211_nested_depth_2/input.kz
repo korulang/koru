@@ -26,4 +26,4 @@ import std/io
 // Test: 10 + 1 + 2 = 13
 ~add-one(value: 10)
 | done a |> add-two(value: a)
-    | done b |> std.io:print.ln("{{b:d}}")
+    | done b |> std/io:print.ln("{{b:d}}")

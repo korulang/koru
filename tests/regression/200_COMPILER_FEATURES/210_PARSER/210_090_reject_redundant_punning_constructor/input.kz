@@ -16,4 +16,4 @@ import std/io
 ~make-point => point { x: x, y: y }
 
 ~make-point(x: 10, y: 20)
-| point p |> std.io:print.ln("x={{ p.x:d }}")
+| point p |> std/io:print.ln("x={{ p.x:d }}")

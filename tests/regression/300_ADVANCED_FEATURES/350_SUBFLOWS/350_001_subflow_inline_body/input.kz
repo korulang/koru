@@ -15,7 +15,7 @@ import std/io
 const std = @import("std");
 
 // Template: check if value > 0, return tagged union
-~std.template:define(name: "check_positive") {
+~std/template:define(name: "check_positive") {
     blk: {
         const Result = union(enum) {
             positive: i32,

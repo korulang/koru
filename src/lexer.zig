@@ -140,6 +140,14 @@ pub fn parseQualifiedPath(allocator: std.mem.Allocator, path: []const u8, ast: a
 
         const owned_qualifier = try allocator.dupe(u8, qualifier);
         mangleKebabInPlace(owned_qualifier);
+        // Namespace separator: `/` is the source form (matches the import string
+        // and filesystem), but the registry / canonical names use `.` internally
+        // (namespaces are built as `parent.file`). Normalize the qualifier `/`->`.`
+        // so a slash call site `std/deps:requires.system` resolves to the same
+        // event as the dot form. Member access AFTER the `:` (segments) keeps `.`.
+        for (owned_qualifier) |*c| {
+            if (c.* == '/') c.* = '.';
+        }
         return ast.DottedPath{
             .module_qualifier = owned_qualifier,
             .segments = segments,
@@ -185,7 +193,7 @@ pub fn findTopLevelVariantPipe(path: []const u8) ?usize {
 
 /// Find the position of a module qualifier colon (at bracket depth 0)
 /// Returns null if no qualifying colon found
-fn findModuleQualifierColon(path: []const u8) ?usize {
+pub fn findModuleQualifierColon(path: []const u8) ?usize {
     var bracket_depth: i32 = 0;  // []
     var paren_depth: i32 = 0;    // ()
     var angle_depth: i32 = 0;    // <>

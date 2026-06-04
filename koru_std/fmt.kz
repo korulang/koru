@@ -294,7 +294,7 @@ pub const FormattedText = struct {
 // ============================================================================
 //
 // Syntax:
-//   std.fmt:ln("Hello {{ name:s }}! Count: {{ count:d }}")
+//   std/fmt:ln("Hello {{ name:s }}! Count: {{ count:d }}")
 //   | line l |> ... use l.text ...
 //
 // Zero allocation: uses a thread-local buffer (safe across workers).

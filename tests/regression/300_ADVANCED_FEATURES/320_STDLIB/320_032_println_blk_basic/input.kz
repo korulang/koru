@@ -6,7 +6,7 @@ const total: i32 = 100;
 const max: i32 = 42;
 const name: []const u8 = "Results";
 
-~std.io:print.blk {
+~std/io:print.blk {
     === {{ name:s }} ===
     Total: {{ total:d }}
     Max:   {{ max:d }}

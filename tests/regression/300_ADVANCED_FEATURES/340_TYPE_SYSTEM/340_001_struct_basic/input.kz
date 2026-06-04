@@ -4,7 +4,7 @@ import std/types
 import std/io
 
 // Declare a struct type
-~std.types:struct(Player) {
+~std/types:struct(Player) {
     name: []const u8,
     health: i32,
 }
@@ -12,4 +12,4 @@ import std/io
 // Use the struct to prove it compiled
 const player = Player{ .name = "Alice", .health = 100 };
 
-~std.io:print.ln("Player: {{ player.name:s }}, Health: {{ player.health:d }}")
+~std/io:print.ln("Player: {{ player.name:s }}, Health: {{ player.health:d }}")

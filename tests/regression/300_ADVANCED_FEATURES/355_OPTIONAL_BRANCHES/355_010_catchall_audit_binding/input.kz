@@ -33,15 +33,15 @@ import std/io
 
 // Call 1: value=10 → success (required, handled explicitly)
 ~process(value: 10)
-| success _ |> std.io:print.ln("SUCCESS")
+| success _ |> std/io:print.ln("SUCCESS")
 |? Audit e |> print-str(text: e.branch)
 
 // Call 2: value=150 → warning (optional, caught by |? Audit)
 ~process(value: 150)
-| success _ |> std.io:print.ln("SUCCESS")
+| success _ |> std/io:print.ln("SUCCESS")
 |? Audit e |> print-str(text: e.branch)
 
 // Call 3: value=7 → debug (optional, caught by |? Audit)
 ~process(value: 7)
-| success _ |> std.io:print.ln("SUCCESS")
+| success _ |> std/io:print.ln("SUCCESS")
 |? Audit e |> print-str(text: e.branch)

@@ -14,15 +14,15 @@
 import std/math
 
 // Generate a 4x4 matrix type - template knows dimensions, can optimize
-~std.math:matrix(rows: 4, cols: 4)
+~std/math:matrix(rows: 4, cols: 4)
 | mat4x4 |> _
 
 // Generate a 3x3 matrix type - different optimizations apply
-~std.math:matrix(rows: 3, cols: 3)
+~std/math:matrix(rows: 3, cols: 3)
 | mat3x3 |> _
 
 // Test the generated types
 const identity = mat4x4.identity();
 const det = mat3x3.identity().determinant();
 
-~std.io:print.ln("4x4 identity created, 3x3 determinant = {{ det:d }}")
+~std/io:print.ln("4x4 identity created, 3x3 determinant = {{ det:d }}")

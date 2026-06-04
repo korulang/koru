@@ -8,4 +8,4 @@ import std/io
 
 ~const { x: 10, y: 20 }
 
-~std.io:print.ln("{{ x + y:d }}")
+~std/io:print.ln("{{ x + y:d }}")

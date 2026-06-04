@@ -16,9 +16,9 @@ import std/taps
     std.debug.print("TAP: {s}\n", .{msg});
 }
 
-// Tap: observe std.io:println when it transitions to another event
+// Tap: observe std/io:println when it transitions to another event
 // Using Profile for string source field
-~tap(std.io:print* -> *)
+~tap(std/io:print* -> *)
 | Profile p |> log(msg: p.source)
 
 // Flow: println transitions to a local event
@@ -29,4 +29,4 @@ import std/taps
 }
 
 // Main flow: println (void) transitions to finish (has branch)
-~std.io:println(text: "Hello") |> finish()
+~std/io:print.ln("Hello") |> finish()

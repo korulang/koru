@@ -7,7 +7,7 @@
 
 import std/io
 
-// Local print event - same name as $std.io:print
+// Local print event - same name as $std/io:print
 // This MUST take priority for unqualified invocations
 ~event print {}
 
@@ -21,4 +21,4 @@ import std/io
 ~print()
 
 // Explicit qualification still works for imported version
-~std.io:println(text: "Imported println works too")
+~std/io:print.ln("Imported println works too")

@@ -21,10 +21,10 @@ import std/io
 
 // value=10 → success → handled normally
 ~process(value: 10)
-| success _ |> std.io:print.ln("SUCCESS")
+| success _ |> std/io:print.ln("SUCCESS")
 // No |? — that's OK
 
 // value=150 → warning → no handler, no |? → silently ignored
 ~process(value: 150)
-| success _ |> std.io:print.ln("SUCCESS")
+| success _ |> std/io:print.ln("SUCCESS")
 // No warning handler, no |? — optional branch fires into the void

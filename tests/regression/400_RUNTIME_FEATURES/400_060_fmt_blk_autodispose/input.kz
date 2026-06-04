@@ -30,6 +30,6 @@ pub const Resource = struct {
 }
 
 // Simple sequential test
-~std.io:print.ln("Test start")
+~std/io:print.ln("Test start")
 ~create-resource(name: "Test")
-| created r |> destroy-resource(res: r) |> std.io:print.ln("Test done")
+| created r |> destroy-resource(res: r) |> std/io:print.ln("Test done")

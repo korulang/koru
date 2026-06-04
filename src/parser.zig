@@ -1287,6 +1287,34 @@ pub const Parser = struct {
         }
     }
 
+    /// Reject `.` used as a NAMESPACE separator. `/` is the sole namespace
+    /// separator (matching the import string + filesystem); `.` is member access
+    /// AFTER the `:` pivot. So a `.` in the module-qualifier (the part before the
+    /// top-level `:`) is the old dot-namespace form and must fail loudly. Member
+    /// dots after `:` (`std/io:print.ln`) and qualifier-less local paths
+    /// (`read.ln`) are unaffected.
+    fn rejectDotNamespace(self: *Parser, raw: []const u8, line_index: usize) !void {
+        // The namespace qualifier is the part before the qualifier `:`, which
+        // always precedes the call's opening `(` (args) or `{` (source block).
+        // A `:` AFTER `(`/`{` is an arg key or source-block field — never a
+        // qualifier — and its preceding text may legitimately contain `.`
+        // (e.g. `fail { r.score, reason: .. }`). Restrict the scan to the head.
+        const limit = std.mem.indexOfAny(u8, raw, "({") orelse raw.len;
+        const head = raw[0..limit];
+        const colon = lexer.findModuleQualifierColon(head) orelse return; // no qualifier
+        const qualifier = head[0..colon];
+        if (std.mem.indexOfScalar(u8, qualifier, '.') != null) {
+            try self.reporter.addError(
+                .KORU035,
+                line_index + 1,
+                1,
+                "'.' is not a namespace separator in '{s}' — use '/' (e.g. 'std/io:...', not 'std.io:...'). '.' is member access after ':'.",
+                .{qualifier},
+            );
+            return error.ParseError;
+        }
+    }
+
     fn parseEventDeclWithAnnotations(self: *Parser, is_public: bool, annotations: [][]const u8) !ast.EventDecl {
         if (self.current >= self.lines.len) {
             try self.reporter.addError(
@@ -3449,6 +3477,9 @@ pub const Parser = struct {
         var clean = lexer.withoutLabelAnchor(line);
         clean = lexer.withoutLabel(clean);
         log_debug("[DEBUG] parseEventInvocation: input='{s}'\n", .{clean});
+
+        // `/` is the sole namespace separator; reject the old `.`-namespace form.
+        try self.rejectDotNamespace(clean, self.current);
 
         // Detect Zig code patterns and report error
         if (self.looksLikeZigCode(clean)) {
@@ -6129,7 +6160,7 @@ pub const Parser = struct {
         // Also accept `[` `]` for Source-block type hints inside the path.
         while (i < content.len) : (i += 1) {
             const c = content[i];
-            if (std.ascii.isAlphanumeric(c) or c == '_' or c == '-' or c == '.' or c == ':' or c == '[' or c == ']') continue;
+            if (std.ascii.isAlphanumeric(c) or c == '_' or c == '-' or c == '.' or c == ':' or c == '/' or c == '[' or c == ']') continue;
             break;
         }
         // After the path, skip whitespace

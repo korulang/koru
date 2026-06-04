@@ -15,4 +15,4 @@ const {
     count: 42
 }
 
-std.io:print.ln("Hello, {{ name:s }}! The answer is {{ count:d }}.")
+std/io:print.ln("Hello, {{ name:s }}! The answer is {{ count:d }}.")

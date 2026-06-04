@@ -7,5 +7,5 @@ const std = @import("std");
 import std/io
 import app/mylib
 
-~app.mylib:greet(name: "kjs index")
-| greeted g |> std.io:print.ln("{{ g:s }}")
+~app/mylib:greet(name: "kjs index")
+| greeted g |> std/io:print.ln("{{ g:s }}")

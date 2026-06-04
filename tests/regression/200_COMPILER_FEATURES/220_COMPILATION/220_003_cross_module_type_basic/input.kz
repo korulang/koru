@@ -5,7 +5,7 @@
 //
 // Structure:
 //   test_lib/
-//     user.kz  -> defines User struct and test_lib.user:create event
+//     user.kz  -> defines User struct and test_lib/user:create event
 //
 // Key Test: Can we reference test_lib.user:User in an event signature?
 //
@@ -32,6 +32,6 @@ import app/test_lib
 }
 
 // Create a user using the imported event
-~app.test_lib.user:create(name: "Alice", age: 30)
+~app/test_lib/user:create(name: "Alice", age: 30)
 | created c |> register-user(user-data: c)
     | registered _ |> _
