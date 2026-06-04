@@ -561,6 +561,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     dead_strip_module.addImport("ast", ast_module);
+    dead_strip_module.addImport("log", log_module);
     exe.root_module.addImport("dead_strip", dead_strip_module);
 
     // Transform Collector module for two-layer AST transformation
@@ -674,6 +675,8 @@ pub fn build(b: *std.Build) void {
     playground_exe.root_module.addImport("module_resolver", module_resolver_module);
     playground_exe.root_module.addImport("config", config_module);
     playground_exe.root_module.addImport("canonicalize_names", canonicalize_names_module);
+    playground_exe.root_module.addImport("file_types", file_types_module);
+    playground_exe.root_module.addImport("dead_strip", dead_strip_module);
 
     // Embedded stdlib bytes (generated) + the Fs that serves them, so the
     // playground resolves `import "std/io"` with no disk.

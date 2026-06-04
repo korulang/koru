@@ -24,10 +24,76 @@ const ShapeChecker = @import("shape_checker").ShapeChecker;
 const FlowChecker = @import("flow_checker").FlowChecker;
 const PhantomSemanticChecker = @import("phantom_semantic_checker").PhantomSemanticChecker;
 const js_emitter = @import("js_emitter");
-const ModuleResolver = @import("module_resolver").ModuleResolver;
+const module_resolver_mod = @import("module_resolver");
+const ModuleResolver = module_resolver_mod.ModuleResolver;
 const embedded_fs = @import("embedded_fs");
 const Config = @import("config").Config;
 const canonicalize_names = @import("canonicalize_names");
+const file_types = @import("file_types");
+const DeadStripPass = @import("dead_strip").DeadStripPass;
+
+/// "std/io" → "std.io" (slashes to dots, Koru extension stripped). Mirrors
+/// main.zig's deriveCanonicalName — the name js_emit matches a qualified call
+/// (`std.io:println`) against. Trivial enough to own here rather than extract.
+fn deriveLogicalName(allocator: std.mem.Allocator, import_path: []const u8) ![]const u8 {
+    const without_ext = if (file_types.koruExtensionOf(import_path)) |ext|
+        import_path[0 .. import_path.len - ext.len]
+    else
+        import_path;
+    const result = try allocator.alloc(u8, without_ext.len);
+    for (without_ext, 0..) |c, i| result[i] = if (c == '/') '.' else c;
+    return result;
+}
+
+/// Materialize each DIRECT import as a `module_decl` AST item so js_emit (Phase
+/// 1b) can emit it. The parser already registers imports into the type registry
+/// (and follows transitive imports there via the Fs seam) — but js_emit walks
+/// the AST, not the registry, so the entry program needs the imported modules
+/// present as items. Reuses the shared resolver (resolveBoth/findCompanionFiles
+/// over the embedded Fs); facet companions (.k/.kjs siblings) merge into one
+/// module's items, exactly like main.zig's loadFileWithCompanions.
+fn materializeImports(allocator: std.mem.Allocator, source_file: *ast.Program, resolver: *ModuleResolver) !void {
+    var combined = std.ArrayList(ast.Item){ .items = &.{}, .capacity = 0 };
+    try combined.appendSlice(allocator, source_file.items);
+
+    for (source_file.items) |item| {
+        if (item != .import_decl) continue;
+        const imp = item.import_decl;
+
+        var resolved = resolver.resolveBoth(imp.path, null) catch continue;
+        defer resolved.deinit(allocator);
+        const file_path = resolved.file_path orelse continue;
+
+        const bytes = (try resolver.fs.readFile(allocator, file_path)) orelse continue;
+        var p = try Parser.init(allocator, bytes, file_path, &[_][]const u8{}, resolver);
+        defer p.deinit();
+        const parsed = try p.parse();
+
+        var mod_items = std.ArrayList(ast.Item){ .items = &.{}, .capacity = 0 };
+        try mod_items.appendSlice(allocator, parsed.source_file.items);
+
+        // Fold in facet companions (e.g. a .kjs sibling carrying |js bodies).
+        const companions = try module_resolver_mod.findCompanionFiles(resolver.fs, allocator, file_path);
+        for (companions) |cp| {
+            const cbytes = (try resolver.fs.readFile(allocator, cp)) orelse continue;
+            var cp_parser = try Parser.init(allocator, cbytes, cp, &[_][]const u8{}, resolver);
+            defer cp_parser.deinit();
+            const cparsed = try cp_parser.parse();
+            try mod_items.appendSlice(allocator, cparsed.source_file.items);
+        }
+
+        try combined.append(allocator, .{ .module_decl = .{
+            .logical_name = try deriveLogicalName(allocator, imp.local_name orelse imp.path),
+            .canonical_path = try allocator.dupe(u8, file_path),
+            .items = try mod_items.toOwnedSlice(allocator),
+            .is_system = resolver.isSystemModule(file_path),
+            .annotations = &.{},
+            .location = .{ .file = file_path, .line = 1, .column = 0 },
+        } });
+    }
+
+    source_file.items = try combined.toOwnedSlice(allocator);
+}
 
 /// A Config that maps the `std` import alias to the embedded stdlib root, so
 /// `import "std/io"` resolves against the baked-in koru_std bytes. project_root
@@ -99,6 +165,15 @@ pub fn check(allocator: std.mem.Allocator, source: []const u8, file_name: []cons
     var source_file = parse_result.source_file;
     try collect(&diagnostics, &parser.reporter, "parse", allocator);
 
+    // NOTE: we deliberately do NOT materialize imports here (the JS path does).
+    // Materializing only DIRECT imports surfaces stdlib-internal references
+    // (e.g. io.kz → std.build:variants) as false KORU040s, because the checkers
+    // run on the un-pruned AST. Correct import-aware diagnostics need full
+    // TRANSITIVE materialization + user-scoped checking — a follow-up. For now
+    // the checkers validate the user's own program shape; calls into stdlib
+    // events are left to the JS-compile path.
+    canonicalize_names.canonicalize(&source_file, allocator) catch {};
+
     // --- Semantic checkers (Stage C guts, called directly, no backend binary) ---
     // All three share one reporter and consume only the AST. None need the
     // parser's TypeRegistry — they rebuild what they need from the AST.
@@ -136,10 +211,18 @@ pub fn compileToJs(allocator: std.mem.Allocator, source: []const u8, file_name: 
     defer parser.deinit();
     const parse_result = try parser.parse();
     var source_file = parse_result.source_file;
-    // Qualify DottedPaths so invocations like `std.io:println` match the
-    // imported event decls — the frontend pass downstream passes rely on.
+    // Bring imported modules into the AST as module_decl items (js_emit walks
+    // the AST), then qualify DottedPaths so `std.io:println` matches them.
+    // Order mirrors main(): materialize imports → canonicalize.
+    try materializeImports(allocator, &source_file, &resolver);
     try canonicalize_names.canonicalize(&source_file, allocator);
-    return try js_emitter.emit(allocator, &source_file);
+    // Strip unreachable events (e.g. unused stdlib procs whose comptime/template
+    // |js variants aren't runnable JS) so only what the program actually calls
+    // gets emitted — same pass the real pipeline runs before emission.
+    var ds = DeadStripPass.init(allocator);
+    defer ds.deinit();
+    const pruned = try ds.run(&source_file);
+    return try js_emitter.emit(allocator, pruned);
 }
 
 fn appendStr(buf: *std.ArrayList(u8), a: std.mem.Allocator, s: []const u8) !void {
