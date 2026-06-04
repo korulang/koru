@@ -8,7 +8,7 @@
 import std/kernel
 import std/io
 
-~std.kernel:shape(Body) {
+~std/kernel:shape(Body) {
     mass: f64,
 }
 
@@ -18,9 +18,9 @@ import std/io
     std.debug.print("mass={d}\n", .{value});
 }
 
-~std.kernel:init(Body) {
+~std/kernel:init(Body) {
     { mass: 1.0 },
     { mass: 2.0 },
 }
-| kernel k |> std.kernel:self { k.mass *= 1.0 }
+| kernel k |> std/kernel:self { k.mass *= 1.0 }
 | computed c |> print-mass(value: c[0].mass)

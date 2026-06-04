@@ -23,6 +23,6 @@ import std/io
 }
 
 ~multi()
-! a v |> std.io:print.blk {
+! a v |> std/io:print.blk {
     a {{ v:d }}
 }

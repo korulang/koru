@@ -1,0 +1,9 @@
+// codemod:skip — negative test: must keep the dot-namespace to exercise the rule.
+// PIN: `.` is NOT a namespace separator — `/` is the sole separator (matching the
+// import string + filesystem). `.` is member access AFTER the `:` pivot. The old
+// `std.io:` form must fail loudly (KORU035). We won't accept both.
+import std/io
+
+const msg: []const u8 = "should be rejected";
+
+~std.io:print(text: msg)

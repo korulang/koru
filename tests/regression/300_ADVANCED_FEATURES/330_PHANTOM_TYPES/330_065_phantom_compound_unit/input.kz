@@ -27,4 +27,4 @@ import std/io
 ~read-distance(trip-id: 1)
 | traveled m |> read-time(trip-id: 1)
     | elapsed s |> compute-velocity(d: m, t: s)
-        | result v |> std.io:print.ln("{{ v:d }} m/s")
+        | result v |> std/io:print.ln("{{ v:d }} m/s")

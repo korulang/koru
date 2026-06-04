@@ -12,13 +12,13 @@
 //   ~import "std/runtime"
 //
 //   // Register events you want callable at runtime
-//   ~std.runtime:register(scope: "api") {
+//   ~std/runtime:register(scope: "api") {
 //       greet
 //       process_order
 //   }
 //
 //   // Interpret Koru source
-//   ~std.interpreter:run(source: user_input, scope: "api")
+//   ~std/interpreter:run(source: user_input, scope: "api")
 //   | result r |> handle_result(value: r.value)
 //   | parse-error e |> respond(status: 400, body: e.message)
 //   | validation-error e |> respond(status: 400, body: e.message)
@@ -37,7 +37,7 @@ const flow_parser = @import("flow_parser");
 // BUILD REQUIREMENTS - Parser and checkers for runtime use
 // ============================================================================
 
-~std.build:requires {
+~std/build:requires {
     const REL_TO_ROOT = "/usr/local/lib/koru";
 
     // Errors module (needed by parser and ast)
@@ -1489,7 +1489,7 @@ fn executeFlow(
 
     // =========================================================================
     // SPECIAL HANDLING: Control flow (~if, ~for)
-    // Recognized as both bare (if) and qualified (std.control:if)
+    // Recognized as both bare (if) and qualified (std/control:if)
     // =========================================================================
     const is_if = (inv.path.module_qualifier == null and
                    inv.path.segments.len == 1 and

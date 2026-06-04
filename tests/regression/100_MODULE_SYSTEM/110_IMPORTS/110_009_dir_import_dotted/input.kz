@@ -1,6 +1,6 @@
 // Test 835: Directory import with dotted event names
 //
-// Tests the full hierarchy: package.module:category.event()
+// Tests the full hierarchy: package/module:category.event()
 // - package = raylib (from directory)
 // - module = graphics (from graphics.kz file)
 // - category.event = z-buffer.render (dotted event name within file)
@@ -9,8 +9,8 @@ const std = @import("std");
 
 import app/lib/raylib
 
-// Full hierarchy: package.module:category.event()
-~app.lib.raylib.graphics:z-buffer.render(width: 1024, height: 768)
-| drawn _ |> app.lib.raylib.graphics:z-buffer.clear() |> app.lib.raylib.graphics:sprite.draw(x: 100, y: 200) |> app.lib.raylib.graphics:texture.load(path: "sprite.png")
+// Full hierarchy: package/module:category.event()
+~app/lib/raylib/graphics:z-buffer.render(width: 1024, height: 768)
+| drawn _ |> app/lib/raylib/graphics:z-buffer.clear() |> app/lib/raylib/graphics:sprite.draw(x: 100, y: 200) |> app/lib/raylib/graphics:texture.load(path: "sprite.png")
     | loaded _ |> _
     | failed _ |> _

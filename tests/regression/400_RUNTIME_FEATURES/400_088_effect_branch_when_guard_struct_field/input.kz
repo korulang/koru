@@ -28,7 +28,7 @@ import std/io
 }
 
 ~keystream(count: 4)
-! key k when k.ch == 'q' |> std.io:print.blk {
+! key k when k.ch == 'q' |> std/io:print.blk {
     quit pressed
 }
 ! key _ |> _

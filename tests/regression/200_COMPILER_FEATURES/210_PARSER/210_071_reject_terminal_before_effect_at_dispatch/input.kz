@@ -8,7 +8,7 @@
 //
 // The well-formed shape (defended by 210_073) is:
 //   ~count-to-three = for(0..3)
-//   ! each _ |> std.io:println(text: "counting")
+//   ! each _ |> std/io:println(text: "counting")
 //   | done |> result 3
 // ============================================================================
 

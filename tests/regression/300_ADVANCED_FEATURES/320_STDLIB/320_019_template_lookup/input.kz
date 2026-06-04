@@ -1,6 +1,6 @@
 // Test: Template lookup works (templates defined in AST are retrievable)
 //
-// This test validates that templates defined with ~std.template:define
+// This test validates that templates defined with ~std/template:define
 // are stored in the AST in a way that lookupTemplate can find them.
 //
 // The actual lookup functionality is tested implicitly through the
@@ -12,7 +12,7 @@
 import std/template
 
 // Define a template that we'll "use" to prove lookup works
-~std.template:define(name: "greeting") {
+~std/template:define(name: "greeting") {
     Hello, ${name}!
 }
 

@@ -3,10 +3,10 @@
 import std/args
 import std/io
 
-~std.args:get(index: 1)
-| arg a |> std.io:println(text: a)
-| out-of-bounds |> std.io:println(text: "<none>")
+~std/args:get(index: 1)
+| arg a |> std/io:println(text: a)
+| out-of-bounds |> std/io:println(text: "<none>")
 
-~std.args:get(index: 2)
-| arg a |> std.io:println(text: a)
-| out-of-bounds |> std.io:println(text: "<none>")
+~std/args:get(index: 2)
+| arg a |> std/io:println(text: a)
+| out-of-bounds |> std/io:println(text: "<none>")

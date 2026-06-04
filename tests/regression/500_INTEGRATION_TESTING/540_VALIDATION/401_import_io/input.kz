@@ -5,4 +5,4 @@
 // This tests the import system with path aliases and module qualification
 import std/io
 
-~std.io:println(text: "Import works!")
+~std/io:println(text: "Import works!")

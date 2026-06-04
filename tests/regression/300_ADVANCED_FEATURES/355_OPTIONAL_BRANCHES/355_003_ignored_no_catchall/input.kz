@@ -23,9 +23,9 @@ import std/io
 
 // value=50 → success
 ~analyze(value: 50)
-| success _ |> std.io:print.ln("SUCCESS")
+| success _ |> std/io:print.ln("SUCCESS")
 // No warning handler, no |? — optional branches just ignored
 
 // value=150 → warning (optional, no handler — silently ignored)
 ~analyze(value: 150)
-| success _ |> std.io:print.ln("SUCCESS")
+| success _ |> std/io:print.ln("SUCCESS")

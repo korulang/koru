@@ -7,7 +7,7 @@ import std/control
 import std/build
 
 // Link libc for c_allocator
-~std.build:requires { exe.linkLibC(); }
+~std/build:requires { exe.linkLibC(); }
 
 const std = @import("std");
 

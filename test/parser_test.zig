@@ -362,12 +362,12 @@ test "multi-line annotation syntax for flow calls" {
         \\import std/build
         \\
         \\~[default]
-        \\std.build:step(name: "compile") {
+        \\std/build:step(name: "compile") {
         \\    zig build
         \\}
         \\
         \\~[default, depends_on("compile")]
-        \\std.build:step(name: "run") {
+        \\std/build:step(name: "run") {
         \\    ./zig-out/bin/main
         \\}
     ;

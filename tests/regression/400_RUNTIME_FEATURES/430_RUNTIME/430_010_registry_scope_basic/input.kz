@@ -1,6 +1,6 @@
 // Test: Registry Scope - Basic
 //
-// Verifies that ~std.runtime:register generates a dispatcher function
+// Verifies that ~std/runtime:register generates a dispatcher function
 
 import std/runtime
 import std/io
@@ -23,7 +23,7 @@ const std = @import("std");
 }
 
 // Register a scope with these events
-~std.runtime:register(scope: "api") {
+~std/runtime:register(scope: "api") {
     greet
     farewell
 }

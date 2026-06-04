@@ -17,6 +17,6 @@ const std = @import("std");
 }
 
 ~ping(msg: "hello effect branches")
-! pong reply |> std.io:print.blk {
+! pong reply |> std/io:print.blk {
     {{ reply:s }}
 }

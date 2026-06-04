@@ -18,7 +18,7 @@ import sys
 PROC_RE = re.compile(r'^\s*~?(?:\[[^\]]*\])?\s*(?:pub\s+)?proc\b')
 # A dotted lowercase module path immediately followed by the `:` pivot and a
 # symbol char. Lookbehind avoids matching mid-identifier or after `/`/`.`.
-PIVOT_RE = re.compile(r'(?<![\w/.])([a-z][a-z0-9_]*(?:\.[a-z0-9_]+)+):(?=[a-z_])')
+PIVOT_RE = re.compile(r'(?<![\w/.])([a-z][a-z0-9_]*(?:\.[a-z0-9_]+)+):(?=[a-zA-Z_])')
 INTERP_RE = re.compile(r'\{\{.*?\}\}')
 
 

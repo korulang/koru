@@ -508,4 +508,4 @@ const std = @import("std");
         <h1>$[u.name]</h1>
         <p>Age: $[u.age]</p>
     }
-    | rendered h |> std.io:println(text: h.html)
+    | rendered h |> std/io:println(text: h.html)

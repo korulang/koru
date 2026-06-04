@@ -13,17 +13,17 @@
 // USAGE:
 //   ~import "std/types"
 //
-//   ~std.types:struct(Player) { name: []const u8, health: i32 }
-//   ~[pub]std.types:struct(Position) { x: f32, y: f32 }
+//   ~std/types:struct(Player) { name: []const u8, health: i32 }
+//   ~[pub]std/types:struct(Position) { x: f32, y: f32 }
 //
-//   ~std.types:enum(Color) { red, green, blue }
-//   ~[pub]std.types:enum(State) { idle, running, jumping }
+//   ~std/types:enum(Color) { red, green, blue }
+//   ~[pub]std/types:enum(State) { idle, running, jumping }
 //
-//   ~std.types:union(Value) { int: i32, float: f32, none }
+//   ~std/types:union(Value) { int: i32, float: f32, none }
 //
 // Future annotations:
-//   ~[pub|soa]std.types:struct(Enemies) { hp: i32, x: f32, y: f32 }
-//   ~[packed]std.types:struct(NetworkPacket) { ... }
+//   ~[pub|soa]std/types:struct(Enemies) { hp: i32, x: f32, y: f32 }
+//   ~[packed]std/types:struct(NetworkPacket) { ... }
 //
 // NOTE: For const/var declarations, use raw Zig or ~const from control.kz
 

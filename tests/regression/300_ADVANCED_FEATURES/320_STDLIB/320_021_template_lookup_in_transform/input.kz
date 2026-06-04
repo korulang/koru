@@ -16,5 +16,5 @@ const std = @import("std");
 const value = 42;
 
 ~if(value > 10)
-| then |> std.io:println(text: "Template says: greater!")
-| else |> std.io:println(text: "Template says: not greater!")
+| then |> std/io:println(text: "Template says: greater!")
+| else |> std/io:println(text: "Template says: not greater!")

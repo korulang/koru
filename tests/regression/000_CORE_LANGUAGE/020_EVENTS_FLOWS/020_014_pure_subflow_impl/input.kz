@@ -9,4 +9,4 @@ import std/io
 ~greet => greeting "Hello, " ++ name ++ "!"
 
 ~greet ("World")
-| greeting msg |> std.io:print.ln(msg)
+| greeting msg |> std/io:print.ln(msg)

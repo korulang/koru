@@ -21,6 +21,6 @@ const std = @import("std");
 }
 
 ~each-i32(items: &[_]i32{ 10, 20, 30 })
-! item v |> std.io:print.blk {
+! item v |> std/io:print.blk {
     saw {{ v:d }}
 }

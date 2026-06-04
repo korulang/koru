@@ -21,9 +21,9 @@ import std/io
 }
 
 ~count-up(start: 0, end: 3)
-! each i |> std.io:print.blk {
+! each i |> std/io:print.blk {
     each {{ i:d }}
 }
-| done total |> std.io:print.blk {
+| done total |> std/io:print.blk {
     done {{ total:d }}
 }

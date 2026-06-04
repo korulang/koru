@@ -5,10 +5,10 @@ import std/kernel
 import std/io
 
 // BUG: This single-line shape doesn't work
-~std.kernel:shape(Body) { mass: f64 }
+~std/kernel:shape(Body) { mass: f64 }
 
-~std.kernel:init(Body) {
+~std/kernel:init(Body) {
     { mass: 1.0 },
 }
 
-~std.io:print.ln("done")
+~std/io:print.ln("done")

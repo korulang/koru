@@ -18,4 +18,4 @@ import std/io
 }
 
 ~probe2(n: 3)
-! each i |> std.io:print.ln("each {{ i:d }}")
+! each i |> std/io:print.ln("each {{ i:d }}")

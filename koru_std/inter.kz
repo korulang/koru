@@ -20,7 +20,7 @@ import std/compiler
 const std = @import("std");
 
 // Declare the --inter flag
-~std.compiler:flag.declare {
+~std/compiler:flag.declare {
   "name": "inter",
   "description": "Launch interactive compiler TUI for debugging and exploration",
   "type": "boolean"
@@ -29,7 +29,7 @@ const std = @import("std");
 // The interactive mode entry point
 // Called from the compiler pipeline with contexts from each stage
 ~[comptime] pub event start {
-    contexts: []const std.compiler:CompilerContext,
+    contexts: []const std/compiler:CompilerContext,
 }
 | launched
 | skipped

@@ -8,4 +8,4 @@ import std/io
 
 const msg: []const u8 = "println removal pending std/compiler:print.ln";
 
-~std.io:println(text: msg)
+~std/io:println(text: msg)

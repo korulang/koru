@@ -1,3 +1,3 @@
 import app/fs
-~app.fs:open(path: "test.txt")
-| opened f |> app.fs:flush-close(file: f)
+~app/fs:open(path: "test.txt")
+| opened f |> app/fs:flush-close(file: f)

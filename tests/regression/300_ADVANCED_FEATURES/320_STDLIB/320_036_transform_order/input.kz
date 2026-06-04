@@ -14,6 +14,6 @@ const std = @import("std");
 // Nested if: both in pipeline steps
 ~start() |> if(true)
     | then |> if(true)
-        | then |> std.io:print.ln("inner-then")
-        | else |> std.io:print.ln("inner-else")
-    | else |> std.io:print.ln("outer-else")
+        | then |> std/io:print.ln("inner-then")
+        | else |> std/io:print.ln("inner-else")
+    | else |> std/io:print.ln("outer-else")

@@ -9,15 +9,15 @@
 //   ~import "std/kernel"
 //
 //   // 1. Declare the shape (structure with explicit types)
-//   ~std.kernel:shape(Body) { x: f64, y: f64, z: f64, vx: f64, vy: f64, vz: f64, mass: f64 }
+//   ~std/kernel:shape(Body) { x: f64, y: f64, z: f64, vx: f64, vy: f64, vz: f64, mass: f64 }
 //
 //   // 2. Initialize kernel data (creates instance of shape)
 //   // Uses Koru syntax (x: value) which transforms to Zig (.x = value)
-//   ~std.kernel:init(Body) { x: 0, y: 0, z: 0, vx: 1.0, vy: 0, vz: 0, mass: 1.0 }
+//   ~std/kernel:init(Body) { x: 0, y: 0, z: 0, vx: 1.0, vy: 0, vz: 0, mass: 1.0 }
 //   | kernel bodies |> ...
 //
 //   // 3. Perform kernel operations
-//   std.kernel:pairwise {
+//   std/kernel:pairwise {
 //       bodies.vel -= d * mag * bodies.other.mass
 //       bodies.other.vel += d * mag * bodies.mass
 //   }
@@ -48,7 +48,7 @@ const std = @import("std");
 // This is NOT a transform - it just sits in the AST for kernel.init to look up.
 //
 // Example:
-//   ~std.kernel:shape(Body) { x: f64, y: f64, z: f64, mass: f64 }
+//   ~std/kernel:shape(Body) { x: f64, y: f64, z: f64, mass: f64 }
 
 ~[norun]pub event shape {
     expr: Expression,
@@ -66,7 +66,7 @@ const std = @import("std");
 // the struct definition and initialization code, replaces the flow.
 //
 // Example:
-//   ~std.kernel:init(Body) { x: 0, y: 0, mass: 1.0 }
+//   ~std/kernel:init(Body) { x: 0, y: 0, mass: 1.0 }
 //   | kernel bodies |> ...
 //
 // Koru syntax "x: 0" transforms to Zig syntax ".x = 0"

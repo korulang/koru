@@ -36,27 +36,27 @@ import std/build
 
 // Define variant configurations for different build modes
 // Use full canonical names: module:event
-~[release]std.build:variants {
+~[release]std/build:variants {
     "input:compute": "fast",
     "input:blur": "gpu"
 }
-| configured _ |> std.io:println(text: "Release config loaded")
+| configured _ |> std/io:println(text: "Release config loaded")
 | skipped _ |> _
-| invalid-event _ |> std.io:println(text: "Invalid event in release config")
+| invalid-event _ |> std/io:println(text: "Invalid event in release config")
 
-~[debug]std.build:variants {
+~[debug]std/build:variants {
     "input:compute": "naive",
     "input:blur": "cpu"
 }
-| configured _ |> std.io:println(text: "Debug config loaded")
+| configured _ |> std/io:println(text: "Debug config loaded")
 | skipped _ |> _
-| invalid-event _ |> std.io:println(text: "Invalid event in debug config")
+| invalid-event _ |> std/io:println(text: "Invalid event in debug config")
 
 // Default config (when no --build flag is passed)
-~std.build:variants {
+~std/build:variants {
     "input:compute": "default",
     "input:blur": "default"
 }
-| configured _ |> std.io:println(text: "Default config loaded")
+| configured _ |> std/io:println(text: "Default config loaded")
 | skipped _ |> _
-| invalid-event _ |> std.io:println(text: "Invalid event in default config")
+| invalid-event _ |> std/io:println(text: "Invalid event in default config")

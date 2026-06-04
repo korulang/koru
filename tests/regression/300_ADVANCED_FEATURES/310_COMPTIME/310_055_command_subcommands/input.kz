@@ -7,7 +7,7 @@
 // ASPIRATIONAL SYNTAX FOR command.declare
 // ============================================================
 //
-//   ~std.compiler:command.declare {
+//   ~std/compiler:command.declare {
 //       "name": "deps",
 //       "description": "Manage system dependencies",
 //       "subcommands": [
@@ -31,14 +31,14 @@
 //
 // Current deps.kz has:
 //
-//   ~std.compiler:command.declare {
+//   ~std/compiler:command.declare {
 //       "name": "deps",
 //       "description": "Check and install system dependencies..."
 //   }
 //
 // It would become:
 //
-//   ~std.compiler:command.declare {
+//   ~std/compiler:command.declare {
 //       "name": "deps",
 //       "description": "Manage system dependencies",
 //       "subcommands": [

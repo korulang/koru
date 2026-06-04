@@ -29,9 +29,9 @@ import std/io
 }
 
 ~ticker(n: 4)
-! tick i when i > 1 |> std.io:print.blk {
+! tick i when i > 1 |> std/io:print.blk {
     big {{ i:d }}
 }
-! tick i |> std.io:print.blk {
+! tick i |> std/io:print.blk {
     small {{ i:d }}
 }

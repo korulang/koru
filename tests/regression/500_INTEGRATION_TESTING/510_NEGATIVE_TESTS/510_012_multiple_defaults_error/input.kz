@@ -9,6 +9,6 @@ import app/lib/extra_build
 
 // This file defines ONE default
 ~[default]
-std.build:step(name: "test") {
+std/build:step(name: "test") {
     echo "Main test implementation"
 }

@@ -1,8 +1,8 @@
 import std/control
 import app/fs
 const condition = true;
-~app.fs:open(path: "test.txt")
-| opened f |> std.control:if(condition)
-    | then |> app.fs:close(file: f)
+~app/fs:open(path: "test.txt")
+| opened f |> std/control:if(condition)
+    | then |> app/fs:close(file: f)
     | else |> _  // ERROR? Obligation not satisfied here!
 pub fn main() void {}

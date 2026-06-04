@@ -19,4 +19,4 @@ import std/io
 ~echo => out v
 
 ~echo(v: v)
-| out r |> std.io:print.ln("{{ r:d }}")
+| out r |> std/io:print.ln("{{ r:d }}")

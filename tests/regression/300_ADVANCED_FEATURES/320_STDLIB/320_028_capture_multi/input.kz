@@ -32,4 +32,4 @@ import std/control
 | captured final |> result { final.sum, final.max }
 
 ~compute-stats()
-| result _ |> std.io:println(text: "done")
+| result _ |> std/io:println(text: "done")

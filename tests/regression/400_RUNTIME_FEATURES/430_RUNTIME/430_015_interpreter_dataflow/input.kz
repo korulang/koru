@@ -31,7 +31,7 @@ const std = @import("std");
 }
 
 // Register events
-~std.runtime:register(scope: "api") {
+~std/runtime:register(scope: "api") {
     validate
     transform
 }

@@ -1,4 +1,4 @@
-// Test: ~[build("flag")]std.build:config { ... } compiles cleanly.
+// Test: ~[build("flag")]std/build:config { ... } compiles cleanly.
 //
 // This is the canonical idiom for setting build-time configuration
 // (cross-compilation target, etc.) gated on a --build flag.
@@ -10,7 +10,7 @@
 
 import std/build
 
-~[build("native")]std.build:config {
+~[build("native")]std/build:config {
     "target": "x86_64-linux-gnu"
 }
 

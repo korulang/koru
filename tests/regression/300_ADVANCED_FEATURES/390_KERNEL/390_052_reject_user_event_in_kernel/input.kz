@@ -2,7 +2,7 @@
 
 import std/kernel
 
-~std.kernel:shape(Body) {
+~std/kernel:shape(Body) {
     mass: f64,
 }
 
@@ -12,8 +12,8 @@ import std/kernel
     std.debug.print("mass={d}\n", .{value});
 }
 
-~std.kernel:init(Body) {
+~std/kernel:init(Body) {
     { mass: 1.0 },
     { mass: 2.0 },
 }
-| kernel k |> std.kernel:self { k.mass *= 2.0 } |> print-mass(value: k.ptr[0].mass)
+| kernel k |> std/kernel:self { k.mass *= 2.0 } |> print-mass(value: k.ptr[0].mass)

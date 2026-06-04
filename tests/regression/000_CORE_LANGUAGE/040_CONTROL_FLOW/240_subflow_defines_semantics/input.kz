@@ -35,7 +35,7 @@ import std/io
 | break => stopped
 | continue => iterated
 
-~std.io:print.ln("Testing subflow-defined semantics:")
+~std/io:print.ln("Testing subflow-defined semantics:")
 ~run()
-| stopped |> std.io:print.ln("  stopped")
-| iterated |> std.io:print.ln("  iterated")
+| stopped |> std/io:print.ln("  stopped")
+| iterated |> std/io:print.ln("  iterated")

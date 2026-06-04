@@ -11,5 +11,5 @@ const std = @import("std");
     std.debug.print("tick {}\n", .{n});
 }
 
-~tap(app.counter:tick -> *)
+~tap(app/counter:tick -> *)
 | next v |> log(n: v)

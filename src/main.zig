@@ -6380,7 +6380,11 @@ pub fn main() !void {
     // Inject compiler bootstrap import (unless --compiler=disable or user already imported it)
     // Note: compiler.kz itself has ~[comptime] annotation, so it will be emitted to backend_output
     const inject_compiler = !compiler_config.hasFlag("compiler=disable");
-    const user_already_imported_compiler = std.mem.indexOf(u8, source, "std/compiler") != null;
+    // Detect the actual IMPORT statement — not any `std/compiler` occurrence.
+    // `~std/compiler:requires { .. }` is a directive, not an import; matching bare
+    // `std/compiler` there falsely skipped the bootstrap inject under the `/`
+    // namespace (it didn't under the old `std.compiler` spelling).
+    const user_already_imported_compiler = std.mem.indexOf(u8, source, "import std/compiler") != null;
     const final_source = if (inject_compiler and !user_already_imported_compiler) blk: {
         log.debug("DEBUG: Auto-injecting compiler import\n", .{});
         // Imports are bare and first-class in every file kind — no `~`, no

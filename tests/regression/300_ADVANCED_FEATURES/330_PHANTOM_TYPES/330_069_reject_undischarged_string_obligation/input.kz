@@ -2,7 +2,7 @@
 // that doesn't accept `<!unsanitized>` is rejected by the phantom checker.
 //
 // This is the taint-tracking shape: a tainted string flowing into a sink
-// (like `std.io:print.ln`) without going through a sanitizer is a
+// (like `std/io:print.ln`) without going through a sanitizer is a
 // compile-time error. The phantom checker treats the obligation on the
 // primitive payload exactly as it treats `*File<opened!>` — undischarged
 // at scope exit is a rejection.
@@ -17,4 +17,4 @@ import std/io
 ~get-input => line "user input data"
 
 ~get-input()
-| line s |> std.io:print.ln(s)
+| line s |> std/io:print.ln(s)

@@ -14,4 +14,4 @@ import std/io
 
 // Test it
 ~data(x: 10, y: 20)
-| result _ |> std.io:print.ln("explicit works")
+| result _ |> std/io:print.ln("explicit works")

@@ -6,7 +6,7 @@ import std/deps
 import std/optimizer
 
 // Compiler system dependencies
-~std.deps:requires.system {
+~std/deps:requires.system {
     "name": "zig",
     "check": "zig version",
     "min_version": "0.15.0",
@@ -619,7 +619,7 @@ pub const CompilerContext = struct {
 // Usage (in your module, e.g. package.kz):
 //   ~import "std/compiler"
 //
-//   ~std.compiler:command.declare {
+//   ~std/compiler:command.declare {
 //     "name": "i",
 //     "alias": "install",
 //     "description": "Install npm packages from requires.npm declarations"
@@ -648,7 +648,7 @@ pub const CompilerContext = struct {
 // ============================================================
 
 // The compiler coordinator (user-overridable)
-// Abstract: Users can override with ~std.compiler:coordinate = ...
+// Abstract: Users can override with ~std/compiler:coordinate = ...
 ~[comptime|abstract] pub event coordinate { program-ast: *const Program, allocator: std.mem.Allocator }
 | coordinated { ast: *const Program, code: []const u8, metrics: []const u8 }
 | error []const u8
@@ -660,10 +660,10 @@ pub const CompilerContext = struct {
 | created c0 |> frontend(ctx: c0)
   | ctx c1 |> analysis(ctx: c1)
     | ctx c2 |> test-generation(ctx: c2)
-      | ctx c3 |> std.optimizer:optimize(ctx: c3)
+      | ctx c3 |> std/optimizer:optimize(ctx: c3)
         | ctx c4 |> emission(ctx: c4)
           | ctx c5 |> metrics-format(c5.ctx.passes_completed, allocator)
-            | formatted m |> std.inter:start(contexts: [
+            | formatted m |> std/inter:start(contexts: [
                 c0,
                 c1,
                 c2,

@@ -15,7 +15,7 @@ const std = @import("std");
 }
 
 // Register just this one event
-~std.runtime:register(scope: "test") {
+~std/runtime:register(scope: "test") {
     greet
 }
 

@@ -9,8 +9,8 @@ import std/io
 
 const cond = true;
 
-~std.control:if(cond)
-| then |> std.io:print.ln("then taken")
-| else |> std.io:print.ln("else taken")
+~std/control:if(cond)
+| then |> std/io:print.ln("then taken")
+| else |> std/io:print.ln("else taken")
 
 pub fn main() void {}

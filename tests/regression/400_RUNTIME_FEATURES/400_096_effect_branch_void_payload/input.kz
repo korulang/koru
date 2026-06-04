@@ -19,7 +19,7 @@ import std/io
 }
 
 ~ping()
-! pong |> std.io:print.ln("pong")
-| result n |> std.io:print.blk {
+! pong |> std/io:print.ln("pong")
+| result n |> std/io:print.blk {
     result {{ n:d }}
 }

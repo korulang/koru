@@ -24,7 +24,7 @@ import std/io
 }
 
 ~ticker(n: 5)
-! tick i when i % 2 == 0 |> std.io:print.blk {
+! tick i when i % 2 == 0 |> std/io:print.blk {
     tick {{ i:d }}
 }
 ! tick _ |> _

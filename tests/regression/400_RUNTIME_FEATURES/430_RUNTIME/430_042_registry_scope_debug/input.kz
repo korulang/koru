@@ -10,7 +10,7 @@ const std = @import("std");
 ~proc debug.dump-state|zig {
 }
 
-~[registry:scope(admin)]std.runtime:register {
+~[registry:scope(admin)]std/runtime:register {
     [debug]debug:*
 }
 

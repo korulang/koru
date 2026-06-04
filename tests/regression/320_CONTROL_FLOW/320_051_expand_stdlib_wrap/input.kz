@@ -13,7 +13,7 @@ const std = @import("std");
 
 // Template uses @TypeOf to infer element type from the array itself
 // This gives us generics "for free" - Zig figures out the types!
-~std.template:define(name: "sort") {
+~std/template:define(name: "sort") {
     std.mem.sort(@TypeOf({{ arr }}[0]), {{ arr }}, {}, std.sort.asc(@TypeOf({{ arr }}[0])));
 }
 

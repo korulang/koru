@@ -1,7 +1,7 @@
 // Test: ~struct as keyword (no module qualification)
 //
 // With [keyword] on types.kz, ~struct(Name) should work
-// without writing ~std.types:struct(Name)
+// without writing ~std/types:struct(Name)
 
 import std/types
 import std/io

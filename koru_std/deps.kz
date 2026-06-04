@@ -8,7 +8,7 @@
 //
 //   ~import "std/deps"
 //
-//   ~std.deps:requires.system {
+//   ~std/deps:requires.system {
 //       "name": "curl",
 //       "check": "curl-config --version",
 //       "brew": "curl",
@@ -29,7 +29,7 @@ import std/build
 // DEPS COMMAND - Check and install system dependencies
 // ============================================================
 
-~std.compiler:command.declare {
+~std/compiler:command.declare {
     "name": "deps",
     "description": "Manage system dependencies",
     "subcommands": [

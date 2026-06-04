@@ -22,4 +22,4 @@ const std = @import("std");
 // The `result` branch has payload `{ value: i32 }` but no binding.
 // Correct syntax would be: `| result _ |>` or `| result r |>` (if `r` is used)
 ~compute(x: 42)
-| result |> std.io:println(text: "done")
+| result |> std/io:println(text: "done")

@@ -18,5 +18,5 @@ import std/control
 // Use typed struct literal directly in ~const
 ~const({ cfg: IntConfig{ value: 42, enabled: true } })
 | as settings |> if(settings.cfg.enabled)
-    | then |> std.io:print.ln("Value: {{ settings.cfg.value:d }}")
+    | then |> std/io:print.ln("Value: {{ settings.cfg.value:d }}")
     | else |> _

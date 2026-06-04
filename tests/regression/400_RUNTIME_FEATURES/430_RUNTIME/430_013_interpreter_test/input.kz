@@ -28,7 +28,7 @@ const std = @import("std");
 }
 
 // Register events for runtime dispatch
-~std.runtime:register(scope: "test") {
+~std/runtime:register(scope: "test") {
     greet
     farewell
 }

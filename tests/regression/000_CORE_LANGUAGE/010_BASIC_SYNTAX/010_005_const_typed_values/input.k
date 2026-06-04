@@ -16,4 +16,4 @@ const {
     plain: 100
 }
 
-std.io:print.ln("{{ name:s }} {{ count:d }} {{ size:d }} {{ plain:d }}")
+std/io:print.ln("{{ name:s }} {{ count:d }} {{ size:d }} {{ plain:d }}")

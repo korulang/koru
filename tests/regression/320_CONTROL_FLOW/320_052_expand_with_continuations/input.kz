@@ -17,7 +17,7 @@ const std = @import("std");
 
 // Template produces ONLY the expression that returns the union value
 // Type is inlined since [norun] events don't generate event structs
-~std.template:define(name: "maybe") {
+~std/template:define(name: "maybe") {
     blk: {
         const Result = union(enum) {
             some: struct { val: i32 },
@@ -40,5 +40,5 @@ const std = @import("std");
 var test_value: ?i32 = 42;
 
 ~maybe(expr: test_value)
-| some _ |> std.io:print.ln("Got a value!")
-| none |> std.io:print.ln("Got nothing")
+| some _ |> std/io:print.ln("Got a value!")
+| none |> std/io:print.ln("Got nothing")

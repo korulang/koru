@@ -18,5 +18,5 @@ const std = @import("std");
 // Test: ~if in pipeline, condition uses binding from outer continuation
 ~get-value()
 | result r |> if(r > 10)
-    | then |> std.io:println(text: "Value is greater than 10")
-    | else |> std.io:println(text: "Value is 10 or less")
+    | then |> std/io:println(text: "Value is greater than 10")
+    | else |> std/io:println(text: "Value is 10 or less")

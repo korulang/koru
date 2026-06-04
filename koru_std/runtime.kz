@@ -2,9 +2,9 @@
 // Enables scoped runtime evaluation of parsed Koru code
 //
 // DESIGN:
-// - ~std.runtime:register(scope: "name") { events } declares a scope (norun)
-// - ~std.runtime:collect-scopes walks AST and generates dispatch tables
-// - ~std.runtime:get-scope(name: "...") looks up a scope at runtime
+// - ~std/runtime:register(scope: "name") { events } declares a scope (norun)
+// - ~std/runtime:collect-scopes walks AST and generates dispatch tables
+// - ~std/runtime:get-scope(name: "...") looks up a scope at runtime
 
 ~[comptime|runtime]
 
@@ -1398,7 +1398,7 @@ fn lookupEventBranches(scope_name: []const u8, event_name: []const u8) []const B
 
 // shape: Optional event name to validate response shape against
 // @retain: run_event is referenced from generated Zig code in user pipelines
-// (std.runtime:run invocations in continuations compile to run_event.handler(...))
+// (std/runtime:run invocations in continuations compile to run_event.handler(...))
 ~[retain]pub event run {
     source: []const u8,
     scope: []const u8,

@@ -20,7 +20,7 @@ const std = @import("std");
 }
 
 // Register events for dispatch
-~std.runtime:register(scope: "test") {
+~std/runtime:register(scope: "test") {
     get-score
 }
 

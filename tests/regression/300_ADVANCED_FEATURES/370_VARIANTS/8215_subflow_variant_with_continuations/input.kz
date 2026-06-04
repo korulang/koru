@@ -39,7 +39,7 @@ const std = @import("std");
 | result r => final r
 
 // Register the |two variant.
-~std.build:variants {
+~std/build:variants {
     "input:greet": "two"
 }
 | configured _ |> _

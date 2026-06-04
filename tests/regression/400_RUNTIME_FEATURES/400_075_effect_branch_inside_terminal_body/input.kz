@@ -22,9 +22,9 @@ import std/io
 }
 
 ~work(steps: 2)
-! progress p |> std.io:print.blk {
+! progress p |> std/io:print.blk {
     progress {{ p:d }}
 }
-| done total |> std.io:print.blk {
+| done total |> std/io:print.blk {
     done {{ total:d }}
 }

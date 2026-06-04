@@ -22,6 +22,6 @@ import std/io
 }
 
 ~maybe(count: 3)
-| done c |> std.io:print.blk {
+| done c |> std/io:print.blk {
     done {{ c:d }}
 }

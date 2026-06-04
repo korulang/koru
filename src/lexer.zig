@@ -193,7 +193,7 @@ pub fn findTopLevelVariantPipe(path: []const u8) ?usize {
 
 /// Find the position of a module qualifier colon (at bracket depth 0)
 /// Returns null if no qualifying colon found
-fn findModuleQualifierColon(path: []const u8) ?usize {
+pub fn findModuleQualifierColon(path: []const u8) ?usize {
     var bracket_depth: i32 = 0;  // []
     var paren_depth: i32 = 0;    // ()
     var angle_depth: i32 = 0;    // <>

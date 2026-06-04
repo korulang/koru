@@ -4,6 +4,6 @@ import app/fs
     std.debug.print("Done!\n", .{});
 }
 const std = @import("std");
-~app.fs:open(path: "test.txt")
+~app/fs:open(path: "test.txt")
 | opened _ |> log-done()
 pub fn main() void {}

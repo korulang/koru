@@ -1,9 +1,9 @@
 // Test 632: Basic package requirements (npm)
-// Validates that std.package:requires.npm captures npm dependencies
+// Validates that std/package:requires.npm captures npm dependencies
 //
 // This test demonstrates:
 // 1. Self-describing modules with npm dependencies
-// 2. AST collection: Compiler walks AST to find std.package:requires.npm
+// 2. AST collection: Compiler walks AST to find std/package:requires.npm
 // 3. Void events: No branches needed for simple requirements
 // 4. package.json generation with --install-packages flag
 
@@ -12,15 +12,15 @@ import std/package
 
 // Declare npm package dependencies using implicit Source blocks
 // The { } block is compiled to a Source parameter containing raw JSON
-~std.package:requires.npm {
+~std/package:requires.npm {
     "@koru/graphics": "^1.0.0"
 }
 
-~std.package:requires.npm {
+~std/package:requires.npm {
     "@korulang/gzip": "^1.0.0"
 }
 
-~std.package:requires.npm {
+~std/package:requires.npm {
     "@korulang/sqlite3": "^0.1.0"
 }
 

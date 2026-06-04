@@ -1,8 +1,8 @@
 import app/db
 const std = @import("std");
-~app.db:connect(host: "localhost")
-| connected _ |> app.db:begin(_.conn)
-    | begun _ |> app.db:do-work(_.tx)
+~app/db:connect(host: "localhost")
+| connected _ |> app/db:begin(_.conn)
+    | begun _ |> app/db:do-work(_.tx)
 pub fn main() void {
     std.debug.print("Cascading auto-discharge test\n", .{});
 }

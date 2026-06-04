@@ -16,6 +16,6 @@ import std/io
 }
 
 ~loop(r: 0..3)
-! each v |> std.io:print.blk {
+! each v |> std/io:print.blk {
     v {{ v:d }}
 }

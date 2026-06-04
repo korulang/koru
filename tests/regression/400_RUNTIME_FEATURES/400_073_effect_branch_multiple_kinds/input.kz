@@ -25,9 +25,9 @@ import std/io
 }
 
 ~tokenize(source: "ignored")
-! token t |> std.io:print.blk {
+! token t |> std/io:print.blk {
     token: {{ t:s }}
 }
-! warning w |> std.io:print.blk {
+! warning w |> std/io:print.blk {
     warning: {{ w:s }}
 }

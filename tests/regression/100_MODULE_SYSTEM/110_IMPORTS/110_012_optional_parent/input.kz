@@ -24,7 +24,7 @@ import app/test_lib/net/tcp
 }
 
 // Use submodule (no parent exists, that's OK!)
-~app.test_lib.net.tcp:connect(host: "localhost", port: 8080)
+~app/test_lib/net/tcp:connect(host: "localhost", port: 8080)
 | connected |> std.debug.print("TCP connected!\n", .{})
 | failed |> std.debug.print("TCP failed\n", .{})
 

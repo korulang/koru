@@ -2,8 +2,8 @@
 //
 // This test verifies mocking events from IMPORTED modules.
 //
-// The syntax `~std.fs:read_lines = failed "mock error"` means:
-// "For this test, provide this implementation for the std.fs:read_lines event"
+// The syntax `~std/fs:read_lines = failed "mock error"` means:
+// "For this test, provide this implementation for the std/fs:read_lines event"
 //
 // This is NOT just for testing - Source blocks with impl declarations enable:
 // - Compile-time code synthesis
@@ -21,7 +21,7 @@ import std/fs
 | ok usize
 | failed []const u8
 
-~process-config = std.fs:read_lines(path)
+~process-config = std/fs:read_lines(path)
 | lines l => ok l.len
 | failed msg => failed msg
 
@@ -32,7 +32,7 @@ import std/fs
 ~test(Cross-module mock with failed branch) {
     // Mock the external module's event with the 'failed' branch
     // This returns a simple string ([]const u8), which works without array literals
-    ~std.fs:read_lines => failed "mocked file read error"
+    ~std/fs:read_lines => failed "mocked file read error"
 
     ~process-config(path: "/this/file/does/not/exist.txt")
     | ok _ |> assert.fail()
@@ -44,7 +44,7 @@ import std/fs
 // ============================================
 
 ~test(Cross-module mock should return 3 lines) {
-    ~std.fs:read_lines => lines ["line1", "line2", "line3"]
+    ~std/fs:read_lines => lines ["line1", "line2", "line3"]
 
     ~process-config(path: "/fake/path")
     | ok result |> assert(result == 3)

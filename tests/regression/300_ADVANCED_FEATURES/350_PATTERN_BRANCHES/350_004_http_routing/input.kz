@@ -36,13 +36,13 @@ const std = @import("std");
 }
 
 ~handle(method: "GET", path: "/users/42")
-| response r |> std.io:print.ln("GET /users/42 -> {{ r.status:d }}: {{ r.body:s }}")
+| response r |> std/io:print.ln("GET /users/42 -> {{ r.status:d }}: {{ r.body:s }}")
 
 ~handle(method: "GET", path: "/health")
-| response r |> std.io:print.ln("GET /health -> {{ r.status:d }}: {{ r.body:s }}")
+| response r |> std/io:print.ln("GET /health -> {{ r.status:d }}: {{ r.body:s }}")
 
 ~handle(method: "POST", path: "/users")
-| response r |> std.io:print.ln("POST /users -> {{ r.status:d }}: {{ r.body:s }}")
+| response r |> std/io:print.ln("POST /users -> {{ r.status:d }}: {{ r.body:s }}")
 
 ~handle(method: "DELETE", path: "/users/1")
-| response r |> std.io:print.ln("DELETE /users/1 -> {{ r.status:d }}: {{ r.body:s }}")
+| response r |> std/io:print.ln("DELETE /users/1 -> {{ r.status:d }}: {{ r.body:s }}")

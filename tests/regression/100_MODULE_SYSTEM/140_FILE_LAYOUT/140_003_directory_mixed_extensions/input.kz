@@ -7,8 +7,8 @@ const std = @import("std");
 import std/io
 import app/lib
 
-~app.lib.alpha:greet-alpha()
-| spoken a |> std.io:print.ln("{{ a:s }}")
+~app/lib/alpha:greet-alpha()
+| spoken a |> std/io:print.ln("{{ a:s }}")
 
-~app.lib.beta:greet-beta()
-| spoken b |> std.io:print.ln("{{ b:s }}")
+~app/lib/beta:greet-beta()
+| spoken b |> std/io:print.ln("{{ b:s }}")

@@ -8,8 +8,8 @@
 
 import app/db
 
-~app.db:connect(host: "localhost")
-| ok c |> app.db:begin(conn: c)
+~app/db:connect(host: "localhost")
+| ok c |> app/db:begin(conn: c)
     | ok _ |> _
     | err _ |> _
 | err _ |> _

@@ -24,4 +24,4 @@ import std/io
 //      → emitter skips `_ = &name;` suppressor
 //      → Zig: "unused local constant 'name'"
 ~greet(id: 1)
-| ok name |> std.io:print.ln("no name given")
+| ok name |> std/io:print.ln("no name given")

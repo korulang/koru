@@ -35,6 +35,6 @@ import std/io
 | value v => result v
 
 // Main test
-~std.io:print.ln("Testing braceless in continuation:")
+~std/io:print.ln("Testing braceless in continuation:")
 ~process(input: 21)
-| result r |> std.io:print.ln("  Got result: {{ r:d }}")
+| result r |> std/io:print.ln("  Got result: {{ r:d }}")

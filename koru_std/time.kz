@@ -6,10 +6,10 @@
 //   ~import "std/time"
 //   ~import "std/io"
 //
-//   ~std.time:now()
+//   ~std/time:now()
 //   | t start |> do_work()
-//       |> std.time:elapsed(start: start.ns)
-//           | duration d |> std.io:print.ln("work: {{ d.ms:f }}ms")
+//       |> std/time:elapsed(start: start.ns)
+//           | duration d |> std/io:print.ln("work: {{ d.ms:f }}ms")
 
 ~[comptime|runtime]
 

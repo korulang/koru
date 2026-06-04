@@ -28,6 +28,6 @@ const Frame = struct { id: i32 };
 }
 
 ~frames(n: 3)
-! frame f |> std.io:print.blk {
+! frame f |> std/io:print.blk {
     frame id={{ f.id:d }}
 }

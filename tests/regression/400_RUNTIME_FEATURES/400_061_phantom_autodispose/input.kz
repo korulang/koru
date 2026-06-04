@@ -40,9 +40,9 @@ pub const Resource = struct {
 
 // Test: Create resource, use it, but DON'T manually destroy
 // Auto-discharge should insert destroy-resource
-~std.io:print.ln("Test start")
+~std/io:print.ln("Test start")
 ~create-resource(name: "AutoDisposed")
 | created r |> use-resource(res: r)
     // Obligation [allocated!] should trigger auto-discharge here
 
-~std.io:print.ln("Test done")
+~std/io:print.ln("Test done")

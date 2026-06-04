@@ -9,6 +9,6 @@ import std/build
 import app/lib/build_config
 
 // User defines "build" step here
-~std.build:step(name: "build") {
+~std/build:step(name: "build") {
     echo "Build from main"
 }

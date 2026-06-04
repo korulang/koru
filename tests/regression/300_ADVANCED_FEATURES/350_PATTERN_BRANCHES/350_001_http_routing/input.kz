@@ -21,4 +21,4 @@ pub const Request = struct {
 
 // WRONG: Zig-style struct literal in parameter value
 ~handle(req: .{ .method = "GET", .path = "/health" })
-| response r |> std.io:print.ln("{{ r.body:s }}")
+| response r |> std/io:print.ln("{{ r.body:s }}")

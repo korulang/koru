@@ -3,6 +3,6 @@
 
 import std/build
 
-~std.build:step(name: "build") {
+~std/build:step(name: "build") {
     echo "Build from build_config - AMBIGUOUS!"
 }

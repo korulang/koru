@@ -1,5 +1,5 @@
 // codemod:skip — runtime-eval blocks use internal (snake) names; flow_parser does not normalize.
-// Test: std.runtime:eval invokes auto-discharge cleanup events
+// Test: std/runtime:eval invokes auto-discharge cleanup events
 
 import std/runtime
 import std/io
@@ -20,19 +20,19 @@ const std = @import("std");
     std.debug.print("CLOSE\n", .{});
 }
 
-~std.runtime:register(scope: "api") {
+~std/runtime:register(scope: "api") {
     open_handle(1)
     close_handle(1)
 }
 
 const TEST_SOURCE = "~open_handle()";
 
-~std.runtime:parse.source(source: TEST_SOURCE, file-name: "runtime_eval_autodischarge.kz", allocator: std.heap.page_allocator)
-| parsed p |> std.runtime:eval(ast: p, scope: "api")
-    | result _ |> std.io:print.ln("OK")
-    | exhausted _ |> std.io:print.ln("EXHAUSTED")
-    | validation-error _ |> std.io:print.ln("VALIDATION ERROR")
-    | event-denied _ |> std.io:print.ln("EVENT DENIED")
-    | dispatch-error _ |> std.io:print.ln("DISPATCH ERROR")
-    | scope-not-found _ |> std.io:print.ln("SCOPE NOT FOUND")
-| parse-error _ |> std.io:print.ln("PARSE ERROR")
+~std/runtime:parse.source(source: TEST_SOURCE, file-name: "runtime_eval_autodischarge.kz", allocator: std.heap.page_allocator)
+| parsed p |> std/runtime:eval(ast: p, scope: "api")
+    | result _ |> std/io:print.ln("OK")
+    | exhausted _ |> std/io:print.ln("EXHAUSTED")
+    | validation-error _ |> std/io:print.ln("VALIDATION ERROR")
+    | event-denied _ |> std/io:print.ln("EVENT DENIED")
+    | dispatch-error _ |> std/io:print.ln("DISPATCH ERROR")
+    | scope-not-found _ |> std/io:print.ln("SCOPE NOT FOUND")
+| parse-error _ |> std/io:print.ln("PARSE ERROR")

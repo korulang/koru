@@ -3,7 +3,7 @@
 
 import std/io
 
-std.io:print.blk {
+std/io:print.blk {
     {% if debug %}[DEBUG] {% endif %}Hello, {{ name:s }}!
     The answer is {{ count:d }}.
 }

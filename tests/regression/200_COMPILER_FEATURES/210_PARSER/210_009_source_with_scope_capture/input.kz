@@ -34,4 +34,4 @@ import std/io
         <p>Syntax validated</p>
     </div>
 }
-| rendered h |> std.io:println(text: h.html)
+| rendered h |> std/io:println(text: h.html)

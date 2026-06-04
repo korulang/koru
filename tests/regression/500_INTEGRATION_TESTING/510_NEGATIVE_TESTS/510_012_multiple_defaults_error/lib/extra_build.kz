@@ -3,6 +3,6 @@
 import std/build
 
 ~[default]
-std.build:step(name: "test") {
+std/build:step(name: "test") {
     echo "Extra test implementation - THIS IS A BUG!"
 }
