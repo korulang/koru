@@ -21,5 +21,5 @@ import std/control
 const std = @import("std");
 
 ~for(0..5)
-! each _ |> std/io:println(text: "iteration")
-| done |> std/io:println(text: "done")
+! each _ |> std/io:print.ln("iteration")
+| done |> std/io:print.ln("done")

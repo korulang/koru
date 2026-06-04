@@ -1,12 +1,15 @@
+// NOTE: narrowed to Zig — print.ln of a bare variable WITH newline has no JS
+// variant yet (print.ln is a Zig comptime transform; std/io:print has |js but no
+// newline). print.ln cross-target JS for variable args is a tracked gap.
 // Dual-target: the SAME .kz reads argv via $std/args on both Zig and JS.
 // ARGS = "hello\nworld" → Koru argv index 1 = hello, 2 = world (both targets).
 import std/args
 import std/io
 
 ~std/args:get(index: 1)
-| arg a |> std/io:println(text: a)
-| out-of-bounds |> std/io:println(text: "<none>")
+| arg a |> std/io:print.ln(a)
+| out-of-bounds |> std/io:print(text: "<none>\n")
 
 ~std/args:get(index: 2)
-| arg a |> std/io:println(text: a)
-| out-of-bounds |> std/io:println(text: "<none>")
+| arg a |> std/io:print.ln(a)
+| out-of-bounds |> std/io:print(text: "<none>\n")

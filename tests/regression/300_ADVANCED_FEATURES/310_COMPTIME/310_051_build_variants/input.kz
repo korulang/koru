@@ -40,23 +40,23 @@ import std/build
     "input:compute": "fast",
     "input:blur": "gpu"
 }
-| configured _ |> std/io:println(text: "Release config loaded")
+| configured _ |> std/io:print(text: "Release config loaded\n")
 | skipped _ |> _
-| invalid-event _ |> std/io:println(text: "Invalid event in release config")
+| invalid-event _ |> std/io:print(text: "Invalid event in release config\n")
 
 ~[debug]std/build:variants {
     "input:compute": "naive",
     "input:blur": "cpu"
 }
-| configured _ |> std/io:println(text: "Debug config loaded")
+| configured _ |> std/io:print(text: "Debug config loaded\n")
 | skipped _ |> _
-| invalid-event _ |> std/io:println(text: "Invalid event in debug config")
+| invalid-event _ |> std/io:print(text: "Invalid event in debug config\n")
 
 // Default config (when no --build flag is passed)
 ~std/build:variants {
     "input:compute": "default",
     "input:blur": "default"
 }
-| configured _ |> std/io:println(text: "Default config loaded")
+| configured _ |> std/io:print(text: "Default config loaded\n")
 | skipped _ |> _
-| invalid-event _ |> std/io:println(text: "Invalid event in default config")
+| invalid-event _ |> std/io:print(text: "Invalid event in default config\n")

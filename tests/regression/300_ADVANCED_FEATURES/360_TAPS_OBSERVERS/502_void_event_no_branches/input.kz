@@ -8,6 +8,6 @@
 import std/io
 
 // Void events have no output branches, so no branch handling required
-~std/io:println(text: "First line")
-~std/io:println(text: "Second line")
-~std/io:println(text: "Third line")
+~std/io:print.ln("First line")
+~std/io:print.ln("Second line")
+~std/io:print.ln("Third line")

@@ -18,8 +18,8 @@ import std/taps
 
 // SHORTHAND: ~tap(ping) instead of ~tap(ping -> *)
 ~tap(ping)
-| pong _ |> std/io:println(text: "Tap observed pong")
+| pong _ |> std/io:print.ln("Tap observed pong")
 
 // Main flow
 ~ping()
-| pong p |> std/io:println(text: p)
+| pong p |> std/io:print.ln(p)

@@ -10,7 +10,7 @@ const std = @import("std");
 import std/io
 
 // Simple flow using imported module
-~std/io:println(text: "Multiple imports work!")
+~std/io:print.ln("Multiple imports work!")
 
 // NOTE: $lib and $root aliases exist but testing them requires
 // setting up relative paths or KORU_PATH, which is environment-dependent.

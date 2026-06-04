@@ -14,10 +14,10 @@ import ctrl = $std/control
 
 // Use the alias - should still resolve keywords correctly
 ~ctrl:for(0..3)
-| each i |> std/io:println(text: "via alias")
-| done |> std/io:println(text: "alias worked")
+| each i |> std/io:print.ln("via alias")
+| done |> std/io:print.ln("alias worked")
 
 // Also test that keywords still work (they resolve to std.control internally)
 ~for(0..2)
-| each j |> std/io:println(text: "via keyword")
-| done |> std/io:println(text: "keyword worked")
+| each j |> std/io:print.ln("via keyword")
+| done |> std/io:print.ln("keyword worked")

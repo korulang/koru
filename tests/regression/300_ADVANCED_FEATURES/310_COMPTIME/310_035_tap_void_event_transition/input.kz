@@ -29,4 +29,4 @@ import std/taps
 }
 
 // Main flow: println (void) transitions to finish (has branch)
-~std/io:println(text: "Hello") |> finish()
+~std/io:print.ln("Hello") |> finish()

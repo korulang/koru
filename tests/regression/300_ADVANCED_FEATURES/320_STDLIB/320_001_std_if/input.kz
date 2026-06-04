@@ -115,11 +115,11 @@ const std = @import("std");
 const value = 42;
 
 ~my-if(value > 10)
-    | then |> std/io:println(text: "Test 1: then branch")
-    | else |> std/io:println(text: "Test 1: else branch")
+    | then |> std/io:print.ln("Test 1: then branch")
+    | else |> std/io:print.ln("Test 1: else branch")
 
 const small = 5;
 
 ~my-if(small > 10)
-    | then |> std/io:println(text: "Test 2: then branch")
-    | else |> std/io:println(text: "Test 2: else branch")
+    | then |> std/io:print.ln("Test 2: then branch")
+    | else |> std/io:print.ln("Test 2: else branch")

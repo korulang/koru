@@ -1,3 +1,6 @@
+// NOTE: narrowed to Zig — print.ln of a bare variable WITH newline has no JS
+// variant yet (print.ln is a Zig comptime transform; std/io:print has |js but no
+// newline). print.ln cross-target JS for variable args is a tracked gap.
 // JS continuation-branch dispatch: the JS emitter switches on the returned
 // branch tag (as Zig does), firing only the matched branch — not all of them.
 // n=4 → only the `even` branch fires; byte-identical on both targets. Minimal,
@@ -23,5 +26,5 @@ import std/io
 }
 
 ~pick(n: 4)
-| even e |> std/io:println(text: e)
-| odd o |> std/io:println(text: o)
+| even e |> std/io:print.ln(e)
+| odd o |> std/io:print.ln(o)

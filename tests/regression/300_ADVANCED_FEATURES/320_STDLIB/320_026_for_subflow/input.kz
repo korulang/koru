@@ -12,9 +12,9 @@ const std = @import("std");
 
 // Subflow implementation using ~for as the starting construct
 ~count-to-three = for(0..3)
-! each _ |> std/io:println(text: "counting")
+! each _ |> std/io:print.ln("counting")
 | done => result 3
 
 // Main flow calls the subflow
 ~count-to-three()
-| result _ |> std/io:println(text: "done")
+| result _ |> std/io:print.ln("done")

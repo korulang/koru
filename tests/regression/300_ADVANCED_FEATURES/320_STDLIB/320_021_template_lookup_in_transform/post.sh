@@ -18,8 +18,8 @@ fi
 # Check 3: Verify the template structure was used
 # The template produces: if (${condition}) { ${| then |} } else { ${| else |} }
 # So we should see the if/else structure with handler calls inside
-if ! grep -q "println_event.handler" "$OUTPUT_FILE"; then
-    echo "FAIL: Expected println handler calls not found"
+if ! grep -q "print_event.handler" "$OUTPUT_FILE"; then
+    echo "FAIL: Expected print handler calls not found"
     exit 1
 fi
 

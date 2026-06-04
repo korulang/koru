@@ -1,2 +1,2 @@
 Hello from terminal void
-TAP observed: std.io:println
+TAP observed: std.io:print.ln

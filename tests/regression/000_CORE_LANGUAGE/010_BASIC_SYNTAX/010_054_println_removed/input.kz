@@ -1,11 +1,8 @@
-// DEFERRED PIN (#3 println removal): blocked on the `std/compiler` stage facet.
-// Correct replacement is `std/compiler:print.ln` (runtime-safe, non-transform),
-// NOT `std/io:print.ln` (a comptime transform that can't be a runtime event).
-// println + print.ln are different and both currently needed. This compiles
-// today (println exists) so EXPECT is NOT met → RED on purpose, tracking the
-// deferred removal. Flips GREEN once println is removed (unknown-event error).
+// codemod:skip — negative test: keeps the removed `println` call to exercise removal.
+// PIN: `std/io:println` is DELETED (subsumed by print.ln / print). Calling it now
+// fails loudly as KORU040 "unknown event" at compiler coordination. GREEN = removed.
 import std/io
 
-const msg: []const u8 = "println removal pending std/compiler:print.ln";
+const msg: []const u8 = "println is gone";
 
 ~std/io:println(text: msg)
