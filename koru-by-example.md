@@ -1,6 +1,6 @@
 # Koru by Example
 
-> 22 hand-picked tests from `tests/regression/`. Generated 2026-06-03T10:58:00.379Z by `scripts/generate-corpus.js`.
+> 22 hand-picked tests from `tests/regression/`. Generated 2026-06-04T00:54:17.178Z by `scripts/generate-corpus.js`.
 
 Every example below is verbatim source from a passing POSITIVE regression test (negative MUST_FAIL tests are excluded — these are all what-to-do). Section prose is pulled from existing `SPEC.md` / `README.md` files in the relevant category directories — drift is tolerated in this pass and cleaned in a separate sweep. Per-test prose is intentionally NOT pulled; tests speak for themselves.
 
@@ -467,9 +467,9 @@ const count: i32 = 42;
 // Hello World in pure Koru.
 // This is the frontpage example from korulang.org.
 
-~import "std/io"
+import "std/io"
 
-~std.io:print.blk {
+std.io:print.blk {
     {% if debug %}[DEBUG] {% endif %}Hello, {{ name:s }}!
     The answer is {{ count:d }}.
 }

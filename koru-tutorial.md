@@ -1,6 +1,6 @@
 # Koru in a Page
 
-> Generated 2026-06-03T10:58:00.507Z by `scripts/generate-tutorial.js` from `koru-by-example.json`.
+> Generated 2026-06-04T00:54:17.307Z by `scripts/generate-tutorial.js` from `koru-by-example.json`.
 
 > **Note:** This tutorial is prose synthesis on top of the test suite. It may contain errors or drift. The compiler's actual behavior — verified by tests in `tests/regression/` and source in `src/` — is the source of truth. When you find this document saying one thing and the compiler doing another, the conflict itself is the finding: flag it, don't paper over it.
 >
@@ -176,9 +176,9 @@ const count: i32 = 42;
 // Hello World in pure Koru.
 // This is the frontpage example from korulang.org.
 
-~import "std/io"
+import "std/io"
 
-~std.io:print.blk {
+std.io:print.blk {
     {% if debug %}[DEBUG] {% endif %}Hello, {{ name:s }}!
     The answer is {{ count:d }}.
 }
