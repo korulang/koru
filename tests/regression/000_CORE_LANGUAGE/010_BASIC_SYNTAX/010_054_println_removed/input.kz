@@ -1,9 +1,7 @@
-// PIN (kebab-stdlib-restructure): `std/io:println` is DELETED — subsumed by
-// `print.ln` (it was just a non-interpolating nerf). Calling it must become a
-// frontend error (unknown symbol). RED today — println still exists and this
-// compiles cleanly, so no error is produced and EXPECT fails. Greenfield: the
-// old form must fail loudly once removed. Uses the current `.`-path form to
-// isolate the missing-symbol reason from the separate `/`-namespace change.
+// codemod:skip — negative test: must keep its `println` call to exercise removal.
+// PIN: `std/io:println` is DELETED (subsumed by `print.ln`). Calling the removed
+// event fails loudly — KORU040 "unknown event" at compiler coordination (Stage C).
+// Greenfield: the old form must fail once removed.
 import std/io
 
-~std.io:println(text: "println should be gone")
+~std/io:println("println should be gone")

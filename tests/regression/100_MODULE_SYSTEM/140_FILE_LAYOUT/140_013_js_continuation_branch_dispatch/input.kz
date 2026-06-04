@@ -23,5 +23,5 @@ import std/io
 }
 
 ~pick(n: 4)
-| even e |> std.io:println(text: e)
-| odd o |> std.io:println(text: o)
+| even e |> std.io:print.ln(e)
+| odd o |> std.io:print.ln(o)

@@ -22,17 +22,9 @@ const std = @import("std");
     process.stdout.write(text);
 }
 
-// Print text with newline
-~pub event println { text: []const u8 }
-
-~proc println|zig {
-    std.debug.print("{s}\n", .{text});
-}
-
-// JS variant: console.log appends the newline, matching println semantics.
-~proc println|js {
-    console.log(text);
-}
+// `println` is REMOVED — it was a non-interpolating nerf of `print.ln`.
+// Use `std/io:print.ln(...)` (interpolates `{{ x:fmt }}`, also takes a bare
+// expression). Calling `println` is now an unknown-event error by design.
 
 // Print formatted text
 // NOTE: printf with varargs would require runtime support - skipping for now

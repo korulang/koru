@@ -5,5 +5,5 @@
 import std/io
 
 ~if(42 > 10)
-| then |> std.io:println(text: "big")
-| else |> std.io:println(text: "small")
+| then |> std.io:print.ln("big")
+| else |> std.io:print.ln("small")

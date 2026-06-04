@@ -19,11 +19,11 @@ const std = @import("std");
 
 // Tap program start - match the `done` branch explicitly
 ~tap(koru:start -> *)
-| done |> std.io:println(text: "START: Program beginning")
+| done |> std.io:print.ln("START: Program beginning")
 
 // Tap program end - match the `done` branch explicitly
 ~tap(koru:end -> *)
-| done |> std.io:println(text: "END: Program finishing")
+| done |> std.io:print.ln("END: Program finishing")
 
 // Main flow
 ~greet(name: "World")

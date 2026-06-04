@@ -16,5 +16,5 @@ const std = @import("std");
 const value = 42;
 
 ~if(value > 10)
-| then |> std.io:println(text: "Greater than 10")
-| else |> std.io:println(text: "10 or less")
+| then |> std.io:print.ln("Greater than 10")
+| else |> std.io:print.ln("10 or less")

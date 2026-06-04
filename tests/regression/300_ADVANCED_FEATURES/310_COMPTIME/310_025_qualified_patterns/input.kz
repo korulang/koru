@@ -27,4 +27,4 @@ import std/io
 
 // Flow: println (void) transitions to finish
 // Tap fires because println matches print* and transitions to finish
-~std.io:println(text: "From std.io") |> finish()
+~std.io:print.ln("From std.io") |> finish()

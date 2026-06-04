@@ -17,4 +17,4 @@ pub event repeat {
     item: *const Item,
     program: *const Program,
 }
-|> std.io:println(text: "Custom transform executed")
+|> std.io:print.ln("Custom transform executed")

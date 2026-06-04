@@ -18,4 +18,4 @@ import std/io
 }
 
 // Prove compilation works
-~std.io:println(text: "Type declarations parsed successfully")
+~std.io:print.ln("Type declarations parsed successfully")
