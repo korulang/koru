@@ -45,6 +45,156 @@ fn deriveLogicalName(allocator: std.mem.Allocator, import_path: []const u8) ![]c
     return result;
 }
 
+/// Expand a `std.io:print.blk` source-block template into a JS `console.log(...)`
+/// statement. This is a NATIVE port of io.kz's `print.blk|js` comptime transform
+/// — the first concrete "limited compile-time selection": a fixed stdlib comptime
+/// transform pre-compiled into the playground instead of recompiled per-program
+/// (which would need `zig build`). Handles literal text, `{{ var:fmt }}` (fmt
+/// ignored — JS `+` auto-stringifies), and `{% if var %}body{% endif %}`.
+/// console.log appends a newline, so one trailing newline is stripped to match
+/// |zig's std.debug.print semantics.
+fn expandPrintBlk(allocator: std.mem.Allocator, template: []const u8) ![]const u8 {
+    const content = if (template.len > 0 and template[template.len - 1] == '\n')
+        template[0 .. template.len - 1]
+    else
+        template;
+
+    var expr = std.ArrayList(u8){ .items = &.{}, .capacity = 0 };
+    var first = true; // no leading " + " before the first segment
+    var in_literal = false; // currently inside a "..." run
+
+    const H = struct {
+        fn openLit(b: *std.ArrayList(u8), a: std.mem.Allocator, f: *bool, il: *bool) !void {
+            if (!il.*) {
+                if (!f.*) try b.appendSlice(a, " + ");
+                try b.append(a, '"');
+                il.* = true;
+                f.* = false;
+            }
+        }
+        fn closeLit(b: *std.ArrayList(u8), a: std.mem.Allocator, il: *bool) !void {
+            if (il.*) {
+                try b.append(a, '"');
+                il.* = false;
+            }
+        }
+        fn esc(b: *std.ArrayList(u8), a: std.mem.Allocator, c: u8) !void {
+            switch (c) {
+                '"' => try b.appendSlice(a, "\\\""),
+                '\\' => try b.appendSlice(a, "\\\\"),
+                '\n' => try b.appendSlice(a, "\\n"),
+                '\r' => try b.appendSlice(a, "\\r"),
+                '\t' => try b.appendSlice(a, "\\t"),
+                else => try b.append(a, c),
+            }
+        }
+    };
+
+    var i: usize = 0;
+    while (i < content.len) {
+        if (i + 1 < content.len and content[i] == '{' and content[i + 1] == '%') {
+            // {% if var %} body {% endif %}  →  (var ? "body" : "")
+            var p = i + 2;
+            while (p < content.len and (content[p] == ' ' or content[p] == '\t')) : (p += 1) {}
+            if (p + 3 <= content.len and std.mem.eql(u8, content[p .. p + 3], "if ")) {
+                var vp = p + 3;
+                while (vp < content.len and (content[vp] == ' ' or content[vp] == '\t')) : (vp += 1) {}
+                var ve = vp;
+                while (ve < content.len and content[ve] != ' ' and content[ve] != '\t' and content[ve] != '%') : (ve += 1) {}
+                const cond = content[vp..ve];
+                var te = ve;
+                while (te + 1 < content.len and !(content[te] == '%' and content[te + 1] == '}')) : (te += 1) {}
+                if (te + 1 < content.len) {
+                    const bstart = te + 2;
+                    const endmark = "{% endif %}";
+                    if (std.mem.indexOf(u8, content[bstart..], endmark)) |off| {
+                        const body = content[bstart .. bstart + off];
+                        try H.closeLit(&expr, allocator, &in_literal);
+                        if (!first) try expr.appendSlice(allocator, " + ");
+                        first = false;
+                        try expr.append(allocator, '(');
+                        try expr.appendSlice(allocator, cond);
+                        try expr.appendSlice(allocator, " ? \"");
+                        for (body) |c| try H.esc(&expr, allocator, c);
+                        try expr.appendSlice(allocator, "\" : \"\")");
+                        i = bstart + off + endmark.len;
+                        continue;
+                    }
+                }
+            }
+            try H.openLit(&expr, allocator, &first, &in_literal);
+            try H.esc(&expr, allocator, content[i]);
+            i += 1;
+        } else if (i + 1 < content.len and content[i] == '{' and content[i + 1] == '{') {
+            // {{ var:fmt }}  →  var   (fmt ignored; JS auto-stringifies on +)
+            var ps = i + 2;
+            while (ps < content.len and (content[ps] == ' ' or content[ps] == '\t')) : (ps += 1) {}
+            var j = ps;
+            while (j + 1 < content.len and !(content[j] == '}' and content[j + 1] == '}')) : (j += 1) {}
+            if (j + 1 < content.len) {
+                var pe = j;
+                while (pe > ps and (content[pe - 1] == ' ' or content[pe - 1] == '\t')) : (pe -= 1) {}
+                var name = content[ps..pe];
+                if (std.mem.indexOfScalar(u8, name, ':')) |cp| name = name[0..cp];
+                try H.closeLit(&expr, allocator, &in_literal);
+                if (!first) try expr.appendSlice(allocator, " + ");
+                first = false;
+                try expr.appendSlice(allocator, name);
+                i = j + 2;
+            } else {
+                try H.openLit(&expr, allocator, &first, &in_literal);
+                try H.esc(&expr, allocator, content[i]);
+                i += 1;
+            }
+        } else {
+            try H.openLit(&expr, allocator, &first, &in_literal);
+            try H.esc(&expr, allocator, content[i]);
+            i += 1;
+        }
+    }
+    try H.closeLit(&expr, allocator, &in_literal);
+    if (first) try expr.appendSlice(allocator, "\"\""); // empty template → console.log("")
+
+    return try std.fmt.allocPrint(allocator, "console.log({s});", .{expr.items});
+}
+
+fn isPrintBlk(path: ast.DottedPath) bool {
+    const n = path.segments.len;
+    if (n >= 1 and std.mem.eql(u8, path.segments[n - 1], "print.blk")) return true;
+    if (n >= 2 and std.mem.eql(u8, path.segments[n - 1], "blk") and std.mem.eql(u8, path.segments[n - 2], "print")) return true;
+    return false;
+}
+
+/// Run the curated comptime transforms (currently just print.blk) over top-level
+/// flows: expand the template to inline JS and neutralize the call by appending
+/// an `impl` segment (→ print.blk.impl, a norun stub), exactly like the real
+/// transform — so dead_strip prunes the original print.blk event and js_emit
+/// emits our inline_body instead.
+fn applyComptimeTransforms(allocator: std.mem.Allocator, source_file: *ast.Program) !void {
+    const items = @constCast(source_file.items);
+    for (items) |*item| {
+        if (item.* != .flow) continue;
+        const inv = &item.flow.invocation;
+        if (!isPrintBlk(inv.path)) continue;
+
+        var tmpl: ?[]const u8 = null;
+        for (inv.args) |a| {
+            if (a.source_value) |sv| {
+                tmpl = sv.text;
+                break;
+            }
+        }
+        const text = tmpl orelse continue;
+
+        item.flow.inline_body = try expandPrintBlk(allocator, text);
+
+        const segs = try allocator.alloc([]const u8, inv.path.segments.len + 1);
+        for (inv.path.segments, 0..) |s, k| segs[k] = s;
+        segs[inv.path.segments.len] = "impl";
+        inv.path.segments = segs;
+    }
+}
+
 /// Materialize each DIRECT import as a `module_decl` AST item so js_emit (Phase
 /// 1b) can emit it. The parser already registers imports into the type registry
 /// (and follows transitive imports there via the Fs seam) — but js_emit walks
@@ -216,6 +366,9 @@ pub fn compileToJs(allocator: std.mem.Allocator, source: []const u8, file_name: 
     // Order mirrors main(): materialize imports → canonicalize.
     try materializeImports(allocator, &source_file, &resolver);
     try canonicalize_names.canonicalize(&source_file, allocator);
+    // Run curated comptime transforms (print.blk → inline console.log) natively,
+    // before dead_strip so the original print.blk event gets pruned.
+    try applyComptimeTransforms(allocator, &source_file);
     // Strip unreachable events (e.g. unused stdlib procs whose comptime/template
     // |js variants aren't runnable JS) so only what the program actually calls
     // gets emitted — same pass the real pipeline runs before emission.
