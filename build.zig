@@ -644,6 +644,18 @@ pub fn build(b: *std.Build) void {
     // same parser + checker modules as koruc, but skips the metacircular backend
     // (no `zig build` subprocess), so it can target wasm32 later. Slice 1: prove
     // the glue natively. `zig build playground` then `./zig-out/bin/playground f.kz`.
+    // js_emitter: pure-Zig Koru→JS codegen (ast/log/file_types only). Not wired
+    // into the main build before — the metacircular backend imports it directly.
+    // The playground calls it in-process to emit JS with no `zig build`.
+    const js_emitter_module = b.createModule(.{
+        .root_source_file = b.path("src/js_emitter.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    js_emitter_module.addImport("ast", ast_module);
+    js_emitter_module.addImport("log", log_module);
+    js_emitter_module.addImport("file_types", file_types_module);
+
     const playground_exe = b.addExecutable(.{
         .name = "playground",
         .root_module = b.createModule(.{
@@ -658,6 +670,7 @@ pub fn build(b: *std.Build) void {
     playground_exe.root_module.addImport("shape_checker", shape_checker_module);
     playground_exe.root_module.addImport("flow_checker", flow_checker_module);
     playground_exe.root_module.addImport("phantom_semantic_checker", phantom_semantic_checker_module);
+    playground_exe.root_module.addImport("js_emitter", js_emitter_module);
     const install_playground = b.addInstallArtifact(playground_exe, .{});
 
     const playground_step = b.step("playground", "Build the playground diagnostics core");

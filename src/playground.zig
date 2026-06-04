@@ -23,6 +23,7 @@ const Parser = @import("parser").Parser;
 const ShapeChecker = @import("shape_checker").ShapeChecker;
 const FlowChecker = @import("flow_checker").FlowChecker;
 const PhantomSemanticChecker = @import("phantom_semantic_checker").PhantomSemanticChecker;
+const js_emitter = @import("js_emitter");
 
 /// One diagnostic in the shape the web shell consumes. Mirrors the fields of
 /// errors.ParseError that a Monaco marker needs, plus which pass produced it.
@@ -101,6 +102,21 @@ pub fn check(allocator: std.mem.Allocator, source: []const u8, file_name: []cons
     return try emitJson(allocator, diagnostics.items);
 }
 
+/// Compile a snippet straight to JavaScript — the "compile to JS and run" path.
+/// No metacircular backend, no `zig build`: parse → js_emitter.emit, in-process.
+/// The transform passes that sit between parse and emit in the full pipeline
+/// (template processing, auto-discharge, if/for lowering — the "limited
+/// compile-time selection") are NOT wired yet; we add them empirically as real
+/// programs reveal which ones are load-bearing. A JsEmitError (NoJsProcBody,
+/// UnsupportedConstruct, ...) propagates so we see exactly what's missing.
+pub fn compileToJs(allocator: std.mem.Allocator, source: []const u8, file_name: []const u8) ![]const u8 {
+    var parser = try Parser.init(allocator, source, file_name, &[_][]const u8{}, null);
+    defer parser.deinit();
+    const parse_result = try parser.parse();
+    var source_file = parse_result.source_file;
+    return try js_emitter.emit(allocator, &source_file);
+}
+
 fn appendStr(buf: *std.ArrayList(u8), a: std.mem.Allocator, s: []const u8) !void {
     try buf.append(a, '"');
     for (s) |c| switch (c) {
@@ -161,25 +177,26 @@ pub fn main() !void {
     const args = try std.process.argsAlloc(allocator);
     defer std.process.argsFree(allocator, args);
 
-    var source: []const u8 = undefined;
-    var owned = false;
-    var file_name: []const u8 = "playground.kz";
-
-    if (args.len > 1) {
-        file_name = args[1];
-        source = try std.fs.cwd().readFileAlloc(allocator, args[1], 16 * 1024 * 1024);
-        owned = true;
-    } else {
-        // Read the snippet from stdin.
-        source = try std.fs.File.stdin().readToEndAlloc(allocator, 16 * 1024 * 1024);
-        owned = true;
+    // `--js` emits JavaScript; default emits JSON diagnostics. The remaining
+    // non-flag arg is an input file; otherwise read the snippet from stdin.
+    var emit_js = false;
+    var file: ?[]const u8 = null;
+    for (args[1..]) |arg| {
+        if (std.mem.eql(u8, arg, "--js")) emit_js = true else file = arg;
     }
-    defer if (owned) allocator.free(source);
 
-    const json = try check(allocator, source, file_name);
-    defer allocator.free(json);
+    const file_name = file orelse "playground.kz";
+    const source = if (file) |f|
+        try std.fs.cwd().readFileAlloc(allocator, f, 16 * 1024 * 1024)
+    else
+        try std.fs.File.stdin().readToEndAlloc(allocator, 16 * 1024 * 1024);
+
+    const out = if (emit_js)
+        try compileToJs(allocator, source, file_name)
+    else
+        try check(allocator, source, file_name);
 
     var stdout = std.fs.File.stdout();
-    try stdout.writeAll(json);
+    try stdout.writeAll(out);
     try stdout.writeAll("\n");
 }
