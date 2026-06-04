@@ -14,7 +14,7 @@
 //
 // Expected output: only the 'q' key fires the handler.
 
-~import "std/io"
+import std/io
 
 ~pub event keystream { count: usize }
 ! key { ch: u8, code: u8 }

@@ -5,15 +5,15 @@
 //
 // Expected: Compilation error - type mismatch
 
-~import "std/types"
+import std/types
 
 ~struct(Option<T>) { some: T, none }
 ~type(OptionalInt = Option<i32>)
 ~type(OptionalFloat = Option<f32>)
 
-~event process_int { val: OptionalInt }
+~event process-int { val: OptionalInt }
 
-~proc process_int|zig {
+~proc process-int|zig {
 }
 
 ~event main {}

@@ -4,24 +4,24 @@
 // Verifies: inline tap emission works for subflow continuations
 // ============================================================================
 
-~import "std/taps"
+import std/taps
 
 const std = @import("std");
 
 // Base event: adds 5 to a number
-~event add_five { value: i32 }
+~event add-five { value: i32 }
 | result i32
 
-~proc add_five|zig {
+~proc add-five|zig {
     std.debug.print("add_five: {} + 5 = {}\n", .{value, value + 5});
     return .{ .result = value + 5 };
 }
 
-// Subflow that calls add_five
+// Subflow that calls add-five
 ~event double { value: i32 }
 | result i32
 
-~double = add_five(value)
+~double = add-five(value)
 | result r => result r
 
 // Observer that should be called by the tap
@@ -32,17 +32,17 @@ const std = @import("std");
 }
 
 // Print final result
-~event print_final { value: i32 }
+~event print-final { value: i32 }
 
-~proc print_final|zig {
+~proc print-final|zig {
     std.debug.print("Final: {}\n", .{value});
 }
 
-// TAP: Observe add_five -> result transitions
-// This tap should fire when the subflow transitions through add_five's result branch
-~tap(add_five -> *)
+// TAP: Observe add-five -> result transitions
+// This tap should fire when the subflow transitions through add-five's result branch
+~tap(add-five -> *)
 | result |> observer()
 
 // Execute the subflow - tap should fire
 ~double(value: 10)
-| result r |> print_final(value: r)
+| result r |> print-final(value: r)

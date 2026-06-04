@@ -2,7 +2,7 @@
 // using the binding. `n * 2` should evaluate the Zig expression and
 // send the result back as the resume value.
 
-~import "std/io"
+import std/io
 
 ~pub event request { payload: i32 }
 ! double i32 -> i32

@@ -9,7 +9,7 @@
 //
 // EXPECTED: Compiler error - type mismatch (started vs active)
 
-~import "app/db"
+import app/db
 
 ~app.db:connect(host: "localhost")
 | ok c |> app.db:begin(conn: c)

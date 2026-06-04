@@ -6,7 +6,7 @@
 // Run: koruc input.kz deps
 // Expected: Shows status of declared system dependencies
 
-~import "std/deps"
+import std/deps
 
 // Declare system dependencies using Source blocks (like requires.npm)
 

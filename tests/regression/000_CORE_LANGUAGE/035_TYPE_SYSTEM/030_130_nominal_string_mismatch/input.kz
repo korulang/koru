@@ -5,14 +5,14 @@
 //
 // Expected: Compilation error - type mismatch
 
-~import "std/types"
+import std/types
 
 ~string(EmailAddress)
 ~string(UserName)
 
-~event send_email { to: EmailAddress }
+~event send-email { to: EmailAddress }
 
-~proc send_email|zig {
+~proc send-email|zig {
 }
 
 ~event main {}

@@ -8,7 +8,7 @@
 // - Should expose ALL the bootstrap bugs at once!
 // ============================================================================
 
-~import "std/io"
+import std/io
 
 ~event validate { value: i32 }
 | ok i32

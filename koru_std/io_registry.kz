@@ -16,8 +16,8 @@
 //       my_custom_event
 //   }
 
-~import "std/io"
-~import "std/runtime"
+import std/io
+import std/runtime
 
 // Register io events for runtime dispatch
 ~std.runtime:register(scope: "std.io") {

@@ -20,7 +20,7 @@ pub const getVariant = emitter_helpers.getVariant;
 pub const registerVariant = emitter_helpers.registerVariant;
 
 // Import shared compiler types (to avoid circular dependency with compiler.kz)
-~import "std/compiler_types"
+import std/compiler_types
 
 // ============================================================================
 // FLAG MATCHING - Annotation-based conditional compilation
@@ -97,7 +97,7 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
     source: Source
 }
 | ?added
-| ?parse_error []const u8
+| ?parse-error []const u8
 
 ~proc requires|zig {
     // Validate Source syntax
@@ -129,7 +129,7 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
 ~[comptime]pub event variants { meta: InvocationMeta, source: Source, program: Program }
 | configured usize
 | skipped []const u8
-| invalid_event []const u8
+| invalid-event []const u8
 
 ~proc variants|zig {
     // Check if this config's annotation matches the --build flag
@@ -448,7 +448,7 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
 // build:requires configures the FINAL PROGRAM compilation.
 //
 // Usage (invoked by compiler.kz during backend coordination):
-//   ~std.build:collect(ctx: ctx, output_path: "build.zig")
+//   ~std.build:collect(ctx: ctx, output-path: "build.zig")
 //   | collected { ctx: CompilerContext }
 //
 // The pass:
@@ -459,7 +459,7 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
 
 ~[comptime]pub event collect {
     ctx: koru_compiler_types.CompilerContext,
-    output_path: []const u8
+    output-path: []const u8
 }
 | collected koru_compiler_types.CompilerContext
 

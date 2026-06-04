@@ -5,7 +5,7 @@
 //
 // Expected: Compiles and runs with nominal type inside generic
 
-~import "std/types"
+import std/types
 
 const std = @import("std");
 
@@ -13,12 +13,12 @@ const std = @import("std");
 ~struct(Box<T>) { value: T }
 ~type(EmailBox = Box<EmailAddress>)
 
-~event test_email {}
+~event test-email {}
 
-~proc test_email|zig {
+~proc test-email|zig {
     const email: EmailAddress = "test@example.com";
     const box = EmailBox{ .value = email };
     std.debug.print("Email: {s}\n", .{box.value});
 }
 
-~test_email()
+~test-email()

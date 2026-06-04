@@ -3,7 +3,7 @@
 // `! query _ |> 42` — bare numeric literal IS the resume value. Same
 // shape as string literal in 400_082, just confirms primitives flow.
 
-~import "std/io"
+import std/io
 
 ~pub event query { question: []const u8 }
 ! ask []const u8 -> i32

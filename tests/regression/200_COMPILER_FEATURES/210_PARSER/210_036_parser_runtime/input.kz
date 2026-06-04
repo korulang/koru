@@ -2,7 +2,7 @@
 // Parses Koru source code and inspects the AST at runtime
 // This proves the parser is fully usable as a library!
 
-~import "std/parser"
+import std/parser
 
 const std = @import("std");
 
@@ -17,9 +17,9 @@ const SAMPLE_CODE =
 ;
 
 // Event to inspect AST - using module:Type syntax!
-~event inspect_ast { result: std.parser:ParseResult }
+~event inspect-ast { result: std.parser:ParseResult }
 
-~proc inspect_ast|zig {
+~proc inspect-ast|zig {
     std.debug.print("Parsed {} items\n", .{result.source_file.items.len});
 
     for (result.source_file.items) |item| {
@@ -44,13 +44,13 @@ const SAMPLE_CODE =
 }
 
 // Event to report error - returns done when complete
-~event report_error { message: []const u8 }
+~event report-error { message: []const u8 }
 
-~proc report_error|zig {
+~proc report-error|zig {
     std.debug.print("Parse error: {s}\n", .{message});
 }
 
 // Modern Koru: proc = flow composition
-~std.parser:parse.source(source: SAMPLE_CODE, file_name: "sample.kz", allocator: std.heap.page_allocator)
-| parsed p |> inspect_ast(result: p)
-| parse_error err |> report_error(message: err)
+~std.parser:parse.source(source: SAMPLE_CODE, file-name: "sample.kz", allocator: std.heap.page_allocator)
+| parsed p |> inspect-ast(result: p)
+| parse-error err |> report-error(message: err)

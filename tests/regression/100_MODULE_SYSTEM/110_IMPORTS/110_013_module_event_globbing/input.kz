@@ -16,7 +16,7 @@
 const std = @import("std");
 
 // Import the logger module (which defines module-level globbing tap)
-~import "app/test_lib/logger"
+import app/test_lib/logger
 
 // Define multiple events to test with
 ~event compute { x: i32 }

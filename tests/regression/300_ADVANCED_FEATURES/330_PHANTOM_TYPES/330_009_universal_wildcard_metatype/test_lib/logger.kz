@@ -1,6 +1,6 @@
 // Logger with universal wildcard + metatype tap
 
-~import "std/taps"
+import std/taps
 const std = @import("std");
 
 ~pub event log { source: []const u8, branch: []const u8 }

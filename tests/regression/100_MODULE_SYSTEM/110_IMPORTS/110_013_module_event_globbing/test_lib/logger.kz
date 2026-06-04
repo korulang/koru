@@ -1,12 +1,12 @@
 // Universal logger using module-level event globbing
 // Demonstrates the power of wildcard patterns in taps
 
-~import "std/taps"
+import std/taps
 
 const std = @import("std");
 
 // Define a logging event
-~pub event log { event_name: []const u8 }
+~pub event log { event-name: []const u8 }
 
 ~proc log|zig {
     std.debug.print("[TAP] Intercepted: {s}\n", .{event_name});
@@ -19,12 +19,12 @@ const std = @import("std");
 // Tap for compute event (.result branch)
 // Note: Tap flows must end with void - they're observers, not transformers
 ~tap(input:* -> *)
-| result |> log(event_name: "compute")
+| result |> log(event-name: "compute")
 
 // Tap for format event (.formatted branch)
 ~tap(input:* -> *)
-| formatted |> log(event_name: "format")
+| formatted |> log(event-name: "format")
 
 // Tap for display event (.done branch)
 ~tap(input:* -> *)
-| Profile _ |> log(event_name: "display")
+| Profile _ |> log(event-name: "display")

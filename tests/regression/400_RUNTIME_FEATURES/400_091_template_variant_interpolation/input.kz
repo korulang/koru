@@ -5,7 +5,7 @@
 // The rendered proc body prints the literal "ping" — which is the
 // proc's name, supplied through the template context.
 
-~import "std/io"
+import std/io
 
 const std = @import("std");
 

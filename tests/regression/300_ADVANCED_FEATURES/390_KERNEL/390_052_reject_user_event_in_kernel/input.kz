@@ -1,13 +1,13 @@
 // TEST: aspirational - arbitrary user events should be rejected inside kernel scope
 
-~import "std/kernel"
+import std/kernel
 
 ~std.kernel:shape(Body) {
     mass: f64,
 }
 
-~event print_mass { value: f64 }
-~proc print_mass|zig {
+~event print-mass { value: f64 }
+~proc print-mass|zig {
     const std = @import("std");
     std.debug.print("mass={d}\n", .{value});
 }
@@ -16,4 +16,4 @@
     { mass: 1.0 },
     { mass: 2.0 },
 }
-| kernel k |> std.kernel:self { k.mass *= 2.0 } |> print_mass(value: k.ptr[0].mass)
+| kernel k |> std.kernel:self { k.mass *= 2.0 } |> print-mass(value: k.ptr[0].mass)

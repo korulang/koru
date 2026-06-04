@@ -15,7 +15,7 @@
 const std = @import("std");
 
 // This import has 3 segments after $app and should FAIL
-~import "app/test_lib/net/tcp"
+import app/test_lib/net/tcp
 
 ~event test {}
 

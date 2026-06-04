@@ -9,12 +9,12 @@
 //
 // Positive twin: 330_068.
 
-~import "std/io"
+import std/io
 
-~pub event get_input {}
+~pub event get-input {}
 | line []const u8<unsanitized!>
 
-~get_input => line "user input data"
+~get-input => line "user input data"
 
-~get_input()
+~get-input()
 | line s |> std.io:print.ln(s)

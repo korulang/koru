@@ -1,132 +1,237 @@
 #!/usr/bin/env python3
 """
-Kebab codemod — pass 1: event/proc NAMES (snake -> kebab).
+Kebab codemod — snake_case Koru NAMES -> kebab-case.
 
-Region-aware: skips `~proc NAME|var { ... }` Zig bodies entirely (a proc body
-is host code; an event name appearing in a Zig string there must NOT change,
-and proc bodies never reference event names as identifiers anyway).
+Two-phase + GLOBAL so cross-file references convert too (an event declared in
+one file and called in another):
 
-Scope deliberately narrow for pass 1:
-  - Collect names declared by `~[anno] [pub] event NAME` and `~[anno] [pub] proc NAME`.
-  - Only multi-word (contains `_`) names are candidates.
-  - Replace whole-word occurrences of those names with their kebab form
-    (`_`->`-`) in NON-proc-body lines only (decl sites + call sites + branch
-    dispatch + comments).
+  Phase 1 (collect, across ALL files): gather declared snake names —
+    events/procs (`[~][anno][pub] event|proc NAME`), branch names (`| NAME`),
+    and field/arg keys (`NAME:` in Koru regions). Only names containing `_`.
 
-Field names, bindings, and `_` in numeric literals / Zig bodies are left for
-later passes. The full regression suite is the oracle: run it after applying.
+  Phase 2 (apply, per file): region-aware. Skip `~proc {...}` Zig bodies (host
+    code — a field used there is the mangled snake form and must stay). In Koru
+    regions, replace whole-word occurrences of any collected name with kebab.
+
+NOT handled (left snake on purpose): `_` in numeric literals, host type refs,
+and multi-word *bindings* used in arg-value position (those need expression
+lowering — refactor the few sites to single-word bindings instead). The full
+regression suite is the oracle: run it after applying and iterate.
 
 Usage:
-  kebab_codemod.py --dry-run <files...>   # show per-file replacement counts + sample
-  kebab_codemod.py --apply   <files...>   # rewrite in place
+  kebab_codemod.py --dry-run <files...>
+  kebab_codemod.py --apply   <files...>
 """
 import re
 import sys
 
-# `~[anno] [pub] (event|proc) NAME` — NAME up to whitespace, `{`, `|`, `(`.
-DECL_RE = re.compile(r'^\s*~(?:\[[^\]]*\])?\s*(?:pub\s+)?(?:event|proc)\s+([A-Za-z][\w.]*)')
-# A line that starts (after indent) a proc — its `{` opens a Zig body.
-PROC_RE = re.compile(r'^\s*~(?:\[[^\]]*\])?\s*(?:pub\s+)?proc\b')
+DECL_RE = re.compile(r'^\s*~?(?:\[[^\]]*\])?\s*(?:pub\s+)?(?:event|proc)\s+([A-Za-z][\w.]*)')
+PROC_RE = re.compile(r'^\s*~?(?:\[[^\]]*\])?\s*(?:pub\s+)?proc\b')
+BRANCH_RE = re.compile(r'^\s*\|\s*([a-z][\w]*)')
+# `name:` field/arg key — snake identifier immediately followed by `:` (not `::`).
+KEY_RE = re.compile(r'(?<![\w.])([a-z][a-z0-9]*_[a-z0-9_]*)\s*:(?!:)')
+# Host (Zig/JS) declarations inside a `.kz`/`.kjs` — NOT Koru. Their bodies and
+# fields (e.g. `const X = struct { type_name: T }`) must NOT be kebab'd.
+HOST_OPEN = re.compile(r'^\s*(?:pub\s+)?(?:const|var|comptime|inline\s+fn|export\s+fn|extern\s+fn|fn)\b')
 
 
-def collect_names(lines):
-    names = set()
-    for line in lines:
-        m = DECL_RE.match(line)
-        if not m:
+def has_underscore(name):
+    return '_' in name
+
+
+def host_mask(lines):
+    """list[bool]: True where the line is HOST code (not Koru), so the kebab
+    rewrite must skip it. Covers two host regions in a mixed `.kz`:
+      1. `~proc {...}` bodies — the decl line is NOT masked (proc name converts).
+      2. host declarations `[pub] const|var|fn ... [{ ... }]` — fully masked,
+         incl. `const X = struct { snake_field: T }` and `const x = @import(...)`.
+    """
+    mask = [False] * len(lines)
+    i, n = 0, len(lines)
+    while i < n:
+        line = lines[i]
+        if PROC_RE.match(line):
+            j = i
+            while j < n and '{' not in lines[j]:
+                j += 1
+            if j >= n:
+                i += 1
+                continue
+            depth = lines[j].count('{') - lines[j].count('}')
+            k = j + 1
+            while k < n and depth > 0:
+                mask[k] = True
+                depth += lines[k].count('{') - lines[k].count('}')
+                k += 1
+            i = k
             continue
-        name = m.group(1)
-        # event/proc names may be dotted (read.ln); take the last segment? No —
-        # we convert the whole path's snake segments. Only act if it has `_`.
-        if '_' in name:
-            names.add(name)
-    return names
+        if HOST_OPEN.match(line):
+            # A host decl is either a STATEMENT (`const x = ...;`) or a BLOCK
+            # (`fn f(...) T { ... }`, `const X = struct { ... };`). The opening
+            # `{` — or the terminating `;` for a statement — can sit several
+            # lines below the keyword when a function signature wraps across
+            # lines. Mask the keyword line, then keep masking until the block
+            # closes (depth back to 0 after the first `{`) or, for a braceless
+            # statement, until the first `;`. Masking only the keyword line (the
+            # old behavior) leaked wrapped signature params into the rewrite.
+            mask[i] = True
+            depth = line.count('{') - line.count('}')
+            saw_brace = '{' in line
+            # Decl already complete on the keyword line — a balanced single-line
+            # block (`const X = struct { .. };`) or a braceless statement
+            # (`const x = ..;`). Do NOT spill the mask onto the following line
+            # (that line may be the next Koru decl).
+            if (saw_brace and depth <= 0) or (not saw_brace and ';' in line):
+                i += 1
+                continue
+            j = i + 1
+            while j < n:
+                mask[j] = True
+                if '{' in lines[j]:
+                    saw_brace = True
+                depth += lines[j].count('{') - lines[j].count('}')
+                if saw_brace and depth <= 0:
+                    j += 1
+                    break
+                if not saw_brace and ';' in lines[j]:
+                    j += 1
+                    break
+                j += 1
+            i = j
+            continue
+        i += 1
+    return mask
+
+
+# Back-compat alias used below.
+proc_body_mask = host_mask
+
+
+def collect_from(text, names, keys):
+    """names = event/proc/branch names (converted bare — decl + call sites).
+    keys  = field/arg keys (converted ONLY in key position `name:`, NEVER in
+            value/binding position — a binding ref in a value is a host
+            expression forwarded verbatim and must stay snake)."""
+    if should_skip(text):
+        return
+    lines = text.split('\n')
+    mask = host_mask(lines)
+    for i, line in enumerate(lines):
+        if mask[i]:
+            continue
+        m = DECL_RE.match(line)
+        if m and has_underscore(m.group(1)):
+            names.add(m.group(1))
+        b = BRANCH_RE.match(line)
+        if b and has_underscore(b.group(1)):
+            names.add(b.group(1))
+        for k in KEY_RE.findall(line):
+            if has_underscore(k):
+                keys.add(k)
 
 
 def kebab(name):
     return name.replace('_', '-')
 
 
-def proc_body_mask(lines):
-    """Return a list[bool]: True where the line is inside a ~proc {...} Zig body.
-
-    The proc DECLARATION line (and any signature lines before the opening `{`)
-    are NOT masked — the proc name lives there and is Koru, so it must convert.
-    Only the body interior (lines after the line bearing the opening `{`, up to
-    the balancing `}`) is masked as Zig.
-    """
-    mask = [False] * len(lines)
-    i = 0
-    n = len(lines)
-    while i < n:
-        if not PROC_RE.match(lines[i]):
-            i += 1
-            continue
-        # Walk signature lines (not masked) until we find the opening `{`.
-        j = i
-        while j < n and '{' not in lines[j]:
-            j += 1
-        if j >= n:
-            i += 1
-            continue
-        # lines[j] holds the opening `{` — it's the decl/signature line, NOT
-        # masked (proc name may be on it). Body interior starts at j+1.
-        depth = lines[j].count('{') - lines[j].count('}')
-        k = j + 1
-        while k < n and depth > 0:
-            mask[k] = True
-            depth += lines[k].count('{') - lines[k].count('}')
-            k += 1
-        i = k
-    return mask
+# Double-quoted string spans. Contents are DATA (template names, printed text,
+# error-message fixtures), never Koru names — a name inside a string must NOT be
+# rewritten (e.g. `define(name: "check_positive")` must stay snake to match the
+# event whose name normalizes to snake at parse). Simple escape handling.
+STRING_RE = re.compile(r'"(?:\\.|[^"\\])*"')
 
 
-def transform(text):
-    lines = text.split('\n')
-    names = collect_names(lines)
-    if not names:
+def apply_outside_strings(line, patterns):
+    """Apply (name, compiled-pattern) replacements to `line`, skipping the
+    contents of double-quoted string spans."""
+    spans = [(m.start(), m.end()) for m in STRING_RE.finditer(line)]
+    out = []
+    pos = 0
+    count = 0
+    for s, e in spans + [(len(line), len(line))]:
+        seg = line[pos:s]
+        for n, pat in patterns:
+            seg, k = pat.subn(kebab(n), seg)
+            count += k
+        out.append(seg)
+        if s != len(line):
+            out.append(line[s:e])  # untouched string span
+        pos = e
+    return ''.join(out), count
+
+
+# A file may opt out of the rewrite with this marker — used by negative tests
+# whose whole point is to hold a snake-case name the language must REJECT (e.g.
+# the `_`-rejection pin). Such fixtures must keep their snake spelling.
+SKIP_MARKER = 'codemod:skip'
+
+
+def should_skip(text):
+    return SKIP_MARKER in text
+
+
+def apply_to(text, name_patterns, key_patterns):
+    if should_skip(text):
         return text, 0
-    mask = proc_body_mask(lines)
-    # Longest-first so `a_b_c` is tried before `a_b`.
-    patterns = [(n, re.compile(r'(?<![\w-])' + re.escape(n) + r'(?![\w-])'))
-                for n in sorted(names, key=len, reverse=True)]
+    lines = text.split('\n')
+    mask = host_mask(lines)
     count = 0
     out = []
     for i, line in enumerate(lines):
         if mask[i]:
             out.append(line)
             continue
-        new = line
-        for n, pat in patterns:
-            new, k = pat.subn(kebab(n), new)
-            count += k
+        new, k1 = apply_outside_strings(line, name_patterns)
+        new, k2 = apply_outside_strings(new, key_patterns)  # lookahead leaves `:` in place
+        count += k1 + k2
         out.append(new)
     return '\n'.join(out), count
+
+
+def read(path):
+    try:
+        with open(path) as f:
+            return f.read()
+    except (IsADirectoryError, UnicodeDecodeError, FileNotFoundError):
+        return None
 
 
 def main():
     if len(sys.argv) < 3 or sys.argv[1] not in ('--dry-run', '--apply'):
         print(__doc__)
         sys.exit(2)
-    mode = sys.argv[1]
-    files = sys.argv[2:]
-    total_files = 0
-    total_repl = 0
-    for path in files:
-        try:
-            with open(path, 'r') as f:
-                text = f.read()
-        except (IsADirectoryError, UnicodeDecodeError):
+    mode, files = sys.argv[1], sys.argv[2:]
+
+    # Phase 1: global collection.
+    names, keys = set(), set()
+    for p in files:
+        t = read(p)
+        if t is not None:
+            collect_from(t, names, keys)
+    print(f'collected {len(names)} names + {len(keys)} keys to kebab-ify')
+
+    # Names (events/procs/branches): bare whole-word (decl + call sites).
+    name_patterns = [(n, re.compile(r'(?<![\w-])' + re.escape(n) + r'(?![\w-])'))
+                     for n in sorted(names, key=len, reverse=True)]
+    # Keys (field/arg keys): ONLY in key position `name:` — never value/binding.
+    key_patterns = [(n, re.compile(r'(?<![\w-])' + re.escape(n) + r'(?=\s*:(?!:))'))
+                    for n in sorted(keys, key=len, reverse=True)]
+
+    # Phase 2: apply.
+    total_files = total_repl = 0
+    for p in files:
+        t = read(p)
+        if t is None:
             continue
-        new, count = transform(text)
-        if count == 0:
+        new, c = apply_to(t, name_patterns, key_patterns)
+        if c == 0:
             continue
         total_files += 1
-        total_repl += count
+        total_repl += c
         if mode == '--dry-run':
-            print(f'{count:3d} repl  {path}')
+            print(f'{c:4d} repl  {p}')
         else:
-            with open(path, 'w') as f:
+            with open(p, 'w') as f:
                 f.write(new)
     print(f'\n{"DRY-RUN" if mode == "--dry-run" else "APPLIED"}: '
           f'{total_repl} replacements across {total_files} files')

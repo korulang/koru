@@ -40,10 +40,10 @@ const std = @import("std");
     return .{ .seq = seq };
 }
 
-~pub event select_len { seq: []const i32 }
+~pub event select-len { seq: []const i32 }
 | seq []const usize
 
-~proc select_len|zig {
+~proc select-len|zig {
     // Return length instead of elements (simplified transform)
     _ = seq;
     var result: []const usize = &[_]usize{ seq.len };
@@ -66,16 +66,16 @@ const test_data = [_]i32{ 1, 2, 3, 4, 5 };
 //   ~from(source: test_data[0..])
 //   | seq s1 |> where(pred: true, seq: s1)
 //       | seq s2 |> count(seq: s2)
-//           | count c |> print_result(c)
+//           | count c |> print-result(c)
 //
 // WITH auto-threading:
 ~from(source: test_data[0..])
 |> where(pred: true)
 |> count
-| count c |> print_result(c)
+| count c |> print-result(c)
 
-~event print_result { value: usize }
+~event print-result { value: usize }
 
-~proc print_result|zig {
+~proc print-result|zig {
     std.debug.print("Count: {d}\n", .{value});
 }

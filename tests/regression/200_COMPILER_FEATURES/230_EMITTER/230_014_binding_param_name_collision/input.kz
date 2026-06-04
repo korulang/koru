@@ -9,7 +9,7 @@
 // PARSE005 forbids the explicit `echo(v: v)` because it would pun to the
 // same name.
 
-~import "std/io"
+import std/io
 
 ~event echo { v: i32 }
 | out i32

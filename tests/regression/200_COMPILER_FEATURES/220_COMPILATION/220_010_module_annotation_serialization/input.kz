@@ -7,7 +7,7 @@
 // std.io has [comptime|runtime] → should have both in backend.zig
 // std.compiler has [comptime] → should have only "comptime" in backend.zig
 
-~import "std/io"
+import std/io
 
 ~event hello {}
 

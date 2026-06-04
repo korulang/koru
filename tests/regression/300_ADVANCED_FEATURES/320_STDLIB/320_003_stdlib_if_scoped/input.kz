@@ -3,20 +3,20 @@
 // 1. It's in a pipeline (not top-level)
 // 2. The condition references a continuation binding
 
-~import "std/io"
+import std/io
 
 const std = @import("std");
 
 // Event that returns a value we can check
-~event get_value {}
+~event get-value {}
 | result i32
 
-~proc get_value|zig {
+~proc get-value|zig {
     return .{ .result = 42 };
 }
 
 // Test: ~if in pipeline, condition uses binding from outer continuation
-~get_value()
+~get-value()
 | result r |> if(r > 10)
     | then |> std.io:println(text: "Value is greater than 10")
     | else |> std.io:println(text: "Value is 10 or less")

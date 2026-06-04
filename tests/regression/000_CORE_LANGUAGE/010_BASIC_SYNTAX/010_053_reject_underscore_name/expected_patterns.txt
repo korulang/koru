@@ -1,0 +1,1 @@
+error\[KORU034\]:.*'_' is not allowed in a Koru event name 'foo_bar'

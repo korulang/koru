@@ -5,8 +5,8 @@
 //
 // Key: No { } in capture() → bind to existing variable
 
-~import "std/io"
-~import "std/control"
+import std/io
+import std/control
 
 const std = @import("std");
 
@@ -16,9 +16,9 @@ const Entity = struct {
     pos_x: i32,
 };
 
-~event print_health { value: i32 }
+~event print-health { value: i32 }
 
-~proc print_health|zig {
+~proc print-health|zig {
     std.debug.print("{d}\n", .{value});
 }
 
@@ -31,4 +31,4 @@ const entity = Entity{
 ~capture(entity)
 ! as acc |> for(&[_]i32{10, 20, 30})
     ! each damage |> captured({ health: acc.health - damage })
-| captured final |> print_health(value: final.health)
+| captured final |> print-health(value: final.health)

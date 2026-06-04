@@ -7,13 +7,13 @@
 // `{ x }` and `{ p.x }` respectively — the last segment names the field.
 // ============================================================================
 
-~import "std/io"
+import std/io
 
-~event make_point { x: i32, y: i32 }
+~event make-point { x: i32, y: i32 }
 | point { x: i32, y: i32 }
 
 // Explicit labels `x: x, y: y` are redundant — punning produces the same names.
-~make_point => point { x: x, y: y }
+~make-point => point { x: x, y: y }
 
-~make_point(x: 10, y: 20)
+~make-point(x: 10, y: 20)
 | point p |> std.io:print.ln("x={{ p.x:d }}")

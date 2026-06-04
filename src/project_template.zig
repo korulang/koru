@@ -222,7 +222,7 @@ fn writeReadme(
             \\Import in your code:
             \\
             \\```koru
-            \\~import "lib/{s}"
+            \\import lib/{s}
             \\
             \\~{s}:greet(name: "World")
             \\| done |> _
@@ -271,7 +271,7 @@ fn writeMainFile(
 
         const content = try std.fmt.allocPrint(allocator,
             \\// {s}
-            \\~import "std/io"
+            \\import std/io
             \\
             \\~std.io:print.ln("Hello from {s}!")
             \\
@@ -291,7 +291,7 @@ fn writeMainFile(
             \\// This file defines the public API of your library.
             \\// Mark events with ~pub to export them.
             \\
-            \\~import "std/io"
+            \\import std/io
             \\
             \\// Example public event - void events just do their work
             \\~pub event greet {{ name: []const u8 }}

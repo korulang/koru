@@ -3,9 +3,9 @@
 // Override BOTH the whole pipeline AND individual passes.
 // Demonstrates that abstract event overrides compose cleanly.
 
-~import "std/compiler"
-~import "std/time"
-~import "std/io"
+import std/compiler
+import std/time
+import std/io
 
 // ============================================================================
 // WHOLE PIPELINE TIMING (outer layer)

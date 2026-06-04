@@ -11,7 +11,7 @@
 // `{{ }}` render — the emitter resolves the tag (the Zig lowering happens to be
 // a `return`, but that backend detail never leaks into the surface). It never
 // parses host code out of the opaque proc body; the emit-only boundary holds.
-~import "std/io"
+import std/io
 
 ~pub event probe3 { n: usize }
 ! each usize

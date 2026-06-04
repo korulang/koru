@@ -51,10 +51,10 @@ pub const File = struct {
 
 // Batch close - consumes obligations for ALL files at once
 // This is what RAII cannot express: cleanup multiple resources in one operation
-~pub event close_batch { files: []*File[!opened] }
+~pub event close-batch { files: []*File[!opened] }
 | closed usize
 
-~proc close_batch|zig {
+~proc close-batch|zig {
     for (files) |file_ptr| {
         file_ptr.handle.close();
         std.heap.page_allocator.destroy(file_ptr);

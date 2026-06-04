@@ -14,7 +14,7 @@
 // landed but never exercised) survives an end-to-end run when the
 // labeled event has BOTH effect branches AND a re-entering terminal.
 
-~import "std/io"
+import std/io
 
 ~pub event ramp { start: usize }
 ! step usize

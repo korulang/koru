@@ -3,8 +3,8 @@
 // This is the real payoff: declare a type through Koru,
 // then use it in event signatures and flows.
 
-~import "std/types"
-~import "std/io"
+import std/types
+import std/io
 
 // Declare the type through Koru
 ~struct(Player) {

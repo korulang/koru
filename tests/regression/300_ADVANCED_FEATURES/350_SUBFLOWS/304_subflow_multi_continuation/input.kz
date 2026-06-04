@@ -8,7 +8,7 @@
 
 const std = @import("std");
 
-~import "std/io"
+import std/io
 
 // Helper event: triples a number
 ~event triple { value: i32 }
@@ -36,9 +36,9 @@ const std = @import("std");
     | doubled d => final d
 
 // Helper to verify and print the result
-~event verify_and_print { value: i32 }
+~event verify-and-print { value: i32 }
 
-~proc verify_and_print|zig {
+~proc verify-and-print|zig {
     if (value == 30) {
         std.debug.print("30\n", .{});
     } else {
@@ -48,4 +48,4 @@ const std = @import("std");
 
 // Test: 5 * 3 * 2 = 30
 ~process(input: 5)
-| final f |> verify_and_print(value: f)
+| final f |> verify-and-print(value: f)

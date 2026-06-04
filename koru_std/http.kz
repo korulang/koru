@@ -4,11 +4,11 @@
 const std = @import("std");
 
 // HTTP Request
-~pub event http.parse_request { data: []const u8 }
+~pub event http.parse-request { data: []const u8 }
 | request { method: []const u8, path: []const u8, headers: []const u8, body: []const u8 }
 | invalid []const u8
 
-~proc http.parse_request|zig {
+~proc http.parse-request|zig {
     const allocator = std.heap.page_allocator;
     
     // Find the end of the request line
@@ -52,7 +52,7 @@ const std = @import("std");
 }
 
 // HTTP Response Builder
-~pub event http.response { status: u16, status_text: []const u8, headers: []const u8, body: []const u8 }
+~pub event http.response { status: u16, status-text: []const u8, headers: []const u8, body: []const u8 }
 | formatted []const u8
 
 ~proc http.response|zig {
@@ -71,11 +71,11 @@ const std = @import("std");
 }
 
 // Route matching
-~pub event http.match_route { path: []const u8, pattern: []const u8 }
+~pub event http.match-route { path: []const u8, pattern: []const u8 }
 | matched []const u8  // For simplicity, params as comma-separated string
-| no_match
+| no-match
 
-~proc http.match_route|zig {
+~proc http.match-route|zig {
     // Simple exact match for now
     if (std.mem.eql(u8, path, pattern)) {
         return .{ .@"matched" = .{ .params = "" } };
@@ -93,10 +93,10 @@ const std = @import("std");
 }
 
 // Simple JSON response helper
-~pub event http.json_response { status: u16, json: []const u8 }
+~pub event http.json-response { status: u16, json: []const u8 }
 | response []const u8
 
-~proc http.json_response|zig {
+~proc http.json-response|zig {
     const allocator = std.heap.page_allocator;
     
     const status_text = switch (status) {
@@ -120,10 +120,10 @@ const std = @import("std");
 }
 
 // HTML response helper
-~pub event http.html_response { status: u16, html: []const u8 }
+~pub event http.html-response { status: u16, html: []const u8 }
 | response []const u8
 
-~proc http.html_response|zig {
+~proc http.html-response|zig {
     const allocator = std.heap.page_allocator;
     
     const status_text = switch (status) {
@@ -145,10 +145,10 @@ const std = @import("std");
 }
 
 // Static file serving helper
-~pub event http.mime_type { extension: []const u8 }
+~pub event http.mime-type { extension: []const u8 }
 | type []const u8
 
-~proc http.mime_type|zig {
+~proc http.mime-type|zig {
     const mime = if (std.mem.eql(u8, extension, ".html")) "text/html"
         else if (std.mem.eql(u8, extension, ".css")) "text/css"
         else if (std.mem.eql(u8, extension, ".js")) "application/javascript"
@@ -163,11 +163,11 @@ const std = @import("std");
 }
 
 // URL decode helper
-~pub event http.url_decode { encoded: []const u8 }
+~pub event http.url-decode { encoded: []const u8 }
 | decoded []const u8
 | error []const u8
 
-~proc http.url_decode|zig {
+~proc http.url-decode|zig {
     const allocator = std.heap.page_allocator;
     var result = std.ArrayList(u8).init(allocator);
     
@@ -199,10 +199,10 @@ const std = @import("std");
 }
 
 // Parse query string
-~pub event http.parse_query { query: []const u8 }
+~pub event http.parse-query { query: []const u8 }
 | params []const u8  // Simplified: key=value,key2=value2 format
 
-~proc http.parse_query|zig {
+~proc http.parse-query|zig {
     const allocator = std.heap.page_allocator;
     var result = std.ArrayList(u8).init(allocator);
     

@@ -5,7 +5,7 @@
 // 2. "Optional" means "can be omitted", NOT "can be misused"
 // 3. Handling a nonexistent branch name = compile error
 
-~import "std/io"
+import std/io
 
 // Event with required + optional branch
 ~event process { value: u32 }

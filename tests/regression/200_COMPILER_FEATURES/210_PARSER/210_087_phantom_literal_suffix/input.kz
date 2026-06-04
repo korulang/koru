@@ -16,12 +16,12 @@
 // See `docs/UNITS_OF_MEASURE.md` "Implementation sketch" — literal-suffix
 // parsing is item (6) in the implementation plan.
 
-~import "std/io"
+import std/io
 
-~event accept_celsius { c: f32<celsius> }
+~event accept-celsius { c: f32<celsius> }
 | ok f32<celsius>
 
-~accept_celsius => ok c
+~accept-celsius => ok c
 
-~accept_celsius(c: 32<celsius>)
+~accept-celsius(c: 32<celsius>)
 | ok v |> std.io:print.ln("{{ v:f }}")

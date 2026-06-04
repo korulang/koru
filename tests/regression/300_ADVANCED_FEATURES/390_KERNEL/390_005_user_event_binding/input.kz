@@ -5,15 +5,15 @@
 // 2. computed branch receives the kernel data
 // 3. user-defined events can consume values from computed data
 
-~import "std/kernel"
-~import "std/io"
+import std/kernel
+import std/io
 
 ~std.kernel:shape(Body) {
     mass: f64,
 }
 
-~event print_mass { value: f64 }
-~proc print_mass|zig {
+~event print-mass { value: f64 }
+~proc print-mass|zig {
     const std = @import("std");
     std.debug.print("mass={d}\n", .{value});
 }
@@ -23,4 +23,4 @@
     { mass: 2.0 },
 }
 | kernel k |> std.kernel:self { k.mass *= 1.0 }
-| computed c |> print_mass(value: c[0].mass)
+| computed c |> print-mass(value: c[0].mass)

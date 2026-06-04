@@ -14,13 +14,13 @@
 //
 // Related: docs/BUILD_REQUIRES.md
 
-~import "std/parser"
+import std/parser
 
 const std = @import("std");
 
-~event test_parser_runtime {}
+~event test-parser-runtime {}
 
-~proc test_parser_runtime|zig {
+~proc test-parser-runtime|zig {
     const allocator = std.heap.page_allocator;
 
     // This code is CORRECT but won't work until ~build.requires is implemented
@@ -47,5 +47,5 @@ const std = @import("std");
 
 }
 
-~test_parser_runtime()
+~test-parser-runtime()
 | success |> _

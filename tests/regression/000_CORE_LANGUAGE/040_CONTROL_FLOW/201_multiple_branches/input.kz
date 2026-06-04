@@ -16,38 +16,38 @@ const std = @import("std");
     return .{ .zero = .{} };
 }
 
-~event handle_positive { n: i32 }
+~event handle-positive { n: i32 }
 
-~proc handle_positive|zig {
+~proc handle-positive|zig {
     std.debug.print("Positive branch works: {}\n", .{n});
 }
 
-~event handle_zero {}
+~event handle-zero {}
 
-~proc handle_zero|zig {
+~proc handle-zero|zig {
     std.debug.print("Zero branch works\n", .{});
 }
 
-~event handle_negative { n: i32 }
+~event handle-negative { n: i32 }
 
-~proc handle_negative|zig {
+~proc handle-negative|zig {
     std.debug.print("Negative branch works: {}\n", .{n});
 }
 
 // Test 1: Positive value (42)
 ~check(value: 42)
-| positive p |> handle_positive(n: p)
-| zero |> handle_zero()
-| negative n |> handle_negative(n)
+| positive p |> handle-positive(n: p)
+| zero |> handle-zero()
+| negative n |> handle-negative(n)
 
 // Test 2: Zero value (0)
 ~check(value: 0)
-| positive p |> handle_positive(n: p)
-| zero |> handle_zero()
-| negative n |> handle_negative(n)
+| positive p |> handle-positive(n: p)
+| zero |> handle-zero()
+| negative n |> handle-negative(n)
 
 // Test 3: Negative value (-7)
 ~check(value: -7)
-| positive p |> handle_positive(n: p)
-| zero |> handle_zero()
-| negative n |> handle_negative(n)
+| positive p |> handle-positive(n: p)
+| zero |> handle-zero()
+| negative n |> handle-negative(n)

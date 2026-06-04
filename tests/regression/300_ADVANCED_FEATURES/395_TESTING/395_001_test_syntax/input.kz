@@ -5,16 +5,16 @@
 // 2. Bindings are extracted from mocked branch values
 // 3. Assert can verify actual values
 
-~import "std/testing"
+import std/testing
 
 // Impure event - needs mock in tests (no proc = impure by default)
-~event get_balance {}
+~event get-balance {}
 | amount u32
 
 // Test: Mock value is inlined, binding extracted, value verified
 ~test(Mock value inlined with binding) {
-    ~get_balance => amount 100
-    ~get_balance()
+    ~get-balance => amount 100
+    ~get-balance()
     | amount a |> assert(a == 100)
 }
 

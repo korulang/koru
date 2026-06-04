@@ -7,13 +7,13 @@
 // The unconditional import should be parsed normally.
 
 // Unconditional import (baseline) - should appear in AST
-~import "std/compiler"
+import std/compiler
 
 // Conditional imports - should NOT appear in AST (deadstripped)
-~[profile]import "std/profiler"
+~[profile]import std/profiler
 
-~[test]import "std/testing"
+~[test]import std/testing
 
-~[debug|trace]import "std/debug"
+~[debug|trace]import std/debug
 
 ~event hello {}

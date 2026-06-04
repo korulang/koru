@@ -4,7 +4,7 @@
 //
 // Without --strict-base-types, Zig catches this during compilation.
 
-~import "app/db"
+import app/db
 
 // BUG: the `| ok c |> app.db:commit(tx: c)` handler below passes c
 // (*Connection) to commit() which expects *Transaction. Koru won't catch

@@ -40,9 +40,9 @@ const File = struct { handle: i32 };
 }
 
 // Force close - also consumes locked! (Option 2 for disposing locked!)
-~pub event force_close { file: *File<!locked> }
+~pub event force-close { file: *File<!locked> }
 
-~proc force_close|zig {
+~proc force-close|zig {
     std.debug.print("Force closing\n", .{});
     std.heap.page_allocator.destroy(file);
 }

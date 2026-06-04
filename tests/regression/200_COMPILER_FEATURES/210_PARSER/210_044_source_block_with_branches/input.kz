@@ -8,7 +8,7 @@
 //
 // The transform doesn't need to work - we just verify parsing.
 
-~import "std/io"
+import std/io
 
 // Use print.blk which we KNOW works, as baseline
 ~std.io:print.blk {

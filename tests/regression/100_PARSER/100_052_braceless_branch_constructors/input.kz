@@ -2,16 +2,16 @@
 //
 // Syntax: ok expr (branch with single value)
 
-~import "std/io"
+import std/io
 
 // Event with value branch
-~pub event value_result {}
+~pub event value-result {}
 | success i32
 
 // Subflow impl using braceless syntax with value
-~value_result => success 42
+~value-result => success 42
 
 // Main entry point
 ~std.io:print.ln("Testing value braceless:")
-~value_result()
+~value-result()
 | success n |> std.io:print.ln("  Got success: {{ n:d }}")

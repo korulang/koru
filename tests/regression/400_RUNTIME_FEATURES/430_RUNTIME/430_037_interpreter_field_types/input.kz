@@ -1,23 +1,23 @@
 // Test: Interpreter numeric FieldValue in expressions
 // Ensures FieldValue.int_val is propagated to expr bindings (no string reparse)
 
-~import "std/runtime"
-~import "std/interpreter"
-~import "std/io"
+import std/runtime
+import std/interpreter
+import std/io
 
 const std = @import("std");
 
 // Event producing an integer field
-~pub event produce_int {}
+~pub event produce-int {}
 | value i32
 
-~proc produce_int|zig {
+~proc produce-int|zig {
     return .{ .value = 12 };
 }
 
 // Register scope
 ~std.runtime:register(scope: "test") {
-    produce_int
+    produce-int
 }
 
 const TEST_SOURCE =
@@ -31,7 +31,7 @@ const TEST_SOURCE =
 | scope s |> std.interpreter:run(source: TEST_SOURCE, s.dispatcher)
     | result r |> std.io:print.ln("SUCCESS branch={{ r.value.branch:s }}")
     | exhausted e |> std.io:print.ln("EXHAUSTED: {{ e.last_event:s }}")
-    | parse_error e |> std.io:print.ln("PARSE ERROR: {{ e.message:s }}")
-    | validation_error e |> std.io:print.ln("VALIDATION ERROR: {{ e:s }}")
-    | dispatch_error e |> std.io:print.ln("DISPATCH ERROR: {{ e.message:s }}")
-| not_found |> std.io:print.ln("SCOPE NOT FOUND")
+    | parse-error e |> std.io:print.ln("PARSE ERROR: {{ e.message:s }}")
+    | validation-error e |> std.io:print.ln("VALIDATION ERROR: {{ e:s }}")
+    | dispatch-error e |> std.io:print.ln("DISPATCH ERROR: {{ e.message:s }}")
+| not-found |> std.io:print.ln("SCOPE NOT FOUND")

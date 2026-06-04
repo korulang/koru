@@ -43,15 +43,15 @@ const Transaction = struct { conn_handle: i32 };
     return .ok;
 }
 
-~event report_err { stage: []const u8, msg: []const u8 }
+~event report-err { stage: []const u8, msg: []const u8 }
 
-~proc report_err|zig {
+~proc report-err|zig {
     std.debug.print("{s} err: {s}\n", .{ stage, msg });
 }
 
 ~connect(host: "localhost")
 | ok c1 |> begin(c1.conn)
   | ok c2 |> commit(c2.tx)
-    | err msg |> report_err(stage: "commit", msg)
-  | err msg |> report_err(stage: "begin", msg)
-| err msg |> report_err(stage: "connect", msg)
+    | err msg |> report-err(stage: "commit", msg)
+  | err msg |> report-err(stage: "begin", msg)
+| err msg |> report-err(stage: "connect", msg)

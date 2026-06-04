@@ -12,34 +12,34 @@
 
 const std = @import("std");
 
-~import "std/control"
+import std/control
 
 // Void event (no branches)
-~event step_one {}
+~event step-one {}
 
-~proc step_one|zig {
+~proc step-one|zig {
     // Does nothing, just tests void event handling
 }
 
 // Another void event
-~event step_two {}
+~event step-two {}
 
-~proc step_two|zig {
+~proc step-two|zig {
     // Does nothing
 }
 
 // Event with a result branch
-~event get_value {}
+~event get-value {}
 | value i32
 
-~proc get_value|zig {
+~proc get-value|zig {
     return .{ .value = 42 };
 }
 
 // Event to print
-~event print_value { v: i32 }
+~event print-value { v: i32 }
 
-~proc print_value|zig {
+~proc print-value|zig {
     std.debug.print("{d}\n", .{v});
 }
 
@@ -47,8 +47,8 @@ const std = @import("std");
 // The structure: void event -> branched event -> loop -> void event -> branched event
 // Both branched events generate `result_N` with same N
 
-~step_one()
-~get_value()
-| value v1 |> print_value(v: v1) |> for(0..2)
-    ! each _ |> step_two() |> get_value()
-        | value v2 |> print_value(v: v2)
+~step-one()
+~get-value()
+| value v1 |> print-value(v: v1) |> for(0..2)
+    ! each _ |> step-two() |> get-value()
+        | value v2 |> print-value(v: v2)

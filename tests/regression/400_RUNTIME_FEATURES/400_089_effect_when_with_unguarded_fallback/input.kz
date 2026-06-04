@@ -16,7 +16,7 @@
 //   big 2         (guarded, i=2 > 1)
 //   big 3         (guarded, i=3 > 1)
 
-~import "std/io"
+import std/io
 
 ~pub event ticker { n: usize }
 ! tick usize

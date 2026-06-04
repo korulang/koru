@@ -1,4 +1,4 @@
-~import "std/io"
+import std/io
 const std = @import("std");
 const File = struct { handle: i32 };
 ~event open { path: []const u8 }
@@ -12,8 +12,8 @@ const File = struct { handle: i32 };
 ~proc close|zig {
     std.heap.page_allocator.destroy(file);
 }
-~event flush_close { file: *File<!opened> }
-~proc flush_close|zig {
+~event flush-close { file: *File<!opened> }
+~proc flush-close|zig {
     std.heap.page_allocator.destroy(file);
 }
 ~open(path: "test.txt")

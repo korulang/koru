@@ -1,14 +1,14 @@
 // Test: Void event chaining with nested continuations
 // When chaining void -> event with branches, should parse nested continuations correctly
-// Pattern: ~void_event() |> branching_event()
+// Pattern: ~void-event() |> branching-event()
 //              | branch1 |> _
 //              | branch2 |> _
 
-~event void_event {}
+~event void-event {}
 
-~event branching_event {}
+~event branching-event {}
 
-// MUST_FAIL: branching_event is declared void (no branches), so `| error` is a
+// MUST_FAIL: branching-event is declared void (no branches), so `| error` is a
 // branch handler on an event that has no branches — category error.
-~void_event() |> branching_event()
+~void-event() |> branching-event()
 | error |> _

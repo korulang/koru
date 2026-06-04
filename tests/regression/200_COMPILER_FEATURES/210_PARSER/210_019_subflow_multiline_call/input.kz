@@ -15,47 +15,47 @@
 // the intended authoring model.
 //
 // This bug was discovered while implementing benchmark 2101b_nbody_granular,
-// which needed to pass multiple arguments to assemble_solar_system() across
+// which needed to pass multiple arguments to assemble-solar-system() across
 // multiple lines.
 //
 // ============================================================================
 
 const std = @import("std");
 
-~event step_a { x: i32 }
+~event step-a { x: i32 }
 | done i32
 
-~proc step_a|zig {
+~proc step-a|zig {
     return .{ .done = x + 1 };
 }
 
-~event step_b { a: i32, b: i32, c: i32 }
+~event step-b { a: i32, b: i32, c: i32 }
 | done i32
 
-~proc step_b|zig {
+~proc step-b|zig {
     return .{ .done = a + b + c };
 }
 
-~event step_c { x: i32 }
+~event step-c { x: i32 }
 | done i32
 
-~proc step_c|zig {
+~proc step-c|zig {
     return .{ .done = x * 2 };
 }
 
 // This subflow should work but currently fails
-~event test_multiline_call {}
+~event test-multiline-call {}
 | final i32
 
-~test_multiline_call = step_a(x: 10)
-| done a |> step_b(
+~test-multiline-call = step-a(x: 10)
+| done a |> step-b(
     a,
     b: 20,
     c: 30
 )
-    | done b |> step_c(x: b)
+    | done b |> step-c(x: b)
         | done c => final c
 
 // Main flow
-~test_multiline_call()
+~test-multiline-call()
 | final _ |> _

@@ -4,7 +4,7 @@
 // REQUIRES you to be explicit. This catches logic bugs where you
 // might have chosen the wrong disposal path.
 
-~import "std/control"
+import std/control
 
 const std = @import("std");
 
@@ -33,16 +33,16 @@ const File = struct { handle: i32, dirty: bool };
     std.heap.page_allocator.destroy(file);
 }
 
-~event flush_close { file: *File<!opened> }
+~event flush-close { file: *File<!opened> }
 
-~proc flush_close|zig {
+~proc flush-close|zig {
     std.debug.print("Flush and close\n", .{});
     std.heap.page_allocator.destroy(file);
 }
 
 const should_write = true;
 
-// This should FAIL - auto-discharge can't choose between close and flush_close
+// This should FAIL - auto-discharge can't choose between close and flush-close
 ~open(path: "test.txt")
 | opened f |> std.control:if(should_write)
     | then |> write(f.file, data: "hello")

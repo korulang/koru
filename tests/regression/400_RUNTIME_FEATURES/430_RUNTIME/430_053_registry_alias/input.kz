@@ -5,8 +5,8 @@
 // 2. Same event can have multiple aliases with different costs
 // 3. Original event name is NOT exposed (alias replaces)
 
-~import "std/runtime"
-~import "std/io"
+import std/runtime
+import std/io
 
 const std = @import("std");
 
@@ -29,12 +29,12 @@ const TEST1 = "~hello(name: \"World\")";
 ~std.runtime:run(source: TEST1, scope: "api")
 | result _ |> std.io:print.ln("HELLO OK")
 | exhausted _ |> std.io:print.ln("HELLO EXHAUSTED")
-| parse_error _ |> std.io:print.ln("HELLO PARSE ERROR")
-| validation_error _ |> std.io:print.ln("HELLO VALIDATION ERROR")
-| shape_error _ |> std.io:print.ln("HELLO SHAPE ERROR")
-| event_denied _ |> std.io:print.ln("HELLO EVENT DENIED")
-| dispatch_error _ |> std.io:print.ln("HELLO DISPATCH ERROR")
-| scope_not_found _ |> std.io:print.ln("HELLO SCOPE NOT FOUND")
+| parse-error _ |> std.io:print.ln("HELLO PARSE ERROR")
+| validation-error _ |> std.io:print.ln("HELLO VALIDATION ERROR")
+| shape-error _ |> std.io:print.ln("HELLO SHAPE ERROR")
+| event-denied _ |> std.io:print.ln("HELLO EVENT DENIED")
+| dispatch-error _ |> std.io:print.ln("HELLO DISPATCH ERROR")
+| scope-not-found _ |> std.io:print.ln("HELLO SCOPE NOT FOUND")
 
 // Test 2: alias "hi" also dispatches to greet (different cost)
 const TEST2 = "~hi(name: \"World\")";
@@ -42,12 +42,12 @@ const TEST2 = "~hi(name: \"World\")";
 ~std.runtime:run(source: TEST2, scope: "api")
 | result _ |> std.io:print.ln("HI OK")
 | exhausted _ |> std.io:print.ln("HI EXHAUSTED")
-| parse_error _ |> std.io:print.ln("HI PARSE ERROR")
-| validation_error _ |> std.io:print.ln("HI VALIDATION ERROR")
-| shape_error _ |> std.io:print.ln("HI SHAPE ERROR")
-| event_denied _ |> std.io:print.ln("HI EVENT DENIED")
-| dispatch_error _ |> std.io:print.ln("HI DISPATCH ERROR")
-| scope_not_found _ |> std.io:print.ln("HI SCOPE NOT FOUND")
+| parse-error _ |> std.io:print.ln("HI PARSE ERROR")
+| validation-error _ |> std.io:print.ln("HI VALIDATION ERROR")
+| shape-error _ |> std.io:print.ln("HI SHAPE ERROR")
+| event-denied _ |> std.io:print.ln("HI EVENT DENIED")
+| dispatch-error _ |> std.io:print.ln("HI DISPATCH ERROR")
+| scope-not-found _ |> std.io:print.ln("HI SCOPE NOT FOUND")
 
 // Test 3: original name "greet" should NOT work (alias replaces)
 const TEST3 = "~greet(name: \"World\")";
@@ -55,9 +55,9 @@ const TEST3 = "~greet(name: \"World\")";
 ~std.runtime:run(source: TEST3, scope: "api")
 | result _ |> std.io:print.ln("GREET SHOULD NOT WORK")
 | exhausted _ |> std.io:print.ln("GREET EXHAUSTED")
-| parse_error _ |> std.io:print.ln("GREET PARSE ERROR")
-| validation_error _ |> std.io:print.ln("GREET VALIDATION ERROR")
-| shape_error _ |> std.io:print.ln("GREET SHAPE ERROR")
-| event_denied _ |> std.io:print.ln("GREET DENIED OK")
-| dispatch_error _ |> std.io:print.ln("GREET DISPATCH ERROR")
-| scope_not_found _ |> std.io:print.ln("GREET SCOPE NOT FOUND")
+| parse-error _ |> std.io:print.ln("GREET PARSE ERROR")
+| validation-error _ |> std.io:print.ln("GREET VALIDATION ERROR")
+| shape-error _ |> std.io:print.ln("GREET SHAPE ERROR")
+| event-denied _ |> std.io:print.ln("GREET DENIED OK")
+| dispatch-error _ |> std.io:print.ln("GREET DISPATCH ERROR")
+| scope-not-found _ |> std.io:print.ln("GREET SCOPE NOT FOUND")

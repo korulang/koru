@@ -6,7 +6,7 @@
 //
 // This is the "wrap and extend" pattern with NO MAGIC!
 
-~import "std/io"
+import std/io
 
 // Define abstract event
 ~[abstract] event process { name: []const u8 }

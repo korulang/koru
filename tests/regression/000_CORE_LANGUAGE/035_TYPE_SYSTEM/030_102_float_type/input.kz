@@ -5,17 +5,17 @@
 //
 // Expected: Compiles and runs, Temperature is usable as a float
 
-~import "std/types"
+import std/types
 
 const std = @import("std");
 
 ~float(Temperature)
 
-~event report_temp { temp: Temperature }
+~event report-temp { temp: Temperature }
 
-~proc report_temp|zig {
+~proc report-temp|zig {
     std.debug.print("Temperature: {d:.1}\n", .{temp});
 }
 
-~report_temp(temp: 98.6)
+~report-temp(temp: 98.6)
 

@@ -25,7 +25,7 @@ const std = @import("std");
 }
 
 // Read from connection (stub)
-~pub event tcp.read { id: u32, max_bytes: usize }
+~pub event tcp.read { id: u32, max-bytes: usize }
 | data []const u8
 | closed
 | error []const u8

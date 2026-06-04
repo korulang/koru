@@ -5,8 +5,8 @@
 //
 // The custom coordinator prints a marker, then delegates to standard pipeline.
 
-~import "std/compiler"
-~import "std/optimizer"
+import std/compiler
+import std/optimizer
 
 const std = @import("std");
 const ast = @import("ast");
@@ -14,7 +14,7 @@ const Program = ast.Program;
 
 // Custom coordinator that wraps the default pipeline
 // All compiler events must be module-qualified
-~std.compiler:coordinate = custom_marker() |> std.compiler:context_create(program_ast, allocator)
+~std.compiler:coordinate = custom-marker() |> std.compiler:context_create(program_ast, allocator)
 | created c0 |> std.compiler:frontend(ctx: c0)
   | ctx c1 |> std.compiler:transform_taps(ctx: c1)
     | ctx c2 |> std.compiler:analysis(ctx: c2)
@@ -29,9 +29,9 @@ const Program = ast.Program;
       | failed f => error f.message
 
 // Helper event to print marker (must be comptime since it's called from coordinate handler)
-~[comptime] event custom_marker {}
+~[comptime] event custom-marker {}
 
-~proc custom_marker|zig {
+~proc custom-marker|zig {
     std.debug.print("CUSTOM COORDINATOR: Pipeline override active!\n", .{});
 }
 

@@ -6,7 +6,7 @@
 
 ~[comptime|runtime]
 
-~import "std/build"
+import std/build
 
 const std = @import("std");
 
@@ -114,12 +114,12 @@ const std = @import("std");
 // ============================================================================
 
 // Read entire stdin as text
-~pub event read_stdin {}
+~pub event read-stdin {}
 | ok []const u8
 | eof
 | failed []const u8
 
-~proc read_stdin|zig {
+~proc read-stdin|zig {
     const stdin = std.fs.File.stdin();
     const content = stdin.readToEndAlloc(std.heap.page_allocator, 1024 * 1024 * 10) catch |err| {
         const msg = switch (err) {
@@ -137,12 +137,12 @@ const std = @import("std");
 }
 
 // Read entire file as text
-~pub event read_file { path: []const u8 }
+~pub event read-file { path: []const u8 }
 | ok []const u8
-| not_found
+| not-found
 | failed []const u8
 
-~proc read_file|zig {
+~proc read-file|zig {
     const file = std.fs.cwd().openFile(path, .{}) catch |err| {
         return switch (err) {
             error.FileNotFound => .{ .not_found = .{} },

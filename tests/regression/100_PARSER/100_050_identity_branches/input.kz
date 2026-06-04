@@ -1,24 +1,24 @@
 // Test identity branch syntax: | branch Type instead of | branch { field: Type }
 // MUST_RUN: Verify identity values flow correctly at runtime
-~import "std/io"
+import std/io
 
-~pub event get_number {}
+~pub event get-number {}
 | value i32
 
-~proc get_number|zig {
+~proc get-number|zig {
     return .{ .value = 42 };
 }
 
-~pub event get_message {}
+~pub event get-message {}
 | text []const u8
 
-~proc get_message|zig {
+~proc get-message|zig {
     return .{ .text = "Hello from identity branch!" };
 }
 
 // Test that identity values work correctly
-~get_number()
+~get-number()
 | value n |> std.io:print.ln("Got number: {{ n:d }}")
 
-~get_message()
+~get-message()
 | text msg |> std.io:print.ln("{{ msg:s }}")

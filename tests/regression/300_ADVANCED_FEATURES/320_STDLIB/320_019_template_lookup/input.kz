@@ -9,7 +9,7 @@
 // This test just confirms templates are accessible by defining one
 // and using a simple comptime validation.
 
-~import "std/template"
+import std/template
 
 // Define a template that we'll "use" to prove lookup works
 ~std.template:define(name: "greeting") {

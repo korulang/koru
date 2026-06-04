@@ -1,0 +1,3 @@
+// NEGATIVE: imports take a bare path — quotes are rejected.
+// Write `import std/io`, not `import "std/io"`.
+import "std/io"

@@ -1,7 +1,7 @@
 // Test: Basic ~capture as top-level flow
 
-~import "std/io"
-~import "std/control"
+import std/io
+import std/control
 
 // Struct capture with typed init
 ~capture({ total: @as(i32, 0) })

@@ -67,9 +67,11 @@ pub fn isValidIdentifier(s: []const u8) bool {
     // Must start with letter or underscore
     if (!std.ascii.isAlphabetic(s[0]) and s[0] != '_') return false;
     
-    // Rest must be alphanumeric or underscore
+    // Rest must be alphanumeric, underscore, or kebab `-` (a legal name-char;
+    // it mangles to `_` on emit). First char stays letter/`_` — names don't
+    // start with `-`.
     for (s[1..]) |c| {
-        if (!std.ascii.isAlphanumeric(c) and c != '_') return false;
+        if (!std.ascii.isAlphanumeric(c) and c != '_' and c != '-') return false;
     }
     
     return true;
@@ -87,6 +89,21 @@ pub fn afterPrefix(line: []const u8, prefix: []const u8) ?[]const u8 {
 
 /// Parse a dotted path (e.g., "file.read")
 /// DEPRECATED: Use parseQualifiedPath for new code
+/// In-place kebab `-` -> `_`, INFIX only (between two name characters). Mirrors
+/// src/ast_mangle.zig: an operator/spaced/edge `-` is not word-glue and is left
+/// alone (e.g. a tap's `* -> *` pattern stored as a segment must not become `_>`).
+pub fn mangleKebabInPlace(s: []u8) void {
+    for (s, 0..) |*c, i| {
+        if (c.* != '-') continue;
+        if (i == 0 or i + 1 >= s.len) continue;
+        const prev = s[i - 1];
+        const next = s[i + 1];
+        const prev_ok = std.ascii.isAlphanumeric(prev) or prev == '_';
+        const next_ok = std.ascii.isAlphanumeric(next) or next == '_';
+        if (prev_ok and next_ok) c.* = '_';
+    }
+}
+
 pub fn parseDottedPath(allocator: std.mem.Allocator, path: []const u8) ![][]const u8 {
     var segments = try std.ArrayList([]const u8).initCapacity(allocator, 4);
     errdefer {
@@ -97,6 +114,10 @@ pub fn parseDottedPath(allocator: std.mem.Allocator, path: []const u8) ![][]cons
     var iter = std.mem.tokenizeScalar(u8, path, '.');
     while (iter.next()) |segment| {
         const owned = try allocator.dupe(u8, segment);
+        // Normalize kebab Koru names -> snake at construction, BEFORE the registry
+        // keys (path_str) are derived from these segments. Keeps decl registration
+        // and call-site lookups on the same snake form. See src/ast_mangle.zig.
+        mangleKebabInPlace(owned);
         try segments.append(allocator, owned);
     }
 
@@ -117,8 +138,10 @@ pub fn parseQualifiedPath(allocator: std.mem.Allocator, path: []const u8, ast: a
 
         const segments = try parseDottedPath(allocator, namespace_part);
 
+        const owned_qualifier = try allocator.dupe(u8, qualifier);
+        mangleKebabInPlace(owned_qualifier);
         return ast.DottedPath{
-            .module_qualifier = try allocator.dupe(u8, qualifier),
+            .module_qualifier = owned_qualifier,
             .segments = segments,
         };
     } else {

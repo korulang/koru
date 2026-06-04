@@ -4,9 +4,9 @@
 //
 // Usage:
 //   ~import "std/parser"
-//   ~std.parser:parse.source(source: code, file_name: "test.kz", allocator: allocator)
+//   ~std.parser:parse.source(source: code, file-name: "test.kz", allocator: allocator)
 //   | parsed p |> use(p.ast)
-//   | parse_error e |> handle(e.message)
+//   | parse-error e |> handle(e.message)
 //
 // This enables:
 //   - REPLs that parse and execute Koru at runtime
@@ -14,7 +14,7 @@
 //   - Dynamic code loading and evaluation
 //   - AI agents that can parse and understand Koru
 
-~import "std/build"
+import std/build
 
 const std = @import("std");
 const parser_impl = @import("parser");
@@ -114,6 +114,14 @@ pub const ParseResult = parser_impl.ParseResult;
     module_resolver_module.addImport("log", log_module);
     module_resolver_module.addImport("file_types", file_types_module);
 
+    // Parse-time name normalizer (kebab -> snake). Shares ast_module for type identity.
+    const ast_mangle_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/ast_mangle.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    ast_mangle_module.addImport("ast", ast_module);
+
     // Parser module - the main parser with all its dependencies
     const parser_module = b.createModule(.{
         .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/parser.zig" },
@@ -121,6 +129,7 @@ pub const ParseResult = parser_impl.ParseResult;
         .optimize = optimize,
     });
     parser_module.addImport("ast", ast_module);
+    parser_module.addImport("ast_mangle", ast_mangle_module);
     parser_module.addImport("lexer", lexer_module);
     parser_module.addImport("errors", errors_module);
     parser_module.addImport("type_registry", type_registry_module);
@@ -151,11 +160,11 @@ pub const ParseResult = parser_impl.ParseResult;
 // Parse Koru source code into AST
 ~pub event parse.source {
     source: []const u8,
-    file_name: []const u8,
+    file-name: []const u8,
     allocator: std.mem.Allocator
 }
 | parsed parser_impl.ParseResult
-| parse_error []const u8
+| parse-error []const u8
 
 ~proc parse.source|zig {
     // Initialize parser (empty compiler flags, no resolver for standalone parsing)
@@ -178,7 +187,7 @@ pub const ParseResult = parser_impl.ParseResult;
     allocator: std.mem.Allocator
 }
 | dumped []const u8
-| dump_error []const u8
+| dump-error []const u8
 
 ~proc dump.ast|zig {
     var serializer = ast_serializer.AstSerializer.init(allocator) catch |err| {

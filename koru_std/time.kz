@@ -62,15 +62,15 @@ const std = @import("std");
 // ============================================================================
 
 // Sleep for specified milliseconds
-~[runtime] pub event sleep_ms { ms: u64 }
+~[runtime] pub event sleep-ms { ms: u64 }
 
-~[runtime] proc sleep_ms|zig {
+~[runtime] proc sleep-ms|zig {
     std.time.sleep(ms * 1_000_000);
 }
 
 // Sleep for specified seconds
-~[runtime] pub event sleep_s { s: u64 }
+~[runtime] pub event sleep-s { s: u64 }
 
-~[runtime] proc sleep_s|zig {
+~[runtime] proc sleep-s|zig {
     std.time.sleep(s * 1_000_000_000);
 }

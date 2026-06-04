@@ -1,5 +1,5 @@
-~import "std/control"
-~import "app/fs"
+import std/control
+import app/fs
 const should_loop = true;
 ~app.fs:open(path: "test.txt")
 | opened f |> std.control:if(should_loop)

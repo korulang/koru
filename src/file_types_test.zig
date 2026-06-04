@@ -6,7 +6,7 @@ test "parse File and EmbedFile types" {
     const allocator = std.testing.allocator;
     
     const source =
-        \\~event test_files {
+        \\~event test-files {
         \\    compile_only: File,
         \\    runtime_data: EmbedFile,
         \\    normal_field: []const u8

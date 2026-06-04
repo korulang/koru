@@ -9,8 +9,8 @@ const std = @import("std");
 
 // Outer loop event
 ~event outer { x: i32, max: i32 }
-| next_outer { x: i32, max: i32 }
-| done_outer
+| next-outer { x: i32, max: i32 }
+| done-outer
 
 ~proc outer|zig {
     if (x > max) {
@@ -23,8 +23,8 @@ const std = @import("std");
 
 // Inner loop event
 ~event inner { x: i32, y: i32, max: i32 }
-| next_inner { x: i32, y: i32, max: i32 }
-| done_inner i32
+| next-inner { x: i32, y: i32, max: i32 }
+| done-inner i32
 
 ~proc inner|zig {
     if (y > max) {
@@ -44,7 +44,7 @@ const std = @import("std");
 
 // Flow with nested labels - tests arbitrary jumps!
 ~start() |> #outer_loop outer(x: 1, max: 3)
-| next_outer o |> #inner_loop inner(o.x, y: 1, max: 2)
-    | next_inner i |> @inner_loop(i.x, y: i.y + 1, i.max)  // Loop within inner
-    | done_inner d |> @outer_loop(x: d + 1, o.max)             // Jump back to outer!
-| done_outer |> _
+| next-outer o |> #inner_loop inner(o.x, y: 1, max: 2)
+    | next-inner i |> @inner_loop(i.x, y: i.y + 1, i.max)  // Loop within inner
+    | done-inner d |> @outer_loop(x: d + 1, o.max)             // Jump back to outer!
+| done-outer |> _

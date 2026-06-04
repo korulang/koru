@@ -1,4 +1,0 @@
-// Test: Import without quotes around path
-// GOOD: Frontend catches with clear error about $ alias
-
-~import foo

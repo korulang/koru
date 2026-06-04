@@ -10,7 +10,7 @@
 //   Array version:  capture({ dv: [5][3]f64{ ... } })           // 1 field!
 
 const std = @import("std");
-~import "std/control"
+import std/control
 
 const PI: f64 = 3.141592653589793;
 const SOLAR_MASS: f64 = 4.0 * PI * PI;
@@ -69,9 +69,9 @@ const ZERO_DV = [5][3]f64{
     return .{ .e = e };
 }
 
-~event print_e { e: f64 }
+~event print-e { e: f64 }
 
-~proc print_e|zig { std.debug.print("{d:.9}\n", .{e}); }
+~proc print-e|zig { std.debug.print("{d:.9}\n", .{e}); }
 
 ~event parse {}
 | n u32
@@ -98,10 +98,10 @@ const ZERO_DV = [5][3]f64{
 }
 
 // Compute force contribution for one body pair
-~event pair_force { bi: Body, bj: Body, dt: f64 }
+~event pair-force { bi: Body, bj: Body, dt: f64 }
 | result { fx: f64, fy: f64, fz: f64, mi: f64, mj: f64 }
 
-~proc pair_force|zig {
+~proc pair-force|zig {
     const dx = bi.x - bj.x;
     const dy = bi.y - bj.y;
     const dz = bi.z - bj.z;
@@ -124,15 +124,15 @@ const ZERO_DV = [5][3]f64{
 | n iters |> init()
     | bodies b[mutable] |> offset(bodies: b[0..])
         |> energy(bodies: b[0..])
-            | e e1 |> print_e(e: e1)
+            | e e1 |> print-e(e: e1)
                 |> for(0..iters)
                     | each |> capture({ dv: ZERO_DV })
                         | as acc |> for(0..5)
                             | each i |> for(i+1..5)
-                                | each j |> pair_force(bi: b[i], bj: b[j], dt: DT)
+                                | each j |> pair-force(bi: b[i], bj: b[j], dt: DT)
                                     | result f |> captured { dv[i][0]: acc.dv[i][0] - f.fx*f.mj, dv[i][1]: acc.dv[i][1] - f.fy*f.mj, dv[i][2]: acc.dv[i][2] - f.fz*f.mj, dv[j][0]: acc.dv[j][0] + f.fx*f.mi, dv[j][1]: acc.dv[j][1] + f.fy*f.mi, dv[j][2]: acc.dv[j][2] + f.fz*f.mi }
                                 |> _
                             |> _
                         | captured deltas |> apply(bodies: b[0..], dt: DT, deltas.dv)
                     |> energy(bodies: b[0..])
-                        | e e2 |> print_e(e: e2)
+                        | e e2 |> print-e(e: e2)

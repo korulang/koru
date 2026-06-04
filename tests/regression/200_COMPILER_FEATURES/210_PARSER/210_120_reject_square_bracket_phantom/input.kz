@@ -4,5 +4,5 @@
 // checking and false safety). See AST: `*Resource[active!]` → type stays
 // "*Resource[active!]", phantom=null; `*Resource<active!>` → type "*Resource",
 // phantom="active!".
-~event use_sq { r: *Resource[active!] }
-~proc use_sq|zig { _ = r; }
+~event use-sq { r: *Resource[active!] }
+~proc use-sq|zig { _ = r; }

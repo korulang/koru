@@ -1,37 +1,37 @@
 // Test: std.runtime:eval invokes auto-discharge cleanup events
 
-~import "std/runtime"
-~import "std/io"
+import std/runtime
+import std/io
 
 const std = @import("std");
 
-~pub event open_handle {}
+~pub event open-handle {}
 | opened []const u8<opened!>
 
-~proc open_handle|zig {
+~proc open-handle|zig {
     std.debug.print("OPEN\n", .{});
     return .{ .opened = "h1" };
 }
 
-~pub event close_handle { handle: []const u8<!opened> }
+~pub event close-handle { handle: []const u8<!opened> }
 
-~proc close_handle|zig {
+~proc close-handle|zig {
     std.debug.print("CLOSE\n", .{});
 }
 
 ~std.runtime:register(scope: "api") {
-    open_handle(1)
-    close_handle(1)
+    open-handle(1)
+    close-handle(1)
 }
 
 const TEST_SOURCE = "~open_handle()";
 
-~std.runtime:parse.source(source: TEST_SOURCE, file_name: "runtime_eval_autodischarge.kz", allocator: std.heap.page_allocator)
+~std.runtime:parse.source(source: TEST_SOURCE, file-name: "runtime_eval_autodischarge.kz", allocator: std.heap.page_allocator)
 | parsed p |> std.runtime:eval(ast: p, scope: "api")
     | result _ |> std.io:print.ln("OK")
     | exhausted _ |> std.io:print.ln("EXHAUSTED")
-    | validation_error _ |> std.io:print.ln("VALIDATION ERROR")
-    | event_denied _ |> std.io:print.ln("EVENT DENIED")
-    | dispatch_error _ |> std.io:print.ln("DISPATCH ERROR")
-    | scope_not_found _ |> std.io:print.ln("SCOPE NOT FOUND")
-| parse_error _ |> std.io:print.ln("PARSE ERROR")
+    | validation-error _ |> std.io:print.ln("VALIDATION ERROR")
+    | event-denied _ |> std.io:print.ln("EVENT DENIED")
+    | dispatch-error _ |> std.io:print.ln("DISPATCH ERROR")
+    | scope-not-found _ |> std.io:print.ln("SCOPE NOT FOUND")
+| parse-error _ |> std.io:print.ln("PARSE ERROR")

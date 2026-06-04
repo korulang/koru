@@ -6,10 +6,10 @@
 
 const std = @import("std");
 
-~pub event each_in { r: i32 }
+~pub event each-in { r: i32 }
 
-~proc each_in|template|zig {
+~proc each-in|template|zig {
     for ({{ r }}) |item| std.debug.print("{d}\n", .{item});
 }
 
-~each_in(r: 0..3)
+~each-in(r: 0..3)

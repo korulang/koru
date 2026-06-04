@@ -7,7 +7,7 @@
 //
 // Expected output order: compile_backend -> build -> run
 
-~import "std/build"
+import std/build
 
 // Override compile_backend (no dependencies)
 ~std.build:step(name: "compile_backend") {

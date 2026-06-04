@@ -5,8 +5,8 @@
 // Test: Basic ~const for immutable bindings in pipelines
 // Demonstrates pure Koru with named constants
 
-~import "std/io"
-~import "std/control"
+import std/io
+import std/control
 
 ~const({ threshold: @as(i32, 5), multiplier: @as(i32, 2) })
 | as cfg |> capture({ sum: @as(i64, 0), count: @as(i32, 0) })

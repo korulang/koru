@@ -1,11 +1,11 @@
-~import "app/lib/fs"
-~import "app/lib/mipmap"
+import app/lib/fs
+import app/lib/mipmap
 const std = @import("std");
 const File = struct {
     handle: i32,
 };
-~event needs_fs_file { file: *File<app.lib.fs:open> }
-~proc needs_fs_file|zig {
+~event needs-fs-file { file: *File<app.lib.fs:open> }
+~proc needs-fs-file|zig {
 }
 ~app.lib.mipmap:load(path: "texture.png")
-| loaded m |> needs_fs_file(file: m)
+| loaded m |> needs-fs-file(file: m)

@@ -17,7 +17,7 @@
 const std = @import("std");
 
 // Import the logger module (which defines universal taps)
-~import "app/test_lib/logger"
+import app/test_lib/logger
 
 // Define some events to test with
 ~event compute { x: i32 }

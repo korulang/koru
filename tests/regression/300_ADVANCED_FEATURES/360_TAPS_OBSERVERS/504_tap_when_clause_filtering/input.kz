@@ -9,13 +9,13 @@
 //     if (b.flag) { handler(...); }
 //
 // This test verifies:
-// - Only entities with has_damage=true trigger handle_damage
+// - Only entities with has_damage=true trigger handle-damage
 // - Entities 1 and 3 (has_damage=false) are filtered out
 // - Entities 2 and 4 (has_damage=true) trigger the tap handler
 
-~import "std/io"
-~import "std/control"
-~import "std/taps"
+import std/io
+import std/control
+import std/taps
 
 const std = @import("std");
 
@@ -26,19 +26,19 @@ const Entity = struct {
 };
 
 // Producer event - broadcasts entities
-~pub event process_entity { e: Entity }
+~pub event process-entity { e: Entity }
 | entity Entity
 
-~proc process_entity|zig {
+~proc process-entity|zig {
     return .{ .entity = e };
 }
 
 // TAP: Only fires when entity has damage
-~tap(process_entity -> *)
-| entity ent when ent.has_damage |> handle_damage(e: ent)
+~tap(process-entity -> *)
+| entity ent when ent.has_damage |> handle-damage(e: ent)
 
-~event handle_damage { e: Entity }
-~proc handle_damage|zig {
+~event handle-damage { e: Entity }
+~proc handle-damage|zig {
     std.debug.print("DAMAGE on Entity {d}!\n", .{ e.id });
 }
 
@@ -53,12 +53,12 @@ const entities = [_]Entity{
 ~event noop {}
 ~proc noop|zig {}
 
-~event print_done {}
-~proc print_done|zig {
+~event print-done {}
+~proc print-done|zig {
     std.debug.print("Done!\n", .{});
 }
 
 ~for(&entities)
-| each e |> process_entity(e)
+| each e |> process-entity(e)
     | entity _ |> noop()
-| done |> print_done()
+| done |> print-done()

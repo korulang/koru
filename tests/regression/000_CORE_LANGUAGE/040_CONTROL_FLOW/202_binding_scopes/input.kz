@@ -30,7 +30,7 @@ const std = @import("std");
 }
 
 // Event with nested structure for field access testing
-~event nested_data { info: UserInfo }
+~event nested-data { info: UserInfo }
 | processed i32
 
 // Define the struct type inline
@@ -41,16 +41,16 @@ const UserInfo = struct {
     },
 };
 
-~proc nested_data|zig {
+~proc nested-data|zig {
     // Access nested field
     const len: i32 = @intCast(info.profile.name.len);
     return .{ .processed = len };
 }
 
 // Event to demonstrate access to outer scope bindings
-~event show_values { a: i32, b: i32, c: i32 }
+~event show-values { a: i32, b: i32, c: i32 }
 
-~proc show_values|zig {
+~proc show-values|zig {
     // Should print values showing the scope chain worked
     std.debug.print("Values from scope chain: {} {} {}\n", .{a, b, c});
 }
@@ -61,7 +61,7 @@ const UserInfo = struct {
 ~outer(x: 10)
 | result r |> middle(y: r)
     | data d |> inner(z: d)
-        | final f |> show_values(a: r, b: d, c: f)
+        | final f |> show-values(a: r, b: d, c: f)
 
 // The binding 'r' from outer should be accessible in all nested continuations
 // The binding 'd' from middle should be accessible in inner's continuation

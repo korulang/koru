@@ -1,20 +1,20 @@
 // TEST: kernel:init used as a step in a pipeline, not top-level
 
-~import "std/kernel"
-~import "std/io"
+import std/kernel
+import std/io
 
 ~std.kernel:shape(Body) {
     mass: f64,
 }
 
-~event get_count {}
+~event get-count {}
 | n u32
 
-~proc get_count|zig {
+~proc get-count|zig {
     return .{ .n = 3 };
 }
 
-~get_count()
+~get-count()
 | n _ |> std.kernel:init(Body) {
         { mass: 1.0 },
         { mass: 2.0 },

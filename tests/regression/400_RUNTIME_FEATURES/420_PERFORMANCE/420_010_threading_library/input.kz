@@ -18,7 +18,7 @@
 // ============================================================================
 
 const std = @import("std");
-~import $std/threading
+import $std/threading
 
 // ============================================================================
 // MPMC Ring Implementation (same as test 2005)
@@ -224,7 +224,7 @@ fn consumerWorker(ctx: *anyopaque) *anyopaque {
 // ============================================================================
 
 ~event combineResults { contexts: []*ConsumerContext }
-| combined { total_sum: u64, total_count: u64 }
+| combined { total-sum: u64, total-count: u64 }
 
 ~proc combineResults|zig {
     var total_sum: u64 = 0;
@@ -304,18 +304,18 @@ fn consumerWorker(ctx: *anyopaque) *anyopaque {
 ~createRing()
 | created r |> spawnProducer(r.ring) |> spawnConsumer(r.ring, target: MESSAGES_PER_CONSUMER)
     | spawned ctx1 |> castToOpaque(ctx1.context)
-        | casted c1 |> threading:worker.spawn.async(work_fn: consumerWorker, context: c1.ptr)
+        | casted c1 |> threading:worker.spawn.async(work-fn: consumerWorker, context: c1.ptr)
             | awaitable h1 |> spawnConsumer(r.ring, target: MESSAGES_PER_CONSUMER)
                 | spawned ctx2 |> castToOpaque(ctx2.context)
-                    | casted c2 |> threading:worker.spawn.async(work_fn: consumerWorker, context: c2.ptr)
+                    | casted c2 |> threading:worker.spawn.async(work-fn: consumerWorker, context: c2.ptr)
                         | awaitable h2 |> spawnConsumer(r.ring, target: MESSAGES_PER_CONSUMER)
                             | spawned ctx3 |> castToOpaque(ctx3.context)
-                                | casted c3 |> threading:worker.spawn.async(work_fn: consumerWorker, context: c3.ptr)
+                                | casted c3 |> threading:worker.spawn.async(work-fn: consumerWorker, context: c3.ptr)
                                     | awaitable h3 |> spawnConsumer(r.ring, target: MESSAGES_PER_CONSUMER)
                                         | spawned ctx4 |> castToOpaque(ctx4.context)
-                                            | casted c4 |> threading:worker.spawn.async(work_fn: consumerWorker, context: c4.ptr)
+                                            | casted c4 |> threading:worker.spawn.async(work-fn: consumerWorker, context: c4.ptr)
                                                 | awaitable h4 |> collectHandles(h1: h1.handle, h2: h2.handle, h3: h3.handle, h4: h4.handle)
                                                     | collected handles |> threading:worker.spawn.join(handles.handles)
-                                                        | all_completed results |> extractContexts(results.results)
+                                                        | all-completed results |> extractContexts(results.results)
                                                             | extracted e |> combineResults(e.contexts)
                                                                 | combined c |> validate(sum: c.total_sum, count: c.total_count)

@@ -13,7 +13,7 @@ pub const Point = struct {
 };
 
 ~event sumPoints { points: []const Point }
-| result { total_x: i32, total_y: i32 }
+| result { total-x: i32, total-y: i32 }
 
 ~proc sumPoints|zig {
     var tx: i32 = 0;
@@ -25,7 +25,7 @@ pub const Point = struct {
     return .{ .result = .{ .total_x = tx, .total_y = ty } };
 }
 
-~event check { expected_x: i32, expected_y: i32, actual_x: i32, actual_y: i32 }
+~event check { expected-x: i32, expected-y: i32, actual-x: i32, actual-y: i32 }
 
 ~proc check|zig {
     if (expected_x != actual_x or expected_y != actual_y) {
@@ -37,4 +37,4 @@ pub const Point = struct {
 
 // Array of struct literals - the full Koru ergonomics
 ~sumPoints(points: [{ x: 1, y: 2 }, { x: 3, y: 4 }, { x: 5, y: 6 }])
-| result r |> check(expected_x: 9, expected_y: 12, actual_x: r.total_x, actual_y: r.total_y)
+| result r |> check(expected-x: 9, expected-y: 12, actual-x: r.total_x, actual-y: r.total_y)

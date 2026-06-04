@@ -5,17 +5,17 @@
 //
 // Expected: Compiles and runs, UserId is usable as an integer
 
-~import "std/types"
+import std/types
 
 const std = @import("std");
 
 ~int(UserId)
 
-~event lookup_user { id: UserId }
+~event lookup-user { id: UserId }
 
-~proc lookup_user|zig {
+~proc lookup-user|zig {
     std.debug.print("Looking up user: {d}\n", .{id});
 }
 
-~lookup_user(id: 42)
+~lookup-user(id: 42)
 

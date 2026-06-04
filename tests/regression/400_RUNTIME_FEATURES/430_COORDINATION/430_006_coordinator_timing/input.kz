@@ -4,8 +4,8 @@
 // std.fmt.allocPrint inside a branch constructor violates this rule.
 // Use event chaining to compute values before constructing the branch.
 
-~import "std/compiler"
-~import "std/io"
+import std/compiler
+import std/io
 
 const std = @import("std");
 

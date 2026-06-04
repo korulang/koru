@@ -3,17 +3,17 @@
 //
 // Usage with taps:
 // ~* std.compiler:frontend -> ctx
-// |> dump_ast(ctx, "post-frontend")
+// |> dump-ast(ctx, "post-frontend")
 //
 // ~* std.compiler:optimize -> ctx
-// |> dump_ast(ctx, "post-optimization")  // See IR nodes!
+// |> dump-ast(ctx, "post-optimization")  // See IR nodes!
 
 const std = @import("std");
 
 // Void event: Dump AST to stderr with stage label
-~pub event dump_ast { ctx: CompilerContext, stage: []const u8 }
+~pub event dump-ast { ctx: CompilerContext, stage: []const u8 }
 
-~proc dump_ast|zig {
+~proc dump-ast|zig {
     // TODO: Use ast_serializer to generate JSON
     // For now, just print stage marker
     std.debug.print("\n[AST DUMP: {s}]\n", .{stage});

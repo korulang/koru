@@ -1,4 +1,4 @@
-~import "std/eval"
+import std/eval
 
 
 const std = @import("std");

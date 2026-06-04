@@ -3,16 +3,16 @@ const ast = @import("ast");
 const Program = ast.Program;
 const Item = ast.Item;
 
-~[keyword|comptime|transform]pub event sample_transform {
+~[keyword|comptime|transform]pub event sample-transform {
     item: *const Item,
     program: *const Program,
     allocator: std.mem.Allocator
 }
 | transformed *const Program
 
-~[norun]pub event sample_impl {}
+~[norun]pub event sample-impl {}
 
-~proc sample_transform|zig {
+~proc sample-transform|zig {
     // Deriving flow from item
     const flow = if (item.* == .flow)
         &item.flow
@@ -43,4 +43,4 @@ const Item = ast.Item;
     return .{ .transformed = result_ptr };
 }
 
-~sample_transform()
+~sample-transform()

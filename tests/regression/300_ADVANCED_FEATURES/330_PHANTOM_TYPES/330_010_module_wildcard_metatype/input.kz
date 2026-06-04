@@ -1,5 +1,5 @@
 const std = @import("std");
-~import "app/test_lib/logger"
+import app/test_lib/logger
 ~event compute { x: i32 }
 | result i32
 ~event format { value: i32 }

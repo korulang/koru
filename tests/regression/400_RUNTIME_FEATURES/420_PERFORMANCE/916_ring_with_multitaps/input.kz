@@ -7,7 +7,7 @@
 //
 // No special syntax needed - just composition of primitives!
 
-~import "std/taps"
+import std/taps
 
 const std = @import("std");
 
@@ -74,9 +74,9 @@ const MyRing = Ring(u32, 1024);
     std.debug.print("Processing x 1: {}\n", .{data});
 }
 
-~event process_timestwo { data: u32 }
+~event process-timestwo { data: u32 }
 
-~proc process_timestwo|zig {
+~proc process-timestwo|zig {
     std.debug.print("Processing x 2: {}\n", .{data * 2});
 }
 
@@ -85,7 +85,7 @@ const MyRing = Ring(u32, 1024);
 ~tap(ring.dequeue -> *)
 | value v |> process(v.data)
 ~tap(ring.dequeue -> *)
-| value v when v.data * 2 > 2 |> process_timestwo(v.data) | done |> _
+| value v when v.data * 2 > 2 |> process-timestwo(v.data) | done |> _
 
 // Producer: Fill the ring with values
 ~event produce { ring: *Ring(u32, 1024), count: u32 }

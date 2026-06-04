@@ -14,15 +14,15 @@
 const std = @import("std");
 
 // Must explicitly import the nested module (using 'domain' alias from koru.json)
-~import "domain/user"
+import domain/user
 
 // This event uses a type from an explicitly imported nested module
-~pub event grant_access {
-    user_data: domain.user:DomainUser,
+~pub event grant-access {
+    user-data: domain.user:DomainUser,
 }
 | granted bool
 
-~proc grant_access|zig {
+~proc grant-access|zig {
     std.debug.print("Granting access: {s} as {s} (perms: {d})\n",
         .{user_data.email, user_data.role, user_data.permissions});
     return .{ .granted = true };
@@ -30,5 +30,5 @@ const std = @import("std");
 
 // Create a domain user and grant access
 ~domain.user:create(email: "admin@example.com", role: "administrator", permissions: 999)
-| created c |> grant_access(user_data: c)
+| created c |> grant-access(user-data: c)
     | granted _ |> _

@@ -5,20 +5,20 @@
 //
 // Expected: Compiles and emits a concrete Zig struct
 
-~import "std/types"
+import std/types
 
 const std = @import("std");
 
 ~struct(Option<T>) { value: ?T = null }
 ~type(OptionalInt = Option<i32>)
 
-~event test_opt {}
+~event test-opt {}
 
-~proc test_opt|zig {
+~proc test-opt|zig {
     const opt = OptionalInt{ .value = 123 };
     if (opt.value) |v| {
         std.debug.print("Value: {d}\n", .{v});
     }
 }
 
-~test_opt()
+~test-opt()

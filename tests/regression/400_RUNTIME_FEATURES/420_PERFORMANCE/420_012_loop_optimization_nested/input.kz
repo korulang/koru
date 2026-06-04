@@ -1,6 +1,6 @@
 // PERFORMANCE TEST: Loop Optimization - Nested Loops (Triangular Pattern)
 // Goal: Prove compiler detects nested loop patterns and transforms both levels
-// Pattern: Outer checker event + inner checker event (like nbody calculate_interactions)
+// Pattern: Outer checker event + inner checker event (like nbody calculate-interactions)
 // Baseline: Hand-written nested Zig while loops
 // Threshold: 1.05x (5% overhead max)
 //
@@ -12,11 +12,11 @@
 const std = @import("std");
 
 // Inner loop checker: j from start to limit
-~event inner_step { i: u64, j: u64, limit: u64, sum: u64 }
+~event inner-step { i: u64, j: u64, limit: u64, sum: u64 }
 | continue { i: u64, j: u64, sum: u64 }
 | done { i: u64, sum: u64 }
 
-~proc inner_step|zig {
+~proc inner-step|zig {
     if (j < limit) {
         // Triangular sum: add i*limit + j
         const new_sum = sum + (i * limit + j);
@@ -27,11 +27,11 @@ const std = @import("std");
 }
 
 // Outer loop checker: i from 0 to limit
-~event outer_step { i: u64, limit: u64, sum: u64 }
+~event outer-step { i: u64, limit: u64, sum: u64 }
 | continue { i: u64, limit: u64, sum: u64 }
 | done u64
 
-~proc outer_step|zig {
+~proc outer-step|zig {
     if (i < limit) {
         return .{ .continue = .{ .i = i, .limit = limit, .sum = sum } };
     } else {
@@ -57,8 +57,8 @@ const std = @import("std");
 //     }
 // }
 
-~#outer outer_step(i: 0, limit: 5000, sum: 0)
-| continue c_outer |> #inner inner_step(c_outer.i, j: c_outer.i + 1, c_outer.limit, c_outer.sum)
+~#outer outer-step(i: 0, limit: 5000, sum: 0)
+| continue c_outer |> #inner inner-step(c_outer.i, j: c_outer.i + 1, c_outer.limit, c_outer.sum)
     | continue c_inner |> @inner(c_inner.i, j: c_inner.j + 1, c_outer.limit, c_inner.sum)
     | done d_inner |> @outer(i: d_inner.i + 1, c_outer.limit, d_inner.sum)
 | done d_outer |> print(d_outer.result)

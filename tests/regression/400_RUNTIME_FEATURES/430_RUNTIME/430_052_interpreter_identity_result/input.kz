@@ -1,8 +1,8 @@
 // Test: Interpreter identity branch constructor (result s) and discard (_)
 
-~import "std/runtime"
-~import "std/interpreter"
-~import "std/io"
+import std/runtime
+import std/interpreter
+import std/io
 
 const std = @import("std");
 
@@ -36,26 +36,26 @@ const TEST_SOURCE_DISCARD =
     | result r |> std.interpreter:value.stringify(r.value)
         | json j |> std.io:print.ln("IDENTITY {{ j:s }}")
     | exhausted e |> std.io:print.ln("EXHAUSTED: {{ e.last_event:s }}")
-    | parse_error e |> std.io:print.ln("PARSE ERROR: {{ e.message:s }}")
-    | validation_error e |> std.io:print.ln("VALIDATION ERROR: {{ e:s }}")
-    | dispatch_error e |> std.io:print.ln("DISPATCH ERROR: {{ e.message:s }}")
-| not_found |> std.io:print.ln("SCOPE NOT FOUND")
+    | parse-error e |> std.io:print.ln("PARSE ERROR: {{ e.message:s }}")
+    | validation-error e |> std.io:print.ln("VALIDATION ERROR: {{ e:s }}")
+    | dispatch-error e |> std.io:print.ln("DISPATCH ERROR: {{ e.message:s }}")
+| not-found |> std.io:print.ln("SCOPE NOT FOUND")
 
 ~std.runtime:get_scope(name: "test")
 | scope s |> std.interpreter:run(source: TEST_SOURCE_BRANCH, s.dispatcher)
     | result r |> std.interpreter:value.stringify(r.value)
         | json j |> std.io:print.ln("BRANCH {{ j:s }}")
     | exhausted e |> std.io:print.ln("EXHAUSTED: {{ e.last_event:s }}")
-    | parse_error e |> std.io:print.ln("PARSE ERROR: {{ e.message:s }}")
-    | validation_error e |> std.io:print.ln("VALIDATION ERROR: {{ e:s }}")
-    | dispatch_error e |> std.io:print.ln("DISPATCH ERROR: {{ e.message:s }}")
-| not_found |> std.io:print.ln("SCOPE NOT FOUND")
+    | parse-error e |> std.io:print.ln("PARSE ERROR: {{ e.message:s }}")
+    | validation-error e |> std.io:print.ln("VALIDATION ERROR: {{ e:s }}")
+    | dispatch-error e |> std.io:print.ln("DISPATCH ERROR: {{ e.message:s }}")
+| not-found |> std.io:print.ln("SCOPE NOT FOUND")
 
 ~std.runtime:get_scope(name: "test")
 | scope s |> std.interpreter:run(source: TEST_SOURCE_DISCARD, s.dispatcher)
     | result r |> std.io:print.ln("DISCARD {{ r.value.branch:s }}")
     | exhausted e |> std.io:print.ln("EXHAUSTED: {{ e.last_event:s }}")
-    | parse_error e |> std.io:print.ln("PARSE ERROR: {{ e.message:s }}")
-    | validation_error e |> std.io:print.ln("VALIDATION ERROR: {{ e:s }}")
-    | dispatch_error e |> std.io:print.ln("DISPATCH ERROR: {{ e.message:s }}")
-| not_found |> std.io:print.ln("SCOPE NOT FOUND")
+    | parse-error e |> std.io:print.ln("PARSE ERROR: {{ e.message:s }}")
+    | validation-error e |> std.io:print.ln("VALIDATION ERROR: {{ e:s }}")
+    | dispatch-error e |> std.io:print.ln("DISPATCH ERROR: {{ e.message:s }}")
+| not-found |> std.io:print.ln("SCOPE NOT FOUND")

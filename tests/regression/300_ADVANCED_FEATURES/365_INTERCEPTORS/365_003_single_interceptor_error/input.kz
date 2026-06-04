@@ -4,7 +4,7 @@
 // causes a compile-time error. Only ONE interceptor per destination allowed.
 
 const std = @import("std");
-~import "std/interceptors"
+import std/interceptors
 
 ~event log.write { logline: []const u8 }
 

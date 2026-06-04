@@ -74,12 +74,22 @@ pub fn build(b: *std.Build) void {
     });
 
     // Parser module with dependencies
+    // Parse-time name normalizer (kebab -> snake). Shares ast_module so its
+    // ast.* types are identical to the parser's (avoids module-identity mismatch).
+    const ast_mangle_module = b.createModule(.{
+        .root_source_file = b.path("src/ast_mangle.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    ast_mangle_module.addImport("ast", ast_module);
+
     const parser_module = b.createModule(.{
         .root_source_file = b.path("src/parser.zig"),
         .target = target,
         .optimize = optimize,
     });
     parser_module.addImport("ast", ast_module);
+    parser_module.addImport("ast_mangle", ast_mangle_module);
     parser_module.addImport("lexer", lexer_module);
     parser_module.addImport("errors", errors_module);
     parser_module.addImport("type_registry", type_registry_module);

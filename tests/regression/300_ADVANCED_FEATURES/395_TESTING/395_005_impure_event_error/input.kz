@@ -6,28 +6,28 @@
 //
 // This is the "fix/recompile loop killer" - great UX!
 
-~import "std/testing"
+import std/testing
 
 // Impure event - Zig proc without ~[pure]
-~event fetch_user { id: u32 }
+~event fetch-user { id: u32 }
 | found []const u8
 
-~proc fetch_user|zig {
+~proc fetch-user|zig {
     // This is impure - does I/O (simulated)
     return .{ .found = "Alice" };
 }
 
 // Another impure event
-~event save_log { message: []const u8 }
+~event save-log { message: []const u8 }
 
-~proc save_log|zig {
+~proc save-log|zig {
     // This is impure - writes to disk
 }
 
 // Test: Should FAIL - calls impure events without overrides
 ~test(Impure events should error) {
-    ~fetch_user(id: 1)
-    | found u |> save_log(message: u.name)
+    ~fetch-user(id: 1)
+    | found u |> save-log(message: u.name)
         | saved |> assert.ok()
 }
 

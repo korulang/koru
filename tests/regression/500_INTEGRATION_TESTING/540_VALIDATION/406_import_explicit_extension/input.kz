@@ -5,6 +5,6 @@
 // - This allows disambiguation when both a file and directory exist
 //   (e.g., foo.kz and foo/ directory)
 
-~import "std/io.kz"
+import std/io.kz
 
 ~std.io:println(text: "Explicit .kz extension works!")

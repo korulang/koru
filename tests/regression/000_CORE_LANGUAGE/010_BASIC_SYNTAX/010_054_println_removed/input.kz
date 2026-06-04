@@ -4,6 +4,6 @@
 // compiles cleanly, so no error is produced and EXPECT fails. Greenfield: the
 // old form must fail loudly once removed. Uses the current `.`-path form to
 // isolate the missing-symbol reason from the separate `/`-namespace change.
-~import "std/io"
+import std/io
 
 ~std.io:println(text: "println should be gone")

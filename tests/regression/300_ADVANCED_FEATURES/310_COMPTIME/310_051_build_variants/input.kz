@@ -2,8 +2,8 @@
 // When --build=release, the release config should be used
 // When --build=debug, the debug config should be used
 
-~import "std/io"
-~import "std/build"
+import std/io
+import std/build
 
 // Define events that we'll configure variants for
 ~event compute { x: i32 }
@@ -42,7 +42,7 @@
 }
 | configured _ |> std.io:println(text: "Release config loaded")
 | skipped _ |> _
-| invalid_event _ |> std.io:println(text: "Invalid event in release config")
+| invalid-event _ |> std.io:println(text: "Invalid event in release config")
 
 ~[debug]std.build:variants {
     "input:compute": "naive",
@@ -50,7 +50,7 @@
 }
 | configured _ |> std.io:println(text: "Debug config loaded")
 | skipped _ |> _
-| invalid_event _ |> std.io:println(text: "Invalid event in debug config")
+| invalid-event _ |> std.io:println(text: "Invalid event in debug config")
 
 // Default config (when no --build flag is passed)
 ~std.build:variants {
@@ -59,4 +59,4 @@
 }
 | configured _ |> std.io:println(text: "Default config loaded")
 | skipped _ |> _
-| invalid_event _ |> std.io:println(text: "Invalid event in default config")
+| invalid-event _ |> std.io:println(text: "Invalid event in default config")

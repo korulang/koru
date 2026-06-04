@@ -3,13 +3,13 @@
 // When an event has multiple branches, mocking forces ONE branch.
 // This enables compile-time flow pruning - no switch statement needed.
 
-~import "std/testing"
+import std/testing
 
 // Event with multiple possible outcomes
 ~event withdraw { amount: u32 }
 | success u32
-| insufficient_funds
-| account_locked
+| insufficient-funds
+| account-locked
 
 // Test: Mock forces success branch - verify the mocked value
 ~test(Withdrawal succeeds when mocked) {
@@ -21,9 +21,9 @@
 // Test: Mock forces failure branch (different branch same event)
 // For empty branches, just assert true to confirm branch was taken
 ~test(Withdrawal fails when funds insufficient) {
-    ~withdraw => insufficient_funds
+    ~withdraw => insufficient-funds
     ~withdraw(amount: 100)
-    | insufficient_funds |> assert(true)
+    | insufficient-funds |> assert(true)
 }
 
 pub fn main() void {}

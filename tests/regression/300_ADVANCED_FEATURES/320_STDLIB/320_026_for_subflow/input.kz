@@ -1,20 +1,20 @@
 // Test: ~for as subflow starting point
 // This must work - transforms should apply to subflow bodies
 
-~import "std/io"
-~import "std/control"
+import std/io
+import std/control
 
 const std = @import("std");
 
 // Event that uses ~for in its implementation
-~event count_to_three {}
+~event count-to-three {}
 | result i32
 
 // Subflow implementation using ~for as the starting construct
-~count_to_three = for(0..3)
+~count-to-three = for(0..3)
 ! each _ |> std.io:println(text: "counting")
 | done => result 3
 
 // Main flow calls the subflow
-~count_to_three()
+~count-to-three()
 | result _ |> std.io:println(text: "done")

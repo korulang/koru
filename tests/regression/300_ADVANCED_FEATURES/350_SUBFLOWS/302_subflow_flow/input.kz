@@ -8,7 +8,7 @@
 
 const std = @import("std");
 
-~import "std/io"
+import std/io
 
 // Helper event: doubles a number
 ~event double { value: i32 }
@@ -27,12 +27,12 @@ const std = @import("std");
 | result r => final r
 
 // Helper to print i32
-~event print_result { value: i32 }
+~event print-result { value: i32 }
 
-~proc print_result|zig {
+~proc print-result|zig {
     std.debug.print("{}\n", .{value});
 }
 
 // Test: 21 * 2 = 42
 ~process(input: 21)
-| final f |> print_result(value: f)
+| final f |> print-result(value: f)

@@ -5,7 +5,7 @@
 //
 // In Koru: Compiler error - obligation not satisfied on else branch.
 
-~import "std/control"
+import std/control
 
 const std = @import("std");
 

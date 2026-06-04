@@ -18,8 +18,8 @@ const File = struct { handle: i32 };
     std.debug.print("Closing file\n", .{});
 }
 
-~pub event use_file { file: *File<opened> }  // Expects opened file
+~pub event use-file { file: *File<opened> }  // Expects opened file
 
-~proc use_file|zig {
+~proc use-file|zig {
     std.debug.print("Using file\n", .{});
 }

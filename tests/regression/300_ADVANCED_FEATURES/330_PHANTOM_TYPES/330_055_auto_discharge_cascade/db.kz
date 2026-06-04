@@ -50,11 +50,11 @@ const Transaction = struct { conn: *Connection };
     return .closed;
 }
 
-// do_work: uses transaction without consuming it
-~pub event do_work { tx: *Transaction<in_transaction> }
+// do-work: uses transaction without consuming it
+~pub event do-work { tx: *Transaction<in_transaction> }
 | done *Transaction<in_transaction>
 
-~proc do_work|zig {
+~proc do-work|zig {
     std.debug.print("Working with transaction...\n", .{});
     return .{ .done = tx };
 }

@@ -50,7 +50,7 @@ test "validate incomplete flow" {
 
 test "validate proc without event" {
     const source =
-        \\~proc mystery_handler|zig {
+        \\~proc mystery-handler|zig {
         \\    return .{};
         \\}
     ;
@@ -95,10 +95,10 @@ test "validate event tap with known events" {
         \\| ok { contents: []const u8, size: u32 }
         \\| err { errno: u8, message: []const u8 }
         \\
-        \\~event audit_log { message: []const u8, path: []const u8 }
+        \\~event audit-log { message: []const u8, path: []const u8 }
         \\| ok {}
         \\
-        \\~tap(read -> audit_log)
+        \\~tap(read -> audit-log)
         \\| ok _ |> _
     ;
 
@@ -140,10 +140,10 @@ test "validate event tap with wildcard destination" {
 test "validate event tap with unknown source" {
     if (true) return error.SkipZigTest;
     const source =
-        \\~event audit_log { message: []const u8, path: []const u8 }
+        \\~event audit-log { message: []const u8, path: []const u8 }
         \\| ok {}
         \\
-        \\~tap(missing -> audit_log)
+        \\~tap(missing -> audit-log)
         \\| ok _ |> _
     ;
 
@@ -234,14 +234,14 @@ test "void event with branch constructor in inline flow should fail" {
         \\~event helper { input: u32 }
         \\| ok { value: u32, tag: u32 }
         \\
-        \\~event test_event { input: u32 }
+        \\~event test-event { input: u32 }
         \\| ok {}
         \\
         \\~proc helper|zig {
         \\    return .{ .ok = .{ .value = e.input * 2, .tag = 0 } };
         \\}
         \\
-        \\~proc test_event|zig {
+        \\~proc test-event|zig {
         \\    ~helper(e.input)
         \\    | ok o |> result { o.value }
         \\}

@@ -1,7 +1,7 @@
 // Test: Inspect ~if argument structure
 // Check what fields are populated when parsing ~if(expr)
 
-~import "std/runtime"
+import std/runtime
 
 
 const std = @import("std");

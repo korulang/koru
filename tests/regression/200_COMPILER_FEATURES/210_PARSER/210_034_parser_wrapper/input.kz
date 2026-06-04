@@ -8,7 +8,7 @@
 // NOTE: This is a COMPILE-ONLY test. Runtime usage requires ~build.requires
 // See test 997 for the runtime usage test (documents missing ~build.requires feature)
 
-~import "std/parser"
+import std/parser
 
 const std = @import("std");
 

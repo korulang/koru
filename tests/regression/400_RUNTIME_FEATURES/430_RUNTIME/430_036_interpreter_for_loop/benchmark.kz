@@ -4,8 +4,8 @@
 // Measure: Parse once, execute N times, report per-execution time
 // Compare: Python doing the same thing
 
-~import "std/runtime"
-~import "std/interpreter"
+import std/runtime
+import std/interpreter
 
 const std = @import("std");
 
@@ -25,10 +25,10 @@ const std = @import("std");
     return .{ .sum = result_str };
 }
 
-~pub event init_sum {}
+~pub event init-sum {}
 | value []const u8
 
-~proc init_sum|zig {
+~proc init-sum|zig {
     return .{ .value = "0" };
 }
 
@@ -36,7 +36,7 @@ const std = @import("std");
 ~std.runtime:register(scope: "bench") {
     for
     add
-    init_sum
+    init-sum
 }
 
 // The benchmark flow: sum 0..100

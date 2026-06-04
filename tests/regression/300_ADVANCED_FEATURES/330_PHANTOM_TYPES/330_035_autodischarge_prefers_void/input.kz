@@ -9,14 +9,14 @@ pub const Handle = struct {
     h.* = .{ .id = 42 };
     return .{ .ok = h };
 }
-~event close_quiet { h: *Handle<!open> }
-~proc close_quiet|zig {
+~event close-quiet { h: *Handle<!open> }
+~proc close-quiet|zig {
     std.debug.print("closed quietly\n", .{});
     std.heap.page_allocator.destroy(h);
 }
-~event close_checked { h: *Handle<!open> }
+~event close-checked { h: *Handle<!open> }
 | error []const u8
-~proc close_checked|zig {
+~proc close-checked|zig {
     std.heap.page_allocator.destroy(h);
 }
 const std = @import("std");

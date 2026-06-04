@@ -4,8 +4,8 @@
 
 const std = @import("std");
 
-~import "std/io"
-~import "app/contract"
+import std/io
+import app/contract
 
 ~app.contract:compute(x: 42)
 | done v |> std.io:print.ln("{{ v:d }}")

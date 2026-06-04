@@ -4,7 +4,7 @@
 //
 // This proves cross-module overrides work without delegation.
 
-~import "std/compiler"
+import std/compiler
 
 // Override coordinate - just return error immediately
 // Cross-module subflow override: the colon in the path makes it an impl.

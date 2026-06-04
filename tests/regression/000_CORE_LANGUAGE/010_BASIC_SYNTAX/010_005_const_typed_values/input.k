@@ -7,7 +7,7 @@
 // The annotation is OPTIONAL and lowers per-target via the two `const` template
 // variants: Zig emits `@as(i32, 42)`, JS erases it (`42`). A string literal IS its
 // type, and a bare number takes the target default — neither needs an annotation.
-import "std/io"
+import std/io
 
 const {
     name: "Claude"

@@ -7,11 +7,11 @@
 // When we fix the circular import architecture, this test should pass
 // without the special-casing kludge.
 
-~import "std/io"
+import std/io
 
 // Module A imports Module B
 ~module moduleA {
-    ~import moduleB
+    import moduleB
 
     ~event greetA {}
 
@@ -20,7 +20,7 @@
 
 // Module B imports Module A (circular!)
 ~module moduleB {
-    ~import moduleA
+    import moduleA
 
     ~event greetB {}
 

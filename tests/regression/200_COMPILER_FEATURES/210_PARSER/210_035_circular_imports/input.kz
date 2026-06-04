@@ -8,17 +8,17 @@
 // event, which prints. If any link in the cycle breaks, the expected
 // output disappears and the test fails loudly.
 
-~import "app/module_b"
+import app/module_b
 
 const std = @import("std");
 
-~pub event from_a { msg: []const u8 }
+~pub event from-a { msg: []const u8 }
 | received []const u8
 
-~proc from_a|zig {
+~proc from-a|zig {
     std.debug.print("input.kz received: {s}\n", .{msg});
     return .{ .received = msg };
 }
 
-~app.module_b:from_b(msg: "hello from input")
+~app.module_b:from-b(msg: "hello from input")
 | relayed _ |> _

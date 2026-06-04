@@ -6,7 +6,7 @@
 // struct param for multi-field payloads, replacing the `@compileError`
 // placeholder from Phase 3b first cut.
 
-~import "std/io"
+import std/io
 
 ~pub event tokenize { source: []const u8 }
 ! token { kind: u32, lexeme: []const u8 }

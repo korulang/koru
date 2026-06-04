@@ -8,27 +8,27 @@ const std = @import("std");
 - comptime
 - runtime
 - fuseable
-] event vertical_bullets {}
+] event vertical-bullets {}
 
 // Vertical with parameterized annotations
 ~[
 - optimize(level: 3)
 - inline(threshold: 500)
 - gpu(target: "metal", precision: "half")
-] event vertical_params {}
+] event vertical-params {}
 
 // Mix of simple and complex
 ~[
 - comptime
 - runtime
 - optimize(level: 2)
-- profile(sample_rate: 1000)
-] event vertical_mixed {}
+- profile(sample-rate: 1000)
+] event vertical-mixed {}
 
 // Should be equivalent to inline
-~[comptime|runtime|fuseable] event inline_equiv {}
+~[comptime|runtime|fuseable] event inline-equiv {}
 
-~proc vertical_bullets|zig { return .{ .done = .{} }; }
-~proc vertical_params|zig { return .{ .done = .{} }; }
-~proc vertical_mixed|zig { return .{ .done = .{} }; }
-~proc inline_equiv|zig { return .{ .done = .{} }; }
+~proc vertical-bullets|zig { return .{ .done = .{} }; }
+~proc vertical-params|zig { return .{ .done = .{} }; }
+~proc vertical-mixed|zig { return .{ .done = .{} }; }
+~proc inline-equiv|zig { return .{ .done = .{} }; }

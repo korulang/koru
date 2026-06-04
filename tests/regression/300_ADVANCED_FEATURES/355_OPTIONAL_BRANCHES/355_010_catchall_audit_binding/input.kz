@@ -5,7 +5,7 @@
 // 2. Required branches handled explicitly, optional caught generically
 // 3. The Audit metatype is constructed with correct branch name
 
-~import "std/io"
+import std/io
 
 // Event with required + optional branches
 ~event process { value: u32 }
@@ -24,9 +24,9 @@
 }
 
 // Helper: print a string (void event - no branches)
-~event print_str { text: []const u8 }
+~event print-str { text: []const u8 }
 
-~proc print_str|zig {
+~proc print-str|zig {
     _ = @import("std").posix.write(1, text) catch {};
     _ = @import("std").posix.write(1, "\n") catch {};
 }
@@ -34,14 +34,14 @@
 // Call 1: value=10 → success (required, handled explicitly)
 ~process(value: 10)
 | success _ |> std.io:print.ln("SUCCESS")
-|? Audit e |> print_str(text: e.branch)
+|? Audit e |> print-str(text: e.branch)
 
 // Call 2: value=150 → warning (optional, caught by |? Audit)
 ~process(value: 150)
 | success _ |> std.io:print.ln("SUCCESS")
-|? Audit e |> print_str(text: e.branch)
+|? Audit e |> print-str(text: e.branch)
 
 // Call 3: value=7 → debug (optional, caught by |? Audit)
 ~process(value: 7)
 | success _ |> std.io:print.ln("SUCCESS")
-|? Audit e |> print_str(text: e.branch)
+|? Audit e |> print-str(text: e.branch)

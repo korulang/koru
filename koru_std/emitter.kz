@@ -14,7 +14,7 @@ const ast = @import("ast");
 
 // Emit a complete program from AST
 ~pub event emit.program {
-    source_ast: *const ast.Program,
+    source-ast: *const ast.Program,
     allocator: std.mem.Allocator
 }
 | emitted []const u8

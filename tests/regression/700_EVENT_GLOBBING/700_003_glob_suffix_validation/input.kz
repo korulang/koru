@@ -9,12 +9,12 @@
 // 5. Emit compile error: "Unknown log level 'warning', did you mean 'warn'?"
 
 ~[comptime|transform]pub event log.* {
-    event_name: []const u8,
+    event-name: []const u8,
     item: *const Item,
     program: *const Program,
 }
 | transformed *const Program
-| compile_error []const u8
+| compile-error []const u8
 
 ~proc log.*|zig {
     const std = @import("std");

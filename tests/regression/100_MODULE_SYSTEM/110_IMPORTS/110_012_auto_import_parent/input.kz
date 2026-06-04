@@ -5,17 +5,17 @@
 //
 // Structure:
 //   testlib/
-//     mymod.kz        → parent_hello event
+//     mymod.kz        → parent-hello event
 //     mymod/
-//       sub.kz        → sub_hello event
+//       sub.kz        → sub-hello event
 
-~import "std/compiler"
+import std/compiler
 
 // Only import the submodule - parent should come automatically
-~import "testlib/mymod/sub"
+import testlib/mymod/sub
 
 // Use event from submodule (explicitly imported)
-~testlib.mymod.sub:sub_hello()
+~testlib.mymod.sub:sub-hello()
 
 // Use event from parent (auto-imported)
-~testlib.mymod:parent_hello()
+~testlib.mymod:parent-hello()

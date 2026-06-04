@@ -2,7 +2,7 @@
 // This exact code appears on korulang.org
 // If this test fails, the website shows broken code!
 
-~import "std/io"
+import std/io
 
 const name = "World";
 const debug = true;

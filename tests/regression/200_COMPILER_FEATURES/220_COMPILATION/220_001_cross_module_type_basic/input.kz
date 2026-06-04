@@ -3,8 +3,8 @@
 // Tests that the parser correctly captures cross-module type syntax in the AST.
 // The syntax module.path:Type should be parsed and stored with the module path separated.
 
-~event process_user {
-    user_data: test_lib.user:User,
+~event process-user {
+    user-data: test_lib.user:User,
     value: i32,
 }
 | done bool

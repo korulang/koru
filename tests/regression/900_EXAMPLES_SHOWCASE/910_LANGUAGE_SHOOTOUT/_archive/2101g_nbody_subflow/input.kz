@@ -6,8 +6,8 @@
 // for maximum terseness. No ~proc ceremony!
 
 const std = @import("std");
-~import "std/control"
-~import "std/io"
+import std/control
+import std/io
 
 const PI: f64 = 3.141592653589793;
 const SOLAR_MASS: f64 = 4.0 * PI * PI;
@@ -96,10 +96,10 @@ const ZERO_DV = [5][3]f64{
 // ============================================================================
 
 // Step 1: Compute deltas - use const to compute dx/dy/dz once, then dsq from them
-~event pair_delta { bi: Body, bj: Body, dt: f64 }
+~event pair-delta { bi: Body, bj: Body, dt: f64 }
 | delta { dx: f64, dy: f64, dz: f64, dsq: f64, dt: f64, mi: f64, mj: f64 }
 
-~pair_delta = const({ dx: bi.x - bj.x, dy: bi.y - bj.y, dz: bi.z - bj.z })
+~pair-delta = const({ dx: bi.x - bj.x, dy: bi.y - bj.y, dz: bi.z - bj.z })
 | as d |> delta {
     d.dx,
     d.dy,
@@ -111,10 +111,10 @@ const ZERO_DV = [5][3]f64{
 }
 
 // Step 2: Compute force - use const to compute mag once (inv_d^3 pattern)
-~event pair_force { dx: f64, dy: f64, dz: f64, dsq: f64, dt: f64, mi: f64, mj: f64 }
+~event pair-force { dx: f64, dy: f64, dz: f64, dsq: f64, dt: f64, mi: f64, mj: f64 }
 | result { fx: f64, fy: f64, fz: f64, mi: f64, mj: f64 }
 
-~pair_force = const({ mag: dt / (dsq * @sqrt(dsq)) })
+~pair-force = const({ mag: dt / (dsq * @sqrt(dsq)) })
 | as c |> result {
     fx: dx * c.mag,
     fy: dy * c.mag,
@@ -136,8 +136,8 @@ const ZERO_DV = [5][3]f64{
                     | each |> capture({ dv: ZERO_DV })
                         | as acc |> for(0..5)
                             | each i |> for(i+1..5)
-                                | each j |> pair_delta(bi: b[i], bj: b[j], dt: DT)
-                                    | delta d |> pair_force(d.dx, d.dy, d.dz, d.dsq, d.dt, d.mi, d.mj)
+                                | each j |> pair-delta(bi: b[i], bj: b[j], dt: DT)
+                                    | delta d |> pair-force(d.dx, d.dy, d.dz, d.dsq, d.dt, d.mi, d.mj)
                                         | result f |> captured {
                                             dv[i][0]: acc.dv[i][0] - f.fx*f.mj,
                                             dv[i][1]: acc.dv[i][1] - f.fy*f.mj,

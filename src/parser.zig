@@ -1,5 +1,6 @@
 const std = @import("std");
 const ast = @import("ast");
+const ast_mangle = @import("ast_mangle");
 const lexer = @import("lexer");
 const errors = @import("errors");
 const type_registry = @import("type_registry");
@@ -562,6 +563,22 @@ pub const Parser = struct {
                 }
             }
 
+            // Plain `~import` is the old host-context form. Imports are bare:
+            // `import std/io`. A conditional `~[flag]import ...` keeps its `~`
+            // (the `~[flag]` is the conditional marker, a different construct),
+            // so we reject only `~import ` here, not `~[`. `.k` synthesizes its
+            // own `~` internally and is exempt.
+            if (!self.is_k and lexer.startsWith(trimmed, "~import ")) {
+                try self.reporter.addError(
+                    .PARSE003,
+                    self.current + 1,
+                    lexer.getIndent(line) + 1,
+                    "imports are bare — drop the `~`: write `import ...` (the `~` is the host->Koru switch; an import is always Koru, nothing to switch from)",
+                    .{},
+                );
+                return error.ParseError;
+            }
+
             if (lexer.startsWith(line, "~")) {
                 // Check if this is a module-level annotation: ~[annotation] on its own line
                 const after_tilde = lexer.trim(trimmed[1..]);
@@ -840,6 +857,14 @@ pub const Parser = struct {
                     continue;
                 };
                 try items.append(self.allocator, item);
+            } else if (lexer.startsWith(trimmed, "import ")) {
+                // First-class top-level import: `import std/io` with no `~`.
+                // An import is always Koru (never host), so it needs no
+                // host->Koru `~` switch and we do NOT synthesize one. Zig/JS
+                // have no bare `import` statement (only `@import`), so a line
+                // starting with `import ` is unambiguous.
+                const decl = try self.parseImportDecl();
+                try items.append(self.allocator, .{ .import_decl = decl });
             } else if (lexer.startsWith(line, "|")) {
                 try self.reporter.addError(
                     .KORU010,
@@ -860,6 +885,13 @@ pub const Parser = struct {
                 self.current += 1;
             }
         }
+
+        // Normalize kebab-case Koru names -> snake_case across the whole AST.
+        // Single point at the parse boundary so every downstream consumer sees
+        // snake (kills the metacircular cascade). Path segments are also mangled
+        // earlier in lexer.parseDottedPath so registry keys stay consistent; this
+        // walk is the comprehensive net and is idempotent on already-snake names.
+        ast_mangle.normalizeProgram(items.items);
 
         self.registry_transferred = true;
         return ParseResult{
@@ -1226,6 +1258,35 @@ pub const Parser = struct {
         return error.ParseError;
     }
 
+    /// Reject `_` in a Koru NAME. Kebab `-` is the sole word separator for Koru
+    /// names; `_` is reserved for digit separators in numeric literals (rule G4).
+    /// We won't accept both spellings — a snake name must fail loudly. The check
+    /// is on the BARE name only (it stops at a generic `[`, phantom `<`, paren,
+    /// brace, or whitespace) so type params and phantom states are unaffected.
+    /// Runs on the RAW source name, before kebab→snake normalization.
+    fn rejectSnakeName(self: *Parser, raw: []const u8, line_index: usize, kind: []const u8) !void {
+        var end: usize = 0;
+        while (end < raw.len) : (end += 1) {
+            const c = raw[end];
+            if (c == '[' or c == '<' or c == '(' or c == '{' or c == ' ' or c == '\t') break;
+        }
+        const name_part = raw[0..end];
+        // Leading-underscore names (`__compiler_marker`, `_internal`) are the
+        // reserved compiler-internal convention — kebab cannot express them
+        // (a name can't start with `-`), so they are exempt from the rule.
+        if (name_part.len > 0 and name_part[0] == '_') return;
+        if (std.mem.indexOfScalar(u8, name_part, '_') != null) {
+            try self.reporter.addError(
+                .KORU034,
+                line_index + 1,
+                1,
+                "'_' is not allowed in a Koru {s} name '{s}' — use '-' for word separation ('_' is reserved for digit separators)",
+                .{ kind, name_part },
+            );
+            return error.ParseError;
+        }
+    }
+
     fn parseEventDeclWithAnnotations(self: *Parser, is_public: bool, annotations: [][]const u8) !ast.EventDecl {
         if (self.current >= self.lines.len) {
             try self.reporter.addError(
@@ -1294,6 +1355,7 @@ pub const Parser = struct {
             return error.ParseError;
         }
 
+        try self.rejectSnakeName(parsed_path_str, event_line_index, "event");
         var path = try lexer.parseQualifiedPath(self.allocator, parsed_path_str, ast);
         errdefer path.deinit(self.allocator);
         log_debug("PARSER parseEventDeclWithAnnotations: Just parsed event path: module={s} segments=", .{if (path.module_qualifier) |m| m else "null"});
@@ -1621,7 +1683,7 @@ pub const Parser = struct {
             annotations_copy[all_annotations.items.len] = try self.allocator.dupe(u8, "comptime");
         }
 
-        const event_decl = ast.EventDecl{
+        var event_decl = ast.EventDecl{
             .path = path,
             .input = input,
             .branches = try branches.toOwnedSlice(self.allocator),
@@ -1631,6 +1693,13 @@ pub const Parser = struct {
             .location = self.getCurrentLocation(),
             .module = try self.allocator.dupe(u8, self.module_name),
         };
+
+        // Normalize kebab names -> snake BEFORE registration: the registry
+        // deep-copies field/branch names (see TypeRegistry.registerEvent), and
+        // those copies are read by later passes (e.g. positional-arg → struct
+        // field pairing). Without this, a kebab field leaks into emission.
+        // The post-parse walk re-touches this decl idempotently.
+        ast_mangle.normalizeEventDecl(&event_decl);
 
         log_debug("PARSER: Created EventDecl module='{s}', path.module_qualifier={s}\n", .{ event_decl.module, if (event_decl.path.module_qualifier) |m| m else "null" });
 
@@ -1715,6 +1784,7 @@ pub const Parser = struct {
             return error.ParseError;
         }
 
+        try self.rejectSnakeName(parsed_path_str, event_line_index, "event");
         var path = try lexer.parseQualifiedPath(self.allocator, parsed_path_str, ast);
         errdefer path.deinit(self.allocator);
 
@@ -1772,7 +1842,7 @@ pub const Parser = struct {
         // Check if this is an implicit flow event
         const is_implicit_flow = self.checkImplicitFlowEvent(&input);
 
-        const event_decl = ast.EventDecl{
+        var event_decl = ast.EventDecl{
             .path = path,
             .input = input,
             .branches = try branches.toOwnedSlice(self.allocator),
@@ -1782,6 +1852,10 @@ pub const Parser = struct {
             .location = self.getCurrentLocation(),
             .module = try self.allocator.dupe(u8, self.module_name),
         };
+
+        // Normalize kebab -> snake before the registry deep-copies names. See
+        // the matching note at the other EventDecl registration site.
+        ast_mangle.normalizeEventDecl(&event_decl);
 
         // Register the event with the type registry
         const path_str = try self.pathToString(event_decl.path);
@@ -1895,6 +1969,7 @@ pub const Parser = struct {
             }
         }
 
+        try self.rejectSnakeName(path_for_parsing, self.current, "proc");
         var path = try lexer.parseQualifiedPath(self.allocator, path_for_parsing, ast);
         errdefer path.deinit(self.allocator);
 
@@ -2036,6 +2111,7 @@ pub const Parser = struct {
             }
         }
 
+        try self.rejectSnakeName(path_for_parsing, self.current, "proc");
         var path = try lexer.parseQualifiedPath(self.allocator, path_for_parsing, ast);
         errdefer path.deinit(self.allocator);
 
@@ -6752,10 +6828,15 @@ pub const Parser = struct {
         // Struct branch syntax: | branch { field: Type } or | branch { field: Type }[annotation]
         if (brace_idx == null) {
             // Identity branch: | branch Type[annotation]
-            // Find branch name (first identifier token)
+            // Find branch name (first identifier token). `-` is a legal Koru
+            // name-char (kebab) and is normalized to `_` downstream; without it
+            // here, `| not-found` would split into name `not` + bogus type
+            // `-found`. The `->` resume-type case is already stripped above, so a
+            // `-` at this point is always kebab word-glue.
             var name_end: usize = 0;
             while (name_end < branch_start.len and
-                (std.ascii.isAlphanumeric(branch_start[name_end]) or branch_start[name_end] == '_'))
+                (std.ascii.isAlphanumeric(branch_start[name_end]) or
+                 branch_start[name_end] == '_' or branch_start[name_end] == '-'))
             {
                 name_end += 1;
             }
@@ -7053,9 +7134,10 @@ pub const Parser = struct {
         const first = name[0];
         if (!std.ascii.isAlphabetic(first) and first != '_') return false;
 
-        // Rest can be letters, numbers, or underscores
+        // Rest can be letters, numbers, underscores, or kebab `-` (a legal
+        // name-char; mangles to `_` on emit). First char stays letter/`_`.
         for (name[1..]) |c| {
-            if (!std.ascii.isAlphanumeric(c) and c != '_') return false;
+            if (!std.ascii.isAlphanumeric(c) and c != '_' and c != '-') return false;
         }
 
         return true;
@@ -7371,8 +7453,15 @@ pub const Parser = struct {
         const line = self.lines[self.current];
         self.current += 1;
 
-        // Parse: ~import "path"
-        const after_tilde = lexer.trim(line[1..]);
+        // Accept both forms with NO `~` synthesis:
+        //   `import std/io`   — first-class Koru import (an import is always
+        //                       Koru, so there is no host->Koru switch to make)
+        //   `~import std/io`  — the host-context form, where `~` flips a line
+        //                       out of host code into Koru.
+        // An import is never host syntax, so we parse the bare form directly
+        // rather than faking a `~`.
+        const t = lexer.trim(line);
+        const after_tilde = if (lexer.startsWith(t, "~")) lexer.trim(t[1..]) else t;
 
         // Skip the "import " part
         const after_import = if (lexer.startsWith(after_tilde, "import "))
@@ -7388,15 +7477,25 @@ pub const Parser = struct {
             return error.ParseError;
         };
 
-        // Extract the path from quotes
+        // Plain `~import` is rejected at the line level in parse() (it never
+        // reaches here in host files). A `~` that does reach here is either the
+        // `.k` internal synthesized form or a conditional `~[flag]import`, both
+        // legitimate — so parseImportDecl only enforces the bare-path rule.
+
+        // Extract the path — bare identifier-path only. Quotes are the old form.
         var path: []const u8 = undefined;
         const path_str = after_import;
-        if (lexer.startsWith(path_str, "\"") and std.mem.endsWith(u8, path_str, "\"")) {
-            // Quoted path
-            path = path_str[1 .. path_str.len - 1];
-        } else if (lexer.startsWith(path_str, "'") and std.mem.endsWith(u8, path_str, "'")) {
-            // Single quoted path
-            path = path_str[1 .. path_str.len - 1];
+        if (lexer.startsWith(path_str, "\"") or lexer.startsWith(path_str, "'")) {
+            // An import path is an identifier-path, not a string.
+            const stripped = std.mem.trim(u8, path_str, "\"'");
+            try self.reporter.addError(
+                .PARSE003,
+                self.current,
+                1,
+                "imports take a bare path, not a string: write `import {s}` (no quotes)",
+                .{stripped},
+            );
+            return error.ParseError;
         } else {
             // Unquoted path (for simplicity)
             path = path_str;
@@ -7790,7 +7889,7 @@ test "parser handles import statement" {
     const allocator = std.testing.allocator;
 
     const source =
-        \\~import "std/array"
+        \\import std/array
     ;
 
     var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);

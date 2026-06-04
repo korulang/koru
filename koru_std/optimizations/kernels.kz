@@ -12,7 +12,7 @@
 
 ~[comptime]
 
-~import "std/compiler"
+import std/compiler
 
 // ============================================================
 // KERNEL OPTIMIZATION EVENT
@@ -54,7 +54,7 @@
 // fn isKernelPairwise(inv: *const ast.Invocation) bool
 
 // TODO: Detect position/velocity update patterns
-// fn isKernelUpdate(inv: *const ast.Invocation, kernel_binding: []const u8) bool
+// fn isKernelUpdate(inv: *const ast.Invocation, kernel-binding: []const u8) bool
 
 // TODO: Check if two operations can be fused
 // fn canFuse(op1: *const ast.Node, op2: *const ast.Node) bool

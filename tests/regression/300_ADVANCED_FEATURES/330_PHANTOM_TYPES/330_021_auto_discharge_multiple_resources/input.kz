@@ -1,4 +1,4 @@
-~import "app/fs"
+import app/fs
 const std = @import("std");
 ~app.fs:open(path: "first.txt")
 | opened _ |> app.fs:open(path: "second.txt")

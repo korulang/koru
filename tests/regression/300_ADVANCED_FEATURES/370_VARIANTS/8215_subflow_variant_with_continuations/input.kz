@@ -7,8 +7,8 @@
 // Currently expected to trip the @compileError marker in visitor_emitter.zig
 // because the variant emission loop only handles continuations.len == 0.
 
-~import "std/io"
-~import "std/build"
+import std/io
+import std/build
 
 const std = @import("std");
 
@@ -44,14 +44,14 @@ const std = @import("std");
 }
 | configured _ |> _
 | skipped _ |> _
-| invalid_event _ |> _
+| invalid-event _ |> _
 
-~event print_result { value: i32 }
+~event print-result { value: i32 }
 
-~proc print_result|zig {
+~proc print-result|zig {
     std.debug.print("{}\n", .{value});
 }
 
 // Expected: greet(value: 21) picks |two variant → double(21) → 42 → print 42.
 ~greet(value: 21)
-| final f |> print_result(value: f)
+| final f |> print-result(value: f)

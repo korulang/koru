@@ -11,13 +11,13 @@
 
 const std = @import("std");
 
-~import "std/io"
+import std/io
 
-~pub event process_file { path: []const u8 }
+~pub event process-file { path: []const u8 }
 | success []const u8
 | error []const u8  // "error" is a Zig reserved keyword!
 
-~proc process_file|zig {
+~proc process-file|zig {
     const file = std.fs.cwd().openFile(path, .{}) catch |err| {
         return .{ .@"error" = @errorName(err) };
     };
@@ -31,6 +31,6 @@ const std = @import("std");
 }
 
 // Test without inline flows - just test keyword escaping
-~process_file(path: "/nonexistent/file.txt")
+~process-file(path: "/nonexistent/file.txt")
 | success _ |> std.io:println(text: "Unexpected file found")
 | error _ |> std.io:println(text: "✅ Reserved Zig keyword branch works!")

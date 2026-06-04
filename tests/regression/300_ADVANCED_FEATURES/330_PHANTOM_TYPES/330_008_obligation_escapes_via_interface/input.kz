@@ -1,3 +1,3 @@
-~import "app/fs"
-~app.fs:my_subflow()
-| file_opened f |> app.fs:close(file: f)
+import app/fs
+~app.fs:my-subflow()
+| file-opened f |> app.fs:close(file: f)

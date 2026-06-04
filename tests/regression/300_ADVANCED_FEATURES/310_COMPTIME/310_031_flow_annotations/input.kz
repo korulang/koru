@@ -3,7 +3,7 @@
 // This test validates that Flow invocations can have parametrized annotations
 // and that they are correctly parsed and available in the AST.
 
-~import "std/build"
+import std/build
 
 // Flow with simple annotation
 ~[pure]std.build:step(name: "simple") {

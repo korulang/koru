@@ -11,7 +11,7 @@
 //   // conn drops here - Rust says "fine, cleanup happened"
 //   // Koru says "ERROR: you didn't DO anything meaningful with this connection"
 
-~import "app/db"
+import app/db
 
 ~app.db:connect(host: "localhost")
 | ok _ |> _

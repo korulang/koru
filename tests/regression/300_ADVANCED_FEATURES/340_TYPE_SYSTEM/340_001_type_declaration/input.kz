@@ -2,8 +2,8 @@
 //
 // Validates that std.types:struct declarations parse correctly.
 
-~import "std/types"
-~import "std/io"
+import std/types
+import std/io
 
 // Declare a simple struct
 ~std.types:struct(Player) {

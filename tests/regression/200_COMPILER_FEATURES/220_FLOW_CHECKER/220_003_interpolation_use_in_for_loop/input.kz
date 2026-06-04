@@ -16,12 +16,12 @@
 // Expected: Compiles successfully — 'val' IS used in {{ val:s }}
 // Actual:   error[KORU100]: unused binding 'val'
 
-~import "std/io"
-~import "std/control"
-~import "app/source"
+import std/io
+import std/control
+import app/source
 
 ~std.control:for(0..3)
-| each _ |> source:maybe_str()
+| each _ |> source:maybe-str()
     | none |> std.io:print.ln("nothing")
     | some val |> std.io:print.ln("got: {{ val:s }}")
 |> _

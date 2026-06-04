@@ -1,13 +1,13 @@
 // Test: Registry Scope - Debug Flag Enabled
 // Ensures [debug] entries are included when compiled with --debug.
 
-~import "std/runtime"
+import std/runtime
 
 const std = @import("std");
 
-~pub event debug.dump_state {}
+~pub event debug.dump-state {}
 
-~proc debug.dump_state|zig {
+~proc debug.dump-state|zig {
 }
 
 ~[registry:scope(admin)]std.runtime:register {
