@@ -657,27 +657,6 @@ pub fn build(b: *std.Build) void {
     js_emitter_module.addImport("log", log_module);
     js_emitter_module.addImport("file_types", file_types_module);
 
-    const playground_exe = b.addExecutable(.{
-        .name = "playground",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/playground.zig"),
-            .target = target,
-            .optimize = optimize,
-        }),
-    });
-    playground_exe.root_module.addImport("ast", ast_module);
-    playground_exe.root_module.addImport("errors", errors_module);
-    playground_exe.root_module.addImport("parser", parser_module);
-    playground_exe.root_module.addImport("shape_checker", shape_checker_module);
-    playground_exe.root_module.addImport("flow_checker", flow_checker_module);
-    playground_exe.root_module.addImport("phantom_semantic_checker", phantom_semantic_checker_module);
-    playground_exe.root_module.addImport("js_emitter", js_emitter_module);
-    playground_exe.root_module.addImport("module_resolver", module_resolver_module);
-    playground_exe.root_module.addImport("config", config_module);
-    playground_exe.root_module.addImport("canonicalize_names", canonicalize_names_module);
-    playground_exe.root_module.addImport("file_types", file_types_module);
-    playground_exe.root_module.addImport("dead_strip", dead_strip_module);
-
     // Embedded stdlib bytes (generated) + the Fs that serves them, so the
     // playground resolves `import "std/io"` with no disk.
     const stdlib_bundle_module = b.createModule(.{
@@ -693,11 +672,57 @@ pub fn build(b: *std.Build) void {
     embedded_fs_module.addImport("stdlib_bundle", stdlib_bundle_module);
     embedded_fs_module.addImport("module_resolver", module_resolver_module);
     embedded_fs_module.addImport("file_types", file_types_module);
-    playground_exe.root_module.addImport("embedded_fs", embedded_fs_module);
-    const install_playground = b.addInstallArtifact(playground_exe, .{});
 
-    const playground_step = b.step("playground", "Build the playground diagnostics core");
-    playground_step.dependOn(&install_playground.step);
+    // Shared playground core (src/playground.zig) — the whole compile pipeline.
+    // Imported as a module by BOTH the native CLI and the freestanding wasm
+    // layer, so the logic lives in exactly one place (no drift between targets).
+    const playground_module = b.createModule(.{
+        .root_source_file = b.path("src/playground.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    playground_module.addImport("ast", ast_module);
+    playground_module.addImport("errors", errors_module);
+    playground_module.addImport("parser", parser_module);
+    playground_module.addImport("shape_checker", shape_checker_module);
+    playground_module.addImport("flow_checker", flow_checker_module);
+    playground_module.addImport("phantom_semantic_checker", phantom_semantic_checker_module);
+    playground_module.addImport("js_emitter", js_emitter_module);
+    playground_module.addImport("module_resolver", module_resolver_module);
+    playground_module.addImport("config", config_module);
+    playground_module.addImport("canonicalize_names", canonicalize_names_module);
+    playground_module.addImport("file_types", file_types_module);
+    playground_module.addImport("dead_strip", dead_strip_module);
+    playground_module.addImport("embedded_fs", embedded_fs_module);
+
+    // Native CLI (testing): `zig build playground` → ./zig-out/bin/playground <file> [--js]
+    const playground_exe = b.addExecutable(.{
+        .name = "playground",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/playground_cli.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    playground_exe.root_module.addImport("playground", playground_module);
+    const install_playground = b.addInstallArtifact(playground_exe, .{});
+    b.step("playground", "Build the playground CLI").dependOn(&install_playground.step);
+
+    // Freestanding wasm for the browser — zero host imports (no wasi), exported
+    // functions only. Build with: zig build playground-wasm -Dtarget=wasm32-freestanding
+    const playground_wasm = b.addExecutable(.{
+        .name = "koru-playground",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/playground_wasm.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    playground_wasm.root_module.addImport("playground", playground_module);
+    playground_wasm.entry = .disabled;
+    playground_wasm.rdynamic = true;
+    const install_wasm = b.addInstallArtifact(playground_wasm, .{});
+    b.step("playground-wasm", "Build the freestanding wasm playground").dependOn(&install_wasm.step);
 
     // Create a run step
     const run_cmd = b.addRunArtifact(exe);
