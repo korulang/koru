@@ -25,7 +25,7 @@ const std = @import("std");
     source: []const u8,
     branch: []const u8,
     destination: ?[]const u8,
-    timestamp-ns: i128,
+    timestamp_ns: i128,
 }
 
 ~proc emit-transition|zig {

@@ -278,7 +278,7 @@ const AsyncHandle = struct {
 // ============================================================================
 
 ~event combineResults { results: []const ConsumeResult }
-| combined { total-sum: u64, total-count: u64 }
+| combined { total_sum: u64, total_count: u64 }
 
 ~proc combineResults|zig {
     var total_sum: u64 = 0;

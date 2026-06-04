@@ -18,7 +18,7 @@ import std/testing
 | not-found
 
 // Payment service (impure - external API)
-~event payment.charge { user-id: u32, amount: u32 }
+~event payment.charge { user_id: u32, amount: u32 }
 | success []const u8
 | failed []const u8
 
@@ -36,14 +36,14 @@ import std/testing
 }
 
 // The main flow - chains everything together
-~event process-payment { user-id: u32, amount: u32 }
+~event process-payment { user_id: u32, amount: u32 }
 | success []const u8
 | user-not-found
 | insufficient-funds
 
 ~process-payment = db.get-user(id: user_id)
 | found u |> validate.amount(amount, u.balance)
-    | valid |> payment.charge(user-id: u.id, amount)
+    | valid |> payment.charge(user_id: u.id, amount)
         | success tx => success tx
         | failed _ => insufficient-funds
     | insufficient => insufficient-funds
@@ -57,20 +57,20 @@ import std/testing
     ~db.get-user => found { id: 42, balance: 100 }
     ~payment.charge => success "tx123"
 
-    ~process-payment(user-id: 42, amount: 50)
+    ~process-payment(user_id: 42, amount: 50)
     | success s |> assert(s.len == 5)  // "tx123" has 5 chars
 }
 
 ~test(Insufficient funds rejected) {
     ~db.get-user => found { id: 42, balance: 30 }
 
-    ~process-payment(user-id: 42, amount: 50)
+    ~process-payment(user_id: 42, amount: 50)
     | insufficient-funds |> assert.ok()
 }
 
 ~test(User not found) {
     ~db.get-user => not-found
 
-    ~process-payment(user-id: 999, amount: 50)
+    ~process-payment(user_id: 999, amount: 50)
     | user-not-found |> assert.ok()
 }

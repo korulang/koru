@@ -4,4 +4,4 @@ import lib_a
 import lib_b
 
 // Using explicit qualification - no ambiguity!
-~lib-a:process()
+~lib_a:process()

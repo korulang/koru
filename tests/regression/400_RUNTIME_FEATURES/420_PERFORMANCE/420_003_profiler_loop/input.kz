@@ -9,8 +9,8 @@ const std = @import("std");
 ~[profile]import std/profiler
 
 // Outer counter event (counts outer iterations)
-~event outer { x: i32, max-inner: i32 }
-| next-outer { x: i32, max-inner: i32 }
+~event outer { x: i32, max_inner: i32 }
+| next-outer { x: i32, max_inner: i32 }
 
 ~proc outer|zig {
     std.debug.print("Outer: {}\n", .{x});
@@ -22,9 +22,9 @@ const std = @import("std");
 }
 
 // Inner counter event (counts inner iterations)
-~event inner { x: i32, y: i32, max-inner: i32 }
-| next-inner { x: i32, y: i32, max-inner: i32 }
-| done-inner { x: i32, max-inner: i32 }
+~event inner { x: i32, y: i32, max_inner: i32 }
+| next-inner { x: i32, y: i32, max_inner: i32 }
+| done-inner { x: i32, max_inner: i32 }
 
 ~proc inner|zig {
     std.debug.print("  Inner: {}, {}\n", .{x, y});
@@ -46,7 +46,7 @@ const std = @import("std");
 // Flow with nested labels
 // Both loops now have matching signatures (x: i32, max-inner: i32)
 ~start()
-|> #outer_loop outer(x: 1, max-inner: 2)
+|> #outer_loop outer(x: 1, max_inner: 2)
     | next-outer o |> #inner_loop inner(o.x, y: 1, o.max_inner)
         | next-inner i |> @inner_loop(i.x, i.y, i.max_inner)
         | done-inner d |> @outer_loop(d.x, d.max_inner)

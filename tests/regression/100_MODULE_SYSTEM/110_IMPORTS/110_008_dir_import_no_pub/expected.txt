@@ -15,14 +15,14 @@ error[KORU044]: cannot access private event 'app.lib.raylib.graphics:clear' from
 error[KORU044]: cannot access private event 'app.lib.raylib.audio:play' from module 'input'
   --> tests/regression/100_MODULE_SYSTEM/110_IMPORTS/110_008_dir_import_no_pub/input.kz:14:4
     |
- 14 |     | cleared |> app/lib/raylib/audio:play(sound-id: 42) |> app/lib/raylib/audio:stop()
+ 14 |     | cleared |> app/lib/raylib/audio:play(sound_id: 42) |> app/lib/raylib/audio:stop()
     |    ^
   hint: mark the event as public with ~pub event
 
 error[KORU044]: cannot access private event 'app.lib.raylib.audio:stop' from module 'input'
   --> tests/regression/100_MODULE_SYSTEM/110_IMPORTS/110_008_dir_import_no_pub/input.kz:14:4
     |
- 14 |     | cleared |> app/lib/raylib/audio:play(sound-id: 42) |> app/lib/raylib/audio:stop()
+ 14 |     | cleared |> app/lib/raylib/audio:play(sound_id: 42) |> app/lib/raylib/audio:stop()
     |    ^
   hint: mark the event as public with ~pub event
 

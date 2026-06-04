@@ -9,7 +9,7 @@
 // No runtime overhead, no type erasure, no boxing.
 
 ~[comptime|transform]pub event ring.* {
-    event-name: []const u8,
+    event_name: []const u8,
     expr: Expression,
     source: Source,
     item: *const Item,

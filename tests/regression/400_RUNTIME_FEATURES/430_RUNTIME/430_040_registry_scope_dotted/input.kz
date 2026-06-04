@@ -19,7 +19,7 @@ const std = @import("std");
 
 const SOURCE = "~greet(id: 7)";
 
-~std/runtime:parse.source(source: SOURCE, file-name: "dotted.kz", allocator: std.heap.page_allocator)
+~std/runtime:parse.source(source: SOURCE, file_name: "dotted.kz", allocator: std.heap.page_allocator)
 | parsed p |> std/runtime:eval(ast: p, scope: "api.v1")
     | result _ |> std/io:print.ln("OK")
     | event-denied e |> std/io:print.ln("DENIED: {{e:s}}")

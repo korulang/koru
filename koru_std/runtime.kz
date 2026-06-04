@@ -1248,12 +1248,12 @@ fn buildScopeTable() []const ScopeRuntime {
 ~[retain]pub event get-scope { name: []const u8 }
 | scope {
     dispatcher: DispatchFn,
-    cost-fn: ?CostFn,
-    creates-obligations-fn: ?ObligationsArrayFn,
-    discharges-obligations-fn: ?ObligationsArrayFn,
-    discharge-event-fn: ?DischargeEventFn,
-    creates-spec-fn: ?CreatesSpecFn,
-    discharges-spec-fn: ?DischargesSpecFn
+    cost_fn: ?CostFn,
+    creates_obligations_fn: ?ObligationsArrayFn,
+    discharges_obligations_fn: ?ObligationsArrayFn,
+    discharge_event_fn: ?DischargeEventFn,
+    creates_spec_fn: ?CreatesSpecFn,
+    discharges_spec_fn: ?DischargesSpecFn
 }
 | not-found
 
@@ -1294,9 +1294,9 @@ fn lookupEventBranches(scope_name: []const u8, event_name: []const u8) []const B
 
 ~pub event parse.source {
     source: []const u8,
-    file-name: []const u8,
+    file_name: []const u8,
     allocator: std.mem.Allocator,
-    fail-fast: bool = true
+    fail_fast: bool = true
 }
 | parsed koru_parser.ParseResult
 | parse-error []const u8
@@ -1323,14 +1323,14 @@ fn lookupEventBranches(scope_name: []const u8, event_name: []const u8) []const B
     ast: koru_parser.ParseResult,
     scope: []const u8,
     budget: ?u64,
-    handle-pool: ?*@import("root").koru_std.koru_interpreter.HandlePool,
-    auto-discharge: bool = true
+    handle_pool: ?*@import("root").koru_std.koru_interpreter.HandlePool,
+    auto_discharge: bool = true
 }
 | result { value: @import("root").koru_std.koru_interpreter.Value, used: u64, handles: u32 }
-| exhausted { used: u64, last-event: []const u8, handles: u32 }
+| exhausted { used: u64, last_event: []const u8, handles: u32 }
 | validation-error []const u8
 | event-denied []const u8
-| dispatch-error { event-name: []const u8, message: []const u8 }
+| dispatch-error { event_name: []const u8, message: []const u8 }
 | scope-not-found []const u8
 
 ~proc eval|zig {
@@ -1403,18 +1403,18 @@ fn lookupEventBranches(scope_name: []const u8, event_name: []const u8) []const B
     source: []const u8,
     scope: []const u8,
     budget: ?u64 = null,
-    handle-pool: ?*@import("root").koru_std.koru_interpreter.HandlePool = null,
-    fail-fast: bool = true,
-    auto-discharge: bool = true,
+    handle_pool: ?*@import("root").koru_std.koru_interpreter.HandlePool = null,
+    fail_fast: bool = true,
+    auto_discharge: bool = true,
     shape: ?[]const u8 = null
 }
 | result { value: @import("root").koru_std.koru_interpreter.Value, used: u64, handles: u32 }
-| exhausted { used: u64, last-event: []const u8, handles: u32 }
+| exhausted { used: u64, last_event: []const u8, handles: u32 }
 | parse-error { message: []const u8, line: u32, column: u32 }
 | validation-error []const u8
 | shape-error { branch: []const u8, field: ?[]const u8, message: []const u8 }
 | event-denied []const u8
-| dispatch-error { event-name: []const u8, message: []const u8 }
+| dispatch-error { event_name: []const u8, message: []const u8 }
 | scope-not-found []const u8
 
 ~proc run|zig {
@@ -1524,18 +1524,18 @@ fn lookupEventBranches(scope_name: []const u8, event_name: []const u8) []const B
     source: []const u8,
     scope: []const u8,
     budget: ?u64 = null,
-    handle-pool: ?*@import("root").koru_std.koru_interpreter.HandlePool = null,
-    fail-fast: bool = true,
-    auto-discharge: bool = true,
+    handle_pool: ?*@import("root").koru_std.koru_interpreter.HandlePool = null,
+    fail_fast: bool = true,
+    auto_discharge: bool = true,
     shape: ?[]const u8 = null
 }
 | result { value: @import("root").koru_std.koru_interpreter.Value, used: u64, handles: u32 }
-| exhausted { used: u64, last-event: []const u8, handles: u32 }
+| exhausted { used: u64, last_event: []const u8, handles: u32 }
 | parse-error { message: []const u8, line: u32, column: u32 }
 | validation-error []const u8
 | shape-error { branch: []const u8, field: ?[]const u8, message: []const u8 }
 | event-denied []const u8
-| dispatch-error { event-name: []const u8, message: []const u8 }
+| dispatch-error { event_name: []const u8, message: []const u8 }
 | scope-not-found []const u8
 
 ~proc run-cached|zig {

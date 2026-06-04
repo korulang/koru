@@ -160,7 +160,7 @@ pub const ParseResult = parser_impl.ParseResult;
 // Parse Koru source code into AST
 ~pub event parse.source {
     source: []const u8,
-    file-name: []const u8,
+    file_name: []const u8,
     allocator: std.mem.Allocator
 }
 | parsed parser_impl.ParseResult

@@ -16,7 +16,7 @@ import std/control
 
 const std = @import("std");
 
-~event print-results { outer-count: i32, inner-count: i32 }
+~event print-results { outer_count: i32, inner_count: i32 }
 
 ~proc print-results|zig {
     std.debug.print("outer={d}, inner={d}\n", .{outer_count, inner_count});
@@ -29,4 +29,4 @@ const std = @import("std");
 | as outer |> capture(init: { count: @as(i32, 0) })
     | as inner => captured { inner.count: inner.count + 10 }
     | captured inner_result => captured { outer.count: outer.count + inner_result.count }
-| captured final |> print-results(outer-count: final.count, inner-count: 10)
+| captured final |> print-results(outer_count: final.count, inner_count: 10)

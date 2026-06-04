@@ -459,7 +459,7 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
 
 ~[comptime]pub event collect {
     ctx: koru_compiler_types.CompilerContext,
-    output-path: []const u8
+    output_path: []const u8
 }
 | collected koru_compiler_types.CompilerContext
 

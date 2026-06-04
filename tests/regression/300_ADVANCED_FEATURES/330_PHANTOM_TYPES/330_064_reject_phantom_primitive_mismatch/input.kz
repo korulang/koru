@@ -5,7 +5,7 @@
 // matching phantoms compile and a conversion event transitions across labels;
 // this one proves that an un-labelled f32 can't masquerade as a labelled one.
 
-~event read-raw { sensor-id: u8 }
+~event read-raw { sensor_id: u8 }
 | reading f32                          // BARE f32 — no phantom label
 
 ~read-raw => reading 22.5
@@ -15,6 +15,6 @@
 
 ~to-fahrenheit => result c * 9.0 / 5.0 + 32.0
 
-~read-raw(sensor-id: 1)
+~read-raw(sensor_id: 1)
 | reading t |> to-fahrenheit(c: t)     // ERROR: f32 cannot satisfy f32[celsius]
     | result _ |> _

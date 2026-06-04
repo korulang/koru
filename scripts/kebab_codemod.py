@@ -208,14 +208,17 @@ def main():
         t = read(p)
         if t is not None:
             collect_from(t, names, keys)
-    print(f'collected {len(names)} names + {len(keys)} keys to kebab-ify')
+    print(f'collected {len(names)} names to kebab-ify (field/arg KEYS stay snake)')
 
-    # Names (events/procs/branches): bare whole-word (decl + call sites).
+    # Names (events/procs/branches): bare whole-word (decl + call sites). These
+    # are the "verbs"/outcomes and read well kebab.
     name_patterns = [(n, re.compile(r'(?<![\w-])' + re.escape(n) + r'(?![\w-])'))
                      for n in sorted(names, key=len, reverse=True)]
-    # Keys (field/arg keys): ONLY in key position `name:` — never value/binding.
-    key_patterns = [(n, re.compile(r'(?<![\w-])' + re.escape(n) + r'(?=\s*:(?!:))'))
-                    for n in sorted(keys, key=len, reverse=True)]
+    # Field/arg KEYS are deliberately NOT kebab'd — properties read better snake
+    # (`expected_x: i32`, not `expected-x: i32`). See scripts/dekebab_keys.py for
+    # the revert. `keys` is still collected above but intentionally unused here.
+    _ = keys
+    key_patterns = []
 
     # Phase 2: apply.
     total_files = total_repl = 0

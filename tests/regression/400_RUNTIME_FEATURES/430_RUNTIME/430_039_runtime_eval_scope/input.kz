@@ -19,7 +19,7 @@ const std = @import("std");
 
 const TEST_SOURCE = "~greet(name: \"World\")";
 
-~std/runtime:parse.source(source: TEST_SOURCE, file-name: "runtime_eval.kz", allocator: std.heap.page_allocator)
+~std/runtime:parse.source(source: TEST_SOURCE, file_name: "runtime_eval.kz", allocator: std.heap.page_allocator)
 | parsed p |> std/runtime:eval(ast: p, scope: "api")
     | result _ |> std/io:print.ln("OK")
     | event-denied _ |> std/io:print.ln("EVENT DENIED")

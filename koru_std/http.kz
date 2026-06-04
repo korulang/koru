@@ -52,7 +52,7 @@ const std = @import("std");
 }
 
 // HTTP Response Builder
-~pub event http.response { status: u16, status-text: []const u8, headers: []const u8, body: []const u8 }
+~pub event http.response { status: u16, status_text: []const u8, headers: []const u8, body: []const u8 }
 | formatted []const u8
 
 ~proc http.response|zig {

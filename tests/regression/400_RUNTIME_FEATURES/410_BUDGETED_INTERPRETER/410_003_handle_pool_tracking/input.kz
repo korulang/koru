@@ -30,7 +30,7 @@ const std = @import("std");
 const TEST_SOURCE = "~open(path: \"test.txt\")\n| opened f |> result { path: \"test.txt\" }";
 
 // Open a file, don't close - should be in handle pool
-~std/runtime:run(source: TEST_SOURCE, scope: "test", budget: 100, auto-discharge: false)
+~std/runtime:run(source: TEST_SOURCE, scope: "test", budget: 100, auto_discharge: false)
 | result r |> std/io:print.ln("PASS: handles tracked: {{ r.handles:d }}")
 | exhausted _ |> std/io:print.ln("FAIL: should not exhaust")
 | parse-error _ |> std/io:print.ln("PARSE ERROR")
