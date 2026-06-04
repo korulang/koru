@@ -24,6 +24,26 @@ const ShapeChecker = @import("shape_checker").ShapeChecker;
 const FlowChecker = @import("flow_checker").FlowChecker;
 const PhantomSemanticChecker = @import("phantom_semantic_checker").PhantomSemanticChecker;
 const js_emitter = @import("js_emitter");
+const ModuleResolver = @import("module_resolver").ModuleResolver;
+const embedded_fs = @import("embedded_fs");
+const Config = @import("config").Config;
+const canonicalize_names = @import("canonicalize_names");
+
+/// A Config that maps the `std` import alias to the embedded stdlib root, so
+/// `import "std/io"` resolves against the baked-in koru_std bytes. project_root
+/// is the virtual root "/"; no koru.json, no disk.
+fn embeddedConfig(allocator: std.mem.Allocator) !Config {
+    var paths = std.StringHashMap([][]const u8).init(allocator);
+    const std_paths = try allocator.alloc([]const u8, 1);
+    std_paths[0] = try allocator.dupe(u8, "/koru_std");
+    try paths.put(try allocator.dupe(u8, "std"), std_paths);
+    return Config{
+        .name = try allocator.dupe(u8, "playground"),
+        .version = try allocator.dupe(u8, "0.0.0"),
+        .paths = paths,
+        .allocator = allocator,
+    };
+}
 
 /// One diagnostic in the shape the web shell consumes. Mirrors the fields of
 /// errors.ParseError that a Monaco marker needs, plus which pass produced it.
@@ -61,11 +81,11 @@ pub fn check(allocator: std.mem.Allocator, source: []const u8, file_name: []cons
     var diagnostics: std.ArrayList(Diagnostic) = .empty;
     defer diagnostics.deinit(allocator);
 
-    // --- Parse (Stage A guts, no bootstrap injection, no module resolver) ---
-    // A single-file snippet resolves nothing, so resolver = null. Imports are
-    // the known next gap (needs an in-memory stdlib FS); they'll surface here
-    // as KORU002 rather than silently passing.
-    var parser = try Parser.init(allocator, source, file_name, &[_][]const u8{}, null);
+    // --- Parse (Stage A guts, no bootstrap injection) ---
+    // Imports resolve against the embedded stdlib (no disk).
+    var config = try embeddedConfig(allocator);
+    var resolver = try ModuleResolver.initEmbedded(allocator, &config, embedded_fs.fs(), "/koru_std");
+    var parser = try Parser.init(allocator, source, file_name, &[_][]const u8{}, &resolver);
     defer parser.deinit();
 
     const parse_result = parser.parse() catch |err| {
@@ -110,10 +130,15 @@ pub fn check(allocator: std.mem.Allocator, source: []const u8, file_name: []cons
 /// programs reveal which ones are load-bearing. A JsEmitError (NoJsProcBody,
 /// UnsupportedConstruct, ...) propagates so we see exactly what's missing.
 pub fn compileToJs(allocator: std.mem.Allocator, source: []const u8, file_name: []const u8) ![]const u8 {
-    var parser = try Parser.init(allocator, source, file_name, &[_][]const u8{}, null);
+    var config = try embeddedConfig(allocator);
+    var resolver = try ModuleResolver.initEmbedded(allocator, &config, embedded_fs.fs(), "/koru_std");
+    var parser = try Parser.init(allocator, source, file_name, &[_][]const u8{}, &resolver);
     defer parser.deinit();
     const parse_result = try parser.parse();
     var source_file = parse_result.source_file;
+    // Qualify DottedPaths so invocations like `std.io:println` match the
+    // imported event decls — the frontend pass downstream passes rely on.
+    try canonicalize_names.canonicalize(&source_file, allocator);
     return try js_emitter.emit(allocator, &source_file);
 }
 

@@ -671,6 +671,26 @@ pub fn build(b: *std.Build) void {
     playground_exe.root_module.addImport("flow_checker", flow_checker_module);
     playground_exe.root_module.addImport("phantom_semantic_checker", phantom_semantic_checker_module);
     playground_exe.root_module.addImport("js_emitter", js_emitter_module);
+    playground_exe.root_module.addImport("module_resolver", module_resolver_module);
+    playground_exe.root_module.addImport("config", config_module);
+    playground_exe.root_module.addImport("canonicalize_names", canonicalize_names_module);
+
+    // Embedded stdlib bytes (generated) + the Fs that serves them, so the
+    // playground resolves `import "std/io"` with no disk.
+    const stdlib_bundle_module = b.createModule(.{
+        .root_source_file = b.path("stdlib_bundle.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const embedded_fs_module = b.createModule(.{
+        .root_source_file = b.path("src/embedded_fs.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    embedded_fs_module.addImport("stdlib_bundle", stdlib_bundle_module);
+    embedded_fs_module.addImport("module_resolver", module_resolver_module);
+    embedded_fs_module.addImport("file_types", file_types_module);
+    playground_exe.root_module.addImport("embedded_fs", embedded_fs_module);
     const install_playground = b.addInstallArtifact(playground_exe, .{});
 
     const playground_step = b.step("playground", "Build the playground diagnostics core");
