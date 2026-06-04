@@ -13,12 +13,12 @@ const std = @import("std");
 ~struct(Box<T>) { value: T }
 ~type(UserIdBox = Box<UserId>)
 
-~event test_box {}
+~event test-box {}
 
-~proc test_box|zig {
+~proc test-box|zig {
     const uid: UserId = 999;
     const box = UserIdBox{ .value = uid };
     std.debug.print("UserId: {d}\n", .{box.value});
 }
 
-~test_box()
+~test-box()

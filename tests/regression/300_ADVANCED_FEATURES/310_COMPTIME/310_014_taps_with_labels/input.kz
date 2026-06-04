@@ -19,15 +19,15 @@ import std/taps
     return .{ .done = n };
 }
 
-~event log_iteration { value: i32 }
+~event log-iteration { value: i32 }
 
-~proc log_iteration|zig {
+~proc log-iteration|zig {
     std.debug.print("Iteration: {}\n", .{value});
 }
 
 // Tap that should fire on every counter -> * transition with 'next' branch
 ~tap(counter -> *)
-| next v |> log_iteration(value: v)
+| next v |> log-iteration(value: v)
 
 // Recursive label using counter - tap should fire on each loop iteration
 ~event start {}

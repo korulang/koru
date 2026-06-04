@@ -6,10 +6,10 @@ import std/io
 const std = @import("std");
 
 // A comptime event that receives metadata about its invocation
-~[comptime]pub event check_config { meta: InvocationMeta }
+~[comptime]pub event check-config { meta: InvocationMeta }
 | matched []const u8
 
-~proc check_config|zig {
+~proc check-config|zig {
     // meta.annotations contains the flow annotations like ["release"], ["debug"]
     // meta.path contains the full path like "check_config"
     // meta.location contains the source location
@@ -22,16 +22,16 @@ const std = @import("std");
 }
 
 // Test 1: Invocation with [release] annotation
-~[release]check_config()
+~[release]check-config()
 | matched _ |> std.io:println(text: "Config: release")
-| no_annotation |> std.io:println(text: "No config")
+| no-annotation |> std.io:println(text: "No config")
 
 // Test 2: Invocation with [debug] annotation
-~[debug]check_config()
+~[debug]check-config()
 | matched _ |> std.io:println(text: "Config: debug")
-| no_annotation |> std.io:println(text: "No config")
+| no-annotation |> std.io:println(text: "No config")
 
 // Test 3: Invocation without annotation
-~check_config()
+~check-config()
 | matched _ |> std.io:println(text: "Config: unexpected")
-| no_annotation |> std.io:println(text: "No config (expected)")
+| no-annotation |> std.io:println(text: "No config (expected)")

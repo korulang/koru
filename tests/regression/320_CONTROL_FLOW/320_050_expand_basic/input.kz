@@ -12,7 +12,7 @@ import std/template
 // Event with [norun|expand] - implementation comes from template
 // [norun] = not emitted anywhere
 // [expand] = processed by transform_pass_runner via template lookup
-~[norun|expand]pub event debug_print { value: Expression }
+~[norun|expand]pub event debug-print { value: Expression }
 
 // Use it - note the ~ prefix to make it a Koru flow!
-~debug_print(value: 42)
+~debug-print(value: 42)

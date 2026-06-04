@@ -14,13 +14,13 @@ const std = @import("std");
 // Instantiate it with ~type
 ~type(OptionalInt = Option<i32>)
 
-~event test_option {}
+~event test-option {}
 
-~proc test_option|zig {
+~proc test-option|zig {
     const opt = OptionalInt{ .value = 42 };
     if (opt.value) |v| {
         std.debug.print("Got: {d}\n", .{v});
     }
 }
 
-~test_option()
+~test-option()

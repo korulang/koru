@@ -27,9 +27,9 @@ const allocator = std.heap.c_allocator;
 // These are void events - no branches. Should chain with |>
 // ============================================================
 
-~event work_void { r: *Resource }
+~event work-void { r: *Resource }
 
-~proc work_void|zig {
+~proc work-void|zig {
     r.data[0] +%= 1;
 }
 
@@ -38,9 +38,9 @@ const allocator = std.heap.c_allocator;
 // Same branch name "done" at multiple nesting levels
 // ============================================================
 
-~event work_done { r: *Resource }
+~event work-done { r: *Resource }
 
-~proc work_done|zig {
+~proc work-done|zig {
     r.data[0] +%= 1;
 }
 
@@ -65,11 +65,11 @@ const allocator = std.heap.c_allocator;
 }
 
 // Factory with DIFFERENT field name than create
-~event make_resource { id: usize }
+~event make-resource { id: usize }
 | ready *Resource<active!>  // "resource" not "r"
 
 // BUG #3: f.r -> resource field name mismatch
-~make_resource = create(id)
+~make-resource = create(id)
 | created f => ready f
 
 // ============================================================
@@ -79,8 +79,8 @@ const allocator = std.heap.c_allocator;
 const N: usize = 10;
 
 ~for(0..N)
-! each i |> make_resource(id: i)
-    | ready r |> work_done(r) |> work_done(r) |> work_done(r) |> destroy(r)
+! each i |> make-resource(id: i)
+    | ready r |> work-done(r) |> work-done(r) |> work-done(r) |> destroy(r)
 
 pub fn main() void {
     std.debug.print("All continuation bugs fixed!\n", .{});

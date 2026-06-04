@@ -11,9 +11,9 @@ import std/types
 ~type(OptionalInt = Option<i32>)
 ~type(OptionalFloat = Option<f32>)
 
-~event process_int { val: OptionalInt }
+~event process-int { val: OptionalInt }
 
-~proc process_int|zig {
+~proc process-int|zig {
 }
 
 ~event main {}

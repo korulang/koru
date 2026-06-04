@@ -1,29 +1,29 @@
 pub const File = struct {
     handle: usize,
 };
-~event open_file { path: []const u8 }
+~event open-file { path: []const u8 }
 | opened *File<open>
-~event close_file { file: *File<closed> }
-~event read_file { file: *File<open> }
-~event write_file { file: *File<open> }
-~proc open_file|zig {
+~event close-file { file: *File<closed> }
+~event read-file { file: *File<open> }
+~event write-file { file: *File<open> }
+~proc open-file|zig {
     const f = File{ .handle = 42 };
     return .{ .opened = &f };
 }
-~proc close_file|zig {
+~proc close-file|zig {
     _ = file;
     return .{ .done = .{} };
 }
-~proc read_file|zig {
+~proc read-file|zig {
     _ = file;
 }
-~proc write_file|zig {
+~proc write-file|zig {
     _ = file;
     return .{ .done = .{} };
 }
-~open_file(path: "test1.txt")
-| opened o |> close_file(o.file)
-~open_file(path: "test2.txt")
-| opened o |> close_file(o.file)
-~open_file(path: "test3.txt")
-| opened o |> close_file(o.file)
+~open-file(path: "test1.txt")
+| opened o |> close-file(o.file)
+~open-file(path: "test2.txt")
+| opened o |> close-file(o.file)
+~open-file(path: "test3.txt")
+| opened o |> close-file(o.file)

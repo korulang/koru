@@ -8,20 +8,20 @@
 // ============================================================================
 
 // Simple event to test pattern branches
-~event test_patterns {}
+~event test-patterns {}
 
-~proc test_patterns|zig {
+~proc test-patterns|zig {
 }
 
 // Test that pattern branches parse correctly
 // The branch names are [GET /users/:id] etc - opaque to the compiler
-~test_patterns()
+~test-patterns()
 | [GET /users/:id] => ok {}
 | [POST /users] => ok {}
 | [nested [brackets] work] => ok {}
 | [* -> stopped] => ok {}  // State machine style
 
 // Verify nested patterns work
-~test_patterns()
-| [/admin/*] |> test_patterns()
+~test-patterns()
+| [/admin/*] |> test-patterns()
     | [GET /dashboard] => ok {}

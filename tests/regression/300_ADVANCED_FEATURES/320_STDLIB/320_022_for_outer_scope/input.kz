@@ -3,8 +3,8 @@
 // VISION: When ~for is in a pipeline, the loop body should be able to
 // reference bindings from outer continuations (like init.data, p.count).
 //
-// This is the pattern used in nbody_optimized:
-//   ~get_data()
+// This is the pattern used in nbody-optimized:
+//   ~get-data()
 //   | result init |> for(0..p.n)
 //       | each |> process(data: init.items[0..])  // <-- outer scope binding!
 //
@@ -17,22 +17,22 @@ import std/control
 const std = @import("std");
 
 // Event that returns data we reference in the loop
-~event get_params {}
+~event get-params {}
 | result { count: u32, items: [5]i32 }
 
-~proc get_params|zig {
+~proc get-params|zig {
     return .{ .result = .{ .count = 3, .items = .{ 10, 20, 30, 40, 50 } } };
 }
 
 // Event to process items (void - no branches, for use inside for loop)
-~event process_item { value: i32 }
+~event process-item { value: i32 }
 
-~proc process_item|zig {
+~proc process-item|zig {
     std.debug.print("Processing: {d}\n", .{value});
 }
 
 // The critical pattern: ~for in pipeline with outer scope reference
-~get_params()
+~get-params()
 | result p |> for(0..p.count)
-    ! each i |> process_item(value: p.items[i])
+    ! each i |> process-item(value: p.items[i])
     | done |> std.io:println(text: "All items processed")

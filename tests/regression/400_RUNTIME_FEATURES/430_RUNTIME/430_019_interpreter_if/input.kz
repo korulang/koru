@@ -11,17 +11,17 @@ const std = @import("std");
 // Test event that returns a score
 // ============================================================================
 
-~pub event get_score { value: []const u8 }
+~pub event get-score { value: []const u8 }
 | score i32
 
-~proc get_score|zig {
+~proc get-score|zig {
     const num = std.fmt.parseInt(i32, value, 10) catch 0;
     return .{ .score = num };
 }
 
 // Register events for dispatch
 ~std.runtime:register(scope: "test") {
-    get_score
+    get-score
 }
 
 // ============================================================================

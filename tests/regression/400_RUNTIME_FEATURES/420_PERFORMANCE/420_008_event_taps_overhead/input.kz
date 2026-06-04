@@ -21,9 +21,9 @@ var tap_count: u64 = 0;
 }
 
 // Tap target - simulates logging/metrics
-~event tap_point { i: u64 }
+~event tap-point { i: u64 }
 
-~proc tap_point|zig {
+~proc tap-point|zig {
     tap_count += 1;
     // Touch parameter to avoid unused warning
     if (i > 999_999_999) {
@@ -32,20 +32,20 @@ var tap_count: u64 = 0;
 }
 
 // Print result
-~event print_result {}
+~event print-result {}
 
-~proc print_result|zig {
+~proc print-result|zig {
     std.debug.print("Taps called: {}\n", .{tap_count});
 }
 
 // Taps: Observe every 5th iteration (5 tap points)
-~count -> * | next n where n.i % 200_000 == 0 |> tap_point(n.i) | done |> _
-~count -> * | next n where n.i % 200_001 == 0 |> tap_point(n.i) | done |> _
-~count -> * | next n where n.i % 200_002 == 0 |> tap_point(n.i) | done |> _
-~count -> * | next n where n.i % 200_003 == 0 |> tap_point(n.i) | done |> _
-~count -> * | next n where n.i % 200_004 == 0 |> tap_point(n.i) | done |> _
+~count -> * | next n where n.i % 200_000 == 0 |> tap-point(n.i) | done |> _
+~count -> * | next n where n.i % 200_001 == 0 |> tap-point(n.i) | done |> _
+~count -> * | next n where n.i % 200_002 == 0 |> tap-point(n.i) | done |> _
+~count -> * | next n where n.i % 200_003 == 0 |> tap-point(n.i) | done |> _
+~count -> * | next n where n.i % 200_004 == 0 |> tap-point(n.i) | done |> _
 
 // Main loop
 ~#loop count(i: 0)
 | next n |> @loop(n.i)
-|> print_result() | done |> _
+|> print-result() | done |> _

@@ -21,9 +21,9 @@ import std/io
 | ok i32
 
 // Wrapper that uses braceless constructors in continuations
-~pub event run_test {}
+~pub event run-test {}
 
-~proc run_test|zig {
+~proc run-test|zig {
     // This internally tests braceless continuation constructors
 }
 

@@ -4,4 +4,4 @@
 
 const std = @import("std");
 
-~event process_path { path: []const u8 }
+~event process-path { path: []const u8 }

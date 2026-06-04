@@ -29,7 +29,7 @@ const std = @import("std");
 }
 
 // [expand] event — template produces inline_body + branches
-~[norun|expand]pub event classify_num { expr: Expression }
+~[norun|expand]pub event classify-num { expr: Expression }
 | positive i32
 
 // Abstract event — simulates a library event like orisha:handler
@@ -43,23 +43,23 @@ const std = @import("std");
 
 // Cross-module impl using expand — THIS IS THE KEY PATTERN
 // input:categorize means is_impl=true (module qualifier present)
-// classify_num is [expand] so it sets inline_body on the flow
+// classify-num is [expand] so it sets inline_body on the flow
 // The emitter must use inline_body instead of trying to call classify_num_event.handler
-~input:categorize = classify_num(expr: value)
+~input:categorize = classify-num(expr: value)
 | positive p => result p
-| non_positive => result 0
+| non-positive => result 0
 
 // Helper to print
-~event print_num { n: i32 }
+~event print-num { n: i32 }
 
-~proc print_num|zig {
+~proc print-num|zig {
     std.debug.print("{}\n", .{n});
 }
 
 // Test 1: positive value -> should output 42
 ~categorize(value: 42)
-| result r |> print_num(n: r)
+| result r |> print-num(n: r)
 
 // Test 2: non-positive value -> should output 0
 ~categorize(value: 0)
-| result r |> print_num(n: r)
+| result r |> print-num(n: r)

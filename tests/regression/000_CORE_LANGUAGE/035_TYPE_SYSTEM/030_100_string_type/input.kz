@@ -11,11 +11,11 @@ const std = @import("std");
 
 ~string(EmailAddress)
 
-~event send_email { to: EmailAddress }
+~event send-email { to: EmailAddress }
 
-~proc send_email|zig {
+~proc send-email|zig {
     std.debug.print("Sending to: {s}\n", .{to});
 }
 
-~send_email(to: "user@example.com")
+~send-email(to: "user@example.com")
 

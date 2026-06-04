@@ -2,9 +2,9 @@
 // Multiple tap handlers for the same branch should ALL fire
 //
 // ~tap(foo -> *)
-// | success s |> log_success(s)
-// | success s |> audit_success(s)  // BOTH fire on success
-// | error e |> log_error(e)
+// | success s |> log-success(s)
+// | success s |> audit-success(s)  // BOTH fire on success
+// | error e |> log-error(e)
 
 const std = @import("std");
 import std/taps
@@ -21,27 +21,27 @@ import std/taps
 }
 
 // Multiple handlers for success branch - both should fire
-~event log_success { result: i32 }
-~proc log_success|zig {
+~event log-success { result: i32 }
+~proc log-success|zig {
     std.debug.print("LOG: success with {d}\n", .{result});
 }
 
-~event audit_success { result: i32 }
-~proc audit_success|zig {
+~event audit-success { result: i32 }
+~proc audit-success|zig {
     std.debug.print("AUDIT: success with {d}\n", .{result});
 }
 
 // Single handler for error branch
-~event log_error { msg: []const u8 }
-~proc log_error|zig {
+~event log-error { msg: []const u8 }
+~proc log-error|zig {
     std.debug.print("LOG: error - {s}\n", .{msg});
 }
 
 // Multi-branch tap: two handlers for success, one for error
 ~tap(process -> *)
-| success s |> log_success(s.result)
-| success s |> audit_success(s.result)
-| error e |> log_error(e.msg)
+| success s |> log-success(s.result)
+| success s |> audit-success(s.result)
+| error e |> log-error(e.msg)
 
 // Test with positive value (should trigger BOTH success handlers)
 ~process(value: 5)

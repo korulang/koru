@@ -13,8 +13,8 @@ const File = struct { handle: i32, dirty: bool };
     std.debug.print("closed\n", .{});
     std.heap.page_allocator.destroy(file);
 }
-~event flush_close { file: *File<!opened> }
-~proc flush_close|zig {
+~event flush-close { file: *File<!opened> }
+~proc flush-close|zig {
     std.debug.print("flushing...\n", .{});
     std.heap.page_allocator.destroy(file);
 }

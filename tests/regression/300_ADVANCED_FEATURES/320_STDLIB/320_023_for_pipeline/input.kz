@@ -11,15 +11,15 @@ import std/control
 const std = @import("std");
 
 // Simple event that returns a count
-~event get_count {}
+~event get-count {}
 | result u32
 
-~proc get_count|zig {
+~proc get-count|zig {
     return .{ .result = 3 };
 }
 
 // Main flow: pipeline ~for
-~get_count()
+~get-count()
 | result r |> for(0..r)
     ! each _ |> std.io:println(text: "iteration")
     | done |> std.io:println(text: "done")

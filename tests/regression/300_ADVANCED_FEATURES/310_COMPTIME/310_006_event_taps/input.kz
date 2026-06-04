@@ -15,15 +15,15 @@ import std/taps
 }
 
 // Void observer event
-~event tap_action {}
+~event tap-action {}
 
-~proc tap_action|zig {
+~proc tap-action|zig {
     std.debug.print("TAP observed!\n", .{});
 }
 
-// Tap that observes hello's `greeted` branch and logs via tap_action
+// Tap that observes hello's `greeted` branch and logs via tap-action
 ~tap(hello -> *)
-| greeted _ |> tap_action()
+| greeted _ |> tap-action()
 
 // Main flow that triggers the tap
 ~hello()

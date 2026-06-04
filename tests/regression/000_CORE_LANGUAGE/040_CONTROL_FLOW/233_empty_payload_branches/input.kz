@@ -6,11 +6,11 @@
 import std/io
 
 // Event with two branches, BOTH empty (no payload fields)
-~event check_value { n: i32 }
+~event check-value { n: i32 }
 | positive
-| non_positive
+| non-positive
 
-~proc check_value|zig {
+~proc check-value|zig {
     if (n > 0) {
         return .{ .positive = .{} };
     } else {
@@ -19,14 +19,14 @@ import std/io
 }
 
 // Test: handle both empty branches
-~check_value(n: 42)
+~check-value(n: 42)
     | positive |> std.io:println(text: "42 is positive")
-    | non_positive |> std.io:println(text: "42 is not positive")
+    | non-positive |> std.io:println(text: "42 is not positive")
 
-~check_value(n: -5)
+~check-value(n: -5)
     | positive |> std.io:println(text: "-5 is positive")
-    | non_positive |> std.io:println(text: "-5 is not positive")
+    | non-positive |> std.io:println(text: "-5 is not positive")
 
-~check_value(n: 0)
+~check-value(n: 0)
     | positive |> std.io:println(text: "0 is positive")
-    | non_positive |> std.io:println(text: "0 is not positive")
+    | non-positive |> std.io:println(text: "0 is not positive")

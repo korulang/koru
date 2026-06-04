@@ -21,6 +21,6 @@ const std = @import("std");
 }
 | configured _ |> _
 | skipped _ |> _
-| invalid_event _ |> _
+| invalid-event _ |> _
 
 ~greet()

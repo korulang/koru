@@ -7,9 +7,9 @@ import std/control
 const std = @import("std");
 
 // Simple helper to print result
-~event print_sum { arr: [3]i32 }
+~event print-sum { arr: [3]i32 }
 
-~proc print_sum|zig {
+~proc print-sum|zig {
     const sum = arr[0] + arr[1] + arr[2];
     std.debug.print("{d}\n", .{sum});
 }
@@ -19,4 +19,4 @@ const std = @import("std");
 ~capture({ arr: [3]i32{ 0, 0, 0 } })
 ! as acc |> for(0..3)
     ! each i |> captured({ arr[i]: acc.arr[i] + @as(i32, @intCast(i)) * 10 })
-| captured result |> print_sum(result.arr)
+| captured result |> print-sum(result.arr)

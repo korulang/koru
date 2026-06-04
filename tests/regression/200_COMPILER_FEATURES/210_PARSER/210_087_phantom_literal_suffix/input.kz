@@ -18,10 +18,10 @@
 
 import std/io
 
-~event accept_celsius { c: f32<celsius> }
+~event accept-celsius { c: f32<celsius> }
 | ok f32<celsius>
 
-~accept_celsius => ok c
+~accept-celsius => ok c
 
-~accept_celsius(c: 32<celsius>)
+~accept-celsius(c: 32<celsius>)
 | ok v |> std.io:print.ln("{{ v:f }}")

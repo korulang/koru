@@ -21,10 +21,10 @@
 ! ?debug []const u8
 | done usize
 
-~pub event consume_token { t: []const u8 }
-~pub event end_run { n: usize }
+~pub event consume-token { t: []const u8 }
+~pub event end-run { n: usize }
 
 ~tokenize(source: "x")
-! token t |> consume_token(t)
+! token t |> consume-token(t)
 !? |> _
-| done n |> end_run(n)
+| done n |> end-run(n)

@@ -76,7 +76,7 @@
                 "line": 9,
                 "col": 1
             },
-            "raw_text": "~event broken_event {\n    value: i32\n\n// This event is valid - should still be parsed\n"
+            "raw_text": "~event broken-event {\n    value: i32\n\n// This event is valid - should still be parsed\n"
         },
         {
             "type": "event_decl",

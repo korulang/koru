@@ -15,7 +15,7 @@
 import std/io
 
 // Event with wildcard payload - parser should accept this
-~[norun]event iterator_pattern {}
+~[norun]event iterator-pattern {}
 | each *
 
 // Use stdlib to print

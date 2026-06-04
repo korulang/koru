@@ -7,17 +7,17 @@
 
 import std/testing
 
-~event fetch_user { id: u32 }
+~event fetch-user { id: u32 }
 | found []const u8
 
-~proc fetch_user|zig {
+~proc fetch-user|zig {
     return .{ .found = "Alice" };
 }
 
 ~test(Impure event with override works) {
-    ~fetch_user => found "TestUser"
+    ~fetch-user => found "TestUser"
 
-    ~fetch_user(id: 1)
+    ~fetch-user(id: 1)
     | found u |> assert(u.len == 8)
 }
 

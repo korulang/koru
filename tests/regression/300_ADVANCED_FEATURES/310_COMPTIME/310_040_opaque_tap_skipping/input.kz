@@ -15,21 +15,21 @@ import std/taps
 ~event hello {}
 
 // Internal event - marked opaque to prevent tapping
-~[opaque] event internal_log { msg: []const u8 }
+~[opaque] event internal-log { msg: []const u8 }
 
 ~proc hello|zig {
     std.debug.print("Hello\n", .{});
 }
 
-~proc internal_log|zig {
+~proc internal-log|zig {
     std.debug.print("[INTERNAL] {s}\n", .{msg});
 }
 
-// Universal tap - should wrap hello() but NOT internal_log()
+// Universal tap - should wrap hello() but NOT internal-log()
 ~tap(* -> *)
-| Profile p |> internal_log(msg: p.source)
+| Profile p |> internal-log(msg: p.source)
 
-// Call hello - tap should fire and call internal_log
-// The internal_log call from the tap should NOT be wrapped again
+// Call hello - tap should fire and call internal-log
+// The internal-log call from the tap should NOT be wrapped again
 // (it's opaque, so tap won't try to tap it)
 ~hello()

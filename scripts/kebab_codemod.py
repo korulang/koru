@@ -128,6 +128,32 @@ def kebab(name):
     return name.replace('_', '-')
 
 
+# Double-quoted string spans. Contents are DATA (template names, printed text,
+# error-message fixtures), never Koru names — a name inside a string must NOT be
+# rewritten (e.g. `define(name: "check_positive")` must stay snake to match the
+# event whose name normalizes to snake at parse). Simple escape handling.
+STRING_RE = re.compile(r'"(?:\\.|[^"\\])*"')
+
+
+def apply_outside_strings(line, patterns):
+    """Apply (name, compiled-pattern) replacements to `line`, skipping the
+    contents of double-quoted string spans."""
+    spans = [(m.start(), m.end()) for m in STRING_RE.finditer(line)]
+    out = []
+    pos = 0
+    count = 0
+    for s, e in spans + [(len(line), len(line))]:
+        seg = line[pos:s]
+        for n, pat in patterns:
+            seg, k = pat.subn(kebab(n), seg)
+            count += k
+        out.append(seg)
+        if s != len(line):
+            out.append(line[s:e])  # untouched string span
+        pos = e
+    return ''.join(out), count
+
+
 def apply_to(text, name_patterns, key_patterns):
     lines = text.split('\n')
     mask = host_mask(lines)
@@ -137,13 +163,9 @@ def apply_to(text, name_patterns, key_patterns):
         if mask[i]:
             out.append(line)
             continue
-        new = line
-        for n, pat in name_patterns:
-            new, k = pat.subn(kebab(n), new)
-            count += k
-        for n, pat in key_patterns:
-            new, k = pat.subn(kebab(n), new)  # pattern lookahead leaves `:` in place
-            count += k
+        new, k1 = apply_outside_strings(line, name_patterns)
+        new, k2 = apply_outside_strings(new, key_patterns)  # lookahead leaves `:` in place
+        count += k1 + k2
         out.append(new)
     return '\n'.join(out), count
 

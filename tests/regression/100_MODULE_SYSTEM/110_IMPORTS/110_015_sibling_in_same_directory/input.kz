@@ -14,11 +14,11 @@ const std = @import("std");
 import mylib
 
 // Call an event from the library
-~mylib:greet(name: "World") |> on_done()
+~mylib:greet(name: "World") |> on-done()
 
 // Handler that uses std - this will trigger ambiguity if nested
-~event on_done {}
+~event on-done {}
 
-~proc on_done|zig {
+~proc on-done|zig {
     std.debug.print("Done!\n", .{});
 }

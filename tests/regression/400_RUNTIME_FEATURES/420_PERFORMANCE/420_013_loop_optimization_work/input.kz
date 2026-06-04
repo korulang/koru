@@ -13,10 +13,10 @@
 const std = @import("std");
 
 // Work event: Process array element (this should be INLINED into loop body)
-~event process_element { array: []u64, i: u64, sum: u64 }
+~event process-element { array: []u64, i: u64, sum: u64 }
 | processed u64
 
-~proc process_element|zig {
+~proc process-element|zig {
     // Simulate some work: square the element and add to sum
     const value = array[i];
     const squared = value * value;
@@ -25,11 +25,11 @@ const std = @import("std");
 }
 
 // Checker event: Loop through array indices
-~event loop_step { i: u64, limit: u64, sum: u64 }
+~event loop-step { i: u64, limit: u64, sum: u64 }
 | continue { i: u64, sum: u64 }
 | done u64
 
-~proc loop_step|zig {
+~proc loop-step|zig {
     if (i < limit) {
         return .{ .continue = .{ .i = i, .sum = sum } };
     } else {
@@ -45,10 +45,10 @@ const std = @import("std");
 }
 
 // Initialize array event
-~event init_array {}
+~event init-array {}
 | initialized []u64
 
-~proc init_array|zig {
+~proc init-array|zig {
     // Create array 0..10000
     const allocator = std.heap.page_allocator;
     const array = allocator.alloc(u64, 10_000) catch unreachable;
@@ -74,8 +74,8 @@ const std = @import("std");
 //     sum += squared;  // Work body INLINED here!
 // }
 
-~init_array()
-| initialized init |> #work_loop loop_step(i: 0, limit: init.array.len, sum: 0)
-    | continue c |> process_element(init.array, c.i, c.sum)
+~init-array()
+| initialized init |> #work_loop loop-step(i: 0, limit: init.array.len, sum: 0)
+    | continue c |> process-element(init.array, c.i, c.sum)
         | processed p |> @work_loop(i: c.i + 1, limit: init.array.len, p.sum)
     | done d |> print(d.result)

@@ -11,16 +11,16 @@
 
 import std/io
 
-~event read_temp { sensor_id: u8 }
+~event read-temp { sensor-id: u8 }
 | reading f32<celsius>
 
-~read_temp => reading 22.5
+~read-temp => reading 22.5
 
-~event to_fahrenheit { c: f32<celsius> }
+~event to-fahrenheit { c: f32<celsius> }
 | result f32<fahrenheit>
 
-~to_fahrenheit => result c * 9.0 / 5.0 + 32.0
+~to-fahrenheit => result c * 9.0 / 5.0 + 32.0
 
-~read_temp(sensor_id: 1)
-| reading c |> to_fahrenheit(c)
+~read-temp(sensor-id: 1)
+| reading c |> to-fahrenheit(c)
     | result f |> std.io:print.ln("{{ f:f }} F")

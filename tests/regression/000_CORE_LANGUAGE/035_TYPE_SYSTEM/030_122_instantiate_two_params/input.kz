@@ -11,11 +11,11 @@ const std = @import("std");
 ~struct(Entry<K, V>) { key: K, value: V }
 ~type(StringIntEntry = Entry<[]const u8, i32>)
 
-~event test_entry {}
+~event test-entry {}
 
-~proc test_entry|zig {
+~proc test-entry|zig {
     const e = StringIntEntry{ .key = "count", .value = 42 };
     std.debug.print("{s} = {d}\n", .{ e.key, e.value });
 }
 
-~test_entry()
+~test-entry()

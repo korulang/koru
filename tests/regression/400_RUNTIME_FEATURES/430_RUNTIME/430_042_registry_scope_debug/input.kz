@@ -5,9 +5,9 @@ import std/runtime
 
 const std = @import("std");
 
-~pub event debug.dump_state {}
+~pub event debug.dump-state {}
 
-~proc debug.dump_state|zig {
+~proc debug.dump-state|zig {
 }
 
 ~[registry:scope(admin)]std.runtime:register {

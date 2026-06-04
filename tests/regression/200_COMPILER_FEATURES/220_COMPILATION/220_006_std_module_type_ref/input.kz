@@ -14,12 +14,12 @@ import std/parser
 const std = @import("std");
 
 // Event that processes a parse result - uses TYPE from std import
-~event process_ast {
+~event process-ast {
     result: std.parser:ParseResult,
 }
 | processed usize
 
-~proc process_ast|zig {
+~proc process-ast|zig {
     return .{ .processed = result.source_file.items.len };
 }
 
@@ -37,7 +37,7 @@ const SAMPLE =
 ;
 
 // Flow: parse → process → report
-~std.parser:parse.source(source: SAMPLE, file_name: "test.kz", allocator: std.heap.page_allocator)
-| parsed p |> process_ast(result: p)
+~std.parser:parse.source(source: SAMPLE, file-name: "test.kz", allocator: std.heap.page_allocator)
+| parsed p |> process-ast(result: p)
     | processed r |> report(count: r)
-| parse_error _ |> report(count: 0)
+| parse-error _ |> report(count: 0)

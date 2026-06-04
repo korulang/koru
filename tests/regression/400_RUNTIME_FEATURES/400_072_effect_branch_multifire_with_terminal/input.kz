@@ -1,6 +1,6 @@
 // Test: multi-fire effect-branch pump WITH terminal — the canonical iterator shape.
 //
-// `count_up(start: 0, end: 3)` yields three `! each` operations (i = 0, 1, 2),
+// `count-up(start: 0, end: 3)` yields three `! each` operations (i = 0, 1, 2),
 // then returns `| done 3`. Consumer handles each yield by printing the index,
 // and handles the terminal by printing the total count. This is the smallest
 // program that exercises BOTH branch kinds together at runtime: yielding conts
@@ -9,18 +9,18 @@
 
 import std/io
 
-~pub event count_up { start: usize, end: usize }
+~pub event count-up { start: usize, end: usize }
 ! each usize
 | done usize
 
-~proc count_up|zig {
+~proc count-up|zig {
     for (start..end) |i| {
         each(i);
     }
     return .{ .done = end };
 }
 
-~count_up(start: 0, end: 3)
+~count-up(start: 0, end: 3)
 ! each i |> std.io:print.blk {
     each {{ i:d }}
 }

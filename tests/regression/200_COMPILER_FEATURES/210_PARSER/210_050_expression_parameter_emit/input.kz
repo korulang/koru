@@ -12,14 +12,14 @@
 const std = @import("std");
 
 // Event with Expression parameter
-~[comptime|norun]pub event test_expr {
+~[comptime|norun]pub event test-expr {
     route: Expression,
     source: Source
 }
 
 // This invocation should emit: .route = "GET /", .source = "..."
 // But currently emits: .GET / = "GET /", .source = "..." (INVALID ZIG)
-~test_expr(GET /) {
+~test-expr(GET /) {
     config: value
 }
 

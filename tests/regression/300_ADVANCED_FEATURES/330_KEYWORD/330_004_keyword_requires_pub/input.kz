@@ -1,8 +1,8 @@
 // Test: [keyword] on private event should error
 // [keyword] requires pub because private events can't be imported
 
-~[keyword] event private_thing {}
+~[keyword] event private-thing {}
 
-~proc private_thing|zig {
+~proc private-thing|zig {
     // This should never run - the error is at parse time
 }

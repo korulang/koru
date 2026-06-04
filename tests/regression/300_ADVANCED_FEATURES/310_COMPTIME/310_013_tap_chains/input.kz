@@ -3,7 +3,7 @@
 const std = @import("std");
 import std/taps
 
-~event main_flow {}
+~event main-flow {}
 
 ~event logger {}
 |> logger()
@@ -16,5 +16,5 @@ import std/taps
 |> metrics()
     |> _
 
-~main_flow()
+~main-flow()
 |> _

@@ -14,17 +14,17 @@ import std/control
 
 const std = @import("std");
 
-~event print_results { outer_val: i32, inner_val: i32 }
+~event print-results { outer-val: i32, inner-val: i32 }
 
-~proc print_results|zig {
+~proc print-results|zig {
     std.debug.print("outer={d}, inner={d}\n", .{outer_val, inner_val});
 }
 
 // Outer capture owns `outer_val`, inner capture owns `inner_val`
 // First test: just nested captures WITHOUT binding qualification
 // Each captured block only updates its OWN capture's field
-~capture(init: { outer_val: @as(i32, 0) })
-| as outer |> capture(init: { inner_val: @as(i32, 0) })
-    | as inner => captured { inner_val: inner.inner_val + 10 }
-    | captured inner_result => captured { outer_val: outer.outer_val + inner_result.inner_val }
-| captured final |> print_results(final.outer_val, inner_val: 10)
+~capture(init: { outer-val: @as(i32, 0) })
+| as outer |> capture(init: { inner-val: @as(i32, 0) })
+    | as inner => captured { inner-val: inner.inner_val + 10 }
+    | captured inner_result => captured { outer-val: outer.outer_val + inner_result.inner_val }
+| captured final |> print-results(final.outer_val, inner-val: 10)

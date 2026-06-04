@@ -1,8 +1,8 @@
 // Test: Bespoke if-event - conditional flow control
 //
 // Pattern: comptime transform + runtime implementation
-// - my_if: comptime transform captures Expression
-// - my_if_impl: runtime implementation handles branching
+// - my-if: comptime transform captures Expression
+// - my-if-impl: runtime implementation handles branching
 
 import std/io
 
@@ -12,11 +12,11 @@ const std = @import("std");
 // RUNTIME IMPLEMENTATION - handles the actual branching
 // ============================================================================
 
-~event my_if_impl { condition: bool }
+~event my-if-impl { condition: bool }
 | then
 | else
 
-~proc my_if_impl|zig {
+~proc my-if-impl|zig {
     if (condition) {
         return .{ .then = .{} };
     } else {
@@ -25,10 +25,10 @@ const std = @import("std");
 }
 
 // ============================================================================
-// COMPTIME TRANSFORM - rewrites my_if(expr) to my_if_impl(condition: expr)
+// COMPTIME TRANSFORM - rewrites my-if(expr) to my-if-impl(condition: expr)
 // ============================================================================
 
-~[comptime|transform]event my_if {
+~[comptime|transform]event my-if {
     expr: Expression,
     item: *const Item,
     program: *const Program,
@@ -36,7 +36,7 @@ const std = @import("std");
 }
 | transformed *const Program
 
-~proc my_if|zig {
+~proc my-if|zig {
     const ast = @import("ast");
     const ast_functional = @import("ast_functional");
 
@@ -114,12 +114,12 @@ const std = @import("std");
 
 const value = 42;
 
-~my_if(value > 10)
+~my-if(value > 10)
     | then |> std.io:println(text: "Test 1: then branch")
     | else |> std.io:println(text: "Test 1: else branch")
 
 const small = 5;
 
-~my_if(small > 10)
+~my-if(small > 10)
     | then |> std.io:println(text: "Test 2: then branch")
     | else |> std.io:println(text: "Test 2: else branch")

@@ -3,6 +3,6 @@
 import std/interpreter
 import std/io
 
-~pub event test_nullable {
+~pub event test-nullable {
     pool: ?*std.interpreter:HandlePool,
 }

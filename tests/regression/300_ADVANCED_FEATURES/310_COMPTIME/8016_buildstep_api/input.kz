@@ -48,13 +48,13 @@ const CompileFlag = struct {
 // Compiler Pass Event (what coordinator invokes)
 // ================================================================
 
-~pub event compile.proc_target {
-    target_name: []const u8,
+~pub event compile.proc-target {
+    target-name: []const u8,
     body: []const u8,
 }
 | compiled {
     code: []const u8,
-    build_steps: []const BuildStep,
+    build-steps: []const BuildStep,
 }
 | unsupported []const u8
 
@@ -63,7 +63,7 @@ const CompileFlag = struct {
 // ================================================================
 // This demonstrates how a real compiler pass would use BuildSteps
 
-~proc compile.proc_target|zig {
+~proc compile.proc-target|zig {
     const allocator = std.heap.page_allocator;
 
     // Example: If target is "gpu", generate GPU build steps

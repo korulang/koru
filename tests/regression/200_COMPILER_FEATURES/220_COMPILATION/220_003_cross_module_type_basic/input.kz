@@ -20,12 +20,12 @@ import app/test_lib
 
 // This event takes a User from the imported module as a parameter
 // KEY TEST: app.test_lib.user:User should resolve to the User struct in test_lib/user.kz
-~pub event register_user {
-    user_data: app.test_lib.user:User,
+~pub event register-user {
+    user-data: app.test_lib.user:User,
 }
 | registered bool
 
-~proc register_user|zig {
+~proc register-user|zig {
     // Print the user's information
     std.debug.print("Registering user: {s}, age {d}\n", .{user_data.name, user_data.age});
     return .{ .registered = true };
@@ -33,5 +33,5 @@ import app/test_lib
 
 // Create a user using the imported event
 ~app.test_lib.user:create(name: "Alice", age: 30)
-| created c |> register_user(user_data: c)
+| created c |> register-user(user-data: c)
     | registered _ |> _

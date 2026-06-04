@@ -34,10 +34,10 @@ const Body = struct {
 // PLANETARY INITIALIZATION - Ultra granular (5 planet events + assembler)
 // ============================================================================
 
-~event create_sun {}
+~event create-sun {}
 | created Body
 
-~proc create_sun|zig {
+~proc create-sun|zig {
     const sun = Body{
         .x = 0, .y = 0, .z = 0,
         .vx = 0, .vy = 0, .vz = 0,
@@ -46,10 +46,10 @@ const Body = struct {
     return .{ .created = sun };
 }
 
-~event create_jupiter {}
+~event create-jupiter {}
 | created Body
 
-~proc create_jupiter|zig {
+~proc create-jupiter|zig {
     const jupiter = Body{
         .x = 4.84143144246472090e+00,
         .y = -1.16032004402742839e+00,
@@ -62,10 +62,10 @@ const Body = struct {
     return .{ .created = jupiter };
 }
 
-~event create_saturn {}
+~event create-saturn {}
 | created Body
 
-~proc create_saturn|zig {
+~proc create-saturn|zig {
     const saturn = Body{
         .x = 8.34336671824457987e+00,
         .y = 4.12479856412430479e+00,
@@ -78,10 +78,10 @@ const Body = struct {
     return .{ .created = saturn };
 }
 
-~event create_uranus {}
+~event create-uranus {}
 | created Body
 
-~proc create_uranus|zig {
+~proc create-uranus|zig {
     const uranus = Body{
         .x = 1.28943695621391310e+01,
         .y = -1.51111514016986312e+01,
@@ -94,10 +94,10 @@ const Body = struct {
     return .{ .created = uranus };
 }
 
-~event create_neptune {}
+~event create-neptune {}
 | created Body
 
-~proc create_neptune|zig {
+~proc create-neptune|zig {
     const neptune = Body{
         .x = 1.53796971148509165e+01,
         .y = -2.59193146099879641e+01,
@@ -110,7 +110,7 @@ const Body = struct {
     return .{ .created = neptune };
 }
 
-~event assemble_solar_system {
+~event assemble-solar-system {
     sun: Body,
     jupiter: Body,
     saturn: Body,
@@ -119,31 +119,31 @@ const Body = struct {
 }
 | assembled [5]Body
 
-~proc assemble_solar_system|zig {
+~proc assemble-solar-system|zig {
     const bodies_array = [_]Body{ sun, jupiter, saturn, uranus, neptune };
     return .{ .assembled = bodies_array };
 }
 
 // Subflow: Initialize system by creating each planet then assembling
-~event initialize_system {}
+~event initialize-system {}
 | initialized [5]Body[mutable]
 
-~initialize_system = create_sun()
-| created s |> create_jupiter()
-    | created j |> create_saturn()
-        | created sat |> create_uranus()
-            | created u |> create_neptune()
-                | created n |> assemble_solar_system(s.sun, j.jupiter, sat.saturn, u.uranus, n.neptune)
+~initialize-system = create-sun()
+| created s |> create-jupiter()
+    | created j |> create-saturn()
+        | created sat |> create-uranus()
+            | created u |> create-neptune()
+                | created n |> assemble-solar-system(s.sun, j.jupiter, sat.saturn, u.uranus, n.neptune)
                     | assembled a |> initialized { a.bodies }
 
 // ============================================================================
 // MOMENTUM OFFSET - Granular decomposition
 // ============================================================================
 
-~event calculate_momentum_x { bodies: []Body }
+~event calculate-momentum-x { bodies: []Body }
 | computed f64
 
-~proc calculate_momentum_x|zig {
+~proc calculate-momentum-x|zig {
     var px: f64 = 0.0;
     for (bodies) |body| {
         px += body.vx * body.mass;
@@ -151,10 +151,10 @@ const Body = struct {
     return .{ .computed = px };
 }
 
-~event calculate_momentum_y { bodies: []Body }
+~event calculate-momentum-y { bodies: []Body }
 | computed f64
 
-~proc calculate_momentum_y|zig {
+~proc calculate-momentum-y|zig {
     var py: f64 = 0.0;
     for (bodies) |body| {
         py += body.vy * body.mass;
@@ -162,10 +162,10 @@ const Body = struct {
     return .{ .computed = py };
 }
 
-~event calculate_momentum_z { bodies: []Body }
+~event calculate-momentum-z { bodies: []Body }
 | computed f64
 
-~proc calculate_momentum_z|zig {
+~proc calculate-momentum-z|zig {
     var pz: f64 = 0.0;
     for (bodies) |body| {
         pz += body.vz * body.mass;
@@ -173,31 +173,31 @@ const Body = struct {
     return .{ .computed = pz };
 }
 
-~event apply_sun_offset { bodies: []Body, px: f64, py: f64, pz: f64 }
+~event apply-sun-offset { bodies: []Body, px: f64, py: f64, pz: f64 }
 
-~proc apply_sun_offset|zig {
+~proc apply-sun-offset|zig {
     bodies[0].vx = -px / SOLAR_MASS;
     bodies[0].vy = -py / SOLAR_MASS;
     bodies[0].vz = -pz / SOLAR_MASS;
 }
 
 // Subflow: Offset momentum by calculating each component then applying
-~event offset_momentum { bodies: []Body }
+~event offset-momentum { bodies: []Body }
 
-~offset_momentum = calculate_momentum_x(bodies)
-| computed cx |> calculate_momentum_y(bodies)
-    | computed cy |> calculate_momentum_z(bodies)
-        | computed cz |> apply_sun_offset(bodies, cx.px, cy.py, cz.pz)
+~offset-momentum = calculate-momentum-x(bodies)
+| computed cx |> calculate-momentum-y(bodies)
+    | computed cy |> calculate-momentum-z(bodies)
+        | computed cz |> apply-sun-offset(bodies, cx.px, cy.py, cz.pz)
             |> adjusted {}
 
 // ============================================================================
 // ENERGY CALCULATION - Ultra granular
 // ============================================================================
 
-~event sum_kinetic_energies { bodies: []const Body }
+~event sum-kinetic-energies { bodies: []const Body }
 | computed f64
 
-~proc sum_kinetic_energies|zig {
+~proc sum-kinetic-energies|zig {
     var total: f64 = 0.0;
     for (bodies) |body| {
         total += 0.5 * body.mass * (body.vx * body.vx + body.vy * body.vy + body.vz * body.vz);
@@ -205,10 +205,10 @@ const Body = struct {
     return .{ .computed = total };
 }
 
-~event sum_potential_energies { bodies: []const Body }
+~event sum-potential-energies { bodies: []const Body }
 | computed f64
 
-~proc sum_potential_energies|zig {
+~proc sum-potential-energies|zig {
     var total: f64 = 0.0;
     for (bodies, 0..) |body, i| {
         var j = i + 1;
@@ -223,54 +223,54 @@ const Body = struct {
     return .{ .computed = total };
 }
 
-~event combine_energies { ke: f64, pe: f64 }
+~event combine-energies { ke: f64, pe: f64 }
 | computed f64
 
-~proc combine_energies|zig {
+~proc combine-energies|zig {
     const total = ke + pe;
     return .{ .computed = total };
 }
 
 // Subflow: Calculate total energy by summing kinetic and potential
-~event calculate_total_energy { bodies: []const Body }
+~event calculate-total-energy { bodies: []const Body }
 | result f64
 
-~calculate_total_energy = sum_kinetic_energies(bodies)
-| computed ke |> sum_potential_energies(bodies)
-    | computed pe |> combine_energies(ke: ke.total_ke, pe: pe.total_pe)
+~calculate-total-energy = sum-kinetic-energies(bodies)
+| computed ke |> sum-potential-energies(bodies)
+    | computed pe |> combine-energies(ke: ke.total_ke, pe: pe.total_pe)
         | computed c |> result { energy: c.total }
 
 // ============================================================================
 // GRAVITATIONAL INTERACTIONS - Maximum granularity
 // ============================================================================
 
-~event calculate_distance_vector { b1: Body, b2: Body }
+~event calculate-distance-vector { b1: Body, b2: Body }
 | computed { dx: f64, dy: f64, dz: f64, b1: Body, b2: Body }
 
-~proc calculate_distance_vector|zig {
+~proc calculate-distance-vector|zig {
     const dx = b1.x - b2.x;
     const dy = b1.y - b2.y;
     const dz = b1.z - b2.z;
     return .{ .computed = .{ .dx = dx, .dy = dy, .dz = dz, .b1 = b1, .b2 = b2 } };
 }
 
-~event calculate_distance_scalar { dx: f64, dy: f64, dz: f64 }
+~event calculate-distance-scalar { dx: f64, dy: f64, dz: f64 }
 | computed { distance: f64, dx: f64, dy: f64, dz: f64 }
 
-~proc calculate_distance_scalar|zig {
+~proc calculate-distance-scalar|zig {
     const distance = @sqrt(dx * dx + dy * dy + dz * dz);
     return .{ .computed = .{ .distance = distance, .dx = dx, .dy = dy, .dz = dz } };
 }
 
-~event calculate_gravitational_magnitude { distance: f64, dt: f64 }
+~event calculate-gravitational-magnitude { distance: f64, dt: f64 }
 | computed { mag: f64, dt: f64 }
 
-~proc calculate_gravitational_magnitude|zig {
+~proc calculate-gravitational-magnitude|zig {
     const mag = dt / (distance * distance * distance);
     return .{ .computed = .{ .mag = mag, .dt = dt } };
 }
 
-~event update_body_pair_velocities {
+~event update-body-pair-velocities {
     b1: Body,
     b2: Body,
     dx: f64,
@@ -280,7 +280,7 @@ const Body = struct {
 }
 | updated { b1: Body, b2: Body }
 
-~proc update_body_pair_velocities|zig {
+~proc update-body-pair-velocities|zig {
     var updated_b1 = b1;
     var updated_b2 = b2;
 
@@ -296,13 +296,13 @@ const Body = struct {
 }
 
 // Subflow: Process one body pair - demonstrates deep event composition
-~event process_body_pair { b1: Body, b2: Body, dt: f64 }
+~event process-body-pair { b1: Body, b2: Body, dt: f64 }
 | updated { b1: Body, b2: Body }
 
-~process_body_pair = calculate_distance_vector(b1, b2)
-| computed dv |> calculate_distance_scalar(dv.dx, dv.dy, dv.dz)
-    | computed ds |> calculate_gravitational_magnitude(ds.distance, dt)
-        | computed gm |> update_body_pair_velocities(dv.b1, dv.b2, ds.dx, ds.dy, ds.dz, gm.mag)
+~process-body-pair = calculate-distance-vector(b1, b2)
+| computed dv |> calculate-distance-scalar(dv.dx, dv.dy, dv.dz)
+    | computed ds |> calculate-gravitational-magnitude(ds.distance, dt)
+        | computed gm |> update-body-pair-velocities(dv.b1, dv.b2, ds.dx, ds.dy, ds.dz, gm.mag)
             | updated u |> updated { u.b1, u.b2 }
 
 // ============================================================================
@@ -311,9 +311,9 @@ const Body = struct {
 // ============================================================================
 
 // Helper: Update one pair of bodies in the array
-~event update_pair_in_array { bodies: []Body, i: usize, j: usize, dt: f64 }
+~event update-pair-in-array { bodies: []Body, i: usize, j: usize, dt: f64 }
 
-~proc update_pair_in_array|zig {
+~proc update-pair-in-array|zig {
     const dx = bodies[i].x - bodies[j].x;
     const dy = bodies[i].y - bodies[j].y;
     const dz = bodies[i].z - bodies[j].z;
@@ -331,11 +331,11 @@ const Body = struct {
 }
 
 // Inner loop iteration: process pairs for current i
-~event inner_loop_step { bodies: []Body, i: usize, j: usize, dt: f64 }
-| continue_inner { i: usize, j: usize, dt: f64 }
-| done_inner usize
+~event inner-loop-step { bodies: []Body, i: usize, j: usize, dt: f64 }
+| continue-inner { i: usize, j: usize, dt: f64 }
+| done-inner usize
 
-~proc inner_loop_step|zig {
+~proc inner-loop-step|zig {
     if (j < bodies.len) {
         return .{ .continue_inner = .{ .i = i, .j = j, .dt = dt } };
     } else {
@@ -344,11 +344,11 @@ const Body = struct {
 }
 
 // Outer loop iteration: process all i values
-~event outer_loop_step { bodies: []Body, i: usize, dt: f64 }
-| continue_outer { i: usize, dt: f64 }
-| done_outer f64
+~event outer-loop-step { bodies: []Body, i: usize, dt: f64 }
+| continue-outer { i: usize, dt: f64 }
+| done-outer f64
 
-~proc outer_loop_step|zig {
+~proc outer-loop-step|zig {
     if (i < bodies.len) {
         return .{ .continue_outer = .{ .i = i, .dt = dt } };
     } else {
@@ -357,24 +357,24 @@ const Body = struct {
 }
 
 // Main entry point: Event-driven nested loop for all interactions
-~event calculate_all_interactions { bodies: []Body, dt: f64 }
+~event calculate-all-interactions { bodies: []Body, dt: f64 }
 
-~calculate_all_interactions = outer_loop_step(bodies, i: 0, dt)
-| continue_outer outer |> #inner_start inner_loop_step(bodies, outer.i, j: outer.i + 1, outer.dt)
-    | continue_inner inner |> update_pair_in_array(bodies, inner.i, inner.j, inner.dt)
+~calculate-all-interactions = outer-loop-step(bodies, i: 0, dt)
+| continue-outer outer |> #inner_start inner-loop-step(bodies, outer.i, j: outer.i + 1, outer.dt)
+    | continue-inner inner |> update-pair-in-array(bodies, inner.i, inner.j, inner.dt)
         |> @inner_start(bodies, inner.i, j: inner.j + 1, inner.dt)
-    | done_inner done_i |> outer_loop_step(bodies, i: done_i.i + 1, outer.dt)
-        | continue_outer co2 |> @inner_start(bodies, co2.i, j: co2.i + 1, co2.dt)
-        | done_outer |> updated {}
-| done_outer |> updated {}
+    | done-inner done_i |> outer-loop-step(bodies, i: done_i.i + 1, outer.dt)
+        | continue-outer co2 |> @inner_start(bodies, co2.i, j: co2.i + 1, co2.dt)
+        | done-outer |> updated {}
+| done-outer |> updated {}
 
 // ============================================================================
 // POSITION UPDATES
 // ============================================================================
 
-~event update_all_positions { bodies: []Body, dt: f64 }
+~event update-all-positions { bodies: []Body, dt: f64 }
 
-~proc update_all_positions|zig {
+~proc update-all-positions|zig {
     for (bodies) |*body| {
         body.x += dt * body.vx;
         body.y += dt * body.vy;
@@ -386,26 +386,26 @@ const Body = struct {
 // UTILITY EVENTS
 // ============================================================================
 
-~event print_energy { energy: f64 }
+~event print-energy { energy: f64 }
 
-~proc print_energy|zig {
+~proc print-energy|zig {
     std.debug.print("{d:.9}\n", .{energy});
 }
 
-~event simulation_step { i: u32, n: u32 }
+~event simulation-step { i: u32, n: u32 }
 | continue { i: u32, n: u32 }
 
-~proc simulation_step|zig {
+~proc simulation-step|zig {
     if (i < n) {
         return .{ .continue = .{ .i = i, .n = n } };
     } else {
     }
 }
 
-~event parse_args {}
+~event parse-args {}
 | parsed u32
 
-~proc parse_args|zig {
+~proc parse-args|zig {
     const args = std.process.argsAlloc(std.heap.page_allocator) catch unreachable;
     defer std.process.argsFree(std.heap.page_allocator, args);
 
@@ -422,15 +422,15 @@ const Body = struct {
 // Main flow: Demonstrate extreme event composition with subflows
 // ============================================================================
 
-~parse_args()
-| parsed p |> initialize_system()
-    | initialized init |> offset_momentum(bodies: init.bodies[0..])
-        |> calculate_total_energy(bodies: init.bodies[0..])
-            | result r1 |> print_energy(r1.energy)
-                |> #sim_loop simulation_step(i: 0, p.n)
-                    | continue cont |> calculate_all_interactions(bodies: init.bodies[0..], dt: 0.01)
-                        |> update_all_positions(bodies: init.bodies[0..], dt: 0.01)
+~parse-args()
+| parsed p |> initialize-system()
+    | initialized init |> offset-momentum(bodies: init.bodies[0..])
+        |> calculate-total-energy(bodies: init.bodies[0..])
+            | result r1 |> print-energy(r1.energy)
+                |> #sim_loop simulation-step(i: 0, p.n)
+                    | continue cont |> calculate-all-interactions(bodies: init.bodies[0..], dt: 0.01)
+                        |> update-all-positions(bodies: init.bodies[0..], dt: 0.01)
                             |> @sim_loop(i: cont.i + 1, cont.n)
-                    |> calculate_total_energy(bodies: init.bodies[0..])
-                        | result r2 |> print_energy(r2.energy)
+                    |> calculate-total-energy(bodies: init.bodies[0..])
+                        | result r2 |> print-energy(r2.energy)
                             |> _

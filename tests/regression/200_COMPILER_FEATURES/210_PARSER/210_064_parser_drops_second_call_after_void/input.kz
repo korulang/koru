@@ -19,10 +19,10 @@ const std = @import("std");
     std.debug.print("ping\n", .{});
 }
 
-~event make_payload {}
+~event make-payload {}
 | created u32
 
-~proc make_payload|zig {
+~proc make-payload|zig {
     return .{ .created = 42 };
 }
 
@@ -32,7 +32,7 @@ const std = @import("std");
 }
 
 ~event run {}
-~run = ping() |> make_payload()
+~run = ping() |> make-payload()
 | created v |> consume(v)
 
 ~run()

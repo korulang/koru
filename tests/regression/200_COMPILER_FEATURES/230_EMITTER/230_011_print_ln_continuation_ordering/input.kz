@@ -10,32 +10,32 @@ const std = @import("std");
 import std/control
 import std/io
 
-// Void event (like advance_velocities)
-~event step_one {}
+// Void event (like advance-velocities)
+~event step-one {}
 
-~proc step_one|zig {}
+~proc step-one|zig {}
 
-// Another void event (like advance_positions)
-~event step_two {}
+// Another void event (like advance-positions)
+~event step-two {}
 
-~proc step_two|zig {}
+~proc step-two|zig {}
 
-// Branched event (like calculate_energy)
-~event get_result {}
+// Branched event (like calculate-energy)
+~event get-result {}
 | value i32
 
-~proc get_result|zig {
+~proc get-result|zig {
     return .{ .value = 42 };
 }
 
-// Print event with a result (like print_energy)
-~event print_value { v: i32 }
+// Print event with a result (like print-energy)
+~event print-value { v: i32 }
 
-~proc print_value|zig {
+~proc print-value|zig {
     std.debug.print("{d}\n", .{v});
 }
 
-// Initial setup (like initialize_bodies)
+// Initial setup (like initialize-bodies)
 ~event setup {}
 | ready i32
 
@@ -45,8 +45,8 @@ import std/io
 
 // Main flow - matches nbody structure
 ~setup()
-| ready _ |> get_result()
-    | value v1 |> print_value(v: v1) |> for(0..3)
-        ! each _ |> step_one() |> step_two()
-        | done |> get_result()
+| ready _ |> get-result()
+    | value v1 |> print-value(v: v1) |> for(0..3)
+        ! each _ |> step-one() |> step-two()
+        | done |> get-result()
             | value v2 |> std.io:print.ln("Result: {{ v2:d }}")

@@ -16,15 +16,15 @@ import std/taps
     std.debug.print("Helper executed\n", .{});
 }
 
-~event log_tap {}
+~event log-tap {}
 
-~proc log_tap|zig {
+~proc log-tap|zig {
     std.debug.print("TAP executed from nested context!\n", .{});
 }
 
 // Tap that observes helper
 ~tap(helper -> *)
-| Profile _ |> log_tap()
+| Profile _ |> log-tap()
 
 // Call helper from a NESTED context (inside a continuation)
 ~event outer {}

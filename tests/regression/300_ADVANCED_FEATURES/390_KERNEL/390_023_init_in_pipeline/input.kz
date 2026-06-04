@@ -7,14 +7,14 @@ import std/io
     mass: f64,
 }
 
-~event get_count {}
+~event get-count {}
 | n u32
 
-~proc get_count|zig {
+~proc get-count|zig {
     return .{ .n = 3 };
 }
 
-~get_count()
+~get-count()
 | n _ |> std.kernel:init(Body) {
         { mass: 1.0 },
         { mass: 2.0 },

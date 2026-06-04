@@ -11,16 +11,16 @@
 
 import std/io
 
-~pub event get_input {}
+~pub event get-input {}
 | line []const u8<unsanitized!>
 
-~get_input => line "user input data"
+~get-input => line "user input data"
 
 ~event sanitize { input: []const u8<!unsanitized> }
 | clean []const u8
 
 ~sanitize => clean input
 
-~get_input()
+~get-input()
 | line s |> sanitize(input: s)
     | clean c |> std.io:print.ln(c)

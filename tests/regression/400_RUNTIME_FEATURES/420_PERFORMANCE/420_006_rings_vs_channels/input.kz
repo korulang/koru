@@ -124,19 +124,19 @@ const MESSAGES: u64 = 10_000_000;
 // Koru Events - Ring Operations
 // ============================================================================
 
-~event create_ring {}
+~event create-ring {}
 | created *Ring
 
-~proc create_ring|zig {
+~proc create-ring|zig {
     // Allocate ring on heap (needs to outlive this function)
     const ring_storage = std.heap.page_allocator.create(Ring) catch unreachable;
     ring_storage.* = Ring.init();
     return .{ .created = ring_storage };
 }
 
-~event spawn_producer { ring: *Ring }
+~event spawn-producer { ring: *Ring }
 
-~proc spawn_producer|zig {
+~proc spawn-producer|zig {
     // Spawn producer thread
     const producer = std.Thread.spawn(.{}, struct {
         fn run(r: *Ring) void {
@@ -164,22 +164,22 @@ const MESSAGES: u64 = 10_000_000;
     }
 }
 
-~event consume_loop { ring: *Ring, sum: u64, received: u64 }
+~event consume-loop { ring: *Ring, sum: u64, received: u64 }
 | continue { sum: u64, received: u64 }
 | done u64
 
-~consume_loop = dequeue(ring)
-| some msg |> check_if_done(sum: sum + msg.value, received: received + 1)
+~consume-loop = dequeue(ring)
+| some msg |> check-if-done(sum: sum + msg.value, received: received + 1)
     | continue s => continue { s.sum, s.received }
     | done s => done { s.sum }
-| none |> yield_then_continue(sum, received)
+| none |> yield-then-continue(sum, received)
     | continue s => continue { s.sum, s.received }
 
-~event check_if_done { sum: u64, received: u64 }
+~event check-if-done { sum: u64, received: u64 }
 | continue { sum: u64, received: u64 }
 | done u64
 
-~proc check_if_done|zig {
+~proc check-if-done|zig {
     if (received >= MESSAGES) {
         return .{ .done = sum };
     } else {
@@ -187,10 +187,10 @@ const MESSAGES: u64 = 10_000_000;
     }
 }
 
-~event yield_then_continue { sum: u64, received: u64 }
+~event yield-then-continue { sum: u64, received: u64 }
 | continue { sum: u64, received: u64 }
 
-~proc yield_then_continue|zig {
+~proc yield-then-continue|zig {
     std.Thread.yield() catch {};
     return .{ .continue = .{ .sum = sum, .received = received } };
 }
@@ -210,8 +210,8 @@ const MESSAGES: u64 = 10_000_000;
 // Main Flow - Idiomatic Koru Consumer Loop
 // ============================================================================
 
-~create_ring()
-| created r |> spawn_producer(r.ring) |> #loop consume_loop(r.ring, sum: 0, received: 0)
+~create-ring()
+| created r |> spawn-producer(r.ring) |> #loop consume-loop(r.ring, sum: 0, received: 0)
     | continue s |> @loop(r.ring, s.sum, s.received)
     | done s |> validate(s.sum)
         | valid |> _

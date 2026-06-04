@@ -11,13 +11,13 @@ const std = @import("std");
 ~struct(Result<T, E>) { ok: ?T = null, err: ?E = null }
 ~type(IntResult = Result<i32, []const u8>)
 
-~event test_result {}
+~event test-result {}
 
-~proc test_result|zig {
+~proc test-result|zig {
     const success = IntResult{ .ok = 42, .err = null };
     if (success.ok) |val| {
         std.debug.print("Ok: {d}\n", .{val});
     }
 }
 
-~test_result()
+~test-result()

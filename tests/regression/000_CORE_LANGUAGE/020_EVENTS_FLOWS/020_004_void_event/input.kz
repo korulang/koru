@@ -2,7 +2,7 @@
 // VERIFIED REGRESSION TEST - DO NOT MODIFY WITHOUT DISCUSSION
 // ============================================================================
 // Test: Void events (no branches) in flows
-// Search: parseVoidEvent void_event no_branches
+// Search: parseVoidEvent void-event no_branches
 // ============================================================================
 
 const std = @import("std");

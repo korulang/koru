@@ -8,7 +8,7 @@ import std/io
 
 ~std.args:get(index: 1)
 | arg a |> std.io:print.ln("argv1: {{ a:s }}")
-| out_of_bounds |> std.io:print.ln("argv1: <none>")
+| out-of-bounds |> std.io:print.ln("argv1: <none>")
 
 ~std.args:rest()
 | args r |> std.io:print.ln("rest: {{ r.len:d }}")

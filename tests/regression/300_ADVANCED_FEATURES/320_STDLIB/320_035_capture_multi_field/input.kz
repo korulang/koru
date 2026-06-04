@@ -12,9 +12,9 @@ import std/control
 
 const std = @import("std");
 
-~event print_results { outer_val: i32, inner_val: i32 }
+~event print-results { outer-val: i32, inner-val: i32 }
 
-~proc print_results|zig {
+~proc print-results|zig {
     std.debug.print("{d},{d}\n", .{outer_val, inner_val});
 }
 
@@ -23,5 +23,5 @@ const std = @import("std");
 ~capture(expr: { outer: @as(i32, 0) })
 | as o |> capture(expr: { inner: @as(i32, 0) })
     | as => captured { inner: 42, outer: 99 }
-    | captured result |> print_results(outer_val: o.outer, inner_val: result.inner)
+    | captured result |> print-results(outer-val: o.outer, inner-val: result.inner)
 | captured |> _

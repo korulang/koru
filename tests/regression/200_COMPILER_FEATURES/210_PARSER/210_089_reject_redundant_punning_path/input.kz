@@ -14,13 +14,13 @@ import std/io
 
 ~echo => out v
 
-~event get_box { }
+~event get-box { }
 | got { v: i32, other: i32 }
 
-~proc get_box|zig {
+~proc get-box|zig {
     return .{ .got = .{ .v = 7, .other = 11 } };
 }
 
-~get_box()
+~get-box()
 | got box |> echo(v: box.v)
     | out r |> std.io:print.ln("{{ r:d }}")

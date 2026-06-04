@@ -33,16 +33,16 @@ const std = @import("std");
     return .{ .result = result_str };
 }
 
-~pub event print_result { value: []const u8 }
+~pub event print-result { value: []const u8 }
 
-~proc print_result|zig {
+~proc print-result|zig {
     std.debug.print("Result: {s}\n", .{value});
 }
 
 // Register events for runtime dispatch
 ~std.runtime:register(scope: "bench") {
     compute
-    print_result
+    print-result
 }
 
 // ============================================================================
@@ -65,6 +65,6 @@ import std/io
 ~std.interpreter:run(source: FLOW_SOURCE, dispatcher: dispatch_bench)
 | result r |> std.io:print.ln("Success: branch {{ r.value.branch:s }}")
 | exhausted e |> std.io:print.ln("Exhausted: {{ e.last_event:s }}")
-| parse_error e |> std.io:print.ln("Error: {{ e.message:s }}")
-| validation_error e |> std.io:print.ln("Error: {{ e:s }}")
-| dispatch_error e |> std.io:print.ln("Error: {{ e.message:s }}")
+| parse-error e |> std.io:print.ln("Error: {{ e.message:s }}")
+| validation-error e |> std.io:print.ln("Error: {{ e:s }}")
+| dispatch-error e |> std.io:print.ln("Error: {{ e.message:s }}")

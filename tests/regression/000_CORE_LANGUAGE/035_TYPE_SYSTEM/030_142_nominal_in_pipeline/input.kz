@@ -16,13 +16,13 @@ const std = @import("std");
 ~int(UserId)
 
 // Event that takes nominal types
-~event greet_user { name: Username, id: UserId }
+~event greet-user { name: Username, id: UserId }
 
-~proc greet_user|zig {
+~proc greet-user|zig {
     std.debug.print("Hello {s} (ID: {d})\n", .{ name, id });
 }
 
 // Use in a pipeline
 ~const({ user: "alice", uid: @as(i64, 42) })
-| as data |> greet_user(name: data.user, id: data.uid)
+| as data |> greet-user(name: data.user, id: data.uid)
     

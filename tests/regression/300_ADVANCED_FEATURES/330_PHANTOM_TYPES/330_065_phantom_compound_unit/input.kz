@@ -9,22 +9,22 @@
 
 import std/io
 
-~event read_distance { trip_id: u8 }
+~event read-distance { trip-id: u8 }
 | traveled i32<meter>
 
-~read_distance => traveled 100
+~read-distance => traveled 100
 
-~event read_time { trip_id: u8 }
+~event read-time { trip-id: u8 }
 | elapsed i32<second>
 
-~read_time => elapsed 4
+~read-time => elapsed 4
 
-~event compute_velocity { d: i32<meter>, t: i32<second> }
+~event compute-velocity { d: i32<meter>, t: i32<second> }
 | result i32<meter/second>
 
-~compute_velocity => result d / t
+~compute-velocity => result d / t
 
-~read_distance(trip_id: 1)
-| traveled m |> read_time(trip_id: 1)
-    | elapsed s |> compute_velocity(d: m, t: s)
+~read-distance(trip-id: 1)
+| traveled m |> read-time(trip-id: 1)
+    | elapsed s |> compute-velocity(d: m, t: s)
         | result v |> std.io:print.ln("{{ v:d }} m/s")

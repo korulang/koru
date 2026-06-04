@@ -4,10 +4,10 @@
 const std = @import("std");
 
 // Annotations with special characters (opaque!)
-~[gpu:metal:half] event colon_separated {}
+~[gpu:metal:half] event colon-separated {}
 
 // Annotations with comparison operators
-~[version>=2.0] event version_check {}
+~[version>=2.0] event version-check {}
 
 // Annotations with spaces in params
 ~[profile "with spaces" 1000Hz] event spaced {}
@@ -16,14 +16,14 @@ const std = @import("std");
 ~[custom(foo(bar: 1))] event nested {}
 
 // URL-like annotation
-~[source("https://example.com/spec")] event url_annot {}
+~[source("https://example.com/spec")] event url-annot {}
 
 // Future syntax experimentation
-~[inline@500] event at_syntax {}
+~[inline@500] event at-syntax {}
 
-~proc colon_separated|zig { return .{ .done = .{} }; }
-~proc version_check|zig { return .{ .done = .{} }; }
+~proc colon-separated|zig { return .{ .done = .{} }; }
+~proc version-check|zig { return .{ .done = .{} }; }
 ~proc spaced|zig { return .{ .done = .{} }; }
 ~proc nested|zig { return .{ .done = .{} }; }
-~proc url_annot|zig { return .{ .done = .{} }; }
-~proc at_syntax|zig { return .{ .done = .{} }; }
+~proc url-annot|zig { return .{ .done = .{} }; }
+~proc at-syntax|zig { return .{ .done = .{} }; }

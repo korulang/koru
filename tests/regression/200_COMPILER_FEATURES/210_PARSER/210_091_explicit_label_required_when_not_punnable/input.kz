@@ -20,10 +20,10 @@ import std/io
 
 ~echo => out v
 
-~event get_box { }
+~event get-box { }
 | got { v: i32, other: i32 }
 
-~proc get_box|zig {
+~proc get-box|zig {
     return .{ .got = .{ .v = 7, .other = 11 } };
 }
 
@@ -36,6 +36,6 @@ import std/io
 | out r2 |> std.io:print.ln("expr: {{ r2:d }}")
 
 // Path mismatch — `box.other` puns to 'other', not 'v', so label required.
-~get_box()
+~get-box()
 | got box |> echo(v: box.other)
     | out r3 |> std.io:print.ln("path mismatch: {{ r3:d }}")

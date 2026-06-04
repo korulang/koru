@@ -258,7 +258,7 @@ const AsyncHandle = struct {
 // This is where the power of progressive disclosure shines!
 
 ~event consumeMessages.join { handles: []const AsyncHandle }
-| all_completed []const ConsumeResult
+| all-completed []const ConsumeResult
 
 ~proc consumeMessages.join|zig {
     // Allocate results array
@@ -278,7 +278,7 @@ const AsyncHandle = struct {
 // ============================================================================
 
 ~event combineResults { results: []const ConsumeResult }
-| combined { total_sum: u64, total_count: u64 }
+| combined { total-sum: u64, total-count: u64 }
 
 ~proc combineResults|zig {
     var total_sum: u64 = 0;
@@ -360,5 +360,5 @@ const AsyncHandle = struct {
         | awaitable h2 |> consumeMessages.async(r.ring, target: MESSAGES_PER_CONSUMER)
             | awaitable h3 |> consumeMessages.async(r.ring, target: MESSAGES_PER_CONSUMER)
                 | awaitable h4 |> consumeMessages.join(handles: &[_]AsyncHandle{ h1.handle, h2.handle, h3.handle, h4.handle })
-                    | all_completed results |> combineResults(results.results)
+                    | all-completed results |> combineResults(results.results)
                         | combined c |> validate(sum: c.total_sum, count: c.total_count)

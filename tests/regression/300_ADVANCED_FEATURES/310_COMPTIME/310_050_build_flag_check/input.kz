@@ -7,11 +7,11 @@ const std = @import("std");
 const Root = @import("root");
 
 // A comptime event that checks build configuration (no Source, just meta)
-~[comptime]pub event check_build { meta: InvocationMeta }
+~[comptime]pub event check-build { meta: InvocationMeta }
 | activated []const u8
 | skipped []const u8
 
-~proc check_build|zig {
+~proc check-build|zig {
     // If no annotations, skip
     if (meta.annotations.len == 0) {
         return .{ .skipped = "no annotation" };
@@ -36,11 +36,11 @@ const Root = @import("root");
 }
 
 // Test with [release] annotation - should activate when --build=release
-~[release]check_build()
+~[release]check-build()
 | activated _ |> std.io:println(text: "release: ACTIVATED")
 | skipped _ |> std.io:println(text: "release: skipped")
 
 // Test with [debug] annotation - should activate when --build=debug
-~[debug]check_build()
+~[debug]check-build()
 | activated _ |> std.io:println(text: "debug: ACTIVATED")
 | skipped _ |> std.io:println(text: "debug: skipped")

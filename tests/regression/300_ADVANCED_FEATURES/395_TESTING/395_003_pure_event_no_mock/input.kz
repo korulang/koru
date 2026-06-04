@@ -6,17 +6,17 @@
 import std/testing
 
 // Pure computation - no side effects
-~event add_numbers { a: u32, b: u32 }
+~event add-numbers { a: u32, b: u32 }
 | result u32
 
-~[pure] proc add_numbers|zig {
+~[pure] proc add-numbers|zig {
     return .{ .result = a + b };
 }
 
 // Test: Pure event called directly, no mock needed
 // Actually verify the computation result!
 ~test(Pure event works without mock) {
-    ~add_numbers(a: 5, b: 3)
+    ~add-numbers(a: 5, b: 3)
     | result r |> assert(r == 8)
 }
 

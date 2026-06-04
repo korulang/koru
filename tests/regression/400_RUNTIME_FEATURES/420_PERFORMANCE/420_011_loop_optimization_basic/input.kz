@@ -13,11 +13,11 @@
 const std = @import("std");
 
 // Checker event: Two branches (continue/done), proc with if/else
-~event loop_step { i: u64, limit: u64, sum: u64 }
+~event loop-step { i: u64, limit: u64, sum: u64 }
 | continue { i: u64, sum: u64 }
 | done u64
 
-~proc loop_step|zig {
+~proc loop-step|zig {
     if (i < limit) {
         const new_sum = sum + i;
         return .{ .continue = .{ .i = i, .sum = new_sum } };
@@ -35,7 +35,7 @@ const std = @import("std");
 
 // Main flow: Label loop with recursive jump
 // Pattern the optimizer should detect:
-// - Initial call: loop_step(i: 0, ...)
+// - Initial call: loop-step(i: 0, ...)
 // - Continue branch: @loop(i: i + 1, ...) - RECURSIVE JUMP with increment
 // - Done branch: Exit loop
 //
@@ -44,6 +44,6 @@ const std = @import("std");
 //     sum += i;
 // }
 
-~#main_loop loop_step(i: 0, limit: 10_000_000, sum: 0)
+~#main_loop loop-step(i: 0, limit: 10_000_000, sum: 0)
 | continue c |> @main_loop(i: c.i + 1, limit: 10_000_000, c.sum)
 | done d |> print(d.result)

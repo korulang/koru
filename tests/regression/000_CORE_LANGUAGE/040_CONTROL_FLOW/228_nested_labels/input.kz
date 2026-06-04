@@ -8,12 +8,12 @@
 const std = @import("std");
 
 ~event outer { count: i32 }
-| continue_outer i32
-| done_outer
+| continue-outer i32
+| done-outer
 
 ~event inner { count: i32 }
-| continue_inner i32
-| done_inner
+| continue-inner i32
+| done-inner
 
 ~proc outer|zig {
     std.debug.print("Outer: {}\n", .{count});
@@ -33,7 +33,7 @@ const std = @import("std");
 
 // Nested labels: #outer contains #inner
 ~#outer outer(count: 0)
-| continue_outer o |> #inner inner(count: 0)
-    | continue_inner i |> @inner(count: i)
-    | done_inner |> @outer(count: o)
-| done_outer |> _
+| continue-outer o |> #inner inner(count: 0)
+    | continue-inner i |> @inner(count: i)
+    | done-inner |> @outer(count: o)
+| done-outer |> _

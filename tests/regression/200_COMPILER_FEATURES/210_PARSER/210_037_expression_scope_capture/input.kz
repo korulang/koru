@@ -5,10 +5,10 @@
 const std = @import("std");
 
 // Event with Expression field - should auto-mark as comptime
-~event check_expr { expr: Expression }
+~event check-expr { expr: Expression }
 
 // Proc receives expr as []const u8
-~proc check_expr|zig {
+~proc check-expr|zig {
     std.debug.print("Expression: {s}\n", .{expr});
 }
 

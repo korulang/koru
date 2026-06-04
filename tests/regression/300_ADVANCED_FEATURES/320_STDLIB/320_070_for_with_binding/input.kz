@@ -14,34 +14,34 @@ const std = @import("std");
 // Event that returns an array OR fails (multiple branches = switch needed)
 const my_items = [_]i32{ 1, 2, 3 };
 
-~event get_items {}
+~event get-items {}
 | items *const [3]i32
 | failed []const u8
 
-~proc get_items|zig {
+~proc get-items|zig {
     return .{ .items = &my_items };
 }
 
 // Process each item
 var sum: i32 = 0;
 
-~event add_item { value: i32 }
+~event add-item { value: i32 }
 
-~proc add_item|zig {
+~proc add-item|zig {
     sum += value;
     std.debug.print("Added {}, sum = {}\n", .{value, sum});
 }
 
 // Show result
-~event show_sum {}
+~event show-sum {}
 
-~proc show_sum|zig {
+~proc show-sum|zig {
     std.debug.print("Final sum: {}\n", .{sum});
 }
 
 // Main flow: the binding 'arr' must be captured in the switch arm
-~get_items()
+~get-items()
 | items arr |> for(arr)
-    ! each x |> add_item(value: x)
-    | done |> show_sum()
+    ! each x |> add-item(value: x)
+    | done |> show-sum()
 | failed _ |> _

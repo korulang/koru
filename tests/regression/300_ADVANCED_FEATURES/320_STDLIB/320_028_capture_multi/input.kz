@@ -1,5 +1,5 @@
 // FRONTIER (deferred 2026-06-03): old-form capture-as-subflow-impl
-// (`~compute_stats = capture(...)`) + brace `captured { }`. The new capture model
+// (`~compute-stats = capture(...)`) + brace `captured { }`. The new capture model
 // (320_042) is top-level single-cell; capture-as-a-pipeline/subflow-RHS needs the
 // nested-step path (deleted). See project_capture_dissolves_into_effect_cell.
 // Test: ~capture with multiple accumulated fields
@@ -18,12 +18,12 @@
 import std/io
 import std/control
 
-~event compute_stats {}
+~event compute-stats {}
 | result { sum: i32, max: i32 }
 
 // Compute sum and max in one pass
 // Values: 3, 1, 4, 1, 5 -> sum=14, max=5
-~compute_stats = capture(init: { sum: @as(i32, 0), max: @as(i32, 0) })
+~compute-stats = capture(init: { sum: @as(i32, 0), max: @as(i32, 0) })
 | as c |> for(&[_]i32{ 3, 1, 4, 1, 5 })
   ! each val |> captured {
       sum: c.sum + val,
@@ -31,5 +31,5 @@ import std/control
     }
 | captured final |> result { final.sum, final.max }
 
-~compute_stats()
+~compute-stats()
 | result _ |> std.io:println(text: "done")

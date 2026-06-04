@@ -9,9 +9,9 @@ import std/control
 
 const std = @import("std");
 
-~event print_int { value: i32 }
+~event print-int { value: i32 }
 
-~proc print_int|zig {
+~proc print-int|zig {
     std.debug.print("{d}\n", .{value});
 }
 
@@ -23,4 +23,4 @@ const std = @import("std");
 | as outer |> capture(expr: { inner: @as(i32, 0) })
     | as inner => captured { inner: inner.inner + 42 }
     | captured result => captured { outer: outer.outer + result.inner }
-| captured final |> print_int(value: final.outer)
+| captured final |> print-int(value: final.outer)

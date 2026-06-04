@@ -1,12 +1,12 @@
 // Minimal repro for nested recursive event with labels codegen bug
 // Issue: Complex nested recursion with multiple labels generates invalid Zig
-// Pattern: .continue_outer => , (missing expression)
+// Pattern: .continue-outer => , (missing expression)
 
-~event outer_step { i: u32 }
-| continue_outer u32
-| done_outer u32
+~event outer-step { i: u32 }
+| continue-outer u32
+| done-outer u32
 
-~proc outer_step|zig {
+~proc outer-step|zig {
     if (i < 2) {
         return .{ .continue_outer = i };
     } else {
@@ -14,11 +14,11 @@
     }
 }
 
-~event inner_step { i: u32, j: u32 }
-| continue_inner { i: u32, j: u32 }
-| done_inner u32
+~event inner-step { i: u32, j: u32 }
+| continue-inner { i: u32, j: u32 }
+| done-inner u32
 
-~proc inner_step|zig {
+~proc inner-step|zig {
     if (j < 2) {
         return .{ .continue_inner = .{ .i = i, .j = j } };
     } else {
@@ -26,25 +26,25 @@
     }
 }
 
-~event process_pair { i: u32, j: u32 }
+~event process-pair { i: u32, j: u32 }
 | processed { i: u32, j: u32 }
 
-~proc process_pair|zig {
+~proc process-pair|zig {
     return .{ .processed = .{ .i = i, .j = j } };
 }
 
 // Nested recursive loop with labels
-~event nested_loop { start: u32 }
+~event nested-loop { start: u32 }
 | done u32
 
-~nested_loop = outer_step(i: start)
-| continue_outer outer |> #inner_start inner_step(i: outer, j: 0)
-    | continue_inner inner |> process_pair(inner.i, inner.j)
+~nested-loop = outer-step(i: start)
+| continue-outer outer |> #inner_start inner-step(i: outer, j: 0)
+    | continue-inner inner |> process-pair(inner.i, inner.j)
         | processed p |> @inner_start(p.i, j: p.j + 1)
-    | done_inner done_i |> outer_step(i: done_i + 1)
-        | continue_outer co2 |> @inner_start(i: co2, j: 0)
-        | done_outer done_o => done done_o
-| done_outer done_o => done done_o
+    | done-inner done_i |> outer-step(i: done_i + 1)
+        | continue-outer co2 |> @inner_start(i: co2, j: 0)
+        | done-outer done_o => done done_o
+| done-outer done_o => done done_o
 
-~nested_loop(start: 0)
+~nested-loop(start: 0)
 | done _ |> _

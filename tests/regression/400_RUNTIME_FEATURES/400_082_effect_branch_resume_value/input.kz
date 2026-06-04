@@ -13,16 +13,16 @@ import std/io
 
 const std = @import("std");
 
-~pub event prompt_user { question: []const u8 }
+~pub event prompt-user { question: []const u8 }
 ! ask []const u8 -> []const u8
 | done []const u8
 
-~proc prompt_user|zig {
+~proc prompt-user|zig {
     const reply = ask(question);
     return .{ .done = reply };
 }
 
-~prompt_user(question: "What's your name?")
+~prompt-user(question: "What's your name?")
 ! ask _ |> "Alice"
 | done r |> std.io:print.blk {
     reply was: {{ r:s }}

@@ -11,11 +11,11 @@
 ! ?warning []const u8
 | done usize
 
-~pub event consume_token { t: []const u8 }
-~pub event end_run { n: usize }
-~pub event log_unhandled { name: []const u8 }
+~pub event consume-token { t: []const u8 }
+~pub event end-run { n: usize }
+~pub event log-unhandled { name: []const u8 }
 
 ~tokenize(source: "x")
-! token t |> consume_token(t)
-!? Transition _ |> log_unhandled(name: "warn")
-| done n |> end_run(n)
+! token t |> consume-token(t)
+!? Transition _ |> log-unhandled(name: "warn")
+| done n |> end-run(n)

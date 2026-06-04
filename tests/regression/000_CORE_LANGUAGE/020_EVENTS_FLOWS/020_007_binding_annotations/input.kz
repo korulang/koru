@@ -3,21 +3,21 @@
 
 const std = @import("std");
 
-~event get_data {}
+~event get-data {}
 | result i32
 
-~proc get_data|zig {
+~proc get-data|zig {
     return .{ .result = 42 };
 }
 
 // This event mutates the value it receives via a pointer
-~event mutate_and_print { ptr: *i32 }
+~event mutate-and-print { ptr: *i32 }
 
-~proc mutate_and_print|zig {
+~proc mutate-and-print|zig {
     ptr.* += 1;  // Mutate the value
     std.debug.print("Value: {d}\n", .{ptr.*});
 }
 
 // Test: Using [mutable] annotation so we can pass a mutable pointer
-~get_data()
-| result r[mutable] |> mutate_and_print(ptr: &r)
+~get-data()
+| result r[mutable] |> mutate-and-print(ptr: &r)

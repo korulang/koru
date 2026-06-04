@@ -9,7 +9,7 @@ import std/io
 // Get program name (index 0) - just verify we can access it
 ~std.args:get(index: 0)
 | arg _ |> std.io:print.ln("has program name: yes")
-| out_of_bounds |> std.io:print.ln("no args?!")
+| out-of-bounds |> std.io:print.ln("no args?!")
 
 // Get rest (skipping program name)
 ~std.args:rest()
