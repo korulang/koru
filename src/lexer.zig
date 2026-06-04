@@ -99,6 +99,12 @@ pub fn parseDottedPath(allocator: std.mem.Allocator, path: []const u8) ![][]cons
     var iter = std.mem.tokenizeScalar(u8, path, '.');
     while (iter.next()) |segment| {
         const owned = try allocator.dupe(u8, segment);
+        // Normalize kebab Koru names -> snake at construction, BEFORE the registry
+        // keys (path_str) are derived from these segments. Keeps decl registration
+        // and call-site lookups on the same snake form. See src/ast_mangle.zig.
+        for (owned) |*c| {
+            if (c.* == '-') c.* = '_';
+        }
         try segments.append(allocator, owned);
     }
 
@@ -119,8 +125,12 @@ pub fn parseQualifiedPath(allocator: std.mem.Allocator, path: []const u8, ast: a
 
         const segments = try parseDottedPath(allocator, namespace_part);
 
+        const owned_qualifier = try allocator.dupe(u8, qualifier);
+        for (owned_qualifier) |*c| {
+            if (c.* == '-') c.* = '_';
+        }
         return ast.DottedPath{
-            .module_qualifier = try allocator.dupe(u8, qualifier),
+            .module_qualifier = owned_qualifier,
             .segments = segments,
         };
     } else {

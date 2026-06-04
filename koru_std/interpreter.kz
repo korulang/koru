@@ -127,6 +127,14 @@ const flow_parser = @import("flow_parser");
     module_resolver_module.addImport("log", log_module);
     module_resolver_module.addImport("file_types", file_types_module);
 
+    // Parse-time name normalizer (kebab -> snake). Shares ast_module for type identity.
+    const ast_mangle_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/ast_mangle.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    ast_mangle_module.addImport("ast", ast_module);
+
     // Parser module - the core!
     const parser_module = b.createModule(.{
         .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/parser.zig" },
@@ -134,6 +142,7 @@ const flow_parser = @import("flow_parser");
         .optimize = optimize,
     });
     parser_module.addImport("ast", ast_module);
+    parser_module.addImport("ast_mangle", ast_mangle_module);
     parser_module.addImport("lexer", lexer_module);
     parser_module.addImport("errors", errors_module);
     parser_module.addImport("type_registry", type_registry_module);

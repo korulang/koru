@@ -359,7 +359,7 @@ test "multi-line annotation syntax for flow calls" {
 
     // Test annotation on separate line from flow call
     const source =
-        \\~import "$std/build"
+        \\import std/build
         \\
         \\~[default]
         \\std.build:step(name: "compile") {

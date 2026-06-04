@@ -83,9 +83,13 @@ def host_mask(lines):
 proc_body_mask = host_mask
 
 
-def collect_from(text, names):
+def collect_from(text, names, keys):
+    """names = event/proc/branch names (converted bare — decl + call sites).
+    keys  = field/arg keys (converted ONLY in key position `name:`, NEVER in
+            value/binding position — a binding ref in a value is a host
+            expression forwarded verbatim and must stay snake)."""
     lines = text.split('\n')
-    mask = proc_body_mask(lines)
+    mask = host_mask(lines)
     for i, line in enumerate(lines):
         if mask[i]:
             continue
@@ -97,16 +101,16 @@ def collect_from(text, names):
             names.add(b.group(1))
         for k in KEY_RE.findall(line):
             if has_underscore(k):
-                names.add(k)
+                keys.add(k)
 
 
 def kebab(name):
     return name.replace('_', '-')
 
 
-def apply_to(text, patterns):
+def apply_to(text, name_patterns, key_patterns):
     lines = text.split('\n')
-    mask = proc_body_mask(lines)
+    mask = host_mask(lines)
     count = 0
     out = []
     for i, line in enumerate(lines):
@@ -114,8 +118,11 @@ def apply_to(text, patterns):
             out.append(line)
             continue
         new = line
-        for n, pat in patterns:
+        for n, pat in name_patterns:
             new, k = pat.subn(kebab(n), new)
+            count += k
+        for n, pat in key_patterns:
+            new, k = pat.subn(kebab(n), new)  # pattern lookahead leaves `:` in place
             count += k
         out.append(new)
     return '\n'.join(out), count
@@ -136,17 +143,19 @@ def main():
     mode, files = sys.argv[1], sys.argv[2:]
 
     # Phase 1: global collection.
-    names = set()
+    names, keys = set(), set()
     for p in files:
         t = read(p)
         if t is not None:
-            collect_from(t, names)
-    print(f'collected {len(names)} snake names to kebab-ify')
+            collect_from(t, names, keys)
+    print(f'collected {len(names)} names + {len(keys)} keys to kebab-ify')
 
-    # Dotted names: also kebab-ify per-segment (e.g. `fmt.blk_x` -> `fmt.blk-x`)
-    # falls out of plain `_`->`-`. Longest-first to avoid prefix shadowing.
-    patterns = [(n, re.compile(r'(?<![\w-])' + re.escape(n) + r'(?![\w-])'))
-                for n in sorted(names, key=len, reverse=True)]
+    # Names (events/procs/branches): bare whole-word (decl + call sites).
+    name_patterns = [(n, re.compile(r'(?<![\w-])' + re.escape(n) + r'(?![\w-])'))
+                     for n in sorted(names, key=len, reverse=True)]
+    # Keys (field/arg keys): ONLY in key position `name:` — never value/binding.
+    key_patterns = [(n, re.compile(r'(?<![\w-])' + re.escape(n) + r'(?=\s*:(?!:))'))
+                    for n in sorted(keys, key=len, reverse=True)]
 
     # Phase 2: apply.
     total_files = total_repl = 0
@@ -154,7 +163,7 @@ def main():
         t = read(p)
         if t is None:
             continue
-        new, c = apply_to(t, patterns)
+        new, c = apply_to(t, name_patterns, key_patterns)
         if c == 0:
             continue
         total_files += 1

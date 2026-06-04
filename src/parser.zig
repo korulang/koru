@@ -1,5 +1,6 @@
 const std = @import("std");
 const ast = @import("ast");
+const ast_mangle = @import("ast_mangle");
 const lexer = @import("lexer");
 const errors = @import("errors");
 const type_registry = @import("type_registry");
@@ -884,6 +885,13 @@ pub const Parser = struct {
                 self.current += 1;
             }
         }
+
+        // Normalize kebab-case Koru names -> snake_case across the whole AST.
+        // Single point at the parse boundary so every downstream consumer sees
+        // snake (kills the metacircular cascade). Path segments are also mangled
+        // earlier in lexer.parseDottedPath so registry keys stay consistent; this
+        // walk is the comprehensive net and is idempotent on already-snake names.
+        ast_mangle.normalizeProgram(items.items);
 
         self.registry_transferred = true;
         return ParseResult{
