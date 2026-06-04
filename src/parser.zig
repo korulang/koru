@@ -7573,7 +7573,7 @@ pub const Parser = struct {
             // (e.g. `contract.k` alongside `contract.kz`). The resolver
             // returns only the first-hit; the contract file gets dropped
             // unless we look for its siblings explicitly.
-            const companions = try module_resolver_mod.findCompanionFiles(resolver.allocator, file_path);
+            const companions = try module_resolver_mod.findCompanionFiles(resolver.fs, resolver.allocator, file_path);
             defer {
                 for (companions) |c| resolver.allocator.free(c);
                 resolver.allocator.free(companions);
@@ -7598,15 +7598,13 @@ pub const Parser = struct {
         try resolver.markParsing(file_path);
         defer resolver.unmarkParsing(file_path);
 
-        // Read the file
-        const file = std.fs.cwd().openFile(file_path, .{}) catch |err| {
-            try self.reporter.addError(.PARSE003, self.current, 1, "failed to open import file '{s}': {s}", .{ file_path, @errorName(err) });
-            return error.ParseError;
-        };
-        defer file.close();
-
-        const source = file.readToEndAlloc(self.allocator, 10 * 1024 * 1024) catch |err| {
+        // Read the file through the resolver's filesystem (disk for koruc,
+        // embedded bytes for the wasm playground).
+        const source = (resolver.fs.readFile(self.allocator, file_path) catch |err| {
             try self.reporter.addError(.PARSE003, self.current, 1, "failed to read import file '{s}': {s}", .{ file_path, @errorName(err) });
+            return error.ParseError;
+        }) orelse {
+            try self.reporter.addError(.PARSE003, self.current, 1, "failed to open import file '{s}': not found", .{file_path});
             return error.ParseError;
         };
         defer self.allocator.free(source);

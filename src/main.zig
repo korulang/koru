@@ -3622,7 +3622,7 @@ fn processImport(allocator: std.mem.Allocator, parse_allocator: std.mem.Allocato
         // Previously this was empty, causing flow arguments (like Source blocks) to be lost.
         // Phase 2: probe all Koru extensions so .kjs/.k/etc. projects can have
         // their own index.<ext> file.
-        const maybe_index_path = try module_resolver_mod.resolveKoruFileIn(allocator, resolved.dir_path.?, "index");
+        const maybe_index_path = try module_resolver_mod.resolveKoruFileIn(module_resolver_mod.DiskFs.fs(), allocator, resolved.dir_path.?, "index");
         if (maybe_index_path == null) {
             // No index file - use empty source_file (original behavior)
             log.debug("  No index.<ext> file found in directory\n", .{});
@@ -3730,7 +3730,7 @@ fn loadFileWithCompanions(
         }
     }.load;
 
-    const companions = try module_resolver_mod.findCompanionFiles(allocator, primary_path);
+    const companions = try module_resolver_mod.findCompanionFiles(module_resolver_mod.DiskFs.fs(), allocator, primary_path);
     defer {
         for (companions) |c| allocator.free(c);
         allocator.free(companions);
@@ -3792,7 +3792,7 @@ fn mergeEntryCompanions(
     primary_path: []const u8,
     primary: ast.Program,
 ) !ast.Program {
-    const companions = try module_resolver_mod.findCompanionFiles(allocator, primary_path);
+    const companions = try module_resolver_mod.findCompanionFiles(module_resolver_mod.DiskFs.fs(), allocator, primary_path);
     defer {
         for (companions) |c| allocator.free(c);
         allocator.free(companions);

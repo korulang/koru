@@ -3,6 +3,107 @@ const log = @import("log");
 const Config = @import("config").Config;
 const file_types = @import("file_types");
 
+/// Filesystem provider — the seam between resolution logic and where bytes/dirs
+/// actually live. `koruc` uses `DiskFs` (real filesystem, behavior-identical to
+/// the original code). The browser playground uses an embedded-bytes impl so the
+/// whole resolver runs in wasm with no disk and no `zig build`. Only the OPS that
+/// truly touch the OS are abstracted; pure path math (`std.fs.path.join`) stays
+/// inline. `canonicalize` is abstracted because `std.fs.path.resolve` consults
+/// the cwd for relative paths, which doesn't exist in a freestanding wasm host.
+pub const Fs = struct {
+    ptr: *anyopaque,
+    vtable: *const VTable,
+
+    pub const VTable = struct {
+        /// Does a regular file exist at `path`?
+        exists: *const fn (ptr: *anyopaque, path: []const u8) bool,
+        /// Is `path` a directory?
+        isDir: *const fn (ptr: *anyopaque, path: []const u8) bool,
+        /// Full paths of the Koru files directly inside directory `dir`.
+        /// Owned slice of owned strings; caller frees each + the slice.
+        listKoruFiles: *const fn (ptr: *anyopaque, allocator: std.mem.Allocator, dir: []const u8) anyerror![][]const u8,
+        /// Whole-file bytes (owned), or null if the file doesn't exist.
+        readFile: *const fn (ptr: *anyopaque, allocator: std.mem.Allocator, path: []const u8) anyerror!?[]u8,
+        /// Canonicalize a single path to an owned absolute/normalized form.
+        canonicalize: *const fn (ptr: *anyopaque, allocator: std.mem.Allocator, path: []const u8) anyerror![]u8,
+    };
+
+    pub fn exists(self: Fs, path: []const u8) bool {
+        return self.vtable.exists(self.ptr, path);
+    }
+    pub fn isDir(self: Fs, path: []const u8) bool {
+        return self.vtable.isDir(self.ptr, path);
+    }
+    pub fn listKoruFiles(self: Fs, allocator: std.mem.Allocator, dir: []const u8) anyerror![][]const u8 {
+        return self.vtable.listKoruFiles(self.ptr, allocator, dir);
+    }
+    pub fn readFile(self: Fs, allocator: std.mem.Allocator, path: []const u8) anyerror!?[]u8 {
+        return self.vtable.readFile(self.ptr, allocator, path);
+    }
+    pub fn canonicalize(self: Fs, allocator: std.mem.Allocator, path: []const u8) anyerror![]u8 {
+        return self.vtable.canonicalize(self.ptr, allocator, path);
+    }
+};
+
+/// The real filesystem. Stateless — every op goes through `std.fs.cwd()`, so
+/// `ptr` is unused. This preserves the exact behavior the resolver had before
+/// the `Fs` seam existed.
+pub const DiskFs = struct {
+    var instance: u8 = 0;
+    const vtable = Fs.VTable{
+        .exists = existsImpl,
+        .isDir = isDirImpl,
+        .listKoruFiles = listKoruFilesImpl,
+        .readFile = readFileImpl,
+        .canonicalize = canonicalizeImpl,
+    };
+
+    pub fn fs() Fs {
+        return .{ .ptr = @ptrCast(&instance), .vtable = &vtable };
+    }
+
+    fn existsImpl(_: *anyopaque, path: []const u8) bool {
+        std.fs.cwd().access(path, .{}) catch return false;
+        return true;
+    }
+
+    fn isDirImpl(_: *anyopaque, path: []const u8) bool {
+        var dir = std.fs.cwd().openDir(path, .{}) catch return false;
+        dir.close();
+        return true;
+    }
+
+    fn listKoruFilesImpl(_: *anyopaque, allocator: std.mem.Allocator, dir_path: []const u8) anyerror![][]const u8 {
+        var dir = try std.fs.cwd().openDir(dir_path, .{ .iterate = true });
+        defer dir.close();
+
+        var files = std.ArrayList([]const u8){ .items = &.{}, .capacity = 0 };
+        errdefer {
+            for (files.items) |file| allocator.free(file);
+            files.deinit(allocator);
+        }
+
+        var iter = dir.iterate();
+        while (try iter.next()) |entry| {
+            if (entry.kind != .file) continue;
+            if (!file_types.isKoruFile(entry.name)) continue;
+            const full_path = try std.fs.path.join(allocator, &[_][]const u8{ dir_path, entry.name });
+            try files.append(allocator, full_path);
+        }
+        return try files.toOwnedSlice(allocator);
+    }
+
+    fn readFileImpl(_: *anyopaque, allocator: std.mem.Allocator, path: []const u8) anyerror!?[]u8 {
+        const file = std.fs.cwd().openFile(path, .{}) catch return null;
+        defer file.close();
+        return try file.readToEndAlloc(allocator, 10 * 1024 * 1024);
+    }
+
+    fn canonicalizeImpl(_: *anyopaque, allocator: std.mem.Allocator, path: []const u8) anyerror![]u8 {
+        return try std.fs.path.resolve(allocator, &[_][]const u8{path});
+    }
+};
+
 
 /// Try to resolve `base_path` to an existing Koru file on disk.
 ///
@@ -12,16 +113,16 @@ const file_types = @import("file_types");
 ///
 /// Returns an owned, canonicalized path on success, or null if no candidate
 /// exists. Caller owns the result and must free it.
-pub fn resolveKoruFile(allocator: std.mem.Allocator, base_path: []const u8) !?[]u8 {
+pub fn resolveKoruFile(fs: Fs, allocator: std.mem.Allocator, base_path: []const u8) !?[]u8 {
     if (file_types.isKoruFile(base_path)) {
-        std.fs.cwd().access(base_path, .{}) catch return null;
-        return try std.fs.path.resolve(allocator, &[_][]const u8{base_path});
+        if (!fs.exists(base_path)) return null;
+        return try fs.canonicalize(allocator, base_path);
     }
     for (file_types.koru_extensions) |ext| {
         const candidate = try std.fmt.allocPrint(allocator, "{s}{s}", .{ base_path, ext });
         defer allocator.free(candidate);
-        std.fs.cwd().access(candidate, .{}) catch continue;
-        return try std.fs.path.resolve(allocator, &[_][]const u8{candidate});
+        if (!fs.exists(candidate)) continue;
+        return try fs.canonicalize(allocator, candidate);
     }
     return null;
 }
@@ -30,20 +131,20 @@ pub fn resolveKoruFile(allocator: std.mem.Allocator, base_path: []const u8) !?[]
 /// may not already carry a Koru extension.
 ///
 /// Returns an owned, canonicalized path on success, or null. Caller owns.
-pub fn resolveKoruFileIn(allocator: std.mem.Allocator, base: []const u8, name: []const u8) !?[]u8 {
+pub fn resolveKoruFileIn(fs: Fs, allocator: std.mem.Allocator, base: []const u8, name: []const u8) !?[]u8 {
     if (file_types.isKoruFile(name)) {
         const candidate = try std.fs.path.join(allocator, &[_][]const u8{ base, name });
         defer allocator.free(candidate);
-        std.fs.cwd().access(candidate, .{}) catch return null;
-        return try std.fs.path.resolve(allocator, &[_][]const u8{candidate});
+        if (!fs.exists(candidate)) return null;
+        return try fs.canonicalize(allocator, candidate);
     }
     for (file_types.koru_extensions) |ext| {
         const name_with_ext = try std.fmt.allocPrint(allocator, "{s}{s}", .{ name, ext });
         defer allocator.free(name_with_ext);
         const candidate = try std.fs.path.join(allocator, &[_][]const u8{ base, name_with_ext });
         defer allocator.free(candidate);
-        std.fs.cwd().access(candidate, .{}) catch continue;
-        return try std.fs.path.resolve(allocator, &[_][]const u8{candidate});
+        if (!fs.exists(candidate)) continue;
+        return try fs.canonicalize(allocator, candidate);
     }
     return null;
 }
@@ -62,7 +163,7 @@ pub fn resolveKoruFileIn(allocator: std.mem.Allocator, base: []const u8, name: [
 /// Returns an owned slice of owned, canonicalized paths. Caller frees each
 /// element and the outer slice. Empty slice (not null) when no companions
 /// exist.
-pub fn findCompanionFiles(allocator: std.mem.Allocator, primary_path: []const u8) ![][]u8 {
+pub fn findCompanionFiles(fs: Fs, allocator: std.mem.Allocator, primary_path: []const u8) ![][]u8 {
     var companions = std.ArrayList([]u8){ .items = &.{}, .capacity = 0 };
     errdefer {
         for (companions.items) |c| allocator.free(c);
@@ -82,8 +183,8 @@ pub fn findCompanionFiles(allocator: std.mem.Allocator, primary_path: []const u8
         defer allocator.free(name_with_ext);
         const candidate = try std.fs.path.join(allocator, &[_][]const u8{ dir, name_with_ext });
         defer allocator.free(candidate);
-        std.fs.cwd().access(candidate, .{}) catch continue;
-        const resolved = try std.fs.path.resolve(allocator, &[_][]const u8{candidate});
+        if (!fs.exists(candidate)) continue;
+        const resolved = try fs.canonicalize(allocator, candidate);
         try companions.append(allocator, resolved);
     }
 
@@ -122,6 +223,7 @@ pub const ModuleResolver = struct {
     entry_dir: []const u8,     // Directory of the entry file being compiled (for {{ ENTRY }} interpolation)
     koru_home: []const u8,     // Directory where koruc is installed (for {{ KORU_HOME }} interpolation)
     parsing_files: std.StringHashMap(void),  // Track files currently being parsed (for cycle detection)
+    fs: Fs,                    // Filesystem provider (disk for koruc, embedded bytes for the playground)
 
     pub fn init(allocator: std.mem.Allocator, config: *const Config, project_root: []const u8, entry_dir: []const u8) !ModuleResolver {
         // Get KORU_HOME from executable path
@@ -158,6 +260,7 @@ pub const ModuleResolver = struct {
             .entry_dir = entry_dir,
             .koru_home = koru_home,
             .parsing_files = std.StringHashMap(void).init(allocator),
+            .fs = DiskFs.fs(),
         };
 
         // Initialize with default search paths
@@ -165,7 +268,25 @@ pub const ModuleResolver = struct {
 
         return resolver;
     }
-    
+
+    /// Construct a resolver backed by an arbitrary `Fs` (e.g. embedded stdlib
+    /// bytes) with no disk/env/exe discovery — for the wasm playground. The
+    /// stdlib lives at `stdlib_root` inside the provided filesystem; search
+    /// paths and aliases are empty (single-file user program + bundled stdlib).
+    pub fn initEmbedded(allocator: std.mem.Allocator, config: *const Config, fs: Fs, stdlib_root: []const u8) !ModuleResolver {
+        return ModuleResolver{
+            .allocator = allocator,
+            .search_paths = std.ArrayList([]const u8){ .items = &.{}, .capacity = 0 },
+            .stdlib_path = try allocator.dupe(u8, stdlib_root),
+            .config = config,
+            .project_root = "",
+            .entry_dir = "",
+            .koru_home = try allocator.dupe(u8, ""),
+            .parsing_files = std.StringHashMap(void).init(allocator),
+            .fs = fs,
+        };
+    }
+
     pub fn deinit(self: *ModuleResolver) void {
         for (self.search_paths.items) |path| {
             self.allocator.free(path);
@@ -346,32 +467,7 @@ pub const ModuleResolver = struct {
         self: *ModuleResolver,
         dir_path: []const u8,
     ) ![][]const u8 {
-        var dir = try std.fs.cwd().openDir(dir_path, .{ .iterate = true });
-        defer dir.close();
-
-        var files = std.ArrayList([]const u8){
-            .items = &.{},
-            .capacity = 0,
-        };
-        errdefer {
-            for (files.items) |file| self.allocator.free(file);
-            files.deinit(self.allocator);
-        }
-
-        var iter = dir.iterate();
-        while (try iter.next()) |entry| {
-            if (entry.kind != .file) continue;
-            if (!file_types.isKoruFile(entry.name)) continue;
-
-            // Build full path: dir_path/file.<ext>
-            const full_path = try std.fs.path.join(
-                self.allocator,
-                &[_][]const u8{ dir_path, entry.name }
-            );
-            try files.append(self.allocator, full_path);
-        }
-
-        return try files.toOwnedSlice(self.allocator);
+        return try self.fs.listKoruFiles(self.allocator, dir_path);
     }
 
     /// Resolve an import path to BOTH file and directory (if they exist)
@@ -442,18 +538,15 @@ pub const ModuleResolver = struct {
                 var found_something = false;
 
                 // Check directory
-                if (isDirectory(absolute_path)) {
-                    const dir_resolved = try std.fs.path.resolve(
-                        self.allocator,
-                        &[_][]const u8{absolute_path}
-                    );
+                if (self.fs.isDir(absolute_path)) {
+                    const dir_resolved = try self.fs.canonicalize(self.allocator, absolute_path);
                     result.dir_path = dir_resolved;
                     log.debug("    ✓ FOUND directory: {s}\n", .{dir_resolved});
                     found_something = true;
                 }
 
                 // Check file (probe all Koru extensions if base doesn't carry one)
-                if (try resolveKoruFile(self.allocator, absolute_path)) |file_resolved| {
+                if (try resolveKoruFile(self.fs, self.allocator, absolute_path)) |file_resolved| {
                     result.file_path = file_resolved;
                     log.debug("    ✓ FOUND file: {s}\n", .{file_resolved});
                     found_something = true;
@@ -483,7 +576,7 @@ pub const ModuleResolver = struct {
 
         // Helper to check both file and dir at a given base path
         const checkBoth = struct {
-            fn check(alloc: std.mem.Allocator, base: []const u8, import: []const u8, res: *ResolveResult) !bool {
+            fn check(fs: Fs, alloc: std.mem.Allocator, base: []const u8, import: []const u8, res: *ResolveResult) !bool {
                 var found_any = false;
 
                 // Check directory
@@ -493,15 +586,15 @@ pub const ModuleResolver = struct {
                 );
                 defer alloc.free(dir_candidate);
 
-                if (isDirectory(dir_candidate)) {
-                    const resolved = try std.fs.path.resolve(alloc, &[_][]const u8{dir_candidate});
+                if (fs.isDir(dir_candidate)) {
+                    const resolved = try fs.canonicalize(alloc, dir_candidate);
                     res.dir_path = resolved;
                     log.debug("      ✓ FOUND directory: {s}\n", .{resolved});
                     found_any = true;
                 }
 
                 // Check file (probe all Koru extensions if import doesn't carry one)
-                if (try resolveKoruFileIn(alloc, base, import)) |resolved| {
+                if (try resolveKoruFileIn(fs, alloc, base, import)) |resolved| {
                     res.file_path = resolved;
                     log.debug("      ✓ FOUND file: {s}\n", .{resolved});
                     found_any = true;
@@ -513,7 +606,7 @@ pub const ModuleResolver = struct {
 
         // 1. Absolute path
         if (std.fs.path.isAbsolute(resolved_import_path)) {
-            if (try checkBoth(self.allocator, "", resolved_import_path, &result)) {
+            if (try checkBoth(self.fs, self.allocator, "", resolved_import_path, &result)) {
                 return result;
             }
         }
@@ -522,7 +615,7 @@ pub const ModuleResolver = struct {
         log.debug("  [2] Trying relative to importing file...\n", .{});
         if (base_file) |base| {
             const base_dir = std.fs.path.dirname(base) orelse ".";
-            if (try checkBoth(self.allocator, base_dir, resolved_import_path, &result)) {
+            if (try checkBoth(self.fs, self.allocator, base_dir, resolved_import_path, &result)) {
                 return result;
             }
         }
@@ -530,7 +623,7 @@ pub const ModuleResolver = struct {
         // 3. KORU_PATH search paths
         log.debug("  [3] Trying KORU_PATH search paths...\n", .{});
         for (self.search_paths.items) |search_path| {
-            if (try checkBoth(self.allocator, search_path, resolved_import_path, &result)) {
+            if (try checkBoth(self.fs, self.allocator, search_path, resolved_import_path, &result)) {
                 return result;
             }
         }
@@ -538,7 +631,7 @@ pub const ModuleResolver = struct {
         // 4. Standard library
         log.debug("  [4] Trying standard library...\n", .{});
         if (self.stdlib_path) |stdlib| {
-            if (try checkBoth(self.allocator, stdlib, resolved_import_path, &result)) {
+            if (try checkBoth(self.fs, self.allocator, stdlib, resolved_import_path, &result)) {
                 return result;
             }
         }
@@ -618,7 +711,7 @@ pub const ModuleResolver = struct {
                 }
 
                 // Check if it's a file (probe all Koru extensions if base doesn't carry one)
-                if (try resolveKoruFile(self.allocator, absolute_path)) |resolved| {
+                if (try resolveKoruFile(self.fs, self.allocator, absolute_path)) |resolved| {
                     log.debug("    ✓ FOUND file: {s}\n", .{resolved});
                     return resolved;
                 } else {
@@ -648,7 +741,7 @@ pub const ModuleResolver = struct {
             // Probe for an existing Koru file (any extension). Phase 2 adds
             // one stat() per absolute-path import that previously had none —
             // the old code blindly appended .kz without checking.
-            if (try resolveKoruFile(self.allocator, resolved_import_path)) |resolved| {
+            if (try resolveKoruFile(self.fs, self.allocator, resolved_import_path)) |resolved| {
                 return resolved;
             }
             return error.ModuleNotFound;
@@ -680,7 +773,7 @@ pub const ModuleResolver = struct {
 
             // Try as file (probe all Koru extensions if import doesn't carry one)
             log.debug("    Checking file in: {s}\n", .{base_dir});
-            if (try resolveKoruFileIn(self.allocator, base_dir, resolved_import_path)) |resolved| {
+            if (try resolveKoruFileIn(self.fs, self.allocator, base_dir, resolved_import_path)) |resolved| {
                 log.debug("    ✓ FOUND file: {s}\n", .{resolved});
                 return resolved;
             } else {
@@ -716,7 +809,7 @@ pub const ModuleResolver = struct {
 
             // Try file (probe all Koru extensions if import doesn't carry one)
             log.debug("      Checking file in: {s}\n", .{search_path});
-            if (try resolveKoruFileIn(self.allocator, search_path, resolved_import_path)) |resolved| {
+            if (try resolveKoruFileIn(self.fs, self.allocator, search_path, resolved_import_path)) |resolved| {
                 log.debug("      ✓ FOUND file: {s}\n", .{resolved});
                 return resolved;
             } else {
@@ -750,7 +843,7 @@ pub const ModuleResolver = struct {
 
             // Try file (probe all Koru extensions if import doesn't carry one)
             log.debug("    Checking file in stdlib: {s}\n", .{stdlib});
-            if (try resolveKoruFileIn(self.allocator, stdlib, resolved_import_path)) |resolved| {
+            if (try resolveKoruFileIn(self.fs, self.allocator, stdlib, resolved_import_path)) |resolved| {
                 log.debug("    ✓ FOUND file: {s}\n", .{resolved});
                 return resolved;
             } else {
