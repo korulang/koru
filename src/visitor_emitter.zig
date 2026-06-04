@@ -896,6 +896,13 @@ pub const VisitorEmitter = struct {
                             // Impl flows are handled by the abstract event handler, not called standalone
                             if (flow.impl_of != null) continue;
 
+                            // `[declaration]` flows (e.g. `const`) emit container-scope
+                            // decls, not a callable flow function — no main() call, and
+                            // no `i++` so flow numbering stays in sync with phase 1.
+                            if (self.findEventDeclInItems(self.all_items, &flow.invocation.path)) |decl| {
+                                if (annotation_parser.hasPart(decl.annotations, "declaration")) continue;
+                            }
+
                             // CRITICAL: Check if transform already ran (look for @pass_ran annotation)
                             var has_pass_ran = false;
                             for (flow.invocation.annotations) |ann| {
@@ -1139,6 +1146,23 @@ pub const VisitorEmitter = struct {
                             }
                             if (comptime_returns_program) break;
                         }
+                    }
+                }
+
+                // `[declaration]` keyword templates (e.g. `const`) emit names into
+                // the ENCLOSING scope, not a statement into a function body. Splice
+                // the rendered decls directly as container members — no `flowN()`
+                // wrapper, no main() call (it declares, it doesn't execute) — so
+                // sibling flows resolve the names via Zig container-scope lookup.
+                // Skipped here AND in the main-call loop (like impl_of flows), so
+                // flow numbering stays in sync. The body carries no splice markers
+                // (a declaration has no effects/continuations), so it emits verbatim.
+                if (event_decl) |decl| {
+                    if (annotation_parser.hasPart(decl.annotations, "declaration") and flow.inline_body != null) {
+                        try self.code_emitter.writeIndent();
+                        try self.code_emitter.write(flow.inline_body.?);
+                        try self.code_emitter.write("\n");
+                        return;
                     }
                 }
 

@@ -83,6 +83,134 @@ fn parseRangeFilter(allocator: std.mem.Allocator, args: []const liquid.Value) an
     return liquid.Value{ .record = node };
 }
 
+/// Return the index of the next top-level `,` (or end / closing `}`) at or
+/// after `start`, treating `{}`/`()`/`[]` nesting and `"…"` string literals as
+/// opaque. Mirrors codegen_utils.parseValue's depth tracking — the value of a
+/// field runs until the next separator that isn't inside a nested construct.
+fn scanValueEnd(s: []const u8, start: usize) usize {
+    var i = start;
+    var brace: usize = 0;
+    var paren: usize = 0;
+    var bracket: usize = 0;
+    while (i < s.len) : (i += 1) {
+        const c = s[i];
+        if (c == '"') {
+            i += 1;
+            while (i < s.len and s[i] != '"') : (i += 1) {
+                if (s[i] == '\\' and i + 1 < s.len) i += 1;
+            }
+            continue; // i lands on the closing quote; loop's i+=1 steps past it
+        }
+        switch (c) {
+            '{' => brace += 1,
+            '}' => {
+                if (brace == 0) break; // closing brace of an unstripped struct → end
+                brace -= 1;
+            },
+            '(' => paren += 1,
+            ')' => if (paren > 0) {
+                paren -= 1;
+            },
+            '[' => bracket += 1,
+            ']' => if (bracket > 0) {
+                bracket -= 1;
+            },
+            // A top-level `,` OR newline ends a field. Newlines inside a nested
+            // construct (a multi-line struct value) are protected by depth, so a
+            // value may still span lines when braced — only an unnested newline
+            // separates fields (the canonical `const { … }` block shape).
+            ',', '\n', '\r' => if (brace == 0 and paren == 0 and bracket == 0) break,
+            else => {},
+        }
+    }
+    return i;
+}
+
+/// Koru-native base types — a bounded, defined set (mirrors the units-of-measure
+/// scope guard). Only these are recognized as a `value[type]` annotation; anything
+/// else in a trailing `[…]` (array literals `[1,2,3]`, indexing) is left in the value.
+fn isBaseType(s: []const u8) bool {
+    const types = [_][]const u8{
+        "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64",
+        "usize", "isize", "f16", "f32", "f64", "bool",
+    };
+    for (types) |t| {
+        if (std.mem.eql(u8, s, t)) return true;
+    }
+    return false;
+}
+
+/// Peel an OPTIONAL Koru-native base-type annotation `value[type]` off a field
+/// value: `10[i32]` → `{ .value = "10", .type = "i32" }`. Strings and bare numbers
+/// carry no annotation (`"x"` → type ""), since a string literal IS its type and a
+/// bare number takes the target default (Zig comptime_int / JS number). Only a
+/// recognized base type counts, so array literals (`[1,2,3]`, leading `[`) and
+/// indexing are untouched.
+fn peelBaseType(field_value: []const u8) struct { value: []const u8, type: []const u8 } {
+    if (field_value.len < 3 or field_value[field_value.len - 1] != ']') return .{ .value = field_value, .type = "" };
+    const lb = std.mem.lastIndexOfScalar(u8, field_value, '[') orelse return .{ .value = field_value, .type = "" };
+    const inner = field_value[lb + 1 .. field_value.len - 1];
+    const prefix = std.mem.trim(u8, field_value[0..lb], " \t");
+    if (prefix.len == 0 or !isBaseType(inner)) return .{ .value = field_value, .type = "" };
+    return .{ .value = prefix, .type = inner };
+}
+
+/// `parse_fields(struct_text)` filter: split a brace-optional Koru field list
+/// (`name: "X", count: 42[i32]`, or `{ … }`, comma- OR newline-separated) into an
+/// array of `{ name, value, type }` record nodes the template iterates with
+/// `{% for f in fields %}`. `type` is the OPTIONAL Koru-native base-type annotation
+/// (`42[i32]` → value "42", type "i32"); empty when absent. The per-target template
+/// branches on `{% if f.type %}` to emit `@as(i32, 42)` (Zig) vs `42` (JS) — the
+/// annotation is the first thing that genuinely DIVERGES between the variants. Both
+/// `|zig` and `|js` call THIS single parser, so the lowerings cannot drift. The
+/// input is a Source's `.text`, so the caller has location context for diagnostics.
+fn parseFieldsFilter(allocator: std.mem.Allocator, args: []const liquid.Value) anyerror!liquid.Value {
+    if (args.len != 1 or args[0] != .string) return error.BadArgs;
+    const input = std.mem.trim(u8, args[0].string, " \t\n\r");
+    // Accept the field list with or without wrapping braces.
+    const body = if (input.len >= 2 and input[0] == '{' and input[input.len - 1] == '}')
+        std.mem.trim(u8, input[1 .. input.len - 1], " \t\n\r")
+    else
+        input;
+
+    var nodes: std.ArrayList(*liquid.Context) = .empty;
+
+    var i: usize = 0;
+    while (i < body.len) {
+        // Skip whitespace and field separators (`,` or newline).
+        while (i < body.len and (body[i] == ' ' or body[i] == '\t' or
+            body[i] == '\n' or body[i] == '\r' or body[i] == ',')) i += 1;
+        if (i >= body.len) break;
+
+        // Field name (identifier).
+        const name_start = i;
+        while (i < body.len and (std.ascii.isAlphanumeric(body[i]) or body[i] == '_')) i += 1;
+        const field_name = body[name_start..i];
+        if (field_name.len == 0) break;
+
+        // Skip whitespace, require `:`.
+        while (i < body.len and (body[i] == ' ' or body[i] == '\t')) i += 1;
+        if (i >= body.len or body[i] != ':') break;
+        i += 1;
+        while (i < body.len and (body[i] == ' ' or body[i] == '\t')) i += 1;
+
+        // Value runs until the next top-level separator.
+        const value_start = i;
+        i = scanValueEnd(body, i);
+        const field_value = std.mem.trim(u8, body[value_start..i], " \t\n\r");
+        const peeled = peelBaseType(field_value);
+
+        const node = try allocator.create(liquid.Context);
+        node.* = liquid.Context.init(allocator);
+        try node.put("name", .{ .string = field_name });
+        try node.put("value", .{ .string = peeled.value });
+        try node.put("type", .{ .string = peeled.type });
+        try nodes.append(allocator, node);
+    }
+
+    return liquid.Value{ .array = try nodes.toOwnedSlice(allocator) };
+}
+
 /// Walk the AST and process every proc whose variant chain begins with
 /// `template(once)|...`. Mutates ProcDecl.body and ProcDecl.target in place.
 /// Also runs the per-call template pass for bare `|template|...` procs:
@@ -263,6 +391,7 @@ fn renderTemplateInvocation(
     var filters = liquid.FilterRegistry.init(allocator);
     defer filters.deinit();
     try filters.put("parse_range", parseRangeFilter);
+    try filters.put("parse_fields", parseFieldsFilter);
 
     var comp_err: ?[]const u8 = null;
     const rendered = liquid.renderWithEnv(allocator, proc.body.text, &ctx, &comp_err, .{ .filters = &filters }) catch |err| {
@@ -630,4 +759,53 @@ fn processProc(pd: *ast.ProcDecl, allocator: std.mem.Allocator) !void {
     log.debug("[TEMPLATE] processed proc body, new target: {s}\n", .{
         if (pd.target) |t| t else "<none>",
     });
+}
+
+test "parse_fields: splits brace-optional, comma/newline-separated field lists" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    const Case = struct { in: []const u8, names: []const []const u8, vals: []const []const u8, types: []const []const u8 };
+    const cases = [_]Case{
+        // Comma-separated; values returned VERBATIM (string literal keeps its quotes), no type annotation.
+        .{ .in = "name: \"Claude\", count: 42", .names = &.{ "name", "count" }, .vals = &.{ "\"Claude\"", "42" }, .types = &.{ "", "" } },
+        // Newline-separated — the canonical `const { … }` block shape.
+        .{ .in = "name: \"Claude\"\n    count: 42\n", .names = &.{ "name", "count" }, .vals = &.{ "\"Claude\"", "42" }, .types = &.{ "", "" } },
+        // Wrapping braces are accepted and stripped.
+        .{ .in = "{ a: 1, b: 2 }", .names = &.{ "a", "b" }, .vals = &.{ "1", "2" }, .types = &.{ "", "" } },
+        // A nested struct value's inner comma is NOT a field separator.
+        .{ .in = "pt: Point{ x: 1, y: 2 }, n: 3", .names = &.{ "pt", "n" }, .vals = &.{ "Point{ x: 1, y: 2 }", "3" }, .types = &.{ "", "" } },
+        // A comma inside a string literal is NOT a field separator.
+        .{ .in = "s: \"a, b\"", .names = &.{"s"}, .vals = &.{"\"a, b\""}, .types = &.{""} },
+        // Optional `[base_type]` annotation is peeled: value/type split per field.
+        .{ .in = "x: 10[i32], y: 20", .names = &.{ "x", "y" }, .vals = &.{ "10", "20" }, .types = &.{ "i32", "" } },
+        .{ .in = "ratio: 3.14[f64], flag: true[bool]", .names = &.{ "ratio", "flag" }, .vals = &.{ "3.14", "true" }, .types = &.{ "f64", "bool" } },
+        // A leading-`[` array literal is NOT a type annotation (no value before `[`).
+        .{ .in = "arr: [1, 2, 3]", .names = &.{"arr"}, .vals = &.{"[1, 2, 3]"}, .types = &.{""} },
+        // A non-base-type trailing `[…]` is left in the value.
+        .{ .in = "got: thing[99]", .names = &.{"got"}, .vals = &.{"thing[99]"}, .types = &.{""} },
+    };
+
+    for (cases) |c| {
+        const v = try parseFieldsFilter(a, &.{.{ .string = c.in }});
+        try std.testing.expect(v == .array);
+        try std.testing.expectEqual(c.names.len, v.array.len);
+        for (v.array, 0..) |node, i| {
+            try std.testing.expectEqualStrings(c.names[i], node.get("name").?.string);
+            try std.testing.expectEqualStrings(c.vals[i], node.get("value").?.string);
+            try std.testing.expectEqualStrings(c.types[i], node.get("type").?.string);
+        }
+    }
+}
+
+test "parse_fields: empty / malformed inputs yield an empty field list" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    for ([_][]const u8{ "", "   ", "{}", "{ }" }) |s| {
+        const v = try parseFieldsFilter(a, &.{.{ .string = s }});
+        try std.testing.expect(v == .array);
+        try std.testing.expectEqual(@as(usize, 0), v.array.len);
+    }
 }

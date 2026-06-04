@@ -1012,6 +1012,21 @@ pub fn build(b: *std.Build) void {
     });
     const run_liquid_tests = b.addRunArtifact(liquid_tests);
 
+    // Template processor — per-call template filters (parse_range, parse_fields).
+    const template_processor_tests = b.addTest(.{
+        .name = "template_processor_tests",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/template_processor.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    template_processor_tests.root_module.addImport("ast", ast_module);
+    template_processor_tests.root_module.addImport("liquid", liquid_module);
+    template_processor_tests.root_module.addImport("log", log_module);
+    template_processor_tests.root_module.addImport("errors", errors_module);
+    const run_template_processor_tests = b.addRunArtifact(template_processor_tests);
+
     // JSON parser — parse real JSON into liquid records and walk it.
     const json_parser_tests = b.addTest(.{
         .name = "json_parser_tests",
@@ -1300,6 +1315,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_where_clause_tests.step);
     test_step.dependOn(&run_expression_parser_tests.step);
     test_step.dependOn(&run_liquid_tests.step);
+    test_step.dependOn(&run_template_processor_tests.step);
     test_step.dependOn(&run_json_parser_tests.step);
     test_step.dependOn(&run_struct_literal_tests.step);
     test_step.dependOn(&run_expression_purity_tests.step);

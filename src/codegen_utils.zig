@@ -180,54 +180,11 @@ pub fn koruStructToZig(allocator: std.mem.Allocator, koru_struct: []const u8) ![
     return result.toOwnedSlice(allocator);
 }
 
-/// Lower a Koru struct literal `{ a: 1, b: "x" }` into a sequence of host const
-/// declarations: `const a = 1;\nconst b = "x";\n`. This is the `const {}`
-/// module-declaration form (no `| as` continuation): each field becomes an
-/// in-scope constant rather than a single struct binding. Values are converted
-/// with the same nested-struct handling as `koruStructToZig` (via `parseValue`).
-pub fn koruStructToConstDecls(allocator: std.mem.Allocator, koru_struct: []const u8) ![]const u8 {
-    var result = try std.ArrayList(u8).initCapacity(allocator, koru_struct.len + 32);
-    errdefer result.deinit(allocator);
-
-    const input = std.mem.trim(u8, koru_struct, " \t\n\r");
-    if (input.len == 0) return result.toOwnedSlice(allocator);
-    // The parser may hand us the field list with or without the wrapping braces
-    // (`const { a: 1 }` strips them; `const({ a: 1 })` keeps them). Accept both.
-    const body = if (input.len >= 2 and input[0] == '{' and input[input.len - 1] == '}')
-        input[1 .. input.len - 1]
-    else
-        input;
-
-    var i: usize = 0;
-    while (i < body.len) {
-        // Skip whitespace and field separators (`,` or newline).
-        while (i < body.len and (body[i] == ' ' or body[i] == '\t' or
-            body[i] == '\n' or body[i] == '\r' or body[i] == ',')) i += 1;
-        if (i >= body.len) break;
-
-        // Field name (identifier).
-        const name_start = i;
-        while (i < body.len and (std.ascii.isAlphanumeric(body[i]) or body[i] == '_')) i += 1;
-        const field_name = body[name_start..i];
-        if (field_name.len == 0) break;
-
-        // Skip whitespace, expect `:`.
-        while (i < body.len and (body[i] == ' ' or body[i] == '\t')) i += 1;
-        if (i >= body.len or body[i] != ':') break;
-        i += 1;
-        while (i < body.len and (body[i] == ' ' or body[i] == '\t')) i += 1;
-
-        // Emit `const <name> = <value>;` — parseValue converts nested Koru
-        // structs and stops at the next `,`/`}` at depth 0.
-        try result.appendSlice(allocator, "const ");
-        try result.appendSlice(allocator, field_name);
-        try result.appendSlice(allocator, " = ");
-        i = try parseValue(allocator, body, i, &result);
-        try result.appendSlice(allocator, ";\n");
-    }
-
-    return result.toOwnedSlice(allocator);
-}
+// NOTE: `koruStructToConstDecls` (the old Zig string-builder for `const {}`
+// module decls) was removed 2026-06-04. `const` is now a per-target template
+// over the `parse_fields` filter (koru_std/control.kz + template_processor.zig),
+// so field parsing lives in one place both targets call — see
+// [[project_const_as_type_system_checkpoint]].
 
 /// Parse a field name, colon, and value. Output as ".fieldname = value"
 /// Returns the new position after the value.

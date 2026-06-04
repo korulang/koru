@@ -1,13 +1,13 @@
 {
-  "timestamp": "2026-06-03T21:42:06.209Z",
+  "timestamp": "2026-06-03T23:38:20.390Z",
   "summary": {
-    "passed": 221,
+    "passed": 223,
     "failed": 0,
     "skipped": 12,
     "leaked": 0,
     "compileErrors": 0,
-    "total": 233,
-    "suiteCount": 35,
+    "total": 235,
+    "suiteCount": 36,
     "status": "success"
   },
   "suites": [
@@ -237,6 +237,14 @@
     },
     {
       "name": "tap_transformer_tests",
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "total": 2,
+      "status": "success"
+    },
+    {
+      "name": "template_processor_tests",
       "passed": 2,
       "failed": 0,
       "skipped": 0,
