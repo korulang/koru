@@ -22,6 +22,7 @@ import std/runtime
 // Register io events for runtime dispatch
 ~std.runtime:register(scope: "std.io") {
     std.io:print
+    std.io:println
     std.io:readln
     std.io:print.ln
     std.io:eprintln

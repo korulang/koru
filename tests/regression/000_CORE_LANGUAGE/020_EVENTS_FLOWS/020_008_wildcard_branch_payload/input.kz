@@ -19,4 +19,4 @@ import std/io
 | each *
 
 // Use stdlib to print
-~std.io:print.ln("done")
+~std.io:println(text: "done")

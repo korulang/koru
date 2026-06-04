@@ -23,15 +23,15 @@ const std = @import("std");
 
 // Test 1: Invocation with [release] annotation
 ~[release]check-config()
-| matched _ |> std.io:print.ln("Config: release")
-| no-annotation |> std.io:print.ln("No config")
+| matched _ |> std.io:println(text: "Config: release")
+| no-annotation |> std.io:println(text: "No config")
 
 // Test 2: Invocation with [debug] annotation
 ~[debug]check-config()
-| matched _ |> std.io:print.ln("Config: debug")
-| no-annotation |> std.io:print.ln("No config")
+| matched _ |> std.io:println(text: "Config: debug")
+| no-annotation |> std.io:println(text: "No config")
 
 // Test 3: Invocation without annotation
 ~check-config()
-| matched _ |> std.io:print.ln("Config: unexpected")
-| no-annotation |> std.io:print.ln("No config (expected)")
+| matched _ |> std.io:println(text: "Config: unexpected")
+| no-annotation |> std.io:println(text: "No config (expected)")

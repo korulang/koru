@@ -60,20 +60,20 @@ const std = @import("std");
 // User code - should work with "user" scope
 const USER_CODE =
     \\~users.get(id: 42)
-    \\| found |> std.io:print.ln("Found")
-    \\| not_found |> std.io:print.ln("Not found")
+    \\| found |> std.io:println(text: "Found")
+    \\| not_found |> std.io:println(text: "Not found")
 ;
 
 // Admin code - should work with "admin" scope, fail with "user" scope
 const ADMIN_CODE =
     \\~admin.delete_user(id: 42)
-    \\| deleted |> std.io:print.ln("User deleted")
+    \\| deleted |> std.io:println(text: "User deleted")
 ;
 
 // Debug code - should only work with "admin" scope AND --debug flag
 const DEBUG_CODE =
     \\~debug.dump_state()
-    \\| dumped |> std.io:print.ln("State")
+    \\| dumped |> std.io:println(text: "State")
 ;
 
 // Test user scope

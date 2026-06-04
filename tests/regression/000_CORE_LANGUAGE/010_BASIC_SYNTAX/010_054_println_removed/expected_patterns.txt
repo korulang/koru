@@ -1,1 +1,0 @@
-error\[KORU040\]: unknown event 'std/io:println'

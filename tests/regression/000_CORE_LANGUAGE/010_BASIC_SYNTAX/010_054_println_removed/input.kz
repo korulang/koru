@@ -1,7 +1,10 @@
-// codemod:skip — negative test: must keep its `println` call to exercise removal.
-// PIN: `std/io:println` is DELETED (subsumed by `print.ln`). Calling the removed
-// event fails loudly — KORU040 "unknown event" at compiler coordination (Stage C).
-// Greenfield: the old form must fail once removed.
+// DEFERRED PIN: `std/io:println` removal (#3). Blocked on the `std/compiler`
+// stage facet: the correct replacement is `std/compiler:print.ln` (a runtime-
+// safe, NON-transform print), NOT `std/io:print.ln` (a comptime transform that
+// can't serve as a runtime event — subflow bodies, taps, cross-target JS, and
+// runtime-eval all need the runtime form). println and print.ln are different
+// and both currently necessary. RED until the std/compiler facet lands and
+// println moves there. EXPECT stays FRONTEND_COMPILE_ERROR (the target state).
 import std/io
 
-~std/io:println("println should be gone")
+~std.io:println(text: "println should be gone once std/compiler:print.ln exists")

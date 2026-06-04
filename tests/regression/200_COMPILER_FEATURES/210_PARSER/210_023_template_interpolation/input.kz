@@ -228,4 +228,4 @@ const std = @import("std");
         <p>This is a template</p>
     </div>
 }
-| rendered h |> std.io:print.ln(h.html)
+| rendered h |> std.io:println(text: h.html)

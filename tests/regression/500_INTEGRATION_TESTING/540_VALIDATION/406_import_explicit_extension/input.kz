@@ -7,4 +7,4 @@
 
 import std/io.kz
 
-~std.io:print.ln("Explicit .kz extension works!")
+~std.io:println(text: "Explicit .kz extension works!")

@@ -1,7 +1,8 @@
-// `println` was removed; `print.ln` is the replacement. print.ln is a Zig
-// comptime transform with no JS variant yet (JS target is immature), so this
-// verifies print.ln on Zig. KNOWN GAP: print.ln cross-target JS — print's JS
-// path emits Zig `std.debug.print` instead of `console.log`. Tracked separately.
+// Cross-target stdlib parity: the idiomatic hello-world through std.io must
+// produce identical output whether emitted to Zig or JS. `println` resolves
+// across the module boundary (std.io is imported, module-qualified), and the
+// JS target uses println's |js variant (console.log) while Zig uses |zig
+// (std.debug.print). Same source, same output, two backends.
 import std/io
 
-~std/io:print.ln("Hello, world!")
+~std.io:println(text: "Hello, world!")

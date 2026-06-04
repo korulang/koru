@@ -25,5 +25,5 @@ import std/io
 ! [*] |> orisha:static_router(name: "site")
 
 ~orisha:serve(port: 3099)
-| shutdown s |> std.io:print.ln(s)
-| failed f |> std.io:print.ln(f)
+| shutdown s |> std.io:println(text: s)
+| failed f |> std.io:println(text: f)

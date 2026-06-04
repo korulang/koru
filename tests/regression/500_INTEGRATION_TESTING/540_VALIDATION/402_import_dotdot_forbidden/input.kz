@@ -7,4 +7,4 @@
 
 import ../koru_std/io
 
-~io:print.ln("This should never compile!")
+~io:println(text: "This should never compile!")
