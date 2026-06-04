@@ -67,9 +67,11 @@ pub fn isValidIdentifier(s: []const u8) bool {
     // Must start with letter or underscore
     if (!std.ascii.isAlphabetic(s[0]) and s[0] != '_') return false;
     
-    // Rest must be alphanumeric or underscore
+    // Rest must be alphanumeric, underscore, or kebab `-` (a legal name-char;
+    // it mangles to `_` on emit). First char stays letter/`_` — names don't
+    // start with `-`.
     for (s[1..]) |c| {
-        if (!std.ascii.isAlphanumeric(c) and c != '_') return false;
+        if (!std.ascii.isAlphanumeric(c) and c != '_' and c != '-') return false;
     }
     
     return true;

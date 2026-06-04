@@ -7077,9 +7077,10 @@ pub const Parser = struct {
         const first = name[0];
         if (!std.ascii.isAlphabetic(first) and first != '_') return false;
 
-        // Rest can be letters, numbers, or underscores
+        // Rest can be letters, numbers, underscores, or kebab `-` (a legal
+        // name-char; mangles to `_` on emit). First char stays letter/`_`.
         for (name[1..]) |c| {
-            if (!std.ascii.isAlphanumeric(c) and c != '_') return false;
+            if (!std.ascii.isAlphanumeric(c) and c != '_' and c != '-') return false;
         }
 
         return true;
