@@ -1258,6 +1258,35 @@ pub const Parser = struct {
         return error.ParseError;
     }
 
+    /// Reject `_` in a Koru NAME. Kebab `-` is the sole word separator for Koru
+    /// names; `_` is reserved for digit separators in numeric literals (rule G4).
+    /// We won't accept both spellings — a snake name must fail loudly. The check
+    /// is on the BARE name only (it stops at a generic `[`, phantom `<`, paren,
+    /// brace, or whitespace) so type params and phantom states are unaffected.
+    /// Runs on the RAW source name, before kebab→snake normalization.
+    fn rejectSnakeName(self: *Parser, raw: []const u8, line_index: usize, kind: []const u8) !void {
+        var end: usize = 0;
+        while (end < raw.len) : (end += 1) {
+            const c = raw[end];
+            if (c == '[' or c == '<' or c == '(' or c == '{' or c == ' ' or c == '\t') break;
+        }
+        const name_part = raw[0..end];
+        // Leading-underscore names (`__compiler_marker`, `_internal`) are the
+        // reserved compiler-internal convention — kebab cannot express them
+        // (a name can't start with `-`), so they are exempt from the rule.
+        if (name_part.len > 0 and name_part[0] == '_') return;
+        if (std.mem.indexOfScalar(u8, name_part, '_') != null) {
+            try self.reporter.addError(
+                .KORU034,
+                line_index + 1,
+                1,
+                "'_' is not allowed in a Koru {s} name '{s}' — use '-' for word separation ('_' is reserved for digit separators)",
+                .{ kind, name_part },
+            );
+            return error.ParseError;
+        }
+    }
+
     fn parseEventDeclWithAnnotations(self: *Parser, is_public: bool, annotations: [][]const u8) !ast.EventDecl {
         if (self.current >= self.lines.len) {
             try self.reporter.addError(
@@ -1326,6 +1355,7 @@ pub const Parser = struct {
             return error.ParseError;
         }
 
+        try self.rejectSnakeName(parsed_path_str, event_line_index, "event");
         var path = try lexer.parseQualifiedPath(self.allocator, parsed_path_str, ast);
         errdefer path.deinit(self.allocator);
         log_debug("PARSER parseEventDeclWithAnnotations: Just parsed event path: module={s} segments=", .{if (path.module_qualifier) |m| m else "null"});
@@ -1754,6 +1784,7 @@ pub const Parser = struct {
             return error.ParseError;
         }
 
+        try self.rejectSnakeName(parsed_path_str, event_line_index, "event");
         var path = try lexer.parseQualifiedPath(self.allocator, parsed_path_str, ast);
         errdefer path.deinit(self.allocator);
 
@@ -1938,6 +1969,7 @@ pub const Parser = struct {
             }
         }
 
+        try self.rejectSnakeName(path_for_parsing, self.current, "proc");
         var path = try lexer.parseQualifiedPath(self.allocator, path_for_parsing, ast);
         errdefer path.deinit(self.allocator);
 
@@ -2079,6 +2111,7 @@ pub const Parser = struct {
             }
         }
 
+        try self.rejectSnakeName(path_for_parsing, self.current, "proc");
         var path = try lexer.parseQualifiedPath(self.allocator, path_for_parsing, ast);
         errdefer path.deinit(self.allocator);
 

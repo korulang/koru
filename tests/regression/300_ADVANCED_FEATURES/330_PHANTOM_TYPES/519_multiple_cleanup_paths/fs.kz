@@ -18,8 +18,8 @@ const File = struct { handle: i32 };
     std.debug.print("Closing file (quick)\n", .{});
 }
 
-~pub event flush_close { file: *File<!opened> }  // Disposal option 2
+~pub event flush-close { file: *File<!opened> }  // Disposal option 2
 
-~proc flush_close|zig {
+~proc flush-close|zig {
     std.debug.print("Flushing and closing file\n", .{});
 }

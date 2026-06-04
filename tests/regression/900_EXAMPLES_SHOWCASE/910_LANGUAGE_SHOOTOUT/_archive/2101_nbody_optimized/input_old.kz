@@ -6,12 +6,12 @@
 // We test Koru's event-driven architecture, NOT "can we call fast Zig code"
 //
 // Event decomposition:
-// - initialize_bodies: Create planetary system
-// - offset_momentum: Zero out system momentum (sun at rest)
-// - calculate_energy: Compute total energy (kinetic + potential)
-// - calculate_interactions: Update velocities from gravitational forces
-// - update_positions: Update positions from velocities
-// - print_energy: Output energy value
+// - initialize-bodies: Create planetary system
+// - offset-momentum: Zero out system momentum (sun at rest)
+// - calculate-energy: Compute total energy (kinetic + potential)
+// - calculate-interactions: Update velocities from gravitational forces
+// - update-positions: Update positions from velocities
+// - print-energy: Output energy value
 //
 // This proves:
 // ✅ Event dispatch is zero-cost
@@ -42,10 +42,10 @@ const Body = struct {
 // Event 1: Initialize planetary bodies
 // ============================================================================
 
-~event initialize_bodies {}
+~event initialize-bodies {}
 | initialized [5]Body
 
-~proc initialize_bodies|zig {
+~proc initialize-bodies|zig {
     // Sun, Jupiter, Saturn, Uranus, Neptune
     const bodies_data = [_]Body{
         .{ // Sun
@@ -98,9 +98,9 @@ const Body = struct {
 // Event 2: Offset momentum (sun at rest) - MUTATES bodies in place!
 // ============================================================================
 
-~event offset_momentum { bodies: []Body }
+~event offset-momentum { bodies: []Body }
 
-~proc offset_momentum|zig {
+~proc offset-momentum|zig {
     var px: f64 = 0.0;
     var py: f64 = 0.0;
     var pz: f64 = 0.0;
@@ -121,10 +121,10 @@ const Body = struct {
 // Event 3: Calculate total energy (kinetic + potential)
 // ============================================================================
 
-~event calculate_energy { bodies: []const Body }
+~event calculate-energy { bodies: []const Body }
 | result f64
 
-~proc calculate_energy|zig {
+~proc calculate-energy|zig {
     var e: f64 = 0.0;
 
     for (bodies, 0..) |body, i| {
@@ -149,9 +149,9 @@ const Body = struct {
 // Event 4: Print energy value
 // ============================================================================
 
-~event print_energy { energy: f64 }
+~event print-energy { energy: f64 }
 
-~proc print_energy|zig {
+~proc print-energy|zig {
     std.debug.print("{d:.9}\n", .{energy});
 }
 
@@ -160,9 +160,9 @@ const Body = struct {
 // Single responsibility: ONLY velocity updates from forces
 // ============================================================================
 
-~event calculate_interactions { bodies: []Body, dt: f64 }
+~event calculate-interactions { bodies: []Body, dt: f64 }
 
-~proc calculate_interactions|zig {
+~proc calculate-interactions|zig {
     var i: usize = 0;
     while (i < bodies.len) : (i += 1) {
         var j: usize = i + 1;
@@ -190,9 +190,9 @@ const Body = struct {
 // Single responsibility: ONLY position updates
 // ============================================================================
 
-~event update_positions { bodies: []Body, dt: f64 }
+~event update-positions { bodies: []Body, dt: f64 }
 
-~proc update_positions|zig {
+~proc update-positions|zig {
     for (bodies) |*body| {
         body.x += dt * body.vx;
         body.y += dt * body.vy;
@@ -205,10 +205,10 @@ const Body = struct {
 // Event 7: Parse command line argument
 // ============================================================================
 
-~event parse_args {}
+~event parse-args {}
 | parsed u32
 
-~proc parse_args|zig {
+~proc parse-args|zig {
     const args = std.process.argsAlloc(std.heap.page_allocator) catch unreachable;
     defer std.process.argsFree(std.heap.page_allocator, args);
 
@@ -226,14 +226,14 @@ const Body = struct {
 // Bodies array lives on the stack and is mutated in place through slices
 // ============================================================================
 
-~parse_args()
-| parsed p |> initialize_bodies()
-    | initialized init[mutable] |> offset_momentum(bodies: init.bodies[0..])
-        |> calculate_energy(bodies: init.bodies[0..])
-            | result r1 |> print_energy(r1.energy)
+~parse-args()
+| parsed p |> initialize-bodies()
+    | initialized init[mutable] |> offset-momentum(bodies: init.bodies[0..])
+        |> calculate-energy(bodies: init.bodies[0..])
+            | result r1 |> print-energy(r1.energy)
                 |> for(0..p.n)
-                    | each |> calculate_interactions(bodies: init.bodies[0..], dt: 0.01)
-                        |> update_positions(bodies: init.bodies[0..], dt: 0.01)
-                    |> calculate_energy(bodies: init.bodies[0..])
-                        | result r2 |> print_energy(r2.energy)
+                    | each |> calculate-interactions(bodies: init.bodies[0..], dt: 0.01)
+                        |> update-positions(bodies: init.bodies[0..], dt: 0.01)
+                    |> calculate-energy(bodies: init.bodies[0..])
+                        | result r2 |> print-energy(r2.energy)
                             |> _

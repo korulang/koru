@@ -23,6 +23,7 @@ pub const ErrorCode = enum(u16) {
     KORU031, // Payload type mismatch
     KORU032, // Cannot auto-discharge outer-scope resource inside loop
     KORU033, // Invalid phantom annotation (e.g., obligation issuance on input)
+    KORU034, // '_' in a Koru name — use '-' (kebab); '_' is reserved for digit separators
     SHAPE001, // Inconsistent branch shapes in subflow
     SHAPE002, // Duplicate branch handler at same level (indentation error)
     

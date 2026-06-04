@@ -1,5 +1,5 @@
 // Exploration: Striping pattern with TAP
-// The tap should be fused into process_entity at compile time
+// The tap should be fused into process-entity at compile time
 
 import std/io
 import std/control
@@ -15,19 +15,19 @@ const Entity = struct {
 };
 
 // The broadcast point
-~pub event process_entity { e: Entity }
+~pub event process-entity { e: Entity }
 | entity Entity
 
-~proc process_entity|zig {
+~proc process-entity|zig {
     return .{ .entity = e };
 }
 
 // TAP: Only fires when entity has damage
-~tap(process_entity -> *)
-| entity ent when ent.e.has_damage |> handle_damage(ent.e)
+~tap(process-entity -> *)
+| entity ent when ent.e.has_damage |> handle-damage(ent.e)
 
-~event handle_damage { e: Entity }
-~proc handle_damage|zig {
+~event handle-damage { e: Entity }
+~proc handle-damage|zig {
     std.debug.print("DAMAGE on Entity {d}!\n", .{ e.id });
 }
 
@@ -42,14 +42,14 @@ const entities = [_]Entity{
 // Iterate and broadcast each entity
 // Note: | entity _ |> noop() to consume the branch without doing anything
 ~for(&entities)
-| each e |> process_entity(e)
+| each e |> process-entity(e)
     | entity _ |> noop()
-| done |> print_done()
+| done |> print-done()
 
 ~event noop {}
 ~proc noop|zig {}
 
-~event print_done {}
-~proc print_done|zig {
+~event print-done {}
+~proc print-done|zig {
     std.debug.print("Done!\n", .{});
 }

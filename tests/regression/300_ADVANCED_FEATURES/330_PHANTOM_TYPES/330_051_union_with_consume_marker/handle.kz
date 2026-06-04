@@ -21,10 +21,10 @@ const Handle = struct {
 }
 
 // Start closing - explicitly discharges opened! and produces closing! obligation
-~pub event start_close { h: *Handle<!opened> }
+~pub event start-close { h: *Handle<!opened> }
 | closing *Handle<closing!>
 
-~proc start_close|zig {
+~proc start-close|zig {
     std.debug.print("Starting close: {d}\n", .{h.id});
     return .{ .closing = h };
 }

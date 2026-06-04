@@ -77,7 +77,11 @@ def host_mask(lines):
             mask[i] = True
             depth = line.count('{') - line.count('}')
             saw_brace = '{' in line
-            if not saw_brace and ';' in line:
+            # Decl already complete on the keyword line — a balanced single-line
+            # block (`const X = struct { .. };`) or a braceless statement
+            # (`const x = ..;`). Do NOT spill the mask onto the following line
+            # (that line may be the next Koru decl).
+            if (saw_brace and depth <= 0) or (not saw_brace and ';' in line):
                 i += 1
                 continue
             j = i + 1
@@ -108,6 +112,8 @@ def collect_from(text, names, keys):
     keys  = field/arg keys (converted ONLY in key position `name:`, NEVER in
             value/binding position — a binding ref in a value is a host
             expression forwarded verbatim and must stay snake)."""
+    if should_skip(text):
+        return
     lines = text.split('\n')
     mask = host_mask(lines)
     for i, line in enumerate(lines):
@@ -154,7 +160,19 @@ def apply_outside_strings(line, patterns):
     return ''.join(out), count
 
 
+# A file may opt out of the rewrite with this marker — used by negative tests
+# whose whole point is to hold a snake-case name the language must REJECT (e.g.
+# the `_`-rejection pin). Such fixtures must keep their snake spelling.
+SKIP_MARKER = 'codemod:skip'
+
+
+def should_skip(text):
+    return SKIP_MARKER in text
+
+
 def apply_to(text, name_patterns, key_patterns):
+    if should_skip(text):
+        return text, 0
     lines = text.split('\n')
     mask = host_mask(lines)
     count = 0

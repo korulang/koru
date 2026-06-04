@@ -116,7 +116,7 @@ test "findDisposalEvents handles multiple disposal options for same type" {
         \\
         \\~event close[!] { file: *File<!open> }
         \\
-        \\~event close_and_delete[!] { file: *File<!open> }
+        \\~event close-and-delete[!] { file: *File<!open> }
     ;
 
     const empty_flags: []const []const u8 = &.{};

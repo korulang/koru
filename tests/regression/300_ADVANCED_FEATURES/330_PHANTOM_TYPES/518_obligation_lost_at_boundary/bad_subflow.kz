@@ -1,9 +1,9 @@
 import app/fs
 
 // BAD: Opens file but doesn't document obligation in signature
-~pub event bad_subflow {}
+~pub event bad-subflow {}
 
-~proc bad_subflow|zig {
+~proc bad-subflow|zig {
     ~app.fs:open(path: "data.txt")
     | opened f |> done {}
     // ERROR: f.file has [opened!] obligation

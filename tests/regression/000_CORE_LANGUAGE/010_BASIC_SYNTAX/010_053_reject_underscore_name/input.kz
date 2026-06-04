@@ -1,11 +1,10 @@
-// PIN (kebab-stdlib-restructure): `_` is no longer a legal name-char — `foo-bar`
-// must be REJECTED with a demangle-aware hint (use `foo-bar`; `_` is reserved
-// for digit separators, G4). RED today — the lexer still ACCEPTS `_` in
-// identifiers (lexer.zig:68,72), so no error is produced and this
-// EXPECT=FRONTEND_COMPILE_ERROR test fails. Tighten to expected_patterns.txt
-// once the G4 message text lands.
+// codemod:skip — this negative test MUST keep its snake name to exercise the rule.
+// PIN (kebab): `_` is not a legal Koru name char. A snake event name must be
+// REJECTED (KORU034) — use `-` (kebab) for word separation; `_` is reserved for
+// digit separators in numeric literals (rule G4). The "we won't accept both"
+// enforcement: the old snake form must fail loudly.
 import std/io
 
-~event foo-bar {}
+~event foo_bar {}
 
-~std.io:println(text: "underscore should have been rejected")
+~std/io:print.ln("underscore should have been rejected")

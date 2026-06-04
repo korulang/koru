@@ -20,5 +20,5 @@ const std = @import("std");
     return .{ .received = msg };
 }
 
-~app.module_b:from_b(msg: "hello from input")
+~app.module_b:from-b(msg: "hello from input")
 | relayed _ |> _

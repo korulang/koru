@@ -18,8 +18,8 @@ const DT: f64 = 0.01;
 
 var iterations: usize = 50000000;
 
-~event parse_args {}
-~proc parse_args|zig {
+~event parse-args {}
+~proc parse-args|zig {
     const args = std.process.argsAlloc(std.heap.page_allocator) catch unreachable;
     defer std.process.argsFree(std.heap.page_allocator, args);
     if (args.len >= 2) {
@@ -37,7 +37,7 @@ var iterations: usize = 50000000;
     mass: f64,
 }
 
-~parse_args()
+~parse-args()
 
 ~std.kernel:init(Body) {
     { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, mass: SOLAR_MASS },

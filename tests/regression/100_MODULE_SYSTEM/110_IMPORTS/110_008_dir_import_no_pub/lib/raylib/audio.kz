@@ -2,7 +2,7 @@
 
 const std = @import("std");
 
-~event play { sound_id: i32 }
+~event play { sound-id: i32 }
 
 ~event stop {}
 

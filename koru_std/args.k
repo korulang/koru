@@ -22,7 +22,7 @@ pub event count {}
 // Get the argument at an index.
 pub event get { index: usize }
 | arg [:0]u8
-| out_of_bounds
+| out-of-bounds
 
 // Skip the program name and get the remaining arguments.
 pub event rest {}
