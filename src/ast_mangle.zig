@@ -29,12 +29,25 @@
 const std = @import("std");
 const ast = @import("ast");
 
-/// In-place `-` -> `_`. Safe: every name field is `allocator.dupe`'d (mutable
-/// `[]u8` underneath), length-preserving, and idempotent on already-snake names.
+/// True if `c` can appear inside a Koru identifier word.
+fn isNameChar(c: u8) bool {
+    return std.ascii.isAlphanumeric(c) or c == '_';
+}
+
+/// In-place kebab `-` -> `_`. Safe: every name field is `allocator.dupe`'d
+/// (mutable `[]u8` underneath), length-preserving, idempotent on snake names.
+///
+/// Only an INFIX dash between two name characters is word-glue. A `-` that is
+/// part of an operator (`->`), spaced (` - `), or leading/trailing is NOT kebab
+/// and is left alone — this protects opaque patterns stored in name fields such
+/// as a tap's `* -> *` source/dest. A real kebab name always has `-` between two
+/// name chars, so this never under-mangles a genuine identifier.
 fn mangle(name: []const u8) void {
     const bytes = @constCast(name);
-    for (bytes) |*c| {
-        if (c.* == '-') c.* = '_';
+    for (bytes, 0..) |*c, i| {
+        if (c.* != '-') continue;
+        if (i == 0 or i + 1 >= bytes.len) continue;
+        if (isNameChar(bytes[i - 1]) and isNameChar(bytes[i + 1])) c.* = '_';
     }
 }
 

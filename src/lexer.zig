@@ -89,6 +89,21 @@ pub fn afterPrefix(line: []const u8, prefix: []const u8) ?[]const u8 {
 
 /// Parse a dotted path (e.g., "file.read")
 /// DEPRECATED: Use parseQualifiedPath for new code
+/// In-place kebab `-` -> `_`, INFIX only (between two name characters). Mirrors
+/// src/ast_mangle.zig: an operator/spaced/edge `-` is not word-glue and is left
+/// alone (e.g. a tap's `* -> *` pattern stored as a segment must not become `_>`).
+pub fn mangleKebabInPlace(s: []u8) void {
+    for (s, 0..) |*c, i| {
+        if (c.* != '-') continue;
+        if (i == 0 or i + 1 >= s.len) continue;
+        const prev = s[i - 1];
+        const next = s[i + 1];
+        const prev_ok = std.ascii.isAlphanumeric(prev) or prev == '_';
+        const next_ok = std.ascii.isAlphanumeric(next) or next == '_';
+        if (prev_ok and next_ok) c.* = '_';
+    }
+}
+
 pub fn parseDottedPath(allocator: std.mem.Allocator, path: []const u8) ![][]const u8 {
     var segments = try std.ArrayList([]const u8).initCapacity(allocator, 4);
     errdefer {
@@ -102,9 +117,7 @@ pub fn parseDottedPath(allocator: std.mem.Allocator, path: []const u8) ![][]cons
         // Normalize kebab Koru names -> snake at construction, BEFORE the registry
         // keys (path_str) are derived from these segments. Keeps decl registration
         // and call-site lookups on the same snake form. See src/ast_mangle.zig.
-        for (owned) |*c| {
-            if (c.* == '-') c.* = '_';
-        }
+        mangleKebabInPlace(owned);
         try segments.append(allocator, owned);
     }
 
@@ -126,9 +139,7 @@ pub fn parseQualifiedPath(allocator: std.mem.Allocator, path: []const u8, ast: a
         const segments = try parseDottedPath(allocator, namespace_part);
 
         const owned_qualifier = try allocator.dupe(u8, qualifier);
-        for (owned_qualifier) |*c| {
-            if (c.* == '-') c.* = '_';
-        }
+        mangleKebabInPlace(owned_qualifier);
         return ast.DottedPath{
             .module_qualifier = owned_qualifier,
             .segments = segments,
