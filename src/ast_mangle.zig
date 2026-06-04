@@ -88,7 +88,7 @@ fn normalizeItem(item: *ast.Item) void {
     }
 }
 
-fn normalizeEventDecl(e: *ast.EventDecl) void {
+pub fn normalizeEventDecl(e: *ast.EventDecl) void {
     normalizeDottedPath(&e.path);
     normalizeShape(@constCast(&e.input));
     for (@constCast(e.branches)) |*b| normalizeBranch(b);

@@ -47,11 +47,11 @@ pub const String = struct {
 }
 
 // Create with page allocator (simple, for demos)
-~pub event from_page { text: []const u8 }
+~pub event from-page { text: []const u8 }
 | ok *String<view!>
 | err []const u8
 
-~proc from_page|zig {
+~proc from-page|zig {
     const allocator = std.heap.page_allocator;
     const data = allocator.alloc(u8, text.len) catch {
         return .{ .err = "allocation failed" };

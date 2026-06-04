@@ -1653,7 +1653,7 @@ pub const Parser = struct {
             annotations_copy[all_annotations.items.len] = try self.allocator.dupe(u8, "comptime");
         }
 
-        const event_decl = ast.EventDecl{
+        var event_decl = ast.EventDecl{
             .path = path,
             .input = input,
             .branches = try branches.toOwnedSlice(self.allocator),
@@ -1663,6 +1663,13 @@ pub const Parser = struct {
             .location = self.getCurrentLocation(),
             .module = try self.allocator.dupe(u8, self.module_name),
         };
+
+        // Normalize kebab names -> snake BEFORE registration: the registry
+        // deep-copies field/branch names (see TypeRegistry.registerEvent), and
+        // those copies are read by later passes (e.g. positional-arg → struct
+        // field pairing). Without this, a kebab field leaks into emission.
+        // The post-parse walk re-touches this decl idempotently.
+        ast_mangle.normalizeEventDecl(&event_decl);
 
         log_debug("PARSER: Created EventDecl module='{s}', path.module_qualifier={s}\n", .{ event_decl.module, if (event_decl.path.module_qualifier) |m| m else "null" });
 
@@ -1804,7 +1811,7 @@ pub const Parser = struct {
         // Check if this is an implicit flow event
         const is_implicit_flow = self.checkImplicitFlowEvent(&input);
 
-        const event_decl = ast.EventDecl{
+        var event_decl = ast.EventDecl{
             .path = path,
             .input = input,
             .branches = try branches.toOwnedSlice(self.allocator),
@@ -1814,6 +1821,10 @@ pub const Parser = struct {
             .location = self.getCurrentLocation(),
             .module = try self.allocator.dupe(u8, self.module_name),
         };
+
+        // Normalize kebab -> snake before the registry deep-copies names. See
+        // the matching note at the other EventDecl registration site.
+        ast_mangle.normalizeEventDecl(&event_decl);
 
         // Register the event with the type registry
         const path_str = try self.pathToString(event_decl.path);
@@ -6784,10 +6795,15 @@ pub const Parser = struct {
         // Struct branch syntax: | branch { field: Type } or | branch { field: Type }[annotation]
         if (brace_idx == null) {
             // Identity branch: | branch Type[annotation]
-            // Find branch name (first identifier token)
+            // Find branch name (first identifier token). `-` is a legal Koru
+            // name-char (kebab) and is normalized to `_` downstream; without it
+            // here, `| not-found` would split into name `not` + bogus type
+            // `-found`. The `->` resume-type case is already stripped above, so a
+            // `-` at this point is always kebab word-glue.
             var name_end: usize = 0;
             while (name_end < branch_start.len and
-                (std.ascii.isAlphanumeric(branch_start[name_end]) or branch_start[name_end] == '_'))
+                (std.ascii.isAlphanumeric(branch_start[name_end]) or
+                 branch_start[name_end] == '_' or branch_start[name_end] == '-'))
             {
                 name_end += 1;
             }

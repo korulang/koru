@@ -232,7 +232,7 @@ const validateMocks = struct {
 }
 | transformed *const Program
 
-~[comptime|retain] pub event validate_mocks {
+~[comptime|retain] pub event validate-mocks {
     program: *const Program,
     mocks: []const Item,
     source: *const Source,
@@ -241,7 +241,7 @@ const validateMocks = struct {
 | ok
 | failed []const u8
 
-~proc validate_mocks|zig {
+~proc validate-mocks|zig {
     if (validateMocks(allocator, program, mocks, source)) {
         return .{ .ok = .{} };
     }
@@ -791,7 +791,7 @@ const emitFlowWithMocks = struct {
 }.call;
 
 // Test with shared harness (mocks can be unused per-test)
-~[keyword|comptime|transform] pub event test.with_harness {
+~[keyword|comptime|transform] pub event test.with-harness {
     expr: Expression,
     harness: []const u8,
     source: Source

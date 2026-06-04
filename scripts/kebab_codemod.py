@@ -66,12 +66,32 @@ def host_mask(lines):
             i = k
             continue
         if HOST_OPEN.match(line):
-            mask[i] = True  # the host decl line itself has no Koru name
+            # A host decl is either a STATEMENT (`const x = ...;`) or a BLOCK
+            # (`fn f(...) T { ... }`, `const X = struct { ... };`). The opening
+            # `{` — or the terminating `;` for a statement — can sit several
+            # lines below the keyword when a function signature wraps across
+            # lines. Mask the keyword line, then keep masking until the block
+            # closes (depth back to 0 after the first `{`) or, for a braceless
+            # statement, until the first `;`. Masking only the keyword line (the
+            # old behavior) leaked wrapped signature params into the rewrite.
+            mask[i] = True
             depth = line.count('{') - line.count('}')
+            saw_brace = '{' in line
+            if not saw_brace and ';' in line:
+                i += 1
+                continue
             j = i + 1
-            while j < n and depth > 0:
+            while j < n:
                 mask[j] = True
+                if '{' in lines[j]:
+                    saw_brace = True
                 depth += lines[j].count('{') - lines[j].count('}')
+                if saw_brace and depth <= 0:
+                    j += 1
+                    break
+                if not saw_brace and ';' in lines[j]:
+                    j += 1
+                    break
                 j += 1
             i = j
             continue

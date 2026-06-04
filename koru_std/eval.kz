@@ -17,7 +17,7 @@
 //   | error e |> ...
 //
 //   // Or inline in conditionals:
-//   ~std.eval:eval_bool(expression: user.role == "admin", bindings: env)
+//   ~std.eval:eval-bool(expression: user.role == "admin", bindings: env)
 //   | true |> ...
 //   | false |> ...
 
@@ -434,7 +434,7 @@ fn floatOp(l: f64, r: f64, op: ArithOp) EvalError!Value {
 }
 
 // Test an expression for truthiness (convenience for conditionals)
-~pub event eval_bool {
+~pub event eval-bool {
     expression: Expression,
     bindings: *const Bindings
 }
@@ -442,7 +442,7 @@ fn floatOp(l: f64, r: f64, op: ArithOp) EvalError!Value {
 | false
 | error []const u8
 
-~proc eval_bool|zig {
+~proc eval-bool|zig {
     const result = evaluate(expression, bindings) catch |err| {
         return .{ .error = @errorName(err) };
     };

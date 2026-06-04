@@ -42,9 +42,9 @@ var previous_event_name: []const u8 = "";
 var profiler_finished: bool = false;  // Prevents write_event from creating new file after footer
 
 // Event: Write Chrome Tracing header
-~[comptime|runtime] event write_header {}
+~[comptime|runtime] event write-header {}
 
-~proc write_header|zig {
+~proc write-header|zig {
     // Only create file if not already created by write_event
     // (write_event runs BEFORE write_header due to universal tap ordering)
     if (profile_file == null) {

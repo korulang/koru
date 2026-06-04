@@ -20,9 +20,9 @@
 //   // Interpret Koru source
 //   ~std.interpreter:run(source: user_input, scope: "api")
 //   | result r |> handle_result(value: r.value)
-//   | parse_error e |> respond(status: 400, body: e.message)
-//   | validation_error e |> respond(status: 400, body: e.message)
-//   | dispatch_error e |> respond(status: 500, body: e.event)
+//   | parse-error e |> respond(status: 400, body: e.message)
+//   | validation-error e |> respond(status: 400, body: e.message)
+//   | dispatch-error e |> respond(status: 500, body: e.event)
 
 ~[runtime]
 
@@ -967,70 +967,70 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
 // ============================================================================
 
 // Parse and execute in one step - the main interpreter entry point
-// Use ~get_scope to get the dispatcher first, then pass it here
+// Use ~get-scope to get the dispatcher first, then pass it here
 ~[retain]pub event run {
     source: []const u8,
     dispatcher: DispatchFn,
-    cost_fn: ?CostFn,  // Optional cost lookup (null = default cost 1)
-    creates_obligations_fn: ?ObligationsArrayFn,   // event -> []obligations it creates
-    discharges_obligations_fn: ?ObligationsArrayFn, // event -> []obligations it discharges
-    discharge_event_fn: ?DischargeEventFn,         // obligation -> event that discharges it
-    creates_spec_fn: ?CreatesSpecFn = null,        // event -> []CreateSpec with field names
-    discharges_spec_fn: ?DischargesSpecFn = null,  // event -> []DischargeSpec with arg names
+    cost-fn: ?CostFn,  // Optional cost lookup (null = default cost 1)
+    creates-obligations-fn: ?ObligationsArrayFn,   // event -> []obligations it creates
+    discharges-obligations-fn: ?ObligationsArrayFn, // event -> []obligations it discharges
+    discharge-event-fn: ?DischargeEventFn,         // obligation -> event that discharges it
+    creates-spec-fn: ?CreatesSpecFn = null,        // event -> []CreateSpec with field names
+    discharges-spec-fn: ?DischargesSpecFn = null,  // event -> []DischargeSpec with arg names
     budget: ?u64,  // Optional budget limit (null = unlimited)
-    handle_pool: ?*HandlePool,  // Optional external pool (for bridges)
-    fail_fast: bool = true,
-    scope_name: []const u8 = "default",  // Scope name for handle isolation
-    auto_discharge: bool = true  // Auto-discharge undischarged handles at end
+    handle-pool: ?*HandlePool,  // Optional external pool (for bridges)
+    fail-fast: bool = true,
+    scope-name: []const u8 = "default",  // Scope name for handle isolation
+    auto-discharge: bool = true  // Auto-discharge undischarged handles at end
 }
 | result { value: Value, used: u64, handles: u32 }
-| exhausted { used: u64, last_event: []const u8, handles: u32 }
-| parse_error { message: []const u8, line: u32, column: u32 }
-| validation_error []const u8
-| dispatch_error { event_name: []const u8, message: []const u8 }
+| exhausted { used: u64, last-event: []const u8, handles: u32 }
+| parse-error { message: []const u8, line: u32, column: u32 }
+| validation-error []const u8
+| dispatch-error { event-name: []const u8, message: []const u8 }
 
 // Cached parse + execute (reuses parsed flow for identical source input)
-~[retain]pub event run_cached {
+~[retain]pub event run-cached {
     source: []const u8,
     dispatcher: DispatchFn,
-    cost_fn: ?CostFn,  // Optional cost lookup (null = default cost 1)
-    creates_obligations_fn: ?ObligationsArrayFn,   // event -> []obligations it creates
-    discharges_obligations_fn: ?ObligationsArrayFn, // event -> []obligations it discharges
-    discharge_event_fn: ?DischargeEventFn,         // obligation -> event that discharges it
-    creates_spec_fn: ?CreatesSpecFn = null,        // event -> []CreateSpec with field names
-    discharges_spec_fn: ?DischargesSpecFn = null,  // event -> []DischargeSpec with arg names
+    cost-fn: ?CostFn,  // Optional cost lookup (null = default cost 1)
+    creates-obligations-fn: ?ObligationsArrayFn,   // event -> []obligations it creates
+    discharges-obligations-fn: ?ObligationsArrayFn, // event -> []obligations it discharges
+    discharge-event-fn: ?DischargeEventFn,         // obligation -> event that discharges it
+    creates-spec-fn: ?CreatesSpecFn = null,        // event -> []CreateSpec with field names
+    discharges-spec-fn: ?DischargesSpecFn = null,  // event -> []DischargeSpec with arg names
     budget: ?u64,  // Optional budget limit (null = unlimited)
-    handle_pool: ?*HandlePool,  // Optional external pool (for bridges)
-    fail_fast: bool = true,
-    scope_name: []const u8 = "default",  // Scope name for handle isolation
-    auto_discharge: bool = true  // Auto-discharge undischarged handles at end
+    handle-pool: ?*HandlePool,  // Optional external pool (for bridges)
+    fail-fast: bool = true,
+    scope-name: []const u8 = "default",  // Scope name for handle isolation
+    auto-discharge: bool = true  // Auto-discharge undischarged handles at end
 }
 | result { value: Value, used: u64, handles: u32 }
-| exhausted { used: u64, last_event: []const u8, handles: u32 }
-| parse_error { message: []const u8, line: u32, column: u32 }
-| validation_error []const u8
-| dispatch_error { event_name: []const u8, message: []const u8 }
+| exhausted { used: u64, last-event: []const u8, handles: u32 }
+| parse-error { message: []const u8, line: u32, column: u32 }
+| validation-error []const u8
+| dispatch-error { event-name: []const u8, message: []const u8 }
 
 // Execute pre-parsed AST - for benchmarks and advanced use
 // This is the fast path: no parsing overhead, just execution!
 ~[retain]pub event eval {
     flow: *const ast.Flow,
     dispatcher: DispatchFn,
-    cost_fn: ?CostFn,  // Optional cost lookup (null = default cost 1)
-    creates_obligations_fn: ?ObligationsArrayFn,
-    discharges_obligations_fn: ?ObligationsArrayFn,
-    discharge_event_fn: ?DischargeEventFn,
-    creates_spec_fn: ?CreatesSpecFn = null,        // event -> []CreateSpec with field names
-    discharges_spec_fn: ?DischargesSpecFn = null,  // event -> []DischargeSpec with arg names
+    cost-fn: ?CostFn,  // Optional cost lookup (null = default cost 1)
+    creates-obligations-fn: ?ObligationsArrayFn,
+    discharges-obligations-fn: ?ObligationsArrayFn,
+    discharge-event-fn: ?DischargeEventFn,
+    creates-spec-fn: ?CreatesSpecFn = null,        // event -> []CreateSpec with field names
+    discharges-spec-fn: ?DischargesSpecFn = null,  // event -> []DischargeSpec with arg names
     budget: ?u64,  // Optional budget limit (null = unlimited)
-    handle_pool: ?*HandlePool,  // Optional external pool (for bridges)
-    scope_name: []const u8 = "default",  // Scope name for handle isolation
-    auto_discharge: bool = true  // Auto-discharge undischarged handles at end
+    handle-pool: ?*HandlePool,  // Optional external pool (for bridges)
+    scope-name: []const u8 = "default",  // Scope name for handle isolation
+    auto-discharge: bool = true  // Auto-discharge undischarged handles at end
 }
 | result { value: Value, used: u64, handles: u32 }
-| exhausted { used: u64, last_event: []const u8, handles: u32 }
-| validation_error []const u8
-| dispatch_error { event_name: []const u8, message: []const u8 }
+| exhausted { used: u64, last-event: []const u8, handles: u32 }
+| validation-error []const u8
+| dispatch-error { event-name: []const u8, message: []const u8 }
 
 ~proc run|zig {
     const koru_errors = @import("koru_errors");
@@ -1177,7 +1177,7 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
 
 // Cached fast path: reuse parsed flow when the source string matches.
 // Falls back to the full parser if parsing fails.
-~proc run_cached|zig {
+~proc run-cached|zig {
     const koru_errors = @import("koru_errors");
     const koru_ast = @import("koru_ast");
 

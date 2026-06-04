@@ -83,10 +83,10 @@ pub const Bridge = struct {
 // GET_HANDLES - Query handles currently on the bridge
 // ============================================================================
 
-~pub event get_handles { br: *Bridge }
+~pub event get-handles { br: *Bridge }
 | handles u32
 
-~proc get_handles|zig {
+~proc get-handles|zig {
     return .{ .handles = br.getHandleCount() };
 }
 
@@ -109,7 +109,7 @@ pub const Bridge = struct {
 // TEST_RUN - Test helper: create bridge, run source, report handle count
 // ============================================================================
 
-~pub event test_run {
+~pub event test-run {
     source: []const u8,
     scope: []const u8,
     budget: u64
@@ -117,7 +117,7 @@ pub const Bridge = struct {
 | pass u32
 | fail []const u8
 
-~proc test_run|zig {
+~proc test-run|zig {
     const rt = @import("root").koru_std.koru_runtime;
 
     // Create bridge instance

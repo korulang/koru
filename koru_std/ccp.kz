@@ -24,14 +24,14 @@ const std = @import("std");
 
 // Event: Emit a transition event as JSONL to stdout
 // Marked [opaque] to prevent infinite recursion from universal tap
-~[opaque] event emit_transition {
+~[opaque] event emit-transition {
     source: []const u8,
     branch: []const u8,
     destination: ?[]const u8,
-    timestamp_ns: i128,
+    timestamp-ns: i128,
 }
 
-~proc emit_transition|zig {
+~proc emit-transition|zig {
     var buffer: [8192]u8 = undefined;
     var pos: usize = 0;
 
@@ -102,8 +102,8 @@ const std = @import("std");
 // - source: Source event name (e.g., "fetch", "process")
 // - branch: Branch name taken (e.g., "success", "error")
 // - destination: Next event in flow (null for terminal transitions)
-// - timestamp_ns: Execution time (null unless profiling enabled)
+// - timestamp-ns: Execution time (null unless profiling enabled)
 //
 // Self-governing: Only fires when --ccp flag is set AND this module is imported
 ~tap(* -> *)
-| Profile t |> emit_transition(t.source, t.branch, t.destination, t.timestamp_ns)
+| Profile t |> emit-transition(t.source, t.branch, t.destination, t.timestamp_ns)

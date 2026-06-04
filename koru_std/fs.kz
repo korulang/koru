@@ -10,11 +10,11 @@ const std = @import("std");
 // ============================================================================
 
 // Read entire file as array of lines
-~pub event read_lines { path: []const u8 }
+~pub event read-lines { path: []const u8 }
 | lines [][]const u8
 | failed []const u8
 
-~proc read_lines|zig {
+~proc read-lines|zig {
     // Open the file
     const file = std.fs.cwd().openFile(path, .{}) catch |err| {
         const msg = switch (err) {

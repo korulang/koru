@@ -39,7 +39,7 @@ pub const WorkerHandle = struct {
 // Simple interface - spawn and forget
 // Use when you don't need to wait for result
 
-~event worker.spawn { work_fn: WorkFn, context: *anyopaque }
+~event worker.spawn { work-fn: WorkFn, context: *anyopaque }
 
 ~proc worker.spawn|zig {
     // Spawn thread with work function
@@ -59,7 +59,7 @@ pub const WorkerHandle = struct {
 // Advanced interface - spawn and return handle for later joining
 // Threading happens INSIDE the proc, but event signature is clean
 
-~event worker.spawn.async { work_fn: WorkFn, context: *anyopaque }
+~event worker.spawn.async { work-fn: WorkFn, context: *anyopaque }
 | awaitable WorkerHandle
 
 ~proc worker.spawn.async|zig {
@@ -101,7 +101,7 @@ pub const WorkerHandle = struct {
 // This is where progressive disclosure really shines!
 
 ~event worker.spawn.join { handles: []const WorkerHandle }
-| all_completed []*anyopaque
+| all-completed []*anyopaque
 
 ~proc worker.spawn.join|zig {
     // Allocate results array
@@ -132,13 +132,13 @@ pub const WorkerHandle = struct {
 // Use it:
 //
 // // Simple (fire-and-forget)
-// ~worker.spawn(work_fn: myWork, context: &my_context)
+// ~worker.spawn(work-fn: myWork, context: &my_context)
 // | spawned |> continueWithoutWaiting()
 //
 // // Async (with handle)
-// ~worker.spawn.async(work_fn: myWork, context: &my_context1)
-// | awaitable h1 |> worker.spawn.async(work_fn: myWork, context: &my_context2)
+// ~worker.spawn.async(work-fn: myWork, context: &my_context1)
+// | awaitable h1 |> worker.spawn.async(work-fn: myWork, context: &my_context2)
 //     | awaitable h2 |> worker.spawn.join(handles: &[_]WorkerHandle{ h1.handle, h2.handle })
-//         | all_completed results |> processResults(results: results.results)
+//         | all-completed results |> processResults(results: results.results)
 //
 // ============================================================================
