@@ -1,1 +1,2 @@
 FRONTEND_COMPILE_ERROR
+CONTAINS unknown event 'std/io:println'
