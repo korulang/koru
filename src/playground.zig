@@ -31,6 +31,7 @@ const Config = @import("config").Config;
 const canonicalize_names = @import("canonicalize_names");
 const file_types = @import("file_types");
 const DeadStripPass = @import("dead_strip").DeadStripPass;
+const template_processor = @import("template_processor");
 
 /// "std/io" → "std.io" (slashes to dots, Koru extension stripped). Mirrors
 /// main.zig's deriveCanonicalName — the name js_emit matches a qualified call
@@ -202,17 +203,32 @@ fn applyComptimeTransforms(allocator: std.mem.Allocator, source_file: *ast.Progr
 /// present as items. Reuses the shared resolver (resolveBoth/findCompanionFiles
 /// over the embedded Fs); facet companions (.k/.kjs siblings) merge into one
 /// module's items, exactly like main.zig's loadFileWithCompanions.
+const ImportSpec = struct { path: []const u8, local_name: ?[]const u8 };
+
 fn materializeImports(allocator: std.mem.Allocator, source_file: *ast.Program, resolver: *ModuleResolver) !void {
     var combined = std.ArrayList(ast.Item){ .items = &.{}, .capacity = 0 };
     try combined.appendSlice(allocator, source_file.items);
 
+    // What to materialize: the user's direct imports, PLUS std/control so the
+    // keyword templates (const/if/for) resolve without an explicit import —
+    // koruc gets these from its bootstrap prelude; the playground has none, so
+    // we always load them. Dedup by resolved file path (a user `import
+    // "std/control"` won't double up).
+    var specs = std.ArrayList(ImportSpec){ .items = &.{}, .capacity = 0 };
     for (source_file.items) |item| {
-        if (item != .import_decl) continue;
-        const imp = item.import_decl;
+        if (item == .import_decl) {
+            try specs.append(allocator, .{ .path = item.import_decl.path, .local_name = item.import_decl.local_name });
+        }
+    }
+    try specs.append(allocator, .{ .path = "std/control", .local_name = null });
 
-        var resolved = resolver.resolveBoth(imp.path, null) catch continue;
+    var seen = std.StringHashMap(void).init(allocator);
+    for (specs.items) |spec| {
+        var resolved = resolver.resolveBoth(spec.path, null) catch continue;
         defer resolved.deinit(allocator);
         const file_path = resolved.file_path orelse continue;
+        if (seen.contains(file_path)) continue;
+        try seen.put(file_path, {});
 
         const bytes = (try resolver.fs.readFile(allocator, file_path)) orelse continue;
         var p = try Parser.init(allocator, bytes, file_path, &[_][]const u8{}, resolver);
@@ -233,7 +249,7 @@ fn materializeImports(allocator: std.mem.Allocator, source_file: *ast.Program, r
         }
 
         try combined.append(allocator, .{ .module_decl = .{
-            .logical_name = try deriveLogicalName(allocator, imp.local_name orelse imp.path),
+            .logical_name = try deriveLogicalName(allocator, spec.local_name orelse spec.path),
             .canonical_path = try allocator.dupe(u8, file_path),
             .items = try mod_items.toOwnedSlice(allocator),
             .is_system = resolver.isSystemModule(file_path),
@@ -366,6 +382,10 @@ pub fn compileToJs(allocator: std.mem.Allocator, source: []const u8, file_name: 
     // Order mirrors main(): materialize imports → canonicalize.
     try materializeImports(allocator, &source_file, &resolver);
     try canonicalize_names.canonicalize(&source_file, allocator);
+    // Render |template| comptime procs for the JS target — const, if, for (they
+    // match per-call by name, no keyword-registry pass needed). Mirrors koruc's
+    // frontend `process_template_procs`, before the hand-ported transforms.
+    try template_processor.processTemplateProcs(&source_file, allocator, "js");
     // Run curated comptime transforms (print.blk → inline console.log) natively,
     // before dead_strip so the original print.blk event gets pruned.
     try applyComptimeTransforms(allocator, &source_file);

@@ -621,6 +621,7 @@ pub fn build(b: *std.Build) void {
     template_processor_module.addImport("ast", ast_module);
     template_processor_module.addImport("liquid", liquid_module);
     template_processor_module.addImport("log", log_module);
+    template_processor_module.addImport("errors", errors_module);
     exe.root_module.addImport("template_processor", template_processor_module);
 
     // Transform Pass Runner module - generic AST walker for transforms
@@ -694,6 +695,7 @@ pub fn build(b: *std.Build) void {
     playground_module.addImport("file_types", file_types_module);
     playground_module.addImport("dead_strip", dead_strip_module);
     playground_module.addImport("embedded_fs", embedded_fs_module);
+    playground_module.addImport("template_processor", template_processor_module);
 
     // Native CLI (testing): `zig build playground` → ./zig-out/bin/playground <file> [--js]
     const playground_exe = b.addExecutable(.{
