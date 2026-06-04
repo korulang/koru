@@ -840,6 +840,14 @@ pub const Parser = struct {
                     continue;
                 };
                 try items.append(self.allocator, item);
+            } else if (lexer.startsWith(trimmed, "import ")) {
+                // First-class top-level import: `import std/io` with no `~`.
+                // An import is always Koru (never host), so it needs no
+                // host->Koru `~` switch and we do NOT synthesize one. Zig/JS
+                // have no bare `import` statement (only `@import`), so a line
+                // starting with `import ` is unambiguous.
+                const decl = try self.parseImportDecl();
+                try items.append(self.allocator, .{ .import_decl = decl });
             } else if (lexer.startsWith(line, "|")) {
                 try self.reporter.addError(
                     .KORU010,
@@ -7371,8 +7379,15 @@ pub const Parser = struct {
         const line = self.lines[self.current];
         self.current += 1;
 
-        // Parse: ~import "path"
-        const after_tilde = lexer.trim(line[1..]);
+        // Accept both forms with NO `~` synthesis:
+        //   `import std/io`   — first-class Koru import (an import is always
+        //                       Koru, so there is no host->Koru switch to make)
+        //   `~import std/io`  — the host-context form, where `~` flips a line
+        //                       out of host code into Koru.
+        // An import is never host syntax, so we parse the bare form directly
+        // rather than faking a `~`.
+        const t = lexer.trim(line);
+        const after_tilde = if (lexer.startsWith(t, "~")) lexer.trim(t[1..]) else t;
 
         // Skip the "import " part
         const after_import = if (lexer.startsWith(after_tilde, "import "))
