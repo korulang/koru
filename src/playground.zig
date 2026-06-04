@@ -398,6 +398,82 @@ pub fn compileToJs(allocator: std.mem.Allocator, source: []const u8, file_name: 
     return try js_emitter.emit(allocator, pruned);
 }
 
+/// Web-facing compile: returns a JSON envelope the playground UI consumes —
+/// `{"ok":true,"js":"…"}` on success, or `{"ok":false,"errors":[…]}` so the user
+/// sees a real diagnostic instead of blank output. Diagnostics are collected
+/// AFTER the full transform + dead_strip pipeline: materialization makes stdlib
+/// calls (e.g. println) resolve, and pruning removes unreachable stdlib internals
+/// — together that's what keeps the checkers from false-flagging valid programs.
+pub fn compileForWeb(allocator: std.mem.Allocator, source: []const u8, file_name: []const u8) ![]const u8 {
+    var config = try embeddedConfig(allocator);
+    var resolver = try ModuleResolver.initEmbedded(allocator, &config, embedded_fs.fs(), "/koru_std");
+    var parser = try Parser.init(allocator, source, file_name, &[_][]const u8{}, &resolver);
+    defer parser.deinit();
+
+    const parse_result = parser.parse() catch {
+        return try errorsEnvelope(allocator, &parser.reporter, "parse");
+    };
+    if (parser.reporter.hasErrors()) {
+        return try errorsEnvelope(allocator, &parser.reporter, "parse");
+    }
+    var source_file = parse_result.source_file;
+
+    try materializeImports(allocator, &source_file, &resolver);
+    try canonicalize_names.canonicalize(&source_file, allocator);
+    try template_processor.processTemplateProcs(&source_file, allocator, "js");
+    try applyComptimeTransforms(allocator, &source_file);
+    var ds = DeadStripPass.init(allocator);
+    defer ds.deinit();
+    const pruned = try ds.run(&source_file);
+
+    // NOTE: we do NOT run shape/flow/phantom here. Without koruc's full analysis
+    // setup they false-positive (flag valid `if`, leak stdlib internals), and a
+    // wrong error is worse than none. Reliable diagnostics today = parse errors
+    // (above) + js-emit failures (below). Faithful semantic diagnostics need the
+    // real analysis pipeline wired — a follow-up.
+    const js = js_emitter.emit(allocator, pruned) catch |err| {
+        return try messageEnvelope(allocator, friendlyEmitError(err));
+    };
+
+    var buf: std.ArrayList(u8) = .empty;
+    errdefer buf.deinit(allocator);
+    try buf.appendSlice(allocator, "{\"ok\":true,\"js\":");
+    try appendStr(&buf, allocator, js);
+    try buf.append(allocator, '}');
+    return try buf.toOwnedSlice(allocator);
+}
+
+fn errorsEnvelope(allocator: std.mem.Allocator, reporter: *const errors.ErrorReporter, stage: []const u8) ![]const u8 {
+    var diagnostics: std.ArrayList(Diagnostic) = .empty;
+    defer diagnostics.deinit(allocator);
+    try collect(&diagnostics, reporter, stage, allocator);
+    const errs = try emitJson(allocator, diagnostics.items);
+    defer allocator.free(errs);
+    return try std.fmt.allocPrint(allocator, "{{\"ok\":false,\"errors\":{s}}}", .{errs});
+}
+
+/// Turn a JsEmitError into a human message. Many of these are gardening gaps
+/// (a stdlib event without a |js body), so we say so plainly.
+fn friendlyEmitError(err: anyerror) []const u8 {
+    return switch (err) {
+        error.UnresolvedEvent => "Couldn't resolve an event or proc to JavaScript — check the name, or it may not have a |js implementation yet.",
+        error.NoJsProcBody => "This event has no JavaScript (|js) implementation yet — a stdlib gap to fill.",
+        error.UnsupportedConstruct => "This construct can't be lowered to JavaScript yet.",
+        else => @errorName(err),
+    };
+}
+
+/// Envelope for a compile failure with no source-located diagnostic (e.g. a
+/// js_emitter error like UnresolvedEvent) — surface the cause as a message.
+fn messageEnvelope(allocator: std.mem.Allocator, message: []const u8) ![]const u8 {
+    var buf: std.ArrayList(u8) = .empty;
+    errdefer buf.deinit(allocator);
+    try buf.appendSlice(allocator, "{\"ok\":false,\"errors\":[{\"code\":\"\",\"message\":");
+    try appendStr(&buf, allocator, message);
+    try buf.appendSlice(allocator, ",\"line\":0,\"column\":0,\"span_length\":1,\"hint\":null,\"stage\":\"emit\"}]}");
+    return try buf.toOwnedSlice(allocator);
+}
+
 fn appendStr(buf: *std.ArrayList(u8), a: std.mem.Allocator, s: []const u8) !void {
     try buf.append(a, '"');
     for (s) |c| switch (c) {
@@ -461,9 +537,10 @@ pub fn main() !void {
     // `--js` emits JavaScript; default emits JSON diagnostics. The remaining
     // non-flag arg is an input file; otherwise read the snippet from stdin.
     var emit_js = false;
+    var emit_web = false;
     var file: ?[]const u8 = null;
     for (args[1..]) |arg| {
-        if (std.mem.eql(u8, arg, "--js")) emit_js = true else file = arg;
+        if (std.mem.eql(u8, arg, "--js")) emit_js = true else if (std.mem.eql(u8, arg, "--web")) emit_web = true else file = arg;
     }
 
     const file_name = file orelse "playground.kz";
@@ -472,7 +549,9 @@ pub fn main() !void {
     else
         try std.fs.File.stdin().readToEndAlloc(allocator, 16 * 1024 * 1024);
 
-    const out = if (emit_js)
+    const out = if (emit_web)
+        try compileForWeb(allocator, source, file_name)
+    else if (emit_js)
         try compileToJs(allocator, source, file_name)
     else
         try check(allocator, source, file_name);

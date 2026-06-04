@@ -56,6 +56,18 @@ export fn koru_check(ptr: [*]const u8, len: usize) [*]const u8 {
     return out.ptr;
 }
 
+/// Web-facing compile: returns a JSON envelope ({"ok":true,"js":…} or
+/// {"ok":false,"errors":[…]}) so the playground UI shows real diagnostics
+/// instead of blank output. Result ptr returned; length via koru_result_len.
+export fn koru_compile_web(ptr: [*]const u8, len: usize) [*]const u8 {
+    const out = pg.compileForWeb(allocator(), ptr[0..len], "/playground.k") catch {
+        result_len = 0;
+        return "";
+    };
+    result_len = out.len;
+    return out.ptr;
+}
+
 export fn koru_result_len() usize {
     return result_len;
 }
