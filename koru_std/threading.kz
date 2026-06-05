@@ -39,7 +39,7 @@ pub const WorkerHandle = struct {
 // Simple interface - spawn and forget
 // Use when you don't need to wait for result
 
-~event worker.spawn { work-fn: WorkFn, context: *anyopaque }
+~event worker.spawn { work_fn: WorkFn, context: *anyopaque }
 
 ~proc worker.spawn|zig {
     // Spawn thread with work function
@@ -59,7 +59,7 @@ pub const WorkerHandle = struct {
 // Advanced interface - spawn and return handle for later joining
 // Threading happens INSIDE the proc, but event signature is clean
 
-~event worker.spawn.async { work-fn: WorkFn, context: *anyopaque }
+~event worker.spawn.async { work_fn: WorkFn, context: *anyopaque }
 | awaitable WorkerHandle
 
 ~proc worker.spawn.async|zig {

@@ -22,7 +22,7 @@ const std = @import("std");
 - comptime
 - runtime
 - optimize(level: 2)
-- profile(sample-rate: 1000)
+- profile(sample_rate: 1000)
 ] event vertical-mixed {}
 
 // Should be equivalent to inline

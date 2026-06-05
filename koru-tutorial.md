@@ -1,6 +1,6 @@
 # Koru in a Page
 
-> Generated 2026-06-04T00:54:17.307Z by `scripts/generate-tutorial.js` from `koru-by-example.json`.
+> Generated 2026-06-05T06:47:49.631Z by `scripts/generate-tutorial.js` from `koru-by-example.json`.
 
 > **Note:** This tutorial is prose synthesis on top of the test suite. It may contain errors or drift. The compiler's actual behavior — verified by tests in `tests/regression/` and source in `src/` — is the source of truth. When you find this document saying one thing and the compiler doing another, the conflict itself is the finding: flag it, don't paper over it.
 >
@@ -176,9 +176,9 @@ const count: i32 = 42;
 // Hello World in pure Koru.
 // This is the frontpage example from korulang.org.
 
-import "std/io"
+import std/io
 
-std.io:print.blk {
+std/io:print.blk {
     {% if debug %}[DEBUG] {% endif %}Hello, {{ name:s }}!
     The answer is {{ count:d }}.
 }
@@ -197,7 +197,7 @@ The answer is 42.
 // Test: Pure subflow implementation (no proc needed)
 // From the README example - this is idiomatic Koru
 // This is the default authoring model for ordinary event behavior.
-~import "std/io"
+import std/io
 
 ~event greet { name: []const u8 }
 | greeting []const u8
@@ -205,7 +205,7 @@ The answer is 42.
 ~greet => greeting "Hello, " ++ name ++ "!"
 
 ~greet ("World")
-| greeting msg |> std.io:print.ln(msg)
+| greeting msg |> std/io:print.ln(msg)
 ```
 
 **Output:**
@@ -235,41 +235,41 @@ const std = @import("std");
     return .{ .zero = .{} };
 }
 
-~event handle_positive { n: i32 }
+~event handle-positive { n: i32 }
 
-~proc handle_positive|zig {
+~proc handle-positive|zig {
     std.debug.print("Positive branch works: {}\n", .{n});
 }
 
-~event handle_zero {}
+~event handle-zero {}
 
-~proc handle_zero|zig {
+~proc handle-zero|zig {
     std.debug.print("Zero branch works\n", .{});
 }
 
-~event handle_negative { n: i32 }
+~event handle-negative { n: i32 }
 
-~proc handle_negative|zig {
+~proc handle-negative|zig {
     std.debug.print("Negative branch works: {}\n", .{n});
 }
 
 // Test 1: Positive value (42)
 ~check(value: 42)
-| positive p |> handle_positive(n: p)
-| zero |> handle_zero()
-| negative n |> handle_negative(n)
+| positive p |> handle-positive(n: p)
+| zero |> handle-zero()
+| negative n |> handle-negative(n)
 
 // Test 2: Zero value (0)
 ~check(value: 0)
-| positive p |> handle_positive(n: p)
-| zero |> handle_zero()
-| negative n |> handle_negative(n)
+| positive p |> handle-positive(n: p)
+| zero |> handle-zero()
+| negative n |> handle-negative(n)
 
 // Test 3: Negative value (-7)
 ~check(value: -7)
-| positive p |> handle_positive(n: p)
-| zero |> handle_zero()
-| negative n |> handle_negative(n)
+| positive p |> handle-positive(n: p)
+| zero |> handle-zero()
+| negative n |> handle-negative(n)
 ```
 
 **Output:**
@@ -297,7 +297,7 @@ Negative branch works: -7
 // other languages" trap is re-introduced at parser.zig parseStep,
 // this test fails. That is the point.
 
-~import "std/io"
+import std/io
 
 // Lower-level event: arbitrary outcome names
 ~pub event step {}
@@ -320,10 +320,10 @@ Negative branch works: -7
 | break => stopped
 | continue => iterated
 
-~std.io:print.ln("Testing subflow-defined semantics:")
+~std/io:print.ln("Testing subflow-defined semantics:")
 ~run()
-| stopped |> std.io:print.ln("  stopped")
-| iterated |> std.io:print.ln("  iterated")
+| stopped |> std/io:print.ln("  stopped")
+| iterated |> std/io:print.ln("  iterated")
 ```
 
 **Output:**
@@ -336,9 +336,9 @@ Testing subflow-defined semantics:
 ### 330_005_cleanup_obligation_satisfied
 
 ```koru
-~import "app/fs"
-~app.fs:open(path: "test.txt")
-| opened f |> app.fs:close(file: f)
+import app/fs
+~app/fs:open(path: "test.txt")
+| opened f |> app/fs:close(file: f)
 ```
 
 **Output:**
@@ -358,7 +358,7 @@ Closing file
 // runs it, then returns. No terminal `|` branches — this is a void event
 // with one effect operation.
 
-~import "std/io"
+import std/io
 
 const std = @import("std");
 
@@ -370,7 +370,7 @@ const std = @import("std");
 }
 
 ~ping(msg: "hello effect branches")
-! pong reply |> std.io:print.blk {
+! pong reply |> std/io:print.blk {
     {{ reply:s }}
 }
 ```

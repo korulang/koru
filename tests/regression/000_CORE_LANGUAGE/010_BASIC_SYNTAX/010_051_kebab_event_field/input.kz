@@ -5,9 +5,9 @@
 const std = @import("std");
 import std/io
 
-~event my-stuff { a-thing: []const u8 }
+~event my-stuff { a_thing: []const u8 }
 ~proc my-stuff|zig {
     std.debug.print("{s}\n", .{a_thing});
 }
 
-~my-stuff(a-thing: "field ok")
+~my-stuff(a_thing: "field ok")

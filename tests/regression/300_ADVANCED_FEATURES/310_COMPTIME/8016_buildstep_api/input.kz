@@ -49,12 +49,12 @@ const CompileFlag = struct {
 // ================================================================
 
 ~pub event compile.proc-target {
-    target-name: []const u8,
+    target_name: []const u8,
     body: []const u8,
 }
 | compiled {
     code: []const u8,
-    build-steps: []const BuildStep,
+    build_steps: []const BuildStep,
 }
 | unsupported []const u8
 

@@ -18,7 +18,7 @@ import domain/user
 
 // This event uses a type from an explicitly imported nested module
 ~pub event grant-access {
-    user-data: domain.user:DomainUser,
+    user_data: domain.user:DomainUser,
 }
 | granted bool
 
@@ -30,5 +30,5 @@ import domain/user
 
 // Create a domain user and grant access
 ~domain/user:create(email: "admin@example.com", role: "administrator", permissions: 999)
-| created c |> grant-access(user-data: c)
+| created c |> grant-access(user_data: c)
     | granted _ |> _

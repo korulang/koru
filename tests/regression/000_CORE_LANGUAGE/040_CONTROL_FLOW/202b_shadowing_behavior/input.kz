@@ -20,7 +20,7 @@ const std = @import("std");
     return .{ .data = value * 3 };
 }
 
-~event show { outer-val: i32, inner-val: i32 }
+~event show { outer_val: i32, inner_val: i32 }
 
 ~proc show|zig {
     std.debug.print("Outer: {}, Inner: {}\n", .{outer_val, inner_val});
@@ -29,4 +29,4 @@ const std = @import("std");
 // Test: Use unique binding names (r and d)
 ~first(value: 10)
 | result r |> second(value: r)
-    | data d |> show(outer-val: r, inner-val: d)
+    | data d |> show(outer_val: r, inner_val: d)

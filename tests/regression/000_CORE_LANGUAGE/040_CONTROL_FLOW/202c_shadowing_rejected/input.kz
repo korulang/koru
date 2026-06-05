@@ -22,7 +22,7 @@ const std = @import("std");
     return .{ .data = value * 3 };
 }
 
-~event show { outer-val: i32, inner-val: i32 }
+~event show { outer_val: i32, inner_val: i32 }
 
 ~proc show|zig {
     std.debug.print("Outer: {}, Inner: {}\n", .{outer_val, inner_val});
@@ -34,4 +34,4 @@ const std = @import("std");
 // This should be caught by Koru compiler, not Zig compiler
 ~first(value: 10)
 | result r |> second(value: r.num)
-    | data r |> show(outer-val: r.num, inner-val: r.num)
+    | data r |> show(outer_val: r.num, inner_val: r.num)

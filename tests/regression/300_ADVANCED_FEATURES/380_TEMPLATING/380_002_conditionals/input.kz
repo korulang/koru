@@ -11,4 +11,4 @@
 import std/liquid_template
 
 // When is_debug is truthy (non-empty string), the {% if %} block is included
-~emit("{% if is_debug %}[DEBUG] Player: {{ name }}{% endif %} Game started.", is-debug: "true", name: "Bob")
+~emit("{% if is_debug %}[DEBUG] Player: {{ name }}{% endif %} Game started.", is_debug: "true", name: "Bob")

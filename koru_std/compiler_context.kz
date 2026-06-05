@@ -54,7 +54,7 @@ pub const CompilerContext = struct {
 ~pub event init {
     ast: Program,
     allocator: std.mem.Allocator,
-    error-policy: ErrorPolicy
+    error_policy: ErrorPolicy
 }
 | created CompilerContext
 

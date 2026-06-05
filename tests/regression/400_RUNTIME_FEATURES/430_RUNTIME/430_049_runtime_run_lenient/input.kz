@@ -21,7 +21,7 @@ const TEST_SOURCE =
     \\~ping()
 ;
 
-~std/runtime:run(source: TEST_SOURCE, scope: "api", fail-fast: false)
+~std/runtime:run(source: TEST_SOURCE, scope: "api", fail_fast: false)
 | result _ |> std/io:print.ln("OK")
 | exhausted _ |> std/io:print.ln("EXHAUSTED")
 | parse-error _ |> std/io:print.ln("PARSE ERROR")

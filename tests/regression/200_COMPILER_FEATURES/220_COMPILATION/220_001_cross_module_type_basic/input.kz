@@ -4,7 +4,7 @@
 // The syntax module.path:Type should be parsed and stored with the module path separated.
 
 ~event process-user {
-    user-data: test_lib.user:User,
+    user_data: test_lib.user:User,
     value: i32,
 }
 | done bool

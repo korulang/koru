@@ -31,7 +31,7 @@ const std = @import("std");
 
 const SOURCE = "~set_config(enabled: true, ratio: 3.5, count: 42)";
 
-~std/runtime:parse.source(source: SOURCE, file-name: "typed_args.kz", allocator: std.heap.page_allocator)
+~std/runtime:parse.source(source: SOURCE, file_name: "typed_args.kz", allocator: std.heap.page_allocator)
 | parsed p |> std/runtime:eval(ast: p, scope: "config")
     | result _ |> std/io:print.ln("OK")
     | event-denied e |> std/io:print.ln("DENIED: {{e:s}}")

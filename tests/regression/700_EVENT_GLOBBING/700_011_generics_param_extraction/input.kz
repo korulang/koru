@@ -15,7 +15,7 @@
 // This is generics-as-library: the transform IS the generic instantiation.
 
 ~[comptime|transform]pub event ring.* {
-    event-name: []const u8,
+    event_name: []const u8,
     item: *const Item,
     program: *const Program,
 }

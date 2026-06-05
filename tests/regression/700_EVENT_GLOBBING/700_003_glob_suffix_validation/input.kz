@@ -9,7 +9,7 @@
 // 5. Emit compile error: "Unknown log level 'warning', did you mean 'warn'?"
 
 ~[comptime|transform]pub event log.* {
-    event-name: []const u8,
+    event_name: []const u8,
     item: *const Item,
     program: *const Program,
 }

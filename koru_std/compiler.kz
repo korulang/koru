@@ -461,6 +461,7 @@ pub const CompilerContext = struct {
     js_emitter_module.addImport("ast", ast_module);
     js_emitter_module.addImport("log", log_module);
     js_emitter_module.addImport("file_types", file_types_module);
+    js_emitter_module.addImport("annotation_parser", annotation_parser_module);
 
     // Build.zig emission
     const emit_build_zig_module = b.createModule(.{
@@ -649,7 +650,7 @@ pub const CompilerContext = struct {
 
 // The compiler coordinator (user-overridable)
 // Abstract: Users can override with ~std/compiler:coordinate = ...
-~[comptime|abstract] pub event coordinate { program-ast: *const Program, allocator: std.mem.Allocator }
+~[comptime|abstract] pub event coordinate { program_ast: *const Program, allocator: std.mem.Allocator }
 | coordinated { ast: *const Program, code: []const u8, metrics: []const u8 }
 | error []const u8
 
@@ -678,7 +679,7 @@ pub const CompilerContext = struct {
 // Composable pipeline segments - users can mix and match!
 
 // Helper: Create CompilerContext from ast and allocator
-~pub event context-create { program-ast: *const Program, allocator: std.mem.Allocator }
+~pub event context-create { program_ast: *const Program, allocator: std.mem.Allocator }
 | created CompilerContext
 
 ~proc context-create|zig {
@@ -697,7 +698,7 @@ pub const CompilerContext = struct {
 }
 
 // Helper: Format metrics string
-~pub event metrics-format { passes-completed: u32, allocator: std.mem.Allocator }
+~pub event metrics-format { passes_completed: u32, allocator: std.mem.Allocator }
 | formatted []const u8
 
 ~proc metrics-format|zig {
@@ -1310,7 +1311,7 @@ const emitFlowWithMocks = struct {
 
 // Parser service - makes the Koru parser available at backend comptime
 // This enables dynamic module loading during compilation passes
-~pub event parse { source: []const u8, module-name: []const u8 }
+~pub event parse { source: []const u8, module_name: []const u8 }
 | parsed []Item
 | failed []const u8
 
