@@ -1,6 +1,6 @@
 # Koru by Example
 
-> 22 hand-picked tests from `tests/regression/`. Generated 2026-06-04T00:54:17.178Z by `scripts/generate-corpus.js`.
+> 22 hand-picked tests from `tests/regression/`. Generated 2026-06-05T06:47:49.516Z by `scripts/generate-corpus.js`.
 
 Every example below is verbatim source from a passing POSITIVE regression test (negative MUST_FAIL tests are excluded — these are all what-to-do). Section prose is pulled from existing `SPEC.md` / `README.md` files in the relevant category directories — drift is tolerated in this pass and cleaned in a separate sweep. Per-test prose is intentionally NOT pulled; tests speak for themselves.
 
@@ -467,9 +467,9 @@ const count: i32 = 42;
 // Hello World in pure Koru.
 // This is the frontpage example from korulang.org.
 
-import "std/io"
+import std/io
 
-std.io:print.blk {
+std/io:print.blk {
     {% if debug %}[DEBUG] {% endif %}Hello, {{ name:s }}!
     The answer is {{ count:d }}.
 }
@@ -551,7 +551,7 @@ Flow executed
 // VERIFIED REGRESSION TEST - DO NOT MODIFY WITHOUT DISCUSSION
 // ============================================================================
 // Test: Void events (no branches) in flows
-// Search: parseVoidEvent void_event no_branches
+// Search: parseVoidEvent void-event no_branches
 // ============================================================================
 
 const std = @import("std");
@@ -627,7 +627,7 @@ Void events work correctly
 // VERIFIED REGRESSION TEST - DO NOT MODIFY WITHOUT DISCUSSION
 // ============================================================================
 // Test: Void events (no branches) in flows
-// Search: parseVoidEvent void_event no_branches
+// Search: parseVoidEvent void-event no_branches
 // ============================================================================
 
 const std = @import("std");
@@ -701,7 +701,7 @@ Void events work correctly
 // Test: Pure subflow implementation (no proc needed)
 // From the README example - this is idiomatic Koru
 // This is the default authoring model for ordinary event behavior.
-~import "std/io"
+import std/io
 
 ~event greet { name: []const u8 }
 | greeting []const u8
@@ -709,7 +709,7 @@ Void events work correctly
 ~greet => greeting "Hello, " ++ name ++ "!"
 
 ~greet ("World")
-| greeting msg |> std.io:print.ln(msg)
+| greeting msg |> std/io:print.ln(msg)
 ```
 
 **Output:**
@@ -854,41 +854,41 @@ const std = @import("std");
     return .{ .zero = .{} };
 }
 
-~event handle_positive { n: i32 }
+~event handle-positive { n: i32 }
 
-~proc handle_positive|zig {
+~proc handle-positive|zig {
     std.debug.print("Positive branch works: {}\n", .{n});
 }
 
-~event handle_zero {}
+~event handle-zero {}
 
-~proc handle_zero|zig {
+~proc handle-zero|zig {
     std.debug.print("Zero branch works\n", .{});
 }
 
-~event handle_negative { n: i32 }
+~event handle-negative { n: i32 }
 
-~proc handle_negative|zig {
+~proc handle-negative|zig {
     std.debug.print("Negative branch works: {}\n", .{n});
 }
 
 // Test 1: Positive value (42)
 ~check(value: 42)
-| positive p |> handle_positive(n: p)
-| zero |> handle_zero()
-| negative n |> handle_negative(n)
+| positive p |> handle-positive(n: p)
+| zero |> handle-zero()
+| negative n |> handle-negative(n)
 
 // Test 2: Zero value (0)
 ~check(value: 0)
-| positive p |> handle_positive(n: p)
-| zero |> handle_zero()
-| negative n |> handle_negative(n)
+| positive p |> handle-positive(n: p)
+| zero |> handle-zero()
+| negative n |> handle-negative(n)
 
 // Test 3: Negative value (-7)
 ~check(value: -7)
-| positive p |> handle_positive(n: p)
-| zero |> handle_zero()
-| negative n |> handle_negative(n)
+| positive p |> handle-positive(n: p)
+| zero |> handle-zero()
+| negative n |> handle-negative(n)
 ```
 
 **Output:**
@@ -965,14 +965,14 @@ const std = @import("std");
 // Previously: emitter would generate |name| capture even for empty payloads
 // Fixed: emitter now generates => { without capture for empty payloads
 
-~import "std/io"
+import std/io
 
 // Event with two branches, BOTH empty (no payload fields)
-~event check_value { n: i32 }
+~event check-value { n: i32 }
 | positive
-| non_positive
+| non-positive
 
-~proc check_value|zig {
+~proc check-value|zig {
     if (n > 0) {
         return .{ .positive = .{} };
     } else {
@@ -981,17 +981,17 @@ const std = @import("std");
 }
 
 // Test: handle both empty branches
-~check_value(n: 42)
-    | positive |> std.io:println(text: "42 is positive")
-    | non_positive |> std.io:println(text: "42 is not positive")
+~check-value(n: 42)
+    | positive |> std/io:print.ln("42 is positive")
+    | non-positive |> std/io:print.ln("42 is not positive")
 
-~check_value(n: -5)
-    | positive |> std.io:println(text: "-5 is positive")
-    | non_positive |> std.io:println(text: "-5 is not positive")
+~check-value(n: -5)
+    | positive |> std/io:print.ln("-5 is positive")
+    | non-positive |> std/io:print.ln("-5 is not positive")
 
-~check_value(n: 0)
-    | positive |> std.io:println(text: "0 is positive")
-    | non_positive |> std.io:println(text: "0 is not positive")
+~check-value(n: 0)
+    | positive |> std/io:print.ln("0 is positive")
+    | non-positive |> std/io:print.ln("0 is not positive")
 ```
 
 **Output:**
@@ -1019,7 +1019,7 @@ const std = @import("std");
 // other languages" trap is re-introduced at parser.zig parseStep,
 // this test fails. That is the point.
 
-~import "std/io"
+import std/io
 
 // Lower-level event: arbitrary outcome names
 ~pub event step {}
@@ -1042,10 +1042,10 @@ const std = @import("std");
 | break => stopped
 | continue => iterated
 
-~std.io:print.ln("Testing subflow-defined semantics:")
+~std/io:print.ln("Testing subflow-defined semantics:")
 ~run()
-| stopped |> std.io:print.ln("  stopped")
-| iterated |> std.io:print.ln("  iterated")
+| stopped |> std/io:print.ln("  stopped")
+| iterated |> std/io:print.ln("  iterated")
 ```
 
 **Output:**
@@ -1114,10 +1114,10 @@ const std = @import("std");
     std.debug.print("Closed connection {}\n", .{conn});
 }
 
-~event log_error { conn: u32, msg: []const u8 }
+~event log-error { conn: u32, msg: []const u8 }
 | logged u32
 
-~proc log_error|zig {
+~proc log-error|zig {
     std.debug.print("Error on connection {}: {s}\n", .{conn, msg});
     return .{ .logged = conn };
 }
@@ -1134,7 +1134,7 @@ const std = @import("std");
     | connected c |> #process_loop process(c.conn)
         | done d |> close(conn: d) |> @accept_loop(c.server)
         | retry r |> @process_loop(conn: r)
-        | error e |> log_error(e.conn, e.msg)
+        | error e |> log-error(e.conn, e.msg)
             | logged l |> cleanup(conn: l) |> @accept_loop(c.server)
     | failed f |> @accept_loop(server: f)
 | failed _ |> _
@@ -1854,7 +1854,7 @@ pub const Comparison = struct {
 const std = @import("std");
 
 // Import the logger module (which defines universal taps)
-~import "app/test_lib/logger"
+import app/test_lib/logger
 
 // Define some events to test with
 ~event compute { x: i32 }
@@ -2359,9 +2359,9 @@ The phantom annotation `[fs:open]` exists only during compilation.
 ### 330_005_cleanup_obligation_satisfied
 
 ```koru
-~import "app/fs"
-~app.fs:open(path: "test.txt")
-| opened f |> app.fs:close(file: f)
+import app/fs
+~app/fs:open(path: "test.txt")
+| opened f |> app/fs:close(file: f)
 ```
 
 **Output:**
@@ -2374,9 +2374,9 @@ Closing file
 ### 330_006_cleanup_consumed_by_disposal
 
 ```koru
-~import "app/fs"
-~app.fs:open(path: "test.txt")
-| opened f |> app.fs:close(file: f)
+import app/fs
+~app/fs:open(path: "test.txt")
+| opened f |> app/fs:close(file: f)
 ```
 
 **Output:**
@@ -2395,7 +2395,7 @@ Closing file
 //
 // Tests that [allocated!] obligation can be discharged with [!allocated]
 
-~import "std/io"
+import std/io
 
 const std = @import("std");
 
@@ -2404,10 +2404,10 @@ pub const Resource = struct {
     allocator: std.mem.Allocator,
 };
 
-~pub event create_resource { name: []const u8 }
+~pub event create-resource { name: []const u8 }
 | created *Resource<allocated!>
 
-~proc create_resource|zig {
+~proc create-resource|zig {
     const alloc = std.heap.page_allocator;
     const data = std.fmt.allocPrint(alloc, "Resource: {s}", .{name}) catch unreachable;
     const res = alloc.create(Resource) catch unreachable;
@@ -2415,17 +2415,17 @@ pub const Resource = struct {
     return .{ .created = res };
 }
 
-~pub event destroy_resource { res: *Resource<!allocated> }
+~pub event destroy-resource { res: *Resource<!allocated> }
 
-~proc destroy_resource|zig {
+~proc destroy-resource|zig {
     res.allocator.free(res.data);
     std.heap.page_allocator.destroy(res);
 }
 
 // Simple sequential test
-~std.io:print.ln("Test start")
-~create_resource(name: "Test")
-| created r |> destroy_resource(res: r) |> std.io:print.ln("Test done")
+~std/io:print.ln("Test start")
+~create-resource(name: "Test")
+| created r |> destroy-resource(res: r) |> std/io:print.ln("Test done")
 ```
 
 **Output:**
@@ -2445,7 +2445,7 @@ Test done
 // runs it, then returns. No terminal `|` branches — this is a void event
 // with one effect operation.
 
-~import "std/io"
+import std/io
 
 const std = @import("std");
 
@@ -2457,7 +2457,7 @@ const std = @import("std");
 }
 
 ~ping(msg: "hello effect branches")
-! pong reply |> std.io:print.blk {
+! pong reply |> std/io:print.blk {
     {{ reply:s }}
 }
 ```
@@ -2476,12 +2476,12 @@ hello effect branches
 
 ```koru
 // Test: Basic string creation and read
-~import "std/string"
-~import "std/io"
+import std/string
+import std/io
 
-~std.string:from_page(text: "hello")
-| ok s |> std.string:read(s)
-    | slice text |> std.io:print.ln("{{ text:s }}") |> std.string:free(s)
+~std/string:from_page(text: "hello")
+| ok s |> std/string:read(s)
+    | slice text |> std/io:print.ln("{{ text:s }}") |> std/string:free(s)
 | err _ |> _
 ```
 
@@ -2497,17 +2497,17 @@ hello
 
 ```koru
 // TEST: fmt:ln basic - format a string and get it back via | line continuation
-~import "std/fmt"
-~import "std/io"
+import std/fmt
+import std/io
 
 ~event greet { name: []const u8 }
 | greeted []const u8
 
-~greet = std.fmt:ln("Hello, {{ name:s }}!")
+~greet = std/fmt:ln("Hello, {{ name:s }}!")
 | line l => greeted l.text
 
 ~greet(name: "World")
-| greeted g |> std.io:println(text: g)
+| greeted g |> std/io:print.ln(g)
 ```
 
 **Output:**
