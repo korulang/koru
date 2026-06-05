@@ -4379,7 +4379,7 @@ pub const Parser = struct {
         return all_continuations.toOwnedSlice(self.allocator);
     }
 
-    fn parseImplicitSourceBlock(self: *Parser, base_indent: usize, phantom_type: ?[]const u8, strict: bool) !struct { source: []const u8, continuations: []ast.Continuation, phantom_type: ?[]const u8 } {
+    fn parseImplicitSourceBlock(self: *Parser, base_indent: usize, phantom_type: ?[]const u8, strict: bool) anyerror!struct { source: []const u8, continuations: []ast.Continuation, phantom_type: ?[]const u8 } {
         // Parse Source content inside {} as raw text, then any output continuations after
         // Source is captured as a string - no parsing of flows inside
         //
@@ -4399,6 +4399,7 @@ pub const Parser = struct {
         var inside_braces = true;
         var min_indent: ?usize = null;
         var first_content_indent: ?usize = null;
+        var inline_close_line: ?[]const u8 = null;
 
         // First pass: collect lines and find minimum indentation
         while (self.current < self.lines.len and inside_braces) {
@@ -4417,6 +4418,15 @@ pub const Parser = struct {
             const close_threshold = first_content_indent orelse base_indent;
 
             if (std.mem.eql(u8, trimmed, "}") and line_indent < close_threshold) {
+                self.current += 1;
+                inside_braces = false;
+                break;
+            }
+
+            // Inline void chain after `}`: `} |> next()` — `|>` is always inline in Koru,
+            // so the source block must close at the `}` even when `|>` follows on the same line.
+            if (std.mem.startsWith(u8, trimmed, "}") and std.mem.indexOf(u8, trimmed, "|>") != null) {
+                inline_close_line = line;
                 self.current += 1;
                 inside_braces = false;
                 break;
@@ -4462,10 +4472,93 @@ pub const Parser = struct {
         // Now parse any output continuations after the }
         // In strict mode (pipeline context), only collect continuations MORE indented than base_indent
         // This prevents sibling branches at the pipeline level from being consumed as children
-        const output_continuations = if (strict)
-            try self.parseContinuationsWithMode(base_indent, true)
-        else
-            try self.parseContinuations(base_indent);
+        var output_continuations: []ast.Continuation = undefined;
+        if (inline_close_line) |close_line| {
+            const trimmed_close = lexer.trim(close_line);
+            if (std.mem.indexOf(u8, trimmed_close, "|>")) |pipe_idx| {
+                const tail = lexer.trim(trimmed_close[pipe_idx + 2 ..]);
+                const close_line_idx = if (self.current > 0) self.current - 1 else self.current;
+                const tail_location = self.getLineLocation(close_line_idx, 0);
+
+                // Mirror parsePipelineContinuationBase's Source-block pipeline step without
+                // mutual recursion (that path also calls parseImplicitSourceBlock).
+                const has_open_brace = std.mem.indexOf(u8, tail, "{") != null;
+                const has_close_brace = std.mem.indexOf(u8, tail, "}") != null;
+                if (has_open_brace and !has_close_brace) {
+                    const brace_idx = std.mem.lastIndexOf(u8, tail, "{") orelse unreachable;
+                    const invocation_str = lexer.trim(tail[0..brace_idx]);
+                    const temp_invocation = try self.parseEventInvocation(invocation_str);
+                    const path_str = try self.pathToString(temp_invocation.path);
+                    defer self.allocator.free(path_str);
+
+                    var has_source_param = false;
+                    if (self.registry.getEventType(path_str)) |event_type| {
+                        if (event_type.input_shape) |shape| {
+                            for (shape.fields) |field| {
+                                if (field.is_source) {
+                                    has_source_param = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    if (has_source_param) {
+                        const tail_source = try self.parseImplicitSourceBlock(base_indent, null, true);
+                        var final_invocation: ast.Invocation = undefined;
+                        if (self.registry.getEventType(path_str)) |event_type| {
+                            final_invocation = try self.createImplicitSourceInvocation(
+                                temp_invocation,
+                                tail_source.source,
+                                tail_source.phantom_type,
+                                event_type,
+                            );
+                        } else {
+                            final_invocation = try self.createImplicitSourceInvocationDefault(
+                                temp_invocation,
+                                tail_source.source,
+                                tail_source.phantom_type,
+                            );
+                        }
+                        self.allocator.free(tail_source.source);
+
+                        const step = ast.Step{ .invocation = final_invocation };
+                        const tail_cont = ast.Continuation{
+                            .branch = try self.allocator.dupe(u8, ""),
+                            .binding = null,
+                            .condition = null,
+                            .condition_expr = null,
+                            .node = step,
+                            .indent = base_indent,
+                            .continuations = tail_source.continuations,
+                            .location = tail_location,
+                        };
+                        var cont_list = try std.ArrayList(ast.Continuation).initCapacity(self.allocator, 1);
+                        try cont_list.append(self.allocator, tail_cont);
+                        output_continuations = try cont_list.toOwnedSlice(self.allocator);
+                    } else {
+                        const tail_cont = try self.parsePipelineContinuationBase(tail, base_indent, tail_location);
+                        var cont_list = try std.ArrayList(ast.Continuation).initCapacity(self.allocator, 1);
+                        try cont_list.append(self.allocator, tail_cont);
+                        output_continuations = try cont_list.toOwnedSlice(self.allocator);
+                    }
+                } else {
+                    const tail_cont = try self.parsePipelineContinuationBase(tail, base_indent, tail_location);
+                    var cont_list = try std.ArrayList(ast.Continuation).initCapacity(self.allocator, 1);
+                    try cont_list.append(self.allocator, tail_cont);
+                    output_continuations = try cont_list.toOwnedSlice(self.allocator);
+                }
+            } else {
+                output_continuations = if (strict)
+                    try self.parseContinuationsWithMode(base_indent, true)
+                else
+                    try self.parseContinuations(base_indent);
+            }
+        } else if (strict) {
+            output_continuations = try self.parseContinuationsWithMode(base_indent, true);
+        } else {
+            output_continuations = try self.parseContinuations(base_indent);
+        }
 
         return .{
             .source = source,

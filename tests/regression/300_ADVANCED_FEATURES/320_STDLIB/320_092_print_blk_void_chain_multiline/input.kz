@@ -1,0 +1,12 @@
+// Void-chain two print.blk blocks: `|>` stays inline on the closing `}`.
+// Both blocks sit at the same top-level column; only the template lines indent.
+
+import std/io
+
+~std/io:print.blk {
+    First block line one.
+    First block line two.
+} |> std/io:print.blk {
+    Second block line one.
+    Second block line two.
+}
