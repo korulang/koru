@@ -1,0 +1,8 @@
+// A string literal with a `\n` (or `\t`) escape is valid Koru — it's just a
+// string passed to an event. The parser must NOT reject it as "Zig code in a
+// flow". Regression for looksLikeZigCode flagging positional string args with
+// escape sequences (`print.ln("a\nb")`) — koruc rejected this with PARSE001
+// while `print(text: "a\nb")` (keyed) slipped past. Found via the playground.
+import std/io
+
+~std/io:print.ln("a\nb")
