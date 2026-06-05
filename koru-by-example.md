@@ -1,6 +1,6 @@
 # Koru by Example
 
-> 22 hand-picked tests from `tests/regression/`. Generated 2026-06-05T06:47:49.516Z by `scripts/generate-corpus.js`.
+> 22 hand-picked tests from `tests/regression/`. Generated 2026-06-05T08:12:09.086Z by `scripts/generate-corpus.js`.
 
 Every example below is verbatim source from a passing POSITIVE regression test (negative MUST_FAIL tests are excluded — these are all what-to-do). Section prose is pulled from existing `SPEC.md` / `README.md` files in the relevant category directories — drift is tolerated in this pass and cleaned in a separate sweep. Per-test prose is intentionally NOT pulled; tests speak for themselves.
 
