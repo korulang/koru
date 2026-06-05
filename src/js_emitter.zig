@@ -28,6 +28,7 @@ const std = @import("std");
 const ast = @import("ast");
 const log = @import("log");
 const file_types = @import("file_types");
+const annotation_parser = @import("annotation_parser");
 
 pub const JsEmitError = error{
     OutOfMemory,
@@ -70,6 +71,23 @@ pub fn emit(allocator: std.mem.Allocator, program: *const ast.Program) JsEmitErr
         try em.write("\n");
     }
 
+    // Phase 0.5: module-scope `[declaration]` flows (Koru-native `const {}`).
+    // A declaration introduces names into the ENCLOSING scope, not a statement
+    // into a function body. JS's shared scope is the module top level — an object
+    // literal can't hold bare `const` statements — so splice the rendered decls
+    // here, above `const main_module`, where every flow and proc body sees them
+    // via closure. Mirrors the Zig emitter splicing them into the main_module
+    // struct (visitor_emitter.zig:1170). The flow is NOT emitted as a flowN()
+    // method and NOT invoked (it declares, it doesn't execute) — Phase 2 skips it
+    // via the same isDeclarationFlow check, so flow numbering stays in sync.
+    for (program.items) |*item| {
+        if (item.* != .flow) continue;
+        if (!em.isDeclarationFlow(&item.flow)) continue;
+        const body = stripInlineStmtMarker(item.flow.inline_body.?);
+        try em.write(std.mem.trim(u8, body, " \t\r\n"));
+        try em.write("\n");
+    }
+
     try em.write("const main_module = {\n");
 
     // Phase 1: emit each event decl (matched to its |js proc) as an object member.
@@ -98,6 +116,10 @@ pub fn emit(allocator: std.mem.Allocator, program: *const ast.Program) JsEmitErr
             // abstract event handler, not as standalone flows. pump.kz has none,
             // but mirror the Zig walk's skip for correctness.
             if (item.flow.impl_of != null) continue;
+            // `[declaration]` flows (Koru-native `const {}`) were spliced at
+            // module scope in Phase 0.5 — never emit them as a flowN() method or
+            // invoke them (they declare, they don't execute).
+            if (em.isDeclarationFlow(&item.flow)) continue;
             // Skip injected meta-event flows (koru:start / koru:end). These are
             // compiler infrastructure, not user code; the spike emits only the
             // user pump. They live in the `koru` module-qualifier namespace.
@@ -175,6 +197,17 @@ const Emitter = struct {
     /// Mirrors visitor_emitter.zig:findEventDeclInItemsWithModule.
     fn findEventDecl(self: *Emitter, path: *const ast.DottedPath) ?*const ast.EventDecl {
         return self.findEventDeclIn(self.items, path, null);
+    }
+
+    /// A `[declaration]` flow (Koru-native `const {}`) introduces names into the
+    /// enclosing scope rather than executing. Detected via the flow's resolved
+    /// event-decl annotation — mirrors visitor_emitter.zig's `declaration`
+    /// handling. Such flows are hoisted to module scope (Phase 0.5) instead of
+    /// being emitted/invoked as flowN() methods.
+    fn isDeclarationFlow(self: *Emitter, flow: *const ast.Flow) bool {
+        if (flow.inline_body == null) return false;
+        const decl = self.findEventDecl(&flow.invocation.path) orelse return false;
+        return annotation_parser.hasPart(decl.annotations, "declaration");
     }
     fn findEventDeclIn(self: *Emitter, scope: []const ast.Item, path: *const ast.DottedPath, current_module: ?[]const u8) ?*const ast.EventDecl {
         for (scope) |*item| {

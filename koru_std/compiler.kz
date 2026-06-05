@@ -461,6 +461,7 @@ pub const CompilerContext = struct {
     js_emitter_module.addImport("ast", ast_module);
     js_emitter_module.addImport("log", log_module);
     js_emitter_module.addImport("file_types", file_types_module);
+    js_emitter_module.addImport("annotation_parser", annotation_parser_module);
 
     // Build.zig emission
     const emit_build_zig_module = b.createModule(.{
