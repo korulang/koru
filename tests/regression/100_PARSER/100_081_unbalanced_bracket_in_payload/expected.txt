@@ -1,0 +1,6 @@
+error[PARSE004]: unbalanced ']' in payload shape — closing bracket has no matching '['
+  --> tests/regression/100_PARSER/100_081_unbalanced_bracket_in_payload/input.kz:18:1
+    |
+ 18 | | got { a: i32], b: u8 }
+    | ^
+

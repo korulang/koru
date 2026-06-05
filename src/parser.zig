@@ -7255,10 +7255,35 @@ pub const Parser = struct {
                 bracket_depth += 1;
             } else if (ch == ']') {
                 bracket_depth -= 1;
+                // A closing ']' with no matching '[' drives the depth negative.
+                // Left unchecked, the `bracket_depth == 0` gate below stops
+                // recognizing top-level commas, silently collapsing the fields
+                // and producing a misleading "single field in braces" error.
+                // Reject the real cause loudly at the earliest layer.
+                if (bracket_depth < 0) {
+                    try self.reporter.addError(
+                        .PARSE004,
+                        self.current,
+                        1,
+                        "unbalanced ']' in payload shape — closing bracket has no matching '['",
+                        .{},
+                    );
+                    return error.ParseError;
+                }
             } else if (ch == '(') {
                 paren_depth += 1;
             } else if (ch == ')') {
                 paren_depth -= 1;
+                if (paren_depth < 0) {
+                    try self.reporter.addError(
+                        .PARSE004,
+                        self.current,
+                        1,
+                        "unbalanced ')' in payload shape — closing paren has no matching '('",
+                        .{},
+                    );
+                    return error.ParseError;
+                }
             } else if (ch == ',' and bracket_depth == 0 and paren_depth == 0) {
                 // Found a field separator at top level (outside all brackets and parens)
                 const field = lexer.trim(content[field_start..i]);

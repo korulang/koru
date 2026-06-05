@@ -1,0 +1,20 @@
+// TEST: A stray ']' before any '[' in a struct payload must be rejected
+//       LOUDLY as an unbalanced bracket — not silently mis-split.
+//
+// MUST_FAIL: unbalanced ']'
+//
+// `splitFieldsRespectingBrackets` walks the payload content tracking
+// `bracket_depth`. A closing ']' with no matching '[' drives the depth
+// negative, so the `bracket_depth == 0` gate stops recognizing the top-level
+// comma as a field separator. The two fields collapse into one, and
+// `parseShape` then fires a WRONG diagnostic ("single field in braces").
+//
+// The honest behavior: detect the negative depth and report the real cause —
+// an unbalanced closing bracket — at the earliest layer (maximalist parser).
+
+import std/io
+
+~pub event probe {}
+| got { a: i32], b: u8 }
+
+~std/io:print.ln("hi")
