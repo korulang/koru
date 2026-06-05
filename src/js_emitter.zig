@@ -42,6 +42,12 @@ pub const JsEmitError = error{
 /// a `|js` proc body and a `.kjs` host line. One vocabulary, two surfaces.
 const JS_TARGET = "js";
 
+/// Stamped onto a `[declaration]` flow's inline_body (playground.zig
+/// markDeclarationFlows) before dead_strip prunes the declaration event. js_emit
+/// reads it to hoist the body to module scope; the marker line is stripped on
+/// emit. Lets the const-hoist survive without the event decl being resolvable.
+const DECLARATION_MARKER = "//@koru:declaration";
+
 /// Emit JS for the given program. Returns a heap-allocated string owned by the
 /// caller's allocator.
 pub fn emit(allocator: std.mem.Allocator, program: *const ast.Program) JsEmitError![]const u8 {
@@ -83,8 +89,15 @@ pub fn emit(allocator: std.mem.Allocator, program: *const ast.Program) JsEmitErr
     for (program.items) |*item| {
         if (item.* != .flow) continue;
         if (!em.isDeclarationFlow(&item.flow)) continue;
-        const body = stripInlineStmtMarker(item.flow.inline_body.?);
-        try em.write(std.mem.trim(u8, body, " \t\r\n"));
+        var body = std.mem.trim(u8, item.flow.inline_body.?, " \t\r\n");
+        // Drop the leading declaration-marker line (see DECLARATION_MARKER) FIRST,
+        // then strip the template inline-stmt marker underneath it.
+        if (std.mem.startsWith(u8, body, DECLARATION_MARKER)) {
+            const nl = std.mem.indexOfScalar(u8, body, '\n') orelse body.len;
+            body = std.mem.trim(u8, body[nl..], " \t\r\n");
+        }
+        body = std.mem.trim(u8, stripInlineStmtMarker(body), " \t\r\n");
+        try em.write(body);
         try em.write("\n");
     }
 
@@ -199,14 +212,35 @@ const Emitter = struct {
         return self.findEventDeclIn(self.items, path, null);
     }
 
+    /// Find a `[keyword]` event decl by bare name (last path segment), searching
+    /// all items and nested modules. Keyword events (`const`, `if`, `for`) are
+    /// invoked UNQUALIFIED, so a bare-path flow resolves to the keyword event no
+    /// matter which module declares it — including when that module is brought in
+    /// as a `module_decl` (the playground materializes std/control this way),
+    /// where the exact qualified-path lookup in findEventDecl misses.
+    fn findKeywordEventDecl(self: *Emitter, name: []const u8) ?*const ast.EventDecl {
+        return findKeywordEventDeclIn(self.items, name);
+    }
+
     /// A `[declaration]` flow (Koru-native `const {}`) introduces names into the
     /// enclosing scope rather than executing. Detected via the flow's resolved
     /// event-decl annotation — mirrors visitor_emitter.zig's `declaration`
     /// handling. Such flows are hoisted to module scope (Phase 0.5) instead of
-    /// being emitted/invoked as flowN() methods.
+    /// being emitted/invoked as flowN() methods. The keyword fallback resolves
+    /// the bare unqualified `const` invocation when std/control is a module_decl.
     fn isDeclarationFlow(self: *Emitter, flow: *const ast.Flow) bool {
-        if (flow.inline_body == null) return false;
-        const decl = self.findEventDecl(&flow.invocation.path) orelse return false;
+        const ib = flow.inline_body orelse return false;
+        // Primary signal: a marker stamped onto the body before dead_strip (which
+        // prunes the [declaration] event itself, so the annotation is no longer
+        // resolvable here). See playground.zig markDeclarationFlows. Survives
+        // pruning because the flow — and its inline_body — survive.
+        if (std.mem.startsWith(u8, std.mem.trimLeft(u8, ib, " \t\r\n"), DECLARATION_MARKER)) return true;
+        // Fallback: resolve the event decl's [declaration] annotation directly
+        // (koruc keeps the event in its full AST, so this path serves it).
+        const segs = flow.invocation.path.segments;
+        const decl = self.findEventDecl(&flow.invocation.path) orelse
+            self.findKeywordEventDecl(segs[segs.len - 1]) orelse
+            return false;
         return annotation_parser.hasPart(decl.annotations, "declaration");
     }
     fn findEventDeclIn(self: *Emitter, scope: []const ast.Item, path: *const ast.DottedPath, current_module: ?[]const u8) ?*const ast.EventDecl {
@@ -1052,6 +1086,25 @@ fn qualifierSuffixMatch(long: []const u8, short: []const u8) bool {
 fn moduleQualifiersMatch(a: []const u8, b: []const u8) bool {
     if (std.mem.eql(u8, a, b)) return true;
     return qualifierSuffixMatch(a, b) or qualifierSuffixMatch(b, a);
+}
+
+/// Recursive bare-name lookup for `[keyword]` event decls (see
+/// Emitter.findKeywordEventDecl). Matches the last path segment and requires the
+/// `keyword` annotation, descending into nested modules.
+fn findKeywordEventDeclIn(scope: []const ast.Item, name: []const u8) ?*const ast.EventDecl {
+    for (scope) |*item| {
+        switch (item.*) {
+            .event_decl => |*e| {
+                const last = e.path.segments[e.path.segments.len - 1];
+                if (std.mem.eql(u8, last, name) and annotation_parser.hasPart(e.annotations, "keyword")) return e;
+            },
+            .module_decl => |*m| {
+                if (findKeywordEventDeclIn(m.items, name)) |found| return found;
+            },
+            else => {},
+        }
+    }
+    return null;
 }
 
 /// Module-aware path equality. `decl_path` is a declaration's path (usually

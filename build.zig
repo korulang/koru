@@ -667,6 +667,7 @@ pub fn build(b: *std.Build) void {
     js_emitter_module.addImport("ast", ast_module);
     js_emitter_module.addImport("log", log_module);
     js_emitter_module.addImport("file_types", file_types_module);
+    js_emitter_module.addImport("annotation_parser", annotation_parser_module);
 
     // Embedded stdlib bytes (generated) + the Fs that serves them, so the
     // playground resolves `import "std/io"` with no disk.

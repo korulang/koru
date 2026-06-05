@@ -205,6 +205,54 @@ fn applyComptimeTransforms(allocator: std.mem.Allocator, source_file: *ast.Progr
 /// module's items, exactly like main.zig's loadFileWithCompanions.
 const ImportSpec = struct { path: []const u8, local_name: ?[]const u8 };
 
+/// Marker line prepended to a [declaration] flow's inline_body so js_emitter can
+/// hoist it after dead_strip prunes the declaration event. Kept in sync with
+/// js_emitter.DECLARATION_MARKER.
+const DECLARATION_MARKER = "//@koru:declaration";
+
+/// True if `items` (recursing into modules) contains an event_decl whose last
+/// path segment is `name` and which carries the `declaration` annotation part.
+fn hasDeclarationEvent(items: []const ast.Item, name: []const u8) bool {
+    for (items) |*item| {
+        switch (item.*) {
+            .event_decl => |*e| {
+                const last = e.path.segments[e.path.segments.len - 1];
+                if (!std.mem.eql(u8, last, name)) continue;
+                for (e.annotations) |a| {
+                    var it = std.mem.splitScalar(u8, a, '|');
+                    while (it.next()) |part| {
+                        if (std.mem.eql(u8, std.mem.trim(u8, part, " \t"), "declaration")) return true;
+                    }
+                }
+            },
+            .module_decl => |*m| {
+                if (hasDeclarationEvent(m.items, name)) return true;
+            },
+            else => {},
+        }
+    }
+    return false;
+}
+
+/// Stamp DECLARATION_MARKER onto each top-level flow that resolves to a
+/// `[declaration]` event (e.g. `const {}`), BEFORE dead_strip removes the event.
+/// The marker rides in inline_body — which survives pruning — so js_emitter knows
+/// to hoist the declaration to module scope instead of trapping it in a flowN().
+fn markDeclarationFlows(allocator: std.mem.Allocator, source_file: *ast.Program) !void {
+    // items is heap-owned (materializeImports re-slices it); template_processor
+    // already mutates flows in place, so const-casting to stamp inline_body is safe.
+    const items = @constCast(source_file.items);
+    for (items) |*item| {
+        if (item.* != .flow) continue;
+        const ib = item.flow.inline_body orelse continue;
+        const segs = item.flow.invocation.path.segments;
+        if (segs.len == 0) continue;
+        if (!hasDeclarationEvent(source_file.items, segs[segs.len - 1])) continue;
+        if (std.mem.startsWith(u8, std.mem.trimLeft(u8, ib, " \t\r\n"), DECLARATION_MARKER)) continue;
+        item.flow.inline_body = try std.fmt.allocPrint(allocator, "{s}\n{s}", .{ DECLARATION_MARKER, ib });
+    }
+}
+
 fn materializeImports(allocator: std.mem.Allocator, source_file: *ast.Program, resolver: *ModuleResolver) !void {
     var combined = std.ArrayList(ast.Item){ .items = &.{}, .capacity = 0 };
     try combined.appendSlice(allocator, source_file.items);
@@ -389,6 +437,11 @@ pub fn compileToJs(allocator: std.mem.Allocator, source: []const u8, file_name: 
     // Run curated comptime transforms (print.blk → inline console.log) natively,
     // before dead_strip so the original print.blk event gets pruned.
     try applyComptimeTransforms(allocator, &source_file);
+    // Stamp [declaration] flows (Koru-native `const {}`) NOW, while the keyword
+    // declaration event is still in the AST — dead_strip is about to prune it,
+    // and js_emitter needs to know the flow is a declaration to hoist it to
+    // module scope rather than trap it in a flowN() body.
+    try markDeclarationFlows(allocator, &source_file);
     // Strip unreachable events (e.g. unused stdlib procs whose comptime/template
     // |js variants aren't runnable JS) so only what the program actually calls
     // gets emitted — same pass the real pipeline runs before emission.
