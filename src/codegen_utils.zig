@@ -123,11 +123,19 @@ pub fn appendEscapedIdentifier(list: *std.ArrayList(u8), allocator: std.mem.Allo
 //   - Complex values with colons: { arr: @as([]const u8, "hi") }
 //   - Whitespace preservation
 
+/// A closing delimiter inside the opaque expression value had no matching
+/// opener. The value is pasted-verbatim raw text (Model A — see
+/// struct_literal.zig), so we don't diagnose it here: we refuse to mis-parse
+/// it and let the caller paste the raw expression, where the host (Zig)
+/// rejects the imbalance loudly. The alternative — decrementing an unsigned
+/// depth past zero — is an integer-overflow panic on user input.
+const ExprParseError = std.mem.Allocator.Error || error{UnbalancedExpression};
+
 /// Convert a Koru struct literal to Zig anonymous struct syntax
 /// Input:  "{ field: value, other: value2 }"
 /// Output: ".{ .field = value, .other = value2 }"
 /// Caller owns returned memory.
-pub fn koruStructToZig(allocator: std.mem.Allocator, koru_struct: []const u8) ![]const u8 {
+pub fn koruStructToZig(allocator: std.mem.Allocator, koru_struct: []const u8) ExprParseError![]const u8 {
     var result = try std.ArrayList(u8).initCapacity(allocator, koru_struct.len + 16);
     errdefer result.deinit(allocator);
 
@@ -193,7 +201,7 @@ fn parseFieldAndValue(
     input: []const u8,
     start: usize,
     result: *std.ArrayList(u8),
-) std.mem.Allocator.Error!usize {
+) ExprParseError!usize {
     var i = start;
 
     // Read field name (identifier)
@@ -244,7 +252,7 @@ fn parseValue(
     input: []const u8,
     start: usize,
     result: *std.ArrayList(u8),
-) std.mem.Allocator.Error!usize {
+) ExprParseError!usize {
     var i = start;
     var brace_depth: usize = 0;
     var paren_depth: usize = 0;
@@ -295,6 +303,7 @@ fn parseValue(
                 i = try parseFieldAndValue(allocator, input, i, result);
             }
         } else if (c == '}') {
+            if (brace_depth == 0) return error.UnbalancedExpression;
             brace_depth -= 1;
             try result.append(allocator, '}');
             i += 1;
@@ -303,6 +312,7 @@ fn parseValue(
             try result.append(allocator, c);
             i += 1;
         } else if (c == ')') {
+            if (paren_depth == 0) return error.UnbalancedExpression;
             paren_depth -= 1;
             try result.append(allocator, c);
             i += 1;
@@ -311,6 +321,7 @@ fn parseValue(
             try result.append(allocator, c);
             i += 1;
         } else if (c == ']') {
+            if (bracket_depth == 0) return error.UnbalancedExpression;
             bracket_depth -= 1;
             try result.append(allocator, c);
             i += 1;
@@ -364,6 +375,20 @@ test "koruStructToZig nested struct" {
     const result = try koruStructToZig(allocator, "{ outer: { inner: 1 } }");
     defer allocator.free(result);
     try std.testing.expectEqualStrings(".{ .outer = .{ .inner = 1 } }", result);
+}
+
+// Regression: a stray closing delimiter inside a value used to underflow the
+// unsigned depth counter (integer-overflow panic on user input). It must now
+// surface as a clean error so the caller can paste the raw expression and let
+// the host compiler reject the imbalance loudly.
+test "koruStructToZig stray ']' returns error, never panics" {
+    const allocator = std.testing.allocator;
+    try std.testing.expectError(error.UnbalancedExpression, koruStructToZig(allocator, "{ a: foo] }"));
+}
+
+test "koruStructToZig stray ')' returns error, never panics" {
+    const allocator = std.testing.allocator;
+    try std.testing.expectError(error.UnbalancedExpression, koruStructToZig(allocator, "{ a: foo) }"));
 }
 
 // ============================================================================
