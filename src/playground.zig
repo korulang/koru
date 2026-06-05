@@ -475,6 +475,10 @@ pub fn compileForWeb(allocator: std.mem.Allocator, source: []const u8, file_name
     try canonicalize_names.canonicalize(&source_file, allocator);
     try template_processor.processTemplateProcs(&source_file, allocator, "js");
     try applyComptimeTransforms(allocator, &source_file);
+    // Stamp [declaration] flows (const) before dead_strip prunes the keyword
+    // event — same as compileToJs. This is the web path the playground actually
+    // calls (koru_compile_web); without it, const never hoists in the browser.
+    try markDeclarationFlows(allocator, &source_file);
     var ds = DeadStripPass.init(allocator);
     defer ds.deinit();
     const pruned = try ds.run(&source_file);
