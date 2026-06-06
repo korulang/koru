@@ -1,0 +1,6 @@
+error[PARSE004]: unbalanced ')' or ']' in arguments — closing delimiter has no matching opener
+  --> tests/regression/100_PARSER/100_082_unbalanced_bracket_in_args/input.kz:22:1
+    |
+ 22 | ~sum(xs: ]1, 2[)
+    | ^
+

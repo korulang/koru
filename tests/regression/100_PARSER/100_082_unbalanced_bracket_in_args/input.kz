@@ -1,0 +1,23 @@
+// TEST: A stray ']' (or ')') before its matching opener in a call's argument
+//       list must be rejected LOUDLY at the parser, located at the user's
+//       source line — not silently mis-split into malformed args that only
+//       blow up later as an opaque Zig backend error pointing at generated code.
+//
+// MUST_FAIL: unbalanced
+//
+// `lexer.parseArgs` tracks paren/bracket depth as unsigned and previously
+// CLAMPED a closer with no opener (`]` while depth==0) to zero. The imbalance
+// was swallowed, the comma split fired anyway, and the orphaned ']' landed in
+// the emitted Zig — surfacing as `error: expected expression, found ']'` at
+// output_emitted.zig instead of here. Reject it at the earliest layer.
+//
+// NOTE: '<'/'>' are NOT covered — they are overloaded as comparison operators
+// in Expression args, so their depth is intentionally clamped, not rejected.
+
+import std/io
+
+~pub event sum { xs: []const u8 }
+| ok i32
+
+~sum(xs: ]1, 2[)
+| ok n |> std/io:print.ln("got")

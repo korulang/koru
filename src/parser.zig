@@ -3736,7 +3736,7 @@ pub const Parser = struct {
 
             if (depth == 0) {
                 const args_str = invocation_part[idx..args_end];
-                const parsed_args = try lexer.parseArgs(self.allocator, args_str);
+                const parsed_args = try self.parseArgsReported(args_str);
                 defer self.allocator.free(parsed_args);
 
                 try self.checkRedundantPunning(parsed_args, self.current);
@@ -4902,7 +4902,7 @@ pub const Parser = struct {
         if (paren_idx) |p| {
             const args_end = std.mem.indexOf(u8, trimmed[p..], ")") orelse trimmed.len - p;
             const args_str = trimmed[p .. p + args_end + 1];
-            const parsed_args = try lexer.parseArgs(self.allocator, args_str);
+            const parsed_args = try self.parseArgsReported(args_str);
             defer self.allocator.free(parsed_args);
 
             try self.checkRedundantPunning(parsed_args, self.current);
@@ -6130,7 +6130,7 @@ pub const Parser = struct {
 
                 // Parse the arguments
                 const args_str = after_at[p_idx..args_end];
-                const parsed_args = try lexer.parseArgs(self.allocator, args_str);
+                const parsed_args = try self.parseArgsReported(args_str);
                 defer self.allocator.free(parsed_args);
 
                 try self.checkRedundantPunning(parsed_args, self.current);
@@ -7237,6 +7237,27 @@ pub const Parser = struct {
         }
 
         return true;
+    }
+
+    /// Split a call's argument list, reporting an unbalanced ')'/']' as a
+    /// source-located parse error instead of letting it propagate as an opaque
+    /// failure. `lexer.parseArgs` detects the imbalance (it owns the depth
+    /// tracking); this is where we have `self.reporter` and `self.current` to
+    /// point the diagnostic at the user's call site.
+    fn parseArgsReported(self: *Parser, args_str: []const u8) ![]lexer.ArgPair {
+        return lexer.parseArgs(self.allocator, args_str) catch |err| switch (err) {
+            error.UnbalancedArgs => {
+                try self.reporter.addError(
+                    .PARSE004,
+                    self.current,
+                    1,
+                    "unbalanced ')' or ']' in arguments — closing delimiter has no matching opener",
+                    .{},
+                );
+                return error.ParseError;
+            },
+            else => return err,
+        };
     }
 
     fn splitFieldsRespectingBrackets(self: *Parser, content: []const u8) !std.ArrayList([]const u8) {

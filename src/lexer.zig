@@ -494,25 +494,35 @@ pub fn parseArgs(allocator: std.mem.Allocator, args_str: []const u8) ![]ArgPair 
             string_char = null;
         }
 
-        // Track parenthesis depth for Expression params (e.g., func(x, y) shouldn't split at inner comma)
+        // Track parenthesis depth for Expression params (e.g., func(x, y) shouldn't split at inner comma).
+        // A ')' with no matching '(' is unbalanced: reject it instead of clamping
+        // to zero (which would swallow the imbalance, mis-split the args, and leak
+        // the orphaned delimiter into the emitted host code). '(' and ')' are not
+        // overloaded in argument position, so the imbalance is unambiguous.
         if (!in_string and !in_braces) {
             if (char == '(') {
                 paren_depth += 1;
-            } else if (char == ')' and paren_depth > 0) {
+            } else if (char == ')') {
+                if (paren_depth == 0) return error.UnbalancedArgs;
                 paren_depth -= 1;
             }
         }
 
-        // Track bracket depth for array literals (e.g., [1, 2, 3] shouldn't split at inner comma)
+        // Track bracket depth for array literals (e.g., [1, 2, 3] shouldn't split at inner comma).
+        // A ']' with no matching '[' is unbalanced — same reasoning as parens.
         if (!in_string and !in_braces) {
             if (char == '[') {
                 bracket_depth += 1;
-            } else if (char == ']' and bracket_depth > 0) {
+            } else if (char == ']') {
+                if (bracket_depth == 0) return error.UnbalancedArgs;
                 bracket_depth -= 1;
             }
         }
 
-        // Track angle bracket depth for generics (e.g., Option<A, B> shouldn't split at inner comma)
+        // Track angle bracket depth for generics (e.g., Option<A, B> shouldn't split at inner comma).
+        // NOTE: '<'/'>' are deliberately CLAMPED, not rejected — '>' is overloaded
+        // as the comparison operator in Expression args (e.g. `d.value > 10`), so a
+        // lone '>' is legal and must not be treated as an unbalanced generic close.
         if (!in_string and !in_braces) {
             if (char == '<') {
                 angle_depth += 1;
