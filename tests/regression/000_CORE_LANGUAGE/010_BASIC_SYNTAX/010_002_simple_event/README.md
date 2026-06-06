@@ -9,12 +9,12 @@ be expressed as event composition, prefer a subflow implementation:
 ## The Code
 
 ```koru
-~event hello {}
-| done {}
+const std = @import("std");
 
-~proc hello {
+~event hello {}
+
+~proc hello|zig {
     std.debug.print("Event executed\n", .{});
-    return .{ .done = .{} };
 }
 ```
 
@@ -24,28 +24,25 @@ be expressed as event composition, prefer a subflow implementation:
 
 ```koru
 ~event hello {}
-| done {}
 ```
 
 This declares an **event** named `hello`:
 - `{}` after the name is the **input shape** (empty here—this event takes no parameters)
-- `| done {}` declares a **branch** called `done` (also with empty shape)
 
-Think of an event as a request with possible responses. Here, `hello` is a request that can respond with `done`.
+Think of an event as a request. Here, `hello` is a request that takes no input.
 
 ### The Host Proc
 
 ```koru
-~proc hello {
+~proc hello|zig {
     std.debug.print("Event executed\n", .{});
-    return .{ .done = .{} };
 }
 ```
 
-A **proc** (procedure) is host/Zig code that handles an event:
+A **proc** (procedure) is host code that handles an event:
 - `~proc hello` says "this handles the `hello` event"
+- `|zig` marks the host language for the body—this is the host implementation boundary
 - The body is regular Zig code, not Koru flow syntax
-- `return .{ .done = .{} }` returns the `done` branch
 
 Use this when the implementation must touch host/Zig APIs, target-specific
 code, or low-level behavior. For normal event composition, use a subflow
