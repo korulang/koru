@@ -64,8 +64,8 @@ Posture this affects:
 
 ## What Koru does at compile time that Rust can't
 
-- **Local-scope phantom states.** A function can demand `*Conn[connected]`
-  at one call site without that state propagating across the entire program.
+- **Local-scope phantom states.** A function can demand a value be in a specific
+  phantom state at one call site without that state propagating across the program.
   Rust lifetimes are whole-program; phantom states are per-boundary. This
   is what makes retrofit possible — add safety to a single boundary without
   rewriting the world below.
@@ -359,35 +359,25 @@ analogies to other languages or from first-principles guesses about what
 might be. If you produce a syntax example that you have not seen in a passing
 test, label it as a guess.
 
-## Phantom states are string-literal types
+## Phantom states
 
-`[open]` and `[opened]` are completely different phantom types. They are
-semantically related in English but the phantom checker compares strings, not
-English. A branch that returns `*File[opened]` cannot satisfy a parameter
-requiring `*File[open]`.
+Phantom states are per-boundary string-literal type tags: a value's state is a
+string matched exactly — `open` and `opened` are different types; spelling /
+plurality / tense mismatches (`active` vs `activated`, `close` vs `closed`) do not
+unify. An obligation marker layers "must be discharged" on top of plain state
+matching (which works on its own — a unit-of-measure tag never needs discharge).
 
-When chasing phantom-type bugs, check state literals for spelling / plurality /
-tense mismatches first: `open` vs `opened`, `active` vs `activated`, `close`
-vs `closed`, `connect` vs `connected`. This is independent of the `!`
-obligation marker.
-
-## Phantom states vs. obligations
-
-Phantom state is the foundation: "what state is this value in?" The `!` marker
-is a layered decoration:
-
-- `*T[state!]` on a branch return = "produces an obligation on `state`"
-- `*T[!state]` on a parameter = "discharges the obligation on `state`"
-- `*T[state]` alone = plain state matching, no obligation machinery
-
-State matching works without obligations. A unit-of-measure typing like
-`f32[celsius]` is pure state matching — temperatures don't get cleaned up.
+The *syntax* — the state tags and the obligation/discharge forms — is demonstrated by
+the passing tests, not restated here (it drifted once already, written in square
+brackets that koruc rejects). The live authority is
+`tests/regression/300_ADVANCED_FEATURES/330_PHANTOM_TYPES/`; the square-bracket form is
+pinned as a hard error by `210_120_reject_square_bracket_phantom`.
 
 ## Identity branches
 
 Branches must carry meaningful payload. Two shapes:
 
-- **Identity:** `| name *T[state]` — binds a single typed value. Captured with
+- **Identity:** `| name *T` — binds a single typed value. Captured with
   `| name x |>`, `x` IS the payload.
 - **Struct:** `| name { a: A, b: B }` — multiple named fields (must be > 1).
   Captured with `| name x |>`, access fields as `x.a`, `x.b`.
@@ -400,7 +390,7 @@ event has more than one branch**. The branch name itself is the dispatch
 payload when siblings exist:
 
 ```koru
-~pub event close { conn: *Connection[!active] }
+~pub event close { conn: *Connection }
 | ok                    // closed cleanly, nothing to carry
 | err []const u8        // sibling makes `| ok` meaningful as a dispatch
 ```
