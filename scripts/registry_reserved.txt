@@ -1,0 +1,26 @@
+# registry_reserved.txt — diagnostic codes intentionally declared-but-unimplemented.
+#
+# scripts/registry_check.zig treats a DECLARED code with no emit site as DEAD (a lie:
+# the enum claims the compiler catches something it doesn't). If a code is reserved on
+# purpose — planned semantics not yet wired — list it here (one code per line) to tell
+# the watcher "known gap, don't fire." A `#` line is a comment and does NOT suppress.
+#
+# Listing a code here is a DECISION, not a default. Empty file = every dead code fires.
+#
+# TRIAGE QUEUE (as of 2026-06-07, surfaced by the first run — each is currently FIRING):
+# Decide per code: (a) wire the emit (it's a real bug the enum promises), or
+#                  (b) move it below the line as genuinely-reserved future semantics.
+#
+#   KORU031  Payload type mismatch                 -> bug or reserved?
+#   KORU042  Duplicate label                       -> bug or reserved?
+#   KORU043  Label shape mismatch                  -> bug or reserved?
+#   KORU052  Proc payload mismatch                 -> bug or reserved?
+#   KORU060  Subflow arity mismatch                -> bug or reserved?
+#   KORU061  Subflow recursion detected            -> named in CLAUDE.md as real semantics
+#   KORU070  Cannot determine shape at compile time-> bug or reserved?
+#   KORU082  Field type mismatch                   -> bug or reserved?
+#   KORU090  Unhandled split in pipeline           -> bug or reserved?
+#   KORU091  Invalid use of 'p' symbol             -> bug or reserved?
+#   PARSE002 Invalid indentation                   -> bug or reserved?
+#
+# --- reserved codes below this line (uncommented = suppressed) ---

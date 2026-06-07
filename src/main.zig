@@ -3611,7 +3611,7 @@ fn processImport(allocator: std.mem.Allocator, parse_allocator: std.mem.Allocato
         log.err("  |   - Directory:   {s}/index.kz (with submodules)\n", .{module_name});
         log.err("  |\n", .{});
         log.err("  = help: Delete or rename one of them\n\n", .{});
-        return error.ModuleNotFound; // TODO: Add proper AmbiguousModule error
+        return error.ModuleNotFound; // TODO: route KORU200 through ErrorReporter (code now declared in errors.zig)
     } else if (has_dir) {
         // ONLY directory
         log.debug("  Importing directory only: {s}\n", .{import_decl.path});

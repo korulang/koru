@@ -1027,6 +1027,19 @@ if [ ${#TEST_FILTERS[@]} -eq 0 ] && [ "$SMOKE_MODE" = false ]; then
     fi
 fi
 
+# Registry-coherence watcher — diagnostic-code drift in src/errors.zig.
+# FACT-only watcher (scripts/registry_check.zig): fires when a diagnostic code is
+# emitted-but-undeclared, declared-but-never-emitted, or pinned-but-undeclared.
+# This CANNOT lie either — it runs the real scan over real source.
+echo ""
+echo -e "${BLUE}Running registry-coherence watcher...${NC}"
+if ! zig run "$SCRIPT_DIR/scripts/registry_check.zig"; then
+    FAILED_TESTS="$FAILED_TESTS registry-coherence"
+    echo -e "${RED}❌ registry-coherence watcher fired (diagnostic-code drift)${NC}"
+else
+    echo -e "${GREEN}✅ registry coherent${NC}"
+fi
+
 # Exit with appropriate code
 # Success = all regression tests passed AND (unit tests passed OR skipped)
 if [ -z "$FAILED_TESTS" ]; then
