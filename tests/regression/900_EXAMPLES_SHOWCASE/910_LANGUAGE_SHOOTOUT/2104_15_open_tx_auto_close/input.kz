@@ -1,0 +1,12 @@
+// Ground truth for korulang.org phantom explorer — auto-discharge inserts close
+//
+// EXPECTED: Compiles and runs successfully
+
+import app/db
+
+~app/db:open(connstr: "postgres://localhost/test")
+| connected c |> app/db:tx.begin(conn: c)
+    | tx t |> app/db:tx.exec(tx: t, sql: "INSERT INTO users VALUES (1, 'alice')")
+        | ok r |> app/db:tx.commit(tx: r)
+            | committed _ |> _
+| connection_failed |> _

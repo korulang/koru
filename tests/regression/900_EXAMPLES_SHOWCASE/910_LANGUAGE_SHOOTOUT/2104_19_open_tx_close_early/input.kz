@@ -1,0 +1,9 @@
+// Ground truth for korulang.org phantom explorer — close before tx work
+//
+// EXPECTED: Compiler error — connected! cannot close
+
+import app/db
+
+~app/db:open(connstr: "postgres://localhost/test")
+| connected c |> app/db:close(conn: c)
+| connection_failed |> _

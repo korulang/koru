@@ -1,0 +1,3 @@
+Executing: UPDATE inventory SET qty = 0
+ROLLBACK
+Connection closed
