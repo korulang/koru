@@ -98,9 +98,14 @@ Produce 4–8 **probes**. For each, return:
   `SUCCESS`-marked regression tests** for this shape or an adjacent one; cite the test path. A
   passing example is the strongest form of this evidence. If, after looking, you find none, say
   "no prior art found" — that absence is signal, not an excuse to skip the hunt.
-- `qualified_guess` — your lean: `A` / `B` / `unsettled`, a `confidence` (low/med/high), and the
-  prior adjacent art that grounds it (the `SUCCESS` test path, or "none found → unpinned"). A
-  shrug with no dig is malformed. This is a hypothesis for the arbiters, NOT a verdict.
+- `qualified_guess` — your `lean` (`A` / `B` / `unsettled`) plus a `confidence` **defined by
+  evidence, not a vibe** (a self-assigned percentage is theater — an LLM isn't calibrated, and a
+  number just pressures manufactured certainty): `grounded` = you cite a `SUCCESS` test of this or
+  an adjacent shape (verifiable; the **only** level at which a hard A/B lean is allowed);
+  `inferred` = spec/code reasoning but no passing test found (weak lean, flagged as such);
+  `unsettled` = no prior art (a frontier finding, not a guess). Plus `prior_art` — the cited
+  `SUCCESS` test path, or "none found". A shrug with no dig is malformed; this is a hypothesis
+  handed to the arbiters, never a verdict.
 - `proposed_pin` — IF the arbiter later rules it real, the regression test that would capture it
   (`input.kz`, `MUST_FAIL` + `EXPECT=FRONTEND_COMPILE_ERROR` + `expected_error`, or a positive
   `MUST_RUN` + `expected`). Proposed, not applied.
