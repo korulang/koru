@@ -3,6 +3,19 @@
 A guide for agents working on Koru. Interim documentation — the test suite is
 the evolving ground truth.
 
+## Ground truth is the tests, not this doc
+
+What Koru *is* — what is legal, what is rejected — lives in the test suite, never
+in prose (prose drifts and contaminates; the tests cannot lie). Read them:
+
+- **`koru-by-example.md`** — a curated tour of real regression tests, verbatim source.
+- **`tests/regression/`** — the full suite. Every passing `.kz` is law; a `MUST_FAIL`
+  test with its `expected_error` is law about what's *rejected*.
+
+When this guide and the compiler disagree, **the compiler wins and the doc is the
+bug** — flag the drift, never reconcile reality to the prose. Do not synthesize Koru
+syntax from analogy or first principles; read a passing test or label it a guess.
+
 ## Greenfield: there are ZERO users. Breaking things IS the job.
 
 Koru has no users. None. There is no production, no shipped contract, no one
