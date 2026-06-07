@@ -131,7 +131,11 @@ fn loadReserved(a: std.mem.Allocator, set: *Set, path: []const u8) void {
     while (lines.next()) |raw| {
         const line = std.mem.trim(u8, raw, " \t\r");
         if (line.len == 0 or line[0] == '#') continue;
-        set.put(a.dupe(u8, line) catch return, {}) catch return;
+        // Take the first whitespace-delimited token so `CODE  # rationale` suppresses
+        // safely (a trailing comment used to become part of the key and silently NOT match).
+        var toks = std.mem.tokenizeAny(u8, line, " \t");
+        const code = toks.next() orelse continue;
+        set.put(a.dupe(u8, code) catch return, {}) catch return;
     }
 }
 

@@ -16,7 +16,7 @@
 #   KORU043  Label shape mismatch                  -> bug or reserved?
 #   KORU052  Proc payload mismatch                 -> bug or reserved?
 #   KORU060  Subflow arity mismatch                -> bug or reserved?
-#   KORU061  Subflow recursion detected            -> named in CLAUDE.md as real semantics
+#   KORU061  Subflow recursion detected            -> NO call-graph/cycle detector exists in src/; whether koru forbids subflow recursion is an unsettled design question (no policy in CLAUDE.md/docs) -> reserved-leaning, confirm in a koru session
 #   KORU070  Cannot determine shape at compile time-> bug or reserved?
 #   KORU082  Field type mismatch                   -> bug or reserved?
 #   KORU090  Unhandled split in pipeline           -> bug or reserved?
