@@ -218,7 +218,9 @@ fn diagnose(a: std.mem.Allocator, code: []const u8, declared: *LineMap, emit: *C
     if (sibs.items.len == 1) {
         out("        -> no siblings to compare; inspect the declaring section manually.\n", .{});
     } else if (emitted_sibs > 0 and dead_sibs == 0) {
-        out("        -> LONE GAP in a fully-emitted family: likely a BUG. Wire a `.{s}` emit in src/.\n", .{code});
+        out("        -> LONE GAP in a fully-emitted family: emit-density HINTS a BUG (wire a `.{s}` emit).\n", .{code});
+        out("           but this signal only counts siblings — it cannot see a never-built detector or a\n", .{});
+        out("           semantic duplicate of another code. VERIFY before wiring (grep src/ + docs + tests).\n", .{});
     } else if (emitted_sibs == 0) {
         out("        -> WHOLE family unemitted: likely RESERVED (detector/feature unbuilt). Confirm, then reserve.\n", .{});
     } else {
