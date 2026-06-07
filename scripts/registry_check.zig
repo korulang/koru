@@ -411,7 +411,8 @@ pub fn main() !void {
         out("  twin/history evidence + a verdict hint):  zig run scripts/registry_check.zig -- confirm <CODE>\n", .{});
         out("  To clear a DEAD code: wire a `.CODE` emit in src/ (a LONE GAP is almost always this),\n", .{});
         out("  OR add the bare code to scripts/registry_reserved.txt below the marker (unbuilt/intentional).\n", .{});
-        out("  ORPHAN_EMIT: declare the code in the enum. ROTTEN_PIN: declare it, or fix the pinning test.\n\n", .{});
+        out("  ORPHAN_EMIT: declare the code in the enum. ROTTEN_PIN: declare it, or fix the pinning test.\n", .{});
+        out("  Full playbook (when to wire / reserve / consolidate): skills/registry-drain/SKILL.md\n\n", .{});
         out("result: FAIL — {d} code(s) drifted from the registry. (FIRE)\n", .{total});
         std.process.exit(1);
     }
