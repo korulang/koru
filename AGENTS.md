@@ -3,7 +3,7 @@
 ## Project Structure & Module Organization
 - `src/` is the metacircular compiler pipeline; wire passes in `build.zig` and trace dependencies.
 - `lib/`, `libs/` for runtime/backends; `koru_std/` is the standard library (`KORU_STDLIB`).
-- `tests/` holds integration, feature, regression, broken suites (see `tests/ORGANIZATION.md`); new repros go to `tests/regression/`.
+- `tests/` holds `regression/`, `features/`, and `benchmarks/`; new repros go to `tests/regression/` (the cluster tree under it is the structure).
 - `examples/` has reference programs; `scripts/` hosts helpers; `zig-out/` holds build artifacts (ignore in git).
 - Docs: `README.md`, `CONTRIBUTING.md`, and regression-local `README.md`/`BUG.md` files.
 
@@ -12,9 +12,6 @@
 - Treat prose docs as commentary on nearby executable examples, not as independent syntax authority.
 - Before writing nontrivial Koru, inspect a passing regression test with the same shape.
 - If no passing example exists for the syntax shape, say so and add or request a minimal repro instead of inventing syntax.
-- Prefer subflow implementations (`~event_name = ...`) for ordinary event behavior and event composition.
-- Use `~proc event_name { ... }` only at the host/Zig or target-specific implementation boundary.
-- Treat inline flows inside procs as exceptional and optimization-hostile; do not use them as the default implementation model.
 
 ## Metacircular Safety & Collaboration
 - Assume self-hosting: validate against compiler sources and generated artifacts; avoid speculative changes without tests.
@@ -51,7 +48,7 @@
 ## Coding Style & Naming Conventions
 - Follow standard Zig style (4-space indent, lowerCamelCase for funcs/vars, UpperCamel for types). Do not run `zig fmt` unless explicitly requested.
 - Keep modules focused; prefer small helpers in `src/` over ad-hoc scripts.
-- Tests: integration files numbered `tests/integration/0N_*`, feature tests descriptive, regressions `tests/regression/bug_###.kz` or `issue_###.kz`.
+- Tests: regression tests are directories under `tests/regression/`, each with `input.kz` + markers (`MUST_FAIL`/`EXPECT`/`expected_error`). The tree is the structure — read it.
 
 ## Testing Guidelines
 - Add a failing regression test first, then fix; ensure it passes in `./run_regression.sh`.
