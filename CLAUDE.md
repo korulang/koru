@@ -346,24 +346,6 @@ analogies to other languages or from first-principles guesses about what
 might be. If you produce a syntax example that you have not seen in a passing
 test, label it as a guess.
 
-## The `~` prefix is parser mode, not a call operator
-
-`~` switches the parser from Zig to Koru. It is NEVER used inside a Koru flow.
-Once you're in Koru, you stay in Koru until the flow ends.
-
-```koru
-~get_user(id: 4)                   // ~ here: switching from Zig to Koru
-| ok u |>
-    get_permissions(user: u)       // NO ~ here: already in Koru flow
-    | ok p |>
-        std.io:print.ln("...")     // NO ~ here either
-        | then |> ...
-```
-
-Writing `~` inside a flow silently creates two separate flows with unrelated
-bindings. The parser accepts it; you get mysterious "unused binding" or
-"undefined name" errors downstream.
-
 ## Phantom states are string-literal types
 
 `[open]` and `[opened]` are completely different phantom types. They are
