@@ -36,7 +36,7 @@ generative engine.
 
 ---
 
-## ⚖️ THE HARD STANCE — you never know which side is wrong (binding on EVERYONE)
+## ⚖️ THE HARD STANCE — make a qualified guess, never a verdict (binding on EVERYONE)
 
 When a probe diverges, there are **always at least two readings**, and they are **not yours to
 choose between**:
@@ -57,12 +57,26 @@ This is the **asymmetric truth hierarchy** (`ARBITER_DRIVEN_DEVELOPMENT.md`), an
   the expectation to match the compiler is **conformance fraud**; silently "fixing" the
   compiler to match your prediction is its mirror. Both are forbidden.
 
-**Therefore, as a contestant you NEVER conclude which side moves.** You surface the divergence
-with **evidence for BOTH readings** — the stated rule that supports "should reject" *and* the
-passing example / spec line that might make it legal — and you hand the design question up. The
-decision of which side is wrong is the **arbiters'**, made on the walk, because only they hold
-the altitude to settle a language-design question. If your report picks a side, it is
-malformed.
+**Therefore: make a QUALIFIED GUESS, but never a verdict.** A 50/50 shrug is forbidden — it is
+just permission to stop digging. You MUST lean — **A** (toolchain-wrong), **B** (expectation-wrong),
+or **unsettled** — with a stated confidence, and you must **ground the lean in PRIOR ADJACENT ART**:
+hunt the regression suite for `SUCCESS`-marked tests of this exact shape *or an adjacent one*. A
+passing test of the shape is strong evidence it is intended-legal (→ lean **B**, your prediction
+misread the spec). Finding **no** adjacent passing art is itself a prize finding — the behavior is
+*unpinned*: say "unsettled — no prior art found" and flag the gap. Do **not** invent a coin-flip
+where you simply didn't look.
+
+The guess is **asymmetric**: commit it where a passing example grounds it; stay at *unsettled*
+where none exists. And it is **a hypothesis handed to the arbiter — never a decision, never a
+licence to act**:
+
+- You still write **both** readings in full. `reading_B` stays complete **even when you lean A** —
+  skimping the side you guessed against is the exact failure this stance exists to prevent.
+- You still **never** edit a test, **never** "fix" the compiler. The arbiters rule which side
+  moves, on the walk; your qualified guess is *evidence handed up*, weighted by the prior art you
+  cite — not the ruling.
+- The two frauds stay forbidden: editing a test to match the compiler (**conformance fraud**);
+  proposing a rejection a passing test shows legal (**fabrication**).
 
 ---
 
@@ -80,8 +94,13 @@ Produce 4–8 **probes**. For each, return:
 - `actual` — what koruc actually did (exit, stderr, the diagnostic or its absence).
 - `divergence` — none / accepted-should-reject / rejected-should-accept / wrong-or-bad-message.
 - `reading_A_toolchain_wrong` — the concrete evidence the *compiler* is at fault.
-- `reading_B_expectation_wrong` — the concrete evidence your *prediction* is at fault (a passing
-  example, a spec line). If you genuinely can't find any, say so — that itself is signal.
+- `reading_B_expectation_wrong` — the concrete evidence your *prediction* is at fault. **Hunt the
+  `SUCCESS`-marked regression tests** for this shape or an adjacent one; cite the test path. A
+  passing example is the strongest form of this evidence. If, after looking, you find none, say
+  "no prior art found" — that absence is signal, not an excuse to skip the hunt.
+- `qualified_guess` — your lean: `A` / `B` / `unsettled`, a `confidence` (low/med/high), and the
+  prior adjacent art that grounds it (the `SUCCESS` test path, or "none found → unpinned"). A
+  shrug with no dig is malformed. This is a hypothesis for the arbiters, NOT a verdict.
 - `proposed_pin` — IF the arbiter later rules it real, the regression test that would capture it
   (`input.kz`, `MUST_FAIL` + `EXPECT=FRONTEND_COMPILE_ERROR` + `expected_error`, or a positive
   `MUST_RUN` + `expected`). Proposed, not applied.
