@@ -7,7 +7,7 @@ import std/io
 const {
     name: "World"
     debug: true
-    count: 42
+    count: 42[i32]
 }
 
 std/io:print.blk {
