@@ -6060,14 +6060,13 @@ pub fn main() !void {
             \\
             \\~event main {}
             \\
-            \\~proc main {
+            \\~proc main|zig {
             \\    const std = @import("std");
             \\    std.debug.print("Hello from Koru!\n", .{});
             \\}
             \\
             \\// Entry point
             \\~main()
-            \\|> _
             \\
         ;
 

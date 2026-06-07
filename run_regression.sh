@@ -1040,6 +1040,15 @@ else
     echo -e "${GREEN}✅ registry coherent${NC}"
 fi
 
+# No-prose / pipeline coherence watcher (enforcement E). Blocks on A (a generated file was
+# hand-edited) and B (prose re-entered the config); C (duplicate test ids) is report-only.
+echo ""
+echo -e "${BLUE}Running prose-check (no-prose pipeline coherence)...${NC}"
+if ! bash "$SCRIPT_DIR/scripts/prose_check.sh"; then
+    FAILED_TESTS="$FAILED_TESTS prose-check"
+    echo -e "${RED}❌ prose-check fired — a generated file was hand-edited, or prose re-entered the config${NC}"
+fi
+
 # Exit with appropriate code
 # Success = all regression tests passed AND (unit tests passed OR skipped)
 if [ -z "$FAILED_TESTS" ]; then

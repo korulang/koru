@@ -51,10 +51,6 @@ These cost hours if you don't know them. Each is expanded in `CLAUDE.md` /
 - **Punning is mandatory.** When a call argument's value is exactly the field
   name, write `f(n)` — the compiler rejects the redundant `f(n: n)`. Use a label
   only when the value differs from the field (`f(n: p)`).
-- **`~` is parser mode, not a call.** `~` switches the parser from the host
-  language (Zig) into Koru. It is NEVER written inside a Koru flow — once you're
-  in a flow, you stay in Koru. Writing `~` mid-flow silently creates a second,
-  unrelated flow.
 - **Branches are equal — there is no happy path.** `| ok`, `| err`, `| done`
   are all just named outcomes. No success/error/Result framing. An event with
   one branch `| err` is not "an event that fails" — it's an event whose only

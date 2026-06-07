@@ -10,6 +10,7 @@
 import { readdir, stat, access, writeFile, readFile } from 'fs/promises';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { execSync } from 'child_process';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -47,7 +48,7 @@ async function readFirstLine(path) {
 async function loadFromSnapshot() {
 	const raw = await readFile(SNAPSHOT_PATH, 'utf-8');
 	const snap = JSON.parse(raw);
-	const { summary, categories, timestamp } = snap;
+	const { summary, categories, timestamp, gitCommit } = snap;
 
 	// Backfill inScope for older snapshots written before the field existed.
 	const inScope = summary.inScope ?? (summary.total - summary.todo - summary.skipped - summary.broken);
@@ -63,6 +64,7 @@ async function loadFromSnapshot() {
 		brokenTests: summary.broken,
 		untestedTests: summary.untested,
 		generatedAt: timestamp,
+		gitCommit: gitCommit ?? null,
 	};
 }
 
@@ -224,12 +226,23 @@ async function generateStatus() {
 }
 
 function outputCLI(data) {
-	const { categories, totalTests, inScopeTests, passedTests, failedTests, todoTests, skippedTests, brokenTests, untestedTests, generatedAt, fromFilesystem } = data;
+	const { categories, totalTests, inScopeTests, passedTests, failedTests, todoTests, skippedTests, brokenTests, untestedTests, generatedAt, fromFilesystem, gitCommit } = data;
 
 	console.log('═══════════════════════════════════════════════════════════');
 	console.log('KORU REGRESSION TEST STATUS');
-	const sourceLabel = fromFilesystem ? 'filesystem scan (no snapshot yet)' : `snapshot ${new Date(generatedAt).toLocaleString()}`;
+	const sourceLabel = fromFilesystem
+		? 'filesystem scan (no snapshot yet)'
+		: `snapshot ${new Date(generatedAt).toLocaleString()}${gitCommit ? ` @ ${gitCommit}` : ''}`;
 	console.log(`Source: ${sourceLabel}`);
+	if (!fromFilesystem && gitCommit) {
+		try {
+			const head = execSync('git rev-parse --short HEAD', { cwd: __dirname }).toString().trim();
+			if (head && !head.startsWith(gitCommit) && !gitCommit.startsWith(head)) {
+				const behind = execSync(`git rev-list --count ${gitCommit}..HEAD`, { cwd: __dirname }).toString().trim();
+				console.log(`⚠️  STALE: snapshot is ${behind} commit(s) behind HEAD (${head}) — run a full suite to refresh.`);
+			}
+		} catch { /* not a git repo or git unavailable — skip the staleness check */ }
+	}
 	console.log('═══════════════════════════════════════════════════════════');
 	console.log('');
 

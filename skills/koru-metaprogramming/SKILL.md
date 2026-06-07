@@ -7,8 +7,6 @@ description: Compile-time metaprogramming in Koru: event globbing and compile-ti
 
 # Koru — metaprogramming (event globbing)
 
-Koru's metaprogramming is not a separate metalanguage — userland code sits inside the compile-time pipeline. Event globbing matches events by pattern at compile time. This topic is a seed scoped to the event-globbing cluster; the examples below are the verbatim passing tests. Treat them as the authority and widen the topic's `clusters` as the surface grows.
-
 ## Worked examples
 
 5 passing tests, verbatim, in [`../../docs/by-example/koru-metaprogramming.md`](../../docs/by-example/koru-metaprogramming.md). The tests are the spec — read them as the authority on what is actually legal. This skill is the map; the shard is the territory.
