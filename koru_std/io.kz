@@ -1605,11 +1605,11 @@ const std = @import("std");
 }
 | configured _ |> _
 | skipped _ |> _
-| invalid_event _ |> _
+| invalid-event _ |> _
 
 ~[build(macos)]std/build:variants {
     "std.io:print.blk": "raw_posix"
 }
 | configured _ |> _
 | skipped _ |> _
-| invalid_event _ |> _
+| invalid-event _ |> _

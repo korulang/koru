@@ -4,11 +4,13 @@
 
 import std/io
 
-const name = "World";
-const debug = true;
-const count: i32 = 42;
+const {
+    name: "World"
+    debug: true
+    count: 42
+}
 
-~std/io:print.blk {
+std/io:print.blk {
     {% if debug %}[DEBUG] {% endif %}Hello, {{ name:s }}!
     The answer is {{ count:d }}.
 }
