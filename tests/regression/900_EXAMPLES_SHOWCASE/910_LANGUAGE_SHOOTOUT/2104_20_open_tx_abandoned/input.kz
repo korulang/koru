@@ -7,4 +7,4 @@ import app/db
 ~app/db:open(connstr: "postgres://localhost/test")
 | connected c |> app/db:tx.begin(conn: c)
     | tx _ |> _
-| connection_failed |> _
+| connection-failed |> _

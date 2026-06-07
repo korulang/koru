@@ -11,4 +11,4 @@ import app/db
             | ok r2 |> app/db:tx.exec(tx: r2, sql: "INSERT INTO users VALUES (3, 'charlie')")
                 | ok r3 |> app/db:tx.commit(tx: r3)
                     | committed conn |> app/db:close(conn)
-| connection_failed |> _
+| connection-failed |> _

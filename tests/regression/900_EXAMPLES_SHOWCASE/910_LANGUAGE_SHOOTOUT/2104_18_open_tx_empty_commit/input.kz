@@ -8,4 +8,4 @@ import app/db
 | connected c |> app/db:tx.begin(conn: c)
     | tx t |> app/db:tx.commit(tx: t)
         | committed conn |> app/db:close(conn)
-| connection_failed |> _
+| connection-failed |> _

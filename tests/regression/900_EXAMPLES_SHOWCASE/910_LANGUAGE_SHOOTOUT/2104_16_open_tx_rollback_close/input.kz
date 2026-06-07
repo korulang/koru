@@ -8,5 +8,5 @@ import app/db
 | connected c |> app/db:tx.begin(conn: c)
     | tx t |> app/db:tx.exec(tx: t, sql: "UPDATE inventory SET qty = 0")
         | ok r |> app/db:tx.rollback(tx: r)
-            | rolled_back conn |> app/db:close(conn)
-| connection_failed |> _
+            | rolled-back conn |> app/db:close(conn)
+| connection-failed |> _

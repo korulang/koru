@@ -6,4 +6,4 @@ import app/db
 
 ~app/db:open(connstr: "postgres://localhost/test")
 | connected c |> app/db:close(conn: c)
-| connection_failed |> _
+| connection-failed |> _

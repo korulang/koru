@@ -1508,6 +1508,7 @@ pub const Parser = struct {
                     };
 
                     const branch_name = lexer.trim(branch_content[0..branch_brace_idx]);
+                    try self.rejectSnakeName(branch_name, event_line_index, "branch");
 
                     // Find the matching closing brace for the payload
                     const payload_end = blk: {
@@ -5123,6 +5124,9 @@ pub const Parser = struct {
 
         // Normal branch continuation - validate branch name is a valid identifier
         // Pattern branches ([...]) skip this check - the pattern is opaque data for transforms
+        if (!is_pattern_branch and !std.mem.eql(u8, branch_name, "?")) {
+            try self.rejectSnakeName(branch_name, self.current, "branch");
+        }
         if (!is_pattern_branch and !isValidIdentifier(branch_name)) {
             try self.reporter.addError(
                 .PARSE003,
@@ -6950,6 +6954,8 @@ pub const Parser = struct {
 
             const branch_name = branch_start[0..name_end];
 
+            try self.rejectSnakeName(branch_name, self.current - 1, "branch");
+
             // Validate branch name is a valid identifier
             if (!isValidIdentifier(branch_name)) {
                 try self.reporter.addError(
@@ -7105,6 +7111,8 @@ pub const Parser = struct {
 
         // Struct branch syntax: | branch { field: Type }
         const branch_name = lexer.trim(branch_start[0..brace_idx.?]);
+
+        try self.rejectSnakeName(branch_name, self.current - 1, "branch");
 
         // Validate branch name is a valid identifier
         if (!isValidIdentifier(branch_name)) {

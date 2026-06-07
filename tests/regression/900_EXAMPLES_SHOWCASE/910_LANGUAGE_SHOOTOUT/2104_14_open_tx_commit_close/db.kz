@@ -7,7 +7,7 @@ const Transaction = struct { conn_handle: i32 };
 
 ~pub event open { connstr: []const u8 }
 | connected *Connection<connected!>
-| connection_failed
+| connection-failed
 
 ~proc open|zig {
     _ = connstr;
@@ -45,7 +45,7 @@ const Transaction = struct { conn_handle: i32 };
 }
 
 ~pub event tx.rollback { tx: *Transaction<!active> }
-| rolled_back *Connection<active!>
+| rolled-back *Connection<active!>
 
 ~proc tx.rollback|zig {
     std.debug.print("ROLLBACK\n", .{});
