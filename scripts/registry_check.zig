@@ -6,7 +6,9 @@
 //
 //   DECLARED = members of the `pub const ErrorCode = enum(u16)` block in src/errors.zig
 //   EMITTED  = codes the compiler actually uses:  `.KORUxxx` enum-tags + `error[KORUxxx]`
-//              literals across src/ (excluding errors.zig itself)
+//              literals across src/ (errors.zig INCLUDED — its helper fns emit, e.g.
+//              moduleNotFound -> .KORU002; the bare enum-declaration lines are space-
+//              prefixed so they never match the emit filter)
 //   PINNED   = codes asserted by the regression suite: `error[KORUxxx]` in tests/regression
 //
 // It FIRES (exit 1) on any of three drifts:
@@ -15,14 +17,21 @@
 //                 compiler catches something it doesn't), minus an explicit reserved-list
 //   ROTTEN_PIN  = PINNED \ DECLARED   — a test pinned to a code that can't resolve
 //
+// For each DEAD code it prints the DIAGNOSIS, not just the symptom: the declaring
+// file:line, the emitted siblings in its family with site-counts, and the bug-vs-reserved
+// signal (a lone gap in an emitted family is almost always an unwired BUG; a whole-family
+// gap is almost always an unbuilt detector = RESERVED). Then the two-lever remedy.
+//
 // Reserved-but-unimplemented codes are whitelisted in scripts/registry_reserved.txt
-// (one code per line, `#` comments). Empty/absent = every dead code fires.
+// (one bare code per line below the marker; rationale on a preceding `#` line).
 //
 // Run from the koru repo root:  zig run scripts/registry_check.zig
 // This is the lean first watcher of the `wm` toolchain (FACT-only; no judge).
 
 const std = @import("std");
 
+const CountMap = std.StringHashMap(u32);
+const LineMap = std.StringHashMap(usize);
 const Set = std.StringHashMap(void);
 
 fn isUpper(c: u8) bool {
@@ -32,34 +41,49 @@ fn isDigit(c: u8) bool {
     return c >= '0' and c <= '9';
 }
 
-const Mode = enum { emit, pin, declared };
+/// Match a diagnostic-code token at the START of `s`: >=3 uppercase letters then >=3 digits.
+/// Returns the token length, or 0 if `s` does not start with one.
+fn codeAt(s: []const u8) usize {
+    var j: usize = 0;
+    while (j < s.len and isUpper(s[j])) j += 1;
+    if (j < 3) return 0;
+    var k = j;
+    while (k < s.len and isDigit(s[k])) k += 1;
+    if (k - j < 3) return 0;
+    return k;
+}
 
-/// Scan `content` for diagnostic-code tokens (>=3 uppercase letters followed by >=3 digits)
-/// and add the ones matching `mode`'s context filter to `set`.
-fn collect(a: std.mem.Allocator, set: *Set, content: []const u8, mode: Mode) !void {
+/// The "family" of a code = the code minus its last digit (PARSE002 -> PARSE00,
+/// KORU061 -> KORU06). Groups siblings that share an error class/section.
+fn familyOf(code: []const u8) []const u8 {
+    return if (code.len > 0) code[0 .. code.len - 1] else code;
+}
+
+fn bump(a: std.mem.Allocator, map: *CountMap, tok: []const u8) !void {
+    if (map.getPtr(tok)) |p| {
+        p.* += 1;
+    } else {
+        try map.put(try a.dupe(u8, tok), 1);
+    }
+}
+
+const Mode = enum { emit, pin };
+
+/// Scan `content` for code tokens matching `mode`'s context filter, counting into `map`.
+fn collect(a: std.mem.Allocator, map: *CountMap, content: []const u8, mode: Mode) !void {
     var i: usize = 0;
     while (i < content.len) {
         if (isUpper(content[i])) {
-            var j = i;
-            while (j < content.len and isUpper(content[j])) j += 1;
-            if (j < content.len and isDigit(content[j])) {
-                var k = j;
-                while (k < content.len and isDigit(content[k])) k += 1;
-                if (j - i >= 3 and k - j >= 3) {
-                    const tok = content[i..k];
-                    const prev: u8 = if (i > 0) content[i - 1] else 0;
-                    const next: u8 = if (k < content.len) content[k] else 0;
-                    const take = switch (mode) {
-                        // `.KORU030` (enum literal) or `error[KORU200]` (literal)
-                        .emit => prev == '.' or prev == '[',
-                        // `error[KORU030]` inside an expected_error.txt
-                        .pin => prev == '[',
-                        // an enum member line: `    KORU001, // ...`
-                        .declared => (prev == ' ' or prev == '\t' or prev == '\n' or prev == '{') and next == ',',
-                    };
-                    if (take) try set.put(try a.dupe(u8, tok), {});
-                }
-                i = k;
+            const len = codeAt(content[i..]);
+            if (len > 0) {
+                const tok = content[i .. i + len];
+                const prev: u8 = if (i > 0) content[i - 1] else 0;
+                const take = switch (mode) {
+                    .emit => prev == '.' or prev == '[', // `.KORU030` or `error[KORU200]`
+                    .pin => prev == '[', // `error[KORU030]` in an expected_error.txt
+                };
+                if (take) try bump(a, map, tok);
+                i += len;
                 continue;
             }
         }
@@ -67,9 +91,7 @@ fn collect(a: std.mem.Allocator, set: *Set, content: []const u8, mode: Mode) !vo
     }
 }
 
-/// Walk `root` recursively, reading every `.zig` file (optionally skipping one basename),
-/// collecting codes under `mode` into `set`.
-fn collectTree(a: std.mem.Allocator, set: *Set, root: []const u8, ext: []const u8, mode: Mode, skip_basename: ?[]const u8) !void {
+fn collectTree(a: std.mem.Allocator, map: *CountMap, root: []const u8, ext: []const u8, mode: Mode) !void {
     var dir = std.fs.cwd().openDir(root, .{ .iterate = true }) catch return;
     defer dir.close();
     var walker = try dir.walk(a);
@@ -77,14 +99,12 @@ fn collectTree(a: std.mem.Allocator, set: *Set, root: []const u8, ext: []const u
     while (try walker.next()) |entry| {
         if (entry.kind != .file) continue;
         if (!std.mem.endsWith(u8, entry.basename, ext)) continue;
-        if (skip_basename) |sb| if (std.mem.eql(u8, entry.basename, sb)) continue;
         const content = dir.readFileAlloc(a, entry.path, 16 * 1024 * 1024) catch continue;
-        try collect(a, set, content, mode);
+        try collect(a, map, content, mode);
     }
 }
 
-/// PINNED: codes inside `error[...]` across regression expected/EXPECT files.
-fn collectPins(a: std.mem.Allocator, set: *Set, root: []const u8) !void {
+fn collectPins(a: std.mem.Allocator, map: *CountMap, root: []const u8) !void {
     var dir = std.fs.cwd().openDir(root, .{ .iterate = true }) catch return;
     defer dir.close();
     var walker = try dir.walk(a);
@@ -92,37 +112,31 @@ fn collectPins(a: std.mem.Allocator, set: *Set, root: []const u8) !void {
     while (try walker.next()) |entry| {
         if (entry.kind != .file) continue;
         const b = entry.basename;
-        const is_pin_file = std.mem.startsWith(u8, b, "expected") or std.mem.eql(u8, b, "EXPECT");
-        if (!is_pin_file) continue;
+        if (!(std.mem.startsWith(u8, b, "expected") or std.mem.eql(u8, b, "EXPECT"))) continue;
         const content = dir.readFileAlloc(a, entry.path, 16 * 1024 * 1024) catch continue;
-        try collect(a, set, content, .pin);
+        try collect(a, map, content, .pin);
     }
 }
 
-fn strLess(_: void, l: []const u8, r: []const u8) bool {
-    return std.mem.lessThan(u8, l, r);
-}
-
-/// Sorted list of keys in `from` that are NOT in `notin` (and not in `exclude`, if given).
-fn diff(a: std.mem.Allocator, from: *Set, notin: *Set, exclude: ?*Set) ![][]const u8 {
-    var out = try std.ArrayList([]const u8).initCapacity(a, 0);
-    var it = from.keyIterator();
-    while (it.next()) |kp| {
-        if (notin.contains(kp.*)) continue;
-        if (exclude) |ex| if (ex.contains(kp.*)) continue;
-        try out.append(a, kp.*);
+/// DECLARED — parse the `pub const ErrorCode = enum(u16) { ... };` block line-by-line,
+/// recording each member code -> its 1-based line number in src/errors.zig.
+fn collectDeclared(a: std.mem.Allocator, lines: *LineMap, src: []const u8) !void {
+    var it = std.mem.splitScalar(u8, src, '\n');
+    var lineno: usize = 0;
+    var inside = false;
+    while (it.next()) |raw| {
+        lineno += 1;
+        if (!inside) {
+            if (std.mem.indexOf(u8, raw, "pub const ErrorCode = enum(u16) {") != null) inside = true;
+            continue;
+        }
+        const t = std.mem.trimLeft(u8, raw, " \t");
+        if (std.mem.startsWith(u8, t, "};")) break;
+        const len = codeAt(t);
+        if (len > 0 and len < t.len and t[len] == ',') {
+            try lines.put(try a.dupe(u8, t[0..len]), lineno);
+        }
     }
-    std.mem.sort([]const u8, out.items, {}, strLess);
-    return out.items;
-}
-
-fn extractEnumBlock(content: []const u8) []const u8 {
-    const marker = "pub const ErrorCode = enum(u16) {";
-    const s = std.mem.indexOf(u8, content, marker) orelse return content;
-    const start = s + marker.len;
-    const rest = content[start..];
-    const e = std.mem.indexOf(u8, rest, "\n};") orelse return rest;
-    return rest[0..e];
 }
 
 fn loadReserved(a: std.mem.Allocator, set: *Set, path: []const u8) void {
@@ -139,55 +153,123 @@ fn loadReserved(a: std.mem.Allocator, set: *Set, path: []const u8) void {
     }
 }
 
+fn strLess(_: void, l: []const u8, r: []const u8) bool {
+    return std.mem.lessThan(u8, l, r);
+}
+
+/// Sorted keys of `from` that are absent from `emit` (count map) and `exclude` (optional set).
+fn deadDiff(a: std.mem.Allocator, from: *LineMap, emit: *CountMap, exclude: *Set) ![][]const u8 {
+    var list = try std.ArrayList([]const u8).initCapacity(a, 0);
+    var it = from.keyIterator();
+    while (it.next()) |kp| {
+        if (emit.contains(kp.*)) continue;
+        if (exclude.contains(kp.*)) continue;
+        try list.append(a, kp.*);
+    }
+    std.mem.sort([]const u8, list.items, {}, strLess);
+    return list.items;
+}
+
+/// Sorted keys of count map `from` absent from line map `decl`.
+fn orphanDiff(a: std.mem.Allocator, from: *CountMap, decl: *LineMap) ![][]const u8 {
+    var list = try std.ArrayList([]const u8).initCapacity(a, 0);
+    var it = from.keyIterator();
+    while (it.next()) |kp| {
+        if (decl.contains(kp.*)) continue;
+        try list.append(a, kp.*);
+    }
+    std.mem.sort([]const u8, list.items, {}, strLess);
+    return list.items;
+}
+
+const out = std.debug.print;
+
+/// Print the family context + bug-vs-reserved signal for one DEAD code.
+fn diagnose(a: std.mem.Allocator, code: []const u8, declared: *LineMap, emit: *CountMap) !void {
+    const fam = familyOf(code);
+    // Gather declared siblings sharing the family.
+    var sibs = try std.ArrayList([]const u8).initCapacity(a, 0);
+    var it = declared.keyIterator();
+    while (it.next()) |kp| {
+        if (std.mem.eql(u8, familyOf(kp.*), fam)) try sibs.append(a, kp.*);
+    }
+    std.mem.sort([]const u8, sibs.items, {}, strLess);
+
+    const line = declared.get(code) orelse 0;
+    out("    {s}  declared src/errors.zig:{d}\n", .{ code, line });
+
+    // family line: each sibling with its emit count (this one marked).
+    out("        family {s}: ", .{fam});
+    var emitted_sibs: usize = 0;
+    var dead_sibs: usize = 0;
+    for (sibs.items) |s| {
+        const n = if (emit.get(s)) |c| c else 0;
+        const is_self = std.mem.eql(u8, s, code);
+        if (is_self) {
+            out("{s}={d}(this,DEAD) ", .{ s, n });
+        } else {
+            out("{s}={d} ", .{ s, n });
+            if (n > 0) emitted_sibs += 1 else dead_sibs += 1;
+        }
+    }
+    out("\n", .{});
+
+    // bug-vs-reserved signal.
+    if (sibs.items.len == 1) {
+        out("        -> no siblings to compare; inspect the declaring section manually.\n", .{});
+    } else if (emitted_sibs > 0 and dead_sibs == 0) {
+        out("        -> LONE GAP in a fully-emitted family: likely a BUG. Wire a `.{s}` emit in src/.\n", .{code});
+    } else if (emitted_sibs == 0) {
+        out("        -> WHOLE family unemitted: likely RESERVED (detector/feature unbuilt). Confirm, then reserve.\n", .{});
+    } else {
+        out("        -> mixed family ({d} emitted, {d} dead siblings): inspect — could be either.\n", .{ emitted_sibs, dead_sibs });
+    }
+}
+
 pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const a = arena.allocator();
 
-    var declared = Set.init(a);
-    var emitted = Set.init(a);
-    var pinned = Set.init(a);
+    var declared = LineMap.init(a);
+    var emitted = CountMap.init(a);
+    var pinned = CountMap.init(a);
     var reserved = Set.init(a);
 
-    // DECLARED — only within the enum block.
     const errors_src = try std.fs.cwd().readFileAlloc(a, "src/errors.zig", 16 * 1024 * 1024);
-    try collect(a, &declared, extractEnumBlock(errors_src), .declared);
+    try collectDeclared(a, &declared, errors_src);
 
-    // EMITTED — all of src/, INCLUDING errors.zig. The enum-declaration lines are
-    // space-prefixed (`KORU002,`) so they never match the `.emit` filter (which needs a
-    // `.` or `[` prefix); but errors.zig's HELPER functions emit via `.KORUxxx` enum-tags
-    // (e.g. `moduleNotFound` -> `.KORU002`) and those ARE real emit sites. Excluding the
-    // whole file dropped them and produced false "dead" positives on helper-dispatched,
-    // test-pinned codes (KORU002 has 5 pins). So scan it like any other source file.
-    try collectTree(a, &emitted, "src", ".zig", .emit, null);
-    try collectTree(a, &emitted, "koru_std", ".zig", .emit, null);
+    // EMITTED — all of src/ (incl. errors.zig helper fns) + koru_std.
+    try collectTree(a, &emitted, "src", ".zig", .emit);
+    try collectTree(a, &emitted, "koru_std", ".zig", .emit);
 
-    // PINNED — the regression suite's expected outputs.
     try collectPins(a, &pinned, "tests/regression");
-
-    // Reserved (intentionally-unimplemented) codes are not "dead".
     loadReserved(a, &reserved, "scripts/registry_reserved.txt");
 
-    const orphan = try diff(a, &emitted, &declared, null);
-    const dead = try diff(a, &declared, &emitted, &reserved);
-    const rotten = try diff(a, &pinned, &declared, null);
+    const orphan = try orphanDiff(a, &emitted, &declared);
+    const dead = try deadDiff(a, &declared, &emitted, &reserved);
+    const rotten = try orphanDiff(a, &pinned, &declared);
 
-    const out = std.debug.print;
     out("registry-check — koru diagnostic-code coherence\n", .{});
     out("  DECLARED={d}  EMITTED={d}  PINNED={d}  RESERVED={d}\n\n", .{ declared.count(), emitted.count(), pinned.count(), reserved.count() });
 
     out("  ORPHAN_EMIT (emitted, never declared) [{d}]:\n", .{orphan.len});
-    for (orphan) |c| out("    {s}  <- emitted but absent from the ErrorCode enum\n", .{c});
+    for (orphan) |c| out("    {s}  <- emitted but absent from the ErrorCode enum (declare it in src/errors.zig)\n", .{c});
+
     out("  DEAD (declared, never emitted, not reserved) [{d}]:\n", .{dead.len});
-    for (dead) |c| out("    {s}  <- the enum claims this code; nothing emits it\n", .{c});
+    for (dead) |c| try diagnose(a, c, &declared, &emitted);
+
     out("  ROTTEN_PIN (pinned by a test, not declared) [{d}]:\n", .{rotten.len});
-    for (rotten) |c| out("    {s}  <- a regression test pins a code that can't resolve\n", .{c});
+    for (rotten) |c| out("    {s}  <- a regression test pins a code that can't resolve (declare it, or fix the test)\n", .{c});
 
     const total = orphan.len + dead.len + rotten.len;
     out("\n", .{});
     if (total == 0) {
         out("result: PASS — the registry is coherent.\n", .{});
     } else {
+        out("  To clear a DEAD code: wire a `.CODE` emit in src/ (a LONE GAP is almost always this),\n", .{});
+        out("  OR add the bare code to scripts/registry_reserved.txt below the marker (unbuilt/intentional).\n", .{});
+        out("  ORPHAN_EMIT: declare the code in the enum. ROTTEN_PIN: declare it, or fix the pinning test.\n\n", .{});
         out("result: FAIL — {d} code(s) drifted from the registry. (FIRE)\n", .{total});
         std.process.exit(1);
     }
