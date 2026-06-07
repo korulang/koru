@@ -1,66 +1,38 @@
 {
-  "_comment": "Curation config for koru-by-example.md (reference) and koru-tutorial.md (teaching artifact). Both generators read this file. Corpus selection: corpus = union(passing tests under `categories`) ∪ `includedTests` − `excludedTests`. The tutorial is independent — `tutorial.tests` is its own ordered list. Stale references print warnings during generation. Per-test prose is intentionally NOT pulled by either generator; tests speak for themselves. Category prose (SPEC.md / README.md in category directories) is pulled in by the corpus generator only.",
-  "_topics_comment": "`topics` drives generate-skills.js. Each topic emits TWO artifacts from one entry: (1) docs/by-example/<name>.md — the verbatim reference shard, every passing test under `clusters` ∪ `includedTests` − `excludedTests`; (2) skills/<name>/SKILL.md — a small routing stub: frontmatter `description` (when the skill fires), the authored `intro` + `rules` framing, and a pointer at the shard. The shard is generated data (can't drift). The skill is the deliberately-authored map. Don't hand-edit either file — edit this config and regenerate.",
+  "_comment": "Curation config for the by-example artifacts. Corpus = union(passing tests under `categories`) ∪ `includedTests` − `excludedTests`. NO PROSE: per-test prose, category prose, intro, and rules have all been removed — the tests are the only source of truth (they cannot lie; prose drifts and contaminates). Generators emit verbatim passing tests + routing frontmatter only.",
+  "_topics_comment": "`topics` drives generate-skills.js. Each topic emits TWO artifacts: (1) docs/by-example/<name>.md — the verbatim reference shard (every passing test under `clusters` ∪ `includedTests` − `excludedTests`); (2) skills/<name>/SKILL.md — a routing stub: frontmatter `description` (when the skill fires) + a pointer at the shard. No authored prose — the shard (verbatim tests) is the authority.",
   "topics": [
     {
       "name": "koru",
       "title": "Koru — core language",
       "description": "The core Koru language: events with named outcome branches, flows that dispatch (`|`) and chain (`|>`), subflows vs host procs, the `~` parser-mode rule, plus loops (label + jump) and literals/punning. Use when writing or reading any `.kz`/`.k` file and you need the foundational shapes. Start here before the narrower topic skills.",
-      "clusters": ["000_CORE_LANGUAGE", "100_PARSER", "200_SYNTAX"],
+      "clusters": [
+        "000_CORE_LANGUAGE",
+        "100_PARSER",
+        "200_SYNTAX"
+      ],
       "includedTests": [],
-      "excludedTests": [],
-      "intro": "Koru is an event-continuation language layered on a host language (Zig here, hence `.kz`). Lines starting with `~` switch the parser into Koru mode; everything else is plain host code. The core: events declare named outcome branches; flows dispatch on those branches with `|` and chain with `|>`; subflows implement events in pure Koru while procs are the host escape hatch. On top of that sit loops (labels + jumps) and literals. The worked examples below are verbatim from passing tests — they are the receipts; these rules are the framing.",
-      "rules": [
-        {
-          "title": "The tilde is parser mode, not a function call",
-          "body": "`~` at the start of a top-level construct switches the parser from Zig to Koru. `~event`, `~proc`, `~import`, `~event_name(...)` are all parser-mode switches. Inside a flow's continuation you are already in Koru, so `~` does not belong there — writing it silently creates a second unrelated flow."
-        },
-        {
-          "title": "Events declare named outcomes; branches are equal",
-          "body": "An event has input fields and zero or more named outcome branches, each with a payload shape: **empty** `| name` (allowed only when a sibling branch exists), **identity** `| name T` (one typed value), or **struct** `| name { a: A, b: B }` (more than one field). Branches are equal — `| ok`, `| err`, `| north`, `| break` are all just named outcomes, no privileged success. A void event (no branches) means 'it happened, nothing more to say.' Meaning comes from the subflow that resolves a branch, not from the compiler."
-        },
-        {
-          "title": "Subflows implement events in pure Koru; procs are the host escape hatch",
-          "body": "An event is implemented by a **subflow** — pure Koru — as either an immediate emit (`~greet = greeting \"Hello, \" ++ name`) or a composition that maps another event's branches into this one's. When you need an actual side effect or host data, a **proc** gives a host body: `~proc name|zig { ... }`, opaque to Koru and forwarded to Zig unchanged. The proc is the escape hatch, not the default — a proc body that only selects a branch with an `if` wants to be a subflow."
-        },
-        {
-          "title": "Flows dispatch with `|`, chain with `|>`",
-          "body": "A flow invokes an event and handles each branch: `| branch binding |> next_step()`. `|>` chains void events inline and never starts a line. Punning is mandatory — when an argument's value is exactly the field name, write `f(n)`, not `f(n: n)`. Every required branch must be handled (exhaustiveness). A `when` clause narrows a handler to matching fires (`| key k when k.code == 'q' |> ...`); guarded handlers need an unguarded sibling to satisfy coverage."
-        },
-        {
-          "title": "Loop with labels and jumps",
-          "body": "The core looping primitive is a labeled flow plus a jump back to it. `~#loop count(current: 1, target: 5)` names the dispatch point `loop`; a branch handler loops by jumping: `| next n |> @loop(current: n.value, n.target)`. Labels scope to their flow and can nest; a jump can target an enclosing label. There is no `for`/`while` keyword at this layer — iteration is a continuation jumping to a label. (`~for`/`~if` exist as stdlib templates, a separate topic.)"
-        },
-        {
-          "title": "Literals and field punning",
-          "body": "Array literals `[1, 2, 3]` fill slice parameters (`numbers: []const i32`); struct literals `{ field: value }` fill struct parameters. Field punning works inside constructors too: `result { x, y }` expands to `{ x: x, y: y }`, and `{ p.x, p.y }` to `{ x: p.x, y: p.y }`."
-        }
-      ]
+      "excludedTests": []
     },
     {
       "name": "koru-templates",
       "title": "Koru — control-flow templates (`for` / `if`)",
       "description": "Control flow in Koru: `~if` and `~for` as templates over continuation-return, not host keywords. Use when emitting conditionals or iteration in Koru, or when working on the template/lowering layer (`koru_std/control.kz`). Covers how `for`/`if` select continuations and lower per target.",
-      "clusters": ["320_CONTROL_FLOW"],
+      "clusters": [
+        "320_CONTROL_FLOW"
+      ],
       "includedTests": [],
-      "excludedTests": [],
-      "intro": "`~if` and `~for` are not host keywords — they are templates that return a continuation the consumer dispatches on. `~if(cond) | then |> ... | else |> ...` selects one of two terminal continuations; `for` is the same machine with an iteration half. They lower to the fastest correct emission per target (a Zig range becomes a counting loop, not a generator). The examples below are the canonical shapes.",
-      "rules": [
-        {
-          "title": "`~if` is a convention over `when`, not a primitive",
-          "body": "`~if(cond) | then |> ... | else |> ...` is a specialization of guarded `when`-branches, kept because it reads clearly and lowers to fast code. It runs no effects — it returns the `then` or `else` continuation and the consumer dispatches. Available as a keyword once any `$std` module is imported."
-        }
-      ]
+      "excludedTests": []
     },
     {
       "name": "koru-metaprogramming",
       "title": "Koru — metaprogramming (event globbing)",
       "description": "Compile-time metaprogramming in Koru: event globbing and compile-time event matching — the \"you are the compiler\" surface where userland code sits inside the pipeline. Use when writing compile-time event selection or pattern-matching over events. SEED TOPIC — currently scoped to event globbing; widen `clusters` in koru-by-example.json as the metaprogramming surface grows.",
-      "clusters": ["700_EVENT_GLOBBING"],
+      "clusters": [
+        "700_EVENT_GLOBBING"
+      ],
       "includedTests": [],
-      "excludedTests": [],
-      "intro": "Koru's metaprogramming is not a separate metalanguage — userland code sits inside the compile-time pipeline. Event globbing matches events by pattern at compile time. This topic is a seed scoped to the event-globbing cluster; the examples below are the verbatim passing tests. Treat them as the authority and widen the topic's `clusters` as the surface grows.",
-      "rules": []
+      "excludedTests": []
     }
   ],
   "categories": [],
@@ -92,37 +64,6 @@
   "tutorial": {
     "title": "Koru in a Page",
     "disclaimer": "This tutorial is prose synthesis on top of the test suite. It may contain errors or drift. The compiler's actual behavior — verified by tests in `tests/regression/` and source in `src/` — is the source of truth. When you find this document saying one thing and the compiler doing another, the conflict itself is the finding: flag it, don't paper over it.\n\n**Koru is greenfield.** There are no legacy users, no deprecated forms to support, no migration windows that constitute a contract. When the language changes, the change lands and tests/docs get rewritten in the same motion. If the parser temporarily accepts an older form while migration is in progress, that's internal scaffolding — not a feature. Write code in the current canonical form. Don't hedge for legacy.",
-    "intro": "Koru is an event-continuation language. It lives on top of a host language — the implementation here targets Zig, so this file (`.kz`, for *Koru Zig*) is the Koru-Zig variant. A `.kz` file is a valid Zig file: lines starting with `~` switch the parser into Koru mode for that construct, everything else stays plain Zig. Pure Zig works as-is — you can write a `.kz` file that's nothing but `pub fn main()` and it compiles. Add Koru where it earns its keep: events with named outcome branches, flows that dispatch on those branches, subflows that compose them. The language is small. Read this top to bottom and you can write it.",
-    "rules": [
-      {
-        "title": "The tilde is parser mode, not a function call",
-        "body": "`~` at the start of a top-level construct switches the parser from Zig to Koru. `~event`, `~proc`, `~import`, `~event_name(...)` — all parser-mode switches. Anything *outside* a Koru block is the host language — even a `// comment` between two `~event` declarations is parsed by Zig, not Koru. Inside a flow's continuation you're already in Koru, so `~` doesn't belong there — writing it silently creates a second unrelated flow.\n\n```koru\n~greet(name: \"World\")        // ~ here: switching to Koru\n| greeting g |> process(g)   // NO ~ here: already in Koru\n```"
-      },
-      {
-        "title": "Events declare named outcomes; branches are equal",
-        "body": "An event has input fields and zero or more named branches. Each branch is a possible outcome with its own payload shape, which takes one of three forms:\n\n- **Empty**: `| name` — the branch name itself is the dispatch payload. Allowed only when the event has more than one branch; a single empty-payload branch is rejected — it carries no information beyond *the event happened*, so declare a void event (no branches at all) instead.\n- **Identity**: `| name T` — binds a single typed value.\n- **Struct**: `| name { a: A, b: B }` — multiple named fields (must be more than one; single-field structs are rejected — use identity instead).\n\nThe branch *names* are arbitrary identifiers — there is no privileged 'success' or 'error', no implicit happy path. `| ok`, `| err`, `| north`, `| return`, `| break` are all the same kind of thing. The meaning of a branch name comes from the subflow that resolves it, not from the compiler.\n\nA void event (no branches at all) is allowed and means 'this event has nothing to say beyond having happened.'"
-      },
-      {
-        "title": "Subflows implement events in Koru; procs are the host escape hatch",
-        "body": "An event is implemented by a **subflow** — pure Koru, no host code — in one of two shapes:\n\n- **Immediate**: `~name = branch_name payload_expr` directly emits a branch with a value. `~greet = greeting \"Hello, \" ++ name ++ \"!\"` emits `greeting` with the formatted string.\n- **Composition**: `~name = sub_event() | branch |> ... | branch |> ...` invokes another event and maps its branches into this event's outcomes. **Branch selection lives here, in Koru:**\n\n```koru\n~run = step()\n| return |> stopped\n| break |> stopped\n| continue |> iterated\n```\n\nChoosing which outcome to emit — including with `when`-guards on the branches (see the next rule) — is a Koru act, not a host one. Subflows are the fractal heart of Koru: a program is itself a subflow, branch constructors are tiny anonymous subflows, everything is input → transformation → output.\n\nWhen you genuinely need the host — an actual **side effect**, or **collecting data across a call** until Koru grows a first-class feature for it — a proc provides a host-language body: `~proc name|zig { ... }` is the Zig-variant, opaque to Koru and passed straight through. (The `|zig` is the variant tag; the same mechanism is what would target other hosts.) The proc is the escape hatch, not the default. **If a proc body is only selecting a branch with an `if`, it wants to be a subflow.**"
-      },
-      {
-        "title": "Flows dispatch with `|`, chain with `|>`",
-        "body": "A flow invocation lists each branch and what to do with it. `| branch binding |> next_step()` captures the branch payload and pipes it to the next event. `|> _` terminates a branch.\n\n```koru\n~check(value: 42)\n| positive p |> handle_positive(n: p)\n| zero |> handle_zero()\n| negative n |> handle_negative(n)\n```\n\nPunning is mandatory: when a call argument's value is exactly the field name, write `handle_negative(n)` — the compiler rejects the redundant `handle_negative(n: n)`. A label is for when the value differs from the field, like `handle_positive(n: p)` above.\n\nEvery branch must be handled — the compiler enforces exhaustiveness. Inline chains like `A() |> B() |> C()` compose void events on one line. `|>` never starts a line; if a chain gets long, refactor.\n\nA `when` clause narrows a handler to a subset of fires that match a predicate — `| key k when k.code == 'p' |> handle_pause()`. Multiple `when`-guarded handlers for the same branch are allowed; they're tried top-down. A guarded handler does NOT satisfy coverage on its own — every required branch needs at least one unguarded sibling. Write the predicate bare: `when k.code == 'p'`, not `when (k.code == 'p')`. The same `when` works on `!` effect-branch handlers."
-      },
-      {
-        "title": "`~if` — the fast conditional, a convention over `when`",
-        "body": "`~if(cond) | then |> ... | else |> ...` selects one of two terminal continuations on a condition — branch selection in pure Koru, no proc needed:\n\n```koru\n~if(value > 10)\n| then |> std.io:println(text: \"big\")\n| else |> std.io:println(text: \"small\")\n```\n\n`~if` is a *convenience, not a primitive* — it is a specialization of `when`-branches (the same selection is expressible with a guarded branch), kept because it reads clearly and lowers to fast code. It is a template proc: it runs no effects, it just *returns* the `then` or `else` continuation and the consumer dispatches on it — the same machine as `for` with the during-half empty. `~if` is available as a keyword once you import any `$std` module.\n\nThis is the form Rule 3's sibling points at: when a proc body would only be selecting a branch with a host `if`, reach for `~if` and keep it in Koru."
-      },
-      {
-        "title": "Phantom states are compile-time type labels",
-        "body": "Attach a state label to a type: `*File<opened>`. The label is opaque to the language; meaning comes from a *semantic checker pass*. The default checker treats labels as resource-lifecycle states and tracks them through event signatures — but the mechanism is pluggable, and custom checkers can interpret labels however they want.\n\nSimplest case: a phantom label as a *unit of measure*, attached to a primitive type. No obligation involved; the compiler just refuses to let you cross units.\n\n```koru\n~event read_temp { sensor_id: u8 }\n| reading f32<celsius>\n\n~event to_fahrenheit { c: f32<celsius> }\n| result f32<fahrenheit>\n```\n\n`to_fahrenheit` won't accept a bare `f32` or an `f32<fahrenheit>` — only `f32<celsius>`. The conversion event declares the unit transition at its boundary.\n\nFor resource lifecycle, layer *obligations* on top: `<state!>` on a return *produces* a cleanup obligation; `<!state>` on a parameter *discharges* one. The compiler refuses to let an obligated resource fall off the end of a flow without being passed to a `<!state>` parameter somewhere.\n\n```koru\n~event open { path: []const u8 }\n| opened *File<opened!>              // <opened!> produces a cleanup obligation\n\n~event close { file: *File<!opened> }   // <!opened> discharges it\n```\n\n`open` hands back a file with an obligation the compiler tracks until something accepts it via `<!opened>` — `close` is that something. Try to drop the file (`| opened f |> _`) and the compiler stops you.\n\nThe compiler does NOT verify that the disposal proc actually cleans up — that's the library author's promise. Usage correctness is checked; library correctness is verified by tests."
-      },
-      {
-        "title": "Effect branches yield mid-proc to the caller",
-        "body": "`! name payload` on an event declares an *effect branch* (vs. `| name` which is a terminal outcome). The proc body invokes it like a function call, which transfers control to the caller's `! name binding |> body` handler, runs the handler, then returns to the proc. Different from continuations: a continuation runs *after* the proc returns; an effect-branch handler runs *during* it.\n\nA producer can declare any number of effect branches; the handler is selected by name at the call site. A `ticker` that alternates two effects:\n\n```koru\n~pub event ticker { n: usize }\n! tick usize\n! tock usize\n\n~proc ticker|zig {\n    for (0..n) |i| {\n        if (i % 2 == 0) tick(i) else tock(i);\n    }\n}\n\n~ticker(n: 5)\n! tick i |> std.io:print.ln(\"tick {{ i:d }}\")\n! tock i |> std.io:print.ln(\"tock {{ i:d }}\")\n```\n\nOutput:\n\n```\ntick 0\ntock 1\ntick 2\ntock 3\ntick 4\n```"
-      }
-    ],
     "tests": [
       "010_001_hello_world",
       "010_000_hello_world_koru",

@@ -7,14 +7,6 @@ description: Control flow in Koru: `~if` and `~for` as templates over continuati
 
 # Koru — control-flow templates (`for` / `if`)
 
-`~if` and `~for` are not host keywords — they are templates that return a continuation the consumer dispatches on. `~if(cond) | then |> ... | else |> ...` selects one of two terminal continuations; `for` is the same machine with an iteration half. They lower to the fastest correct emission per target (a Zig range becomes a counting loop, not a generator). The examples below are the canonical shapes.
-
-## What matters
-
-### `~if` is a convention over `when`, not a primitive
-
-`~if(cond) | then |> ... | else |> ...` is a specialization of guarded `when`-branches, kept because it reads clearly and lowers to fast code. It runs no effects — it returns the `then` or `else` continuation and the consumer dispatches. Available as a keyword once any `$std` module is imported.
-
 ## Worked examples
 
 3 passing tests, verbatim, in [`../../docs/by-example/koru-templates.md`](../../docs/by-example/koru-templates.md). The tests are the spec — read them as the authority on what is actually legal. This skill is the map; the shard is the territory.
