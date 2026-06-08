@@ -4,6 +4,6 @@ error[PARSE003]: import path too deep: 'app/test_lib/net/tcp' has 3 segments aft
   Then use: ~import "mylib/..." (Suggested: extract 'app' as its own alias)
   --> tests/regression/100_MODULE_SYSTEM/110_IMPORTS/110_016_optional_parent/input.kz:18:1
     |
- 18 | import app/test_lib/net/tcp
+ 18 | ~import app/test_lib/net/tcp
     | ^
 
