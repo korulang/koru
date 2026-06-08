@@ -8,8 +8,8 @@
 #
 #   A (blocking) generated artifacts == regeneration  — catches hand-edits to a generated file
 #   B (blocking) the config carries no prose fields    — catches re-contamination at the source
-#   C (report)   no duplicate NNN_NNN test ID          — the pointer-as-truth precondition
-#                (fires on existing dupes today; flip to blocking once they're drained)
+#   C (blocking) no duplicate NNN_NNN test ID          — the pointer-as-truth precondition
+#                (the 55 historical dupes were drained; a duplicate id now fails the run)
 #
 # Run from anywhere: bash scripts/prose_check.sh   (CANNOT lie — it regenerates and diffs.)
 set -o pipefail
@@ -52,16 +52,17 @@ else
   fail=1
 fi
 
-# --- C: no duplicate NNN_NNN test ID (report-first) -------------------------
-DUPES=$(find tests/regression -type d -name '[0-9][0-9][0-9]_[0-9][0-9][0-9]_*' \
+# --- C: no duplicate NNN_NNN test ID (blocking) -----------------------------
+DUPES=$(find tests/regression -type d -name '[0-9][0-9][0-9]_[0-9][0-9][0-9]_*' -not -path '*/_archive/*' \
         | sed 's#.*/##' | awk -F_ '{print $1"_"$2}' | sort | uniq -d)
 n=$(printf '%s' "$DUPES" | grep -c . || true)
 if [ "$n" -eq 0 ]; then
   echo -e "  ${GREEN}✓ C${NC} all NNN_NNN test IDs are unique"
 else
-  echo -e "  ${YELLOW}⚠ C${NC} ${n} duplicate NNN_NNN id(s) — pointers to them are ambiguous (report-only):"
+  echo -e "  ${RED}✗ C${NC} ${n} duplicate NNN_NNN id(s) — pointers to them are ambiguous:"
   printf '%s\n' "$DUPES" | sed 's/^/      /'
-  echo "      A duplicate id breaks 'a path cannot drift'. Drain them, then flip C to blocking."
+  echo "      A duplicate id breaks 'a path cannot drift'. Renumber so every NNN_NNN is globally unique."
+  fail=1
 fi
 
 echo ""
@@ -69,4 +70,4 @@ if [ "$fail" -ne 0 ]; then
   echo -e "${RED}prose-check FAILED${NC}"
   exit 1
 fi
-echo -e "${GREEN}prose-check OK${NC} (C is report-only until the duplicate ids are drained)"
+echo -e "${GREEN}prose-check OK${NC} (A/B/C all green — generated==regen, no prose fields, all test ids unique)"

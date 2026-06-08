@@ -1041,7 +1041,7 @@ else
 fi
 
 # No-prose / pipeline coherence watcher (enforcement E). Blocks on A (a generated file was
-# hand-edited) and B (prose re-entered the config); C (duplicate test ids) is report-only.
+# hand-edited), B (prose re-entered the config), and C (duplicate NNN_NNN test ids).
 echo ""
 echo -e "${BLUE}Running prose-check (no-prose pipeline coherence)...${NC}"
 if ! bash "$SCRIPT_DIR/scripts/prose_check.sh"; then

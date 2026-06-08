@@ -1,8 +1,8 @@
 // Layer 2 demonstration (positive case): a subflow dispatching ONLY
-// into pure events should be transitively pure. Mirrors 410_010's
+// into pure events should be transitively pure. Mirrors 410_016's
 // negative case (subflow dispatching impure → transitively impure).
 //
-// Pairs with 410_010 to pin both directions of transitive propagation.
+// Pairs with 410_016 to pin both directions of transitive propagation.
 
 const std = @import("std");
 

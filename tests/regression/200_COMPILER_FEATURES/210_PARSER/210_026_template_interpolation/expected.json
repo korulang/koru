@@ -6,7 +6,7 @@
             "type": "import_decl",
             "path": "std/compiler",
             "location": {
-                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_023_template_interpolation/input.kz",
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_026_template_interpolation/input.kz",
                 "line": 2,
                 "col": 0
             }
@@ -15,7 +15,7 @@
             "type": "host_line",
             "module": "input",
             "location": {
-                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_023_template_interpolation/input.kz",
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_026_template_interpolation/input.kz",
                 "line": 2,
                 "col": 0
             }
@@ -24,7 +24,7 @@
             "type": "host_line",
             "module": "input",
             "location": {
-                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_023_template_interpolation/input.kz",
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_026_template_interpolation/input.kz",
                 "line": 3,
                 "col": 0
             }
@@ -33,7 +33,7 @@
             "type": "host_line",
             "module": "input",
             "location": {
-                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_023_template_interpolation/input.kz",
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_026_template_interpolation/input.kz",
                 "line": 4,
                 "col": 0
             }
@@ -42,7 +42,7 @@
             "type": "host_line",
             "module": "input",
             "location": {
-                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_023_template_interpolation/input.kz",
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_026_template_interpolation/input.kz",
                 "line": 5,
                 "col": 0
             }
@@ -51,7 +51,7 @@
             "type": "host_line",
             "module": "input",
             "location": {
-                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_023_template_interpolation/input.kz",
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_026_template_interpolation/input.kz",
                 "line": 6,
                 "col": 0
             }
@@ -60,7 +60,7 @@
             "type": "host_line",
             "module": "input",
             "location": {
-                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_023_template_interpolation/input.kz",
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_026_template_interpolation/input.kz",
                 "line": 7,
                 "col": 0
             }
@@ -69,7 +69,7 @@
             "type": "host_line",
             "module": "input",
             "location": {
-                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_023_template_interpolation/input.kz",
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_026_template_interpolation/input.kz",
                 "line": 8,
                 "col": 0
             }
@@ -78,7 +78,7 @@
             "type": "import_decl",
             "path": "std/io",
             "location": {
-                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_023_template_interpolation/input.kz",
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_026_template_interpolation/input.kz",
                 "line": 11,
                 "col": 0
             }
@@ -87,7 +87,7 @@
             "type": "host_line",
             "module": "input",
             "location": {
-                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_023_template_interpolation/input.kz",
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_026_template_interpolation/input.kz",
                 "line": 12,
                 "col": 0
             }
@@ -125,7 +125,7 @@
                 }
             ],
             "location": {
-                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_023_template_interpolation/input.kz",
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_026_template_interpolation/input.kz",
                 "line": 15,
                 "col": 0
             }
@@ -141,7 +141,7 @@
             ],
             "is_pure": false,
             "location": {
-                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_023_template_interpolation/input.kz",
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_026_template_interpolation/input.kz",
                 "line": 22,
                 "col": 0
             }
@@ -150,7 +150,7 @@
             "type": "host_line",
             "module": "input",
             "location": {
-                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_023_template_interpolation/input.kz",
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_026_template_interpolation/input.kz",
                 "line": 23,
                 "col": 0
             }
@@ -166,7 +166,7 @@
                         "source_value": {
                             "text": "    <div>\n        <h1>Hello, World!</h1>\n        <p>This is a template</p>\n    </div>\n",
                             "location": {
-                                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_023_template_interpolation/input.kz",
+                                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_026_template_interpolation/input.kz",
                                 "line": 31,
                                 "col": 0
                             },
@@ -207,7 +207,7 @@
             "pre_label": null,
             "post_label": null,
             "location": {
-                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_023_template_interpolation/input.kz",
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_026_template_interpolation/input.kz",
                 "line": 31,
                 "col": 0
             }
