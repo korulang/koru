@@ -5,8 +5,8 @@
 //
 // Key: No { } in capture() → bind to existing variable
 
-import std/io
-import std/control
+~import std/io
+~import std/control
 
 const std = @import("std");
 

@@ -5,7 +5,7 @@
 // 2. |? catches remaining optional branches
 // 3. Most realistic real-world pattern
 
-import std/io
+~import std/io
 
 // Event with required + multiple optional branches
 // success is REQUIRED, warning is handled explicitly, debug/trace caught by |?

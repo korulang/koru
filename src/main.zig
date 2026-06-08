@@ -6051,7 +6051,7 @@ pub fn main() !void {
             \\//
             \\// Run with: koruc app.kz && ./a.out
             \\
-            \\import std/package
+            \\~import std/package
             \\
             \\// Declare npm dependencies (install with: koruc app.kz i)
             \\// ~std.package:requires.npm {
@@ -6383,12 +6383,18 @@ pub fn main() !void {
     // `~std/compiler:requires { .. }` is a directive, not an import; matching bare
     // `std/compiler` there falsely skipped the bootstrap inject under the `/`
     // namespace (it didn't under the old `std.compiler` spelling).
-    const user_already_imported_compiler = std.mem.indexOf(u8, source, "import std/compiler") != null;
+    const user_already_imported_compiler =
+        std.mem.indexOf(u8, source, "~import std/compiler") != null or
+        std.mem.indexOf(u8, source, "import std/compiler") != null;
     const final_source = if (inject_compiler and !user_already_imported_compiler) blk: {
         log.debug("DEBUG: Auto-injecting compiler import\n", .{});
-        // Imports are bare and first-class in every file kind — no `~`, no
-        // quotes — so the injected line is identical for `.k` and `.kz`/`.kjs`.
-        const import_line = "import std/compiler\n";
+        // Pure `.k` synthesizes `~` on `import`; host-embedded `.k*` files need `~import`.
+        const input_basename = std.fs.path.basename(input);
+        const is_pure_k = if (file_types.koruExtensionOf(input_basename)) |ext|
+            std.mem.eql(u8, ext, ".k")
+        else
+            false;
+        const import_line = if (is_pure_k) "import std/compiler\n" else "~import std/compiler\n";
         const injected = try parse_allocator.alloc(u8, import_line.len + source.len);
         @memcpy(injected[0..import_line.len], import_line);
         @memcpy(injected[import_line.len..], source);

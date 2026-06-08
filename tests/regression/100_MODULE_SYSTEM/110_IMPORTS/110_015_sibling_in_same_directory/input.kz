@@ -11,7 +11,7 @@
 const std = @import("std");
 
 // Import the library (index.kz in the same directory as THIS FILE)
-import mylib
+~import mylib
 
 // Call an event from the library
 ~mylib:greet(name: "World") |> on-done()

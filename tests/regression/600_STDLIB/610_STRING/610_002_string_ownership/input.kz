@@ -1,6 +1,6 @@
 // Test: String ownership transitions and append
-import std/string
-import std/io
+~import std/string
+~import std/io
 
 ~std/string:from_page(text: "hello")
 | ok s |> std/string:take(s)

@@ -6,8 +6,8 @@
 // Each iteration: each body gains +0.2
 // After 3 iterations: 1.6, 2.6, 3.6
 
-import std/kernel
-import std/io
+~import std/kernel
+~import std/io
 
 ~std/kernel:shape(Body) {
     mass: f64,

@@ -14,7 +14,7 @@
 //     | next |> ...   <-- THIS IS WHAT WE'RE TESTING
 //
 
-import std/io
+~import std/io
 
 // First: void event to start a pipeline
 ~event setup {}

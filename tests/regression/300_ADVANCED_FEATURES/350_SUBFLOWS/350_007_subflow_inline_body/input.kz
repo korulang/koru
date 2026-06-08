@@ -9,8 +9,8 @@
 // Verifies: Subflow can use [expand] transforms with branching continuations
 // ============================================================================
 
-import std/template
-import std/io
+~import std/template
+~import std/io
 
 const std = @import("std");
 

@@ -22,7 +22,7 @@
 //   3. Run npm install
 
 
-import std/compiler
+~import std/compiler
 
 ~[comptime]
 

@@ -9,7 +9,7 @@
 // - continuation_codegen generates correct handler calls
 // - Emitter outputs inline_body directly
 
-import std/io
+~import std/io
 
 const std = @import("std");
 

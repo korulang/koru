@@ -12,7 +12,7 @@
 // other languages" trap is re-introduced at parser.zig parseStep,
 // this test fails. That is the point.
 
-import std/io
+~import std/io
 
 // Lower-level event: arbitrary outcome names
 ~pub event step {}

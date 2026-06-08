@@ -7,7 +7,7 @@
 // This test captures the intention that transforms are NOT special-cased
 // for stdlib - they're a general mechanism.
 
-import std/io
+~import std/io
 
 // User-defined transform event - should work just like stdlib transforms
 ~[keyword|comptime|transform]

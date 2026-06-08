@@ -9,7 +9,7 @@
 // would mean `?` carries no meaning and the language has no way to
 // distinguish "optional terminal" from "you forgot a handler".
 
-import std/io
+~import std/io
 
 ~pub event run {}
 | done

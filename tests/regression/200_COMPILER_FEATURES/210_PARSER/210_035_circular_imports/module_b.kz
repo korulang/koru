@@ -1,7 +1,7 @@
 // Module B - imports input.kz back, closing the cycle.
 // from-b dispatches back into input's from_a, then relays its result.
 
-import app/input
+~import app/input
 
 ~pub event from-b { msg: []const u8 }
 | relayed []const u8

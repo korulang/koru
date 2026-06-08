@@ -4,8 +4,8 @@
 // 10 steps of gravitational simulation.
 // Verifies that step(0..N) wrapping pairwise + self produces correct output.
 
-import std/kernel
-import std/io
+~import std/kernel
+~import std/io
 
 const PI: f64 = 3.141592653589793;
 const SOLAR_MASS: f64 = 4.0 * PI * PI;

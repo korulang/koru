@@ -6,8 +6,8 @@
 // predates `BranchKind` and was kind-blind, silently accepting `| [pattern]`.
 // This pins that the transform is now kind-aware and rejects `|` loudly.
 
-import orisha
-import std/io
+~import orisha
+~import std/io
 
 const std = @import("std");
 

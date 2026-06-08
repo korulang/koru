@@ -9,7 +9,7 @@
 // This is ACTUAL template metaprogramming, not hardcoded string building!
 // Mom can put this on the refrigerator.
 
-import std/io
+~import std/io
 
 const std = @import("std");
 

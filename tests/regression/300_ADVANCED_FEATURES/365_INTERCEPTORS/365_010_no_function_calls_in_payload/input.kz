@@ -9,7 +9,7 @@
 //       | timestamp ts |> payload { logline: p.logline, ts: ts }
 
 const std = @import("std");
-import std/interceptors
+~import std/interceptors
 
 ~event log.write { logline: []const u8 }
 

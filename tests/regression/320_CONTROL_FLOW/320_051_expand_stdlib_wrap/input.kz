@@ -7,7 +7,7 @@
 //
 // Result: Zero-cost, type-safe stdlib wrappers with clean Koru syntax.
 
-import std/template
+~import std/template
 
 const std = @import("std");
 

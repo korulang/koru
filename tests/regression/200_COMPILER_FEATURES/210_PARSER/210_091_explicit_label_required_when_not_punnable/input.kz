@@ -13,7 +13,7 @@
 // has lost calibration. The negative twins live in 210_088/089/090.
 // ============================================================================
 
-import std/io
+~import std/io
 
 ~event echo { v: i32 }
 | out i32

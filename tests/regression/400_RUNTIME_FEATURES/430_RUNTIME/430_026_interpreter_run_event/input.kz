@@ -1,9 +1,9 @@
 // Test: std/interpreter:run event
 // Uses ~get_scope to get dispatcher, passes to std/interpreter:run
 
-import std/runtime
-import std/interpreter
-import std/io
+~import std/runtime
+~import std/interpreter
+~import std/io
 
 ~pub event greet { name: []const u8 }
 | greeted []const u8

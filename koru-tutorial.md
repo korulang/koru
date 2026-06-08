@@ -60,7 +60,7 @@ The answer is 42.
 // Test: Pure subflow implementation (no proc needed)
 // From the README example - this is idiomatic Koru
 // This is the default authoring model for ordinary event behavior.
-import std/io
+~import std/io
 
 ~event greet { name: []const u8 }
 | greeting []const u8
@@ -160,7 +160,7 @@ Negative branch works: -7
 // other languages" trap is re-introduced at parser.zig parseStep,
 // this test fails. That is the point.
 
-import std/io
+~import std/io
 
 // Lower-level event: arbitrary outcome names
 ~pub event step {}
@@ -196,21 +196,6 @@ Testing subflow-defined semantics:
   iterated
 ```
 
-### 330_005_cleanup_obligation_satisfied
-
-```koru
-import app/fs
-~app/fs:open(path: "test.txt")
-| opened f |> app/fs:close(file: f)
-```
-
-**Output:**
-
-```
-Opening file: test.txt
-Closing file
-```
-
 ### 400_070_effect_branch_minimal
 
 ```koru
@@ -221,7 +206,7 @@ Closing file
 // runs it, then returns. No terminal `|` branches — this is a void event
 // with one effect operation.
 
-import std/io
+~import std/io
 
 const std = @import("std");
 

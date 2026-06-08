@@ -3,7 +3,7 @@
 // REJECTED (KORU034) — use `-` (kebab) for word separation; `_` is reserved for
 // digit separators in numeric literals (rule G4). The "we won't accept both"
 // enforcement: the old snake form must fail loudly.
-import std/io
+~import std/io
 
 ~event foo_bar {}
 

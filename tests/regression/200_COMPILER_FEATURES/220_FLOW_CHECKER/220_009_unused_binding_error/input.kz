@@ -7,7 +7,7 @@
 // This test ensures the flow checker catches unused named bindings.
 // The _ syntax is exempted from this check (explicit discard).
 
-import app/fs
+~import app/fs
 
 // ERROR: f is bound but never used - should trigger KORU100
 ~app/fs:open(path: "test.txt")

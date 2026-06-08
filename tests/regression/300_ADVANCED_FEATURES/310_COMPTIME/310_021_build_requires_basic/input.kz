@@ -6,7 +6,7 @@
 // 2. AST collection: Compiler walks AST to find std/compiler:requires
 // 3. Zero boilerplate: just declare requirements, build.zig generated automatically
 
-import std/compiler
+~import std/compiler
 
 // Declare build dependencies using implicit Source blocks
 // The { } block is compiled to a Source parameter containing raw Zig code

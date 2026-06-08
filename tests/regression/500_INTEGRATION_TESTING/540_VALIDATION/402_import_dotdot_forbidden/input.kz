@@ -5,6 +5,6 @@
 // Security: Prevent directory traversal attacks
 // Simplicity: Use explicit path aliases in koru.json instead
 
-import ../koru_std/io
+~import ../koru_std/io
 
 ~io:print.ln("This should never compile!")

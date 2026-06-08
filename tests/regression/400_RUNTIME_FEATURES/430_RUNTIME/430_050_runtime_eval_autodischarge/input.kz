@@ -1,8 +1,8 @@
 // codemod:skip — runtime-eval blocks use internal (snake) names; flow_parser does not normalize.
 // Test: std/runtime:eval invokes auto-discharge cleanup events
 
-import std/runtime
-import std/io
+~import std/runtime
+~import std/io
 
 const std = @import("std");
 

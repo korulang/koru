@@ -2,7 +2,7 @@
 // Both Profile and Transition metatypes should fire on the same event
 // This verifies that multiple metatype bindings work together
 
-import std/taps
+~import std/taps
 
 ~event hello { }
 

@@ -563,21 +563,9 @@ pub const Parser = struct {
                 }
             }
 
-            // Plain `~import` is the old host-context form. Imports are bare:
-            // `import std/io`. A conditional `~[flag]import ...` keeps its `~`
-            // (the `~[flag]` is the conditional marker, a different construct),
-            // so we reject only `~import ` here, not `~[`. `.k` synthesizes its
-            // own `~` internally and is exempt.
-            if (!self.is_k and lexer.startsWith(trimmed, "~import ")) {
-                try self.reporter.addError(
-                    .PARSE003,
-                    self.current + 1,
-                    lexer.getIndent(line) + 1,
-                    "imports are bare — drop the `~`: write `import ...` (the `~` is the host->Koru switch; an import is always Koru, nothing to switch from)",
-                    .{},
-                );
-                return error.ParseError;
-            }
+            // `.k` synthesizes `~` on top-level constructs above. Every other
+            // `.k*` file (`.kz`, `.kjs`, …) requires the author to write `~`
+            // before each Koru construct — including imports (`~import`).
 
             if (lexer.startsWith(line, "~")) {
                 // Check if this is a module-level annotation: ~[annotation] on its own line
@@ -857,14 +845,6 @@ pub const Parser = struct {
                     continue;
                 };
                 try items.append(self.allocator, item);
-            } else if (lexer.startsWith(trimmed, "import ")) {
-                // First-class top-level import: `import std/io` with no `~`.
-                // An import is always Koru (never host), so it needs no
-                // host->Koru `~` switch and we do NOT synthesize one. Zig/JS
-                // have no bare `import` statement (only `@import`), so a line
-                // starting with `import ` is unambiguous.
-                const decl = try self.parseImportDecl();
-                try items.append(self.allocator, .{ .import_decl = decl });
             } else if (lexer.startsWith(line, "|")) {
                 try self.reporter.addError(
                     .KORU010,
@@ -875,6 +855,20 @@ pub const Parser = struct {
                 );
                 self.current += 1;
             } else {
+                // Host-embedded `.k*` files: Koru module constructs require `~`.
+                // Pure `.k` synthesizes it above; this catches bare Koru keywords
+                // (import, event, proc, …) that skipped the switch — no import-only
+                // special case.
+                if (!self.is_k and looksLikeBareKoruModuleConstruct(trimmed)) {
+                    try self.reporter.addError(
+                        .PARSE003,
+                        self.current + 1,
+                        lexer.getIndent(line) + 1,
+                        "Koru constructs in host-embedded files (`.kz`, `.kjs`, etc.) must start with `~` — the host→Koru switch",
+                        .{},
+                    );
+                    return error.ParseError;
+                }
                 // Pass through host language line
                 const owned_line = try self.allocator.dupe(u8, line);
                 try items.append(self.allocator, .{ .host_line = .{
@@ -1005,6 +999,22 @@ pub const Parser = struct {
         // Ran out of lines without finding ]
         try self.reporter.addError(.PARSE003, starting_line, 1, "unclosed annotation bracket", .{});
         return error.ParseError;
+    }
+
+    /// True when `trimmed` begins a Koru module-level construct. Host-embedded
+    /// files must prefix these with `~`; pure `.k` synthesizes `~` before parse.
+    fn looksLikeBareKoruModuleConstruct(trimmed: []const u8) bool {
+        const prefixes = [_][]const u8{
+            "import ",
+            "pub event",
+            "event ",
+            "proc ",
+            "pub proc ",
+        };
+        for (prefixes) |prefix| {
+            if (std.mem.startsWith(u8, trimmed, prefix)) return true;
+        }
+        return false;
     }
 
     fn parseKoruConstruct(self: *Parser) !ast.Item {
@@ -7603,13 +7613,8 @@ pub const Parser = struct {
         const line = self.lines[self.current];
         self.current += 1;
 
-        // Accept both forms with NO `~` synthesis:
-        //   `import std/io`   — first-class Koru import (an import is always
-        //                       Koru, so there is no host->Koru switch to make)
-        //   `~import std/io`  — the host-context form, where `~` flips a line
-        //                       out of host code into Koru.
-        // An import is never host syntax, so we parse the bare form directly
-        // rather than faking a `~`.
+        // Reached via `~import ...` in host-embedded files, or after `.k` synthesizes
+        // the leading `~` on bare `import ...`.
         const t = lexer.trim(line);
         const after_tilde = if (lexer.startsWith(t, "~")) lexer.trim(t[1..]) else t;
 
@@ -7627,10 +7632,9 @@ pub const Parser = struct {
             return error.ParseError;
         };
 
-        // Plain `~import` is rejected at the line level in parse() (it never
-        // reaches here in host files). A `~` that does reach here is either the
-        // `.k` internal synthesized form or a conditional `~[flag]import`, both
-        // legitimate — so parseImportDecl only enforces the bare-path rule.
+        // Bare `import` in `.kz` is rejected at the line level in parse() before
+        // we get here. A `~` prefix reaching here is normal (~import, ~[flag]import,
+        // or `.k` internal synthesis).
 
         // Extract the path — bare identifier-path only. Quotes are the old form.
         var path: []const u8 = undefined;
@@ -7642,7 +7646,7 @@ pub const Parser = struct {
                 .PARSE003,
                 self.current,
                 1,
-                "imports take a bare path, not a string: write `import {s}` (no quotes)",
+                "imports take a bare path, not a string: write `~import {s}` (no quotes)",
                 .{stripped},
             );
             return error.ParseError;
@@ -8041,7 +8045,7 @@ test "parser handles import statement" {
     const allocator = std.testing.allocator;
 
     const source =
-        \\import std/array
+        \\~import std/array
     ;
 
     var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
@@ -8100,8 +8104,8 @@ test "parser validates branch names" {
     {
         const source =
             \\~event test {}
-            \\| valid_branch i32
-            \\| another_one []const u8
+            \\| valid-branch i32
+            \\| another-one []const u8
         ;
 
         var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);

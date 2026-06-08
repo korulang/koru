@@ -5,8 +5,8 @@
 // it's ambiguous which one to use.
 // Expected: Compilation error "Ambiguous step definition for 'build'"
 
-import std/build
-import app/lib/build_config
+~import std/build
+~import app/lib/build_config
 
 // User defines "build" step here
 ~std/build:step(name: "build") {

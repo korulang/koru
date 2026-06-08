@@ -1,7 +1,7 @@
 // codemod:skip — negative test: keeps the removed `println` call to exercise removal.
 // PIN: `std/io:println` is DELETED (subsumed by print.ln / print). Calling it now
 // fails loudly as KORU040 "unknown event" at compiler coordination. GREEN = removed.
-import std/io
+~import std/io
 
 const msg: []const u8 = "println is gone";
 

@@ -9,7 +9,7 @@
 // at body position without trailing parens after the path is a Zig
 // expression — terse and unambiguous.
 
-import std/io
+~import std/io
 
 const std = @import("std");
 

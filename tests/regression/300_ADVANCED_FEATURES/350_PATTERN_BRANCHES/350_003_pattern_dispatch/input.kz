@@ -9,7 +9,7 @@
 // 3. Generate dispatch code that matches against the payload
 // 4. Extract path params into the binding
 
-import std/io
+~import std/io
 
 const std = @import("std");
 

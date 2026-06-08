@@ -127,7 +127,7 @@ test "end-to-end with deferred events" {
         \\| selected s
         \\  | *s
         \\    | authenticated a |> session.create (a.token)
-        \\    | needs_2fa |> send.otp
+        \\    | needs-2fa |> send.otp
     ;
     
     // Parse

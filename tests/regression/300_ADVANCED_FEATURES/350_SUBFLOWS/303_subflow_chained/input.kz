@@ -8,7 +8,7 @@
 
 const std = @import("std");
 
-import std/io
+~import std/io
 
 // Base proc: adds 5 to a number
 ~event add-five { value: i32 }

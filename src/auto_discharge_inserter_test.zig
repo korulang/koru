@@ -223,3 +223,45 @@ test "findDisposalEvents with different types same phantom state" {
         try std.testing.expectEqualStrings("test:release[!]", disposals[0].qualified_name);
     }
 }
+
+test "findDisposalEvents excludes events with user-required extra inputs" {
+    // Auto-insert can supply the obligation binding, not user-authored args like sql.
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const arena_alloc = arena.allocator();
+    const test_alloc = std.testing.allocator;
+
+    const source =
+        \\~event tx.exec { tx: *Transaction<!started>, sql: []const u8 }
+        \\| ok *Transaction<active!>
+        \\
+        \\~event tx.rollback { tx: *Transaction<!active> }
+        \\| ok *Connection<active!>
+    ;
+
+    const empty_flags: []const []const u8 = &.{};
+    var parser = try Parser.init(arena_alloc, source, "test.kz", empty_flags, null);
+    defer parser.deinit();
+
+    var parse_result = try parser.parse();
+    defer parse_result.deinit();
+
+    var reporter = try errors.ErrorReporter.init(test_alloc, "test.kz", source);
+    defer reporter.deinit();
+
+    var inserter = try AutoDischargeInserter.init(test_alloc, &reporter, false);
+    defer inserter.deinit();
+
+    try inserter.buildEventMap(&parse_result.source_file);
+
+    const disposals = try inserter.findDisposalEvents("test:started!", "*Transaction");
+    defer {
+        for (disposals) |d| {
+            test_alloc.free(d.qualified_name);
+            test_alloc.free(d.field_name);
+        }
+        test_alloc.free(disposals);
+    }
+
+    try std.testing.expectEqual(@as(usize, 0), disposals.len);
+}

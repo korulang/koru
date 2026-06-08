@@ -6,7 +6,7 @@
 // Verifies: Basic Source parameter access works
 // ============================================================================
 
-import std/io
+~import std/io
 
 const std = @import("std");
 

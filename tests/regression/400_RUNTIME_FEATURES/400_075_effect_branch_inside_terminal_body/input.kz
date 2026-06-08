@@ -6,7 +6,7 @@
 // works — they're just Zig statements in the proc body, but it's worth
 // verifying since the doc lists this as an open question (#3).
 
-import std/io
+~import std/io
 
 ~pub event work { steps: usize }
 ! progress usize

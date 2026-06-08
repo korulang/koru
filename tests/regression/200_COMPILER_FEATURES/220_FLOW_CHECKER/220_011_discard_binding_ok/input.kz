@@ -8,7 +8,7 @@
 //
 // Expected: Compiles successfully
 
-import app/fs
+~import app/fs
 
 // OK: _ is explicit discard - no KORU100 error
 ~app/fs:open(path: "test.txt")

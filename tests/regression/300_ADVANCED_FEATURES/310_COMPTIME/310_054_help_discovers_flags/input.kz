@@ -10,7 +10,7 @@
 // Run: koruc input.kz --help
 // Expected: Help output includes backend flags like --ccp, --verbose
 
-import std/compiler
+~import std/compiler
 
 ~event main {}
 

@@ -12,7 +12,7 @@
 // This test verifies the PARSER accepts the syntax.
 // The event is marked [norun] so no emission happens.
 
-import std/io
+~import std/io
 
 // Event with wildcard payload - parser should accept this
 ~[norun]event iterator-pattern {}

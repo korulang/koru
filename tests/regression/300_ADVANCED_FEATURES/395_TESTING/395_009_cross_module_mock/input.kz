@@ -13,8 +13,8 @@
 //
 // The compiler becomes a development partner, not just a batch processor.
 
-import std/testing
-import std/fs
+~import std/testing
+~import std/fs
 
 // A flow that depends on an external module event
 ~event process-config { path: []const u8 }

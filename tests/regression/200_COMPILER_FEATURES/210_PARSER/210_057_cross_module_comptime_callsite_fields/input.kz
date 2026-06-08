@@ -15,8 +15,8 @@
 // See also: 210_056 (dispatch fix), 210_058 (return type fix)
 // Real-world reproducer: koru-libs/pq/examples/02_sql.kz
 
-import app/comptime_lib
-import std/io
+~import app/comptime_lib
+~import std/io
 
 ~[comptime] app/comptime_lib:greet(name: "world")
 | ok msg |> std/io:print.ln("{{msg}}")

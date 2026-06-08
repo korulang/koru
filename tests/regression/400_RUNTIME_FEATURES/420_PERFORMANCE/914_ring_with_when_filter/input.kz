@@ -8,7 +8,7 @@
 // Only process EVEN numbers!
 
 const std = @import("std");
-import std/taps
+~import std/taps
 
 // Generic ring buffer (Zig function returning type)
 pub fn Ring(comptime T: type, comptime size: usize) type {

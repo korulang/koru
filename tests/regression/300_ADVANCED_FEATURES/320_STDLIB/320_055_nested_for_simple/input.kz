@@ -1,7 +1,7 @@
 // Test: nested for loops - depth-first transform ordering
 // Inner for should transform before outer for
 
-import std/control
+~import std/control
 
 const std = @import("std");
 

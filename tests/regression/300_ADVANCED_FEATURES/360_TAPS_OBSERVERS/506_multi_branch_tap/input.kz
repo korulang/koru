@@ -7,7 +7,7 @@
 // | error e |> log-error(e)
 
 const std = @import("std");
-import std/taps
+~import std/taps
 
 ~event process { value: i32 }
 | success i32

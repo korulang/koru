@@ -3,7 +3,7 @@
 // the `! make` payload (`*Resource<active!>`). The handler RECEIVES the live
 // obligation and must discharge it within the firing (no resume to carry it
 // out). Producer allocates, consumer consumes — per firing, balanced.
-import std/build
+~import std/build
 ~std/build:requires { exe.linkLibC(); }
 const std = @import("std");
 const Resource = struct { id: usize };

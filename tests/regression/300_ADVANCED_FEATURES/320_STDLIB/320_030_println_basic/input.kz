@@ -1,6 +1,6 @@
 // Test: Basic println with interpolation
 
-import std/io
+~import std/io
 
 const value: i32 = 42;
 const name: []const u8 = "World";

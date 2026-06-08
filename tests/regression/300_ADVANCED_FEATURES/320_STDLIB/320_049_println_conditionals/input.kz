@@ -1,6 +1,6 @@
 // Test: print.ln with {% if %} conditionals
 
-import std/io
+~import std/io
 
 const debug = true;
 const verbose = false;

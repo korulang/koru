@@ -149,7 +149,8 @@ pub const PhantomSemanticChecker = struct {
 
     /// Build qualified event name with explicit module name
     fn buildDisposalQualifiedEventNameWithModule(self: *PhantomSemanticChecker, event_decl: *const ast.EventDecl, module_name: []const u8) ![]const u8 {
-        const event_name = event_decl.path.segments[0];
+        const event_name = try self.pathToString(event_decl.path);
+        defer self.allocator.free(event_name);
         const has_default = for (event_decl.annotations) |ann| {
             if (std.mem.eql(u8, ann, "!")) break true;
         } else false;
@@ -161,9 +162,17 @@ pub const PhantomSemanticChecker = struct {
         }
     }
 
+    fn obligationBaseTypeMatchesField(obligation_base_type: []const u8, field_type: []const u8) bool {
+        if (std.mem.eql(u8, field_type, obligation_base_type)) return true;
+        if (std.mem.lastIndexOf(u8, obligation_base_type, ":")) |colon| {
+            return std.mem.eql(u8, field_type, obligation_base_type[colon + 1 ..]);
+        }
+        return false;
+    }
+
     /// Find events that can discharge a given phantom state obligation
     /// Returns a list of event names that consume the given phantom state
-    fn findDisposalEventsForState(self: *PhantomSemanticChecker, phantom_state: []const u8) !std.ArrayList([]const u8) {
+    fn findDisposalEventsForState(self: *PhantomSemanticChecker, phantom_state: []const u8, obligation_base_type: []const u8) !std.ArrayList([]const u8) {
         var results = try std.ArrayList([]const u8).initCapacity(self.allocator, 4);
 
         // Strip the ! suffix to get base state
@@ -179,6 +188,7 @@ pub const PhantomSemanticChecker = struct {
 
             for (event_decl.input.fields) |field| {
                 if (field.phantom) |field_phantom| {
+                    if (!obligationBaseTypeMatchesField(obligation_base_type, field.type)) continue;
                     // Parse to check if it consumes this state
                     var parsed = phantom_parser.PhantomState.parse(self.allocator, field_phantom) catch continue;
                     defer parsed.deinit(self.allocator);
@@ -1491,10 +1501,11 @@ pub const PhantomSemanticChecker = struct {
                         if (escapes) continue;
 
                         // Get the phantom state for this resource
-                        const phantom_state = context.get(resource) orelse {
+                        const binding_info = context.getInfo(resource) orelse {
                             log.debug("[CLEANUP] No phantom state found for '{s}'\n", .{resource});
                             continue;
                         };
+                        const phantom_state = binding_info.phantom_state;
 
                         // Report error - obligation was not satisfied
                         // Format names for display - extract field name from paths like "_.conn"
@@ -1508,7 +1519,7 @@ pub const PhantomSemanticChecker = struct {
                             phantom_state;
 
                         // Find events that could discharge this obligation
-                        var disposal_events = try self.findDisposalEventsForState(phantom_state);
+                        var disposal_events = try self.findDisposalEventsForState(phantom_state, binding_info.base_type);
                         defer {
                             for (disposal_events.items) |item| {
                                 self.allocator.free(item);

@@ -1,5 +1,5 @@
-import std/control
-import std/build
+~import std/control
+~import std/build
 ~std/build:requires { exe.linkLibC(); }
 const std = @import("std");
 const Resource = struct {

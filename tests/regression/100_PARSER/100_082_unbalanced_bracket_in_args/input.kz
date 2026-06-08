@@ -14,7 +14,7 @@
 // NOTE: '<'/'>' are NOT covered — they are overloaded as comparison operators
 // in Expression args, so their depth is intentionally clamped, not rejected.
 
-import std/io
+~import std/io
 
 ~pub event sum { xs: []const u8 }
 | ok i32

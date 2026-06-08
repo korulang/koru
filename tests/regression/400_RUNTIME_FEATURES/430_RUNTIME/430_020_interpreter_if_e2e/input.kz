@@ -2,8 +2,8 @@
 // Full integration test: parse source with ~if, execute, verify branch taken
 // Uses inline types since $std module import not yet supported
 
-import std/runtime
-import std/interpreter
+~import std/runtime
+~import std/interpreter
 
 
 const std = @import("std");

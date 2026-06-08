@@ -7,7 +7,7 @@
 // lower into the synthesized Handlers struct, terminal conts drive the
 // post-call switch/extract. Proves partition logic doesn't drop either path.
 
-import std/io
+~import std/io
 
 ~pub event count-up { start: usize, end: usize }
 ! each usize

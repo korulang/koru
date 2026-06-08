@@ -8,7 +8,7 @@
 // The binding `name` is never referenced as a variable in the continuation
 // body — it only appears inside the string literal "no name given".
 
-import std/io
+~import std/io
 
 ~event greet { id: u32 }
 | ok []const u8

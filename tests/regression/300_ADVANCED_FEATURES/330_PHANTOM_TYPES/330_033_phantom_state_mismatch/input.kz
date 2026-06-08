@@ -1,5 +1,5 @@
-import app/lib/fs
-import app/lib/mipmap
+~import app/lib/fs
+~import app/lib/mipmap
 const std = @import("std");
 const File = struct {
     handle: i32,

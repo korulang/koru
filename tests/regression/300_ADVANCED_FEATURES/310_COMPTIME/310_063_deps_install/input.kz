@@ -10,7 +10,7 @@
 // Run: koruc input.kz deps install
 // Expected: "Installing 1 missing dependencies" (NOT "To install missing dependencies:")
 
-import std/deps
+~import std/deps
 
 // A dep that is definitely not installed, with no brew package defined.
 // This ensures: (1) it shows as missing, (2) no actual brew call is made,

@@ -9,7 +9,7 @@
 // as a regular effect-branch event (modulo the question of accepting
 // arbitrary iterables vs just slices).
 
-import std/io
+~import std/io
 
 const std = @import("std");
 

@@ -5,8 +5,8 @@
 // 2. Same event can have multiple aliases with different costs
 // 3. Original event name is NOT exposed (alias replaces)
 
-import std/runtime
-import std/io
+~import std/runtime
+~import std/io
 
 const std = @import("std");
 

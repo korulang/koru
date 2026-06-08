@@ -3,7 +3,7 @@
 // Pattern ~tap(* -> file.write) observes ALL sources calling file.write
 
 const std = @import("std");
-import std/taps
+~import std/taps
 
 ~event file.read {}
 

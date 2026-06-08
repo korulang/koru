@@ -2,9 +2,9 @@
 //
 // Override frontend pass to add timing using $std/time.
 
-import std/compiler
-import std/time
-import std/io
+~import std/compiler
+~import std/time
+~import std/io
 
 // ============================================================================
 // TIMED FRONTEND (using stdlib!)

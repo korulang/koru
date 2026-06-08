@@ -12,7 +12,7 @@
 
 ~[comptime]
 
-import std/compiler
+~import std/compiler
 
 // ============================================================
 // KERNEL OPTIMIZATION EVENT

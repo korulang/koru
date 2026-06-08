@@ -4,8 +4,8 @@
 
 const std = @import("std");
 
-import std/taps
-import std/io
+~import std/taps
+~import std/io
 
 // Local event to transition to (so tap can fire)
 ~event finish {}

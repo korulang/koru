@@ -5,8 +5,8 @@
 // - Scope composition: scope(other) includes another scope
 // - Compiler flags: [debug]event only included with --debug
 
-import std/runtime
-import std/io
+~import std/runtime
+~import std/io
 
 const std = @import("std");
 

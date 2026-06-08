@@ -1,9 +1,9 @@
 // Exploration: Striping pattern with TAP
 // The tap should be fused into process-entity at compile time
 
-import std/io
-import std/control
-import std/taps
+~import std/io
+~import std/control
+~import std/taps
 
 const std = @import("std");
 

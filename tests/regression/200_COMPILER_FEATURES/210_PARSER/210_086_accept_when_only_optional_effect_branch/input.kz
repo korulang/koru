@@ -15,7 +15,7 @@
 // pinning that the validator does NOT reject this shape.)
 // ============================================================================
 
-import std/io
+~import std/io
 
 ~pub event tokenize { source: []const u8 }
 ! token []const u8

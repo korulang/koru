@@ -3,6 +3,6 @@
 // flow". Regression for looksLikeZigCode flagging positional string args with
 // escape sequences (`print.ln("a\nb")`) — koruc rejected this with PARSE001
 // while `print(text: "a\nb")` (keyed) slipped past. Found via the playground.
-import std/io
+~import std/io
 
 ~std/io:print.ln("a\nb")

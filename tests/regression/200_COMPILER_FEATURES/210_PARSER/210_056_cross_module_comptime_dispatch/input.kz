@@ -13,7 +13,7 @@
 // Real-world reproducer: koru-libs/pq/examples/02_sql.kz
 //   ~[comptime|norun]pub event sql { conninfo: ..., source: Source }
 
-import app/comptime_lib
+~import app/comptime_lib
 
 ~[comptime] app/comptime_lib:setup(config: "test-config")
 | ok _ |> _

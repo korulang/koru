@@ -6,7 +6,7 @@
 // 3. Adding optional branches never breaks existing handlers
 // 4. Contrast: adding REQUIRED branches would break compilation (good!)
 
-import std/io
+~import std/io
 
 // VERSION 2: added ?debug branch (new in v2)
 // success is REQUIRED, warning/debug are OPTIONAL

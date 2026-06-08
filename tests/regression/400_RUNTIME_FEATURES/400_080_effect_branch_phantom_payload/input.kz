@@ -8,7 +8,7 @@
 // `!` payloads can carry phantom annotations and the lowering preserves
 // the pointer type cleanly.
 
-import std/io
+~import std/io
 
 const std = @import("std");
 

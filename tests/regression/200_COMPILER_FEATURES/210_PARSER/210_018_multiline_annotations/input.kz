@@ -3,7 +3,7 @@
 // This tests flow calls, event declarations, and proc definitions
 // ============================================================================
 
-import std/build
+~import std/build
 
 // Flow call with annotation on separate line
 ~[default]

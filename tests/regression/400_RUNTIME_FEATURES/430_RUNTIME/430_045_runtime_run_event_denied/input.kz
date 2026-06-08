@@ -1,7 +1,7 @@
 // Test: std/runtime:run returns event-denied for unregistered events
 
-import std/runtime
-import std/io
+~import std/runtime
+~import std/io
 
 ~pub event allowed {}
 

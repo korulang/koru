@@ -2,7 +2,7 @@
 //
 // EXPECTED: Compiler error — transaction obligation not discharged
 
-import app/db
+~import app/db
 
 ~app/db:open(connstr: "postgres://localhost/test")
 | connected c |> app/db:tx.begin(conn: c)

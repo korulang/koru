@@ -1,4 +1,4 @@
-import app/data
+~import app/data
 ~app/data:alloc()
 | allocated a |> app/data:validate(d: a)
     | validated v |> app/data:process(d: v)

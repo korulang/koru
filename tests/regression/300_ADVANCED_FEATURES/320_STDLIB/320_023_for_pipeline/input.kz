@@ -5,8 +5,8 @@
 //
 // This is different from top-level ~for which is the flow's main invocation.
 
-import std/io
-import std/control
+~import std/io
+~import std/control
 
 const std = @import("std");
 

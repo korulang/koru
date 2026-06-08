@@ -16,7 +16,7 @@
 // See `docs/UNITS_OF_MEASURE.md` "Implementation sketch" — literal-suffix
 // parsing is item (6) in the implementation plan.
 
-import std/io
+~import std/io
 
 ~event accept-celsius { c: f32<celsius> }
 | ok f32<celsius>

@@ -10,7 +10,7 @@
 
 const std = @import("std");
 
-import std/template
+~import std/template
 
 // Case 1: Semicolons
 ~std/template:define(with_semicolons) { const x = 42; return x; }

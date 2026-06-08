@@ -1,7 +1,7 @@
 // Test: Pattern branch syntax baseline
 // Just verify we can define and call an event that returns a struct payload
 
-import std/io
+~import std/io
 
 const std = @import("std");
 

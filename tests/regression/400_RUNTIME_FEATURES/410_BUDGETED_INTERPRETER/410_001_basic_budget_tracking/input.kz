@@ -2,8 +2,8 @@
 // Events have costs, budget is deducted on each call
 // Response includes used budget
 
-import std/runtime
-import std/io
+~import std/runtime
+~import std/io
 
 const std = @import("std");
 

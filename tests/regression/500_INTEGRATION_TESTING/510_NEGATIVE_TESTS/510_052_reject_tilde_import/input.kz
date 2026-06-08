@@ -1,3 +1,3 @@
-// NEGATIVE: `~import` is the old host-switch form. An import is always Koru,
-// never host, so it must be bare: `import std/io`. `~import` is rejected.
-~import std/io
+// NEGATIVE: bare `import` in a `.kz` file violates the host/Koru boundary.
+// Every Koru construct must lead with `~`. Write `~import std/io`.
+import std/io

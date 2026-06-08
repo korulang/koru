@@ -16,35 +16,6 @@ These are the receipts for the `koru-templates` skill — passing tests shown as
 
 ## CONTROL FLOW
 
-### 320_050_expand_basic
-
-```koru
-// Test: [expand] annotation for template-based code generation
-// This tests the simplest case: an event with [expand] that uses a template
-// to generate inline Zig code without needing a proc.
-
-import std/template
-
-// Define template in user-land using the imported define event
-~std/template:define(name: "debug_print") {
-    @import("std").debug.print("value: {d}\n", .{ {{ value }} });
-}
-
-// Event with [norun|expand] - implementation comes from template
-// [norun] = not emitted anywhere
-// [expand] = processed by transform_pass_runner via template lookup
-~[norun|expand]pub event debug-print { value: Expression }
-
-// Use it - note the ~ prefix to make it a Koru flow!
-~debug-print(value: 42)
-```
-
-**Output:**
-
-```
-value: 42
-```
-
 ### 320_051_expand_stdlib_wrap
 
 ```koru
@@ -57,7 +28,7 @@ value: 42
 //
 // Result: Zero-cost, type-safe stdlib wrappers with clean Koru syntax.
 
-import std/template
+~import std/template
 
 const std = @import("std");
 
@@ -117,8 +88,8 @@ PASS: array sorted correctly
 //
 // This enables [expand] to handle branching constructs without full [transform] procs.
 
-import std/template
-import std/io
+~import std/template
+~import std/io
 
 const std = @import("std");
 
@@ -149,5 +120,34 @@ var test_value: ?i32 = 42;
 ~maybe(expr: test_value)
 | some _ |> std/io:print.ln("Got a value!")
 | none |> std/io:print.ln("Got nothing")
+```
+
+### 320_056_expand_basic
+
+```koru
+// Test: [expand] annotation for template-based code generation
+// This tests the simplest case: an event with [expand] that uses a template
+// to generate inline Zig code without needing a proc.
+
+~import std/template
+
+// Define template in user-land using the imported define event
+~std/template:define(name: "debug_print") {
+    @import("std").debug.print("value: {d}\n", .{ {{ value }} });
+}
+
+// Event with [norun|expand] - implementation comes from template
+// [norun] = not emitted anywhere
+// [expand] = processed by transform_pass_runner via template lookup
+~[norun|expand]pub event debug-print { value: Expression }
+
+// Use it - note the ~ prefix to make it a Koru flow!
+~debug-print(value: 42)
+```
+
+**Output:**
+
+```
+value: 42
 ```
 

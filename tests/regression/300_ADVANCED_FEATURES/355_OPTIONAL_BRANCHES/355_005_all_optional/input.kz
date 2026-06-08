@@ -5,7 +5,7 @@
 // 2. Handler uses ONLY |? to catch everything
 // 3. Edge case: zero required branches + only catch-all
 
-import std/io
+~import std/io
 
 // Event with ONLY optional branches
 ~event process { value: u32 }

@@ -11,7 +11,7 @@
 //
 // The phantom type system MUST check base types.
 
-import app/db
+~import app/db
 
 // BUG: the `| ok t |> app/db:close(conn: t)` handler below passes t
 // (*Transaction) to close() which expects *Connection. Both have [active]

@@ -2,8 +2,8 @@
 // Tests the FULL pipeline: parse Koru flow string → execute → return result
 // Uses a realistic multi-step flow with continuations
 
-import std/runtime
-import std/interpreter
+~import std/runtime
+~import std/interpreter
 
 const std = @import("std");
 
@@ -56,7 +56,7 @@ const FLOW_SOURCE =
     \\| error e |> print_result(value: e.message)
 ;
 
-import std/io
+~import std/io
 
 // ============================================================================
 // Benchmark: Parse and execute the flow

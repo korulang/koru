@@ -1,7 +1,7 @@
 // Test: Interpreter Dataflow with Branch Constructor
 // Tests the interpreter returning structured data via branch constructors
 
-import std/runtime
+~import std/runtime
 
 
 const std = @import("std");

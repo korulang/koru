@@ -5,7 +5,7 @@
 //
 // This is "provide the implementation" pattern.
 
-import std/io
+~import std/io
 
 // Define abstract event with NO default implementation
 ~[abstract] event greet { name: []const u8 }

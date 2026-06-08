@@ -15,7 +15,7 @@
 
 ~[comptime]
 
-import std/compiler
+~import std/compiler
 
 const std = @import("std");
 

@@ -201,7 +201,7 @@ The answer is 42.
 // flow". Regression for looksLikeZigCode flagging positional string args with
 // escape sequences (`print.ln("a\nb")`) — koruc rejected this with PARSE001
 // while `print(text: "a\nb")` (keyed) slipped past. Found via the playground.
-import std/io
+~import std/io
 
 ~std/io:print.ln("a\nb")
 ```
@@ -244,7 +244,7 @@ Hello!
 // emission leaks `pub const my-event_event = struct` → invalid Zig. The real
 // Track-B work is the emit mangle, not parser acceptance.
 const std = @import("std");
-import std/io
+~import std/io
 
 ~event my-event {}
 ~proc my-event|zig {
@@ -268,7 +268,7 @@ kebab event ok
 // struct-scoped). RED today — `-` rejected in the field decl. Mirrors the
 // field-in-scope pattern of std/io:println (`text` field used directly).
 const std = @import("std");
-import std/io
+~import std/io
 
 ~event my-stuff { a_thing: []const u8 }
 ~proc my-stuff|zig {
@@ -295,7 +295,7 @@ field ok
 // corpus codemod (`.`→`/`) + eventually tightening `.` out of namespace position.
 // (Written as .kz — the harness discovers tests by input.kz; pure-`.k` entry
 // support was dropped with the const commit in the D5 rebase.)
-import std/io
+~import std/io
 
 ~std/io:print.ln("slash namespace ok")
 ```
@@ -314,7 +314,7 @@ slash namespace ok
 // REJECTED (KORU034) — use `-` (kebab) for word separation; `_` is reserved for
 // digit separators in numeric literals (rule G4). The "we won't accept both"
 // enforcement: the old snake form must fail loudly.
-import std/io
+~import std/io
 
 ~event foo_bar {}
 
@@ -324,8 +324,8 @@ import std/io
 ### 010_055_bare_import
 
 ```koru
-// PIN: bare import `import std/io` (no ~, no quotes) must resolve + run.
-import std/io
+// PIN: Koru import in `.kz` must use `~` — same host->Koru switch as flows.
+~import std/io
 
 ~std/io:print.ln("bare import ok")
 ```
@@ -343,7 +343,7 @@ bare import ok
 // transforms like print.ln). `std/io:print` must resolve to the same event as
 // `std/io:print` — the qualifier `/` is normalized to the internal `.` form
 // (parseQualifiedPath + canonicalize). Member access after `:` keeps `.`.
-import std/io
+~import std/io
 
 const msg: []const u8 = "slash ok";
 
@@ -363,7 +363,7 @@ slash ok
 // PIN: `.` is NOT a namespace separator — `/` is the sole separator (matching the
 // import string + filesystem). `.` is member access AFTER the `:` pivot. The old
 // `std.io:` form must fail loudly (KORU035). We won't accept both.
-import std/io
+~import std/io
 
 const msg: []const u8 = "should be rejected";
 
@@ -585,7 +585,7 @@ Void events work correctly
 // Test: Void pipeline sequence - multiple steps after void events
 // This tests that |> chains work correctly after void events like print.ln
 
-import std/io
+~import std/io
 
 // Simple work event
 ~event work {}
@@ -655,7 +655,7 @@ Value: 43
 // This test verifies the PARSER accepts the syntax.
 // The event is marked [norun] so no emission happens.
 
-import std/io
+~import std/io
 
 // Event with wildcard payload - parser should accept this
 ~[norun]event iterator-pattern {}
@@ -696,8 +696,8 @@ done
 // The ~ is a LEADER character that switches from host-language to Koru.
 // Inside a continuation pipeline, you're already IN Koru, so ~ is invalid.
 
-import std/io
-import std/control
+~import std/io
+~import std/control
 
 // This is WRONG - ~ should not appear inside flows
 ~capture(expr: { total: @as(i32, 0) })
@@ -721,7 +721,7 @@ error[PARSE001]: Nested flows (~) are not allowed inside continuations. Use a ba
 // Test: Pure subflow implementation (no proc needed)
 // From the README example - this is idiomatic Koru
 // This is the default authoring model for ordinary event behavior.
-import std/io
+~import std/io
 
 ~event greet { name: []const u8 }
 | greeting []const u8
@@ -1685,7 +1685,7 @@ const std = @import("std");
 // ============================================================================
 
 const std = @import("std");
-import std/io
+~import std/io
 
 // Simple events that add values
 ~event add-one { value: i32 }
@@ -1719,7 +1719,7 @@ import std/io
 // ============================================================================
 
 const std = @import("std");
-import std/io
+~import std/io
 
 ~event add-one { value: i32 }
 | done i32
@@ -1750,7 +1750,7 @@ import std/io
 ```koru
 // Depth 4 test: start |> +1 |> +2 |> +3 |> +4 → result (10+1+2+3+4 = 20)
 const std = @import("std");
-import std/io
+~import std/io
 
 ~event add-one { value: i32 }
 | done i32
@@ -1780,7 +1780,7 @@ import std/io
 ```koru
 // Depth 5 test: Maximum stress test (10+1+2+3+4+5 = 25)
 const std = @import("std");
-import std/io
+~import std/io
 
 ~event add-one { value: i32 }
 | done i32
@@ -1823,7 +1823,7 @@ import std/io
 // - Should expose ALL the bootstrap bugs at once!
 // ============================================================================
 
-import std/io
+~import std/io
 
 ~event validate { value: i32 }
 | ok i32
@@ -1893,7 +1893,7 @@ Success: 4
 
 const std = @import("std");
 
-import std/io
+~import std/io
 
 ~pub event process-file { path: []const u8 }
 | success []const u8
@@ -1937,7 +1937,7 @@ import std/io
 // The binding `name` is never referenced as a variable in the continuation
 // body — it only appears inside the string literal "no name given".
 
-import std/io
+~import std/io
 
 ~event greet { id: u32 }
 | ok []const u8
@@ -2204,7 +2204,7 @@ Accept
 // Previously: emitter would generate |name| capture even for empty payloads
 // Fixed: emitter now generates => { without capture for empty payloads
 
-import std/io
+~import std/io
 
 // Event with two branches, BOTH empty (no payload fields)
 ~event check-value { n: i32 }
@@ -2286,7 +2286,7 @@ const std = @import("std");
 //
 // This is a regression test to track when the bug is fixed.
 
-import app/mylib
+~import app/mylib
 
 // The loop uses an event from the imported module
 ~#loop app/mylib:tick()
@@ -2300,8 +2300,8 @@ import app/mylib
 // User code: taps tick from the counter library
 // The loop lives in counter.kz - this just observes it
 
-import std/taps
-import app/counter
+~import std/taps
+~import app/counter
 
 const std = @import("std");
 
@@ -2341,7 +2341,7 @@ tick 5
 // other languages" trap is re-introduced at parser.zig parseStep,
 // this test fails. That is the point.
 
-import std/io
+~import std/io
 
 // Lower-level event: arbitrary outcome names
 ~pub event step {}
@@ -2384,7 +2384,7 @@ Testing subflow-defined semantics:
 ```koru
 // Test identity branch syntax: | branch Type instead of | branch { field: Type }
 // MUST_RUN: Verify identity values flow correctly at runtime
-import std/io
+~import std/io
 
 ~pub event get-number {}
 | value i32
@@ -2422,7 +2422,7 @@ Hello from identity branch!
 //
 // Syntax: ok expr (branch with single value)
 
-import std/io
+~import std/io
 
 // Event with value branch
 ~pub event value-result {}
@@ -2455,7 +2455,7 @@ Testing value braceless:
 //
 // This complements 100_052 which tests subflow syntax.
 
-import std/io
+~import std/io
 
 // Source event
 ~pub event compute { x: i32 }
@@ -2511,7 +2511,7 @@ Testing braceless in continuation:
 
 const std = @import("std");
 
-import std/template
+~import std/template
 
 // Case 1: Semicolons
 ~std/template:define(with_semicolons) { const x = 42; return x; }
@@ -2559,34 +2559,6 @@ pub fn main() void {
 
 ## SYNTAX / STRUCT CONSTRUCTORS
 
-### 210_020_field_punning
-
-```koru
-// Test 210_020: Struct Field Punning
-// When field value matches field name, allow shorthand: { x, y } instead of { x: x, y: y }
-//
-// This is the "punning" pattern common in many languages.
-// The emitter should expand { c.ast, c.code } to { ast: c.ast, code: c.code }
-
-import std/io
-
-~event data { x: i32, y: i32 }
-| result { x: i32, y: i32 }
-
-// Explicit field names (always works)
-~data => result { x, y }
-
-// Test it
-~data(x: 10, y: 20)
-| result _ |> std/io:print.ln("explicit works")
-```
-
-**Output:**
-
-```
-explicit works
-```
-
 ### 210_021_field_punning_shorthand
 
 ```koru
@@ -2595,7 +2567,7 @@ explicit works
 //
 // Syntax: { p.x, p.y } should expand to { x: p.x, y: p.y }
 
-import std/io
+~import std/io
 
 pub const Point = struct { x: i32, y: i32 };
 
@@ -2622,5 +2594,33 @@ pub const Point = struct { x: i32, y: i32 };
 
 ```
 punning works: x=10, y=20
+```
+
+### 210_025_field_punning
+
+```koru
+// Test 210_020: Struct Field Punning
+// When field value matches field name, allow shorthand: { x, y } instead of { x: x, y: y }
+//
+// This is the "punning" pattern common in many languages.
+// The emitter should expand { c.ast, c.code } to { ast: c.ast, code: c.code }
+
+~import std/io
+
+~event data { x: i32, y: i32 }
+| result { x: i32, y: i32 }
+
+// Explicit field names (always works)
+~data => result { x, y }
+
+// Test it
+~data(x: 10, y: 20)
+| result _ |> std/io:print.ln("explicit works")
+```
+
+**Output:**
+
+```
+explicit works
 ```
 

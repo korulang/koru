@@ -2,8 +2,8 @@
 //
 // Verifies that ~std/runtime:register generates a dispatcher function
 
-import std/runtime
-import std/io
+~import std/runtime
+~import std/io
 
 const std = @import("std");
 

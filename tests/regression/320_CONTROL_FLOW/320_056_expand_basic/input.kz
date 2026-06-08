@@ -2,7 +2,7 @@
 // This tests the simplest case: an event with [expand] that uses a template
 // to generate inline Zig code without needing a proc.
 
-import std/template
+~import std/template
 
 // Define template in user-land using the imported define event
 ~std/template:define(name: "debug_print") {

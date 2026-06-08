@@ -15,7 +15,7 @@
 // Koru phantom checker passes (both have [active] state)
 // Zig type checker fails (Transaction != Connection)
 
-import app/db
+~import app/db
 
 // BUG: the `| ok t |> app/db:close(conn: t)` handler below passes t
 // (*Transaction) to close() which expects *Connection. Koru won't catch

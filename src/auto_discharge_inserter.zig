@@ -4,8 +4,14 @@ const log = @import("log");
 // This pass runs BEFORE phantom_semantic_checker. It:
 // 1. Tracks binding contexts and their phantom obligations
 // 2. At flow terminators, checks for unsatisfied obligations
-// 3. For exactly 1 disposal option: inserts the call
+// 3. For exactly 1 auto-insertable disposal option: inserts the call
 // 4. For 0 or >1 options: produces an error
+//
+// Auto-INSERT (not error hints) is constrained by what the pass can supply at
+// scope exit: the obligation binding for the matching parameter. Any other
+// **user-required** input (e.g. tx.exec's `sql`) has no value here and makes
+// the event non-insertable. Optional parameters (?T) and future defaults may
+// widen insert eligibility; see eventCanBeAutoInserted.
 //
 // The checker then validates normally (acts as safety net).
 
@@ -1772,9 +1778,7 @@ pub const AutoDischargeInserter = struct {
         while (iter.next()) |entry| {
             const event_decl = entry.value_ptr.decl;
 
-            // Skip events with multiple branches unless explicitly included
-            // Events with 0 branches (void) or 1 branch (single outcome) can be auto-discharged
-            // Events with multiple branches require manual handling but can still be suggested
+            // Skip events with multiple branches unless explicitly included (error suggestions).
             if (!include_multi_branch and event_decl.branches.len > 1) continue;
 
             const is_default = eventHasDefaultAnnotation(event_decl);
@@ -1802,6 +1806,9 @@ pub const AutoDischargeInserter = struct {
                                 defer self.allocator.free(consumer_state);
 
                                 if (std.mem.eql(u8, consumer_state, base_state)) {
+                                    if (!include_multi_branch and !eventCanBeAutoInserted(event_decl, field.name)) {
+                                        continue;
+                                    }
                                     try results.append(self.allocator, .{
                                         .qualified_name = try self.allocator.dupe(u8, entry.key_ptr.*),
                                         .event_decl = event_decl,
@@ -1823,6 +1830,9 @@ pub const AutoDischargeInserter = struct {
                                 defer self.allocator.free(consumer_state);
 
                                 if (std.mem.eql(u8, consumer_state, base_state)) {
+                                    if (!include_multi_branch and !eventCanBeAutoInserted(event_decl, field.name)) {
+                                        break;
+                                    }
                                     try results.append(self.allocator, .{
                                         .qualified_name = try self.allocator.dupe(u8, entry.key_ptr.*),
                                         .event_decl = event_decl,
@@ -1839,6 +1849,25 @@ pub const AutoDischargeInserter = struct {
         }
 
         return results.toOwnedSlice(self.allocator);
+    }
+
+    /// Auto-insert at scope exit can fill the obligation parameter from the binding.
+    /// Every other input must be auto-fillable without user authorship — not
+    /// "exactly one field", but "no user-required fields we don't have a value for".
+    fn eventCanBeAutoInserted(event_decl: *const ast.EventDecl, obligation_field_name: []const u8) bool {
+        for (event_decl.input.fields) |input_field| {
+            if (std.mem.eql(u8, input_field.name, obligation_field_name)) continue;
+            if (!inputFieldAutoFillableAtScopeExit(input_field)) return false;
+        }
+        return true;
+    }
+
+    /// Parameters the inserter may omit or synthesize without user input.
+    fn inputFieldAutoFillableAtScopeExit(field: ast.Field) bool {
+        // Optional event inputs (?T) need no call-site value.
+        if (field.type.len > 0 and field.type[0] == '?') return true;
+        // TODO: event-input defaults when the surface supports them on shapes
+        return false;
     }
 
     /// Find all events that can dispose a given phantom state (auto-dischargeable only)

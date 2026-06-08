@@ -16,7 +16,7 @@
 // `emitter(...)` call is emitted without its Handlers — producing a
 // signature mismatch and a backend compile error.
 
-import std/io
+~import std/io
 
 ~pub event setup { }
 

@@ -11,8 +11,8 @@
 //     vx[i] += force * dx,  vy[i] += force * dy   (body i)
 //     vx[j] -= force * dx,  vy[j] -= force * dy   (body j, symmetric)
 
-import std/kernel
-import std/io
+~import std/kernel
+~import std/io
 
 // Body shape: position, velocity, mass
 ~std/kernel:shape(Body) {

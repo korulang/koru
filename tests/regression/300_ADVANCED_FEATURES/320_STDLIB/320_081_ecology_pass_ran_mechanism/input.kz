@@ -9,8 +9,8 @@
 // 2. Nested transforms don't infinite loop
 // 3. The mechanism works for user-defined transforms too
 
-import std/control
-import std/io
+~import std/control
+~import std/io
 
 // Use nested control flow - each should only transform ONCE
 ~for(0..2)

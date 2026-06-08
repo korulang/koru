@@ -9,7 +9,7 @@
 // safely from tap handlers without creating infinite loops.
 
 const std = @import("std");
-import std/taps
+~import std/taps
 
 // Public event - will be tapped
 ~event hello {}

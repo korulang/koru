@@ -20,8 +20,8 @@
 //   koruc main.kz deps install   # Install missing deps (auto-detects package manager)
 //   koruc main.kz deps install --pm brew   # Force specific package manager
 
-import std/compiler
-import std/build
+~import std/compiler
+~import std/build
 
 ~[comptime]
 

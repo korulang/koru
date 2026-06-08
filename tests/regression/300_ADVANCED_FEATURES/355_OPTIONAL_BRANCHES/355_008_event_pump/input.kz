@@ -6,7 +6,7 @@
 // 3. |? catches unhandled events, loop continues
 // 4. THE motivating use case: wrapping WIN32/SDL/etc event systems
 
-import std/io
+~import std/io
 
 const std = @import("std");
 

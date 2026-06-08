@@ -1,6 +1,6 @@
 // Test: print.ln.blk with {% if %} conditionals
 
-import std/io
+~import std/io
 
 const debug = true;
 const total: i32 = 100;

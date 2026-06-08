@@ -4,7 +4,7 @@
 //
 // Expected: Compiles with both type parameters substituted
 
-import std/types
+~import std/types
 
 const std = @import("std");
 

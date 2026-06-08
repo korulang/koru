@@ -1,6 +1,6 @@
 // Test when clauses - conditional tap execution
 const std = @import("std");
-import std/taps
+~import std/taps
 
 ~event process { value: usize }
 |> alert(result: d)

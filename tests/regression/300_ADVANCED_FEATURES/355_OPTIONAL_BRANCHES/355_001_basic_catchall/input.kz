@@ -5,7 +5,7 @@
 // 2. |? catches optional branches generically
 // 3. Required branches handled explicitly as usual
 
-import std/io
+~import std/io
 
 // Event with both required and optional branches
 // success is REQUIRED - must be handled

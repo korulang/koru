@@ -1,6 +1,6 @@
 // Test: Basic args access
-import std/args
-import std/io
+~import std/args
+~import std/io
 
 // Get argument count
 ~std/args:count()

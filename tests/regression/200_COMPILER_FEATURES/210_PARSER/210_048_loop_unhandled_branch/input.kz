@@ -3,7 +3,7 @@
 // Tests that taps work correctly with labeled loops.
 
 const std = @import("std");
-import std/taps
+~import std/taps
 
 ~event counter { n: i32 }
 | next i32

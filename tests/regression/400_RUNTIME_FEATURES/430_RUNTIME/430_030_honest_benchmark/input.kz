@@ -2,9 +2,9 @@
 // Tests FULL interpreter: parse Koru source string -> execute
 // This is what Orisha will do: receive Koru over HTTP, parse it, run it
 
-import std/runtime
-import std/interpreter
-import std/io
+~import std/runtime
+~import std/interpreter
+~import std/io
 
 const std = @import("std");
 

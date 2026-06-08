@@ -15,8 +15,8 @@
 //
 // This test uses post.sh to verify the generated code pattern.
 
-import std/io
-import std/control
+~import std/io
+~import std/control
 
 const std = @import("std");
 

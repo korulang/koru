@@ -1,5 +1,5 @@
-import std/control
-import app/fs
+~import std/control
+~import app/fs
 const condition = true;
 ~app/fs:open(path: "test.txt")
 | opened _ |> std/control:if(condition)

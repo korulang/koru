@@ -3,7 +3,7 @@
 // emission leaks `pub const my-event_event = struct` → invalid Zig. The real
 // Track-B work is the emit mangle, not parser acceptance.
 const std = @import("std");
-import std/io
+~import std/io
 
 ~event my-event {}
 ~proc my-event|zig {

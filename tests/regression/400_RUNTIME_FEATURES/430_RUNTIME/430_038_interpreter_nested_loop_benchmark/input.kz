@@ -5,9 +5,9 @@
 //
 // Same syntax as compiled Koru. Same parser. Just interpreted.
 
-import std/runtime
-import std/interpreter
-import std/io
+~import std/runtime
+~import std/interpreter
+~import std/io
 
 const std = @import("std");
 

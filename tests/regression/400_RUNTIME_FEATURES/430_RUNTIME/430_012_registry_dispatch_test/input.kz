@@ -1,7 +1,7 @@
 // Test: Runtime Registry Dispatch
 // Minimal test to verify the generated dispatcher works
 
-import std/runtime
+~import std/runtime
 
 const std = @import("std");
 

@@ -5,7 +5,7 @@
 //
 // Both have [active] state, but base types differ!
 
-import app/db
+~import app/db
 
 // BUG: the `| ok c |> app/db:commit(tx: c)` handler below passes c
 // (*Connection) to commit() which expects *Transaction.

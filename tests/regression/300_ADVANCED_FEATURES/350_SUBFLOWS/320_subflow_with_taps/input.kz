@@ -4,7 +4,7 @@
 // Verifies: inline tap emission works for subflow continuations
 // ============================================================================
 
-import std/taps
+~import std/taps
 
 const std = @import("std");
 

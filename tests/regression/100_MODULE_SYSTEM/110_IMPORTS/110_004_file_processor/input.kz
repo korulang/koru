@@ -9,7 +9,7 @@ const std = @import("std");
 // - file.kz (read, write events)
 // - parse.kz (lines event)
 // - transform.kz (uppercase event)
-import app/lib/io
+~import app/lib/io
 
 // The full pipeline using directory imports
 ~app/lib/io/file:read(path: "input.txt")

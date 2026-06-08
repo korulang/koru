@@ -12,7 +12,7 @@
 // The honest behavior: detect the negative depth and report the real cause —
 // an unbalanced closing bracket — at the earliest layer (maximalist parser).
 
-import std/io
+~import std/io
 
 ~pub event probe {}
 | got { a: i32], b: u8 }

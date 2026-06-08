@@ -3,8 +3,8 @@
 // BULLETPROOF: Real work that can't be optimized away
 // ZERO atomic operations. Just pointer passing.
 
-import std/control
-import std/build
+~import std/control
+~import std/build
 
 // Link libc for c_allocator
 ~std/build:requires { exe.linkLibC(); }

@@ -9,8 +9,8 @@
 //           generation, branch name escaping, parameter extraction
 // ============================================================================
 
-import orisha
-import std/io
+~import orisha
+~import std/io
 
 const std = @import("std");
 

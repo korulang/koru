@@ -1,7 +1,7 @@
 // Template engine: `{% if %}` control block in a |template| body.
 // `flag` is a provided arg; non-empty captured text -> truthy -> guarded block
 // emits. Anchors the cluster.
-import std/io
+~import std/io
 
 ~pub event maybe { flag: usize }
 

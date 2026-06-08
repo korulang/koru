@@ -1,4 +1,4 @@
-import std/io
+~import std/io
 const std = @import("std");
 const File = struct { handle: i32 };
 ~event open { path: []const u8 }

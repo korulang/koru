@@ -15,8 +15,8 @@
 // range→JS lowering (`0..N` → a counting loop or `Array.from`/generator), a
 // target-aware transform of the iterable expression that does not exist yet.
 // That is the whole of what's left; the for-body + effect-splice lowering is done.
-import std/control
-import std/io
+~import std/control
+~import std/io
 
 ~for(0..3)
 ! each _ |> std/io:print(text: "tick\n")

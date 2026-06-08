@@ -2,8 +2,8 @@
 //
 // Tests importing a sibling .kz file and verifying the result actually runs.
 
-import std/io
-import app/helper
+~import std/io
+~import app/helper
 
 ~app/helper:greet(name: "World")
 | greeted g |> std/io:print.ln("{{ g:s }}")

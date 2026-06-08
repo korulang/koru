@@ -9,10 +9,10 @@
 //     mymod/
 //       sub.kz        → sub-hello event
 
-import std/compiler
+~import std/compiler
 
 // Only import the submodule - parent should come automatically
-import testlib/mymod/sub
+~import testlib/mymod/sub
 
 // Use event from submodule (explicitly imported)
 ~testlib/mymod/sub:sub-hello()

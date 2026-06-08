@@ -1,6 +1,6 @@
 // TEST: branch constructors are rejected inside kernel scope
 
-import std/kernel
+~import std/kernel
 
 ~std/kernel:shape(Body) {
     mass: f64,

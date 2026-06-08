@@ -3,7 +3,7 @@
 // Events with ~[pure] procs can be called in tests without mocking.
 // Only impure events (side effects) need mocks.
 
-import std/testing
+~import std/testing
 
 // Pure computation - no side effects
 ~event add-numbers { a: u32, b: u32 }

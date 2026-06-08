@@ -16,7 +16,7 @@
 //   tap.continuations[1] = { branch: "done", ... }  // WRONG - should be nested!
 
 const std = @import("std");
-import std/taps
+~import std/taps
 
 ~event log { data: ?[]const u8 }
 

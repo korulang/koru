@@ -13,9 +13,9 @@
 
 ~[comptime]
 
-import std/compiler
-import std/optimizations/kernels
-import std/optimizations/loops
+~import std/compiler
+~import std/optimizations/kernels
+~import std/optimizations/loops
 
 // Optimization segment: AST transformations for performance (abstract, can be overridden)
 // This is where we create IR nodes (NativeLoop, etc.)

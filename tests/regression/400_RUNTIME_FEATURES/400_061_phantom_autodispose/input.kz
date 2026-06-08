@@ -3,7 +3,7 @@
 // Tests that the compiler automatically inserts cleanup
 // when [allocated!] obligation is not manually discharged
 
-import std/io
+~import std/io
 
 const std = @import("std");
 

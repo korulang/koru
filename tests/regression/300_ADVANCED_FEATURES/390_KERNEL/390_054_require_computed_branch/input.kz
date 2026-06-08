@@ -11,7 +11,7 @@
 // Future: nested/inner kernels may relax this requirement once we understand
 // the GPU/CPU segmentation tradeoffs. For now, computed is required.
 
-import std/kernel
+~import std/kernel
 
 ~std/kernel:shape(Body) {
     mass: f64,

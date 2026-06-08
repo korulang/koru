@@ -5,7 +5,7 @@
 // proc body and the mocked branch value propagates through
 // the binding.
 
-import std/testing
+~import std/testing
 
 ~event fetch-user { id: u32 }
 | found []const u8

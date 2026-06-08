@@ -9,8 +9,8 @@
 //   === AST DUMP: post-analysis ===
 //   { ... JSON AST ... }
 
-import std/compiler
-import std/io
+~import std/compiler
+~import std/io
 
 // ============================================================================
 // DUMP AST AFTER FRONTEND

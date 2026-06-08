@@ -5,7 +5,7 @@
 //
 // Expected: Compilation error - type mismatch
 
-import std/types
+~import std/types
 
 ~string(EmailAddress)
 ~string(UserName)

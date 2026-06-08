@@ -15,8 +15,8 @@
 //   5. The whole thing compiles as a nested catch-all in router
 // ============================================================================
 
-import orisha
-import std/io
+~import orisha
+~import std/io
 
 ~orisha:static(name: "site", root: "testdata")
 

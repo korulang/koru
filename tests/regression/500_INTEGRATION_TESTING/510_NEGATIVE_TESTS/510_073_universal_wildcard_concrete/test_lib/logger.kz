@@ -1,7 +1,7 @@
 // Logger for wildcard tap test
 
 const std = @import("std");
-import std/taps
+~import std/taps
 
 ~pub event log { msg: []const u8 }
 

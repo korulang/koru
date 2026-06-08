@@ -9,7 +9,7 @@
 // Other phantom tests still use the legacy `[...]` form (parser accepts both
 // during transition).
 
-import std/io
+~import std/io
 
 ~event read-temp { sensor_id: u8 }
 | reading f32<celsius>

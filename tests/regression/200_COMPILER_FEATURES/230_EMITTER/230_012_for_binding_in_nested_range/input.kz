@@ -7,7 +7,7 @@
 
 const std = @import("std");
 
-import std/control
+~import std/control
 
 ~event print-pair { i: usize, j: usize }
 

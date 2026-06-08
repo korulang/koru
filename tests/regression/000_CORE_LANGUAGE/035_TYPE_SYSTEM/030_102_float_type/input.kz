@@ -5,7 +5,7 @@
 //
 // Expected: Compiles and runs, Temperature is usable as a float
 
-import std/types
+~import std/types
 
 const std = @import("std");
 

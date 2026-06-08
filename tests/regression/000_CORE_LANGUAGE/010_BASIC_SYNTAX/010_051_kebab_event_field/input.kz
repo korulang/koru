@@ -3,7 +3,7 @@
 // struct-scoped). RED today — `-` rejected in the field decl. Mirrors the
 // field-in-scope pattern of std/io:println (`text` field used directly).
 const std = @import("std");
-import std/io
+~import std/io
 
 ~event my-stuff { a_thing: []const u8 }
 ~proc my-stuff|zig {

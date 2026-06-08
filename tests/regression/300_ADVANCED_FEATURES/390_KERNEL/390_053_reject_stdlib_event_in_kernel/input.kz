@@ -1,7 +1,7 @@
 // TEST: aspirational - arbitrary stdlib events should be rejected inside kernel scope
 
-import std/kernel
-import std/io
+~import std/kernel
+~import std/io
 
 ~std/kernel:shape(Body) {
     mass: f64,

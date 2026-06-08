@@ -4,7 +4,7 @@
 // When called with (value), expr is the value string.
 // When called without (), expr is null.
 
-import std/io
+~import std/io
 
 const std = @import("std");
 

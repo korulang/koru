@@ -1,4 +1,4 @@
-import app/fs
+~import app/fs
 
 // BAD: Opens file but doesn't document obligation in signature
 ~pub event bad-subflow {}

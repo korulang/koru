@@ -3,7 +3,7 @@
 // (`<!state>` on its payload) is incoherent — that promises "discharge exactly
 // once" via a branch that may fire zero or many times. Must be rejected at the
 // signature level (NOT a body check). If accepted, the invariant is unenforced.
-import std/build
+~import std/build
 ~std/build:requires { exe.linkLibC(); }
 const std = @import("std");
 const Resource = struct { id: usize };

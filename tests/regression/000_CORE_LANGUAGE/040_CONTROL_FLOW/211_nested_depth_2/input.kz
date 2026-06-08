@@ -8,7 +8,7 @@
 // ============================================================================
 
 const std = @import("std");
-import std/io
+~import std/io
 
 // Simple events that add values
 ~event add-one { value: i32 }

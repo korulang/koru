@@ -18,7 +18,7 @@
 // ============================================================================
 
 const std = @import("std");
-import $std/threading
+~import $std/threading
 
 // ============================================================================
 // MPMC Ring Implementation (same as test 2005)

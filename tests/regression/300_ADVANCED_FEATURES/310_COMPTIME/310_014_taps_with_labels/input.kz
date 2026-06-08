@@ -6,7 +6,7 @@
 // Actual: Tap invocation is missing, so no output is produced
 
 const std = @import("std");
-import std/taps
+~import std/taps
 
 ~event counter { n: i32 }
 | next i32

@@ -1,4 +1,4 @@
-import app/db
+~import app/db
 const std = @import("std");
 ~app/db:connect(host: "localhost")
 | connected _ |> app/db:begin(_.conn)

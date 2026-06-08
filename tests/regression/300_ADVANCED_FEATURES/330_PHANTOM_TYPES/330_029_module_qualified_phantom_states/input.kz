@@ -1,5 +1,5 @@
-import std/io
-import app/fileops
+~import std/io
+~import app/fileops
 const std = @import("std");
 const File = struct {
     handle: i32,

@@ -8,7 +8,7 @@
 // - Nested continuations ✅ (this test)
 
 const std = @import("std");
-import std/taps
+~import std/taps
 
 ~event helper {}
 
