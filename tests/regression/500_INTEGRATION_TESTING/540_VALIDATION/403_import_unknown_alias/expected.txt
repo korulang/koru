@@ -1,7 +1,7 @@
 error[PARSE003]: unknown import alias: 'unknown'
   --> tests/regression/500_INTEGRATION_TESTING/540_VALIDATION/403_import_unknown_alias/input.kz:7:1
     |
-  7 | import unknown/module
+  7 | ~import unknown/module
     | ^
   hint: define alias in koru.json paths, e.g. "paths": { "unknown": "./path" }
 
