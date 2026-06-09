@@ -1,0 +1,389 @@
+{
+  "summary": "Transparency float — point context-light contestants at a REAL foreign repo and have each hunt for HEAD-CARRIED TRUST (an invariant the project relies on but nothing watches), returning INSTALLABLE WATCHERS (intent + faucet + gate) on our judge×fact rail, ranked into a commission queue. Not a bug list — a queue of new watchers to encode.",
+  "agentCount": 7,
+  "logs": [
+    "Float complete: 21 watcher candidates across 6 contestants"
+  ],
+  "result": {
+    "target": "/Users/larsde/src/koru",
+    "candidate_count": 21,
+    "synthesis": {
+      "synthesis": "## The strongest signal: four lenses converge on ONE registry — `src/errors.zig`\n\nThe most-corroborated invariant in the whole sweep is **the ErrorCode enum at `src/errors.zig:3-86` is the single source of truth for diagnostic codes, and nothing keeps the things that reference it honest.** Four independent lenses walked in from four different doors and all landed on this same file:\n\n- **two_source_drift.1** — a code is *emitted* (`error[KORU200]`) that isn't *declared* in the enum. Verified live: `src/main.zig:3604` prints `error[KORU200]: Ambiguous module structure` and returns `error.ModuleNotFound` with a `// TODO: Add proper AmbiguousModule error` — KORU200 is absent from the enum (it stops at KORU121).\n- **unenforced_convention.1** — codes *declared* in the enum that are *never emitted*. Verified live: exactly 11 dead codes — KORU031, KORU042, KORU043, KORU052, KORU060, KORU061, KORU070, KORU082, KORU090, KORU091, PARSE002 all have `emit_sites=0` (vs KORU030 with 36, KORU034 with 1). KORU061 \"Subflow recursion detected\" is named in CLAUDE.md as real semantics yet fires nowhere.\n- **two_source_drift.4 / unenforced_convention.3 / dangerous_change_shape.3** — codes *pinned by tests* (`CONTAINS error[KORUxxx]`, expected.txt) that could orphan against the enum. Clean control today (all referenced codes resolve), but the trap is one rename away.\n\nThat is the dictionary problem from three sides at once: **emit→enum (KORU200 lives outside the dictionary), enum→emit (11 words in the dictionary nobody speaks), test→enum (pins that could rot).** A single FACT scan that materializes three sets — `EMITTED` (raw `error[CODE]` literals + `.CODE` enum uses), `DECLARED` (enum members), `PINNED` (test references) — and diffs them pairwise covers all four lenses with one mechanical engine. This is the buy.\n\n## The second tier: two clean fact×intent watchers with a real anchor AND a real control\n\n- **two_source_drift.3 — the version is four numbers.** Verified live: `src/main.zig:36`=0.1.7, `koru.json:3`=0.1.4, CHANGELOG newest=`[0.1.3]`, `src/project_template.zig:93/108`=0.1.0, with the zon `0.0.0` correctly a package-dedup placeholder to whitelist. CHANGELOG.md:87's own \"now kept in sync\" note is the receipt that this drifted before. Pure set-difference, deterministic, fires NOW.\n- **silent_invariant.1 — canonicalize's post-condition has no enforcement and a silent consumer.** Verified live: `src/canonicalize_names.zig:11` documents \"After this pass, ALL DottedPaths have a module_qualifier set\"; the walker is a hand-maintained switch; `src/continuation_codegen.zig:31` is `if (invocation.path.module_qualifier) |mq| {...}` — when null, the *entire* module-prefix block is skipped and a bare unqualified symbol is emitted. This is the textbook trust→sight trap: a docstring invariant + a silent `orelse` consumer + no exhaustiveness check. It fires on a *future* commit (new path-bearing AST variant), so it's a true watcher, not a today-linter.\n\n## The third tier: real but lower leverage\n\n- **unenforced_convention.2 — orphaned expected.txt.** Verified: 9 dirs have expected.txt with no MUST_RUN/EXPECT. All 9 are FAILURE today, so the SUCCESS-without-FAILURE gate correctly holds fire — it's latent, flips to a false-green alarm the instant one compiles. Good watcher, but it guards the test harness rather than the product.\n- **two_source_drift.2 / rules_aware.1 — README doesn't compile.** Verified: `/tmp/readme_block.kz` → `error[PARSE003]: imports are bare — drop the ~`. Real, high-severity, front-door. **One wrinkle I confirmed that the candidates understate: koruc exits 0 even on PARSE003** — so the faucet MUST grep stderr for `error[`, never trust exit code. Slightly lower than the registry because it's a single block and the fix is \"rewrite the README,\" not a recurring invariant.\n- **unenforced_convention.4 — fix-without-test.** Verified: b203f6cb (`fix(codegen)`) touches only src/codegen_utils.zig, zero tests/; control d87beceb lands with its test. Clean anchor+control, but it's a process-discipline watcher (git-archaeology), weaker payoff than a product invariant.\n\n## What I cut and why\n\n- **rules_aware.3 / rules_aware.4 (governance dangling refs / stale verification citations)** — low severity, and they fire on *documentation that was always aspirational* (SPEC.md/KORU.md never existed). That's closer to \"this doc was never true\" than \"trust silently broke.\" Cut as low-payoff.\n- **silent_invariant.2 (empty segments) / silent_invariant.3 (is_impl snapshot) / reachable_bad_state.3 (undefined AST var)** — all \"med/low or med/med, not currently broken, dataflow-hard to build.\" Real traps but the FACT scan (whole-function dominator/dataflow analysis) is expensive and noisy, and there's no current violation to anchor on. Deprioritized, not killed — they're the right shape, wrong cost/benefit for first commission.\n- **dangerous_change_shape.2 (dual mangler divergence)** — clever, but \"structurally compare two predicate bodies\" is the hardest FACT to build reliably and has no current divergence to anchor. Park it.\n- **reachable_bad_state.1 (unsigned depth underflow)** — genuinely good (high/high, real fixed bug at b203f6cb), but it's a guard-presence linter over depth counters; it overlaps the fix-without-test idea and is more of a Zig-idiom lint than a head-carried-trust watcher. Keep in queue, below the registry.\n\nI did NOT re-verify reachable_bad_state.1's guard-counting or dangerous_change_shape.1's diagnostic-pin scan against the tree (read the grounding, didn't run the scans) — ranking them on the candidates' own evidence plus the registry corroboration they share.",
+      "commission_queue": [
+        {
+          "rank": 1,
+          "title": "Diagnostic-code registry coherence: emit ⊆ declared, declared ⊆ emitted, pinned ⊆ declared",
+          "intent": "Keep src/errors.zig the honest single source of truth for diagnostics: no code emitted that isn't declared, no code declared that's never emitted (a lie that claims the compiler catches something it doesn't), no test pinned to a code that can't fire.",
+          "faucet": "FACT (three sets, one scan): EMITTED = raw `error\\[([A-Z]+[0-9]+)\\]` string literals across src/ PLUS `.KORU###`/`.PARSE###`/etc enum-tag uses; DECLARED = enum members parsed from the `pub const ErrorCode = enum` block in src/errors.zig; PINNED = codes referenced in tests/**/{EXPECT,expected*.txt}. Emit the three set-differences: EMITTED\\DECLARED (orphan emits), DECLARED\\EMITTED (dead codes), PINNED\\DECLARED (rotten pins). INTENT (only to gate the dead-code arm): axis code_is_aspirational: +1 a newly-added enum member is marked reserved/aspirational with a comment, -1 a code is added or left with zero emit sites under no such marker.",
+          "gate": "Two arms. Pure-FACT arm (no judge): fire if EMITTED\\DECLARED >= 1 OR PINNED\\DECLARED >= 1 — a closed-registry set difference, deterministic. Dead-code arm: fire = FACT(DECLARED\\EMITTED introduced/grows by this diff) × INTENT(code_is_aspirational <= -0.5) × gain >= floor, so a benign reserved-code addition stays silent.",
+          "fires_on": "TODAY: EMITTED\\DECLARED = {KORU200} (src/main.zig:3604, verified absent from enum at src/errors.zig:3-86). DECLARED\\EMITTED = {KORU031,KORU042,KORU043,KORU052,KORU060,KORU061,KORU070,KORU082,KORU090,KORU091,PARSE002} — 11 codes with emit_sites=0, verified by grep. Also fires on a future rename like KORU044→KORU047 that leaves the 8 expected.txt pins dangling.",
+          "severity": "med",
+          "buildability": "high",
+          "corroborated_by": [
+            "two_source_drift.1",
+            "two_source_drift.4",
+            "unenforced_convention.1",
+            "unenforced_convention.3",
+            "dangerous_change_shape.3"
+          ]
+        },
+        {
+          "rank": 2,
+          "title": "Product version is one number across all five sites",
+          "intent": "A release has exactly one version; `koruc --version`, the manifest, the scaffolded-project templates, the CCP handshake, and the CHANGELOG must agree.",
+          "faucet": "FACT: collect version strings from src/main.zig `const version`, koru.json `.version`, the newest `## [X.Y.Z]` CHANGELOG header, and the hardcoded `\"version\": \"X.Y.Z\"` literals in ccp.zig + project_template.zig; whitelist build.zig.zon's `0.0.0` (documented Zig package-dedup placeholder). Returns the distinct release-version set and whether main.zig's version has a matching CHANGELOG header.",
+          "gate": "Pure FACT: fire = count(distinct non-placeholder versions) > 1 OR main.zig version has no `## [that-version]` CHANGELOG header. No judge.",
+          "fires_on": "TODAY: main.zig:36=0.1.7, koru.json:3=0.1.4, CHANGELOG newest=[0.1.3], project_template.zig:93/108=0.1.0 — four disagreeing values, no [0.1.7] header. CHANGELOG.md:87 is the receipt this already drifted once.",
+          "severity": "med",
+          "buildability": "high",
+          "corroborated_by": [
+            "two_source_drift.3"
+          ]
+        },
+        {
+          "rank": 3,
+          "title": "canonicalize post-condition: every DottedPath gets a module_qualifier, no silent null-skip downstream",
+          "intent": "The documented post-condition of canonicalize_names (every DottedPath has module_qualifier != null) must stay enforced as the AST grows, and consumers must assert it rather than silently papering over a null with `orelse`/`if(mq)`.",
+          "faucet": "FACT: AST-walk — enumerate every ast.Item/ast.Step variant that (transitively) holds a DottedPath field (grep ast.zig: `:\\s*\\??\\[?\\]?DottedPath` → ~15 fields), check each is reached by a canonicalizePath call in the src/canonicalize_names.zig walker; return count of uncovered path-bearing variants. INTENT axis path_coverage_complete: +1 a diff adding a path-bearing AST variant adds the matching walker call (or a justified skip), -1 it adds the variant with no walker edit; axis fallback_masks_invariant: +1 a downstream module_qualifier read asserts non-null, -1 it adds another silent `orelse`/`if(mq)`.",
+          "gate": "fire = FACT(uncovered path-bearing variants >= 1, i.e. a new variant added without a walker edit) × INTENT(path_coverage_complete <= -0.5) × gain >= floor. A benign walker rename/reorder keeps coverage at full → FACT=0 → silent.",
+          "fires_on": "FUTURE: a commit adding an ast.Item/ast.Step variant carrying a DottedPath without touching canonicalize_names.zig — the path keeps module_qualifier==null and continuation_codegen.zig:31 (`if (invocation.path.module_qualifier) |mq| {...}`, verified) silently emits a bare unqualified symbol, surfacing 3 steps later as a wrong-module/unknown-symbol error in generated Zig.",
+          "severity": "high",
+          "buildability": "high",
+          "corroborated_by": [
+            "silent_invariant.1"
+          ]
+        },
+        {
+          "rank": 4,
+          "title": "No orphaned expected.txt that degrades to a false-green compile-only test",
+          "intent": "A regression dir shipping expected.txt must carry a run/assert marker (MUST_RUN or EXPECT), or its expected output is never compared and the test silently passes the moment it compiles.",
+          "faucet": "FACT: walk tests/regression/**; flag dirs with expected.txt present, no MUST_RUN, no EXPECT. Return paths plus their SUCCESS/FAILURE marker state.",
+          "gate": "Pure FACT with a product-anchor clause: fire = (dir has expected.txt) AND NOT(MUST_RUN OR EXPECT) AND (SUCCESS present, no FAILURE). The SUCCESS-without-FAILURE clause isolates the dangerous false-green subset from merely-deferred TODOs.",
+          "fires_on": "LATENT TODAY: 9 dirs match the orphan shape (verified: e.g. 430_003_impl_override_only, 365_001_basic_intercept), but all 9 are FAILURE so the gate correctly holds. Flips to alarm the instant one compiles and gets a SUCCESS marker with its expected.txt still unchecked.",
+          "severity": "high",
+          "buildability": "high",
+          "corroborated_by": [
+            "unenforced_convention.2"
+          ]
+        },
+        {
+          "rank": 5,
+          "title": "Hand-authored doc code blocks must compile against the live compiler (stderr-gated, not exit-code)",
+          "intent": "Every fenced ```koru/```kz block in hand-authored Markdown (README first) must use only forms the current koruc accepts — the front door a new user copies must not be dead syntax.",
+          "faucet": "FACT: extract fenced koru/kz blocks from hand-authored .md (exclude files with a 'Generated by' header), write each to a temp .kz, run zig-out/bin/koruc, and fire on any block whose STDERR contains `error[`. CRITICAL: koruc exits 0 even on PARSE003 (verified), so gate on stderr `error[` match, never on exit code.",
+          "gate": "Pure FACT: fire = N_failing_blocks >= 1 in any non-generated doc. Compiler is the oracle.",
+          "fires_on": "TODAY: README.md:6 block → `error[PARSE003]: imports are bare — drop the ~` (verified live; also uses dead `std.io:` dot-namespace pinned by KORU035). Canonical form is bare `import std/io`.",
+          "severity": "high",
+          "buildability": "high",
+          "corroborated_by": [
+            "two_source_drift.2",
+            "rules_aware.1",
+            "rules_aware.2"
+          ]
+        },
+        {
+          "rank": 6,
+          "title": "A behavior-changing fix(...) under src/ must land with a regression test",
+          "intent": "CONTRIBUTING/AGENTS both mandate failing-test-first; a src/ behavior fix with no tests/ change ships a change with zero pinned evidence.",
+          "faucet": "FACT: for each `^fix` commit, `git show --name-only`; flag if it touches src/*.zig but no path under tests/. INTENT axis fix_is_test_pinned: +1 the diff adds/updates a regression exercising the fixed path, -1 a behavior-changing fix lands with no test and no stated untestability reason.",
+          "gate": "fire = FACT(fix touches src/, not tests/) × INTENT(fix_is_test_pinned <= -0.5) × gain >= floor. Judge suppresses docs/snapshot-only fix commits and fixes already covered by an existing re-run test.",
+          "fires_on": "VERIFIED: b203f6cb `fix(codegen): unbalanced closer...` touches only src/codegen_utils.zig, zero tests/. Control d87beceb `fix(parser): reject unbalanced...` lands with its tests/regression/100_081 — FACT half silent.",
+          "severity": "med",
+          "buildability": "med",
+          "corroborated_by": [
+            "unenforced_convention.4"
+          ]
+        }
+      ],
+      "top_pick": {
+        "title": "Diagnostic-code registry coherence (emit ⊆ declared, declared ⊆ emitted, pinned ⊆ declared)",
+        "why": "Highest (value × buildability) and the single most-corroborated invariant in the sweep — FOUR lenses (two_source_drift.1, two_source_drift.4, unenforced_convention.1, unenforced_convention.3/dangerous_change_shape.3) independently walked into the same file, src/errors.zig. It exercises the rail cleanly: a deterministic three-set FACT scan over a closed registry, with a real violation on BOTH primary arms verified live (KORU200 emitted-but-undeclared at main.zig:3604; 11 declared-but-dead codes), and a clean control arm (test pins all resolve today, so the pinned-arm stays silent now and only fires on a future rename). The dead-code arm is the one place a judge earns its keep — distinguishing a genuinely-reserved code from a forgotten one — so it also demos the fact×intent product gate, while the orphan-emit and rotten-pin arms are pure mechanical set-difference. One engine, four lenses, two live anchors, one clean control.",
+        "build_sketch": "FACT scan (no LLM): (1) DECLARED = parse members from the `pub const ErrorCode = enum(u16)` block in src/errors.zig:3-86. (2) EMITTED = union of (a) regex `error\\[([A-Z]+[0-9]+)\\]` raw string literals across src/**.zig, and (b) `\\.((KORU|PARSE|TYPE|SHAPE)[0-9]+)\\b` enum-tag uses across src/ + koru_std/, minus the errors.zig declaration lines themselves. (3) PINNED = `(KORU|PARSE|TYPE|SHAPE)[0-9]{3}` over tests/regression/**/{EXPECT,expected*.txt}. Emit three diffs: ORPHAN_EMIT=EMITTED\\DECLARED, DEAD=DECLARED\\EMITTED, ROTTEN_PIN=PINNED\\DECLARED. JUDGE axis (gates ONLY the DEAD arm): code_is_aspirational ∈[-1,1] — +1 the enum line carries an explicit reserved/aspirational comment, -1 a code sits with zero emit sites under no such marker. PRODUCT GATE: ORPHAN_EMIT and ROTTEN_PIN fire pure-FACT (set-diff >= 1, deterministic, no judge). DEAD fires = FACT(DEAD grows on this diff) × INTENT(code_is_aspirational <= -0.5) × gain >= floor. ANCHOR it must fire on: HEAD state — ORPHAN_EMIT={KORU200} (main.zig:3604) and DEAD={KORU031,KORU042,KORU043,KORU052,KORU060,KORU061,KORU070,KORU082,KORU090,KORU091,PARSE002}. CONTROL it must stay silent on: KORU030 (36 emit sites) and KORU034 (1 site) — both declared AND emitted; and the current PINNED set, which fully resolves into DECLARED today, so ROTTEN_PIN=∅ until a future rename. A benign enum reorder/rename that preserves all three set-memberships scores every diff empty and stays silent."
+      }
+    },
+    "all_watchers": [
+      {
+        "lens": "silent_invariant",
+        "watchers": [
+          {
+            "intent": "After the canonicalize pass runs, EVERY ast.DottedPath in the program tree has module_qualifier != null (it is the documented post-condition of canonicalize_names.zig).",
+            "trusted_via": "a-comment + convention: the post-condition is asserted only in the docstring (src/canonicalize_names.zig:11 'After this pass, ALL DottedPaths have a module_qualifier set'); the walker is a hand-maintained switch and nothing checks the post-condition. Downstream consumers each carry their own `orelse <module_name>` fallback that silently papers over any miss.",
+            "grounding": "src/canonicalize_names.zig:43-204 (the hand-written walker over ast.Item/ast.Step — note canonicalizeArg:214 and canonicalizeBranchConstructor:220 are explicit no-ops that skip their subtree); the trust breaks at consumers src/auto_discharge_inserter.zig:586,909,1245,1504 (`path.module_qualifier orelse flow.module`) and worst at src/continuation_codegen.zig:31 (`if (invocation.path.module_qualifier) |mq| {...}` — when null the entire module-prefix block is skipped and a BARE unqualified symbol is emitted).",
+            "faucet_fact": "AST-walk src/canonicalize_names.zig: enumerate every ast.Item and ast.Step variant that (transitively) holds a DottedPath field (grep ast.zig for `: DottedPath` / `: ?DottedPath` -> 13 fields across Item/Step/Tap/native_loop/fused/inlined), then check each is reached by a `canonicalizePath` call in the walker. Returns the count of DottedPath-bearing variants NOT covered (today: Arg and BranchConstructor subtrees are explicitly skipped — return >0 if any of those can actually carry a path, else the FACT is 'a new Item/Step variant added since the walker was last edited holds a path with no canonicalizePath call').",
+            "faucet_intent": "axis path_coverage_complete: +1 the diff adds/edits a DottedPath-bearing AST variant AND adds the matching canonicalizePath call in the walker (or an explicit, justified skip comment), -1 a new path-bearing variant or field is added with no corresponding walker edit. axis fallback_masks_invariant: +1 a downstream module_qualifier read asserts non-null, -1 it adds another silent `orelse`/`if(mq)` that lets a null slide.",
+            "gate": "fire = (FACT: count of uncovered DottedPath-bearing variants >= 1) x (INTENT: path_coverage_complete <= -0.5 on the introducing diff) x gain >= floor. The mechanical coverage count anchors the judge so a benign walker refactor (rename, reorder) that keeps full coverage scores FACT=0 and cannot fire.",
+            "fires_on": "A commit that adds a new ast.Item or ast.Step variant carrying a DottedPath without touching src/canonicalize_names.zig — the new path keeps module_qualifier==null, continuation_codegen.zig:31 silently emits an unqualified symbol, and it surfaces three steps later as a mysterious 'unknown symbol' or wrong-module resolution in generated Zig. The two explicit no-op skips (canonicalizeArg:214, canonicalizeBranchConstructor:220) are the standing proof the walker already chooses NOT to descend into some subtrees by hand.",
+            "stays_silent_on": "A commit that edits canonicalizePath's separator-normalization (the `/`->`.` loop at :233-238) or renames a walker helper while keeping every DottedPath-bearing variant covered — coverage count stays 0, watcher silent.",
+            "severity": "high",
+            "buildability": "high"
+          },
+          {
+            "intent": "Every ast.DottedPath has a non-empty segments slice — segments[0] (and segments[len-1]) are dereferenced without a length guard across the compiler.",
+            "trusted_via": "nothing — pure convention that the parser never emits a zero-segment path. No assertion at the parse boundary, no guard at the read sites.",
+            "grounding": "Unguarded reads: src/canonicalize_names.zig:249,251 (`path.segments[0]`), src/compiler_requires.zig:82,88,95 (`flow.invocation.path.segments[0]`), src/auto_discharge_inserter.zig:2586,2594-2595 (`path.segments[0].len`/memcpy), src/ast_functional.zig:3130 (`event.path.segments[0]`), src/ast_serializer.zig:1799,1846 (`segments[segments.len-1]`). Construction site that must uphold it: src/parser.zig:4214-4222 (dup_segments built from event_path.segments — empty in, empty out).",
+            "faucet_fact": "grep the compiler for `\\.segments\\[0\\]`, `\\.segments\\[.*len - 1\\]`, and `.segments[0].len` and subtract the count of those reads that are dominated by a preceding `.segments.len > 0` / `!= 0` guard in the same function. Returns the count of UNGUARDED first/last-segment dereferences (today: ~8+, e.g. canonicalize:249 has no guard).",
+            "faucet_intent": "axis empty_path_unreachable: +1 a diff that can newly construct a DottedPath proves segments is non-empty at the construction site (literal with >=1 element, or an explicit guard), -1 a diff builds segments from a possibly-empty source (a slice of a parsed list, a split result) and feeds it to a path with no min-length check.",
+            "gate": "fire = (FACT: a NEW unguarded segments[0]/[len-1] read introduced, OR a new DottedPath construction from an unchecked-length source) x (INTENT: empty_path_unreachable <= -0.5) x gain >= floor. A pure read added next to an existing guard scores FACT=0.",
+            "fires_on": "src/parser.zig:4214 — `parsePassThroughInvocation` dups event_path.segments verbatim; if a parse path ever yields an event_path with zero segments (e.g. a malformed `:` qualifier with nothing after it), the pass-through invocation inherits an empty segments and canonicalize_names.zig:249 indexes segments[0] -> panic with no source location, looking like an internal compiler crash rather than a parse error.",
+            "stays_silent_on": "A read like emitter_helpers.zig:4461 `invocation.path.segments[0]` that sits after an established non-empty guarantee, or a refactor that adds a `segments.len` loop — no new unguarded first-element index, watcher silent.",
+            "severity": "med",
+            "buildability": "med"
+          },
+          {
+            "intent": "The parse-time flag is_impl == (event_path.module_qualifier != null) must be captured BEFORE the canonicalize pass runs, because canonicalize unconditionally fills module_qualifier on every path and thereby destroys the 'was this path module-qualified in source?' signal that is_impl/impl_of encode.",
+            "trusted_via": "convention + ordering discipline: is_impl is snapshotted at parse time (parser.zig:4199 `.is_impl = event_path.module_qualifier != null`) and is RELIED ON to mean 'source-qualified' long after canonicalize has made module_qualifier non-null everywhere. Nothing prevents a future pass from re-deriving is_impl from module_qualifier post-canonicalize (which would now be universally true), or from re-ordering canonicalize before the snapshot.",
+            "grounding": "Snapshot site: src/parser.zig:4199 (`.is_impl = event_path.module_qualifier != null`). Destroyer: src/canonicalize_names.zig:246 (`path.module_qualifier = try ctx.allocator.dupe(...)` — sets it on EVERY previously-null path). Consumers that trust the snapshot: src/ast_serializer.zig:515-516,649-652, src/ast_functional.zig:792,1287,1720,1803,1927 (clone-propagate is_impl), and impl_of-based dispatch in src/ast_transform.zig:133.",
+            "faucet_fact": "AST-walk: flag any read of `.module_qualifier != null` (or `== null`) used to derive is_impl / impl-status / cross-module-override semantics that occurs in a pass scheduled AFTER canonicalize in build.zig's pass order. Also flag any new write to `.is_impl`/`.impl_of` not co-located with the parser. Returns count of such post-canonicalize is_impl derivations (today: 0 — the snapshot is correctly the only source).",
+            "faucet_intent": "axis impl_signal_pre_canonicalize: +1 is_impl/impl_of is read or set only from the parse-time snapshot and is threaded forward verbatim, -1 a diff re-derives module-qualified-ness from module_qualifier in or after canonicalize (where it is now always non-null, silently making every flow look like an impl).",
+            "gate": "fire = (FACT: a `module_qualifier ?== null`-derived impl decision appears in a post-canonicalize pass, OR is_impl is written outside the parser) x (INTENT: impl_signal_pre_canonicalize <= -0.5) x gain >= floor. Cloning that copies `.is_impl = flow.is_impl` verbatim (ast_functional.zig) scores FACT=0 and stays silent.",
+            "fires_on": "Not yet broken in the repo — but the trap is loaded: a maintainer adding a new dispatch pass that decides 'is this a cross-module override?' by checking `path.module_qualifier != null` (the natural thing to write) would, post-canonicalize-name:246, find EVERY path qualified and treat every local flow as a cross-module impl. The snapshot at parser.zig:4199 exists precisely because this is non-obvious, and nothing stops the regression.",
+            "stays_silent_on": "The existing clones at ast_functional.zig:792 etc. that copy is_impl field-to-field, and the serializer at ast_serializer.zig:516 that emits the snapshotted bool — no post-canonicalize re-derivation, watcher silent.",
+            "severity": "med",
+            "buildability": "med"
+          }
+        ]
+      },
+      {
+        "lens": "two_source_drift",
+        "watchers": [
+          {
+            "intent": "Every error code emitted to users as `error[XXX]:` must be a real member of the `ErrorCode` enum in src/errors.zig (the single registry of diagnostic codes).",
+            "trusted_via": "convention — the canonical render path errors.zig:121 does `error[{tagName}]` off the enum, so codes are normally impossible to misspell; the one raw hand-formatted emit site is trusted only by reviewer-attention plus a self-flagged `// TODO` the author left in.",
+            "grounding": "src/errors.zig:3-79 defines `ErrorCode` (KORU001..KORU121, PARSE001-005, TYPE001-005, SHAPE001-002). src/errors.zig:121 renders `error[{tagName}]`. The drift lives at src/main.zig:3604 which prints literal `error[KORU200]` — KORU200 is NOT in the enum (grep of src/errors.zig confirms absent), and the function returns the WRONG type `error.ModuleNotFound` (main.zig:3614) with a `// TODO: Add proper AmbiguousModule error`.",
+            "faucet_fact": "Scan all .zig in src/ for string literals matching `error\\[([A-Z]+[0-9]+)\\]`, collect the code set E. Parse the `ErrorCode` enum members from src/errors.zig into set R. Fire if E - R is non-empty (a code is emitted but not registered). Returns the offending code(s).",
+            "faucet_intent": "none",
+            "gate": "Pure fact gate: fire = |emitted_codes \\ enum_members| >= 1. No judge needed — it is a set-difference on a closed registry.",
+            "fires_on": "src/main.zig:3604 emits `error[KORU200]` which is absent from the ErrorCode enum at src/errors.zig:3-79. Current HEAD (commit 81d9519c). Non-vacuous: 11 EXPECT regression files assert `CONTAINS error[KORUxxx]` codes, so a future renumber that drops a code would surface here too.",
+            "stays_silent_on": "Every other code (e.g. PARSE004 at parser.zig:1202, KORU111 at the validate sites) is emitted via `@tagName(self.code)` off the enum (errors.zig:121), so it is by construction a member of R — the watcher stays silent on all enum-routed diagnostics. KORU200 is the ONLY raw-string `error[CODE]` literal in src.",
+            "severity": "med",
+            "buildability": "high"
+          },
+          {
+            "intent": "The single example in README.md (the project's front door) must compile and run with the current koruc, since it is the first syntax a new user copies.",
+            "trusted_via": "nothing — the README example is plain prose, never run by any test or CI step; it is trusted purely by whoever last remembered to update it after a syntax change.",
+            "grounding": "README.md:6-14 shows `~import \"$std/io\"`, `~greet = greeting \"Hello,\" ++ ...`, and `std.io:print.ln(msg)`. Running `./zig-out/bin/koruc /tmp/<readme>.kz` rejects line 1 with PARSE003 ('imports are bare — drop the `~`') and, after fixing that, rejects the `~greet = greeting ...` subflow with KORU040 'unknown event'. The language moved `~import`→bare `import` (see commit context) and the `:`-namespace to `/`, but README never followed.",
+            "faucet_fact": "Extract fenced ```koru blocks from README.md (and optionally koru-tutorial.md / koru-by-example.md), write each to a temp .kz, run `koruc` on it, fire on any non-zero/diagnostic-bearing compile. Returns the failing block + first diagnostic line.",
+            "faucet_intent": "none",
+            "gate": "Fact gate: fire = (koruc on README example produces a diagnostic / non-success). Deterministic — the compiler is the oracle.",
+            "fires_on": "README.md:6-14 — the only example in the file — fails to compile at HEAD: PARSE003 on `~import`, then KORU040 on the `~greet = greeting` subflow. Verified by running the exact snippet through ./zig-out/bin/koruc.",
+            "stays_silent_on": "A doc example that DOES match current syntax (e.g. the `import std/io` + subflow forms used in passing tests/regression/*.kz) compiles clean — the watcher stays silent on those, so it is not a blanket 'docs are stale' linter; it fires only when a doc snippet actually breaks against the live compiler.",
+            "severity": "high",
+            "buildability": "high"
+          },
+          {
+            "intent": "The project's version must be one number — the value `koruc --version` prints (src/main.zig `version`) must agree with koru.json, build.zig.zon, the scaffolded-project templates, the CCP handshake, and have a matching CHANGELOG entry.",
+            "trusted_via": "a-comment / convention — CHANGELOG.md:87 literally records that `src/main.zig` 'is now kept in sync (was stuck at 0.1.0 for 0.1.1 and 0.1.2)'. 'Kept in sync' is a human promise; nothing mechanically enforces it, and it has already re-drifted.",
+            "grounding": "src/main.zig:36 `const version = \"0.1.7\"` (and `koruc --version` prints `0.1.7`). But koru.json:3 = `0.1.4`; build.zig.zon:12 = `0.0.0`; CHANGELOG.md only has `## [0.1.3]` (line 3) as its newest entry; and src/ccp.zig:70, src/project_template.zig:93, src/project_template.zig:108, src/main.zig:6027 all still emit hardcoded `\"version\":\"0.1.0\"` into generated projects / the CCP ready message.",
+            "faucet_fact": "Collect version strings from: src/main.zig `const version`, koru.json `.version`, build.zig.zon `.version`, the newest `## [X.Y.Z]` in CHANGELOG.md, and the hardcoded `\"version\": \"X.Y.Z\"` literals in ccp.zig + project_template.zig. Fire if the distinct set has >1 release-version value (ignoring the deliberate zon `0.0.0` placeholder if whitelisted), and specifically fire if main.zig's version has no matching CHANGELOG header.",
+            "faucet_intent": "none",
+            "gate": "Fact gate: fire = count(distinct non-placeholder version strings) > 1 OR main.zig version not present as a CHANGELOG `## [..]` header. Set comparison, no judge.",
+            "fires_on": "HEAD state right now: main.zig=0.1.7, koru.json=0.1.4, CHANGELOG newest=0.1.3, templates/ccp=0.1.0. Four mutually-disagreeing values + no `## [0.1.7]` changelog entry. CHANGELOG.md:87 is the receipt that this exact drift already happened once.",
+            "stays_silent_on": "If a release bump touches all five sites together (the intended workflow) the set collapses to one value and the CHANGELOG header matches — watcher silent. It also should NOT fire on build.zig.zon's `0.0.0` if that placeholder is explicitly whitelisted (it is documented as a Zig-package-dedup field, not the product version), proving the watcher discriminates the real product version from the package-manager placeholder.",
+            "severity": "med",
+            "buildability": "high"
+          },
+          {
+            "intent": "Every regression EXPECT file that asserts `CONTAINS error[KORUxxx]` must reference a code the compiler can actually still emit under that name — the test's hardcoded code and the enum/emit site must stay in lockstep.",
+            "trusted_via": "a-partial-test — the full ./run_regression.sh run is the only thing that would catch a stale EXPECT code, and only if that specific test is in-scope and actually executed; the code string inside EXPECT is otherwise an untyped literal that nothing validates structurally.",
+            "grounding": "scripts/regression_lib.sh:101-124 implements `CONTAINS`/`NOT_CONTAINS` as a literal `grep -qF` against compile_kz.err. 11 EXPECT files assert codes, e.g. tests/regression/100_MODULE_SYSTEM/140_FILE_LAYOUT/140_007_.../EXPECT contains `CONTAINS KORU111`. The asserted code is a free-text substring — if errors.zig renames KORU111 or the emit site changes the number, the grep silently fails (or, worse, the test is SKIP/TODO and never runs).",
+            "faucet_fact": "Collect every `CONTAINS error\\[([A-Z]+[0-9]+)\\]` (and bare `CONTAINS (KORU|PARSE|TYPE|SHAPE)[0-9]+`) code referenced across tests/**/EXPECT into set A. Build enum set R from src/errors.zig. Fire if A - R is non-empty (a test pins a code no longer in the registry). Optionally cross-check A against the set of codes any emit site can actually produce.",
+            "faucet_intent": "none",
+            "gate": "Fact gate: fire = |EXPECT-referenced codes \\ enum_members| >= 1. Closed-registry set difference, deterministic.",
+            "fires_on": "Not currently firing on a rename (codes match today), BUT it is the structural guard the project lacks: today the ONLY thing keeping these 11 EXPECT codes honest is running the full suite with those tests in-scope. The KORU200 case (candidate 1) proves codes CAN exist outside the enum — an EXPECT could pin KORU200 today and this watcher would flag it as un-registry-backed. Real grounding: scripts/regression_lib.sh:105 literal grep, 11 live EXPECT files.",
+            "stays_silent_on": "EXPECT files that only assert plain-English message substrings (e.g. `CONTAINS public event in implementation file` in 140_007) carry no code token, so the watcher extracts nothing and stays silent — it fires only on the code-pinning subset, not on every EXPECT assertion.",
+            "severity": "med",
+            "buildability": "med"
+          }
+        ]
+      },
+      {
+        "lens": "unenforced_convention",
+        "watchers": [
+          {
+            "intent": "Every ErrorCode enum member declared in src/errors.zig (KORU###/PARSE###) must actually be emitted by at least one call site — a declared-but-never-fired diagnostic is a lie in the canonical registry: it claims the compiler catches a condition it never catches.",
+            "trusted_via": "convention",
+            "grounding": "src/errors.zig:3-86 declares the ErrorCode enum with a canonical one-line comment per code (e.g. line 23 `KORU031, // Payload type mismatch`, line 47 `KORU061, // Subflow recursion detected`, line 64 `PARSE002, // Invalid indentation`). The enum comments ARE the registry; reachability is enforced by nothing.",
+            "faucet_fact": "Parse the enum members out of src/errors.zig (the `pub const ErrorCode = enum` block), then grep src/ + koru_std/ for `.KORU###` / `.PARSE###` call-site uses. Return the set difference: declared-minus-emitted. Today it returns exactly {KORU031,KORU042,KORU043,KORU052,KORU060,KORU061,KORU070,KORU082,KORU090,KORU091,PARSE002} = 11 dead codes.",
+            "faucet_intent": "none",
+            "gate": "fire = (count of declared-but-never-emitted codes that are NOT marked aspirational) >= 1. A pure FACT faucet; no judge needed. Optionally gate to NEW dead codes introduced by the diff so it fires on the commit that adds an unreachable `.KORUxxx,` enum line.",
+            "fires_on": "src/errors.zig:47 KORU061 (`// Subflow recursion detected`) — CLAUDE.md treats subflow-recursion detection as real semantics, yet `grep -rn KORU061 src/ koru_std/` returns ONLY the enum declaration line; no call site ever emits it. Same for KORU031/KORU082/KORU090/PARSE002 (verified: zero emission sites each).",
+            "stays_silent_on": "KORU030 (`// Shape mismatch`) — emitted from 39 call sites incl. src/auto_discharge_inserter.zig:660; KORU034, PARSE004 — both emitted and pinned by live tests. A code that is declared AND fired stays silent.",
+            "severity": "med",
+            "buildability": "high"
+          },
+          {
+            "intent": "A regression test directory that ships an expected.txt (or expected_error.txt / expected_patterns.txt) MUST also carry a run/assert marker (MUST_RUN, EXPECT, or expected_error/patterns wired in) — otherwise the expected output is never compared and the test silently degrades to compile-only, becoming a false green the moment it compiles cleanly.",
+            "trusted_via": "a-partial-test",
+            "grounding": "scripts/regression_lib.sh:445-447 prints `Test has expected output but no MUST_RUN or EXPECT marker / This test expects output but won't run!` — but ONLY while that specific test is executed. Nothing scans the tree statically; an unrun/cached test with this defect is invisible.",
+            "faucet_fact": "Walk tests/regression/**; for each dir with expected.txt present but no MUST_RUN file and no EXPECT file, emit the path. Today returns 9 dirs incl. tests/regression/300_ADVANCED_FEATURES/365_INTERCEPTORS/365_001_basic_intercept and 400_RUNTIME_FEATURES/430_COORDINATION/430_003_impl_override_only.",
+            "faucet_intent": "none",
+            "gate": "fire = (dir has expected.txt) AND NOT(has MUST_RUN OR EXPECT) AND (dir has SUCCESS, no FAILURE). The SUCCESS-without-FAILURE clause is the product anchor: it isolates the DANGEROUS subset — tests passing green while their expected.txt is provably never checked — from the merely-deferred TODO/FAILURE ones.",
+            "fires_on": "Latent across the 9 orphaned dirs: e.g. 430_003_impl_override_only/expected.txt contains `world` but the dir has no MUST_RUN/EXPECT, so the string is never asserted. It is FAILURE+TODO today, so the gate holds fire — but flips to a false-green alarm the instant it starts compiling and gets a SUCCESS marker.",
+            "stays_silent_on": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_059_reject_tilde_after_pipe_forward — has both EXPECT (FRONTEND_COMPILE_ERROR) and expected.txt, so its output IS validated; stays silent.",
+            "severity": "high",
+            "buildability": "high"
+          },
+          {
+            "intent": "A regression test that pins a specific diagnostic via `CONTAINS error[KORU###]` / expected_patterns / expected_error MUST reference a code that exists AND is reachable in src/errors.zig — a test pinned to a dead or typo'd code can never go green for the right reason; it is a defender guarding nothing.",
+            "trusted_via": "nothing",
+            "grounding": "scripts/regression_lib.sh:674-686 enforces that SOME `error[KORU` fired and must be pinned, but it never checks the pinned code is a real, emittable enum member. The set of test-referenced codes (grep over EXPECT/expected*.txt) matching the enum is true today only by luck.",
+            "faucet_fact": "Collect codes referenced in tests/regression/**/{EXPECT,expected*.txt} via `grep -oE 'KORU[0-9]{3}|PARSE[0-9]{3}'`; subtract the set of EMITTABLE codes (enum members that have >=1 call site). Any test-pinned code in the dead/nonexistent set is a hit. Today: 0 hits (all 22 test-referenced codes are live) — clean control proving non-vacuity.",
+            "faucet_intent": "none",
+            "gate": "fire = (a test pins code C) AND (C not in emittable-codes set). Pure FACT product of two greps. Fires the moment someone writes `CONTAINS error[KORU082]` (declared but dead) or a typo like `KORU303`.",
+            "fires_on": "No current violation (the discriminating control) — but the trap is one keystroke away: KORU082/KORU090/KORU031 are declared, dead, and a plausible target for a new shape/payload test author who reads the enum comment and pins the code before the emission site exists. The watcher fires on that commit; nothing does today.",
+            "stays_silent_on": "tests/regression/000_CORE_LANGUAGE/010_BASIC_SYNTAX/010_053_reject_underscore_name/expected_patterns.txt pins KORU034, which is emitted at a real call site — stays silent.",
+            "severity": "med",
+            "buildability": "high"
+          },
+          {
+            "intent": "A bug-fix commit (`fix(...)` subject) that changes compiler behavior under src/ MUST land with a regression test in the same commit — CONTRIBUTING.md and AGENTS.md both mandate 'add a failing regression test first, then fix'. A src/ fix with no tests/ change ships a behavior change with zero pinned evidence.",
+            "trusted_via": "reviewer-attention",
+            "grounding": "CONTRIBUTING.md:38-43 ('Add/Update Regression Test ... Reproduce the bug ... Fix ... Verify test passes') and AGENTS.md:57 ('Add a failing regression test first, then fix'). Enforced by review discipline only; no commit-time hook checks it.",
+            "faucet_fact": "For each commit whose subject matches `^fix`, run `git show --name-only`; if it touches `src/*.zig` (or koru_std compiler files) AND touches no path under `tests/`, flag it. Over the last 40 commits this returns b203f6cb and 1486cfde.",
+            "faucet_intent": "axis `fix_is_test_pinned`: +1 the diff adds/updates a regression test that exercises the fixed path, -1 a behavior-changing src fix lands with no test and no stated reason it is untestable (e.g. pure refactor, snapshot-only). Scores the gray zone the raw fact can't (a fix legitimately covered by an existing test that was merely re-run).",
+            "gate": "fire = FACT(fix commit touches src/, not tests/) x INTENT(fix_is_test_pinned <= -0.5) x gain >= floor. The mechanical fact gates the judge so it can't fire on docs/snapshot-only `fix(` commits; the judge suppresses false positives where coverage already exists or the change is non-behavioral.",
+            "fires_on": "b203f6cb `fix(codegen): unbalanced closer in opaque expr no longer underflow-panics` — touches only src/codegen_utils.zig, zero tests/ files (verified via `git show --name-only`). A panic-fix with no pin; the next regression of it teaches nothing.",
+            "stays_silent_on": "d87beceb `fix(parser): reject unbalanced ']'/')' in payload shapes (PARSE004)` — lands with a tests/regression change pinning PARSE004; the FACT half doesn't fire, watcher stays silent.",
+            "severity": "med",
+            "buildability": "med"
+          }
+        ]
+      },
+      {
+        "lens": "dangerous_change_shape",
+        "watchers": [
+          {
+            "intent": "Every negative regression test whose intent is 'the compiler must REJECT this with a SPECIFIC diagnostic' must PIN which diagnostic fired — so the test fails if rejection later happens for a different/wrong reason. A bare FRONTEND_COMPILE_ERROR/BACKEND_COMPILE_ERROR marker is insufficient for any diagnostic Koru owns.",
+            "trusted_via": "a-partial-test",
+            "grounding": "scripts/regression_lib.sh:674 (frontend) and :1114 (backend) — the 'must be pinned' guard runs `grep -q 'error\\[KORU'` ONLY. Koru also owns the PARSE/TYPE/SHAPE diagnostic families (src/errors.zig:56-78 define PARSE001-005, TYPE001-005, SHAPE001-002), which the guard never sees, so they fall to the 'bare marker OK' else branch at regression_lib.sh:692.",
+            "faucet_fact": "AST/dir walk over tests/regression: for each test dir with EXPECT containing '^FRONTEND_COMPILE_ERROR$' or '^BACKEND_COMPILE_ERROR$', read compile_kz.err/backend.err, extract `error[CODE]`; return 1 (fires) if CODE matches a Koru-owned family (PARSE|TYPE|SHAPE|KORU) AND the dir has no pin (no expected.txt, no expected_patterns.txt, no expected_error.txt, no CONTAINS/NOT_CONTAINS/STDOUT_CONTAINS line in EXPECT). Returns the dir + the unpinned code.",
+            "faucet_intent": "axis diagnostic_pin_present: +1 the negative test asserts the exact diagnostic code/message it was written to catch, -1 it leans on a bare category marker so any rejection (even an unrelated parser hiccup) keeps it green.",
+            "gate": "fire = fact(unpinned Koru-owned diagnostic in a negative test) × intent(diagnostic_pin_present <= 0) × gain >= floor. The mechanical fact alone is the dominant signal; the judge axis only suppresses cases where a CONTAINS-equivalent pin exists in an unusual form.",
+            "fires_on": "tests/regression/500_INTEGRATION_TESTING/510_NEGATIVE_TESTS/510_052_reject_tilde_import and /510_053_reject_quoted_import — both fire error[PARSE003], are marked SUCCESS, and pin NOTHING (EXPECT contains only the bare 'FRONTEND_COMPILE_ERROR' line). A future refactor that makes `~import` fail with a generic PARSE003 for an unrelated reason leaves both green while no longer testing import-rejection.",
+            "stays_silent_on": "tests/regression/100_PARSER/100_081_unbalanced_bracket_in_payload — also fires PARSE004 but carries an exact expected.txt ('error[PARSE004]: unbalanced ...'), so the diagnostic is pinned; must NOT fire.",
+            "severity": "high",
+            "buildability": "high"
+          },
+          {
+            "intent": "The kebab `-`→`_` name-mangle rule must be IDENTICAL across both normalization sites — the lexer path and the AST path — or a name mangles one way in one and another way in the other, silently miscompiling identifiers.",
+            "trusted_via": "a-comment",
+            "grounding": "Two independent implementations of the same INFIX-dash rule: src/ast_mangle.zig:45 `mangle()` (uses local `isNameChar` at :33) and src/lexer.zig:96 `mangleKebabInPlace()` (inline prev_ok/next_ok). They are tied together only by lexer.zig:93 comment 'Mirrors src/ast_mangle.zig' and the commit message of 1486cfde ('Applied in both normalization points'). ast_mangle.zig does NOT call lexer.mangleKebabInPlace — verified no cross-reference.",
+            "faucet_fact": "AST/text scan: extract the normalized boolean predicate of each mangler body (the condition under which `-`→`_`). Compare the two predicates structurally; return 1 (fires) if they diverge — e.g. one adds a digit-separator carve-out, drops the `i==0` edge guard, or changes isNameChar membership — while no shared helper unifies them.",
+            "faucet_intent": "axis mangle_rule_consistency: +1 both sites implement byte-identical infix-dash logic (or call one shared fn), -1 a commit edits one mangler's rule without the other, or refactors lexer's without touching ast_mangle's.",
+            "gate": "fire = fact(two mangler bodies' predicates differ) × intent(commit touches one mangle site but not the other / mangle_rule_consistency <= 0) × gain >= floor. The fact (predicate divergence) is the anchor; the judge confirms the change-shape is a rule edit, not a comment tweak.",
+            "fires_on": "Synthetic-but-grounded: commit 1486cfde had to edit BOTH src/ast_mangle.zig and src/lexer.zig in lockstep to add the infix rule. The watcher fires on the failure-shape where a future commit edits only one — e.g. touching ast_mangle.zig:50's `isNameChar(bytes[i-1]) and isNameChar(bytes[i+1])` to allow a leading-`_` exception without mirroring it into lexer.zig:96.",
+            "stays_silent_on": "A commit that edits both manglers identically (like 1486cfde itself), or one that only changes the doc comment / unrelated functions in those files — predicates stay equal, no fire.",
+            "severity": "high",
+            "buildability": "med"
+          },
+          {
+            "intent": "Every diagnostic code referenced by string in a test pin (expected.txt / expected_error.txt / EXPECT CONTAINS) must still exist as a live variant in the src/errors.zig ErrorCode enum — the Zig compiler checks .zig call sites but is blind to these string references, so a rename/removal silently orphans the test's assertion target.",
+            "trusted_via": "nothing",
+            "grounding": "src/errors.zig:3 `pub const ErrorCode = enum(u16)` lists ~50 variants (KORU001..KORU200, PARSE001-005, TYPE/SHAPE). 45 expected.txt files plus EXPECT CONTAINS lines reference codes as raw strings 'error[CODE]' (e.g. 22× PARSE003, 8× KORU044). The harness asserts via grep -F substring (regression_lib.sh:613 check_expect_assertions, :560 expected.txt exact-match) — no link back to the enum.",
+            "faucet_fact": "Scan: collect the set R of codes referenced in any test pin (regex `error\\[([A-Z]+[0-9]+)\\]` over expected.txt/expected_error.txt/EXPECT). Collect set D = enum variant names in src/errors.zig. Fire (return the orphans) if R \\ D is non-empty — a pinned code with no matching live diagnostic.",
+            "faucet_intent": "axis diagnostic_code_change_disclosed: +1 a commit that renames/removes an ErrorCode variant also updates or removes every test pin referencing the old string, -1 the enum variant is renamed under a cosmetic subject and stale 'error[OLDCODE]' pins are left to rot (now unmatchable, so the negative test can never re-pass for the right reason).",
+            "gate": "fire = fact(referenced code not in enum) × intent(diagnostic_code_change_disclosed <= 0) × gain >= floor. Pure mechanical set-difference is the anchor; judge gates out benign cases where the code was intentionally retired and the test was meant to be deleted.",
+            "fires_on": "Today the set-difference is empty (all 9 referenced families resolve in errors.zig — verified KORU002/010/044/050/100/110, PARSE001/003/004), so this is the CONTROL state. It fires the moment a rename like KORU044→KORU047 lands in errors.zig+parser.zig (compiler-checked) while the 8 expected.txt files pinning 'error[KORU044]' stay unchanged — exactly the silent gap.",
+            "stays_silent_on": "A diagnostic-message wording change that keeps the code string (e.g. rephrasing KORU034's text while the variant name and 'error[KORU034]' pins are untouched) — set-difference stays empty, no fire.",
+            "severity": "med",
+            "buildability": "high"
+          }
+        ]
+      },
+      {
+        "lens": "reachable_bad_state",
+        "watchers": [
+          {
+            "intent": "Every UNSIGNED delimiter/nesting depth counter that walks user-supplied text must be guarded (`if (depth == 0) return error` or `if (depth > 0)`) before each decrement — a stray closing delimiter must surface as a clean error, never underflow the usize into an integer-overflow panic.",
+            "trusted_via": "convention + scattered comments. The invariant is hand-written into prose THREE separate times (src/codegen_utils.zig:296-302 doc comment, src/struct_literal.zig:57 inline, src/lexer.zig:497-501 multi-line comment 'reject it instead of clamping to zero... which would swallow the imbalance') and the maintainers' habit of reaching for `i32` in the parser. Nothing mechanical enforces it; each new usize-depth walker re-litigates it from memory.",
+            "grounding": "src/codegen_utils.zig:257-325 (the just-fixed site: `brace_depth: usize = 0` + `while (i < input.len)` + guarded `if (brace_depth == 0) return error.UnbalancedExpression` at 303/312/321). Pre-fix at commit b203f6cb^ those guards were absent. Controls that prove the discriminator: src/lexer.zig:171-208 and src/parser.zig:83 use `i32` (signed, cannot panic); src/js_emitter.zig:417-424 and src/emitter_helpers.zig:3280-3288 use `usize` but a `while (... depth > 0)` loop bound so the decrement never runs at 0.",
+            "faucet_fact": "AST/regex walk over non-test .zig in src/: for each function, find a depth-like counter (`<name>depth`/`nesting`/`depth`) declared `usize`/`u8`/`u16`/`u32`/`u64`; flag a decrement (`x -= 1` or `x -= N`) of that counter that is NOT (a) preceded on the same or immediately-prior line by `if (x == 0)`/`if (x > 0)` guard, AND NOT (b) inside a `while` whose condition contains `<counter> > 0`. Returns count of unguarded unsigned-depth decrements. Signed (`i32`/`isize`) counters return 0 (deliberately safe).",
+            "faucet_intent": "axis depth_walker_on_user_text: +1 the enclosing function parses user-supplied source/expression text (params named source/input/body/expr/content, called from parser/codegen/emitter), -1 it is an internal fixed-shape buffer (e.g. our own JSON help text with literal field names). Anchors the count so a benign internal walker doesn't fire.",
+            "gate": "fire = (unguarded_unsigned_decrement_count >= 1) AND (depth_walker_on_user_text >= 0.5). Product gate: a raw count alone is fooled by loop-bounded `while depth>0` cases (excluded by fact rule b) and by internal fixed-text walkers (excluded by intent). Both must agree.",
+            "fires_on": "src/codegen_utils.zig parseValue at commit e8e5a917..b203f6cb^ — `brace_depth -= 1`/`paren_depth -= 1`/`bracket_depth -= 1` on usize counters inside `while (i < input.len)`, no zero guard. Reached on real user input via `~capture(expr: { ... })` through the koru_std backend; a stray `]`/`)`/`}` did `0 -= 1` → integer-overflow panic (fixed in b203f6cb, pinned by two expectError unit tests).",
+            "stays_silent_on": "src/lexer.zig:171-208 (findTopLevelVariantPipe/findModuleQualifierColon) — same delimiter-counting shape but `i32`, so underflow is harmless; and src/js_emitter.zig:417-424 — usize but the `while (j < len and depth > 0)` bound means the `depth -= 1` can never execute at depth 0. Both must stay grey or the watcher is just a delimiter-counting linter.",
+            "severity": "high",
+            "buildability": "high"
+          },
+          {
+            "intent": "When emitting build.zig.zon for a Zig dependency, a dependency Source whose JSON is missing/typo'd a required field (name/url/hash) must fail loudly at the malformed-JSON boundary — it must NOT be silently dropped from the dependency set, leaving the user to debug an opaque downstream 'module not found' from Zig's package manager.",
+            "trusted_via": "nothing — the `continue` is a deliberate silent skip with no diagnostic, no log, no error. The only thing 'watching' is the reviewer who happens to read line 224.",
+            "grounding": "src/emit_package_files.zig:224 `if (name.len == 0 or url.len == 0 or hash.len == 0) continue;` — drops the dependency. The upstream extractor src/emit_package_files.zig:150-165 (parseJsonField) returns \"\" for any missing field (lines 158, 164) and \"\" on a bufPrint overflow (line 152 `catch return \"\"`), so an empty field reaching 224 is a real reachable state, not a guaranteed-absent one.",
+            "faucet_fact": "Grep/AST: find `continue;`/`return`/`break` statements whose controlling `if` tests `<x>.len == 0` (or `== null`/`orelse \"\"`) on a value that was produced by a fallible extractor returning a synthesized empty/null on failure (parseJsonField, parseJsonField-family `catch return \"\"`/`catch return null`), inside an emit/codegen function. Returns the count of silent-skip-on-synthesized-empty sites. Binary: emit_package_files.zig:224 currently = 1.",
+            "faucet_intent": "axis failure_should_be_loud: +1 the skipped/empty value is a hard requirement for a correct artifact (a dependency's url/hash — without it the build is broken), -1 the value is genuinely optional (a description, a comment). Distinguishes 'dropped a load-bearing field' from 'omitted optional prose'.",
+            "gate": "fire = (silent_skip_on_synthesized_empty >= 1) AND (failure_should_be_loud >= 0.5). The fact alone would flag benign optional-field skips; the judge axis confirms the dropped field is load-bearing (url/hash for a build dependency) before firing.",
+            "fires_on": "src/emit_package_files.zig:218-230: feed emitBuildZigZon a Source requirement JSON with a typo'd key (e.g. `\"hashh\":` instead of `\"hash\"`). parseJsonField returns \"\" for hash → line 224 `continue` silently omits the whole dependency → emitted build.zig.zon lacks it → Zig later fails with an unrelated 'module not found', no Koru diagnostic pointing at the malformed field.",
+            "stays_silent_on": "src/template_processor.zig:316-317 `cont.binding orelse \"\"` / `cont.condition orelse \"\"` — these feed an optional binding/guard into a template where empty is a legitimate value (no binding, no guard), failure_should_be_loud = -1, so the watcher must not fire.",
+            "severity": "med",
+            "buildability": "med"
+          },
+          {
+            "intent": "In the parser's implicit-flow/source dispatch, the `var invocation: ast.Invocation = undefined` (and the parallel `continuations`/`final_invocation` undefineds) must be assigned on EVERY reachable path before the shared use below the if/else-if/else chain — a path that falls through unassigned uses garbage memory (a wild pointer in the AST node), which in ReleaseFast is silent corruption rather than a crash.",
+            "trusted_via": "reviewer-attention only. Correctness rests on each of the three top-level branches happening to assign `invocation` before the merge point; there is no `else`-exhaustiveness check and no compiler error for a future fourth branch (or an early non-return path) that forgets to set it.",
+            "grounding": "src/parser.zig:3046 `var invocation: ast.Invocation = undefined;` then branches at 3054 (has_implicit_file_source), 3089 (has_implicit_flow_brace), and the final else each assign it (verified: assignments at the file-source branch, head_str/invocation_str sub-branches, and `invocation = try self.parseEventInvocation(remaining)` in the final else). Same pattern at parser.zig:3052, 4447, 4480, 4729, 4768, 5717.",
+            "faucet_fact": "AST walk: for each `var <name>: <T> = undefined;` where T is a struct/slice AST type, within the function find whether every control-flow path from the decl to the first READ of <name> passes through an assignment `<name> = ...`. Flag decls with >=1 read-reaching path that has no dominating assignment. Returns count of undefined-AST-vars with an unassigned read path. (Cheaper proxy: decl is followed by an if/else-if chain with NO final bare `else` that assigns, OR a branch that `break`s/falls through without assigning.)",
+            "faucet_intent": "axis undefined_is_load_bearing: +1 the undefined var is an AST payload later embedded into the tree / dereferenced (a wild value propagates into compiled output), -1 it is a scratch index/length immediately overwritten in all paths or only used in a debug log. Separates 'garbage reaches the AST' from harmless undefined scratch.",
+            "gate": "fire = (undefined_ast_var_with_unassigned_read_path >= 1) AND (undefined_is_load_bearing >= 0.5). The dataflow fact is the anchor (it is exact when computed properly); the judge confirms the leaked-undefined value actually lands in the AST rather than a discarded local.",
+            "fires_on": "src/parser.zig:3046 region — the invariant holds TODAY only because all three branches assign. The watcher fires the moment a maintainer adds a branch (or an early-continue path) to the implicit-flow dispatch that forgets the `invocation = ...` assignment, since there is no exhaustiveness guarantee binding the three branches to the single merged use of `invocation` below.",
+            "stays_silent_on": "src/parser.zig:2950-2956 — `body_lines.items[0]` style reads are guarded by `if (body_lines.items.len > 0)`; and scratch usize indices initialized `= undefined` then unconditionally assigned in the next line before any read. Those have a dominating assignment on every read path, so the dataflow fact returns 0 and the watcher stays silent.",
+            "severity": "med",
+            "buildability": "low"
+          }
+        ]
+      },
+      {
+        "lens": "rules_aware",
+        "watchers": [
+          {
+            "intent": "Every fenced ```koru / ```kz code block in hand-authored Markdown docs (README.md above all, then any non-generated .md) MUST compile under the current compiler — it must use only language forms the compiler accepts today.",
+            "trusted_via": "nothing — README.md is hand-written, not generated from tests; generate-corpus.js only validates the docs/by-example/ shards (which ARE 'verbatim from passing tests'), never README.md, and there is no harness that extracts fenced blocks and runs koruc on them.",
+            "grounding": "README.md:6-15 (the single ```koru block). Generation/validation lives in scripts/generate-corpus.js / generate-tutorial.js which read koru-by-example.json (corpus = passing tests) — README is outside that pipeline entirely. Compiler rejection sites: parser PARSE003 on `~import` and on quoted import paths (reproduced live via zig-out/bin/koruc).",
+            "faucet_fact": "Extract every fenced koru/kz block from hand-authored .md (README.md, AGENTS.md, CLAUDE.md, CONTRIBUTING.md, PLAN.md — exclude files whose header says 'Generated by'), write each to a temp .kz, run zig-out/bin/koruc with KORU_STDLIB/KORU_PATH set, and count blocks whose stderr contains 'error[' (PARSE/KORU codes) or whose exit indicates a compile error. Returns N_failing_blocks and their file:line.",
+            "faucet_intent": "none",
+            "gate": "fact alone: fire when N_failing_blocks >= 1 for any hand-authored doc. Pure mechanical compile — no judge needed. (Optional product anchor: only fire if the doc lacks a 'Generated by / may drift' disclaimer header, so self-aware generated artifacts stay silent.)",
+            "fires_on": "README.md:6 — the front-door example begins `~import \"$std/io\"`. koruc rejects line 1 twice: PARSE003 'imports are bare — drop the `~`' and, once de-tilded, PARSE003 'imports take a bare path, not a string'. The canonical form (560 corpus files) is `import std/io`. The README example has never compiled against the current parser.",
+            "stays_silent_on": "docs/by-example/koru.md and koru-tutorial.md carry a 'Generated ... by scripts/generate-tutorial.js' / 'verbatim from passing tests' header — their fenced blocks come from passing tests, so they compile and the watcher stays silent (and the disclaimer-gate excludes them anyway). A README example written in current `import std/io` form also stays silent.",
+            "severity": "high",
+            "buildability": "high"
+          },
+          {
+            "intent": "A language form the project has DELETED and pinned dead with a MUST_FAIL test must not still be TAUGHT as live syntax in prose docs — the doc corpus and the compiler's pinned-removals must not contradict each other.",
+            "trusted_via": "a-partial-test — the removal is pinned by exactly one MUST_FAIL regression (e.g. tests/regression/.../010_054_println_removed pins `std/io:println` as KORU040 unknown event; 010_053 pins `_`-in-name rejection). The test proves the COMPILER rejects it; nothing checks that the DOCS stopped teaching it.",
+            "grounding": "tests/regression/000_CORE_LANGUAGE/010_BASIC_SYNTAX/010_054_println_removed/{input.kz,MUST_FAIL} (PIN comment: '`std/io:println` is DELETED'). Drift surfaces in koru-tutorial.md, docs/by-example/koru.md, README.md (which still uses `std.io:` dot-namespace, dead per PLAN.md §3 and the 251-vs-18 slash-vs-dot corpus split).",
+            "faucet_fact": "Build the dead-form set mechanically from MUST_FAIL tests carrying a 'DELETED'/'removed'/'rejected' PIN comment (the literal token they keep: `~import`, quoted import path, `println`, `_`-name, `std.io:` dot-namespace). grep every hand-authored prose doc for those literal tokens used as live examples (inside ```koru fences or backtick spans not prefixed by 'removed'/'no longer'/'~~'). Returns count of dead-form occurrences per doc.",
+            "faucet_intent": "axis taught_as_live: +1 the doc presents the token as the current way to do X (imperative example, 'use `~import`'), -1 the doc presents it as removed/historical ('`println` was deleted', struck through). Anchors the raw grep so a doc that mentions a dead form precisely to say it's gone does not fire.",
+            "gate": "PRODUCT: fire = (dead_form_grep_count >= 1) × (judge taught_as_live >= +1) — the correct mechanical fact (token IS pinned-dead AND appears in the doc) gates the judge; refuses to fire when the doc only references the dead form to document its removal.",
+            "fires_on": "README.md teaches `std.io:print.ln` (dot namespace) and `~import \"$std/io\"` as the live hello-world — both pinned-dead forms presented imperatively. taught_as_live = +1, grep_count >= 1 → fires.",
+            "stays_silent_on": "010_054's own input.kz keeps `~std/io:println(...)` but is a MUST_FAIL negative test with 'codemod:skip — negative test' header; a prose line like 'the old `println` was removed in favor of print.ln' scores taught_as_live = -1 → product is 0 → silent.",
+            "severity": "med",
+            "buildability": "med"
+          },
+          {
+            "intent": "Every doc file, build command, or test number a governance/protocol doc tells contributors to update or run MUST actually exist — a referenced target that is gone is a discipline nothing can follow.",
+            "trusted_via": "convention / reviewer-attention only — CONTRIBUTING.md prescribes a 5-step 'Documentation Update Protocol' and a PR checklist, but no CI, hook, or test verifies the referenced files exist or the commands resolve.",
+            "grounding": "CONTRIBUTING.md:18-37 (update SPEC.md, KORU.md, STATUS.md, docs/development/TEST_DOCUMENTATION_MAP.md), :45-52 (KNOWN_ISSUES.md), :211/:238 ('verified by test 123', 'test 405'). Verified MISSING on disk: SPEC.md, KORU.md, STATUS.md, TEST_DOCUMENTATION_MAP.md, KNOWN_ISSUES.md, DOCUMENTATION.md, AI.md. AGENTS.md:48 prescribes `npm run status` — no root package.json defines a 'status' script (verified absent).",
+            "faucet_fact": "Parse governance docs (CONTRIBUTING.md, AGENTS.md) for (a) referenced repo-relative file paths, (b) `npm run X` / `node scripts/X` commands, (c) `test NNN` / `(test NNN)` references. For each: stat the file / resolve the npm script in package.json / confirm a regression dir matching NNN exists. Returns count of dangling references with their CONTRIBUTING.md:line.",
+            "faucet_intent": "none",
+            "gate": "fact alone: fire when dangling_reference_count >= 1. Deterministic existence check — no judge.",
+            "fires_on": "CONTRIBUTING.md's entire Documentation Update Protocol points at SPEC.md / KORU.md / STATUS.md / TEST_DOCUMENTATION_MAP.md / KNOWN_ISSUES.md — all confirmed MISSING. AGENTS.md:48 `npm run status` does not resolve (no root package.json). The protocol is unfollowable as written.",
+            "stays_silent_on": "A reference to README.md, build.zig, run_regression.sh, or tests/regression/ (all present) does not fire; a `(test 405)` whose directory exists does not fire — the watcher only flags the dead targets, not the live ones.",
+            "severity": "low",
+            "buildability": "high"
+          },
+          {
+            "intent": "A doc claim of the form 'X works (verified by test NNN)' / 'Last Verified: DATE (test NNN)' must point at a test that (a) exists and (b) actually exercises X — the verification-receipt discipline CONTRIBUTING preaches must not decay into a bare citation nobody re-checks.",
+            "trusted_via": "a-comment / convention — CONTRIBUTING.md:60-64 and :209-215 mandate 'Add Verification Date / Note which tests verify the claim / Format: Last Verified: YYYY-MM-DD (test NNN)', but no mechanism confirms the cited test number resolves or that the doc date isn't stale relative to the test's last change.",
+            "grounding": "CONTRIBUTING.md:62-64 ('Last Verified: 2025-10-02 (test 401-405)'), :150-154 (Monthly audit: 'Check SPEC.md examples compile / Verify KORU.md tutorials work'). The audit is prescribed as a MANUAL monthly maintainer chore (CONTRIBUTING.md:136 'Maintainers should run this monthly') — i.e. trusted to human discipline, watched by nothing.",
+            "faucet_fact": "grep all docs for `verified by test N`, `(test N)`, `Last Verified: <date> (test N)`. For each citation: confirm a tests/regression dir for N exists; if a date is present, compare it against `git log -1 --format=%cd` of that test's input.kz — flag when the test changed AFTER the doc's Last-Verified date (claim is stale) or when N does not resolve. Returns stale/dangling citation count + file:line.",
+            "faucet_intent": "axis claim_still_holds: +1 the cited test plausibly exercises the documented feature (name/cluster matches the claim), -1 the citation is decorative or the test is unrelated to the prose claim around it. Used only to suppress benign number-mentions that aren't verification claims.",
+            "gate": "PRODUCT: fire = (citation_resolves_and_date_is_stale-or-dangling : fact) × (claim_still_holds judge != irrelevant). The mechanical staleness/dangling fact is primary; the judge keeps it from firing on a passing mention of a number that isn't a verification receipt.",
+            "fires_on": "CONTRIBUTING.md:211 cites 'verified by test 123' and :238 'test 405' as exemplars; if treated as live receipts neither maps to a present descriptively-named regression dir (regressions are NNN_name dirs, not bare 123/405) — dangling citation, fires. (Also any future 'Last Verified' whose test was edited after the date.)",
+            "stays_silent_on": "koru-by-example.json topic configs reference real cluster ids (000_CORE_LANGUAGE etc.) that the corpus generator already validates and which resolve on disk — those stay silent; a citation whose test exists and whose Last-Verified date is newer than the test's last edit stays silent.",
+            "severity": "low",
+            "buildability": "med"
+          }
+        ]
+      }
+    ]
+  }
+}
