@@ -8,8 +8,8 @@
 // - Uses the shape_checker for optional validation before execution
 //
 // Usage:
-//   ~import "std/interpreter"
-//   ~import "std/runtime"
+//   ~import std/interpreter
+//   ~import std/runtime
 //
 //   // Register events you want callable at runtime
 //   ~std/runtime:register(scope: "api") {

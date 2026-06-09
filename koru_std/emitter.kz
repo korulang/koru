@@ -3,7 +3,7 @@
 // Makes the Zig emitter available as Koru events at backend runtime.
 //
 // Usage:
-//   ~import "std/emitter"
+//   ~import std/emitter
 //   ~emit.program(ast: my_ast, allocator: allocator)
 //   | emitted code |> use(code.zig_code)
 //   | failed e |> handle(e.message)

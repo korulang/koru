@@ -3,7 +3,7 @@
 // Makes the Zig parser available as Koru events at RUNTIME.
 //
 // Usage:
-//   ~import "std/parser"
+//   ~import std/parser
 //   ~std/parser:parse.source(source: code, file-name: "test.kz", allocator: allocator)
 //   | parsed p |> use(p.ast)
 //   | parse-error e |> handle(e.message)

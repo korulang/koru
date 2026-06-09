@@ -14,7 +14,7 @@
 // tap calls and regular calls - they're just steps in the flow.
 //
 // USAGE:
-//   ~import "std/taps"
+//   ~import std/taps
 //
 //   // Concrete source + branch (has payload access)
 //   ~tap(source: myEvent, destination: *)

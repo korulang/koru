@@ -1,7 +1,7 @@
 // Chrome Tracing Profiler - Proof-of-Concept Timeline Profiler
 // ==================================================================
 // Usage:
-//   ~[profile]import "$std/profiler"
+//   ~[profile]import std/profiler
 //   koruc my_app.kz --profile
 //
 // Result: Program generates /tmp/koru_profile.json in Chrome Tracing Format

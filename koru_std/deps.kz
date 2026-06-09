@@ -6,7 +6,7 @@
 //
 // Usage in a library (e.g., curl/index.kz):
 //
-//   ~import "std/deps"
+//   ~import std/deps
 //
 //   ~std/deps:requires.system {
 //       "name": "curl",
