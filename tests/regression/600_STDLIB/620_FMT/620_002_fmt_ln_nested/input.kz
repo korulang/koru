@@ -1,0 +1,22 @@
+// TEST: fmt:ln invoked NESTED in a continuation — position must be irrelevant.
+//
+// Twin of 620_001 (fmt:ln at top level, as a subflow RHS — the
+// flow.invocation position). Same transform, same format string, but the
+// invocation sits inside a continuation. Pins the transform-layer
+// position-duality bug family: fmt.kz's non-top-level path currently
+// returns `.{ .formatted = undefined }` without transforming, so the
+// nested invocation never fires.
+
+~import std/fmt
+~import std/io
+
+~event get-name {}
+| name []const u8
+
+~proc get-name|zig {
+    return .{ .name = "World" };
+}
+
+~get-name()
+| name n |> std/fmt:ln("Hello, {{ n:s }}!")
+    | line l |> std/io:print.ln(l.text)

@@ -1,0 +1,37 @@
+// Probe: kernel:init nested under a continuation, WITH step/pairwise/self
+// fusion + a | computed branch — same shape as top-level 390_090 but the
+// init is not the top-level invocation. Determines whether the non-top-level
+// fusion path reproduces the dead-branch duplicate.
+
+~import std/kernel
+~import std/io
+
+~std/kernel:shape(Body) {
+    v: f64,
+    acc: f64,
+}
+
+~event get-count {}
+| n u32
+
+~proc get-count|zig {
+    return .{ .n = 3 };
+}
+
+~get-count()
+| n _ |> std/kernel:init(Body) {
+        { v: 1, acc: 0 },
+        { v: 2, acc: 0 },
+        { v: 3, acc: 0 },
+    }
+    | kernel k |> std/kernel:step(0..2)
+        | step |> std/kernel:pairwise {
+                const s = k.v + k.other.v;
+                k.acc += s;
+                k.other.acc += s;
+            } |> std/kernel:self {
+                    k.v += k.acc;
+                }
+    | computed c |> std/io:print.blk {
+            v0={{ c[0].v:f }}
+        }
