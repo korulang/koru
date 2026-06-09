@@ -6,7 +6,7 @@
 // The compiler decides optimal data layout and iteration strategy.
 //
 // USAGE:
-//   ~import "std/kernel"
+//   ~import std/kernel
 //
 //   // 1. Declare the shape (structure with explicit types)
 //   ~std/kernel:shape(Body) { x: f64, y: f64, z: f64, vx: f64, vy: f64, vz: f64, mass: f64 }
@@ -864,10 +864,22 @@ const std = @import("std");
 
     var new_item: ast.Item = undefined;
     if (is_top_level) {
-        // Clone continuations (shallow clone of the array is fine if we don't mutate elements)
-        var new_continuations = allocator.alloc(ast.Continuation, flow.continuations.len) catch unreachable;
-        for (flow.continuations, 0..) |cont, i| {
-            new_continuations[i] = cont;
+        // Clone continuations (shallow clone of the array is fine if we don't mutate elements).
+        // When fusion folded the kernel ops into the init proc (it now returns `.computed`),
+        // the consumed `| kernel` continuation MUST be dropped — otherwise it survives as a
+        // dead `.kernel =>` switch arm holding a duplicate of the fused pairwise+self loops.
+        const drop_kernel_cont = has_computed_continuation;
+        var kept_count: usize = 0;
+        for (flow.continuations) |cont| {
+            if (drop_kernel_cont and std.mem.eql(u8, std.mem.trim(u8, cont.branch, " "), "kernel")) continue;
+            kept_count += 1;
+        }
+        var new_continuations = allocator.alloc(ast.Continuation, kept_count) catch unreachable;
+        var write_idx: usize = 0;
+        for (flow.continuations) |cont| {
+            if (drop_kernel_cont and std.mem.eql(u8, std.mem.trim(u8, cont.branch, " "), "kernel")) continue;
+            new_continuations[write_idx] = cont;
+            write_idx += 1;
         }
 
         new_item = ast.Item{
@@ -1002,16 +1014,21 @@ const std = @import("std");
             .type = slice_type,
         };
 
-        const branches = allocator.alloc(ast.Branch, 2) catch unreachable;
-        branches[0] = ast.Branch{
-            .name = allocator.dupe(u8, "kernel") catch unreachable,
-            .payload = ast.Shape{ .fields = branch_fields },
-            .is_optional = !has_kernel_continuation,
-            .annotations = &[_][]const u8{},
-        };
-        branches[1] = ast.Branch{
+        // Declare ONLY the branch the init proc actually returns (`.computed` once fusion
+        // folds the kernel ops, else `.kernel`). Declaring both left an unused `kernel`
+        // variant that forced the emitter to keep a dead `.kernel =>` switch arm in the
+        // calling flow. The `kernel`-return case (e.g. init with no continuation at all)
+        // must stay OPTIONAL so branch-coverage (KORU022) doesn't demand a handler that
+        // isn't there; the `computed`-return case always has its `| computed` continuation.
+        const branches = allocator.alloc(ast.Branch, 1) catch unreachable;
+        branches[0] = if (has_computed_continuation) ast.Branch{
             .name = allocator.dupe(u8, "computed") catch unreachable,
             .payload = ast.Shape{ .fields = computed_fields },
+            .is_optional = false,
+            .annotations = &[_][]const u8{},
+        } else ast.Branch{
+            .name = allocator.dupe(u8, "kernel") catch unreachable,
+            .payload = ast.Shape{ .fields = branch_fields },
             .is_optional = true,
             .annotations = &[_][]const u8{},
         };
@@ -1087,7 +1104,7 @@ const std = @import("std");
 // The kernel variable becomes "self" and .other refers to the paired element.
 //
 // Example:
-//   std.kernel:pairwise {
+//   std/kernel:pairwise {
 //       bodies.vel -= d * mag * bodies.other.mass
 //       bodies.other.vel += d * mag * bodies.mass
 //   }
@@ -1441,7 +1458,7 @@ const std = @import("std");
 // k.X refers to the current element (no k.other).
 //
 // Example:
-//   std.kernel:self { k.vel += k.force * dt }
+//   std/kernel:self { k.vel += k.force * dt }
 //
 // Generated code:
 //   const ptr = k.ptr;
