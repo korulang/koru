@@ -27,10 +27,17 @@ const std = @import("std");
         \\_ = @import("std").posix.write(1, "{s}\n") catch {{}};
         , .{text}) catch unreachable;
 
-    const new_node = ast.Node{ .inline_code = code };
-    const maybe_new_program = ast_functional.replaceInvocationNodeRecursive(
-        allocator, program, invocation, new_node,
-    ) catch unreachable;
+    _ = invocation;
+    // Position-agnostic write-back: the handler always sees its invocation as
+    // a flow's own invocation (the runner lifts nested sites), so the
+    // replacement is the uniform flow-shaped one — never a nested-node search.
+    const flow = &item.flow;
+    const new_item = ast.Item{ .inline_code = ast.InlineCode{
+        .code = code,
+        .location = flow.location,
+        .module = allocator.dupe(u8, flow.module) catch unreachable,
+    } };
+    const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
     if (maybe_new_program) |new_program| {
         const result = allocator.create(ast.Program) catch unreachable;
         result.* = new_program;
@@ -39,8 +46,8 @@ const std = @import("std");
     @panic("labeled: replacement failed");
 }
 
-// Use a simple noop event to create a continuation context — labeled must be
-// inside a continuation for replaceInvocationNodeRecursive to find it.
+// The invocations sit nested under a noop chain on purpose: they exercise the
+// lift/graft path — the transform above must work identically at any depth.
 ~event noop {}
 
 ~proc noop|zig {}
