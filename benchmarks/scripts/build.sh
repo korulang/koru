@@ -28,6 +28,16 @@ if [ -d "$DIR/csharp" ]; then
     echo "[csharp] ok"
 fi
 
+# Go
+if [ -d "$DIR/go" ]; then
+    echo "[go] building..."
+    cd "$DIR/go"
+    rm -f bench
+    go build -o bench . > /dev/null
+    [ -f bench ] || { echo "[go] FAILED"; exit 1; }
+    echo "[go] ok"
+fi
+
 # Rust
 if [ -d "$DIR/rust" ]; then
     echo "[rust] building..."
