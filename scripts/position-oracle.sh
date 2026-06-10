@@ -49,6 +49,10 @@ export KORU_PATH="$ROOT"
 
 GEN="$SCRIPT_DIR/position_oracle_gen.py"
 SCRATCH="tests/regression/999_POSITION_ORACLE"
+# Twins must sit at the same depth as real tests (cluster/subcluster/test) —
+# import resolution is depth-sensitive, and a shallower twin manufactures
+# frontend failures (proven by 330_001/220_004 false positives, 2026-06-10).
+SCRATCH_SUB="$SCRATCH/999_TWINS"
 REPORT="$ROOT/position-oracle-report.txt"
 SENTINEL_TEST="tests/regression/200_COMPILER_FEATURES/210_PARSER/210_045_source_block_in_pipeline"
 
@@ -73,7 +77,7 @@ if [ -e "$SCRATCH" ]; then
     echo "it created itself this run — remove or rename it manually, then rerun." >&2
     exit 1
 fi
-mkdir -p "$SCRATCH"
+mkdir -p "$SCRATCH_SUB"
 CREATED_SCRATCH=true
 cleanup_scratch() {
     if [ "$CREATED_SCRATCH" = true ] && [ "$KEEP_TWINS" = false ]; then
@@ -205,7 +209,7 @@ while IFS= read -r dir; do
         continue
     fi
 
-    twin="$SCRATCH/$name"
+    twin="$SCRATCH_SUB/$name"
     rm -rf "$twin"
     cp -R "$dir" "$twin"
     # Strip generated artifacts and markers from the twin copy (same list the
