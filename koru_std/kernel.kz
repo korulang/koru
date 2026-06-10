@@ -471,6 +471,14 @@ const std = @import("std");
     // Enforce: if kernel branch is present, computed branch is required
     // Without computed, kernel results are trapped with no way to exit the scope
     // Each init checks itself — claims_descendants ensures outer init runs first
+    //
+    // DESIGN (ratified 2026-06-10): today init takes only a literal source-block
+    // dataset, so a computed-less kernel is unobservable by construction — dead
+    // computation, rejected. If a future init FORM binds external host data
+    // (mutate-in-place, observability outside the kernel), the requirement
+    // becomes per-init-form: that form may make | computed optional. The rule
+    // carves by init form, NEVER by position — position stays irrelevant.
+    // Pinned: 390_054 (top level), 390_023 (in pipeline).
     if (has_kernel_continuation and !has_computed_continuation) {
         const computed_error = std.fmt.allocPrint(
             allocator,

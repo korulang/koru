@@ -1,0 +1,32 @@
+// TEST: kernel:init in a pipeline REQUIRES | computed — twin of 390_054 at depth.
+//
+// NEGATIVE test (expected_error.txt pins the rejection). The rule is
+// position-blind: a kernel whose result is never observed is dead
+// computation at any depth. This test was green pre-a24afd06 only because
+// the old nested path enforced the rule against the containing flow — an
+// accident of the top-level/nested duality, not a sanctioned form.
+// Placement-legality of nested init (WITH computed) is carried by 390_091.
+
+~import std/kernel
+~import std/io
+
+~std/kernel:shape(Body) {
+    mass: f64,
+}
+
+~event get-count {}
+| n u32
+
+~proc get-count|zig {
+    return .{ .n = 3 };
+}
+
+~get-count()
+| n _ |> std/kernel:init(Body) {
+        { mass: 1.0 },
+        { mass: 2.0 },
+        { mass: 3.0 },
+    }
+    | kernel k |> std/kernel:pairwise { k.mass += k.other.mass }
+
+~std/io:print.ln("done")
