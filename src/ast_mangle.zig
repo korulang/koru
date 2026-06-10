@@ -43,6 +43,10 @@ fn isNameChar(c: u8) bool {
 /// as a tap's `* -> *` source/dest. A real kebab name always has `-` between two
 /// name chars, so this never under-mangles a genuine identifier.
 fn mangle(name: []const u8) void {
+    // Raw (backtick-delimited) names are DATA, not Koru identifiers — e.g. a
+    // regex pattern in a `…`-branch. They must survive byte-for-byte (a `-` is
+    // a range operator, not a word separator), so never normalize them.
+    if (name.len > 0 and name[0] == '`') return;
     const bytes = @constCast(name);
     for (bytes, 0..) |*c, i| {
         if (c.* != '-') continue;

@@ -4956,13 +4956,36 @@ pub const Parser = struct {
 
         const trimmed_content = lexer.trim(content);
 
-        // Check for pattern branch: [...]
+        // Check for pattern branch: [...]  or  raw pattern branch: `...`
         const is_pattern_branch = trimmed_content.len > 0 and trimmed_content[0] == '[';
+        const is_raw_branch = trimmed_content.len > 0 and trimmed_content[0] == '`';
 
         var branch_name: []const u8 = undefined;
         var rest_after_branch: []const u8 = undefined;
 
-        if (is_pattern_branch) {
+        if (is_raw_branch) {
+            // Raw pattern branch: `...` — capture the content VERBATIM up to the
+            // next backtick. This is the delimiter for pattern languages that
+            // use `[]`/`-` as data (regex: `[a-z]+`). Backticks don't nest, so
+            // no depth counting; the backticks stay on the name as the "raw"
+            // marker (ast_mangle skips backtick-led names, leaving them
+            // byte-for-byte — unlike `[...]` names, which get kebab-normalized).
+            var end_pos: usize = 1;
+            while (end_pos < trimmed_content.len and trimmed_content[end_pos] != '`') : (end_pos += 1) {}
+            if (end_pos >= trimmed_content.len) {
+                try self.reporter.addError(
+                    .PARSE003,
+                    self.current + 1,
+                    indent + 2,
+                    "unmatched '`' in raw pattern branch",
+                    .{},
+                );
+                return error.ParseError;
+            }
+            end_pos += 1; // include the closing backtick
+            branch_name = trimmed_content[0..end_pos];
+            rest_after_branch = lexer.trim(trimmed_content[end_pos..]);
+        } else if (is_pattern_branch) {
             // Pattern branch: find matching ] with bracket counting
             var depth: usize = 1;
             var end_pos: usize = 1;
@@ -5128,12 +5151,13 @@ pub const Parser = struct {
             };
         }
 
-        // Normal branch continuation - validate branch name is a valid identifier
-        // Pattern branches ([...]) skip this check - the pattern is opaque data for transforms
-        if (!is_pattern_branch and !std.mem.eql(u8, branch_name, "?")) {
+        // Normal branch continuation - validate branch name is a valid identifier.
+        // Pattern branches ([...]) and raw pattern branches (`...`) skip this
+        // check - the pattern is opaque data for transforms, not an identifier.
+        if (!is_pattern_branch and !is_raw_branch and !std.mem.eql(u8, branch_name, "?")) {
             try self.rejectSnakeName(branch_name, self.current, "branch");
         }
-        if (!is_pattern_branch and !isValidIdentifier(branch_name)) {
+        if (!is_pattern_branch and !is_raw_branch and !isValidIdentifier(branch_name)) {
             try self.reporter.addError(
                 .PARSE003,
                 self.current + 1,

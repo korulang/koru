@@ -1,0 +1,45 @@
+// Backtick raw-pattern-branch glyph. A branch delimited by `…` captures its
+// content VERBATIM (no kebab→snake normalization), so it can carry data whose
+// `-`/`[]` are operators, not word separators — e.g. a regex range `[a-z]`.
+// This is the delimiter the regex `match` flagship is built on (the `[...]`
+// form snake-normalizes `-`, corrupting ranges — see 010_058).
+//
+// This transform reads the FIRST continuation's backtick branch name and bakes
+// it into a comptime @compileError. EXPECT (CONTAINS): the range `[a-z]+@[a-z]+`
+// survives byte-for-byte (hyphen intact). GREEN proves the glyph works.
+const std = @import("std");
+
+~[comptime|transform]pub event scan {
+    invocation: *const Invocation,
+    item: *const Item,
+    program: *const Program,
+}
+| transformed SiteResult
+
+~proc scan|zig {
+    const ast = @import("ast");
+    const allocator = std.heap.page_allocator;
+
+    const flow = if (item.* == .flow) &item.flow else return .{ .transformed = .{} };
+    if (flow.body.continuations.len == 0) return .{ .transformed = .{} };
+
+    const pattern = flow.body.continuations[0].branch;
+
+    const code = std.fmt.allocPrint(
+        allocator,
+        "comptime {{ @compileError(\"pattern={s}\"); }}",
+        .{pattern},
+    ) catch unreachable;
+
+    const replacement = ast.Item{ .inline_code = ast.InlineCode{
+        .code = code,
+        .location = flow.location,
+        .module = allocator.dupe(u8, flow.module) catch unreachable,
+    } };
+
+    return .{ .transformed = .{ .replacement = replacement } };
+}
+
+~scan()
+| `[a-z]+@[a-z]+` _ |> _
+| no-match |> _
