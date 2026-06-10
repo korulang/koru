@@ -1,0 +1,115 @@
+~[comptime]
+
+// Koru Standard Library: Regex — compile-time, DFA-based pattern matching as
+// CONTROL FLOW. Generalizes the Orisha-router idiom from routes to regex:
+//
+//   ~match(input)
+//   | `[a-z]+@[a-z]+` _ |> handle-email()
+//   | `[0-9]+`        _ |> handle-number()
+//   | no-match        _ |> reject()
+//
+// Each `…` raw-pattern branch is compiled — at COMPILE TIME — to a specialized
+// DFA matcher (src/regex_engine.zig). Matching is straight-line, linear-time,
+// ReDoS-immune by construction (no backtracking, ever). The branches dispatch
+// like a switch: first matching pattern wins; `no-match` is the fallback.
+//
+// `match` semantics (cut 1): FULL match — the whole input must match a pattern.
+//
+// STATUS: WIP, dispatch mechanism WRONG (pinned RED by 630_001). The engine
+// integration is correct — it reads the `…`-branches, compiles each pattern via
+// regex_engine, and appends the matcher fns. But transform-set `inline_body`
+// goes through the emitter's EXPAND-SWITCH path (`const __r = <inline_body>;
+// switch (__r) { .<branch> => … }`), NOT the `__koru_continue_<idx>` marker path
+// assumed below — so the markers come out unresolved, and the switch arms use
+// the branch names as Zig union tags (backtick patterns aren't valid tags, and
+// get snake-mangled). FIX (needs emitter grounding): re-tag each `…`-branch to a
+// valid Zig tag, produce the branch-tag union the expand-switch expects, track
+// tag→pattern separately. Or emit the full inlined dispatch directly.
+
+const std = @import("std");
+
+~[comptime|transform]pub event match {
+    invocation: *const Invocation,
+    item: *const Item,
+    program: *const Program,
+    allocator: std.mem.Allocator,
+}
+| transformed SiteResult
+
+~proc match|zig {
+    const ast = @import("ast");
+    const regex = @import("regex_engine");
+
+    const flow = if (item.* == .flow) &item.flow else return .{ .transformed = .{} };
+    const conts = flow.body.continuations;
+
+    // The input expression is the match invocation's first argument.
+    const input_expr: []const u8 = if (invocation.args.len > 0) invocation.args[0].value else "\"\"";
+
+    // Build (a) the matcher fns as one top-level item, and (b) the dispatch
+    // inline_body: an if/else-if chain over the compiled matchers, each arm a
+    // `__koru_continue_<idx>` marker the emitter expands to that branch's body.
+    var matchers = std.ArrayList(u8){};
+    var dispatch = std.ArrayList(u8){};
+
+    dispatch.appendSlice(allocator, "{ const __koru_match_in: []const u8 = ") catch unreachable;
+    dispatch.appendSlice(allocator, input_expr) catch unreachable;
+    dispatch.appendSlice(allocator, "; ") catch unreachable;
+
+    var nomatch_idx: ?usize = null;
+    var arm_count: usize = 0;
+    for (conts, 0..) |c, i| {
+        const name = c.branch;
+        if (name.len >= 2 and name[0] == '`' and name[name.len - 1] == '`') {
+            const pattern = name[1 .. name.len - 1];
+            const fn_name = std.fmt.allocPrint(allocator, "__koru_re_{d}_{d}_{d}", .{ flow.location.line, flow.location.column, i }) catch unreachable;
+            const matcher_src = regex.compileToZig(allocator, pattern, fn_name) catch {
+                const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"regex: cannot compile pattern `{s}`\"); }}", .{pattern}) catch unreachable;
+                return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+            };
+            matchers.appendSlice(allocator, matcher_src) catch unreachable;
+            matchers.appendSlice(allocator, "\n") catch unreachable;
+
+            if (arm_count > 0) dispatch.appendSlice(allocator, " else ") catch unreachable;
+            const arm = std.fmt.allocPrint(allocator, "if ({s}(__koru_match_in)) __koru_continue_{d}", .{ fn_name, i }) catch unreachable;
+            dispatch.appendSlice(allocator, arm) catch unreachable;
+            arm_count += 1;
+        } else if (std.mem.eql(u8, name, "no_match") or std.mem.eql(u8, name, "no-match")) {
+            nomatch_idx = i;
+        }
+    }
+
+    if (nomatch_idx) |ni| {
+        const tail = std.fmt.allocPrint(allocator, " else __koru_continue_{d}", .{ni}) catch unreachable;
+        dispatch.appendSlice(allocator, tail) catch unreachable;
+    }
+    dispatch.appendSlice(allocator, " }") catch unreachable;
+
+    // Rebuild the flow: same invocation marked @pass_ran (so it isn't
+    // re-transformed), inline_body = the dispatch, continuations kept (the
+    // markers resolve against them).
+    const new_anns = allocator.alloc([]const u8, flow.inv().annotations.len + 1) catch unreachable;
+    for (flow.inv().annotations, 0..) |an, k| new_anns[k] = an;
+    new_anns[flow.inv().annotations.len] = allocator.dupe(u8, "@pass_ran(\"transform\")") catch unreachable;
+
+    const new_inv = ast.Invocation{
+        .path = flow.inv().path,
+        .args = flow.inv().args,
+        .annotations = new_anns,
+        .inserted_by_tap = flow.inv().inserted_by_tap,
+        .from_opaque_tap = flow.inv().from_opaque_tap,
+    };
+
+    var new_flow = flow.*;
+    new_flow.body = ast.rootSite(new_inv, flow.body.continuations, flow.location);
+    new_flow.inline_body = dispatch.toOwnedSlice(allocator) catch unreachable;
+
+    const appended = allocator.alloc(ast.Item, 1) catch unreachable;
+    appended[0] = ast.Item{ .inline_code = ast.InlineCode{
+        .code = matchers.toOwnedSlice(allocator) catch unreachable,
+        .location = flow.location,
+        .module = flow.module,
+    } };
+
+    return .{ .transformed = .{ .replacement = ast.Item{ .flow = new_flow }, .appended = appended } };
+}
