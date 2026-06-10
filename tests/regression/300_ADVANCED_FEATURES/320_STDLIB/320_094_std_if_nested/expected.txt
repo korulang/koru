@@ -1,0 +1,2 @@
+Test 1: then branch
+Test 2: else branch
