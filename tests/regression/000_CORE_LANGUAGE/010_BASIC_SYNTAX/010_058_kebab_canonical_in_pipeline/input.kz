@@ -1,0 +1,56 @@
+// PIN (kebab-canonical-pipeline) — ARCHITECTURE BUG, parked behind this pin.
+//
+// kebab-case MUST be the canonical form through the ENTIRE pipeline: parser,
+// AST, registry, call-site lookups — all of it. The ONLY place kebab→snake
+// conversion belongs is the EMITTER, because Zig identifiers can't carry `-`.
+// Nothing upstream of emission needs snake; it just needs a consistent form,
+// and kebab IS consistent.
+//
+// Today the conversion happens FAR too early — at token construction
+// (lexer.zig:92, :117, infix `-`→`_`) and again in a whole-AST normalize pass
+// (parser.zig:883 ast_mangle.normalizeProgram, :1736 normalizeEventDecl). That
+// poisons every downstream stage with a form none of them require, and throws
+// away the source form — which is sometimes load-bearing DATA. Consequence:
+// ANY name read mid-pipeline is silently corrupted `-`→`_`. (This is exactly
+// what blocks regex pattern branches: a `[a-z]` range read from a branch name
+// becomes `[a_z]`.)
+//
+// This transform reads its own event name from the pipeline and bakes it into
+// a comptime @compileError so the name surfaces verbatim in the build error.
+// EXPECT (CONTAINS): `canonical-name=[report-status]` (kebab preserved).
+// RED today: the name was snake'd at lex time → error says `report_status`.
+//
+// FIX (NEEDS DESIGN — bigger refactor): keep kebab canonical end-to-end; move
+// the single kebab→snake lowering into the emitter. Do NOT "fix" by editing
+// this test to expect snake — that would cement the blunder.
+const std = @import("std");
+
+~[comptime|transform]pub event report-status {
+    event_name: []const u8,
+    item: *const Item,
+    program: *const Program,
+}
+| transformed SiteResult
+
+~proc report-status|zig {
+    const ast = @import("ast");
+    const allocator = std.heap.page_allocator;
+
+    const flow = if (item.* == .flow) &item.flow else return .{ .transformed = .{} };
+
+    const code = std.fmt.allocPrint(
+        allocator,
+        "comptime {{ @compileError(\"canonical-name=[{s}]\"); }}",
+        .{event_name},
+    ) catch unreachable;
+
+    const replacement = ast.Item{ .inline_code = ast.InlineCode{
+        .code = code,
+        .location = flow.location,
+        .module = allocator.dupe(u8, flow.module) catch unreachable,
+    } };
+
+    return .{ .transformed = .{ .replacement = replacement } };
+}
+
+~report-status()
