@@ -496,12 +496,21 @@ pub const CompilerContext = struct {
     // Backend_output_emitted as its own compilation unit, linked via addObject.
     // This is the slice-B move: backend.zig no longer @import-s this file, so
     // it doesn't get fused into backend.zig's compilation unit.
+    // Regex engine (std/regex) — compile-time NFA/DFA matcher generator used by
+    // the `match` transform. Pure std, no deps.
+    const regex_engine_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/regex_engine.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+
     const backend_output_module = b.createModule(.{
         .root_source_file = b.path("backend_output_emitted.zig"),
         .target = target,
         .optimize = optimize,
     });
     backend_output_module.addImport("ast", ast_module);
+    backend_output_module.addImport("regex_engine", regex_engine_module);
     backend_output_module.addImport("log", log_module);
     backend_output_module.addImport("emitter_helpers", emitter_helpers_module);
     backend_output_module.addImport("compiler_env", compiler_env_module);
