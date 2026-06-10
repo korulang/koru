@@ -1,0 +1,10 @@
+// Regex match as control flow — first e2e. `match(input)` dispatches to the
+// first `…`-pattern branch that fully matches, else `no-match`. Patterns are
+// compiled to specialized DFA matchers at compile time (std/regex).
+~import std/regex
+~import std/io
+
+~match("foo@bar")
+| `[a-z]+@[a-z]+` _ |> std/io:print.ln("matched-email")
+| `[0-9]+` _ |> std/io:print.ln("matched-number")
+| no-match _ |> std/io:print.ln("no-match")

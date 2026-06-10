@@ -15,16 +15,12 @@
 //
 // `match` semantics (cut 1): FULL match — the whole input must match a pattern.
 //
-// STATUS: WIP, dispatch mechanism WRONG (pinned RED by 630_001). The engine
-// integration is correct — it reads the `…`-branches, compiles each pattern via
-// regex_engine, and appends the matcher fns. But transform-set `inline_body`
-// goes through the emitter's EXPAND-SWITCH path (`const __r = <inline_body>;
-// switch (__r) { .<branch> => … }`), NOT the `__koru_continue_<idx>` marker path
-// assumed below — so the markers come out unresolved, and the switch arms use
-// the branch names as Zig union tags (backtick patterns aren't valid tags, and
-// get snake-mangled). FIX (needs emitter grounding): re-tag each `…`-branch to a
-// valid Zig tag, produce the branch-tag union the expand-switch expects, track
-// tag→pattern separately. Or emit the full inlined dispatch directly.
+// Dispatch: the transform sets `inline_body` to an if/else-if chain over the
+// compiled matchers, with `__koru_continue_<idx>` markers for the branch
+// bodies. The `//@koru:inline_stmt` marker routes it down the emitter's
+// statement path, whose marker resolver hands off to each continuation —
+// match dispatch IS continuation-passing (first pattern wins, body runs once),
+// not a union value for the expand-switch. E2E pinned by 640_001.
 
 const std = @import("std");
 
@@ -52,7 +48,10 @@ const std = @import("std");
     var matchers = std.ArrayList(u8){};
     var dispatch = std.ArrayList(u8){};
 
-    dispatch.appendSlice(allocator, "{ const __koru_match_in: []const u8 = ") catch unreachable;
+    // `//@koru:inline_stmt` routes this inline_body down the emitter's
+    // STATEMENT path (marker resolver) instead of the expand-switch — the
+    // `__koru_continue_<idx>` markers below resolve to the branch bodies there.
+    dispatch.appendSlice(allocator, "//@koru:inline_stmt\n{ const __koru_match_in: []const u8 = ") catch unreachable;
     dispatch.appendSlice(allocator, input_expr) catch unreachable;
     dispatch.appendSlice(allocator, "; ") catch unreachable;
 
