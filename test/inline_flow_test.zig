@@ -46,8 +46,8 @@ test "inline flow extraction" {
                     try std.testing.expect(proc.inline_flows.len == 1);
                     
                     const flow = proc.inline_flows[0];
-                    try std.testing.expect(std.mem.eql(u8, flow.invocation.path.segments[0], "validate"));
-                    try std.testing.expect(flow.continuations.len == 2);
+                    try std.testing.expect(std.mem.eql(u8, flow.inv().path.segments[0], "validate"));
+                    try std.testing.expect(flow.body.continuations.len == 2);
                 } else if (std.mem.eql(u8, proc.path.segments[0], "pure_flow_proc")) {
                     // This should be pure (only flows)
                     // Purity is now tracked in compiler passes, not in AST
@@ -102,12 +102,12 @@ test "complex nested inline flow" {
                 
                 const flow = proc.inline_flows[0];
                 // Check it's the process flow
-                try std.testing.expect(std.mem.eql(u8, flow.invocation.path.segments[0], "process"));
+                try std.testing.expect(std.mem.eql(u8, flow.inv().path.segments[0], "process"));
                 // Should have 2 top-level continuations
-                try std.testing.expect(flow.continuations.len == 2);
+                try std.testing.expect(flow.body.continuations.len == 2);
                 
                 // Check nested continuations exist
-                const ready_cont = flow.continuations[0];
+                const ready_cont = flow.body.continuations[0];
                 try std.testing.expect(ready_cont.node != null);
             },
             else => {},

@@ -118,8 +118,7 @@ fn parseFlowInternal(allocator: std.mem.Allocator, source: []const u8) ParseErro
         try allocator.alloc(ast.Continuation, 0);
 
     return .{ .flow = .{
-        .invocation = invocation,
-        .continuations = continuations,
+        .body = ast.rootSite(invocation, continuations, .{ .file = "generated", .line = 0, .column = 0 }),
         .module = try allocator.dupe(u8, "eval"),
     } };
 }
@@ -794,11 +793,11 @@ test "parseFlow: simple invocation no args" {
     const result = parseFlow(alloc, "greet");
     switch (result) {
         .flow => |f| {
-            try std.testing.expect(f.invocation.path.module_qualifier == null);
-            try std.testing.expectEqual(@as(usize, 1), f.invocation.path.segments.len);
-            try std.testing.expectEqualStrings("greet", f.invocation.path.segments[0]);
-            try std.testing.expectEqual(@as(usize, 0), f.invocation.args.len);
-            try std.testing.expectEqual(@as(usize, 0), f.continuations.len);
+            try std.testing.expect(f.inv().path.module_qualifier == null);
+            try std.testing.expectEqual(@as(usize, 1), f.inv().path.segments.len);
+            try std.testing.expectEqualStrings("greet", f.inv().path.segments[0]);
+            try std.testing.expectEqual(@as(usize, 0), f.inv().args.len);
+            try std.testing.expectEqual(@as(usize, 0), f.body.continuations.len);
         },
         .err => |e| {
             std.debug.print("Unexpected error: {s}\n", .{e.message});
@@ -815,13 +814,13 @@ test "parseFlow: invocation with args" {
     const result = parseFlow(alloc, "add(a: 3, b: 4)");
     switch (result) {
         .flow => |f| {
-            try std.testing.expectEqual(@as(usize, 1), f.invocation.path.segments.len);
-            try std.testing.expectEqualStrings("add", f.invocation.path.segments[0]);
-            try std.testing.expectEqual(@as(usize, 2), f.invocation.args.len);
-            try std.testing.expectEqualStrings("a", f.invocation.args[0].name);
-            try std.testing.expectEqualStrings("3", f.invocation.args[0].value);
-            try std.testing.expectEqualStrings("b", f.invocation.args[1].name);
-            try std.testing.expectEqualStrings("4", f.invocation.args[1].value);
+            try std.testing.expectEqual(@as(usize, 1), f.inv().path.segments.len);
+            try std.testing.expectEqualStrings("add", f.inv().path.segments[0]);
+            try std.testing.expectEqual(@as(usize, 2), f.inv().args.len);
+            try std.testing.expectEqualStrings("a", f.inv().args[0].name);
+            try std.testing.expectEqualStrings("3", f.inv().args[0].value);
+            try std.testing.expectEqualStrings("b", f.inv().args[1].name);
+            try std.testing.expectEqualStrings("4", f.inv().args[1].value);
         },
         .err => return error.UnexpectedError,
     }
@@ -835,8 +834,8 @@ test "parseFlow: ~ prefix stripped" {
     const result = parseFlow(alloc, "~add(a: 3)");
     switch (result) {
         .flow => |f| {
-            try std.testing.expectEqualStrings("add", f.invocation.path.segments[0]);
-            try std.testing.expectEqual(@as(usize, 1), f.invocation.args.len);
+            try std.testing.expectEqualStrings("add", f.inv().path.segments[0]);
+            try std.testing.expectEqual(@as(usize, 1), f.inv().args.len);
         },
         .err => return error.UnexpectedError,
     }
@@ -850,8 +849,8 @@ test "parseFlow: module-qualified path" {
     const result = parseFlow(alloc, "math:add(a: 3, b: 4)");
     switch (result) {
         .flow => |f| {
-            try std.testing.expectEqualStrings("math", f.invocation.path.module_qualifier.?);
-            try std.testing.expectEqualStrings("add", f.invocation.path.segments[0]);
+            try std.testing.expectEqualStrings("math", f.inv().path.module_qualifier.?);
+            try std.testing.expectEqualStrings("add", f.inv().path.segments[0]);
         },
         .err => return error.UnexpectedError,
     }
@@ -870,8 +869,8 @@ test "parseFlow: single continuation" {
     const result = parseFlow(alloc, source);
     switch (result) {
         .flow => |f| {
-            try std.testing.expectEqual(@as(usize, 1), f.continuations.len);
-            const cont = f.continuations[0];
+            try std.testing.expectEqual(@as(usize, 1), f.body.continuations.len);
+            const cont = f.body.continuations[0];
             try std.testing.expectEqualStrings("sum", cont.branch);
             try std.testing.expectEqualStrings("s", cont.binding.?);
             try std.testing.expect(cont.node != null);
@@ -902,11 +901,11 @@ test "parseFlow: multiple continuations" {
     const result = parseFlow(alloc, source);
     switch (result) {
         .flow => |f| {
-            try std.testing.expectEqual(@as(usize, 2), f.continuations.len);
-            try std.testing.expectEqualStrings("ok", f.continuations[0].branch);
-            try std.testing.expectEqualStrings("result", f.continuations[0].binding.?);
-            try std.testing.expectEqualStrings("error", f.continuations[1].branch);
-            try std.testing.expectEqualStrings("e", f.continuations[1].binding.?);
+            try std.testing.expectEqual(@as(usize, 2), f.body.continuations.len);
+            try std.testing.expectEqualStrings("ok", f.body.continuations[0].branch);
+            try std.testing.expectEqualStrings("result", f.body.continuations[0].binding.?);
+            try std.testing.expectEqualStrings("error", f.body.continuations[1].branch);
+            try std.testing.expectEqualStrings("e", f.body.continuations[1].binding.?);
         },
         .err => return error.UnexpectedError,
     }
@@ -926,8 +925,8 @@ test "parseFlow: nested continuations" {
     const result = parseFlow(alloc, source);
     switch (result) {
         .flow => |f| {
-            try std.testing.expectEqual(@as(usize, 1), f.continuations.len);
-            const outer = f.continuations[0];
+            try std.testing.expectEqual(@as(usize, 1), f.body.continuations.len);
+            const outer = f.body.continuations[0];
             try std.testing.expectEqualStrings("sum", outer.branch);
             // The outer continuation's node is an invocation
             switch (outer.node.?) {
@@ -958,8 +957,8 @@ test "parseFlow: terminal _" {
     const result = parseFlow(alloc, source);
     switch (result) {
         .flow => |f| {
-            try std.testing.expectEqual(@as(usize, 1), f.continuations.len);
-            switch (f.continuations[0].node.?) {
+            try std.testing.expectEqual(@as(usize, 1), f.body.continuations.len);
+            switch (f.body.continuations[0].node.?) {
                 .terminal => {},
                 else => return error.ExpectedTerminal,
             }
@@ -981,9 +980,9 @@ test "parseFlow: pipeline continuation" {
     const result = parseFlow(alloc, source);
     switch (result) {
         .flow => |f| {
-            try std.testing.expectEqual(@as(usize, 1), f.continuations.len);
-            try std.testing.expectEqualStrings("", f.continuations[0].branch);
-            try std.testing.expect(f.continuations[0].binding == null);
+            try std.testing.expectEqual(@as(usize, 1), f.body.continuations.len);
+            try std.testing.expectEqualStrings("", f.body.continuations[0].branch);
+            try std.testing.expect(f.body.continuations[0].binding == null);
         },
         .err => return error.UnexpectedError,
     }
@@ -1002,9 +1001,9 @@ test "parseFlow: catch-all continuation" {
     const result = parseFlow(alloc, source);
     switch (result) {
         .flow => |f| {
-            try std.testing.expectEqual(@as(usize, 1), f.continuations.len);
-            try std.testing.expect(f.continuations[0].is_catchall);
-            try std.testing.expectEqualStrings("err", f.continuations[0].branch);
+            try std.testing.expectEqual(@as(usize, 1), f.body.continuations.len);
+            try std.testing.expect(f.body.continuations[0].is_catchall);
+            try std.testing.expectEqualStrings("err", f.body.continuations[0].branch);
         },
         .err => return error.UnexpectedError,
     }
@@ -1024,11 +1023,11 @@ test "parseFlow: when clause" {
     const result = parseFlow(alloc, source);
     switch (result) {
         .flow => |f| {
-            try std.testing.expectEqual(@as(usize, 2), f.continuations.len);
-            try std.testing.expectEqualStrings("ok", f.continuations[0].branch);
-            try std.testing.expectEqualStrings("r", f.continuations[0].binding.?);
-            try std.testing.expectEqualStrings("r > 10", f.continuations[0].condition.?);
-            try std.testing.expect(f.continuations[1].condition == null);
+            try std.testing.expectEqual(@as(usize, 2), f.body.continuations.len);
+            try std.testing.expectEqualStrings("ok", f.body.continuations[0].branch);
+            try std.testing.expectEqualStrings("r", f.body.continuations[0].binding.?);
+            try std.testing.expectEqualStrings("r > 10", f.body.continuations[0].condition.?);
+            try std.testing.expect(f.body.continuations[1].condition == null);
         },
         .err => return error.UnexpectedError,
     }
@@ -1049,8 +1048,8 @@ test "parseFlow: comment lines skipped" {
     const result = parseFlow(alloc, source);
     switch (result) {
         .flow => |f| {
-            try std.testing.expectEqualStrings("add", f.invocation.path.segments[0]);
-            try std.testing.expectEqual(@as(usize, 1), f.continuations.len);
+            try std.testing.expectEqualStrings("add", f.inv().path.segments[0]);
+            try std.testing.expectEqual(@as(usize, 1), f.body.continuations.len);
         },
         .err => return error.UnexpectedError,
     }
@@ -1064,9 +1063,9 @@ test "parseFlow: dotted path" {
     const result = parseFlow(alloc, "file.read(path: \"/tmp/test\")");
     switch (result) {
         .flow => |f| {
-            try std.testing.expectEqual(@as(usize, 2), f.invocation.path.segments.len);
-            try std.testing.expectEqualStrings("file", f.invocation.path.segments[0]);
-            try std.testing.expectEqualStrings("read", f.invocation.path.segments[1]);
+            try std.testing.expectEqual(@as(usize, 2), f.inv().path.segments.len);
+            try std.testing.expectEqualStrings("file", f.inv().path.segments[0]);
+            try std.testing.expectEqualStrings("read", f.inv().path.segments[1]);
         },
         .err => return error.UnexpectedError,
     }
@@ -1085,8 +1084,8 @@ test "parseFlow: braceless branch constructor" {
     const result = parseFlow(alloc, source);
     switch (result) {
         .flow => |f| {
-            try std.testing.expectEqual(@as(usize, 1), f.continuations.len);
-            switch (f.continuations[0].node.?) {
+            try std.testing.expectEqual(@as(usize, 1), f.body.continuations.len);
+            switch (f.body.continuations[0].node.?) {
                 .branch_constructor => |bc| {
                     try std.testing.expectEqualStrings("ok", bc.branch_name);
                     try std.testing.expectEqual(@as(usize, 0), bc.fields.len);
@@ -1107,8 +1106,8 @@ test "parseFlow: no continuations" {
     const result = parseFlow(alloc, "fire(target: enemy)");
     switch (result) {
         .flow => |f| {
-            try std.testing.expectEqualStrings("fire", f.invocation.path.segments[0]);
-            try std.testing.expectEqual(@as(usize, 0), f.continuations.len);
+            try std.testing.expectEqualStrings("fire", f.inv().path.segments[0]);
+            try std.testing.expectEqual(@as(usize, 0), f.body.continuations.len);
         },
         .err => return error.UnexpectedError,
     }
@@ -1127,7 +1126,7 @@ test "parseFlow: branch constructor with plain value" {
     const result = parseFlow(alloc, source);
     switch (result) {
         .flow => |f| {
-            switch (f.continuations[0].node.?) {
+            switch (f.body.continuations[0].node.?) {
                 .branch_constructor => |bc| {
                     try std.testing.expectEqualStrings("result", bc.branch_name);
                     try std.testing.expectEqualStrings("42", bc.plain_value.?);

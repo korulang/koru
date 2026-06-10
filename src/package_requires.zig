@@ -79,12 +79,12 @@ pub const PackageRequirementsCollector = struct {
         // Check if this is a package requirements invocation
         // Looking for std.package:requires.npm, std.package:requires.cargo, etc.
         // After canonicalization, module_qualifier is the full module name "std.package"
-        if (flow.invocation.path.module_qualifier) |mq| {
+        if (flow.inv().path.module_qualifier) |mq| {
             if (std.mem.eql(u8, mq, "std.package") and
-                flow.invocation.path.segments.len == 2 and
-                std.mem.eql(u8, flow.invocation.path.segments[0], "requires"))
+                flow.inv().path.segments.len == 2 and
+                std.mem.eql(u8, flow.inv().path.segments[0], "requires"))
             {
-                const package_type = flow.invocation.path.segments[1];
+                const package_type = flow.inv().path.segments[1];
 
                 // Determine which package manager
                 const is_npm = std.mem.eql(u8, package_type, "npm");
@@ -94,7 +94,7 @@ pub const PackageRequirementsCollector = struct {
 
                 if (is_npm or is_cargo or is_go or is_pip) {
                     // Extract source parameter
-                    for (flow.invocation.args) |arg| {
+                    for (flow.inv().args) |arg| {
                         if (std.mem.eql(u8, arg.name, "source")) {
                             const source_copy = try self.allocator.dupe(u8, arg.value);
 
@@ -115,11 +115,11 @@ pub const PackageRequirementsCollector = struct {
 
             // Also check for std.deps:requires.zig (Zig package manager dependencies)
             if (std.mem.eql(u8, mq, "std.deps") and
-                flow.invocation.path.segments.len == 2 and
-                std.mem.eql(u8, flow.invocation.path.segments[0], "requires") and
-                std.mem.eql(u8, flow.invocation.path.segments[1], "zig"))
+                flow.inv().path.segments.len == 2 and
+                std.mem.eql(u8, flow.inv().path.segments[0], "requires") and
+                std.mem.eql(u8, flow.inv().path.segments[1], "zig"))
             {
-                for (flow.invocation.args) |arg| {
+                for (flow.inv().args) |arg| {
                     if (std.mem.eql(u8, arg.name, "source")) {
                         const source_copy = try self.allocator.dupe(u8, arg.value);
                         try self.zig_requirements.append(self.allocator, source_copy);
@@ -178,14 +178,13 @@ test "collects npm requirements" {
     };
 
     const flow = ast.Flow{
-        .invocation = ast.Invocation{
+        .body = ast.rootSite(ast.Invocation{
             .path = ast.DottedPath{
                 .segments = &segments,
                 .module_qualifier = "std",
             },
             .args = &args,
-        },
-        .continuations = &.{},
+        }, &.{}, .{ .file = "generated", .line = 0, .column = 0 }),
     };
 
     try collector.checkFlowForPackageRequires(&flow);
@@ -217,14 +216,13 @@ test "collects cargo requirements" {
     };
 
     const flow = ast.Flow{
-        .invocation = ast.Invocation{
+        .body = ast.rootSite(ast.Invocation{
             .path = ast.DottedPath{
                 .segments = &segments,
                 .module_qualifier = "std",
             },
             .args = &args,
-        },
-        .continuations = &.{},
+        }, &.{}, .{ .file = "generated", .line = 0, .column = 0 }),
     };
 
     try collector.checkFlowForPackageRequires(&flow);
@@ -258,25 +256,23 @@ test "collects multiple npm requirements" {
     };
 
     const flow1 = ast.Flow{
-        .invocation = ast.Invocation{
+        .body = ast.rootSite(ast.Invocation{
             .path = ast.DottedPath{
                 .segments = &segments,
                 .module_qualifier = "std",
             },
             .args = &args1,
-        },
-        .continuations = &.{},
+        }, &.{}, .{ .file = "generated", .line = 0, .column = 0 }),
     };
 
     const flow2 = ast.Flow{
-        .invocation = ast.Invocation{
+        .body = ast.rootSite(ast.Invocation{
             .path = ast.DottedPath{
                 .segments = &segments,
                 .module_qualifier = "std",
             },
             .args = &args2,
-        },
-        .continuations = &.{},
+        }, &.{}, .{ .file = "generated", .line = 0, .column = 0 }),
     };
 
     try collector.checkFlowForPackageRequires(&flow1);
@@ -305,14 +301,13 @@ test "ignores non-package flows" {
     };
 
     const flow = ast.Flow{
-        .invocation = ast.Invocation{
+        .body = ast.rootSite(ast.Invocation{
             .path = ast.DottedPath{
                 .segments = &segments,
                 .module_qualifier = "std",
             },
             .args = &args,
-        },
-        .continuations = &.{},
+        }, &.{}, .{ .file = "generated", .line = 0, .column = 0 }),
     };
 
     try collector.checkFlowForPackageRequires(&flow);

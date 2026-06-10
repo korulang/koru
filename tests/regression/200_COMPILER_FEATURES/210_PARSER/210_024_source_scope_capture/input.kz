@@ -374,7 +374,7 @@ const std = @import("std");
 
             // Check if any continuation contains renderHTML
             var has_renderHTML = false;
-            for (flow.continuations) |cont| {
+            for (flow.body.continuations) |cont| {
                 if (cont.node) |step| {
                     if (step == .invocation) {
                         const inv = step.invocation;
@@ -389,9 +389,9 @@ const std = @import("std");
 
             if (has_renderHTML) {
                 // Transform the flow by transforming its continuations
-                const new_continuations = allocator.alloc(ast.Continuation, flow.continuations.len) catch unreachable;
+                const new_continuations = allocator.alloc(ast.Continuation, flow.body.continuations.len) catch unreachable;
 
-                for (flow.continuations, 0..) |cont, cont_idx| {
+                for (flow.body.continuations, 0..) |cont, cont_idx| {
                     // Transform the step
                     var new_step: ?ast.Step = null;
 
@@ -452,8 +452,7 @@ const std = @import("std");
 
                 // Create transformed flow with new continuations
                 const transformed_flow = ast.Flow{
-                    .invocation = flow.invocation,
-                    .continuations = new_continuations,
+                    .body = ast.rootSite(flow.inv().*, new_continuations, flow.location),
                     .annotations = flow.annotations,
                     .pre_label = flow.pre_label,
                     .post_label = flow.post_label,

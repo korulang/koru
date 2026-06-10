@@ -20,7 +20,7 @@ test "parse and generate code for when clause" {
     defer result.deinit();
     
     const flow = result.source_file.items[0].flow;
-    const ok_cont = flow.continuations[0];
+    const ok_cont = flow.body.continuations[0];
     
     // Check that we parsed the when clause
     try testing.expect(ok_cont.condition != null);
@@ -63,13 +63,13 @@ test "complex when clause with logical operators" {
     const flow = result.source_file.items[0].flow;
     
     // Check first continuation with AND
-    const valid_cont = flow.continuations[0];
+    const valid_cont = flow.body.continuations[0];
     try testing.expect(valid_cont.condition != null);
     try testing.expectEqualStrings("v.score > 90 and v.approved", valid_cont.condition.?);
     try testing.expect(valid_cont.condition_expr != null);
     
     // Check second continuation with OR
-    const invalid_retry_cont = flow.continuations[1];
+    const invalid_retry_cont = flow.body.continuations[1];
     try testing.expect(invalid_retry_cont.condition != null);
     try testing.expectEqualStrings("i.retryable or i.code == \"TEMP_ERROR\"", invalid_retry_cont.condition.?);
     try testing.expect(invalid_retry_cont.condition_expr != null);
@@ -87,7 +87,7 @@ test "complex when clause with logical operators" {
     try testing.expect(std.mem.indexOf(u8, code, "&&") == null);
     
     // Check third continuation without when clause
-    const invalid_reject_cont = flow.continuations[2];
+    const invalid_reject_cont = flow.body.continuations[2];
     try testing.expect(invalid_reject_cont.condition == null);
     try testing.expect(invalid_reject_cont.condition_expr == null);
 }
@@ -123,12 +123,12 @@ test "where clause in proc context" {
     const inline_flow = proc.inline_flows[0];
     
     // Check multiple when clauses
-    const ok_200 = inline_flow.continuations[0];
+    const ok_200 = inline_flow.body.continuations[0];
     try testing.expect(ok_200.condition != null);
     try testing.expectEqualStrings("o.status == 200", ok_200.condition.?);
     try testing.expect(ok_200.condition_expr != null);
     
-    const ok_500 = inline_flow.continuations[1];
+    const ok_500 = inline_flow.body.continuations[1];
     try testing.expect(ok_500.condition != null);
     try testing.expectEqualStrings("o.status >= 500", ok_500.condition.?);
     try testing.expect(ok_500.condition_expr != null);

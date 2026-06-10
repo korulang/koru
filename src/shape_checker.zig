@@ -474,7 +474,7 @@ pub const ShapeChecker = struct {
         // replaced the comptime event structure with a runtime node structure.
         // The new structure can't match the original event's shape because it's
         // a completely different representation (e.g., capture -> CaptureNode).
-        for (flow.invocation.annotations) |ann| {
+        for (flow.inv().annotations) |ann| {
             if (std.mem.startsWith(u8, ann, "@pass_ran")) {
                 return;  // Skip validation - transform output is valid by construction
             }
@@ -523,10 +523,10 @@ pub const ShapeChecker = struct {
         }
         
         // Get the event being invoked
-        const event_name = try self.pathToString(flow.invocation.path);
+        const event_name = try self.pathToString(flow.inv().path);
         defer self.allocator.free(event_name);  // Free temp string after lookup
 
-        const final_event_info = try self.lookupEventInfo(flow.invocation.path) orelse {
+        const final_event_info = try self.lookupEventInfo(flow.inv().path) orelse {
             log.debug("ERROR: Unknown event '{s}'\n", .{event_name});
             // Check if it's a subflow implementation
             if (self.impl_flows.get(event_name)) |impl_flow_info| {
@@ -546,7 +546,7 @@ pub const ShapeChecker = struct {
                 const covered = try self.checkBranchCoverageWithTerminals(
                     event_name,
                     event.decl.branches,
-                    flow.continuations,
+                    flow.body.continuations,
                     location,
                 );
 
@@ -570,7 +570,7 @@ pub const ShapeChecker = struct {
         const covered = try self.checkBranchCoverageWithTerminals(
             event_name,
             final_event_info.decl.branches,
-            flow.continuations,
+            flow.body.continuations,
             location,
         );
 
@@ -1170,12 +1170,12 @@ pub const ShapeChecker = struct {
 
     fn validateInlineFlow(self: *ShapeChecker, flow: *const ast.Flow, proc_event: ?EventInfo) !void {
         // Check for duplicate branch handlers at each level (recursively)
-        try self.checkDuplicateBranchHandlers(flow.continuations);
+        try self.checkDuplicateBranchHandlers(flow.body.continuations);
 
         // Inline flows with super_shape create union types - different validation
         if (flow.super_shape) |_| {
             // Still need to validate that the invoked event exists
-            const event_name = try self.pathToString(flow.invocation.path);
+            const event_name = try self.pathToString(flow.inv().path);
             defer self.allocator.free(event_name);
 
             _ = self.events.get(event_name) orelse {
@@ -1199,7 +1199,7 @@ pub const ShapeChecker = struct {
         //   | parse_error err |> handle_error(err)
         //
         // We still need to validate the event exists and branches are covered
-        const event_name = try self.pathToString(flow.invocation.path);
+        const event_name = try self.pathToString(flow.inv().path);
         defer self.allocator.free(event_name);
 
         const event_info = self.events.get(event_name) orelse {
@@ -1216,7 +1216,7 @@ pub const ShapeChecker = struct {
         const covered = try self.checkBranchCoverageWithTerminals(
             event_name,
             event_info.decl.branches,
-            flow.continuations,
+            flow.body.continuations,
             flow.location,
         );
         if (!covered) {

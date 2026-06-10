@@ -3668,7 +3668,7 @@ pub fn emitFlow(
         // The preamble already set up the binding (e.g., `const cfg = ...;`)
         // Each continuation's node is the code that should run
         var result_counter: usize = 0;
-        for (flow.continuations) |*cont| {
+        for (flow.body.continuations) |*cont| {
             try emitContinuationBody(emitter, ctx, cont, &result_counter);
         }
         return; // Done - don't emit the invocation
@@ -3679,7 +3679,7 @@ pub fn emitFlow(
     // nested inline node takes, so this works at every depth, not just top-level.
     if (flow.inline_body) |inline_code_raw| {
         var inline_result_counter: usize = 0;
-        try emitInlineBodyNode(emitter, ctx, inline_code_raw, flow.continuations, &flow.invocation.path, &inline_result_counter);
+        try emitInlineBodyNode(emitter, ctx, inline_code_raw, flow.body.continuations, &flow.inv().path, &inline_result_counter);
         return;
     }
 
@@ -3699,7 +3699,7 @@ pub fn emitFlow(
     defer ctx.label_contexts = null;
 
     // Set current source event for tap matching
-    const source_event = try buildCanonicalEventName(&flow.invocation.path, ctx.allocator, ctx.main_module_name);
+    const source_event = try buildCanonicalEventName(&flow.inv().path, ctx.allocator, ctx.main_module_name);
     defer ctx.allocator.free(source_event);
     ctx.current_source_event = source_event;
 
@@ -3707,24 +3707,24 @@ pub fn emitFlow(
     if (flow.pre_label) |label| {
         // Look up event definition to get parameter types
         const event_decl = if (ctx.ast_items) |items|
-            findEventDeclByPath(items, &flow.invocation.path)
+            findEventDeclByPath(items, &flow.inv().path)
         else
             null;
 
         // Determine if label will be mutated by checking for .label_jump
-        const label_is_mutable = labelWillBeMutated(label, flow.continuations);
+        const label_is_mutable = labelWillBeMutated(label, flow.body.continuations);
 
         // CRITICAL: If mutable, we MUST have type annotations (Zig forbids var with comptime_int)
         if (label_is_mutable and event_decl == null) {
             std.debug.panic("COMPILER BUG: Cannot find event declaration for loop variable '{s}' when emitting mutable label '{s}'. Event lookup failed for invocation path with {} segments.", .{
-                if (flow.invocation.args.len > 0) flow.invocation.args[0].name else "(no args)",
+                if (flow.inv().args.len > 0) flow.inv().args[0].name else "(no args)",
                 label,
-                flow.invocation.path.segments.len,
+                flow.inv().path.segments.len,
             });
         }
 
         // Emit state variables for loop parameters with type annotations
-        for (flow.invocation.args) |arg| {
+        for (flow.inv().args) |arg| {
             try emitter.writeIndent();
             // Use var if label will be mutated by label_jump, const otherwise
             if (label_is_mutable) {
@@ -3781,7 +3781,7 @@ pub fn emitFlow(
     // is OPTIONAL and the consumer omits all of them. In that case Handlers
     // is still synthesized; the no-op pass in emitHandlersStruct fills it.
     const event_decl_for_partition = if (ctx.ast_items) |items|
-        findEventDeclByPath(items, &flow.invocation.path)
+        findEventDeclByPath(items, &flow.inv().path)
     else
         null;
 
@@ -3801,7 +3801,7 @@ pub fn emitFlow(
     defer effect_conts_buf.deinit(ctx.allocator);
 
     if (event_has_effect_branch) {
-        for (flow.continuations) |cont| {
+        for (flow.body.continuations) |cont| {
             if (cont.kind == .effect) {
                 try effect_conts_buf.append(ctx.allocator, cont);
             } else {
@@ -3813,7 +3813,7 @@ pub fn emitFlow(
     const conts: []const ast.Continuation = if (event_has_effect_branch)
         terminal_conts_buf.items
     else
-        flow.continuations;
+        flow.body.continuations;
 
     var handlers_name_owned: ?[]const u8 = null;
     defer if (handlers_name_owned) |h| ctx.allocator.free(h);
@@ -3854,10 +3854,10 @@ pub fn emitFlow(
             if (!ctx.is_sync) {
                 try emitter.write("try ");
             }
-            try emitInvocationTarget(emitter, ctx, &flow.invocation.path);
+            try emitInvocationTarget(emitter, ctx, &flow.inv().path);
             try emitter.write(".handler(.{ ");
             // Use state variables for initial call
-            for (flow.invocation.args, 0..) |arg, idx| {
+            for (flow.inv().args, 0..) |arg, idx| {
                 if (idx > 0) {
                     try emitter.write(", ");
                 }
@@ -3881,7 +3881,7 @@ pub fn emitFlow(
                 // Need to duplicate the result string since first_result will be freed
                 const result_copy = try ctx.allocator.dupe(u8, first_result);
                 try label_map.put(label, .{
-                    .handler_invocation = &flow.invocation,
+                    .handler_invocation = flow.inv(),
                     .result_var = result_copy,
                     .handlers_name = ctx.pending_handlers_name,
                 });
@@ -3923,10 +3923,10 @@ pub fn emitFlow(
             emitter.indent();
 
             // Store label context so label_jump can re-call the handler
-            ctx.label_handler_invocation = &flow.invocation;
+            ctx.label_handler_invocation = flow.inv();
             ctx.label_result_var = first_result;
         } else {
-            try emitInvocation(emitter, ctx, &flow.invocation, first_result);
+            try emitInvocation(emitter, ctx, flow.inv(), first_result);
         }
 
         result_counter += 1;
@@ -4012,7 +4012,7 @@ pub fn emitFlow(
     } else {
         // Zero continuations — use comptime_result_binding if set (for program return)
         const binding = if (ctx.comptime_result_binding) |b| b else "_";
-        try emitInvocation(emitter, ctx, &flow.invocation, binding);
+        try emitInvocation(emitter, ctx, flow.inv(), binding);
     }
 }
 

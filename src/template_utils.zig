@@ -56,7 +56,7 @@ fn lookupTemplateInItems(items: []const ast.Item, name: []const u8) ?[]const u8 
 }
 
 fn isTemplateDefine(flow: *const ast.Flow) bool {
-    const path = flow.invocation.path;
+    const path = flow.inv().path;
 
     // Check module qualifier is "std.template"
     const mq = path.module_qualifier orelse return false;
@@ -70,7 +70,7 @@ fn isTemplateDefine(flow: *const ast.Flow) bool {
 }
 
 fn getTemplateName(flow: *const ast.Flow) ?[]const u8 {
-    for (flow.invocation.args) |arg| {
+    for (flow.inv().args) |arg| {
         if (std.mem.eql(u8, arg.name, "name")) {
             // Remove quotes if present
             const value = arg.value;
@@ -84,7 +84,7 @@ fn getTemplateName(flow: *const ast.Flow) ?[]const u8 {
 }
 
 fn getTemplateSource(flow: *const ast.Flow) ?[]const u8 {
-    for (flow.invocation.args) |arg| {
+    for (flow.inv().args) |arg| {
         if (std.mem.eql(u8, arg.name, "source")) {
             // Prefer source_value.text (full Source block content) over arg.value
             // arg.value may be truncated for multiline sources

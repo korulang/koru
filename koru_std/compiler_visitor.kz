@@ -307,14 +307,14 @@ const VisitorContext = struct {
             // Build the event path
             try self.emitter.writeIndent();
             try self.emitter.write("_ = ");
-            for (flow.invocation.path, 0..) |segment, i| {
+            for (flow.inv().path, 0..) |segment, i| {
                 if (i > 0) try self.emitter.write(".");
                 try self.emitter.write(segment);
             }
             try self.emitter.write(".handler(.{");
             
             // Add arguments
-            for (flow.invocation.args, 0..) |arg, i| {
+            for (flow.inv().args, 0..) |arg, i| {
                 if (i > 0) try self.emitter.write(", ");
                 try self.emitter.write(".");
                 try self.emitter.write(arg.name);

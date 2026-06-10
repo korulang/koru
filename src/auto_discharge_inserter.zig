@@ -392,8 +392,8 @@ pub const AutoDischargeInserter = struct {
                     // Handle top-level flows with pre_label
                     if (flow.pre_label) |label_name| {
                         var branch_modified = false;
-                        const new_conts = try self.allocator.alloc(ast.Continuation, flow.continuations.len);
-                        @memcpy(new_conts, flow.continuations);
+                        const new_conts = try self.allocator.alloc(ast.Continuation, flow.body.continuations.len);
+                        @memcpy(new_conts, flow.body.continuations);
 
                         for (new_conts, 0..) |*cont, ci| {
                             if (!hasScope(cont) and continuationContainsLabelJump(cont, label_name)) {
@@ -403,14 +403,14 @@ pub const AutoDischargeInserter = struct {
                         }
 
                         if (branch_modified) {
-                            flow.continuations = new_conts;
+                            flow.body.continuations = new_conts;
                             modified = true;
                         }
                     }
 
                     // Also recurse into continuation tree for nested #label nodes
-                    if (try self.annotateContTree(flow.continuations)) |new_conts| {
-                        flow.continuations = new_conts;
+                    if (try self.annotateContTree(flow.body.continuations)) |new_conts| {
+                        flow.body.continuations = new_conts;
                         modified = true;
                     }
                 },
@@ -578,7 +578,7 @@ pub const AutoDischargeInserter = struct {
     ) !TransformResult {
         if (mode == .full) {
             // Skip already-processed flows
-            for (flow.invocation.annotations) |ann| {
+            for (flow.inv().annotations) |ann| {
                 if (std.mem.startsWith(u8, ann, "@auto_discharge_ran")) {
                     return .{ .transformed = false, .program = program };
                 }
@@ -586,10 +586,10 @@ pub const AutoDischargeInserter = struct {
         }
 
         // Get event info for this flow
-        const event_name = try self.pathToString(flow.invocation.path);
+        const event_name = try self.pathToString(flow.inv().path);
         defer self.allocator.free(event_name);
 
-        const module_name = flow.invocation.path.module_qualifier orelse flow.module;
+        const module_name = flow.inv().path.module_qualifier orelse flow.module;
         const qualified_name = try std.fmt.allocPrint(self.allocator, "{s}:{s}", .{ module_name, event_name });
         defer self.allocator.free(qualified_name);
 
@@ -621,7 +621,7 @@ pub const AutoDischargeInserter = struct {
         var context = BindingContext.init(self.allocator);
         defer context.deinit();
 
-        for (flow.continuations) |*cont| {
+        for (flow.body.continuations) |*cont| {
             // If this continuation has @scope annotation, enter a new scope
             // The @scope annotation is the source of truth - not the event name
             if (hasScope(cont)) {
@@ -2387,9 +2387,9 @@ pub const AutoDischargeInserter = struct {
         old_cont: *const ast.Continuation,
         new_cont: ast.Continuation,
     ) !ast.Flow {
-        var new_continuations = try self.allocator.alloc(ast.Continuation, flow.continuations.len);
+        var new_continuations = try self.allocator.alloc(ast.Continuation, flow.body.continuations.len);
 
-        for (flow.continuations, 0..) |*cont, i| {
+        for (flow.body.continuations, 0..) |*cont, i| {
             if (@intFromPtr(cont) == @intFromPtr(old_cont)) {
                 new_continuations[i] = new_cont;
             } else {
@@ -2404,8 +2404,7 @@ pub const AutoDischargeInserter = struct {
         }
 
         return .{
-            .invocation = try ast_functional.cloneInvocation(self.allocator, &flow.invocation),
-            .continuations = new_continuations,
+            .body = ast.rootSite(try ast_functional.cloneInvocation(self.allocator, flow.inv()), new_continuations, flow.location),
             .annotations = new_annotations,
             .pre_label = if (flow.pre_label) |l| try self.allocator.dupe(u8, l) else null,
             .post_label = if (flow.post_label) |l| try self.allocator.dupe(u8, l) else null,
@@ -2429,9 +2428,9 @@ pub const AutoDischargeInserter = struct {
         old_cont: *const ast.Continuation,
         new_cont: ast.Continuation,
     ) !ast.Flow {
-        var new_continuations = try self.allocator.alloc(ast.Continuation, flow.continuations.len);
+        var new_continuations = try self.allocator.alloc(ast.Continuation, flow.body.continuations.len);
 
-        for (flow.continuations, 0..) |*cont, i| {
+        for (flow.body.continuations, 0..) |*cont, i| {
             new_continuations[i] = try self.replaceContinuationInTree(cont, old_cont, new_cont);
         }
 
@@ -2442,8 +2441,7 @@ pub const AutoDischargeInserter = struct {
         }
 
         return .{
-            .invocation = try ast_functional.cloneInvocation(self.allocator, &flow.invocation),
-            .continuations = new_continuations,
+            .body = ast.rootSite(try ast_functional.cloneInvocation(self.allocator, flow.inv()), new_continuations, flow.location),
             .annotations = new_annotations,
             .pre_label = if (flow.pre_label) |l| try self.allocator.dupe(u8, l) else null,
             .post_label = if (flow.post_label) |l| try self.allocator.dupe(u8, l) else null,
@@ -2548,14 +2546,14 @@ pub const AutoDischargeInserter = struct {
 
     /// Mark a flow as processed with @auto_discharge_ran annotation
     fn markFlowProcessed(self: *AutoDischargeInserter, flow: ast.Flow) !ast.Flow {
-        var new_annotations = try self.allocator.alloc([]const u8, flow.invocation.annotations.len + 1);
+        var new_annotations = try self.allocator.alloc([]const u8, flow.inv().annotations.len + 1);
 
-        for (flow.invocation.annotations, 0..) |ann, i| {
+        for (flow.inv().annotations, 0..) |ann, i| {
             new_annotations[i] = try self.allocator.dupe(u8, ann);
         }
-        new_annotations[flow.invocation.annotations.len] = try self.allocator.dupe(u8, "@auto_discharge_ran");
+        new_annotations[flow.inv().annotations.len] = try self.allocator.dupe(u8, "@auto_discharge_ran");
 
-        var new_invocation = try ast_functional.cloneInvocation(self.allocator, &flow.invocation);
+        var new_invocation = try ast_functional.cloneInvocation(self.allocator, flow.inv());
         new_invocation.annotations = new_annotations;
 
         // Clone flow annotations
@@ -2565,8 +2563,7 @@ pub const AutoDischargeInserter = struct {
         }
 
         return .{
-            .invocation = new_invocation,
-            .continuations = flow.continuations,
+            .body = ast.rootSite(new_invocation, flow.body.continuations, flow.location),
             .annotations = new_flow_annotations,
             .pre_label = if (flow.pre_label) |l| try self.allocator.dupe(u8, l) else null,
             .post_label = if (flow.post_label) |l| try self.allocator.dupe(u8, l) else null,
@@ -2695,7 +2692,7 @@ pub const AutoDischargeInserter = struct {
         var handled = std.StringHashMap(void).init(self.allocator);
         defer handled.deinit();
 
-        for (flow.continuations) |*cont| {
+        for (flow.body.continuations) |*cont| {
             if (cont.is_catchall) {
                 // Catch-all handles all optional branches - no synthesis needed
                 return null;
@@ -2723,18 +2720,18 @@ pub const AutoDischargeInserter = struct {
         }
 
         // Create new continuations array with synthesized branches
-        const new_len = flow.continuations.len + missing_optional.items.len;
+        const new_len = flow.body.continuations.len + missing_optional.items.len;
         var new_continuations = try self.allocator.alloc(ast.Continuation, new_len);
         errdefer self.allocator.free(new_continuations);
 
         // Copy existing continuations
-        for (flow.continuations, 0..) |*cont, i| {
+        for (flow.body.continuations, 0..) |*cont, i| {
             new_continuations[i] = try ast_functional.cloneContinuation(self.allocator, cont);
         }
 
         // Add synthesized continuations for missing optional branches
         for (missing_optional.items, 0..) |branch_name, i| {
-            const idx = flow.continuations.len + i;
+            const idx = flow.body.continuations.len + i;
             new_continuations[idx] = ast.Continuation{
                 .branch = try self.allocator.dupe(u8, branch_name),
                 .binding = try self.allocator.dupe(u8, "_"), // Discard binding - auto-discharge will synthesize _auto_N
@@ -2754,7 +2751,7 @@ pub const AutoDischargeInserter = struct {
         // Create new flow with synthesized continuations
         const new_flow = try self.allocator.create(ast.Flow);
         new_flow.* = flow.*;
-        new_flow.continuations = new_continuations;
+        new_flow.body.continuations = new_continuations;
 
         return new_flow;
     }

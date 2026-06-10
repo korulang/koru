@@ -70,14 +70,14 @@ pub fn main() void {
         for (parse_result.source_file.items) |item| {
             if (item == .flow) {
                 const flow = &item.flow;
-                std.debug.print("  Flow: path={s}\n", .{flow.invocation.path.segments[0]});
-                std.debug.print("  Continuations: {d}\n", .{flow.continuations.len});
-                for (flow.continuations) |cont| {
+                std.debug.print("  Flow: path={s}\n", .{flow.inv().path.segments[0]});
+                std.debug.print("  Continuations: {d}\n", .{flow.body.continuations.len});
+                for (flow.body.continuations) |cont| {
                     std.debug.print("    | {s} |>\n", .{cont.branch});
                 }
 
                 // Dispatch (will use special if handling)
-                const ast_inv = &flow.invocation;
+                const ast_inv = flow.inv();
                 const inv: *const Invocation = @ptrCast(ast_inv);
                 var dispatch_result: DispatchResult = undefined;
                 dispatcher_fn(inv, &dispatch_result) catch |err| {
@@ -123,10 +123,10 @@ pub fn main() void {
         for (parse_result.source_file.items) |item| {
             if (item == .flow) {
                 const flow = &item.flow;
-                std.debug.print("  Flow: path={s}\n", .{flow.invocation.path.segments[0]});
-                std.debug.print("  Args: {d}\n", .{flow.invocation.args.len});
-                if (flow.invocation.args.len > 0) {
-                    std.debug.print("    arg[0].value = {s}\n", .{flow.invocation.args[0].value});
+                std.debug.print("  Flow: path={s}\n", .{flow.inv().path.segments[0]});
+                std.debug.print("  Args: {d}\n", .{flow.inv().args.len});
+                if (flow.inv().args.len > 0) {
+                    std.debug.print("    arg[0].value = {s}\n", .{flow.inv().args[0].value});
                 }
                 std.debug.print("  ✓ TEST 2 PARSED SUCCESSFULLY\n\n", .{});
                 break;

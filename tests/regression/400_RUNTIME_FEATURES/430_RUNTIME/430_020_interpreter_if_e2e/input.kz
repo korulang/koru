@@ -94,7 +94,7 @@ fn dummy_dispatcher(inv: *const ast.Invocation, result: *DispatchResult) !void {
 
 // Simplified executeFlow for ~if only
 fn executeFlow(flow: *const ast.Flow, ctx: *InterpreterContext) !Value {
-    const inv = &flow.invocation;
+    const inv = flow.inv();
 
     var dispatch_result: DispatchResult = undefined;
 
@@ -132,7 +132,7 @@ fn executeFlow(flow: *const ast.Flow, ctx: *InterpreterContext) !Value {
     }
 
     // Find matching continuation and execute
-    for (flow.continuations) |cont| {
+    for (flow.body.continuations) |cont| {
         if (std.mem.eql(u8, cont.branch, dispatch_result.branch)) {
             std.debug.print("  [EXEC] Matched continuation: | {s} |>\n", .{cont.branch});
 

@@ -47,7 +47,7 @@ const std = @import("std");
     // Build Liquid context from named event arguments (skip expr)
     var ctx = liquid.Context.init(allocator);
 
-    for (flow.invocation.args) |arg| {
+    for (flow.inv().args) |arg| {
         // Skip the expr argument (template)
         if (std.mem.eql(u8, arg.name, "expr")) continue;
 
@@ -96,28 +96,27 @@ const std = @import("std");
     impl_segments[0] = allocator.dupe(u8, "emit") catch unreachable;
     impl_segments[1] = allocator.dupe(u8, "impl") catch unreachable;
     const impl_path = ast.DottedPath{
-        .module_qualifier = flow.invocation.path.module_qualifier,
+        .module_qualifier = flow.inv().path.module_qualifier,
         .segments = impl_segments,
     };
 
     // Build new invocation with @pass_ran annotation
-    const new_inv_annotations = allocator.alloc([]const u8, flow.invocation.annotations.len + 1) catch unreachable;
-    for (flow.invocation.annotations, 0..) |ann, idx| {
+    const new_inv_annotations = allocator.alloc([]const u8, flow.inv().annotations.len + 1) catch unreachable;
+    for (flow.inv().annotations, 0..) |ann, idx| {
         new_inv_annotations[idx] = ann;
     }
-    new_inv_annotations[flow.invocation.annotations.len] = allocator.dupe(u8, "@pass_ran(\"transform\")") catch unreachable;
+    new_inv_annotations[flow.inv().annotations.len] = allocator.dupe(u8, "@pass_ran(\"transform\")") catch unreachable;
 
     const new_invocation = ast.Invocation{
         .path = impl_path,
-        .args = flow.invocation.args,
+        .args = flow.inv().args,
         .annotations = new_inv_annotations,
-        .inserted_by_tap = flow.invocation.inserted_by_tap,
-        .from_opaque_tap = flow.invocation.from_opaque_tap,
+        .inserted_by_tap = flow.inv().inserted_by_tap,
+        .from_opaque_tap = flow.inv().from_opaque_tap,
     };
 
     const transformed_flow = ast.Flow{
-        .invocation = new_invocation,
-        .continuations = flow.continuations,
+        .body = ast.rootSite(new_invocation, flow.body.continuations, flow.location),
         .annotations = flow.annotations,
         .pre_label = flow.pre_label,
         .post_label = flow.post_label,

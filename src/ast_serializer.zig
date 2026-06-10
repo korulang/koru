@@ -548,23 +548,13 @@ pub const AstSerializer = struct {
         try self.write("Flow{\n");
         self.indent();
 
-        // Invocation
+        // Body — the one recursive invoke+branches core (a Continuation).
         try self.writeIndent();
-        try self.write(".invocation = ");
-        try self.serializeInvocation(&flow.invocation);
-        try self.write(",\n");
-
-        // Continuations
-        try self.writeIndent();
-        try self.write(".continuations = &[_]Continuation{\n");
+        try self.write(".body =\n");
         self.indent();
-        for (flow.continuations) |cont| {
-            try self.serializeContinuation(&cont);
-            try self.write(",\n");
-        }
+        try self.serializeContinuation(&flow.body);
         self.dedent();
-        try self.writeIndent();
-        try self.write("},\n");
+        try self.write(",\n");
 
         // Annotations
         try self.writeIndent();
@@ -1882,14 +1872,14 @@ pub const AstSerializer = struct {
         // Invocation
         try self.writeIndent();
         try self.write("\"invocation\": ");
-        try self.serializeInvocationJson(&flow.invocation);
+        try self.serializeInvocationJson(flow.inv());
         try self.write(",\n");
 
         // Continuations
         try self.writeIndent();
         try self.write("\"continuations\": [\n");
         self.indent();
-        for (flow.continuations, 0..) |*cont, i| {
+        for (flow.body.continuations, 0..) |*cont, i| {
             if (i > 0) try self.write(",\n");
             try self.serializeContinuationJson(cont);
         }
@@ -1941,14 +1931,14 @@ pub const AstSerializer = struct {
         // Invocation
         try self.writeIndent();
         try self.write("\"invocation\": ");
-        try self.serializeInvocationJson(&flow.invocation);
+        try self.serializeInvocationJson(flow.inv());
         try self.write(",\n");
 
         // Continuations
         try self.writeIndent();
         try self.write("\"continuations\": [\n");
         self.indent();
-        for (flow.continuations, 0..) |*cont, i| {
+        for (flow.body.continuations, 0..) |*cont, i| {
             if (i > 0) try self.write(",\n");
             try self.serializeContinuationJson(cont);
         }

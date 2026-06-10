@@ -91,7 +91,7 @@ pub fn main() void {
 
             if (item == .flow) {
                 const flow = &item.flow;
-                const inv = &flow.invocation;
+                const inv = flow.inv();
                 std.debug.print("  Flow invocation: ", .{});
                 if (inv.path.module_qualifier) |mq| {
                     std.debug.print("{s}:", .{mq});
@@ -105,8 +105,8 @@ pub fn main() void {
                 for (inv.args) |arg| {
                     std.debug.print("    {s} = {s}\n", .{arg.name, arg.value});
                 }
-                std.debug.print("  Continuations: {d}\n", .{flow.continuations.len});
-                for (flow.continuations) |cont| {
+                std.debug.print("  Continuations: {d}\n", .{flow.body.continuations.len});
+                for (flow.body.continuations) |cont| {
                     std.debug.print("    | {s}", .{cont.branch});
                     if (cont.binding) |b| std.debug.print(" {s}", .{b});
                     std.debug.print(" |>\n", .{});
@@ -158,7 +158,7 @@ pub fn main() void {
                 const flow = &item.flow;
 
                 // Dispatch
-                const ast_inv = &flow.invocation;
+                const ast_inv = flow.inv();
                 const inv: *const Invocation = @ptrCast(ast_inv);
                 var dispatch_result: DispatchResult = undefined;
                 dispatcher_fn(inv, &dispatch_result) catch |err| {
@@ -169,7 +169,7 @@ pub fn main() void {
                 std.debug.print("  Dispatched: branch={s}\n", .{dispatch_result.branch});
 
                 // Find matching continuation
-                for (flow.continuations) |cont| {
+                for (flow.body.continuations) |cont| {
                     if (std.mem.eql(u8, cont.branch, dispatch_result.branch)) {
                         std.debug.print("  Matched: | {s} |>\n", .{cont.branch});
 
@@ -224,14 +224,14 @@ pub fn main() void {
             if (item == .flow) {
                 const flow = &item.flow;
 
-                const ast_inv = &flow.invocation;
+                const ast_inv = flow.inv();
                 const inv: *const Invocation = @ptrCast(ast_inv);
                 var dispatch_result: DispatchResult = undefined;
                 dispatcher_fn(inv, &dispatch_result) catch return;
 
                 std.debug.print("  Dispatched: branch={s}\n", .{dispatch_result.branch});
 
-                for (flow.continuations) |cont| {
+                for (flow.body.continuations) |cont| {
                     if (std.mem.eql(u8, cont.branch, dispatch_result.branch)) {
                         std.debug.print("  Matched: | {s} |>\n", .{cont.branch});
 

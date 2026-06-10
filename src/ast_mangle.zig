@@ -108,8 +108,8 @@ fn normalizeEventTap(t: *ast.EventTap) void {
 }
 
 fn normalizeFlow(f: *ast.Flow) void {
-    normalizeInvocation(&f.invocation);
-    normalizeContinuations(@constCast(f.continuations));
+    normalizeInvocation(f.invMut());
+    normalizeContinuations(@constCast(f.body.continuations));
     mangleOpt(f.pre_label);
     mangleOpt(f.post_label);
     if (f.impl_of) |*io| normalizeDottedPath(io);

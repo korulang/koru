@@ -22,7 +22,7 @@ const Item = ast.Item;
     const segments = allocator.alloc([]const u8, 1) catch unreachable;
     segments[0] = "sample_impl";
     
-    var new_inv = flow.invocation;
+    var new_inv = flow.inv().*;
     new_inv.path = ast.DottedPath{
         .segments = segments,
         .module_qualifier = "input"
@@ -30,8 +30,7 @@ const Item = ast.Item;
     new_inv.annotations = &[_][]const u8{ "@pass_ran(\"transform\")" };
 
     const transformed_flow = ast.Flow{
-        .invocation = new_inv,
-        .continuations = flow.continuations,
+        .body = ast.rootSite(new_inv, flow.body.continuations, flow.location),
         .inline_body = "    // lowered\n",
         .location = flow.location,
         .module = flow.module,

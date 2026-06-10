@@ -75,24 +75,24 @@ pub const CompilerRequiresCollector = struct {
     }
 
     fn checkFlowForRequires(self: *CompilerRequiresCollector, flow: *const ast.Flow) !void {
-        if (flow.invocation.path.module_qualifier) |mq| {
-            if (flow.invocation.path.segments.len < 1) return;
+        if (flow.inv().path.module_qualifier) |mq| {
+            if (flow.inv().path.segments.len < 1) return;
 
             // DEBUG: Print what we're checking
-            log.debug("[CompilerRequiresCollector] Checking flow: {s}:{s}\n", .{ mq, flow.invocation.path.segments[0] });
+            log.debug("[CompilerRequiresCollector] Checking flow: {s}:{s}\n", .{ mq, flow.inv().path.segments[0] });
 
             // Check for std.build:requires (for OUTPUT binary)
             const is_build_module = std.mem.endsWith(u8, mq, ".build") or std.mem.eql(u8, mq, "build");
             const is_build_requires = is_build_module and
-                flow.invocation.path.segments.len == 1 and
-                std.mem.eql(u8, flow.invocation.path.segments[0], "requires");
+                flow.inv().path.segments.len == 1 and
+                std.mem.eql(u8, flow.inv().path.segments[0], "requires");
 
             // Check for std.compiler:requires or std.compiler_requirements:requires (for BACKEND)
             const is_compiler_module = std.mem.endsWith(u8, mq, ".compiler") or std.mem.eql(u8, mq, "compiler");
             const is_compiler_requirements_module = std.mem.endsWith(u8, mq, ".compiler_requirements") or std.mem.eql(u8, mq, "compiler_requirements");
             const is_compiler_requires = (is_compiler_module or is_compiler_requirements_module) and
-                flow.invocation.path.segments.len == 1 and
-                std.mem.eql(u8, flow.invocation.path.segments[0], "requires");
+                flow.inv().path.segments.len == 1 and
+                std.mem.eql(u8, flow.inv().path.segments[0], "requires");
 
             if (is_build_requires) {
                 log.debug("[CompilerRequiresCollector] ✓ FOUND build:requires (for output binary)!\n", .{});
@@ -105,7 +105,7 @@ pub const CompilerRequiresCollector = struct {
     }
 
     fn extractAndAddSource(self: *CompilerRequiresCollector, flow: *const ast.Flow, target_list: *std.ArrayList([]const u8), seen: *std.StringHashMap(void)) !void {
-        for (flow.invocation.args) |arg| {
+        for (flow.inv().args) |arg| {
             // Accept both "source" (named) and "" (anonymous block with source_value)
             if (std.mem.eql(u8, arg.name, "source") or (std.mem.eql(u8, arg.name, "") and arg.source_value != null)) {
                 const source_code = if (arg.source_value) |sv| sv.text else arg.value;
@@ -153,14 +153,13 @@ test "collects single compiler:requires" {
     };
 
     const flow = ast.Flow{
-        .invocation = ast.Invocation{
+        .body = ast.rootSite(ast.Invocation{
             .path = ast.DottedPath{
                 .segments = &segments,
                 .module_qualifier = "compiler",
             },
             .args = &args,
-        },
-        .continuations = &.{},
+        }, &.{}, .{ .file = "generated", .line = 0, .column = 0 }),
     };
 
     try collector.checkFlowForRequires(&flow);
@@ -194,27 +193,25 @@ test "collects multiple compiler:requires" {
     };
 
     const flow1 = ast.Flow{
-        .invocation = ast.Invocation{
+        .body = ast.rootSite(ast.Invocation{
             .module_qualifier = "compiler",
             .path = ast.DottedPath{
                 .segments = &segments,
                 .module_qualifier = "compiler",
             },
             .args = &args1,
-        },
-        .continuations = &.{},
+        }, &.{}, .{ .file = "generated", .line = 0, .column = 0 }),
     };
 
     const flow2 = ast.Flow{
-        .invocation = ast.Invocation{
+        .body = ast.rootSite(ast.Invocation{
             .module_qualifier = "compiler",
             .path = ast.DottedPath{
                 .segments = &segments,
                 .module_qualifier = "compiler",
             },
             .args = &args2,
-        },
-        .continuations = &.{},
+        }, &.{}, .{ .file = "generated", .line = 0, .column = 0 }),
     };
 
     try collector.checkFlowForRequires(&flow1);
@@ -243,14 +240,13 @@ test "ignores non-compiler:requires flows" {
     };
 
     const flow = ast.Flow{
-        .invocation = ast.Invocation{
+        .body = ast.rootSite(ast.Invocation{
             .path = ast.DottedPath{
                 .segments = &segments,
                 .module_qualifier = "compiler",
             },
             .args = &args,
-        },
-        .continuations = &.{},
+        }, &.{}, .{ .file = "generated", .line = 0, .column = 0 }),
     };
 
     try collector.checkFlowForRequires(&flow);

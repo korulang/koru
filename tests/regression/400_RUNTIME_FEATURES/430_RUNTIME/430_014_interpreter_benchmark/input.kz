@@ -124,7 +124,7 @@ pub fn main() void {
 
             for (parse_result.source_file.items) |item| {
                 if (item == .flow) {
-                    const ast_inv = &item.flow.invocation;
+                    const ast_inv = item.flow.inv();
                     const inv: *const Invocation = @ptrCast(ast_inv);
                     var result: DispatchResult = undefined;
                     dispatcher_fn(inv, &result) catch {};

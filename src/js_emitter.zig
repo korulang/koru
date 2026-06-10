@@ -123,7 +123,7 @@ pub fn emit(allocator: std.mem.Allocator, program: *const ast.Program) JsEmitErr
             // Skip injected meta-event flows (koru:start / koru:end). These are
             // compiler infrastructure, not user code; the spike emits only the
             // user pump. They live in the `koru` module-qualifier namespace.
-            if (item.flow.invocation.path.module_qualifier) |mq| {
+            if (item.flow.inv().path.module_qualifier) |mq| {
                 if (std.mem.eql(u8, mq, "koru")) continue;
             }
             try em.emitFlow(&item.flow, flow_num);
@@ -206,7 +206,7 @@ const Emitter = struct {
     /// being emitted/invoked as flowN() methods.
     fn isDeclarationFlow(self: *Emitter, flow: *const ast.Flow) bool {
         if (flow.inline_body == null) return false;
-        const decl = self.findEventDecl(&flow.invocation.path) orelse return false;
+        const decl = self.findEventDecl(&flow.inv().path) orelse return false;
         return annotation_parser.hasPart(decl.annotations, "declaration");
     }
     fn findEventDeclIn(self: *Emitter, scope: []const ast.Item, path: *const ast.DottedPath, current_module: ?[]const u8) ?*const ast.EventDecl {
@@ -299,14 +299,14 @@ const Emitter = struct {
             const stripped = stripInlineStmtMarker(inline_body_raw);
             // The rendered template (e.g. `~if`) carries `__koru_continue_N`
             // markers where a terminal continuation's body must be spliced in.
-            // Resolve them against `flow.continuations` — the JS mirror of the
+            // Resolve them against `flow.body.continuations` — the JS mirror of the
             // Zig emitter's emitInlineCodeResolvingSplices (emitter_helpers.zig
             // :3186). Lines with no marker are emitted verbatim, so non-template
             // inline bodies (comptime |js transforms) lower exactly as before.
-            try self.emitInlineBodyResolvingContinuations(stripped, flow.continuations, "    ");
+            try self.emitInlineBodyResolvingContinuations(stripped, flow.body.continuations, "    ");
             try self.write("\n");
         } else {
-            try self.emitInvocationWithContinuations(&flow.invocation, flow.continuations, "    ");
+            try self.emitInvocationWithContinuations(flow.inv(), flow.body.continuations, "    ");
         }
         try self.write("  },\n");
     }

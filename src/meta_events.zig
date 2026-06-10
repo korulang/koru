@@ -136,14 +136,17 @@ pub fn injectMetaEvents(allocator: std.mem.Allocator, program: *ast.Program) !vo
 
     new_items[old_len + 1] = ast.Item{
         .flow = ast.Flow{
-            .invocation = ast.Invocation{
+            .body = ast.rootSite(ast.Invocation{
                 .path = ast.DottedPath{
                     .module_qualifier = try allocator.dupe(u8, "koru"),
                     .segments = start_flow_segments,
                 },
                 .args = &.{},
-            },
-            .continuations = start_flow_continuations,
+            }, start_flow_continuations, errors.SourceLocation{
+                .file = "koru_meta_events",
+                .line = 0,
+                .column = 0,
+            }),
             .location = errors.SourceLocation{
                 .file = "koru_meta_events",
                 .line = 0,
@@ -179,14 +182,17 @@ pub fn injectMetaEvents(allocator: std.mem.Allocator, program: *ast.Program) !vo
 
     new_items[old_len + 2] = ast.Item{
         .flow = ast.Flow{
-            .invocation = ast.Invocation{
+            .body = ast.rootSite(ast.Invocation{
                 .path = ast.DottedPath{
                     .module_qualifier = try allocator.dupe(u8, "koru"),
                     .segments = end_flow_segments,
                 },
                 .args = &.{},
-            },
-            .continuations = end_flow_continuations,
+            }, end_flow_continuations, errors.SourceLocation{
+                .file = "koru_meta_events",
+                .line = 0,
+                .column = 0,
+            }),
             .location = errors.SourceLocation{
                 .file = "koru_meta_events",
                 .line = 0,

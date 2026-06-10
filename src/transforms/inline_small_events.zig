@@ -109,7 +109,7 @@ pub const InlineSmallEventsTransform = struct {
         // Check each flow to see if it calls an inlinable event
         for (flow_indices.items) |flow_index| {
             const flow = &self.context.current_ast.items[flow_index].flow;
-            const path_str = try localPathToString(self.allocator, flow.invocation.path.segments);
+            const path_str = try localPathToString(self.allocator, flow.inv().path.segments);
             defer self.allocator.free(path_str);
             
             if (proc_map.get(path_str)) |proc_data| {
@@ -156,7 +156,7 @@ pub const InlineSmallEventsTransform = struct {
         // Generate parameter bindings
         try code.appendSlice(self.allocator, "    // Bind parameters\n");
         try code.appendSlice(self.allocator, "    const e = .{\n");
-        for (candidate.flow.invocation.args) |arg| {
+        for (candidate.flow.inv().args) |arg| {
             try code.appendSlice(self.allocator, "        .");
             try code.appendSlice(self.allocator, arg.name);
             try code.appendSlice(self.allocator, " = ");
@@ -200,7 +200,7 @@ pub const InlineSmallEventsTransform = struct {
         // For now, generate a simple switch on the result
         try code.appendSlice(self.allocator, "    // TODO: Map return values to continuations\n");
         
-        for (candidate.flow.continuations) |cont| {
+        for (candidate.flow.body.continuations) |cont| {
             try code.appendSlice(self.allocator, "    // Branch: ");
             try code.appendSlice(self.allocator, cont.branch);
             try code.appendSlice(self.allocator, "\n");

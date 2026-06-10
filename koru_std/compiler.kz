@@ -842,7 +842,7 @@ pub const CompilerContext = struct {
         if (item == .flow) {
             const flow = &item.flow;
             // Check if this is a test invocation
-            if (isTestInvocation(&flow.invocation)) {
+            if (isTestInvocation(flow.inv())) {
                 // Found a test! Process it
                 const inline_code = processTestFlow(flow, mutable_ctx.ast, mutable_ctx.allocator);
                 if (inline_code) |code| {
@@ -857,7 +857,7 @@ pub const CompilerContext = struct {
             for (mod.items) |mod_item| {
                 if (mod_item == .flow) {
                     const flow = &mod_item.flow;
-                    if (isTestInvocation(&flow.invocation)) {
+                    if (isTestInvocation(flow.inv())) {
                         const inline_code = processTestFlow(flow, mutable_ctx.ast, mutable_ctx.allocator);
                         if (inline_code) |code| {
                             test_inline_codes.append(mutable_ctx.allocator, code) catch {};
@@ -950,7 +950,7 @@ const processTestFlow = struct {
 
         // Get test name from invocation args (first arg named "expr")
         var test_name: []const u8 = "unnamed test";
-        for (flow.invocation.args) |arg| {
+        for (flow.inv().args) |arg| {
             if (std.mem.eql(u8, arg.name, "expr")) {
                 test_name = arg.value;
                 break;
@@ -960,7 +960,7 @@ const processTestFlow = struct {
         // Get source body from invocation args - stored in source_value field
         var source_text: []const u8 = "";
         var source_ptr: ?*const ast_mod.Source = null;
-        for (flow.invocation.args) |arg| {
+        for (flow.inv().args) |arg| {
             if (arg.source_value) |src| {
                 source_text = src.text;
                 source_ptr = src;
@@ -1118,11 +1118,11 @@ const walkFlowForPurity = struct {
 
         // Get invocation path as string
         var path_buf = std.ArrayList(u8).initCapacity(allocator, 64) catch unreachable;
-        if (flow_to_walk.invocation.path.module_qualifier) |mq| {
+        if (flow_to_walk.inv().path.module_qualifier) |mq| {
             path_buf.appendSlice(allocator, mq) catch {};
             path_buf.append(allocator, ':') catch {};
         }
-        for (flow_to_walk.invocation.path.segments, 0..) |seg, i| {
+        for (flow_to_walk.inv().path.segments, 0..) |seg, i| {
             if (i > 0) path_buf.append(allocator, '.') catch {};
             path_buf.appendSlice(allocator, seg) catch {};
         }
@@ -1137,7 +1137,7 @@ const walkFlowForPurity = struct {
 
         // Subflow/composed events: walk the implementation body instead of
         // flagging the outer event.
-        if (emitter_helpers.findImplByPath(all_items, &flow_to_walk.invocation.path)) |found_impl| {
+        if (emitter_helpers.findImplByPath(all_items, &flow_to_walk.inv().path)) |found_impl| {
             switch (found_impl) {
                 .immediate_impl => return,
                 .flow => |impl_flow| {
@@ -1148,7 +1148,7 @@ const walkFlowForPurity = struct {
         }
 
         // No mock - check if event/proc is pure
-        if (emitter_helpers.findProcDeclByPath(all_items, &flow_to_walk.invocation.path)) |proc| {
+        if (emitter_helpers.findProcDeclByPath(all_items, &flow_to_walk.inv().path)) |proc| {
             if (!proc.is_pure) {
                 // Impure proc without mock!
                 var already_added = false;
@@ -1162,7 +1162,7 @@ const walkFlowForPurity = struct {
                     impure_list.append(allocator, inv_path) catch {};
                 }
             }
-        } else if (emitter_helpers.findEventDeclByPath(all_items, &flow_to_walk.invocation.path)) |event| {
+        } else if (emitter_helpers.findEventDeclByPath(all_items, &flow_to_walk.inv().path)) |event| {
             if (!event.is_pure) {
                 var already_added = false;
                 for (impure_list.items) |existing| {
@@ -1178,7 +1178,7 @@ const walkFlowForPurity = struct {
         }
 
         // Walk continuations recursively
-        for (flow_to_walk.continuations) |cont| {
+        for (flow_to_walk.body.continuations) |cont| {
             walkContinuation(&cont, mocks, impure_list, all_items, allocator);
         }
     }
@@ -1193,11 +1193,10 @@ const walkFlowForPurity = struct {
         const ast_mod = @import("ast");
         if (cont.node) |node| {
             switch (node) {
-                .invocation => |inv| {
-                    // Create temp flow to walk
+                .invocation => {
+                    // Wrap the site as a flow to walk (same core, thin wrapper)
                     const temp_flow = ast_mod.Flow{
-                        .invocation = inv,
-                        .continuations = cont.continuations,
+                        .body = cont.*,
                         .location = cont.location,
                         .module = "",
                         .is_pure = true,
@@ -1233,7 +1232,7 @@ const emitFlowWithMocks = struct {
 
         // Get invocation path as string
         var path_buf = std.ArrayList(u8).initCapacity(ctx.allocator, 64) catch unreachable;
-        for (flow_to_emit.invocation.path.segments, 0..) |seg, i| {
+        for (flow_to_emit.inv().path.segments, 0..) |seg, i| {
             if (i > 0) try path_buf.append(ctx.allocator, '.');
             try path_buf.appendSlice(ctx.allocator, seg);
         }
@@ -1253,7 +1252,7 @@ const emitFlowWithMocks = struct {
             try code_emitter.write(";\n");
 
             // Emit matching continuation
-            for (flow_to_emit.continuations) |cont| {
+            for (flow_to_emit.body.continuations) |cont| {
                 if (std.mem.eql(u8, cont.branch, bc.branch_name)) {
                     if (cont.binding) |binding| {
                         // Emit binding extraction: const x = result.branch;
@@ -1275,8 +1274,7 @@ const emitFlowWithMocks = struct {
                     if (cont.node) |node| {
                         if (node == .invocation) {
                             const nested_flow = ast_mod.Flow{
-                                .invocation = node.invocation,
-                                .continuations = cont.continuations,
+                                .body = cont,
                                 .location = cont.location,
                                 .module = "",
                                 .is_pure = true,
@@ -1631,8 +1629,8 @@ const joinPathAlloc = struct {
         if (item == .flow) {
             const flow = item.flow;
             // For module-qualified flows, include the module name: "std.build:requires"
-            const path_str = joinPathAlloc(ctx.allocator, flow.invocation.path.segments);
-            const inv_path = if (flow.invocation.path.module_qualifier) |mq|
+            const path_str = joinPathAlloc(ctx.allocator, flow.inv().path.segments);
+            const inv_path = if (flow.inv().path.module_qualifier) |mq|
                 std.fmt.allocPrint(ctx.allocator, "{s}:{s}", .{mq, path_str}) catch path_str
             else
                 path_str;
@@ -1782,8 +1780,8 @@ const joinPathAlloc = struct {
         if (item == .flow) {
             const flow = item.flow;
             // For module-qualified flows, include the module name: "std.build:requires"
-            const path_str = joinPathAlloc(ctx.allocator, flow.invocation.path.segments);
-            const inv_path = if (flow.invocation.path.module_qualifier) |mq|
+            const path_str = joinPathAlloc(ctx.allocator, flow.inv().path.segments);
+            const inv_path = if (flow.inv().path.module_qualifier) |mq|
                 std.fmt.allocPrint(ctx.allocator, "{s}:{s}", .{mq, path_str}) catch path_str
             else
                 path_str;
@@ -1795,7 +1793,7 @@ const joinPathAlloc = struct {
                     if (flow.inline_body != null or flow.preamble_code != null) {
                         transformed = true;
                     } else {
-                        for (flow.invocation.annotations) |ann| {
+                        for (flow.inv().annotations) |ann| {
                             if (std.mem.eql(u8, ann, "@pass_ran(\"transform\")")) {
                                 transformed = true;
                                 break;
@@ -1851,8 +1849,8 @@ const joinPathAlloc = struct {
         if (item == .flow) {
             const flow = item.flow;
             // For module-qualified flows, include the module name: "std.build:requires"
-            const path_str2 = joinPathAlloc(ctx.allocator, flow.invocation.path.segments);
-            const inv_path = if (flow.invocation.path.module_qualifier) |mq|
+            const path_str2 = joinPathAlloc(ctx.allocator, flow.inv().path.segments);
+            const inv_path = if (flow.inv().path.module_qualifier) |mq|
                 std.fmt.allocPrint(ctx.allocator, "{s}:{s}", .{mq, path_str2}) catch path_str2
             else
                 path_str2;
@@ -1864,7 +1862,7 @@ const joinPathAlloc = struct {
                     if (flow.inline_body != null or flow.preamble_code != null) {
                         transformed = true;
                     } else {
-                        for (flow.invocation.annotations) |ann| {
+                        for (flow.inv().annotations) |ann| {
                             if (std.mem.eql(u8, ann, "@pass_ran(\"transform\")")) {
                                 transformed = true;
                                 break;

@@ -222,7 +222,7 @@ pub fn validateFlow(flow: *const ast.Flow, allocator: std.mem.Allocator) ?Valida
 
 fn validateFlowRecursive(flow: *const ast.Flow, seen: *std.StringHashMap(void)) ?ValidationError {
     // Check each continuation for bindings
-    for (flow.continuations) |cont| {
+    for (flow.body.continuations) |cont| {
         if (cont.binding) |binding_name| {
             // Check for shadowing
             if (seen.contains(binding_name)) {
@@ -592,7 +592,7 @@ pub fn executeFlow(
     ctx: *InterpreterContext,
     expr_parser_module: anytype, // ExpressionParser module for parsing conditions
 ) ExecuteFlowError!Value {
-    const inv = &flow.invocation;
+    const inv = flow.inv();
 
     // Build invocation for dispatcher
     var dispatch_result: DispatchResult = undefined;
@@ -695,7 +695,7 @@ pub fn executeFlow(
         var each_cont: ?*const ast.Continuation = null;
         var done_cont: ?*const ast.Continuation = null;
 
-        for (flow.continuations) |*cont| {
+        for (flow.body.continuations) |*cont| {
             if (std.mem.eql(u8, cont.branch, "each")) {
                 each_cont = cont;
             } else if (std.mem.eql(u8, cont.branch, "done")) {
@@ -726,8 +726,7 @@ pub fn executeFlow(
                     switch (node) {
                         .invocation => |next_inv| {
                             const next_flow = ast.Flow{
-                                .invocation = next_inv,
-                                .continuations = cont.continuations,
+                                .body = ast.rootSite(next_inv, cont.continuations, .{ .file = "generated", .line = 0, .column = 0 }),
                                 .module = flow.module,
                             };
                             _ = try executeFlow(&next_flow, ctx, expr_parser_module);
@@ -751,8 +750,7 @@ pub fn executeFlow(
                 switch (node) {
                     .invocation => |next_inv| {
                         const next_flow = ast.Flow{
-                            .invocation = next_inv,
-                            .continuations = cont.continuations,
+                            .body = ast.rootSite(next_inv, cont.continuations, .{ .file = "generated", .line = 0, .column = 0 }),
                             .module = flow.module,
                         };
                         return try executeFlow(&next_flow, ctx, expr_parser_module);
@@ -807,7 +805,7 @@ pub fn executeFlow(
     }
 
     // If no continuations, just return the dispatch result
-    if (flow.continuations.len == 0) {
+    if (flow.body.continuations.len == 0) {
         return Value.fromDispatch(
             dispatch_result.branch,
             dispatch_result.fields,
@@ -815,7 +813,7 @@ pub fn executeFlow(
     }
 
     // Find matching continuation
-    for (flow.continuations) |cont| {
+    for (flow.body.continuations) |cont| {
         if (std.mem.eql(u8, cont.branch, dispatch_result.branch)) {
             // Bind the result if there's a binding name
             if (cont.binding) |binding_name| {
@@ -844,8 +842,7 @@ pub fn executeFlow(
                     .invocation => |next_inv| {
                         // Create a synthetic flow for the next invocation
                         const next_flow = ast.Flow{
-                            .invocation = next_inv,
-                            .continuations = cont.continuations,
+                            .body = ast.rootSite(next_inv, cont.continuations, .{ .file = "generated", .line = 0, .column = 0 }),
                             .module = flow.module,
                         };
                         return executeFlow(&next_flow, ctx, expr_parser_module);
@@ -1017,7 +1014,7 @@ pub fn runSource(
     // Execute the flow!
     const result_value = executeFlow(flow, &ctx, parser_module) catch |err| {
         // Build event name for error reporting
-        const inv = &flow.invocation;
+        const inv = flow.inv();
         var name_buf: [256]u8 = undefined;
         var name_len: usize = 0;
         if (inv.path.module_qualifier) |mq| {
@@ -1095,7 +1092,7 @@ pub fn runSourceFast(
 
             // Execute the flow
             const result_value = executeFlow(&flow, &ctx, expr_parser_module) catch |err| {
-                const inv = &flow.invocation;
+                const inv = flow.inv();
                 var name_buf: [256]u8 = undefined;
                 var name_len: usize = 0;
                 if (inv.path.module_qualifier) |mq| {
@@ -1161,7 +1158,7 @@ pub fn runSourceFastCached(
     };
 
     const result_value = executeFlow(cached_flow, &ctx, expr_parser_module) catch |err| {
-        const inv = &cached_flow.invocation;
+        const inv = cached_flow.inv();
         var name_buf: [256]u8 = undefined;
         var name_len: usize = 0;
         if (inv.path.module_qualifier) |mq| {
@@ -1223,7 +1220,7 @@ pub fn evalFlow(
     // Execute the flow!
     const result_value = executeFlow(flow, &ctx, expr_parser_module) catch |err| {
         // Build event name for error reporting
-        const inv = &flow.invocation;
+        const inv = flow.inv();
         var name_buf: [256]u8 = undefined;
         var name_len: usize = 0;
         if (inv.path.module_qualifier) |mq| {

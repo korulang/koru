@@ -288,16 +288,16 @@
     for (program.items) |item| {
         if (item == .flow) {
             const flow = item.flow;
-            if (flow.invocation.path.module_qualifier) |mq| {
+            if (flow.inv().path.module_qualifier) |mq| {
                 if (std.mem.eql(u8, mq, "std.deps") and
-                    flow.invocation.path.segments.len == 2 and
-                    std.mem.eql(u8, flow.invocation.path.segments[0], "requires") and
-                    std.mem.eql(u8, flow.invocation.path.segments[1], "system"))
+                    flow.inv().path.segments.len == 2 and
+                    std.mem.eql(u8, flow.inv().path.segments[0], "requires") and
+                    std.mem.eql(u8, flow.inv().path.segments[1], "system"))
                 {
                     // Respect build flags: ~[build("prod")], ~[build("dev")], etc.
-                    if (!matchesBuildFlags(flow.invocation.annotations)) continue;
+                    if (!matchesBuildFlags(flow.inv().annotations)) continue;
                     // Extract source parameter
-                    for (flow.invocation.args) |arg| {
+                    for (flow.inv().args) |arg| {
                         if (std.mem.eql(u8, arg.name, "source")) {
                             var dep = SystemDep{};
                             dep.name = helpers.parseJsonField(arg.value, "name");
@@ -321,12 +321,12 @@
 
                 // Check for requires.zig (Zig package manager dependencies)
                 if (std.mem.eql(u8, mq, "std.deps") and
-                    flow.invocation.path.segments.len == 2 and
-                    std.mem.eql(u8, flow.invocation.path.segments[0], "requires") and
-                    std.mem.eql(u8, flow.invocation.path.segments[1], "zig"))
+                    flow.inv().path.segments.len == 2 and
+                    std.mem.eql(u8, flow.inv().path.segments[0], "requires") and
+                    std.mem.eql(u8, flow.inv().path.segments[1], "zig"))
                 {
-                    if (!matchesBuildFlags(flow.invocation.annotations)) continue;
-                    for (flow.invocation.args) |arg| {
+                    if (!matchesBuildFlags(flow.inv().annotations)) continue;
+                    for (flow.inv().args) |arg| {
                         if (std.mem.eql(u8, arg.name, "source")) {
                             var zdep = ZigDep{};
                             zdep.name = helpers.parseJsonField(arg.value, "name");

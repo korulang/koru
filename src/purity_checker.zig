@@ -123,11 +123,11 @@ pub const PurityChecker = struct {
     /// Helper: Recursively collect all event invocations from a flow
     fn collectFlowInvocations(self: *PurityChecker, flow: *const ast.Flow, invocations: *std.ArrayList([]const u8)) !void {
         // Add the first invocation
-        const first_event = try self.pathToString(flow.invocation.path);
+        const first_event = try self.pathToString(flow.inv().path);
         try invocations.append(self.allocator, first_event);
 
         // Recursively walk all continuations
-        for (flow.continuations) |*cont| {
+        for (flow.body.continuations) |*cont| {
             try self.collectContinuationInvocations(cont, invocations);
         }
     }

@@ -58,7 +58,7 @@ const std = @import("std");
 
     // Create new path: my_if -> my_if_impl
     const new_path = ast.DottedPath{
-        .module_qualifier = flow.invocation.path.module_qualifier,
+        .module_qualifier = flow.inv().path.module_qualifier,
         .segments = &[_][]const u8{"my_if_impl"},
     };
 
@@ -75,14 +75,13 @@ const std = @import("std");
     new_annotations[0] = allocator.dupe(u8, "@pass_ran(\"transform\")") catch unreachable;
 
     const transformed_flow = ast.Flow{
-        .invocation = ast.Invocation{
+        .body = ast.rootSite(ast.Invocation{
             .path = new_path,
             .args = new_args,
             .annotations = new_annotations,
             .inserted_by_tap = false,
             .from_opaque_tap = false,
-        },
-        .continuations = flow.continuations,
+        }, flow.body.continuations, flow.location),
         .annotations = flow.annotations,
         .pre_label = flow.pre_label,
         .post_label = flow.post_label,

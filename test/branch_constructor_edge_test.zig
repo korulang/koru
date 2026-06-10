@@ -26,7 +26,7 @@ test "empty branch constructor" {
     const flow = &proc.inline_flows[0];
     
     // Check empty constructors
-    for (flow.continuations) |cont| {
+    for (flow.body.continuations) |cont| {
         if (cont.node) |step| {
             if (step == .branch_constructor) {
                 const bc = &step.branch_constructor;
@@ -58,7 +58,7 @@ test "nested field access in branch constructor" {
     
     const proc = result.source_file.items[0].proc_decl;
     const flow = &proc.inline_flows[0];
-    const bc = &flow.continuations[0].node.?.branch_constructor;
+    const bc = &flow.body.continuations[0].node.?.branch_constructor;
     
     // Check nested field access
     try testing.expectEqualStrings("content", bc.fields[0].name);
@@ -90,7 +90,7 @@ test "complex expressions in branch constructor" {
     
     const proc = result.source_file.items[0].proc_decl;
     const flow = &proc.inline_flows[0];
-    const bc = &flow.continuations[0].node.?.branch_constructor;
+    const bc = &flow.body.continuations[0].node.?.branch_constructor;
     
     // Check complex expressions
     try testing.expectEqualStrings("count", bc.fields[0].name);
@@ -127,7 +127,7 @@ test "mixed literals and expressions" {
     
     const proc = result.source_file.items[0].proc_decl;
     const flow = &proc.inline_flows[0];
-    const bc = &flow.continuations[0].node.?.branch_constructor;
+    const bc = &flow.body.continuations[0].node.?.branch_constructor;
     
     // Check mix of expressions and literals
     try testing.expectEqualStrings("data", bc.fields[0].name);
@@ -162,7 +162,7 @@ test "single field shorthand" {
     
     const proc = result.source_file.items[0].proc_decl;
     const flow = &proc.inline_flows[0];
-    const bc = &flow.continuations[0].node.?.branch_constructor;
+    const bc = &flow.body.continuations[0].node.?.branch_constructor;
     
     // Shorthand should extract field name from expression
     try testing.expectEqual(@as(usize, 1), bc.fields.len);

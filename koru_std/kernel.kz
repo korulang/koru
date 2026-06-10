@@ -97,19 +97,19 @@ const std = @import("std");
             for (prog_internal.items) |item_internal| {
                 if (item_internal == .flow) {
                     const f = item_internal.flow;
-                    if (f.invocation.path.segments.len == 1 and 
-                        std.mem.eql(u8, f.invocation.path.segments[0], "shape") and
-                        f.invocation.path.module_qualifier != null and
-                        std.mem.eql(u8, f.invocation.path.module_qualifier.?, "std.kernel")) 
+                    if (f.inv().path.segments.len == 1 and 
+                        std.mem.eql(u8, f.inv().path.segments[0], "shape") and
+                        f.inv().path.module_qualifier != null and
+                        std.mem.eql(u8, f.inv().path.module_qualifier.?, "std.kernel")) 
                     {
                         // Check if first arg matches target_type
-                        for (f.invocation.args) |arg| {
+                        for (f.inv().args) |arg| {
                             if (std.mem.eql(u8, arg.name, "expr")) {
                                  var name = arg.value;
                                  if (name.len >= 2 and name[0] == '"') name = name[1..name.len-1];
                                  if (std.mem.eql(u8, name, target_type)) {
                                      // Found it! Get source arg
-                                     for (f.invocation.args) |s_arg| {
+                                     for (f.inv().args) |s_arg| {
                                          if (std.mem.eql(u8, s_arg.name, "source")) {
                                              return s_arg.source_value.?.text;
                                          }
@@ -149,12 +149,12 @@ const std = @import("std");
     // STEP 1: Locate invocation + kernel binding
     // ========================================================================
     // Position-agnostic: the runner lifts nested sites into a synthetic
-    // top-level flow, so `invocation` IS `flow.invocation` at every depth.
+    // top-level flow, so `invocation` IS the flow's own invocation at every depth.
     _ = invocation;
 
     var has_kernel_continuation = false;
     var has_computed_continuation = false;
-    for (flow.continuations) |cont| {
+    for (flow.body.continuations) |cont| {
         const branch = std.mem.trim(u8, cont.branch, " ");
         if (std.mem.eql(u8, branch, "kernel")) {
             has_kernel_continuation = true;
@@ -169,7 +169,7 @@ const std = @import("std");
             alloc: std.mem.Allocator,
             flow_internal: *const ast.Flow,
         ) ?[]const u8 {
-            const owner_continuations = flow_internal.continuations;
+            const owner_continuations = flow_internal.body.continuations;
 
             const kernel_cont = ast_functional.findContinuationByBranchInSlice(owner_continuations, "kernel") orelse return null;
 
@@ -292,7 +292,7 @@ const std = @import("std");
             flow_internal: *const ast.Flow,
         ) KernelPlan {
             const empty = KernelPlan{ .step_range = null, .step_invocation = null, .ops = &[_]KernelOp{} };
-            const owner_continuations = flow_internal.continuations;
+            const owner_continuations = flow_internal.body.continuations;
 
             const kernel_cont = ast_functional.findContinuationByBranchInSlice(owner_continuations, "kernel") orelse return empty;
 
@@ -607,7 +607,7 @@ const std = @import("std");
 
     // Get kernel binding name for codegen
     const kernel_binding_name = if (has_kernel_continuation) blk: {
-        const k_cont = ast_functional.findContinuationByBranchInSlice(flow.continuations, "kernel");
+        const k_cont = ast_functional.findContinuationByBranchInSlice(flow.body.continuations, "kernel");
         break :blk if (k_cont) |kc| (kc.binding orelse "k") else "k";
     } else "k";
 
@@ -819,13 +819,13 @@ const std = @import("std");
         // dead `.kernel =>` switch arm holding a duplicate of the fused pairwise+self loops.
         const drop_kernel_cont = has_computed_continuation;
         var kept_count: usize = 0;
-        for (flow.continuations) |cont| {
+        for (flow.body.continuations) |cont| {
             if (drop_kernel_cont and std.mem.eql(u8, std.mem.trim(u8, cont.branch, " "), "kernel")) continue;
             kept_count += 1;
         }
         var new_continuations = allocator.alloc(ast.Continuation, kept_count) catch unreachable;
         var write_idx: usize = 0;
-        for (flow.continuations) |cont| {
+        for (flow.body.continuations) |cont| {
             if (drop_kernel_cont and std.mem.eql(u8, std.mem.trim(u8, cont.branch, " "), "kernel")) continue;
             new_continuations[write_idx] = cont;
             write_idx += 1;
@@ -833,8 +833,7 @@ const std = @import("std");
 
         new_item = ast.Item{
             .flow = ast.Flow{
-                .invocation = init_inv,
-                .continuations = new_continuations,
+                .body = ast.rootSite(init_inv, new_continuations, flow.location),
                 .pre_label = if (flow.pre_label) |l| allocator.dupe(u8, l) catch unreachable else null,
                 .post_label = if (flow.post_label) |l| allocator.dupe(u8, l) catch unreachable else null,
                 .impl_of = flow.impl_of,
@@ -1053,7 +1052,7 @@ const std = @import("std");
             for (items) |*it| {
                 switch (it.*) {
                     .flow => |*f| {
-                        if (searchContinuations(f.continuations, target_inv, &f.invocation, null, null)) |result| {
+                        if (searchContinuations(f.body.continuations, target_inv, f.inv(), null, null)) |result| {
                             return result;
                         }
                     },
@@ -1388,7 +1387,7 @@ const std = @import("std");
             for (items) |*it| {
                 switch (it.*) {
                     .flow => |*f| {
-                        if (searchContinuations(f.continuations, target_inv, &f.invocation, null, null)) |result| {
+                        if (searchContinuations(f.body.continuations, target_inv, f.inv(), null, null)) |result| {
                             return result;
                         }
                     },
@@ -1580,7 +1579,7 @@ const std = @import("std");
         }
     }.search;
     
-    const step_cont = findStepCont(flow.continuations, invocation);
+    const step_cont = findStepCont(flow.body.continuations, invocation);
     
     // Check for | step |> and flatten it to void-chain
     var new_conts: []const ast.Continuation = &[_]ast.Continuation{};

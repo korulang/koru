@@ -532,7 +532,7 @@ pub const VisitorEmitter = struct {
         for (items) |item| {
             switch (item) {
                 .flow => |flow| {
-                    var found = try scanContinuationsForMetatypes(flow.continuations, allocator);
+                    var found = try scanContinuationsForMetatypes(flow.body.continuations, allocator);
                     defer found.deinit();
                     try result.merge(&found);
                 },
@@ -602,7 +602,7 @@ pub const VisitorEmitter = struct {
             for (source_file.items, 0..) |item, idx| {
                 log.debug("  [{}] Item type: {s}\n", .{idx, @tagName(item)});
                 if (item == .flow) {
-                    log.debug("       Flow invokes: {s}\n", .{item.flow.invocation.path.segments[0]});
+                    log.debug("       Flow invokes: {s}\n", .{item.flow.inv().path.segments[0]});
                 }
                 if (item == .parse_error) {
                     log.debug("       PARSE ERROR MESSAGE: {s}\n", .{item.parse_error.message});
@@ -746,7 +746,7 @@ pub const VisitorEmitter = struct {
                     // Only emit calls to comptime flows that are not [norun] or [transform]
                     if (invokes_comptime_event) {
                         // Check if this flow invokes a [norun] or [transform] event
-                        const event_decl = self.findEventDeclInItems(self.all_items, &flow.invocation.path);
+                        const event_decl = self.findEventDeclInItems(self.all_items, &flow.inv().path);
                         var flow_returns_program = false;
                         if (event_decl) |decl| {
                             const is_norun = annotation_parser.hasPart(decl.annotations, "norun");
@@ -754,7 +754,7 @@ pub const VisitorEmitter = struct {
                                 // Only allow [comptime|norun] events that have proc handlers.
                                 // Data-storage events (template:define, build:command.sh) have no proc.
                                 const is_comptime_event = annotation_parser.hasPart(decl.annotations, "comptime");
-                                const has_proc = self.eventHasProcHandler(&flow.invocation.path);
+                                const has_proc = self.eventHasProcHandler(&flow.inv().path);
                                 if (!(is_comptime_event and has_proc)) {
                                     continue;
                                 }
@@ -844,7 +844,7 @@ pub const VisitorEmitter = struct {
 
                         // Check if transform already ran (look for @pass_ran annotation)
                         var has_pass_ran = false;
-                        for (flow.invocation.annotations) |ann| {
+                        for (flow.inv().annotations) |ann| {
                             if (std.mem.startsWith(u8, ann, "@pass_ran")) {
                                 has_pass_ran = true;
                                 break;
@@ -869,11 +869,11 @@ pub const VisitorEmitter = struct {
                         }
 
                         // Skip meta-event flows in count (they're not user flows)
-                        const is_meta_event = flow.invocation.path.module_qualifier != null and
-                            std.mem.eql(u8, flow.invocation.path.module_qualifier.?, "koru") and
-                            flow.invocation.path.segments.len == 1 and
-                            (std.mem.eql(u8, flow.invocation.path.segments[0], "start") or
-                             std.mem.eql(u8, flow.invocation.path.segments[0], "end"));
+                        const is_meta_event = flow.inv().path.module_qualifier != null and
+                            std.mem.eql(u8, flow.inv().path.module_qualifier.?, "koru") and
+                            flow.inv().path.segments.len == 1 and
+                            (std.mem.eql(u8, flow.inv().path.segments[0], "start") or
+                             std.mem.eql(u8, flow.inv().path.segments[0], "end"));
 
                         if (!is_meta_event) {
                             flow_count += 1;
@@ -908,13 +908,13 @@ pub const VisitorEmitter = struct {
                             // `[declaration]` flows (e.g. `const`) emit container-scope
                             // decls, not a callable flow function — no main() call, and
                             // no `i++` so flow numbering stays in sync with phase 1.
-                            if (self.findEventDeclInItems(self.all_items, &flow.invocation.path)) |decl| {
+                            if (self.findEventDeclInItems(self.all_items, &flow.inv().path)) |decl| {
                                 if (annotation_parser.hasPart(decl.annotations, "declaration")) continue;
                             }
 
                             // CRITICAL: Check if transform already ran (look for @pass_ran annotation)
                             var has_pass_ran = false;
-                            for (flow.invocation.annotations) |ann| {
+                            for (flow.inv().annotations) |ann| {
                                 if (std.mem.startsWith(u8, ann, "@pass_ran")) {
                                     has_pass_ran = true;
                                     break;
@@ -939,11 +939,11 @@ pub const VisitorEmitter = struct {
                             }
 
                             // Skip meta-event flows (they're called explicitly)
-                            const is_meta_event = flow.invocation.path.module_qualifier != null and
-                                std.mem.eql(u8, flow.invocation.path.module_qualifier.?, "koru") and
-                                flow.invocation.path.segments.len == 1 and
-                                (std.mem.eql(u8, flow.invocation.path.segments[0], "start") or
-                                 std.mem.eql(u8, flow.invocation.path.segments[0], "end"));
+                            const is_meta_event = flow.inv().path.module_qualifier != null and
+                                std.mem.eql(u8, flow.inv().path.module_qualifier.?, "koru") and
+                                flow.inv().path.segments.len == 1 and
+                                (std.mem.eql(u8, flow.inv().path.segments[0], "start") or
+                                 std.mem.eql(u8, flow.inv().path.segments[0], "end"));
 
                             if (is_meta_event) {
                                 continue; // Skip - called explicitly
@@ -1081,14 +1081,14 @@ pub const VisitorEmitter = struct {
                 // EXCEPTION: If the flow has inline_body OR preamble_code OR @pass_ran annotation, the transform already ran and we MUST emit it
                 // Note: @pass_ran is parametrized like @pass_ran("transform"), so check for prefix
                 var has_pass_ran = false;
-                for (flow.invocation.annotations) |ann| {
+                for (flow.inv().annotations) |ann| {
                     if (std.mem.startsWith(u8, ann, "@pass_ran")) {
                         has_pass_ran = true;
                         break;
                     }
                 }
                 const is_transformed = flow.inline_body != null or flow.preamble_code != null or has_pass_ran;
-                const event_decl = self.findEventDeclInItems(self.all_items, &flow.invocation.path);
+                const event_decl = self.findEventDeclInItems(self.all_items, &flow.inv().path);
                 if (event_decl) |decl| {
                     const is_norun = annotation_parser.hasPart(decl.annotations, "norun");
                     if (is_norun and !is_transformed) {
@@ -1096,7 +1096,7 @@ pub const VisitorEmitter = struct {
                         // BUT [comptime|norun] events WITH proc handlers need comptime emission.
                         // Events without procs (e.g. template:define) are data-storage only.
                         const is_comptime_event = annotation_parser.hasPart(decl.annotations, "comptime");
-                        const has_proc = self.eventHasProcHandler(&flow.invocation.path);
+                        const has_proc = self.eventHasProcHandler(&flow.inv().path);
                         if (!(is_comptime_event and has_proc and self.emit_mode == .comptime_only)) {
                             return;
                         }
@@ -1129,21 +1129,21 @@ pub const VisitorEmitter = struct {
                 // If is_transformed is true, always fall through to emit the flow
 
                 // Check if this is a meta-event flow (koru:start or koru:end)
-                const is_koru_start = flow.invocation.path.module_qualifier != null and
-                    std.mem.eql(u8, flow.invocation.path.module_qualifier.?, "koru") and
-                    flow.invocation.path.segments.len == 1 and
-                    std.mem.eql(u8, flow.invocation.path.segments[0], "start");
+                const is_koru_start = flow.inv().path.module_qualifier != null and
+                    std.mem.eql(u8, flow.inv().path.module_qualifier.?, "koru") and
+                    flow.inv().path.segments.len == 1 and
+                    std.mem.eql(u8, flow.inv().path.segments[0], "start");
 
-                const is_koru_end = flow.invocation.path.module_qualifier != null and
-                    std.mem.eql(u8, flow.invocation.path.module_qualifier.?, "koru") and
-                    flow.invocation.path.segments.len == 1 and
-                    std.mem.eql(u8, flow.invocation.path.segments[0], "end");
+                const is_koru_end = flow.inv().path.module_qualifier != null and
+                    std.mem.eql(u8, flow.inv().path.module_qualifier.?, "koru") and
+                    flow.inv().path.segments.len == 1 and
+                    std.mem.eql(u8, flow.inv().path.segments[0], "end");
 
                 // Detect if this comptime event returns a program (for comptime program return)
                 var comptime_returns_program = false;
                 var comptime_program_branch: []const u8 = "";
                 if (invokes_comptime_event and self.emit_mode == .comptime_only) {
-                    const ct_event_decl = self.findEventDeclInItems(self.all_items, &flow.invocation.path);
+                    const ct_event_decl = self.findEventDeclInItems(self.all_items, &flow.inv().path);
                     if (ct_event_decl) |ct_decl| {
                         for (ct_decl.branches) |branch| {
                             for (branch.payload.fields) |field| {
@@ -1185,11 +1185,11 @@ pub const VisitorEmitter = struct {
                     const flow_line_str = try std.fmt.bufPrint(&flow_line_buf, "{}", .{flow.location.line});
                     try self.code_emitter.write(flow_line_str);
                     try self.code_emitter.write("  ~");
-                    if (flow.invocation.path.module_qualifier) |mq| {
+                    if (flow.inv().path.module_qualifier) |mq| {
                         try self.code_emitter.write(mq);
                         try self.code_emitter.write(":");
                     }
-                    for (flow.invocation.path.segments, 0..) |seg, idx| {
+                    for (flow.inv().path.segments, 0..) |seg, idx| {
                         if (idx > 0) try self.code_emitter.write(".");
                         try writeMangledSegment(self.code_emitter, seg);
                     }
@@ -1352,7 +1352,7 @@ pub const VisitorEmitter = struct {
                 // Emit variable declarations from original Flow
                 // We need to declare accumulators and other mutable state
                 if (loop_ir.optimized_from_flow) |original_flow| {
-                    for (original_flow.invocation.args) |arg| {
+                    for (original_flow.inv().args) |arg| {
                         // Skip loop variable (handled by for-loop)
                         if (std.mem.eql(u8, arg.name, loop_ir.variable)) continue;
                         // Skip limit (handled by end_expr)
@@ -1388,7 +1388,7 @@ pub const VisitorEmitter = struct {
                 // Emit exit continuation using proper continuation emission
                 if (loop_ir.optimized_from_flow) |original_flow| {
                     // Find the exit continuation (dynamically determined by optimizer)
-                    for (original_flow.continuations) |*cont| {
+                    for (original_flow.body.continuations) |*cont| {
                         if (std.mem.eql(u8, cont.branch, loop_ir.exit_branch_name)) {
                             // If the exit continuation has an empty pipeline, skip emission
                             // (the loop just exits without any continuation code)
@@ -1846,7 +1846,7 @@ pub const VisitorEmitter = struct {
 
                                         if (is_inline_stmt) {
                                             const has_named_branches = blk: {
-                                                for (flow.continuations) |cont| {
+                                                for (flow.body.continuations) |cont| {
                                                     if (cont.branch.len > 0) break :blk true;
                                                 }
                                                 break :blk false;
@@ -1889,17 +1889,17 @@ pub const VisitorEmitter = struct {
                                         try self.code_emitter.write("const result = ");
 
                                         // Emit the event call
-                                        if (flow.invocation.path.module_qualifier) |mq| {
+                                        if (flow.inv().path.module_qualifier) |mq| {
                                             try emitter.writeModulePath(self.code_emitter, mq, self.main_module_name);
                                             try self.code_emitter.write(".");
                                         }
-                                        for (flow.invocation.path.segments, 0..) |seg, idx| {
+                                        for (flow.inv().path.segments, 0..) |seg, idx| {
                                             if (idx > 0) try self.code_emitter.write("_");
                                             try writeMangledSegment(self.code_emitter, seg);
                                         }
                                         try self.code_emitter.write("_event.handler(.{");
 
-                                        for (flow.invocation.args, 0..) |arg, k| {
+                                        for (flow.inv().args, 0..) |arg, k| {
                                             if (k > 0) try self.code_emitter.write(", ");
                                             try self.code_emitter.write(" .");
                                             try emitter.writeBranchName(self.code_emitter, arg.name);
@@ -1919,10 +1919,10 @@ pub const VisitorEmitter = struct {
                                     }
                                     const indent_str = indent_buf[0..indent_pos];
 
-                                    const source_event_name = try emitter.buildCanonicalEventName(&flow.invocation.path, self.allocator, self.main_module_name);
+                                    const source_event_name = try emitter.buildCanonicalEventName(&flow.inv().path, self.allocator, self.main_module_name);
                                     const compiler_module_name = try codegen_utils.buildKoruModulePath(self.allocator, "std.compiler");
                                     defer self.allocator.free(compiler_module_name);
-                                    try emitter.emitSubflowContinuations(self.code_emitter, flow.continuations, 0, indent_str, items_to_search, self.tap_registry, self.type_registry, self.main_module_name, source_event_name, compiler_module_name);
+                                    try emitter.emitSubflowContinuations(self.code_emitter, flow.body.continuations, 0, indent_str, items_to_search, self.tap_registry, self.type_registry, self.main_module_name, source_event_name, compiler_module_name);
 
                                     self.code_emitter.indent_level -= 1;
                                     try self.code_emitter.writeIndent();
@@ -2123,7 +2123,7 @@ pub const VisitorEmitter = struct {
 
                                                     if (is_inline_stmt) {
                                                         const has_named_branches = blk: {
-                                                            for (flow.continuations) |cont| {
+                                                            for (flow.body.continuations) |cont| {
                                                                 if (cont.branch.len > 0) break :blk true;
                                                             }
                                                             break :blk false;
@@ -2167,12 +2167,12 @@ pub const VisitorEmitter = struct {
                                                     // Check if this is a self-call (delegating to default)
                                                     const is_self_call = blk: {
                                                         // For cross-module impl, self-call means calling the same event
-                                                        if (flow.invocation.path.module_qualifier) |inv_mq| {
+                                                        if (flow.inv().path.module_qualifier) |inv_mq| {
                                                             if (eql(u8, inv_mq, event_module) and
-                                                                flow.invocation.path.segments.len == event.path.segments.len)
+                                                                flow.inv().path.segments.len == event.path.segments.len)
                                                             {
                                                                 var segs_match = true;
-                                                                for (flow.invocation.path.segments, 0..) |seg, j| {
+                                                                for (flow.inv().path.segments, 0..) |seg, j| {
                                                                     if (!eql(u8, seg, event.path.segments[j])) {
                                                                         segs_match = false;
                                                                         break;
@@ -2187,11 +2187,11 @@ pub const VisitorEmitter = struct {
                                                     if (is_self_call) {
                                                         try self.code_emitter.write("_default_handler(.{");
                                                     } else {
-                                                        if (flow.invocation.path.module_qualifier) |mq| {
+                                                        if (flow.inv().path.module_qualifier) |mq| {
                                                             try emitter.writeModulePath(self.code_emitter, mq, self.main_module_name);
                                                             try self.code_emitter.write(".");
                                                         }
-                                                        for (flow.invocation.path.segments, 0..) |seg, idx| {
+                                                        for (flow.inv().path.segments, 0..) |seg, idx| {
                                                             if (idx > 0) try self.code_emitter.write("_");
                                                             try writeMangledSegment(self.code_emitter, seg);
                                                         }
@@ -2199,7 +2199,7 @@ pub const VisitorEmitter = struct {
                                                     }
 
                                                     // Write arguments
-                                                    for (flow.invocation.args, 0..) |arg, k| {
+                                                    for (flow.inv().args, 0..) |arg, k| {
                                                         if (k > 0) try self.code_emitter.write(", ");
                                                         try self.code_emitter.write(" .");
                                                         try emitter.writeBranchName(self.code_emitter, arg.name);
@@ -2231,8 +2231,8 @@ pub const VisitorEmitter = struct {
                                                     try self.code_emitter.write("\n");
                                                 }
 
-                                                const source_event_name = try emitter.buildCanonicalEventName(&flow.invocation.path, self.allocator, self.main_module_name);
-                                                try emitter.emitSubflowContinuations(self.code_emitter, flow.continuations, 0, indent_str, self.all_items, self.tap_registry, self.type_registry, self.main_module_name, source_event_name, "main_module");
+                                                const source_event_name = try emitter.buildCanonicalEventName(&flow.inv().path, self.allocator, self.main_module_name);
+                                                try emitter.emitSubflowContinuations(self.code_emitter, flow.body.continuations, 0, indent_str, self.all_items, self.tap_registry, self.type_registry, self.main_module_name, source_event_name, "main_module");
 
                                                 found_impl = true;
                                             }
@@ -2549,13 +2549,13 @@ pub const VisitorEmitter = struct {
 
                                     // Emit continuation bodies directly - the continuations contain the control flow node
                                     var result_counter: usize = 0;
-                                    for (flow.continuations) |*cont| {
+                                    for (flow.body.continuations) |*cont| {
                                         try emitter.emitContinuationBody(self.code_emitter, &emitter_ctx, cont, &result_counter);
                                     }
                                 } else if (flow.inline_body) |inline_code| {
                                     // Check if continuations have named branches (need switch)
                                     const has_named_branches = blk: {
-                                        for (flow.continuations) |cont| {
+                                        for (flow.body.continuations) |cont| {
                                             if (cont.branch.len > 0) break :blk true;
                                         }
                                         break :blk false;
@@ -2597,8 +2597,8 @@ pub const VisitorEmitter = struct {
                                         }
                                         const indent_str = indent_buf[0..indent_pos];
 
-                                        const source_event_name = try emitter.buildCanonicalEventName(&flow.invocation.path, self.allocator, self.main_module_name);
-                                        try emitter.emitSubflowContinuations(self.code_emitter, flow.continuations, 0, indent_str, items_to_search, self.tap_registry, self.type_registry, self.main_module_name, source_event_name, "main_module");
+                                        const source_event_name = try emitter.buildCanonicalEventName(&flow.inv().path, self.allocator, self.main_module_name);
+                                        try emitter.emitSubflowContinuations(self.code_emitter, flow.body.continuations, 0, indent_str, items_to_search, self.tap_registry, self.type_registry, self.main_module_name, source_event_name, "main_module");
                                     } else {
                                         // Void/pipeline continuations -- emit inline code + branch constructors
                                         try self.code_emitter.writeIndent();
@@ -2623,7 +2623,7 @@ pub const VisitorEmitter = struct {
                                         try self.code_emitter.emitReindentedText(inline_code, indent_buf[0..indent_pos]);
                                         try self.code_emitter.write("\n");
 
-                                        for (flow.continuations) |cont| {
+                                        for (flow.body.continuations) |cont| {
                                             if (cont.branch.len == 0) {
                                                 if (cont.node) |step| {
                                                     if (step == .branch_constructor) {
@@ -2664,7 +2664,7 @@ pub const VisitorEmitter = struct {
                                     try self.code_emitter.writeIndent();
 
                                     // Check if the invoked event has mutable branches
-                                    const invoked_event = self.findEventDeclInItems(items_to_search, &flow.invocation.path);
+                                    const invoked_event = self.findEventDeclInItems(items_to_search, &flow.inv().path);
                                     const needs_mutable = if (invoked_event) |invoked| blk: {
                                         for (invoked.branches) |branch| {
                                             for (branch.annotations) |ann| {
@@ -2686,8 +2686,8 @@ pub const VisitorEmitter = struct {
                                     // This happens in override patterns like: ~mod:foo = foo(x: 42) | ok |> ...
                                     const is_self_call = blk: {
                                         if (!has_impl_override) break :blk false;
-                                        if (flow.invocation.path.segments.len != event.path.segments.len) break :blk false;
-                                        for (flow.invocation.path.segments, 0..) |seg, j| {
+                                        if (flow.inv().path.segments.len != event.path.segments.len) break :blk false;
+                                        for (flow.inv().path.segments, 0..) |seg, j| {
                                             if (!std.mem.eql(u8, seg, event.path.segments[j])) break :blk false;
                                         }
                                         break :blk true;
@@ -2699,14 +2699,14 @@ pub const VisitorEmitter = struct {
                                     } else {
                                         // Regular call: use the event handler
                                         // Check if event is module-qualified
-                                        if (flow.invocation.path.module_qualifier) |mq| {
+                                        if (flow.inv().path.module_qualifier) |mq| {
                                             // Use writeModulePath to properly sanitize module references
                                             // (e.g., entry module -> "main_module", "logger" -> "koru_logger")
                                             try emitter.writeModulePath(self.code_emitter, mq, self.main_module_name);
                                             try self.code_emitter.write(".");
                                         }
                                         // Join all segments with underscores
-                                        for (flow.invocation.path.segments, 0..) |seg, idx| {
+                                        for (flow.inv().path.segments, 0..) |seg, idx| {
                                             if (idx > 0) try self.code_emitter.write("_");
                                             try writeMangledSegment(self.code_emitter, seg);
                                         }
@@ -2715,7 +2715,7 @@ pub const VisitorEmitter = struct {
 
                                     // Write arguments, mapping from input parameters
                                     // Look up event signature to get parameter names for positional args
-                                    const event_canonical_name = try emitter.buildCanonicalEventName(&flow.invocation.path, self.allocator, self.main_module_name);
+                                    const event_canonical_name = try emitter.buildCanonicalEventName(&flow.inv().path, self.allocator, self.main_module_name);
                                     defer self.allocator.free(event_canonical_name);
                                     const event_type = self.type_registry.getEventType(event_canonical_name);
                                     var value_ctx = emitter.EmissionContext{
@@ -2723,7 +2723,7 @@ pub const VisitorEmitter = struct {
                                         .main_module_name = self.main_module_name,
                                     };
 
-                                    for (flow.invocation.args, 0..) |arg, k| {
+                                    for (flow.inv().args, 0..) |arg, k| {
                                         if (k > 0) try self.code_emitter.write(", ");
                                         try self.code_emitter.write(" .");
 
@@ -2781,9 +2781,9 @@ pub const VisitorEmitter = struct {
                                     const indent_str = indent_buf[0..indent_pos];
 
                                     // Build canonical source event name for tap emission
-                                    const source_event_name = try emitter.buildCanonicalEventName(&flow.invocation.path, self.allocator, self.main_module_name);
+                                    const source_event_name = try emitter.buildCanonicalEventName(&flow.inv().path, self.allocator, self.main_module_name);
 
-                                    try emitter.emitSubflowContinuations(self.code_emitter, flow.continuations, 0, indent_str, items_to_search, self.tap_registry, self.type_registry, self.main_module_name, source_event_name, "main_module");
+                                    try emitter.emitSubflowContinuations(self.code_emitter, flow.body.continuations, 0, indent_str, items_to_search, self.tap_registry, self.type_registry, self.main_module_name, source_event_name, "main_module");
                                 }
                                 found_impl = true;
                                 break;
@@ -3098,14 +3098,14 @@ pub const VisitorEmitter = struct {
                             // or inline_body). Extending this to full flow shapes
                             // requires factoring out the main handler's body-emission
                             // path into a shared helper. Pinning that gap as a TODO.
-                            if (flow.continuations.len == 0 and flow.preamble_code == null and flow.inline_body == null) {
+                            if (flow.body.continuations.len == 0 and flow.preamble_code == null and flow.inline_body == null) {
                                 try self.code_emitter.writeIndent();
                                 try self.code_emitter.write("_ = ");
-                                if (flow.invocation.path.module_qualifier) |mq| {
+                                if (flow.inv().path.module_qualifier) |mq| {
                                     try emitter.writeModulePath(self.code_emitter, mq, self.main_module_name);
                                     try self.code_emitter.write(".");
                                 }
-                                for (flow.invocation.path.segments, 0..) |seg, idx| {
+                                for (flow.inv().path.segments, 0..) |seg, idx| {
                                     if (idx > 0) try self.code_emitter.write("_");
                                     try writeMangledSegment(self.code_emitter, seg);
                                 }
@@ -3114,7 +3114,7 @@ pub const VisitorEmitter = struct {
                                     .allocator = self.allocator,
                                     .main_module_name = self.main_module_name,
                                 };
-                                for (flow.invocation.args, 0..) |arg, k| {
+                                for (flow.inv().args, 0..) |arg, k| {
                                     if (k > 0) try self.code_emitter.write(", ");
                                     try self.code_emitter.write(" .");
                                     try emitter.writeBranchName(self.code_emitter, arg.name);
@@ -3490,14 +3490,14 @@ pub const VisitorEmitter = struct {
         var event_name_buf: [256]u8 = undefined;
         var pos: usize = 0;
 
-        if (flow.invocation.path.module_qualifier) |mq| {
+        if (flow.inv().path.module_qualifier) |mq| {
             @memcpy(event_name_buf[pos..pos + mq.len], mq);
             pos += mq.len;
             event_name_buf[pos] = ':';
             pos += 1;
         }
 
-        for (flow.invocation.path.segments, 0..) |seg, i| {
+        for (flow.inv().path.segments, 0..) |seg, i| {
             if (i > 0) {
                 event_name_buf[pos] = '.';
                 pos += 1;
@@ -3513,7 +3513,7 @@ pub const VisitorEmitter = struct {
         // self.all_items contains the actual AST we're emitting (potentially transformed)
         // TypeRegistry contains the ORIGINAL frontend AST before transformations
         log.debug("  Checking current AST for event: '{s}'\n", .{event_name});
-        const event_decl = self.findEventDeclInItems(self.all_items, &flow.invocation.path);
+        const event_decl = self.findEventDeclInItems(self.all_items, &flow.inv().path);
         log.debug("  AST event lookup result for '{s}': {}\n", .{event_name, event_decl != null});
 
         if (event_decl) |decl| {

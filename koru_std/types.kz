@@ -623,10 +623,10 @@ const std = @import("std");
         // Check flows (untransformed generic definitions)
         if (itm == .flow) {
             const f = &itm.flow;
-            if (f.invocation.path.segments.len > 0) {
-                const last_seg = f.invocation.path.segments[f.invocation.path.segments.len - 1];
+            if (f.inv().path.segments.len > 0) {
+                const last_seg = f.inv().path.segments[f.inv().path.segments.len - 1];
                 if (std.mem.eql(u8, last_seg, "struct")) {
-                    for (f.invocation.args) |arg| {
+                    for (f.inv().args) |arg| {
                         if (arg.source_value) |src| {
                             const arg_val = arg.value;
                             var ap: ?usize = null;

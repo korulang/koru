@@ -369,14 +369,14 @@ pub const InliningVisitor = struct {
         const self: *InliningVisitor = @fieldParentPtr("base", visitor);
         
         // Check if this flow's invocation is a candidate for inlining
-        if (self.context.canInline(flow.invocation.path)) {
-            const path_str = try transform.pathToString(self.context.allocator, flow.invocation.path);
+        if (self.context.canInline(flow.inv().path)) {
+            const path_str = try transform.pathToString(self.context.allocator, flow.inv().path);
             if (self.context.symbol_table.procs.get(path_str)) |_| {
                 // Find the actual proc in the AST
                 // This is simplified - in reality we'd need to search properly
                 const candidate = InlineCandidate{
                     .flow_index = 0, // Would need to track this
-                    .invocation = &flow.invocation,
+                    .invocation = flow.inv(),
                     .proc = undefined, // Would need to find the actual proc
                 };
                 _ = candidate;

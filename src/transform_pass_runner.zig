@@ -22,32 +22,33 @@ const annotation_parser = @import("annotation_parser");
 const ast_functional = @import("ast_functional");
 
 // ============================================================================
-// Position-agnostic transform sites (lift/graft)
+// Position-agnostic transform sites
 // ============================================================================
 //
-// Koru's AST encodes "invoke event + handle branches" twice: top-level
-// `Flow{invocation, continuations}` and nested `Continuation{node,
-// continuations}`. The two are isomorphic, but transform handlers used to
-// receive a bare `*Invocation` and re-derive `is_top_level = (invocation ==
-// &flow.invocation)`, forking every transform into a top-level path and a
-// (usually drifted/buggy) nested path.
+// "Invoke an event + handle its branches" has ONE encoding at every depth:
+// a `Continuation` (`ast.Flow` is a thin module-level wrapper whose `body`
+// is the root Continuation). A transform site is therefore just a
+// *Continuation; the only positional datum left is a wrapper-layer one —
+// whether the site happens to be some flow's root body, which decides WHICH
+// Item the handler's program-level write-back replaces:
 //
-// The runner now makes position structurally unaskable: before a handler runs
-// against a NESTED invocation, the site is LIFTED — a synthetic top-level
-// `Flow` is built whose `.invocation` is the nested invocation and whose
-// `.continuations` are the nested invocation's branch continuations, and that
-// flow is appended to a copy of the program. The handler therefore always
-// sees its invocation as a flow's own invocation (`invocation ==
-// &flow.invocation` is invariantly true), and writes back with the exact same
-// `replaceFlowRecursive`/`replaceAt` calls it uses at top level.
+// - Root sites (site == &flow.body): the handler runs against the real
+//   program and its returned program is used as-is (it replaced the Item).
+// - Nested sites: the handler ABI is "receive a program, return a whole new
+//   program with the site replaced as an Item" (handlers deep-clone
+//   untouched items, may append new event decls/procs/host lines). A nested
+//   site is not an Item, so the runner WRAPS it: the site Continuation
+//   becomes the `body` of a synthetic marker-stamped Flow appended to a
+//   program copy (no re-encoding — the body IS the site value). After the
+//   handler returns, the result is GRAFTED back: the marker-stamped item's
+//   body is spliced into the holding continuation (`Flow.inline_body`
+//   migrates to `Invocation.inline_body`, the canonical location;
+//   `Item.inline_code` becomes `Node.inline_code`), and any new top-level
+//   items the handler inserted are kept.
 //
-// After the handler returns, the result is GRAFTED back: the transformed
-// site (identified by a marker source-location the runner stamped on the
-// synthetic flow) is converted into the continuation position it came from —
-// `Flow.inline_body` migrates to `Invocation.inline_body` (the canonical
-// location, see ast.zig Invocation.inline_body), `Item.inline_code` becomes
-// `Node.inline_code` — and any NEW top-level items the handler inserted
-// (event decls, procs, host lines) are kept.
+// The wrap/graft residue exists because the HANDLER ABI is item-level and
+// deep-cloning (marker rediscovery, path navigation) — it is no longer
+// compensation for a dual encoding; there is none.
 //
 // Transforms either complete or fail loudly: every impossible state on this
 // path is a hard error, never a warn-and-continue.
@@ -58,17 +59,22 @@ const ast_functional = @import("ast_functional");
 /// ones do); a handler that destroys it gets a hard, descriptive error.
 const site_marker_prefix = "__koru_lifted_site__:";
 
+/// A transform site reference: the ONE invoke+branches core (a Continuation)
+/// plus the wrapper-layer datum of which Item to replace on write-back.
+/// `wrapper` is non-null iff the site is that flow's root body. Nothing
+/// below the runner's write-back dispatch may consult it.
+const SiteRef = struct {
+    holding: *ast.Continuation,
+    wrapper: ?*ast.Flow,
+};
+
 /// Where an invocation sits in the AST, threaded through the walk so the
 /// runner never has to re-discover it by pointer-chasing.
 const SitePosition = union(enum) {
     /// Not an invocation position (program/item/etc. levels).
     none,
-    /// The invocation IS a flow's own invocation (top level, or a flow
-    /// inside a module_decl). Handlers can run against it directly.
-    flow_invocation: *ast.Flow,
-    /// The invocation is a continuation's node. Must be lifted before a
-    /// handler may run.
-    continuation_node: *ast.Continuation,
+    /// The invocation is the node of this site.
+    site: SiteRef,
     /// Any other position (e.g. inside a conditional_block). No transform
     /// has ever legally fired here; matching one is a hard error.
     opaque_position,
@@ -91,8 +97,8 @@ const LiftedSite = struct {
     /// pointer identity does not survive; source location does).
     containing_loc: SourceLocation,
     /// Index path of the holding continuation inside the containing flow:
-    /// containing.continuations[p0].continuations[p1]...[pN] IS the holding
-    /// continuation (whose .node is the lifted invocation).
+    /// containing.body.continuations[p0].continuations[p1]...[pN] IS the
+    /// holding continuation (whose .node is the lifted invocation).
     cont_path: []const usize,
     /// The lifted invocation's original path segments — graft-time sanity
     /// check that the navigation landed on the right continuation.
@@ -129,7 +135,7 @@ const ContainingSearch = struct {
             switch (item.*) {
                 .flow => |*f| {
                     var path: std.ArrayList(usize) = .empty;
-                    if (try findInConts(allocator, f.continuations, target_cont, &path)) {
+                    if (try findInConts(allocator, f.body.continuations, target_cont, &path)) {
                         return ContainingSearch{ .flow = f, .cont_path = try path.toOwnedSlice(allocator) };
                     }
                     path.deinit(allocator);
@@ -146,17 +152,20 @@ const ContainingSearch = struct {
     }
 };
 
-/// Build the lifted view of a nested transform site: a synthetic top-level
-/// flow whose invocation is the nested invocation and whose continuations are
-/// the nested invocation's branch continuations, appended to a copy of the
-/// program. The handler runs against this view exactly as it would against a
-/// real top-level flow.
+/// Wrap a nested transform site in a synthetic top-level item: the site
+/// Continuation BECOMES the body of a marker-stamped Flow appended to a copy
+/// of the program. No re-encoding happens — the body is the same
+/// invoke+branches value the walker found (it shares the continuation slice
+/// with the real AST; handlers treat the program as immutable and build
+/// replacements functionally). The handler runs against this view exactly as
+/// it would against a real top-level flow.
 fn liftSite(
     allocator: std.mem.Allocator,
     program: *const Program,
     holding_cont: *ast.Continuation,
-    target_inv: *Invocation,
 ) !LiftedSite {
+    const target_inv = &holding_cont.node.?.invocation;
+
     const containing = (try ContainingSearch.findInItems(allocator, program.items, holding_cont)) orelse {
         log.err("TRANSFORM RUNNER BUG: could not locate the flow containing a nested transform invocation. The walker handed us a continuation that is not reachable from the program root.\n", .{});
         return error.TransformSiteNotInProgram;
@@ -169,12 +178,8 @@ fn liftSite(
         holding_cont.location.column,
     });
 
-    // Synthetic flow: the site, viewed as a top-level flow. Shares the
-    // invocation value and the continuation slice with the real AST (handlers
-    // treat the program as immutable and build replacements functionally).
     const site_flow = ast.Flow{
-        .invocation = target_inv.*,
-        .continuations = holding_cont.continuations,
+        .body = holding_cont.*,
         .location = .{
             .file = marker,
             .line = holding_cont.location.line,
@@ -195,7 +200,7 @@ fn liftSite(
 
     return LiftedSite{
         .site_program = site_program,
-        .site_node = ASTNode{ .invocation = &site_items[program.items.len].flow.invocation },
+        .site_node = ASTNode{ .invocation = site_items[program.items.len].flow.invMut() },
         .marker = marker,
         .containing_loc = containing.flow.location,
         .cont_path = containing.cont_path,
@@ -275,14 +280,14 @@ fn graftSite(
                 log.err("TRANSFORM ERROR: transform produced preamble_code for a nested site ({s}). preamble_code only exists at flow level; there is no preamble position inside a continuation. The transform must use inline_body (statement-shaped, //@koru:inline_stmt) instead.\n", .{lifted.marker});
                 return error.TransformPreambleAtNestedSite;
             }
-            var new_inv = f.invocation;
+            var new_inv = f.inv().*;
             // Flow.inline_body delegates to Invocation.inline_body (the
             // canonical location) — migrate it so depth emission sees it.
             if (f.inline_body != null and new_inv.inline_body == null) {
                 new_inv.inline_body = f.inline_body;
             }
             new_node = ast.Node{ .invocation = new_inv };
-            new_children = f.continuations;
+            new_children = f.body.continuations;
         },
         .inline_code => |*ic| {
             // The handler replaced the whole site with raw host code (e.g. a
@@ -300,7 +305,7 @@ fn graftSite(
         return error.TransformContainingFlowLost;
     };
 
-    var conts: []const ast.Continuation = containing.continuations;
+    var conts: []const ast.Continuation = containing.body.continuations;
     var holding: *ast.Continuation = undefined;
     for (lifted.cont_path, 0..) |idx, depth| {
         if (idx >= conts.len) {
@@ -380,37 +385,27 @@ fn countMatchingFlowsInProgram(transform_name: []const u8, program: *const Progr
     return count;
 }
 
-/// Count matching invocations in a flow (including its continuations)
+/// Count matching invocations in a flow. The flow's root body is just a
+/// continuation, so one recursive walk covers every depth — there is no
+/// separate "flow's own invocation" case anymore.
 fn countMatchingInFlow(flow: *const ast.Flow, transform_name: []const u8) usize {
-    var count: usize = 0;
-
-    // Check the flow's own invocation
-    if (flowStillMatchesTransform(&flow.invocation, transform_name)) {
-        count += 1;
-    }
-
-    // Check invocations in continuations
-    count += countMatchingInContinuations(flow.continuations, transform_name);
-
-    return count;
+    return countMatchingInContinuation(&flow.body, transform_name);
 }
 
-/// Recursively count matching invocations in continuations
-fn countMatchingInContinuations(continuations: []const ast.Continuation, transform_name: []const u8) usize {
+/// Recursively count matching invocations in a site (node + branch handlers).
+fn countMatchingInContinuation(cont: *const ast.Continuation, transform_name: []const u8) usize {
     var count: usize = 0;
 
-    for (continuations) |cont| {
-        // Check the continuation's node
-        if (cont.node) |node| {
-            if (node == .invocation) {
-                if (flowStillMatchesTransform(&node.invocation, transform_name)) {
-                    count += 1;
-                }
+    if (cont.node) |node| {
+        if (node == .invocation) {
+            if (flowStillMatchesTransform(&node.invocation, transform_name)) {
+                count += 1;
             }
         }
+    }
 
-        // Recurse into nested continuations
-        count += countMatchingInContinuations(cont.continuations, transform_name);
+    for (cont.continuations) |*child| {
+        count += countMatchingInContinuation(child, transform_name);
     }
 
     return count;
@@ -422,7 +417,7 @@ fn removeFlowFromProgram(allocator: std.mem.Allocator, program: *const Program, 
     var found = false;
     for (program.items, 0..) |_, idx| {
         const item_ptr = &program.items[idx];
-        if (item_ptr.* == .flow and &item_ptr.flow.invocation == target_inv) {
+        if (item_ptr.* == .flow and item_ptr.flow.inv() == target_inv) {
             found = true;
             continue; // Skip this flow
         }
@@ -610,13 +605,23 @@ fn walkOnce(
 fn childPosition(node: ASTNode, child: ASTNode, inherited: SitePosition) SitePosition {
     switch (node) {
         .flow => |f| {
-            if (child == .invocation) return .{ .flow_invocation = f };
+            // A flow's child is its root site — same SiteRef shape as any
+            // nested site, plus the wrapper-layer datum of which Item it is.
+            if (child == .continuation) return .{ .site = .{ .holding = &f.body, .wrapper = f } };
             return .none;
         },
         .continuation => |c| {
             // The continuation's own step node (and the invocation inside it)
-            // sits at this continuation. Branch continuations start fresh.
-            if (child == .node) return .{ .continuation_node = c };
+            // sits at this continuation. If this continuation IS some flow's
+            // root body, the inherited position already says so — keep the
+            // wrapper. Branch continuations start fresh (.none).
+            if (child == .node) {
+                const wrapper: ?*ast.Flow = switch (inherited) {
+                    .site => |s| if (s.holding == c) s.wrapper else null,
+                    else => null,
+                };
+                return .{ .site = .{ .holding = c, .wrapper = wrapper } };
+            }
             return .none;
         },
         .node => {
@@ -625,7 +630,7 @@ fn childPosition(node: ASTNode, child: ASTNode, inherited: SitePosition) SitePos
                 // assigned — unless this is a position no transform supports
                 // (conditional_block bodies and the like).
                 return switch (inherited) {
-                    .continuation_node => inherited,
+                    .site => inherited,
                     else => .opaque_position,
                 };
             }
@@ -770,15 +775,21 @@ const ClaimCandidate = struct {
 fn getClaimCandidate(node: ASTNode, position: SitePosition) ?ClaimCandidate {
     return switch (node) {
         .flow => |flow| ClaimCandidate{
-            .node = ASTNode{ .invocation = @constCast(&flow.invocation) },
-            .position = .{ .flow_invocation = flow },
+            .node = ASTNode{ .invocation = flow.invMut() },
+            .position = .{ .site = .{ .holding = &flow.body, .wrapper = flow } },
         },
         .continuation => |cont| blk: {
             if (cont.node) |*step| {
                 if (step.* == .invocation) {
+                    // If this continuation IS some flow's root body, the
+                    // inherited position carries the wrapper.
+                    const wrapper: ?*ast.Flow = switch (position) {
+                        .site => |sr| if (sr.holding == cont) sr.wrapper else null,
+                        else => null,
+                    };
                     break :blk ClaimCandidate{
                         .node = ASTNode{ .invocation = @constCast(&step.invocation) },
-                        .position = .{ .continuation_node = cont },
+                        .position = .{ .site = .{ .holding = cont, .wrapper = wrapper } },
                     };
                 }
             }
@@ -797,11 +808,13 @@ fn applyTransform(
     allocator: std.mem.Allocator,
 ) !WalkResult {
     // Position-agnostic site contract: handlers ALWAYS see their invocation
-    // as a flow's own invocation. Nested sites are lifted into a synthetic
-    // top-level flow first; the handler's result is grafted back afterwards.
+    // as a flow's own invocation. A site that already IS some flow's root
+    // body runs directly (the wrapper Item gets replaced); any other site is
+    // wrapped in a synthetic flow first and the handler's result is grafted
+    // back afterwards. This is the write-back dispatch — the ONLY place that
+    // may consult the wrapper.
     const lifted: ?LiftedSite = switch (position) {
-        .flow_invocation => null, // already a flow's own invocation
-        .continuation_node => |cont| try liftSite(allocator, program, cont, node.invocation),
+        .site => |sr| if (sr.wrapper != null) null else try liftSite(allocator, program, sr.holding),
         .none, .opaque_position => {
             log.err("TRANSFORM ERROR: transform '{s}' matched an invocation at an unsupported AST position (e.g. inside a conditional_block). Transforms can fire on flow invocations and continuation steps only.\n", .{transform.name});
             return error.TransformAtUnsupportedPosition;
@@ -994,9 +1007,11 @@ fn applyExpandAtSite(
     allocator: std.mem.Allocator,
 ) !WalkResult {
     switch (position) {
-        .flow_invocation => return try applyExpandTemplate(node, program, inv_path, allocator),
-        .continuation_node => |cont| {
-            const lifted = try liftSite(allocator, program, cont, node.invocation);
+        .site => |sr| {
+            if (sr.wrapper != null) {
+                return try applyExpandTemplate(node, program, inv_path, allocator);
+            }
+            const lifted = try liftSite(allocator, program, sr.holding);
             const result = try applyExpandTemplate(lifted.site_node, lifted.site_program, inv_path, allocator);
             if (!result.found) {
                 return WalkResult{ .found = false, .program = program };
@@ -1063,24 +1078,24 @@ fn applyExpandTemplate(
     };
 
     // Create new invocation with @pass_ran("transform") annotation to prevent re-expansion
-    const new_inv_annotations = allocator.alloc([]const u8, flow.invocation.annotations.len + 1) catch {
+    const new_inv_annotations = allocator.alloc([]const u8, flow.inv().annotations.len + 1) catch {
         log.debug("[EXPAND] ERROR: Failed to allocate annotations\n", .{});
         return WalkResult{ .found = false, .program = program };
     };
-    for (flow.invocation.annotations, 0..) |ann, i| {
+    for (flow.inv().annotations, 0..) |ann, i| {
         new_inv_annotations[i] = ann;
     }
-    new_inv_annotations[flow.invocation.annotations.len] = allocator.dupe(u8, "@pass_ran(\"transform\")") catch {
+    new_inv_annotations[flow.inv().annotations.len] = allocator.dupe(u8, "@pass_ran(\"transform\")") catch {
         log.debug("[EXPAND] ERROR: Failed to dupe annotation\n", .{});
         return WalkResult{ .found = false, .program = program };
     };
 
     const new_invocation = ast.Invocation{
-        .path = flow.invocation.path,
-        .args = flow.invocation.args,
+        .path = flow.inv().path,
+        .args = flow.inv().args,
         .annotations = new_inv_annotations,
-        .inserted_by_tap = flow.invocation.inserted_by_tap,
-        .from_opaque_tap = flow.invocation.from_opaque_tap,
+        .inserted_by_tap = flow.inv().inserted_by_tap,
+        .from_opaque_tap = flow.inv().from_opaque_tap,
     };
 
     // For expand with continuations:
@@ -1091,10 +1106,13 @@ fn applyExpandTemplate(
     // This preserves flow validation (branches match event definition) while
     // still allowing the template to provide the switch expression.
 
-    // Create new flow with inline_body set (emitter handles the switch generation)
+    // Create new flow with inline_body set (emitter handles the switch
+    // generation). The body keeps the original branch handlers; only the
+    // node (invocation) is swapped.
+    var new_body = flow.body;
+    new_body.node = .{ .invocation = new_invocation };
     const new_flow = ast.Flow{
-        .invocation = new_invocation,
-        .continuations = flow.continuations, // Keep original continuations
+        .body = new_body,
         .annotations = flow.annotations,
         .pre_label = flow.pre_label,
         .post_label = flow.post_label,

@@ -49,7 +49,7 @@ fi
 # Find the top-level subflow that dispatches compute
 FLOW_LINE=$(grep -n '\.flow = Flow{' _combined_emit.zig | while read line; do
     linenum=$(echo "$line" | cut -d: -f1)
-    if sed -n "$((linenum)),$((linenum + 10))p" _combined_emit.zig | grep -q '"compute"'; then
+    if sed -n "$((linenum)),$((linenum + 40))p" _combined_emit.zig | grep -q '"compute"'; then
         echo "$linenum"
         break
     fi

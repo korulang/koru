@@ -75,8 +75,8 @@ fn generateCode(allocator: std.mem.Allocator, source_file: *const ast.SourceFile
             },
             .flow => |flow| {
                 // For the POC, we'll generate a simple main that calls the handler
-                if (flow.invocation.path.segments.len > 0) {
-                    const flow_name = flow.invocation.path.segments[0];
+                if (flow.inv().path.segments.len > 0) {
+                    const flow_name = flow.inv().path.segments[0];
                     
                     // Only generate main once for the top-level flow
                     if (std.mem.eql(u8, flow_name, "greet")) {
@@ -90,7 +90,7 @@ fn generateCode(allocator: std.mem.Allocator, source_file: *const ast.SourceFile
                         try buffer.appendSlice(allocator, "Event{\n");
                         
                         // Generate input args
-                        for (flow.invocation.args) |arg| {
+                        for (flow.inv().args) |arg| {
                             try buffer.appendSlice(allocator, "        .");
                             try buffer.appendSlice(allocator, arg.name);
                             try buffer.appendSlice(allocator, " = ");

@@ -886,7 +886,7 @@ pub const PhantomSemanticChecker = struct {
         // Skip flows that have been transformed by [transform] events.
         // Transformed flows have valid structure by construction - the transform
         // replaced the comptime event structure with a runtime node structure.
-        for (flow.invocation.annotations) |ann| {
+        for (flow.inv().annotations) |ann| {
             if (std.mem.startsWith(u8, ann, "@pass_ran")) {
                 return true; // Valid - transform output is correct by construction
             }
@@ -895,11 +895,11 @@ pub const PhantomSemanticChecker = struct {
         var has_errors = false;
 
         // Get the event name from path segments
-        const event_name = try self.pathToString(flow.invocation.path);
+        const event_name = try self.pathToString(flow.inv().path);
         defer self.allocator.free(event_name);
 
         // Determine the module - use module_qualifier if present, otherwise current_module
-        const module_name = flow.invocation.path.module_qualifier orelse current_module;
+        const module_name = flow.inv().path.module_qualifier orelse current_module;
 
         // Build fully-qualified event name (module:event)
         const qualified_name = try std.fmt.allocPrint(self.allocator, "{s}:{s}", .{ module_name, event_name });
@@ -919,7 +919,7 @@ pub const PhantomSemanticChecker = struct {
         // Continuation validation only covers args on nested steps, not the flow head.
         var root_context = BindingContext.init(self.allocator);
         defer root_context.deinit();
-        for (flow.invocation.args) |arg| {
+        for (flow.inv().args) |arg| {
             const arg_valid = try self.validateArgument(arg, event_info.decl, module_name, &root_context, flow.location);
             if (!arg_valid) {
                 has_errors = true;
@@ -929,7 +929,7 @@ pub const PhantomSemanticChecker = struct {
         // For each continuation, validate phantom state flows
         // Pass both: current_module (where flow is defined, for name resolution)
         // and module_name (where event is defined, for phantom qualification)
-        for (flow.continuations) |*cont_ptr| {
+        for (flow.body.continuations) |*cont_ptr| {
             const cont_valid = try self.validateContinuation(cont_ptr, event_info.decl, module_name, current_module, event_map, flow.location, null, implementing_event);
             if (!cont_valid) {
                 has_errors = true;
@@ -2834,11 +2834,10 @@ test "PhantomSemanticChecker - state mismatch rejected" {
             .module = "input",
         } },
         .{ .flow = .{
-            .invocation = .{
+            .body = ast.rootSite(.{
                 .path = .{ .module_qualifier = null, .segments = @constCast(&[_][]const u8{"open_file"}) },
                 .args = &[_]ast.Arg{},
-            },
-            .continuations = &flow_conts,
+            }, &flow_conts, .{ .line = 8, .column = 0, .file = "test.kz" }),
             .location = .{ .line = 8, .column = 0, .file = "test.kz" },
             .module = "input",
         } },
@@ -2933,11 +2932,10 @@ test "PhantomSemanticChecker - matching states accepted" {
             .module = "input",
         } },
         .{ .flow = .{
-            .invocation = .{
+            .body = ast.rootSite(.{
                 .path = .{ .module_qualifier = null, .segments = @constCast(&[_][]const u8{"open_file"}) },
                 .args = &[_]ast.Arg{},
-            },
-            .continuations = &flow_conts,
+            }, &flow_conts, .{ .line = 8, .column = 0, .file = "test.kz" }),
             .location = .{ .line = 8, .column = 0, .file = "test.kz" },
             .module = "input",
         } },
@@ -3039,11 +3037,10 @@ test "PhantomSemanticChecker - cross-module state mismatch rejected" {
             .module = "input",
         } },
         .{ .flow = .{
-            .invocation = .{
+            .body = ast.rootSite(.{
                 .path = .{ .module_qualifier = null, .segments = @constCast(&[_][]const u8{"open_file"}) },
                 .args = &[_]ast.Arg{},
-            },
-            .continuations = &flow_conts,
+            }, &flow_conts, .{ .line = 8, .column = 0, .file = "test.kz" }),
             .location = .{ .line = 8, .column = 0, .file = "test.kz" },
             .module = "input",
         } },

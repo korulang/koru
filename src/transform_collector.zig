@@ -255,7 +255,7 @@ fn getItemKey(allocator: std.mem.Allocator, item: *const ast.Item) ![]u8 {
         },
         .flow => |flow| {
             return try std.fmt.allocPrint(allocator, "flow:{s}", .{
-                try pathToString(allocator, &flow.invocation.path),
+                try pathToString(allocator, flow.inv().path),
             });
         },
         .label_decl => |label| {

@@ -155,13 +155,13 @@ const std = @import("std");
         if (prog_item == .flow) {
             const flow = prog_item.flow;
             // Match renderHTML with or without module qualifier
-            const is_renderHTML = flow.invocation.path.segments.len == 1 and
-                std.mem.eql(u8, flow.invocation.path.segments[0], "renderHTML");
+            const is_renderHTML = flow.inv().path.segments.len == 1 and
+                std.mem.eql(u8, flow.inv().path.segments[0], "renderHTML");
 
             if (is_renderHTML) {
                 // Create new invocation WITHOUT Source argument, preserving module info
                 const transformed_path = ast.DottedPath{
-                    .module_qualifier = flow.invocation.path.module_qualifier,  // Preserve module qualifier
+                    .module_qualifier = flow.inv().path.module_qualifier,  // Preserve module qualifier
                     .segments = path_segments,
                 };
 
@@ -179,8 +179,7 @@ const std = @import("std");
 
                 // Create transformed flow preserving continuations
                 const transformed_flow = ast.Flow{
-                    .invocation = new_invocation,
-                    .continuations = flow.continuations,  // Preserve!
+                    .body = ast.rootSite(new_invocation, flow.body.continuations, flow.location),  // Preserve continuations!
                     .annotations = flow.annotations,
                     .pre_label = flow.pre_label,
                     .post_label = flow.post_label,

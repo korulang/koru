@@ -268,8 +268,7 @@ fn cloneFlows(allocator: std.mem.Allocator, flows: []const ast.Flow) ![]const as
 
 fn cloneFlow(allocator: std.mem.Allocator, flow: ast.Flow) !ast.Flow {
     return .{
-        .invocation = try cloneInvocation(allocator, flow.invocation),
-        .continuations = try cloneContinuations(allocator, flow.continuations),
+        .body = ast.rootSite(try cloneInvocation(allocator, flow.inv().*), try cloneContinuations(allocator, flow.body.continuations), .{ .file = "generated", .line = 0, .column = 0 }),
         .pre_label = if (flow.pre_label) |l| try allocator.dupe(u8, l) else null,
         .post_label = if (flow.post_label) |l| try allocator.dupe(u8, l) else null,
     };

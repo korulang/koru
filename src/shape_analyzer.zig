@@ -53,7 +53,7 @@ pub const ShapeAnalyzer = struct {
         const event_path = if (impl_flow.impl_of) |impl_path|
             try self.pathToString(impl_path)
         else
-            try self.pathToString(impl_flow.invocation.path);
+            try self.pathToString(impl_flow.inv().path);
         defer self.allocator.free(event_path);
         try ctx.registerEventInputFields(event_path);
 
@@ -117,7 +117,7 @@ pub const ShapeAnalyzer = struct {
         // Convert dotted path to string
         var buf = try std.ArrayList(u8).initCapacity(self.allocator, 64);
         defer buf.deinit(self.allocator);
-        for (flow.invocation.path.segments, 0..) |segment, i| {
+        for (flow.inv().path.segments, 0..) |segment, i| {
             if (i > 0) try buf.append(self.allocator, '.');
             try buf.appendSlice(self.allocator, segment);
         }
@@ -125,7 +125,7 @@ pub const ShapeAnalyzer = struct {
         defer self.allocator.free(event_path);
         
         // Process each continuation
-        for (flow.continuations) |cont| {
+        for (flow.body.continuations) |cont| {
             try self.collectExitPointsFromContinuation(&cont, exit_points, ctx, event_path);
         }
     }
@@ -447,8 +447,7 @@ test "analyze simple subflow exit points" {
     };
     
     const flow = ast.Flow{
-        .invocation = invocation,
-        .continuations = &continuations,
+        .body = ast.rootSite(invocation, &continuations, .{ .file = "generated", .line = 0, .column = 0 }),
     };
     
     const subflow = ast.SubflowDecl{

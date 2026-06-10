@@ -82,9 +82,9 @@ pub fn main() void {
 
         for (parse_result.source_file.items) |item| {
             if (item == .flow) {
-                const ast_inv = &item.flow.invocation;
+                const ast_inv = item.flow.inv();
                 std.debug.print("  Found flow: {s}\n", .{ast_inv.path.segments[0]});
-                std.debug.print("  Continuations: {d}\n", .{item.flow.continuations.len});
+                std.debug.print("  Continuations: {d}\n", .{item.flow.body.continuations.len});
 
                 // Cast and dispatch
                 const inv: *const Invocation = @ptrCast(ast_inv);
@@ -134,7 +134,7 @@ pub fn main() void {
                 const flow = &item.flow;
 
                 // Step 1: Dispatch the invocation
-                const ast_inv = &flow.invocation;
+                const ast_inv = flow.inv();
                 const inv: *const Invocation = @ptrCast(ast_inv);
                 var dispatch_result: DispatchResult = undefined;
                 dispatcher_fn(inv, &dispatch_result) catch |err| {
@@ -145,7 +145,7 @@ pub fn main() void {
                 std.debug.print("  Dispatched: branch={s}\n", .{dispatch_result.branch});
 
                 // Step 2: Find matching continuation
-                for (flow.continuations) |cont| {
+                for (flow.body.continuations) |cont| {
                     if (std.mem.eql(u8, cont.branch, dispatch_result.branch)) {
                         std.debug.print("  Matched continuation: {s}\n", .{cont.branch});
 

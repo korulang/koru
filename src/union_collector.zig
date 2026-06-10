@@ -68,7 +68,7 @@ pub const UnionCollector = struct {
         defer branch_map.deinit();
         
         // Collect all branch constructors from continuations
-        try self.collectFromContinuations(flow.continuations, &branch_map);
+        try self.collectFromContinuations(flow.body.continuations, &branch_map);
         
         // Check for conflicts and build SuperShape
         return try self.buildResult(&branch_map);
@@ -356,11 +356,10 @@ pub fn testFlow(allocator: std.mem.Allocator) !ast.Flow {
     };
     
     return ast.Flow{
-        .invocation = .{
+        .body = ast.rootSite(.{
             .path = .{ .segments = try allocator.dupe([]const u8, &[_][]const u8{ "http", "get" }) },
             .args = args,
-        },
-        .continuations = continuations,
+        }, continuations, .{ .file = "generated", .line = 0, .column = 0 }),
     };
 }
 

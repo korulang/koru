@@ -79,7 +79,7 @@ fn inlineSmallEvents(
                 if (flow.pre_label != null or flow.post_label != null) {
                     try new_items.append(allocator, try functional.cloneItem(allocator, item));
                 } else {
-                    const path_str = try pathToString(allocator, flow.invocation.path.segments);
+                    const path_str = try pathToString(allocator, flow.inv().path.segments);
                     defer allocator.free(path_str);
                     
                     if (proc_map.get(path_str)) |proc_data| {
@@ -159,10 +159,10 @@ fn generateInlinedCode(
     try code.appendSlice(allocator, "{\n");
     
     // Generate parameter bindings
-    if (flow.invocation.args.len > 0) {
+    if (flow.inv().args.len > 0) {
         try code.appendSlice(allocator, "    // Bind parameters\n");
         try code.appendSlice(allocator, "    const e = .{\n");
-        for (flow.invocation.args) |arg| {
+        for (flow.inv().args) |arg| {
             // Check if this field is a File type
             var is_file_field = false;
             if (event_decl) |event| {
@@ -212,7 +212,7 @@ fn generateInlinedCode(
     }
     
     // Handle continuations if present
-    if (flow.continuations.len > 0) {
+    if (flow.body.continuations.len > 0) {
         try code.appendSlice(allocator, "\n    // Handle continuations\n");
         try generateContinuationHandling(&code, flow, allocator);
     }
@@ -225,7 +225,7 @@ fn generateInlinedCode(
 fn generateContinuationHandling(code: *std.ArrayList(u8), flow: *const ast.Flow, allocator: std.mem.Allocator) !void {
     // Generate a comment for each continuation
     // In a full implementation, this would map return values to continuations
-    for (flow.continuations) |cont| {
+    for (flow.body.continuations) |cont| {
         try code.appendSlice(allocator, "    // Branch: ");
         try code.appendSlice(allocator, cont.branch);
         
@@ -272,7 +272,7 @@ pub fn countInlineCandidates(
     for (source.items) |*item| {
         switch (item.*) {
             .flow => |flow| {
-                const path_str = try pathToString(allocator, flow.invocation.path.segments);
+                const path_str = try pathToString(allocator, flow.inv().path.segments);
                 defer allocator.free(path_str);
                 
                 if (proc_map.get(path_str)) |line_count| {
@@ -339,7 +339,7 @@ pub fn getInlineMetrics(
             .flow => |flow| {
                 metrics.total_flows += 1;
                 
-                const path_str = try pathToString(allocator, flow.invocation.path.segments);
+                const path_str = try pathToString(allocator, flow.inv().path.segments);
                 defer allocator.free(path_str);
                 
                 if (proc_map.get(path_str)) |line_count| {

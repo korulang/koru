@@ -512,9 +512,37 @@ pub const ScopeBinding = struct {
     }
 };
 
-pub const Flow = struct {
+/// Build a flow's root site: one Continuation whose node is the invocation
+/// and whose continuations are the branch handlers. The root is not a branch —
+/// header fields (branch name, binding, guard) are empty and are never read
+/// for a root site.
+pub fn rootSite(
     invocation: Invocation,
     continuations: []const Continuation,
+    location: errors.SourceLocation,
+) Continuation {
+    return .{
+        .branch = "",
+        .binding = null,
+        .condition = null,
+        .node = .{ .invocation = invocation },
+        .indent = 0,
+        .continuations = continuations,
+        .location = location,
+    };
+}
+
+pub const Flow = struct {
+    /// THE single recursive "invoke an event + handle its branches" core.
+    /// `body.node` is always an `.invocation` for a flow (the parser only
+    /// constructs flows that way — `inv()` asserts the guarantee), and
+    /// `body.continuations` are the branch handlers. The same Continuation
+    /// type encodes the identical shape at every nesting depth, so nothing
+    /// below the wrapper can ask "am I top-level?". Everything else on Flow
+    /// is a genuinely module-level wrapper concern: annotations (emit-mode/
+    /// filtering), labels, purity, impl_of/impl_variant/is_impl, module
+    /// membership, source location.
+    body: Continuation,
     annotations: []const []const u8 = &[_][]const u8{},  // Flow annotations like [depends_on("a", "b")]
     pre_label: ?[]const u8 = null,   // Label before invocation (#label event)
     post_label: ?[]const u8 = null,  // Label after invocation (event #label)
@@ -560,13 +588,22 @@ pub const Flow = struct {
         return self.is_impl;
     }
 
+    /// The wrapper's structural guarantee: a flow's site head is always an
+    /// event invocation. Asserts (safe builds) if the invariant is violated —
+    /// a flow whose body head is not an invocation is a constructor bug.
+    pub fn inv(self: *const Flow) *const Invocation {
+        const n: *const Node = &self.body.node.?;
+        return &n.invocation;
+    }
+
+    /// Mutable variant of `inv()`.
+    pub fn invMut(self: *Flow) *Invocation {
+        const n: *Node = &self.body.node.?;
+        return &n.invocation;
+    }
+
     pub fn deinit(self: *Flow, allocator: std.mem.Allocator) void {
-        self.invocation.deinit(allocator);
-        for (self.continuations) |*cont| {
-            var mutable_cont = cont.*;
-            mutable_cont.deinit(allocator);
-        }
-        allocator.free(@constCast(self.continuations));
+        self.body.deinit(allocator);
         for (self.annotations) |ann| {
             allocator.free(ann);
         }
@@ -1532,15 +1569,12 @@ pub const ASTNode = union(enum) {
                 }
             },
             .flow => |f| blk: {
-                // Flow has: invocation + continuations
-                // CRITICAL: Visit continuations FIRST for proper depth-first ordering!
-                // Inner transforms (in continuations) must run before the outer transform (the flow itself).
-                const count = 1 + f.continuations.len;
-                var result = try allocator.alloc(ASTNode, count);
-                for (f.continuations, 0..) |*cont, i| {
-                    result[i] = .{ .continuation = @constCast(cont) };
-                }
-                result[f.continuations.len] = .{ .invocation = @constCast(&f.invocation) };
+                // A flow's single child is its root site (a Continuation).
+                // The continuation case below handles depth-first ordering
+                // (branch continuations before the node) uniformly for the
+                // root and every nested site.
+                var result = try allocator.alloc(ASTNode, 1);
+                result[0] = .{ .continuation = @constCast(&f.body) };
                 break :blk result;
             },
             .continuation => |c| blk: {
@@ -1696,13 +1730,9 @@ pub const ASTNode = union(enum) {
         for (items) |*item| {
             switch (item.*) {
                 .flow => |*f| {
-                    // Check if this flow's invocation IS the target
-                    if (&f.invocation == target_inv) {
-                        return item;
-                    }
-                    // Check in continuations — return the original flow item
-                    // so transform handlers can search the full continuation tree
-                    if (findInContinuations(f.continuations, target_inv)) {
+                    // The root site is just a continuation — one search path
+                    // covers the flow's own invocation and every nested one.
+                    if (findInContinuation(&f.body, target_inv)) {
                         return item;
                     }
                 },
@@ -1719,16 +1749,16 @@ pub const ASTNode = union(enum) {
         return null;
     }
 
-    fn findInContinuations(conts: []const Continuation, target_inv: *const Invocation) bool {
-        for (conts) |*cont| {
-            if (cont.node) |*node| {
-                if (node.* == .invocation) {
-                    if (&node.invocation == target_inv) {
-                        return true;
-                    }
+    fn findInContinuation(cont: *const Continuation, target_inv: *const Invocation) bool {
+        if (cont.node) |*node| {
+            if (node.* == .invocation) {
+                if (&node.invocation == target_inv) {
+                    return true;
                 }
             }
-            if (findInContinuations(cont.continuations, target_inv)) {
+        }
+        for (cont.continuations) |*child| {
+            if (findInContinuation(child, target_inv)) {
                 return true;
             }
         }

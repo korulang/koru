@@ -465,14 +465,14 @@ fn generateBackendCode(allocator: std.mem.Allocator, input_file: []const u8, sou
                 var inv_name_buf: [256]u8 = undefined;
                 var inv_name_len: usize = 0;
 
-                if (flow.invocation.path.module_qualifier) |mq| {
+                if (flow.inv().path.module_qualifier) |mq| {
                     @memcpy(inv_name_buf[0..mq.len], mq);
                     inv_name_len += mq.len;
                     inv_name_buf[inv_name_len] = ':';
                     inv_name_len += 1;
                 }
 
-                for (flow.invocation.path.segments, 0..) |seg, i| {
+                for (flow.inv().path.segments, 0..) |seg, i| {
                     if (i > 0) {
                         inv_name_buf[inv_name_len] = '.';
                         inv_name_len += 1;
@@ -507,14 +507,14 @@ fn generateBackendCode(allocator: std.mem.Allocator, input_file: []const u8, sou
                         var inv_name_buf: [256]u8 = undefined;
                         var inv_name_len: usize = 0;
 
-                        if (flow.invocation.path.module_qualifier) |mq| {
+                        if (flow.inv().path.module_qualifier) |mq| {
                             @memcpy(inv_name_buf[0..mq.len], mq);
                             inv_name_len += mq.len;
                             inv_name_buf[inv_name_len] = ':';
                             inv_name_len += 1;
                         }
 
-                        for (flow.invocation.path.segments, 0..) |seg, i| {
+                        for (flow.inv().path.segments, 0..) |seg, i| {
                             if (i > 0) {
                                 inv_name_buf[inv_name_len] = '.';
                                 inv_name_len += 1;
@@ -548,13 +548,13 @@ fn generateBackendCode(allocator: std.mem.Allocator, input_file: []const u8, sou
                 // Build invocation name for display
                 var inv_name_buf: [256]u8 = undefined;
                 var inv_name_len: usize = 0;
-                if (flow.invocation.path.module_qualifier) |mq| {
+                if (flow.inv().path.module_qualifier) |mq| {
                     @memcpy(inv_name_buf[0..mq.len], mq);
                     inv_name_len += mq.len;
                     inv_name_buf[inv_name_len] = ':';
                     inv_name_len += 1;
                 }
-                for (flow.invocation.path.segments, 0..) |seg, i| {
+                for (flow.inv().path.segments, 0..) |seg, i| {
                     if (i > 0) {
                         inv_name_buf[inv_name_len] = '.';
                         inv_name_len += 1;
@@ -609,7 +609,7 @@ fn generateBackendCode(allocator: std.mem.Allocator, input_file: []const u8, sou
                 // Call handler from backend_output with full module path
                 // Use __thunk_result to avoid shadowing user bindings like |result|
                 try writer.writeAll("        const __thunk_result = ");
-                if (flow.invocation.path.module_qualifier) |mq| {
+                if (flow.inv().path.module_qualifier) |mq| {
                     // Module-qualified event: backend_output.koru_<module>.<event>_event
                     try writer.writeAll("backend_output.koru_");
                     // Resolve alias to full module path
@@ -619,21 +619,21 @@ fn generateBackendCode(allocator: std.mem.Allocator, input_file: []const u8, sou
                         try writer.writeAll(mq);
                     }
                     try writer.writeAll(".");
-                    for (flow.invocation.path.segments, 0..) |seg, i| {
+                    for (flow.inv().path.segments, 0..) |seg, i| {
                         if (i > 0) try writer.writeAll("_");
                         try writer.writeAll(seg);
                     }
                 } else {
                     // Local event: backend_output.main_module.<event>_event
                     try writer.writeAll("backend_output.main_module.");
-                    for (flow.invocation.path.segments, 0..) |seg, i| {
+                    for (flow.inv().path.segments, 0..) |seg, i| {
                         if (i > 0) try writer.writeAll("_");
                         try writer.writeAll(seg);
                     }
                 }
                 try writer.writeAll("_event.handler(.{");
 
-                for (flow.invocation.args, 0..) |arg, i| {
+                for (flow.inv().args, 0..) |arg, i| {
                     if (i > 0) try writer.writeAll(", ");
                     try writer.writeAll(" .");
                     try writer.writeAll(arg.name);
@@ -656,9 +656,9 @@ fn generateBackendCode(allocator: std.mem.Allocator, input_file: []const u8, sou
                 }
 
                 try writer.writeAll(" });\n");
-                const has_void_continuation = flow.continuations.len == 1 and flow.continuations[0].branch.len == 0;
+                const has_void_continuation = flow.body.continuations.len == 1 and flow.body.continuations[0].branch.len == 0;
                 if (has_void_continuation) {
-                    const cont = flow.continuations[0];
+                    const cont = flow.body.continuations[0];
                     try writer.writeAll("        _ = &__thunk_result;\n");
                     if (cont.node) |step| {
                         try writer.writeAll("        ");
@@ -728,7 +728,7 @@ fn generateBackendCode(allocator: std.mem.Allocator, input_file: []const u8, sou
                 } else {
                     try writer.writeAll("        switch (__thunk_result) {\n");
 
-                    for (flow.continuations) |cont| {
+                    for (flow.body.continuations) |cont| {
                         try writer.writeAll("            .");
                         try writeBranchName(writer, cont.branch);
                         try writer.writeAll(" => ");
@@ -1473,7 +1473,7 @@ const TransformEvent = struct {
     /// Variant target names (e.g. "raw_posix") for ~proc <event>|<variant> declarations.
     /// Each variant gets its own stub function call_transform_<stub>__<variant> that calls
     /// handler.handler__<variant>. The dispatcher selects which variant stub to call based
-    /// on flow.invocation.variant or the build-time variant registry.
+    /// on flow.inv().variant or the build-time variant registry.
     variant_targets: []const []const u8 = &[_][]const u8{},
 };
 
@@ -1919,7 +1919,7 @@ fn generateTransformHandlers(writer: anytype, allocator: std.mem.Allocator, sour
         try writer.writeAll("    for (current_ast.items) |item| {\n");
         try writer.writeAll("        if (item == .flow) {\n");
         try writer.writeAll("            const flow = item.flow;\n");
-        try writer.writeAll("            const inv_path = joinPath(flow.invocation.path.segments);\n");
+        try writer.writeAll("            const inv_path = joinPath(flow.inv().path.segments);\n");
         try writer.writeAll("            \n");
         try writer.writeAll("            // Dispatch to appropriate transform handler\n");
 
@@ -4020,12 +4020,12 @@ fn collectFlagDeclarations(allocator: std.mem.Allocator, program: *const ast.Pro
             // TODO: Shouldn't this ALSO check if the "namespace" is "compiler"?
             const flow = item.flow;
             // Check if this is compiler.flag.declare
-            if (flow.invocation.path.segments.len == 2 and
-                std.mem.eql(u8, flow.invocation.path.segments[0], "flag") and
-                std.mem.eql(u8, flow.invocation.path.segments[1], "declare"))
+            if (flow.inv().path.segments.len == 2 and
+                std.mem.eql(u8, flow.inv().path.segments[0], "flag") and
+                std.mem.eql(u8, flow.inv().path.segments[1], "declare"))
             {
                 // Extract source parameter (stored in .value for anonymous blocks)
-                for (flow.invocation.args) |arg| {
+                for (flow.inv().args) |arg| {
                     if (std.mem.eql(u8, arg.name, "source")) {
                         const flag = try parseFlagDeclaration(allocator, arg.value);
                         try flags.append(allocator, flag);
@@ -4039,11 +4039,11 @@ fn collectFlagDeclarations(allocator: std.mem.Allocator, program: *const ast.Pro
                 if (mod_item == .flow) {
                     const flow = mod_item.flow;
                     // Check for flag.declare (same pattern as top-level)
-                    if (flow.invocation.path.segments.len == 2 and
-                        std.mem.eql(u8, flow.invocation.path.segments[0], "flag") and
-                        std.mem.eql(u8, flow.invocation.path.segments[1], "declare"))
+                    if (flow.inv().path.segments.len == 2 and
+                        std.mem.eql(u8, flow.inv().path.segments[0], "flag") and
+                        std.mem.eql(u8, flow.inv().path.segments[1], "declare"))
                     {
-                        for (flow.invocation.args) |arg| {
+                        for (flow.inv().args) |arg| {
                             if (std.mem.eql(u8, arg.name, "source")) {
                                 const flag = try parseFlagDeclaration(allocator, arg.value);
                                 try flags.append(allocator, flag);
@@ -4204,11 +4204,11 @@ fn collectCommandDeclarations(allocator: std.mem.Allocator, program: *const ast.
         if (item == .flow) {
             const flow = item.flow;
             // Check if this is command.declare (could be std.compiler:command.declare or just command.declare)
-            if (flow.invocation.path.segments.len == 2 and
-                std.mem.eql(u8, flow.invocation.path.segments[0], "command") and
-                std.mem.eql(u8, flow.invocation.path.segments[1], "declare"))
+            if (flow.inv().path.segments.len == 2 and
+                std.mem.eql(u8, flow.inv().path.segments[0], "command") and
+                std.mem.eql(u8, flow.inv().path.segments[1], "declare"))
             {
-                for (flow.invocation.args) |arg| {
+                for (flow.inv().args) |arg| {
                     if (std.mem.eql(u8, arg.name, "source")) {
                         const cmd = try parseCommandDeclaration(allocator, arg.value);
                         try commands.append(allocator, cmd);
@@ -4222,11 +4222,11 @@ fn collectCommandDeclarations(allocator: std.mem.Allocator, program: *const ast.
                 if (mod_item == .flow) {
                     const flow = mod_item.flow;
                     // Check for command.declare in module
-                    if (flow.invocation.path.segments.len == 2 and
-                        std.mem.eql(u8, flow.invocation.path.segments[0], "command") and
-                        std.mem.eql(u8, flow.invocation.path.segments[1], "declare"))
+                    if (flow.inv().path.segments.len == 2 and
+                        std.mem.eql(u8, flow.inv().path.segments[0], "command") and
+                        std.mem.eql(u8, flow.inv().path.segments[1], "declare"))
                     {
-                        for (flow.invocation.args) |arg| {
+                        for (flow.inv().args) |arg| {
                             if (std.mem.eql(u8, arg.name, "source")) {
                                 const cmd = try parseCommandDeclaration(allocator, arg.value);
                                 try commands.append(allocator, cmd);
@@ -4489,18 +4489,18 @@ fn collectShellCommands(allocator: std.mem.Allocator, program: *const ast.Progra
         if (item == .flow) {
             const flow = item.flow;
             // Check if this is std.build:command.sh (module-qualified)
-            if (flow.invocation.path.module_qualifier) |mq| {
+            if (flow.inv().path.module_qualifier) |mq| {
                 if (std.mem.eql(u8, mq, "std.build") and
-                    flow.invocation.path.segments.len == 2 and
-                    std.mem.eql(u8, flow.invocation.path.segments[0], "command") and
-                    std.mem.eql(u8, flow.invocation.path.segments[1], "sh"))
+                    flow.inv().path.segments.len == 2 and
+                    std.mem.eql(u8, flow.inv().path.segments[0], "command") and
+                    std.mem.eql(u8, flow.inv().path.segments[1], "sh"))
                 {
                     // Extract name, source, and description parameters
                     var name: ?[]const u8 = null;
                     var script: ?[]const u8 = null;
                     var description: ?[]const u8 = null;
 
-                    for (flow.invocation.args) |arg| {
+                    for (flow.inv().args) |arg| {
                         if (std.mem.eql(u8, arg.name, "name")) {
                             // Strip quotes from name value
                             const raw_name = arg.value;
@@ -4537,17 +4537,17 @@ fn collectShellCommands(allocator: std.mem.Allocator, program: *const ast.Progra
             for (module.items) |mod_item| {
                 if (mod_item == .flow) {
                     const flow = mod_item.flow;
-                    if (flow.invocation.path.module_qualifier) |mq| {
+                    if (flow.inv().path.module_qualifier) |mq| {
                         if (std.mem.eql(u8, mq, "std.build") and
-                            flow.invocation.path.segments.len == 2 and
-                            std.mem.eql(u8, flow.invocation.path.segments[0], "command") and
-                            std.mem.eql(u8, flow.invocation.path.segments[1], "sh"))
+                            flow.inv().path.segments.len == 2 and
+                            std.mem.eql(u8, flow.inv().path.segments[0], "command") and
+                            std.mem.eql(u8, flow.inv().path.segments[1], "sh"))
                         {
                             var name: ?[]const u8 = null;
                             var script: ?[]const u8 = null;
                             var description: ?[]const u8 = null;
 
-                            for (flow.invocation.args) |arg| {
+                            for (flow.inv().args) |arg| {
                                 if (std.mem.eql(u8, arg.name, "name")) {
                                     // Strip quotes from name value
                                     const raw_name = arg.value;
@@ -4601,17 +4601,17 @@ fn collectZigCommands(allocator: std.mem.Allocator, program: *const ast.Program)
         if (item == .flow) {
             const flow = item.flow;
             // Check if this is std.build:command.zig (module-qualified)
-            if (flow.invocation.path.module_qualifier) |mq| {
+            if (flow.inv().path.module_qualifier) |mq| {
                 if (std.mem.eql(u8, mq, "std.build") and
-                    flow.invocation.path.segments.len == 2 and
-                    std.mem.eql(u8, flow.invocation.path.segments[0], "command") and
-                    std.mem.eql(u8, flow.invocation.path.segments[1], "zig"))
+                    flow.inv().path.segments.len == 2 and
+                    std.mem.eql(u8, flow.inv().path.segments[0], "command") and
+                    std.mem.eql(u8, flow.inv().path.segments[1], "zig"))
                 {
                     // Extract name and source parameters
                     var name: ?[]const u8 = null;
                     var source: ?[]const u8 = null;
 
-                    for (flow.invocation.args) |arg| {
+                    for (flow.inv().args) |arg| {
                         if (std.mem.eql(u8, arg.name, "name")) {
                             // Strip quotes from name value
                             const raw_name = arg.value;
@@ -4639,16 +4639,16 @@ fn collectZigCommands(allocator: std.mem.Allocator, program: *const ast.Program)
             for (module.items) |mod_item| {
                 if (mod_item == .flow) {
                     const flow = mod_item.flow;
-                    if (flow.invocation.path.module_qualifier) |mq| {
+                    if (flow.inv().path.module_qualifier) |mq| {
                         if (std.mem.eql(u8, mq, "std.build") and
-                            flow.invocation.path.segments.len == 2 and
-                            std.mem.eql(u8, flow.invocation.path.segments[0], "command") and
-                            std.mem.eql(u8, flow.invocation.path.segments[1], "zig"))
+                            flow.inv().path.segments.len == 2 and
+                            std.mem.eql(u8, flow.inv().path.segments[0], "command") and
+                            std.mem.eql(u8, flow.inv().path.segments[1], "zig"))
                         {
                             var name: ?[]const u8 = null;
                             var source: ?[]const u8 = null;
 
-                            for (flow.invocation.args) |arg| {
+                            for (flow.inv().args) |arg| {
                                 if (std.mem.eql(u8, arg.name, "name")) {
                                     // Strip quotes from name value
                                     const raw_name = arg.value;
@@ -4694,16 +4694,16 @@ fn collectKoruCommands(allocator: std.mem.Allocator, program: *const ast.Program
             // Get pointer to the actual item in the slice, not a copy
             const flow = &program.items[item_idx].flow;
             // Check if this is std.build:command (not command.sh or command.zig)
-            if (flow.invocation.path.module_qualifier) |mq| {
+            if (flow.inv().path.module_qualifier) |mq| {
                 if (std.mem.eql(u8, mq, "std.build") and
-                    flow.invocation.path.segments.len == 1 and
-                    std.mem.eql(u8, flow.invocation.path.segments[0], "command"))
+                    flow.inv().path.segments.len == 1 and
+                    std.mem.eql(u8, flow.inv().path.segments[0], "command"))
                 {
                     // Extract name and description parameters
                     var name: ?[]const u8 = null;
                     var description: ?[]const u8 = null;
 
-                    for (flow.invocation.args) |arg| {
+                    for (flow.inv().args) |arg| {
                         if (std.mem.eql(u8, arg.name, "name")) {
                             const raw = arg.value;
                             const trimmed = if (raw.len >= 2 and raw[0] == '"' and raw[raw.len - 1] == '"')
@@ -4722,7 +4722,7 @@ fn collectKoruCommands(allocator: std.mem.Allocator, program: *const ast.Program
                     }
 
                     // Must have name and at least one continuation (the execute branch)
-                    if (name != null and flow.continuations.len > 0) {
+                    if (name != null and flow.body.continuations.len > 0) {
                         try commands.append(allocator, KoruCommand{
                             .name = name.?,
                             .description = description orelse "",
@@ -4737,15 +4737,15 @@ fn collectKoruCommands(allocator: std.mem.Allocator, program: *const ast.Program
             for (module.items, 0..) |mod_item, mod_item_idx| {
                 if (mod_item == .flow) {
                     const flow = &module.items[mod_item_idx].flow;
-                    if (flow.invocation.path.module_qualifier) |mq| {
+                    if (flow.inv().path.module_qualifier) |mq| {
                         if (std.mem.eql(u8, mq, "std.build") and
-                            flow.invocation.path.segments.len == 1 and
-                            std.mem.eql(u8, flow.invocation.path.segments[0], "command"))
+                            flow.inv().path.segments.len == 1 and
+                            std.mem.eql(u8, flow.inv().path.segments[0], "command"))
                         {
                             var name: ?[]const u8 = null;
                             var description: ?[]const u8 = null;
 
-                            for (flow.invocation.args) |arg| {
+                            for (flow.inv().args) |arg| {
                                 if (std.mem.eql(u8, arg.name, "name")) {
                                     const raw = arg.value;
                                     const trimmed = if (raw.len >= 2 and raw[0] == '"' and raw[raw.len - 1] == '"')
@@ -4763,7 +4763,7 @@ fn collectKoruCommands(allocator: std.mem.Allocator, program: *const ast.Program
                                 }
                             }
 
-                            if (name != null and flow.continuations.len > 0) {
+                            if (name != null and flow.body.continuations.len > 0) {
                                 try commands.append(allocator, KoruCommand{
                                     .name = name.?,
                                     .description = description orelse "",
@@ -4876,16 +4876,16 @@ fn collectBuildStepCandidates(allocator: std.mem.Allocator, program: *const ast.
         if (item == .flow) {
             const flow = item.flow;
             // Check if this is std.build:step (module-qualified)
-            if (flow.invocation.path.module_qualifier) |mq| {
+            if (flow.inv().path.module_qualifier) |mq| {
                 if (std.mem.eql(u8, mq, "std.build") and
-                    flow.invocation.path.segments.len == 1 and
-                    std.mem.eql(u8, flow.invocation.path.segments[0], "step"))
+                    flow.inv().path.segments.len == 1 and
+                    std.mem.eql(u8, flow.inv().path.segments[0], "step"))
                 {
                     // Extract name and source parameters
                     var name: ?[]const u8 = null;
                     var script: ?[]const u8 = null;
 
-                    for (flow.invocation.args) |arg| {
+                    for (flow.inv().args) |arg| {
                         if (std.mem.eql(u8, arg.name, "name")) {
                             // Strip quotes from name value
                             const raw_name = arg.value;
@@ -4923,15 +4923,15 @@ fn collectBuildStepCandidates(allocator: std.mem.Allocator, program: *const ast.
             for (module.items) |mod_item| {
                 if (mod_item == .flow) {
                     const flow = mod_item.flow;
-                    if (flow.invocation.path.module_qualifier) |mq| {
+                    if (flow.inv().path.module_qualifier) |mq| {
                         if (std.mem.eql(u8, mq, "std.build") and
-                            flow.invocation.path.segments.len == 1 and
-                            std.mem.eql(u8, flow.invocation.path.segments[0], "step"))
+                            flow.inv().path.segments.len == 1 and
+                            std.mem.eql(u8, flow.inv().path.segments[0], "step"))
                         {
                             var name: ?[]const u8 = null;
                             var script: ?[]const u8 = null;
 
-                            for (flow.invocation.args) |arg| {
+                            for (flow.inv().args) |arg| {
                                 if (std.mem.eql(u8, arg.name, "name")) {
                                     const raw_name = arg.value;
                                     const trimmed = if (raw_name.len >= 2 and raw_name[0] == '"' and raw_name[raw_name.len - 1] == '"')
@@ -5346,25 +5346,25 @@ fn resolveKeywordsInItem(
     switch (item.*) {
         .flow => |*flow| {
             // Save the old qualifier to detect if keyword resolution happened
-            const old_qualifier = flow.invocation.path.module_qualifier;
+            const old_qualifier = flow.inv().path.module_qualifier;
 
             // Resolve the main invocation path
-            try resolveKeywordInPath(&flow.invocation.path, registry, allocator, main_module);
+            try resolveKeywordInPath(&flow.invMut().path, registry, allocator, main_module);
 
             // If keyword resolution happened (qualifier changed), fix up Expression args
             const qualifier_changed = if (old_qualifier) |old| blk: {
-                if (flow.invocation.path.module_qualifier) |new| {
+                if (flow.inv().path.module_qualifier) |new| {
                     break :blk !std.mem.eql(u8, old, new);
                 }
                 break :blk true;
-            } else flow.invocation.path.module_qualifier != null;
+            } else flow.inv().path.module_qualifier != null;
 
             if (qualifier_changed) {
-                try fixupExpressionArgs(&flow.invocation, allocator, all_items);
+                try fixupExpressionArgs(flow.invMut(), allocator, all_items);
             }
 
             // Resolve paths in continuations
-            for (flow.continuations) |*cont| {
+            for (flow.body.continuations) |*cont| {
                 try resolveKeywordsInContinuation(@constCast(cont), registry, allocator, main_module);
             }
         },
@@ -5613,8 +5613,8 @@ fn populateInvocationSourceInFlow(
     allocator: std.mem.Allocator,
     module_name: []const u8,
 ) !void {
-    try setInvocationSourceModule(&flow.invocation, allocator, module_name);
-    for (flow.continuations) |*cont| {
+    try setInvocationSourceModule(flow.invMut(), allocator, module_name);
+    for (flow.body.continuations) |*cont| {
         try populateInvocationSourceInContinuation(@constCast(cont), allocator, module_name);
     }
 }
@@ -5732,8 +5732,8 @@ fn enforceInvocationVisibilityInFlow(
     allocator: std.mem.Allocator,
     module_name: []const u8,
 ) !void {
-    try checkInvocationVisibility(&flow.invocation, all_items, reporter, allocator, module_name, flow.location);
-    for (flow.continuations) |cont| {
+    try checkInvocationVisibility(flow.inv(), all_items, reporter, allocator, module_name, flow.location);
+    for (flow.body.continuations) |cont| {
         try enforceInvocationVisibilityInContinuation(&cont, all_items, reporter, allocator, module_name);
     }
 }
@@ -6710,7 +6710,7 @@ pub fn main() !void {
 
                         // Find the execute continuation
                         var execute_cont: ?*const ast.Continuation = null;
-                        for (cmd.flow.continuations) |*cont| {
+                        for (cmd.flow.body.continuations) |*cont| {
                             if (std.mem.eql(u8, cont.branch, "execute")) {
                                 execute_cont = cont;
                                 break;

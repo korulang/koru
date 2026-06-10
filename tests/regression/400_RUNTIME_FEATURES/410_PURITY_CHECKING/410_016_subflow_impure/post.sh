@@ -50,7 +50,7 @@ fi
 FLOW_LINE=$(grep -n '\.flow = Flow{' _combined_emit.zig | while read line; do
     linenum=$(echo "$line" | cut -d: -f1)
     # Check if "log" appears in next 10 lines
-    if sed -n "$((linenum)),$((linenum + 10))p" _combined_emit.zig | grep -q '"log"'; then
+    if sed -n "$((linenum)),$((linenum + 40))p" _combined_emit.zig | grep -q '"log"'; then
         echo "$linenum"
         break
     fi

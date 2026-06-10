@@ -30,7 +30,7 @@ fn inspectFlow(source: []const u8, label: []const u8) void {
     for (parse_result.source_file.items) |item| {
         if (item == .flow) {
             const flow = &item.flow;
-            const inv = &flow.invocation;
+            const inv = flow.inv();
 
             std.debug.print("  Path: {s}\n", .{inv.path.segments[0]});
             std.debug.print("  Args count: {d}\n", .{inv.args.len});

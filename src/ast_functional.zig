@@ -205,7 +205,7 @@ pub fn replaceFlowRecursive(
 
     // Fallback: replace invocation inside continuations (nested transforms)
     if (new_item == .flow) {
-        const replace_result = try replaceInvocationInItems(allocator, source.items, &target_flow.invocation, &new_item.flow);
+        const replace_result = try replaceInvocationInItems(allocator, source.items, target_flow.inv(), &new_item.flow);
         if (replace_result.found) {
             var new_annotations = try allocator.alloc([]const u8, source.module_annotations.len);
             for (source.module_annotations, 0..) |annotation, i| {
@@ -342,7 +342,7 @@ fn replaceInvocationNodeInItems(
     for (items, 0..) |*item, i| {
         switch (item.*) {
             .flow => |*flow| {
-                const cont_result = try replaceInvocationNodeInContinuations(allocator, flow.continuations, target_invocation, new_node);
+                const cont_result = try replaceInvocationNodeInContinuations(allocator, flow.body.continuations, target_invocation, new_node);
                 if (cont_result.found) {
                     new_items[i] = ast.Item{
                         .flow = try cloneFlowWithContinuations(allocator, flow, cont_result.conts),
@@ -394,7 +394,7 @@ fn replaceInvocationNodeAndContinuationsInItems(
             .flow => |*flow| {
                 const cont_result = try replaceInvocationNodeAndContinuationsInContinuations(
                     allocator,
-                    flow.continuations,
+                    flow.body.continuations,
                     target_invocation,
                     new_node,
                     new_continuations,
@@ -540,7 +540,7 @@ fn replaceInvocationInItems(
     for (items, 0..) |*item, i| {
         switch (item.*) {
             .flow => |*flow| {
-                const cont_result = try replaceInvocationInContinuations(allocator, flow.continuations, target_invocation, new_flow);
+                const cont_result = try replaceInvocationInContinuations(allocator, flow.body.continuations, target_invocation, new_flow);
                 if (cont_result.found) {
                     new_items[i] = ast.Item{
                         .flow = try cloneFlowWithContinuations(allocator, flow, cont_result.conts),
@@ -633,12 +633,12 @@ fn cloneContinuationWithReplacedInvocation(
         );
     }
 
-    var inv = new_flow.invocation;
+    var inv = new_flow.inv().*;
     if (new_flow.inline_body != null and inv.inline_body == null) {
         inv.inline_body = new_flow.inline_body;
     }
     const new_node = ast.Node{ .invocation = try cloneInvocation(allocator, &inv) };
-    const new_continuations = try cloneContinuationSlice(allocator, new_flow.continuations);
+    const new_continuations = try cloneContinuationSlice(allocator, new_flow.body.continuations);
 
     var binding_annotations = try allocator.alloc([]const u8, cont.binding_annotations.len);
     errdefer allocator.free(binding_annotations);
@@ -775,8 +775,7 @@ fn cloneFlowWithContinuations(
     continuations: []const ast.Continuation,
 ) CloneError!ast.Flow {
     return .{
-        .invocation = try cloneInvocation(allocator, &flow.invocation),
-        .continuations = continuations,
+        .body = ast.rootSite(try cloneInvocation(allocator, flow.inv()), continuations, flow.location),
         .pre_label = if (flow.pre_label) |l| try allocator.dupe(u8, l) else null,
         .post_label = if (flow.post_label) |l| try allocator.dupe(u8, l) else null,
         .super_shape = null,
@@ -1262,16 +1261,15 @@ fn cloneProcDecl(allocator: std.mem.Allocator, proc: *const ast.ProcDecl) !ast.P
 }
 
 fn cloneFlow(allocator: std.mem.Allocator, flow: *const ast.Flow) CloneError!ast.Flow {
-    var continuations = try allocator.alloc(ast.Continuation, flow.continuations.len);
+    var continuations = try allocator.alloc(ast.Continuation, flow.body.continuations.len);
     errdefer allocator.free(continuations);
 
-    for (flow.continuations, 0..) |*cont, i| {
+    for (flow.body.continuations, 0..) |*cont, i| {
         continuations[i] = try cloneContinuation(allocator, cont);
     }
 
     return .{
-        .invocation = try cloneInvocation(allocator, &flow.invocation),
-        .continuations = continuations,
+        .body = ast.rootSite(try cloneInvocation(allocator, flow.inv()), continuations, flow.location),
         .pre_label = if (flow.pre_label) |l| try allocator.dupe(u8, l) else null,
         .post_label = if (flow.post_label) |l| try allocator.dupe(u8, l) else null,
         .super_shape = null, // TODO: clone super_shape if needed
@@ -1688,10 +1686,10 @@ pub fn replacePipelineStep(
     new_step: ast.Step,
 ) CloneError!ast.Flow {
     // Clone continuations array
-    var new_continuations = try allocator.alloc(ast.Continuation, flow.continuations.len);
+    var new_continuations = try allocator.alloc(ast.Continuation, flow.body.continuations.len);
     errdefer allocator.free(new_continuations);
 
-    for (flow.continuations, 0..) |*cont, i| {
+    for (flow.body.continuations, 0..) |*cont, i| {
         if (i == cont_idx) {
             // This is the continuation to modify - clone with replaced step
             new_continuations[i] = try cloneContinuationWithReplacedStep(allocator, cont, step_idx, new_step);
@@ -1703,8 +1701,7 @@ pub fn replacePipelineStep(
 
     // Clone the rest of the flow
     return ast.Flow{
-        .invocation = try cloneInvocation(allocator, &flow.invocation),
-        .continuations = new_continuations,
+        .body = ast.rootSite(try cloneInvocation(allocator, flow.inv()), new_continuations, flow.location),
         .annotations = try cloneStringSlice(allocator, flow.annotations),
         .pre_label = if (flow.pre_label) |l| try allocator.dupe(u8, l) else null,
         .post_label = if (flow.post_label) |l| try allocator.dupe(u8, l) else null,
@@ -1771,10 +1768,10 @@ pub fn filterNestedContinuations(
     keep_fn: *const fn (branch: []const u8) bool,
 ) CloneError!ast.Flow {
     // Clone continuations array
-    var new_continuations = try allocator.alloc(ast.Continuation, flow.continuations.len);
+    var new_continuations = try allocator.alloc(ast.Continuation, flow.body.continuations.len);
     errdefer allocator.free(new_continuations);
 
-    for (flow.continuations, 0..) |*cont, i| {
+    for (flow.body.continuations, 0..) |*cont, i| {
         if (i == cont_idx) {
             // This is the continuation to modify - clone with filtered nested
             new_continuations[i] = try cloneContinuationWithFilteredNested(allocator, cont, keep_fn);
@@ -1786,8 +1783,7 @@ pub fn filterNestedContinuations(
 
     // Clone the rest of the flow
     return ast.Flow{
-        .invocation = try cloneInvocation(allocator, &flow.invocation),
-        .continuations = new_continuations,
+        .body = ast.rootSite(try cloneInvocation(allocator, flow.inv()), new_continuations, flow.location),
         .annotations = try cloneStringSlice(allocator, flow.annotations),
         .pre_label = if (flow.pre_label) |l| try allocator.dupe(u8, l) else null,
         .post_label = if (flow.post_label) |l| try allocator.dupe(u8, l) else null,
@@ -1873,9 +1869,9 @@ fn cloneStringSlice(allocator: std.mem.Allocator, slice: []const []const u8) Clo
 // ============================================================================
 // These functions operate on continuations at arbitrary depth in the AST.
 // A "continuation path" is a slice of indices representing the traversal:
-//   path = [0]      -> flow.continuations[0]
-//   path = [0, 1]   -> flow.continuations[0].continuations[1]
-//   path = [0, 1, 2] -> flow.continuations[0].continuations[1].continuations[2]
+//   path = [0]      -> flow.body.continuations[0]
+//   path = [0, 1]   -> flow.body.continuations[0].continuations[1]
+//   path = [0, 1, 2] -> flow.body.continuations[0].continuations[1].continuations[2]
 
 /// Replace a step in a deeply nested continuation's pipeline.
 /// cont_path specifies the path through nested continuations to reach the target.
@@ -1891,10 +1887,10 @@ pub fn replacePipelineStepAtPath(
     }
 
     // Clone continuations array with the modified one
-    var new_continuations = try allocator.alloc(ast.Continuation, flow.continuations.len);
+    var new_continuations = try allocator.alloc(ast.Continuation, flow.body.continuations.len);
     errdefer allocator.free(new_continuations);
 
-    for (flow.continuations, 0..) |*cont, i| {
+    for (flow.body.continuations, 0..) |*cont, i| {
         if (i == cont_path[0]) {
             // This is the continuation to descend into
             if (cont_path.len == 1) {
@@ -1910,8 +1906,7 @@ pub fn replacePipelineStepAtPath(
     }
 
     return ast.Flow{
-        .invocation = try cloneInvocation(allocator, &flow.invocation),
-        .continuations = new_continuations,
+        .body = ast.rootSite(try cloneInvocation(allocator, flow.inv()), new_continuations, flow.location),
         .annotations = try cloneStringSlice(allocator, flow.annotations),
         .pre_label = if (flow.pre_label) |l| try allocator.dupe(u8, l) else null,
         .post_label = if (flow.post_label) |l| try allocator.dupe(u8, l) else null,
@@ -1992,10 +1987,10 @@ pub fn filterNestedContinuationsAtPath(
         return error.OutOfMemory; // Invalid path
     }
 
-    var new_continuations = try allocator.alloc(ast.Continuation, flow.continuations.len);
+    var new_continuations = try allocator.alloc(ast.Continuation, flow.body.continuations.len);
     errdefer allocator.free(new_continuations);
 
-    for (flow.continuations, 0..) |*cont, i| {
+    for (flow.body.continuations, 0..) |*cont, i| {
         if (i == cont_path[0]) {
             if (cont_path.len == 1) {
                 // Target is this continuation - filter its nested
@@ -2010,8 +2005,7 @@ pub fn filterNestedContinuationsAtPath(
     }
 
     return ast.Flow{
-        .invocation = try cloneInvocation(allocator, &flow.invocation),
-        .continuations = new_continuations,
+        .body = ast.rootSite(try cloneInvocation(allocator, flow.inv()), new_continuations, flow.location),
         .annotations = try cloneStringSlice(allocator, flow.annotations),
         .pre_label = if (flow.pre_label) |l| try allocator.dupe(u8, l) else null,
         .post_label = if (flow.post_label) |l| try allocator.dupe(u8, l) else null,
@@ -2369,7 +2363,7 @@ pub fn findContinuationByBranch(
     flow: *const ast.Flow,
     branch_name: []const u8,
 ) ?*const ast.Continuation {
-    return findContinuationByBranchInSlice(flow.continuations, branch_name);
+    return findContinuationByBranchInSlice(flow.body.continuations, branch_name);
 }
 
 /// Find a continuation branch by name in an arbitrary continuation slice
@@ -2539,10 +2533,10 @@ pub fn getAllContinuations(
     allocator: std.mem.Allocator,
     flow: *const ast.Flow,
 ) ![]ast.Continuation {
-    var continuations = try allocator.alloc(ast.Continuation, flow.continuations.len);
+    var continuations = try allocator.alloc(ast.Continuation, flow.body.continuations.len);
     errdefer allocator.free(continuations);
 
-    for (flow.continuations, 0..) |*cont, i| {
+    for (flow.body.continuations, 0..) |*cont, i| {
         continuations[i] = try cloneContinuation(allocator, cont);
     }
 
@@ -2621,8 +2615,7 @@ pub fn createFlow(
     }
 
     return ast.Flow{
-        .invocation = invocation,
-        .continuations = cloned_conts,
+        .body = ast.rootSite(invocation, cloned_conts, .{ .file = "generated", .line = 0, .column = 0 }),
         .pre_label = null,
         .post_label = null,
         .super_shape = null,
@@ -2758,58 +2751,11 @@ pub fn generateUniqueName(
 }
 
 // ============================================================
-// Continuation Extraction
+// Continuation Analysis
 // ============================================================
-// These helpers extract continuation branches as standalone flows.
-// Critical for threading - converting continuation branches into callable subflows.
-
-/// Extract a continuation branch as a standalone Flow
-/// Converts | run |> worker(x: 1) | done |> _ into a Flow (with impl_of set by the caller)
-///
-/// Example:
-///   const run_cont = findContinuationByBranch(flow, "run");
-///   const extracted_flow = try extractContinuationAsFlow(allocator, run_cont, "main");
-///   // extracted_flow can now be used to create a subflow
-///
-/// Limitations:
-///   - Currently only supports continuations with a single invocation in the pipeline
-///   - Complex pipelines with multiple steps are not yet supported
-pub fn extractContinuationAsFlow(
-    allocator: std.mem.Allocator,
-    continuation: *const ast.Continuation,
-    module: []const u8,
-) !ast.Flow {
-    // Check that step exists and is an invocation
-    const step = continuation.node orelse return error.ComplexPipelineNotSupported;
-
-    const invocation = switch (step) {
-        .invocation => |inv| inv,
-        else => return error.PipelineNotInvocation,
-    };
-
-    // Clone the invocation
-    const cloned_inv = try cloneInvocation(allocator, &invocation);
-
-    // Clone continuations - these become the flow's continuations
-    var cloned_continuations = try allocator.alloc(ast.Continuation, continuation.continuations.len);
-    errdefer allocator.free(cloned_continuations);
-
-    for (continuation.continuations, 0..) |*nested, i| {
-        cloned_continuations[i] = try cloneContinuation(allocator, nested);
-    }
-
-    return ast.Flow{
-        .invocation = cloned_inv,
-        .continuations = cloned_continuations,
-        .pre_label = null,
-        .post_label = null,
-        .super_shape = null,
-        .is_pure = true,
-        .is_transitively_pure = false,
-        .location = .{ .line = 0, .column = 0, .file = "" }, // Generated/extracted code
-        .module = try allocator.dupe(u8, module),
-    };
-}
+// extractContinuationAsFlow used to live here — it converted the nested
+// invoke+branches encoding into the top-level one. The dual encoding is
+// gone (Flow.body IS a Continuation), so the conversion has no job left.
 
 /// Infer output branches from a continuation
 /// Analyzes the continuation's nested branches to determine what outputs it produces
@@ -2972,7 +2918,7 @@ fn findFlowContainingInvocation(
             const flow = &item.flow;
 
             // Check if this flow's top-level invocation matches
-            if (&flow.invocation == target_invocation) {
+            if (flow.inv() == target_invocation) {
                 return flow;
             }
 
@@ -2991,7 +2937,7 @@ fn flowContainsInvocationInContinuations(
     flow: *const ast.Flow,
     target_invocation: *const ast.Invocation,
 ) bool {
-    for (flow.continuations) |*cont| {
+    for (flow.body.continuations) |*cont| {
         // Check step
         if (cont.node) |*step| {
             if (step.* == .invocation) {
@@ -3088,7 +3034,7 @@ pub fn resolveBindingType(
 
     // Find which continuation has this binding
     var target_branch: ?[]const u8 = null;
-    for (containing_flow.continuations) |cont| {
+    for (containing_flow.body.continuations) |cont| {
         if (cont.binding) |b| {
             if (std.mem.eql(u8, b, binding.name)) {
                 target_branch = cont.branch;
@@ -3102,7 +3048,7 @@ pub fn resolveBindingType(
     }
 
     // The flow's invocation tells us which event produced this binding
-    const event_path = containing_flow.invocation.path;
+    const event_path = containing_flow.inv().path;
 
     // Find the event declaration in the program
     for (program.items) |item| {

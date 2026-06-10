@@ -159,7 +159,7 @@ fn transformItems(
             .flow => |flow| {
                 // Transform top-level flows (e.g., ~hello() | done |> _)
                 // These are flow-level taps that should fire when the main invocation completes
-                log.debug("TAP TRANSFORMER: Found top-level flow invoking: {s}\n", .{flow.invocation.path.segments[0]});
+                log.debug("TAP TRANSFORMER: Found top-level flow invoking: {s}\n", .{flow.inv().path.segments[0]});
 
                 if (hasOpaqueAnnotation(flow.annotations)) {
                     try transformed.append(allocator, item);
@@ -167,14 +167,14 @@ fn transformItems(
                 }
 
                 // Get the invoked event name
-                const invoked_event = try pathToString(flow.invocation.path, allocator);
+                const invoked_event = try pathToString(flow.inv().path, allocator);
                 defer allocator.free(invoked_event);
 
                 log.debug("TAP TRANSFORMER: Top-level flow invokes '{s}'\n", .{invoked_event});
 
                 // Transform continuations - check for taps FROM the invoked event ON each branch
                 const transformed_continuations = try transformContinuationsWithInvokedEvent(
-                    flow.continuations,
+                    flow.body.continuations,
                     invoked_event,
                     tap_registry,
                     emit_mode,
@@ -183,7 +183,7 @@ fn transformItems(
                 );
 
                 var new_flow = flow;
-                new_flow.continuations = transformed_continuations;
+                new_flow.body.continuations = transformed_continuations;
                 try transformed.append(allocator, ast.Item{ .flow = new_flow });
             },
             .module_decl => |module| {

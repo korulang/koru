@@ -96,12 +96,12 @@ var metatype_global_counter: usize = 0;
     const tap_flow = if (item.* == .flow) &item.flow
         else return .{ .transformed = program };
 
-    if (tap_flow.continuations.len == 0) {
+    if (tap_flow.body.continuations.len == 0) {
         return .{ .transformed = program };
     }
 
     // All tap branches - we support multiple handlers for same branch (fan-out)
-    const all_tap_branches = tap_flow.continuations;
+    const all_tap_branches = tap_flow.body.continuations;
 
     // Pattern matching config
     // Any pattern with a glob wildcard (*) should be treated as wildcard
@@ -1135,24 +1135,24 @@ var metatype_global_counter: usize = 0;
         if (prog_item.* == .flow) {
             const flow = &prog_item.flow;
             var flow_modified = false;
-            var new_continuations = flow.continuations;
+            var new_continuations = flow.body.continuations;
 
             if (Helper.flowIsOpaque(flow)) {
                 new_items.append(allocator, ast_functional.cloneItem(allocator, prog_item) catch unreachable) catch unreachable;
                 continue;
             }
 
-            const invoked_is_opaque = Helper.isEventOpaque(&opaque_events, &flow.invocation.path, flow.module, allocator);
+            const invoked_is_opaque = Helper.isEventOpaque(&opaque_events, &flow.inv().path, flow.module, allocator);
             const force_dest_match = source_is_wildcard and Helper.pathMatches(
                 dest_final,
                 dest_is_wildcard,
-                &flow.invocation.path,
+                &flow.inv().path,
                 flow.module,
                 allocator,
             );
             const result = Helper.transformContinuations(
                 allocator,
-                flow.continuations,
+                flow.body.continuations,
                 all_tap_branches,
                 is_metatype,
                 source,
@@ -1163,7 +1163,7 @@ var metatype_global_counter: usize = 0;
                 tap_salt,
                 metatype_counter,
                 tap_is_opaque,
-                &flow.invocation.path,
+                &flow.inv().path,
                 flow.module,
                 invoked_is_opaque,
                 &opaque_events,
@@ -1182,8 +1182,7 @@ var metatype_global_counter: usize = 0;
             if (flow_modified) {
                 // Create modified flow
                 const new_flow = ast.Flow{
-                    .invocation = flow.invocation,
-                    .continuations = new_continuations,
+                    .body = ast.rootSite(flow.inv().*, new_continuations, flow.location),
                     .annotations = flow.annotations,
                     .pre_label = flow.pre_label,
                     .post_label = flow.post_label,
@@ -1251,24 +1250,24 @@ var metatype_global_counter: usize = 0;
                 if (mod_item.* == .flow) {
                     const flow = &mod_item.flow;
                     var flow_modified = false;
-                    var new_continuations = flow.continuations;
+                    var new_continuations = flow.body.continuations;
 
                     if (Helper.flowIsOpaque(flow)) {
                         new_mod_items.append(allocator, ast_functional.cloneItem(allocator, mod_item) catch unreachable) catch unreachable;
                         continue;
                     }
 
-                    const invoked_is_opaque = Helper.isEventOpaque(&opaque_events, &flow.invocation.path, flow.module, allocator);
+                    const invoked_is_opaque = Helper.isEventOpaque(&opaque_events, &flow.inv().path, flow.module, allocator);
                     const force_dest_match = source_is_wildcard and Helper.pathMatches(
                         dest_final,
                         dest_is_wildcard,
-                        &flow.invocation.path,
+                        &flow.inv().path,
                         flow.module,
                         allocator,
                     );
                     const result = Helper.transformContinuations(
                         allocator,
-                        flow.continuations,
+                        flow.body.continuations,
                         all_tap_branches,
                         is_metatype,
                         source,
@@ -1279,7 +1278,7 @@ var metatype_global_counter: usize = 0;
                         tap_salt,
                         metatype_counter,
                         tap_is_opaque,
-                        &flow.invocation.path,
+                        &flow.inv().path,
                         flow.module,
                         invoked_is_opaque,
                         &opaque_events,
@@ -1297,8 +1296,7 @@ var metatype_global_counter: usize = 0;
 
                     if (flow_modified) {
                         const new_flow = ast.Flow{
-                            .invocation = flow.invocation,
-                            .continuations = new_continuations,
+                            .body = ast.rootSite(flow.inv().*, new_continuations, flow.location),
                             .annotations = flow.annotations,
                             .pre_label = flow.pre_label,
                             .post_label = flow.post_label,

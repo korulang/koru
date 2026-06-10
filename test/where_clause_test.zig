@@ -26,10 +26,10 @@ test "parse when clause in continuation" {
     const flow = result.source_file.items[0].flow;
     
     // Check the continuations
-    try std.testing.expectEqual(@as(usize, 5), flow.continuations.len);
+    try std.testing.expectEqual(@as(usize, 5), flow.body.continuations.len);
     
     // First continuation: ok o when o.status == 200
-    const cont1 = flow.continuations[0];
+    const cont1 = flow.body.continuations[0];
     try std.testing.expectEqualStrings("ok", cont1.branch);
     try std.testing.expect(cont1.binding != null);
     try std.testing.expectEqualStrings("o", cont1.binding.?);
@@ -37,7 +37,7 @@ test "parse when clause in continuation" {
     try std.testing.expectEqualStrings("o.status == 200", cont1.condition.?);
     
     // Second continuation: ok o when o.status >= 500
-    const cont2 = flow.continuations[1];
+    const cont2 = flow.body.continuations[1];
     try std.testing.expectEqualStrings("ok", cont2.branch);
     try std.testing.expect(cont2.binding != null);
     try std.testing.expectEqualStrings("o", cont2.binding.?);
@@ -45,7 +45,7 @@ test "parse when clause in continuation" {
     try std.testing.expectEqualStrings("o.status >= 500", cont2.condition.?);
     
     // Third continuation: ok o when o.status >= 400
-    const cont3 = flow.continuations[2];
+    const cont3 = flow.body.continuations[2];
     try std.testing.expectEqualStrings("ok", cont3.branch);
     try std.testing.expect(cont3.binding != null);
     try std.testing.expectEqualStrings("o", cont3.binding.?);
@@ -53,14 +53,14 @@ test "parse when clause in continuation" {
     try std.testing.expectEqualStrings("o.status >= 400", cont3.condition.?);
     
     // Fourth continuation: ok o (no when clause - catch-all)
-    const cont4 = flow.continuations[3];
+    const cont4 = flow.body.continuations[3];
     try std.testing.expectEqualStrings("ok", cont4.branch);
     try std.testing.expect(cont4.binding != null);
     try std.testing.expectEqualStrings("o", cont4.binding.?);
     try std.testing.expect(cont4.condition == null); // No condition - catch-all
     
     // Fifth continuation: err e (no when clause)
-    const cont5 = flow.continuations[4];
+    const cont5 = flow.body.continuations[4];
     try std.testing.expectEqualStrings("err", cont5.branch);
     try std.testing.expect(cont5.binding != null);
     try std.testing.expectEqualStrings("e", cont5.binding.?);
@@ -102,10 +102,10 @@ test "where clause in proc context" {
     const flow = proc.inline_flows[0];
     
     // Check that when clauses are preserved in inline flows
-    try std.testing.expectEqual(@as(usize, 5), flow.continuations.len);
+    try std.testing.expectEqual(@as(usize, 5), flow.body.continuations.len);
     
     // Verify first when clause
-    const cont1 = flow.continuations[0];
+    const cont1 = flow.body.continuations[0];
     try std.testing.expect(cont1.condition != null);
     try std.testing.expectEqualStrings("o.status == 200", cont1.condition.?);
 }
@@ -131,11 +131,11 @@ test "complex when clause expressions" {
     const flow = result.source_file.items[0].flow;
     
     // Check complex conditions are captured correctly
-    const cont1 = flow.continuations[0];
+    const cont1 = flow.body.continuations[0];
     try std.testing.expect(cont1.condition != null);
     try std.testing.expectEqualStrings("r.score > 90 && r.valid", cont1.condition.?);
     
-    const cont2 = flow.continuations[1];
+    const cont2 = flow.body.continuations[1];
     try std.testing.expect(cont2.condition != null);
     try std.testing.expectEqualStrings("r.score > 70 && r.score <= 90", cont2.condition.?);
 }
@@ -158,7 +158,7 @@ test "where clause with parentheses" {
     const flow = result.source_file.items[0].flow;
     
     // Check that parentheses are preserved
-    const cont1 = flow.continuations[0];
+    const cont1 = flow.body.continuations[0];
     try std.testing.expect(cont1.condition != null);
     try std.testing.expectEqualStrings("(r.a > 10 || r.b < 5) && r.valid", cont1.condition.?);
 }
@@ -179,7 +179,7 @@ test "where clause without binding" {
     defer result.deinit();
     
     const flow = result.source_file.items[0].flow;
-    const cont = flow.continuations[0];
+    const cont = flow.body.continuations[0];
     
     // The parser handles "where" specially, so there's no binding
     // but there is a condition

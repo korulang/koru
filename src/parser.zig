@@ -3350,8 +3350,7 @@ pub const Parser = struct {
         }
 
         return ast.Flow{
-            .invocation = final_invocation,
-            .continuations = final_continuations,
+            .body = ast.rootSite(final_invocation, final_continuations, location),
             .annotations = flow_annotations,
             .pre_label = null, // Pre-label is handled in parseLabelAnchor
             .post_label = post_label,
@@ -4093,8 +4092,7 @@ pub const Parser = struct {
                 try self.parseContinuations(lexer.getIndent(line));
 
             return ast.Item{ .flow = .{
-                .invocation = invocation,
-                .continuations = continuations,
+                .body = ast.rootSite(invocation, continuations, self.getCurrentLocation()),
                 .impl_of = event_path,
                 .impl_variant = impl_variant,
                 .is_impl = event_path.module_qualifier != null,
@@ -4239,8 +4237,7 @@ pub const Parser = struct {
             const continuations = try self.parseContinuations(lexer.getIndent(line));
 
             return ast.Item{ .flow = .{
-                .invocation = invocation,
-                .continuations = continuations,
+                .body = ast.rootSite(invocation, continuations, self.getCurrentLocation()),
                 .impl_of = event_path,
                 .impl_variant = impl_variant,
                 .is_impl = event_path.module_qualifier != null,
@@ -4259,8 +4256,7 @@ pub const Parser = struct {
         const continuations = try self.parseContinuations(lexer.getIndent(body_line));
 
         return ast.Item{ .flow = .{
-            .invocation = invocation,
-            .continuations = continuations,
+            .body = ast.rootSite(invocation, continuations, self.getCurrentLocation()),
             .impl_of = event_path,
             .impl_variant = impl_variant,
             .is_impl = event_path.module_qualifier != null,
@@ -7564,8 +7560,7 @@ pub const Parser = struct {
             const continuations = try self.parseContinuations(lexer.getIndent(line));
 
             return .{ .flow = ast.Flow{
-                .invocation = invocation,
-                .continuations = continuations,
+                .body = ast.rootSite(invocation, continuations, self.getCurrentLocation()),
                 .pre_label = try self.allocator.dupe(u8, label_name),
                 .post_label = null,
                 .super_shape = null,
@@ -7955,10 +7950,10 @@ test "parser handles flow with continuation" {
     try std.testing.expect(item == .flow);
 
     const flow = item.flow;
-    try std.testing.expectEqualStrings(flow.invocation.path.segments[0], "hello");
-    try std.testing.expect(flow.continuations.len == 1);
+    try std.testing.expectEqualStrings(flow.inv().path.segments[0], "hello");
+    try std.testing.expect(flow.body.continuations.len == 1);
 
-    const cont = flow.continuations[0];
+    const cont = flow.body.continuations[0];
     try std.testing.expectEqualStrings(cont.branch, "greeting");
     try std.testing.expect(cont.binding != null);
     try std.testing.expectEqualStrings(cont.binding.?, "g");
@@ -8038,7 +8033,7 @@ test "parser handles complex nested proc body extraction" {
     // Make sure the flow after the proc was parsed
     const flow_item = parse_result.source_file.items[1];
     try std.testing.expect(flow_item == .flow);
-    try std.testing.expectEqualStrings(flow_item.flow.invocation.path.segments[0], "something");
+    try std.testing.expectEqualStrings(flow_item.flow.inv().path.segments[0], "something");
 }
 
 test "parser handles import statement" {
@@ -8284,9 +8279,9 @@ test "parser handles when clause with space" {
     try std.testing.expect(item == .flow);
 
     const flow = item.flow;
-    try std.testing.expect(flow.continuations.len == 1);
+    try std.testing.expect(flow.body.continuations.len == 1);
 
-    const cont = flow.continuations[0];
+    const cont = flow.body.continuations[0];
     try std.testing.expectEqualStrings("key", cont.branch);
     try std.testing.expect(cont.binding != null);
     try std.testing.expectEqualStrings("k", cont.binding.?);
@@ -8311,7 +8306,7 @@ test "parser handles when clause with parens for grouping" {
     defer parse_result.deinit();
 
     const flow = parse_result.source_file.items[0].flow;
-    const cont = flow.continuations[0];
+    const cont = flow.body.continuations[0];
 
     try std.testing.expect(cont.condition != null);
     try std.testing.expectEqualStrings("k.code == ('q')", cont.condition.?);
@@ -8336,17 +8331,17 @@ test "parser handles sibling continuations with when guards" {
     const flow = parse_result.source_file.items[0].flow;
 
     // Should have 2 continuations
-    try std.testing.expect(flow.continuations.len == 2);
+    try std.testing.expect(flow.body.continuations.len == 2);
 
     // First continuation: with when guard
-    const cont1 = flow.continuations[0];
+    const cont1 = flow.body.continuations[0];
     try std.testing.expectEqualStrings("key", cont1.branch);
     try std.testing.expectEqualStrings("k", cont1.binding.?);
     try std.testing.expect(cont1.condition != null); // HAS when guard
     try std.testing.expectEqualStrings("k.code == 'q'", cont1.condition.?);
 
     // Second continuation: else case (no when guard)
-    const cont2 = flow.continuations[1];
+    const cont2 = flow.body.continuations[1];
     try std.testing.expectEqualStrings("key", cont2.branch);
     try std.testing.expectEqualStrings("k", cont2.binding.?);
     try std.testing.expect(cont2.condition == null); // NO when guard - this is the else case
@@ -8380,10 +8375,10 @@ test "parser handles NESTED continuations with when guards" {
     const flow = parse_result.source_file.items[0].flow;
 
     // Top level has 2 continuations: ready and err
-    try std.testing.expect(flow.continuations.len == 2);
+    try std.testing.expect(flow.body.continuations.len == 2);
 
     // First top-level continuation: ready t |> poll()
-    const ready_cont = flow.continuations[0];
+    const ready_cont = flow.body.continuations[0];
     try std.testing.expectEqualStrings("ready", ready_cont.branch);
     try std.testing.expectEqualStrings("t", ready_cont.binding.?);
 

@@ -124,9 +124,9 @@ fn canonicalizeItem(ctx: *Context, item: *ast.Item) !void {
 }
 
 fn canonicalizeFlow(ctx: *Context, flow: *ast.Flow) !void {
-    try canonicalizeInvocation(ctx, @constCast(&flow.invocation));
+    try canonicalizeInvocation(ctx, @constCast(flow.inv()));
 
-    for (flow.continuations) |*cont| {
+    for (flow.body.continuations) |*cont| {
         try canonicalizeContinuation(ctx, @constCast(cont));
     }
 }

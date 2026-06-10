@@ -35,7 +35,7 @@ test "parse branch constructor with expressions in proc" {
     const flow = &proc.inline_flows[0];
     
     // Check that continuations have branch constructors with expressions
-    for (flow.continuations) |cont| {
+    for (flow.body.continuations) |cont| {
         if (cont.node) |step| {
             if (step == .branch_constructor) {
                 const bc = &step.branch_constructor;
@@ -81,7 +81,7 @@ test "parse shorthand branch constructor in proc" {
     const flow = &proc.inline_flows[0];
     
     // Check the success branch constructor
-    const success_cont = flow.continuations[0];
+    const success_cont = flow.body.continuations[0];
     const success_bc = &success_cont.node.?.branch_constructor;
     
     try testing.expect(success_bc.has_expressions);
@@ -119,15 +119,15 @@ test "where clauses with expressions in proc" {
     const flow = &proc.inline_flows[0];
     
     // Should have 4 continuations
-    try testing.expectEqual(@as(usize, 4), flow.continuations.len);
+    try testing.expectEqual(@as(usize, 4), flow.body.continuations.len);
     
     // First three should have where conditions
-    for (flow.continuations[0..3]) |cont| {
+    for (flow.body.continuations[0..3]) |cont| {
         try testing.expect(cont.condition != null);
         try testing.expect(cont.condition_expr != null);
     }
     
     // Last one (error branch) should not have a where condition
-    try testing.expect(flow.continuations[3].condition == null);
-    try testing.expect(flow.continuations[3].condition_expr == null);
+    try testing.expect(flow.body.continuations[3].condition == null);
+    try testing.expect(flow.body.continuations[3].condition_expr == null);
 }

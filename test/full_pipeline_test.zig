@@ -144,10 +144,10 @@ test "end-to-end with deferred events" {
     
     // Verify deref continuation was parsed
     const flow = parse_result.source_file.items[1].flow;
-    try testing.expectEqual(@as(usize, 2), flow.continuations.len);
+    try testing.expectEqual(@as(usize, 2), flow.body.continuations.len);
     
     // The second continuation should have a nested deref
-    const selected_cont = flow.continuations[1];
+    const selected_cont = flow.body.continuations[1];
     try testing.expectEqualStrings("selected", selected_cont.branch);
     
     std.debug.print("\n✓ Deferred events parsed successfully\n", .{});

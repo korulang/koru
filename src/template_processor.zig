@@ -416,10 +416,10 @@ fn maybeRenderPerCall(
     allocator: std.mem.Allocator,
 ) !void {
     if (flow.inline_body == null) {
-        if (try renderTemplateInvocation(all_items, &flow.invocation, flow.continuations, flow.location, build_lang, allocator)) |rendered| {
+        if (try renderTemplateInvocation(all_items, flow.inv(), flow.body.continuations, flow.location, build_lang, allocator)) |rendered| {
             flow.inline_body = rendered;
             log.debug("[TEMPLATE/per-call] rendered '{s}' at top-level call site\n", .{
-                if (flow.invocation.path.segments.len > 0) flow.invocation.path.segments[0] else "<?>",
+                if (flow.inv().path.segments.len > 0) flow.inv().path.segments[0] else "<?>",
             });
         }
     }
@@ -428,14 +428,14 @@ fn maybeRenderPerCall(
     // the matching continuations so the obligation checker treats each handler
     // body as a per-iteration scope boundary (auto-discharge per loop).
     if (flow.inline_body) |body| {
-        try tagScopeFromRenderedBody(body, @constCast(flow.continuations), allocator);
+        try tagScopeFromRenderedBody(body, @constCast(flow.body.continuations), allocator);
     }
 
     // Nested template invocations (e.g. `~for` inside a pipeline continuation)
     // get the same per-call rendering, depth-first. The inline_body lands on
     // the continuation's invocation node; emitContinuationBody honors it via the
     // shared emitInlineBodyNode — the SAME path as a top-level flow.
-    try renderNestedTemplates(all_items, @constCast(flow.continuations), build_lang, allocator);
+    try renderNestedTemplates(all_items, @constCast(flow.body.continuations), build_lang, allocator);
 }
 
 /// Scope is declared at the SPLICE SITE, not the event. When a template splices

@@ -132,7 +132,7 @@ pub fn main() void {
             if (item == .flow) {
                 flow_found = true;
                 const flow = item.flow;
-                const ast_inv = &flow.invocation;
+                const ast_inv = flow.inv();
 
                 std.debug.print("Found flow: {s} with {d} args\n", .{
                     if (ast_inv.path.segments.len > 0) ast_inv.path.segments[0] else "?",
@@ -186,7 +186,7 @@ pub fn main() void {
 
         for (parse_result.source_file.items) |item| {
             if (item == .flow) {
-                const ast_inv = &item.flow.invocation;
+                const ast_inv = item.flow.inv();
                 const inv: *const Invocation = @ptrCast(ast_inv);
 
                 var result: DispatchResult = undefined;

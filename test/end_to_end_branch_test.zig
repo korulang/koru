@@ -133,11 +133,11 @@ test "end-to-end: complex expression evaluation" {
     const flow = &proc.inline_flows[0];
     
     // Verify where clause was parsed
-    try testing.expect(flow.continuations[0].condition != null);
-    try testing.expectEqualStrings("o.count > 0", flow.continuations[0].condition.?);
+    try testing.expect(flow.body.continuations[0].condition != null);
+    try testing.expectEqualStrings("o.count > 0", flow.body.continuations[0].condition.?);
     
     // Verify complex expressions in branch constructor
-    const bc = &flow.continuations[0].node.?.branch_constructor;
+    const bc = &flow.body.continuations[0].node.?.branch_constructor;
     try testing.expectEqualStrings("average", bc.fields[1].name);
     try testing.expectEqualStrings("o.sum / o.count", bc.fields[1].expression_str.?);
     
@@ -167,11 +167,11 @@ test "end-to-end: empty and single-field constructors" {
     const flow = &proc.inline_flows[0];
     
     // First continuation has empty constructor
-    const empty_bc = &flow.continuations[0].node.?.branch_constructor;
+    const empty_bc = &flow.body.continuations[0].node.?.branch_constructor;
     try testing.expectEqual(@as(usize, 0), empty_bc.fields.len);
     
     // Second has single shorthand field
-    const single_bc = &flow.continuations[1].node.?.branch_constructor;
+    const single_bc = &flow.body.continuations[1].node.?.branch_constructor;
     try testing.expectEqual(@as(usize, 1), single_bc.fields.len);
     try testing.expectEqualStrings("message", single_bc.fields[0].name);
     try testing.expectEqualStrings("e.message", single_bc.fields[0].expression_str.?);

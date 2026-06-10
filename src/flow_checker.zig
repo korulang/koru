@@ -97,19 +97,19 @@ pub const FlowChecker = struct {
 
         // Check for duplicate branch handlers at each level
         if (!is_transform_flow) {
-            try self.checkDuplicateBranchHandlers(flow.continuations, location);
+            try self.checkDuplicateBranchHandlers(flow.body.continuations, location);
         }
 
         // Skip when-clause checks for transformed flows (structure has changed)
         // Also skip for transform invocations (like ~tap) which use fan-out semantics
         if (!is_transformed and !is_transform_flow) {
             // Validate when-clause exhaustiveness for all continuations (KORU050, KORU051)
-            try self.validateWhenClauseExhaustiveness(flow.continuations, location);
+            try self.validateWhenClauseExhaustiveness(flow.body.continuations, location);
         }
 
         // Recursively validate nested continuations and bindings
         // KORU100 runs even for transformed flows - checks inside ForeachNode etc.
-        for (flow.continuations) |*cont| {
+        for (flow.body.continuations) |*cont| {
             if (!is_transformed) {
                 try self.validateContinuationWhenClauses(cont, location);
             }
@@ -141,8 +141,8 @@ pub const FlowChecker = struct {
     /// declarations are parseable but unresolvable — only |variant-tagged
     /// procs participate in resolution.
     fn validateInvocationResolution(self: *FlowChecker, flow: *const ast.Flow) !void {
-        try self.checkInvocationVariants(&flow.invocation, flow.location);
-        for (flow.continuations) |*cont| {
+        try self.checkInvocationVariants(flow.inv(), flow.location);
+        for (flow.body.continuations) |*cont| {
             try self.checkContinuationInvocations(cont);
         }
     }
@@ -330,7 +330,7 @@ pub const FlowChecker = struct {
     /// Transform flows use fan-out semantics: multiple handlers for the same branch all fire
     fn isTransformFlow(self: *FlowChecker, flow: *const ast.Flow) bool {
         // Look up the event declaration for the flow's invocation
-        if (self.findEventDecl(&flow.invocation.path)) |event_decl| {
+        if (self.findEventDecl(&flow.inv().path)) |event_decl| {
             return annotation_parser.hasPart(event_decl.annotations, "transform");
         }
         return false;
@@ -538,7 +538,7 @@ pub const FlowChecker = struct {
     /// because transform events replace flows entirely.
     fn validateBranchCoverage(self: *FlowChecker, flow: *const ast.Flow, location: errors.SourceLocation) !void {
         // Find the event definition for this flow
-        const event_decl = self.findEventDecl(&flow.invocation.path) orelse {
+        const event_decl = self.findEventDecl(&flow.inv().path) orelse {
             // Event not found - this is a shape checker error, not flow checker
             // Just skip branch coverage validation
             return;
@@ -561,11 +561,11 @@ pub const FlowChecker = struct {
         // Convert continuations to BranchChecker format
         var handled = try std.ArrayList(branch_checker.BranchChecker.HandledBranch).initCapacity(
             self.allocator,
-            flow.continuations.len,
+            flow.body.continuations.len,
         );
         defer handled.deinit(self.allocator);
 
-        for (flow.continuations) |*cont| {
+        for (flow.body.continuations) |*cont| {
             // Skip empty branch names - these are void event chains (|> event())
             // where branches are not explicitly handled
             if (cont.branch.len == 0) continue;

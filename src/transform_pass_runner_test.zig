@@ -60,8 +60,7 @@ fn makeProgramWithNestedInvocation(allocator: std.mem.Allocator) !*ast.Program {
     const items = try allocator.alloc(ast.Item, 1);
     items[0] = ast.Item{
         .flow = ast.Flow{
-            .invocation = outer_invocation,
-            .continuations = conts,
+            .body = ast.rootSite(outer_invocation, conts, .{ .file = "generated", .line = 0, .column = 0 }),
             .annotations = try allocator.alloc([]const u8, 0),
             .module = try allocator.dupe(u8, "test"),
         },
@@ -89,7 +88,7 @@ fn innerTransform(node: ast.ASTNode, program: *const ast.Program, allocator: std
     };
     if (item.* != .flow) return error.TestSiteNotAFlow;
     const flow = &item.flow;
-    if (node.invocation != &flow.invocation) {
+    if (node.invocation != flow.inv()) {
         // The structural invariant the new contract guarantees.
         return error.TestPositionLeaked;
     }
@@ -115,7 +114,7 @@ fn outerTransform(node: ast.ASTNode, program: *const ast.Program, allocator: std
     recordObservation("outer");
 
     const flow = program.items[0].flow;
-    const child_node = flow.continuations[0].node orelse return error.MissingChildNode;
+    const child_node = flow.body.continuations[0].node orelse return error.MissingChildNode;
     outer_saw_inner_inline = child_node == .inline_code;
 
     return program;
@@ -128,7 +127,7 @@ fn outerClaimingTransform(node: ast.ASTNode, program: *const ast.Program, alloca
     recordObservation("outer");
 
     const flow = program.items[0].flow;
-    const child_node = flow.continuations[0].node orelse return error.MissingChildNode;
+    const child_node = flow.body.continuations[0].node orelse return error.MissingChildNode;
     if (child_node == .invocation) {
         outer_saw_raw_inner_invocation = std.mem.eql(u8, child_node.invocation.path.segments[0], "inner");
     }

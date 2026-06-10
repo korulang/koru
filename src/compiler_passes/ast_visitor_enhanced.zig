@@ -190,7 +190,7 @@ pub fn Walker(comptime UserData: type) type {
                 try visit(&self.visitor, &self.context, flow);
             }
             
-            for (flow.continuations) |_| {}
+            for (flow.body.continuations) |_| {}
             
             if (self.visitor.vtable.postVisitFlow) |postVisit| {
                 try postVisit(&self.visitor, &self.context, flow);

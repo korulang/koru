@@ -89,8 +89,8 @@ pub const MinimalSerializer = struct {
                 .flow => |flow| {
                     // For now, just comment about the flow
                     try self.buffer.appendSlice(self.allocator, "// Flow: ");
-                    if (flow.invocation.path.segments.len > 0) {
-                        try self.buffer.appendSlice(self.allocator, flow.invocation.path.segments[0]);
+                    if (flow.inv().path.segments.len > 0) {
+                        try self.buffer.appendSlice(self.allocator, flow.inv().path.segments[0]);
                     }
                     try self.buffer.append(self.allocator, '\n');
                 },

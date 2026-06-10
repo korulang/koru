@@ -164,13 +164,13 @@ pub const UnionCodegen = struct {
         
         // Generate flow invocation
         try result.appendSlice(self.allocator, "    const __result = try ");
-        try self.generateFlowInvocation(&result, &flow.invocation);
+        try self.generateFlowInvocation(&result, flow.inv());
         try result.appendSlice(self.allocator, ";\n");
         
         // Generate switch statement for continuations
         try result.appendSlice(self.allocator, "    return switch (__result) {\n");
         
-        for (flow.continuations) |cont| {
+        for (flow.body.continuations) |cont| {
             try result.appendSlice(self.allocator, "        .");
             try codegen_utils.appendEscapedIdentifier(&result, self.allocator, cont.branch);
             try result.appendSlice(self.allocator, " => |");

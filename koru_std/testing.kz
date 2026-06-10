@@ -264,7 +264,7 @@ const validateMocks = struct {
         return .{ .transformed = program };
 
     // Position-agnostic: the runner lifts nested sites into a synthetic
-    // top-level flow, so `invocation` IS `flow.invocation` at every depth.
+    // top-level flow, so `invocation` IS the flow's own invocation at every depth.
     _ = invocation;
 
     // Get test name from expr parameter
@@ -506,7 +506,7 @@ const validateMocks = struct {
         };
         std_import.debug.print("[TEST]   [{d}] {s}\n", .{idx, item_type});
         if (t_item == .flow) {
-            std_import.debug.print("[TEST]       invocation: {s}\n", .{t_item.flow.invocation.path.segments[0]});
+            std_import.debug.print("[TEST]       invocation: {s}\n", .{t_item.flow.inv().path.segments[0]});
         }
         if (t_item == .inline_code) {
             const preview_len = @min(50, t_item.inline_code.code.len);
@@ -613,11 +613,11 @@ const walkFlowForPurity = struct {
         const emitter_helpers = @import("emitter_helpers");
 
         var path_buf = @import("std").ArrayList(u8).initCapacity(allocator, 64) catch unreachable;
-        if (flow_to_walk.invocation.path.module_qualifier) |mq| {
+        if (flow_to_walk.inv().path.module_qualifier) |mq| {
             path_buf.appendSlice(allocator, mq) catch {};
             path_buf.append(allocator, ':') catch {};
         }
-        for (flow_to_walk.invocation.path.segments, 0..) |seg, i| {
+        for (flow_to_walk.inv().path.segments, 0..) |seg, i| {
             if (i > 0) path_buf.append(allocator, '.') catch {};
             path_buf.appendSlice(allocator, seg) catch {};
         }
@@ -628,7 +628,7 @@ const walkFlowForPurity = struct {
         // Subflow/composed events: walk the implementation body instead of
         // flagging the outer event. Tests call process_payment etc.; purity
         // lives in the leaf proc calls inside the impl.
-        if (emitter_helpers.findImplByPath(all_items, &flow_to_walk.invocation.path)) |found_impl| {
+        if (emitter_helpers.findImplByPath(all_items, &flow_to_walk.inv().path)) |found_impl| {
             switch (found_impl) {
                 .immediate_impl => return,
                 .flow => |impl_flow| {
@@ -638,14 +638,14 @@ const walkFlowForPurity = struct {
             }
         }
 
-        if (emitter_helpers.findProcDeclByPath(all_items, &flow_to_walk.invocation.path)) |proc| {
+        if (emitter_helpers.findProcDeclByPath(all_items, &flow_to_walk.inv().path)) |proc| {
             if (!proc.is_pure) {
                 for (impure_list.items) |existing| {
                     if (@import("std").mem.eql(u8, existing, inv_path)) return;
                 }
                 impure_list.append(allocator, inv_path) catch {};
             }
-        } else if (emitter_helpers.findEventDeclByPath(all_items, &flow_to_walk.invocation.path)) |event| {
+        } else if (emitter_helpers.findEventDeclByPath(all_items, &flow_to_walk.inv().path)) |event| {
             if (!event.is_pure) {
                 for (impure_list.items) |existing| {
                     if (@import("std").mem.eql(u8, existing, inv_path)) return;
@@ -654,7 +654,7 @@ const walkFlowForPurity = struct {
             }
         }
 
-        for (flow_to_walk.continuations) |cont| {
+        for (flow_to_walk.body.continuations) |cont| {
             walkContinuation(&cont, mocks, impure_list, all_items, allocator);
         }
     }
@@ -669,8 +669,7 @@ const walkFlowForPurity = struct {
         if (cont.node) |node| {
             if (node == .invocation) {
                 const temp_flow = @import("ast").Flow{
-                    .invocation = node.invocation,
-                    .continuations = cont.continuations,
+                    .body = cont.*,
                     .location = cont.location,
                     .module = "",
                     .is_pure = true,
@@ -703,7 +702,7 @@ const emitFlowWithMocks = struct {
         const std_local = @import("std");
 
         var path_buf = std_local.ArrayList(u8).initCapacity(ctx.allocator, 64) catch unreachable;
-        for (flow_to_emit.invocation.path.segments, 0..) |seg, i| {
+        for (flow_to_emit.inv().path.segments, 0..) |seg, i| {
             if (i > 0) try path_buf.append(ctx.allocator, '.');
             try path_buf.appendSlice(ctx.allocator, seg);
         }
@@ -712,8 +711,8 @@ const emitFlowWithMocks = struct {
         // Handle assert transform inline - emit if(!expr) @panic
         if (std_local.mem.eql(u8, inv_path, "assert")) {
             // Get the expression from first arg's value (parser stores it there)
-            if (flow_to_emit.invocation.args.len > 0) {
-                const expr_text = flow_to_emit.invocation.args[0].value;
+            if (flow_to_emit.inv().args.len > 0) {
+                const expr_text = flow_to_emit.inv().args[0].value;
                 if (expr_text.len > 0) {
                     try code_emitter.writeIndent();
                     try code_emitter.write("try @import(\"std\").testing.expect(");
@@ -750,7 +749,7 @@ const emitFlowWithMocks = struct {
             try emitter_helpers.emitBranchConstructor(code_emitter, ctx, &bc, true);
             try code_emitter.write(";\n");
 
-            for (flow_to_emit.continuations) |cont| {
+            for (flow_to_emit.body.continuations) |cont| {
                 if (@import("std").mem.eql(u8, cont.branch, bc.branch_name)) {
                     if (cont.binding) |binding| {
                         try code_emitter.writeIndent();
@@ -769,8 +768,7 @@ const emitFlowWithMocks = struct {
                     if (cont.node) |node| {
                         if (node == .invocation) {
                             const nested_flow = @import("ast").Flow{
-                                .invocation = node.invocation,
-                                .continuations = cont.continuations,
+                                .body = cont,
                                 .location = cont.location,
                                 .module = "",
                                 .is_pure = true,
@@ -834,7 +832,7 @@ const emitFlowWithMocks = struct {
         return .{ .transformed = program };
 
     // Position-agnostic: the runner lifts nested sites into a synthetic
-    // top-level flow, so `invocation` IS `flow.invocation` at every depth.
+    // top-level flow, so `invocation` IS the flow's own invocation at every depth.
     // One write-back path: a statement-shaped inline_body (the old fork used
     // preamble_code at top level and a raw inline_code node in pipelines —
     // same emitted statement, two encodings). Continuations are KEPT so a
@@ -849,24 +847,23 @@ const emitFlowWithMocks = struct {
         .{ expr }
     ) catch unreachable;
 
-    const new_inv_annotations = allocator.alloc([]const u8, flow.invocation.annotations.len + 1) catch unreachable;
-    for (flow.invocation.annotations, 0..) |ann, idx| {
+    const new_inv_annotations = allocator.alloc([]const u8, flow.inv().annotations.len + 1) catch unreachable;
+    for (flow.inv().annotations, 0..) |ann, idx| {
         new_inv_annotations[idx] = ann;
     }
-    new_inv_annotations[flow.invocation.annotations.len] = allocator.dupe(u8, "@pass_ran(\"transform\")") catch unreachable;
+    new_inv_annotations[flow.inv().annotations.len] = allocator.dupe(u8, "@pass_ran(\"transform\")") catch unreachable;
 
     const new_invocation = ast.Invocation{
-        .path = flow.invocation.path,
+        .path = flow.inv().path,
         .args = &[_]ast.Arg{},
         .annotations = new_inv_annotations,
-        .inserted_by_tap = flow.invocation.inserted_by_tap,
-        .from_opaque_tap = flow.invocation.from_opaque_tap,
+        .inserted_by_tap = flow.inv().inserted_by_tap,
+        .from_opaque_tap = flow.inv().from_opaque_tap,
         .inline_body = assert_code,
     };
 
     const transformed_flow = ast.Flow{
-        .invocation = new_invocation,
-        .continuations = flow.continuations,
+        .body = ast.rootSite(new_invocation, flow.body.continuations, flow.location),
         .annotations = flow.annotations,
         .pre_label = flow.pre_label,
         .post_label = flow.post_label,

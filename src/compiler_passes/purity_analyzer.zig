@@ -174,12 +174,12 @@ pub const PurityAnalyzer = struct {
 
     fn extractCallsFromFlow(self: *PurityAnalyzer, flow: *const ast.Flow, call_info: *CallInfo) !void {
         // Extract the invocation
-        const invocation_name = try pathToString(self.allocator, flow.invocation.path);
+        const invocation_name = try pathToString(self.allocator, flow.inv().path);
         defer self.allocator.free(invocation_name);
         try call_info.calls.append(self.allocator, try self.allocator.dupe(u8, invocation_name));
 
         // Recursively extract from continuations
-        for (flow.continuations) |*cont| {
+        for (flow.body.continuations) |*cont| {
             try self.extractCallsFromContinuation(cont, call_info);
         }
     }

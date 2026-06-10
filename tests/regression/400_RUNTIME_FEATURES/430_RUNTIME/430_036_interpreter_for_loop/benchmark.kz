@@ -91,7 +91,7 @@ pub fn main() void {
         var inv_ptr: ?*const @import("ast").Invocation = null;
         for (parse_result.source_file.items) |*item| {
             if (item.* == .flow) {
-                inv_ptr = &item.flow.invocation;
+                inv_ptr = item.flow.inv();
                 break;
             }
         }

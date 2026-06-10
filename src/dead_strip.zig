@@ -59,8 +59,8 @@ pub const DeadStripPass = struct {
         for (items) |item| {
             switch (item) {
                 .flow => |flow| {
-                    try self.collectFromInvocation(&flow.invocation);
-                    try self.collectFromContinuations(flow.continuations);
+                    try self.collectFromInvocation(flow.inv());
+                    try self.collectFromContinuations(flow.body.continuations);
                 },
                 .event_tap => |tap| {
                     if (tap.source) |source| try self.markPath(&source);

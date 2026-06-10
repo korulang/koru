@@ -255,7 +255,7 @@ pub const SymbolTable = struct {
                     } else {
                         try self.flows.append(self.allocator, FlowInfo{
                             .has_label = flow.pre_label != null or flow.post_label != null,
-                            .continuation_count = flow.continuations.len,
+                            .continuation_count = flow.body.continuations.len,
                         });
                     }
                 },
@@ -370,8 +370,8 @@ fn countNodes(source_file: *const ast.Program) usize {
     for (source_file.items) |*item| {
         switch (item.*) {
             .flow => |flow| {
-                count += flow.continuations.len;
-                for (flow.continuations) |*cont| {
+                count += flow.body.continuations.len;
+                for (flow.body.continuations) |*cont| {
                     count += cont.pipeline.len;
                     count += cont.nested.len;
                 }

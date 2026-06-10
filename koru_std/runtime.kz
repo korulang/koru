@@ -306,16 +306,16 @@ const koru_parser = @import("koru_parser");
             for (prog.items) |prog_item| {
                 switch (prog_item) {
                     .flow => |flow_item| {
-                        if (isRegisterFlow(&flow_item.invocation)) {
-                            addScopeDef(alloc, &defs, &flow_item.invocation, flow_item.annotations);
+                        if (isRegisterFlow(flow_item.inv())) {
+                            addScopeDef(alloc, &defs, flow_item.inv(), flow_item.annotations);
                         }
                     },
                     .module_decl => |mod| {
                         for (mod.items) |mod_item| {
                             if (mod_item == .flow) {
                                 const flow_item = mod_item.flow;
-                                if (isRegisterFlow(&flow_item.invocation)) {
-                                    addScopeDef(alloc, &defs, &flow_item.invocation, flow_item.annotations);
+                                if (isRegisterFlow(flow_item.inv())) {
+                                    addScopeDef(alloc, &defs, flow_item.inv(), flow_item.annotations);
                                 }
                             }
                         }
@@ -692,7 +692,7 @@ const koru_parser = @import("koru_parser");
     }
 
     const scope_ident = Helpers.mangleIdentifier(allocator, scope_name);
-    const module_name = flow.invocation.path.module_qualifier orelse "main";
+    const module_name = flow.inv().path.module_qualifier orelse "main";
     const emit_helpers = !Helpers.hasRegistryHelpers(program, module_name);
     var events_list = std.ArrayList(EventEntry){ .items = &.{}, .capacity = 0 };
     for (resolved_events.items) |resolved| {
@@ -1622,16 +1622,16 @@ fn lookupEventBranches(scope_name: []const u8, event_name: []const u8) []const B
     for (ast_items) |item| {
         switch (item) {
             .flow => |flow| {
-                if (flow.invocation.path.module_qualifier) |mq| {
+                if (flow.inv().path.module_qualifier) |mq| {
                     const is_register = (std.mem.eql(u8, mq, "std.runtime") and
-                        flow.invocation.path.segments.len == 1 and
-                        std.mem.eql(u8, flow.invocation.path.segments[0], "register"));
+                        flow.inv().path.segments.len == 1 and
+                        std.mem.eql(u8, flow.inv().path.segments[0], "register"));
 
                     if (is_register) {
                         var scope_name: []const u8 = "default";
                         var source_text: []const u8 = "";
 
-                        for (flow.invocation.args) |arg| {
+                        for (flow.inv().args) |arg| {
                             if (std.mem.eql(u8, arg.name, "scope")) {
                                 var val = arg.value;
                                 if (val.len >= 2 and val[0] == '"' and val[val.len - 1] == '"') {
@@ -1673,16 +1673,16 @@ fn lookupEventBranches(scope_name: []const u8, event_name: []const u8) []const B
                 for (module.items) |mod_item| {
                     if (mod_item == .flow) {
                         const flow = mod_item.flow;
-                        if (flow.invocation.path.module_qualifier) |mq| {
+                        if (flow.inv().path.module_qualifier) |mq| {
                             const is_register = (std.mem.eql(u8, mq, "std.runtime") and
-                                flow.invocation.path.segments.len == 1 and
-                                std.mem.eql(u8, flow.invocation.path.segments[0], "register"));
+                                flow.inv().path.segments.len == 1 and
+                                std.mem.eql(u8, flow.inv().path.segments[0], "register"));
 
                             if (is_register) {
                                 var scope_name: []const u8 = "default";
                                 var source_text: []const u8 = "";
 
-                                for (flow.invocation.args) |arg| {
+                                for (flow.inv().args) |arg| {
                                     if (std.mem.eql(u8, arg.name, "scope")) {
                                         var val = arg.value;
                                         if (val.len >= 2 and val[0] == '"' and val[val.len - 1] == '"') {

@@ -157,7 +157,7 @@ const std = @import("std");
         return .{ .transformed = program };
 
     // Position-agnostic: the runner lifts nested sites into a synthetic
-    // top-level flow, so `invocation` IS `flow.invocation` at every depth.
+    // top-level flow, so `invocation` IS the flow's own invocation at every depth.
     // Nested/pipeline captures (migration debt from the old `captured { }`
     // brace form, being retired) now run the same path; a capture whose
     // write-back can't be grafted at depth fails LOUDLY in the runner
@@ -173,7 +173,7 @@ const std = @import("std");
     var captured_cont: ?*const ast.Continuation = null;
     var cell_name: []const u8 = "acc";
     var result_name: []const u8 = "result";
-    for (flow.continuations) |*cont| {
+    for (flow.body.continuations) |*cont| {
         if (std.mem.eql(u8, cont.branch, "as")) {
             as_cont = cont;
             if (cont.binding) |b| cell_name = b;
@@ -335,21 +335,20 @@ const std = @import("std");
     } else std.fmt.allocPrint(allocator, "var {s} = {s};\n_ = &{s};", .{ cell_name, init_zig, cell_name }) catch unreachable;
 
     // --- @pass_ran annotation + skip-invocation flow (mirrors ~const). ---
-    const new_annotations = allocator.alloc([]const u8, flow.invocation.annotations.len + 1) catch unreachable;
-    for (flow.invocation.annotations, 0..) |ann, i| new_annotations[i] = ann;
-    new_annotations[flow.invocation.annotations.len] = allocator.dupe(u8, "@pass_ran(\"transform\")") catch unreachable;
+    const new_annotations = allocator.alloc([]const u8, flow.inv().annotations.len + 1) catch unreachable;
+    for (flow.inv().annotations, 0..) |ann, i| new_annotations[i] = ann;
+    new_annotations[flow.inv().annotations.len] = allocator.dupe(u8, "@pass_ran(\"transform\")") catch unreachable;
 
     const new_invocation = ast.Invocation{
-        .path = flow.invocation.path,
-        .args = flow.invocation.args,
+        .path = flow.inv().path,
+        .args = flow.inv().args,
         .annotations = new_annotations,
-        .inserted_by_tap = flow.invocation.inserted_by_tap,
-        .from_opaque_tap = flow.invocation.from_opaque_tap,
+        .inserted_by_tap = flow.inv().inserted_by_tap,
+        .from_opaque_tap = flow.inv().from_opaque_tap,
     };
 
     const transformed_flow = ast.Flow{
-        .invocation = new_invocation,
-        .continuations = new_conts.toOwnedSlice(allocator) catch unreachable,
+        .body = ast.rootSite(new_invocation, new_conts.toOwnedSlice(allocator) catch unreachable, flow.location),
         .annotations = flow.annotations,
         .pre_label = flow.pre_label,
         .post_label = flow.post_label,

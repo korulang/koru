@@ -117,8 +117,7 @@ test "tap_transformer: basic subflow tap insertion" {
     try subflow_continuations.append(allocator, result_cont);
 
     const impl_flow = ast.Flow{
-        .invocation = five_invocation,
-        .continuations = try subflow_continuations.toOwnedSlice(allocator),
+        .body = ast.rootSite(five_invocation, try subflow_continuations.toOwnedSlice(allocator), .{ .file = "generated", .line = 0, .column = 0 }),
         .super_shape = null,
         .impl_of = try ownedPath(allocator, &[_][]const u8{"add_five"}),
         .module = "",
@@ -147,8 +146,8 @@ test "tap_transformer: basic subflow tap insertion" {
     const flow = transformed_ast.items[1].flow;
 
     // Check that continuation has 1 nested continuation (due to transformation prepending)
-    try testing.expect(flow.continuations.len == 1);
-    const cont = flow.continuations[0];
+    try testing.expect(flow.body.continuations.len == 1);
+    const cont = flow.body.continuations[0];
 
     // The transformation should prepend the tap by creating a nested continuation
     // or by modifying the node. Let's see what tap_transformer actually does.
@@ -209,8 +208,7 @@ test "tap_transformer: no taps means no transformation" {
     try subflow_continuations.append(allocator, result_cont);
 
     const impl_flow = ast.Flow{
-        .invocation = five_invocation,
-        .continuations = try subflow_continuations.toOwnedSlice(allocator),
+        .body = ast.rootSite(five_invocation, try subflow_continuations.toOwnedSlice(allocator), .{ .file = "generated", .line = 0, .column = 0 }),
         .super_shape = null,
         .impl_of = try ownedPath(allocator, &[_][]const u8{"add_five"}),
         .module = "",
@@ -234,7 +232,7 @@ test "tap_transformer: no taps means no transformation" {
 
     // Verify NO transformation (pipeline still has 1 step)
     const flow = transformed_ast.items[0].flow;
-    const cont = flow.continuations[0];
+    const cont = flow.body.continuations[0];
 
     try testing.expect(cont.node != null);
     try testing.expectEqualStrings("doubled", cont.node.?.invocation.path.segments[0]);

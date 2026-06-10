@@ -48,7 +48,7 @@ pub const registerVariant = emitter_helpers.registerVariant;
 //   for (program.items) |item| {
 //       if (item == .flow) {
 //           const flow = item.flow;
-//           if (!matchesFlags(flow.invocation.annotations)) continue;
+//           if (!matchesFlags(flow.inv().annotations)) continue;
 //           // ... process the flow
 //       }
 //   }
@@ -480,16 +480,16 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
         switch (item) {
             .flow => |flow| {
                 // Check if this is std.build:requires
-                if (flow.invocation.path.module_qualifier) |mq| {
+                if (flow.inv().path.module_qualifier) |mq| {
                     const is_build_requires = (std.mem.eql(u8, mq, "std.build") and
-                        flow.invocation.path.segments.len == 1 and
-                        std.mem.eql(u8, flow.invocation.path.segments[0], "requires"));
+                        flow.inv().path.segments.len == 1 and
+                        std.mem.eql(u8, flow.inv().path.segments[0], "requires"));
 
                     if (is_build_requires) {
                         // Respect build flags: ~[build("prod")], ~[build("dev")], etc.
-                        if (!matchesFlags(flow.invocation.annotations)) continue;
+                        if (!matchesFlags(flow.inv().annotations)) continue;
                         // Extract source parameter
-                        for (flow.invocation.args) |arg| {
+                        for (flow.inv().args) |arg| {
                             if (std.mem.eql(u8, arg.name, "source")) {
                                 // Deduplicate by checking if this source already exists
                                 var found = false;
@@ -516,15 +516,15 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
                 for (module.items) |mod_item| {
                     if (mod_item == .flow) {
                         const flow = mod_item.flow;
-                        if (flow.invocation.path.module_qualifier) |mq| {
+                        if (flow.inv().path.module_qualifier) |mq| {
                             const is_build_requires = (std.mem.eql(u8, mq, "std.build") and
-                                flow.invocation.path.segments.len == 1 and
-                                std.mem.eql(u8, flow.invocation.path.segments[0], "requires"));
+                                flow.inv().path.segments.len == 1 and
+                                std.mem.eql(u8, flow.inv().path.segments[0], "requires"));
 
                             if (is_build_requires) {
                                 // Respect build flags: ~[build("prod")], ~[build("dev")], etc.
-                                if (!matchesFlags(flow.invocation.annotations)) continue;
-                                for (flow.invocation.args) |arg| {
+                                if (!matchesFlags(flow.inv().annotations)) continue;
+                                for (flow.inv().args) |arg| {
                                     if (std.mem.eql(u8, arg.name, "source")) {
                                         // Deduplicate by checking if this source already exists
                                         var found = false;

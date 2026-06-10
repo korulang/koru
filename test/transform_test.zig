@@ -145,11 +145,10 @@ test "visitor pattern - collecting visitor" {
     
     try items.append(allocator, .{
         .flow = .{
-            .invocation = .{
+            .body = ast.rootSite(.{
                 .path = .{ .segments = flow1_segments },
                 .args = try allocator.alloc(ast.Arg, 0),
-            },
-            .continuations = flow1_continuations,
+            }, flow1_continuations, .{ .file = "generated", .line = 0, .column = 0 }),
             .pre_label = null,
             .post_label = null,
         },
@@ -218,11 +217,10 @@ test "inline small events - detection" {
     
     try items.append(allocator, .{
         .flow = .{
-            .invocation = .{
+            .body = ast.rootSite(.{
                 .path = .{ .segments = try createPath(allocator, &[_][]const u8{"small"}) },
                 .args = flow_args,
-            },
-            .continuations = flow_continuations,
+            }, flow_continuations, .{ .file = "generated", .line = 0, .column = 0 }),
             .pre_label = null,
             .post_label = null,
         },

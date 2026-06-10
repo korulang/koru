@@ -54,15 +54,15 @@
     for (program.items) |item| {
         if (item == .flow) {
             const flow = item.flow;
-            if (flow.invocation.path.module_qualifier) |mq| {
+            if (flow.inv().path.module_qualifier) |mq| {
                 // Check for std.package:requires.npm
                 if (std.mem.eql(u8, mq, "std.package") and
-                    flow.invocation.path.segments.len == 2 and
-                    std.mem.eql(u8, flow.invocation.path.segments[0], "requires") and
-                    std.mem.eql(u8, flow.invocation.path.segments[1], "npm"))
+                    flow.inv().path.segments.len == 2 and
+                    std.mem.eql(u8, flow.inv().path.segments[0], "requires") and
+                    std.mem.eql(u8, flow.inv().path.segments[1], "npm"))
                 {
                     // Extract source parameter (the JSON-like content)
-                    for (flow.invocation.args) |arg| {
+                    for (flow.inv().args) |arg| {
                         if (std.mem.eql(u8, arg.name, "source")) {
                             npm_packages.append(allocator, arg.value) catch {
                                 std.debug.print("✗ Out of memory\n", .{});

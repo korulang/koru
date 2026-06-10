@@ -93,8 +93,8 @@ test "parse regular subflow still works" {
     const flow = result.source_file.items[1].flow;
     
     try testing.expect(flow.impl_of != null);
-    try testing.expectEqual(@as(usize, 2), flow.invocation.path.segments.len);
-    try testing.expectEqualStrings("compute", flow.invocation.path.segments[0]);
-    try testing.expectEqualStrings("run", flow.invocation.path.segments[1]);
-    try testing.expectEqual(@as(usize, 1), flow.continuations.len);
+    try testing.expectEqual(@as(usize, 2), flow.inv().path.segments.len);
+    try testing.expectEqualStrings("compute", flow.inv().path.segments[0]);
+    try testing.expectEqualStrings("run", flow.inv().path.segments[1]);
+    try testing.expectEqual(@as(usize, 1), flow.body.continuations.len);
 }
