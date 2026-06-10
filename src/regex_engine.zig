@@ -490,3 +490,179 @@ test "nfa: ReDoS pattern stays linear (no catastrophic backtracking)" {
     try testing.expect(nfa.matches("aaaa"));
     try testing.expect(!nfa.matches("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaX"));
 }
+
+// ── DFA (subset construction) ────────────────────────────────────────────────
+//
+// Subset construction turns the epsilon-NFA into a DFA: each DFA state is the
+// epsilon-closure of a set of NFA states, and each (state, byte) has exactly one
+// next state. Matching is then a flat table walk — O(1) per byte, O(input)
+// total, straight-line. This is the shape we emit as native code. The empty set
+// is the natural "dead" sink (all transitions loop to it; non-accepting), so no
+// special-casing is needed. Matching stays linear-time / ReDoS-immune.
+
+pub const Dfa = struct {
+    n_states: usize,
+    trans: []usize, // trans[state * 256 + byte] = next state
+    accept: []bool,
+    start: usize,
+    allocator: std.mem.Allocator,
+
+    pub fn deinit(self: *Dfa) void {
+        self.allocator.free(self.trans);
+        self.allocator.free(self.accept);
+    }
+
+    /// Full-match: does the ENTIRE input match? O(1) per byte.
+    pub fn matches(self: *const Dfa, input: []const u8) bool {
+        var s = self.start;
+        for (input) |c| s = self.trans[s * 256 + c];
+        return self.accept[s];
+    }
+};
+
+const DfaError = error{ OutOfMemory, DfaTooLarge };
+const max_dfa_states: usize = 1 << 16; // loud cap; the regular subset stays well under
+
+/// epsilon-closure of `seeds`, collected as a sorted (ascending) set. Sorted so
+/// equal sets have identical bytes → interning by content via a byte-keyed map.
+fn closureSet(nfa: *const Nfa, seeds: []const usize, a: std.mem.Allocator) ![]usize {
+    const n = nfa.states.items.len;
+    const marked = try a.alloc(bool, n);
+    @memset(marked, false);
+    var stack = std.ArrayList(usize){};
+    for (seeds) |s| {
+        if (!marked[s]) {
+            marked[s] = true;
+            try stack.append(a, s);
+        }
+    }
+    while (stack.pop()) |st| {
+        for (nfa.states.items[st].eps.items) |to| {
+            if (!marked[to]) {
+                marked[to] = true;
+                try stack.append(a, to);
+            }
+        }
+    }
+    var out = std.ArrayList(usize){};
+    var i: usize = 0;
+    while (i < n) : (i += 1) if (marked[i]) try out.append(a, i);
+    return out.items;
+}
+
+fn setContains(set: []const usize, target: usize) bool {
+    for (set) |s| if (s == target) return true;
+    return false;
+}
+
+/// Build a DFA from an NFA via subset construction. The DFA arrays are owned by
+/// `allocator`; all transient sets live in an internal arena.
+pub fn buildDfa(allocator: std.mem.Allocator, nfa: *const Nfa) DfaError!Dfa {
+    var arena_inst = std.heap.ArenaAllocator.init(allocator);
+    defer arena_inst.deinit();
+    const a = arena_inst.allocator();
+
+    var interned = std.StringHashMap(usize).init(a);
+    var nfa_sets = std.ArrayList([]usize){}; // dfa state index -> its NFA set
+
+    var dfa_trans = std.ArrayList(usize){};
+    var dfa_accept = std.ArrayList(bool){};
+
+    // intern the start set
+    const start_set = try closureSet(nfa, &.{nfa.start}, a);
+    try interned.put(std.mem.sliceAsBytes(start_set), 0);
+    try nfa_sets.append(a, start_set);
+    try dfa_accept.append(allocator, setContains(start_set, nfa.accept));
+
+    var processed: usize = 0;
+    while (processed < nfa_sets.items.len) : (processed += 1) {
+        const set = nfa_sets.items[processed];
+        var byte: usize = 0;
+        while (byte < 256) : (byte += 1) {
+            // move: NFA states reachable from `set` on this byte, then closure.
+            var seeds = std.ArrayList(usize){};
+            for (set) |s| {
+                if (nfa.states.items[s].sym) |cls| {
+                    if (cls.contains(@intCast(byte))) try seeds.append(a, nfa.states.items[s].out);
+                }
+            }
+            const move = try closureSet(nfa, seeds.items, a);
+
+            const key = std.mem.sliceAsBytes(move);
+            const target = interned.get(key) orelse blk: {
+                if (nfa_sets.items.len >= max_dfa_states) return error.DfaTooLarge;
+                const idx = nfa_sets.items.len;
+                try interned.put(key, idx);
+                try nfa_sets.append(a, move);
+                try dfa_accept.append(allocator, setContains(move, nfa.accept));
+                break :blk idx;
+            };
+            try dfa_trans.append(allocator, target);
+        }
+    }
+
+    return Dfa{
+        .n_states = nfa_sets.items.len,
+        .trans = try dfa_trans.toOwnedSlice(allocator),
+        .accept = try dfa_accept.toOwnedSlice(allocator),
+        .start = 0,
+        .allocator = allocator,
+    };
+}
+
+fn dfaFor(allocator: std.mem.Allocator, src: []const u8) !Dfa {
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    var p = Parser.init(arena.allocator(), src);
+    const ast = try p.parse();
+    var nfa = try buildNfa(arena.allocator(), ast);
+    return buildDfa(allocator, &nfa);
+}
+
+test "dfa: flagship matches like the nfa" {
+    var dfa = try dfaFor(testing.allocator, "[a-z]+@[a-z]+");
+    defer dfa.deinit();
+    try testing.expect(dfa.matches("foo@bar"));
+    try testing.expect(dfa.matches("a@b"));
+    try testing.expect(!dfa.matches("FOO@bar"));
+    try testing.expect(!dfa.matches("foo@"));
+    try testing.expect(!dfa.matches("@bar"));
+}
+
+test "dfa: alternation, star, opt, anchors" {
+    {
+        var d = try dfaFor(testing.allocator, "a|bb");
+        defer d.deinit();
+        try testing.expect(d.matches("a") and d.matches("bb") and !d.matches("b") and !d.matches("ab"));
+    }
+    {
+        var d = try dfaFor(testing.allocator, "a*");
+        defer d.deinit();
+        try testing.expect(d.matches("") and d.matches("aaa") and !d.matches("ab"));
+    }
+    {
+        var d = try dfaFor(testing.allocator, "ab?c");
+        defer d.deinit();
+        try testing.expect(d.matches("ac") and d.matches("abc") and !d.matches("abbc"));
+    }
+    {
+        var d = try dfaFor(testing.allocator, "^.$");
+        defer d.deinit();
+        try testing.expect(d.matches("x") and !d.matches("") and !d.matches("xy"));
+    }
+}
+
+test "dfa == nfa cross-check over many inputs" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const patterns = [_][]const u8{ "[a-z]+@[a-z]+", "a|bb|ccc", "(ab)*", "[0-9]?x", "a.c", "(a+)+" };
+    const inputs = [_][]const u8{ "", "a", "ab", "abc", "foo@bar", "x", "9x", "ccc", "abab", "aXc", "aaaa", "aaaaX" };
+    for (patterns) |pat| {
+        const nfa = try nfaFor(arena.allocator(), pat);
+        var dfa = try dfaFor(testing.allocator, pat);
+        defer dfa.deinit();
+        for (inputs) |inp| {
+            try testing.expectEqual(nfa.matches(inp), dfa.matches(inp));
+        }
+    }
+}
