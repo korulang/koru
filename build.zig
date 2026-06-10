@@ -1289,7 +1289,20 @@ pub fn build(b: *std.Build) void {
     });
     const run_flow_parser_tests = b.addRunArtifact(flow_parser_tests);
 
+    const regex_engine_tests = b.addTest(.{
+        .name = "regex_engine_tests",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/regex_engine.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    const run_regex_engine_tests = b.addRunArtifact(regex_engine_tests);
+    const regex_test_step = b.step("test-regex", "Run regex engine tests");
+    regex_test_step.dependOn(&run_regex_engine_tests.step);
+
     const test_step = b.step("test", "Run all tests");
+    test_step.dependOn(&run_regex_engine_tests.step);
     test_step.dependOn(&run_flow_parser_tests.step);
     test_step.dependOn(&run_lexer_tests.step);
     test_step.dependOn(&run_parser_tests.step);
