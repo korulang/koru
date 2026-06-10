@@ -19,17 +19,16 @@
     item: *const Item,
     program: *const Program,
 }
-| transformed *const Program
+| transformed SiteResult
 
 ~proc ring.*|zig {
     const std = @import("std");
     const ast = @import("ast");
-    const ast_functional = @import("ast_functional");
     const allocator = std.heap.page_allocator;
 
     // Parse: ring.new[T:u32;N:1024]
-    const bracket_start = std.mem.indexOf(u8, event_name, "[") orelse return .{ .transformed = program };
-    const bracket_end = std.mem.lastIndexOf(u8, event_name, "]") orelse return .{ .transformed = program };
+    const bracket_start = std.mem.indexOf(u8, event_name, "[") orelse return .{ .transformed = .{} };
+    const bracket_end = std.mem.lastIndexOf(u8, event_name, "]") orelse return .{ .transformed = .{} };
 
     const params_str = event_name[bracket_start + 1 .. bracket_end];
 
@@ -76,7 +75,7 @@
         .{ name, N, T, T, N }
     ) catch unreachable;
 
-    const flow = if (item.* == .flow) &item.flow else return .{ .transformed = program };
+    const flow = if (item.* == .flow) &item.flow else return .{ .transformed = .{} };
 
     const inline_code_item = ast.Item{
         .inline_code = ast.InlineCode{
@@ -86,13 +85,7 @@
         },
     };
 
-    const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, inline_code_item) catch unreachable;
-    if (maybe_new_program) |new_program| {
-        const result = allocator.create(ast.Program) catch unreachable;
-        result.* = new_program;
-        return .{ .transformed = result };
-    }
-    return .{ .transformed = program };
+    return .{ .transformed = .{ .replacement = inline_code_item } };
 }
 
 // Create a ring buffer of 1024 u32 values

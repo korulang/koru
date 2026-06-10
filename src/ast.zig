@@ -264,6 +264,40 @@ pub const ParseErrorNode = struct {
     }
 };
 
+/// Replace a nested site's holding continuation with a raw node + children,
+/// for handlers that swap an invocation for a non-flow node (e.g. a `foreach`
+/// loop or an inline statement carrying its own continuations). Nested sites
+/// only — a bare node cannot replace a top-level Item.
+pub const NodeReplacement = struct {
+    node: Node,
+    /// null = keep the site's existing children (replace the node only);
+    /// non-null = replace the children too (including with an empty slice).
+    children: ?[]const Continuation = null,
+};
+
+/// The site-local write-back ABI: what a transform handler decides at one
+/// site. The runner owns ALL placement — handlers describe their change as a
+/// value and never touch the whole program. This is what `| transformed
+/// SiteResult` carries. At most one of `replacement`/`replacement_node` is set:
+/// - `replacement`     — replace the site with this Item (root: the whole Item;
+///                       nested: the Item's body node, via the runner).
+/// - `replacement_node`— nested only: replace the holding continuation's node
+///                       and children directly.
+/// - `appended`        — new top-level items to add to the program.
+/// All-null/empty is the no-op signal (handler declined / already processed).
+pub const SiteResult = struct {
+    replacement: ?Item = null,
+    replacement_node: ?NodeReplacement = null,
+    appended: []const Item = &.{},
+    /// Escape hatch for transforms that are genuinely WHOLE-PROGRAM, not
+    /// site-local — e.g. `tap`, which removes its own declaration AND wraps
+    /// matching continuations scattered across the program. Such a handler
+    /// returns the fully-rewritten program here and the runner uses it
+    /// verbatim. Reserve this for transforms that are irreducibly global; the
+    /// site-local fields above are the default and the right tool for the rest.
+    whole_program: ?*const Program = null,
+};
+
 pub const Item = union(enum) {
     // === SOURCE-LEVEL NODES (created by parser) ===
     module_decl: ModuleDecl,

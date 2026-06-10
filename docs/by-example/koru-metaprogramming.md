@@ -59,33 +59,26 @@ These are the receipts for the `koru-metaprogramming` skill — passing tests sh
     item: *const Item,
     program: *const Program,
 }
-| transformed *const Program
+| transformed SiteResult
 
 // Transform proc - replaces invocation with inline comment
 ~proc log.*|zig {
     const ast = @import("ast");
-    const ast_functional = @import("ast_functional");
     const allocator = @import("std").heap.page_allocator;
 
     // Get the flow from the item
-    const flow = if (item.* == .flow) &item.flow else return .{ .transformed = program };
+    const flow = if (item.* == .flow) &item.flow else return .{ .transformed = .{} };
 
     // Create inline code to replace the flow (simple comment, no keywords)
     const inline_code_item = ast.Item{
         .inline_code = .{
             .code = "// glob transform ran",
             .location = flow.location,
-            .module = allocator.dupe(u8, flow.module) catch return .{ .transformed = program },
+            .module = allocator.dupe(u8, flow.module) catch return .{ .transformed = .{} },
         },
     };
 
-    const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, inline_code_item) catch return .{ .transformed = program };
-    if (maybe_new_program) |new_program| {
-        const result = allocator.create(ast.Program) catch return .{ .transformed = program };
-        result.* = new_program;
-        return .{ .transformed = result };
-    }
-    return .{ .transformed = program };
+    return .{ .transformed = .{ .replacement = inline_code_item } };
 }
 
 // This invocation should match log.* glob pattern
@@ -211,12 +204,11 @@ These are the receipts for the `koru-metaprogramming` skill — passing tests sh
     item: *const Item,
     program: *const Program,
 }
-| transformed *const Program
+| transformed SiteResult
 
 ~proc ring.*|zig {
     const std = @import("std");
     const ast = @import("ast");
-    const ast_functional = @import("ast_functional");
     const allocator = std.heap.page_allocator;
 
     // Parse generic params from event_name
@@ -228,7 +220,7 @@ These are the receipts for the `koru-metaprogramming` skill — passing tests sh
 
     if (bracket_start == null or bracket_end == null) {
         // No generic params - this is fine for some ring operations
-        return .{ .transformed = program };
+        return .{ .transformed = .{} };
     }
 
     const command = event_name[5..bracket_start.?]; // Skip "ring."
@@ -242,7 +234,7 @@ These are the receipts for the `koru-metaprogramming` skill — passing tests sh
         .{ command, params_str }
     ) catch unreachable;
 
-    const flow = if (item.* == .flow) &item.flow else return .{ .transformed = program };
+    const flow = if (item.* == .flow) &item.flow else return .{ .transformed = .{} };
 
     const inline_code_item = ast.Item{
         .inline_code = ast.InlineCode{
@@ -252,13 +244,7 @@ These are the receipts for the `koru-metaprogramming` skill — passing tests sh
         },
     };
 
-    const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, inline_code_item) catch unreachable;
-    if (maybe_new_program) |new_program| {
-        const result = allocator.create(ast.Program) catch unreachable;
-        result.* = new_program;
-        return .{ .transformed = result };
-    }
-    return .{ .transformed = program };
+    return .{ .transformed = .{ .replacement = inline_code_item } };
 }
 
 // This invocation has generic params in brackets
@@ -289,17 +275,16 @@ These are the receipts for the `koru-metaprogramming` skill — passing tests sh
     item: *const Item,
     program: *const Program,
 }
-| transformed *const Program
+| transformed SiteResult
 
 ~proc ring.*|zig {
     const std = @import("std");
     const ast = @import("ast");
-    const ast_functional = @import("ast_functional");
     const allocator = std.heap.page_allocator;
 
     // Parse: ring.new[T:u32;N:1024]
-    const bracket_start = std.mem.indexOf(u8, event_name, "[") orelse return .{ .transformed = program };
-    const bracket_end = std.mem.lastIndexOf(u8, event_name, "]") orelse return .{ .transformed = program };
+    const bracket_start = std.mem.indexOf(u8, event_name, "[") orelse return .{ .transformed = .{} };
+    const bracket_end = std.mem.lastIndexOf(u8, event_name, "]") orelse return .{ .transformed = .{} };
 
     const params_str = event_name[bracket_start + 1 .. bracket_end];
 
@@ -346,7 +331,7 @@ These are the receipts for the `koru-metaprogramming` skill — passing tests sh
         .{ name, N, T, T, N }
     ) catch unreachable;
 
-    const flow = if (item.* == .flow) &item.flow else return .{ .transformed = program };
+    const flow = if (item.* == .flow) &item.flow else return .{ .transformed = .{} };
 
     const inline_code_item = ast.Item{
         .inline_code = ast.InlineCode{
@@ -356,13 +341,7 @@ These are the receipts for the `koru-metaprogramming` skill — passing tests sh
         },
     };
 
-    const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, inline_code_item) catch unreachable;
-    if (maybe_new_program) |new_program| {
-        const result = allocator.create(ast.Program) catch unreachable;
-        result.* = new_program;
-        return .{ .transformed = result };
-    }
-    return .{ .transformed = program };
+    return .{ .transformed = .{ .replacement = inline_code_item } };
 }
 
 // Create a ring buffer of 1024 u32 values

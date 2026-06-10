@@ -14,7 +14,7 @@ const std = @import("std");
 // [comptime|transform] annotation marks this as compile-time transformation
 // Transform events receive: source (user args), invocation (for context), program (AST), allocator (memory)
 ~[comptime|transform]event renderHTML { source: Source<HTML>, invocation: *const Invocation, program: *const Program, allocator: std.mem.Allocator }
-| transformed *const Program
+| transformed SiteResult
 | failed []const u8
 
 ~proc renderHTML|zig {
@@ -217,7 +217,9 @@ const std = @import("std");
         .allocator = allocator,
     };
 
-    return .{ .transformed = new_program };
+    // This transform rebuilds the whole program (replace renderHTML + append
+    // runtime event/proc), so it uses the whole-program escape.
+    return .{ .transformed = .{ .whole_program = new_program } };
 }
 
 // Module-level test: Source block gets passed to renderHTML

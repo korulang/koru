@@ -30,7 +30,7 @@ const std = @import("std");
     program: *const Program,
     allocator: std.mem.Allocator
 }
-| transformed *const Program
+| transformed SiteResult
 
 ~proc parser|zig {
     const ast = @import("ast");
@@ -210,51 +210,18 @@ const std = @import("std");
         .location = event_decl.location,
     };
 
-    // Build new program with:
-    // 1. Original event (with derive annotation removed, pass_ran added)
-    // 2. New .parse event
-    // 3. New .parse proc
-    const new_items = allocator.alloc(ast.Item, program.items.len + 2) catch unreachable;
+    // Site-local derive: replace this event decl with the @pass_ran-marked
+    // version (the runner swaps it by identity), and append the generated
+    // .parse event + proc as new top-level items.
+    _ = program;
+    const appended = allocator.alloc(ast.Item, 2) catch unreachable;
+    appended[0] = ast.Item{ .event_decl = parse_event.* };
+    appended[1] = ast.Item{ .proc_decl = parse_proc.* };
 
-    var write_idx: usize = 0;
-    for (program.items) |prog_item| {
-        // Replace the original event_decl with modified version
-        if (prog_item == .event_decl) {
-            const prog_event = &prog_item.event_decl;
-            if (prog_event.path.segments.len == event_decl.path.segments.len) {
-                var matches = true;
-                for (prog_event.path.segments, event_decl.path.segments) |a, b| {
-                    if (!std.mem.eql(u8, a, b)) {
-                        matches = false;
-                        break;
-                    }
-                }
-                if (matches) {
-                    new_items[write_idx] = ast.Item{ .event_decl = modified_event_decl };
-                    write_idx += 1;
-                    continue;
-                }
-            }
-        }
-        new_items[write_idx] = prog_item;
-        write_idx += 1;
-    }
-
-    // Add the new .parse event and proc
-    new_items[write_idx] = ast.Item{ .event_decl = parse_event.* };
-    write_idx += 1;
-    new_items[write_idx] = ast.Item{ .proc_decl = parse_proc.* };
-    write_idx += 1;
-
-    const new_program = allocator.create(ast.Program) catch unreachable;
-    new_program.* = ast.Program{
-        .items = new_items[0..write_idx],
-        .module_annotations = program.module_annotations,
-        .main_module_name = program.main_module_name,
-        .allocator = allocator,
-    };
-
-    return .{ .transformed = new_program };
+    return .{ .transformed = .{
+        .replacement = ast.Item{ .event_decl = modified_event_decl },
+        .appended = appended,
+    } };
 }
 
 // Helper: Generate Zig matching code for a pattern

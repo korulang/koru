@@ -26,7 +26,7 @@ const std = @import("std");
     program: *const Program,
     allocator: std.mem.Allocator
 }
-| transformed *const Program
+| transformed SiteResult
 
 // Internal event for shape checking (never runs)
 ~[norun]pub event emit.impl {
@@ -35,14 +35,13 @@ const std = @import("std");
 
 ~proc emit|zig {
     const ast = @import("ast");
-    const ast_functional = @import("ast_functional");
     const liquid = @import("liquid");
 
     // Get the flow from the item
     const flow = if (item.* == .flow)
         &item.flow
     else
-        return .{ .transformed = program };
+        return .{ .transformed = .{} };
 
     // Build Liquid context from named event arguments (skip expr)
     var ctx = liquid.Context.init(allocator);
@@ -68,7 +67,7 @@ const std = @import("std");
     // Render the Liquid template
     const rendered = liquid.render(allocator, tpl, &ctx) catch |err| {
         std.debug.print("Liquid template error: {}\n", .{err});
-        return .{ .transformed = program };
+        return .{ .transformed = .{} };
     };
 
     // Escape the rendered output for use in a Zig string literal
@@ -131,11 +130,5 @@ const std = @import("std");
 
     const new_item = ast.Item{ .flow = transformed_flow };
 
-    const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
-    if (maybe_new_program) |new_program| {
-        const result = allocator.create(ast.Program) catch unreachable;
-        result.* = new_program;
-        return .{ .transformed = result };
-    }
-    return .{ .transformed = program };
+    return .{ .transformed = .{ .replacement = new_item } };
 }

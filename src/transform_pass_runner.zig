@@ -53,12 +53,6 @@ const ast_functional = @import("ast_functional");
 // Transforms either complete or fail loudly: every impossible state on this
 // path is a hard error, never a warn-and-continue.
 
-/// Marker prefix stamped into the synthetic flow's location.file so the
-/// transformed site can be found again in the handler's returned program.
-/// Handlers preserve `flow.location` on their replacement items (all known
-/// ones do); a handler that destroys it gets a hard, descriptive error.
-const site_marker_prefix = "__koru_lifted_site__:";
-
 /// A transform site reference: the ONE invoke+branches core (a Continuation)
 /// plus the wrapper-layer datum of which Item to replace on write-back.
 /// `wrapper` is non-null iff the site is that flow's root body. Nothing
@@ -80,280 +74,218 @@ const SitePosition = union(enum) {
     opaque_position,
 };
 
-const SourceLocation = @FieldType(ast.Flow, "location");
-
-/// Everything needed to call a handler against a lifted nested site and
-/// graft the result back into the real program.
-const LiftedSite = struct {
-    /// Program copy with the synthetic site flow appended as the last item.
-    site_program: *Program,
-    /// `.invocation` node pointing INTO the synthetic flow (so glue code's
-    /// `findContainingItem` resolves to the synthetic item).
-    site_node: ASTNode,
-    /// Marker stamped on the synthetic flow's location.file.
-    marker: []const u8,
-    /// Location of the REAL containing flow (used to find its clone in the
-    /// handler's returned program — handlers deep-clone untouched items, so
-    /// pointer identity does not survive; source location does).
-    containing_loc: SourceLocation,
-    /// Index path of the holding continuation inside the containing flow:
-    /// containing.body.continuations[p0].continuations[p1]...[pN] IS the
-    /// holding continuation (whose .node is the lifted invocation).
-    cont_path: []const usize,
-    /// The lifted invocation's original path segments — graft-time sanity
-    /// check that the navigation landed on the right continuation.
-    original_segments: []const []const u8,
-};
-
-/// Locate the top-level (or module-nested) flow containing `target_cont` and
-/// record the continuation index path to it. Returns null if not found.
-const ContainingSearch = struct {
-    flow: *const ast.Flow,
-    cont_path: []const usize,
-
-    fn findInConts(
-        allocator: std.mem.Allocator,
-        conts: []const ast.Continuation,
-        target_cont: *const ast.Continuation,
-        path: *std.ArrayList(usize),
-    ) !bool {
-        for (conts, 0..) |*cont, i| {
-            try path.append(allocator, i);
-            if (cont == target_cont) return true;
-            if (try findInConts(allocator, cont.continuations, target_cont, path)) return true;
-            _ = path.pop();
-        }
-        return false;
-    }
-
-    fn findInItems(
-        allocator: std.mem.Allocator,
-        items: []const ast.Item,
-        target_cont: *const ast.Continuation,
-    ) !?ContainingSearch {
-        for (items) |*item| {
-            switch (item.*) {
-                .flow => |*f| {
-                    var path: std.ArrayList(usize) = .empty;
-                    if (try findInConts(allocator, f.body.continuations, target_cont, &path)) {
-                        return ContainingSearch{ .flow = f, .cont_path = try path.toOwnedSlice(allocator) };
-                    }
-                    path.deinit(allocator);
-                },
-                .module_decl => |*m| {
-                    if (try findInItems(allocator, m.items, target_cont)) |found| {
-                        return found;
-                    }
-                },
-                else => {},
-            }
-        }
-        return null;
-    }
-};
-
-/// Wrap a nested transform site in a synthetic top-level item: the site
-/// Continuation BECOMES the body of a marker-stamped Flow appended to a copy
-/// of the program. No re-encoding happens — the body is the same
-/// invoke+branches value the walker found (it shares the continuation slice
-/// with the real AST; handlers treat the program as immutable and build
-/// replacements functionally). The handler runs against this view exactly as
-/// it would against a real top-level flow.
-fn liftSite(
-    allocator: std.mem.Allocator,
-    program: *const Program,
-    holding_cont: *ast.Continuation,
-) !LiftedSite {
-    const target_inv = &holding_cont.node.?.invocation;
-
-    const containing = (try ContainingSearch.findInItems(allocator, program.items, holding_cont)) orelse {
-        log.err("TRANSFORM RUNNER BUG: could not locate the flow containing a nested transform invocation. The walker handed us a continuation that is not reachable from the program root.\n", .{});
-        return error.TransformSiteNotInProgram;
-    };
-
-    const marker = try std.fmt.allocPrint(allocator, "{s}{s}:{d}:{d}", .{
-        site_marker_prefix,
-        holding_cont.location.file,
-        holding_cont.location.line,
-        holding_cont.location.column,
-    });
-
-    const site_flow = ast.Flow{
-        .body = holding_cont.*,
-        .location = .{
-            .file = marker,
-            .line = holding_cont.location.line,
-            .column = holding_cont.location.column,
-        },
-        .module = containing.flow.module,
-        .is_pure = containing.flow.is_pure,
-        .is_transitively_pure = containing.flow.is_transitively_pure,
-    };
-
-    const site_items = try allocator.alloc(ast.Item, program.items.len + 1);
-    @memcpy(site_items[0..program.items.len], program.items);
-    site_items[program.items.len] = ast.Item{ .flow = site_flow };
-
-    const site_program = try allocator.create(Program);
-    site_program.* = program.*;
-    site_program.items = site_items;
-
-    return LiftedSite{
-        .site_program = site_program,
-        .site_node = ASTNode{ .invocation = site_items[program.items.len].flow.invMut() },
-        .marker = marker,
-        .containing_loc = containing.flow.location,
-        .cont_path = containing.cont_path,
-        .original_segments = target_inv.path.segments,
-    };
-}
-
-/// Find the (single) item carrying the site marker in the handler's returned
-/// program. Only `.flow` and `.inline_code` items count as the site — other
-/// item kinds the handler stamped with the same location (event decls, procs,
-/// host lines it inserted alongside) are siblings, not the site itself.
-fn findSiteItemIndex(items: []const ast.Item, marker: []const u8) !usize {
-    var found: ?usize = null;
-    for (items, 0..) |*item, i| {
-        const loc_file: ?[]const u8 = switch (item.*) {
-            .flow => |*f| f.location.file,
-            .inline_code => |*ic| ic.location.file,
-            else => null,
-        };
-        if (loc_file) |file| {
-            if (std.mem.eql(u8, file, marker)) {
-                if (found != null) {
-                    log.err("TRANSFORM ERROR: handler produced more than one replacement item for a lifted site (marker {s}). A transform must replace its site with exactly one flow or inline_code item.\n", .{marker});
-                    return error.TransformSiteAmbiguous;
-                }
-                found = i;
-            }
-        }
-    }
-    return found orelse {
-        log.err("TRANSFORM ERROR: transformed site not found in handler output (marker {s}). The handler must preserve flow.location on its replacement item — that is how the runner grafts a nested site back into position.\n", .{marker});
-        return error.TransformSiteLost;
-    };
-}
-
-const ContFinder = struct {
-    fn findFlowByLoc(items: []ast.Item, loc: SourceLocation) ?*ast.Flow {
-        for (items) |*item| {
-            switch (item.*) {
-                .flow => |*f| {
-                    if (f.location.line == loc.line and f.location.column == loc.column and
-                        std.mem.eql(u8, f.location.file, loc.file))
-                    {
-                        return f;
-                    }
-                },
-                .module_decl => |*m| {
-                    if (findFlowByLoc(@constCast(m.items), loc)) |found| return found;
-                },
-                else => {},
-            }
-        }
-        return null;
-    }
-};
-
-/// Graft the handler's result back into the real nesting position.
-///
-/// The returned program contains (a) the transformed site as a top-level item
-/// carrying the runner's marker location, (b) a clone of the original
-/// containing flow still holding the UNtransformed nested invocation, and (c)
-/// any new items the handler inserted. The graft converts (a) into the
-/// continuation position inside (b) and drops the synthetic top-level item.
-fn graftSite(
-    allocator: std.mem.Allocator,
-    returned: *const Program,
-    lifted: LiftedSite,
-) !*const Program {
-    const site_idx = try findSiteItemIndex(returned.items, lifted.marker);
-
-    // Convert the transformed site item into a continuation node + children.
-    var new_node: ast.Node = undefined;
-    var new_children: []const ast.Continuation = &[_]ast.Continuation{};
-    switch (returned.items[site_idx]) {
+/// Convert a replacement Item into a continuation node + children, for
+/// splicing into a NESTED site (a continuation, not a top-level Item).
+/// Harvested from the old graft path: a flow becomes its invocation + branch
+/// continuations (migrating inline_body to the canonical Invocation slot);
+/// inline_code becomes a raw host-code node with no children.
+const NodeConv = struct { node: ast.Node, children: []const ast.Continuation };
+fn itemToNode(item: *const ast.Item) !NodeConv {
+    switch (item.*) {
         .flow => |*f| {
             if (f.preamble_code != null) {
-                log.err("TRANSFORM ERROR: transform produced preamble_code for a nested site ({s}). preamble_code only exists at flow level; there is no preamble position inside a continuation. The transform must use inline_body (statement-shaped, //@koru:inline_stmt) instead.\n", .{lifted.marker});
+                log.err("TRANSFORM ERROR: transform produced preamble_code for a nested site. preamble_code only exists at flow level; there is no preamble position inside a continuation. Use inline_body (statement-shaped) instead.\n", .{});
                 return error.TransformPreambleAtNestedSite;
             }
             var new_inv = f.inv().*;
-            // Flow.inline_body delegates to Invocation.inline_body (the
-            // canonical location) — migrate it so depth emission sees it.
+            // Flow.inline_body delegates to Invocation.inline_body (canonical).
             if (f.inline_body != null and new_inv.inline_body == null) {
                 new_inv.inline_body = f.inline_body;
             }
-            new_node = ast.Node{ .invocation = new_inv };
-            new_children = f.body.continuations;
+            return .{ .node = ast.Node{ .invocation = new_inv }, .children = f.body.continuations };
         },
         .inline_code => |*ic| {
-            // The handler replaced the whole site with raw host code (e.g. a
-            // comptime @compileError). The subtree was consumed with it.
-            new_node = ast.Node{ .inline_code = ic.code };
-            new_children = &[_]ast.Continuation{};
+            return .{ .node = ast.Node{ .inline_code = ic.code }, .children = &[_]ast.Continuation{} };
         },
-        else => unreachable, // findSiteItemIndex only returns flow/inline_code
+        else => {
+            log.err("TRANSFORM ERROR: a nested transform site must be replaced by a flow or inline_code item, got {s}.\n", .{@tagName(item.*)});
+            return error.TransformNestedSiteBadItem;
+        },
     }
-
-    // Locate the containing flow's clone in the returned program and navigate
-    // the recorded continuation path to the holding continuation.
-    const containing = ContFinder.findFlowByLoc(@constCast(returned.items), lifted.containing_loc) orelse {
-        log.err("TRANSFORM ERROR: containing flow ({s}:{d}:{d}) vanished from handler output while grafting a nested transform site. Handlers must not remove or relocate flows other than their own site.\n", .{ lifted.containing_loc.file, lifted.containing_loc.line, lifted.containing_loc.column });
-        return error.TransformContainingFlowLost;
-    };
-
-    var conts: []const ast.Continuation = containing.body.continuations;
-    var holding: *ast.Continuation = undefined;
-    for (lifted.cont_path, 0..) |idx, depth| {
-        if (idx >= conts.len) {
-            log.err("TRANSFORM ERROR: continuation path invalid while grafting a nested transform site ({s}) — the handler restructured the containing flow.\n", .{lifted.marker});
-            return error.TransformGraftPathInvalid;
-        }
-        holding = @constCast(&conts[idx]);
-        if (depth + 1 < lifted.cont_path.len) {
-            conts = holding.continuations;
-        }
-    }
-
-    // Sanity: the holding continuation must still carry the UNtransformed
-    // original invocation (the handler only transformed the lifted copy).
-    const ok = blk: {
-        const node = holding.node orelse break :blk false;
-        if (node != .invocation) break :blk false;
-        const segs = node.invocation.path.segments;
-        if (segs.len != lifted.original_segments.len) break :blk false;
-        for (segs, lifted.original_segments) |a, b| {
-            if (!std.mem.eql(u8, a, b)) break :blk false;
-        }
-        break :blk true;
-    };
-    if (!ok) {
-        log.err("TRANSFORM ERROR: graft target mismatch for nested transform site ({s}) — the continuation at the recorded path no longer holds the original invocation.\n", .{lifted.marker});
-        return error.TransformGraftTargetMismatch;
-    }
-
-    // Splice in place — the returned program is handler-fresh and becomes the
-    // next walk iteration's input; nothing else references it.
-    holding.node = new_node;
-    holding.continuations = new_children;
-
-    // Drop the synthetic top-level site item.
-    const final_items = try allocator.alloc(ast.Item, returned.items.len - 1);
-    var w: usize = 0;
-    for (returned.items, 0..) |item, i| {
-        if (i == site_idx) continue;
-        final_items[w] = item;
-        w += 1;
-    }
-
-    const final_program = try allocator.create(Program);
-    final_program.* = returned.*;
-    final_program.items = final_items;
-    return final_program;
 }
+
+/// Find the flow containing a holding continuation (to copy module / purity
+/// onto the synthetic site-view flow). Recurses into module_decls.
+fn findContainingFlow(items: []const ast.Item, target: *const ast.Continuation) ?*const ast.Flow {
+    for (items) |*item| {
+        switch (item.*) {
+            .flow => |*f| {
+                if (contHoldsTarget(f.body.continuations, target)) return f;
+            },
+            .module_decl => |*m| {
+                if (findContainingFlow(m.items, target)) |found| return found;
+            },
+            else => {},
+        }
+    }
+    return null;
+}
+fn contHoldsTarget(conts: []const ast.Continuation, target: *const ast.Continuation) bool {
+    for (conts) |*cont| {
+        if (cont == target) return true;
+        if (contHoldsTarget(cont.continuations, target)) return true;
+    }
+    return false;
+}
+
+/// A read-only view of a nested site AS a top-level flow. Handlers build their
+/// replacement from `item.flow.body`, so they must read the SITE's invocation
+/// and children — not the containing flow's. This wraps the site continuation
+/// in a synthetic top-level flow appended to a program copy. It is READ-only:
+/// the heavy old graft (marker + path navigation) is gone — write-back is the
+/// runner's SiteResult splice into the real program afterwards.
+const SiteView = struct { program: *const Program, node: ASTNode };
+fn siteView(allocator: std.mem.Allocator, program: *const Program, holding: *ast.Continuation) !SiteView {
+    const containing = findContainingFlow(program.items, holding) orelse {
+        log.err("TRANSFORM RUNNER BUG: nested transform site not reachable from program root.\n", .{});
+        return error.TransformSiteNotInProgram;
+    };
+    const site_flow = ast.Flow{
+        .body = holding.*,
+        .location = holding.location,
+        .module = containing.module,
+        .is_pure = containing.is_pure,
+        .is_transitively_pure = containing.is_transitively_pure,
+    };
+    const site_items = try allocator.alloc(ast.Item, program.items.len + 1);
+    @memcpy(site_items[0..program.items.len], program.items);
+    site_items[program.items.len] = ast.Item{ .flow = site_flow };
+    const site_program = try allocator.create(Program);
+    site_program.* = program.*;
+    site_program.items = site_items;
+    return .{
+        .program = site_program,
+        .node = ASTNode{ .invocation = site_items[program.items.len].flow.invMut() },
+    };
+}
+
+/// Append new top-level items to a program, returning a fresh program.
+fn appendItems(allocator: std.mem.Allocator, program: *const Program, extra: []const ast.Item) !*const Program {
+    const new_items = try allocator.alloc(ast.Item, program.items.len + extra.len);
+    @memcpy(new_items[0..program.items.len], program.items);
+    @memcpy(new_items[program.items.len..], extra);
+    const np = try allocator.create(Program);
+    np.* = program.*;
+    np.items = new_items;
+    return np;
+}
+
+/// The site-local write-back: place a handler's SiteResult into the program.
+/// The runner OWNS all placement — this is the single splice point that the
+/// per-handler `replaceFlowRecursive` calls collapsed into. Root sites replace
+/// their flow Item directly; nested sites replace the holding continuation's
+/// invocation (node + children) functionally, keyed on the original pointer
+/// (valid because handlers no longer clone the program). Appended items are
+/// added to the top level. Returns the original program pointer if nothing
+/// changed (the no-op signal the caller checks before reaching here).
+fn spliceSiteResult(
+    allocator: std.mem.Allocator,
+    program: *const Program,
+    sr: SiteRef,
+    result: ast.SiteResult,
+) !*const Program {
+    // Whole-program escape: the handler rewrote the entire program (e.g. tap).
+    // Use it verbatim; site-local placement does not apply.
+    if (result.whole_program) |wp| return wp;
+
+    var current: *const Program = program;
+
+    if (result.replacement) |*repl| {
+        if (sr.wrapper) |flow| {
+            // Root site: the site IS a flow's Item — replace it wholesale.
+            const maybe = try ast_functional.replaceFlowRecursive(allocator, current, flow, repl.*);
+            const np = maybe orelse {
+                log.err("TRANSFORM ERROR: root site flow not found during write-back.\n", .{});
+                return error.TransformSiteNotFound;
+            };
+            const boxed = try allocator.create(Program);
+            boxed.* = np;
+            current = boxed;
+        } else {
+            // Nested site: replace the holding continuation's invocation in
+            // place (node + branch continuations), keyed on the original
+            // invocation pointer.
+            const conv = try itemToNode(repl);
+            const target_inv = &sr.holding.node.?.invocation;
+            const maybe = try ast_functional.replaceInvocationNodeAndContinuationsRecursive(
+                allocator,
+                current,
+                target_inv,
+                conv.node,
+                conv.children,
+            );
+            const np = maybe orelse {
+                log.err("TRANSFORM ERROR: nested site invocation not found during write-back.\n", .{});
+                return error.TransformSiteNotFound;
+            };
+            const boxed = try allocator.create(Program);
+            boxed.* = np;
+            current = boxed;
+        }
+    }
+
+    if (result.replacement_node) |nr| {
+        if (sr.wrapper) |flow| {
+            // Root site. A flow's body node must be an invocation (shape
+            // checker, emitter, clone all assume it). So:
+            //  - inline_code node → the flow DISSOLVES into a top-level
+            //    Item.inline_code (e.g. `step`, removed after init fusion).
+            //  - invocation node → rebuild the flow with the new invocation body.
+            // (A non-invocation, non-inline_code node at a flow root has no
+            // representation — reject loudly rather than forge a bad flow.)
+            const new_item: ast.Item = switch (nr.node) {
+                .inline_code => |code| ast.Item{ .inline_code = ast.InlineCode{
+                    .code = code,
+                    .location = flow.location,
+                    .module = flow.module,
+                } },
+                .invocation => blk: {
+                    var new_flow = flow.*;
+                    var new_body = flow.body;
+                    new_body.node = nr.node;
+                    if (nr.children) |ch| new_body.continuations = ch;
+                    new_flow.body = new_body;
+                    break :blk ast.Item{ .flow = new_flow };
+                },
+                else => {
+                    log.err("TRANSFORM ERROR: cannot replace a root-site flow body with a {s} node — only invocation or inline_code are representable at a flow root.\n", .{@tagName(nr.node)});
+                    return error.TransformBadRootNode;
+                },
+            };
+            const maybe = try ast_functional.replaceFlowRecursive(allocator, current, flow, new_item);
+            const np = maybe orelse {
+                log.err("TRANSFORM ERROR: root site flow not found during node write-back.\n", .{});
+                return error.TransformSiteNotFound;
+            };
+            const boxed = try allocator.create(Program);
+            boxed.* = np;
+            current = boxed;
+        } else {
+            // Nested site: replace the holding continuation's invocation node.
+            // null children → keep existing (node-only replace); non-null →
+            // replace node + children.
+            const target_inv = &sr.holding.node.?.invocation;
+            const maybe = if (nr.children) |ch|
+                try ast_functional.replaceInvocationNodeAndContinuationsRecursive(allocator, current, target_inv, nr.node, ch)
+            else
+                try ast_functional.replaceInvocationNodeRecursive(allocator, current, target_inv, nr.node);
+            const np = maybe orelse {
+                log.err("TRANSFORM ERROR: nested site invocation not found during node write-back.\n", .{});
+                return error.TransformSiteNotFound;
+            };
+            const boxed = try allocator.create(Program);
+            boxed.* = np;
+            current = boxed;
+        }
+    }
+
+    if (result.appended.len > 0) {
+        current = try appendItems(allocator, current, result.appended);
+    }
+
+    return current;
+}
+
 
 /// Count how many invocations in the program match the transform.
 /// Includes both top-level flows AND nested invocations in continuations.
@@ -517,11 +449,14 @@ pub const TransformEntry = struct {
     /// downstream structure before peer transforms rewrite it.
     claims_descendants: bool = false,
 
-    /// Handler function that takes (node, program, allocator) and returns transformed program
+    /// Handler function that takes (node, program, allocator) and returns a
+    /// SiteResult — the site-local write-back ABI. The handler describes its
+    /// change as a value (replace this site / append these items); the RUNNER
+    /// owns all placement. Handlers never splice into the whole program.
     /// - node: The ASTNode being transformed (will be .invocation for transforms)
-    /// - program: The current program AST
+    /// - program: The current program AST (immutable to the handler)
     /// - allocator: For any allocations needed during transformation
-    handler_fn: *const fn (node: ASTNode, program: *const Program, allocator: std.mem.Allocator) anyerror!*const Program,
+    handler_fn: *const fn (node: ASTNode, program: *const Program, allocator: std.mem.Allocator) anyerror!ast.SiteResult,
 };
 
 /// Walk entire AST and apply transforms using fixed-point iteration
@@ -747,14 +682,37 @@ fn walkNode(
                     for (transforms) |transform| {
                         if (std.mem.eql(u8, transform.name, handler_name)) {
                             // log.debug("[WALK] -> Matched derive handler: {s}\n", .{handler_name});
-                            const derived = try transform.handler_fn(node, program, allocator);
+                            const result = try transform.handler_fn(node, program, allocator);
 
-                            if (derived == program) {
-                                log.debug("ERROR: Derive handler '{s}' returned same program pointer!\n", .{handler_name});
+                            if (result.replacement == null and result.replacement_node == null and result.whole_program == null and result.appended.len == 0) {
+                                log.debug("ERROR: Derive handler '{s}' produced an empty SiteResult!\n", .{handler_name});
                                 return error.TransformReturnedSamePointer;
                             }
 
-                            return WalkResult{ .found = true, .program = derived };
+                            // Derive operates at the ITEM level: `replacement`
+                            // swaps the derived event_decl (re-annotated so it
+                            // isn't re-processed); `appended` are the generated
+                            // declarations. Build the new program directly,
+                            // matching the source item by pointer identity.
+                            const target_item: *const ast.Item = node.item;
+                            const new_items = try allocator.alloc(ast.Item, program.items.len + result.appended.len);
+                            var w: usize = 0;
+                            for (program.items) |*pit| {
+                                if (pit == target_item and result.replacement != null) {
+                                    new_items[w] = result.replacement.?;
+                                } else {
+                                    new_items[w] = pit.*;
+                                }
+                                w += 1;
+                            }
+                            for (result.appended) |ai| {
+                                new_items[w] = ai;
+                                w += 1;
+                            }
+                            const np = try allocator.create(Program);
+                            np.* = program.*;
+                            np.items = new_items[0..w];
+                            return WalkResult{ .found = true, .program = np };
                         }
                     }
                     // log.debug("[WALK] -> No handler found for derive: {s}\n", .{handler_name});
@@ -774,9 +732,17 @@ const ClaimCandidate = struct {
 
 fn getClaimCandidate(node: ASTNode, position: SitePosition) ?ClaimCandidate {
     return switch (node) {
-        .flow => |flow| ClaimCandidate{
-            .node = ASTNode{ .invocation = flow.invMut() },
-            .position = .{ .site = .{ .holding = &flow.body, .wrapper = flow } },
+        .flow => |flow| blk: {
+            // Only a flow whose body node is an invocation is a transform site.
+            // After a site-local splice a flow's body can be inline_code (e.g. a
+            // root-site kernel op lowered to a loop) — that is already-lowered,
+            // not a candidate.
+            const body_node = flow.body.node orelse break :blk null;
+            if (body_node != .invocation) break :blk null;
+            break :blk ClaimCandidate{
+                .node = ASTNode{ .invocation = flow.invMut() },
+                .position = .{ .site = .{ .holding = &flow.body, .wrapper = flow } },
+            };
         },
         .continuation => |cont| blk: {
             if (cont.node) |*step| {
@@ -807,36 +773,37 @@ fn applyTransform(
     transform: TransformEntry,
     allocator: std.mem.Allocator,
 ) !WalkResult {
-    // Position-agnostic site contract: handlers ALWAYS see their invocation
-    // as a flow's own invocation. A site that already IS some flow's root
-    // body runs directly (the wrapper Item gets replaced); any other site is
-    // wrapped in a synthetic flow first and the handler's result is grafted
-    // back afterwards. This is the write-back dispatch — the ONLY place that
-    // may consult the wrapper.
-    const lifted: ?LiftedSite = switch (position) {
-        .site => |sr| if (sr.wrapper != null) null else try liftSite(allocator, program, sr.holding),
+    // Position-agnostic site contract: the handler sees its invocation and
+    // describes its change as a SiteResult; THIS function owns all placement
+    // (root replace / nested replace / append). No lifting, no grafting.
+    const sr: SiteRef = switch (position) {
+        .site => |s| s,
         .none, .opaque_position => {
             log.err("TRANSFORM ERROR: transform '{s}' matched an invocation at an unsupported AST position (e.g. inside a conditional_block). Transforms can fire on flow invocations and continuation steps only.\n", .{transform.name});
             return error.TransformAtUnsupportedPosition;
         },
     };
 
-    const handler_node = if (lifted) |l| l.site_node else node;
-    const handler_program = if (lifted) |l| l.site_program else program;
+    // Nested sites: hand the handler a read-view where its site IS a top-level
+    // flow, so `item.flow.body` reads the SITE's invocation + children (not the
+    // containing flow's). Root sites already see the real flow item. Write-back
+    // is the SiteResult splice into the REAL program, below.
+    var handler_node = node;
+    var handler_program = program;
+    if (sr.wrapper == null) {
+        const view = try siteView(allocator, program, sr.holding);
+        handler_node = view.node;
+        handler_program = view.program;
+    }
 
-    const transformed = try transform.handler_fn(handler_node, handler_program, allocator);
+    const result = try transform.handler_fn(handler_node, handler_program, allocator);
 
-    // If a transform returns the same pointer, it can't/won't transform
-    // this invocation (e.g., already processed via inline_body but not
-    // annotated with @pass_ran). Instead of aborting all transforms,
-    // mark the invocation as processed so the walker skips it, and
-    // continue looking for other transforms.
-    //
-    // The marking always goes to the REAL invocation (node), never the lifted
-    // copy — the synthetic site program is rebuilt from scratch on the next
-    // walk iteration, so annotations on the copy would be lost.
-    if (transformed == handler_program) {
-        log.debug("Transform '{s}' returned same pointer, marking as processed\n", .{transform.name});
+    // Empty SiteResult = no-op: the handler declined / already processed this
+    // invocation (e.g. inline_body present but not yet @pass_ran-annotated).
+    // Mark the REAL invocation so the walker skips it, and keep going — don't
+    // abort the pipeline. (Mirrors the old same-pointer signal.)
+    if (result.replacement == null and result.replacement_node == null and result.whole_program == null and result.appended.len == 0) {
+        log.debug("Transform '{s}' produced an empty SiteResult, marking as processed\n", .{transform.name});
         const mutable_inv = @constCast(node.invocation);
         const new_annotations = allocator.alloc([]const u8, mutable_inv.annotations.len + 1) catch {
             return error.TransformReturnedSamePointer;
@@ -886,11 +853,16 @@ fn applyTransform(
         return WalkResult{ .found = false, .program = program };
     }
 
+    // Place the change. The runner owns the splice — root site replaces its
+    // flow Item, nested site replaces the holding continuation, appended items
+    // go to the top level. This is the single write-back point.
+    const spliced = try spliceSiteResult(allocator, program, sr, result);
+
     // CIRCUIT BREAKER: Verify the transform made progress.
-    // Count matching flows before and after - if count didn't decrease,
-    // the transform isn't making progress (infinite loop).
-    const count_before = countMatchingFlowsInProgram(transform.name, handler_program);
-    const count_after = countMatchingFlowsInProgram(transform.name, transformed);
+    // Count matching invocations before and after - if the count didn't
+    // decrease, the transform isn't making progress (infinite loop).
+    const count_before = countMatchingFlowsInProgram(transform.name, program);
+    const count_after = countMatchingFlowsInProgram(transform.name, spliced);
 
     if (count_after >= count_before and count_before > 0) {
         log.err("\n", .{});
@@ -898,7 +870,7 @@ fn applyTransform(
         log.err("║  TRANSFORM ERROR: Invocation not replaced!                       ║\n", .{});
         log.err("╚══════════════════════════════════════════════════════════════════╝\n", .{});
         log.err("\n", .{});
-        log.err("Transform '{s}' returned a new program, but matching invocations\n", .{transform.name});
+        log.err("Transform '{s}' produced a SiteResult, but matching invocations\n", .{transform.name});
         log.err("didn't decrease ({d} before, {d} after) - infinite loop detected.\n", .{ count_before, count_after });
         log.err("\n", .{});
         log.err("FIX: Your transform must either:\n", .{});
@@ -908,13 +880,7 @@ fn applyTransform(
         return error.TransformDidNotReplace;
     }
 
-    // Nested site: graft the transformed site back into its real position.
-    if (lifted) |l| {
-        const grafted = try graftSite(allocator, transformed, l);
-        return WalkResult{ .found = true, .program = grafted };
-    }
-
-    return WalkResult{ .found = true, .program = transformed };
+    return WalkResult{ .found = true, .program = spliced };
 }
 
 /// Check if an invocation matches an [expand] event and handle it.
@@ -997,8 +963,9 @@ fn handleExpandIfMatches(
     return WalkResult{ .found = false, .program = program };
 }
 
-/// Apply an [expand] template at any AST position: direct for flow
-/// invocations, lift/graft for continuation steps.
+/// Apply an [expand] template at any AST position. The template produces a
+/// replacement flow Item; the runner's site-local splice places it (root site
+/// replaces the flow, nested site replaces the holding continuation).
 fn applyExpandAtSite(
     node: ASTNode,
     position: SitePosition,
@@ -1006,41 +973,38 @@ fn applyExpandAtSite(
     inv_path: []const u8,
     allocator: std.mem.Allocator,
 ) !WalkResult {
-    switch (position) {
-        .site => |sr| {
-            if (sr.wrapper != null) {
-                return try applyExpandTemplate(node, program, inv_path, allocator);
-            }
-            const lifted = try liftSite(allocator, program, sr.holding);
-            const result = try applyExpandTemplate(lifted.site_node, lifted.site_program, inv_path, allocator);
-            if (!result.found) {
-                return WalkResult{ .found = false, .program = program };
-            }
-            const grafted = try graftSite(allocator, result.program, lifted);
-            return WalkResult{ .found = true, .program = grafted };
-        },
+    const sr: SiteRef = switch (position) {
+        .site => |s| s,
         .none, .opaque_position => {
             log.err("TRANSFORM ERROR: [expand] event '{s}' invoked at an unsupported AST position (e.g. inside a conditional_block). Expansion works on flow invocations and continuation steps only.\n", .{inv_path});
             return error.TransformAtUnsupportedPosition;
         },
-    }
+    };
+    const maybe_item = try applyExpandTemplate(node, position, program, inv_path, allocator);
+    const repl = maybe_item orelse return WalkResult{ .found = false, .program = program };
+    const spliced = try spliceSiteResult(allocator, program, sr, .{ .replacement = repl });
+    return WalkResult{ .found = true, .program = spliced };
 }
 
-/// Apply template expansion to an [expand] invocation
+/// Render an [expand] template into a replacement flow Item (or null if there
+/// is no template / rendering failed). The BODY (branch continuations) and the
+/// invocation come from the SITE itself — root site uses the flow's own body,
+/// a nested site uses the holding continuation — so expansion is position-
+/// agnostic without any lift/graft. Non-structural flow fields (location,
+/// purity, labels) come from the containing flow.
 fn applyExpandTemplate(
     node: ASTNode,
+    position: SitePosition,
     program: *const Program,
     event_name: []const u8,
     allocator: std.mem.Allocator,
-) !WalkResult {
+) !?ast.Item {
     const invocation = node.invocation;
-
-    // log.debug("[EXPAND] Processing: {s}\n", .{event_name});
 
     // Look up template by event name
     const template_source = template_utils.lookupTemplate(program, event_name) orelse {
         log.debug("[EXPAND] WARNING: No template found for '{s}'\n", .{event_name});
-        return WalkResult{ .found = false, .program = program };
+        return null;
     };
 
     // Build Liquid context from invocation args (Expression parameters)
@@ -1051,7 +1015,7 @@ fn applyExpandTemplate(
         if (arg.expression_value) |expr_val| {
             ctx.put(arg.name, .{ .string = expr_val.text }) catch {
                 log.debug("[EXPAND] ERROR: Failed to add arg to context\n", .{});
-                return WalkResult{ .found = false, .program = program };
+                return null;
             };
         }
     }
@@ -1059,92 +1023,49 @@ fn applyExpandTemplate(
     // Render template with Liquid engine
     const inline_body = liquid.render(allocator, template_source, &ctx) catch |err| {
         log.debug("[EXPAND] ERROR: Liquid render failed: {}\n", .{err});
-        return WalkResult{ .found = false, .program = program };
+        return null;
     };
 
-    // log.debug("[EXPAND] Generated: {s}\n", .{inline_body});
-
-    // Find the containing flow and update it with inline_body
+    // Base flow supplies the non-structural fields; the BODY comes from the
+    // site (below), so this works for both root and nested sites.
     const containing_item = ASTNode.findContainingItem(program, invocation) orelse {
         log.debug("[EXPAND] ERROR: Could not find containing item\n", .{});
-        return WalkResult{ .found = false, .program = program };
+        return null;
     };
-
-    const flow = if (containing_item.* == .flow)
+    const base_flow = if (containing_item.* == .flow)
         &containing_item.flow
     else {
         log.debug("[EXPAND] ERROR: Containing item is not a flow\n", .{});
-        return WalkResult{ .found = false, .program = program };
+        return null;
     };
 
-    // Create new invocation with @pass_ran("transform") annotation to prevent re-expansion
-    const new_inv_annotations = allocator.alloc([]const u8, flow.inv().annotations.len + 1) catch {
-        log.debug("[EXPAND] ERROR: Failed to allocate annotations\n", .{});
-        return WalkResult{ .found = false, .program = program };
-    };
-    for (flow.inv().annotations, 0..) |ann, i| {
+    // @pass_ran on the site invocation so it isn't re-expanded.
+    const new_inv_annotations = try allocator.alloc([]const u8, invocation.annotations.len + 1);
+    for (invocation.annotations, 0..) |ann, i| {
         new_inv_annotations[i] = ann;
     }
-    new_inv_annotations[flow.inv().annotations.len] = allocator.dupe(u8, "@pass_ran(\"transform\")") catch {
-        log.debug("[EXPAND] ERROR: Failed to dupe annotation\n", .{});
-        return WalkResult{ .found = false, .program = program };
-    };
+    new_inv_annotations[invocation.annotations.len] = try allocator.dupe(u8, "@pass_ran(\"transform\")");
 
     const new_invocation = ast.Invocation{
-        .path = flow.inv().path,
-        .args = flow.inv().args,
+        .path = invocation.path,
+        .args = invocation.args,
         .annotations = new_inv_annotations,
-        .inserted_by_tap = flow.inv().inserted_by_tap,
-        .from_opaque_tap = flow.inv().from_opaque_tap,
+        .inserted_by_tap = invocation.inserted_by_tap,
+        .from_opaque_tap = invocation.from_opaque_tap,
     };
 
-    // For expand with continuations:
-    // - Set inline_body to the template output (produces union value)
-    // - Keep continuations as-is (for validation and branch bodies)
-    // - The emitter will detect inline_body + continuations and generate a switch
-    //
-    // This preserves flow validation (branches match event definition) while
-    // still allowing the template to provide the switch expression.
-
-    // Create new flow with inline_body set (emitter handles the switch
-    // generation). The body keeps the original branch handlers; only the
-    // node (invocation) is swapped.
-    var new_body = flow.body;
+    // Body comes from the SITE: root → the flow's own body; nested → the
+    // holding continuation. Branch continuations are preserved; only the node
+    // (invocation) is swapped. inline_body carries the template output and the
+    // emitter generates the switch.
+    var new_body: ast.Continuation = switch (position) {
+        .site => |sr| if (sr.wrapper != null) base_flow.body else sr.holding.*,
+        else => base_flow.body,
+    };
     new_body.node = .{ .invocation = new_invocation };
-    const new_flow = ast.Flow{
-        .body = new_body,
-        .annotations = flow.annotations,
-        .pre_label = flow.pre_label,
-        .post_label = flow.post_label,
-        .super_shape = flow.super_shape,
-        .inline_body = inline_body, // Template output becomes inline_body
-        .preamble_code = flow.preamble_code,
-        .is_pure = flow.is_pure,
-        .is_transitively_pure = flow.is_transitively_pure,
-        .impl_of = flow.impl_of,
-        .is_impl = flow.is_impl,
-        .location = flow.location,
-        .module = flow.module,
-    };
 
-    const new_item = ast.Item{ .flow = new_flow };
-
-    // Replace in program
-    const maybe_new_program = ast_functional.replaceFlowRecursive(
-        allocator,
-        program,
-        flow,
-        new_item,
-    ) catch {
-        log.debug("[EXPAND] ERROR: Failed to replace flow in program\n", .{});
-        return WalkResult{ .found = false, .program = program };
-    };
-
-    if (maybe_new_program) |new_program| {
-        const result = allocator.create(Program) catch unreachable;
-        result.* = new_program;
-        return WalkResult{ .found = true, .program = result };
-    }
-
-    return WalkResult{ .found = false, .program = program };
+    var new_flow = base_flow.*;
+    new_flow.body = new_body;
+    new_flow.inline_body = inline_body;
+    return ast.Item{ .flow = new_flow };
 }

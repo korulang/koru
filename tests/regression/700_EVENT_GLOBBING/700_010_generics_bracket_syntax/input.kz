@@ -21,12 +21,11 @@
     item: *const Item,
     program: *const Program,
 }
-| transformed *const Program
+| transformed SiteResult
 
 ~proc ring.*|zig {
     const std = @import("std");
     const ast = @import("ast");
-    const ast_functional = @import("ast_functional");
     const allocator = std.heap.page_allocator;
 
     // Parse generic params from event_name
@@ -38,7 +37,7 @@
 
     if (bracket_start == null or bracket_end == null) {
         // No generic params - this is fine for some ring operations
-        return .{ .transformed = program };
+        return .{ .transformed = .{} };
     }
 
     const command = event_name[5..bracket_start.?]; // Skip "ring."
@@ -52,7 +51,7 @@
         .{ command, params_str }
     ) catch unreachable;
 
-    const flow = if (item.* == .flow) &item.flow else return .{ .transformed = program };
+    const flow = if (item.* == .flow) &item.flow else return .{ .transformed = .{} };
 
     const inline_code_item = ast.Item{
         .inline_code = ast.InlineCode{
@@ -62,13 +61,7 @@
         },
     };
 
-    const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, inline_code_item) catch unreachable;
-    if (maybe_new_program) |new_program| {
-        const result = allocator.create(ast.Program) catch unreachable;
-        result.* = new_program;
-        return .{ .transformed = result };
-    }
-    return .{ .transformed = program };
+    return .{ .transformed = .{ .replacement = inline_code_item } };
 }
 
 // This invocation has generic params in brackets

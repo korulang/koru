@@ -144,17 +144,16 @@ const std = @import("std");
     program: *const Program,
     allocator: std.mem.Allocator
 }
-| transformed *const Program
+| transformed SiteResult
 
 ~proc capture|zig {
     const ast = @import("ast");
-    const ast_functional = @import("ast_functional");
     const struct_literal = @import("struct_literal");
 
     const flow = if (item.* == .flow)
         &item.flow
     else
-        return .{ .transformed = program };
+        return .{ .transformed = .{} };
 
     // Position-agnostic: the runner lifts nested sites into a synthetic
     // top-level flow, so `invocation` IS the flow's own invocation at every depth.
@@ -165,7 +164,7 @@ const std = @import("std");
     _ = invocation;
 
     // Idempotency: a prior run already set preamble_code.
-    if (flow.preamble_code != null) return .{ .transformed = program };
+    if (flow.preamble_code != null) return .{ .transformed = .{} };
 
     // --- Find `! as <cell>` (the mutable cell) and `| captured <result>` (the
     //     after-read). Mirrors ~const's `| as` lookup. ---
@@ -184,7 +183,7 @@ const std = @import("std");
     }
     if (as_cont == null) {
         std.debug.print("ERROR: ~capture missing `! as` cell binding\n", .{});
-        return .{ .transformed = program };
+        return .{ .transformed = .{} };
     }
 
     // The cell's fields, in declaration order, parsed ONCE via the struct-literal
@@ -363,15 +362,7 @@ const std = @import("std");
     };
 
     const new_item = ast.Item{ .flow = transformed_flow };
-    const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
-    if (maybe_new_program) |new_program| {
-        const result = allocator.create(ast.Program) catch unreachable;
-        result.* = new_program;
-        return .{ .transformed = result };
-    } else {
-        std.debug.print("ERROR: ~capture transform failed - flow not found in program\n", .{});
-        @panic("capture transform: flow not found");
-    }
+    return .{ .transformed = .{ .replacement = new_item } };
 }
 
 // ============================================================================

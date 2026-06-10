@@ -230,7 +230,7 @@ const validateMocks = struct {
     program: *const Program,
     allocator: std.mem.Allocator
 }
-| transformed *const Program
+| transformed SiteResult
 
 ~[comptime|retain] pub event validate-mocks {
     program: *const Program,
@@ -261,7 +261,7 @@ const validateMocks = struct {
     const flow = if (item.* == .flow)
         &item.flow
     else
-        return .{ .transformed = program };
+        return .{ .transformed = .{} };
 
     // Position-agnostic: the runner lifts nested sites into a synthetic
     // top-level flow, so `invocation` IS the flow's own invocation at every depth.
@@ -332,7 +332,7 @@ const validateMocks = struct {
 
     // Clone program AST
     const cloned_program = ast_functional.cloneSourceFile(allocator, program) catch {
-        return .{ .transformed = program };
+        return .{ .transformed = .{} };
     };
 
     // Build test module items: program items with mocks substituted
@@ -592,13 +592,7 @@ const validateMocks = struct {
         .module = allocator.dupe(u8, flow.module) catch unreachable,
     } };
 
-    const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
-    if (maybe_new_program) |new_program| {
-        const result_program = allocator.create(ast.Program) catch unreachable;
-        result_program.* = new_program;
-        return .{ .transformed = result_program };
-    }
-    return .{ .transformed = program };
+    return .{ .transformed = .{ .replacement = new_item } };
 }
 
 // Helper: Walk flow checking purity
@@ -818,18 +812,17 @@ const emitFlowWithMocks = struct {
     program: *const Program,
     allocator: std.mem.Allocator
 }
-| transformed *const Program
+| transformed SiteResult
 
 ~proc assert|zig {
     const std_import = @import("std");
     const ast = @import("ast");
-    const ast_functional = @import("ast_functional");
 
     // Get the flow from the item
     const flow = if (item.* == .flow)
         &item.flow
     else
-        return .{ .transformed = program };
+        return .{ .transformed = .{} };
 
     // Position-agnostic: the runner lifts nested sites into a synthetic
     // top-level flow, so `invocation` IS the flow's own invocation at every depth.
@@ -878,13 +871,7 @@ const emitFlowWithMocks = struct {
 
     const new_item = ast.Item{ .flow = transformed_flow };
 
-    const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
-    if (maybe_new_program) |new_program| {
-        const result = allocator.create(ast.Program) catch unreachable;
-        result.* = new_program;
-        return .{ .transformed = result };
-    }
-    return .{ .transformed = program };
+    return .{ .transformed = .{ .replacement = new_item } };
 }
 
 // Simple pass - marks a test branch as passing (noop)

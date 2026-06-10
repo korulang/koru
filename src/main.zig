@@ -1635,7 +1635,7 @@ fn generateTransformHandlers(writer: anytype, allocator: std.mem.Allocator, sour
                             // Check for old-style struct field or identity syntax (__type_ref)
                             if (std.mem.eql(u8, field.name, "program") or
                                 (std.mem.eql(u8, field.name, "__type_ref") and
-                                 std.mem.indexOf(u8, field.type, "Program") != null)) {
+                                 (std.mem.indexOf(u8, field.type, "Program") != null or std.mem.indexOf(u8, field.type, "SiteResult") != null))) {
                                 returns_program = true;
                                 break;
                             }
@@ -1762,7 +1762,7 @@ fn generateTransformHandlers(writer: anytype, allocator: std.mem.Allocator, sour
                                     // Check for old-style struct field or identity syntax (__type_ref)
                                     if (std.mem.eql(u8, field.name, "program") or
                                         (std.mem.eql(u8, field.name, "__type_ref") and
-                                         std.mem.indexOf(u8, field.type, "Program") != null)) {
+                                         (std.mem.indexOf(u8, field.type, "Program") != null or std.mem.indexOf(u8, field.type, "SiteResult") != null))) {
                                         returns_program = true;
                                         break;
                                     }
@@ -2069,7 +2069,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                             // Check for old-style struct field or identity syntax (__type_ref)
                             if (std.mem.eql(u8, field.name, "program") or
                                 (std.mem.eql(u8, field.name, "__type_ref") and
-                                 std.mem.indexOf(u8, field.type, "Program") != null)) {
+                                 (std.mem.indexOf(u8, field.type, "Program") != null or std.mem.indexOf(u8, field.type, "SiteResult") != null))) {
                                 returns_program = true;
                                 break;
                             }
@@ -2218,7 +2218,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                                     // Check for old-style struct field or identity syntax (__type_ref)
                                     if (std.mem.eql(u8, field.name, "program") or
                                         (std.mem.eql(u8, field.name, "__type_ref") and
-                                         std.mem.indexOf(u8, field.type, "Program") != null)) {
+                                         (std.mem.indexOf(u8, field.type, "Program") != null or std.mem.indexOf(u8, field.type, "SiteResult") != null))) {
                                         returns_program = true;
                                         break;
                                     }
@@ -2292,7 +2292,8 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
     try code_emitter.write("// Transform handler imports\n");
     try code_emitter.write("const transform_std = __koru_std;\n");
     try code_emitter.write("const Arg = __koru_ast.Arg;\n");
-    try code_emitter.write("const Flow = __koru_ast.Flow;\n\n");
+    try code_emitter.write("const Flow = __koru_ast.Flow;\n");
+    try code_emitter.write("const SiteResult = __koru_ast.SiteResult;\n\n");
 
     // Helper to extract Source from flow arguments
     try code_emitter.write("// Helper: Extract Source struct from flow arguments\n");
@@ -2345,7 +2346,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
         try code_emitter.write("// Uses unified ASTNode interface for generic AST traversal\n");
 
         // Function signature
-        const fn_sig = try std.fmt.bufPrint(&buf, "fn call_handler_{s}(node: __koru_ast.ASTNode, program: *const __koru_ast.Program, allocator: transform_std.mem.Allocator) !*const __koru_ast.Program {{\n", .{event.stub_name});
+        const fn_sig = try std.fmt.bufPrint(&buf, "fn call_handler_{s}(node: __koru_ast.ASTNode, program: *const __koru_ast.Program, allocator: transform_std.mem.Allocator) !__koru_ast.SiteResult {{\n", .{event.stub_name});
         try code_emitter.write(fn_sig);
 
         // Extract the appropriate data from the node based on handler type
@@ -2588,7 +2589,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                 try code_emitter.write("        };\n");
             } else {
                 try code_emitter.write("        _ = handler.handler(input);\n");
-                try code_emitter.write("        return program;  // Source-capture events don't modify program\n");
+                try code_emitter.write("        return .{};  // Source-capture events don't modify the program\n");
             }
         }
 
@@ -2596,7 +2597,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
         if (!event.has_event_decl) {
             if (event.has_source or event.has_expression) {
                 try code_emitter.write("    } else {\n");
-                try code_emitter.write("        return program;  // Required args not present, return unchanged\n");
+                try code_emitter.write("        return .{};  // Required args not present, no change\n");
                 try code_emitter.write("    }\n");
             } else {
                 try code_emitter.write("    }\n");

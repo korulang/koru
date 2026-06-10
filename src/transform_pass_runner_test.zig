@@ -76,38 +76,24 @@ fn makeProgramWithNestedInvocation(allocator: std.mem.Allocator) !*ast.Program {
     return program;
 }
 
-fn innerTransform(node: ast.ASTNode, program: *const ast.Program, allocator: std.mem.Allocator) !*const ast.Program {
+fn innerTransform(node: ast.ASTNode, program: *const ast.Program, allocator: std.mem.Allocator) !ast.SiteResult {
+    _ = node;
+    _ = program;
     recordObservation("inner");
 
-    // Position-agnostic site contract: the runner lifts nested sites, so the
-    // handler ALWAYS sees its invocation as a flow's own invocation and
-    // writes back by replacing that flow — no position fork, no
-    // nested-pointer surgery. The runner grafts the result back.
-    const item = ast.ASTNode.findContainingItem(program, node.invocation) orelse {
-        return error.TestMissingContainingItem;
-    };
-    if (item.* != .flow) return error.TestSiteNotAFlow;
-    const flow = &item.flow;
-    if (node.invocation != flow.inv()) {
-        // The structural invariant the new contract guarantees.
-        return error.TestPositionLeaked;
-    }
-
+    // Site-local write-back: the handler DESCRIBES its change (replace this
+    // site with lowered inline_code) and returns it as a value. The runner
+    // owns placement — it splices this into the nested site directly, no
+    // lift/graft, no whole-program clone here.
     const lowered_item = ast.Item{ .inline_code = ast.InlineCode{
         .code = try allocator.dupe(u8, "// inner lowered"),
-        .location = flow.location,
-        .module = try allocator.dupe(u8, flow.module),
+        .location = .{ .file = "generated", .line = 0, .column = 0 },
+        .module = try allocator.dupe(u8, "test"),
     } };
-    const replaced = try ast_functional.replaceFlowRecursive(allocator, program, flow, lowered_item) orelse {
-        return error.TestReplaceFailed;
-    };
-
-    const result = try allocator.create(ast.Program);
-    result.* = replaced;
-    return result;
+    return .{ .replacement = lowered_item };
 }
 
-fn outerTransform(node: ast.ASTNode, program: *const ast.Program, allocator: std.mem.Allocator) !*const ast.Program {
+fn outerTransform(node: ast.ASTNode, program: *const ast.Program, allocator: std.mem.Allocator) !ast.SiteResult {
     _ = node;
     _ = allocator;
 
@@ -117,10 +103,10 @@ fn outerTransform(node: ast.ASTNode, program: *const ast.Program, allocator: std
     const child_node = flow.body.continuations[0].node orelse return error.MissingChildNode;
     outer_saw_inner_inline = child_node == .inline_code;
 
-    return program;
+    return .{}; // no-op: observe only
 }
 
-fn outerClaimingTransform(node: ast.ASTNode, program: *const ast.Program, allocator: std.mem.Allocator) !*const ast.Program {
+fn outerClaimingTransform(node: ast.ASTNode, program: *const ast.Program, allocator: std.mem.Allocator) !ast.SiteResult {
     _ = node;
     _ = allocator;
 
@@ -132,7 +118,7 @@ fn outerClaimingTransform(node: ast.ASTNode, program: *const ast.Program, alloca
         outer_saw_raw_inner_invocation = std.mem.eql(u8, child_node.invocation.path.segments[0], "inner");
     }
 
-    return program;
+    return .{}; // no-op: observe only
 }
 
 test "transform runner prefers nested transform before outer owner candidate" {

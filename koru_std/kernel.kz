@@ -85,7 +85,7 @@ const std = @import("std");
     program: *const Program,
     allocator: std.mem.Allocator
 }
-| transformed *const Program
+| transformed SiteResult
 
 ~proc init|zig {
     const ast = @import("ast");
@@ -451,20 +451,7 @@ const std = @import("std");
                 },
             };
 
-            const maybe_error_program = ast_functional.replaceFlowRecursive(
-                allocator,
-                program,
-                flow,
-                compile_error_item,
-            ) catch unreachable;
-
-            if (maybe_error_program) |error_program| {
-                const result = allocator.create(ast.Program) catch unreachable;
-                result.* = error_program;
-                return .{ .transformed = result };
-            }
-
-            @panic("kernel.init: compile error flow replacement failed");
+            return .{ .transformed = .{ .replacement = compile_error_item } };
         }
     }
 
@@ -494,18 +481,7 @@ const std = @import("std");
             },
         };
 
-        const maybe_computed_error_program = ast_functional.replaceFlowRecursive(
-            allocator,
-            program,
-            flow,
-            computed_error_item,
-        ) catch unreachable;
-
-        if (maybe_computed_error_program) |error_program| {
-            const result = allocator.create(ast.Program) catch unreachable;
-            result.* = error_program;
-            return .{ .transformed = result };
-        }
+        return .{ .transformed = .{ .replacement = computed_error_item } };
     }
 
     // Collect kernel ops for fusion
@@ -848,9 +824,11 @@ const std = @import("std");
         };
     }
 
-    // Replace flow in program
-    const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
-    if (maybe_new_program) |new_program| {
+    // kernel.init replaces its site with new_item and appends the generated
+    // host type (if needed), static decl, and local init event + proc as new
+    // top-level items. The runner owns placement; Zig top-level decl order is
+    // irrelevant, so appending is equivalent to the old insertAt.
+    {
         const slice_type = std.fmt.allocPrint(allocator, "[]{s}", .{type_name}) catch unreachable;
         const branch_fields = allocator.alloc(ast.Field, 1) catch unreachable;
         branch_fields[0] = ast.Field{
@@ -914,19 +892,6 @@ const std = @import("std");
             },
         };
         
-        var res_program = new_program;
-        var insert_index: usize = 0;
-        if (!has_host_type) {
-            const local_type_item = ast.Item{
-                .host_type_decl = ast.HostTypeDecl{
-                    .name = allocator.dupe(u8, type_name) catch unreachable,
-                    .shape = ast.Shape{ .fields = type_fields },
-                },
-            };
-            res_program = ast_functional.insertAt(allocator, &res_program, insert_index, local_type_item) catch unreachable;
-            insert_index = 1;
-        }
-
         const static_item = ast.Item{
             .host_line = ast.HostLine{
                 .content = allocator.dupe(u8, static_decl) catch unreachable,
@@ -935,15 +900,25 @@ const std = @import("std");
             },
         };
 
-        const res_prog_raw = ast_functional.insertAt(allocator, &res_program, insert_index, static_item) catch unreachable;
-        const res_prog_raw2 = ast_functional.insertAt(allocator, &res_prog_raw, insert_index + 1, local_init_item) catch unreachable;
-        const res_prog_raw3 = ast_functional.insertAt(allocator, &res_prog_raw2, insert_index + 2, local_init_proc) catch unreachable;
-        const res_program_ptr = allocator.create(ast.Program) catch unreachable;
-        res_program_ptr.* = res_prog_raw3;
-        return .{ .transformed = res_program_ptr };
+        const appended = allocator.alloc(ast.Item, if (has_host_type) 3 else 4) catch unreachable;
+        var ai: usize = 0;
+        if (!has_host_type) {
+            appended[ai] = ast.Item{
+                .host_type_decl = ast.HostTypeDecl{
+                    .name = allocator.dupe(u8, type_name) catch unreachable,
+                    .shape = ast.Shape{ .fields = type_fields },
+                },
+            };
+            ai += 1;
+        }
+        appended[ai] = static_item;
+        ai += 1;
+        appended[ai] = local_init_item;
+        ai += 1;
+        appended[ai] = local_init_proc;
+        ai += 1;
+        return .{ .transformed = .{ .replacement = new_item, .appended = appended } };
     }
-
-    @panic("kernel.init: replaceFlowRecursive failed");
 }
 
 // ============================================================================
@@ -980,11 +955,10 @@ const std = @import("std");
     program: *const Program,
     allocator: std.mem.Allocator
 }
-| transformed *const Program
+| transformed SiteResult
 
 ~proc pairwise|zig {
     const ast = @import("ast");
-    const ast_functional = @import("ast_functional");
 
     // Get the flow from the item
     const flow = if (item.* == .flow)
@@ -1231,18 +1205,7 @@ const std = @import("std");
         // STANDARD CASE: replace pairwise with inline i/j loops only
         // ====================================================================
         const new_node = ast.Node{ .inline_code = code };
-        const maybe_new_program = ast_functional.replaceInvocationNodeRecursive(
-            allocator,
-            program,
-            invocation,
-            new_node,
-        ) catch unreachable;
-        if (maybe_new_program) |new_program| {
-            const result = allocator.create(ast.Program) catch unreachable;
-            result.* = new_program;
-            return .{ .transformed = result };
-        }
-        @panic("kernel.pairwise: replaceInvocationNodeRecursive returned null - flow not found in AST");
+        return .{ .transformed = .{ .replacement_node = .{ .node = new_node } } };
     }
 
     // ========================================================================
@@ -1284,20 +1247,7 @@ const std = @import("std");
     }};
 
     const empty_conts = allocator.alloc(ast.Continuation, 0) catch unreachable;
-    const maybe_new_program = ast_functional.replaceInvocationNodeAndContinuationsRecursive(
-        allocator,
-        program,
-        invocation,
-        foreach_node,
-        empty_conts,
-    ) catch unreachable;
-    if (maybe_new_program) |new_program| {
-        const result = allocator.create(ast.Program) catch unreachable;
-        result.* = new_program;
-        return .{ .transformed = result };
-    }
-
-    @panic("kernel.pairwise: outer-range ForeachNode replacement failed - flow not found in AST");
+    return .{ .transformed = .{ .replacement_node = .{ .node = foreach_node, .children = empty_conts } } };
 }
 
 // ============================================================================
@@ -1324,11 +1274,10 @@ const std = @import("std");
     program: *const Program,
     allocator: std.mem.Allocator
 }
-| transformed *const Program
+| transformed SiteResult
 
 ~proc self|zig {
     const ast = @import("ast");
-    const ast_functional = @import("ast_functional");
 
     const flow = if (item.* == .flow)
         &item.flow
@@ -1532,18 +1481,7 @@ const std = @import("std");
 
     // Replace invocation with inline code
     const new_node = ast.Node{ .inline_code = loop_code };
-    const maybe_new_program = ast_functional.replaceInvocationNodeRecursive(
-        allocator,
-        program,
-        invocation,
-        new_node,
-    ) catch unreachable;
-    if (maybe_new_program) |new_program| {
-        const result = allocator.create(ast.Program) catch unreachable;
-        result.* = new_program;
-        return .{ .transformed = result };
-    }
-    @panic("kernel.self: replaceInvocationNodeRecursive returned null - flow not found in AST");
+    return .{ .transformed = .{ .replacement_node = .{ .node = new_node } } };
 }
 
 // Kernel:step - wraps kernel ops in an outer iteration loop
@@ -1557,15 +1495,14 @@ const std = @import("std");
     program: *const Program,
     allocator: std.mem.Allocator,
 }
-| transformed *const Program
+| transformed SiteResult
 
 ~proc step|zig {
     _ = expr;
     const ast = @import("ast");
-    const ast_functional = @import("ast_functional");
-    
+
     // Find the continuation containing this step invocation to check for | step |>
-    const flow = if (item.* == .flow) &item.flow else return .{ .transformed = program };
+    const flow = if (item.* == .flow) &item.flow else return .{ .transformed = .{} };
     
     const findStepCont = struct {
         fn search(conts: []const ast.Continuation, target: *const ast.Invocation) ?*const ast.Continuation {
@@ -1603,15 +1540,7 @@ const std = @import("std");
     }
     
     const empty_node = ast.Node{ .inline_code = "" };
-    const maybe_new = ast_functional.replaceInvocationNodeAndContinuationsRecursive(
-        allocator, program, invocation, empty_node, new_conts
-    ) catch unreachable;
-    if (maybe_new) |new_program| {
-        const result = allocator.create(ast.Program) catch unreachable;
-        result.* = new_program;
-        return .{ .transformed = result };
-    }
-    return .{ .transformed = program };
+    return .{ .transformed = .{ .replacement_node = .{ .node = empty_node, .children = new_conts } } };
 }
 
 // ============================================================================

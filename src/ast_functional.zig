@@ -1261,15 +1261,11 @@ fn cloneProcDecl(allocator: std.mem.Allocator, proc: *const ast.ProcDecl) !ast.P
 }
 
 fn cloneFlow(allocator: std.mem.Allocator, flow: *const ast.Flow) CloneError!ast.Flow {
-    var continuations = try allocator.alloc(ast.Continuation, flow.body.continuations.len);
-    errdefer allocator.free(continuations);
-
-    for (flow.body.continuations, 0..) |*cont, i| {
-        continuations[i] = try cloneContinuation(allocator, cont);
-    }
-
+    // Clone the body continuation generically — its node may be an invocation
+    // (the common case) OR a non-invocation (e.g. inline_code, after a root-site
+    // transform lowered the flow's invocation in place). Don't assume invocation.
     return .{
-        .body = ast.rootSite(try cloneInvocation(allocator, flow.inv()), continuations, flow.location),
+        .body = try cloneContinuation(allocator, &flow.body),
         .pre_label = if (flow.pre_label) |l| try allocator.dupe(u8, l) else null,
         .post_label = if (flow.post_label) |l| try allocator.dupe(u8, l) else null,
         .super_shape = null, // TODO: clone super_shape if needed

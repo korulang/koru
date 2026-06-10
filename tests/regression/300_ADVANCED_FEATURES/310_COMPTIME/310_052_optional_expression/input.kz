@@ -15,11 +15,10 @@ const std = @import("std");
     program: *const Program,
     allocator: std.mem.Allocator
 }
-| transformed *const Program
+| transformed SiteResult
 
 ~proc labeled|zig {
     const ast = @import("ast");
-    const ast_functional = @import("ast_functional");
 
     // expr is ?[]const u8 — null when called without (), non-null otherwise
     const text: []const u8 = if (expr != null) "yes" else "no";
@@ -37,13 +36,7 @@ const std = @import("std");
         .location = flow.location,
         .module = allocator.dupe(u8, flow.module) catch unreachable,
     } };
-    const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
-    if (maybe_new_program) |new_program| {
-        const result = allocator.create(ast.Program) catch unreachable;
-        result.* = new_program;
-        return .{ .transformed = result };
-    }
-    @panic("labeled: replacement failed");
+    return .{ .transformed = .{ .replacement = new_item } };
 }
 
 // The invocations sit nested under a noop chain on purpose: they exercise the

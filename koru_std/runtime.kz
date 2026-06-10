@@ -26,11 +26,10 @@ const koru_parser = @import("koru_parser");
     program: *const Program,
     allocator: std.mem.Allocator
 }
-| transformed *const Program
+| transformed SiteResult
 
 ~proc register|zig {
     const ast_reg = @import("ast");
-    const ast_functional = @import("ast_functional");
     const CompilerEnvRt = @import("root").CompilerEnv;
     const registry_helpers_marker = "__KORU_RUNTIME_REGISTRY_HELPERS__";
 
@@ -183,7 +182,7 @@ const koru_parser = @import("koru_parser");
     };
 
     // Get the flow from the item
-    const flow = if (item.* == .flow) &item.flow else return .{ .transformed = program };
+    const flow = if (item.* == .flow) &item.flow else return .{ .transformed = .{} };
 
     // Extract scope name from args or registry annotations
     const scope_name = Helpers.extractScopeName(invocation, flow.annotations);
@@ -1105,14 +1104,7 @@ const koru_parser = @import("koru_parser");
         },
     };
 
-    const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
-    if (maybe_new_program) |new_program| {
-        const result = allocator.create(ast_reg.Program) catch unreachable;
-        result.* = new_program;
-        return .{ .transformed = result };
-    }
-
-    return .{ .transformed = program };
+    return .{ .transformed = .{ .replacement = new_item } };
 }
 
 // ============================================================================

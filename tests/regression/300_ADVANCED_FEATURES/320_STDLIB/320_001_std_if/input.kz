@@ -34,17 +34,16 @@ const std = @import("std");
     program: *const Program,
     allocator: std.mem.Allocator
 }
-| transformed *const Program
+| transformed SiteResult
 
 ~proc my-if|zig {
     const ast = @import("ast");
-    const ast_functional = @import("ast_functional");
 
     std.debug.print("my_if transform: expr=\"{s}\"\n", .{expr});
 
     if (item.* != .flow) {
         std.debug.print("my_if transform: item is not a flow, returning unchanged\n", .{});
-        return .{ .transformed = program };
+        return .{ .transformed = .{} };
     }
 
     const flow = &item.flow;
@@ -87,24 +86,8 @@ const std = @import("std");
 
     const transformed_item = ast.Item{ .flow = transformed_flow };
 
-    // Find the index of the item we're transforming and replace it
-    var item_index: ?usize = null;
-    for (program.items, 0..) |*prog_item, idx| {
-        if (prog_item == item) {
-            item_index = idx;
-            break;
-        }
-    }
-
-    if (item_index) |idx| {
-        const new_program = ast_functional.replaceAt(allocator, program, idx, transformed_item) catch unreachable;
-        const result = allocator.create(ast.Program) catch unreachable;
-        result.* = new_program;
-        return .{ .transformed = result };
-    } else {
-        std.debug.print("my_if transform: item not found in program.items\n", .{});
-        return .{ .transformed = program };
-    }
+    // Site-local: hand back the replacement; the runner places it.
+    return .{ .transformed = .{ .replacement = transformed_item } };
 }
 
 // ============================================================================

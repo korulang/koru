@@ -14,7 +14,7 @@ const std = @import("std");
     program: *const Program,
     allocator: std.mem.Allocator
 }
-| transformed *const Program
+| transformed SiteResult
 
 ~proc conditional.render|zig {
     // For this test, just prove we received both parameters
@@ -27,7 +27,7 @@ const std = @import("std");
     std.debug.print("Source bindings: {d}\n", .{source.scope.bindings.len});
 
     // Return program unchanged for now
-    return .{ .transformed = program };
+    return .{ .transformed = .{} };
 }
 
 // Test: Use both implicit expression AND implicit source block
