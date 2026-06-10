@@ -165,6 +165,11 @@ tests/scratchpad/
 !tests/regression/**/post.sh
 !tests/regression/**/*.c
 
+# Vestigial pre-refactor compiler-backend snapshot. The live compiler emits a
+# thin-driver backend.zig per-compile (with PROGRAM_AST split into
+# program_ast.zig); this monolith is not consumed by the build or suite.
+koru_std/backend.zig
+
 # Regression test generated files (ignored at any depth)
 tests/regression/**/backend
 tests/regression/**/backend.zig
