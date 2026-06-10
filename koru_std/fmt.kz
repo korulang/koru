@@ -121,7 +121,9 @@ pub const FormattedText = struct {
     else
         return .{ .formatted = undefined };
 
-    const is_top_level = (invocation == &flow.invocation);
+    // Position-agnostic: the runner lifts nested sites, so `invocation` IS
+    // `flow.invocation` at every depth. No position fork.
+    _ = invocation;
 
     // Parse the Source content for {{ ... }} placeholders
     var format_buf = std.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
@@ -219,57 +221,54 @@ pub const FormattedText = struct {
         .{ format_buf.items, args_buf.items }
     ) catch unreachable;
 
-    if (is_top_level) {
-        // Create impl path for shape checking
-        const impl_segments = allocator.alloc([]const u8, 2) catch unreachable;
-        impl_segments[0] = allocator.dupe(u8, "fmt") catch unreachable;
-        impl_segments[1] = allocator.dupe(u8, "blk.impl") catch unreachable;
-        const impl_path = ast.DottedPath{
-            .module_qualifier = flow.invocation.path.module_qualifier,
-            .segments = impl_segments,
-        };
+    // Position-agnostic: one write-back path at every depth (the runner lifts
+    // nested sites and grafts the result back).
+    // Create impl path for shape checking
+    const impl_segments = allocator.alloc([]const u8, 2) catch unreachable;
+    impl_segments[0] = allocator.dupe(u8, "fmt") catch unreachable;
+    impl_segments[1] = allocator.dupe(u8, "blk.impl") catch unreachable;
+    const impl_path = ast.DottedPath{
+        .module_qualifier = flow.invocation.path.module_qualifier,
+        .segments = impl_segments,
+    };
 
-        const new_inv_annotations = allocator.alloc([]const u8, flow.invocation.annotations.len + 1) catch unreachable;
-        for (flow.invocation.annotations, 0..) |ann, idx| {
-            new_inv_annotations[idx] = ann;
-        }
-        new_inv_annotations[flow.invocation.annotations.len] = allocator.dupe(u8, "@pass_ran(\"transform\")") catch unreachable;
+    const new_inv_annotations = allocator.alloc([]const u8, flow.invocation.annotations.len + 1) catch unreachable;
+    for (flow.invocation.annotations, 0..) |ann, idx| {
+        new_inv_annotations[idx] = ann;
+    }
+    new_inv_annotations[flow.invocation.annotations.len] = allocator.dupe(u8, "@pass_ran(\"transform\")") catch unreachable;
 
-        const new_invocation = ast.Invocation{
-            .path = impl_path,
-            .args = flow.invocation.args,
-            .annotations = new_inv_annotations,
-            .inserted_by_tap = flow.invocation.inserted_by_tap,
-            .from_opaque_tap = flow.invocation.from_opaque_tap,
-        };
+    const new_invocation = ast.Invocation{
+        .path = impl_path,
+        .args = flow.invocation.args,
+        .annotations = new_inv_annotations,
+        .inserted_by_tap = flow.invocation.inserted_by_tap,
+        .from_opaque_tap = flow.invocation.from_opaque_tap,
+    };
 
-        const transformed_flow = ast.Flow{
-            .invocation = new_invocation,
-            .continuations = flow.continuations,
-            .annotations = flow.annotations,
-            .pre_label = flow.pre_label,
-            .post_label = flow.post_label,
-            .super_shape = flow.super_shape,
-            .inline_body = inline_code,
-            .is_pure = flow.is_pure,
-            .is_transitively_pure = flow.is_transitively_pure,
-            .impl_of = flow.impl_of,
-            .location = flow.location,
-            .module = flow.module,
-        };
+    const transformed_flow = ast.Flow{
+        .invocation = new_invocation,
+        .continuations = flow.continuations,
+        .annotations = flow.annotations,
+        .pre_label = flow.pre_label,
+        .post_label = flow.post_label,
+        .super_shape = flow.super_shape,
+        .inline_body = inline_code,
+        .is_pure = flow.is_pure,
+        .is_transitively_pure = flow.is_transitively_pure,
+        .impl_of = flow.impl_of,
+        .location = flow.location,
+        .module = flow.module,
+    };
 
-        const new_item = ast.Item{ .flow = transformed_flow };
+    const new_item = ast.Item{ .flow = transformed_flow };
 
-        const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
-        if (maybe_new_program) |new_program| {
-            const result = allocator.create(ast.Program) catch unreachable;
-            result.* = new_program;
-            return .{ .formatted = undefined };
-        }
+    const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
+    if (maybe_new_program) |new_program| {
+        const result = allocator.create(ast.Program) catch unreachable;
+        result.* = new_program;
         return .{ .formatted = undefined };
     }
-
-    // Pipeline case - similar to print.blk
     return .{ .formatted = undefined };
 }
 
@@ -497,46 +496,31 @@ pub const FormattedText = struct {
         .inline_body = allocator.dupe(u8, inline_code) catch unreachable,
     };
 
-    // Check if this is the flow's own invocation or nested in a continuation
-    const is_top_level = (@intFromPtr(invocation) == @intFromPtr(&flow.invocation));
+    // Position-agnostic: the runner lifts nested sites into a synthetic
+    // top-level flow, so `invocation` IS `flow.invocation` at every depth.
+    // One write-back path; the runner grafts nested results back.
+    const transformed_flow = ast.Flow{
+        .invocation = new_invocation,
+        .continuations = flow.continuations,
+        .annotations = flow.annotations,
+        .pre_label = flow.pre_label,
+        .post_label = flow.post_label,
+        .super_shape = flow.super_shape,
+        .inline_body = inline_code,
+        .is_pure = flow.is_pure,
+        .is_transitively_pure = flow.is_transitively_pure,
+        .location = flow.location,
+        .module = flow.module,
+        .impl_of = flow.impl_of,
+    };
 
-    if (is_top_level) {
-        // Flow-level: replace invocation, also set flow.inline_body for existing emitter compat
-        const transformed_flow = ast.Flow{
-            .invocation = new_invocation,
-            .continuations = flow.continuations,
-            .annotations = flow.annotations,
-            .pre_label = flow.pre_label,
-            .post_label = flow.post_label,
-            .super_shape = flow.super_shape,
-            .inline_body = inline_code,
-            .is_pure = flow.is_pure,
-            .is_transitively_pure = flow.is_transitively_pure,
-            .location = flow.location,
-            .module = flow.module,
-            .impl_of = flow.impl_of,
-        };
-
-        const new_item = ast.Item{ .flow = transformed_flow };
-        const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
-        if (maybe_new_program) |new_program| {
-            const result_ptr = allocator.create(ast.Program) catch unreachable;
-            result_ptr.* = new_program;
-            return .{ .transformed = result_ptr };
-        }
-    } else {
-        // Pipeline: replace the invocation node directly using the original
-        // invocation pointer. The walker found this pointer in the program's
-        // continuation tree, so replaceInvocationNodeRecursive can locate it.
-        const new_node = ast.Node{ .invocation = new_invocation };
-
-        const maybe_new_program = ast_functional.replaceInvocationNodeRecursive(allocator, program, invocation, new_node) catch unreachable;
-        if (maybe_new_program) |new_program| {
-            const result_ptr = allocator.create(ast.Program) catch unreachable;
-            result_ptr.* = new_program;
-            return .{ .transformed = result_ptr };
-        }
+    const new_item = ast.Item{ .flow = transformed_flow };
+    const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
+    if (maybe_new_program) |new_program| {
+        const result_ptr = allocator.create(ast.Program) catch unreachable;
+        result_ptr.* = new_program;
+        return .{ .transformed = result_ptr };
     }
 
-    return .{ .transformed = program };
+    @panic("fmt.ln: replaceFlowRecursive could not find the site flow — runner/handler contract violated");
 }

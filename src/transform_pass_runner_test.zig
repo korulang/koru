@@ -80,10 +80,26 @@ fn makeProgramWithNestedInvocation(allocator: std.mem.Allocator) !*ast.Program {
 fn innerTransform(node: ast.ASTNode, program: *const ast.Program, allocator: std.mem.Allocator) !*const ast.Program {
     recordObservation("inner");
 
-    const lowered = ast.Node{
-        .inline_code = try allocator.dupe(u8, "// inner lowered"),
+    // Position-agnostic site contract: the runner lifts nested sites, so the
+    // handler ALWAYS sees its invocation as a flow's own invocation and
+    // writes back by replacing that flow — no position fork, no
+    // nested-pointer surgery. The runner grafts the result back.
+    const item = ast.ASTNode.findContainingItem(program, node.invocation) orelse {
+        return error.TestMissingContainingItem;
     };
-    const replaced = try ast_functional.replaceInvocationNodeRecursive(allocator, program, node.invocation, lowered) orelse {
+    if (item.* != .flow) return error.TestSiteNotAFlow;
+    const flow = &item.flow;
+    if (node.invocation != &flow.invocation) {
+        // The structural invariant the new contract guarantees.
+        return error.TestPositionLeaked;
+    }
+
+    const lowered_item = ast.Item{ .inline_code = ast.InlineCode{
+        .code = try allocator.dupe(u8, "// inner lowered"),
+        .location = flow.location,
+        .module = try allocator.dupe(u8, flow.module),
+    } };
+    const replaced = try ast_functional.replaceFlowRecursive(allocator, program, flow, lowered_item) orelse {
         return error.TestReplaceFailed;
     };
 

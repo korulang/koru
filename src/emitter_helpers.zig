@@ -192,6 +192,7 @@ pub const EmissionContext = struct {
     skip_tap_inserted_steps: bool = false, // Skip steps inserted by tap transformation (for opaque modules)
     capture_counter: usize = 0, // Counter for unique capture type names (nested captures)
     for_counter: usize = 0, // Counter for unique for loop binding names (nested loops)
+    inline_label_counter: usize = 0, // Counter for unique __KORU_INLINE__ label substitution at depth
     result_prefix: []const u8 = "result_", // Prefix for result variable names (changes to "loop_result_" inside loops)
     // InvocationMeta support - set when emitting a flow
     current_flow_annotations: ?[]const []const u8 = null, // Flow annotations like ["release", "debug"]
@@ -1513,6 +1514,13 @@ fn bindingIsUsedInContinuations(binding_name: []const u8, continuations: []const
                     // Check if any arg references this binding (e.g., "s.sun" references "s")
                     for (inv.args) |arg| {
                         if (valueReferencesBinding(arg.value, binding_name)) {
+                            return true;
+                        }
+                    }
+                    // Transform-grafted generated code on the invocation
+                    // (Invocation.inline_body) — scan it like inline code.
+                    if (inv.inline_body) |ib| {
+                        if (valueReferencesBinding(ib, binding_name)) {
                             return true;
                         }
                     }
@@ -3344,6 +3352,42 @@ fn emitInlineCodeResolvingSplices(
     try emitter.write(inline_code[pos..]);
 }
 
+/// Write inline transform code, substituting the `__KORU_INLINE__` label
+/// placeholder (used by value-producing inline bodies like fmt:ln's
+/// `break :__KORU_INLINE__ value` block) with a unique label and prefixing
+/// the block with that label. Mirrors the substitution visitor_emitter does
+/// for top-level flows, so value-shaped inline bodies work at every depth.
+fn writeInlineCodeWithLabel(
+    emitter: *CodeEmitter,
+    ctx: *EmissionContext,
+    inline_code: []const u8,
+) !void {
+    const placeholder = "__KORU_INLINE__";
+    if (std.mem.indexOf(u8, inline_code, placeholder) == null) {
+        try emitter.write(inline_code);
+        return;
+    }
+
+    var label_buf: [48]u8 = undefined;
+    const label = std.fmt.bufPrint(&label_buf, "__koru_inline_{d}__", .{ctx.inline_label_counter}) catch unreachable;
+    ctx.inline_label_counter += 1;
+
+    try emitter.write(label);
+    try emitter.write(": ");
+    var scan: usize = 0;
+    while (scan < inline_code.len) {
+        if (scan + placeholder.len <= inline_code.len and
+            std.mem.eql(u8, inline_code[scan .. scan + placeholder.len], placeholder))
+        {
+            try emitter.write(label);
+            scan += placeholder.len;
+        } else {
+            try emitter.write(inline_code[scan .. scan + 1]);
+            scan += 1;
+        }
+    }
+}
+
 /// Emit a node whose template transform produced `inline_body` (zero-overhead
 /// control flow: `~if`, `~for`, …). Shared by `emitFlow` (top-level) and
 /// `emitContinuationBody` (nested), so the inline-template lowering works
@@ -3359,6 +3403,7 @@ fn emitInlineBodyNode(
     inline_code_raw: []const u8,
     continuations: []const ast.Continuation,
     path: *const ast.DottedPath,
+    result_counter: *usize,
 ) anyerror!void {
     const inline_stmt_marker = "//@koru:inline_stmt\n";
     var inline_code = inline_code_raw;
@@ -3533,10 +3578,12 @@ fn emitInlineBodyNode(
         }
         try emitter.write("\n");
 
-        var result_counter: usize = 0;
+        // Void-chain continuations share the CALLER's result counter — at
+        // depth the chain continues in the same Zig scope, and a reset here
+        // re-issues result_N names that shadow the enclosing scope's.
         for (continuations) |*cont| {
             if (cont.branch.len != 0) continue; // terminal — returned, not appended
-            try emitContinuationBody(emitter, ctx, cont, &result_counter);
+            try emitContinuationBody(emitter, ctx, cont, result_counter);
         }
         return;
     }
@@ -3548,7 +3595,7 @@ fn emitInlineBodyNode(
         // Emit: const __expand_result = <inline_code>;
         try emitter.writeIndent();
         try emitter.write("const __expand_result = ");
-        try emitter.write(inline_code);
+        try writeInlineCodeWithLabel(emitter, ctx, inline_code);
         try emitter.write(";\n");
 
         // Emit: switch (__expand_result) { ... }
@@ -3631,7 +3678,8 @@ pub fn emitFlow(
     // it (and any continuations) via the shared node emitter — the same path a
     // nested inline node takes, so this works at every depth, not just top-level.
     if (flow.inline_body) |inline_code_raw| {
-        try emitInlineBodyNode(emitter, ctx, inline_code_raw, flow.continuations, &flow.invocation.path);
+        var inline_result_counter: usize = 0;
+        try emitInlineBodyNode(emitter, ctx, inline_code_raw, flow.continuations, &flow.invocation.path, &inline_result_counter);
         return;
     }
 
@@ -6438,7 +6486,7 @@ pub fn emitContinuationBody(
     if (cont.node) |node| {
         if (node == .invocation) {
             if (node.invocation.inline_body) |inline_code_raw| {
-                try emitInlineBodyNode(emitter, ctx, inline_code_raw, cont.continuations, &cont.node.?.invocation.path);
+                try emitInlineBodyNode(emitter, ctx, inline_code_raw, cont.continuations, &cont.node.?.invocation.path, result_counter);
                 return;
             }
         }
@@ -8120,6 +8168,14 @@ fn continuationUsesBinding(cont: *const ast.Continuation, binding: []const u8) b
             .invocation => |inv| {
                 for (inv.args) |arg| {
                     if (containsIdentifier(arg.value, binding)) {
+                        return true;
+                    }
+                }
+                // A transform may have grafted generated code onto the
+                // invocation (Invocation.inline_body — same encoding as a
+                // raw .inline_code node). Scan it like inline code.
+                if (inv.inline_body) |ib| {
+                    if (containsIdentifier(ib, binding)) {
                         return true;
                     }
                 }

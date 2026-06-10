@@ -380,6 +380,11 @@ pub const FlowChecker = struct {
                 for (inv.args) |arg| {
                     if (containsIdentifier(arg.value, binding)) return true;
                 }
+                // Transform-grafted generated code on the invocation
+                // (Invocation.inline_body) — scan it like inline code.
+                if (inv.inline_body) |ib| {
+                    if (containsIdentifier(ib, binding)) return true;
+                }
             },
             .branch_constructor => |bc| {
                 // Check plain_value for shorthand syntax like `e { result.e }`

@@ -263,10 +263,9 @@ const validateMocks = struct {
     else
         return .{ .transformed = program };
 
-    const is_top_level = (invocation == &flow.invocation);
-    if (!is_top_level) {
-        return .{ .transformed = program };
-    }
+    // Position-agnostic: the runner lifts nested sites into a synthetic
+    // top-level flow, so `invocation` IS `flow.invocation` at every depth.
+    _ = invocation;
 
     // Get test name from expr parameter
     const test_name = expr;
@@ -420,8 +419,10 @@ const validateMocks = struct {
         type_registry_ptr,
         program.main_module_name,  // original main module name for event redirection
     ) catch |err| {
-        std_import.debug.print("emitModuleSubset failed in test: {s}\n", .{@errorName(err)});
-        return .{ .transformed = program };
+        // Loud failure: silently skipping emission would mean the test block
+        // never exists — a test that "passes" by not being generated.
+        std_import.debug.print("FATAL: emitModuleSubset failed in test: {s}\n", .{@errorName(err)});
+        @panic("test transform: emitModuleSubset failed — see error above");
     };
 
     // Run transforms on test flows (for assert -> inline_code, etc.)
@@ -441,8 +442,10 @@ const validateMocks = struct {
 
     const backend_output = @import("backend_output_emitted.zig");
     const transformed_program = backend_output.run_pass("transform", flow_program, allocator) catch |err| {
-        std_import.debug.print("Transform pass failed in test: {}\n", .{err});
-        return .{ .transformed = program };
+        // Loud failure: continuing with untransformed test flows would emit
+        // raw transform invocations into the test block.
+        std_import.debug.print("FATAL: transform pass failed in test: {}\n", .{err});
+        @panic("test transform: inner transform pass failed — see error above");
     };
 
     // ==========================================================================
@@ -830,61 +833,61 @@ const emitFlowWithMocks = struct {
     else
         return .{ .transformed = program };
 
-    // Check if this is top-level (flow.invocation IS the assert)
-    const is_top_level = (invocation == &flow.invocation);
+    // Position-agnostic: the runner lifts nested sites into a synthetic
+    // top-level flow, so `invocation` IS `flow.invocation` at every depth.
+    // One write-back path: a statement-shaped inline_body (the old fork used
+    // preamble_code at top level and a raw inline_code node in pipelines —
+    // same emitted statement, two encodings). Continuations are KEPT so a
+    // chained `assert(x) |> next()` keeps running its chain at any depth.
+    _ = invocation;
 
-    // Build assertion code - use idiomatic Zig testing assertions
+    // Build assertion code - use idiomatic Zig testing assertions.
+    // //@koru:inline_stmt marks it statement-shaped for the inline emitter.
     const assert_code = std_import.fmt.allocPrint(
         allocator,
-        "try @import(\"std\").testing.expect({s});",
+        "//@koru:inline_stmt\ntry @import(\"std\").testing.expect({s});",
         .{ expr }
     ) catch unreachable;
 
-    if (is_top_level) {
-        // Top-level case: flow.invocation is the assert
-        // Set preamble_code and empty continuations (assert has no branches)
-        const transformed_flow = ast.Flow{
-            .invocation = flow.invocation,
-            .continuations = &[_]ast.Continuation{},
-            .annotations = flow.annotations,
-            .pre_label = flow.pre_label,
-            .post_label = flow.post_label,
-            .super_shape = flow.super_shape,
-            .inline_body = null,
-            .preamble_code = assert_code,
-            .is_pure = true,
-            .is_transitively_pure = true,
-            .impl_of = flow.impl_of,
-            .location = flow.location,
-            .module = flow.module,
-        };
-
-        const new_item = ast.Item{ .flow = transformed_flow };
-
-        const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
-        if (maybe_new_program) |new_program| {
-            const result = allocator.create(ast.Program) catch unreachable;
-            result.* = new_program;
-            return .{ .transformed = result };
-        }
-        return .{ .transformed = program };
-    } else {
-        // Pipeline case: assert is a step inside a continuation
-        // Replace the invocation node directly (supports nested/virtual flows).
-        const inline_node = ast.Node{ .inline_code = assert_code };
-        const maybe_new_program = ast_functional.replaceInvocationNodeRecursive(
-            allocator,
-            program,
-            invocation,
-            inline_node,
-        ) catch unreachable;
-        if (maybe_new_program) |new_program| {
-            const result = allocator.create(ast.Program) catch unreachable;
-            result.* = new_program;
-            return .{ .transformed = result };
-        }
-        return .{ .transformed = program };
+    const new_inv_annotations = allocator.alloc([]const u8, flow.invocation.annotations.len + 1) catch unreachable;
+    for (flow.invocation.annotations, 0..) |ann, idx| {
+        new_inv_annotations[idx] = ann;
     }
+    new_inv_annotations[flow.invocation.annotations.len] = allocator.dupe(u8, "@pass_ran(\"transform\")") catch unreachable;
+
+    const new_invocation = ast.Invocation{
+        .path = flow.invocation.path,
+        .args = &[_]ast.Arg{},
+        .annotations = new_inv_annotations,
+        .inserted_by_tap = flow.invocation.inserted_by_tap,
+        .from_opaque_tap = flow.invocation.from_opaque_tap,
+        .inline_body = assert_code,
+    };
+
+    const transformed_flow = ast.Flow{
+        .invocation = new_invocation,
+        .continuations = flow.continuations,
+        .annotations = flow.annotations,
+        .pre_label = flow.pre_label,
+        .post_label = flow.post_label,
+        .super_shape = flow.super_shape,
+        .inline_body = assert_code,
+        .is_pure = true,
+        .is_transitively_pure = true,
+        .impl_of = flow.impl_of,
+        .location = flow.location,
+        .module = flow.module,
+    };
+
+    const new_item = ast.Item{ .flow = transformed_flow };
+
+    const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
+    if (maybe_new_program) |new_program| {
+        const result = allocator.create(ast.Program) catch unreachable;
+        result.* = new_program;
+        return .{ .transformed = result };
+    }
+    return .{ .transformed = program };
 }
 
 // Simple pass - marks a test branch as passing (noop)

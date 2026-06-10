@@ -415,6 +415,12 @@ var metatype_global_counter: usize = 0;
 
             var new_inv = inv;
             new_inv.args = rewritten_args;
+            // Transform-grafted generated code lives on the invocation
+            // (Invocation.inline_body — same encoding as a raw .inline_code
+            // node). Rewrite binding references in it too.
+            if (inv.inline_body) |ib| {
+                new_inv.inline_body = try rewriteBindingInValue(alloc, ib, old_binding, new_binding);
+            }
             return new_inv;
         }
 

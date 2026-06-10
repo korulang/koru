@@ -156,11 +156,13 @@ const std = @import("std");
     else
         return .{ .transformed = program };
 
-    // Only the top-level capture transforms here (flow.invocation IS the capture
-    // being transformed). Nested/pipeline captures are migration debt from the
-    // old `captured { }` brace form — pass through (they are being retired).
-    const is_top = @intFromPtr(&flow.invocation) == @intFromPtr(invocation);
-    if (!is_top) return .{ .transformed = program };
+    // Position-agnostic: the runner lifts nested sites into a synthetic
+    // top-level flow, so `invocation` IS `flow.invocation` at every depth.
+    // Nested/pipeline captures (migration debt from the old `captured { }`
+    // brace form, being retired) now run the same path; a capture whose
+    // write-back can't be grafted at depth fails LOUDLY in the runner
+    // instead of silently passing through.
+    _ = invocation;
 
     // Idempotency: a prior run already set preamble_code.
     if (flow.preamble_code != null) return .{ .transformed = program };

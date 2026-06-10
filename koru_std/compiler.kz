@@ -1685,9 +1685,12 @@ const joinPathAlloc = struct {
         backend_output.dumpAST(ctx.ast, "3-pre-transform", ctx.allocator);
 
         const post_transform_ast = backend_output.run_pass("transform", ctx.ast, ctx.allocator) catch |err| {
-            // Transformation failed - return original AST unchanged
-            log.err("WARNING: Transform execution failed ({s})\n", .{@errorName(err)});
-            return .{ .ctx = ctx };
+            // Transforms either complete or fail loudly. Continuing with the
+            // untransformed AST used to mask the failure behind a cascade of
+            // downstream KORU021/022 errors about events the transform should
+            // have rewritten away.
+            log.err("FATAL: transform pass failed ({s}). The pipeline cannot continue with a partially-transformed AST.\n", .{@errorName(err)});
+            @panic("transform pass failed — see error above");
         };
 
         // DUMP POINT 4: AST after transform handlers

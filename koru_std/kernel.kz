@@ -148,7 +148,9 @@ const std = @import("std");
     // ========================================================================
     // STEP 1: Locate invocation + kernel binding
     // ========================================================================
-    const is_top_level = (invocation == &flow.invocation);
+    // Position-agnostic: the runner lifts nested sites into a synthetic
+    // top-level flow, so `invocation` IS `flow.invocation` at every depth.
+    _ = invocation;
 
     var has_kernel_continuation = false;
     var has_computed_continuation = false;
@@ -166,18 +168,8 @@ const std = @import("std");
         fn call(
             alloc: std.mem.Allocator,
             flow_internal: *const ast.Flow,
-            target_invocation: *const ast.Invocation,
-            top_level: bool,
         ) ?[]const u8 {
-            const owner_continuations = if (top_level)
-                flow_internal.continuations
-            else blk: {
-                const owner_cont = ast_functional.findContinuationContainingInvocation(
-                    flow_internal.continuations,
-                    target_invocation,
-                ) orelse @panic("kernel.init: could not find owning continuation");
-                break :blk owner_cont.continuations;
-            };
+            const owner_continuations = flow_internal.continuations;
 
             const kernel_cont = ast_functional.findContinuationByBranchInSlice(owner_continuations, "kernel") orelse return null;
 
@@ -298,19 +290,9 @@ const std = @import("std");
         fn call(
             alloc: std.mem.Allocator,
             flow_internal: *const ast.Flow,
-            target_invocation: *const ast.Invocation,
-            top_level: bool,
         ) KernelPlan {
             const empty = KernelPlan{ .step_range = null, .step_invocation = null, .ops = &[_]KernelOp{} };
-            const owner_continuations = if (top_level)
-                flow_internal.continuations
-            else blk: {
-                const owner_cont = ast_functional.findContinuationContainingInvocation(
-                    flow_internal.continuations,
-                    target_invocation,
-                ) orelse return empty;
-                break :blk owner_cont.continuations;
-            };
+            const owner_continuations = flow_internal.continuations;
 
             const kernel_cont = ast_functional.findContinuationByBranchInSlice(owner_continuations, "kernel") orelse return empty;
 
@@ -454,70 +436,16 @@ const std = @import("std");
     }.call;
 
     if (has_kernel_continuation) {
-        if (validateKernelSubtree(allocator, flow, invocation, is_top_level)) |msg| {
+        if (validateKernelSubtree(allocator, flow)) |msg| {
             const compile_error_code = std.fmt.allocPrint(
                 allocator,
                 "comptime {{ @compileError(\"{s}\"); }}",
                 .{msg},
             ) catch unreachable;
 
-            if (is_top_level) {
-                const compile_error_item = ast.Item{
-                    .inline_code = ast.InlineCode{
-                        .code = compile_error_code,
-                        .location = flow.location,
-                        .module = allocator.dupe(u8, flow.module) catch unreachable,
-                    },
-                };
-
-                const maybe_error_program = ast_functional.replaceFlowRecursive(
-                    allocator,
-                    program,
-                    flow,
-                    compile_error_item,
-                ) catch unreachable;
-
-                if (maybe_error_program) |error_program| {
-                    const result = allocator.create(ast.Program) catch unreachable;
-                    result.* = error_program;
-                    return .{ .transformed = result };
-                }
-
-                @panic("kernel.init: compile error flow replacement failed");
-            } else {
-                const compile_error_node = ast.Node{ .inline_code = compile_error_code };
-                const maybe_error_program = ast_functional.replaceInvocationNodeRecursive(
-                    allocator,
-                    program,
-                    invocation,
-                    compile_error_node,
-                ) catch unreachable;
-
-                if (maybe_error_program) |error_program| {
-                    const result = allocator.create(ast.Program) catch unreachable;
-                    result.* = error_program;
-                    return .{ .transformed = result };
-                }
-
-                @panic("kernel.init: compile error invocation replacement failed");
-            }
-        }
-    }
-
-    // Enforce: if kernel branch is present, computed branch is required
-    // Without computed, kernel results are trapped with no way to exit the scope
-    // Each init checks itself — claims_descendants ensures outer init runs first
-    if (has_kernel_continuation and !has_computed_continuation) {
-        const computed_error = std.fmt.allocPrint(
-            allocator,
-            "comptime {{ @compileError(\"kernel:init requires | computed |> branch — without it, kernel results are trapped inside the kernel scope\"); }}",
-            .{},
-        ) catch unreachable;
-
-        if (is_top_level) {
             const compile_error_item = ast.Item{
                 .inline_code = ast.InlineCode{
-                    .code = computed_error,
+                    .code = compile_error_code,
                     .location = flow.location,
                     .module = allocator.dupe(u8, flow.module) catch unreachable,
                 },
@@ -535,26 +463,46 @@ const std = @import("std");
                 result.* = error_program;
                 return .{ .transformed = result };
             }
-        } else {
-            const compile_error_node = ast.Node{ .inline_code = computed_error };
-            const maybe_error_program = ast_functional.replaceInvocationNodeRecursive(
-                allocator,
-                program,
-                invocation,
-                compile_error_node,
-            ) catch unreachable;
 
-            if (maybe_error_program) |error_program| {
-                const result = allocator.create(ast.Program) catch unreachable;
-                result.* = error_program;
-                return .{ .transformed = result };
-            }
+            @panic("kernel.init: compile error flow replacement failed");
+        }
+    }
+
+    // Enforce: if kernel branch is present, computed branch is required
+    // Without computed, kernel results are trapped with no way to exit the scope
+    // Each init checks itself — claims_descendants ensures outer init runs first
+    if (has_kernel_continuation and !has_computed_continuation) {
+        const computed_error = std.fmt.allocPrint(
+            allocator,
+            "comptime {{ @compileError(\"kernel:init requires | computed |> branch — without it, kernel results are trapped inside the kernel scope\"); }}",
+            .{},
+        ) catch unreachable;
+
+        const computed_error_item = ast.Item{
+            .inline_code = ast.InlineCode{
+                .code = computed_error,
+                .location = flow.location,
+                .module = allocator.dupe(u8, flow.module) catch unreachable,
+            },
+        };
+
+        const maybe_computed_error_program = ast_functional.replaceFlowRecursive(
+            allocator,
+            program,
+            flow,
+            computed_error_item,
+        ) catch unreachable;
+
+        if (maybe_computed_error_program) |error_program| {
+            const result = allocator.create(ast.Program) catch unreachable;
+            result.* = error_program;
+            return .{ .transformed = result };
         }
     }
 
     // Collect kernel ops for fusion
     const kernel_plan = if (has_kernel_continuation)
-        collectKernelOps(allocator, flow, invocation, is_top_level)
+        collectKernelOps(allocator, flow)
     else
         KernelPlan{ .step_range = null, .step_invocation = null, .ops = &[_]KernelOp{} };
 
@@ -651,16 +599,7 @@ const std = @import("std");
 
     // Get kernel binding name for codegen
     const kernel_binding_name = if (has_kernel_continuation) blk: {
-        const owner_conts = if (is_top_level)
-            flow.continuations
-        else inner_blk: {
-            const owner_cont = ast_functional.findContinuationContainingInvocation(
-                flow.continuations,
-                invocation,
-            ) orelse break :blk "k";
-            break :inner_blk owner_cont.continuations;
-        };
-        const k_cont = ast_functional.findContinuationByBranchInSlice(owner_conts, "kernel");
+        const k_cont = ast_functional.findContinuationByBranchInSlice(flow.continuations, "kernel");
         break :blk if (k_cont) |kc| (kc.binding orelse "k") else "k";
     } else "k";
 
@@ -862,8 +801,10 @@ const std = @import("std");
         .args = &[_]ast.Arg{},
     };
 
+    // Position-agnostic: one write-back path at every depth (the runner
+    // lifts nested sites and grafts the result back).
     var new_item: ast.Item = undefined;
-    if (is_top_level) {
+    {
         // Clone continuations (shallow clone of the array is fine if we don't mutate elements).
         // When fusion folded the kernel ops into the init proc (it now returns `.computed`),
         // the consumed `| kernel` continuation MUST be dropped — otherwise it survives as a
@@ -898,104 +839,6 @@ const std = @import("std");
                 .module = allocator.dupe(u8, flow.module) catch unreachable,
             },
         };
-    } else {
-        const new_node = ast.Node{ .invocation = init_inv };
-        const maybe_new_program = ast_functional.replaceInvocationNodeRecursive(
-            allocator,
-            program,
-            invocation,
-            new_node,
-        ) catch unreachable;
-
-        if (maybe_new_program) |new_program| {
-            const slice_type = std.fmt.allocPrint(allocator, "[]{s}", .{type_name}) catch unreachable;
-            const branch_fields = allocator.alloc(ast.Field, 1) catch unreachable;
-            branch_fields[0] = ast.Field{
-                .name = allocator.dupe(u8, "__type_ref") catch unreachable,
-                .type = slice_type,
-            };
-
-            const computed_fields = allocator.alloc(ast.Field, 1) catch unreachable;
-            computed_fields[0] = ast.Field{
-                .name = allocator.dupe(u8, "__type_ref") catch unreachable,
-                .type = slice_type,
-            };
-
-            const branches = allocator.alloc(ast.Branch, 2) catch unreachable;
-            branches[0] = ast.Branch{
-                .name = allocator.dupe(u8, "kernel") catch unreachable,
-                .payload = ast.Shape{ .fields = branch_fields },
-                .is_optional = !has_kernel_continuation,
-                .annotations = &[_][]const u8{},
-            };
-            branches[1] = ast.Branch{
-                .name = allocator.dupe(u8, "computed") catch unreachable,
-                .payload = ast.Shape{ .fields = computed_fields },
-                .is_optional = true,
-                .annotations = &[_][]const u8{},
-            };
-
-            const event_segments = allocator.alloc([]const u8, 1) catch unreachable;
-            event_segments[0] = allocator.dupe(u8, unique_name) catch unreachable;
-            const event_module = allocator.dupe(u8, flow.module) catch unreachable;
-            const proc_segments = allocator.alloc([]const u8, 1) catch unreachable;
-            proc_segments[0] = allocator.dupe(u8, unique_name) catch unreachable;
-            const proc_module = allocator.dupe(u8, flow.module) catch unreachable;
-
-            const local_init_item = ast.Item{
-                .event_decl = ast.EventDecl{
-                    .path = ast.DottedPath{ .module_qualifier = event_module, .segments = event_segments },
-                    .input = ast.Shape{ .fields = &[_]ast.Field{} },
-                    .branches = branches,
-                    .is_public = false,
-                    .is_implicit_flow = false,
-                    .annotations = &[_][]const u8{},
-                    .location = flow.location,
-                    .module = allocator.dupe(u8, flow.module) catch unreachable,
-                }
-            };
-
-            const local_init_proc = ast.Item{
-                .proc_decl = ast.ProcDecl{
-                    .path = ast.DottedPath{ .module_qualifier = proc_module, .segments = proc_segments },
-                    .body = ast.Source{ .text = proc_body, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
-                    .annotations = &[_][]const u8{},
-                    .target = allocator.dupe(u8, "zig") catch unreachable,
-                    .location = flow.location,
-                    .module = allocator.dupe(u8, flow.module) catch unreachable,
-                },
-            };
-            
-            var res_program = new_program;
-            var insert_index: usize = 0;
-            if (!has_host_type) {
-                const local_type_item = ast.Item{
-                    .host_type_decl = ast.HostTypeDecl{
-                        .name = allocator.dupe(u8, type_name) catch unreachable,
-                        .shape = ast.Shape{ .fields = type_fields },
-                    },
-                };
-                res_program = ast_functional.insertAt(allocator, &res_program, insert_index, local_type_item) catch unreachable;
-                insert_index = 1;
-            }
-
-            const static_item = ast.Item{
-                .host_line = ast.HostLine{
-                    .content = allocator.dupe(u8, static_decl) catch unreachable,
-                    .location = flow.location,
-                    .module = allocator.dupe(u8, flow.module) catch unreachable,
-                },
-            };
-
-            const res_prog_raw = ast_functional.insertAt(allocator, &res_program, insert_index, static_item) catch unreachable;
-            const res_prog_raw2 = ast_functional.insertAt(allocator, &res_prog_raw, insert_index + 1, local_init_item) catch unreachable;
-            const res_prog_raw3 = ast_functional.insertAt(allocator, &res_prog_raw2, insert_index + 2, local_init_proc) catch unreachable;
-            const res_program_ptr = allocator.create(ast.Program) catch unreachable;
-            res_program_ptr.* = res_prog_raw3;
-            return .{ .transformed = res_program_ptr };
-        }
-
-        @panic("kernel.init: replaceInvocationNodeRecursive failed");
     }
 
     // Replace flow in program
