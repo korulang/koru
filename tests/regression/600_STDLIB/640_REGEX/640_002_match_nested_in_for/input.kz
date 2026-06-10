@@ -1,0 +1,23 @@
+// PIN (nested-match) — `match` nested under another construct trips the
+// shape checker's nested-invocation path. validateFlow (top level) skips
+// `@pass_ran`-stamped flows ("transform output is valid by construction",
+// shape_checker.zig:477) but the nested pipeline-invocation check
+// (shape_checker.zig:978-986) has NO such skip: it looks the transformed
+// invocation up in the runtime events registry and raises UnknownEvent —
+// silently (debug-log only). Same failure under ~for, ~if, or a plain
+// runtime event's branch: the gap is "nested anywhere".
+//
+// This is the top-level vs in-flow duality surviving in the shape checker —
+// the transform runner's fork was healed (site cursors, stage 3); this is
+// the checker-side twin. Goes GREEN when nested validation mirrors the
+// @pass_ran skip.
+//
+// The shape matters: it is the regex benchmark's hot loop
+// (benchmarks/workloads/regex_match/koru/input.kz).
+~import std/regex
+~import std/io
+
+~for(0..3)
+! each _ |> match("foo@bar")
+            | `[a-z]+@[a-z]+` _ |> std/io:print.ln("hit")
+            | no-match _ |> std/io:print.ln("miss")

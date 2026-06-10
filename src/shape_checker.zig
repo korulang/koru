@@ -976,6 +976,19 @@ pub const ShapeChecker = struct {
 
                 // Validate ALL invocations in the pipeline, not just the last one
                 if (step == .invocation) {
+                    // Skip invocations rewritten by a [transform] pass — the same
+                    // rule validateFlow applies at top level: transform output is
+                    // valid by construction, and its continuations (e.g. a
+                    // `match`'s backtick pattern branches) no longer correspond
+                    // to the declared event's branches.
+                    const nested_pass_ran = blk: {
+                        for (step.invocation.annotations) |ann| {
+                            if (std.mem.startsWith(u8, ann, "@pass_ran")) break :blk true;
+                        }
+                        break :blk false;
+                    };
+                    if (nested_pass_ran) continue;
+
                     const nested_event_name = try self.pathToString(step.invocation.path);
                     defer self.allocator.free(nested_event_name);
 
@@ -1169,6 +1182,14 @@ pub const ShapeChecker = struct {
     }
 
     fn validateInlineFlow(self: *ShapeChecker, flow: *const ast.Flow, proc_event: ?EventInfo) !void {
+        // Skip flows rewritten by a [transform] pass — mirrors validateFlow's
+        // top-level skip: transform output is valid by construction.
+        for (flow.inv().annotations) |ann| {
+            if (std.mem.startsWith(u8, ann, "@pass_ran")) {
+                return;
+            }
+        }
+
         // Check for duplicate branch handlers at each level (recursively)
         try self.checkDuplicateBranchHandlers(flow.body.continuations);
 
@@ -1179,6 +1200,13 @@ pub const ShapeChecker = struct {
             defer self.allocator.free(event_name);
 
             _ = self.events.get(event_name) orelse {
+                // Loud, not silent: name the event so the failure is actionable.
+                try self.reporter.addErrorAtLocation(
+                    .KORU040,
+                    flow.location,
+                    "unknown event '{s}'",
+                    .{event_name},
+                );
                 return error.UnknownEvent;
             };
 
