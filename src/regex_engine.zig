@@ -273,3 +273,220 @@ test "unterminated class errors" {
     defer arena.deinit();
     try testing.expectError(error.UnterminatedClass, parseWith(arena.allocator(), "[a-z"));
 }
+
+// ── NFA (Thompson construction) + epsilon-closure simulation ─────────────────
+//
+// AST → NFA with epsilon transitions. Matching is epsilon-closure simulation:
+// O(input_len × states), NO backtracking — linear-time, ReDoS-immune. (The DFA
+// is a later speed optimization; this simulator is already a safe, working
+// matcher and the reference the DFA will be checked against.)
+//
+// `match` semantics (cut 1): FULL match — the whole input must match. `^`/`$`
+// are therefore no-ops here (the match is already whole-string-anchored); they
+// build as epsilon. Real zero-width anchors + search semantics are a later cut.
+
+pub const NfaState = struct {
+    sym: ?Class = null, // class-guarded transition (consumes one byte) …
+    out: usize = 0, // … to this state (valid iff sym != null)
+    eps: std.ArrayList(usize) = .{}, // epsilon transitions (consume nothing)
+};
+
+pub const Nfa = struct {
+    states: std.ArrayList(NfaState) = .{},
+    start: usize = 0,
+    accept: usize = 0,
+    allocator: std.mem.Allocator,
+
+    fn newState(self: *Nfa) !usize {
+        try self.states.append(self.allocator, .{});
+        return self.states.items.len - 1;
+    }
+    fn addEps(self: *Nfa, from: usize, to: usize) !void {
+        try self.states.items[from].eps.append(self.allocator, to);
+    }
+
+    /// Full-match: does the ENTIRE input match the pattern? Linear in input.
+    pub fn matches(self: *const Nfa, input: []const u8) bool {
+        const n = self.states.items.len;
+        var cur = self.allocator.alloc(bool, n) catch return false;
+        defer self.allocator.free(cur);
+        var nxt = self.allocator.alloc(bool, n) catch return false;
+        defer self.allocator.free(nxt);
+        var stack = std.ArrayList(usize).initCapacity(self.allocator, n) catch return false;
+        defer stack.deinit(self.allocator);
+
+        @memset(cur, false);
+        self.epsClosure(self.start, cur, &stack);
+        for (input) |c| {
+            @memset(nxt, false);
+            var s: usize = 0;
+            while (s < n) : (s += 1) {
+                if (!cur[s]) continue;
+                if (self.states.items[s].sym) |cls| {
+                    if (cls.contains(c)) self.epsClosure(self.states.items[s].out, nxt, &stack);
+                }
+            }
+            const tmp = cur;
+            cur = nxt;
+            nxt = tmp;
+        }
+        return cur[self.accept];
+    }
+
+    fn epsClosure(self: *const Nfa, from: usize, marked: []bool, stack: *std.ArrayList(usize)) void {
+        if (marked[from]) return;
+        stack.clearRetainingCapacity();
+        stack.append(self.allocator, from) catch return;
+        marked[from] = true;
+        while (stack.pop()) |st| {
+            for (self.states.items[st].eps.items) |to| {
+                if (!marked[to]) {
+                    marked[to] = true;
+                    stack.append(self.allocator, to) catch return;
+                }
+            }
+        }
+    }
+};
+
+const Frag = struct { start: usize, accept: usize };
+
+/// Build an NFA from a regex AST (Thompson). Allocate from an arena.
+pub fn buildNfa(allocator: std.mem.Allocator, ast: *const Node) !Nfa {
+    var nfa = Nfa{ .allocator = allocator };
+    const frag = try buildFrag(&nfa, ast);
+    nfa.start = frag.start;
+    nfa.accept = frag.accept;
+    return nfa;
+}
+
+fn symFrag(nfa: *Nfa, cls: Class) !Frag {
+    const s = try nfa.newState();
+    const acc = try nfa.newState();
+    nfa.states.items[s].sym = cls;
+    nfa.states.items[s].out = acc;
+    return .{ .start = s, .accept = acc };
+}
+
+fn buildFrag(nfa: *Nfa, node: *const Node) anyerror!Frag {
+    switch (node.*) {
+        .empty, .anchor_start, .anchor_end => {
+            const a = try nfa.newState();
+            const b = try nfa.newState();
+            try nfa.addEps(a, b);
+            return .{ .start = a, .accept = b };
+        },
+        .literal => |ch| {
+            var cls = Class{};
+            cls.set[ch] = true;
+            return symFrag(nfa, cls);
+        },
+        .any => return symFrag(nfa, Class{ .negated = true }), // negated empty = all bytes
+        .class => |cls| return symFrag(nfa, cls),
+        .concat => |parts| {
+            const first = try buildFrag(nfa, parts[0]);
+            var prev = first.accept;
+            for (parts[1..]) |p| {
+                const f = try buildFrag(nfa, p);
+                try nfa.addEps(prev, f.start);
+                prev = f.accept;
+            }
+            return .{ .start = first.start, .accept = prev };
+        },
+        .alt => |branches| {
+            const start = try nfa.newState();
+            const accept = try nfa.newState();
+            for (branches) |b| {
+                const f = try buildFrag(nfa, b);
+                try nfa.addEps(start, f.start);
+                try nfa.addEps(f.accept, accept);
+            }
+            return .{ .start = start, .accept = accept };
+        },
+        .star => |inner| {
+            const start = try nfa.newState();
+            const accept = try nfa.newState();
+            const f = try buildFrag(nfa, inner);
+            try nfa.addEps(start, f.start);
+            try nfa.addEps(start, accept);
+            try nfa.addEps(f.accept, f.start);
+            try nfa.addEps(f.accept, accept);
+            return .{ .start = start, .accept = accept };
+        },
+        .plus => |inner| {
+            const f = try buildFrag(nfa, inner);
+            const accept = try nfa.newState();
+            try nfa.addEps(f.accept, f.start);
+            try nfa.addEps(f.accept, accept);
+            return .{ .start = f.start, .accept = accept };
+        },
+        .opt => |inner| {
+            const start = try nfa.newState();
+            const accept = try nfa.newState();
+            const f = try buildFrag(nfa, inner);
+            try nfa.addEps(start, f.start);
+            try nfa.addEps(start, accept);
+            try nfa.addEps(f.accept, accept);
+            return .{ .start = start, .accept = accept };
+        },
+    }
+}
+
+fn nfaFor(arena: std.mem.Allocator, src: []const u8) !Nfa {
+    var p = Parser.init(arena, src);
+    const ast = try p.parse();
+    return buildNfa(arena, ast);
+}
+
+test "nfa: literal full-match" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const nfa = try nfaFor(arena.allocator(), "abc");
+    try testing.expect(nfa.matches("abc"));
+    try testing.expect(!nfa.matches("ab"));
+    try testing.expect(!nfa.matches("abcd"));
+    try testing.expect(!nfa.matches(""));
+}
+
+test "nfa: class + plus" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const nfa = try nfaFor(arena.allocator(), "[a-z]+");
+    try testing.expect(nfa.matches("foo"));
+    try testing.expect(!nfa.matches("")); // + needs ≥1
+    try testing.expect(!nfa.matches("f1")); // '1' not in [a-z], full match fails
+}
+
+test "nfa: the flagship [a-z]+@[a-z]+" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const nfa = try nfaFor(arena.allocator(), "[a-z]+@[a-z]+");
+    try testing.expect(nfa.matches("foo@bar"));
+    try testing.expect(nfa.matches("a@b"));
+    try testing.expect(!nfa.matches("FOO@bar")); // uppercase
+    try testing.expect(!nfa.matches("foo@")); // second part empty
+    try testing.expect(!nfa.matches("@bar")); // first part empty
+}
+
+test "nfa: alternation, star, opt" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const a = try nfaFor(arena.allocator(), "a|bb");
+    try testing.expect(a.matches("a") and a.matches("bb"));
+    try testing.expect(!a.matches("b") and !a.matches("ab"));
+    const s = try nfaFor(arena.allocator(), "a*");
+    try testing.expect(s.matches("") and s.matches("aaa") and !s.matches("ab"));
+    const o = try nfaFor(arena.allocator(), "ab?c");
+    try testing.expect(o.matches("ac") and o.matches("abc") and !o.matches("abbc"));
+}
+
+test "nfa: ReDoS pattern stays linear (no catastrophic backtracking)" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    // `(a+)+` is the canonical ReDoS bomb — a backtracking engine goes
+    // exponential on a long run of 'a' ending in a non-match. The NFA simulator
+    // is linear, so this completes instantly and returns the correct answer.
+    const nfa = try nfaFor(arena.allocator(), "(a+)+");
+    try testing.expect(nfa.matches("aaaa"));
+    try testing.expect(!nfa.matches("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaX"));
+}
