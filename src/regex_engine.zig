@@ -666,3 +666,69 @@ test "dfa == nfa cross-check over many inputs" {
         }
     }
 }
+
+// ── Emit (DFA → specialized native Zig matcher) ──────────────────────────────
+//
+// Serialize a DFA as a self-contained Zig function `fn <name>(input) bool` — the
+// pattern's transition table baked in as data, walked O(1) per byte. The table
+// IS the per-pattern specialization; because it's exactly the (cross-checked)
+// DFA's `trans`/`accept`/`start`, the emitted matcher is equivalent to
+// Dfa.matches by construction. (A switch-per-state emit is the later perf
+// refinement; this table form is correct and fast and unblocks the e2e + the
+// benchmark.) This is the function the `match` transform emits per `…`-branch.
+
+/// Compile a regex pattern straight to emitted Zig matcher source. Convenience
+/// for the `match` transform: pattern bytes in, `fn <name>(input: []const u8) bool`
+/// source out. Uses an arena internally; the returned source is owned by `out`.
+pub fn compileToZig(out: std.mem.Allocator, pattern: []const u8, name: []const u8) ![]const u8 {
+    var arena = std.heap.ArenaAllocator.init(out);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var p = Parser.init(a, pattern);
+    const ast = try p.parse();
+    var nfa = try buildNfa(a, ast);
+    var dfa = try buildDfa(a, &nfa);
+    var buf = std.ArrayList(u8){};
+    try emitMatcher(buf.writer(out), &dfa, name);
+    return buf.toOwnedSlice(out);
+}
+
+/// Emit `fn <name>(input: []const u8) bool { … }` for the given DFA.
+pub fn emitMatcher(w: anytype, dfa: *const Dfa, name: []const u8) !void {
+    try w.print("fn {s}(input: []const u8) bool {{\n", .{name});
+    try w.writeAll("    const T = [_]u32{ ");
+    for (dfa.trans, 0..) |t, i| {
+        if (i != 0) try w.writeAll(", ");
+        try w.print("{d}", .{t});
+    }
+    try w.writeAll(" };\n");
+    try w.writeAll("    const A = [_]bool{ ");
+    for (dfa.accept, 0..) |acc, i| {
+        if (i != 0) try w.writeAll(", ");
+        try w.writeAll(if (acc) "true" else "false");
+    }
+    try w.writeAll(" };\n");
+    try w.print("    var s: u32 = {d};\n", .{dfa.start});
+    try w.writeAll("    for (input) |c| s = T[@as(usize, s) * 256 + @as(usize, c)];\n");
+    try w.writeAll("    return A[s];\n");
+    try w.writeAll("}\n");
+}
+
+test "emit: produces a well-formed matcher fn that encodes the DFA" {
+    const src = try compileToZig(testing.allocator, "[a-z]+@[a-z]+", "m0");
+    defer testing.allocator.free(src);
+    try testing.expect(std.mem.indexOf(u8, src, "fn m0(input: []const u8) bool") != null);
+    try testing.expect(std.mem.indexOf(u8, src, "const T = [_]u32{") != null);
+    try testing.expect(std.mem.indexOf(u8, src, "const A = [_]bool{") != null);
+    try testing.expect(std.mem.indexOf(u8, src, "return A[s];") != null);
+    // table has exactly n_states * 256 entries
+    var dfa = try dfaFor(testing.allocator, "[a-z]+@[a-z]+");
+    defer dfa.deinit();
+    var commas: usize = 0;
+    const t_start = std.mem.indexOf(u8, src, "[_]u32{").?;
+    const t_end = std.mem.indexOfPos(u8, src, t_start, "};").?;
+    for (src[t_start..t_end]) |c| {
+        if (c == ',') commas += 1;
+    }
+    try testing.expectEqual(dfa.n_states * 256, commas + 1);
+}
