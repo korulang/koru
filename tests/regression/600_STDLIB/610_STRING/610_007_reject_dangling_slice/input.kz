@@ -1,0 +1,13 @@
+// RED PIN (design gap): read's `| slice` payload BORROWS s.data through a
+// terminal branch, and nothing links its lifetime to s — freeing s before
+// using the slice compiles today and SIGSEGVs at runtime (exit 139).
+// The ratified borrow model (2026-06-11) says terminal payloads must OWN
+// what they carry or carry an obligation; this test goes green when that
+// rule (or a read-scope design) lands and rejects this program.
+~import std/string
+~import std/io
+
+~std/string:from-page(text: "hello")
+| ok s |> std/string:read(s)
+    | slice text |> std/string:free(s) |> std/io:print.ln("{{ text:s }}")
+| err _ |> _

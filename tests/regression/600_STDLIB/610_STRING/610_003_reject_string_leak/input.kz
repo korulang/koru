@@ -1,0 +1,9 @@
+// PIN (enforcement): dropping a String<view!> without discharging is a
+// compile error — the obligation half of the ownership model. The checker
+// refuses to auto-discharge because free and take are both candidates.
+~import std/string
+~import std/io
+
+~std/string:from-page(text: "leaked")
+| ok s |> std/io:print.ln("dropping it")
+| err _ |> _

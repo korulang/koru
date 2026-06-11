@@ -1,0 +1,6 @@
+// PIN (enforcement): freeing a String twice is use-after-discharge.
+~import std/string
+
+~std/string:from-page(text: "hello")
+| ok s |> std/string:free(s) |> std/string:free(s)
+| err _ |> _

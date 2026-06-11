@@ -1,0 +1,9 @@
+// PIN (enforcement): append demands <instance>; calling it on a <view!>
+// is a phantom state mismatch. Write access requires taking ownership.
+~import std/string
+
+~std/string:from-page(text: "hello")
+| ok s |> std/string:append(s, text: " world")
+    | ok |> std/string:free(s)
+    | err _ |> std/string:free(s)
+| err _ |> _
