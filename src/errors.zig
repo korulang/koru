@@ -75,6 +75,7 @@ pub const ErrorCode = enum(u16) {
 
     // Binding errors
     KORU100, // Unused binding
+    KORU101, // Binding on a payload-less branch (nothing to bind or discard)
 
     // Variant errors
     KORU110, // Event call site has only bare ~proc declarations (no variant tag)

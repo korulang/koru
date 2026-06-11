@@ -1,0 +1,20 @@
+// The void half of the linear bind-or-discard rule (KORU101):
+// a branch that carries NO payload must be handled bindingless — there is
+// nothing to bind, so there is nothing to discard either. `| done _ |>` is
+// a lie about the data flowing through the program.
+//
+// Mirror of KORU030 ("branch has payload but no binding"). Together they are
+// the full linear discipline: payload => bind or discard; void => bindingless.
+const std = @import("std");
+
+~event check {}
+| ok i32
+| done
+
+~proc check|zig {
+    return .done;
+}
+
+~check()
+| ok _ |> _
+| done _ |> _

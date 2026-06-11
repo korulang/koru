@@ -894,6 +894,14 @@ pub const ShapeChecker = struct {
                         "branch '{s}' has payload but no binding", .{branch.name});
                     has_errors = true;
                 }
+                // The void half of the linear rule: a branch that carries
+                // nothing has nothing to bind OR discard — `_` included.
+                if (!has_payload and cont.binding != null) {
+                    try self.reporter.addErrorAtLocation(.KORU101, location,
+                        "branch '{s}' carries no payload — remove the binding '{s}'",
+                        .{ branch.name, cont.binding.? });
+                    has_errors = true;
+                }
                 break;
             }
         }
