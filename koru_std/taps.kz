@@ -71,27 +71,9 @@ var metatype_global_counter: usize = 0;
         source = std.mem.trim(u8, expr, " \t");
     }
 
-    // The pattern is an opaque expression payload, so the compiler does not
-    // normalize the kebab Koru names inside it (unlike event/proc paths, which
-    // are normalized kebab->snake at parse). Do it here so a tap pattern like
-    // `add-five -> *` matches the event registered as `add_five`. Infix-only:
-    // an operator/edge `-` is left alone (mirrors src/ast_mangle.zig).
-    const __mangleTapName = struct {
-        fn f(a: std.mem.Allocator, s: []const u8) []const u8 {
-            const buf = a.dupe(u8, s) catch return s;
-            for (buf, 0..) |*c, i| {
-                if (c.* != '-' or i == 0 or i + 1 >= buf.len) continue;
-                const p = buf[i - 1];
-                const q = buf[i + 1];
-                const p_ok = std.ascii.isAlphanumeric(p) or p == '_';
-                const q_ok = std.ascii.isAlphanumeric(q) or q == '_';
-                if (p_ok and q_ok) c.* = '_';
-            }
-            return buf;
-        }
-    }.f;
-    source = __mangleTapName(allocator, source);
-    destination = __mangleTapName(allocator, destination);
+    // KEBAB-CANONICAL: names are bytes everywhere in the pipeline, so the tap
+    // pattern compares verbatim against event names — `add-five -> *` matches
+    // the event registered as `add-five`. No normalization on either side.
 
     const tap_flow = if (item.* == .flow) &item.flow
         else return .{ .transformed = .{} };

@@ -32,8 +32,8 @@
         },
         {
             "type": "event_decl",
-            "name": "valid_before",
-            "path": ["valid_before"],
+            "name": "valid-before",
+            "path": ["valid-before"],
             "module": "input",
             "input": {
                 "fields": [
@@ -80,8 +80,8 @@
         },
         {
             "type": "event_decl",
-            "name": "valid_after",
-            "path": ["valid_after"],
+            "name": "valid-after",
+            "path": ["valid-after"],
             "module": "input",
             "input": {
                 "fields": [

@@ -166,6 +166,15 @@ const Emitter = struct {
         try self.buf.print(self.allocator, fmt, args);
     }
 
+    /// Identifier formation boundary: names are kebab-canonical in the
+    /// pipeline; a dash lowers to underscore only while writing a JS
+    /// identifier. Mirrors emitter_helpers.writeBranchName for the Zig target.
+    fn writeIdent(self: *Emitter, name: []const u8) JsEmitError!void {
+        for (name) |c| {
+            try self.buf.append(self.allocator, if (c == '-') '_' else c);
+        }
+    }
+
     /// Find the |js proc for `event_path` WITHIN a given item scope (segment-
     /// equal). Scope matters: a module's event resolves to the proc in that same
     /// module, never a same-named proc in a sibling module. Mirrors the Zig
@@ -250,7 +259,11 @@ const Emitter = struct {
             // Bind each effect-branch op as a local: `const tick = H.tick;`
             for (event.branches) |b| {
                 if (b.kind != .effect) continue;
-                try self.writeFmt("      const {s} = H.{s};\n", .{ b.name, b.name });
+                try self.write("      const ");
+                try self.writeIdent(b.name);
+                try self.write(" = H.");
+                try self.writeIdent(b.name);
+                try self.write(";\n");
             }
         } else {
             try self.write("    handler(input) {\n");

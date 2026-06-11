@@ -1,14 +1,14 @@
 # Test 210_014: Branch handler attached to void event
 #
-# `branching_event` is declared with no branches (void event). The flow
+# `branching-event` is declared with no branches (void event). The flow
 # attaches `| error |>` — a branch handler for a branch the event does
 # not produce. The compiler should reject this with a clear
 # coverage/category error that names the event and indicates the
 # branch is not declared.
 #
-# Currently emits: KORU021 "event 'input:branching_event' has no
+# Currently emits: KORU021 "event 'input:branching-event' has no
 # branch 'error' (available: (none))". Pin matches current behavior.
 error\[KORU\d+\]
-branching_event
+branching-event
 no branch
 input\.kz

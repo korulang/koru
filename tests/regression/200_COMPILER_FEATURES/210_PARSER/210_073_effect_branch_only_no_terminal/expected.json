@@ -32,8 +32,8 @@
         },
         {
             "type": "event_decl",
-            "name": "lines_of",
-            "path": ["lines_of"],
+            "name": "lines-of",
+            "path": ["lines-of"],
             "module": "input",
             "input": {
                 "fields": [

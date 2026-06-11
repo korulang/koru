@@ -3,5 +3,5 @@
 OPEN
 [EVAL] Execution complete, branch: opened
 CLOSE
-[AUTO-DISCHARGE] Invoked 'close_handle' for handle 'h1' [main:opened]
+[AUTO-DISCHARGE] Invoked 'close-handle' for handle 'h1' [main:opened]
 OK

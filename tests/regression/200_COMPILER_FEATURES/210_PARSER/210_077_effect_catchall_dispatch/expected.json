@@ -167,8 +167,8 @@
         },
         {
             "type": "event_decl",
-            "name": "consume_token",
-            "path": ["consume_token"],
+            "name": "consume-token",
+            "path": ["consume-token"],
             "module": "input",
             "input": {
                 "fields": [
@@ -195,8 +195,8 @@
         },
         {
             "type": "event_decl",
-            "name": "end_run",
-            "path": ["end_run"],
+            "name": "end-run",
+            "path": ["end-run"],
             "module": "input",
             "input": {
                 "fields": [
@@ -223,8 +223,8 @@
         },
         {
             "type": "event_decl",
-            "name": "log_unhandled",
-            "path": ["log_unhandled"],
+            "name": "log-unhandled",
+            "path": ["log-unhandled"],
             "module": "input",
             "input": {
                 "fields": [
@@ -272,7 +272,7 @@
                     "step":                     {
                         "type": "invocation",
                         "invocation": {
-                            "event": ["consume_token"],
+                            "event": ["consume-token"],
                             "args": [
                                 {
                                     "name": "t",
@@ -296,7 +296,7 @@
                     "step":                     {
                         "type": "invocation",
                         "invocation": {
-                            "event": ["log_unhandled"],
+                            "event": ["log-unhandled"],
                             "args": [
                                 {
                                     "name": "name",
@@ -320,7 +320,7 @@
                     "step":                     {
                         "type": "invocation",
                         "invocation": {
-                            "event": ["end_run"],
+                            "event": ["end-run"],
                             "args": [
                                 {
                                     "name": "n",

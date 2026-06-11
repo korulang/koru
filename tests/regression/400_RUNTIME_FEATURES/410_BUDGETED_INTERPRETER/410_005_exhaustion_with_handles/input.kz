@@ -31,10 +31,10 @@ const std = @import("std");
 ~std/runtime:register(scope: "test") {
     open(10)
     close(1)
-    expensive_read(100)  // Very expensive!
+    expensive-read(100)  // Very expensive!
 }
 
-const TEST_SOURCE = "~open(path: \"x.txt\")\n| opened f |> expensive_read(handle: f.handle)\n| read r |> result { r.data }";
+const TEST_SOURCE = "~open(path: \"x.txt\")\n| opened f |> expensive-read(handle: f.handle)\n| read r |> result { r.data }";
 
 // Open file (10), then try expensive read (100) with only 50 budget
 // Should exhaust, but still auto-discharge the open file

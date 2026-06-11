@@ -32,8 +32,8 @@
         },
         {
             "type": "event_decl",
-            "name": "prompt_user",
-            "path": ["prompt_user"],
+            "name": "prompt-user",
+            "path": ["prompt-user"],
             "module": "input",
             "input": {
                 "fields": [

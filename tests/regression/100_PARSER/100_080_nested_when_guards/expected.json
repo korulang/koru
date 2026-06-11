@@ -129,8 +129,8 @@
         },
         {
             "type": "event_decl",
-            "name": "handle_key",
-            "path": ["handle_key"],
+            "name": "handle-key",
+            "path": ["handle-key"],
             "module": "input",
             "input": {
                 "fields": [
@@ -217,7 +217,7 @@
                             "step":                             {
                                 "type": "invocation",
                                 "invocation": {
-                                    "event": ["handle_key"],
+                                    "event": ["handle-key"],
                                     "args": [
                                         {
                                             "name": "code",
