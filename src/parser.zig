@@ -880,12 +880,11 @@ pub const Parser = struct {
             }
         }
 
-        // Normalize kebab-case Koru names -> snake_case across the whole AST.
-        // Single point at the parse boundary so every downstream consumer sees
-        // snake (kills the metacircular cascade). Path segments are also mangled
-        // earlier in lexer.parseDottedPath so registry keys stay consistent; this
-        // walk is the comprehensive net and is idempotent on already-snake names.
-        ast_mangle.normalizeProgram(items.items);
+        // KEBAB-CANONICAL: no parse-boundary normalization. Names stay
+        // byte-for-byte as written through the whole pipeline; kebab -> snake
+        // happens ONLY at emitter identifier-formation (writeBranchName and
+        // friends). Quoted branch names (`…`/[…]) are just source encoding for
+        // names — a name is a name; the pipeline never rewrites one.
 
         self.registry_transferred = true;
         return ParseResult{
@@ -1734,11 +1733,8 @@ pub const Parser = struct {
         };
 
         // Normalize kebab names -> snake BEFORE registration: the registry
-        // deep-copies field/branch names (see TypeRegistry.registerEvent), and
-        // those copies are read by later passes (e.g. positional-arg → struct
-        // field pairing). Without this, a kebab field leaks into emission.
-        // The post-parse walk re-touches this decl idempotently.
-        ast_mangle.normalizeEventDecl(&event_decl);
+        // KEBAB-CANONICAL: registry deep-copies the names verbatim (kebab).
+        // Lookups come through the same verbatim path; emission lowers.
 
         log_debug("PARSER: Created EventDecl module='{s}', path.module_qualifier={s}\n", .{ event_decl.module, if (event_decl.path.module_qualifier) |m| m else "null" });
 
@@ -1892,9 +1888,8 @@ pub const Parser = struct {
             .module = try self.allocator.dupe(u8, self.module_name),
         };
 
-        // Normalize kebab -> snake before the registry deep-copies names. See
-        // the matching note at the other EventDecl registration site.
-        ast_mangle.normalizeEventDecl(&event_decl);
+        // KEBAB-CANONICAL: registry deep-copies the names verbatim (kebab).
+        // See the matching note at the other EventDecl registration site.
 
         // Register the event with the type registry
         const path_str = try self.pathToString(event_decl.path);

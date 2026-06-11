@@ -114,10 +114,10 @@ pub fn parseDottedPath(allocator: std.mem.Allocator, path: []const u8) ![][]cons
     var iter = std.mem.tokenizeScalar(u8, path, '.');
     while (iter.next()) |segment| {
         const owned = try allocator.dupe(u8, segment);
-        // Normalize kebab Koru names -> snake at construction, BEFORE the registry
-        // keys (path_str) are derived from these segments. Keeps decl registration
-        // and call-site lookups on the same snake form. See src/ast_mangle.zig.
-        mangleKebabInPlace(owned);
+        // KEBAB-CANONICAL: segments stay byte-for-byte as written (kebab is the
+        // canonical internal form). Registry keys derive from these verbatim
+        // segments; registration and lookup stay consistent because BOTH sides
+        // come through here. Snake is an EMITTER concern (identifier formation).
         try segments.append(allocator, owned);
     }
 
@@ -139,7 +139,6 @@ pub fn parseQualifiedPath(allocator: std.mem.Allocator, path: []const u8, ast: a
         const segments = try parseDottedPath(allocator, namespace_part);
 
         const owned_qualifier = try allocator.dupe(u8, qualifier);
-        mangleKebabInPlace(owned_qualifier);
         // Namespace separator: `/` is the source form (matches the import string
         // and filesystem), but the registry / canonical names use `.` internally
         // (namespaces are built as `parent.file`). Normalize the qualifier `/`->`.`

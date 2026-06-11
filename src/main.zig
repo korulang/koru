@@ -1958,7 +1958,9 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
         try code_emitter.write("// Uses unified ASTNode interface for generic AST traversal\n");
 
         // Function signature
-        const fn_sig = try std.fmt.bufPrint(&buf, "fn call_handler_{s}(node: __koru_ast.ASTNode, program: *const __koru_ast.Program, allocator: transform_std.mem.Allocator) !__koru_ast.SiteResult {{\n", .{event.stub_name});
+        var stub_ident_buf: [256]u8 = undefined;
+        const stub_ident = lowerKebabIdent(&stub_ident_buf, event.stub_name);
+        const fn_sig = try std.fmt.bufPrint(&buf, "fn call_handler_{s}(node: __koru_ast.ASTNode, program: *const __koru_ast.Program, allocator: transform_std.mem.Allocator) !__koru_ast.SiteResult {{\n", .{stub_ident});
         try code_emitter.write(fn_sig);
 
         // Extract the appropriate data from the node based on handler type
@@ -2004,11 +2006,15 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
 
         // Generate handler call
         // Use event_name (original name) for handler struct lookup, not stub_name (prefixed for uniqueness)
+        var event_ident_buf: [256]u8 = undefined;
+        const event_ident = lowerKebabIdent(&event_ident_buf, event.event_name);
         if (event.module_path) |mp| {
-            const handler_line = try std.fmt.bufPrint(&buf, "    const handler = {s}.{s}_event;\n", .{ mp, event.event_name });
+            var mp_ident_buf: [256]u8 = undefined;
+            const mp_ident = lowerKebabIdent(&mp_ident_buf, mp);
+            const handler_line = try std.fmt.bufPrint(&buf, "    const handler = {s}.{s}_event;\n", .{ mp_ident, event_ident });
             try code_emitter.write(handler_line);
         } else {
-            const handler_line = try std.fmt.bufPrint(&buf, "    const handler = main_module.{s}_event;\n", .{event.event_name});
+            const handler_line = try std.fmt.bufPrint(&buf, "    const handler = main_module.{s}_event;\n", .{event_ident});
             try code_emitter.write(handler_line);
         }
 
@@ -2251,10 +2257,12 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
 
     // Generate dispatch table entries for Koru-defined handlers (both transform and derive)
     for (transform_events[0..transform_count]) |event| {
+        var stub_ident_buf: [256]u8 = undefined;
+        const stub_ident = lowerKebabIdent(&stub_ident_buf, event.stub_name);
         const entry_line = try std.fmt.bufPrint(&buf, "        .{{ .name = \"{s}\", .claims_descendants = {s}, .handler_fn = call_handler_{s} }},\n", .{
             event.match_name,
             if (event.claims_descendants) "true" else "false",
-            event.stub_name,
+            stub_ident,
         });
         try code_emitter.write(entry_line);
     }
@@ -2279,6 +2287,18 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
 
 /// Helper: Join path segments with underscores for function names
 /// Escapes glob characters: * -> _star_
+/// Identifier formation boundary: names are kebab-canonical in the pipeline
+/// and in ALL stored form — a dash becomes an underscore ONLY in the same
+/// breath as writing a host-language identifier into generated code. Callers
+/// take a lowered COPY at the write site; nothing stored is ever lowered.
+fn lowerKebabIdent(buf: []u8, name: []const u8) []const u8 {
+    @memcpy(buf[0..name.len], name);
+    for (buf[0..name.len]) |*c| {
+        if (c.* == '-') c.* = '_';
+    }
+    return buf[0..name.len];
+}
+
 fn joinPathSegments(allocator: std.mem.Allocator, segments: []const []const u8) ![]const u8 {
     if (segments.len == 0) return try allocator.dupe(u8, "unknown");
 
