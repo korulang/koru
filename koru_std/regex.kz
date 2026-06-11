@@ -96,7 +96,12 @@ const std = @import("std");
             matchers.appendSlice(allocator, "\n") catch unreachable;
 
             if (arm_count > 0) dispatch.appendSlice(allocator, " else ") catch unreachable;
-            const arm = std.fmt.allocPrint(allocator, "if ({s}(__koru_match_in)) __koru_continue_{d}", .{ fn_name, i }) catch unreachable;
+            // Pattern branches carry the matched text (the `*` payload in the
+            // contract): the splice marker binds it to the branch's binding
+            // (`const <name> = ...` or `_ = ...` for discard). Cut-1 is FULL
+            // match, so the matched text IS the input. `no-match` is void and
+            // keeps the bare continue hand-off below.
+            const arm = std.fmt.allocPrint(allocator, "if ({s}(__koru_match_in)) __koru_inline_{d}(__koru_match_in)", .{ fn_name, i }) catch unreachable;
             dispatch.appendSlice(allocator, arm) catch unreachable;
             arm_count += 1;
         }
