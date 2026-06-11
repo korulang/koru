@@ -1,5 +1,5 @@
-// FRONTIER (intentional RED — pins the target capture-as-events shape, not yet
-// built). Capture is being dissolved into ordinary primitives:
+// Capture-as-events: BUILT 2026-06-11 (was the frontier pin for the
+// dissolution; green since the [transform]proc migration). The primitives:
 //   - `capture { ... }` and `captured { ... }` are the SAME shape — events
 //     taking one SOURCE BLOCK (bare braces, no parens; ratified 2026-06-11 —
 //     `name { ... }` is unambiguously an invocation since `=>` took over
