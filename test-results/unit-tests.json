@@ -1,14 +1,14 @@
 {
-  "timestamp": "2026-06-10T07:41:08.291Z",
+  "timestamp": "2026-06-11T04:39:17.395Z",
   "summary": {
-    "passed": 224,
-    "failed": 0,
+    "passed": 240,
+    "failed": 2,
     "skipped": 12,
     "leaked": 0,
     "compileErrors": 0,
-    "total": 236,
-    "suiteCount": 36,
-    "status": "success"
+    "total": 254,
+    "suiteCount": 37,
+    "status": "failure"
   },
   "suites": [
     {
@@ -29,11 +29,11 @@
     },
     {
       "name": "auto_discharge_inserter_tests",
-      "passed": 4,
-      "failed": 0,
+      "passed": 3,
+      "failed": 1,
       "skipped": 0,
       "total": 4,
-      "status": "success"
+      "status": "failure"
     },
     {
       "name": "compiler_passes_tests",
@@ -165,11 +165,11 @@
     },
     {
       "name": "parser_tests",
-      "passed": 19,
-      "failed": 0,
+      "passed": 18,
+      "failed": 1,
       "skipped": 0,
       "total": 19,
-      "status": "success"
+      "status": "failure"
     },
     {
       "name": "phantom_semantic_checker_tests",
@@ -193,6 +193,14 @@
       "failed": 0,
       "skipped": 0,
       "total": 3,
+      "status": "success"
+    },
+    {
+      "name": "regex_engine_tests",
+      "passed": 18,
+      "failed": 0,
+      "skipped": 0,
+      "total": 18,
       "status": "success"
     },
     {

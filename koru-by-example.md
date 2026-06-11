@@ -898,7 +898,7 @@ hello effect branches
 ~import std/string
 ~import std/io
 
-~std/string:from_page(text: "hello")
+~std/string:from-page(text: "hello")
 | ok s |> std/string:read(s)
     | slice text |> std/io:print.ln("{{ text:s }}") |> std/string:free(s)
 | err _ |> _
