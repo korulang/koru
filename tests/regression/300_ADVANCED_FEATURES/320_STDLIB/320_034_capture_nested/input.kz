@@ -1,8 +1,9 @@
-// FRONTIER (deferred 2026-06-03): nested ~capture (capture inside a capture) =
-// MULTI-CELL store territory. The new model (320_042) is top-level single-cell;
-// multi-cell + qualified routing is the deferred store question. Old brace form.
-// See project_capture_dissolves_into_effect_cell.
-// Test: Nested ~capture - outer capture's `captured` inside inner capture's continuation
+// FRONTIER (RED — the MULTI-CELL store question, parked): nested capture.
+// Spelling migrated to block form 2026-06-12; the SEMANTICS are the open
+// design — two live cells means captured { } needs cell ROUTING (which
+// write targets which cell), and the single-cell transform rewrites every
+// captured in its subtree onto its own cell. Goes green when the store
+// design lands (or dies if nested capture is rejected instead).
 
 ~import std/io
 ~import std/control
@@ -15,12 +16,8 @@ const std = @import("std");
     std.debug.print("{d}\n", .{value});
 }
 
-// Outer capture wraps inner capture
-// The outer's `captured { outer: ... }` is inside the inner's `| captured |>` continuation
-// Note: nested captures require explicit unique bindings (outer/inner)
-// The bindings must actually be used in captured { } blocks
-~capture(expr: { outer: @as(i32, 0) })
-| as outer |> capture(expr: { inner: @as(i32, 0) })
-    | as inner => captured { inner: inner.inner + 42 }
-    | captured result => captured { outer: outer.outer + result.inner }
+~capture { outer: 0[i32] }
+! as outer |> capture { inner: 0[i32] }
+    ! as inner |> captured { inner: inner.inner + 42 }
+    | captured result |> captured { outer: outer.outer + result.inner }
 | captured final |> print-int(value: final.outer)

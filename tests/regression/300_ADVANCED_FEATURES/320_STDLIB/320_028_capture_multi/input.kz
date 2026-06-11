@@ -1,19 +1,8 @@
-// FRONTIER (deferred 2026-06-03): old-form capture-as-subflow-impl
-// (`~compute-stats = capture(...)`) + brace `captured { }`. The new capture model
-// (320_042) is top-level single-cell; capture-as-a-pipeline/subflow-RHS needs the
-// nested-step path (deleted). See project_capture_dissolves_into_effect_cell.
-// Test: ~capture with multiple accumulated fields
-//
-// This demonstrates the power of struct accumulators:
-// - One pass through the data
-// - Multiple values captured simultaneously
-// - Pure semantics (compute entire next state at once)
-// - Efficient generated code
-//
-// Compare to Haskell:
-//   fold (\(sum, max) x -> (sum + x, max `max` x)) (0, -inf) items
-//
-// Koru is MORE READABLE with the same purity guarantees!
+// Test: ~capture with multiple accumulated fields, as a SUBFLOW implementation.
+// One pass through the data, multiple cells in one block, pure next-state
+// semantics (compute the entire next state at once). Also exercises the
+// multi-FIELD multi-LINE captured block.
+// Values: 3, 1, 4, 1, 5 -> sum=14, max=5.
 
 ~import std/io
 ~import std/control
@@ -21,15 +10,13 @@
 ~event compute-stats {}
 | result { sum: i32, max: i32 }
 
-// Compute sum and max in one pass
-// Values: 3, 1, 4, 1, 5 -> sum=14, max=5
-~compute-stats = capture(init: { sum: @as(i32, 0), max: @as(i32, 0) })
-| as c |> for(&[_]i32{ 3, 1, 4, 1, 5 })
-  ! each val |> captured {
-      sum: c.sum + val,
-      max: if (val > c.max) val else c.max
+~compute-stats = capture { sum: 0[i32], max: 0[i32] }
+! as c |> for(&[_]i32{ 3, 1, 4, 1, 5 })
+    ! each val |> captured {
+        sum: c.sum + val,
+        max: if (val > c.max) val else c.max
     }
-| captured final |> result { final.sum, final.max }
+| captured final => result { final.sum, final.max }
 
 ~compute-stats()
 | result _ |> std/io:print.ln("done")

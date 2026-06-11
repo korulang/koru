@@ -1,30 +1,22 @@
-// FRONTIER (deferred 2026-06-03): nested + binding-qualified routing
-// (`captured { outer.count: ... }`) = MULTI-CELL store territory. New model is
-// single-cell. Old brace form. See project_capture_dissolves_into_effect_cell.
-// Test: Nested captures with binding-qualified field assignment
-//
-// When captures are nested, field names may conflict.
-// Use the binding name to qualify which capture to update:
-//   captured { outer.count: outer.count + inner.count }
-//
-// This makes data flow EXPLICIT at the syntax level!
+// FRONTIER (RED — the MULTI-CELL store question, parked): nested captures
+// where each captured block updates its OWN cell by field-name routing.
+// Spelling migrated to block form 2026-06-12; semantics are the open store
+// design (see 320_034 for the routing problem, 320_038 for explicit
+// binding-qualified routing).
 
 ~import std/io
 ~import std/control
 
 const std = @import("std");
 
-~event print-results { outer_val: i32, inner_val: i32 }
+~event print-results { outer-val: i32, inner-val: i32 }
 
 ~proc print-results|zig {
     std.debug.print("outer={d}, inner={d}\n", .{outer_val, inner_val});
 }
 
-// Outer capture owns `outer_val`, inner capture owns `inner_val`
-// First test: just nested captures WITHOUT binding qualification
-// Each captured block only updates its OWN capture's field
-~capture(init: { outer_val: @as(i32, 0) })
-| as outer |> capture(init: { inner_val: @as(i32, 0) })
-    | as inner => captured { inner_val: inner.inner_val + 10 }
-    | captured inner_result => captured { outer_val: outer.outer_val + inner_result.inner_val }
-| captured final |> print-results(final.outer_val, inner_val: 10)
+~capture { oval: 0[i32] }
+! as outer |> capture { ival: 0[i32] }
+    ! as inner |> captured { ival: inner.ival + 10 }
+    | captured ires |> captured { oval: outer.oval + ires.ival }
+| captured final |> print-results(outer-val: final.oval, inner-val: 10)
