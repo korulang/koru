@@ -139,34 +139,39 @@ const std = @import("std");
 // - Pure from Koru's perspective (captured computes the NEXT value)
 // - Efficient mutation in generated Zig (var cell + field writes)
 // - Decomposes fold while preserving purity guarantees
-~[keyword|comptime|transform]pub event capture {
-    source: Source,
-    invocation: *const Invocation,
-    item: *const Item,
-    program: *const Program,
-    allocator: std.mem.Allocator
-}
-| transformed SiteResult
+// The event declares the USER surface (second [transform]proc migrant after
+// std/regex:match): a source block, the `! as` cell effect, the optional
+// `| captured` after-read. The shape checker enforces this contract with zero
+// capture-specific code. The machine interface (invocation/item/program/
+// allocator → transformed SiteResult) is the proc-return convention.
+~[keyword|comptime|transform]pub event capture { source: Source }
+! as *
+| ?captured *
 
-~proc capture|zig {
+~[transform]proc capture|zig {
     const ast = @import("ast");
     const struct_literal = @import("struct_literal");
 
-    const flow = if (item.* == .flow)
-        &item.flow
-    else
-        return .{ .transformed = .{} };
-
-    // Position-agnostic: the runner lifts nested sites into a synthetic
-    // top-level flow, so `invocation` IS the flow's own invocation at every depth.
-    // Nested/pipeline captures (migration debt from the old `captured { }`
-    // brace form, being retired) now run the same path; a capture whose
-    // write-back can't be grafted at depth fails LOUDLY in the runner
-    // instead of silently passing through.
-    _ = invocation;
+    // The walker hands transforms the containing item of the matched
+    // invocation; a capture invocation always lives in a flow. A non-flow
+    // item means the dispatch contract broke upstream — crash loudly.
+    if (item.* != .flow) @panic("capture transform: containing item is not a flow - walker dispatch contract broken");
+    const flow = &item.flow;
 
     // Idempotency: a prior run already set preamble_code.
     if (flow.preamble_code != null) return .{ .transformed = .{} };
+
+    // The cell seed is the invocation's source block (parser attaches the
+    // block interior as the `source` arg). A capture without a block is
+    // meaningless — fail loudly at the user.
+    var source_text: ?[]const u8 = null;
+    for (invocation.args) |arg| {
+        if (std.mem.eql(u8, arg.name, "source")) source_text = arg.value;
+    }
+    if (source_text == null) {
+        const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"~capture requires a seed block: capture {{ field: value }}\"); }}", .{}) catch unreachable;
+        return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+    }
 
     // --- Find `! as <cell>` (the mutable cell) and `| captured <result>` (the
     //     after-read). Mirrors ~const's `| as` lookup. ---
@@ -184,15 +189,15 @@ const std = @import("std");
         }
     }
     if (as_cont == null) {
-        std.debug.print("ERROR: ~capture missing `! as` cell binding\n", .{});
-        return .{ .transformed = .{} };
+        const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"~capture requires a `! as <cell>` effect branch\"); }}", .{}) catch unreachable;
+        return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
     }
 
     // The cell's fields, in declaration order, parsed ONCE via the struct-literal
     // projector (the walker foundation). Used for the `var` seed below and to map
     // positional `captured { a, b }` values onto field names by index. The
     // Source text is the block INTERIOR; the projector wants braces back.
-    const expr = std.fmt.allocPrint(allocator, "{{{s}}}", .{source.text}) catch unreachable;
+    const expr = std.fmt.allocPrint(allocator, "{{{s}}}", .{source_text.?}) catch unreachable;
     const cell_fields = struct_literal.parseFields(allocator, expr) catch &[_]struct_literal.StructField{};
 
     // --- Rewrite `captured(...)` invocations into general `.assignment` nodes
@@ -344,10 +349,19 @@ const std = @import("std");
         break :blk2 p.toOwnedSlice(allocator) catch unreachable;
     } else std.fmt.allocPrint(allocator, "var {s} = {s};\n_ = &{s};", .{ cell_name, init_zig, cell_name }) catch unreachable;
 
-    // --- @pass_ran annotation + skip-invocation flow (mirrors ~const). ---
-    const new_annotations = allocator.alloc([]const u8, flow.inv().annotations.len + 1) catch unreachable;
+    // --- @pass_ran (circuit breaker) + @shape_valid (conscious checker
+    //     exemption, WITH reason). The dissolution CONSUMES the user's
+    //     `! as`/`| captured` branches — they become the cell preamble and
+    //     field assignments — so the replacement flow no longer matches the
+    //     event's user contract. That is by design, and this is the rare,
+    //     explicit @shape_valid case. NOTE: checkers run AFTER transforms, so
+    //     the user surface is validated HERE in the transform (loud
+    //     @compileError on missing block / missing `! as`), not by the shape
+    //     checker. The decl's branch contract still serves parse + docs. ---
+    const new_annotations = allocator.alloc([]const u8, flow.inv().annotations.len + 2) catch unreachable;
     for (flow.inv().annotations, 0..) |ann, i| new_annotations[i] = ann;
     new_annotations[flow.inv().annotations.len] = allocator.dupe(u8, "@pass_ran(\"transform\")") catch unreachable;
+    new_annotations[flow.inv().annotations.len + 1] = allocator.dupe(u8, "@shape_valid(\"capture dissolves ! as / | captured into cell preamble + assignments\")") catch unreachable;
 
     const new_invocation = ast.Invocation{
         .path = flow.inv().path,

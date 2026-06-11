@@ -1,0 +1,16 @@
+// PIN (found by AoC day 1): a char literal containing a paren — '(' or ')' —
+// inside invocation args must not confuse the arg scanner. The paren-depth
+// scan was quote-blind: '(' inflated the depth, the closing paren was never
+// found, and the args were SILENTLY DROPPED (empty args, no error), so
+// `if(c == '(')` lost its condition and downstream KORU100 blamed the binding.
+
+const std = @import("std");
+
+~event probe { c: u8 }
+
+~proc probe|zig {
+    std.debug.print("{c}\n", .{c});
+}
+
+~probe(c: '(')
+~probe(c: ')')

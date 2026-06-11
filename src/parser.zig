@@ -77,6 +77,34 @@ fn containsNonBuiltinCall(s: []const u8) bool {
 /// Source blocks are opaque - their content should not affect parsing decisions.
 /// Returns true if there's a `{` that's NOT inside parentheses AND no `=` before it.
 /// The `=` check distinguishes source blocks from subflow impls with branch constructors:
+/// Net paren balance of a line, QUOTE-AWARE: parens inside string ("...") or
+/// char ('...') literals are text, not structure. Backslash escapes honored.
+/// A quote-blind count mistakes `if(c == '(')` for an unbalanced line — the
+/// multiline joiner then swallows following branch lines (pinned by 210_122).
+fn netParens(s: []const u8) i32 {
+    var depth: i32 = 0;
+    var quote: u8 = 0; // 0 = not in a literal; otherwise the delimiter
+    var i: usize = 0;
+    while (i < s.len) : (i += 1) {
+        const c = s[i];
+        if (quote != 0) {
+            if (c == '\\') {
+                i += 1; // skip the escaped char
+            } else if (c == quote) {
+                quote = 0;
+            }
+            continue;
+        }
+        switch (c) {
+            '"', '\'' => quote = c,
+            '(' => depth += 1,
+            ')' => depth -= 1,
+            else => {},
+        }
+    }
+    return depth;
+}
+
 ///   - Source block:   `~event { content }`      - no = before {
 ///   - Subflow impl:   `~event = branch { ... }` - has = before {
 fn hasSourceBlock(s: []const u8) bool {
@@ -3737,12 +3765,42 @@ pub const Parser = struct {
         defer args.deinit(self.allocator);
 
         if (paren_idx) |idx| {
-            // Find the matching closing parenthesis for this opening one
+            // Find the matching closing parenthesis for this opening one.
+            // QUOTE-AWARE: parens inside string/char literals ("(" / '(') are
+            // text, not structure — a quote-blind scan loses `if(c == '(')`
+            // (pinned by 210_122). Backslash escapes honored inside quotes.
             var depth: usize = 1;
             var args_end = idx + 1;
+            var quote: u8 = 0; // 0 = not in a literal; otherwise the delimiter
             while (args_end < invocation_part.len and depth > 0) : (args_end += 1) {
-                if (invocation_part[args_end] == '(') depth += 1;
-                if (invocation_part[args_end] == ')') depth -= 1;
+                const ch = invocation_part[args_end];
+                if (quote != 0) {
+                    if (ch == '\\') {
+                        args_end += 1; // skip the escaped char
+                    } else if (ch == quote) {
+                        quote = 0;
+                    }
+                    continue;
+                }
+                switch (ch) {
+                    '"', '\'' => quote = ch,
+                    '(' => depth += 1,
+                    ')' => depth -= 1,
+                    else => {},
+                }
+            }
+
+            if (depth != 0) {
+                // Unbalanced args are a USER error — never silently drop them
+                // (the old behavior compiled `if(c == '(')` with EMPTY args).
+                try self.reporter.addError(
+                    .PARSE003,
+                    self.current,
+                    1,
+                    "unbalanced parentheses in invocation arguments",
+                    .{},
+                );
+                return error.ParseError;
             }
 
             if (depth == 0) {
@@ -5390,12 +5448,11 @@ pub const Parser = struct {
             //       a: a.result,
             //       b: 20)
             //       | done b |> ...  (nested continuation - MORE indented)
+            // QUOTE-AWARE: parens inside string/char literals are text, not
+            // structure. A quote-blind count saw `if(c == '(')` as unbalanced
+            // and swallowed the following branch lines (pinned by 210_122).
             if (!is_multiline_source_block) {
-                var paren_depth: i32 = 0;
-                for (full_rest) |c| {
-                    if (c == '(') paren_depth += 1;
-                    if (c == ')') paren_depth -= 1;
-                }
+                var paren_depth: i32 = netParens(full_rest);
 
                 if (paren_depth > 0) {
                     // Unbalanced parens - collect lines until balanced
@@ -5413,11 +5470,8 @@ pub const Parser = struct {
                             continue;
                         }
 
-                        // Count parens in this line
-                        for (next_trimmed) |c| {
-                            if (c == '(') paren_depth += 1;
-                            if (c == ')') paren_depth -= 1;
-                        }
+                        // Count parens in this line (quote-aware, see above)
+                        paren_depth += netParens(next_trimmed);
 
                         // Add this line to our content (with space separator)
                         try rest_buf.appendSlice(self.allocator, " ");

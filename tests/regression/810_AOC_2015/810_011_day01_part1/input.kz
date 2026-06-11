@@ -1,35 +1,17 @@
 // AoC 2015 Day 1 Part 1 — "Not Quite Lisp" (statement example: "(()(()(" → 3).
-// PROBE ARTIFACT, not the final surface: accumulation reaches into host Zig
-// (`var floor` mutated inside a proc). That reach is the frontier this day
-// votes on — the pristine version needs a Koru accumulation surface
-// (capture/store design). This input.kz gets rewritten when that lands.
+// PRISTINE: Koru carries the whole structure — the capture cell accumulates,
+// for iterates the input's chars, if branches, captured { } computes the next
+// cell value. The only host code is leaf expressions (comparison, ±1).
+// This rung voted on the capture/store question — and capture won.
 
+~import std/io
 ~import std/control
-
-const std = @import("std");
 
 const input = "(()(()(";
 
-var floor: i32 = 0;
-
-~event step { c: u8 }
-
-~proc step|zig {
-    if (c == '(') {
-        floor += 1;
-    } else {
-        floor -= 1;
-    }
-}
-
-~event report {}
-
-~proc report|zig {
-    std.debug.print("{d}\n", .{floor});
-}
-
-~for(input)
-! each c |> step(c)
-| done |> report()
-
-pub fn main() void {}
+~capture { floor: @as(i32, 0) }
+! as acc |> for(input)
+    ! each c |> if(c == '(')
+        | then |> captured { floor: acc.floor + 1 }
+        | else |> captured { floor: acc.floor - 1 }
+| captured result |> std/io:print.ln("{{ result.floor:d }}")

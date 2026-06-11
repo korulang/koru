@@ -1781,6 +1781,14 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                     if (has_transform_proc) {
                         has_invocation_param = true;
                         has_item_param = true;
+                        // Machine convention is the WHOLE Input: user-surface
+                        // fields (Source blocks, expressions) ride the
+                        // invocation's args, never the handler Input struct
+                        // (emitTransformProcEventStruct emits machine fields
+                        // only — a wrapper passing .source would not compile).
+                        has_source_param = false;
+                        has_expression_param = false;
+                        has_optional_expression_param = false;
                     }
 
                     // Emit handlers for events that consume AST types
