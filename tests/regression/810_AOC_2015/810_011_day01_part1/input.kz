@@ -1,0 +1,35 @@
+// AoC 2015 Day 1 Part 1 — "Not Quite Lisp" (statement example: "(()(()(" → 3).
+// PROBE ARTIFACT, not the final surface: accumulation reaches into host Zig
+// (`var floor` mutated inside a proc). That reach is the frontier this day
+// votes on — the pristine version needs a Koru accumulation surface
+// (capture/store design). This input.kz gets rewritten when that lands.
+
+~import std/control
+
+const std = @import("std");
+
+const input = "(()(()(";
+
+var floor: i32 = 0;
+
+~event step { c: u8 }
+
+~proc step|zig {
+    if (c == '(') {
+        floor += 1;
+    } else {
+        floor -= 1;
+    }
+}
+
+~event report {}
+
+~proc report|zig {
+    std.debug.print("{d}\n", .{floor});
+}
+
+~for(input)
+! each c |> step(c)
+| done |> report()
+
+pub fn main() void {}
