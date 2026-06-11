@@ -1,5 +1,5 @@
 // Test: std/interpreter:run event
-// Uses ~get_scope to get dispatcher, passes to std/interpreter:run
+// Uses ~get-scope to get dispatcher, passes to std/interpreter:run
 
 ~import std/runtime
 ~import std/interpreter
@@ -20,7 +20,7 @@
 
 const TEST_SOURCE = "~greet(name: \"World\")";
 
-~std/runtime:get_scope(name: "test")
+~std/runtime:get-scope(name: "test")
 | scope s |> std/interpreter:run(source: TEST_SOURCE, s.dispatcher)
     | result _ |> std/io:print.ln("SUCCESS")
     | exhausted _ |> std/io:print.ln("EXHAUSTED")

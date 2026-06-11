@@ -6023,14 +6023,7 @@ fn emitContinuationListWithUnreachableBranches(
     for (unreachable_branches) |branch| {
         try emitter.writeIndent();
         try emitter.write(".");
-        // Handle reserved Zig keywords
-        if (CodeEmitter.isZigKeyword(branch)) {
-            try emitter.write("@\"");
-            try emitter.write(branch);
-            try emitter.write("\"");
-        } else {
-            try emitter.write(branch);
-        }
+        try writeBranchName(emitter, branch);
         try emitter.write(" => unreachable,\n");
     }
 
@@ -8589,13 +8582,13 @@ fn emitEventDeclForModule(
             if (b.kind != .effect) continue;
             try code_emitter.writeIndent();
             try code_emitter.write("const ");
-            try code_emitter.write(b.name);
+            try writeBranchName(code_emitter, b.name);
             try code_emitter.write(" = __H.");
-            try code_emitter.write(b.name);
+            try writeBranchName(code_emitter, b.name);
             try code_emitter.write(";\n");
             try code_emitter.writeIndent();
             try code_emitter.write("_ = &");
-            try code_emitter.write(b.name);
+            try writeBranchName(code_emitter, b.name);
             try code_emitter.write(";\n");
         }
     }

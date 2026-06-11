@@ -51,7 +51,7 @@ const std = @import("std");
     // Create new path: my_if -> my_if_impl
     const new_path = ast.DottedPath{
         .module_qualifier = flow.inv().path.module_qualifier,
-        .segments = &[_][]const u8{"my_if_impl"},
+        .segments = &[_][]const u8{"my-if-impl"},
     };
 
     // Create new args: condition = expr

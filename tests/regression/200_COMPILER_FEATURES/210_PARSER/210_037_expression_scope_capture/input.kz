@@ -16,4 +16,4 @@ const std = @import("std");
 // Before fix: 'data.value > 10' was parsed as name='value > 10', value='data.value > 10'
 // After fix: name='expr', value='data.value > 10'
 const data = .{ .value = 42 };
-~check_expr(data.value > 10)
+~check-expr(data.value > 10)

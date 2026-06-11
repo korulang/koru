@@ -20,7 +20,7 @@ const Item = ast.Item;
         return .{ .transformed = .{} };
 
     const segments = allocator.alloc([]const u8, 1) catch unreachable;
-    segments[0] = "sample_impl";
+    segments[0] = "sample-impl";
     
     var new_inv = flow.inv().*;
     new_inv.path = ast.DottedPath{

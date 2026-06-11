@@ -1954,13 +1954,13 @@ pub const VisitorEmitter = struct {
                 if (b.kind != .effect) continue;
                 try self.code_emitter.writeIndent();
                 try self.code_emitter.write("const ");
-                try self.code_emitter.write(b.name);
+                try emitter.writeBranchName(self.code_emitter, b.name);
                 try self.code_emitter.write(" = __H.");
-                try self.code_emitter.write(b.name);
+                try emitter.writeBranchName(self.code_emitter, b.name);
                 try self.code_emitter.write(";\n");
                 try self.code_emitter.writeIndent();
                 try self.code_emitter.write("_ = &");
-                try self.code_emitter.write(b.name);
+                try emitter.writeBranchName(self.code_emitter, b.name);
                 try self.code_emitter.write(";\n");
             }
         }

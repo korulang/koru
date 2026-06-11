@@ -13,7 +13,7 @@
 const std = @import("std");
 
 // Template: classify a number as positive or not
-~std/template:define(name: "classify_num") {
+~std/template:define(name: "classify-num") {
     blk: {
         const Result = union(enum) {
             positive: i32,
