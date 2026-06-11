@@ -274,7 +274,13 @@ const std = @import("std");
     // (2) `| captured result` → `const result = cell;` (the after-read) then the
     //     captured body. A plain inline_code binding + the body as its child.
     if (captured_cont) |cc| {
-        const bind_code = std.fmt.allocPrint(allocator, "const {s} = {s};", .{ result_name, cell_name }) catch unreachable;
+        // A `_` (or `_`-prefixed) read binding is a DISCARD: the user runs the
+        // after-body without reading the cell — emit no binding at all
+        // (`const _ = cell;` is not legal Zig).
+        const bind_code = if (std.mem.startsWith(u8, result_name, "_"))
+            allocator.dupe(u8, "") catch unreachable
+        else
+            std.fmt.allocPrint(allocator, "const {s} = {s};", .{ result_name, cell_name }) catch unreachable;
         const body_inner = allocator.alloc(ast.Continuation, 1) catch unreachable;
         body_inner[0] = .{
             .branch = "",
