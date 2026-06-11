@@ -1,0 +1,6 @@
+workload,language,n,wall_ms,output_hash,output,note
+regex_match_bound,koru,3000000,47.731,49e38691e302,"email = 1000000 number = 1000000 none = 1000000 total_len = 12000000",
+regex_match_bound,koru,3000000,46.861,49e38691e302,"email = 1000000 number = 1000000 none = 1000000 total_len = 12000000",
+regex_match_bound,koru,3000000,46.378,49e38691e302,"email = 1000000 number = 1000000 none = 1000000 total_len = 12000000",
+regex_match_bound,koru,3000000,47.739,49e38691e302,"email = 1000000 number = 1000000 none = 1000000 total_len = 12000000",
+regex_match_bound,koru,3000000,46.978,49e38691e302,"email = 1000000 number = 1000000 none = 1000000 total_len = 12000000",

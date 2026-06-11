@@ -1,0 +1,47 @@
+// regex_match_bound — the SAME n-dispatch workload as regex_match, but every
+// pattern branch BINDS the matched text and USES it (accumulates lengths).
+// The A/B against regex_match measures what binding costs: the dispatch arms
+// emit `const m = <input>;` (a fat-pointer copy) — predicted Δ ≈ 0.
+~import std/regex
+~import std/io
+
+const std = @import("std");
+
+var input_n: u64 = 0;
+var count_email: u64 = 0;
+var count_number: u64 = 0;
+var count_none: u64 = 0;
+var total_len: u64 = 0;
+
+const INPUTS = [_][]const u8{ "foo@bar", "12345", "hello world!" };
+
+~pub event read-n {}
+
+~proc read-n|zig {
+    var args = std.process.args();
+    _ = args.next();
+    if (args.next()) |arg| {
+        input_n = std.fmt.parseInt(u64, arg, 10) catch 3_000_000;
+    } else {
+        input_n = 3_000_000;
+    }
+}
+
+~pub event bump-email { m: []const u8 }
+~proc bump-email|zig { count_email += 1; total_len += m.len; }
+
+~pub event bump-number { m: []const u8 }
+~proc bump-number|zig { count_number += 1; total_len += m.len; }
+
+~pub event bump-none {}
+~proc bump-none|zig { count_none += 1; }
+
+~read-n()
+
+~for(0..input_n)
+! each i |> std/regex:match(INPUTS[i % 3])
+            | `[a-z]+@[a-z]+` m |> bump-email(m)
+            | `[0-9]+` m |> bump-number(m)
+            | no-match |> bump-none()
+
+~std/io:print.ln("email = {{ count_email:d }} number = {{ count_number:d }} none = {{ count_none:d }} total_len = {{ total_len:d }}")
