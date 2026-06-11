@@ -1,0 +1,49 @@
+// PIN (quote-decode) — a quoted branch name may contain SPACES.
+//
+// Branch names are bytes; backtick/bracket quoting is source ENCODING that
+// lets the source express any name. The decoded (inner) content is stored —
+// glyphs never enter the AST. A regex pattern with a space (`[a-z ]+@...`)
+// must survive byte-for-byte through parseBranchInfo, which historically
+// whitespace-tokenized the branch line and split mid-pattern.
+//
+// Same scan-transform trick as 010_059: bake the FIRST continuation's branch
+// name into a @compileError so it surfaces verbatim. EXPECT (CONTAINS):
+// `pattern=[a-z ]+@[a-z]+` — space intact, NO quoting glyphs in the stored
+// name. RED until the parser decodes quotes (space currently breaks
+// tokenization).
+const std = @import("std");
+
+~[comptime|transform]pub event scan-spaced {
+    invocation: *const Invocation,
+    item: *const Item,
+    program: *const Program,
+}
+| transformed SiteResult
+
+~proc scan-spaced|zig {
+    const ast = @import("ast");
+    const allocator = std.heap.page_allocator;
+
+    const flow = if (item.* == .flow) &item.flow else return .{ .transformed = .{} };
+    if (flow.body.continuations.len == 0) return .{ .transformed = .{} };
+
+    const pattern = flow.body.continuations[0].branch;
+
+    const code = std.fmt.allocPrint(
+        allocator,
+        "comptime {{ @compileError(\"pattern={s}\"); }}",
+        .{pattern},
+    ) catch unreachable;
+
+    const replacement = ast.Item{ .inline_code = ast.InlineCode{
+        .code = code,
+        .location = flow.location,
+        .module = allocator.dupe(u8, flow.module) catch unreachable,
+    } };
+
+    return .{ .transformed = .{ .replacement = replacement } };
+}
+
+~scan-spaced()
+| `[a-z ]+@[a-z]+` _ |> _
+| no-match |> _

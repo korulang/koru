@@ -4959,12 +4959,10 @@ pub const Parser = struct {
         var rest_after_branch: []const u8 = undefined;
 
         if (is_raw_branch) {
-            // Raw pattern branch: `...` — capture the content VERBATIM up to the
-            // next backtick. This is the delimiter for pattern languages that
-            // use `[]`/`-` as data (regex: `[a-z]+`). Backticks don't nest, so
-            // no depth counting; the backticks stay on the name as the "raw"
-            // marker (ast_mangle skips backtick-led names, leaving them
-            // byte-for-byte — unlike `[...]` names, which get kebab-normalized).
+            // Quoted branch name, backtick spelling: `…`. Quoting is source
+            // ENCODING — it lets the source express any name (regex ranges,
+            // spaces, operators). The INNER content is the name; glyphs never
+            // enter the AST. Byte-identical in meaning to the […] spelling.
             var end_pos: usize = 1;
             while (end_pos < trimmed_content.len and trimmed_content[end_pos] != '`') : (end_pos += 1) {}
             if (end_pos >= trimmed_content.len) {
@@ -4972,16 +4970,18 @@ pub const Parser = struct {
                     .PARSE003,
                     self.current + 1,
                     indent + 2,
-                    "unmatched '`' in raw pattern branch",
+                    "unmatched '`' in quoted branch name",
                     .{},
                 );
                 return error.ParseError;
             }
-            end_pos += 1; // include the closing backtick
-            branch_name = trimmed_content[0..end_pos];
-            rest_after_branch = lexer.trim(trimmed_content[end_pos..]);
+            branch_name = trimmed_content[1..end_pos];
+            rest_after_branch = lexer.trim(trimmed_content[end_pos + 1 ..]);
         } else if (is_pattern_branch) {
             // Pattern branch: find matching ] with bracket counting
+            // Quoted branch name, bracket spelling: […] (depth-counted; the
+            // content may itself contain brackets). EXACTLY equivalent to the
+            // backtick spelling — the INNER content is the name.
             var depth: usize = 1;
             var end_pos: usize = 1;
             while (end_pos < trimmed_content.len and depth > 0) : (end_pos += 1) {
@@ -4997,13 +4997,14 @@ pub const Parser = struct {
                     .PARSE003,
                     self.current + 1,
                     indent + 2,
-                    "unmatched '[' in pattern branch",
+                    "unmatched '[' in quoted branch name",
                     .{},
                 );
                 return error.ParseError;
             }
 
-            branch_name = trimmed_content[0..end_pos];
+            // end_pos is one past the matching ']' — inner excludes both glyphs.
+            branch_name = trimmed_content[1 .. end_pos - 1];
             rest_after_branch = lexer.trim(trimmed_content[end_pos..]);
         } else {
             // Normal branch: tokenize on space

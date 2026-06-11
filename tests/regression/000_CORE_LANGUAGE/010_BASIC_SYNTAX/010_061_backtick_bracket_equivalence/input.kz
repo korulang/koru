@@ -1,0 +1,50 @@
+// PIN (quote-decode) — backtick and bracket quoting are EXACTLY equivalent.
+//
+// `something` and [something] are two source spellings of the SAME branch
+// name. Both decode to the inner content; the stored names are byte-identical
+// and carry no glyphs. (Today brackets stay attached AND get kebab-corrupted
+// in other positions, while backticks stay attached as a sentinel — two
+// different accidents.)
+//
+// The transform bakes BOTH continuations' branch names into one
+// @compileError. EXPECT (CONTAINS): `names=<[a-z]+|[a-z]+>` — identical
+// decoded content from the two spellings. RED until the parser decodes both
+// quote forms to inner content.
+const std = @import("std");
+
+~[comptime|transform]pub event scan-two {
+    invocation: *const Invocation,
+    item: *const Item,
+    program: *const Program,
+}
+| transformed SiteResult
+
+~proc scan-two|zig {
+    const ast = @import("ast");
+    const allocator = std.heap.page_allocator;
+
+    const flow = if (item.* == .flow) &item.flow else return .{ .transformed = .{} };
+    if (flow.body.continuations.len < 2) return .{ .transformed = .{} };
+
+    const a = flow.body.continuations[0].branch;
+    const b = flow.body.continuations[1].branch;
+
+    const code = std.fmt.allocPrint(
+        allocator,
+        "comptime {{ @compileError(\"names=<{s}|{s}>\"); }}",
+        .{ a, b },
+    ) catch unreachable;
+
+    const replacement = ast.Item{ .inline_code = ast.InlineCode{
+        .code = code,
+        .location = flow.location,
+        .module = allocator.dupe(u8, flow.module) catch unreachable,
+    } };
+
+    return .{ .transformed = .{ .replacement = replacement } };
+}
+
+~scan-two()
+| `[a-z]+` _ |> _
+| [[a-z]+] _ |> _
+| no-match |> _

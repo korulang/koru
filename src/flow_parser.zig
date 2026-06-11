@@ -549,12 +549,26 @@ fn parseSingleContinuation(
 fn findPipeGt(text: []const u8) ?usize {
     var brace_depth: usize = 0;
     var paren_depth: usize = 0;
+    var bracket_depth: usize = 0;
     var in_string = false;
+    var in_backtick = false;
     var string_char: ?u8 = null;
 
     var i: usize = 0;
     while (i < text.len) {
         const c = text[i];
+
+        // Quoted branch name (`…`): opaque bytes — a `|>` inside is data.
+        // No escape sequences inside backticks (the content is verbatim).
+        if (!in_string and c == '`') {
+            in_backtick = !in_backtick;
+            i += 1;
+            continue;
+        }
+        if (in_backtick) {
+            i += 1;
+            continue;
+        }
 
         if (!in_string and (c == '"' or c == '\'')) {
             in_string = true;
@@ -577,8 +591,10 @@ fn findPipeGt(text: []const u8) ?usize {
             '}' => brace_depth -|= 1,
             '(' => paren_depth += 1,
             ')' => paren_depth -|= 1,
+            '[' => bracket_depth += 1,
+            ']' => bracket_depth -|= 1,
             '|' => {
-                if (brace_depth == 0 and paren_depth == 0 and i + 1 < text.len and text[i + 1] == '>') {
+                if (brace_depth == 0 and paren_depth == 0 and bracket_depth == 0 and i + 1 < text.len and text[i + 1] == '>') {
                     return i;
                 }
             },
@@ -597,6 +613,53 @@ const BranchInfo = struct {
 
 fn parseBranchInfo(allocator: std.mem.Allocator, text: []const u8) ParseError!BranchInfo {
     var content = lexer.trim(text);
+
+    // Quoted branch name (`…` or […]) — source ENCODING of an arbitrary name.
+    // Decode FIRST: the content may contain spaces or the word "when", so the
+    // quote scan must run before when-extraction and tokenization. The INNER
+    // content is the name; glyphs never enter the AST. Both spellings are
+    // exactly equivalent.
+    if (content.len > 0 and (content[0] == '`' or content[0] == '[')) {
+        const close: usize = blk: {
+            if (content[0] == '`') {
+                var i: usize = 1;
+                while (i < content.len and content[i] != '`') : (i += 1) {}
+                if (i >= content.len) return ParseError.MalformedContinuation;
+                break :blk i;
+            } else {
+                var depth: usize = 1;
+                var i: usize = 1;
+                while (i < content.len and depth > 0) : (i += 1) {
+                    if (content[i] == '[') {
+                        depth += 1;
+                    } else if (content[i] == ']') {
+                        depth -= 1;
+                    }
+                }
+                if (depth != 0) return ParseError.MalformedContinuation;
+                break :blk i - 1; // i is one past the closing ']'
+            }
+        };
+        const inner = content[1..close];
+        var rest = lexer.trim(content[close + 1 ..]);
+
+        var condition: ?[]const u8 = null;
+        if (findWhenKeyword(rest)) |when_idx| {
+            const when_text = lexer.trim(rest[when_idx + 4 ..]);
+            if (when_text.len > 0) {
+                condition = try allocator.dupe(u8, when_text);
+            }
+            rest = lexer.trim(rest[0..when_idx]);
+        }
+        var rest_tokens = std.mem.tokenizeAny(u8, rest, " \t");
+        const quoted_binding = rest_tokens.next();
+
+        return .{
+            .branch = try allocator.dupe(u8, inner),
+            .binding = if (quoted_binding) |b| try allocator.dupe(u8, b) else null,
+            .condition = condition,
+        };
+    }
 
     // Extract when-clause if present: "branch binding when condition"
     var condition: ?[]const u8 = null;

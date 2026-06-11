@@ -59,8 +59,13 @@ const std = @import("std");
     var arm_count: usize = 0;
     for (conts, 0..) |c, i| {
         const name = c.branch;
-        if (name.len >= 2 and name[0] == '`' and name[name.len - 1] == '`') {
-            const pattern = name[1 .. name.len - 1];
+        if (std.mem.eql(u8, name, "no-match")) {
+            nomatch_idx = i;
+        } else {
+            // Every non-`no-match` branch IS a pattern. Quoting (`…`/[…]) is
+            // source encoding; the parser stored the INNER content — the name
+            // is the pattern, byte-for-byte. No glyph stripping here.
+            const pattern = name;
             const fn_name = std.fmt.allocPrint(allocator, "__koru_re_{d}_{d}_{d}", .{ flow.location.line, flow.location.column, i }) catch unreachable;
             const matcher_src = regex.compileToZig(allocator, pattern, fn_name) catch {
                 const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"regex: cannot compile pattern `{s}`\"); }}", .{pattern}) catch unreachable;
@@ -73,8 +78,6 @@ const std = @import("std");
             const arm = std.fmt.allocPrint(allocator, "if ({s}(__koru_match_in)) __koru_continue_{d}", .{ fn_name, i }) catch unreachable;
             dispatch.appendSlice(allocator, arm) catch unreachable;
             arm_count += 1;
-        } else if (std.mem.eql(u8, name, "no_match") or std.mem.eql(u8, name, "no-match")) {
-            nomatch_idx = i;
         }
     }
 
