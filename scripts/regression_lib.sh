@@ -1249,6 +1249,18 @@ EOF
         else
             RUN_SUCCESS=false
         fi
+
+        # PRODUCED-PROGRAM LEAK CHECK: the emitted main() deinits the
+        # koru_allocator GPA and exits 1 with a marker line if anything
+        # leaked (traces land in actual.txt via 2>&1). A leak is its own
+        # failure category — it outranks the output diff.
+        if grep -q "KORU LEAK CHECK FAILED" "$test_dir/actual.txt" 2>/dev/null; then
+            echo -e "${RED}❌ Produced program leaked memory (see actual.txt for GPA trace)${NC}"
+            echo "leak-output" > "$test_dir/FAILURE"
+            FAILED_TESTS="$FAILED_TESTS $TEST_NAME(leak-output)"
+            LEAKED_TESTS=$((LEAKED_TESTS + 1))
+            return 0
+        fi
         
         # Check if we have expected output or post-validation script
         if [ -f "$test_dir/expected.txt" ]; then

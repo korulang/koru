@@ -29,7 +29,7 @@ pub const FormattedText = struct {
 
 ~proc fmt.dealloc|zig {
     formatted.allocator.free(formatted.text);
-    std.heap.page_allocator.destroy(formatted);
+    koru_allocator().destroy(formatted);
 }
 
 // ============================================================================
@@ -211,7 +211,7 @@ pub const FormattedText = struct {
     const inline_code = std.fmt.allocPrint(
         allocator,
         \\{{
-        \\    const __fmt_alloc = @import("std").heap.page_allocator;
+        \\    const __fmt_alloc = koru_allocator();
         \\    const __fmt_text = @import("std").fmt.allocPrint(__fmt_alloc, "{s}", .{{{s}}}) catch unreachable;
         \\    const __fmt_result = __fmt_alloc.create(@import("std").io.FormattedText) catch unreachable;
         \\    __fmt_result.* = .{{ .text = __fmt_text, .allocator = __fmt_alloc }};

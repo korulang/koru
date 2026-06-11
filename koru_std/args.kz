@@ -15,7 +15,7 @@ fn _get_argv() [][:0]u8 {
     if (_cached_argv) |argv| {
         return argv;
     }
-    _cached_argv = std.process.argsAlloc(std.heap.page_allocator) catch &.{};
+    _cached_argv = std.process.argsAlloc(koru_allocator()) catch &.{};
     return _cached_argv.?;
 }
 

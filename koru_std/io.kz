@@ -66,7 +66,7 @@ const std = @import("std");
     // Find newline and exclude it
     var end: usize = 0;
     while (end < n and buf[end] != '\n') : (end += 1) {}
-    const duped = std.heap.page_allocator.dupe(u8, buf[0..end]) catch "";
+    const duped = koru_allocator().dupe(u8, buf[0..end]) catch "";
     return .{ .ok = duped };
 }
 
@@ -118,7 +118,7 @@ const std = @import("std");
 
 ~proc read-stdin|zig {
     const stdin = std.fs.File.stdin();
-    const content = stdin.readToEndAlloc(std.heap.page_allocator, 1024 * 1024 * 10) catch |err| {
+    const content = stdin.readToEndAlloc(koru_allocator(), 1024 * 1024 * 10) catch |err| {
         const msg = switch (err) {
             error.OutOfMemory => "Input too large (max 10MB)",
             else => "Failed to read stdin",
@@ -150,7 +150,7 @@ const std = @import("std");
     };
     defer file.close();
 
-    const content = file.readToEndAlloc(std.heap.page_allocator, 1024 * 1024 * 10) catch |err| {
+    const content = file.readToEndAlloc(koru_allocator(), 1024 * 1024 * 10) catch |err| {
         const msg = switch (err) {
             error.OutOfMemory => "File too large (max 10MB)",
             else => "Failed to read file",
@@ -166,7 +166,7 @@ const std = @import("std");
 | ok []const []const u8
 
 ~proc args|zig {
-    var arg_list = std.ArrayList([]const u8).init(std.heap.page_allocator);
+    var arg_list = std.ArrayList([]const u8).init(koru_allocator());
     var iter = std.process.args();
     while (iter.next()) |arg| {
         arg_list.append(arg) catch continue;

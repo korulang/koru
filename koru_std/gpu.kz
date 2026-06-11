@@ -50,7 +50,7 @@ const RuntimeFile = struct {
 // ================================================================
 
 ~proc compile.target|zig {
-    const allocator = std.heap.page_allocator;
+    const allocator = koru_allocator();
 
     // Only handle "gpu" target
     if (!std.mem.eql(u8, target_name, "gpu")) {

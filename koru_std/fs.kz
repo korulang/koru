@@ -28,7 +28,7 @@ const std = @import("std");
     defer file.close();
 
     // Read entire file content
-    const content = file.readToEndAlloc(std.heap.page_allocator, 1024 * 1024 * 10) catch |err| {
+    const content = file.readToEndAlloc(koru_allocator(), 1024 * 1024 * 10) catch |err| {
         const msg = switch (err) {
             error.OutOfMemory => "File too large",
             else => "Failed to read file",
@@ -51,7 +51,7 @@ const std = @import("std");
     }
 
     // Allocate lines array
-    const lines = std.heap.page_allocator.alloc([]const u8, line_count) catch {
+    const lines = koru_allocator().alloc([]const u8, line_count) catch {
         return .{ .failed = "Out of memory allocating lines" };
     };
 

@@ -740,6 +740,21 @@ pub fn emitMainModuleStart(emitter: *CodeEmitter, pub_compiler_env: bool) !void 
     } else {
         try emitter.write("const CompilerEnv = @import(\"compiler_env\").CompilerEnv;\n\n");
     }
+    // KORU ALLOCATOR SPINE — the one allocator stdlib runtime procs use,
+    // backed by a leak-reporting GPA. Emitted into BOTH outputs so proc
+    // bodies (pasted into both) always resolve; only the RUNTIME main()
+    // performs the deinit leak check and fails the process (exit 1) on
+    // leaks. This is a METER, not a mop: no arenas, no auto-free — real
+    // leaks in proc bodies must surface, loudly.
+    // `.safety = true` UNCONDITIONALLY: Stage D builds release binaries
+    // (ReleaseSmall/ReleaseFast), where DebugAllocator's tracking defaults
+    // OFF and deinit() lies `.ok` over real leaks. Every produced Koru
+    // binary leak-checks itself at exit, in every build mode — that IS the
+    // resource-safety claim.
+    try emitter.write("var __koru_gpa = @import(\"std\").heap.GeneralPurposeAllocator(.{ .safety = true }){};\n");
+    try emitter.write("pub fn koru_allocator() @import(\"std\").mem.Allocator {\n");
+    try emitter.write("    return __koru_gpa.allocator();\n");
+    try emitter.write("}\n\n");
     try emitter.write("pub const main_module = struct {\n");
 }
 

@@ -52,7 +52,7 @@ pub const String = struct {
 | err []const u8
 
 ~proc from-page|zig {
-    const allocator = std.heap.page_allocator;
+    const allocator = koru_allocator();
     const data = allocator.alloc(u8, text.len) catch {
         return .{ .err = "allocation failed" };
     };

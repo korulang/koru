@@ -105,7 +105,7 @@ pub const WorkerHandle = struct {
 
 ~proc worker.spawn.join|zig {
     // Allocate results array
-    const results = std.heap.page_allocator.alloc(*anyopaque, handles.len) catch unreachable;
+    const results = koru_allocator().alloc(*anyopaque, handles.len) catch unreachable;
 
     // Join all threads and collect result pointers
     for (handles, 0..) |h, i| {

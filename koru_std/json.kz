@@ -36,7 +36,7 @@ pub const JsonValue = union(enum) {
 | ok *JsonObject<building!>
 
 ~proc object.new|zig {
-    const alloc = allocator orelse std.heap.page_allocator;
+    const alloc = allocator orelse koru_allocator();
     
     const obj = alloc.create(JsonObject) catch {
         return .{ .ok = undefined }; // Should have error branch
@@ -115,7 +115,7 @@ pub const JsonValue = union(enum) {
 | ok *JsonObject<building!>  // Reuse JsonObject for simplicity
 
 ~proc array.new|zig {
-    const alloc = allocator orelse std.heap.page_allocator;
+    const alloc = allocator orelse koru_allocator();
     
     const obj = alloc.create(JsonObject) catch {
         return .{ .ok = undefined };

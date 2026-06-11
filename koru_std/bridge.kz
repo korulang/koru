@@ -73,7 +73,7 @@ pub const Bridge = struct {
 | session *Bridge<session!>
 
 ~proc create|zig {
-    const allocator = std.heap.page_allocator;
+    const allocator = koru_allocator();
     const br = allocator.create(Bridge) catch unreachable;
     br.* = Bridge.init(allocator, id);
     return .{ .session = br };
@@ -101,7 +101,7 @@ pub const Bridge = struct {
     const count = br.getHandleCount();
     br.dischargeAll(null); // TODO: pass dispatcher
     br.deinit();
-    std.heap.page_allocator.destroy(br);
+    koru_allocator().destroy(br);
     return .{ .closed = count };
 }
 
@@ -121,7 +121,7 @@ pub const Bridge = struct {
     const rt = @import("root").koru_std.koru_runtime;
 
     // Create bridge instance
-    const allocator = std.heap.page_allocator;
+    const allocator = koru_allocator();
     var br = Bridge.init(allocator, "test");
     defer br.deinit();
 

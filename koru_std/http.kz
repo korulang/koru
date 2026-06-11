@@ -9,7 +9,7 @@ const std = @import("std");
 | invalid []const u8
 
 ~proc http.parse-request|zig {
-    const allocator = std.heap.page_allocator;
+    const allocator = koru_allocator();
     
     // Find the end of the request line
     const first_line_end = std.mem.indexOf(u8, data, "\r\n") orelse {
@@ -56,7 +56,7 @@ const std = @import("std");
 | formatted []const u8
 
 ~proc http.response|zig {
-    const allocator = std.heap.page_allocator;
+    const allocator = koru_allocator();
     
     const response = std.fmt.allocPrint(allocator, 
         "HTTP/1.1 {} {s}\r\n{s}\r\nContent-Length: {}\r\n\r\n{s}",
@@ -97,7 +97,7 @@ const std = @import("std");
 | response []const u8
 
 ~proc http.json-response|zig {
-    const allocator = std.heap.page_allocator;
+    const allocator = koru_allocator();
     
     const status_text = switch (status) {
         200 => "OK",
@@ -124,7 +124,7 @@ const std = @import("std");
 | response []const u8
 
 ~proc http.html-response|zig {
-    const allocator = std.heap.page_allocator;
+    const allocator = koru_allocator();
     
     const status_text = switch (status) {
         200 => "OK",
@@ -168,7 +168,7 @@ const std = @import("std");
 | error []const u8
 
 ~proc http.url-decode|zig {
-    const allocator = std.heap.page_allocator;
+    const allocator = koru_allocator();
     var result = std.ArrayList(u8).init(allocator);
     
     var i: usize = 0;
@@ -203,7 +203,7 @@ const std = @import("std");
 | params []const u8  // Simplified: key=value,key2=value2 format
 
 ~proc http.parse-query|zig {
-    const allocator = std.heap.page_allocator;
+    const allocator = koru_allocator();
     var result = std.ArrayList(u8).init(allocator);
     
     var pairs = std.mem.tokenize(u8, query, "&");
