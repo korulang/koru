@@ -469,14 +469,14 @@ pub const ShapeChecker = struct {
     }
     
     fn validateFlow(self: *ShapeChecker, flow: *const ast.Flow, location: errors.SourceLocation, _: *const ast.Program) !void {
-        // Skip flows that have been transformed by [transform] events.
-        // Transformed flows have valid structure by construction - the transform
-        // replaced the comptime event structure with a runtime node structure.
-        // The new structure can't match the original event's shape because it's
-        // a completely different representation (e.g., capture -> CaptureNode).
+        // @shape_valid is an EXPLICIT, rare exemption from shape checking.
+        // A transform must consciously stamp it on output the checker cannot
+        // model (genuinely host-opaque rewrites). @pass_ran deliberately does
+        // NOT exempt: "a pass ran" is a historical fact, not a validity
+        // guarantee — transform output must be valid like any other AST.
         for (flow.inv().annotations) |ann| {
-            if (std.mem.startsWith(u8, ann, "@pass_ran")) {
-                return;  // Skip validation - transform output is valid by construction
+            if (std.mem.startsWith(u8, ann, "@shape_valid")) {
+                return;
             }
         }
 
@@ -976,18 +976,16 @@ pub const ShapeChecker = struct {
 
                 // Validate ALL invocations in the pipeline, not just the last one
                 if (step == .invocation) {
-                    // Skip invocations rewritten by a [transform] pass — the same
-                    // rule validateFlow applies at top level: transform output is
-                    // valid by construction, and its continuations (e.g. a
-                    // `match`'s backtick pattern branches) no longer correspond
-                    // to the declared event's branches.
-                    const nested_pass_ran = blk: {
+                    // @shape_valid only — mirrors validateFlow's top-level rule.
+                    // @pass_ran does NOT exempt nested invocations from checking:
+                    // a pass having run is not a validity guarantee.
+                    const nested_shape_valid = blk: {
                         for (step.invocation.annotations) |ann| {
-                            if (std.mem.startsWith(u8, ann, "@pass_ran")) break :blk true;
+                            if (std.mem.startsWith(u8, ann, "@shape_valid")) break :blk true;
                         }
                         break :blk false;
                     };
-                    if (nested_pass_ran) continue;
+                    if (nested_shape_valid) continue;
 
                     const nested_event_name = try self.pathToString(step.invocation.path);
                     defer self.allocator.free(nested_event_name);
@@ -1182,10 +1180,10 @@ pub const ShapeChecker = struct {
     }
 
     fn validateInlineFlow(self: *ShapeChecker, flow: *const ast.Flow, proc_event: ?EventInfo) !void {
-        // Skip flows rewritten by a [transform] pass — mirrors validateFlow's
-        // top-level skip: transform output is valid by construction.
+        // @shape_valid only — mirrors validateFlow's top-level rule. @pass_ran
+        // does NOT exempt: a pass having run is not a validity guarantee.
         for (flow.inv().annotations) |ann| {
-            if (std.mem.startsWith(u8, ann, "@pass_ran")) {
+            if (std.mem.startsWith(u8, ann, "@shape_valid")) {
                 return;
             }
         }
