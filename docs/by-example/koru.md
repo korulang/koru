@@ -347,7 +347,7 @@ bare import ok
 
 const msg: []const u8 = "slash ok";
 
-~std/io:print(text: msg)
+~std/io:print(msg)
 ```
 
 **Output:**
@@ -367,7 +367,7 @@ slash ok
 
 const msg: []const u8 = "should be rejected";
 
-~std.io:print(text: msg)
+~std.io:print(msg)
 ```
 
 ## CORE LANGUAGE / EVENTS FLOWS
