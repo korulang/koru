@@ -700,8 +700,8 @@ done
 ~import std/control
 
 // This is WRONG - ~ should not appear inside flows
-~capture(expr: { total: @as(i32, 0) })
-| as |> captured { total: 42 }
+~capture { total: 0[i32] }
+! as acc |> captured { total: acc.total + 42 }
 | captured |> ~std/io:println("Should reject this!")
 ```
 

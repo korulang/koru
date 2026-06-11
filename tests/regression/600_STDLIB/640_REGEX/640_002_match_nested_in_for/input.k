@@ -1,4 +1,4 @@
-// Nested match — `std/regex:match` under `~for`'s `! each` handler. The
+// Nested match — `std/regex:match` under `for`'s `! each` handler. The
 // match event declares its user-surface contract (`| \`*\` *` raw-name
 // class + `| ?no-match` void), so nested validation passes by DEFAULT
 // checking, no transform-trust exemption: the qualified invocation resolves
@@ -7,10 +7,10 @@
 //
 // The shape matters: it is the regex benchmark's hot loop
 // (benchmarks/workloads/regex_match/koru/input.kz).
-~import std/regex
-~import std/io
+import std/regex
+import std/io
 
-~for(0..3)
+for(0..3)
 ! each _ |> std/regex:match("foo@bar")
             | `[a-z]+@[a-z]+` _ |> std/io:print.ln("hit")
             | no-match |> std/io:print.ln("miss")

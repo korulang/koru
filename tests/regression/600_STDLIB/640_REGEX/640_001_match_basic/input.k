@@ -4,10 +4,10 @@
 // time. `match` is an ordinary module event (NOT a keyword): the invocation
 // must be qualified, pattern branches bind or discard the payload (`_`),
 // and `no-match` is void — bindingless by the linear rule (KORU101).
-~import std/regex
-~import std/io
+import std/regex
+import std/io
 
-~std/regex:match("foo@bar")
+std/regex:match("foo@bar")
 | `[a-z]+@[a-z]+` _ |> std/io:print.ln("matched-email")
 | `[0-9]+` _ |> std/io:print.ln("matched-number")
 | no-match |> std/io:print.ln("no-match")
