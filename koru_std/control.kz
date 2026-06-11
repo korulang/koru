@@ -118,27 +118,29 @@ const std = @import("std");
 // CAPTURE - Accumulation with pure semantics (ZERO OVERHEAD)
 // ============================================================================
 //
-// Syntax: ~capture(init: { total: 0 })
-//         | as c |>
-//           for(items)
-//           | each i |> captured { total: c.total + i.item }
-//         | captured final |> result { sum: final.total }
+// Syntax: ~capture { total: 0 }
+//         ! as acc |> for(items)
+//             ! each i |> captured { total: acc.total + i }
+//         | captured final |> result(sum: final.total)
+//
+// Both `capture` and `captured` take a SOURCE BLOCK — bare braces, no parens.
+// Bare `name { ... }` is unambiguously an invocation since the `=>` construct
+// glyph took over branch construction (210_047). The parens forms
+// `capture({...})` / `captured({...})` are retired (ratified 2026-06-11).
+// A block holding a single bare expression (`~capture { entity }`) seeds from
+// an existing value instead of building a new struct cell.
 //
 // ARCHITECTURE:
-// - ~capture is a comptime transform that rewrites to ~capture.impl
-// - ~capture.impl declares the user-facing branches for shape checking
-// - `captured { ... }` branch constructors become assignments
-// - inline_body provides zero-overhead code (no handler call)
+// - ~capture is a comptime transform: `! as` binds the cell (live/during),
+//   `captured { ... }` invocations are rewritten into general `.assignment`
+//   nodes, `| captured` is the one-shot after-read.
 //
 // SEMANTICS:
-// - Pure from Koru's perspective (captured computes NEXT value)
-// - Efficient mutation in generated Zig
+// - Pure from Koru's perspective (captured computes the NEXT value)
+// - Efficient mutation in generated Zig (var cell + field writes)
 // - Decomposes fold while preserving purity guarantees
-
-// Transform: creates CaptureNode for accumulation
-// Note: First parameter must be named 'expr' for transform_pass_runner compatibility
 ~[keyword|comptime|transform]pub event capture {
-    expr: Expression,
+    source: Source,
     invocation: *const Invocation,
     item: *const Item,
     program: *const Program,
@@ -188,7 +190,9 @@ const std = @import("std");
 
     // The cell's fields, in declaration order, parsed ONCE via the struct-literal
     // projector (the walker foundation). Used for the `var` seed below and to map
-    // positional `captured({ a, b })` values onto field names by index.
+    // positional `captured { a, b }` values onto field names by index. The
+    // Source text is the block INTERIOR; the projector wants braces back.
+    const expr = std.fmt.allocPrint(allocator, "{{{s}}}", .{source.text}) catch unreachable;
     const cell_fields = struct_literal.parseFields(allocator, expr) catch &[_]struct_literal.StructField{};
 
     // --- Rewrite `captured(...)` invocations into general `.assignment` nodes
@@ -207,7 +211,10 @@ const std = @import("std");
                 if (step == .invocation) {
                     const segs = step.invocation.path.segments;
                     if (segs.len > 0 and std.mem.eql(u8, segs[segs.len - 1], "captured")) {
-                        const payload = if (step.invocation.args.len > 0) step.invocation.args[0].value else "{}";
+                        // Block form: the parser stored the block INTERIOR as the
+                        // source arg's value; the projector wants braces back.
+                        const raw = if (step.invocation.args.len > 0) step.invocation.args[0].value else "";
+                        const payload = std.fmt.allocPrint(alloc, "{{{s}}}", .{raw}) catch unreachable;
                         const parsed = struct_literal.parseFields(alloc, payload) catch &[_]struct_literal.StructField{};
                         const asgn_fields = alloc.alloc(ast.Field, parsed.len) catch unreachable;
                         for (parsed, 0..) |pf, i| {
@@ -286,7 +293,11 @@ const std = @import("std");
     //     projector's fields (no koruStructToZig text surgery). For existing-var
     //     captures (`~capture(myVar)`) the expr is not a struct literal, so emit
     //     it verbatim. `_ = &cell;` keeps it live even if the loop never writes. ---
-    const is_struct_init = std.mem.startsWith(u8, std.mem.trim(u8, expr, " \t\n\r"), "{");
+    // A block holding exactly one bare (unnamed) expression seeds from an
+    // existing value: `~capture { entity }`. Anything with named fields builds
+    // a fresh struct cell.
+    const is_existing_var = cell_fields.len == 1 and cell_fields[0].name.len == 0;
+    const is_struct_init = !is_existing_var;
     const init_zig = if (is_struct_init) blk: {
         var seed = std.ArrayList(u8).initCapacity(allocator, 64) catch unreachable;
         seed.appendSlice(allocator, ".{ ") catch unreachable;
@@ -301,7 +312,7 @@ const std = @import("std");
         }
         seed.appendSlice(allocator, " }") catch unreachable;
         break :blk seed.toOwnedSlice(allocator) catch unreachable;
-    } else expr;
+    } else cell_fields[0].value;
     // An anonymous struct literal is comptime, so a bare `var cell = .{...}` is a
     // comptime var and runtime field writes fail. Give the cell an explicit struct
     // type built from the seed's fields (made non-comptime) so it is a runtime

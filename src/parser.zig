@@ -3361,15 +3361,21 @@ pub const Parser = struct {
     fn looksLikeZigCode(self: *Parser, content: []const u8) bool {
         _ = self;
         // Detect patterns that indicate Zig code rather than Koru event invocations
-        // Note: We allow .{} and @as in arguments (Expression fields), so we need to be careful
-        // to only flag Zig builtins that appear OUTSIDE of argument parentheses
+        // Note: We allow .{} and @as in ARGUMENTS — paren args (Expression
+        // fields) and bare source blocks alike (`capture { total: @as(i32, 0) }`).
+        // Both are data carried by the invocation, not flow plumbing. So the
+        // check range stops at the first `(` OR `{`, whichever comes first.
 
-        // Find the position of the first paren (start of arguments)
         const paren_start = std.mem.indexOf(u8, content, "(");
-        const check_range = if (paren_start) |idx| content[0..idx] else content;
+        const brace_start = std.mem.indexOf(u8, content, "{");
+        const args_start = if (paren_start) |p|
+            (if (brace_start) |b| @min(p, b) else p)
+        else
+            brace_start;
+        const check_range = if (args_start) |idx| content[0..idx] else content;
 
         // Check for @import, @as, etc. at the TOP LEVEL (not inside args)
-        // This allows ~capture(expr: { total: @as(i32, 0) }) while blocking ~@as(...)
+        // This allows ~capture { total: @as(i32, 0) } while blocking ~@as(...)
         if (std.mem.indexOf(u8, check_range, "@import") != null or
             std.mem.indexOf(u8, check_range, "@as") != null or
             std.mem.indexOf(u8, check_range, "@field") != null)

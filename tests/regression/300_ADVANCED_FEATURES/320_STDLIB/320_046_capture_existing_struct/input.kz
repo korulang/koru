@@ -1,9 +1,10 @@
-// Test: Capture from existing struct (no { } literal)
+// Test: Capture from existing value — BLOCK FORM.
 //
-// ~capture(existing_var) binds to existing struct instead of creating new one
-// captured({ field: expr }) updates just that field, preserves others
-//
-// Key: No { } in capture() → bind to existing variable
+// `~capture { entity }` — a block holding a single bare expression — binds to
+// an existing value instead of building a new struct cell. (Open call,
+// flagged 2026-06-11: this replaces the old `~capture(entity)` parens form so
+// capture has exactly ONE argument shape: the source block.)
+// `captured { field: expr }` updates just that field, preserves others.
 
 ~import std/io
 ~import std/control
@@ -28,7 +29,7 @@ const entity = Entity{
     .pos_x = 10,
 };
 
-~capture(entity)
+~capture { entity }
 ! as acc |> for(&[_]i32{10, 20, 30})
-    ! each damage |> captured({ health: acc.health - damage })
+    ! each damage |> captured { health: acc.health - damage }
 | captured final |> print-health(value: final.health)

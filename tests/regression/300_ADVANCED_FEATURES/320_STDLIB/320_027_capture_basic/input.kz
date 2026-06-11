@@ -1,9 +1,14 @@
-// Test: Basic ~capture as top-level flow
+// Test: Basic ~capture as top-level flow — BLOCK FORM.
+//
+// Ratified 2026-06-11: `capture` and `captured` take bare source blocks, no
+// parens. `name { ... }` is unambiguously an invocation since `=>` took over
+// branch construction (210_047). The seed block builds the cell; each
+// `captured { ... }` computes the cell's NEXT value; `| captured` is the
+// one-shot after-read.
 
 ~import std/io
 ~import std/control
 
-// Struct capture with typed init
-~capture({ total: @as(i32, 0) })
-! as acc |> captured({ total: acc.total + 42 })
+~capture { total: @as(i32, 0) }
+! as acc |> captured { total: acc.total + 42 }
 | captured final |> std/io:print.ln("{{ final.total:d }}")

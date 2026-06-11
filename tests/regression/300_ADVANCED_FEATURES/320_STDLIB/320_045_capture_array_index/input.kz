@@ -1,5 +1,7 @@
-// Test: Array indexing in captured({ }) blocks
-// Demonstrates the "pure mutation" pattern with array elements
+// Test: Array indexing in captured { } blocks — BLOCK FORM (no parens).
+// Demonstrates the "pure mutation" pattern with array elements.
+// Note the nested braces in the seed value ([3]i32{ 0, 0, 0 }) — the source
+// block must brace-match, not stop at the first '}'.
 
 ~import std/io
 ~import std/control
@@ -14,9 +16,9 @@ const std = @import("std");
     std.debug.print("{d}\n", .{sum});
 }
 
-// Initialize array, update each element via captured({ arr[i]: value })
+// Initialize array, update each element via captured { arr[i]: value }
 // Expression references acc.arr[i] to satisfy KORU100 (binding must be used)
-~capture({ arr: [3]i32{ 0, 0, 0 } })
+~capture { arr: [3]i32{ 0, 0, 0 } }
 ! as acc |> for(0..3)
-    ! each i |> captured({ arr[i]: acc.arr[i] + @as(i32, @intCast(i)) * 10 })
+    ! each i |> captured { arr[i]: acc.arr[i] + @as(i32, @intCast(i)) * 10 }
 | captured result |> print-sum(result.arr)
