@@ -883,12 +883,12 @@ pub const PhantomSemanticChecker = struct {
         current_module: []const u8,
         implementing_event: ?*const ast.EventDecl, // Event this flow implements (for branch_constructor escape checking)
     ) !bool {
-        // Skip flows that have been transformed by [transform] events.
-        // Transformed flows have valid structure by construction - the transform
-        // replaced the comptime event structure with a runtime node structure.
+        // @shape_valid is an EXPLICIT, rare exemption — mirrors the shape
+        // checker's rule. @pass_ran deliberately does NOT exempt: "a pass ran"
+        // is a historical fact, not a validity guarantee.
         for (flow.inv().annotations) |ann| {
-            if (std.mem.startsWith(u8, ann, "@pass_ran")) {
-                return true; // Valid - transform output is correct by construction
+            if (std.mem.startsWith(u8, ann, "@shape_valid")) {
+                return true;
             }
         }
 
