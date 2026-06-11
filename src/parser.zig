@@ -6881,6 +6881,56 @@ pub const Parser = struct {
             branch_start = lexer.trim(branch_start[1..]);
         }
 
+        // Raw-quoted branch name in a DECL: | `…` or | […] — the same two
+        // source encodings continuations accept (quote-decode). The inner
+        // content IS the name, byte-for-byte; raw names skip identifier
+        // validation (names are bytes). A branch declared with the raw name
+        // `*` is a name-CLASS: it matches any handled branch name that no
+        // other declared branch matches exactly (see branch contract checks).
+        // Extracted before comment/resume/brace scanning so name bytes stay
+        // opaque to all later scans.
+        var raw_branch_name: ?[]const u8 = null;
+        if (branch_start.len > 0 and branch_start[0] == '`') {
+            const close = std.mem.indexOfScalarPos(u8, branch_start, 1, '`') orelse {
+                try self.reporter.addError(
+                    .PARSE003,
+                    self.current - 1,
+                    1,
+                    "unterminated raw branch name - missing closing '`'",
+                    .{},
+                );
+                return error.ParseError;
+            };
+            raw_branch_name = branch_start[1..close];
+            branch_start = lexer.trim(branch_start[close + 1 ..]);
+        } else if (branch_start.len > 0 and branch_start[0] == '[') {
+            var depth: i32 = 0;
+            var close: ?usize = null;
+            for (branch_start, 0..) |c, idx| {
+                if (c == '[') {
+                    depth += 1;
+                } else if (c == ']') {
+                    depth -= 1;
+                    if (depth == 0) {
+                        close = idx;
+                        break;
+                    }
+                }
+            }
+            const end = close orelse {
+                try self.reporter.addError(
+                    .PARSE003,
+                    self.current - 1,
+                    1,
+                    "unterminated raw branch name - missing closing ']'",
+                    .{},
+                );
+                return error.ParseError;
+            };
+            raw_branch_name = branch_start[1..end];
+            branch_start = lexer.trim(branch_start[end + 1 ..]);
+        }
+
         // Strip inline comments (// ...) so they don't leak into types or annotations.
         // This must happen before any brace/phantom/annotation parsing.
         if (std.mem.indexOf(u8, branch_start, "//")) |comment_idx| {
@@ -6959,43 +7009,52 @@ pub const Parser = struct {
             // here, `| not-found` would split into name `not` + bogus type
             // `-found`. The `->` resume-type case is already stripped above, so a
             // `-` at this point is always kebab word-glue.
-            var name_end: usize = 0;
-            while (name_end < branch_start.len and
-                (std.ascii.isAlphanumeric(branch_start[name_end]) or
-                 branch_start[name_end] == '_' or branch_start[name_end] == '-'))
-            {
-                name_end += 1;
-            }
+            var branch_name: []const u8 = undefined;
+            var after_name: []const u8 = undefined;
+            if (raw_branch_name) |rn| {
+                // Raw-quoted name already extracted; no identifier validation.
+                branch_name = rn;
+                after_name = branch_start;
+            } else {
+                var name_end: usize = 0;
+                while (name_end < branch_start.len and
+                    (std.ascii.isAlphanumeric(branch_start[name_end]) or
+                     branch_start[name_end] == '_' or branch_start[name_end] == '-'))
+                {
+                    name_end += 1;
+                }
 
-            if (name_end == 0) {
-                try self.reporter.addError(
-                    .PARSE003,
-                    self.current,
-                    1,
-                    "branch missing name",
-                    .{},
-                );
-                return error.ParseError;
-            }
+                if (name_end == 0) {
+                    try self.reporter.addError(
+                        .PARSE003,
+                        self.current,
+                        1,
+                        "branch missing name",
+                        .{},
+                    );
+                    return error.ParseError;
+                }
 
-            const branch_name = branch_start[0..name_end];
+                branch_name = branch_start[0..name_end];
 
-            try self.rejectSnakeName(branch_name, self.current - 1, "branch");
+                try self.rejectSnakeName(branch_name, self.current - 1, "branch");
 
-            // Validate branch name is a valid identifier
-            if (!isValidIdentifier(branch_name)) {
-                try self.reporter.addError(
-                    .PARSE003,
-                    self.current - 1,
-                    1,
-                    "invalid branch name '{s}' - must be a valid identifier",
-                    .{branch_name},
-                );
-                return error.ParseError;
+                // Validate branch name is a valid identifier
+                if (!isValidIdentifier(branch_name)) {
+                    try self.reporter.addError(
+                        .PARSE003,
+                        self.current - 1,
+                        1,
+                        "invalid branch name '{s}' - must be a valid identifier",
+                        .{branch_name},
+                    );
+                    return error.ParseError;
+                }
+                after_name = branch_start[name_end..];
             }
 
             // Rest is the type, possibly with [annotation]
-            const type_and_annotation = lexer.trim(branch_start[name_end..]);
+            const type_and_annotation = lexer.trim(after_name);
 
             // Check if this is an empty payload (just branch name, no type)
             if (type_and_annotation.len == 0) {
@@ -7136,21 +7195,24 @@ pub const Parser = struct {
         }
 
         // Struct branch syntax: | branch { field: Type }
-        const branch_name = lexer.trim(branch_start[0..brace_idx.?]);
+        const branch_name = raw_branch_name orelse blk: {
+            const scanned = lexer.trim(branch_start[0..brace_idx.?]);
 
-        try self.rejectSnakeName(branch_name, self.current - 1, "branch");
+            try self.rejectSnakeName(scanned, self.current - 1, "branch");
 
-        // Validate branch name is a valid identifier
-        if (!isValidIdentifier(branch_name)) {
-            try self.reporter.addError(
-                .PARSE003,
-                self.current - 1,
-                1,
-                "invalid branch name '{s}' - must be a valid identifier",
-                .{branch_name},
-            );
-            return error.ParseError;
-        }
+            // Validate branch name is a valid identifier
+            if (!isValidIdentifier(scanned)) {
+                try self.reporter.addError(
+                    .PARSE003,
+                    self.current - 1,
+                    1,
+                    "invalid branch name '{s}' - must be a valid identifier",
+                    .{scanned},
+                );
+                return error.ParseError;
+            }
+            break :blk scanned;
+        };
 
         // Parse the payload shape (might be multi-line)
         // Note: parseBranchPayloadShape will advance self.current if multi-line
@@ -8133,8 +8195,9 @@ test "parser validates branch names" {
         try std.testing.expect(parse_result.source_file.items[0] == .event_decl);
         const event = parse_result.source_file.items[0].event_decl;
         try std.testing.expect(event.branches.len == 2);
-        try std.testing.expectEqualStrings(event.branches[0].name, "valid_branch");
-        try std.testing.expectEqualStrings(event.branches[1].name, "another_one");
+        // Names are kebab-canonical BYTES through the pipeline — no lowering at parse.
+        try std.testing.expectEqualStrings(event.branches[0].name, "valid-branch");
+        try std.testing.expectEqualStrings(event.branches[1].name, "another-one");
     }
 
     // Invalid branch name starting with number

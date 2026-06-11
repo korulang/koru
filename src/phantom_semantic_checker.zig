@@ -1095,7 +1095,12 @@ pub const PhantomSemanticChecker = struct {
             return true;
         }
 
-        // Find the branch in the event declaration
+        // Find the branch in the event declaration: exact name first, then a
+        // declared raw-name CLASS branch (literally named `*`, spelled
+        // `| \`*\` *` in the decl) catches any remaining name — the contract
+        // form of transform events like std/regex:match, where the handled
+        // name is data (a pattern), not an identifier. Mirrors
+        // branch_checker.resolveDeclared.
         var branch_payload: ?*const ast.Shape = null;
         var branch_decl: ?*const ast.Branch = null;
         for (event_decl.branches) |*branch| {
@@ -1103,6 +1108,15 @@ pub const PhantomSemanticChecker = struct {
                 branch_payload = &branch.payload;
                 branch_decl = branch;
                 break;
+            }
+        }
+        if (branch_decl == null) {
+            for (event_decl.branches) |*branch| {
+                if (std.mem.eql(u8, branch.name, "*")) {
+                    branch_payload = &branch.payload;
+                    branch_decl = branch;
+                    break;
+                }
             }
         }
 

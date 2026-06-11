@@ -1464,6 +1464,97 @@ pub const VisitorEmitter = struct {
         }
     }
 
+    /// Emit the event struct for an event implemented by a `~[transform]proc`.
+    /// Input/Output are the MACHINE interface (the transform-stub ABI), not the
+    /// event's user-surface declaration — the user surface is contract data for
+    /// the checkers, never a runtime shape.
+    fn emitTransformProcEventStruct(self: *VisitorEmitter, event: *const ast.EventDecl, tproc: *const ast.ProcDecl) !void {
+        try self.code_emitter.writeIndent();
+        try self.code_emitter.write("pub const ");
+        for (event.path.segments, 0..) |segment, idx| {
+            if (idx > 0) try self.code_emitter.write("_");
+            try writeMangledSegment(self.code_emitter, segment);
+        }
+        try self.code_emitter.write("_event = struct {\n");
+        self.code_emitter.indent_level += 1;
+
+        try self.code_emitter.writeIndent();
+        try self.code_emitter.write("pub const Input = struct {\n");
+        self.code_emitter.indent_level += 1;
+        const machine_fields = [_][]const u8{
+            "invocation: *const __koru_ast.Invocation,",
+            "item: *const __koru_ast.Item,",
+            "program: *const __koru_ast.Program,",
+            "allocator: std.mem.Allocator,",
+        };
+        for (machine_fields) |field_line| {
+            try self.code_emitter.writeIndent();
+            try self.code_emitter.write(field_line);
+            try self.code_emitter.write("\n");
+        }
+        self.code_emitter.indent_level -= 1;
+        try self.code_emitter.writeIndent();
+        try self.code_emitter.write("};\n");
+
+        try self.code_emitter.writeIndent();
+        try self.code_emitter.write("pub const Output = union(enum) {\n");
+        self.code_emitter.indent_level += 1;
+        try self.code_emitter.writeIndent();
+        try self.code_emitter.write("transformed: __koru_ast.SiteResult,\n");
+        self.code_emitter.indent_level -= 1;
+        try self.code_emitter.writeIndent();
+        try self.code_emitter.write("};\n");
+
+        try self.code_emitter.writeIndent();
+        try self.code_emitter.write("pub fn handler(__koru_event_input: Input) Output {\n");
+        self.code_emitter.indent_level += 1;
+        const machine_params = [_][]const u8{ "invocation", "item", "program", "allocator" };
+        for (machine_params) |param| {
+            try self.code_emitter.writeIndent();
+            try self.code_emitter.write("const ");
+            try self.code_emitter.write(param);
+            try self.code_emitter.write(" = __koru_event_input.");
+            try self.code_emitter.write(param);
+            try self.code_emitter.write(";\n");
+        }
+        for (machine_params) |param| {
+            try self.code_emitter.writeIndent();
+            try self.code_emitter.write("_ = &");
+            try self.code_emitter.write(param);
+            try self.code_emitter.write(";\n");
+        }
+        try self.code_emitter.writeIndent();
+        try self.code_emitter.write("_ = &__koru_event_input;\n");
+
+        // Source marker + proc body, same shape as the general proc path.
+        try self.code_emitter.writeIndent();
+        try self.code_emitter.write("// >>> PROC: ");
+        for (tproc.path.segments, 0..) |seg, idx| {
+            if (idx > 0) try self.code_emitter.write(".");
+            try writeMangledSegment(self.code_emitter, seg);
+        }
+        if (tproc.location.line > 0) {
+            try self.code_emitter.write("  [");
+            try self.code_emitter.write(tproc.location.file);
+            try self.code_emitter.write(":");
+            var line_buf: [32]u8 = undefined;
+            const line_str = try std.fmt.bufPrint(&line_buf, "{}", .{tproc.location.line});
+            try self.code_emitter.write(line_str);
+            try self.code_emitter.write("]");
+        }
+        try self.code_emitter.write("\n");
+        try self.code_emitter.write(tproc.body.text);
+        try self.code_emitter.write("\n");
+
+        self.code_emitter.indent_level -= 1;
+        try self.code_emitter.writeIndent();
+        try self.code_emitter.write("}\n");
+
+        self.code_emitter.indent_level -= 1;
+        try self.code_emitter.writeIndent();
+        try self.code_emitter.write("};\n\n");
+    }
+
     /// Emit a complete event declaration with Input, Output, and handler
     fn emitEventDecl(self: *VisitorEmitter, event: *const ast.EventDecl, all_items: []const ast.Item) !void {
         const eql = std.mem.eql;
@@ -1471,6 +1562,17 @@ pub const VisitorEmitter = struct {
         // Use scoped search by default (search within the module's own items)
         // This ensures test_lib.graphics:init finds the graphics module's implementation, not audio's
         const items_to_search = all_items;
+
+        // TRANSFORM-PROC OVERRIDE: `~[transform]proc` on an ordinary event.
+        // The event decl carries the USER surface (payload + branch contract —
+        // contract branches may be raw-name classes like `*`, meaningless as a
+        // Zig union). The generated handler uses the machine convention
+        // instead: (invocation, item, program, allocator) → transformed:
+        // SiteResult — the transform-stub ABI in run_pass()'s dispatch table.
+        if (emitter.findTransformProc(items_to_search, event.path.segments)) |tproc| {
+            try self.emitTransformProcEventStruct(event, tproc);
+            return;
+        }
 
         // NOTE: Filtering already done in visitItem() via shouldFilter()
         // No need to re-check compiler annotations or comptime-only here
@@ -3301,6 +3403,11 @@ pub const VisitorEmitter = struct {
         path: *const ast.DottedPath,
         current_module: ?[]const u8,
     ) ?*const ast.EventDecl {
+        // LOCAL-FIRST: scan this level's own event decls before recursing
+        // into imported modules. An unqualified name that the current level
+        // declares resolves locally — an imported module's same-named event
+        // must not capture it just because the import appears earlier in the
+        // item list (the 120_002 name-priority rule).
         for (items) |*item| {
             switch (item.*) {
                 .event_decl => |*event| {
@@ -3312,6 +3419,11 @@ pub const VisitorEmitter = struct {
                         return event;
                     }
                 },
+                else => {},
+            }
+        }
+        for (items) |*item| {
+            switch (item.*) {
                 .module_decl => |*module| {
                     log.debug("DEBUG: Recursing into module '{s}'\n", .{module.logical_name});
                     // Pass the module's logical_name as context when recursing

@@ -43,6 +43,22 @@ pub const BranchChecker = struct {
         duplicate_terminal_branches: []const []const u8,
     };
 
+    /// Resolve a handled branch name to its declared branch (by index).
+    /// Exact name match wins; failing that, a declared raw-name CLASS branch
+    /// — a branch literally named `*` (spelled `| \`*\` *` in the event decl)
+    /// — catches any remaining name. This is how a transform event like
+    /// std/regex:match declares "any raw-name branch is legal here": the
+    /// handled name IS data (a regex pattern, a route), not an identifier.
+    pub fn resolveDeclared(declared: []const DeclaredBranch, name: []const u8) ?usize {
+        for (declared, 0..) |decl, i| {
+            if (std.mem.eql(u8, decl.name, name)) return i;
+        }
+        for (declared, 0..) |decl, i| {
+            if (std.mem.eql(u8, decl.name, "*")) return i;
+        }
+        return null;
+    }
+
     /// Check if handled branches correctly cover declared branches.
     ///
     /// Returns validation result with:
@@ -83,8 +99,10 @@ pub const BranchChecker = struct {
         }
 
         // Check that all required branches are handled by at least one
-        // UNGUARDED handler (or by a catchall).
-        for (declared) |decl| {
+        // UNGUARDED handler (or by a catchall). Handled names resolve via
+        // resolveDeclared, so a raw-name CLASS branch (`*`) is covered by any
+        // handled name it catches.
+        for (declared, 0..) |decl, di| {
             if (decl.is_optional) continue; // Optional branches don't need handling
 
             if (has_catchall) continue; // Catchall covers everything
@@ -92,7 +110,7 @@ pub const BranchChecker = struct {
             var found_unguarded = false;
             for (handled) |h| {
                 if (h.is_catchall) continue; // Catchall doesn't count as specific handler
-                if (!std.mem.eql(u8, decl.name, h.name)) continue;
+                if (resolveDeclared(declared, h.name) != di) continue;
                 if (h.has_when_guard) continue; // Guards narrow; they don't cover
                 found_unguarded = true;
                 break;
@@ -103,19 +121,12 @@ pub const BranchChecker = struct {
             }
         }
 
-        // Check for unknown branches (handled but not declared)
+        // Check for unknown branches (handled but not declared — a raw-name
+        // class branch `*` makes every name resolvable, so nothing is unknown).
         for (handled) |h| {
             if (h.is_catchall) continue; // Catchall is always valid
 
-            var found = false;
-            for (declared) |decl| {
-                if (std.mem.eql(u8, decl.name, h.name)) {
-                    found = true;
-                    break;
-                }
-            }
-
-            if (!found) {
+            if (resolveDeclared(declared, h.name) == null) {
                 try unknown.append(allocator, h.name);
             }
         }
@@ -127,8 +138,31 @@ pub const BranchChecker = struct {
         // each link fires during the event, so any number is legal.
         var duplicate_terminals = try std.ArrayList([]const u8).initCapacity(allocator, 0);
         errdefer duplicate_terminals.deinit(allocator);
-        for (declared) |decl| {
+        for (declared, 0..) |decl, di| {
             if (decl.kind != .terminal) continue;
+
+            if (std.mem.eql(u8, decl.name, "*")) {
+                // Raw-name CLASS branch: each distinct handled NAME caught by
+                // the class is its own logical branch — two DIFFERENT names
+                // are never duplicates of each other, but the SAME name twice
+                // (unguarded) is dead code under first-match dispatch.
+                for (handled, 0..) |h, i| {
+                    if (h.is_catchall or h.has_when_guard) continue;
+                    if (resolveDeclared(declared, h.name) != di) continue;
+                    var seen_before = false;
+                    for (handled[0..i]) |p| {
+                        if (p.is_catchall or p.has_when_guard) continue;
+                        if (std.mem.eql(u8, p.name, h.name)) {
+                            seen_before = true;
+                            break;
+                        }
+                    }
+                    if (seen_before) {
+                        try duplicate_terminals.append(allocator, h.name);
+                    }
+                }
+                continue;
+            }
 
             var unguarded_count: usize = 0;
             for (handled) |h| {

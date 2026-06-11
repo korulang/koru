@@ -744,6 +744,20 @@ pub const ShapeChecker = struct {
         // Taps can observe only the branches they care about
     }
     
+    /// Resolve a handled continuation branch name against declared event
+    /// branches: exact name first, then a declared raw-name CLASS branch
+    /// (literally named `*`, spelled `| \`*\` *` in the decl) catches any
+    /// remaining name. Mirrors branch_checker.resolveDeclared.
+    fn resolveDeclaredBranch(event_branches: []const ast.Branch, name: []const u8) ?*const ast.Branch {
+        for (event_branches) |*b| {
+            if (std.mem.eql(u8, b.name, name)) return b;
+        }
+        for (event_branches) |*b| {
+            if (std.mem.eql(u8, b.name, "*")) return b;
+        }
+        return null;
+    }
+
     fn checkBranchCoverageWithTerminals(
         self: *ShapeChecker,
         event_name: []const u8,
@@ -811,15 +825,15 @@ pub const ShapeChecker = struct {
         // Branch kind-mismatch check (KORU025): a `!` (effect) decl branch
         // must be handled by a `!` continuation, and a `|` (terminal) decl
         // branch by a `|` continuation. Catch-alls are exempt — they match by
-        // kind elsewhere.
+        // kind elsewhere. Handled names resolve exact-first, then against a
+        // declared raw-name CLASS branch (`*`).
         for (continuations) |cont| {
             if (cont.is_catchall or cont.branch.len == 0) continue;
             const is_metatype = std.mem.eql(u8, cont.branch, "Transition") or
                 std.mem.eql(u8, cont.branch, "Profile") or
                 std.mem.eql(u8, cont.branch, "Audit");
             if (is_metatype) continue;
-            for (event_branches) |decl| {
-                if (!std.mem.eql(u8, decl.name, cont.branch)) continue;
+            if (resolveDeclaredBranch(event_branches, cont.branch)) |decl| {
                 if (decl.kind != cont.kind) {
                     try errors.branchKindMismatch(
                         self.reporter,
@@ -830,7 +844,6 @@ pub const ShapeChecker = struct {
                     );
                     has_errors = true;
                 }
-                break;
             }
         }
 
@@ -886,12 +899,11 @@ pub const ShapeChecker = struct {
                 std.mem.eql(u8, cont.branch, "Audit");
             if (is_metatype) continue;
 
-            for (event_branches) |branch| {
-                if (!std.mem.eql(u8, branch.name, cont.branch)) continue;
+            if (resolveDeclaredBranch(event_branches, cont.branch)) |branch| {
                 const has_payload = branch.payload.is_wildcard or branch.payload.fields.len > 0;
                 if (has_payload and cont.binding == null) {
                     try self.reporter.addErrorAtLocation(.KORU030, location,
-                        "branch '{s}' has payload but no binding", .{branch.name});
+                        "branch '{s}' has payload but no binding", .{cont.branch});
                     has_errors = true;
                 }
                 // The void half of the linear rule: a branch that carries
@@ -899,10 +911,9 @@ pub const ShapeChecker = struct {
                 if (!has_payload and cont.binding != null) {
                     try self.reporter.addErrorAtLocation(.KORU101, location,
                         "branch '{s}' carries no payload — remove the binding '{s}'",
-                        .{ branch.name, cont.binding.? });
+                        .{ cont.branch, cont.binding.? });
                     has_errors = true;
                 }
-                break;
             }
         }
 

@@ -3,10 +3,15 @@
 // Koru Standard Library: Regex — compile-time, DFA-based pattern matching as
 // CONTROL FLOW. Generalizes the Orisha-router idiom from routes to regex:
 //
-//   ~match(input)
+//   ~std/regex:match(input)
 //   | `[a-z]+@[a-z]+` _ |> handle-email()
 //   | `[0-9]+`        _ |> handle-number()
-//   | no-match        _ |> reject()
+//   | no-match          |> reject()
+//
+// `match` is NOT a keyword: it is an ordinary module event and must be
+// invoked qualified (`std/regex:match`). Pattern branches carry the matched
+// text (bind or discard with `_`); `no-match` carries nothing and binds
+// nothing.
 //
 // Each `…` raw-pattern branch is compiled — at COMPILE TIME — to a specialized
 // DFA matcher (src/regex_engine.zig). Matching is straight-line, linear-time,
@@ -24,23 +29,39 @@
 
 const std = @import("std");
 
-~[comptime|transform]pub event match {
-    invocation: *const Invocation,
-    item: *const Item,
-    program: *const Program,
-    allocator: std.mem.Allocator,
-}
-| transformed SiteResult
+// The event declares the USER surface: any raw-name branch (the name IS the
+// pattern, byte-for-byte) with a bindable payload, plus an optional void
+// `no-match` fallback. The shape checker enforces this contract — binding
+// rule included — with zero match-specific code; the transform's output
+// needs no exemption.
+//
+// The `[transform]` annotation on the PROC is what makes this a transform:
+// a transform IS a proc on an ordinary event. Its machine interface
+// (invocation/item/program/allocator → SiteResult) is the proc-return
+// convention, not part of the event. The event keeps `[transform]` too —
+// downstream passes read it as "implemented by a transform" (deferred
+// bindings, comptime-flow skipping, variant emission).
+~[comptime|transform]pub event match { input: []const u8 }
+| `*` *
+| ?no-match
 
-~proc match|zig {
+~[transform]proc match|zig {
     const ast = @import("ast");
     const regex = @import("regex_engine");
 
-    const flow = if (item.* == .flow) &item.flow else return .{ .transformed = .{} };
+    // The walker hands transforms the containing item of the matched
+    // invocation, and a match invocation always lives in a flow. A non-flow
+    // item here means the dispatch contract broke upstream — crash loudly.
+    if (item.* != .flow) @panic("regex match transform: containing item is not a flow - walker dispatch contract broken");
+    const flow = &item.flow;
     const conts = flow.body.continuations;
 
     // The input expression is the match invocation's first argument.
-    const input_expr: []const u8 = if (invocation.args.len > 0) invocation.args[0].value else "\"\"";
+    if (invocation.args.len == 0) {
+        const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"std/regex:match requires an input argument: match(<expression>)\"); }}", .{}) catch unreachable;
+        return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+    }
+    const input_expr: []const u8 = invocation.args[0].value;
 
     // Build (a) the matcher fns as one top-level item, and (b) the dispatch
     // inline_body: an if/else-if chain over the compiled matchers, each arm a

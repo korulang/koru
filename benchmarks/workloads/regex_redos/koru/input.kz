@@ -26,6 +26,6 @@ var run_buf: []u8 = &[_]u8{};
 
 ~build-input()
 
-~match(run_buf)
+~std/regex:match(run_buf)
 | `(a+)+b` _ |> std/io:print.ln("matched = true len = {{ input_n:d }}")
-| no-match _ |> std/io:print.ln("matched = false len = {{ input_n:d }}")
+| no-match |> std/io:print.ln("matched = false len = {{ input_n:d }}")

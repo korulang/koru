@@ -151,7 +151,7 @@ test "findDisposalEvents handles multiple disposal options for same type" {
     var found_close_and_delete = false;
     for (disposals) |d| {
         if (std.mem.eql(u8, d.qualified_name, "test:close[!]")) found_close = true;
-        if (std.mem.eql(u8, d.qualified_name, "test:close_and_delete[!]")) found_close_and_delete = true;
+        if (std.mem.eql(u8, d.qualified_name, "test:close-and-delete[!]")) found_close_and_delete = true;
     }
     try std.testing.expect(found_close);
     try std.testing.expect(found_close_and_delete);

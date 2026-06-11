@@ -270,6 +270,7 @@ emitter_helpers_module.addImport("log", log_module);
 emitter_helpers_module.addImport("compiler_config", compiler_config_module);
 emitter_helpers_module.addImport("type_registry", type_registry_module);
 emitter_helpers_module.addImport("codegen_utils", codegen_utils_module);
+emitter_helpers_module.addImport("annotation_parser", annotation_parser_module);
 
 // Tap pattern matcher
 const glob_pattern_matcher_module = b.createModule(.{

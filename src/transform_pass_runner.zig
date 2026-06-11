@@ -291,20 +291,20 @@ fn spliceSiteResult(
 /// Includes both top-level flows AND nested invocations in continuations.
 /// Used to detect infinite loops: if the count doesn't decrease after a transform,
 /// the transform isn't making progress.
-fn countMatchingFlowsInProgram(transform_name: []const u8, program: *const Program) usize {
+fn countMatchingFlowsInProgram(transform: *const TransformEntry, program: *const Program) usize {
     var count: usize = 0;
 
     for (program.items) |item| {
         switch (item) {
             .flow => |flow| {
-                count += countMatchingInFlow(&flow, transform_name);
+                count += countMatchingInFlow(&flow, transform, program);
             },
             .immediate_impl => {},
             .module_decl => |module| {
                 for (module.items) |mod_item| {
                     switch (mod_item) {
                         .flow => |flow| {
-                            count += countMatchingInFlow(&flow, transform_name);
+                            count += countMatchingInFlow(&flow, transform, program);
                         },
                         .immediate_impl => {},
                         else => {},
@@ -320,24 +320,24 @@ fn countMatchingFlowsInProgram(transform_name: []const u8, program: *const Progr
 /// Count matching invocations in a flow. The flow's root body is just a
 /// continuation, so one recursive walk covers every depth — there is no
 /// separate "flow's own invocation" case anymore.
-fn countMatchingInFlow(flow: *const ast.Flow, transform_name: []const u8) usize {
-    return countMatchingInContinuation(&flow.body, transform_name);
+fn countMatchingInFlow(flow: *const ast.Flow, transform: *const TransformEntry, program: *const Program) usize {
+    return countMatchingInContinuation(&flow.body, transform, program);
 }
 
 /// Recursively count matching invocations in a site (node + branch handlers).
-fn countMatchingInContinuation(cont: *const ast.Continuation, transform_name: []const u8) usize {
+fn countMatchingInContinuation(cont: *const ast.Continuation, transform: *const TransformEntry, program: *const Program) usize {
     var count: usize = 0;
 
     if (cont.node) |node| {
         if (node == .invocation) {
-            if (flowStillMatchesTransform(&node.invocation, transform_name)) {
+            if (flowStillMatchesTransform(&node.invocation, transform, program)) {
                 count += 1;
             }
         }
     }
 
     for (cont.continuations) |*child| {
-        count += countMatchingInContinuation(child, transform_name);
+        count += countMatchingInContinuation(child, transform, program);
     }
 
     return count;
@@ -362,7 +362,63 @@ fn removeFlowFromProgram(allocator: std.mem.Allocator, program: *const Program, 
     return result;
 }
 
-fn flowStillMatchesTransform(inv: *const Invocation, transform_name: []const u8) bool {
+/// THE dispatch predicate: does this node fire this transform?
+/// One function so walk-time matching and progress-counting can never drift.
+fn invocationMatchesEntry(node: ASTNode, transform: *const TransformEntry, program: *const Program) bool {
+    if (node != .invocation) return false;
+    if (!qualifierGateOpen(node.invocation, transform)) return false;
+    if (!node.matchesTransform(transform.name)) return false;
+    if (shadowedByLocalEvent(node.invocation, transform, program)) return false;
+    return true;
+}
+
+/// Local-first shadowing: a source-bare invocation whose name the MAIN
+/// MODULE declares as an event is local — an imported module's legacy
+/// transform must not capture it (the 120_002 name-priority rule). After
+/// canonicalization every path carries a qualifier; "bare in source" means
+/// the qualifier is the main module (or, pre-canonicalize, null). Globs are
+/// exempt (taps capture user events by design); qualified-only entries never
+/// reach this (the qualifier gate already decided).
+fn shadowedByLocalEvent(inv: *const Invocation, transform: *const TransformEntry, program: *const Program) bool {
+    if (!transform.from_module) return false;
+    if (inv.path.module_qualifier) |mq| {
+        if (!std.mem.eql(u8, mq, program.main_module_name)) return false;
+    }
+    if (std.mem.indexOfScalar(u8, transform.name, '*') != null) return false;
+    return hasLocalEventDecl(program, inv.path.segments);
+}
+
+/// True if the program's main module (top-level items) declares an event
+/// with exactly these path segments.
+fn hasLocalEventDecl(program: *const Program, segments: []const []const u8) bool {
+    for (program.items) |item| {
+        if (item != .event_decl) continue;
+        const decl = item.event_decl;
+        if (decl.path.segments.len != segments.len) continue;
+        var equal = true;
+        for (decl.path.segments, segments) |a, b| {
+            if (!std.mem.eql(u8, a, b)) {
+                equal = false;
+                break;
+            }
+        }
+        if (equal) return true;
+    }
+    return false;
+}
+
+/// Qualified-only gate: entries with a qualifier fire only when the
+/// invocation spells that module qualifier. Legacy entries (null) pass.
+fn qualifierGateOpen(inv: *const Invocation, transform: *const TransformEntry) bool {
+    const required = transform.qualifier orelse return true;
+    const spelled = inv.path.module_qualifier orelse return false;
+    return std.mem.eql(u8, spelled, required);
+}
+
+fn flowStillMatchesTransform(inv: *const Invocation, transform: *const TransformEntry, program: *const Program) bool {
+    if (!qualifierGateOpen(inv, transform)) return false;
+    if (shadowedByLocalEvent(inv, transform, program)) return false;
+    const transform_name = transform.name;
     // Check if it would match the transform (uses just segments, not full path)
     var seg_path_buf: [256]u8 = undefined;
     var seg_path_len: usize = 0;
@@ -443,6 +499,21 @@ fn matchGlob(pattern: []const u8, value: []const u8) bool {
 pub const TransformEntry = struct {
     /// Name of the transform event (e.g., "std.control.if", "renderHTML")
     name: []const u8,
+
+    /// Qualified-only dispatch: when set, an invocation fires this transform
+    /// ONLY if it spells this module qualifier (dotted user form, e.g.
+    /// "std.regex"). Proc-transforms (`~[transform]proc` on an ordinary
+    /// event) set this — they never capture bare names, which kills the
+    /// wrong-module-capture soundness bug structurally. Null = legacy
+    /// bare-segment matching (globs included).
+    qualifier: ?[]const u8 = null,
+
+    /// True when the transform lives in an imported module (legacy
+    /// bare-matchable entries). Local-first shadowing applies: a bare
+    /// invocation that resolves to a MAIN-MODULE event declaration is local,
+    /// and an imported module's transform must not capture it. Glob entries
+    /// are exempt — taps capture user events by design.
+    from_module: bool = false,
 
     /// When true, this transform claims its lexical descendants and is checked
     /// before child traversal. This lets region-owning constructs see raw
@@ -593,7 +664,7 @@ fn walkNode(
         if (!candidate.node.isAlreadyTransformed()) {
             for (transforms) |transform| {
                 if (!transform.claims_descendants) continue;
-                if (!candidate.node.matchesTransform(transform.name)) continue;
+                if (!invocationMatchesEntry(candidate.node, &transform, program)) continue;
 
                 const claim_result = try applyTransform(candidate.node, candidate.position, program, transform, allocator);
                 if (claim_result.found) {
@@ -643,7 +714,7 @@ fn walkNode(
         // Check if this invocation matches any transform
         for (transforms) |transform| {
             if (transform.claims_descendants) continue;
-            if (node.matchesTransform(transform.name)) {
+            if (invocationMatchesEntry(node, &transform, program)) {
                 return try applyTransform(node, position, program, transform, allocator);
             }
         }
@@ -861,8 +932,8 @@ fn applyTransform(
     // CIRCUIT BREAKER: Verify the transform made progress.
     // Count matching invocations before and after - if the count didn't
     // decrease, the transform isn't making progress (infinite loop).
-    const count_before = countMatchingFlowsInProgram(transform.name, program);
-    const count_after = countMatchingFlowsInProgram(transform.name, spliced);
+    const count_before = countMatchingFlowsInProgram(&transform, program);
+    const count_after = countMatchingFlowsInProgram(&transform, spliced);
 
     if (count_after >= count_before and count_before > 0) {
         log.err("\n", .{});

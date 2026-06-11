@@ -1470,6 +1470,11 @@ const TransformEvent = struct {
     has_failed: bool, // Event has failed{ error: []const u8 } branch
     failed_is_identity: bool, // failed branch is identity (just []const u8, not struct)
     has_compile_error: bool, // Event has compile_error{ message: []const u8 } branch
+    /// Qualified-only dispatch: the user-spelled module qualifier (dotted,
+    /// e.g. "std.regex") an invocation MUST carry to fire this transform.
+    /// Set for proc-transforms (`~[transform]proc` on an ordinary event) —
+    /// they never capture bare names. Null = legacy bare-name matching.
+    qualifier: ?[]const u8 = null,
     /// Variant target names (e.g. "raw_posix") for ~proc <event>|<variant> declarations.
     /// The call_handler wrapper dispatches to handler.handler__<variant> based on
     /// flow.inv().variant or the build-time variant registry.
@@ -1765,6 +1770,19 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                         }
                     }
 
+                    // PROC-TRANSFORM DETECTION: `~[transform]proc <event>` on an
+                    // ordinary event. The event declares the USER surface (payload +
+                    // branch contract, checked by the shape checker like any event);
+                    // the machine interface is the proc-return convention:
+                    // (invocation, item, program, allocator) → transformed SiteResult.
+                    // Proc-transforms dispatch QUALIFIED-ONLY — they never capture
+                    // bare names (the wrong-module-capture soundness fix).
+                    const has_transform_proc = emitter_helpers.findTransformProc(module.items, event_decl.path.segments) != null;
+                    if (has_transform_proc) {
+                        has_invocation_param = true;
+                        has_item_param = true;
+                    }
+
                     // Emit handlers for events that consume AST types
                     const should_generate_handler = has_invocation_param or has_item_param or has_event_decl_param;
 
@@ -1819,6 +1837,13 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                             }
                         }
 
+                        if (has_transform_proc) {
+                            // Machine params come from the proc convention,
+                            // not the event's (user-surface) fields.
+                            has_program_ast = true;
+                            has_allocator = true;
+                        }
+
                         // Detect return type
                         var returns_program = false;
                         var has_failed = false;
@@ -1847,6 +1872,12 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                             }
                         }
 
+                        if (has_transform_proc) {
+                            // Proc-transforms return `transformed SiteResult` by
+                            // convention; the event's branches are the user contract.
+                            returns_program = true;
+                        }
+
                         const claims_descendants = annotation_parser.hasPart(event_decl.annotations, "claims_descendants");
 
                         // Collect variant targets from the same module (variants live alongside the event).
@@ -1872,6 +1903,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                             .returns_program = returns_program,
                             .has_failed = has_failed,
                             .failed_is_identity = failed_is_identity,
+                            .qualifier = if (has_transform_proc) try allocator.dupe(u8, module.logical_name) else null,
                             .variant_targets = variant_targets_mod,
                         };
                         transform_count += 1;
@@ -1889,6 +1921,9 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
             allocator.free(event.event_name);
             if (event.module_path) |mp| {
                 allocator.free(mp);
+            }
+            if (event.qualifier) |q| {
+                allocator.free(q);
             }
             for (event.variant_targets) |t| allocator.free(t);
             allocator.free(event.variant_targets);
@@ -2259,11 +2294,20 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
     for (transform_events[0..transform_count]) |event| {
         var stub_ident_buf: [256]u8 = undefined;
         const stub_ident = lowerKebabIdent(&stub_ident_buf, event.stub_name);
-        const entry_line = try std.fmt.bufPrint(&buf, "        .{{ .name = \"{s}\", .claims_descendants = {s}, .handler_fn = call_handler_{s} }},\n", .{
-            event.match_name,
-            if (event.claims_descendants) "true" else "false",
-            stub_ident,
-        });
+        const entry_line = if (event.qualifier) |qualifier|
+            try std.fmt.bufPrint(&buf, "        .{{ .name = \"{s}\", .qualifier = \"{s}\", .claims_descendants = {s}, .handler_fn = call_handler_{s} }},\n", .{
+                event.match_name,
+                qualifier,
+                if (event.claims_descendants) "true" else "false",
+                stub_ident,
+            })
+        else
+            try std.fmt.bufPrint(&buf, "        .{{ .name = \"{s}\", .from_module = {s}, .claims_descendants = {s}, .handler_fn = call_handler_{s} }},\n", .{
+                event.match_name,
+                if (event.module_path != null) "true" else "false",
+                if (event.claims_descendants) "true" else "false",
+                stub_ident,
+            });
         try code_emitter.write(entry_line);
     }
 
@@ -4982,7 +5026,7 @@ fn resolveKeywordsInItem(
             const old_qualifier = flow.inv().path.module_qualifier;
 
             // Resolve the main invocation path
-            try resolveKeywordInPath(&flow.invMut().path, registry, allocator, main_module);
+            try resolveKeywordInPath(&flow.invMut().path, registry, allocator, main_module, all_items);
 
             // If keyword resolution happened (qualifier changed), fix up Expression args
             const qualifier_changed = if (old_qualifier) |old| blk: {
@@ -4998,7 +5042,7 @@ fn resolveKeywordsInItem(
 
             // Resolve paths in continuations
             for (flow.body.continuations) |*cont| {
-                try resolveKeywordsInContinuation(@constCast(cont), registry, allocator, main_module);
+                try resolveKeywordsInContinuation(@constCast(cont), registry, allocator, main_module, all_items);
             }
         },
         .module_decl => |*module| {
@@ -5132,13 +5176,14 @@ fn resolveKeywordsInStep(
     registry: *const keyword_registry.KeywordRegistry,
     allocator: std.mem.Allocator,
     main_module: []const u8,
+    top_items: []const ast.Item,
 ) !void {
     switch (step.*) {
         .invocation => |*inv| {
-            try resolveKeywordInPath(&inv.path, registry, allocator, main_module);
+            try resolveKeywordInPath(&inv.path, registry, allocator, main_module, top_items);
         },
         .label_with_invocation => |*lwi| {
-            try resolveKeywordInPath(&lwi.invocation.path, registry, allocator, main_module);
+            try resolveKeywordInPath(&lwi.invocation.path, registry, allocator, main_module, top_items);
         },
         else => {},
     }
@@ -5149,16 +5194,32 @@ fn resolveKeywordsInContinuation(
     registry: *const keyword_registry.KeywordRegistry,
     allocator: std.mem.Allocator,
     main_module: []const u8,
+    top_items: []const ast.Item,
 ) !void {
     // Resolve paths in step
     if (cont.node) |*step| {
-        try resolveKeywordsInStep(@constCast(step), registry, allocator, main_module);
+        try resolveKeywordsInStep(@constCast(step), registry, allocator, main_module, top_items);
     }
 
     // Recursively process nested continuations
     for (cont.continuations) |*nested| {
-        try resolveKeywordsInContinuation(@constCast(nested), registry, allocator, main_module);
+        try resolveKeywordsInContinuation(@constCast(nested), registry, allocator, main_module, top_items);
     }
+}
+
+/// True if the main module's own items declare an event with this
+/// single-segment name. A local declaration SHADOWS any [keyword] event of
+/// the same name (the 120_002 name-priority rule): keyword resolution must
+/// not rewrite a name the user declared locally.
+fn localEventShadowsKeyword(top_items: []const ast.Item, name: []const u8) bool {
+    for (top_items) |item| {
+        if (item != .event_decl) continue;
+        const decl = item.event_decl;
+        if (decl.path.segments.len == 1 and std.mem.eql(u8, decl.path.segments[0], name)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 fn resolveKeywordInPath(
@@ -5166,6 +5227,7 @@ fn resolveKeywordInPath(
     registry: *const keyword_registry.KeywordRegistry,
     allocator: std.mem.Allocator,
     main_module: []const u8,
+    top_items: []const ast.Item,
 ) !void {
     // Only resolve single-segment paths
     if (path.segments.len != 1) return;
@@ -5182,6 +5244,10 @@ fn resolveKeywordInPath(
     }
 
     const potential_keyword = path.segments[0];
+
+    // Local-first: a name the main module declares as an event is LOCAL —
+    // it must not be rewritten to an imported [keyword] event's module.
+    if (localEventShadowsKeyword(top_items, potential_keyword)) return;
 
     const resolve_result = registry.resolveKeyword(potential_keyword) catch |err| switch (err) {
         error.KeywordCollision => {

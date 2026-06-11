@@ -38,9 +38,9 @@ const INPUTS = [_][]const u8{ "foo@bar", "12345", "hello world!" };
 ~read-n()
 
 ~for(0..input_n)
-! each i |> match(INPUTS[i % 3])
+! each i |> std/regex:match(INPUTS[i % 3])
             | `[a-z]+@[a-z]+` _ |> bump-email()
             | `[0-9]+` _ |> bump-number()
-            | no-match _ |> bump-none()
+            | no-match |> bump-none()
 
 ~std/io:print.ln("email = {{ count_email:d }} number = {{ count_number:d }} none = {{ count_none:d }}")

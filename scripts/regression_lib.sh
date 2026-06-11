@@ -863,6 +863,7 @@ pub fn build(b: *std.Build) void {
     });
     emitter_helpers_module.addImport("ast", ast_module);
     emitter_helpers_module.addImport("compiler_config", compiler_config_module);
+    emitter_helpers_module.addImport("annotation_parser", annotation_parser_module);
     emitter_helpers_module.addImport("type_registry", type_registry_module);
     const tap_pattern_matcher_module = b.createModule(.{
         .root_source_file = b.path("${REL_TO_ROOT}/src/tap_pattern_matcher.zig"),

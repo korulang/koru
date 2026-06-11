@@ -11,6 +11,30 @@ const type_registry_module = @import("type_registry");
 const purity_helpers = @import("compiler_passes/purity_helpers");
 const compiler_config = @import("compiler_config");
 const codegen_utils = @import("codegen_utils");
+const annotation_parser = @import("annotation_parser");
+
+/// Find a `~[transform]proc` implementing the event at `segments` among `items`.
+/// A transform IS a proc on an ordinary event: the event declares the USER
+/// surface (payload + branch contract), the proc carries the `[transform]`
+/// annotation and follows the machine convention
+/// (invocation, item, program, allocator) → transformed: SiteResult.
+pub fn findTransformProc(items: []const ast.Item, segments: []const []const u8) ?*const ast.ProcDecl {
+    for (items) |*it| {
+        if (it.* != .proc_decl) continue;
+        const proc = &it.proc_decl;
+        if (!annotation_parser.hasPart(proc.annotations, "transform")) continue;
+        if (proc.path.segments.len != segments.len) continue;
+        var equal = true;
+        for (proc.path.segments, segments) |a, b| {
+            if (!std.mem.eql(u8, a, b)) {
+                equal = false;
+                break;
+            }
+        }
+        if (equal) return proc;
+    }
+    return null;
+}
 
 // ============================================================================
 // VARIANT REGISTRY - Core language feature for proc variant selection
