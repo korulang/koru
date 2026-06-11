@@ -50,8 +50,8 @@
         },
         {
             "type": "event_decl",
-            "name": "process_user",
-            "path": ["process_user"],
+            "name": "process-user",
+            "path": ["process-user"],
             "module": "input",
             "input": {
                 "fields": [
