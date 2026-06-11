@@ -133,7 +133,7 @@ var test_value: ?i32 = 42;
 ~import std/template
 
 // Define template in user-land using the imported define event
-~std/template:define(name: "debug_print") {
+~std/template:define(name: "debug-print") {
     @import("std").debug.print("value: {d}\n", .{ {{ value }} });
 }
 
