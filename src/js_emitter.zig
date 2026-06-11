@@ -175,6 +175,17 @@ const Emitter = struct {
         }
     }
 
+    /// Buffer variant of the same boundary, for sites that need the lowered
+    /// identifier as a string (format args, host-text searches — host JS can
+    /// only ever spell the lowered form).
+    fn lowerIdentBuf(buf: []u8, name: []const u8) []const u8 {
+        @memcpy(buf[0..name.len], name);
+        for (buf[0..name.len]) |*c| {
+            if (c.* == '-') c.* = '_';
+        }
+        return buf[0..name.len];
+    }
+
     /// Find the |js proc for `event_path` WITHIN a given item scope (segment-
     /// equal). Scope matters: a module's event resolves to the proc in that same
     /// module, never a same-named proc in a sibling module. Mirrors the Zig
@@ -755,7 +766,10 @@ const Emitter = struct {
 
             for (event.branches) |*b| {
                 if (b.kind != .effect) continue;
-                const found = findOpCall(trimmed, pos, b.name) orelse continue;
+                // Host text spells the lowered identifier — search that form.
+                var op_ident_buf: [256]u8 = undefined;
+                const op_ident = lowerIdentBuf(&op_ident_buf, b.name);
+                const found = findOpCall(trimmed, pos, op_ident) orelse continue;
                 if (best_call_start == null or found.call_start < best_call_start.?) {
                     const cont = continuationForBranch(continuations, b.name) orelse {
                         log.debug("[js_emitter] void effect op '{s}' has no matching continuation\n", .{b.name});
@@ -854,27 +868,30 @@ const Emitter = struct {
     ///   - null / `.terminal` → empty body.
     fn emitEffectHandlerMethod(self: *Emitter, cont: *const ast.Continuation, indent: []const u8) JsEmitError!void {
         const param = cont.binding orelse "_";
+        // Method KEY is a JS identifier (`H.<name>` after the alias) — lower.
+        var method_buf: [256]u8 = undefined;
+        const method_ident = lowerIdentBuf(&method_buf, cont.branch);
 
         const node = cont.node orelse {
             // No body — emit an empty method.
-            try self.writeFmt("{s}{s}({s}) {{}},\n", .{ indent, cont.branch, param });
+            try self.writeFmt("{s}{s}({s}) {{}},\n", .{ indent, method_ident, param });
             return;
         };
         switch (node) {
             .expression => |expr| {
-                try self.writeFmt("{s}{s}({s}) {{ return {s}; }},\n", .{ indent, cont.branch, param, expr });
+                try self.writeFmt("{s}{s}({s}) {{ return {s}; }},\n", .{ indent, method_ident, param, expr });
             },
             .invocation => |*inv| {
                 // VOID effect handler whose body is the nested sub-flow. No
                 // `return` — recurse to emit the nested dispatch.
-                try self.writeFmt("{s}{s}({s}) {{\n", .{ indent, cont.branch, param });
+                try self.writeFmt("{s}{s}({s}) {{\n", .{ indent, method_ident, param });
                 const inner_indent = try std.fmt.allocPrint(self.allocator, "{s}  ", .{indent});
                 defer self.allocator.free(inner_indent);
                 try self.emitInvocationWithContinuations(inv, cont.continuations, inner_indent);
                 try self.writeFmt("{s}}},\n", .{indent});
             },
             .terminal => {
-                try self.writeFmt("{s}{s}({s}) {{}},\n", .{ indent, cont.branch, param });
+                try self.writeFmt("{s}{s}({s}) {{}},\n", .{ indent, method_ident, param });
             },
             else => {
                 log.debug("[js_emitter] effect handler body is neither expression nor invocation\n", .{});
