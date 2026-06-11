@@ -8,8 +8,8 @@
 
 ~std/args:get(index: 1)
 | arg a |> std/io:print.ln(a)
-| out-of-bounds |> std/io:print(text: "<none>\n")
+| out-of-bounds |> std/io:print("<none>\n")
 
 ~std/args:get(index: 2)
 | arg a |> std/io:print.ln(a)
-| out-of-bounds |> std/io:print(text: "<none>\n")
+| out-of-bounds |> std/io:print("<none>\n")

@@ -19,5 +19,5 @@
 ~import std/io
 
 ~for(0..3)
-! each _ |> std/io:print(text: "tick\n")
+! each _ |> std/io:print("tick\n")
 | done |> _

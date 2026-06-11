@@ -17,4 +17,4 @@
 
 // Test: call greet with "World" and print the resulting message
 ~greet(name: "World")
-| greeting g |> std/io:print(text: g)
+| greeting g |> std/io:print(g)

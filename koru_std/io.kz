@@ -10,17 +10,22 @@
 
 const std = @import("std");
 
-// Print text without newline
-~pub event print { text: []const u8 }
-
-~proc print|zig {
-    std.debug.print("{s}", .{text});
+// Print without trailing newline — the no-newline sibling of print.ln.
+// SAME implementation (__printInterpolate, with_newline=false): comptime
+// {{ }} interpolation, rerouted to print.impl for shape checking.
+//
+// The old RUNTIME passthrough event (`print { text }` + |zig/|js procs) died
+// here (2026-06-11, Lars ruling: std/io's print surface is comptime-only;
+// stage/runtime printing is the future std/compiler print-family). Its
+// positional-arg mis-emit bug died with the codepath.
+~[keyword|comptime|transform]pub event print {
+    expr: Expression,
+    invocation: *const Invocation,
+    item: *const Item,
+    program: *const Program,
+    allocator: std.mem.Allocator
 }
-
-// JS variant: write without a trailing newline (console.log would add one).
-~proc print|js {
-    process.stdout.write(text);
-}
+| transformed SiteResult
 
 // `println` REMOVED — subsumed by `print.ln` (the interpolating print). Calling
 // `std/io:println` is now an unknown-event error by design (greenfield: the old
@@ -196,7 +201,25 @@ const std = @import("std");
     expr: []const u8,
 }
 
-~proc print.ln|zig {
+// ============================================================================
+// Shared interpolation engine for the comptime print family. `print` IS
+// `print.ln` without the trailing newline — ONE implementation, parameterized
+// at comptime. Both reroute to the [norun] print.impl event for shape
+// checking. (Stage/runtime printing belongs to the future std/compiler
+// print-family — std/io's print surface is comptime-only by ruling,
+// 2026-06-11.)
+//
+// `item: anytype` + lazy ast import keep this fn unanalyzed (and harmless)
+// if it rides along into runtime emission units where @import("ast") does
+// not exist — Zig only analyzes referenced declarations.
+// ============================================================================
+fn __printInterpolate(
+    expr: []const u8,
+    item: anytype,
+    allocator: std.mem.Allocator,
+    comptime with_newline: bool,
+    comptime label: []const u8,
+) @import("ast").SiteResult {
     const ast = @import("ast");
 
     // Helper: Check if identifier is a Zig keyword
@@ -256,7 +279,7 @@ const std = @import("std");
     const flow = if (item.* == .flow)
         &item.flow
     else
-        return .{ .transformed = .{} };
+        return .{};
 
     // Parse the Expression string for ${...} placeholders
     var format_buf = std.ArrayList(u8).initCapacity(allocator, 128) catch unreachable;
@@ -423,18 +446,20 @@ const std = @import("std");
         }
     }
 
-    format_buf.appendSlice(allocator, "\\n") catch unreachable;
+    if (with_newline) {
+        format_buf.appendSlice(allocator, "\\n") catch unreachable;
+    }
 
     const inline_code = if (function_call_expr) |fn_expr|
         std.fmt.allocPrint(
             allocator,
-            "@compileError(\"std/io:print.ln: '{{{{ {s} }}}}' contains a function call — function calls are not allowed in expressions. Use event chaining instead.\");",
+            "@compileError(\"std/io:" ++ label ++ ": '{{{{ {s} }}}}' contains a function call — function calls are not allowed in expressions. Use event chaining instead.\");",
             .{fn_expr}
         ) catch unreachable
     else if (missing_spec) |placeholder|
         std.fmt.allocPrint(
             allocator,
-            "@compileError(\"std/io:print.ln: '{{{{ {s} }}}}' requires a format specifier (:d, :s, :f, or :any)\");",
+            "@compileError(\"std/io:" ++ label ++ ": '{{{{ {s} }}}}' requires a format specifier (:d, :s, :f, or :any)\");",
             .{placeholder}
         ) catch unreachable
     else
@@ -444,38 +469,8 @@ const std = @import("std");
             .{ format_buf.items, args_buf.items }
         ) catch unreachable;
 
-    const isSameInvocation = struct {
-        fn check(a: *const ast.Invocation, b: *const ast.Invocation) bool {
-            if (a.path.module_qualifier) |amq| {
-                if (b.path.module_qualifier) |bmq| {
-                    if (!std.mem.eql(u8, amq, bmq)) return false;
-                } else {
-                    return false;
-                }
-            } else if (b.path.module_qualifier != null) {
-                return false;
-            }
-
-            if (a.path.segments.len != b.path.segments.len) return false;
-            for (a.path.segments, 0..) |seg, seg_i| {
-                if (!std.mem.eql(u8, seg, b.path.segments[seg_i])) return false;
-            }
-
-            if (a.args.len != b.args.len) return false;
-            for (a.args, 0..) |arg, arg_i| {
-                const other = b.args[arg_i];
-                if (!std.mem.eql(u8, arg.name, other.name)) return false;
-                if (arg.value.len > 0 and other.value.len > 0 and !std.mem.eql(u8, arg.value, other.value)) return false;
-            }
-            return true;
-        }
-    }.check;
-
     // Position-agnostic: the runner lifts nested sites into a synthetic
-    // top-level flow, so `invocation` IS the flow's own invocation at every depth.
-    // One write-back path; the runner grafts nested results back.
-    _ = invocation;
-    _ = isSameInvocation; // keep for now; value match is not a top-level signal
+    // top-level flow, so the flow's own invocation is correct at every depth.
 
     // Re-route path to void print.impl event for shape checking
     const impl_segments = allocator.alloc([]const u8, 2) catch unreachable;
@@ -488,7 +483,7 @@ const std = @import("std");
 
     // Already transformed — don't re-run
     if (flow.inline_body != null) {
-        return .{ .transformed = .{} };
+        return .{};
     }
 
     const new_inv_annotations = allocator.alloc([]const u8, flow.inv().annotations.len + 1) catch unreachable;
@@ -505,23 +500,28 @@ const std = @import("std");
         .from_opaque_tap = flow.inv().from_opaque_tap,
     };
 
-    const transformed_flow = ast.Flow{
-        .body = ast.rootSite(new_invocation, flow.body.continuations, flow.location),
-        .annotations = flow.annotations,
-        .pre_label = flow.pre_label,
-        .post_label = flow.post_label,
-        .super_shape = flow.super_shape,
-        .inline_body = inline_code,
-        .is_pure = flow.is_pure,
-        .is_transitively_pure = flow.is_transitively_pure,
-        .location = flow.location,
-        .module = flow.module,
-        .impl_of = flow.impl_of,
-    };
+    // Whole-struct copy, NOT a field-list literal: a hand-rolled literal
+    // silently drops any field it doesn't name (this exact rebuild used to
+    // lose impl_variant, breaking variant subflows whose body is a print).
+    var transformed_flow = flow.*;
+    transformed_flow.body = ast.rootSite(new_invocation, flow.body.continuations, flow.location);
+    transformed_flow.inline_body = inline_code;
 
     const new_item = ast.Item{ .flow = transformed_flow };
 
-    return .{ .transformed = .{ .replacement = new_item } };
+    return .{ .replacement = new_item };
+}
+
+~proc print.ln|zig {
+    _ = invocation;
+    _ = program;
+    return .{ .transformed = __printInterpolate(expr, item, allocator, true, "print.ln") };
+}
+
+~proc print|zig {
+    _ = invocation;
+    _ = program;
+    return .{ .transformed = __printInterpolate(expr, item, allocator, false, "print") };
 }
 
 // ============================================================================
@@ -898,19 +898,12 @@ const std = @import("std");
         .from_opaque_tap = flow.inv().from_opaque_tap,
     };
 
-    const transformed_flow = ast.Flow{
-        .body = ast.rootSite(new_invocation, flow.body.continuations, flow.location),
-        .annotations = flow.annotations,
-        .pre_label = flow.pre_label,
-        .post_label = flow.post_label,
-        .super_shape = flow.super_shape,
-        .inline_body = inline_code,
-        .is_pure = flow.is_pure,
-        .is_transitively_pure = flow.is_transitively_pure,
-        .location = flow.location,
-        .module = flow.module,
-        .impl_of = flow.impl_of,
-    };
+    // Whole-struct copy, NOT a field-list literal: a hand-rolled literal
+    // silently drops any field it doesn't name (this exact rebuild used to
+    // lose impl_variant, breaking variant subflows whose body is a print).
+    var transformed_flow = flow.*;
+    transformed_flow.body = ast.rootSite(new_invocation, flow.body.continuations, flow.location);
+    transformed_flow.inline_body = inline_code;
 
     const new_item = ast.Item{ .flow = transformed_flow };
 
@@ -1288,19 +1281,12 @@ const std = @import("std");
         .from_opaque_tap = flow.inv().from_opaque_tap,
     };
 
-    const transformed_flow = ast.Flow{
-        .body = ast.rootSite(new_invocation, flow.body.continuations, flow.location),
-        .annotations = flow.annotations,
-        .pre_label = flow.pre_label,
-        .post_label = flow.post_label,
-        .super_shape = flow.super_shape,
-        .inline_body = inline_code,
-        .is_pure = flow.is_pure,
-        .is_transitively_pure = flow.is_transitively_pure,
-        .location = flow.location,
-        .module = flow.module,
-        .impl_of = flow.impl_of,
-    };
+    // Whole-struct copy, NOT a field-list literal: a hand-rolled literal
+    // silently drops any field it doesn't name (this exact rebuild used to
+    // lose impl_variant, breaking variant subflows whose body is a print).
+    var transformed_flow = flow.*;
+    transformed_flow.body = ast.rootSite(new_invocation, flow.body.continuations, flow.location);
+    transformed_flow.inline_body = inline_code;
 
     const new_item = ast.Item{ .flow = transformed_flow };
 
@@ -1507,19 +1493,12 @@ const std = @import("std");
         .from_opaque_tap = flow.inv().from_opaque_tap,
     };
 
-    const transformed_flow = ast.Flow{
-        .body = ast.rootSite(new_invocation, flow.body.continuations, flow.location),
-        .annotations = flow.annotations,
-        .pre_label = flow.pre_label,
-        .post_label = flow.post_label,
-        .super_shape = flow.super_shape,
-        .inline_body = inline_code,
-        .is_pure = flow.is_pure,
-        .is_transitively_pure = flow.is_transitively_pure,
-        .location = flow.location,
-        .module = flow.module,
-        .impl_of = flow.impl_of,
-    };
+    // Whole-struct copy, NOT a field-list literal: a hand-rolled literal
+    // silently drops any field it doesn't name (this exact rebuild used to
+    // lose impl_variant, breaking variant subflows whose body is a print).
+    var transformed_flow = flow.*;
+    transformed_flow.body = ast.rootSite(new_invocation, flow.body.continuations, flow.location);
+    transformed_flow.inline_body = inline_code;
 
     const new_item = ast.Item{ .flow = transformed_flow };
     return .{ .transformed = .{ .replacement = new_item } };

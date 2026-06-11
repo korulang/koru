@@ -37,10 +37,10 @@ const Root = @import("root");
 
 // Test with [release] annotation - should activate when --build=release
 ~[release]check-build()
-| activated _ |> std/io:print(text: "release: ACTIVATED\n")
-| skipped _ |> std/io:print(text: "release: skipped\n")
+| activated _ |> std/io:print("release: ACTIVATED\n")
+| skipped _ |> std/io:print("release: skipped\n")
 
 // Test with [debug] annotation - should activate when --build=debug
 ~[debug]check-build()
-| activated _ |> std/io:print(text: "debug: ACTIVATED\n")
-| skipped _ |> std/io:print(text: "debug: skipped\n")
+| activated _ |> std/io:print("debug: ACTIVATED\n")
+| skipped _ |> std/io:print("debug: skipped\n")

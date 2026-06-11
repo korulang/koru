@@ -3093,12 +3093,25 @@ pub const VisitorEmitter = struct {
                             try self.code_emitter.writeIndent();
                             try self.code_emitter.write("_ = &__koru_event_input;\n");
 
-                            // Body emission. Currently supports only the simple
-                            // single-invocation shape (no continuations, preamble,
-                            // or inline_body). Extending this to full flow shapes
-                            // requires factoring out the main handler's body-emission
-                            // path into a shared helper. Pinning that gap as a TODO.
-                            if (flow.body.continuations.len == 0 and flow.preamble_code == null and flow.inline_body == null) {
+                            // Body emission. Supports the simple single-invocation
+                            // shape and the transformed shape (inline_body, e.g. a
+                            // comptime print as the variant body). Continuations/
+                            // preamble still require factoring the main handler's
+                            // body-emission into a shared helper — loud guard below.
+                            if (flow.body.continuations.len == 0 and flow.preamble_code == null and flow.inline_body != null) {
+                                // Transformed variant body: splice the generated
+                                // host code directly, same as the main handler's
+                                // transformed-flow path.
+                                var vindent_buf: [64]u8 = undefined;
+                                var vindent_pos: usize = 0;
+                                var vidx: usize = 0;
+                                while (vidx < self.code_emitter.indent_level) : (vidx += 1) {
+                                    @memcpy(vindent_buf[vindent_pos..vindent_pos + 4], "    ");
+                                    vindent_pos += 4;
+                                }
+                                try self.code_emitter.emitReindentedText(flow.inline_body.?, vindent_buf[0..vindent_pos]);
+                                try self.code_emitter.write("\n");
+                            } else if (flow.body.continuations.len == 0 and flow.preamble_code == null and flow.inline_body == null) {
                                 try self.code_emitter.writeIndent();
                                 try self.code_emitter.write("_ = ");
                                 if (flow.inv().path.module_qualifier) |mq| {
@@ -3124,7 +3137,7 @@ pub const VisitorEmitter = struct {
                                 try self.code_emitter.write(" });\n");
                             } else {
                                 try self.code_emitter.writeIndent();
-                                try self.code_emitter.write("@compileError(\"variant subflow body has continuations/preamble/inline_body — emission path not yet implemented\");\n");
+                                try self.code_emitter.write("@compileError(\"variant subflow body has continuations/preamble — emission path not yet implemented\");\n");
                             }
 
                             self.code_emitter.indent_level -= 1;

@@ -12,9 +12,9 @@ const std = @import("std");
 
 ~pub event greet {}
 
-~greet|en = std/io:print(text: "hello")
+~greet|en = std/io:print("hello")
 
-~greet|no = std/io:print(text: "hei")
+~greet|no = std/io:print("hei")
 
 ~std/build:variants {
     "input:greet": "no"

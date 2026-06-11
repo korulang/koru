@@ -6,4 +6,4 @@
 
 const msg: []const u8 = "should be rejected";
 
-~std.io:print(text: msg)
+~std.io:print(msg)

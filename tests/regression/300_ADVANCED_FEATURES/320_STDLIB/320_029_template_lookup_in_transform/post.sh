@@ -17,9 +17,11 @@ fi
 
 # Check 3: Verify the template structure was used
 # The template produces: if (${condition}) { ${| then |} } else { ${| else |} }
-# So we should see the if/else structure with handler calls inside
-if ! grep -q "print_event.handler" "$OUTPUT_FILE"; then
-    echo "FAIL: Expected print handler calls not found"
+# The branch bodies are comptime print transforms — they land as inline
+# debug.print calls inside the if/else (print is a transform, not a runtime
+# handler, since 2026-06-11).
+if ! grep -q 'debug.print("Template says' "$OUTPUT_FILE"; then
+    echo "FAIL: Expected inline print output for then/else bodies not found"
     exit 1
 fi
 
