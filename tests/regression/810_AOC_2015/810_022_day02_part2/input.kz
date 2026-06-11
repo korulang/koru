@@ -1,17 +1,6 @@
-// AoC 2015 Day 2 Part 2 — ribbon: smallest face perimeter + cubic volume
-// (2x3x4 → 10+24 = 34, 1x1x10 → 4+10 = 14; total = 48).
-// Same shape as part 1: parse-dims is the declared host leaf (regex-groups
-// frontier), formula in expression leaves, capture cell accumulates.
-
-~import std/io
-~import std/control
+// FRONTIER LEDGER for day 2 part 2 — parse-dims: retired by regex groups.
 
 const std = @import("std");
-
-const presents = [_][]const u8{ "2x3x4", "1x1x10" };
-
-~event parse-dims { line: []const u8 }
-| dims { l: i64, w: i64, h: i64 }
 
 ~proc parse-dims|zig {
     var it = std.mem.splitScalar(u8, line, 'x');
@@ -20,12 +9,3 @@ const presents = [_][]const u8{ "2x3x4", "1x1x10" };
     const h = std.fmt.parseInt(i64, it.next().?, 10) catch unreachable;
     return .{ .dims = .{ .l = l, .w = w, .h = h } };
 }
-
-~capture { ribbon: 0[i64] }
-! as acc |> for(presents)
-    ! each line |> parse-dims(line)
-        | dims d |> captured {
-            ribbon: acc.ribbon + 2*@min(d.l+d.w, d.w+d.h, d.h+d.l)
-                + d.l*d.w*d.h
-        }
-| captured total |> std/io:print.ln("{{ total.ribbon:d }}")

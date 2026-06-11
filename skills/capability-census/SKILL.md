@@ -42,6 +42,20 @@ structure lives in host Zig reads as "Koru can do this" when the host did it —
 a lie that compiles, the conformance-fraud twin. There is no point in solutions
 that aren't pristine.
 
+## The .k covenant (ratified 2026-06-12)
+
+The terminal form of every rung is a **pure `.k` file** — no `~`, no host
+lines. The point of the whole climb is gap-closing until user programs NEVER
+need a `.kz` file; `koru_std`'s own `.kz` facets are where host leaves
+legitimately live, and the climb's job is to migrate every user-side leaf
+into stdlib events.
+
+The transitional form is the **dual-facet split**: `input.k` holds the pure
+structure (contract events must be `pub` — KORU111 enforces this), and the
+same-stem `input.kz` facet holds the remaining procs. **The facet IS the
+rung's frontier ledger** — its header lists each proc and the gap that
+retires it; the facet shrinking to zero bytes is the metric of the climb.
+
 ## Plumbing probes — encouraged, never committed as solutions
 
 Writing the ugly version FIRST is good method, not a violation of the bar. The

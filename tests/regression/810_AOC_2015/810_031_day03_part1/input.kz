@@ -1,29 +1,18 @@
-// AoC 2015 Day 3 Part 1 — "Perfectly Spherical Houses in a Vacuum"
-// (statement examples: ">" → 2, "^>v<" → 4, "^v^v^v^v^v" → 2).
-// Structure is Koru: direction dispatch is EVENT BRANCHES (the language's
-// switch), position is a capture cell, the walk is a subflow. The visited
-// SET is the declared host leaf — and the named frontier: collections have
-// no Koru surface yet (the multi-cell/store question, see 320_034/036/038).
-// First day that allocates: the leak meter judges the set's cleanup.
-
-~import std/io
-~import std/control
+// FRONTIER LEDGER for day 3 part 1:
+// - visit/house-count: the visited SET — the store frontier (collections
+//   have no Koru surface; votes with 320_034/036/038)
+// - classify: char dispatch wants a Koru surface (match on chars, or a
+//   branch-on-value form)
 
 const std = @import("std");
 
 const Pos = struct { x: i64, y: i64 };
 var visited: ?std.AutoHashMap(Pos, void) = null;
 
-~event visit { x: i64, y: i64 }
-
 ~proc visit|zig {
     if (visited == null) visited = std.AutoHashMap(Pos, void).init(koru_allocator());
     visited.?.put(.{ .x = x, .y = y }, {}) catch unreachable;
 }
-
-// Drain-and-count: returns the house count and retires the set (meter-clean).
-~event house-count {}
-| count i64
 
 ~proc house-count|zig {
     const n: i64 = @intCast(visited.?.count());
@@ -31,12 +20,6 @@ var visited: ?std.AutoHashMap(Pos, void) = null;
     visited = null;
     return .{ .count = n };
 }
-
-~event classify { c: u8 }
-| up
-| down
-| left
-| right
 
 ~proc classify|zig {
     return switch (c) {
@@ -47,25 +30,3 @@ var visited: ?std.AutoHashMap(Pos, void) = null;
         else => unreachable,
     };
 }
-
-~event walk { moves: []const u8 }
-| houses i64
-
-~walk = capture { x: 0[i64], y: 0[i64] }
-! as pos |> visit(x: 0, y: 0) |> for(moves)
-    ! each c |> classify(c)
-        | up    |> captured { y: pos.y + 1 } |> visit(pos.x, pos.y)
-        | down  |> captured { y: pos.y - 1 } |> visit(pos.x, pos.y)
-        | left  |> captured { x: pos.x - 1 } |> visit(pos.x, pos.y)
-        | right |> captured { x: pos.x + 1 } |> visit(pos.x, pos.y)
-| captured _ |> house-count()
-    | count n => houses n
-
-~walk(moves: ">")
-| houses a |> std/io:print.ln("{{ a:d }}")
-
-~walk(moves: "^>v<")
-| houses b |> std/io:print.ln("{{ b:d }}")
-
-~walk(moves: "^v^v^v^v^v")
-| houses c |> std/io:print.ln("{{ c:d }}")

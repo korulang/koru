@@ -1,19 +1,7 @@
-// AoC 2015 Day 2 Part 1 — "I Was Told There Would Be No Math"
-// (statement examples: 2x3x4 → 58, 1x1x10 → 43; total = 101).
-// PROBE: structure is Koru (iterate, dispatch, accumulate); parse-dims is a
-// declared HOST LEAF — the frontier this day votes on. The pristine spelling
-// wants regex GROUP captures (`(\d+)x(\d+)x(\d+)` binding the three numbers),
-// which cut-1 match does not have. Formula lives in expression leaves.
-
-~import std/io
-~import std/control
+// FRONTIER LEDGER for day 2 part 1 — every proc here is a gap the climb owes.
+// parse-dims: retired by regex GROUP captures binding (\d+)x(\d+)x(\d+).
 
 const std = @import("std");
-
-const presents = [_][]const u8{ "2x3x4", "1x1x10" };
-
-~event parse-dims { line: []const u8 }
-| dims { l: i64, w: i64, h: i64 }
 
 ~proc parse-dims|zig {
     var it = std.mem.splitScalar(u8, line, 'x');
@@ -22,12 +10,3 @@ const presents = [_][]const u8{ "2x3x4", "1x1x10" };
     const h = std.fmt.parseInt(i64, it.next().?, 10) catch unreachable;
     return .{ .dims = .{ .l = l, .w = w, .h = h } };
 }
-
-~capture { paper: 0[i64] }
-! as acc |> for(presents)
-    ! each line |> parse-dims(line)
-        | dims d |> captured {
-            paper: acc.paper + 2*d.l*d.w + 2*d.w*d.h + 2*d.h*d.l
-                + @min(d.l*d.w, d.w*d.h, d.h*d.l)
-        }
-| captured total |> std/io:print.ln("{{ total.paper:d }}")
