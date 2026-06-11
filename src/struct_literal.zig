@@ -152,6 +152,36 @@ pub const StructField = struct {
     value: []const u8,
 };
 
+/// Recognized Koru-native base types for the `value[type]` annotation.
+/// A closed allowlist on purpose: it is what keeps `acc.arr[i]` (indexing)
+/// and `[1, 2, 3]` (array literals) untouched by peelBaseType.
+pub fn isBaseType(s: []const u8) bool {
+    const types = [_][]const u8{
+        "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64",
+        "usize", "isize", "f16", "f32", "f64", "bool",
+    };
+    for (types) |t| {
+        if (std.mem.eql(u8, s, t)) return true;
+    }
+    return false;
+}
+
+/// Peel an OPTIONAL Koru-native base-type annotation `value[type]` off a field
+/// value: `10[i32]` → `{ .value = "10", .type = "i32" }`. Strings and bare
+/// numbers carry no annotation (type ""), since a string literal IS its type
+/// and a bare number takes the target default. Only a recognized base type
+/// counts (see isBaseType). THE single parser for the annotation — `const`'s
+/// parse_fields filter (template_processor) and `capture`'s seed builder
+/// (koru_std/control.kz) both call THIS, so their lowerings cannot drift.
+pub fn peelBaseType(field_value: []const u8) struct { value: []const u8, type: []const u8 } {
+    if (field_value.len < 3 or field_value[field_value.len - 1] != ']') return .{ .value = field_value, .type = "" };
+    const lb = std.mem.lastIndexOfScalar(u8, field_value, '[') orelse return .{ .value = field_value, .type = "" };
+    const inner = field_value[lb + 1 .. field_value.len - 1];
+    const prefix = std.mem.trim(u8, field_value[0..lb], " \t");
+    if (prefix.len == 0 or !isBaseType(inner)) return .{ .value = field_value, .type = "" };
+    return .{ .value = prefix, .type = inner };
+}
+
 /// Parse a Koru struct literal into ordered (name, value) field pairs. Same
 /// parser as `parse` (single source of struct-splitting truth), but returns a
 /// Zig slice instead of a liquid record. Positional fields carry `name = ""`.

@@ -424,6 +424,7 @@ pub const CompilerContext = struct {
     template_processor_module.addImport("log", log_module);
     template_processor_module.addImport("errors", errors_module);
     template_processor_module.addImport("annotation_parser", annotation_parser_module);
+    template_processor_module.addImport("struct_literal", struct_literal_module);
 
     // Purity helpers
     const purity_helpers_module = b.createModule(.{

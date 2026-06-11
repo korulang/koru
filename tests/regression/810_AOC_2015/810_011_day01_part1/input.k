@@ -8,7 +8,7 @@ import std/control
 
 const { input: "(()(()(" }
 
-capture { floor: @as(i32, 0) }
+capture { floor: 0[i32] }
 ! as acc |> for(input)
     ! each c |> if(c == '(')
         | then |> captured { floor: acc.floor + 1 }

@@ -313,7 +313,21 @@ const std = @import("std");
                 seed.appendSlice(allocator, cf.name) catch unreachable;
                 seed.appendSlice(allocator, " = ") catch unreachable;
             }
-            seed.appendSlice(allocator, cf.value) catch unreachable;
+            // Koru-native typed seed: `floor: 0[i32]` pins the cell field's
+            // type — the SAME annotation (and the same parser) as `const`'s
+            // `count: 42[i32]`. Zig pins with @as; untyped values paste
+            // verbatim (and a bare 0 stays comptime_int, which the runtime
+            // cell rejects — the annotation is how you say "this is data").
+            const peeled = struct_literal.peelBaseType(cf.value);
+            if (peeled.type.len > 0) {
+                seed.appendSlice(allocator, "@as(") catch unreachable;
+                seed.appendSlice(allocator, peeled.type) catch unreachable;
+                seed.appendSlice(allocator, ", ") catch unreachable;
+                seed.appendSlice(allocator, peeled.value) catch unreachable;
+                seed.appendSlice(allocator, ")") catch unreachable;
+            } else {
+                seed.appendSlice(allocator, cf.value) catch unreachable;
+            }
         }
         seed.appendSlice(allocator, " }") catch unreachable;
         break :blk seed.toOwnedSlice(allocator) catch unreachable;

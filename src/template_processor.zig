@@ -23,6 +23,7 @@ const ast = @import("ast");
 const liquid = @import("liquid");
 const log = @import("log");
 const errors = @import("errors");
+const struct_literal = @import("struct_literal");
 
 const TEMPLATE_TAG = "template";
 const ONCE_MODE = "once";
@@ -129,31 +130,10 @@ fn scanValueEnd(s: []const u8, start: usize) usize {
 /// Koru-native base types — a bounded, defined set (mirrors the units-of-measure
 /// scope guard). Only these are recognized as a `value[type]` annotation; anything
 /// else in a trailing `[…]` (array literals `[1,2,3]`, indexing) is left in the value.
-fn isBaseType(s: []const u8) bool {
-    const types = [_][]const u8{
-        "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64",
-        "usize", "isize", "f16", "f32", "f64", "bool",
-    };
-    for (types) |t| {
-        if (std.mem.eql(u8, s, t)) return true;
-    }
-    return false;
-}
-
-/// Peel an OPTIONAL Koru-native base-type annotation `value[type]` off a field
-/// value: `10[i32]` → `{ .value = "10", .type = "i32" }`. Strings and bare numbers
-/// carry no annotation (`"x"` → type ""), since a string literal IS its type and a
-/// bare number takes the target default (Zig comptime_int / JS number). Only a
-/// recognized base type counts, so array literals (`[1,2,3]`, leading `[`) and
-/// indexing are untouched.
-fn peelBaseType(field_value: []const u8) struct { value: []const u8, type: []const u8 } {
-    if (field_value.len < 3 or field_value[field_value.len - 1] != ']') return .{ .value = field_value, .type = "" };
-    const lb = std.mem.lastIndexOfScalar(u8, field_value, '[') orelse return .{ .value = field_value, .type = "" };
-    const inner = field_value[lb + 1 .. field_value.len - 1];
-    const prefix = std.mem.trim(u8, field_value[0..lb], " \t");
-    if (prefix.len == 0 or !isBaseType(inner)) return .{ .value = field_value, .type = "" };
-    return .{ .value = prefix, .type = inner };
-}
+/// The `value[type]` annotation parser lives in struct_literal (the projector
+/// module) — `const`'s filter here and `capture`'s seed builder both call THAT
+/// single implementation, so the two lowerings cannot drift.
+const peelBaseType = struct_literal.peelBaseType;
 
 /// `parse_fields(struct_text)` filter: split a brace-optional Koru field list
 /// (`name: "X", count: 42[i32]`, or `{ … }`, comma- OR newline-separated) into an

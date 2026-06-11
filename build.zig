@@ -632,6 +632,7 @@ pub fn build(b: *std.Build) void {
     template_processor_module.addImport("ast", ast_module);
     template_processor_module.addImport("liquid", liquid_module);
     template_processor_module.addImport("log", log_module);
+    template_processor_module.addImport("struct_literal", struct_literal_module);
     exe.root_module.addImport("template_processor", template_processor_module);
 
     // Transform Pass Runner module - generic AST walker for transforms
@@ -1037,6 +1038,7 @@ pub fn build(b: *std.Build) void {
     template_processor_tests.root_module.addImport("liquid", liquid_module);
     template_processor_tests.root_module.addImport("log", log_module);
     template_processor_tests.root_module.addImport("errors", errors_module);
+    template_processor_tests.root_module.addImport("struct_literal", struct_literal_module);
     const run_template_processor_tests = b.addRunArtifact(template_processor_tests);
 
     // JSON parser — parse real JSON into liquid records and walk it.
