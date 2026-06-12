@@ -88,28 +88,25 @@ CALLS during the proc, terminals return after.
 ARGS/STDIN/input.txt gitignore whitelists, zero-alloc argv. The args FLAGS
 layer (`~std/args:int(flag: ...)`) remains future polish, unblocking nothing.
 
-## 6. EFFECT LOWERING — callbacks today, the design says coroutines,
-## the ratified target is FULL INLINING (the headline gap)
-**What:** runtime events lower effects by CONTROL INVERSION — the proc calls
-the handler (`__H.line(l)`) across a Zig namespace boundary. That inversion
-is the root of: flow-local state being unreachable from handlers (the cell),
-resume values being special-cased, and listener semantics having no story.
-The effect-branch design (resume values; `! ask q |> "Alice"`) is COROUTINE
-semantics — transfer control, come back with a value.
-**Direction (Lars-ratified 2026-06-12):** NOT threads, NOT fibers, NOT a
-threadlocal side channel (one was built and reverted — it compounded the
-inversion). Effects should compile to COMPLETELY INLINABLE, MONOMORPHIZED
-code: the same flattening the for/if templates already get — one frame,
-cells as ordinary locals, handler bodies at the effect sites, resume values
-as expression results. Shape to arbitrate: inline the PROC at the invocation
-site and splice HANDLER BODIES at the effect-call points (double inlining —
-monomorphization by replication, the zero-cost tradition).
-**Acceptance pins (RED):** `620_004_capture_across_handler_boundary`
-(file → lines → match → cell, the real-input accumulator) and
-`620_005_cell_ctx_deep_nesting` (four-level nesting, two cells, interleaved
-writes). GREEN twin `620_003` (match in handler, no cell) must stay green.
-**Blocks:** pristine real-input form of every counting day; gap 2 (store)
-likely hangs off the same lowering.
+## 6. EFFECT LOWERING — CLOSED 2026-06-13 (cut 1)
+**Was:** runtime events lowered effects by control inversion (proc calls
+handler across a Zig namespace boundary) — the root of cells being
+unreachable, resume values being special-cased, listeners having no story.
+**Now:** effectful events compile to COMPLETELY INLINED, MONOMORPHIZED code
+at each invocation site (Lars-ratified): proc body spliced into a labeled
+block, effect calls become handler-body splices IN FLOW SCOPE, proc returns
+become labeled breaks feeding the ordinary terminal switch. The rule:
+**scope-coupled (effects) → inlined by construction; value-coupled
+(subflows/terminals, with their declared contract) → own frame, machine-
+inlined when profitable.** Recursion of effectful events: rejected by
+ruling. Discipline: inline-portable proc bodies (params + effect names +
+`std.` + spine fns; __koru-prefixed locals — they share the consumer frame).
+**Green acceptance set:** 620_001..006 (incl. four-level nesting and
+subflow-in-effect-branch), 400_070/073/079/096. Census 641/42, zero
+collateral.
+**Cut-2 remainders (legacy call path until then):** resume-typed effects,
+guard-grouped handlers, variant invocations, label loops, mock impls
+(395_009 pin). The legacy path dies when the last migrates.
 
 ## 6. Long-horizon tensions (named, not blocking)
 - **Target-neutral expressions:** `c == '('`, `pos.y + 1` are Zig-flavored

@@ -1,14 +1,10 @@
-// RED PIN (found by the composition burn-test, 2026-06-12): captured { }
-// writes inside a RUNTIME event's effect handler cannot reach the capture
-// cell. The ! line handler lowers to a synthesized Handlers struct — a Zig
-// namespace boundary — while the cell is a function-local `var` outside it:
-// "mutable 'acc' not accessible from here ... crosses namespace boundary".
-// Templates (for/if) splice handlers into the SAME scope, which is why every
-// AoC day works; runtime-effect handlers don't. Goes green when effect-
-// handler lowering gains a way to carry flow-local state (instance handlers
-// with a cell pointer, or scope-spliced lowering for in-flow handlers).
-// THIS SHAPE IS THE REAL-INPUT ACCUMULATOR — file → lines → match → cell —
-// so it blocks the pristine real-input form of every counting day.
+// ACCEPTANCE PIN — GREEN since the EFFECT INLINING relowering (2026-06-13):
+// the real-input accumulator (file → lines → match → cell). Effectful
+// events compile to one flat monomorphized frame at the invocation site —
+// the proc body splices in, handler bodies land IN FLOW SCOPE where the
+// cell is an ordinary local. No Handlers struct, no namespace boundary,
+// no side channels. (History: callback lowering made this impossible; a
+// threadlocal spine band-aid was built and REVERTED on ruling.)
 
 import std/io
 import std/fs

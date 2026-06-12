@@ -1,0 +1,9 @@
+// Ledger: upper-stub — string uppercasing wants the string-ops gap (FRONTIERS 4).
+const std = @import("std");
+
+var buf: [256]u8 = undefined;
+
+~proc upper-stub|zig {
+    const up = std.ascii.upperString(buf[0..s.len], s);
+    return .{ .upped = up };
+}

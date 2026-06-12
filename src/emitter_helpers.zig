@@ -3362,10 +3362,22 @@ fn emitInlineCodeResolvingSplices(
             const arg_start = i + 1;
             var depth: usize = 1;
             var j = arg_start;
+            var q: u8 = 0; // quote state: parens in literals are text (210_122 family)
             while (j < inline_code.len and depth > 0) : (j += 1) {
-                if (inline_code[j] == '(') {
+                const ch = inline_code[j];
+                if (q != 0) {
+                    if (ch == '\\') {
+                        j += 1;
+                    } else if (ch == q) {
+                        q = 0;
+                    }
+                    continue;
+                }
+                if (ch == '"' or ch == '\'') {
+                    q = ch;
+                } else if (ch == '(') {
                     depth += 1;
-                } else if (inline_code[j] == ')') {
+                } else if (ch == ')') {
                     depth -= 1;
                 }
             }
@@ -3382,7 +3394,10 @@ fn emitInlineCodeResolvingSplices(
             const cont = &continuations[idx];
             const binding = cont.binding orelse "_";
             try emitter.write("{ ");
-            if (cont.destructure.len > 0) {
+            if (arg.len == 0) {
+                // Void-payload effect (`pong()`): nothing to bind, nothing
+                // to discard — just the body.
+            } else if (cont.destructure.len > 0) {
                 // Shape-destructure: bind the arg once, then per-field consts.
                 try emitter.write("const __koru_dst = ");
                 try emitter.write(arg);
@@ -3392,6 +3407,9 @@ fn emitInlineCodeResolvingSplices(
                 try emitter.write("_ = ");
                 try emitter.write(arg);
                 try emitter.write("; ");
+            } else if (std.mem.eql(u8, std.mem.trim(u8, arg, " \t"), binding)) {
+                // The splice arg IS the binding (an inline-lowered proc local
+                // sharing the name): rebinding would self-shadow — use as-is.
             } else {
                 try emitter.write("const ");
                 try writeBranchName(emitter, binding);
@@ -3896,9 +3914,16 @@ pub fn emitFlow(
     else
         flow.body.continuations;
 
+    // Inline lowering: eligible effectful invocations splice the proc body
+    // at this site (one frame, no Handlers struct). See EFFECT INLINING.
+    const inline_elig = if (event_has_effect_branch and flow.pre_label == null)
+        inlineEffectfulEligibility(ctx, flow.inv(), flow.body.continuations)
+    else
+        null;
+
     var handlers_name_owned: ?[]const u8 = null;
     defer if (handlers_name_owned) |h| ctx.allocator.free(h);
-    if (event_has_effect_branch) {
+    if (event_has_effect_branch and inline_elig == null) {
         if (event_decl_for_partition) |ed| {
             const hname = try std.fmt.allocPrint(ctx.allocator, "Handlers_{d}", .{result_counter});
             handlers_name_owned = hname;
@@ -4007,7 +4032,11 @@ pub fn emitFlow(
             ctx.label_handler_invocation = flow.inv();
             ctx.label_result_var = first_result;
         } else {
-            try emitInvocation(emitter, ctx, flow.inv(), first_result);
+            if (inline_elig) |elig| {
+                try emitInlineEffectfulCall(emitter, ctx, flow.inv(), flow.body.continuations, elig, first_result, result_counter);
+            } else {
+                try emitInvocation(emitter, ctx, flow.inv(), first_result);
+            }
         }
 
         result_counter += 1;
@@ -4093,7 +4122,368 @@ pub fn emitFlow(
     } else {
         // Zero continuations — use comptime_result_binding if set (for program return)
         const binding = if (ctx.comptime_result_binding) |b| b else "_";
-        try emitInvocation(emitter, ctx, flow.inv(), binding);
+        if (inline_elig != null and ctx.comptime_result_binding == null) {
+            try emitInlineEffectfulCall(emitter, ctx, flow.inv(), flow.body.continuations, inline_elig.?, null, 0);
+        } else {
+            try emitInvocation(emitter, ctx, flow.inv(), binding);
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// EFFECT INLINING (cut 1) — effectful runtime events compile to completely
+// inlinable, monomorphized code (Lars-ratified 2026-06-12). The proc body
+// is spliced AT THE INVOCATION SITE inside a labeled block: effect calls
+// become `__koru_inline_<idx>(arg)` markers (resolved by the same splice
+// resolver templates and match use — handler bodies land IN FLOW SCOPE,
+// where cells and bindings are ordinary locals), and proc-exit `return`s
+// become labeled breaks feeding the ordinary terminal switch. One frame.
+// No Handlers struct, no namespace boundary, no side channels.
+//
+// Cut-1 boundaries (ineligible shapes keep the legacy call path; each is a
+// FRONTIERS follow-up): mock/subflow impls (no zig proc — 395_009), resume-
+// typed effects, multiple/guard-grouped handlers per effect branch, variant
+// invocations, label loops, return-less procs on terminal-bearing events.
+// Inlined proc bodies must be SCOPE-PORTABLE: params, effect names, `std.`
+// (rewritten to `@import("std").`), and file-scope spine fns only — a
+// nested `fn` in the body is rejected (no token rewriting inside it would
+// be sound). Recursion of effectful events is structurally impossible to
+// inline and is NOT supported, by ruling.
+// ═══════════════════════════════════════════════════════════════════════
+
+fn lowerIdent(buf: []u8, name: []const u8) []const u8 {
+    for (name, 0..) |c, i| buf[i] = if (c == '-') '_' else c;
+    return buf[0..name.len];
+}
+
+fn findDefaultZigProc(items: []const ast.Item, path: *const ast.DottedPath) ?*const ast.ProcDecl {
+    for (items) |*item| {
+        switch (item.*) {
+            .proc_decl => |*proc| {
+                if (procPathMatches(proc, path) and procIsZig(proc)) return proc;
+            },
+            .module_decl => |*m| {
+                for (m.items) |*mi| {
+                    if (mi.* != .proc_decl) continue;
+                    const proc = &mi.proc_decl;
+                    if (procPathMatches(proc, path) and procIsZig(proc)) return proc;
+                }
+            },
+            else => {},
+        }
+    }
+    return null;
+}
+
+fn procPathMatches(proc: *const ast.ProcDecl, path: *const ast.DottedPath) bool {
+    if (proc.path.segments.len != path.segments.len) return false;
+    for (proc.path.segments, path.segments) |a, b| {
+        if (!std.mem.eql(u8, a, b)) return false;
+    }
+    return true;
+}
+
+fn procIsZig(proc: *const ast.ProcDecl) bool {
+    const t = proc.target orelse return false;
+    return std.mem.eql(u8, t, "zig");
+}
+
+const InlineEligibility = struct {
+    event_decl: *const ast.EventDecl,
+    proc: *const ast.ProcDecl,
+};
+
+/// Decide whether this flow's invocation takes the inline lowering.
+/// Returning null means: legacy call path, exactly today's behavior.
+fn inlineEffectfulEligibility(ctx: *EmissionContext, inv: *const ast.Invocation, conts: []const ast.Continuation) ?InlineEligibility {
+    const items = ctx.ast_items orelse return null;
+    if (inv.variant != null) return null;
+    const event_decl = findEventDeclByPath(items, &inv.path) orelse return null;
+
+    var has_effect = false;
+    var has_terminal_branch = false;
+    for (event_decl.branches) |b| {
+        if (b.kind == .effect) {
+            has_effect = true;
+            if (b.resume_type != null) return null;
+        } else {
+            has_terminal_branch = true;
+        }
+    }
+    if (!has_effect) return null;
+
+    // At most one handler per effect branch (guard groups keep the call path).
+    for (conts) |*c| {
+        if (c.kind != .effect) continue;
+        var n: usize = 0;
+        for (conts) |*c2| {
+            if (c2.kind == .effect and std.mem.eql(u8, c2.branch, c.branch)) n += 1;
+        }
+        if (n > 1) return null;
+    }
+
+    const proc = findDefaultZigProc(items, &event_decl.path) orelse return null;
+
+    // A nested fn makes token rewriting unsound; a terminal-bearing event
+    // whose proc never `return`s relies on the legacy glue's synthesized
+    // tail. Both keep the call path.
+    if (containsToken(proc.body.text, "fn")) return null;
+    if (has_terminal_branch and !containsToken(proc.body.text, "return")) return null;
+
+    return .{ .event_decl = event_decl, .proc = proc };
+}
+
+/// Word-boundary token scan, quote- and comment-aware.
+fn containsToken(body: []const u8, token: []const u8) bool {
+    var i: usize = 0;
+    var q: u8 = 0;
+    while (i < body.len) : (i += 1) {
+        const c = body[i];
+        if (q != 0) {
+            if (c == '\\') {
+                i += 1;
+            } else if (c == q) {
+                q = 0;
+            }
+            continue;
+        }
+        if (c == '"' or c == '\'') {
+            q = c;
+            continue;
+        }
+        if (c == '/' and i + 1 < body.len and body[i + 1] == '/') {
+            while (i < body.len and body[i] != '\n') i += 1;
+            continue;
+        }
+        if (std.mem.startsWith(u8, body[i..], token)) {
+            const before_ok = i == 0 or !(std.ascii.isAlphanumeric(body[i - 1]) or body[i - 1] == '_' or body[i - 1] == '.');
+            const after = i + token.len;
+            const after_ok = after >= body.len or !(std.ascii.isAlphanumeric(body[after]) or body[after] == '_');
+            if (before_ok and after_ok) return true;
+        }
+    }
+    return false;
+}
+
+/// Rewrite a proc body for inline splicing: effect calls → splice markers
+/// (or evaluate-and-discard for unhandled optional effects), depth-any
+/// `return` → labeled break, `std.` → `@import("std").` (inlined bodies
+/// lose their module scope). Quote- and comment-aware throughout.
+const RewrittenProcBody = struct { text: []u8, has_break: bool };
+
+fn rewriteEffectfulProcBody(
+    allocator: std.mem.Allocator,
+    body: []const u8,
+    event_decl: *const ast.EventDecl,
+    conts: []const ast.Continuation,
+    break_label: []const u8,
+) !RewrittenProcBody {
+    var out = try std.ArrayList(u8).initCapacity(allocator, body.len + 256);
+    errdefer out.deinit(allocator);
+
+    // Effect branch → handled continuation index (or null = unhandled optional).
+    const EffectSite = struct { lowered: []const u8, cont_idx: ?usize };
+    var sites_buf: [32]EffectSite = undefined;
+    var name_bufs: [32][128]u8 = undefined;
+    var n_sites: usize = 0;
+    for (event_decl.branches) |*b| {
+        if (b.kind != .effect) continue;
+        const lowered = lowerIdent(&name_bufs[n_sites], b.name);
+        var idx: ?usize = null;
+        for (conts, 0..) |*c, ci| {
+            if (c.kind == .effect and std.mem.eql(u8, c.branch, b.name)) {
+                idx = ci;
+                break;
+            }
+        }
+        sites_buf[n_sites] = .{ .lowered = lowered, .cont_idx = idx };
+        n_sites += 1;
+    }
+    const sites = sites_buf[0..n_sites];
+
+    // Strip standalone param discards (`_ = p;` / `_ = &p;`, line-shaped):
+    // they satisfied the legacy wrapper's unused-param rule; the inline
+    // prologue already discards, and Zig rejects pointless re-discards.
+    var stripped = try std.ArrayList(u8).initCapacity(allocator, body.len);
+    defer stripped.deinit(allocator);
+    {
+        var lines = std.mem.splitScalar(u8, body, '\n');
+        var first_line = true;
+        while (lines.next()) |ln| {
+            const t = std.mem.trim(u8, ln, " \t\r");
+            var is_param_discard = false;
+            if (std.mem.startsWith(u8, t, "_ = ")) {
+                var rest = t["_ = ".len..];
+                if (rest.len > 0 and rest[0] == '&') rest = rest[1..];
+                for (event_decl.input.fields) |*f| {
+                    var fb: [128]u8 = undefined;
+                    const fname = lowerIdent(&fb, f.name);
+                    if (rest.len == fname.len + 1 and std.mem.startsWith(u8, rest, fname) and rest[fname.len] == ';') {
+                        is_param_discard = true;
+                        break;
+                    }
+                }
+            }
+            if (is_param_discard) continue;
+            if (!first_line) try stripped.append(allocator, '\n');
+            try stripped.appendSlice(allocator, ln);
+            first_line = false;
+        }
+    }
+    const clean_body = stripped.items;
+
+    var has_break = false;
+    var i: usize = 0;
+    var q: u8 = 0;
+    while (i < clean_body.len) {
+        const c = clean_body[i];
+        if (q != 0) {
+            try out.append(allocator, c);
+            if (c == '\\') {
+                if (i + 1 < clean_body.len) try out.append(allocator, clean_body[i + 1]);
+                i += 2;
+                continue;
+            }
+            if (c == q) q = 0;
+            i += 1;
+            continue;
+        }
+        if (c == '"' or c == '\'') {
+            q = c;
+            try out.append(allocator, c);
+            i += 1;
+            continue;
+        }
+        if (c == '/' and i + 1 < clean_body.len and clean_body[i + 1] == '/') {
+            while (i < clean_body.len and clean_body[i] != '\n') : (i += 1) try out.append(allocator, clean_body[i]);
+            continue;
+        }
+
+        const boundary_before = i == 0 or !(std.ascii.isAlphanumeric(clean_body[i - 1]) or clean_body[i - 1] == '_' or clean_body[i - 1] == '.');
+        if (boundary_before) {
+            // `return` → labeled break (any depth: every return is a proc exit).
+            if (std.mem.startsWith(u8, clean_body[i..], "return")) {
+                const after = i + "return".len;
+                if (after >= clean_body.len or !(std.ascii.isAlphanumeric(clean_body[after]) or clean_body[after] == '_')) {
+                    try out.appendSlice(allocator, "break :");
+                    try out.appendSlice(allocator, break_label);
+                    has_break = true;
+                    i = after;
+                    continue;
+                }
+            }
+            // `std.` → `@import("std").` (module scope does not travel).
+            if (std.mem.startsWith(u8, clean_body[i..], "std.")) {
+                try out.appendSlice(allocator, "@import(\"std\").");
+                i += "std.".len;
+                continue;
+            }
+            // Effect calls → splice markers / evaluate-and-discard.
+            var matched = false;
+            for (sites) |site| {
+                if (!std.mem.startsWith(u8, clean_body[i..], site.lowered)) continue;
+                var j = i + site.lowered.len;
+                while (j < clean_body.len and (clean_body[j] == ' ' or clean_body[j] == '\t')) j += 1;
+                if (j >= clean_body.len or clean_body[j] != '(') continue;
+                if (site.cont_idx) |ci| {
+                    try out.appendSlice(allocator, INLINE_SPLICE_PREFIX);
+                    var nb: [16]u8 = undefined;
+                    try out.appendSlice(allocator, std.fmt.bufPrint(&nb, "{d}", .{ci}) catch unreachable);
+                } else {
+                    // Unhandled optional effect: evaluate the payload, drop it.
+                    try out.appendSlice(allocator, "_ = ");
+                }
+                i = j; // resume at '(' — the resolver (or Zig) reads the args
+                matched = true;
+                break;
+            }
+            if (matched) continue;
+        }
+
+        try out.append(allocator, c);
+        i += 1;
+    }
+
+    return .{ .text = try out.toOwnedSlice(allocator), .has_break = has_break };
+}
+
+/// Emit the inline lowering at the invocation site. `result_name` is null
+/// for the zero-terminal (statement) shape.
+fn emitInlineEffectfulCall(
+    emitter: *CodeEmitter,
+    ctx: *EmissionContext,
+    inv: *const ast.Invocation,
+    conts: []const ast.Continuation,
+    elig: InlineEligibility,
+    result_name: ?[]const u8,
+    uniq: usize,
+) anyerror!void {
+    var label_buf: [64]u8 = undefined;
+    const label = std.fmt.bufPrint(&label_buf, "__koru_proc_{d}", .{uniq}) catch "__koru_proc";
+
+    const rewritten = try rewriteEffectfulProcBody(ctx.allocator, elig.proc.body.text, elig.event_decl, conts, label);
+    defer ctx.allocator.free(rewritten.text);
+
+    // A label is only legal if something breaks to it; a statement block
+    // takes no trailing semicolon. (The const form always has breaks —
+    // eligibility requires a `return` when terminals exist.)
+    const typed_discard = result_name == null and rewritten.has_break;
+    var disc_buf: [64]u8 = undefined;
+    const disc_name = std.fmt.bufPrint(&disc_buf, "__koru_eff_disc_{d}", .{uniq}) catch "__koru_eff_disc";
+    const labeled = result_name != null or rewritten.has_break;
+    try emitter.writeIndent();
+    if (result_name) |rn| {
+        try emitter.write("const ");
+        try emitter.write(rn);
+        try emitter.write(": ");
+        try emitInvocationTarget(emitter, ctx, &inv.path);
+        try emitter.write(".Output = ");
+    } else if (typed_discard) {
+        // A value-breaking block with no consumer still needs a typed const
+        // so anonymous break literals have a result type; discard after.
+        try emitter.write("const ");
+        try emitter.write(disc_name);
+        try emitter.write(": ");
+        try emitInvocationTarget(emitter, ctx, &inv.path);
+        try emitter.write(".Output = ");
+    }
+    if (labeled) {
+        try emitter.write(label);
+        try emitter.write(": {\n");
+    } else {
+        try emitter.write("{\n");
+    }
+    emitter.indent();
+
+    // Bind event params from the invocation's argument expressions. A
+    // punned arg (`read-lines(path)` where the value IS the param name)
+    // already has the right name in scope — rebinding would self-shadow.
+    for (inv.args) |arg| {
+        var pun_buf: [128]u8 = undefined;
+        const lowered_name = lowerIdent(&pun_buf, arg.name);
+        if (std.mem.eql(u8, std.mem.trim(u8, arg.value, " \t"), lowered_name)) continue;
+        try emitter.writeIndent();
+        try emitter.write("const ");
+        try writeBranchName(emitter, arg.name);
+        try emitter.write(" = (");
+        try emitter.write(arg.value);
+        try emitter.write("); _ = &");
+        try writeBranchName(emitter, arg.name);
+        try emitter.write(";\n");
+    }
+
+    try emitter.writeIndent();
+    try emitInlineCodeResolvingSplices(emitter, ctx, rewritten.text, conts);
+    try emitter.write("\n");
+
+    emitter.dedent();
+    try emitter.writeIndent();
+    try emitter.write(if (result_name != null or typed_discard) "};\n" else "}\n");
+    if (typed_discard) {
+        try emitter.writeIndent();
+        try emitter.write("_ = ");
+        try emitter.write(disc_name);
+        try emitter.write(";\n");
     }
 }
 
@@ -6940,6 +7330,7 @@ pub fn emitContinuationBody(
         defer nested_effect_buf.deinit(ctx.allocator);
 
         var nested_event_has_effect = false;
+        var nested_inline_elig: ?InlineEligibility = null;
         if (cont.node) |maybe_step| {
             if (maybe_step == .invocation) {
                 const event_decl_nested = if (ctx.ast_items) |items|
@@ -6961,10 +7352,13 @@ pub fn emitContinuationBody(
                                 try nested_terminal_buf.append(ctx.allocator, c);
                             }
                         }
-                        const hname = try std.fmt.allocPrint(ctx.allocator, "Handlers_{d}", .{result_counter.*});
-                        nested_handlers_name_owned = hname;
-                        try emitHandlersStruct(emitter, ctx, hname, nested_effect_buf.items, ed);
-                        ctx.pending_handlers_name = hname;
+                        nested_inline_elig = inlineEffectfulEligibility(ctx, &maybe_step.invocation, cont.continuations);
+                        if (nested_inline_elig == null) {
+                            const hname = try std.fmt.allocPrint(ctx.allocator, "Handlers_{d}", .{result_counter.*});
+                            nested_handlers_name_owned = hname;
+                            try emitHandlersStruct(emitter, ctx, hname, nested_effect_buf.items, ed);
+                            ctx.pending_handlers_name = hname;
+                        }
                     }
                 }
             }
@@ -6987,7 +7381,19 @@ pub fn emitContinuationBody(
                     "_";
                 defer if (needs_result) ctx.allocator.free(current_result);
 
-                try emitStep(emitter, ctx, step, current_result);
+                if (nested_inline_elig) |elig| {
+                    try emitInlineEffectfulCall(
+                        emitter,
+                        ctx,
+                        &step.invocation,
+                        cont.continuations,
+                        elig,
+                        if (needs_result) current_result else null,
+                        result_counter.*,
+                    );
+                } else {
+                    try emitStep(emitter, ctx, step, current_result);
+                }
 
                 if (needs_result and !std.mem.eql(u8, current_result, "_")) {
                     try emitter.writeIndent();

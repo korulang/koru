@@ -1,14 +1,12 @@
-// RED ACCEPTANCE PIN — four-level nesting (Lars: "four levels even — even
-// IF four and two are the same"):
+// ACCEPTANCE PIN — GREEN under effect inlining. Four-level nesting (Lars:
+// "four levels even — even IF four and two are the same"):
 //   L1 outer capture cell { total, files }
 //   L2 outer read-lines ! line handler (writes the OUTER cell)
 //   L3 count-file SUBFLOW with its OWN cell
 //   L4 inner read-lines ! line handler (writes the INNER cell)
-// Goes green when effect lowering matches the effect-branch design: fully
-// INLINED, MONOMORPHIZED code (Lars-ratified direction 2026-06-12) — one
-// flat frame where both cells are ordinary locals, NOT callbacks across a
-// namespace boundary, NOT a threadlocal side channel (a spine that greened
-// this was built and REVERTED: it band-aided the control inversion).
+// Both cells are ordinary locals in their own frames (the inner subflow is
+// its own function — value-coupled, contract = compilation boundary); the
+// effect splices share scope by construction. Fully inlined, monomorphized.
 // a.data has 2 lines, b.data has 3 → "2 files, 5 lines".
 
 import std/io

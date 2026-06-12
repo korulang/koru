@@ -21,36 +21,39 @@ const std = @import("std");
 | failed []const u8
 
 ~proc read-lines|zig {
-    const file = std.fs.cwd().openFile(path, .{}) catch |err| {
-        const msg = switch (err) {
+    const __koru_rl_file = std.fs.cwd().openFile(path, .{}) catch |err| {
+        const __koru_rl_msg = switch (err) {
             error.FileNotFound => "File not found",
             error.AccessDenied => "Access denied",
             error.IsDir => "Path is a directory",
             else => "Failed to open file",
         };
-        return .{ .failed = msg };
+        return .{ .failed = __koru_rl_msg };
     };
-    defer file.close();
+    defer __koru_rl_file.close();
 
-    const content = file.readToEndAlloc(koru_allocator(), 1024 * 1024 * 10) catch |err| {
-        const msg = switch (err) {
+    const __koru_rl_content = __koru_rl_file.readToEndAlloc(koru_allocator(), 1024 * 1024 * 10) catch |err| {
+        const __koru_rl_msg = switch (err) {
             error.OutOfMemory => "File too large",
             else => "Failed to read file",
         };
-        return .{ .failed = msg };
+        return .{ .failed = __koru_rl_msg };
     };
-    defer koru_allocator().free(content);
+    defer koru_allocator().free(__koru_rl_content);
 
-    var n: usize = 0;
-    var it = std.mem.splitScalar(u8, content, '\n');
-    while (it.next()) |raw| {
+    // HYGIENE: this body INLINES into the consumer's frame (effect
+    // lowering), so locals are __koru-prefixed to never collide with
+    // user bindings in the surrounding flow.
+    var __koru_rl_n: usize = 0;
+    var __koru_rl_it = std.mem.splitScalar(u8, __koru_rl_content, '\n');
+    while (__koru_rl_it.next()) |__koru_rl_raw| {
         // A trailing newline yields one final empty slice - not a line.
-        if (raw.len == 0 and it.peek() == null) break;
-        const l = if (raw.len > 0 and raw[raw.len - 1] == '\r') raw[0 .. raw.len - 1] else raw;
-        line(l);
-        n += 1;
+        if (__koru_rl_raw.len == 0 and __koru_rl_it.peek() == null) break;
+        const __koru_rl_l = if (__koru_rl_raw.len > 0 and __koru_rl_raw[__koru_rl_raw.len - 1] == '\r') __koru_rl_raw[0 .. __koru_rl_raw.len - 1] else __koru_rl_raw;
+        line(__koru_rl_l);
+        __koru_rl_n += 1;
     }
-    return .{ .done = n };
+    return .{ .done = __koru_rl_n };
 }
 
 // ============================================================================
