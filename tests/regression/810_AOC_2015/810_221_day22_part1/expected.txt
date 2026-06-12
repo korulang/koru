@@ -1,0 +1,2 @@
+win hp=2 mana=24
+win hp=1 mana=114

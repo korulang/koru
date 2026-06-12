@@ -1,0 +1,37 @@
+// FRONTIER LEDGER: subset search ← host; weights ← store.
+
+const std = @import("std");
+
+var ws: [32]i64 = undefined;
+var n_ws: usize = 0;
+
+~proc add-weight|zig {
+    ws[n_ws] = std.fmt.parseInt(i64, line, 10) catch unreachable;
+    n_ws += 1;
+}
+
+var best_qe: i64 = undefined;
+var best_count: usize = undefined;
+
+fn search(i: usize, left: i64, count: usize, qe: i64) void {
+    if (left == 0) {
+        if (count < best_count or (count == best_count and qe < best_qe)) {
+            best_count = count;
+            best_qe = qe;
+        }
+        return;
+    }
+    if (i >= n_ws or left < 0 or count >= best_count) return;
+    search(i + 1, left - ws[i], count + 1, qe * ws[i]);
+    search(i + 1, left, count, qe);
+}
+
+~proc balance|zig {
+    var total: i64 = 0;
+    for (ws[0..n_ws]) |w| total += w;
+    best_qe = 1 << 60;
+    best_count = 99;
+    search(0, @divTrunc(total, groups), 0, 1);
+    n_ws = 0;
+    return .{ .qe = best_qe };
+}

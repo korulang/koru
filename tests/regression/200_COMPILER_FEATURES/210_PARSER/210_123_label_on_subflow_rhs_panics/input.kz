@@ -3,6 +3,8 @@
 // produce a flow whose invocation has ZERO path segments — koruc then
 // PANICS in tap_transformer.zig:162 (index out of bounds). Either the
 // shape is legal (then parse it) or it isn't (then reject with a real
+// SCOPE REFINED by 810_231 (day 23): the TOP-LEVEL label fold works —
+// only the subflow-RHS form panics.
 // diagnostic) — a panic is always a bug. Expected output when legal: "ok".
 
 ~import std/io
