@@ -1,19 +1,16 @@
-// FRONTIER LEDGER (fat, deliberately): the SEARCH LOOP lives in host —
-// the Koru spelling (label loop on a subflow RHS) PANICS the compiler,
-// pinned by 210_123. When that pin greens, this proc shrinks to one
-// md5-check and the loop returns to Koru. md5 itself ← std/crypto leaf.
+// FRONTIER LEDGER: ONE md5-check per event — the search loop is Koru now
+// (label fold on the subflow RHS in input.k; 210_123 greened 2026-06-12).
+// md5 itself ← std/crypto stdlib leaf (first taker writes it).
 
 const std = @import("std");
 
-~proc mine|zig {
-    var n: i64 = 1;
-    while (true) : (n += 1) {
-        var buf: [64]u8 = undefined;
-        const s = std.fmt.bufPrint(&buf, "{s}{d}", .{ key, n }) catch unreachable;
-        var d: [16]u8 = undefined;
-        std.crypto.hash.Md5.hash(s, &d, .{});
-        const five = d[0] == 0 and d[1] == 0 and (d[2] >> 4) == 0;
-        const ok = if (zeros == 6) (five and (d[2] & 0x0F) == 0) else five;
-        if (ok) return .{ .found = n };
-    }
+~proc check|zig {
+    var buf: [64]u8 = undefined;
+    const s = std.fmt.bufPrint(&buf, "{s}{d}", .{ key, n }) catch unreachable;
+    var d: [16]u8 = undefined;
+    std.crypto.hash.Md5.hash(s, &d, .{});
+    const five = d[0] == 0 and d[1] == 0 and (d[2] >> 4) == 0;
+    const ok = if (zeros == 6) (five and (d[2] & 0x0F) == 0) else five;
+    if (ok) return .{ .found = n };
+    return .{ .miss = n + 1 };
 }

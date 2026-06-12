@@ -550,9 +550,8 @@ const validateMocks = struct {
     // Emit test flow using test module prefix
     // ==========================================================================
 
-    const EMIT_BUFFER_SIZE = 16 * 1024;
-    const emit_buffer = allocator.alloc(u8, EMIT_BUFFER_SIZE) catch unreachable;
-    var code_emitter = emitter_helpers.CodeEmitter.init(emit_buffer);
+    // Growable: generated test code has no natural size ceiling.
+    var code_emitter = emitter_helpers.CodeEmitter.initGrowable(allocator, 16 * 1024) catch unreachable;
 
     // Dupe the test module name for the context (it needs to outlive the stack buffer)
     const module_prefix_owned = allocator.dupe(u8, test_module_name) catch unreachable;

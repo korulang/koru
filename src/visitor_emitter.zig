@@ -2769,6 +2769,22 @@ pub const VisitorEmitter = struct {
                                             }
                                         }
                                     }
+                                } else if (flow.pre_label != null) {
+                                    // Label fold on the subflow RHS (`~spin = #loop step(...)`):
+                                    // route through emitFlow, which owns the pre_label state-loop
+                                    // lowering (state vars + `label: while` + looping/terminal
+                                    // branch split). in_handler makes terminal branch
+                                    // constructors emit `return .{ ... }`.
+                                    var label_fold_ctx = emitter.EmissionContext{
+                                        .allocator = self.allocator,
+                                        .ast_items = self.all_items,
+                                        .tap_registry = self.tap_registry,
+                                        .type_registry = self.type_registry,
+                                        .main_module_name = self.main_module_name,
+                                        .is_sync = true,
+                                        .in_handler = true,
+                                    };
+                                    try emitter.emitFlow(self.code_emitter, &label_fold_ctx, &flow);
                                 } else {
                                     // Generate the invocation of the inner event
                                     try self.code_emitter.writeIndent();

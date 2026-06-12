@@ -1073,9 +1073,8 @@ const processTestFlow = struct {
         }
 
         // Now emit the test using REAL emitter infrastructure
-        const EMIT_BUFFER_SIZE = 16 * 1024;
-        const emit_buffer = allocator.alloc(u8, EMIT_BUFFER_SIZE) catch return null;
-        var code_emitter = emitter_helpers.CodeEmitter.init(emit_buffer);
+        // Growable: generated test code has no natural size ceiling.
+        var code_emitter = emitter_helpers.CodeEmitter.initGrowable(allocator, 16 * 1024) catch return null;
 
         // Set up emission context
         var emit_ctx = emitter_helpers.EmissionContext{
@@ -1385,20 +1384,17 @@ const emitFlowWithMocks = struct {
     const visitor_emitter_lib = @import("visitor_emitter");
     const tap_registry_module = @import("tap_registry");
 
-    const MAX_SIZE = 256 * 1024; // 256KB buffer
-    // CRITICAL: Buffer must be heap-allocated because we return a slice to it!
-    // Stack-allocated buffers become invalid when function returns
-    const buffer = ctx.allocator.alloc(u8, MAX_SIZE) catch unreachable;
-    // Note: We don't defer free because the returned slice points to this memory
-
-    // Create CodeEmitter
-    var code_emitter = emitter_lib.CodeEmitter.init(buffer);
+    // Growable emitter: generated code has no natural size ceiling (a large
+    // regex DFA alone can pass a fixed 256KB — pinned by 640_004). The buffer
+    // is heap-allocated (we return a slice into it via getOutput) and grows
+    // on demand; reads go through code_emitter.buffer, never a stale local.
+    var code_emitter = emitter_lib.CodeEmitter.initGrowable(ctx.allocator, 256 * 1024) catch unreachable;
 
     // DEBUG: Check buffer state after init
     log.debug("\n[BUFFER DEBUG] After CodeEmitter.init:\n", .{});
     log.debug("[BUFFER DEBUG]   code_emitter.pos = {d}\n", .{code_emitter.pos});
     log.debug("[BUFFER DEBUG]   First 50 bytes: ", .{});
-    for (buffer[0..@min(50, buffer.len)]) |byte| {
+    for (code_emitter.buffer[0..@min(50, code_emitter.buffer.len)]) |byte| {
         if (byte >= 32 and byte < 127) {
             log.debug("{c}", .{byte});
         } else {
@@ -1445,7 +1441,7 @@ const emitFlowWithMocks = struct {
     log.debug("\n[BUFFER DEBUG] After visitor_emitter.emit:\n", .{});
     log.debug("[BUFFER DEBUG]   code_emitter.pos = {d}\n", .{code_emitter.pos});
     log.debug("[BUFFER DEBUG]   First 50 bytes of buffer: ", .{});
-    for (buffer[0..@min(50, buffer.len)]) |byte| {
+    for (code_emitter.buffer[0..@min(50, code_emitter.buffer.len)]) |byte| {
         if (byte >= 32 and byte < 127) {
             log.debug("{c}", .{byte});
         } else {

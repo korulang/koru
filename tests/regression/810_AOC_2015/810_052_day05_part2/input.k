@@ -2,9 +2,11 @@
 // twice without overlap (xyxy), (2) a letter repeats with one between
 // (xyx). qjhvhtzxzqqjkmpb + xxyxx nice; the other two naughty → 2.
 // Ledger (FAT, deliberately): both predicates are host leaves — the
-// pure-regex spelling ((..).*\1 as 676 alternations) trips the engine's
-// alternation-scale ceiling, pinned by 640_004. When that greens, these
-// leaves become two match arms and this file goes pure.
+// pure-regex spelling ((..).*\1 as 676 alternations) exceeds the DFA
+// engine's deliberate state cap (DfaTooLarge, loud + named since
+// 2026-06-12; 640_004 pinned the old silent ceiling). These leaves become
+// two match arms when the engine grows a huge-alternation strategy
+// (lazy DFA / NFA simulation) — tracked in FRONTIERS.
 
 import std/io
 import std/fs

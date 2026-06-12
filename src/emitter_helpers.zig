@@ -236,6 +236,12 @@ pub const CodeEmitter = struct {
     pos: usize,
     indent_level: u32,
     indent_size: u32 = 4,
+    /// When set, the buffer GROWS on demand instead of failing with
+    /// BufferOverflow. Generated code has no natural size ceiling (a large
+    /// regex DFA alone can pass 256KB — pinned by 640_004), so emission
+    /// call sites should use initGrowable; fixed init remains for callers
+    /// with genuinely bounded output (unit tests with stack buffers).
+    allocator: ?std.mem.Allocator = null,
 
     pub fn init(buffer: []u8) CodeEmitter {
         return .{
@@ -245,10 +251,25 @@ pub const CodeEmitter = struct {
         };
     }
 
+    pub fn initGrowable(allocator: std.mem.Allocator, initial_size: usize) !CodeEmitter {
+        return .{
+            .buffer = try allocator.alloc(u8, initial_size),
+            .pos = 0,
+            .indent_level = 0,
+            .allocator = allocator,
+        };
+    }
+
     /// Low-level write - no formatting
     pub fn write(self: *CodeEmitter, text: []const u8) !void {
         if (self.pos + text.len >= self.buffer.len) {
-            return error.BufferOverflow;
+            const a = self.allocator orelse return error.BufferOverflow;
+            var new_len = if (self.buffer.len > 0) self.buffer.len * 2 else 4096;
+            while (self.pos + text.len >= new_len) new_len *= 2;
+            const new_buf = try a.alloc(u8, new_len);
+            @memcpy(new_buf[0..self.pos], self.buffer[0..self.pos]);
+            a.free(self.buffer);
+            self.buffer = new_buf;
         }
         @memcpy(self.buffer[self.pos .. self.pos + text.len], text);
         self.pos += text.len;
@@ -5834,6 +5855,7 @@ const EmitError = error{
     BufferOverflow,
     ArrayLiteralMissingType,
     ArrayLiteralInvalidTarget,
+    OutOfMemory, // growable CodeEmitter buffers allocate on demand
 };
 
 /// Emit a value expression (may reference input fields)

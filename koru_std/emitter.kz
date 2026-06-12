@@ -21,15 +21,12 @@ const ast = @import("ast");
 | failed []const u8
 
 ~proc emit.program|zig {
-    // Create a large buffer for emission
-    const MAX_SIZE = 512 * 1024; // 512KB
-    const buffer = allocator.alloc(u8, MAX_SIZE) catch |err| {
+    // Growable emitter: generated code has no natural size ceiling.
+    var code_emitter = emitter_impl.CodeEmitter.initGrowable(allocator, 512 * 1024) catch |err| {
         return .{ .failed = @errorName(err) };
     };
-    defer allocator.free(buffer);
-
-    // Initialize emitter
-    var code_emitter = emitter_impl.CodeEmitter.init(buffer);
+    // Free via the emitter — the buffer may have been reallocated by growth.
+    defer allocator.free(code_emitter.buffer);
 
     // Emit program header
     emitter_impl.emitProgramHeader(&code_emitter) catch |err| {

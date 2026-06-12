@@ -1,5 +1,6 @@
-// FRONTIER LEDGER: search loop ← 210_123 (label-in-subflow panic);
-// string increment/validate ← string-ops (gap 4).
+// FRONTIER LEDGER: the search loop is Koru now (label fold on the subflow
+// RHS in input.k; 210_123 greened 2026-06-12). What stays host:
+// prep's buffer copy ← store; increment/validate ← string-ops (gap 4).
 
 const std = @import("std");
 
@@ -41,13 +42,15 @@ fn increment(p: []u8) void {
     }
 }
 
-~proc next-password|zig {
+~proc prep|zig {
     const buf = &out_buf[out_n];
     out_n += 1;
     @memcpy(buf[0..s.len], s);
-    const p = buf[0..s.len];
-    while (true) {
-        increment(p);
-        if (valid(p)) return .{ .pw = p };
-    }
+    return .{ .ready = buf[0..s.len] };
+}
+
+~proc step|zig {
+    increment(p);
+    if (valid(p)) return .{ .pw = p };
+    return .{ .again = p };
 }

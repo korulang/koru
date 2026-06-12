@@ -1,6 +1,8 @@
-// AoC 2015 Day 20 Part 1 — lowest house receiving at least the target
-// presents (p2 lazy elves ×11, 50-house limit; python-oracled: 6). The UNBOUNDED
-// Ledger: hunt loop ← 210_123 panic; divisor sum ← host.
+// AoC 2015 Day 20 Part 2 — lazy elves: ×11 presents, each elf stops
+// after 50 houses (python-oracled: target 130 → house 6). The UNBOUNDED
+// HUNT IS KORU — the same label fold as part 1 with lazy: 1 (210_123
+// greened; the loop came home). Ledger: divisor sum ← host;
+// to-int ← string-ops/typed-groups.
 
 import std/io
 import std/fs
@@ -8,6 +10,13 @@ import std/fs
 pub event presents-check { target: i64, house: i64, lazy: i64 }
 | found i64
 | next { target: i64, house: i64, lazy: i64 }
+
+pub event hunt { target: i64 }
+| house i64
+
+hunt = #h presents-check(target, house: 1, lazy: 1)
+| next s |> @h(s.target, s.house, s.lazy)
+| found x => house x
 
 capture { goal: 0[i64] }
 ! as acc |> std/fs:read-lines(path: "tests/regression/810_AOC_2015/810_202_day20_part2/input.txt")
@@ -20,6 +29,3 @@ capture { goal: 0[i64] }
 
 pub event to-int { s: []const u8 }
 | value i64
-
-pub event hunt { target: i64 }
-| house i64

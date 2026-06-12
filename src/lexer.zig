@@ -454,6 +454,41 @@ fn isNumericLiteral(s: []const u8) bool {
     return i == s.len;
 }
 
+fn isIdentChar(c: u8) bool {
+    return std.ascii.isAlphanumeric(c) or c == '_' or c == '-';
+}
+
+/// String-aware lookahead: does the '<' at `open_idx` have a matching '>'
+/// before the end of the argument content? Distinguishes a generic/phantom
+/// group (`Option<A, B>`, `32<celsius>`) from a comparison (`x < 5`).
+fn hasMatchingAngleClose(content: []const u8, open_idx: usize) bool {
+    var depth: usize = 1;
+    var i = open_idx + 1;
+    var in_string = false;
+    var string_char: u8 = 0;
+    while (i < content.len) : (i += 1) {
+        const c = content[i];
+        if (in_string) {
+            if (c == '\\') {
+                i += 1;
+            } else if (c == string_char) {
+                in_string = false;
+            }
+            continue;
+        }
+        if (c == '"' or c == '\'') {
+            in_string = true;
+            string_char = c;
+        } else if (c == '<') {
+            depth += 1;
+        } else if (c == '>') {
+            depth -= 1;
+            if (depth == 0) return true;
+        }
+    }
+    return false;
+}
+
 pub fn parseArgs(allocator: std.mem.Allocator, args_str: []const u8) ![]ArgPair {
     var args = try std.ArrayList(ArgPair).initCapacity(allocator, 4);
     errdefer {
@@ -519,11 +554,18 @@ pub fn parseArgs(allocator: std.mem.Allocator, args_str: []const u8) ![]ArgPair 
         }
 
         // Track angle bracket depth for generics (e.g., Option<A, B> shouldn't split at inner comma).
-        // NOTE: '<'/'>' are deliberately CLAMPED, not rejected — '>' is overloaded
-        // as the comparison operator in Expression args (e.g. `d.value > 10`), so a
-        // lone '>' is legal and must not be treated as an unbalanced generic close.
+        // BOTH '<' and '>' are overloaded as comparison operators in Expression
+        // args (`x < 5`, `d.value > 10`), so neither side may be treated as
+        // unconditionally structural:
+        // - '<' opens a group only when it hugs an identifier on the left
+        //   (`Option<`, `32<celsius>`) AND a matching '>' exists ahead. An
+        //   unmatched or spaced '<' is a comparison and stays a plain char —
+        //   otherwise `if(x < 5)` leaves angle_depth stuck >0 and the
+        //   comma-split never fires, silently dropping the entire argument
+        //   (pinned by 210_124).
+        // - '>' is CLAMPED, not rejected: a lone '>' is a legal comparison.
         if (!in_string and !in_braces) {
-            if (char == '<') {
+            if (char == '<' and i > 0 and isIdentChar(content[i - 1]) and hasMatchingAngleClose(content, i)) {
                 angle_depth += 1;
             } else if (char == '>' and angle_depth > 0) {
                 angle_depth -= 1;
@@ -754,8 +796,12 @@ pub fn withoutLabel(line: []const u8) []const u8 {
     return line;
 }
 
-/// Remove label anchor from line if present
+/// Remove a post-invocation label anchor (`event(...) #label`) if present.
+/// Only strips when a valid label identifier actually follows the `#` —
+/// a bare `#` elsewhere on the line (e.g. a pre-invocation `#label event(...)`)
+/// must NOT truncate the invocation.
 pub fn withoutLabelAnchor(line: []const u8) []const u8 {
+    if (extractLabelAnchor(line) == null) return line;
     const idx = std.mem.lastIndexOf(u8, line, "#") orelse return line;
     return trim(line[0..idx]);
 }

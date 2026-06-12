@@ -1,5 +1,6 @@
-// FRONTIER LEDGER (FAT): hunt loop ← 210_123 (label-in-subflow panic);
-// divisor sum ← host; to-int ← string-ops/typed-groups.
+// FRONTIER LEDGER: the hunt loop is Koru now (label fold on the subflow
+// RHS in input.k; 210_123 greened 2026-06-12). What stays host: one
+// divisor-sum check per event; to-int ← string-ops/typed-groups.
 
 const std = @import("std");
 
@@ -7,22 +8,20 @@ const std = @import("std");
     return .{ .value = std.fmt.parseInt(i64, s, 10) catch unreachable };
 }
 
-~proc hunt|zig {
-    var house: i64 = 1;
-    while (true) : (house += 1) {
-        var sum: i64 = 0;
-        var d: i64 = 1;
-        while (d * d <= house) : (d += 1) {
-            if (@mod(house, d) != 0) continue;
-            const e = @divTrunc(house, d);
-            if (0 == 1) {
-                if (e <= 50) sum += d * 11;
-                if (d != e and d <= 50) sum += e * 11;
-            } else {
-                sum += d * 10;
-                if (d != e) sum += e * 10;
-            }
+~proc presents-check|zig {
+    var sum: i64 = 0;
+    var d: i64 = 1;
+    while (d * d <= house) : (d += 1) {
+        if (@mod(house, d) != 0) continue;
+        const e = @divTrunc(house, d);
+        if (lazy == 1) {
+            if (e <= 50) sum += d * 11;
+            if (d != e and d <= 50) sum += e * 11;
+        } else {
+            sum += d * 10;
+            if (d != e) sum += e * 10;
         }
-        if (sum >= target) return .{ .house = house };
     }
+    if (sum >= target) return .{ .found = house };
+    return .{ .next = .{ .target = target, .house = house + 1, .lazy = lazy } };
 }

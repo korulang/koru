@@ -1,29 +1,33 @@
-// RED PIN (found by AoC day 4): a LABEL ANCHOR on a subflow RHS
-// (`mine = #search check(...)` + `@search` re-invocation) makes the parser
-// produce a flow whose invocation has ZERO path segments — koruc then
-// PANICS in tap_transformer.zig:162 (index out of bounds). Either the
-// shape is legal (then parse it) or it isn't (then reject with a real
-// SCOPE REFINED by 810_231 (day 23): the TOP-LEVEL label fold works —
-// only the subflow-RHS form panics.
-// diagnostic) — a panic is always a bug. Expected output when legal: "ok".
+// GREEN PIN (was RED; found by AoC day 4): a LABEL ANCHOR on a subflow RHS
+// (`~spin = #loop step(...)` + `@loop` re-invocation) used to PANIC koruc:
+// lexer.withoutLabelAnchor chopped the line at the LAST `#` without checking
+// that a valid label followed, so a PRE-invocation label truncated the whole
+// invocation to "" — zero path segments — and tap_transformer.zig:162 indexed
+// segments[0]. Fixed 2026-06-12: withoutLabelAnchor validates the label,
+// parseSubflowImpl extracts a leading `#name` into Flow.pre_label, and the
+// subflow emitter routes pre_label folds through emitFlow (same state-loop
+// lowering as the top-level form, which 810_231's VM already proved).
+// SPELLING NOTE: the original pin spelled `spin` with a single no-payload
+// branch, which dies on PARSE003 (void-event rule) before reaching the bug;
+// branches are identity-typed here so the pin exercises what it claims.
 
 ~import std/io
 
 ~event step { n: i64 }
 | next i64
-| done
+| done i64
 
 ~proc step|zig {
     if (n < 3) return .{ .next = n + 1 };
-    return .{ .done = .{} };
+    return .{ .done = n };
 }
 
 ~event spin {}
-| finished
+| finished i64
 
 ~spin = #loop step(n: 0)
 | next v |> @loop(n: v)
-| done => finished
+| done r => finished r
 
 ~spin()
-| finished |> std/io:print.ln("ok")
+| finished f |> std/io:print.ln("ok {{ f:d }}")

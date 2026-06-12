@@ -1,5 +1,6 @@
-// FRONTIER LEDGER: pair-twice + gap-repeat ← match alternation-scale
-// ceiling (640_004). String predicates also vote for string-ops (gap 4).
+// FRONTIER LEDGER: pair-twice + gap-repeat ← DFA state cap on the 676-
+// alternation encoding (DfaTooLarge — loud + named; 640_004 pinned the old
+// silent ceiling). String predicates also vote for string-ops (gap 4).
 
 const std = @import("std");
 

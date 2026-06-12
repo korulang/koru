@@ -1,12 +1,16 @@
-// RED PIN (found by AoC day 5 part 2): the match pipeline has a SCALE
-// ceiling on alternations. Nine 2-char alternation branches with [a-z]*
-// filler already trips error.BufferOverflow at emission; the 676-branch
-// finite-alphabet encoding of (..).*\1 fails earlier and surfaces as a
-// bogus KORU100 (a compileError replacement confusing the checker — the
-// failure should be LOUD and say "pattern too large", not blame a binding).
-// Goes green when the engine/emission handles big-alternation DFAs (or
-// rejects them with a real diagnostic and this pin's pattern shrinks to
-// just under the documented cap).
+// GREEN PIN (was RED; found by AoC day 5 part 2): the match pipeline had a
+// SCALE ceiling on alternations — nine 2-char alternation branches with
+// [a-z]* filler tripped error.BufferOverflow at emission. Root cause: the
+// emission CodeEmitter wrote into a FIXED 256KB buffer (koru_std/compiler.kz);
+// a big-alternation DFA alone passes that. Fixed 2026-06-12: CodeEmitter
+// grows on demand (initGrowable), so generated code has no size ceiling.
+// The 676-branch finite-alphabet encoding of (..).*\1 still exceeds the
+// engine's deliberate state cap (max_dfa_states, regex_engine.zig) — but
+// that failure is now LOUD and NAMED: "regex: cannot compile pattern
+// `...`: DfaTooLarge" at the match site (it used to surface as a bogus
+// KORU100 blaming a binding; fixed in koru_std/regex.kz the same day).
+// Day 5p2's pure form waits on an engine strategy for huge alternations
+// (lazy DFA / NFA simulation), tracked in FRONTIERS.
 
 import std/io
 import std/regex

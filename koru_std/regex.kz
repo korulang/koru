@@ -93,8 +93,11 @@ const std = @import("std");
             // is the pattern, byte-for-byte. No glyph stripping here.
             const pattern = name;
             const fn_name = std.fmt.allocPrint(allocator, "__koru_re_{d}_{d}_{d}", .{ flow.location.line, flow.location.column, i }) catch unreachable;
-            const matcher_src = regex.compileToZig(allocator, pattern, fn_name) catch {
-                const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"regex: cannot compile pattern `{s}`\"); }}", .{pattern}) catch unreachable;
+            const matcher_src = regex.compileToZig(allocator, pattern, fn_name) catch |err| {
+                // Name the WHY (e.g. DfaTooLarge for the engine's loud
+                // state cap) — an unnamed failure here used to surface as
+                // a bogus KORU100 blaming a binding (640_004's second mode).
+                const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"regex: cannot compile pattern `{s}`: {s}\"); }}", .{ pattern, @errorName(err) }) catch unreachable;
                 return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
             };
             matchers.appendSlice(allocator, matcher_src) catch unreachable;

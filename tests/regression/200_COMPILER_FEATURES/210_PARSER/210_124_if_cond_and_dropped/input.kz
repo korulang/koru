@@ -1,12 +1,15 @@
-// RED PIN (found by AoC day 12): a `<` inside an if condition makes the
-// parser drop the ENTIRE argument (empty args in the AST → emitter writes
-// `if ()`). Empirically isolated: `ch >= 48` parses, `ch <= 57` does not;
-// `>` and `>=` survive. MECHANISM IS A GUESS (Claude, unverified): possibly
-// the phantom-angle scan (`Type<state>`) hunting an unclosed `>`.
-// ⚠ SYNTAX CAVEAT (Lars 2026-06-13): this pin was authored by Claude mid-
-// grind — if it stays red after the `<` fix, REVIEW TOGETHER whether the
-// pin's own spelling is at fault before trusting its claim.
-// Workaround in the corpus: flip operands (57 >= ch). Expected: "lt".
+// GREEN PIN (was RED; found by AoC day 12): a `<` inside an if condition
+// made the parser drop the ENTIRE argument (empty args in the AST → emitter
+// wrote `if ()`). `>`/`>=` survived. The original mechanism guess
+// (phantom-angle scan) was WRONG — the real culprit was lexer.parseArgs's
+// generics angle-depth tracking: `<` unconditionally bumped angle_depth,
+// `x < 5` has no closing `>`, so the depth stayed stuck >0 and the
+// comma-split (which requires angle_depth == 0) never fired — the arg was
+// never appended. Fixed 2026-06-12: `<` only opens an angle group when it
+// hugs an identifier on the left AND a string-aware lookahead finds a
+// matching `>` (`Option<A, B>`, `32<celsius>` keep working); otherwise it
+// is a comparison operator and stays a plain character.
+// Expected: "lt".
 
 ~import std/io
 

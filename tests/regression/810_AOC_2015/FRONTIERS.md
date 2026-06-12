@@ -108,22 +108,35 @@ collateral.
 guard-grouped handlers, variant invocations, label loops, mock impls
 (395_009 pin). The legacy path dies when the last migrates.
 
-## 7. Toolchain pins from the full-calendar climb (2026-06-13)
-Three compiler bugs found and pinned during the 25-day grind — never
-circumvented; every workaround in the corpus cites its pin:
-- **210_123** — label anchor on a SUBFLOW RHS panics koruc (empty
-  invocation path → tap_transformer index-out-of-bounds). Top-level label
-  folds work (810_231's VM proves it); only the subflow form dies.
-  Workarounds: day 4/11/20 ledgers carry host loops citing this.
-- **210_124** — `<` inside an if condition drops the ENTIRE argument
-  (empty args → `if ()`). `>`/`>=` fine. Mechanism guess (UNVERIFIED):
-  phantom-angle scan. Workaround: flipped operands (day 12).
-- **640_004** — match alternation-scale ceiling: 9 alternation branches
-  trip BufferOverflow at emission; 676 (finite-alphabet backreference
-  encoding) fails as a bogus KORU100 via compileError-replacement —
-  failure should be loud and named. Blocks day 5p2's pure form.
-All three carry Lars's syntax caveat: Claude-authored mid-grind — if a
-pin stays red after its fix, review the pin's own spelling together first.
+## 7. Toolchain pins from the full-calendar climb — CLOSED 2026-06-12
+Three compiler bugs found and pinned during the 25-day grind, never
+circumvented; all three greened in the gap-closing session and the
+workaround ledgers were rewritten in the same commit:
+- **210_123 GREEN** — label anchor on a subflow RHS panicked koruc. Root:
+  `lexer.withoutLabelAnchor` chopped at the last `#` without validating a
+  label followed (pre-invocation `#loop` truncated the invocation to "").
+  Fix: validated strip + `parseSubflowImpl` extracts a leading `#name`
+  into `Flow.pre_label` + the subflow emitter routes pre_label folds
+  through `emitFlow` (the same state-loop lowering as top-level).
+  **Loops came home:** day 4 (both), day 11, day 20 (both) now fold in
+  Koru; their hosts shrank to single-check leaves.
+  (The pin's own spelling needed correction first — it died on PARSE003
+  before reaching its panic. The caveat protocol worked as designed.)
+- **210_124 GREEN** — `<` in an if condition dropped the whole argument.
+  The mechanism guess (phantom-angle scan) was WRONG: `lexer.parseArgs`'s
+  generics angle-tracking left `angle_depth` stuck on an unmatched `<`,
+  so the comma-split never fired. Fix: `<` opens an angle group only when
+  it hugs an identifier AND a string-aware lookahead finds a matching `>`.
+  Day 12p1's nested-if workaround collapsed to `ch >= 48 and ch <= 57`.
+- **640_004 GREEN** — the 9-alternation BufferOverflow was the emission
+  CodeEmitter's FIXED 256KB buffer; it now grows on demand (initGrowable —
+  generated code has no size ceiling). The 676-branch encoding still
+  exceeds the engine's deliberate state cap, but the failure is now LOUD
+  and NAMED at the match site: `regex: cannot compile pattern ...:
+  DfaTooLarge` (the bogus-KORU100 surface died with a one-line
+  `@errorName` fix in koru_std/regex.kz). Day 5p2's pure form now waits
+  on an engine strategy for huge alternations (lazy DFA / NFA
+  simulation) — a real frontier, not a bug.
 
 ## 6. Long-horizon tensions (named, not blocking)
 - **Target-neutral expressions:** `c == '('`, `pos.y + 1` are Zig-flavored

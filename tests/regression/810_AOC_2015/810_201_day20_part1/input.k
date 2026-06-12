@@ -1,7 +1,9 @@
 // AoC 2015 Day 20 Part 1 — lowest house receiving at least the target
-// presents. The hunt loop is HOST (the Koru label-loop spelling panics —
-// 210_123, see ledger); divisor sum is the leaf too. (statement table: house 8 gets 150 ≥ 130 → 8). The UNBOUNDED
-// Ledger: hunt loop ← 210_123 panic; divisor sum ← host.
+// presents (statement table: house 8 gets 150 ≥ 130 → 8). The UNBOUNDED
+// HUNT IS KORU — a label fold on the subflow RHS threads (target, house,
+// lazy) through payloads, one divisor-sum check per iteration (210_123
+// greened; the loop came home). Ledger: divisor sum ← host;
+// to-int ← string-ops/typed-groups.
 
 import std/io
 import std/fs
@@ -9,6 +11,13 @@ import std/fs
 pub event presents-check { target: i64, house: i64, lazy: i64 }
 | found i64
 | next { target: i64, house: i64, lazy: i64 }
+
+pub event hunt { target: i64 }
+| house i64
+
+hunt = #h presents-check(target, house: 1, lazy: 0)
+| next s |> @h(s.target, s.house, s.lazy)
+| found x => house x
 
 capture { goal: 0[i64] }
 ! as acc |> std/fs:read-lines(path: "tests/regression/810_AOC_2015/810_201_day20_part1/input.txt")
@@ -21,6 +30,3 @@ capture { goal: 0[i64] }
 
 pub event to-int { s: []const u8 }
 | value i64
-
-pub event hunt { target: i64 }
-| house i64

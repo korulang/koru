@@ -1,8 +1,8 @@
 // AoC 2015 Day 12 Part 1 — sum every number in the JSON text (six
 // statement examples). PURE .k, EMPTY LEDGER: a char machine accumulates
-// digits in the cell. NOTE: the digit test is spelled as NESTED ifs
-// because `<` inside an if condition is eaten at parse (RED pin
-// 210_124) — collapse to one cond when that greens.
+// digits in the cell. The digit test is ONE condition — `<=` in an if
+// condition parses since 210_124 greened (it was eaten at parse before;
+// this file carried the nested-if workaround, now collapsed).
 
 import std/io
 import std/fs
@@ -12,16 +12,8 @@ pub event sum-numbers { s: []const u8 }
 
 sum-numbers = capture { sum: 0[i64], num: 0[i64], sign: 1[i64], in: 0[i64] }
 ! as a |> for(s)
-    ! each ch |> if(ch >= 48)
-        | then |> if(57 >= ch)
-            | then |> captured { num: a.num * 10 + (ch - 48), in: 1 }
-            | else |> if(a.in == 1)
-                | then |> captured { sum: a.sum + a.sign * a.num, num: 0, sign: 1, in: 0 } |> if(ch == '-')
-                    | then |> captured { sign: -1 }
-                    | else |> _
-                | else |> if(ch == '-')
-                    | then |> captured { sign: -1 }
-                    | else |> captured { sign: 1 }
+    ! each ch |> if(ch >= 48 and ch <= 57)
+        | then |> captured { num: a.num * 10 + (ch - 48), in: 1 }
         | else |> if(a.in == 1)
             | then |> captured { sum: a.sum + a.sign * a.num, num: 0, sign: 1, in: 0 } |> if(ch == '-')
                 | then |> captured { sign: -1 }

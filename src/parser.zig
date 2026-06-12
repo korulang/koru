@@ -4117,7 +4117,22 @@ pub const Parser = struct {
             try self.context_stack.append(self.allocator, .in_subflow_impl);
             defer _ = self.context_stack.pop();
 
-            const invocation = try self.parseEventInvocation(body_str);
+            // A leading `#name` is a pre-invocation label anchor on the subflow
+            // RHS (`~spin = #loop step(...)`) — same shape as the top-level
+            // `#label event(...)` form, carried on Flow.pre_label.
+            var sub_pre_label: ?[]const u8 = null;
+            var inv_str = body_str;
+            if (lexer.startsWith(inv_str, "#")) {
+                if (std.mem.indexOfAny(u8, inv_str, " \t")) |sp| {
+                    const lbl = inv_str[1..sp];
+                    if (lbl.len > 0 and isValidIdentifier(lbl)) {
+                        sub_pre_label = try self.allocator.dupe(u8, lbl);
+                        inv_str = lexer.trim(inv_str[sp + 1 ..]);
+                    }
+                }
+            }
+
+            const invocation = try self.parseEventInvocation(inv_str);
 
             // If body has an inline |> chain (e.g. `head() |> tail() | branch ...`),
             // parseEventInvocation only captured the head; route the tail through
@@ -4127,9 +4142,9 @@ pub const Parser = struct {
                 var paren_depth: i32 = 0;
                 var brace_depth: i32 = 0;
                 var in_string = false;
-                while (i + 1 < body_str.len) : (i += 1) {
-                    const c = body_str[i];
-                    if (c == '"' and (i == 0 or body_str[i - 1] != '\\')) {
+                while (i + 1 < inv_str.len) : (i += 1) {
+                    const c = inv_str[i];
+                    if (c == '"' and (i == 0 or inv_str[i - 1] != '\\')) {
                         in_string = !in_string;
                         continue;
                     }
@@ -4138,7 +4153,7 @@ pub const Parser = struct {
                     if (c == ')') paren_depth -= 1;
                     if (c == '{') brace_depth += 1;
                     if (c == '}') brace_depth -= 1;
-                    if (paren_depth == 0 and brace_depth == 0 and c == '|' and body_str[i + 1] == '>') {
+                    if (paren_depth == 0 and brace_depth == 0 and c == '|' and inv_str[i + 1] == '>') {
                         break :blk true;
                     }
                 }
@@ -4146,12 +4161,13 @@ pub const Parser = struct {
             };
 
             const continuations = if (has_inline_chain)
-                try self.parseInlineContinuation(body_str, lexer.getIndent(line))
+                try self.parseInlineContinuation(inv_str, lexer.getIndent(line))
             else
                 try self.parseContinuations(lexer.getIndent(line));
 
             return ast.Item{ .flow = .{
                 .body = ast.rootSite(invocation, continuations, self.getCurrentLocation()),
+                .pre_label = sub_pre_label,
                 .impl_of = event_path,
                 .impl_variant = impl_variant,
                 .is_impl = event_path.module_qualifier != null,
@@ -4310,12 +4326,27 @@ pub const Parser = struct {
         try self.context_stack.append(self.allocator, .in_subflow_impl);
         defer _ = self.context_stack.pop();
 
-        const invocation = try self.parseEventInvocation(trimmed_body);
+        // A leading `#name` is a pre-invocation label anchor (see the
+        // same-line body path above).
+        var sub_pre_label: ?[]const u8 = null;
+        var inv_str = trimmed_body;
+        if (lexer.startsWith(inv_str, "#")) {
+            if (std.mem.indexOfAny(u8, inv_str, " \t")) |sp| {
+                const lbl = inv_str[1..sp];
+                if (lbl.len > 0 and isValidIdentifier(lbl)) {
+                    sub_pre_label = try self.allocator.dupe(u8, lbl);
+                    inv_str = lexer.trim(inv_str[sp + 1 ..]);
+                }
+            }
+        }
+
+        const invocation = try self.parseEventInvocation(inv_str);
         self.current += 1; // Move past the invocation line
         const continuations = try self.parseContinuations(lexer.getIndent(body_line));
 
         return ast.Item{ .flow = .{
             .body = ast.rootSite(invocation, continuations, self.getCurrentLocation()),
+            .pre_label = sub_pre_label,
             .impl_of = event_path,
             .impl_variant = impl_variant,
             .is_impl = event_path.module_qualifier != null,
