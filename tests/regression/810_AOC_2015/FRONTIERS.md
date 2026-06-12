@@ -88,21 +88,28 @@ CALLS during the proc, terminals return after.
 ARGS/STDIN/input.txt gitignore whitelists, zero-alloc argv. The args FLAGS
 layer (`~std/args:int(flag: ...)`) remains future polish, unblocking nothing.
 
-## 6. Flow-local state across runtime-effect handlers
-**What:** `captured { }` (and any flow-local mutable state) inside a RUNTIME
-event's effect handler can't reach the capture cell: the handler lowers to a
-synthesized Handlers struct — a Zig namespace boundary — while the cell is a
-function-local `var` outside it. Templates (for/if) splice handlers into the
-same scope, so every current AoC day works; runtime-effect handlers don't.
-**Why it matters:** file → lines → match → cell is THE real-input accumulator
-shape — this blocks the pristine real-input form of every counting day
-(workaround meanwhile: host-leaf accumulation, the day-3 visit pattern).
-**Fix direction:** effect-handler lowering carries flow-local state —
-instance handlers with a cell pointer, or scope-spliced lowering for in-flow
-handlers (the same machinery the store, gap 2, will want).
-**Pointers:** RED pin `620_004_capture_across_handler_boundary` (header has
-the full analysis); GREEN twin `620_003_lines_match_capture` proves match
-itself composes with the lines stream.
+## 6. EFFECT LOWERING — callbacks today, the design says coroutines,
+## the ratified target is FULL INLINING (the headline gap)
+**What:** runtime events lower effects by CONTROL INVERSION — the proc calls
+the handler (`__H.line(l)`) across a Zig namespace boundary. That inversion
+is the root of: flow-local state being unreachable from handlers (the cell),
+resume values being special-cased, and listener semantics having no story.
+The effect-branch design (resume values; `! ask q |> "Alice"`) is COROUTINE
+semantics — transfer control, come back with a value.
+**Direction (Lars-ratified 2026-06-12):** NOT threads, NOT fibers, NOT a
+threadlocal side channel (one was built and reverted — it compounded the
+inversion). Effects should compile to COMPLETELY INLINABLE, MONOMORPHIZED
+code: the same flattening the for/if templates already get — one frame,
+cells as ordinary locals, handler bodies at the effect sites, resume values
+as expression results. Shape to arbitrate: inline the PROC at the invocation
+site and splice HANDLER BODIES at the effect-call points (double inlining —
+monomorphization by replication, the zero-cost tradition).
+**Acceptance pins (RED):** `620_004_capture_across_handler_boundary`
+(file → lines → match → cell, the real-input accumulator) and
+`620_005_cell_ctx_deep_nesting` (four-level nesting, two cells, interleaved
+writes). GREEN twin `620_003` (match in handler, no cell) must stay green.
+**Blocks:** pristine real-input form of every counting day; gap 2 (store)
+likely hangs off the same lowering.
 
 ## 6. Long-horizon tensions (named, not blocking)
 - **Target-neutral expressions:** `c == '('`, `pos.y + 1` are Zig-flavored

@@ -42,6 +42,7 @@
 !**/ARGS
 !**/STDIN
 !**/input.txt
+!**/*.data
 
 # Keep documentation and marker files (at any depth)
 !**/README.md
