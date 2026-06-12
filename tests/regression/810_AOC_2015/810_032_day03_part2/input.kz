@@ -1,0 +1,29 @@
+// FRONTIER LEDGER (shared with 810_031): visited SET ← store; classify ←
+// char-dispatch surface.
+
+const std = @import("std");
+
+const Pos = struct { x: i64, y: i64 };
+var visited: ?std.AutoHashMap(Pos, void) = null;
+
+~proc visit|zig {
+    if (visited == null) visited = std.AutoHashMap(Pos, void).init(koru_allocator());
+    visited.?.put(.{ .x = x, .y = y }, {}) catch unreachable;
+}
+
+~proc house-count|zig {
+    const n: i64 = @intCast(visited.?.count());
+    visited.?.deinit();
+    visited = null;
+    return .{ .count = n };
+}
+
+~proc classify|zig {
+    return switch (c) {
+        '^' => .{ .up = .{} },
+        'v' => .{ .down = .{} },
+        '<' => .{ .left = .{} },
+        '>' => .{ .right = .{} },
+        else => unreachable,
+    };
+}

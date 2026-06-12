@@ -1,0 +1,27 @@
+// RED PIN (found by AoC day 4): a LABEL ANCHOR on a subflow RHS
+// (`mine = #search check(...)` + `@search` re-invocation) makes the parser
+// produce a flow whose invocation has ZERO path segments — koruc then
+// PANICS in tap_transformer.zig:162 (index out of bounds). Either the
+// shape is legal (then parse it) or it isn't (then reject with a real
+// diagnostic) — a panic is always a bug. Expected output when legal: "ok".
+
+~import std/io
+
+~event step { n: i64 }
+| next i64
+| done
+
+~proc step|zig {
+    if (n < 3) return .{ .next = n + 1 };
+    return .{ .done = .{} };
+}
+
+~event spin {}
+| finished
+
+~spin = #loop step(n: 0)
+| next v |> @loop(n: v)
+| done => finished
+
+~spin()
+| finished |> std/io:print.ln("ok")

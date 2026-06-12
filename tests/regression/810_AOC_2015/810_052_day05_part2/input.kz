@@ -1,0 +1,32 @@
+// FRONTIER LEDGER: pair-twice + gap-repeat ← match alternation-scale
+// ceiling (640_004). String predicates also vote for string-ops (gap 4).
+
+const std = @import("std");
+
+~proc nice2|zig {
+    var pair_twice = false;
+    if (s.len >= 4) {
+        var i: usize = 0;
+        while (i + 1 < s.len and !pair_twice) : (i += 1) {
+            var j = i + 2;
+            while (j + 1 < s.len) : (j += 1) {
+                if (s[i] == s[j] and s[i + 1] == s[j + 1]) {
+                    pair_twice = true;
+                    break;
+                }
+            }
+        }
+    }
+    var gap_repeat = false;
+    if (s.len >= 3) {
+        var i: usize = 0;
+        while (i + 2 < s.len) : (i += 1) {
+            if (s[i] == s[i + 2]) {
+                gap_repeat = true;
+                break;
+            }
+        }
+    }
+    if (pair_twice and gap_repeat) return .{ .yes = .{} };
+    return .{ .no = .{} };
+}
