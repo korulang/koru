@@ -88,6 +88,22 @@ CALLS during the proc, terminals return after.
 ARGS/STDIN/input.txt gitignore whitelists, zero-alloc argv. The args FLAGS
 layer (`~std/args:int(flag: ...)`) remains future polish, unblocking nothing.
 
+## 6. Flow-local state across runtime-effect handlers
+**What:** `captured { }` (and any flow-local mutable state) inside a RUNTIME
+event's effect handler can't reach the capture cell: the handler lowers to a
+synthesized Handlers struct — a Zig namespace boundary — while the cell is a
+function-local `var` outside it. Templates (for/if) splice handlers into the
+same scope, so every current AoC day works; runtime-effect handlers don't.
+**Why it matters:** file → lines → match → cell is THE real-input accumulator
+shape — this blocks the pristine real-input form of every counting day
+(workaround meanwhile: host-leaf accumulation, the day-3 visit pattern).
+**Fix direction:** effect-handler lowering carries flow-local state —
+instance handlers with a cell pointer, or scope-spliced lowering for in-flow
+handlers (the same machinery the store, gap 2, will want).
+**Pointers:** RED pin `620_004_capture_across_handler_boundary` (header has
+the full analysis); GREEN twin `620_003_lines_match_capture` proves match
+itself composes with the lines stream.
+
 ## 6. Long-horizon tensions (named, not blocking)
 - **Target-neutral expressions:** `c == '('`, `pos.y + 1` are Zig-flavored
   leaves; the legal-gap doctrine covers Zig-target runs. The layered
