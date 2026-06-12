@@ -1,10 +1,12 @@
 // AoC 2015 Day 3 Part 1 — "Perfectly Spherical Houses in a Vacuum"
-// (">" → 2, "^>v<" → 4, "^v^v^v^v^v" → 2). PURE .k STRUCTURE.
+// (">" → 2, "^>v<" → 4, "^v^v^v^v^v" → 2). PURE .k, CANONICAL SHAPE:
+// one walk per input line off disk.
 // The .kz ledger owes: classify (wants a char-dispatch surface), and the
 // visited SET (visit/house-count — THE store frontier, votes with
 // 320_034/036/038).
 
 import std/io
+import std/fs
 
 pub event visit { x: i64, y: i64 }
 
@@ -30,11 +32,8 @@ walk = capture { x: 0[i64], y: 0[i64] }
 | captured _ |> house-count()
     | count n => houses n
 
-walk(moves: ">")
-| houses a |> std/io:print.ln("{{ a:d }}")
-
-walk(moves: "^>v<")
-| houses b |> std/io:print.ln("{{ b:d }}")
-
-walk(moves: "^v^v^v^v^v")
-| houses c |> std/io:print.ln("{{ c:d }}")
+std/fs:read-lines(path: "tests/regression/810_AOC_2015/810_031_day03_part1/input.txt")
+! line m |> walk(moves: m)
+    | houses n |> std/io:print.ln("{{ n:d }}")
+| done _ |> _
+| failed e |> std/io:print.ln("FAILED {{ e:s }}")

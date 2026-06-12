@@ -12,19 +12,18 @@
 // each rule's pass-arm runs the next rule and rule 3's no-match increments.
 
 import std/io
+import std/fs
 import std/regex
 
-// (single-line block: multi-line const{} with nested braces is a known
-// collector gap — see FRONTIERS tensions)
-const { samples: &[_][]const u8{ "ugknbfddgicrmopn", "aaa", "jchzalrnumimnmhp", "haegwjzuvuyypxyu", "dvszwmarrgswjxmb" } }
-
 capture { nice: 0[i64] }
-! as acc |> for(samples)
-    ! each s |> std/regex:match(s)
+! as acc |> std/fs:read-lines(path: "tests/regression/810_AOC_2015/810_051_day05_part1/input.txt")
+    ! line s |> std/regex:match(s)
         | `[a-z]*[aeiou][a-z]*[aeiou][a-z]*[aeiou][a-z]*` _ |> std/regex:match(s)
             | `[a-z]*(aa|bb|cc|dd|ee|ff|gg|hh|ii|jj|kk|ll|mm|nn|oo|pp|qq|rr|ss|tt|uu|vv|ww|xx|yy|zz)[a-z]*` _ |> std/regex:match(s)
                 | `[a-z]*(ab|cd|pq|xy)[a-z]*` _ |> _
                 | no-match |> captured { nice: acc.nice + 1 }
             | no-match |> _
         | no-match |> _
+    | done _ |> _
+    | failed e |> std/io:print.ln("FAILED {{ e:s }}")
 | captured total |> std/io:print.ln("{{ total.nice:d }}")
