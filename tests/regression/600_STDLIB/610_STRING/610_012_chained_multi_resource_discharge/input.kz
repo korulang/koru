@@ -1,0 +1,26 @@
+// RED PIN (auto-discharge bug, found 2026-06-12): two live resources that must
+// BOTH be discharged on one path can only be freed by chaining the disposals in
+// one pipeline (`free(s2) |> free(s1)`) — String can't auto-discharge (free/take
+// are both candidates, KORU030), so every resource needs an EXPLICIT free, and
+// two live resources means two explicit frees on the path.
+//
+// The auto-discharge checker mis-handles this: it recognizes a SINGLE explicit
+// disposal per continuation but not two chained in one `|>` pipeline. The walk
+// still believes one resource leaks and tries to auto-insert a disposal for it,
+// failing on the free/take ambiguity with a FALSE KORU030. Confirmed general
+// (independent of substring) — any two live resources hit it.
+//
+// This blocks all multi-resource flows (strings, files, connections). Greens
+// when checkContinuation recognizes every explicit disposal in a chained
+// pipeline, clearing each obligation. See src/auto_discharge_inserter.zig
+// (checkContinuation / checkInvocationSatisfiesObligations, the chained-
+// continuation recursion).
+~import std/string
+~import std/io
+
+~std/string:from-page(text: "a")
+| ok s1 |> std/string:from-page(text: "b")
+    | ok s2 |> std/string:read(s2)
+        | slice t |> std/io:print.ln("{{ t:s }}") |> std/string:free(s2) |> std/string:free(s1)
+    | err _ |> std/string:free(s1)
+| err _ |> _

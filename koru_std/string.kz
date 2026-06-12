@@ -117,6 +117,75 @@ pub const String = struct {
 }
 
 // ============================================
+// Query / transform operations (FRONTIERS gap 4)
+//
+// Safe-by-construction: each op returns a scalar or a NEW owned String, never
+// a borrowed sub-view of `s`. So the ratified borrow model holds trivially —
+// `|` terminal payloads OWN what they carry (a scalar owns itself; substring
+// allocates a fresh copy) with zero borrow machinery. Cheap views wait on the
+// borrow-obligation surface; `split` (many parts) waits on the store.
+// ============================================
+
+// Parse the string's text as a base-10 integer.
+~pub event parse-int { s: *String<view|instance> }
+| ok i64
+| err []const u8
+
+~proc parse-int|zig {
+    const n = std.fmt.parseInt(i64, s.data, 10) catch {
+        return .{ .err = "not an integer" };
+    };
+    return .{ .ok = n };
+}
+
+// Does the string contain `needle`?
+~pub event contains { s: *String<view|instance>, needle: []const u8 }
+| yes
+| no
+
+~proc contains|zig {
+    if (std.mem.indexOf(u8, s.data, needle) != null) {
+        return .yes;
+    }
+    return .no;
+}
+
+// First index of `needle`, or not-found.
+~pub event index-of { s: *String<view|instance>, needle: []const u8 }
+| found usize
+| not-found
+
+~proc index-of|zig {
+    if (std.mem.indexOf(u8, s.data, needle)) |idx| {
+        return .{ .found = idx };
+    }
+    return .not_found;
+}
+
+// Extract [start, end) as a NEW owned String<view!> (a fresh copy, not a
+// borrow into `s`). The result carries its own ownership obligation.
+~pub event substring { s: *String<view|instance>, start: usize, end: usize }
+| ok *String<view!>
+| err []const u8
+
+~proc substring|zig {
+    if (start > end or end > s.data.len) {
+        return .{ .err = "range out of bounds" };
+    }
+    const allocator = s.allocator;
+    const out_data = allocator.alloc(u8, end - start) catch {
+        return .{ .err = "allocation failed" };
+    };
+    @memcpy(out_data, s.data[start..end]);
+    const out = allocator.create(String) catch {
+        allocator.free(out_data);
+        return .{ .err = "allocation failed" };
+    };
+    out.* = .{ .data = out_data, .allocator = allocator };
+    return .{ .ok = out };
+}
+
+// ============================================
 // Write operations - require instance
 // ============================================
 

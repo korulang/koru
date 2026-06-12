@@ -62,15 +62,29 @@ branch-on-value form.
 any per-char state machine.
 **Pointers:** `810_031_day03_part1/input.kz` ledger.
 
-## 4. String OPERATIONS (on the ownership spine)
-**What:** `string.kz` has the lifecycle (phantom `String<view|instance>`,
-take/release/free — enforcement pins 610_003..006 GREEN) but zero
-operations: no split, no parse-int, no contains/indexOf.
-**Design note:** text→int may dissolve into typed group payloads (gap 1)
-rather than a standalone parse event — decide there first.
-**Blocks forward:** day 4 (hex formatting), 5 part 2 partially, 8, 10, 11.
-**Pointers:** `koru_std/string.kz` (the spine); RED pin
-`610_007_reject_dangling_slice` (the borrow rule the ops will need).
+## 4. String OPERATIONS (on the ownership spine) — partly landed
+**Landed 2026-06-12 (safe subset):** `parse-int` (→ scalar i64), `contains`
+(→ yes/no), `index-of` (→ found usize/not-found) — all GREEN (610_008/009/010).
+Each returns a scalar or an owned value, so the ratified borrow model holds
+trivially (`|` terminals OWN what they carry) with zero borrow machinery.
+`substring` is implemented (returns a NEW owned `String<view!>`, a fresh copy)
+but its test is RED — see the discharge blocker below.
+**Two blockers surfaced, both their own gaps now:**
+- **Chained multi-resource discharge (auto-discharge BUG, RED 610_012):** two
+  live resources that must both be freed on one path require chaining the
+  disposals (`free(a) |> free(b)`); the checker recognizes only ONE explicit
+  disposal per pipeline and falsely fires KORU030 on the other. Confirmed
+  general (independent of substring). Blocks `substring` (610_011) and EVERY
+  multi-resource flow. Pointer: `src/auto_discharge_inserter.zig`
+  (checkContinuation / checkInvocationSatisfiesObligations chained recursion).
+- **The borrow-obligation surface (RED 610_007):** cheap VIEWS (split, slice as
+  borrow) and enforcing the dangling-slice rejection need the phantom vocabulary
+  for "terminal payload borrows param s" — still an OPEN design decision.
+**Still needs the STORE (gap 2):** `split` returns many parts (a collection).
+**Design note (resolved):** text→int does NOT need a standalone parse for the
+regex case — gap 1's typed group payloads convert at the splice; `parse-int`
+covers non-regex text.
+**Pointers:** `koru_std/string.kz` (the spine + the safe ops).
 
 ## 5. Mock machinery × effect branches — CLOSED 2026-06-12
 **Was:** mocking an event that declares effect branches leaked the effect as a
