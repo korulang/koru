@@ -971,10 +971,51 @@ pub const BindingType = enum {
     transition,      // Meta: | transition t |> (t is Transition struct)
 };
 
+/// One field of a shape-destructure at the binding position:
+/// `| found { name, age: i64, user: { city } } |> ...`
+/// Each field binds the payload's same-named field directly — by NAME, never
+/// by position. `type_text` is an optional representation annotation (a typed
+/// const in the emission; transforms like match may define it as conversion).
+/// `sub` is a nested destructure into that field (emission is just longer
+/// access paths; interiors may be host types — Zig validates at Stage D).
+pub const DestructureField = struct {
+    name: []const u8, // binding name, or "_" to discard the slot
+    type_text: ?[]const u8 = null,
+    sub: []const DestructureField = &.{},
+
+    pub fn deinit(self: *const DestructureField, allocator: std.mem.Allocator) void {
+        allocator.free(self.name);
+        if (self.type_text) |t| allocator.free(t);
+        freeDestructure(allocator, self.sub);
+    }
+};
+
+pub fn freeDestructure(allocator: std.mem.Allocator, fields: []const DestructureField) void {
+    for (fields) |*f| f.deinit(allocator);
+    if (fields.len > 0) allocator.free(fields);
+}
+
+pub fn copyDestructure(allocator: std.mem.Allocator, fields: []const DestructureField) ![]const DestructureField {
+    if (fields.len == 0) return &.{};
+    const out = try allocator.alloc(DestructureField, fields.len);
+    for (fields, 0..) |f, i| {
+        out[i] = .{
+            .name = try allocator.dupe(u8, f.name),
+            .type_text = if (f.type_text) |t| try allocator.dupe(u8, t) else null,
+            .sub = try copyDestructure(allocator, f.sub),
+        };
+    }
+    return out;
+}
+
 pub const Continuation = struct {
     branch: []const u8,
     binding: ?[]const u8,
     binding_annotations: []const []const u8 = &[_][]const u8{}, // Annotations on binding (e.g., [mutable])
+    /// Shape-destructure at the binding position (empty = none). Mutually
+    /// exclusive with `binding`: a continuation binds the whole payload to
+    /// one name OR destructures it by field name.
+    destructure: []const DestructureField = &.{},
     binding_type: BindingType = .branch_payload,
     kind: BranchKind = .terminal,  // `|` = terminal handler, `!` = effect handler
     is_catchall: bool = false,  // True for |? or !? catch-all continuations
@@ -991,6 +1032,7 @@ pub const Continuation = struct {
     pub fn deinit(self: *Continuation, allocator: std.mem.Allocator) void {
         allocator.free(self.branch);
         if (self.binding) |b| allocator.free(b);
+        freeDestructure(allocator, self.destructure);
         for (self.binding_annotations) |ann| {
             allocator.free(ann);
         }

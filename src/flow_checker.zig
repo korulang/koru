@@ -243,6 +243,16 @@ pub const FlowChecker = struct {
             }
         }
 
+        // Destructured fields are bindings too: each named field must be
+        // used (or spelled `_` to discard the slot). Same deferred-binding
+        // skip as above — transform/scope constructs consume bindings later.
+        if (cont.destructure.len > 0) {
+            const skip_check = self.mode == .frontend and self.isDeferredBindingInvocation(cont);
+            if (!skip_check) {
+                try self.validateDestructureUsage(cont, cont.destructure);
+            }
+        }
+
         // Recursively check nested continuations
         for (cont.continuations) |*nested| {
             try self.validateBindingUsage(nested);
@@ -334,6 +344,30 @@ pub const FlowChecker = struct {
             return annotation_parser.hasPart(event_decl.annotations, "transform");
         }
         return false;
+    }
+
+    /// KORU100 for destructured fields: every named leaf must be used in
+    /// the continuation's body. Nested sub-shapes recurse; only LEAF names
+    /// are bindings (an intermediate field with a sub-shape binds nothing).
+    fn validateDestructureUsage(self: *FlowChecker, cont: *const ast.Continuation, fields: []const ast.DestructureField) anyerror!void {
+        for (fields) |f| {
+            if (f.sub.len > 0) {
+                try self.validateDestructureUsage(cont, f.sub);
+                continue;
+            }
+            if (std.mem.startsWith(u8, f.name, "_")) continue;
+            if (!self.isBindingUsed(cont, f.name)) {
+                try self.reporter.addErrorWithHint(
+                    .KORU100,
+                    cont.location.line,
+                    cont.location.column,
+                    "unused binding '{s}'",
+                    .{f.name},
+                    "discard the destructured field using `_` if not needed",
+                    .{},
+                );
+            }
+        }
     }
 
     fn isBindingUsed(self: *FlowChecker, cont: *const ast.Continuation, binding: []const u8) bool {

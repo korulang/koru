@@ -5007,6 +5007,91 @@ pub const Parser = struct {
         };
     }
 
+    /// Parse the comma-separated field list of a shape-destructure binding
+    /// (inner text, outer braces already stripped). Grammar per field:
+    ///   name                  — bind payload.name
+    ///   name: Type            — bind with a representation annotation
+    ///   name: { ... }         — nested destructure into payload.name
+    ///   _                     — discard the slot (named position skipped)
+    /// Splitting happens at brace-depth 0 so nested shapes stay intact.
+    fn parseDestructureFields(self: *Parser, inner: []const u8, indent: usize) anyerror![]const ast.DestructureField {
+        var fields = try std.ArrayList(ast.DestructureField).initCapacity(self.allocator, 4);
+        errdefer {
+            for (fields.items) |*f| f.deinit(self.allocator);
+            fields.deinit(self.allocator);
+        }
+
+        var depth: i32 = 0;
+        var start: usize = 0;
+        var idx: usize = 0;
+        while (idx <= inner.len) : (idx += 1) {
+            const at_end = idx == inner.len;
+            const split = at_end or (inner[idx] == ',' and depth == 0);
+            if (!at_end) {
+                if (inner[idx] == '{') depth += 1;
+                if (inner[idx] == '}') depth -= 1;
+            }
+            if (!split) continue;
+
+            const item = lexer.trim(inner[start..idx]);
+            start = idx + 1;
+            if (item.len == 0) continue;
+
+            var name: []const u8 = item;
+            var type_text: ?[]const u8 = null;
+            var sub: []const ast.DestructureField = &.{};
+
+            if (std.mem.indexOfScalar(u8, item, ':')) |colon| {
+                name = lexer.trim(item[0..colon]);
+                const after = lexer.trim(item[colon + 1 ..]);
+                if (after.len >= 2 and after[0] == '{' and after[after.len - 1] == '}') {
+                    sub = try self.parseDestructureFields(lexer.trim(after[1 .. after.len - 1]), indent);
+                } else if (after.len > 0) {
+                    type_text = try self.allocator.dupe(u8, after);
+                } else {
+                    try self.reporter.addError(
+                        .PARSE001,
+                        self.current,
+                        indent + 2,
+                        "Destructure field '{s}' has ':' but no type or nested shape.",
+                        .{name},
+                    );
+                    return error.InvalidBinding;
+                }
+            }
+
+            if (!std.mem.eql(u8, name, "_") and !isValidIdentifier(name)) {
+                try self.reporter.addError(
+                    .PARSE001,
+                    self.current,
+                    indent + 2,
+                    "Invalid destructure field name '{s}' - must be a valid identifier or '_'.",
+                    .{name},
+                );
+                return error.InvalidBinding;
+            }
+
+            try fields.append(self.allocator, .{
+                .name = try self.allocator.dupe(u8, name),
+                .type_text = type_text,
+                .sub = sub,
+            });
+        }
+
+        if (fields.items.len == 0) {
+            try self.reporter.addError(
+                .PARSE001,
+                self.current,
+                indent + 2,
+                "Empty destructure binding '{{}}' - name at least one field or bind the payload to a single name.",
+                .{},
+            );
+            return error.InvalidBinding;
+        }
+
+        return try fields.toOwnedSlice(self.allocator);
+    }
+
     fn parseBranchContinuationBase(self: *Parser, content: []const u8, indent: usize, location: errors.SourceLocation) !ast.Continuation {
         // Note: *deref syntax is handled at a higher level, not here
 
@@ -5234,9 +5319,52 @@ pub const Parser = struct {
         // Check for binding (with optional annotations like r[mutable])
         var binding: ?[]const u8 = null;
         var binding_annotations: [][]const u8 = &[_][]const u8{};
+        var destructure: []const ast.DestructureField = &.{};
         var rest = parts.rest();
 
-        if (parts.peek()) |next| {
+        if (parts.peek()) |maybe_brace| {
+            if (maybe_brace.len > 0 and maybe_brace[0] == '{') {
+                // Shape-destructure at the binding position:
+                //   | found { name, age: i64, user: { city } } |> ...
+                // Consume whitespace tokens until the brace depth closes, then
+                // parse the collected text recursively. Fields bind the
+                // payload's same-named fields — by NAME, never by position.
+                var collected = try std.ArrayList(u8).initCapacity(self.allocator, 64);
+                defer collected.deinit(self.allocator);
+                var depth: i32 = 0;
+                var closed = false;
+                while (parts.peek() != null) {
+                    const tok = parts.next().?;
+                    if (collected.items.len > 0) try collected.append(self.allocator, ' ');
+                    try collected.appendSlice(self.allocator, tok);
+                    for (tok) |ch| {
+                        if (ch == '{') depth += 1;
+                        if (ch == '}') depth -= 1;
+                    }
+                    if (depth == 0) {
+                        closed = true;
+                        break;
+                    }
+                }
+                if (!closed or depth != 0) {
+                    try self.reporter.addError(
+                        .PARSE001,
+                        self.current,
+                        indent + 2,
+                        "Unclosed '{{' in destructure binding.",
+                        .{},
+                    );
+                    return error.InvalidBinding;
+                }
+                const text = collected.items;
+                // Strip the outer braces and parse the field list.
+                destructure = try self.parseDestructureFields(lexer.trim(text[1 .. text.len - 1]), indent);
+                rest = parts.rest();
+            }
+        }
+
+        if (destructure.len == 0) {
+            if (parts.peek()) |next| {
             if (!std.mem.startsWith(u8, next, "|>") and !std.mem.startsWith(u8, next, "=>") and
                 !std.mem.startsWith(u8, next, "@") and !std.mem.eql(u8, next, "when"))
             {
@@ -5298,6 +5426,7 @@ pub const Parser = struct {
                 _ = parts.next(); // consume it
                 rest = parts.rest();
             }
+        }
         }
 
         // Check for when clause
@@ -5536,6 +5665,7 @@ pub const Parser = struct {
                     return ast.Continuation{
                         .branch = owned_branch,
                         .binding = binding,
+                        .destructure = destructure,
                         .binding_annotations = binding_annotations,
                         .binding_type = .branch_payload,
                         .condition = condition,
@@ -5649,6 +5779,7 @@ pub const Parser = struct {
                     return ast.Continuation{
                         .branch = owned_branch,
                         .binding = binding,
+                        .destructure = destructure,
                         .binding_annotations = binding_annotations,
                         .binding_type = .branch_payload,
                         .condition = condition,
@@ -5665,6 +5796,7 @@ pub const Parser = struct {
         return ast.Continuation{
             .branch = owned_branch,
             .binding = binding,
+            .destructure = destructure,
             .binding_annotations = binding_annotations,
             .binding_type = .branch_payload, // Parser always uses branch_payload; backend determines transition semantics
             .condition = condition,

@@ -246,6 +246,7 @@ pub const AstSerializer = struct {
         try self.writeLine("pub const SuperShape = ast.SuperShape;");
         try self.writeLine("pub const Invocation = ast.Invocation;");
         try self.writeLine("pub const Continuation = ast.Continuation;");
+        try self.writeLine("pub const DestructureField = ast.DestructureField;");
         try self.writeLine("pub const BindingType = ast.BindingType;");
         try self.writeLine("pub const Step = ast.Step;");
         try self.writeLine("pub const Arg = ast.Arg;");
@@ -995,6 +996,25 @@ pub const AstSerializer = struct {
         try self.write("}");
     }
 
+    fn serializeDestructure(self: *AstSerializer, fields: []const ast.DestructureField) SerializeError!void {
+        try self.write("&[_]DestructureField{ ");
+        for (fields, 0..) |f, i| {
+            if (i > 0) try self.write(", ");
+            try self.write(".{ .name = ");
+            try self.writeString(f.name);
+            if (f.type_text) |t| {
+                try self.write(", .type_text = ");
+                try self.writeString(t);
+            }
+            if (f.sub.len > 0) {
+                try self.write(", .sub = ");
+                try self.serializeDestructure(f.sub);
+            }
+            try self.write(" }");
+        }
+        try self.write(" }");
+    }
+
     fn serializeContinuation(self: *AstSerializer, cont: *const ast.Continuation) SerializeError!void {
         try self.writeIndent();
         try self.write("Continuation{\n");
@@ -1015,6 +1035,15 @@ pub const AstSerializer = struct {
             try self.write("null");
         }
         try self.write(",\n");
+
+        // Shape-destructure at the binding position (omit when empty — the
+        // field defaults to &.{})
+        if (cont.destructure.len > 0) {
+            try self.writeIndent();
+            try self.write(".destructure = ");
+            try self.serializeDestructure(cont.destructure);
+            try self.write(",\n");
+        }
 
         // Binding type
         try self.writeIndent();

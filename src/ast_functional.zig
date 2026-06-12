@@ -649,6 +649,7 @@ fn cloneContinuationWithReplacedInvocation(
     return .{
         .branch = try allocator.dupe(u8, cont.branch),
         .binding = if (cont.binding) |b| try allocator.dupe(u8, b) else null,
+        .destructure = try ast.copyDestructure(allocator, cont.destructure),
         .binding_annotations = binding_annotations,
         .binding_type = cont.binding_type,
         .kind = cont.kind,
@@ -678,6 +679,7 @@ fn cloneContinuationWithNodeAndContinuations(
     return .{
         .branch = try allocator.dupe(u8, cont.branch),
         .binding = if (cont.binding) |b| try allocator.dupe(u8, b) else null,
+        .destructure = try ast.copyDestructure(allocator, cont.destructure),
         .binding_annotations = binding_annotations,
         .binding_type = cont.binding_type,
         .kind = cont.kind,
@@ -713,6 +715,7 @@ fn cloneContinuationWithReplacedNode(
     return .{
         .branch = try allocator.dupe(u8, cont.branch),
         .binding = if (cont.binding) |b| try allocator.dupe(u8, b) else null,
+        .destructure = try ast.copyDestructure(allocator, cont.destructure),
         .binding_annotations = binding_annotations,
         .binding_type = cont.binding_type,
         .kind = cont.kind,
@@ -743,6 +746,7 @@ fn cloneContinuationWithReplacedNested(
     return .{
         .branch = try allocator.dupe(u8, cont.branch),
         .binding = if (cont.binding) |b| try allocator.dupe(u8, b) else null,
+        .destructure = try ast.copyDestructure(allocator, cont.destructure),
         .binding_annotations = binding_annotations,
         .binding_type = cont.binding_type,
         .kind = cont.kind,
@@ -1484,6 +1488,7 @@ pub fn cloneContinuation(allocator: std.mem.Allocator, cont: *const ast.Continua
     return .{
         .branch = try allocator.dupe(u8, cont.branch),
         .binding = if (cont.binding) |b| try allocator.dupe(u8, b) else null,
+        .destructure = try ast.copyDestructure(allocator, cont.destructure),
         .binding_annotations = binding_annotations,
         .binding_type = cont.binding_type,
         .kind = cont.kind,
@@ -1742,6 +1747,7 @@ fn cloneContinuationWithReplacedStep(
     return ast.Continuation{
         .branch = try allocator.dupe(u8, cont.branch),
         .binding = if (cont.binding) |b| try allocator.dupe(u8, b) else null,
+        .destructure = try ast.copyDestructure(allocator, cont.destructure),
         .binding_annotations = binding_annotations,
         .binding_type = cont.binding_type,
         .kind = cont.kind,
@@ -1835,6 +1841,7 @@ fn cloneContinuationWithFilteredNested(
     return ast.Continuation{
         .branch = try allocator.dupe(u8, cont.branch),
         .binding = if (cont.binding) |b| try allocator.dupe(u8, b) else null,
+        .destructure = try ast.copyDestructure(allocator, cont.destructure),
         .binding_annotations = binding_annotations,
         .binding_type = cont.binding_type,
         .kind = cont.kind,
@@ -1959,6 +1966,7 @@ fn cloneContinuationWithModifiedNested(
     return ast.Continuation{
         .branch = try allocator.dupe(u8, cont.branch),
         .binding = if (cont.binding) |b| try allocator.dupe(u8, b) else null,
+        .destructure = try ast.copyDestructure(allocator, cont.destructure),
         .binding_annotations = binding_annotations,
         .binding_type = cont.binding_type,
         .kind = cont.kind,
@@ -2056,6 +2064,7 @@ fn cloneContinuationWithFilterAtPath(
     return ast.Continuation{
         .branch = try allocator.dupe(u8, cont.branch),
         .binding = if (cont.binding) |b| try allocator.dupe(u8, b) else null,
+        .destructure = try ast.copyDestructure(allocator, cont.destructure),
         .binding_annotations = binding_annotations,
         .binding_type = cont.binding_type,
         .kind = cont.kind,

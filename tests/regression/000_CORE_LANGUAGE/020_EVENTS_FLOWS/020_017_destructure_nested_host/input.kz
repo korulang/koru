@@ -1,0 +1,15 @@
+// Nested destructure — including INTO A HOST TYPE. The emitter only writes
+// access paths (payload.pos.x); Zig validates them at the next stage, so
+// interiors can be fully opaque to Koru. This is the scaling pin: the
+// checker polices names and linearity, the host polices types.
+~import std/io
+
+const Pos = struct { x: i64, y: i64 };
+
+~pub event locate {}
+| at { pos: Pos, label: []const u8 }
+
+~proc locate|zig { return .{ .at = .{ .pos = .{ .x = 3, .y = 7 }, .label = "home" } }; }
+
+~locate()
+| at { pos: { x, y }, label } |> std/io:print.ln("{{ label:s }} at {{ x:d }},{{ y:d }}")

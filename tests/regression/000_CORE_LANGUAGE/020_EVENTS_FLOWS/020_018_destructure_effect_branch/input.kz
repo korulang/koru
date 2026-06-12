@@ -1,0 +1,17 @@
+// Destructure on an EFFECT branch — handlers splice inside the producer's
+// extent (handlers-struct path), per-field consts off the shared param.
+~import std/io
+
+~pub event scan-pairs {}
+! pair { a: i64, b: i64 }
+| done
+
+~proc scan-pairs|zig {
+    pair(.{ .a = 1, .b = 2 });
+    pair(.{ .a = 3, .b = 4 });
+    return .done;
+}
+
+~scan-pairs()
+! pair { a, b } |> std/io:print.ln("{{ a:d }}+{{ b:d }}")
+| done |> std/io:print.ln("done")

@@ -386,6 +386,7 @@ fn cloneContinuations(allocator: std.mem.Allocator, continuations: []const ast.C
         result[i] = .{
             .branch = try allocator.dupe(u8, cont.branch),
             .binding = if (cont.binding) |b| try allocator.dupe(u8, b) else null,
+            .destructure = try ast.copyDestructure(allocator, cont.destructure),
             .condition = if (cont.condition) |c| try allocator.dupe(u8, c) else null,
             .condition_expr = null,
             .node = if (cont.node) |node| try cloneStep(allocator, node) else null,

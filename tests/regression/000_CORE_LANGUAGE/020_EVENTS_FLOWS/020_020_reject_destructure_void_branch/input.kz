@@ -1,0 +1,13 @@
+// The void half of the linear rule applies to destructures too: a branch
+// that carries no payload has nothing to destructure — KORU101.
+~import std/io
+
+~pub event check {}
+| ok { code: i64, note: []const u8 }
+| empty
+
+~proc check|zig { return .{ .empty = .{} }; }
+
+~check()
+| ok { code } |> std/io:print.ln("{{ code:d }}")
+| empty { x } |> std/io:print.ln("bad")

@@ -3235,6 +3235,42 @@ const INLINE_CONTINUE_PREFIX = "__koru_continue_";
 /// Both index the same `continuations` slice the markers were minted against, so
 /// they round-trip deterministically. An omitted optional terminal never minted a
 /// marker, so its absence simply emits nothing. Markers resolve in source order.
+/// Emit the consts for a shape-destructure binding: one
+/// `const <name>[: <type>] = <prefix>.<name>;` per named leaf, recursing into
+/// nested sub-shapes with longer access paths. `_` fields are skipped (the
+/// payload field simply isn't bound). Interiors may be host types — the
+/// emitter only writes access paths; Zig validates them at the next stage.
+pub fn emitDestructureConsts(
+    emitter: *CodeEmitter,
+    fields: []const ast.DestructureField,
+    prefix: []const u8,
+) anyerror!void {
+    for (fields) |f| {
+        if (std.mem.eql(u8, f.name, "_")) continue;
+        if (f.sub.len > 0) {
+            var path_buf: [256]u8 = undefined;
+            const sub_prefix = std.fmt.bufPrint(&path_buf, "{s}.{s}", .{ prefix, f.name }) catch {
+                @panic("destructure path too long");
+            };
+            try emitDestructureConsts(emitter, f.sub, sub_prefix);
+            continue;
+        }
+        try emitter.write("const ");
+        try writeBranchName(emitter, f.name);
+        if (f.type_text) |t| {
+            try emitter.write(": ");
+            try emitter.write(t);
+        }
+        try emitter.write(" = ");
+        try emitter.write(prefix);
+        try emitter.write(".");
+        try writeBranchName(emitter, f.name);
+        try emitter.write("; _ = &");
+        try writeBranchName(emitter, f.name);
+        try emitter.write("; ");
+    }
+}
+
 fn emitInlineCodeResolvingSplices(
     emitter: *CodeEmitter,
     ctx: *EmissionContext,
@@ -3346,7 +3382,13 @@ fn emitInlineCodeResolvingSplices(
             const cont = &continuations[idx];
             const binding = cont.binding orelse "_";
             try emitter.write("{ ");
-            if (std.mem.eql(u8, binding, "_")) {
+            if (cont.destructure.len > 0) {
+                // Shape-destructure: bind the arg once, then per-field consts.
+                try emitter.write("const __koru_dst = ");
+                try emitter.write(arg);
+                try emitter.write("; _ = &__koru_dst; ");
+                try emitDestructureConsts(emitter, cont.destructure, "__koru_dst");
+            } else if (std.mem.eql(u8, binding, "_")) {
                 try emitter.write("_ = ");
                 try emitter.write(arg);
                 try emitter.write("; ");
@@ -4398,7 +4440,12 @@ fn emitHandlersStruct(
             else
                 false;
             const cont_binding: []const u8 = if (cont.binding) |b| b else branch.name;
-            if (has_named_binding) {
+            if (cont.destructure.len > 0) {
+                // Shape-destructure: per-field consts off the shared param.
+                try emitter.writeIndent();
+                try emitDestructureConsts(emitter, cont.destructure, shared_param_name);
+                try emitter.write("\n");
+            } else if (has_named_binding) {
                 try emitter.writeIndent();
                 try emitter.write("const ");
                 try writeBranchName(emitter, cont_binding);
@@ -5799,6 +5846,13 @@ fn emitContinuationList(
             try emitter.write(";\n");
         }
 
+        // Shape-destructure: per-field consts off the payload binding.
+        if (cont.destructure.len > 0) {
+            try emitter.writeIndent();
+            try emitDestructureConsts(emitter, cont.destructure, binding_name);
+            try emitter.write("\n");
+        }
+
         // Check if continuation has a when-clause condition
         // (e.g., from tap: ~tap(foo -> *) | branch b when b.flag |> handler())
         if (cont.condition) |condition| {
@@ -6188,7 +6242,11 @@ fn emitContinuationCase(
             try emitter.write(" => |");
         }
 
-        if (binding_name.len == 0 or !binding_used) {
+        if (cont.destructure.len > 0) {
+            // Shape-destructure: capture the payload under a temp, then
+            // per-field consts at the top of the case block.
+            try emitter.write("__koru_dst");
+        } else if (binding_name.len == 0 or !binding_used) {
             try emitter.write("_");
         } else {
             try writeBranchName(emitter, binding_name);
@@ -6199,6 +6257,12 @@ fn emitContinuationCase(
         try emitter.write(" => {\n");
     }
     emitter.indent();
+
+    if (cont.destructure.len > 0 and has_payload_fields) {
+        try emitter.writeIndent();
+        try emitDestructureConsts(emitter, cont.destructure, "__koru_dst");
+        try emitter.write("\n");
+    }
 
     // Set current branch for tap matching (used by label_jump steps)
     const saved_branch = ctx.current_branch;
@@ -6249,7 +6313,7 @@ fn emitWhenClauseCase(
     result_counter: *usize,
 ) !void {
     const first_cont = group.continuations[0];
-    const binding_name = first_cont.binding orelse first_cont.branch;
+    const binding_name = if (first_cont.destructure.len > 0) "__koru_dst" else first_cont.binding orelse first_cont.branch;
 
     // Check if any continuation in the group wants mutable binding
     var needs_mutable = false;
@@ -6272,6 +6336,14 @@ fn emitWhenClauseCase(
     try writeBranchName(emitter, binding_name);
     try emitter.write("| {\n");
     emitter.indent();
+
+    if (first_cont.destructure.len > 0) {
+        // Shape-destructure: per-field consts before the guard chain so
+        // when-conditions can reference destructured names.
+        try emitter.writeIndent();
+        try emitDestructureConsts(emitter, first_cont.destructure, "__koru_dst");
+        try emitter.write("\n");
+    }
 
     // Emit if/else chain for when-clauses
     for (group.continuations, 0..) |cont, idx| {

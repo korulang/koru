@@ -1951,6 +1951,7 @@ pub const AutoDischargeInserter = struct {
                 return .{
                     .branch = try self.allocator.dupe(u8, original.branch),
                     .binding = if (original.binding) |b| try self.allocator.dupe(u8, b) else null,
+                    .destructure = try ast.copyDestructure(self.allocator, original.destructure),
                     .binding_annotations = original.binding_annotations,
                     .condition = if (original.condition) |c| try self.allocator.dupe(u8, c) else null,
                     .node = .{ .invocation = disposal_invocation },
@@ -1981,6 +1982,7 @@ pub const AutoDischargeInserter = struct {
                 return .{
                     .branch = try self.allocator.dupe(u8, original.branch),
                     .binding = if (original.binding) |b| try self.allocator.dupe(u8, b) else null,
+                    .destructure = try ast.copyDestructure(self.allocator, original.destructure),
                     .binding_annotations = original.binding_annotations,
                     .condition = if (original.condition) |c| try self.allocator.dupe(u8, c) else null,
                     .node = .{ .invocation = disposal_invocation },
@@ -2151,6 +2153,7 @@ pub const AutoDischargeInserter = struct {
         const new_target_cont = ast.Continuation{
             .branch = try self.allocator.dupe(u8, target_cont.branch),
             .binding = if (target_cont.binding) |b| try self.allocator.dupe(u8, b) else null,
+            .destructure = try ast.copyDestructure(self.allocator, target_cont.destructure),
             .binding_annotations = target_cont.binding_annotations,
             .condition = if (target_cont.condition) |c| try self.allocator.dupe(u8, c) else null,
             .node = target_cont.node,
@@ -2272,6 +2275,7 @@ pub const AutoDischargeInserter = struct {
         const new_target_cont = ast.Continuation{
             .branch = try self.allocator.dupe(u8, actual_target.branch),
             .binding = if (actual_target.binding) |b| try self.allocator.dupe(u8, b) else null,
+            .destructure = try ast.copyDestructure(self.allocator, actual_target.destructure),
             .binding_annotations = actual_target.binding_annotations,
             .condition = if (actual_target.condition) |c| try self.allocator.dupe(u8, c) else null,
             .node = actual_target.node,

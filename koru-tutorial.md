@@ -211,36 +211,3 @@ Opening file: test.txt
 Closing file
 ```
 
-### 400_070_effect_branch_minimal
-
-```koru
-// Test: minimum effect-branch program — proc yields, consumer handles.
-//
-// `! pong []const u8` is an effect branch; the proc body calls `pong(msg)`
-// which transfers control to the consumer's `! pong reply |> ...` handler,
-// runs it, then returns. No terminal `|` branches — this is a void event
-// with one effect operation.
-
-~import std/io
-
-const std = @import("std");
-
-~pub event ping { msg: []const u8 }
-! pong []const u8
-
-~proc ping|zig {
-    pong(msg);
-}
-
-~ping(msg: "hello effect branches")
-! pong reply |> std/io:print.blk {
-    {{ reply:s }}
-}
-```
-
-**Output:**
-
-```
-hello effect branches
-```
-

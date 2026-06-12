@@ -15,10 +15,21 @@ rewrite the ledgers, delete the entry.
 
 ## 1. Regex GROUP captures
 **What:** pattern branches bind only the whole matched text (cut-1 full
-match); `(\d+)x(\d+)x(\d+)` cannot deliver its three numbers.
-**Design open:** positional vs named groups; TEXT vs TYPED payloads (the
-`0[i32]` move applied to groups would dissolve text→int conversion into the
-match contract).
+match); `(?<l>\d+)x(?<w>\d+)x(?<h>\d+)` cannot yet deliver its three numbers.
+**Design RATIFIED (2026-06-12):** NAMED groups only (`(?<name>...)`; bare
+`(...)` stays non-capturing structure — positional captures are
+unrepresentable, killing the silent-transposition trap). The pattern is the
+branch's PAYLOAD SCHEMA (the transform owns the pattern's semantics).
+Delivery via the now-LANDED general shape-destructure at the binding
+position: `| \`(?<l>\d+)x(?<w>\d+)x(?<h>\d+)\` { l: i64, w: i64, h: i64 } |>`.
+Types in the destructure = checked assertions generally; match's splice
+defines them as CONVERSION (the `0[i32]` move — dissolves text→int).
+**Remaining build:** named-group parsing + TDFA span extraction in
+regex_engine.zig (cut-2 restriction: no capture groups under quantifiers/
+alternation — rejected loudly, same doctrine as backrefs) + match transform
+emits the payload struct + typed conversion in the splice.
+**Landed substrate:** destructure pins 020_016..020 (flat/nested-host/
+effect-branch/KORU100-per-field/KORU101).
 **Retires:** `parse-dims` in BOTH day-2 ledgers.
 **Blocks forward:** day 6 (`turn on 0,0 through 999,999`), 7 (wire
 expressions), 9/13/14/16 (sentence-shaped lines) — most parsing days.

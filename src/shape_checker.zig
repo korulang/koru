@@ -901,17 +901,19 @@ pub const ShapeChecker = struct {
 
             if (resolveDeclaredBranch(event_branches, cont.branch)) |branch| {
                 const has_payload = branch.payload.is_wildcard or branch.payload.fields.len > 0;
-                if (has_payload and cont.binding == null) {
+                const has_binding = cont.binding != null or cont.destructure.len > 0;
+                if (has_payload and !has_binding) {
                     try self.reporter.addErrorAtLocation(.KORU030, location,
                         "branch '{s}' has payload but no binding", .{cont.branch});
                     has_errors = true;
                 }
                 // The void half of the linear rule: a branch that carries
                 // nothing has nothing to bind OR discard — `_` included.
-                if (!has_payload and cont.binding != null) {
+                // A destructure on a void branch is the same error.
+                if (!has_payload and has_binding) {
                     try self.reporter.addErrorAtLocation(.KORU101, location,
                         "branch '{s}' carries no payload — remove the binding '{s}'",
-                        .{ cont.branch, cont.binding.? });
+                        .{ cont.branch, cont.binding orelse "{...}" });
                     has_errors = true;
                 }
             }

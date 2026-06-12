@@ -1,0 +1,12 @@
+// Destructured fields are bindings: each named field must be USED or be
+// spelled `_` — KORU100 per field, the same linear discipline as any
+// binding. `age` is named but never read.
+~import std/io
+
+~pub event fetch {}
+| found { name: []const u8, age: i64 }
+
+~proc fetch|zig { return .{ .found = .{ .name = "lars", .age = 44 } }; }
+
+~fetch()
+| found { name, age } |> std/io:print.ln("only {{ name:s }}")
