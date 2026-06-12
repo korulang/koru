@@ -1,0 +1,33 @@
+// FRONTIER LEDGER: readout compare ← groups/string-ops.
+
+const std = @import("std");
+
+const readout = [_]struct { name: []const u8, v: i64 }{
+    .{ .name = "children", .v = 3 }, .{ .name = "cats", .v = 7 },
+    .{ .name = "samoyeds", .v = 2 }, .{ .name = "pomeranians", .v = 3 },
+    .{ .name = "akitas", .v = 0 },   .{ .name = "vizslas", .v = 0 },
+    .{ .name = "goldfish", .v = 5 }, .{ .name = "trees", .v = 3 },
+    .{ .name = "cars", .v = 2 },     .{ .name = "perfumes", .v = 1 },
+};
+
+~proc check-sue|zig {
+    const colon = std.mem.indexOf(u8, line, ":").?;
+    const sue_no = std.fmt.parseInt(i64, line[4..colon], 10) catch unreachable;
+    var it = std.mem.splitSequence(u8, line[colon + 2 ..], ", ");
+    while (it.next()) |pair| {
+        const c2 = std.mem.indexOf(u8, pair, ": ").?;
+        const prop = pair[0..c2];
+        const v = std.fmt.parseInt(i64, pair[c2 + 2 ..], 10) catch unreachable;
+        for (readout) |r| {
+            if (!std.mem.eql(u8, r.name, prop)) continue;
+            const ok = if (ranged == 1 and (std.mem.eql(u8, prop, "cats") or std.mem.eql(u8, prop, "trees")))
+                v > r.v
+            else if (ranged == 1 and (std.mem.eql(u8, prop, "pomeranians") or std.mem.eql(u8, prop, "goldfish")))
+                v < r.v
+            else
+                v == r.v;
+            if (!ok) return .{ .no = .{} };
+        }
+    }
+    return .{ .match = sue_no };
+}

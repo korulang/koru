@@ -1,0 +1,3 @@
+Sue 1: cats: 8, trees: 4, cars: 2
+Sue 2: children: 3, goldfish: 5, perfumes: 1
+Sue 3: vizslas: 1, cars: 2
