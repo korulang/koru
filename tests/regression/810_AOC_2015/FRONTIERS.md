@@ -108,6 +108,23 @@ collateral.
 guard-grouped handlers, variant invocations, label loops, mock impls
 (395_009 pin). The legacy path dies when the last migrates.
 
+## 7. Toolchain pins from the full-calendar climb (2026-06-13)
+Three compiler bugs found and pinned during the 25-day grind — never
+circumvented; every workaround in the corpus cites its pin:
+- **210_123** — label anchor on a SUBFLOW RHS panics koruc (empty
+  invocation path → tap_transformer index-out-of-bounds). Top-level label
+  folds work (810_231's VM proves it); only the subflow form dies.
+  Workarounds: day 4/11/20 ledgers carry host loops citing this.
+- **210_124** — `<` inside an if condition drops the ENTIRE argument
+  (empty args → `if ()`). `>`/`>=` fine. Mechanism guess (UNVERIFIED):
+  phantom-angle scan. Workaround: flipped operands (day 12).
+- **640_004** — match alternation-scale ceiling: 9 alternation branches
+  trip BufferOverflow at emission; 676 (finite-alphabet backreference
+  encoding) fails as a bogus KORU100 via compileError-replacement —
+  failure should be loud and named. Blocks day 5p2's pure form.
+All three carry Lars's syntax caveat: Claude-authored mid-grind — if a
+pin stays red after its fix, review the pin's own spelling together first.
+
 ## 6. Long-horizon tensions (named, not blocking)
 - **Target-neutral expressions:** `c == '('`, `pos.y + 1` are Zig-flavored
   leaves; the legal-gap doctrine covers Zig-target runs. The layered
