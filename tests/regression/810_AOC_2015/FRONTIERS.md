@@ -28,6 +28,13 @@ defines them as CONVERSION (the `0[i32]` move — dissolves text→int).
 regex_engine.zig (cut-2 restriction: no capture groups under quantifiers/
 alternation — rejected loudly, same doctrine as backrefs) + match transform
 emits the payload struct + typed conversion in the splice.
+**STRICT 1:1 (Lars-ratified 2026-06-12):** destructure fields ↔ named
+groups must match BOTH ways, compile-time error from the transform (it
+owns pattern AND destructure at the same site). Unwanted capture = spell
+it `(...)` — the discard form lives in the pattern. Consequence: tags are
+emitted exactly for delivered groups (binding-presence-picks-the-engine,
+enforced not inferred). Whole-payload binding `| pat dims |>` binds all
+named groups as the struct (KORU100 on dims covers usage).
 **Landed substrate:** destructure pins 020_016..020 (flat/nested-host/
 effect-branch/KORU100-per-field/KORU101).
 **Retires:** `parse-dims` in BOTH day-2 ledgers.
