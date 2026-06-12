@@ -1,6 +1,6 @@
 // Test: Emitter wrapper import and handler generation
 // This verifies that:
-// 1. $std/emitter module exists
+// 1. std/emitter module exists
 // 2. emit.program event can be imported
 // 3. Handler code generates without errors
 // 4. Backend compiles successfully with emitter wrapper

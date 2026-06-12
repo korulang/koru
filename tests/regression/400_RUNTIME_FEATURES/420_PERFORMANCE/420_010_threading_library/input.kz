@@ -1,5 +1,5 @@
 // ============================================================================
-// Threading Library Demo: Using $std/threading
+// Threading Library Demo: Using std/threading
 // ============================================================================
 // Demonstrates using the generic threading library to solve the same
 // multi-consumer problem as test 2005, but with REUSABLE primitives!
@@ -14,11 +14,11 @@
 // 4. Use worker.spawn.join to wait for all workers
 // 5. Extract results from contexts
 //
-// All threading at SEMANTIC level (events from $std/threading)!
+// All threading at SEMANTIC level (events from std/threading)!
 // ============================================================================
 
 const std = @import("std");
-~import $std/threading
+~import std/threading
 
 // ============================================================================
 // MPMC Ring Implementation (same as test 2005)
@@ -276,7 +276,7 @@ fn consumerWorker(ctx: *anyopaque) *anyopaque {
 }
 
 // ============================================================================
-// Main Flow: Using $std/threading!
+// Main Flow: Using std/threading!
 // ============================================================================
 // This is the beautiful part - we use the LIBRARY, not inline implementations!
 //

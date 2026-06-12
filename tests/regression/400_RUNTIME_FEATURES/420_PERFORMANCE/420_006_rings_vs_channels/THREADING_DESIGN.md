@@ -180,7 +180,7 @@ The `spawn` proc executes the FlowAST in a new thread:
 }
 ```
 
-Where `spawn_thread_with_flow` is in `$std/threading`:
+Where `spawn_thread_with_flow` is in `std/threading`:
 
 ```koru
 // Helper function (probably in Zig for now)
@@ -345,7 +345,7 @@ This is like **closure capture**!
 
 ### Phase 4: Standard Library
 
-- [ ] Create `$std/threading` module
+- [ ] Create `std/threading` module
 - [ ] Implement `spawn` event
 - [ ] Implement `join` event
 - [ ] Implement `detach` event

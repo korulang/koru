@@ -8,7 +8,7 @@ When creating array literals in flows using types from imported modules, the gen
 
 ## Minimal Reproduction
 ```koru
-~import $std/threading
+~import std/threading
 
 ~makeHandle(id: 1)
 | made h1 |> makeHandle(id: 2)

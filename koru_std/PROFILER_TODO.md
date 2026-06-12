@@ -2,7 +2,7 @@
 
 ## What Works Today ✅
 
-The profiler in `$std/profiler` is a **working proof-of-concept** that demonstrates:
+The profiler in `std/profiler` is a **working proof-of-concept** that demonstrates:
 
 1. **Meta-events fire correctly**
    - `koru:start` fires at program startup
@@ -21,7 +21,7 @@ The profiler in `$std/profiler` is a **working proof-of-concept** that demonstra
    - Load `/tmp/koru_profile.json` in `chrome://tracing` to visualize
 
 4. **Zero-cost when disabled**
-   - Conditional import: `~[PROFILE]import "$std/profiler"`
+   - Conditional import: `~[PROFILE]import "std/profiler"`
    - Without `--PROFILE` flag, entire profiler dead-strips at compile time
    - No runtime cost in production builds
 
@@ -174,7 +174,7 @@ This profiler embodies Koru's "let it fail loudly" principle:
 
 ```koru
 // In your Koru program
-~[PROFILE]import "$std/profiler"
+~[PROFILE]import "std/profiler"
 
 ~event process_data { items: []Item }
 | done { results: []Result }
@@ -208,7 +208,7 @@ This is a **working, honest, educational proof-of-concept**. It:
 - ⚠️ Documents its limitations clearly
 - 🚀 Provides clear path to production-ready version
 
-**Ship it in `$std` with pride, knowing exactly what it is and what it isn't.**
+**Ship it in `std` with pride, knowing exactly what it is and what it isn't.**
 
 ---
 

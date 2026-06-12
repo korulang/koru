@@ -2,7 +2,7 @@
 
 ## Status: BLOCKED ⚠️
 
-This test demonstrates using `$std/threading` - a generic threading library based on the progressive disclosure pattern proven in test 2005.
+This test demonstrates using `std/threading` - a generic threading library based on the progressive disclosure pattern proven in test 2005.
 
 **The library design is CORRECT and the pattern WORKS!**
 
@@ -18,7 +18,7 @@ However, we're hitting **codegen bugs** that prevent the test from compiling to 
    - `worker.spawn.await` (wait for single)
    - `worker.spawn.join` (wait for multiple)
 
-2. **Import works**: `~import $std/threading` resolves correctly
+2. **Import works**: `~import std/threading` resolves correctly
 
 3. **Type checking passes**: All event calls type-check correctly
 

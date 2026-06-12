@@ -3,7 +3,7 @@
 //
 // DESIGN:
 // - Unlike control.kz (comptime transform), this evaluates at RUNTIME
-// - Uses the expression evaluator ($std/eval) to evaluate conditions
+// - Uses the expression evaluator (std/eval) to evaluate conditions
 // - Matches the same branch names: | then |> and | else |>
 // - For use with the interpreter when executing parsed Koru source
 //
@@ -50,7 +50,7 @@ const std = @import("std");
 const ast = @import("ast");
 
 // ============================================================================
-// VALUE TYPE - Matches $std/eval
+// VALUE TYPE - Matches std/eval
 // ============================================================================
 
 pub const Value = union(enum) {
@@ -72,7 +72,7 @@ pub const Value = union(enum) {
 };
 
 // ============================================================================
-// BINDINGS - Matches $std/eval
+// BINDINGS - Matches std/eval
 // ============================================================================
 
 pub const Bindings = struct {

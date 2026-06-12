@@ -9,7 +9,7 @@
 const std = @import("std");
 
 // Re-implement Value and Bindings locally to test the concepts
-// The actual $std/eval has these - this validates the design
+// The actual std/eval has these - this validates the design
 
 pub const Value = union(enum) {
     bool_val: bool,

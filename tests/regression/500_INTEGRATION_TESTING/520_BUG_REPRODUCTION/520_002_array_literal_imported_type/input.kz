@@ -10,7 +10,7 @@
 //
 // This affects creating arrays/slices of imported types in flow arguments.
 //
-// Discovered while building $std/threading library (test 2006)
+// Discovered while building std/threading library (test 2006)
 // ============================================================================
 
 const std = @import("std");

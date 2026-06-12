@@ -82,7 +82,7 @@ WalkNode {
 **Three consumers, one type:**
 
 - src parsers **produce** `WalkNode`,
-- the `$std/parsers` Koru events **carry** it as their `| ok` payload,
+- the `std/parsers` Koru events **carry** it as their `| ok` payload,
 - `liquid.zig` **consumes** it as a new `Value` variant.
 
 Open sub-decision: define `WalkNode` as one shared Zig struct that liquid imports
@@ -150,7 +150,7 @@ End-user Koru code then gets the whole palette first-class:
 | err m   |> report(message: m)
 ```
 
-This is the unlock: **every parser added to `$std/parsers` grows the end-user
+This is the unlock: **every parser added to `std/parsers` grows the end-user
 language surface for free.**
 
 ### Template door — a registered filter in `template_processor`
@@ -351,7 +351,7 @@ expressions. Today we pay for both and bank neither.
   pattern to mirror).
 - `compiler.kz:1305-1307` event w/ `| ok`/`| failed` branches; `:1911`
   `~proc check_structure|zig` `@import`-ing a Zig lib (event-wraps-Zig pattern).
-- `main.zig:6425-6441` auto-inject `~import "$std/compiler"`.
+- `main.zig:6425-6441` auto-inject `~import "std/compiler"`.
 - `compiler.kz:402-406` `template_processor` build imports (where to add parsers).
 - `liquid.zig`: no filters (`:142-158`), `Value = {string,boolean,array}`,
   Context `parent`/`scope` (`:42-88`), `comp error` channel (`:100-112`,`:169-179`),

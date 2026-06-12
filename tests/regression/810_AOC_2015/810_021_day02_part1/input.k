@@ -5,7 +5,6 @@
 // (here: parse-dims, which regex GROUPS will retire).
 
 import std/io
-import std/control
 
 const { presents: &[_][]const u8{ "2x3x4", "1x1x10" } }
 

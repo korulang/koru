@@ -40,7 +40,7 @@ These cost hours if you don't know them. Each is expanded in `CLAUDE.md` /
   pure Koru. Branch selection (mapping one event's branches to another's, and
   `when`-guards) is a Koru act. For conditional selection use `~if(cond)
   | then |> ... | else |> ...` (a fast convenience over `when`; available once
-  you import any `$std` module). A `~proc …|zig { ... }` host body is the
+  you import any `std` module). A `~proc …|zig { ... }` host body is the
   *escape hatch*, reserved for an actual side effect or collecting data across
   a call. If a proc body is only selecting a branch with an `if`, it wants to
   be a subflow. **Known gap:** `~if`/`~for` as a subflow-body RHS

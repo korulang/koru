@@ -11,7 +11,7 @@ echo "  Koru Parser Runtime Benchmark"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 echo "This benchmark measures how fast a Koru program can parse"
-echo "Koru source code at runtime using \$std/parser."
+echo "Koru source code at runtime using \std/parser."
 echo ""
 
 # Compile the benchmark

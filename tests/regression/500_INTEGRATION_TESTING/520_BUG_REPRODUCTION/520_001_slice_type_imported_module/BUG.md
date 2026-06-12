@@ -8,7 +8,7 @@ When Koru generates Zig code for slice types containing imported module types, t
 
 ## Minimal Reproduction
 ```koru
-~import $std/threading
+~import std/threading
 
 ~event getHandles {}
 | got { handles: []const threading:WorkerHandle }
@@ -43,7 +43,7 @@ The prefix should apply to the module name INSIDE the slice type, not to the sli
 ## Impact
 - Cannot return slices of imported types from events
 - Cannot pass slices of imported types to events
-- Blocks generic libraries like `$std/threading`
+- Blocks generic libraries like `std/threading`
 
 ## Workaround
 None currently. Possible workarounds:

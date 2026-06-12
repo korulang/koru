@@ -1,5 +1,5 @@
 // ============================================================================
-// $std/threading - Generic Threading Primitives
+// std/threading - Generic Threading Primitives
 // ============================================================================
 // Progressive Disclosure Pattern for Concurrency:
 //

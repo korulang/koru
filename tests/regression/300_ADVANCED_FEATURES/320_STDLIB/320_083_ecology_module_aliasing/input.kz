@@ -10,7 +10,7 @@
 ~import std/io
 
 // Alias the control module
-~import ctrl = $std/control
+~import ctrl = std/control
 
 // Use the alias - should still resolve keywords correctly
 ~ctrl:for(0..3)

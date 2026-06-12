@@ -85,7 +85,7 @@ the thesis below is demonstrated on **real emitter output** (not hand-modeled JS
   infrastructure modules (their procs are `|zig`/`[comptime]`, never `|js`). Proc lookup is scoped
   to the event's own module (`findJsProcIn`) so same-named procs across modules don't cross-match.
   Added `print|js`/`println|js` to `koru_std/io.kz` (`process.stdout.write` / `console.log` —
-  additive, the Zig target ignores `|js` variants). RESULT: `~import "$std/io"` +
+  additive, the Zig target ignores `|js` variants). RESULT: `~import std/io` +
   `~std.io:println(text: "Hello, world!")` emits clean JS → node prints `Hello, world!`, and the
   Zig target prints the same. Pinned as a CROSS-TARGET parity test:
   `tests/regression/600_STDLIB/630_IO/630_001_io_println_cross_target` (`LANGUAGES: zig js`) — the

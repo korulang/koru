@@ -10,7 +10,7 @@
 //
 // This affects any event that returns/accepts slices of imported types.
 //
-// Discovered while building $std/threading library (test 2006)
+// Discovered while building std/threading library (test 2006)
 // ============================================================================
 
 const std = @import("std");

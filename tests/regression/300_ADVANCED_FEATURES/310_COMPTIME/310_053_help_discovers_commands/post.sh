@@ -19,6 +19,6 @@ if echo "$HELP_OUTPUT" | grep -q "deps"; then
     echo "=== PASS: 'deps' command discovered in help output ==="
 else
     echo "=== FAIL: 'deps' command NOT found in help output ==="
-    echo "Expected: Commands section should include 'deps' from \$std/deps"
+    echo "Expected: Commands section should include 'deps' from \std/deps"
     exit 1
 fi

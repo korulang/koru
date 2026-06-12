@@ -4,7 +4,7 @@
 // commands declared via ~std/compiler:command.declare in the input file
 // and its imports.
 //
-// This test imports $std/deps which declares the "deps" command.
+// This test imports std/deps which declares the "deps" command.
 // The help output should show "deps" in the Commands section.
 //
 // Run: koruc input.kz --help

@@ -12,7 +12,6 @@
 // each rule's pass-arm runs the next rule and rule 3's no-match increments.
 
 import std/io
-import std/control
 import std/regex
 
 // (single-line block: multi-line const{} with nested braces is a known

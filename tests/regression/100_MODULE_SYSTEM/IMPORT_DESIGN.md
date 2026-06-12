@@ -6,7 +6,7 @@
 
 ### Why Auto-Import Parents?
 
-When you import `$std/io/file`, you're expressing interest in file I/O. The parent `io.kz` likely contains utilities that file operations depend on (like `println` for logging). Requiring explicit import of both would be tedious and error-prone.
+When you import `std/io/file`, you're expressing interest in file I/O. The parent `io.kz` likely contains utilities that file operations depend on (like `println` for logging). Requiring explicit import of both would be tedious and error-prone.
 
 **The path hierarchy implies the dependency.**
 
@@ -17,7 +17,7 @@ The `index.kz` at a library's root provides:
 - Future home for `[keyword]`-annotated events
 - Common types every user of the library needs
 
-When you import anything from `$std/*`, you implicitly want the stdlib's core utilities.
+When you import anything from `std/*`, you implicitly want the stdlib's core utilities.
 
 ### Both Are Optional
 

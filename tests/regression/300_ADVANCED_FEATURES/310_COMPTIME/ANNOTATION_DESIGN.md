@@ -116,7 +116,7 @@ pub const EventDecl = struct {
 ### Standard Library Helpers
 
 ```koru
-// In $std/compiler/annotations.kz
+// In std/compiler/annotations.kz
 
 // Check if annotation exists (exact match)
 ~proc has_annotation {
@@ -357,7 +357,7 @@ For parser implementation:
 
 For standard library:
 
-- [ ] Create `$std/compiler/annotations.kz`
+- [ ] Create `std/compiler/annotations.kz`
 - [ ] Implement `has_annotation(annotations, name)`
 - [ ] Implement `get_annotation(annotations, prefix)`
 - [ ] Implement `parse_param(annot, key)` for key-value parsing

@@ -3,7 +3,7 @@
 Koru is an event continuation language that compiles to Zig. It provides a structured way to handle control flow through events, continuations, and taps.
 
 ```koru
-~import "$std/io"
+~import std/io
 
 ~event greet { name: []const u8 }
 | greeting []const u8

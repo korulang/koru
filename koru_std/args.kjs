@@ -1,4 +1,4 @@
-// $std/args — JavaScript implementation facet.
+// std/args — JavaScript implementation facet.
 //
 // Events are declared in the `args.k` companion (merged at import). This file
 // holds the `|js` proc bodies.

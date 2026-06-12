@@ -578,8 +578,8 @@ fn buildItemFromCode(allocator: std.mem.Allocator, code: []const u8, branch: Bra
 
 **The user code**:
 ```koru
-~import "$std/io"
-~import "$std/codeGen"
+~import std/io
+~import "std/codeGen"
 
 ~event getUserData { } | data { name: []const u8, age: i32 }
 

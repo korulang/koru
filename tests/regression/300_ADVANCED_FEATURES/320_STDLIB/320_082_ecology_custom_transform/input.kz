@@ -2,7 +2,7 @@
 //
 // ISSUE: The transform mechanism shouldn't require magic. A user should be
 // able to define their own [transform] event and have it work exactly like
-// ~for, ~if, ~capture from $std/control.
+// ~for, ~if, ~capture from std/control.
 //
 // This test captures the intention that transforms are NOT special-cased
 // for stdlib - they're a general mechanism.

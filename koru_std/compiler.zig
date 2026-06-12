@@ -1401,7 +1401,7 @@ pub const PROGRAM_AST = Program{
                 \\    // Uses __ccp_std local import to avoid namespace pollution
                 \\
                 \\    // CCP is a self-governing feature that requires BOTH:
-                \\    // 1. User imports $std/ccp (declares intent to use CCP)
+                \\    // 1. User imports std/ccp (declares intent to use CCP)
                 \\    // 2. Compiler flag --ccp is set (enables CCP infrastructure)
                 \\    // This pattern allows features to exist in AST but remain dormant without flags
                 \\
@@ -1410,13 +1410,13 @@ pub const PROGRAM_AST = Program{
                 \\        return .{ .instrumented = .{ .ast = __koru_event_input.ast } };
                 \\    }
                 \\
-                \\    // Check if $std/ccp was imported (user declared intent)
+                \\    // Check if std/ccp was imported (user declared intent)
                 \\    var has_ccp_import = false;
                 \\    for (__koru_event_input.ast.items) |item| {
                 \\        if (item == .import_decl) {
                 \\            const imp = item.import_decl;
-                \\            // Check if path is exactly "$std/ccp" (user program observability)
-                \\            if (std.mem.eql(u8, imp.path, "$std/ccp")) {
+                \\            // Check if path is exactly "std/ccp" (user program observability)
+                \\            if (std.mem.eql(u8, imp.path, "std/ccp")) {
                 \\                has_ccp_import = true;
                 \\                break;
                 \\            }
@@ -2902,7 +2902,7 @@ pub const PROGRAM_AST = Program{
                 \\    // Uses __ccp_std local import to avoid namespace pollution
                 \\
                 \\    // CCP is a self-governing feature that requires BOTH:
-                \\    // 1. User imports $std/ccp (declares intent to use CCP)
+                \\    // 1. User imports std/ccp (declares intent to use CCP)
                 \\    // 2. Compiler flag --ccp is set (enables CCP infrastructure)
                 \\    // This pattern allows features to exist in AST but remain dormant without flags
                 \\
@@ -2911,13 +2911,13 @@ pub const PROGRAM_AST = Program{
                 \\        return .{ .instrumented = .{ .ast = __koru_event_input.ast } };
                 \\    }
                 \\
-                \\    // Check if $std/ccp was imported (user declared intent)
+                \\    // Check if std/ccp was imported (user declared intent)
                 \\    var has_ccp_import = false;
                 \\    for (__koru_event_input.ast.items) |item| {
                 \\        if (item == .import_decl) {
                 \\            const imp = item.import_decl;
-                \\            // Check if path is exactly "$std/ccp" (user program observability)
-                \\            if (std.mem.eql(u8, imp.path, "$std/ccp")) {
+                \\            // Check if path is exactly "std/ccp" (user program observability)
+                \\            if (std.mem.eql(u8, imp.path, "std/ccp")) {
                 \\                has_ccp_import = true;
                 \\                break;
                 \\            }
@@ -3504,7 +3504,7 @@ const compiler_passes_inject_ccp = struct {
     // Uses __ccp_std local import to avoid namespace pollution
 
     // CCP is a self-governing feature that requires BOTH:
-    // 1. User imports $std/ccp (declares intent to use CCP)
+    // 1. User imports std/ccp (declares intent to use CCP)
     // 2. Compiler flag --ccp is set (enables CCP infrastructure)
     // This pattern allows features to exist in AST but remain dormant without flags
 
@@ -3513,13 +3513,13 @@ const compiler_passes_inject_ccp = struct {
         return .{ .instrumented = .{ .ast = __koru_event_input.ast } };
     }
 
-    // Check if $std/ccp was imported (user declared intent)
+    // Check if std/ccp was imported (user declared intent)
     var has_ccp_import = false;
     for (__koru_event_input.ast.items) |item| {
         if (item == .import_decl) {
             const imp = item.import_decl;
-            // Check if path is exactly "$std/ccp" (user program observability)
-            if (std.mem.eql(u8, imp.path, "$std/ccp")) {
+            // Check if path is exactly "std/ccp" (user program observability)
+            if (std.mem.eql(u8, imp.path, "std/ccp")) {
                 has_ccp_import = true;
                 break;
             }
@@ -4015,7 +4015,7 @@ const compiler_passes_inject_ccp = struct {
     // Uses __ccp_std local import to avoid namespace pollution
 
     // CCP is a self-governing feature that requires BOTH:
-    // 1. User imports $std/ccp (declares intent to use CCP)
+    // 1. User imports std/ccp (declares intent to use CCP)
     // 2. Compiler flag --ccp is set (enables CCP infrastructure)
     // This pattern allows features to exist in AST but remain dormant without flags
 
@@ -4024,13 +4024,13 @@ const compiler_passes_inject_ccp = struct {
         return .{ .instrumented = .{ .ast = __koru_event_input.ast } };
     }
 
-    // Check if $std/ccp was imported (user declared intent)
+    // Check if std/ccp was imported (user declared intent)
     var has_ccp_import = false;
     for (__koru_event_input.ast.items) |item| {
         if (item == .import_decl) {
             const imp = item.import_decl;
-            // Check if path is exactly "$std/ccp" (user program observability)
-            if (std.mem.eql(u8, imp.path, "$std/ccp")) {
+            // Check if path is exactly "std/ccp" (user program observability)
+            if (std.mem.eql(u8, imp.path, "std/ccp")) {
                 has_ccp_import = true;
                 break;
             }

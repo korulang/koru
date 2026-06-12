@@ -174,7 +174,7 @@ Back-compat is implicitly proven by the 507 pre-existing `.kz`-only tests contin
 
 - **Probe order = match order.** Used the same longest-first ordering (`.kgpu, .kjs, .kz, .kc, .k`) for both extension recognition AND file-system probing. A separate probe order biased toward `.kz` would save 2 wasted stat() calls per legacy import, but adds dual-ordering complexity. The 2 stat() calls are negligible compared to actual file parsing; revisit only if profiling demands it.
 - **Absolute-path resolution now fails loudly.** Old `resolve()` blindly returned the path with `.kz` appended without checking; downstream file-open errors hid the bad import. New behavior returns `error.ModuleNotFound` at resolution time, matching how other paths fail.
-- **Probe-via-resolver helper lives in `main.zig`.** `probeImportExtensions` takes an alias-prefixed stem (`$std/io`) and tries each extension through `resolver.resolveBoth`. Distinct from `resolveKoruFile`/`resolveKoruFileIn` which operate on filesystem paths directly. Different layers, different helpers.
+- **Probe-via-resolver helper lives in `main.zig`.** `probeImportExtensions` takes an alias-prefixed stem (`std/io`) and tries each extension through `resolver.resolveBoth`. Distinct from `resolveKoruFile`/`resolveKoruFileIn` which operate on filesystem paths directly. Different layers, different helpers.
 - **Index-file probing extends to all sites.** `queueIndexImport` (3321), the submodule-enumeration skip (3405), and the directory-source loader (3528) all now know that `index.<ext>` may use any Koru extension, not just `.kz`. The `index` convention is now multi-extension-aware end-to-end.
 
 **Followup lessons learned (read before any future addImport-style sweep):**

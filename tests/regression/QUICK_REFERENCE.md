@@ -184,14 +184,14 @@ Taps use `~tap()` with `->` to observe events **read-only**:
 ```
 
 **Path Aliases**:
-- `$std` - Standard library
+- `std` - Standard library
 - `$lib` - Project libraries
 - `$root` - Project root
 
 **Examples**:
 
 ```koru
-~import "$std/io"
+~import std/io
 ~import "$lib/database"
 ~import "utils/helpers"
 ```

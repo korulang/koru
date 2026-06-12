@@ -1,5 +1,5 @@
 // Test 612: CCP Opt-In via Import
-// Demonstrates that importing $std/ccp_taps enables JSON observability
+// Demonstrates that importing std/ccp_taps enables JSON observability
 
 ~import std/ccp
 

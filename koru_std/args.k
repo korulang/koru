@@ -1,4 +1,4 @@
-// $std/args — Command-line argument access
+// std/args — Command-line argument access
 //
 // Safe access to the process's command-line arguments. Works on both the Zig
 // and JavaScript targets.
@@ -9,7 +9,7 @@
 // `~import std/args` merges all same-stem facets into one module, so these
 // events are in scope (unqualified) for every implementation proc.
 //
-// For flag parsing and CLI frameworks, see $std/cli (future).
+// For flag parsing and CLI frameworks, see std/cli (future).
 
 // Get all arguments (including the program name at index 0).
 pub event all {}

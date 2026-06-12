@@ -1,4 +1,4 @@
-// $std/json - JSON encoding and decoding
+// std/json - JSON encoding and decoding
 //
 // Minimal JSON library for building and parsing JSON.
 // Uses Zig's std.json under the hood.

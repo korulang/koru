@@ -1,6 +1,6 @@
 // Test 430_008: Pipeline Profiling - Time Frontend Pass
 //
-// Override frontend pass to add timing using $std/time.
+// Override frontend pass to add timing using std/time.
 
 ~import std/compiler
 ~import std/time

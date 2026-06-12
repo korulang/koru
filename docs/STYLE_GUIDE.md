@@ -23,7 +23,7 @@ A Koru file follows this order:
 ```koru
 ~[comptime]
 
-~import "$std/io"
+~import std/io
 ~import "$app/domain"
 
 const std = @import("std");
@@ -94,7 +94,7 @@ For smaller subsections:
 ```koru
 ~[comptime]
 
-~import "$std/io"
+~import std/io
 
 const std = @import("std");
 
@@ -545,14 +545,14 @@ Avoid inline comments. If needed, align them:
 
 ### Import Order
 
-1. Standard library (`$std/...`)
+1. Standard library (`std/...`)
 2. Project modules (`$app/...`, `$lib/...`)
 
 Separate groups with blank line:
 
 ```koru
-~import "$std/io"
-~import "$std/fs"
+~import std/io
+~import "std/fs"
 
 ~import "$app/config"
 ~import "$app/domain/user"
@@ -563,7 +563,7 @@ Separate groups with blank line:
 Koru has **no import aliasing**. The full module path is always required in invocations:
 
 ```koru
-~import "$std/io"
+~import std/io
 ~import "$app/domain/user"
 
 // Invocations use FULL paths - no shortcuts
@@ -574,7 +574,7 @@ Koru has **no import aliasing**. The full module path is always required in invo
 ~user:get(id: 42)                         // WRONG - no aliasing
 ```
 
-The import prefix (e.g., `$std` → `std`) is defined in `koru.json`. The import statement makes the module available; the invocation always uses the full qualified path.
+The import prefix (e.g., `std` → `std`) is defined in `koru.json`. The import statement makes the module available; the invocation always uses the full qualified path.
 
 This explicitness is intentional: you can always tell exactly where an event comes from by reading the invocation.
 

@@ -1,7 +1,7 @@
 // Test 168: Import Registers Taps Automatically
 //
 // Tests that importing a module automatically registers any taps defined in it.
-// This is the mechanism that makes `~[profile]import "$std/profiler"` work -
+// This is the mechanism that makes `~[profile]import "std/profiler"` work -
 // the import adds the module's universal taps to the tap registry, enabling
 // full-program instrumentation with a single line.
 //

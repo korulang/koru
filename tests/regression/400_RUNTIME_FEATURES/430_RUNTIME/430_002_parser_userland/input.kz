@@ -1,5 +1,5 @@
 // Test: User-land parser access
-// Verify that $std/parser is available at runtime for dynamic parsing
+// Verify that std/parser is available at runtime for dynamic parsing
 
 ~import std/parser
 ~import std/io

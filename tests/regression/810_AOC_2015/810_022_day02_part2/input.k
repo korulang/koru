@@ -2,7 +2,6 @@
 // (2x3x4 → 34, 1x1x10 → 14; total = 48). PURE .k — see the .kz ledger.
 
 import std/io
-import std/control
 
 const { presents: &[_][]const u8{ "2x3x4", "1x1x10" } }
 

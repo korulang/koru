@@ -1,6 +1,6 @@
 // Test: Parser wrapper import and handler generation
 // This verifies that:
-// 1. $std/parser module exists
+// 1. std/parser module exists
 // 2. parse.source event can be imported
 // 3. Handler code generates without errors
 // 4. Backend compiles successfully with parser wrapper

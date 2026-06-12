@@ -5,7 +5,6 @@
 // 320_034/036/038).
 
 import std/io
-import std/control
 
 pub event visit { x: i64, y: i64 }
 

@@ -115,7 +115,7 @@ var build_requirements: std.ArrayList([]const u8) = undefined;
 
 **In user code:**
 ```koru
-~[comptime]import "$std/build"
+~[comptime]import "std/build"
 
 ~[comptime]build:requires {
     exe.linkSystemLibrary("sqlite3");
@@ -133,7 +133,7 @@ var build_requirements: std.ArrayList([]const u8) = undefined;
 
 **User writes:**
 ```koru
-~[comptime]import "$std/build"
+~[comptime]import "std/build"
 
 ~[comptime]build:requires {
     exe.linkSystemLibrary("sqlite3");
@@ -148,7 +148,7 @@ var build_requirements: std.ArrayList([]const u8) = undefined;
 
 **Step 1: Parse & Import**
 - Parse user file
-- Process `~[comptime]import "$std/build"`
+- Process `~[comptime]import "std/build"`
 - Load build.kz's AST (including its top-level `~[comptime(optional)]collect(...)`)
 - Add to program AST
 
@@ -174,7 +174,7 @@ var build_requirements: std.ArrayList([]const u8) = undefined;
 ### Zero Boilerplate
 User just imports and declares requirements:
 ```koru
-~[comptime]import "$std/build"
+~[comptime]import "std/build"
 ~[comptime]build:requires { exe.linkSystemLibrary("sqlite3"); }
 ```
 
@@ -271,7 +271,7 @@ koruc input.kz --disable=std.build:collect
 ### Custom Orchestration Example
 
 ```koru
-~[comptime]import "$std/build"
+~[comptime]import "std/build"
 
 ~[comptime]event custom_build {}
 ~[comptime]proc custom_build {

@@ -4,7 +4,6 @@
 // computes next values. Host code is zero lines; expression values only.
 
 import std/io
-import std/control
 
 const { input: "(()(()(" }
 

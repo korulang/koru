@@ -1,4 +1,4 @@
-// $std/args — Zig implementation facet.
+// std/args — Zig implementation facet.
 //
 // Events are declared in the `args.k` companion (merged at import). This file
 // holds the Zig-side helper and the `|zig` proc bodies.

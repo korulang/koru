@@ -27,7 +27,7 @@ pub const ParseResult = parser_impl.ParseResult;
 // =============================================================================
 // BUILD REQUIREMENTS - Include parser module in output binary
 // =============================================================================
-// When user code imports $std/parser, these requirements are collected
+// When user code imports std/parser, these requirements are collected
 // and the parser module (with all its dependencies) is included in the
 // final executable's build.zig.
 

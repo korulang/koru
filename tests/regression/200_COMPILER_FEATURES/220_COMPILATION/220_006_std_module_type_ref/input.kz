@@ -1,4 +1,4 @@
-// Test: Reference types from $std imports using module:Type syntax
+// Test: Reference types from std imports using module:Type syntax
 //
 // When we import a standard library module that exposes Zig types,
 // we should be able to reference those types in event signatures
