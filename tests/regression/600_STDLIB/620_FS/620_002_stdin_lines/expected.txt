@@ -1,0 +1,3 @@
+got: one
+got: two
+2 lines from stdin

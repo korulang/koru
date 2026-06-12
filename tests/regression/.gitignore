@@ -39,6 +39,9 @@
 !**/SHOULD_*
 !**/PARSER_TEST
 !**/LANGUAGES
+!**/ARGS
+!**/STDIN
+!**/input.txt
 
 # Keep documentation and marker files (at any depth)
 !**/README.md

@@ -1,3 +1,12 @@
+// RED PIN (2026-06-12): cross-module mocking × EFFECT BRANCHES.
+// The consumer below handles `! line` from std/fs:read-lines (effect shape).
+// The REAL path streams effects as handler CALLS during the proc (620_001
+// is green end-to-end); the MOCK path lowers the effect branch into the
+// result-dispatch switch (`.line =>`) against an Output union that
+// (correctly) holds terminals only — Zig rejects the phantom arm. Goes
+// green when mock emission learns the call/return split: effects are
+// DURING (handler calls), terminals are AFTER (the union).
+//
 // Test: Cross-module mocking
 //
 // This test verifies mocking events from IMPORTED modules.
@@ -22,7 +31,8 @@
 | failed []const u8
 
 ~process-config = std/fs:read-lines(path)
-| lines l => ok l.len
+! line _ |> _
+| done n => ok n
 | failed msg => failed msg
 
 // ============================================
@@ -40,11 +50,11 @@
 }
 
 // ============================================
-// Array literal mock
+// Terminal mock against the effect contract
 // ============================================
 
 ~test(Cross-module mock should return 3 lines) {
-    ~std/fs:read-lines => lines ["line1", "line2", "line3"]
+    ~std/fs:read-lines => done 3
 
     ~process-config(path: "/fake/path")
     | ok result |> assert(result == 3)

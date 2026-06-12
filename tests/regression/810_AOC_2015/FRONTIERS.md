@@ -77,14 +77,16 @@ rather than a standalone parse event — decide there first.
 **Pointers:** `koru_std/string.kz` (the spine); RED pin
 `610_007_reject_dangling_slice` (the borrow rule the ops will need).
 
-## 5. Day-1 enablers from the charter (still unbuilt)
-**What:** effect-shape `read-lines` (`! line l` via the for/each engine,
-`| done n`, `| failed e`; namespace open: `std/fs:` vs `std/io:file.*`) and
-the args FLAGS layer. Statement examples inline as consts so far — real
-puzzle inputs (gitignored, local) need file reading the moment we run them.
-**Blocks forward:** running ANY day against a real personal input.
-**Pointers:** charter (`project_aoc_2015_charter` memory); `koru_std/fs.kz:13`
-(the old array-shape read-lines).
+## 5. Mock machinery × effect branches
+**What:** mocking an event that declares effect branches emits the effect as
+a result-switch arm; the Output union (correctly) holds terminals only, so
+Zig rejects the phantom arm. The real path is fine — effects are handler
+CALLS during the proc, terminals return after.
+**Pointers:** RED pin `395_009_cross_module_mock` (header has the analysis).
+**Note:** gap 5 (read-lines + args verticals) CLOSED 2026-06-12 — effect-shape
+`std/fs:read-lines` + `std/io:read-lines` (stdin twin), harness STDIN piping,
+ARGS/STDIN/input.txt gitignore whitelists, zero-alloc argv. The args FLAGS
+layer (`~std/args:int(flag: ...)`) remains future polish, unblocking nothing.
 
 ## 6. Long-horizon tensions (named, not blocking)
 - **Target-neutral expressions:** `c == '('`, `pos.y + 1` are Zig-flavored

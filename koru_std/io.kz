@@ -110,6 +110,35 @@ const std = @import("std");
 // FILE/STDIN READING - For interpreter and scripting
 // ============================================================================
 
+// Read stdin as a stream of lines — the same effect contract as
+// std/fs:read-lines, sourced from stdin (the interactive/pipe vertical).
+~pub event read-lines {}
+! line []const u8
+| done usize
+| failed []const u8
+
+~proc read-lines|zig {
+    const stdin_file = std.fs.File.stdin();
+    const content = stdin_file.readToEndAlloc(koru_allocator(), 1024 * 1024 * 10) catch |err| {
+        const msg = switch (err) {
+            error.OutOfMemory => "Input too large (max 10MB)",
+            else => "Failed to read stdin",
+        };
+        return .{ .failed = msg };
+    };
+    defer koru_allocator().free(content);
+
+    var n: usize = 0;
+    var it = std.mem.splitScalar(u8, content, '\n');
+    while (it.next()) |raw| {
+        if (raw.len == 0 and it.peek() == null) break;
+        const l = if (raw.len > 0 and raw[raw.len - 1] == '\r') raw[0 .. raw.len - 1] else raw;
+        line(l);
+        n += 1;
+    }
+    return .{ .done = n };
+}
+
 // Read entire stdin as text
 ~pub event read-stdin {}
 | ok []const u8

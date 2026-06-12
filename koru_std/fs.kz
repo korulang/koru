@@ -9,13 +9,18 @@ const std = @import("std");
 // HIGH-LEVEL API (convenience, no handle management)
 // ============================================================================
 
-// Read entire file as array of lines
+// Read a file as a stream of lines — the EFFECT SHAPE (FRONTIERS gap 5,
+// charter-ratified): `! line l` fires per line DURING the read (handlers
+// complete before the buffer is freed — borrow-safe by construction),
+// `| done n` delivers the line count after, `| failed e` the error.
+// The old array shape (`| lines [][]const u8`) was a structural leaker:
+// it returned allocator-owned slices no Koru caller could free.
 ~pub event read-lines { path: []const u8 }
-| lines [][]const u8
+! line []const u8
+| done usize
 | failed []const u8
 
 ~proc read-lines|zig {
-    // Open the file
     const file = std.fs.cwd().openFile(path, .{}) catch |err| {
         const msg = switch (err) {
             error.FileNotFound => "File not found",
@@ -27,7 +32,6 @@ const std = @import("std");
     };
     defer file.close();
 
-    // Read entire file content
     const content = file.readToEndAlloc(koru_allocator(), 1024 * 1024 * 10) catch |err| {
         const msg = switch (err) {
             error.OutOfMemory => "File too large",
@@ -35,44 +39,18 @@ const std = @import("std");
         };
         return .{ .failed = msg };
     };
+    defer koru_allocator().free(content);
 
-    // Count lines first
-    var line_count: usize = 0;
-    for (content) |c| {
-        if (c == '\n') line_count += 1;
+    var n: usize = 0;
+    var it = std.mem.splitScalar(u8, content, '\n');
+    while (it.next()) |raw| {
+        // A trailing newline yields one final empty slice - not a line.
+        if (raw.len == 0 and it.peek() == null) break;
+        const l = if (raw.len > 0 and raw[raw.len - 1] == '\r') raw[0 .. raw.len - 1] else raw;
+        line(l);
+        n += 1;
     }
-    // Add one for last line if file doesn't end with newline
-    if (content.len > 0 and content[content.len - 1] != '\n') {
-        line_count += 1;
-    }
-    // Handle empty file
-    if (content.len == 0) {
-        line_count = 0;
-    }
-
-    // Allocate lines array
-    const lines = koru_allocator().alloc([]const u8, line_count) catch {
-        return .{ .failed = "Out of memory allocating lines" };
-    };
-
-    // Split into lines
-    var line_idx: usize = 0;
-    var start: usize = 0;
-    for (content, 0..) |c, i| {
-        if (c == '\n') {
-            // Handle \r\n line endings
-            const end = if (i > 0 and content[i - 1] == '\r') i - 1 else i;
-            lines[line_idx] = content[start..end];
-            line_idx += 1;
-            start = i + 1;
-        }
-    }
-    // Handle last line without newline
-    if (start < content.len) {
-        lines[line_idx] = content[start..];
-    }
-
-    return .{ .lines = lines };
+    return .{ .done = n };
 }
 
 // ============================================================================

@@ -1237,7 +1237,13 @@ EOF
                 RUN_ARGS+=("$_arg")
             done < "$test_dir/ARGS"
         fi
-        timeout "$TEST_TIMEOUT" "$test_dir/output" "${RUN_ARGS[@]}" > "$test_dir/actual.txt" 2>&1
+        # Optional STDIN file: piped to the binary (else /dev/null) — the
+        # interactive/pipe vertical, parallel to ARGS.
+        if [ -f "$test_dir/STDIN" ]; then
+            timeout "$TEST_TIMEOUT" "$test_dir/output" "${RUN_ARGS[@]}" < "$test_dir/STDIN" > "$test_dir/actual.txt" 2>&1
+        else
+            timeout "$TEST_TIMEOUT" "$test_dir/output" "${RUN_ARGS[@]}" < /dev/null > "$test_dir/actual.txt" 2>&1
+        fi
         RUN_EXIT=$?
         if [ $RUN_EXIT -eq 0 ]; then
             RUN_SUCCESS=true
