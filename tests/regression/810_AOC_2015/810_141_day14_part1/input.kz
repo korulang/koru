@@ -1,0 +1,26 @@
+// FRONTIER LEDGER: parse-reindeer ← groups ((?<speed>\d+) etc. retires it).
+
+const std = @import("std");
+
+~proc parse-reindeer|zig {
+    var nums: [3]i64 = undefined;
+    var idx: usize = 0;
+    var cur: i64 = 0;
+    var in_num = false;
+    for (line) |c| {
+        if (c >= '0' and c <= '9') {
+            cur = cur * 10 + (c - '0');
+            in_num = true;
+        } else if (in_num) {
+            nums[idx] = cur;
+            idx += 1;
+            cur = 0;
+            in_num = false;
+        }
+    }
+    if (in_num) {
+        nums[idx] = cur;
+        idx += 1;
+    }
+    return .{ .spec = .{ .speed = nums[0], .fly = nums[1], .rest = nums[2] } };
+}

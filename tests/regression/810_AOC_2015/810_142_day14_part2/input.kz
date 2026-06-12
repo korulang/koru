@@ -1,0 +1,49 @@
+// FRONTIER LEDGER: reindeer table + per-second sim ← store; parse ← groups.
+
+const std = @import("std");
+
+var specs: [16][3]i64 = undefined;
+var n_specs: usize = 0;
+
+~proc add-reindeer|zig {
+    var nums: [3]i64 = undefined;
+    var idx: usize = 0;
+    var cur: i64 = 0;
+    var in_num = false;
+    for (line) |c| {
+        if (c >= '0' and c <= '9') {
+            cur = cur * 10 + (c - '0');
+            in_num = true;
+        } else if (in_num) {
+            nums[idx] = cur;
+            idx += 1;
+            cur = 0;
+            in_num = false;
+        }
+    }
+    if (in_num) nums[idx] = cur;
+    specs[n_specs] = nums;
+    n_specs += 1;
+}
+
+~proc race|zig {
+    var pts = [_]i64{0} ** 16;
+    var t: i64 = 1;
+    while (t <= seconds) : (t += 1) {
+        var lead: i64 = -1;
+        var dists: [16]i64 = undefined;
+        for (specs[0..n_specs], 0..) |sp, i| {
+            const cyc = sp[1] + sp[2];
+            const d = sp[0] * (@divTrunc(t, cyc) * sp[1] + @min(@mod(t, cyc), sp[1]));
+            dists[i] = d;
+            if (d > lead) lead = d;
+        }
+        for (0..n_specs) |i| {
+            if (dists[i] == lead) pts[i] += 1;
+        }
+    }
+    var best: i64 = 0;
+    for (pts[0..n_specs]) |p| best = @max(best, p);
+    n_specs = 0;
+    return .{ .points = best };
+}
