@@ -95,3 +95,8 @@ puzzle inputs (gitignored, local) need file reading the moment we run them.
   320_036/038 headers. May want a rule or a rename convention.
 - **MD5 (day 4):** wants a `std/crypto` stdlib event — a stdlib leaf, not a
   language gap; first taker writes it.
+- **Multi-line `const { }` with nested braces in values:** the multi-line
+  source-block line-collector stops at the first standalone `}`, so an array
+  literal value can't span lines (day 5 single-lines its sample list as the
+  workaround — see the comment in `810_051_day05_part1/input.k`). Wants the
+  brace-depth-aware collector treatment.

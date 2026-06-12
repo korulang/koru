@@ -72,7 +72,12 @@ const std = @import("std");
     // `//@koru:inline_stmt` routes this inline_body down the emitter's
     // STATEMENT path (marker resolver) instead of the expand-switch — the
     // `__koru_continue_<idx>` markers below resolve to the branch bodies there.
-    dispatch.appendSlice(allocator, "//@koru:inline_stmt\n{ const __koru_match_in: []const u8 = ") catch unreachable;
+    // The input const is SITE-UNIQUE (location-suffixed like the matcher fns):
+    // nested matches would otherwise shadow each other's `__koru_match_in`,
+    // which Zig rejects (found by AoC day 5's three-rule nesting).
+    const in_name = std.fmt.allocPrint(allocator, "__koru_match_in_{d}_{d}", .{ flow.location.line, flow.location.column }) catch unreachable;
+    const head = std.fmt.allocPrint(allocator, "//@koru:inline_stmt\n{{ const {s}: []const u8 = ", .{in_name}) catch unreachable;
+    dispatch.appendSlice(allocator, head) catch unreachable;
     dispatch.appendSlice(allocator, input_expr) catch unreachable;
     dispatch.appendSlice(allocator, "; ") catch unreachable;
 
@@ -101,7 +106,7 @@ const std = @import("std");
             // (`const <name> = ...` or `_ = ...` for discard). Cut-1 is FULL
             // match, so the matched text IS the input. `no-match` is void and
             // keeps the bare continue hand-off below.
-            const arm = std.fmt.allocPrint(allocator, "if ({s}(__koru_match_in)) __koru_inline_{d}(__koru_match_in)", .{ fn_name, i }) catch unreachable;
+            const arm = std.fmt.allocPrint(allocator, "if ({s}({s})) __koru_inline_{d}({s})", .{ fn_name, in_name, i, in_name }) catch unreachable;
             dispatch.appendSlice(allocator, arm) catch unreachable;
             arm_count += 1;
         }

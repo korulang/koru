@@ -15,8 +15,8 @@ pub event parse-dims { line: []const u8 }
 capture { paper: 0[i64] }
 ! as acc |> for(presents)
     ! each line |> parse-dims(line)
-        | dims d |> captured {
-            paper: acc.paper + 2*d.l*d.w + 2*d.w*d.h + 2*d.h*d.l
-                + @min(d.l*d.w, d.w*d.h, d.h*d.l)
+        | dims { l, w, h } |> captured {
+            paper: acc.paper + 2*l*w + 2*w*h + 2*h*l
+                + @min(l*w, w*h, h*l)
         }
 | captured total |> std/io:print.ln("{{ total.paper:d }}")

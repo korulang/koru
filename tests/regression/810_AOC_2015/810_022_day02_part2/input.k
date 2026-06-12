@@ -12,8 +12,8 @@ pub event parse-dims { line: []const u8 }
 capture { ribbon: 0[i64] }
 ! as acc |> for(presents)
     ! each line |> parse-dims(line)
-        | dims d |> captured {
-            ribbon: acc.ribbon + 2*@min(d.l+d.w, d.w+d.h, d.h+d.l)
-                + d.l*d.w*d.h
+        | dims { l, w, h } |> captured {
+            ribbon: acc.ribbon + 2*@min(l+w, w+h, h+l)
+                + l*w*h
         }
 | captured total |> std/io:print.ln("{{ total.ribbon:d }}")
