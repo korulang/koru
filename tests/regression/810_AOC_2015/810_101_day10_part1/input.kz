@@ -1,0 +1,42 @@
+// FRONTIER LEDGER: the look-and-say round builds a growing string ←
+// store + string-ops. Round LOOP and sequencing are Koru's.
+
+const std = @import("std");
+
+var cur: ?[]u8 = null;
+
+~proc ls-init|zig {
+    cur = koru_allocator().dupe(u8, seed) catch unreachable;
+}
+
+~proc ls-step|zig {
+    const s = cur.?;
+    var out = std.ArrayList(u8).initCapacity(koru_allocator(), s.len * 2) catch unreachable;
+    var i: usize = 0;
+    while (i < s.len) {
+        var j = i;
+        while (j < s.len and s[j] == s[i]) j += 1;
+        var nbuf: [8]u8 = undefined;
+        const ns = std.fmt.bufPrint(&nbuf, "{d}", .{j - i}) catch unreachable;
+        out.appendSlice(koru_allocator(), ns) catch unreachable;
+        out.append(koru_allocator(), s[i]) catch unreachable;
+        i = j;
+    }
+    koru_allocator().free(s);
+    cur = out.toOwnedSlice(koru_allocator()) catch unreachable;
+}
+
+var final_buf: [1 << 20]u8 = undefined;
+
+~proc ls-result|zig {
+    const s = cur.?;
+    const l: i64 = @intCast(s.len);
+    // The payload must outlive this call (terminals run after), and the
+    // live string must be FREED (the meter watches): copy to a static
+    // buffer, retire the allocation, hand out the static slice.
+    @memcpy(final_buf[0..s.len], s);
+    const out = final_buf[0..s.len];
+    koru_allocator().free(s);
+    cur = null;
+    return .{ .said = .{ .s = out, .len = l } };
+}
