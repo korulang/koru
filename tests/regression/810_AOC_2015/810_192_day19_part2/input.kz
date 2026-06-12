@@ -1,0 +1,38 @@
+// FRONTIER LEDGER: greedy reverse search ← host; rules ← store.
+
+const std = @import("std");
+
+var froms: [64][]const u8 = undefined;
+var tos: [64][]const u8 = undefined;
+var n_rules: usize = 0;
+
+~proc add-rule|zig {
+    const at = std.mem.indexOf(u8, line, " => ").?;
+    froms[n_rules] = koru_allocator().dupe(u8, line[0..at]) catch unreachable;
+    tos[n_rules] = koru_allocator().dupe(u8, line[at + 4 ..]) catch unreachable;
+    n_rules += 1;
+}
+
+~proc fabricate|zig {
+    var cur = koru_allocator().dupe(u8, molecule) catch unreachable;
+    var steps: i64 = 0;
+    outer: while (!std.mem.eql(u8, cur, "e")) {
+        for (0..n_rules) |r| {
+            if (std.mem.indexOf(u8, cur, tos[r])) |i| {
+                const next = std.fmt.allocPrint(koru_allocator(), "{s}{s}{s}", .{ cur[0..i], froms[r], cur[i + tos[r].len ..] }) catch unreachable;
+                koru_allocator().free(cur);
+                cur = next;
+                steps += 1;
+                continue :outer;
+            }
+        }
+        break;
+    }
+    koru_allocator().free(cur);
+    for (0..n_rules) |r| {
+        koru_allocator().free(froms[r]);
+        koru_allocator().free(tos[r]);
+    }
+    n_rules = 0;
+    return .{ .steps = steps };
+}

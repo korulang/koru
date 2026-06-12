@@ -1,0 +1,55 @@
+// FRONTIER LEDGER: grid + neighbor rule ← store. Step loop is Koru's.
+
+const std = @import("std");
+
+var g: [100][100]bool = undefined;
+var rows: usize = 0;
+var cols: usize = 0;
+
+~proc grid-row|zig {
+    cols = line.len;
+    for (line, 0..) |c, x| g[rows][x] = c == '#';
+    rows += 1;
+}
+
+fn stickCorners() void {
+    g[0][0] = true;
+    g[0][cols - 1] = true;
+    g[rows - 1][0] = true;
+    g[rows - 1][cols - 1] = true;
+}
+
+~proc life-step|zig {
+    if (stuck == 1) stickCorners();
+    var next: [100][100]bool = undefined;
+    for (0..rows) |y| {
+        for (0..cols) |x| {
+            var n: usize = 0;
+            var dy: i64 = -1;
+            while (dy <= 1) : (dy += 1) {
+                var dx: i64 = -1;
+                while (dx <= 1) : (dx += 1) {
+                    if (dx == 0 and dy == 0) continue;
+                    const ny = @as(i64, @intCast(y)) + dy;
+                    const nx = @as(i64, @intCast(x)) + dx;
+                    if (ny < 0 or nx < 0 or ny >= rows or nx >= cols) continue;
+                    if (g[@intCast(ny)][@intCast(nx)]) n += 1;
+                }
+            }
+            next[y][x] = if (g[y][x]) (n == 2 or n == 3) else n == 3;
+        }
+    }
+    g = next;
+    if (stuck == 1) stickCorners();
+}
+
+~proc lit|zig {
+    var n: i64 = 0;
+    for (0..rows) |y| {
+        for (0..cols) |x| {
+            if (g[y][x]) n += 1;
+        }
+    }
+    rows = 0;
+    return .{ .count = n };
+}
