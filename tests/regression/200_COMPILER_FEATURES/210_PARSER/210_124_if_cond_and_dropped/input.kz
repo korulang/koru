@@ -1,0 +1,17 @@
+// RED PIN (found by AoC day 12): a `<` inside an if condition makes the
+// parser drop the ENTIRE argument (empty args in the AST → emitter writes
+// `if ()`). Empirically isolated: `ch >= 48` parses, `ch <= 57` does not;
+// `>` and `>=` survive. MECHANISM IS A GUESS (Claude, unverified): possibly
+// the phantom-angle scan (`Type<state>`) hunting an unclosed `>`.
+// ⚠ SYNTAX CAVEAT (Lars 2026-06-13): this pin was authored by Claude mid-
+// grind — if it stays red after the `<` fix, REVIEW TOGETHER whether the
+// pin's own spelling is at fault before trusting its claim.
+// Workaround in the corpus: flip operands (57 >= ch). Expected: "lt".
+
+~import std/io
+
+const x: i64 = 3;
+
+~if(x < 5)
+| then |> std/io:print.ln("lt")
+| else |> std/io:print.ln("ge")
