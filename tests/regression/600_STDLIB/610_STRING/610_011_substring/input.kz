@@ -1,10 +1,9 @@
-// RED PIN (FRONTIERS gap 4): substring returns a NEW owned String<view!> (a
-// fresh copy, not a borrow into `s`) — the op itself is correct and safe. This
-// test is RED because it is the first flow with TWO live String resources that
-// must BOTH be discharged on one path (`free(sub) |> free(s)`), and the
-// auto-discharge checker mis-handles two explicit disposals chained in one
-// pipeline: it falsely reports KORU030 on one of them. Root pinned minimally in
-// 610_012. Greens when chained multi-resource discharge is fixed.
+// substring (FRONTIERS gap 4): returns a NEW owned String<view!> (a fresh copy,
+// not a borrow into `s`), so the result carries its own ownership obligation and
+// is freed independently. This is the first flow with TWO live String resources
+// that must BOTH be discharged on one path (`free(sub) |> free(s)`) — proving the
+// auto-discharge checker handles multiple explicit disposals (see 610_012 for the
+// positional-resolution fix that made it work).
 ~import std/string
 ~import std/io
 

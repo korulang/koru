@@ -1,20 +1,17 @@
-// RED PIN (auto-discharge bug, found 2026-06-12): two live resources that must
-// BOTH be discharged on one path can only be freed by chaining the disposals in
-// one pipeline (`free(s2) |> free(s1)`) — String can't auto-discharge (free/take
-// are both candidates, KORU030), so every resource needs an EXPLICIT free, and
-// two live resources means two explicit frees on the path.
+// Multi-resource discharge: two live String resources both freed on one path
+// (`free(s2) |> free(s1)`). String can't auto-discharge (free/take both candidates
+// → KORU030), so every resource needs an EXPLICIT free; two live resources means
+// two explicit frees on the path.
 //
-// The auto-discharge checker mis-handles this: it recognizes a SINGLE explicit
-// disposal per continuation but not two chained in one `|>` pipeline. The walk
-// still believes one resource leaks and tries to auto-insert a disposal for it,
-// failing on the free/take ambiguity with a FALSE KORU030. Confirmed general
-// (independent of substring) — any two live resources hit it.
-//
-// This blocks all multi-resource flows (strings, files, connections). Greens
-// when checkContinuation recognizes every explicit disposal in a chained
-// pipeline, clearing each obligation. See src/auto_discharge_inserter.zig
-// (checkContinuation / checkInvocationSatisfiesObligations, the chained-
-// continuation recursion).
+// Regression for the positional-arg discharge bug (fixed 2026-06-12): the
+// obligation checker matched a disposal's arg to its parameter by name
+// (`field.name == arg.name`), but a POSITIONAL arg (`free(s1)`) carries the
+// binding name in arg.name, not the param name (`s`). So `free(s1)`/`free(s2)`
+// searched for params literally named "s1"/"s2", found none, and silently cleared
+// nothing — a FALSE KORU030 on every flow whose binding name differs from the
+// param name. It only ever worked by coincidence (`free(s)` where binding == param,
+// or the named form `free(s: owned)`). Fix: resolve positional args by POSITION.
+// See src/auto_discharge_inserter.zig:checkInvocationSatisfiesObligations.
 ~import std/string
 ~import std/io
 

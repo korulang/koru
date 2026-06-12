@@ -62,25 +62,24 @@ branch-on-value form.
 any per-char state machine.
 **Pointers:** `810_031_day03_part1/input.kz` ledger.
 
-## 4. String OPERATIONS (on the ownership spine) — partly landed
-**Landed 2026-06-12 (safe subset):** `parse-int` (→ scalar i64), `contains`
-(→ yes/no), `index-of` (→ found usize/not-found) — all GREEN (610_008/009/010).
+## 4. String OPERATIONS (on the ownership spine) — safe subset landed
+**Landed 2026-06-12 (safe subset, all GREEN):** `parse-int` (→ scalar i64,
+610_008), `contains` (→ yes/no, 610_009), `index-of` (→ found usize/not-found,
+610_010), `substring` (→ a NEW owned `String<view!>`, a fresh copy, 610_011).
 Each returns a scalar or an owned value, so the ratified borrow model holds
 trivially (`|` terminals OWN what they carry) with zero borrow machinery.
-`substring` is implemented (returns a NEW owned `String<view!>`, a fresh copy)
-but its test is RED — see the discharge blocker below.
-**Two blockers surfaced, both their own gaps now:**
-- **Chained multi-resource discharge (auto-discharge BUG, RED 610_012):** two
-  live resources that must both be freed on one path require chaining the
-  disposals (`free(a) |> free(b)`); the checker recognizes only ONE explicit
-  disposal per pipeline and falsely fires KORU030 on the other. Confirmed
-  general (independent of substring). Blocks `substring` (610_011) and EVERY
-  multi-resource flow. Pointer: `src/auto_discharge_inserter.zig`
-  (checkContinuation / checkInvocationSatisfiesObligations chained recursion).
+**Multi-resource discharge — FIXED 2026-06-12 (610_012 GREEN):** `substring`
+surfaced an auto-discharge bug where two live resources both freed on one path
+(`free(a) |> free(b)`) falsely tripped KORU030. Root: the obligation checker
+matched a disposal's arg to its param by NAME, but a positional arg carries the
+binding name, not the param name — so any binding ≠ param name silently failed.
+Fix: resolve positional args by POSITION (`src/auto_discharge_inserter.zig`,
+checkInvocationSatisfiesObligations). Multi-resource flows now work generally.
+**Still gated (own gaps):**
 - **The borrow-obligation surface (RED 610_007):** cheap VIEWS (split, slice as
   borrow) and enforcing the dangling-slice rejection need the phantom vocabulary
   for "terminal payload borrows param s" — still an OPEN design decision.
-**Still needs the STORE (gap 2):** `split` returns many parts (a collection).
+- **The STORE (gap 2):** `split` returns many parts (a collection).
 **Design note (resolved):** text→int does NOT need a standalone parse for the
 regex case — gap 1's typed group payloads convert at the splice; `parse-int`
 covers non-regex text.

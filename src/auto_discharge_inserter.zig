@@ -1514,58 +1514,70 @@ pub const AutoDischargeInserter = struct {
         const event_info = self.event_map.get(qualified_name) orelse return;
         const event_decl = event_info.decl;
 
-        // Check each argument to see if it satisfies an obligation
-        for (invocation.args) |arg| {
-            // Find the corresponding parameter in the event declaration
-            for (event_decl.input.fields) |field| {
-                if (std.mem.eql(u8, field.name, arg.name)) {
-                    // Check if this parameter consumes an obligation
-                    if (field.phantom) |phantom_str| {
-                        var parsed = phantom_parser.PhantomState.parse(self.allocator, phantom_str) catch continue;
-                        defer parsed.deinit(self.allocator);
+        // Check each argument to see if it satisfies (discharges) an obligation.
+        //
+        // Resolving which PARAMETER an arg binds is the subtle part. A NAMED arg
+        // (`free(s: owned)`) carries the param name in arg.name. A POSITIONAL arg
+        // (`free(sub)`) carries the value in BOTH arg.name and arg.value — so it
+        // must be matched by POSITION, not by arg.name (which is the binding, not
+        // a param name). Matching positional args by name only worked when the
+        // binding happened to equal the param name (`free(s)` where the binding is
+        // also `s`); any other binding silently failed to discharge, producing a
+        // false KORU030 on every multi-resource flow (610_011/610_012).
+        for (invocation.args, 0..) |arg, arg_idx| {
+            const is_positional = std.mem.eql(u8, arg.name, arg.value);
+            const field_idx: ?usize = blk: {
+                if (is_positional) {
+                    break :blk if (arg_idx < event_decl.input.fields.len) arg_idx else null;
+                }
+                for (event_decl.input.fields, 0..) |f, fi| {
+                    if (std.mem.eql(u8, f.name, arg.name)) break :blk fi;
+                }
+                break :blk null;
+            };
+            const field = event_decl.input.fields[field_idx orelse continue];
+            const phantom_str = field.phantom orelse continue;
 
-                        // Check if parameter consumes obligation (concrete or any union member with ! prefix)
-                        const consumes = switch (parsed) {
-                            .concrete => |c| c.consumes_obligation,
-                            .state_union => |u| blk: {
-                                var any = false;
-                                for (u.members) |m| if (m.consumes_obligation) {
-                                    any = true;
-                                    break;
-                                };
-                                break :blk any;
-                            },
-                            .variable => false,
-                        };
+            var parsed = phantom_parser.PhantomState.parse(self.allocator, phantom_str) catch continue;
+            defer parsed.deinit(self.allocator);
 
-                        if (consumes) {
-                            // ERROR: Cannot manually dispose outer-scope obligation inside @scope boundary
-                            // This applies to ANY @scope (loops, taps, custom constructs) - not just loops
-                            // is_repeating is true when we're inside a @scope boundary
-                            if (context.is_repeating) {
-                                if (context.loop_entry_scope) |scope_entry| {
-                                    if (context.cleanup_obligations.get(arg.value)) |obl_info| {
-                                        if (obl_info.scope_depth < scope_entry) {
-                                            try self.reporter.addError(
-                                                .KORU032,
-                                                flow.location.line,
-                                                flow.location.column,
-                                                "Cannot discharge outer-scope resource '{s}' inside @scope boundary. Handle outside the scope or escape via branch constructor.",
-                                                .{arg.value},
-                                            );
-                                            return error.ValidationFailed;
-                                        }
-                                    }
-                                }
-                            }
+            // Check if parameter consumes obligation (concrete or any union member with ! prefix)
+            const consumes = switch (parsed) {
+                .concrete => |c| c.consumes_obligation,
+                .state_union => |u| blk: {
+                    var any = false;
+                    for (u.members) |m| if (m.consumes_obligation) {
+                        any = true;
+                        break;
+                    };
+                    break :blk any;
+                },
+                .variable => false,
+            };
+            if (!consumes) continue;
 
-                            // This parameter consumes an obligation - clear it
-                            context.clearObligation(arg.value);
+            // ERROR: Cannot manually dispose outer-scope obligation inside @scope
+            // boundary (loops, taps, custom constructs). is_repeating is true
+            // when we're inside a @scope boundary.
+            if (context.is_repeating) {
+                if (context.loop_entry_scope) |scope_entry| {
+                    if (context.cleanup_obligations.get(arg.value)) |obl_info| {
+                        if (obl_info.scope_depth < scope_entry) {
+                            try self.reporter.addError(
+                                .KORU032,
+                                flow.location.line,
+                                flow.location.column,
+                                "Cannot discharge outer-scope resource '{s}' inside @scope boundary. Handle outside the scope or escape via branch constructor.",
+                                .{arg.value},
+                            );
+                            return error.ValidationFailed;
                         }
                     }
-                    break;
                 }
             }
+
+            // This parameter consumes an obligation - clear it.
+            context.clearObligation(arg.value);
         }
     }
 
