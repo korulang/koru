@@ -72,18 +72,26 @@ rather than a standalone parse event — decide there first.
 **Pointers:** `koru_std/string.kz` (the spine); RED pin
 `610_007_reject_dangling_slice` (the borrow rule the ops will need).
 
-## 5. Mock machinery × effect branches
-**What:** mocking an event that declares effect branches emits the effect as
-a result-switch arm; the Output union (correctly) holds terminals only, so
-Zig rejects the phantom arm. The real path is fine — effects are handler
-CALLS during the proc, terminals return after.
-**Pointers:** RED pin `395_009_cross_module_mock` (header has the analysis).
-**Note:** gap 5 (read-lines + args verticals) CLOSED 2026-06-12 — effect-shape
+## 5. Mock machinery × effect branches — CLOSED 2026-06-12
+**Was:** mocking an event that declares effect branches leaked the effect as a
+result-switch arm (`.line => |_| {}`); the Output union (correctly) holds
+terminals only, so Zig rejected the phantom arm. The real path was always fine
+— effects are handler CALLS during the proc, terminals return after.
+**Now:** a mock substitutes a plain terminal Output value, so the effect branch
+never fires. `emitContinuationList` (the universal result-dispatch switch
+emitter, `src/emitter_helpers.zig`) drops effect (`!`) continuations before
+building the switch — a result switch is over terminals by construction. This
+mirrors the inline path's effect/terminal partition; the fix is a no-op on any
+program that already compiled (an effect arm only ever appeared in code that
+failed to compile), so it can only turn a leaked-arm red green.
+**Green acceptance:** `395_009_cross_module_mock` (the last red, now a positive
+regression for mock × effect branches end-to-end).
+**Note:** the read-lines + args verticals also closed 2026-06-12 — effect-shape
 `std/fs:read-lines` + `std/io:read-lines` (stdin twin), harness STDIN piping,
 ARGS/STDIN/input.txt gitignore whitelists, zero-alloc argv. The args FLAGS
 layer (`~std/args:int(flag: ...)`) remains future polish, unblocking nothing.
 
-## 6. EFFECT LOWERING — CLOSED 2026-06-13 (cut 1)
+## 6. EFFECT LOWERING — CLOSED 2026-06-12 (cut 1)
 **Was:** runtime events lowered effects by control inversion (proc calls
 handler across a Zig namespace boundary) — the root of cells being
 unreachable, resume values being special-cased, listeners having no story.

@@ -1,11 +1,12 @@
-// RED PIN (2026-06-12): cross-module mocking × EFFECT BRANCHES.
+// Cross-module mocking × EFFECT BRANCHES (FRONTIERS gap 5 — CLOSED 2026-06-12).
 // The consumer below handles `! line` from std/fs:read-lines (effect shape).
-// The REAL path streams effects as handler CALLS during the proc (650_001
-// is green end-to-end); the MOCK path lowers the effect branch into the
-// result-dispatch switch (`.line =>`) against an Output union that
-// (correctly) holds terminals only — Zig rejects the phantom arm. Goes
-// green when mock emission learns the call/return split: effects are
-// DURING (handler calls), terminals are AFTER (the union).
+// The REAL path streams effects as handler CALLS during the proc (650_001 is
+// green end-to-end); the MOCK path substitutes a plain terminal Output value,
+// so the effect branch never fires. Both now emit correctly: a result-dispatch
+// switch is over TERMINALS only, and emitContinuationList drops effect (`!`)
+// continuations before building it (mirrors the inline path's effect/terminal
+// partition). Before the fix the mock path leaked `.line =>` against an Output
+// union with no such tag and Zig rejected it.
 //
 // Test: Cross-module mocking
 //

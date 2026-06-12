@@ -6174,11 +6174,39 @@ fn emitUnaryOperator(emitter: *CodeEmitter, op: ast.UnaryOperator) !void {
 fn emitContinuationList(
     emitter: *CodeEmitter,
     ctx: *EmissionContext,
-    continuations: []const ast.Continuation,
+    continuations_in: []const ast.Continuation,
     prev_result: []const u8,
     result_counter: *usize,
     is_partial_switch: bool,
 ) anyerror!void {
+    // Effect (`!`) continuations are handler CALLS that fire DURING a proc run;
+    // they are NOT terminals and have no tag in the event's Output union (which
+    // holds terminals only). The inline path partitions them out before emitting
+    // the terminal switch (see emitFlow, ~line 3587). A NON-inlined effectful
+    // invocation — e.g. a mocked event whose impl substitutes a plain Output
+    // value — bypasses that partition and hands us the full continuation list. If
+    // we emit a switch arm per continuation we produce `.<effect> => |_| {}`
+    // against a union with no such field, and Zig rejects it (395_009). A
+    // result-dispatch switch is over terminals, so drop effect continuations here.
+    var filtered_conts: ?std.ArrayList(ast.Continuation) = null;
+    defer if (filtered_conts) |*f| f.deinit(ctx.allocator);
+    const continuations = blk: {
+        var has_effect = false;
+        for (continuations_in) |cont| {
+            if (cont.kind == .effect) {
+                has_effect = true;
+                break;
+            }
+        }
+        if (!has_effect) break :blk continuations_in;
+        var list: std.ArrayList(ast.Continuation) = .empty;
+        for (continuations_in) |cont| {
+            if (cont.kind != .effect) try list.append(ctx.allocator, cont);
+        }
+        filtered_conts = list;
+        break :blk list.items;
+    };
+
     if (continuations.len == 0) {
         return;
     }
