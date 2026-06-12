@@ -1,12 +1,12 @@
 {
-  "timestamp": "2026-06-12T07:13:13.449Z",
+  "timestamp": "2026-06-12T12:12:15.934Z",
   "summary": {
-    "passed": 242,
+    "passed": 249,
     "failed": 0,
     "skipped": 12,
     "leaked": 0,
     "compileErrors": 0,
-    "total": 254,
+    "total": 261,
     "suiteCount": 37,
     "status": "success"
   },
@@ -197,10 +197,10 @@
     },
     {
       "name": "regex_engine_tests",
-      "passed": 18,
+      "passed": 25,
       "failed": 0,
       "skipped": 0,
-      "total": 18,
+      "total": 25,
       "status": "success"
     },
     {

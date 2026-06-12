@@ -8,13 +8,23 @@
 //! Go-regexp design). That guarantee is WHY the regular subset rejects
 //! backreferences: they'd force backtracking and reopen catastrophic blowup.
 //!
-//! Cut 1 grammar (the regular subset — complete and correct, just no captures
-//! or backrefs yet):
+//! Cut 2 grammar (the regular subset + NAMED capture groups; still no
+//! backrefs — they'd force backtracking):
 //!   alt    := concat ('|' concat)*
 //!   concat := repeat*
 //!   repeat := atom ('*' | '+' | '?')*
-//!   atom   := '(' alt ')' | '[' class ']' | '.' | '^' | '$' | literal
+//!   atom   := group | '[' class ']' | '.' | '^' | '$' | literal
+//!   group  := '(' '?<' name '>' alt ')'   — named CAPTURE group
+//!           | '(' alt ')'                 — non-capturing structure
 //!   class  := '^'? ( char ('-' char)? )+
+//!
+//! Named groups (`(?<name>...)`) are the ONLY capture form — bare `(...)`
+//! stays non-capturing, so positional captures are unrepresentable and the
+//! silent-transposition trap dies at the grammar. Capture groups may not sit
+//! under a quantifier or an alternation (rejected loudly, same doctrine as
+//! backrefs): every group therefore matches EXACTLY ONCE in any successful
+//! match and owns exactly one span. Span extraction is a Pike VM over the
+//! tagged NFA — linear-time, no backtracking, the ReDoS guarantee intact.
 const std = @import("std");
 
 /// A character class `[...]`: a 256-entry membership set + optional negation.
@@ -26,6 +36,14 @@ pub const Class = struct {
         const in = self.set[c];
         return if (self.negated) !in else in;
     }
+};
+
+/// A named capture group `(?<name>inner)`. `index` is the group's position in
+/// pattern open-order; tags 2·index (start) and 2·index+1 (end) mark its span.
+pub const Group = struct {
+    name: []const u8,
+    index: usize,
+    inner: *Node,
 };
 
 /// Regex AST node. Pointers are arena-allocated by the Parser's allocator.
@@ -41,6 +59,7 @@ pub const Node = union(enum) {
     star: *Node, // *
     plus: *Node, // +
     opt: *Node, // ?
+    group: Group, // (?<name>...)
 };
 
 pub const ParseError = error{
@@ -50,7 +69,19 @@ pub const ParseError = error{
     UnterminatedGroup,
     TrailingInput,
     OutOfMemory,
+    // named-group errors
+    UnsupportedGroupSyntax, // `(?` not followed by `<` (no `(?:`, `(?=`, …)
+    UnterminatedGroupName, // `(?<name` with no closing `>`
+    EmptyGroupName,
+    BadGroupName, // names are [A-Za-z_][A-Za-z0-9_]* — they become host identifiers
+    DuplicateGroupName,
+    TooManyGroups, // hard cap so emitted tag vectors stay fixed-size
+    GroupUnderQuantifier, // a repeated group has no single span — rejected
+    GroupUnderAlternation, // a group on an untaken branch has no span — rejected
 };
+
+/// Hard cap on named groups per pattern (tag vectors are 2× this).
+pub const max_groups: usize = 16;
 
 /// Recursive-descent parser. Allocate the parser's nodes from an arena and free
 /// them all at once; nothing here frees individual nodes.
@@ -58,6 +89,8 @@ pub const Parser = struct {
     src: []const u8,
     pos: usize = 0,
     allocator: std.mem.Allocator,
+    /// Named-group names in pattern open-order; group i owns tags 2i / 2i+1.
+    group_names: std.ArrayList([]const u8) = .{},
 
     pub fn init(allocator: std.mem.Allocator, src: []const u8) Parser {
         return .{ .src = src, .pos = 0, .allocator = allocator };
@@ -136,6 +169,21 @@ pub const Parser = struct {
         switch (c) {
             '(' => {
                 self.pos += 1;
+                if (self.peek() == @as(u8, '?')) {
+                    // `(?` — only the named-capture form `(?<name>...)` exists.
+                    self.pos += 1;
+                    if (!self.eat('<')) return error.UnsupportedGroupSyntax;
+                    const name = try self.parseGroupName();
+                    const index = self.group_names.items.len;
+                    for (self.group_names.items) |existing| {
+                        if (std.mem.eql(u8, existing, name)) return error.DuplicateGroupName;
+                    }
+                    if (index >= max_groups) return error.TooManyGroups;
+                    try self.group_names.append(self.allocator, name);
+                    const inner = try self.parseAlt();
+                    if (!self.eat(')')) return error.UnterminatedGroup;
+                    return self.mk(.{ .group = .{ .name = name, .index = index, .inner = inner } });
+                }
                 const inner = try self.parseAlt();
                 if (!self.eat(')')) return error.UnterminatedGroup;
                 return inner;
@@ -158,6 +206,28 @@ pub const Parser = struct {
                 return self.mk(.{ .literal = c });
             },
         }
+    }
+
+    /// Parse `name>` after `(?<`. Names become host struct fields, so the
+    /// charset is the identifier subset: [A-Za-z_][A-Za-z0-9_]* (no kebab —
+    /// `-` is a minus in host expressions; see the FRONTIERS tension).
+    fn parseGroupName(self: *Parser) ParseError![]const u8 {
+        const start = self.pos;
+        while (self.peek()) |c| {
+            if (c == '>') {
+                const name = self.src[start..self.pos];
+                self.pos += 1;
+                if (name.len == 0) return error.EmptyGroupName;
+                for (name, 0..) |ch, i| {
+                    const alpha = (ch >= 'a' and ch <= 'z') or (ch >= 'A' and ch <= 'Z') or ch == '_';
+                    const digit = ch >= '0' and ch <= '9';
+                    if (!(alpha or (digit and i > 0))) return error.BadGroupName;
+                }
+                return name;
+            }
+            self.pos += 1;
+        }
+        return error.UnterminatedGroupName;
     }
 
     fn parseClass(self: *Parser) ParseError!*Node {
@@ -187,6 +257,41 @@ pub const Parser = struct {
         return error.UnterminatedClass;
     }
 };
+
+/// A parsed-and-validated pattern: the AST plus its named groups in open
+/// (= tag) order. The validation guarantees every group matches exactly once
+/// in any successful match — each owns one definite span.
+pub const Analysis = struct {
+    root: *Node,
+    group_names: []const []const u8,
+};
+
+/// Parse + validate a pattern. This is the front door for callers that care
+/// about named groups (the match transform); errors carry the cut-2 doctrine
+/// (`GroupUnderQuantifier` / `GroupUnderAlternation`) for loud surfacing.
+pub fn analyze(allocator: std.mem.Allocator, pattern: []const u8) ParseError!Analysis {
+    var p = Parser.init(allocator, pattern);
+    const root = try p.parse();
+    try validateGroups(root, false, false);
+    return .{ .root = root, .group_names = p.group_names.items };
+}
+
+/// Capture groups may not sit under a quantifier (no single span) or an
+/// alternation (no span on the untaken branch). Nesting groups is legal —
+/// the inner span is simply contained in the outer one.
+fn validateGroups(node: *const Node, in_quant: bool, in_alt: bool) ParseError!void {
+    switch (node.*) {
+        .group => |g| {
+            if (in_quant) return error.GroupUnderQuantifier;
+            if (in_alt) return error.GroupUnderAlternation;
+            try validateGroups(g.inner, in_quant, in_alt);
+        },
+        .star, .plus, .opt => |inner| try validateGroups(inner, true, in_alt),
+        .alt => |branches| for (branches) |b| try validateGroups(b, in_quant, true),
+        .concat => |parts| for (parts) |part| try validateGroups(part, in_quant, in_alt),
+        .empty, .literal, .any, .class, .anchor_start, .anchor_end => {},
+    }
+}
 
 // ── tests ──────────────────────────────────────────────────────────────────
 
@@ -262,6 +367,41 @@ test "the email-ish flagship pattern: [a-z]+@[a-z]+" {
     try testing.expect(n.concat[2].* == .plus and n.concat[2].plus.* == .class);
 }
 
+test "named groups: parse + analyze collects names in open order" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const an = try analyze(arena.allocator(), "(?<l>[0-9]+)x(?<w>[0-9]+)x(?<h>[0-9]+)");
+    try testing.expectEqual(@as(usize, 3), an.group_names.len);
+    try testing.expectEqualStrings("l", an.group_names[0]);
+    try testing.expectEqualStrings("w", an.group_names[1]);
+    try testing.expectEqualStrings("h", an.group_names[2]);
+}
+
+test "named groups: bare (...) stays non-capturing" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const an = try analyze(arena.allocator(), "(ab)*(?<x>c)");
+    try testing.expectEqual(@as(usize, 1), an.group_names.len);
+    try testing.expectEqualStrings("x", an.group_names[0]);
+}
+
+test "named groups: rejection doctrine" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    try testing.expectError(error.UnsupportedGroupSyntax, analyze(a, "(?:a)"));
+    try testing.expectError(error.EmptyGroupName, analyze(a, "(?<>a)"));
+    try testing.expectError(error.BadGroupName, analyze(a, "(?<a b>x)"));
+    try testing.expectError(error.BadGroupName, analyze(a, "(?<my-name>x)")); // kebab is a minus in host exprs
+    try testing.expectError(error.BadGroupName, analyze(a, "(?<1x>a)")); // leading digit
+    try testing.expectError(error.UnterminatedGroupName, analyze(a, "(?<abc"));
+    try testing.expectError(error.DuplicateGroupName, analyze(a, "(?<a>x)(?<a>y)"));
+    try testing.expectError(error.GroupUnderQuantifier, analyze(a, "(?<x>a)+"));
+    try testing.expectError(error.GroupUnderQuantifier, analyze(a, "((?<x>a))*")); // through non-capturing structure
+    try testing.expectError(error.GroupUnderQuantifier, analyze(a, "(?<x>a)?")); // opt counts: no span when skipped
+    try testing.expectError(error.GroupUnderAlternation, analyze(a, "a|(?<x>b)"));
+}
+
 test "unbalanced group errors" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
@@ -285,16 +425,22 @@ test "unterminated class errors" {
 // are therefore no-ops here (the match is already whole-string-anchored); they
 // build as epsilon. Real zero-width anchors + search semantics are a later cut.
 
+/// An epsilon transition. `tag`, when set, records the current input position
+/// into that tag slot as the transition is taken (group i: tag 2i = span
+/// start, 2i+1 = span end). Tags are transparent to the bool matchers.
+pub const Eps = struct { to: usize, tag: ?usize = null };
+
 pub const NfaState = struct {
     sym: ?Class = null, // class-guarded transition (consumes one byte) …
     out: usize = 0, // … to this state (valid iff sym != null)
-    eps: std.ArrayList(usize) = .{}, // epsilon transitions (consume nothing)
+    eps: std.ArrayList(Eps) = .{}, // epsilon transitions (consume nothing)
 };
 
 pub const Nfa = struct {
     states: std.ArrayList(NfaState) = .{},
     start: usize = 0,
     accept: usize = 0,
+    n_tags: usize = 0, // 2 × named-group count
     allocator: std.mem.Allocator,
 
     fn newState(self: *Nfa) !usize {
@@ -302,7 +448,10 @@ pub const Nfa = struct {
         return self.states.items.len - 1;
     }
     fn addEps(self: *Nfa, from: usize, to: usize) !void {
-        try self.states.items[from].eps.append(self.allocator, to);
+        try self.states.items[from].eps.append(self.allocator, .{ .to = to });
+    }
+    fn addTagEps(self: *Nfa, from: usize, to: usize, tag: usize) !void {
+        try self.states.items[from].eps.append(self.allocator, .{ .to = to, .tag = tag });
     }
 
     /// Full-match: does the ENTIRE input match the pattern? Linear in input.
@@ -339,10 +488,10 @@ pub const Nfa = struct {
         stack.append(self.allocator, from) catch return;
         marked[from] = true;
         while (stack.pop()) |st| {
-            for (self.states.items[st].eps.items) |to| {
-                if (!marked[to]) {
-                    marked[to] = true;
-                    stack.append(self.allocator, to) catch return;
+            for (self.states.items[st].eps.items) |e| {
+                if (!marked[e.to]) {
+                    marked[e.to] = true;
+                    stack.append(self.allocator, e.to) catch return;
                 }
             }
         }
@@ -357,7 +506,21 @@ pub fn buildNfa(allocator: std.mem.Allocator, ast: *const Node) !Nfa {
     const frag = try buildFrag(&nfa, ast);
     nfa.start = frag.start;
     nfa.accept = frag.accept;
+    nfa.n_tags = 2 * countGroups(ast);
     return nfa;
+}
+
+fn countGroups(node: *const Node) usize {
+    return switch (node.*) {
+        .group => |g| 1 + countGroups(g.inner),
+        .star, .plus, .opt => |inner| countGroups(inner),
+        .alt, .concat => |parts| blk: {
+            var n: usize = 0;
+            for (parts) |p| n += countGroups(p);
+            break :blk n;
+        },
+        .empty, .literal, .any, .class, .anchor_start, .anchor_end => 0,
+    };
 }
 
 fn symFrag(nfa: *Nfa, cls: Class) !Frag {
@@ -427,6 +590,16 @@ fn buildFrag(nfa: *Nfa, node: *const Node) anyerror!Frag {
             try nfa.addEps(start, f.start);
             try nfa.addEps(start, accept);
             try nfa.addEps(f.accept, accept);
+            return .{ .start = start, .accept = accept };
+        },
+        .group => |g| {
+            // Tagged eps bracket the inner frag: entering records the span
+            // start (tag 2i), leaving records the span end (tag 2i+1).
+            const start = try nfa.newState();
+            const accept = try nfa.newState();
+            const f = try buildFrag(nfa, g.inner);
+            try nfa.addTagEps(start, f.start, 2 * g.index);
+            try nfa.addTagEps(f.accept, accept, 2 * g.index + 1);
             return .{ .start = start, .accept = accept };
         },
     }
@@ -537,10 +710,10 @@ fn closureSet(nfa: *const Nfa, seeds: []const usize, a: std.mem.Allocator) ![]us
         }
     }
     while (stack.pop()) |st| {
-        for (nfa.states.items[st].eps.items) |to| {
-            if (!marked[to]) {
-                marked[to] = true;
-                try stack.append(a, to);
+        for (nfa.states.items[st].eps.items) |e| {
+            if (!marked[e.to]) {
+                marked[e.to] = true;
+                try stack.append(a, e.to);
             }
         }
     }
@@ -667,6 +840,149 @@ test "dfa == nfa cross-check over many inputs" {
     }
 }
 
+// ── Pike VM (tagged NFA simulation → capture spans) ─────────────────────────
+//
+// Span extraction runs the NFA breadth-first with one thread per reachable
+// state, each carrying a tag vector; tagged eps transitions record the current
+// input position as they're taken. Thread priority is DFS pre-order over the
+// eps lists (Thompson construction orders them greedy-first), and the FIRST
+// thread to claim a state wins — that is exactly leftmost-greedy
+// disambiguation. O(input × states × tags), linear in the input, zero
+// backtracking: the ReDoS guarantee survives captures (the RE2 design).
+// Validation guarantees every group matches exactly once, so on accept every
+// tag is set — no optional-span semantics exist to get wrong.
+
+pub const max_tags = 2 * max_groups;
+const tag_unset = std.math.maxInt(usize);
+
+const ThreadList = struct {
+    on: []bool,
+    order: []usize,
+    count: usize = 0,
+    tags: []usize, // states × nt, keyed by state
+    nt: usize,
+
+    fn init(a: std.mem.Allocator, ns: usize, nt: usize) !ThreadList {
+        return .{
+            .on = blk: {
+                const on = try a.alloc(bool, ns);
+                @memset(on, false);
+                break :blk on;
+            },
+            .order = try a.alloc(usize, ns),
+            .tags = try a.alloc(usize, ns * nt),
+            .nt = nt,
+        };
+    }
+
+    fn clear(self: *ThreadList) void {
+        @memset(self.on, false);
+        self.count = 0;
+    }
+
+    /// Add a thread at `s`, then follow eps transitions in priority order.
+    /// First thread to claim a state wins (leftmost-greedy).
+    fn add(self: *ThreadList, nfa: *const Nfa, s: usize, tags: []const usize, pos: usize) void {
+        if (self.on[s]) return;
+        self.on[s] = true;
+        @memcpy(self.tags[s * self.nt ..][0..self.nt], tags);
+        self.order[self.count] = s;
+        self.count += 1;
+        for (nfa.states.items[s].eps.items) |e| {
+            if (e.tag) |t| {
+                var buf: [max_tags]usize = undefined;
+                @memcpy(buf[0..self.nt], tags);
+                buf[t] = pos;
+                self.add(nfa, e.to, buf[0..self.nt], pos);
+            } else {
+                self.add(nfa, e.to, tags, pos);
+            }
+        }
+    }
+};
+
+/// Full-match with capture spans: returns the tag vector (2 per group, byte
+/// offsets, group-open order) for the highest-priority accepting thread, or
+/// null on no match. The returned slice is owned by `allocator`.
+pub fn captures(allocator: std.mem.Allocator, nfa: *const Nfa, input: []const u8) !?[]usize {
+    const ns = nfa.states.items.len;
+    const nt = nfa.n_tags;
+    std.debug.assert(nt <= max_tags);
+
+    var arena_inst = std.heap.ArenaAllocator.init(allocator);
+    defer arena_inst.deinit();
+    const a = arena_inst.allocator();
+
+    var cur = try ThreadList.init(a, ns, nt);
+    var nxt = try ThreadList.init(a, ns, nt);
+
+    const t0 = [_]usize{tag_unset} ** max_tags;
+    cur.add(nfa, nfa.start, t0[0..nt], 0);
+
+    for (input, 0..) |c, i| {
+        nxt.clear();
+        for (cur.order[0..cur.count]) |s| {
+            const st = nfa.states.items[s];
+            if (st.sym) |cls| {
+                if (cls.contains(c)) nxt.add(nfa, st.out, cur.tags[s * nt ..][0..nt], i + 1);
+            }
+        }
+        const tmp = cur;
+        cur = nxt;
+        nxt = tmp;
+        if (cur.count == 0) return null;
+    }
+    if (!cur.on[nfa.accept]) return null;
+    const out = try allocator.alloc(usize, nt);
+    @memcpy(out, cur.tags[nfa.accept * nt ..][0..nt]);
+    return out;
+}
+
+fn capturesFor(arena: std.mem.Allocator, pattern: []const u8, input: []const u8) !?[]usize {
+    const an = try analyze(arena, pattern);
+    var nfa = try buildNfa(arena, an.root);
+    return captures(arena, &nfa, input);
+}
+
+test "pike vm: dims flagship spans" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const sp = (try capturesFor(a, "(?<l>[0-9]+)x(?<w>[0-9]+)x(?<h>[0-9]+)", "25x300x1")).?;
+    try testing.expectEqualSlices(usize, &.{ 0, 2, 3, 6, 7, 8 }, sp);
+    try testing.expectEqual(@as(?[]usize, null), try capturesFor(a, "(?<l>[0-9]+)x(?<w>[0-9]+)x(?<h>[0-9]+)", "25x300"));
+    try testing.expectEqual(@as(?[]usize, null), try capturesFor(a, "(?<l>[0-9]+)x(?<w>[0-9]+)x(?<h>[0-9]+)", ""));
+}
+
+test "pike vm: leftmost-greedy disambiguation" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    // Both groups can take any split of "aa"; greedy gives the first all of it.
+    const sp = (try capturesFor(arena.allocator(), "(?<a>a*)(?<b>a*)", "aa")).?;
+    try testing.expectEqualSlices(usize, &.{ 0, 2, 2, 2 }, sp);
+}
+
+test "pike vm: nested groups, inner span inside outer" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const sp = (try capturesFor(arena.allocator(), "(?<outer>a(?<inner>b+)c)", "abbc")).?;
+    try testing.expectEqualSlices(usize, &.{ 0, 4, 1, 3 }, sp);
+}
+
+test "pike vm: bool answer agrees with the dfa" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const pattern = "(?<n>[0-9]+)x(?<m>[0-9]+)";
+    const inputs = [_][]const u8{ "", "2x3", "12x34", "x", "2x", "x3", "2x3x4", "ax3" };
+    var dfa = try dfaFor(testing.allocator, pattern);
+    defer dfa.deinit();
+    for (inputs) |inp| {
+        const got = (try capturesFor(a, pattern, inp)) != null;
+        try testing.expectEqual(dfa.matches(inp), got);
+    }
+}
+
 // ── Emit (DFA → specialized native Zig matcher) ──────────────────────────────
 //
 // Serialize a DFA as a self-contained Zig function `fn <name>(input) bool` — the
@@ -712,6 +1028,142 @@ pub fn emitMatcher(w: anytype, dfa: *const Dfa, name: []const u8) !void {
     try w.writeAll("    for (input) |c| s = T[@as(usize, s) * 256 + @as(usize, c)];\n");
     try w.writeAll("    return A[s];\n");
     try w.writeAll("}\n");
+}
+
+/// Compile a pattern WITH named groups straight to an emitted Zig captures
+/// matcher: `fn <name>(input: []const u8) ?[<2N>]u32` — null on no match,
+/// else the tag vector (2 byte-offsets per group, group-open order). The
+/// emitted code is the same Pike VM as `captures`, specialized: NFA tables
+/// baked as consts, fixed-size thread arrays, zero allocation. Caller is
+/// expected to have run `analyze` (this re-validates and errors identically).
+pub fn compileCapturesToZig(out: std.mem.Allocator, pattern: []const u8, name: []const u8) ![]const u8 {
+    var arena = std.heap.ArenaAllocator.init(out);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const analysis = try analyze(a, pattern);
+    var nfa = try buildNfa(a, analysis.root);
+    std.debug.assert(nfa.n_tags > 0); // groupless patterns take the DFA path
+    var buf = std.ArrayList(u8){};
+    try emitCapturesMatcher(buf.writer(out), &nfa, name);
+    return buf.toOwnedSlice(out);
+}
+
+/// Emit the specialized Pike VM for a tagged NFA. Mirrors `captures` exactly;
+/// the runtime version is the reference the unit tests pin, this is the shape
+/// that ships in output_emitted.zig (self-contained, no std dependency).
+pub fn emitCapturesMatcher(w: anytype, nfa: *const Nfa, name: []const u8) !void {
+    const ns = nfa.states.items.len;
+    const nt = nfa.n_tags;
+
+    try w.print("const {s}_vm = struct {{\n", .{name});
+    try w.print("    const NS: usize = {d};\n", .{ns});
+    try w.print("    const NT: usize = {d};\n", .{nt});
+    try w.writeAll("    const UNSET: u32 = 0xFFFFFFFF;\n");
+
+    // OUT: sym-transition target per state (UNSET when the state has none).
+    try w.writeAll("    const OUT = [_]u32{ ");
+    for (nfa.states.items, 0..) |st, i| {
+        if (i != 0) try w.writeAll(", ");
+        if (st.sym != null) try w.print("{d}", .{st.out}) else try w.writeAll("0xFFFFFFFF");
+    }
+    try w.writeAll(" };\n");
+
+    // MASK: 256-bit class membership per state ([4]u64).
+    try w.writeAll("    const MASK = [_][4]u64{\n");
+    for (nfa.states.items) |st| {
+        var mask = [_]u64{0} ** 4;
+        if (st.sym) |cls| {
+            var b: usize = 0;
+            while (b < 256) : (b += 1) {
+                if (cls.contains(@intCast(b))) mask[b >> 6] |= @as(u64, 1) << @intCast(b & 63);
+            }
+        }
+        try w.print("        .{{ 0x{x}, 0x{x}, 0x{x}, 0x{x} }},\n", .{ mask[0], mask[1], mask[2], mask[3] });
+    }
+    try w.writeAll("    };\n");
+
+    // Eps lists, flattened with per-state offsets; order preserved (priority).
+    try w.writeAll("    const EPS_OFF = [_]u32{ 0");
+    {
+        var off: usize = 0;
+        for (nfa.states.items) |st| {
+            off += st.eps.items.len;
+            try w.print(", {d}", .{off});
+        }
+    }
+    try w.writeAll(" };\n");
+    try w.writeAll("    const EPS_TO = [_]u32{ ");
+    {
+        var first = true;
+        for (nfa.states.items) |st| {
+            for (st.eps.items) |e| {
+                if (!first) try w.writeAll(", ");
+                first = false;
+                try w.print("{d}", .{e.to});
+            }
+        }
+        if (first) try w.writeAll("0"); // Zig rejects empty [_]T{}; index range is dead anyway
+    }
+    try w.writeAll(" };\n");
+    try w.writeAll("    const EPS_TAG = [_]i8{ ");
+    {
+        var first = true;
+        for (nfa.states.items) |st| {
+            for (st.eps.items) |e| {
+                if (!first) try w.writeAll(", ");
+                first = false;
+                if (e.tag) |t| try w.print("{d}", .{t}) else try w.writeAll("-1");
+            }
+        }
+        if (first) try w.writeAll("-1");
+    }
+    try w.writeAll(" };\n");
+    try w.print("    const START: u32 = {d};\n", .{nfa.start});
+    try w.print("    const ACCEPT: u32 = {d};\n", .{nfa.accept});
+
+    try w.writeAll(
+        \\    fn add(on: *[NS]bool, order: *[NS]u32, count: *usize, tags: *[NS][NT]u32, s: u32, t: [NT]u32, pos: u32) void {
+        \\        if (on[s]) return;
+        \\        on[s] = true;
+        \\        tags[s] = t;
+        \\        order[count.*] = s;
+        \\        count.* += 1;
+        \\        var i: usize = EPS_OFF[s];
+        \\        while (i < EPS_OFF[s + 1]) : (i += 1) {
+        \\            var t2 = t;
+        \\            if (EPS_TAG[i] >= 0) t2[@as(usize, @intCast(EPS_TAG[i]))] = pos;
+        \\            add(on, order, count, tags, EPS_TO[i], t2, pos);
+        \\        }
+        \\    }
+        \\    fn run(input: []const u8) ?[NT]u32 {
+        \\        var on = [_]bool{false} ** NS;
+        \\        var order: [NS]u32 = undefined;
+        \\        var count: usize = 0;
+        \\        var tags: [NS][NT]u32 = undefined;
+        \\        add(&on, &order, &count, &tags, START, [_]u32{UNSET} ** NT, 0);
+        \\        for (input, 0..) |c, ip| {
+        \\            var on2 = [_]bool{false} ** NS;
+        \\            var order2: [NS]u32 = undefined;
+        \\            var count2: usize = 0;
+        \\            var tags2: [NS][NT]u32 = undefined;
+        \\            for (order[0..count]) |s| {
+        \\                if (OUT[s] != UNSET and (MASK[s][c >> 6] >> @as(u6, @intCast(c & 63))) & 1 == 1) {
+        \\                    add(&on2, &order2, &count2, &tags2, OUT[s], tags[s], @as(u32, @intCast(ip + 1)));
+        \\                }
+        \\            }
+        \\            on = on2;
+        \\            order = order2;
+        \\            count = count2;
+        \\            tags = tags2;
+        \\            if (count == 0) return null;
+        \\        }
+        \\        if (!on[ACCEPT]) return null;
+        \\        return tags[ACCEPT];
+        \\    }
+        \\};
+        \\
+    );
+    try w.print("fn {s}(input: []const u8) ?[{d}]u32 {{\n    return {s}_vm.run(input);\n}}\n", .{ name, nt, name });
 }
 
 test "emit: produces a well-formed matcher fn that encodes the DFA" {

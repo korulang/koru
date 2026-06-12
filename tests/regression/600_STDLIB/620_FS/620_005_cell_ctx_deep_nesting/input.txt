@@ -1,2 +1,0 @@
-tests/regression/600_STDLIB/620_FS/620_005_cell_ctx_deep_nesting/a.data
-tests/regression/600_STDLIB/620_FS/620_005_cell_ctx_deep_nesting/b.data

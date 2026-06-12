@@ -1,48 +1,43 @@
 # The Frontier Map — gaps the climb has named
 
-**Contract:** this is an INDEX, not a backlog. Every entry points at
-executable truth — a red pin, or a `.kz` frontier-ledger facet beside a green
-day. An entry exists because code exists that states the gap; when the gap
-closes, the SAME commit rewrites the day files toward the pure-`.k` form
-(the covenant: all days stay VALID and green at every moment, and get more
-elegant as the language improves — facets shrink, never break). Delete the
-entry when the last pointer greens or empties.
+**Contract (REWRITTEN 2026-06-12 by ruling — the old "all days stay green,
+facets shrink" covenant is DEAD):** this is an INDEX, not a backlog. Every
+entry points at executable truth: a RED test whose pure-`.k` form needs the
+gap. A day that Koru cannot yet express sits RED on its gap — host facets
+that did the day's work were LYING TESTS and are deleted, not shrunk. Green
+is only ever earned by Koru doing the work. When a gap closes, the SAME
+commit rewrites the red days that wanted it and greens them honestly;
+delete the entry when its last red greens.
 
 A gap-closing session starts here: pick an entry, read its pointers, close,
 rewrite the ledgers, delete the entry.
 
 ---
 
-## 1. Regex GROUP captures
-**What:** pattern branches bind only the whole matched text (cut-1 full
-match); `(?<l>\d+)x(?<w>\d+)x(?<h>\d+)` cannot yet deliver its three numbers.
-**Design RATIFIED (2026-06-12):** NAMED groups only (`(?<name>...)`; bare
-`(...)` stays non-capturing structure — positional captures are
-unrepresentable, killing the silent-transposition trap). The pattern is the
-branch's PAYLOAD SCHEMA (the transform owns the pattern's semantics).
-Delivery via the now-LANDED general shape-destructure at the binding
-position: `| \`(?<l>\d+)x(?<w>\d+)x(?<h>\d+)\` { l: i64, w: i64, h: i64 } |>`.
-Types in the destructure = checked assertions generally; match's splice
-defines them as CONVERSION (the `0[i32]` move — dissolves text→int).
-**Remaining build:** named-group parsing + TDFA span extraction in
-regex_engine.zig (cut-2 restriction: no capture groups under quantifiers/
-alternation — rejected loudly, same doctrine as backrefs) + match transform
-emits the payload struct + typed conversion in the splice.
-**STRICT 1:1 (Lars-ratified 2026-06-12):** destructure fields ↔ named
-groups must match BOTH ways, compile-time error from the transform (it
-owns pattern AND destructure at the same site). Unwanted capture = spell
-it `(...)` — the discard form lives in the pattern. Consequence: tags are
-emitted exactly for delivered groups (binding-presence-picks-the-engine,
-enforced not inferred). Whole-payload binding `| pat dims |>` binds all
-named groups as the struct (KORU100 on dims covers usage).
-**Landed substrate:** destructure pins 020_016..020 (flat/nested-host/
-effect-branch/KORU100-per-field/KORU101).
-**Retires:** `parse-dims` in BOTH day-2 ledgers.
-**Blocks forward:** day 6 (`turn on 0,0 through 999,999`), 7 (wire
-expressions), 9/13/14/16 (sentence-shaped lines) — most parsing days.
-**Pointers:** `810_021_day02_part1/input.kz`, `810_022_day02_part2/input.kz`.
-**Owner thread:** the regex branch (matched-text binding + bound-path A/B
-already landed there).
+## 1. Regex GROUP captures — CLOSED 2026-06-12
+**Was:** pattern branches bound only the whole matched text; sentence-shaped
+lines needed a host parse proc per day.
+**Now:** NAMED groups (`(?<name>...)`; bare `(...)` stays non-capturing —
+positional captures are unrepresentable, killing the silent-transposition
+trap). The pattern is the branch's PAYLOAD SCHEMA: groups deliver through
+the shape-destructure at the binding position, a TYPE on a field is
+CONVERSION at the splice (text→int dissolves), and a plain binding takes
+all groups as one struct of text slices. STRICT 1:1 both ways, enforced by
+the transform (it owns pattern AND destructure at the same site); unwanted
+capture = spell it `(...)`. Cut-2 doctrine: groups under quantifiers or
+alternation rejected loudly (`GroupUnderQuantifier`/`GroupUnderAlternation`
+— no single span exists, same doctrine as backrefs). Engine: Pike VM over
+the tagged NFA (the RE2 captures design) — linear-time, zero backtracking,
+ReDoS-immune WITH captures; binding-presence picks the engine (grouped
+patterns compile the tagged VM, predicates keep the pure DFA).
+**Green acceptance set:** 640_005 (dims flagship, typed conversion),
+640_006 (whole-payload binding), 640_007..010 (1:1 both ways, quantifier/
+alternation rejection, discard rejection).
+**Retired in the same commit:** `parse-dims` (day 2 both parts),
+`parse-reindeer` (day 14p1), `parse-pos` (day 25) — all four days now
+PURE `.k` with empty ledgers.
+**Still to harvest:** the parse procs in days 6/7/9/13/14p2/15/16/19p1/21
+(each also waits on store/search for its OTHER procs — shrink, not flip).
 
 ## 2. The STORE (collections / multi-cell)
 **What:** no Koru surface for a set/map/growing collection; capture is
@@ -101,7 +96,7 @@ become labeled breaks feeding the ordinary terminal switch. The rule:
 inlined when profitable.** Recursion of effectful events: rejected by
 ruling. Discipline: inline-portable proc bodies (params + effect names +
 `std.` + spine fns; __koru-prefixed locals — they share the consumer frame).
-**Green acceptance set:** 620_001..006 (incl. four-level nesting and
+**Green acceptance set:** 650_001..006 (incl. four-level nesting and
 subflow-in-effect-branch), 400_070/073/079/096. Census 641/42, zero
 collateral.
 **Cut-2 remainders (legacy call path until then):** resume-typed effects,
@@ -138,7 +133,26 @@ workaround ledgers were rewritten in the same commit:
   on an engine strategy for huge alternations (lazy DFA / NFA
   simulation) — a real frontier, not a bug.
 
-## 6. Long-horizon tensions (named, not blocking)
+## 8. SEARCH / RECURSION (permutations, subsets, backtracking)
+**What:** no Koru spelling for recursive search — permutations (days 9/13),
+subset enumeration (days 17/24), loadout product-walk (day 21), greedy
+reverse rewriting (day 19p2), recursive eval with memo (day 7). Every one
+is a host proc today. This was the SECOND-biggest dependency in the ledger
+census (11 facets) and had no entry — named 2026-06-12 during the
+pure-Koru inventory.
+**Design open:** §6 ruled recursion of effectful events REJECTED (inlined
+by construction), so the answer is not "just recurse an event." Candidate
+shapes: subflows with own frames are value-coupled and CAN recurse (the
+§6 rule names the split); a label-fold over an explicit work stack (the
+store frontier feeds this); or a dedicated search/enumerate stdlib surface
+(effect-shape like read-lines: `! candidate c |> ...`, engine in the
+stdlib). Likely entangled with gap 2 — a work stack IS a collection.
+**Blocks forward:** days 7, 9, 13, 17, 19p2, 21, 24 — after store, this is
+what stands between the calendar and pure `.k`.
+**Pointers:** the `← host`/`← host recursion`/`← host search` lines in
+those seven days' ledgers.
+
+## 9. Long-horizon tensions (named, not blocking)
 - **Target-neutral expressions:** `c == '('`, `pos.y + 1` are Zig-flavored
   leaves; the legal-gap doctrine covers Zig-target runs. The layered
   expression-lowering design is the standing answer.

@@ -12,7 +12,7 @@ const std = @import("std");
 // ZERO-ALLOC: spans into the process's own argv memory (std.os.argv,
 // POSIX), cached in a static buffer. The old argsAlloc cache was a
 // process-lifetime allocation the exit-time leak meter rightly refused
-// to exempt (first caught by 620_001, the file-reading vertical).
+// to exempt (first caught by 650_001, the file-reading vertical).
 var _argv_buf: [64][:0]u8 = undefined;
 var _argv_len: usize = 0;
 var _argv_init: bool = false;

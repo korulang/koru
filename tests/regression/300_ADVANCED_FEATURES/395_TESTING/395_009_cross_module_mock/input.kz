@@ -1,6 +1,6 @@
 // RED PIN (2026-06-12): cross-module mocking × EFFECT BRANCHES.
 // The consumer below handles `! line` from std/fs:read-lines (effect shape).
-// The REAL path streams effects as handler CALLS during the proc (620_001
+// The REAL path streams effects as handler CALLS during the proc (650_001
 // is green end-to-end); the MOCK path lowers the effect branch into the
 // result-dispatch switch (`.line =>`) against an Output union that
 // (correctly) holds terminals only — Zig rejects the phantom arm. Goes

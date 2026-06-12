@@ -13,6 +13,20 @@
 // text (bind or discard with `_`); `no-match` carries nothing and binds
 // nothing.
 //
+// NAMED GROUPS (`(?<name>...)`) make the pattern the branch's PAYLOAD SCHEMA:
+//
+//   std/regex:match(line)
+//   | `(?<l>[0-9]+)x(?<w>[0-9]+)x(?<h>[0-9]+)` { l: i64, w: i64, h: i64 } |> …
+//
+// Groups deliver through the shape-destructure at the binding position; a
+// TYPE on a field is a CONVERSION at the splice (text→int dissolves here).
+// A plain binding takes ALL groups as one struct of text slices. STRICT 1:1:
+// destructure fields ↔ named groups, both ways, compile-time — unwanted
+// captures are spelled `(...)` (non-capturing) in the pattern. Groups under
+// quantifiers or alternation are rejected (no single span exists — same
+// doctrine as backrefs). Capture matching is a Pike VM over the tagged NFA:
+// still linear-time, still zero backtracking, still ReDoS-immune.
+//
 // Each `…` raw-pattern branch is compiled — at COMPILE TIME — to a specialized
 // DFA matcher (src/regex_engine.zig). Matching is straight-line, linear-time,
 // ReDoS-immune by construction (no backtracking, ever). The branches dispatch
@@ -93,25 +107,127 @@ const std = @import("std");
             // is the pattern, byte-for-byte. No glyph stripping here.
             const pattern = name;
             const fn_name = std.fmt.allocPrint(allocator, "__koru_re_{d}_{d}_{d}", .{ flow.location.line, flow.location.column, i }) catch unreachable;
-            const matcher_src = regex.compileToZig(allocator, pattern, fn_name) catch |err| {
-                // Name the WHY (e.g. DfaTooLarge for the engine's loud
-                // state cap) — an unnamed failure here used to surface as
-                // a bogus KORU100 blaming a binding (640_004's second mode).
+
+            // Parse + validate up front: named groups decide the engine
+            // (binding-presence-picks-the-engine is ENFORCED below, not
+            // inferred), and the cut-2 doctrine (GroupUnderQuantifier /
+            // GroupUnderAlternation, …) surfaces here, loud and named — an
+            // unnamed failure used to surface as a bogus KORU100 blaming a
+            // binding (640_004's second mode).
+            const analysis = regex.analyze(allocator, pattern) catch |err| {
                 const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"regex: cannot compile pattern `{s}`: {s}\"); }}", .{ pattern, @errorName(err) }) catch unreachable;
                 return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
             };
-            matchers.appendSlice(allocator, matcher_src) catch unreachable;
-            matchers.appendSlice(allocator, "\n") catch unreachable;
+            const groups = analysis.group_names;
+            const binding = c.binding orelse "_";
 
-            if (arm_count > 0) dispatch.appendSlice(allocator, " else ") catch unreachable;
-            // Pattern branches carry the matched text (the `*` payload in the
-            // contract): the splice marker binds it to the branch's binding
-            // (`const <name> = ...` or `_ = ...` for discard). Cut-1 is FULL
-            // match, so the matched text IS the input. `no-match` is void and
-            // keeps the bare continue hand-off below.
-            const arm = std.fmt.allocPrint(allocator, "if ({s}({s})) __koru_inline_{d}({s})", .{ fn_name, in_name, i, in_name }) catch unreachable;
-            dispatch.appendSlice(allocator, arm) catch unreachable;
-            arm_count += 1;
+            if (groups.len == 0) {
+                // No captures: the pattern is a predicate. The branch carries
+                // the matched text (FULL match ⇒ the whole input) through the
+                // splice marker; a destructure has nothing to take apart.
+                if (c.destructure.len > 0) {
+                    const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"regex match: destructure field '{s}' has no named group in pattern `{s}`\"); }}", .{ c.destructure[0].name, pattern }) catch unreachable;
+                    return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+                }
+                const matcher_src = regex.compileToZig(allocator, pattern, fn_name) catch |err| {
+                    const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"regex: cannot compile pattern `{s}`: {s}\"); }}", .{ pattern, @errorName(err) }) catch unreachable;
+                    return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+                };
+                matchers.appendSlice(allocator, matcher_src) catch unreachable;
+                matchers.appendSlice(allocator, "\n") catch unreachable;
+
+                if (arm_count > 0) dispatch.appendSlice(allocator, " else ") catch unreachable;
+                const arm = std.fmt.allocPrint(allocator, "if ({s}({s})) __koru_inline_{d}({s})", .{ fn_name, in_name, i, in_name }) catch unreachable;
+                dispatch.appendSlice(allocator, arm) catch unreachable;
+                arm_count += 1;
+            } else {
+                // Named groups: the pattern is the branch's PAYLOAD SCHEMA.
+                // Delivery is the landed shape-destructure (typed fields are
+                // CONVERSION — text→int dissolves here) or a whole-payload
+                // binding (all groups as one struct of text slices). STRICT
+                // 1:1 both ways — this transform owns pattern AND destructure
+                // at the same site, so the mismatch is its error to raise.
+                if (c.destructure.len == 0 and std.mem.eql(u8, binding, "_")) {
+                    const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"regex match: pattern `{s}` declares named groups but the branch discards the payload — destructure them, bind the payload, or make the unwanted capture non-capturing: spell it (...)\"); }}", .{pattern}) catch unreachable;
+                    return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+                }
+                if (c.destructure.len > 0) {
+                    for (c.destructure) |f| {
+                        if (f.sub.len > 0) {
+                            const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"regex match: nested destructure has no meaning for a text span (field '{s}')\"); }}", .{f.name}) catch unreachable;
+                            return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+                        }
+                        var found = false;
+                        for (groups) |g| {
+                            if (std.mem.eql(u8, g, f.name)) found = true;
+                        }
+                        if (!found) {
+                            const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"regex match: destructure field '{s}' has no named group in pattern `{s}`\"); }}", .{ f.name, pattern }) catch unreachable;
+                            return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+                        }
+                    }
+                    for (groups) |g| {
+                        var found = false;
+                        for (c.destructure) |f| {
+                            if (std.mem.eql(u8, f.name, g)) found = true;
+                        }
+                        if (!found) {
+                            const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"regex match: named group '{s}' has no destructure field — take delivery, or make it non-capturing: spell it (...)\"); }}", .{g}) catch unreachable;
+                            return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+                        }
+                    }
+                }
+
+                const matcher_src = regex.compileCapturesToZig(allocator, pattern, fn_name) catch |err| {
+                    const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"regex: cannot compile pattern `{s}`: {s}\"); }}", .{ pattern, @errorName(err) }) catch unreachable;
+                    return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+                };
+                matchers.appendSlice(allocator, matcher_src) catch unreachable;
+                matchers.appendSlice(allocator, "\n") catch unreachable;
+
+                // SITE-UNIQUE span binding (same lesson as __koru_match_in:
+                // a nested match inside the branch body must not shadow it).
+                const sp_name = std.fmt.allocPrint(allocator, "__koru_sp_{d}_{d}_{d}", .{ flow.location.line, flow.location.column, i }) catch unreachable;
+
+                // Payload struct literal in group-open (= tag) order. A typed
+                // destructure field converts AT THE SPLICE; untyped fields and
+                // whole-payload bindings deliver the span as a text slice.
+                var payload = std.ArrayList(u8){};
+                payload.appendSlice(allocator, ".{ ") catch unreachable;
+                for (groups, 0..) |g, k| {
+                    if (k > 0) payload.appendSlice(allocator, ", ") catch unreachable;
+                    const slice_expr = std.fmt.allocPrint(allocator, "{s}[{s}[{d}]..{s}[{d}]]", .{ in_name, sp_name, 2 * k, sp_name, 2 * k + 1 }) catch unreachable;
+                    var type_text: ?[]const u8 = null;
+                    for (c.destructure) |f| {
+                        if (std.mem.eql(u8, f.name, g)) type_text = f.type_text;
+                    }
+                    var is_int = false;
+                    if (type_text) |t0| {
+                        const t = std.mem.trim(u8, t0, " \t");
+                        is_int = std.mem.eql(u8, t, "isize") or std.mem.eql(u8, t, "usize");
+                        if (!is_int and t.len >= 2 and (t[0] == 'i' or t[0] == 'u')) {
+                            is_int = true;
+                            for (t[1..]) |ch| {
+                                if (ch < '0' or ch > '9') is_int = false;
+                            }
+                        }
+                    }
+                    if (is_int) {
+                        const t = std.mem.trim(u8, type_text.?, " \t");
+                        const field = std.fmt.allocPrint(allocator, ".{s} = @import(\"std\").fmt.parseInt({s}, {s}, 10) catch @panic(\"regex match: group '{s}' does not fit {s}\")", .{ g, t, slice_expr, g, t }) catch unreachable;
+                        payload.appendSlice(allocator, field) catch unreachable;
+                    } else {
+                        const field = std.fmt.allocPrint(allocator, ".{s} = {s}", .{ g, slice_expr }) catch unreachable;
+                        payload.appendSlice(allocator, field) catch unreachable;
+                    }
+                }
+                payload.appendSlice(allocator, " }") catch unreachable;
+
+                if (arm_count > 0) dispatch.appendSlice(allocator, " else ") catch unreachable;
+                const arm = std.fmt.allocPrint(allocator, "if ({s}({s})) |{s}| __koru_inline_{d}({s})", .{ fn_name, in_name, sp_name, i, payload.items }) catch unreachable;
+                dispatch.appendSlice(allocator, arm) catch unreachable;
+                arm_count += 1;
+            }
         }
     }
 

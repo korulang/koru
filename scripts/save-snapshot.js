@@ -57,13 +57,22 @@ async function readFirstLine(path) {
  *
  * categoryPath is the full hierarchy path, e.g. "000_CORE_LANGUAGE/010_BASIC_SYNTAX"
  */
+// A test's entry source is any of the three facet extensions — pure-Koru
+// tests have only input.k (the AoC purity flip made a whole cluster so;
+// input.kz-only discovery silently dropped them from snapshots).
+async function hasInputFile(dir) {
+	return (await fileExists(join(dir, 'input.kz'))) ||
+		(await fileExists(join(dir, 'input.k'))) ||
+		(await fileExists(join(dir, 'input.kjs')));
+}
+
 async function findAllTestDirs(basePath, categoryPath = null, categorySkipped = false, categoryTodo = false, categoryTodoDesc = '') {
 	const tests = [];
 	const entries = await readdir(basePath);
 
 	// Category-level TODO marker on this dir (propagates to all tests below).
 	const ownTodo = await fileExists(join(basePath, 'TODO'));
-	const ownInput = await fileExists(join(basePath, 'input.kz'));
+	const ownInput = await hasInputFile(basePath);
 	const ownTodoIsCategory = ownTodo && !ownInput;
 	const ownTodoDesc = ownTodoIsCategory ? await readFirstLine(join(basePath, 'TODO')) : '';
 	const effectiveCategoryTodo = categoryTodo || ownTodoIsCategory;
@@ -80,7 +89,7 @@ async function findAllTestDirs(basePath, categoryPath = null, categorySkipped = 
 		const isTestDir = /^\d+[a-z]?_/.test(entry);
 
 		// Check for input file and markers (matching bash logic)
-		const hasInput = await fileExists(join(fullPath, 'input.kz'));
+		const hasInput = await hasInputFile(fullPath);
 		const todo = await fileExists(join(fullPath, 'TODO'));
 		const skip = await fileExists(join(fullPath, 'SKIP'));
 		const broken = await fileExists(join(fullPath, 'BROKEN'));
