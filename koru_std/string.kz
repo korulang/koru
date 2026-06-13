@@ -138,6 +138,25 @@ pub const String = struct {
     return .{ .ok = n };
 }
 
+// Build a NEW owned String from a base-10 integer (the int→string mirror of
+// parse-int). Owned return, so it carries its own ownership obligation.
+~pub event from-int { n: i64 }
+| ok *String<view!>
+| err []const u8
+
+~proc from-int|zig {
+    const allocator = koru_allocator();
+    const data = std.fmt.allocPrint(allocator, "{d}", .{n}) catch {
+        return .{ .err = "allocation failed" };
+    };
+    const s = allocator.create(String) catch {
+        allocator.free(data);
+        return .{ .err = "allocation failed" };
+    };
+    s.* = .{ .data = data, .allocator = allocator };
+    return .{ .ok = s };
+}
+
 // Does the string contain `needle`?
 ~pub event contains { s: *String<view|instance>, needle: []const u8 }
 | yes
