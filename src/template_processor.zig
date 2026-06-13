@@ -135,6 +135,37 @@ fn scanValueEnd(s: []const u8, start: usize) usize {
 /// single implementation, so the two lowerings cannot drift.
 const peelBaseType = struct_literal.peelBaseType;
 
+/// Infer the Zig element type of a homogeneous array-literal body from its
+/// first element: a string literal ⇒ `[]const u8`, an integer literal ⇒ `i64`.
+/// Returns null when it can't tell (empty or mixed/other) — the caller then
+/// leaves the value verbatim and Zig reports the real error loudly.
+fn inferElemType(inner: []const u8) ?[]const u8 {
+    const t = std.mem.trim(u8, inner, " \t\n\r");
+    if (t.len == 0) return null;
+    if (t[0] == '"') return "[]const u8";
+    if (t[0] == '-' or std.ascii.isDigit(t[0])) return "i64";
+    return null;
+}
+
+/// Render a `const {}` field value for the ZIG target. Three cases, same parser
+/// the JS variant uses so they can't drift on what a "value" is:
+///   • array literal `[a, b, c]` → `[_]<elem>{ a, b, c }` (elem from the
+///     `[type]` annotation if present, else inferred). Koru/JS `[...]` syntax
+///     is NOT valid Zig, so this is the lowering that makes pure-`.k` const
+///     arrays compile at all.
+///   • typed scalar `42[i32]`    → `@as(i32, 42)`
+///   • everything else           → verbatim (strings, bools, bare numbers)
+fn renderZigConstValue(allocator: std.mem.Allocator, value: []const u8, type_ann: []const u8) ![]const u8 {
+    const v = std.mem.trim(u8, value, " \t\n\r");
+    if (v.len >= 2 and v[0] == '[' and v[v.len - 1] == ']') {
+        const inner = std.mem.trim(u8, v[1 .. v.len - 1], " \t\n\r");
+        const elem = if (type_ann.len > 0) type_ann else (inferElemType(inner) orelse return allocator.dupe(u8, v));
+        return std.fmt.allocPrint(allocator, "[_]{s}{{ {s} }}", .{ elem, inner });
+    }
+    if (type_ann.len > 0) return std.fmt.allocPrint(allocator, "@as({s}, {s})", .{ type_ann, v });
+    return allocator.dupe(u8, v);
+}
+
 /// `parse_fields(struct_text)` filter: split a brace-optional Koru field list
 /// (`name: "X", count: 42[i32]`, or `{ … }`, comma- OR newline-separated) into an
 /// array of `{ name, value, type }` record nodes the template iterates with
@@ -185,6 +216,10 @@ fn parseFieldsFilter(allocator: std.mem.Allocator, args: []const liquid.Value) a
         try node.put("name", .{ .string = field_name });
         try node.put("value", .{ .string = peeled.value });
         try node.put("type", .{ .string = peeled.type });
+        // `zig`: the value lowered for the Zig target (array literals → `[_]T{…}`,
+        // typed scalars → `@as(T, v)`). JS keeps using `value` verbatim.
+        const zig_rendered = renderZigConstValue(allocator, peeled.value, peeled.type) catch peeled.value;
+        try node.put("zig", .{ .string = zig_rendered });
         try nodes.append(allocator, node);
     }
 

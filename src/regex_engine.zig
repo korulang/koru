@@ -983,6 +983,255 @@ test "pike vm: bool answer agrees with the dfa" {
     }
 }
 
+// ── Tagged DFA (one-pass capture extraction) ────────────────────────────────
+//
+// The Pike VM above is correct for ANY tagged NFA, but it simulates every live
+// thread per byte — O(states)/byte. For the regular subset Koru actually allows
+// — NO capture group under a quantifier or an alternation (640_008/009), so
+// every group is a clean once-entered bracket — capture positions are
+// STRUCTURALLY DETERMINISTIC, and subset construction can bake the tag-record
+// actions onto each transition. Captures then run at DFA speed (O(1)/byte), the
+// same class as the groupless matcher. This is RE2's "one-pass" engine narrowed
+// to Koru's grammar.
+//
+// The rule is the Pike VM's, precomputed: a tag fires when the epsilon-closure
+// that follows a byte transition crosses its edge, valued at the post-byte
+// position (ip+1); tags crossed by the START closure fire at 0. Because the
+// grammar guarantees a single live thread, the per-transition tag SET is fixed
+// at compile time. Any pattern that is NOT one-pass (two states in a closure
+// consume the same byte) returns error.NotOnePass and the caller emits the Pike
+// VM instead — correct, just slower. Under the current grammar that should be
+// unreachable for legal patterns; the check is a correctness backstop, not a
+// silent fallback for a bug.
+
+const TagBits = u32; // max_tags == 32 fits one word
+const OnePassError = error{ OutOfMemory, DfaTooLarge, NotOnePass };
+
+pub const TaggedDfa = struct {
+    n_states: usize,
+    n_tags: usize,
+    trans: []u32, // trans[state * 256 + byte] = next state
+    tag_off: []u32, // CSR offsets into tag_ids, len n_states*256 + 1
+    tag_ids: []u8, // tag ids fired on each transition (value = ip+1)
+    start_tags: []u8, // tags fired by the START closure (value 0)
+    accept: []bool,
+    start: u32,
+    allocator: std.mem.Allocator,
+
+    pub fn deinit(self: *TaggedDfa) void {
+        self.allocator.free(self.trans);
+        self.allocator.free(self.tag_off);
+        self.allocator.free(self.tag_ids);
+        self.allocator.free(self.start_tags);
+        self.allocator.free(self.accept);
+    }
+
+    /// Reference runner — byte-for-byte the shape `emitTaggedCapturesMatcher`
+    /// emits, and the oracle the cross-check tests pin against the Pike VM.
+    /// Writes the tag vector into `out` (len n_tags); returns whole-input match.
+    pub fn run(self: *const TaggedDfa, input: []const u8, out: []u32) bool {
+        for (out) |*t| t.* = 0xFFFFFFFF;
+        for (self.start_tags) |t| out[t] = 0;
+        var s: u32 = self.start;
+        for (input, 0..) |c, ip| {
+            const base = @as(usize, s) * 256 + @as(usize, c);
+            var k: usize = self.tag_off[base];
+            while (k < self.tag_off[base + 1]) : (k += 1) out[self.tag_ids[k]] = @as(u32, @intCast(ip + 1));
+            s = self.trans[base];
+        }
+        return self.accept[s];
+    }
+};
+
+/// Epsilon-closure that mirrors the Pike VM's add(): eps edges in priority
+/// order, mark-on-first-visit, and union a tag iff the edge that FIRST reaches
+/// a new node carries one (an edge into an already-claimed node fires nothing —
+/// exactly add()'s `if (on[s]) return`). Fills `marked`; ORs tags into `*tags`.
+fn closeTagged(nfa: *const Nfa, s: usize, marked: []bool, tags: *TagBits) void {
+    if (marked[s]) return;
+    marked[s] = true;
+    for (nfa.states.items[s].eps.items) |e| {
+        if (!marked[e.to]) {
+            if (e.tag) |t| tags.* |= (@as(TagBits, 1) << @as(u5, @intCast(t)));
+            closeTagged(nfa, e.to, marked, tags);
+        }
+    }
+}
+
+/// Set bits of `bits` as ascending tag ids, owned by `a`.
+fn tagIds(a: std.mem.Allocator, bits: TagBits) ![]u8 {
+    var ids = std.ArrayList(u8){};
+    var t: u8 = 0;
+    while (t < max_tags) : (t += 1) {
+        if ((bits >> @as(u5, @intCast(t))) & 1 == 1) try ids.append(a, t);
+    }
+    return ids.toOwnedSlice(a);
+}
+
+/// Closure of a single optional seed (null ⇒ the empty/dead set), as an
+/// ASCENDING set (so equal sets intern by bytes), unioning crossed tags.
+fn closeSeed(nfa: *const Nfa, n: usize, seed: ?usize, a: std.mem.Allocator, tags: *TagBits) ![]usize {
+    const marked = try a.alloc(bool, n);
+    @memset(marked, false);
+    if (seed) |sd| closeTagged(nfa, sd, marked, tags);
+    var out = std.ArrayList(usize){};
+    var i: usize = 0;
+    while (i < n) : (i += 1) if (marked[i]) try out.append(a, i);
+    return out.toOwnedSlice(a);
+}
+
+/// Build a one-pass tagged DFA from a tagged NFA, or error.NotOnePass if the
+/// pattern needs the Pike VM. The dead (empty) set is the natural absorbing
+/// non-accepting sink, so no input is ever rejected mid-walk — the walk runs to
+/// the end and the accept bit decides, matching the groupless emitter.
+pub fn buildTaggedDfa(allocator: std.mem.Allocator, nfa: *const Nfa) OnePassError!TaggedDfa {
+    var arena_inst = std.heap.ArenaAllocator.init(allocator);
+    defer arena_inst.deinit();
+    const a = arena_inst.allocator();
+    const n = nfa.states.items.len;
+    const nt = nfa.n_tags;
+
+    var interned = std.StringHashMap(usize).init(a);
+    var sets = std.ArrayList([]usize){};
+
+    var start_bits: TagBits = 0;
+    const start_set = try closeSeed(nfa, n, nfa.start, a, &start_bits);
+    try interned.put(std.mem.sliceAsBytes(start_set), 0);
+    try sets.append(a, start_set);
+
+    var trans = std.ArrayList(u32){};
+    var tag_lists = std.ArrayList([]const u8){};
+    var accept = std.ArrayList(bool){};
+    try accept.append(a, setContains(start_set, nfa.accept));
+
+    var processed: usize = 0;
+    while (processed < sets.items.len) : (processed += 1) {
+        const set = sets.items[processed];
+        var byte: usize = 0;
+        while (byte < 256) : (byte += 1) {
+            // one-pass: at most one sym-state in this set may consume `byte`.
+            var seed: ?usize = null;
+            for (set) |s| {
+                if (nfa.states.items[s].sym) |cls| {
+                    if (cls.contains(@intCast(byte))) {
+                        if (seed != null) return error.NotOnePass;
+                        seed = nfa.states.items[s].out;
+                    }
+                }
+            }
+            var tbits: TagBits = 0;
+            const move = try closeSeed(nfa, n, seed, a, &tbits);
+            const key = std.mem.sliceAsBytes(move);
+            const target = interned.get(key) orelse blk: {
+                if (sets.items.len >= max_dfa_states) return error.DfaTooLarge;
+                const idx = sets.items.len;
+                try interned.put(key, idx);
+                try sets.append(a, move);
+                try accept.append(a, setContains(move, nfa.accept));
+                break :blk idx;
+            };
+            try trans.append(a, @intCast(target));
+            try tag_lists.append(a, try tagIds(a, tbits));
+        }
+    }
+
+    const nstates = sets.items.len;
+    const trans_out = try allocator.alloc(u32, nstates * 256);
+    @memcpy(trans_out, trans.items);
+    const accept_out = try allocator.alloc(bool, nstates);
+    @memcpy(accept_out, accept.items);
+
+    var total: usize = 0;
+    for (tag_lists.items) |tl| total += tl.len;
+    const tag_off = try allocator.alloc(u32, nstates * 256 + 1);
+    const tag_ids_out = try allocator.alloc(u8, total);
+    var acc: u32 = 0;
+    for (tag_lists.items, 0..) |tl, i| {
+        tag_off[i] = acc;
+        for (tl) |t| {
+            tag_ids_out[acc] = t;
+            acc += 1;
+        }
+    }
+    tag_off[nstates * 256] = acc;
+
+    return TaggedDfa{
+        .n_states = nstates,
+        .n_tags = nt,
+        .trans = trans_out,
+        .tag_off = tag_off,
+        .tag_ids = tag_ids_out,
+        .start_tags = try tagIds(allocator, start_bits),
+        .accept = accept_out,
+        .start = 0,
+        .allocator = allocator,
+    };
+}
+
+fn taggedDfaFor(allocator: std.mem.Allocator, src: []const u8) !TaggedDfa {
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const an = try analyze(arena.allocator(), src);
+    var nfa = try buildNfa(arena.allocator(), an.root);
+    return buildTaggedDfa(allocator, &nfa);
+}
+
+test "tagged-dfa: dims flagship spans match the pike vm" {
+    var td = try taggedDfaFor(testing.allocator, "(?<l>[0-9]+)x(?<w>[0-9]+)x(?<h>[0-9]+)");
+    defer td.deinit();
+    var out: [max_tags]u32 = undefined;
+    try testing.expect(td.run("25x300x1", out[0..6]));
+    try testing.expectEqualSlices(u32, &.{ 0, 2, 3, 6, 7, 8 }, out[0..6]);
+    try testing.expect(!td.run("25x300", out[0..6]));
+    try testing.expect(!td.run("", out[0..6]));
+}
+
+test "tagged-dfa == pike vm: spans agree across patterns and inputs" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const patterns = [_][]const u8{
+        "(?<l>[0-9]+)x(?<w>[0-9]+)x(?<h>[0-9]+)",
+        "(?<n>[0-9]+)x(?<m>[0-9]+)",
+        "(?<a>[A-Za-z]+) to (?<b>[A-Za-z]+) = (?<d>[0-9]+)",
+        "(?<x>a)(?<y>a)",
+        "(?<g>ab|cd)e",
+        "(?<outer>a(?<inner>b+)c)",
+        "(?<neg>-?[0-9]+)",
+    };
+    const inputs = [_][]const u8{ "", "2x3x4", "25x300x1", "2x3", "12x34", "Foo to Bar = 99", "aa", "abe", "cde", "abbc", "x", "2x3x", "-42", "7", "Q to Z = 1" };
+    for (patterns) |pat| {
+        const an = try analyze(a, pat);
+        var nfa = try buildNfa(a, an.root);
+        const nt = nfa.n_tags;
+        var td = buildTaggedDfa(testing.allocator, &nfa) catch |e| switch (e) {
+            error.NotOnePass => continue, // legitimately falls back to the Pike VM
+            else => return e,
+        };
+        defer td.deinit();
+        var out: [max_tags]u32 = undefined;
+        for (inputs) |inp| {
+            const pike = try captures(a, &nfa, inp);
+            const matched = td.run(inp, out[0..nt]);
+            try testing.expectEqual(pike != null, matched);
+            if (pike) |sp| {
+                for (sp, 0..) |v, i| try testing.expectEqual(@as(u32, @intCast(v)), out[i]);
+            }
+        }
+    }
+}
+
+test "tagged-dfa: ambiguous (groups over star) is rejected as not-one-pass" {
+    // `(?<a>a*)(?<b>a*)` — both groups can consume 'a' from the same state, so
+    // there's no single deterministic capture. The one-pass check must catch it
+    // (the emitter then falls back to the Pike VM).
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const an = try analyze(arena.allocator(), "(?<a>a*)(?<b>a*)");
+    var nfa = try buildNfa(arena.allocator(), an.root);
+    try testing.expectError(error.NotOnePass, buildTaggedDfa(testing.allocator, &nfa));
+}
+
 // ── Emit (DFA → specialized native Zig matcher) ──────────────────────────────
 //
 // Serialize a DFA as a self-contained Zig function `fn <name>(input) bool` — the
@@ -1044,8 +1293,71 @@ pub fn compileCapturesToZig(out: std.mem.Allocator, pattern: []const u8, name: [
     var nfa = try buildNfa(a, analysis.root);
     std.debug.assert(nfa.n_tags > 0); // groupless patterns take the DFA path
     var buf = std.ArrayList(u8){};
-    try emitCapturesMatcher(buf.writer(out), &nfa, name);
+    // Fast path: one-pass tagged DFA (O(1)/byte). Any pattern that isn't
+    // one-pass — or whose DFA blows the state cap — falls back to the Pike VM,
+    // which is correct for every tagged NFA, just O(states)/byte.
+    if (buildTaggedDfa(a, &nfa)) |tdfa| {
+        var td = tdfa;
+        try emitTaggedCapturesMatcher(buf.writer(out), &td, name);
+    } else |err| switch (err) {
+        error.NotOnePass, error.DfaTooLarge => try emitCapturesMatcher(buf.writer(out), &nfa, name),
+        error.OutOfMemory => return error.OutOfMemory,
+    }
     return buf.toOwnedSlice(out);
+}
+
+/// Emit the one-pass tagged DFA as `fn <name>(input) ?[<2N>]u32` — the table
+/// walk `TaggedDfa.run` shows, baked self-contained. O(1) per byte: one
+/// transition lookup plus firing this transition's (usually empty) tag set.
+/// Same signature/tag layout as the Pike VM emitter, so the call site is
+/// identical; this is just the fast specialization when the pattern is one-pass.
+pub fn emitTaggedCapturesMatcher(w: anytype, tdfa: *const TaggedDfa, name: []const u8) !void {
+    const nt = tdfa.n_tags;
+    try w.print("fn {s}(input: []const u8) ?[{d}]u32 {{\n", .{ name, nt });
+
+    try w.writeAll("    const T = [_]u32{ ");
+    for (tdfa.trans, 0..) |t, i| {
+        if (i != 0) try w.writeAll(", ");
+        try w.print("{d}", .{t});
+    }
+    try w.writeAll(" };\n");
+
+    try w.writeAll("    const A = [_]bool{ ");
+    for (tdfa.accept, 0..) |acc, i| {
+        if (i != 0) try w.writeAll(", ");
+        try w.writeAll(if (acc) "true" else "false");
+    }
+    try w.writeAll(" };\n");
+
+    try w.writeAll("    const TAG_OFF = [_]u32{ ");
+    for (tdfa.tag_off, 0..) |o, i| {
+        if (i != 0) try w.writeAll(", ");
+        try w.print("{d}", .{o});
+    }
+    try w.writeAll(" };\n");
+
+    try w.writeAll("    const TAG_ID = [_]u8{ ");
+    if (tdfa.tag_ids.len == 0) {
+        try w.writeAll("0"); // Zig rejects empty [_]T{}; the index range is dead
+    } else {
+        for (tdfa.tag_ids, 0..) |id, i| {
+            if (i != 0) try w.writeAll(", ");
+            try w.print("{d}", .{id});
+        }
+    }
+    try w.writeAll(" };\n");
+
+    try w.print("    var tags = [_]u32{{0xFFFFFFFF}} ** {d};\n", .{nt});
+    for (tdfa.start_tags) |t| try w.print("    tags[{d}] = 0;\n", .{t});
+    try w.print("    var s: u32 = {d};\n", .{tdfa.start});
+    try w.writeAll("    for (input, 0..) |c, ip| {\n");
+    try w.writeAll("        const base = @as(usize, s) * 256 + @as(usize, c);\n");
+    try w.writeAll("        var k: usize = TAG_OFF[base];\n");
+    try w.writeAll("        while (k < TAG_OFF[base + 1]) : (k += 1) tags[TAG_ID[k]] = @as(u32, @intCast(ip + 1));\n");
+    try w.writeAll("        s = T[base];\n");
+    try w.writeAll("    }\n");
+    try w.writeAll("    if (!A[s]) return null;\n");
+    try w.writeAll("    return tags;\n}\n");
 }
 
 /// Emit the specialized Pike VM for a tagged NFA. Mirrors `captures` exactly;

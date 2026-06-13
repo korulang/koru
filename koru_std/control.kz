@@ -442,10 +442,12 @@ const std = @import("std");
 
 // An optional `value[type]` base-type annotation (e.g. `count: 42[i32]`) is the
 // FIRST thing that genuinely diverges between the two variants: Zig pins the type
-// with `@as(i32, 42)`; JS erases it (numbers are numbers). Untyped values and
-// strings emit verbatim on both. This is exactly why `const` is two variants.
+// with `@as(i32, 42)`; JS erases it (numbers are numbers). Array literals diverge
+// too — `["a", "b"]` is valid JS but Zig needs `[_][]const u8{ … }` — so the Zig
+// value is pre-lowered by parse_fields into `f.zig` (arrays → `[_]T{…}`, typed
+// scalars → `@as(T, v)`, everything else verbatim). JS emits the value as-is.
 ~proc const|template|zig {
-{% const fields = parse_fields(source) %}{% for f in fields %}const {{ f.name }} = {% if f.type %}@as({{ f.type }}, {{ f.value }}){% else %}{{ f.value }}{% endif %};
+{% const fields = parse_fields(source) %}{% for f in fields %}const {{ f.name }} = {{ f.zig }};
 {% endfor %}
 }
 
