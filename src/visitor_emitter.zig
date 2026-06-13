@@ -3327,14 +3327,18 @@ pub const VisitorEmitter = struct {
         try self.code_emitter.write("pub const ");
         // Phase-controlled wrapper prefix (see codegen_utils.koruWrapperPrefix).
         // Phase 1: only depth==1 (top-level sibling to main_module) gets "koru_".
-        try self.code_emitter.write(codegen_utils.koruWrapperPrefix(depth == 1));
-        // Escape module names that aren't valid Zig identifiers (e.g., @koru, test-pkg)
-        if (codegen_utils.needsEscaping(node.name)) {
+        // Escape the FULL prefixed name, not just the segment: "switch" would
+        // otherwise lower to "koru_@\"switch\"", which Zig rejects because an
+        // @\"...\" identifier cannot be glued to a prefix with an underscore.
+        const koru_prefix = codegen_utils.koruWrapperPrefix(depth == 1);
+        var full_name_buf: [256]u8 = undefined;
+        const full_name = std.fmt.bufPrint(&full_name_buf, "{s}{s}", .{ koru_prefix, node.name }) catch node.name;
+        if (codegen_utils.needsEscaping(full_name)) {
             try self.code_emitter.write("@\"");
-            try self.code_emitter.write(node.name);
+            try self.code_emitter.write(full_name);
             try self.code_emitter.write("\"");
         } else {
-            try self.code_emitter.write(node.name);
+            try self.code_emitter.write(full_name);
         }
         try self.code_emitter.write(" = struct {\n");
 

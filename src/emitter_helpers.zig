@@ -560,9 +560,10 @@ pub fn writeModulePath(emitter: *CodeEmitter, module_path: []const u8, main_modu
         var splitter = std.mem.splitScalar(u8, module_path, '/');
         while (splitter.next()) |segment| {
             if (!first) try emitter.write(".");
-            try emitter.write(codegen_utils.koruWrapperPrefix(first));
-            // Escape segments that need it (e.g., @koru -> @"@koru", test-pkg -> @"test-pkg")
-            try writeEscapedSegment(emitter, segment);
+            const prefix = codegen_utils.koruWrapperPrefix(first);
+            // Escape the full prefixed segment so keyword segments lower correctly
+            // (e.g. "switch" -> "koru_switch", not "koru_@\"switch\"").
+            try writePrefixedSegment(emitter, prefix, segment);
             first = false;
         }
         return;
@@ -573,9 +574,10 @@ pub fn writeModulePath(emitter: *CodeEmitter, module_path: []const u8, main_modu
     var first = true;
     while (splitter.next()) |segment| {
         if (!first) try emitter.write(".");
-        try emitter.write(codegen_utils.koruWrapperPrefix(first));
-        // Escape segments that need it (e.g., @koru -> @"@koru", test-pkg -> @"test-pkg")
-        try writeEscapedSegment(emitter, segment);
+        const prefix = codegen_utils.koruWrapperPrefix(first);
+        // Escape the full prefixed segment so keyword segments lower correctly
+        // (e.g. "switch" -> "koru_switch", not "koru_@\"switch\"").
+        try writePrefixedSegment(emitter, prefix, segment);
         first = false;
     }
 }
@@ -588,6 +590,22 @@ fn writeEscapedSegment(emitter: *CodeEmitter, name: []const u8) !void {
         try emitter.write("\"");
     } else {
         try emitter.write(name);
+    }
+}
+
+/// Write a module-path segment with its "koru_" prefix, escaping the FULL
+/// prefixed identifier if necessary. Escaping only the segment produces invalid
+/// Zig for keyword segments (e.g. "switch" -> "koru_@\"switch\""), so we build
+/// "koru_switch" and only escape if the combined name still needs it.
+fn writePrefixedSegment(emitter: *CodeEmitter, prefix: []const u8, segment: []const u8) !void {
+    var buf: [256]u8 = undefined;
+    const full_name = std.fmt.bufPrint(&buf, "{s}{s}", .{ prefix, segment }) catch segment;
+    if (codegen_utils.needsEscaping(full_name)) {
+        try emitter.write("@\"");
+        try emitter.write(full_name);
+        try emitter.write("\"");
+    } else {
+        try emitter.write(full_name);
     }
 }
 
