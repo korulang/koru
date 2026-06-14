@@ -1,0 +1,4 @@
+Executing: INSERT INTO users VALUES (1)
+COMMIT
+committed
+Connection closed

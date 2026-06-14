@@ -1,0 +1,5 @@
+CONTAINS active!
+CONTAINS was not discharged
+CONTAINS tx.commit
+CONTAINS tx.rollback
+NOT_CONTAINS tx.exec
