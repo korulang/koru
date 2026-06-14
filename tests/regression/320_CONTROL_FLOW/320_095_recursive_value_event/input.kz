@@ -1,0 +1,52 @@
+// PROOF (2026-06-14): a value-returning event that calls ITSELF — recursion.
+// Lars's hypothesis: an event call introduces a new stack frame, so value
+// recursion should fall out for free. It does: the generated `handler`
+// recursively invokes itself (`sum_to_event.handler(.{ .n = n - 1 })`) and the
+// `=>` construct glyph maps each branch back to the `total` return. The day07
+// header had logged this as "VALUE recursion, a future subflow question" — it
+// is now answered: YES, recursion works.
+//
+// The conditional base case here is an [expand] template (the 350_007 pattern)
+// rather than `std/control:if`, because `if` in value-return position is a
+// SEPARATE, still-open emitter gap (it emits unresolved `__koru_continue_N`
+// placeholders) — pinned RED in 320_096. This test isolates recursion itself.
+//
+// sum-to(5) = 5 + 4 + 3 + 2 + 1 = 15.
+
+~import std/io
+~import std/template
+
+const std = @import("std");
+
+// [expand] conditional: yes when n <= 0, else no.
+~std/template:define(name: "leq-zero") {
+    blk: {
+        const Result = union(enum) { yes: void, no: void };
+        const __v: i64 = {{ expr }};
+        if (__v <= 0) {
+            break :blk Result{ .yes = {} };
+        } else {
+            break :blk Result{ .no = {} };
+        }
+    }
+}
+
+~[norun|expand]pub event leq-zero { expr: Expression }
+| yes
+| no
+
+~event sum-to { n: i64 }
+| total i64
+
+// The recursive subflow: base case returns 0; recursive case calls itself and
+// adds n to the returned subtotal. `=>` is the branch-construct glyph.
+~sum-to = leq-zero(expr: n)
+| yes => total 0
+| no |> sum-to(n: n - 1)
+    | total t => total t + n
+
+~event print-result { value: i64 }
+~proc print-result|zig { std.debug.print("{d}\n", .{value}); }
+
+~sum-to(n: 5)
+| total r |> print-result(value: r)

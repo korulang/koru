@@ -1011,7 +1011,10 @@ pub const ShapeChecker = struct {
                     const nested_event_name = try self.pathToString(step.invocation.path);
                     defer self.allocator.free(nested_event_name);
 
-                    const nested_event_info = self.events.get(nested_event_name) orelse {
+                    // Resolve via lookupEventInfo so unqualified references to
+                    // main-module events (including a flow calling ITSELF —
+                    // value recursion) match the "main_module:name" key.
+                    const nested_event_info = (try self.lookupEventInfo(step.invocation.path)) orelse {
                         // Unknown event in pipeline - must fail!
                         log.debug("ERROR: Unknown event '{s}' in pipeline\n", .{nested_event_name});
                         return error.UnknownEvent;
