@@ -4,7 +4,7 @@
 // we should be able to reference those types in event signatures
 // using the same module:Type syntax as local imports.
 //
-// Example: std.parser:ParseResult should resolve to parser_impl.ParseResult
+// Example: std/parser:ParseResult should resolve to parser_impl.ParseResult
 //
 // This enables type-safe integration with runtime libraries without
 // needing a redundant Zig @import.
@@ -15,7 +15,7 @@ const std = @import("std");
 
 // Event that processes a parse result - uses TYPE from std import
 ~event process-ast {
-    result: std.parser:ParseResult,
+    result: std/parser:ParseResult,
 }
 | processed usize
 

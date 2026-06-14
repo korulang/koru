@@ -57,7 +57,7 @@
                 "fields": [
                     {
                         "name": "user_data",
-                        "type": "test_lib.user:User",
+                        "type": "test_lib/user:User",
                         "is_source": false,
                         "is_file": false,
                         "is_embed_file": false,

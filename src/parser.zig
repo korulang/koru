@@ -7009,6 +7009,37 @@ pub const Parser = struct {
         return error.ParseError;
     }
 
+    /// Cross-module type references use slash-separated module qualifiers — the
+    /// same separator as imports (`std/parser`) and call sites
+    /// (`std/parser:parse`, rejected dotted by `rejectDotNamespace`). This is the
+    /// type-reference twin of that rule: one language rule (`.` is not a namespace
+    /// separator), one error code (KORU035), two syntactic sites. The `.` test is
+    /// unambiguous here: this path is reached only when a `:` type-selector is
+    /// present, and genuine Zig types (`std.mem.Allocator`) never carry a `:`.
+    fn rejectDottedModuleQualifier(self: *Parser, module_path: []const u8, base_type: []const u8) !void {
+        if (std.mem.indexOfScalar(u8, module_path, '.') == null) return;
+        // Locate the offending `module.path:` text rather than blaming the cursor,
+        // which has usually drifted past the declaration by shape-parse time.
+        const needle = try std.fmt.allocPrint(self.allocator, "{s}:{s}", .{ module_path, base_type });
+        var report_line: usize = self.current + 1;
+        var report_col: usize = 1;
+        for (self.lines, 0..) |line_text, idx| {
+            if (std.mem.indexOf(u8, line_text, needle)) |col| {
+                report_line = idx + 1;
+                report_col = col + 1;
+                break;
+            }
+        }
+        try self.reporter.addError(
+            .KORU035,
+            report_line,
+            report_col,
+            "'.' is not a namespace separator in '{s}' — use '/' (e.g. 'std/io:Type', not 'std.io:Type'). '.' is member access after ':'.",
+            .{module_path},
+        );
+        return error.ParseError;
+    }
+
     /// Effect branches fire 0-to-N times, so obligation markers on their
     /// signature are read from the effect-branch's own scope (see the obligation
     /// model). Two marker directions are incoherent at 0-to-N firing and are
@@ -7383,6 +7414,7 @@ pub const Parser = struct {
             };
             if (module_colon_idx) |colon_idx| {
                 // Extract module path before the colon
+                try self.rejectDottedModuleQualifier(type_str[0..colon_idx], type_str[colon_idx + 1 ..]);
                 module_path = try self.allocator.dupe(u8, type_str[0..colon_idx]);
                 const base_type = type_str[colon_idx + 1 ..];
                 if (type_prefix.len > 0) {
@@ -7809,6 +7841,7 @@ pub const Parser = struct {
             // Parse cross-module type reference and build owned type string
             const owned_type: []const u8 = blk: {
                 if (std.mem.indexOfScalar(u8, field_type, ':')) |module_colon_idx| {
+                    try self.rejectDottedModuleQualifier(field_type[0..module_colon_idx], field_type[module_colon_idx + 1 ..]);
                     module_path = try self.allocator.dupe(u8, field_type[0..module_colon_idx]);
                     const base_type = field_type[module_colon_idx + 1 ..];
                     if (type_prefix.len > 0) {

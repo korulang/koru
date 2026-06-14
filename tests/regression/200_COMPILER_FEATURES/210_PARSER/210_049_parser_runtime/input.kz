@@ -17,7 +17,7 @@ const SAMPLE_CODE =
 ;
 
 // Event to inspect AST - using module:Type syntax!
-~event inspect-ast { result: std.parser:ParseResult }
+~event inspect-ast { result: std/parser:ParseResult }
 
 ~proc inspect-ast|zig {
     std.debug.print("Parsed {} items\n", .{result.source_file.items.len});

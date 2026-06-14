@@ -1,10 +1,10 @@
 // Test 053: Cross-Module Type Reference (Basic - Parser Level)
 //
 // Tests that the parser correctly captures cross-module type syntax in the AST.
-// The syntax module.path:Type should be parsed and stored with the module path separated.
+// The syntax module/path:Type should be parsed and stored with the module path separated.
 
 ~event process-user {
-    user_data: test_lib.user:User,
+    user_data: test_lib/user:User,
     value: i32,
 }
 | done bool

@@ -4,5 +4,5 @@
 ~import std/io
 
 ~pub event test-nullable {
-    pool: ?*std.interpreter:HandlePool,
+    pool: ?*std/interpreter:HandlePool,
 }
