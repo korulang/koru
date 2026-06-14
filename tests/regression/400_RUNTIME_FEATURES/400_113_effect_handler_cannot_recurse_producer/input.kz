@@ -1,0 +1,35 @@
+// NEGATIVE PIN (2026-06-14): an effect-branch handler may NOT recurse by
+// re-invoking its own producer. This encodes, as law, a boundary the language
+// ALREADY enforces emergently — so it can't silently drift.
+//
+// WHY effect recursion is structurally inexpressible (not merely hard):
+// effects are zero-overhead because the producer is generic over its handler
+// type (`fn handler(in, comptime __H: type)`) and the handler is monomorphized
+// IN — see 400_079's emitted output, where the producer's `step(...)` fires
+// flatten into inline handler blocks at the call site. Recursing through that
+// would need a comptime handler-type CYCLE. But the rejection lands even
+// earlier: mandatory branch coverage (KORU022) forces EVERY `!`-bearing
+// invocation to handle its effects inline. So a handler that re-invokes its
+// producer leaves the re-invocation's own effect unhandled — and there is no
+// way to spell out handlers "all the way down" for unbounded depth. The
+// effect path has no self-reference; only the RETURN path does.
+//
+// Recursion belongs to the VALUE/return path, which works: see
+// 320_095_recursive_value_event. That is also the path the parser/grammar rung
+// needs (a nonterminal event referring to itself, returning an AST node);
+// effects are semantic actions that fire DURING, and never need to recurse.
+//
+// Here: `walk`'s `! step` handler tries to re-invoke `walk`; the inner `walk`'s
+// `step` effect is unhandled → KORU022.
+
+~import std/io
+
+~pub event walk { n: i64 }
+! step i64
+
+~proc walk|zig {
+    if (n > 0) { step(n); }
+}
+
+~walk(n: 3)
+! step v |> walk(n: v - 1)
