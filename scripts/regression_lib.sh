@@ -441,7 +441,7 @@ regression_run_one_test() {
         AOC_IMPURITY=""
         if [ -f "$test_dir/input.kz" ] || [ -f "$test_dir/input.kjs" ]; then
             AOC_IMPURITY="host entry file (.kz/.kjs) — AoC must be a pure .k"
-        elif grep -qE '~proc\b|@import\(' "$test_dir/input.k" 2>/dev/null; then
+        elif grep -qE '~proc\b|@(import|cImport|embedFile)\(' "$test_dir/input.k" 2>/dev/null; then
             AOC_IMPURITY="host code (~proc / @import) in source — AoC must be pure Koru"
         fi
         if [ -n "$AOC_IMPURITY" ]; then
