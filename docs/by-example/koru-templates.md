@@ -164,7 +164,7 @@ value: 42
 // is now answered: YES, recursion works.
 //
 // The conditional base case here is an [expand] template (the 350_007 pattern).
-// `std/control:if` in value-return position ALSO works now (see 320_096, green) —
+// `if` in value-return position ALSO works now (see 320_096, green) —
 // this test keeps the [expand] form to exercise that path too. This test
 // isolates recursion itself.
 //
@@ -218,7 +218,7 @@ const std = @import("std");
 ### 320_096_if_value_return_subflow
 
 ```koru
-// GREEN (2026-06-14, fixed same day it was pinned): `std/control:if` as the
+// GREEN (2026-06-14, fixed same day it was pinned): `if` as the
 // body of a VALUE-returning subflow — now works, including under recursion.
 //
 // THE FIX (visitor_emitter.zig, the subflow-handler inline_body path): a
@@ -260,12 +260,11 @@ const std = @import("std");
 // template in 320_095. sum-to(5) = 15.
 
 ~import std/io
-~import std/control
 
 ~event sum-to { n: i64 }
 | total i64
 
-~sum-to = std/control:if(n <= 0)
+~sum-to = if(n <= 0)
 | then => total 0
 | else |> sum-to(n: n - 1)
     | total t => total t + n

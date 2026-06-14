@@ -1,8 +1,8 @@
 ~import std/control
 ~import app/fs
-~std/control:for(0..2)
+~for(0..2)
 ! each _ |> app/fs:open(path: "outer.txt")
-    | opened _ |> std/control:for(0..2)
+    | opened _ |> for(0..2)
         ! each _ |> app/fs:open(path: "inner.txt")
             | opened _ |> _  // Auto-close inner here
         | done |> _  // Auto-close outer_f here

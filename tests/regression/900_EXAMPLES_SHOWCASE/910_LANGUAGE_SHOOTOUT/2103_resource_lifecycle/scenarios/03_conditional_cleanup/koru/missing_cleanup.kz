@@ -34,7 +34,7 @@ const File = struct { handle: i32 };
 const should_write = true;
 
 ~open(path: "test.txt")
-| opened f |> std/control:if(should_write)
+| opened f |> if(should_write)
     | then |> write(f.file, data: "hello") |> close(f.file)
     | else |> _
 

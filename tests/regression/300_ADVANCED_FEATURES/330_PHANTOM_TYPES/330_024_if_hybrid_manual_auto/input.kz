@@ -2,6 +2,6 @@
 ~import app/fs
 const condition = true;
 ~app/fs:open(path: "test.txt")
-| opened f |> std/control:if(condition)
+| opened f |> if(condition)
     | then |> app/fs:close(file: f)
     | else |> _  // ERROR? Obligation not satisfied here!

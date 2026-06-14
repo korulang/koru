@@ -7,7 +7,7 @@
 // is now answered: YES, recursion works.
 //
 // The conditional base case here is an [expand] template (the 350_007 pattern).
-// `std/control:if` in value-return position ALSO works now (see 320_096, green) —
+// `if` in value-return position ALSO works now (see 320_096, green) —
 // this test keeps the [expand] form to exercise that path too. This test
 // isolates recursion itself.
 //

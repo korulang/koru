@@ -4,12 +4,11 @@
 // the consumer's `| then |>` / `| else |>` body dispatches on it. This is the
 // SAME machine as `for` (effects called during, terminal returned) with the
 // "during" half empty — the proof that control flow is one mechanism.
-~import std/control
 ~import std/io
 
 const cond = true;
 
-~std/control:if(cond)
+~if(cond)
 | then |> std/io:print.ln("then taken")
 | else |> std/io:print.ln("else taken")
 

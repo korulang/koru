@@ -1,8 +1,8 @@
 ~import std/control
 ~import app/fs
 ~app/fs:open(path: "outermost.txt")
-| opened outermost_f |> std/control:for(0..2)
-    ! each _ |> std/control:for(0..2)
+| opened outermost_f |> for(0..2)
+    ! each _ |> for(0..2)
         ! each _ |> app/fs:open(path: "inner.txt")
             | opened _ |> _  // inner_f auto-closed here (innermost @scope)
         | done |> _

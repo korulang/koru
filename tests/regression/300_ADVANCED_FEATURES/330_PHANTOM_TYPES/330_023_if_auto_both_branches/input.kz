@@ -2,6 +2,6 @@
 ~import app/fs
 const condition = true;
 ~app/fs:open(path: "test.txt")
-| opened _ |> std/control:if(condition)
+| opened _ |> if(condition)
     | then |> _  // Auto-discharge inserts close here
     | else |> _  // Auto-discharge inserts close here too

@@ -16,6 +16,6 @@
 const error_occurred = true;
 ~app/db:connect(url: "postgres://localhost/test")
 | connected c |> app/db:query(conn: c)
-    | started tx |> std/control:if(error_occurred)
+    | started tx |> if(error_occurred)
         | then |> app/db:disconnect(conn: c) |> app/db:rollback(tx: tx, conn: c)
         | else |> app/db:commit(tx: tx, conn: c) |> app/db:disconnect(conn: c)

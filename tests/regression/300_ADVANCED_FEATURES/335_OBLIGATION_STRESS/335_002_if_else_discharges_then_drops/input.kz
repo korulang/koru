@@ -7,6 +7,6 @@
 ~import app/fs
 const condition = true;
 ~app/fs:open(path: "test.txt")
-| opened f |> std/control:if(condition)
+| opened f |> if(condition)
     | then |> _
     | else |> app/fs:close(file: f)
