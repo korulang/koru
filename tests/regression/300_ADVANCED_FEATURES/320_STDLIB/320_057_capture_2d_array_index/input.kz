@@ -1,0 +1,16 @@
+// Indexed-lvalue capture write on a 2-D fixed array: `captured { g[a][b]: v }`.
+// 1-D form is green (320_045); this pins the 2-D form, the one missing piece for
+// the AoC grid days (810_06x lights, 810_18x Conway). Green here ⇒ grids become
+// solution-writing, not a language build.
+~import std/io
+const std = @import("std");
+
+~event print-sum { g: [2][2]i32 }
+~proc print-sum|zig {
+    const sum = g[0][0] + g[0][1] + g[1][0] + g[1][1];
+    std.debug.print("{d}\n", .{sum});
+}
+
+~capture { g: [2][2]i32{ .{ 0, 0 }, .{ 0, 0 } } }
+! as acc |> captured { g[1][1]: acc.g[1][1] + 7 }
+| captured result |> print-sum(result.g)

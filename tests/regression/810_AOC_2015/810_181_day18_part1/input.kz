@@ -1,0 +1,77 @@
+// AoC 2015 Day 18 Part 1 — Conway lights, 6x6 grid, 4 steps -> 4 on.
+// FIRST AoC win off the collections/store thread (2026-06-14): the grid lives in
+// ~capture across the Koru `for(0..4)` step loop (2-D indexed capture, cf. 320_057),
+// evolved by `captured { grid: g }` each generation. parse/step/count are Zig leaves;
+// the STORE (grid persisting across the loop) IS the capture. The "store" was never a
+// new primitive — it's capture holding an indexable value.
+~import std/io
+~import std/fs
+~import std/control
+const std = @import("std");
+const ZERO6: [6][6]u8 = [_][6]u8{[_]u8{0} ** 6} ** 6;
+
+~event parse { path: []const u8 }
+| grid [6][6]u8
+| failed []const u8
+~proc parse|zig {
+    var g = [_][6]u8{[_]u8{0} ** 6} ** 6;
+    const file = std.fs.cwd().openFile(path, .{}) catch return .{ .failed = "open" };
+    defer file.close();
+    var buf: [256]u8 = undefined;
+    const nread = file.readAll(&buf) catch return .{ .failed = "read" };
+    var r: usize = 0;
+    var c: usize = 0;
+    for (buf[0..nread]) |ch| {
+        if (ch == '\n') { r += 1; c = 0; } else {
+            if (r < 6 and c < 6 and ch == '#') { g[r][c] = 1; }
+            c += 1;
+        }
+    }
+    return .{ .grid = g };
+}
+
+~event step { g: [6][6]u8 }
+| next [6][6]u8
+~proc step|zig {
+    var out = [_][6]u8{[_]u8{0} ** 6} ** 6;
+    var r: usize = 0;
+    while (r < 6) : (r += 1) {
+        var c: usize = 0;
+        while (c < 6) : (c += 1) {
+            var on: u8 = 0;
+            var dr: i64 = -1;
+            while (dr <= 1) : (dr += 1) {
+                var dc: i64 = -1;
+                while (dc <= 1) : (dc += 1) {
+                    if (dr == 0 and dc == 0) continue;
+                    const nr = @as(i64, @intCast(r)) + dr;
+                    const nc = @as(i64, @intCast(c)) + dc;
+                    if (nr >= 0 and nr < 6 and nc >= 0 and nc < 6) {
+                        on += g[@as(usize, @intCast(nr))][@as(usize, @intCast(nc))];
+                    }
+                }
+            }
+            if (g[r][c] == 1) { out[r][c] = if (on == 2 or on == 3) 1 else 0; }
+            else { out[r][c] = if (on == 3) 1 else 0; }
+        }
+    }
+    return .{ .next = out };
+}
+
+~event count-lit { g: [6][6]u8 }
+| n i64
+~proc count-lit|zig {
+    var total: i64 = 0;
+    for (g) |row| { for (row) |cell| { total += cell; } }
+    return .{ .n = total };
+}
+
+~capture { grid: ZERO6 }
+! as acc |> parse(path: "tests/regression/810_AOC_2015/810_181_day18_part1/input.txt")
+    | grid g0 |> captured { grid: g0 } |> for(0..4)
+        ! each _ |> step(g: acc.grid)
+            | next g |> captured { grid: g }
+        | done |> _
+    | failed e |> std/io:print.ln("FAILED {{ e:s }}")
+| captured result |> count-lit(g: result.grid)
+    | n total |> std/io:print.ln("{{ total:d }}")
