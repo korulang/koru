@@ -1,15 +1,11 @@
-// PIN (2026-06-13): auto-disposal SHOULD insert `free(s)` at scope exit, so a
-// locally-owned String never needs a manual discharge. It doesn't — a `<view!>`
-// String has TWO matching discharge options (`free` matches `view|instance`,
-// `take` matches `view`), neither marked `[!]`, so `selectDisposal` can't pick a
-// winner and the auto-discharger errors KORU030 "multiple discharge options...
-// Discharge explicitly" (auto_discharge_inserter.zig:707) instead of inserting
-// the free.
+// PIN (auto-discharge): auto-disposal inserts `free(s)` at scope exit, so a
+// locally-owned `<view!>` String never needs a manual discharge. `free` is the
+// sole VOID terminal disposer; `take` is non-void (it issues `instance!`) so the
+// void-only auto-insert rule excludes it, leaving `free` unambiguous.
 //
 // This is 610_008_parse_int VERBATIM minus the trailing `|> std/string:free(s)`.
-// 610_008 is green WITH the explicit free; this must go green WITHOUT it once
-// the auto-disposer can choose `free`. Fix candidate: mark `std/string:free` as
-// the `[!]` default disposer so `selectDisposal` prefers it over `take`.
+// 610_008 is green WITH the explicit free; this is green WITHOUT it because the
+// auto-disposer now inserts `free`.
 ~import std/string
 ~import std/io
 

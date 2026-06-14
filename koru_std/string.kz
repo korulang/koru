@@ -90,8 +90,11 @@ pub const String = struct {
 // Cleanup
 // ============================================
 
-// Free - works on either view or instance
-~pub event free { s: *String<!view|instance> }
+// Free - works on either view or instance (consume-marker on BOTH members, so
+// the union discharges either state; `<!view|instance>` marked only `view`,
+// hiding `free` from `instance!` obligations — the discharge-finder's
+// .state_union branch keys off each member's own consume marker).
+~pub event free { s: *String<!view|!instance> }
 
 ~proc free|zig {
     s.allocator.free(s.data);

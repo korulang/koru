@@ -1790,8 +1790,21 @@ pub const AutoDischargeInserter = struct {
         while (iter.next()) |entry| {
             const event_decl = entry.value_ptr.decl;
 
-            // Skip events with multiple branches unless explicitly included (error suggestions).
-            if (!include_multi_branch and event_decl.branches.len > 1) continue;
+            // Auto-discharge can only insert a VOID event (no continuation branch):
+            // the inserter appends a bare call, and any output branch — a re-issued
+            // obligation OR a plain value/error — needs handling it can't synthesize.
+            // So ANY branch disqualifies the event from auto-insertion (KORU083). The
+            // error-suggestion path (include_multi_branch) still lists branched
+            // dischargers so the user can call one explicitly.
+            if (!include_multi_branch and event_decl.branches.len > 0) continue;
+
+            // Self-loop suggestion filter: an event that consumes <state!> on
+            // base_type but ALSO re-issues <state!> on the same base_type through
+            // an output branch never discharges the obligation — calling it just
+            // hands back another one (`tx.exec`: active! -> active!). It must never
+            // be named as a disposer. Only the suggestion path needs this; the
+            // auto-insert path already excludes such events via the void filter.
+            if (include_multi_branch and self.eventReIssuesObligation(event_decl, base_state, base_type)) continue;
 
             const is_default = eventHasDefaultAnnotation(event_decl);
 
@@ -1861,6 +1874,42 @@ pub const AutoDischargeInserter = struct {
         }
 
         return results.toOwnedSlice(self.allocator);
+    }
+
+    /// True if `event_decl` re-issues `<base_state!>` on `base_type` through one of
+    /// its output branches — a self-loop on the obligation it consumes. Such an
+    /// event (e.g. `tx.exec`: consumes active! and outputs `*Transaction<active!>`)
+    /// can never discharge the obligation, so it must be excluded from the disposer
+    /// suggestion list. A genuine forward-transition disposer like `tx.commit`
+    /// issues its obligation on a DIFFERENT type (`*Connection`), so it is kept.
+    fn eventReIssuesObligation(self: *AutoDischargeInserter, event_decl: *const ast.EventDecl, base_state: []const u8, base_type: []const u8) bool {
+        // `base_state` is module-qualified (e.g. "app.db:active"); output-branch
+        // phantoms carry the bare state name ("active"). Compare against the tail.
+        // The `base_type` equality below guards against cross-module collisions.
+        const base_state_name = if (std.mem.lastIndexOfScalar(u8, base_state, ':')) |idx|
+            base_state[idx + 1 ..]
+        else
+            base_state;
+        for (event_decl.branches) |branch| {
+            for (branch.payload.fields) |field| {
+                if (!std.mem.eql(u8, field.type, base_type)) continue;
+                const field_phantom = field.phantom orelse continue;
+                var parsed = phantom_parser.PhantomState.parse(self.allocator, field_phantom) catch continue;
+                defer parsed.deinit(self.allocator);
+                switch (parsed) {
+                    .concrete => |concrete| {
+                        if (concrete.requires_cleanup and std.mem.eql(u8, concrete.name, base_state_name)) return true;
+                    },
+                    .state_union => |u| {
+                        for (u.members) |member| {
+                            if (member.requires_cleanup and std.mem.eql(u8, member.name, base_state_name)) return true;
+                        }
+                    },
+                    .variable => {},
+                }
+            }
+        }
+        return false;
     }
 
     /// Auto-insert at scope exit can fill the obligation parameter from the binding.
