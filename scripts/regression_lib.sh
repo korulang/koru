@@ -426,6 +426,36 @@ regression_run_one_test() {
         FAILED_TESTS="$FAILED_TESTS $TEST_NAME(no-input)"
         return 0
     fi
+    # ───────────────────────────────────────────────────────────────────────
+    # AoC PURITY INVARIANT — 810_AOC_2015 must be PURE KORU, no exceptions.
+    # A green AoC test must demonstrate THE LANGUAGE, not Koru orchestrating a
+    # host algorithm. So a host entry (.kz/.kjs), a host `~proc`, or an `@import`
+    # is the "green-via-Zig" fraud: it fakes a capability the language can't yet
+    # do. Such a test is FORCED RED here — the pure-Koru gap stays on the board
+    # until the language can express it. Leaf builtins (`@max`, `@divTrunc`, …)
+    # inside Koru expressions are fine; pulling in host code is not.
+    # (Encoded 2026-06-14 after a day18 .kz green-via-Zig was written, committed,
+    #  AND published before being caught. A memory note didn't stop it; this does.)
+    case "$test_dir" in
+      *810_AOC_2015*)
+        AOC_IMPURITY=""
+        if [ -f "$test_dir/input.kz" ] || [ -f "$test_dir/input.kjs" ]; then
+            AOC_IMPURITY="host entry file (.kz/.kjs) — AoC must be a pure .k"
+        elif grep -qE '~proc\b|@import\(' "$test_dir/input.k" 2>/dev/null; then
+            AOC_IMPURITY="host code (~proc / @import) in source — AoC must be pure Koru"
+        fi
+        if [ -n "$AOC_IMPURITY" ]; then
+            echo -e "${RED}❌ AoC NOT PURE KORU${NC}"
+            echo "  $AOC_IMPURITY"
+            echo "  AoC proves the LANGUAGE, not Koru-over-Zig. This gap stays RED until pure Koru can do it."
+            rm -f "$test_dir/SUCCESS" "$test_dir/FAILURE"
+            echo "aoc-not-pure-koru" > "$test_dir/FAILURE"
+            FAILED_TESTS="$FAILED_TESTS $TEST_NAME(aoc-not-pure-koru)"
+            return 0
+        fi
+        ;;
+    esac
+
     local ENTRY
     ENTRY="$(test_entry "$test_dir")"
 
