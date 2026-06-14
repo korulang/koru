@@ -3535,7 +3535,7 @@ fn writeInlineCodeWithLabel(
 ///   - the `[expand]` `switch (__expand_result)` form.
 /// `continuations` are the node's branch continuations; `path` is the invoked
 /// event's path (for effect-branch lookup).
-fn emitInlineBodyNode(
+pub fn emitInlineBodyNode(
     emitter: *CodeEmitter,
     ctx: *EmissionContext,
     inline_code_raw: []const u8,

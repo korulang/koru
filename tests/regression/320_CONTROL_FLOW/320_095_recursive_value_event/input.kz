@@ -6,10 +6,10 @@
 // header had logged this as "VALUE recursion, a future subflow question" — it
 // is now answered: YES, recursion works.
 //
-// The conditional base case here is an [expand] template (the 350_007 pattern)
-// rather than `std/control:if`, because `if` in value-return position is a
-// SEPARATE, still-open emitter gap (it emits unresolved `__koru_continue_N`
-// placeholders) — pinned RED in 320_096. This test isolates recursion itself.
+// The conditional base case here is an [expand] template (the 350_007 pattern).
+// `std/control:if` in value-return position ALSO works now (see 320_096, green) —
+// this test keeps the [expand] form to exercise that path too. This test
+// isolates recursion itself.
 //
 // sum-to(5) = 5 + 4 + 3 + 2 + 1 = 15.
 

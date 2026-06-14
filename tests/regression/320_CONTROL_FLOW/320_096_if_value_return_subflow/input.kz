@@ -1,6 +1,18 @@
-// RED PIN (2026-06-14): `std/control:if` as the body of a VALUE-returning
-// subflow. The recursion machinery itself works (see 320_095, green); this
-// pins the remaining gap. `if` is a |template| proc that emits
+// GREEN (2026-06-14, fixed same day it was pinned): `std/control:if` as the
+// body of a VALUE-returning subflow — now works, including under recursion.
+//
+// THE FIX (visitor_emitter.zig, the subflow-handler inline_body path): a
+// statement-style template head (`//@koru:inline_stmt`) with named value-return
+// continuations was emitted as `const result = <template body>; switch(result)`
+// — which left the template's `__koru_continue_N` markers raw and tried to
+// switch on an `if` statement. The handler path now detects the inline_stmt
+// marker and delegates to the shared `emitInlineBodyNode` (the same path
+// `emitFlow` uses for top-level inline templates), which resolves the markers
+// into the continuation bodies inline — the continuation-RETURN model, no outer
+// switch. The `__KORU_INLINE__` expression form is untouched.
+//
+// Original pin notes, for the record:
+// `if` is a |template| proc that emits
 // `{{ continuations["then"].continue }}` / `["else"].continue`. For the common
 // EFFECT-dispatch case (250_007) those resolve to effect calls. But when the
 // continuation is a `=>` value-return (`=> total 0`), the template mints a

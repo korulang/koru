@@ -2672,6 +2672,30 @@ pub const VisitorEmitter = struct {
                                     };
 
                                     if (has_named_branches) {
+                                      // A statement-style template head (e.g. `std/control:if` in
+                                      // VALUE-return position) hands off to its named continuations
+                                      // via `__koru_continue_N` markers, NOT a value-producing union.
+                                      // Route it through the shared inline-body node emitter (the same
+                                      // path `emitFlow` uses for top-level inline templates), which
+                                      // resolves those markers into the continuation bodies. The
+                                      // `const result = <body>; switch(result)` path below would leave
+                                      // the markers raw and emit the `if` as statement-blocks. 320_096.
+                                      const inline_stmt_marker = "//@koru:inline_stmt\n";
+                                      if (std.mem.indexOf(u8, inline_code, inline_stmt_marker) != null) {
+                                        var inline_ctx = emitter.EmissionContext{
+                                            .allocator = self.allocator,
+                                            .ast_items = self.all_items,
+                                            .tap_registry = self.tap_registry,
+                                            .type_registry = self.type_registry,
+                                            .main_module_name = self.main_module_name,
+                                            .current_source_event = null,
+                                            .label_contexts = null,
+                                            .is_sync = true,
+                                            .in_handler = true,
+                                        };
+                                        var inline_result_counter: usize = 0;
+                                        try emitter.emitInlineBodyNode(self.code_emitter, &inline_ctx, inline_code, flow.body.continuations, &flow.inv().path, &inline_result_counter);
+                                      } else {
                                         // Branching continuations -- emit: const result = <inline>; switch(result) { ... }
                                         try self.code_emitter.writeIndent();
                                         try self.code_emitter.write("const result = ");
@@ -2709,6 +2733,7 @@ pub const VisitorEmitter = struct {
 
                                         const source_event_name = try emitter.buildCanonicalEventName(&flow.inv().path, self.allocator, self.main_module_name);
                                         try emitter.emitSubflowContinuations(self.code_emitter, flow.body.continuations, 0, indent_str, items_to_search, self.tap_registry, self.type_registry, self.main_module_name, source_event_name, "main_module");
+                                      }
                                     } else {
                                         // Void/pipeline continuations -- emit inline code + branch constructors
                                         try self.code_emitter.writeIndent();
