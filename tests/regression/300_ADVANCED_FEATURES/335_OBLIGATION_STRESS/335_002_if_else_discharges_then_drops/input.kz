@@ -1,11 +1,8 @@
-// PIN: resource leaked on the then branch.
-// Mirror of 335_001: now | else discharges but | then drops to _.
-// Both branches must discharge the obligation — dropping either is a leak.
-// Austral rule: "a linear value must be used exactly once in each branch."
-//
-// Grounding:
-//   Legal both-branches form: 330_022_if_manual_both_branches/input.kz:5-7
-//   This test removes the | then discharge only.
+// Asymmetric manual/auto discharge across an `if` is VALID. `| else |> close(f)`
+// discharges f manually; `| then |> _` discharges it automatically — `_` is an
+// explicit "auto-discharge me", so the compiler inserts close(f) on the then arm.
+// Whichever branch runs, f is closed: no leak. This is the else-manual / then-auto
+// mirror of 330_024_if_hybrid_manual_auto (then-manual / else-auto).
 ~import std/control
 ~import app/fs
 const condition = true;
@@ -13,4 +10,3 @@ const condition = true;
 | opened f |> std/control:if(condition)
     | then |> _
     | else |> app/fs:close(file: f)
-pub fn main() void {}

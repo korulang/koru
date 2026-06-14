@@ -1,12 +1,11 @@
-// PIN: nested if where | then runs a sub-if (both sub-branches discharge),
-// but the outer | else drops the resource entirely.
-// Tests that obligation checking reaches through a nested if in the then-arm.
-// Austral rule: "a linear value must be used exactly once in each branch."
+// Asymmetric manual/auto discharge through a NESTED `if` is VALID. The outer `| then`
+// runs an inner if whose both arms close f manually; the outer `| else |> _`
+// auto-discharges. Whichever path runs, f is closed — no leak. Exercises auto-discharge
+// coexisting with manual discharge reaching through a nested if.
 //
 // Grounding:
 //   Outer if structure: 330_022_if_manual_both_branches/input.kz:5-7
-//   Nested for-in-if structure: 330_048_nested_for_in_if/input.kz:5-9
-//   const declaration: 330_022_if_manual_both_branches/input.kz:3
+//   Nested control nesting: 330_048_nested_for_in_if/input.kz:5-9
 ~import std/control
 ~import app/fs
 const outer_condition = true;
@@ -17,4 +16,3 @@ const inner_condition = false;
         | then |> app/fs:close(file: f)
         | else |> app/fs:close(file: f)
     | else |> _
-pub fn main() void {}
