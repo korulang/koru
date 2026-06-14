@@ -6,4 +6,3 @@
 const std = @import("std");
 ~app/fs:open(path: "test.txt")
 | opened _ |> log-done()
-pub fn main() void {}

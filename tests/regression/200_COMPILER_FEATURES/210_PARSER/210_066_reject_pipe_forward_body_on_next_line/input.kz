@@ -19,4 +19,3 @@ const std = @import("std");
 ~get(id: 1)
 | ok x |>
     show(v: x)
-pub fn main() void {}

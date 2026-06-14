@@ -26,4 +26,3 @@
     | some val |> std/io:print.ln("got: {{ val:s }}")
 |> _
 
-pub fn main() void {}

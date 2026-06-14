@@ -3,4 +3,3 @@
 ~std/control:for(0..3)
 ! each _ |> app/fs:open(path: "test.txt")
     | opened _ |> _  // Should auto-insert close() here, per iteration
-pub fn main() void {}

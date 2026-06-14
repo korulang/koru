@@ -13,4 +13,3 @@
 ~app/fs:open(path: "test.txt")
 | opened f |> _
 
-pub fn main() void {}

@@ -16,4 +16,3 @@
 ~hello()
 |> _
 
-pub fn main() void {}

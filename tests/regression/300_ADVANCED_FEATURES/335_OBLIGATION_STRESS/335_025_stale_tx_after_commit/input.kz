@@ -12,4 +12,3 @@
 ~app/db:connect(url: "postgres://localhost/test")
 | connected c |> app/db:query(conn: c, sql: "SELECT * FROM users")
     | started tx |> app/db:commit(tx) |> app/db:rollback(tx) |> app/db:disconnect(conn: c)
-pub fn main() void {}

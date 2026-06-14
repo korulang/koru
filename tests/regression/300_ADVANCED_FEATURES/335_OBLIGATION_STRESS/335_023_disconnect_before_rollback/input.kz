@@ -19,4 +19,3 @@ const error_occurred = true;
     | started tx |> std/control:if(error_occurred)
         | then |> app/db:disconnect(conn: c) |> app/db:rollback(tx: tx, conn: c)
         | else |> app/db:commit(tx: tx, conn: c) |> app/db:disconnect(conn: c)
-pub fn main() void {}

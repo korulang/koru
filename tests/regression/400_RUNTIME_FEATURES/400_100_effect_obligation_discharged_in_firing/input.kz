@@ -36,4 +36,3 @@ const allocator = std.heap.c_allocator;
 ! each i |> create(id: i)
     | created r |> destroy(r)
 | done _ |> _
-pub fn main() void {}

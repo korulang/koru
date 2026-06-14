@@ -36,4 +36,3 @@ const File = struct { handle: i32 };
 ~create(path: "test.txt")
 | created r |> use(r.file) |> use(r.file) |> use(r.file) |> close(r.file)
 
-pub fn main() void {}

@@ -5,4 +5,3 @@ const condition = true;
 | opened f |> std/control:if(condition)
     | then |> app/fs:close(file: f)
     | else |> _  // ERROR? Obligation not satisfied here!
-pub fn main() void {}

@@ -37,4 +37,3 @@ const std = @import("std");
 
 ~app/fs:open(path: "data.txt")
 | opened f |> process-file(file: f)
-pub fn main() void {}

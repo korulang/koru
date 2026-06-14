@@ -18,4 +18,3 @@
     | amount a |> assert(a == 100)
 }
 
-pub fn main() void {}

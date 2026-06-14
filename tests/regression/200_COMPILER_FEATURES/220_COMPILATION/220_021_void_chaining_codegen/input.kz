@@ -44,4 +44,3 @@ const Resource = struct { id: usize };
 ! each _ |> run-one()
 | done |> _
 
-pub fn main() void {}

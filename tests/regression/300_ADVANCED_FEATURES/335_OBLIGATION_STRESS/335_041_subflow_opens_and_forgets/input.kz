@@ -36,4 +36,3 @@
 }
 
 ~work()
-pub fn main() void {}

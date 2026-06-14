@@ -20,4 +20,3 @@
     | config c |> assert(c.timeout == 30)
 }
 
-pub fn main() void {}

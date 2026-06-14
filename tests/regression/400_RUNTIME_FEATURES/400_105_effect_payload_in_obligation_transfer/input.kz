@@ -27,4 +27,3 @@ const allocator = std.heap.c_allocator;
 ~gen(n: 3)
 ! make r |> destroy(r)
 | done _ |> _
-pub fn main() void {}

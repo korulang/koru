@@ -18,4 +18,3 @@ const File = struct { handle: i32 };
 | opened f => got-file f
 ~get-file(path: "test.txt")
 | got-file _ |> _
-pub fn main() void {}

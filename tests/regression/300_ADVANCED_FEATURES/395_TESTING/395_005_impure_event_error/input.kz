@@ -31,4 +31,3 @@
         | saved |> assert.ok()
 }
 
-pub fn main() void {}

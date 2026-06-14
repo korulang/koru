@@ -5,4 +5,3 @@
 | opened _ => result "file exists"  // obligation should be auto-discharged before returning!
 ~check-file(path: "test.txt")
 | result _ |> _
-pub fn main() void {}

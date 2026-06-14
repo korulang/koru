@@ -4,4 +4,3 @@
 | opened f |> std/control:for(0..3)
     ! each _ |> _
     | done |> app/fs:close(file: f)
-pub fn main() void {}

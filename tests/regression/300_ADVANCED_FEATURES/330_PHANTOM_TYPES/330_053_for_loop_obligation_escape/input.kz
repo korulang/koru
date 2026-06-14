@@ -20,4 +20,3 @@ const allocator = std.heap.c_allocator;
 ~for(0..10)
 ! each i |> create(id: i)
     | created r |> use(r)  // use it, but can't dispose - no destroy event exists!
-pub fn main() void {}

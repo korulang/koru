@@ -13,4 +13,3 @@ const cond = true;
 | then |> std/io:print.ln("then taken")
 | else |> std/io:print.ln("else taken")
 
-pub fn main() void {}

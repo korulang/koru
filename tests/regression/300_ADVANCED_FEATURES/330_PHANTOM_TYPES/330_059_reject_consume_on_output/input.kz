@@ -4,4 +4,3 @@ const Connection = struct { id: i32 };
 ~proc connect|zig {
     return .{ .ok = undefined };
 }
-pub fn main() void {}

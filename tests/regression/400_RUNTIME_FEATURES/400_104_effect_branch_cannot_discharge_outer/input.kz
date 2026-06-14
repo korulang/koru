@@ -16,4 +16,3 @@ const Resource = struct { id: usize };
     for (items) |it| { each(it); }
     return .{ .done = items.len };
 }
-pub fn main() void {}

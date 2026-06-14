@@ -16,4 +16,3 @@
         ! each _ |> app/fs:close(file: outermost_f)  // ERROR: two @scope layers deep
         | done |> _
     | done |> _
-pub fn main() void {}

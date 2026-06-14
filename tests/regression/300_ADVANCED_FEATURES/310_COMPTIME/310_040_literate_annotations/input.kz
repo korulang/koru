@@ -43,4 +43,3 @@ This keeps the token stream clean for the parser.
 | star void[*]
 | whitespace void[\s+]
 
-pub fn main() void {}

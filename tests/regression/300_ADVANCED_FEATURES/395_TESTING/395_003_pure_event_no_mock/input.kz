@@ -20,4 +20,3 @@
     | result r |> assert(r == 8)
 }
 
-pub fn main() void {}

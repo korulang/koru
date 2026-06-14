@@ -37,4 +37,3 @@ const std = @import("std");
 
 ~run()
 
-pub fn main() void {}

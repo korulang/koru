@@ -19,4 +19,3 @@ var global_r = Resource{ .id = 99 };
 ~borrow(n: 3)
 ! lend _ |> &global_r
 | done _ |> _
-pub fn main() void {}

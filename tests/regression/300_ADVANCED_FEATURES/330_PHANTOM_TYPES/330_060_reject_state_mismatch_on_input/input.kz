@@ -4,4 +4,3 @@ const Connection = struct { id: i32 };
 }
 ~pub event get-raw-connection {}
 | ok c |> query(conn: c, sql: "SELECT 1")
-pub fn main() void {}

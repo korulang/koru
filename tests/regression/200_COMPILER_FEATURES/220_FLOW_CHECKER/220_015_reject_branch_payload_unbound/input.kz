@@ -18,4 +18,3 @@
 ~compute()
 | ok |> _
 
-pub fn main() void {}

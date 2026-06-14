@@ -15,4 +15,3 @@
 | opened outer_f |> std/control:for(0..1)
     ! each _ |> app/fs:close(file: outer_f)  // ERROR: outer_f is in @scope, body runs once but COULD run N times
     | done |> _
-pub fn main() void {}

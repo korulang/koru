@@ -49,4 +49,3 @@ const should_write = true;
     | then |> write(f.file, data: "hello") |> close(f.file)
     | else |> close(f.file)
 
-pub fn main() void {}

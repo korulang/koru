@@ -7,4 +7,3 @@
             | opened _ |> _  // Auto-close inner here
         | done |> _  // Auto-close outer_f here
 | done |> _
-pub fn main() void {}

@@ -19,4 +19,3 @@ const File = struct { handle: i32 };
 | opened f => got f
 ~get-resource(path: "test.txt")
 | got r |> close(file: r)
-pub fn main() void {}

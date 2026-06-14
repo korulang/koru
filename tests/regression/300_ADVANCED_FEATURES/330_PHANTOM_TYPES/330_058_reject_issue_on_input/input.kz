@@ -2,4 +2,3 @@ const Connection = struct { id: i32 };
 ~pub event use-connection { conn: *Connection<connected!> }
 ~proc use-connection|zig {
 }
-pub fn main() void {}

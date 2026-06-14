@@ -21,4 +21,3 @@
 |> _
 | err _ |> _
 
-pub fn main() void {}
