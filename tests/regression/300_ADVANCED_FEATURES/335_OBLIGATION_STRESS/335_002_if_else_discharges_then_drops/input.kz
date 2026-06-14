@@ -1,0 +1,16 @@
+// PIN: resource leaked on the then branch.
+// Mirror of 335_001: now | else discharges but | then drops to _.
+// Both branches must discharge the obligation — dropping either is a leak.
+// Austral rule: "a linear value must be used exactly once in each branch."
+//
+// Grounding:
+//   Legal both-branches form: 330_022_if_manual_both_branches/input.kz:5-7
+//   This test removes the | then discharge only.
+~import std/control
+~import app/fs
+const condition = true;
+~app/fs:open(path: "test.txt")
+| opened f |> std/control:if(condition)
+    | then |> _
+    | else |> app/fs:close(file: f)
+pub fn main() void {}

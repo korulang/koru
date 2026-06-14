@@ -1,0 +1,5 @@
+Obligation created inside subflow proc body but not discharged: work() opens
+*File<opened!> internally via app.fs:open, then branches to done {} (a void
+branch constructor) without calling close(). The opened! obligation is live
+at the done {} call — no event in scope accepts <!opened> to discharge it.
+Same gap as 518_obligation_lost_at_boundary, single-file form.

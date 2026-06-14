@@ -1,0 +1,48 @@
+// ASPIRATIONAL PIN (2026-06-13): CHAINING auto-discharge — the end-goal.
+//
+// `acquire` issues a Widget in state `raw!`. The only way to discharge `raw!`
+// is to WALK: `cure` (a single-branch, no-extra-param FORWARD transition
+// raw!→cured!) and then `discard` (a VOID terminal that consumes cured!). The
+// flow below leaves `w<raw!>` undischarged; the aspiration is that the
+// auto-discharger walks `cure` → `discard` and cleans it up — so this prints
+// "acquired 7" and exits 0.
+//
+// CURRENTLY RED, BY DESIGN — NOT A BUG. Our auto-discharger accepts ONLY void
+// events as dischargers (src/auto_discharge_inserter.zig: `branches.len > 0`
+// → skip), so the non-void `cure` is never auto-inserted, `raw!` is left
+// undischarged, and this fails with KORU030. The void-only rule is the
+// deliberate depth-1 BASE CASE. The depth-N walk (cycle-guarded against
+// self-loops, `[!]` only to break ties) is the roadmap — see
+// memory/project_obligation_stress_work_order.md "DISCHARGE MODEL".
+~import std/io
+
+const std = @import("std");
+
+pub const Widget = struct { id: u32 };
+
+~pub event acquire {}
+| got *Widget<raw!>
+
+~proc acquire|zig {
+    const w = std.heap.page_allocator.create(Widget) catch unreachable;
+    w.* = .{ .id = 7 };
+    return .{ .got = w };
+}
+
+// Single-branch FORWARD transition raw! → cured!, takes only the resource.
+~pub event cure { w: *Widget<!raw> }
+| cured *Widget<cured!>
+
+~proc cure|zig {
+    return .{ .cured = w };
+}
+
+// VOID terminal — consumes cured!, issues nothing.
+~pub event discard { w: *Widget<!cured> }
+
+~proc discard|zig {
+    std.heap.page_allocator.destroy(w);
+}
+
+~acquire()
+| got w |> std/io:print.ln("acquired {{ w.id:d }}")

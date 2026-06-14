@@ -1,0 +1,3 @@
+Obligation lost at subflow boundary: process-file accepts *File<opened!>
+but its output signature has no discharge (<!opened>) and no re-export
+(*File<opened!>). The opened! obligation is silently dropped.

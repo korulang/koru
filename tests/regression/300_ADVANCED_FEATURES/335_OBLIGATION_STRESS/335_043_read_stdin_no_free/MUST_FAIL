@@ -1,0 +1,5 @@
+RED PIN — design gap: std/io:read-stdin returns a bare []const u8 with no
+phantom obligation. The allocator-owned buffer leaks. The phantom checker
+is blind because the type carries no allocated! state. This is the stdin
+twin of 335_042 (read-file gap). Pin stays red until the IO surface gains
+phantom obligation on its allocated outputs.

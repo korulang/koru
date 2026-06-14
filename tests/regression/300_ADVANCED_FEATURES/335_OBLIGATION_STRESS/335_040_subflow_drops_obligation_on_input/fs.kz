@@ -1,0 +1,24 @@
+// File-resource module reused verbatim from:
+// tests/regression/300_ADVANCED_FEATURES/330_PHANTOM_TYPES/330_007_use_after_disposal/fs.kz
+// — syntax is ground-truth from a passing test.
+
+const std = @import("std");
+const File = struct { handle: i32 };
+
+~pub event open { path: []const u8 }
+| opened *File<opened!>
+
+~proc open|zig {
+    std.debug.print("Opening file: {s}\n", .{path});
+    const allocator = std.heap.page_allocator;
+    const f = allocator.create(File) catch unreachable;
+    f.* = File{ .handle = 42 };
+    return .{ .opened = f };
+}
+
+// Consumes the opened! obligation — grounded in 330_007/fs.kz line 13
+~pub event close { file: *File<!opened> }
+
+~proc close|zig {
+    std.debug.print("Closing file\n", .{});
+}

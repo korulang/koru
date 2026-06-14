@@ -1,0 +1,48 @@
+// PIN (design gap investigation): A []const u8<unsanitized!> value is passed
+// to an event whose parameter is plain []const u8 — no phantom annotation.
+//
+// QUESTION: Does the phantom checker (a) reject the call because the caller
+// still holds an undischarged <unsanitized!> obligation after the call, or
+// (b) silently accept, treating the untyped parameter as consuming the obligation?
+//
+// The positive twin (330_068) shows that passing <unsanitized!> to <!unsanitized>
+// correctly discharges the obligation. This test pins the BOUNDARY case: what
+// happens when the callee is not phantom-aware (plain []const u8)?
+//
+// If the obligation is silently stripped at the call site — the taint is "laundered"
+// through a non-phantom-aware sink — that is a security-critical gap (Aldrich
+// typestate, Onward! 2009: typestate must be preserved through composition).
+//
+// PREDICTION: UNCERTAIN — could be RED PIN (compiler silently launders taint)
+// or GREEN-REJECT (checker keeps obligation alive after the plain-param call).
+// The expected error below assumes the CORRECT behavior (reject = keep obligation).
+//
+// Grounding:
+//   ~import std/io               — 330_068/input.kz line 13
+//   []const u8<unsanitized!>     — 330_068/input.kz line 15 (output branch type)
+//   get-input event pattern      — 330_068/input.kz lines 14-17
+//   => branch arm syntax         — 330_068/input.kz line 17 (~get-input => line s)
+//   sanitize event <!unsan>      — 330_068/input.kz lines 19-21
+//   print.ln call                — 330_068/input.kz line 26
+//   Negative twin: 330_069 (undischarged obligation is caught at scope exit)
+
+~import std/io
+
+~pub event get-input {}
+| line []const u8<unsanitized!>
+
+~get-input => line "user input data"
+
+// Sink that takes a PLAIN []const u8 — no phantom annotation.
+// It does NOT declare <!unsanitized>, so it cannot discharge the obligation.
+~event log-raw { data: []const u8 }
+| logged
+
+~log-raw => logged
+
+// Use the tainted value via a non-phantom-aware event.
+// The obligation <unsanitized!> is neither discharged (no <!unsanitized> param)
+// nor visible in log-raw's output. Does it silently strip here?
+~get-input()
+| line s |> log-raw(data: s)
+    | logged |> _

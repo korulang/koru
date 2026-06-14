@@ -1,0 +1,50 @@
+// Library: DB with explicit rollback-needs-connection constraint.
+// Same fixture as 335_022/db.kz — rollback mirrors commit (both need conn live).
+//
+// Grounding: same as 335_022/db.kz
+
+const std = @import("std");
+
+const Connection = struct {
+    id: i32,
+};
+
+const Transaction = struct {
+    id: i32,
+};
+
+~pub event connect { url: []const u8 }
+| connected *Connection<connected!>
+
+~proc connect|zig {
+    const c = std.heap.page_allocator.create(Connection) catch unreachable;
+    c.* = Connection{ .id = 1 };
+    return .{ .connected = c };
+}
+
+~pub event query { conn: *Connection<connected> }
+| started *Transaction<transaction!>
+
+~proc query|zig {
+    const t = std.heap.page_allocator.create(Transaction) catch unreachable;
+    t.* = Transaction{ .id = 1 };
+    return .{ .started = t };
+}
+
+~pub event commit { tx: *Transaction<!transaction>, conn: *Connection<connected> }
+
+~proc commit|zig {
+    std.debug.print("Committing\n", .{});
+}
+
+~pub event rollback { tx: *Transaction<!transaction>, conn: *Connection<connected> }
+
+~proc rollback|zig {
+    std.debug.print("Rolling back\n", .{});
+}
+
+~pub event disconnect { conn: *Connection<!connected> }
+
+~proc disconnect|zig {
+    std.debug.print("Disconnecting\n", .{});
+}

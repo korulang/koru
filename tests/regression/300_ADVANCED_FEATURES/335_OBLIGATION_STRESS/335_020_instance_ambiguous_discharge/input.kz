@@ -1,0 +1,22 @@
+// PIN: when a String is in <instance!> state at scope exit, the auto-discharger
+// has TWO matching candidates: std/string:free (accepts <!view|instance>) and
+// std/string:release (accepts <!instance>). Neither is marked as the default
+// discharger, so KORU030 "multiple discharge options" fires instead of silently
+// picking one. The caller must discharge explicitly.
+//
+// Grounding:
+//   - from-page return type: koru_std/string.kz:51 (| ok *String<view!>)
+//   - take signature:        koru_std/string.kz:74 (~pub event take { s: *String<!view> })
+//   - take return:           koru_std/string.kz:75 (| instance *String<instance!>)
+//   - free signature:        koru_std/string.kz:94 (~pub event free { s: *String<!view|instance> })
+//   - release signature:     koru_std/string.kz:82 (~pub event release { s: *String<!instance> })
+//   - flow shape:            610_002_string_ownership/input.kz:5-11 (take + append + read — drop free)
+~import std/string
+
+~std/string:from-page(text: "hello")
+| ok s |> std/string:take(s)
+    | instance owned |> std/string:append(s: owned, text: " world")
+        | ok |> std/string:read(s: owned)
+            | slice _ |> _
+        | err _ |> _
+| err _ |> _

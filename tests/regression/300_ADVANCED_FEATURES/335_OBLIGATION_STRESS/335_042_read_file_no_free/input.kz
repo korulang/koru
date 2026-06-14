@@ -1,0 +1,34 @@
+// PIN (design gap — RED): std/io:read-file allocates a []const u8 via
+// koru_allocator() (io.kz line 185: file.readToEndAlloc) and returns it
+// in the `| ok []const u8` branch. The caller uses the content and then
+// drops it — no free call, no phantom obligation, no checker warning.
+//
+// The leak is REAL at the allocator level: the `content` slice lives until
+// process exit. But Koru's obligation system has no handle on it because
+// `[]const u8` carries no phantom state (unlike *String<view!> from std/string).
+//
+// This pin documents the TYPE SYSTEM GAP: the bare-slice IO surface is
+// invisible to the phantom checker. The compiler accepts this program today.
+// When a `[]const u8<allocated!>` surface is added to io.kz, this test
+// becomes green-reject and the design gap is closed.
+//
+// PREDICTION: RED PIN (compiler accepts; no phantom = no check).
+// The expected error below is what SHOULD fire after the gap is closed.
+//
+// Grounding:
+//   ~import syntax             — 330_007/input.kz line 1
+//   std/io:read-file event     — koru_std/io.kz line 169: event read-file { path }
+//   | ok []const u8 branch     — koru_std/io.kz line 170
+//   | not-found branch         — koru_std/io.kz line 171
+//   | failed branch            — koru_std/io.kz line 172
+//   std/io:print.ln usage      — 330_068/input.kz line 26 (positive test)
+
+~import std/io
+
+// Read a file and use its content — then drop the slice without freeing.
+// The allocator-owned []const u8 leaks. No phantom obligation exists to
+// force a free() call, so the phantom checker is blind.
+~std/io:read-file(path: "data.txt")
+| ok content |> std/io:print.ln("{{ content:s }}")
+| not-found |> _
+| failed _ |> _

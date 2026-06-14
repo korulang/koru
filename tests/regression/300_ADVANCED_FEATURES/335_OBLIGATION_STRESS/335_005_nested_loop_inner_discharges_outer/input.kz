@@ -1,0 +1,19 @@
+// PIN: outermost resource discharged inside the INNER loop body.
+// The obligation crosses two @scope boundaries (outer loop, inner loop).
+// Discharging it in the innermost ! each is doubly wrong.
+// Austral rule: "a linear value defined outside a loop cannot appear in the loop body."
+//
+// Grounding:
+//   Legal nested-for form: 330_032_nested_for_scopes/input.kz:3-9
+//     outermost_f is closed in the OUTER | done, not any each body
+//   for + each + done nesting syntax: 330_032_nested_for_scopes/input.kz:4-9
+//   KORU032 message: "Cannot discharge outer-scope resource inside @scope boundary"
+~import std/control
+~import app/fs
+~app/fs:open(path: "outermost.txt")
+| opened outermost_f |> std/control:for(0..2)
+    ! each _ |> std/control:for(0..2)
+        ! each _ |> app/fs:close(file: outermost_f)  // ERROR: two @scope layers deep
+        | done |> _
+    | done |> _
+pub fn main() void {}

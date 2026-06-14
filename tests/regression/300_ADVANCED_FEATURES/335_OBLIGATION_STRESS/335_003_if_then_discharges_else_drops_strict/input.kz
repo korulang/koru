@@ -1,0 +1,20 @@
+// PIN: nested if where | then runs a sub-if (both sub-branches discharge),
+// but the outer | else drops the resource entirely.
+// Tests that obligation checking reaches through a nested if in the then-arm.
+// Austral rule: "a linear value must be used exactly once in each branch."
+//
+// Grounding:
+//   Outer if structure: 330_022_if_manual_both_branches/input.kz:5-7
+//   Nested for-in-if structure: 330_048_nested_for_in_if/input.kz:5-9
+//   const declaration: 330_022_if_manual_both_branches/input.kz:3
+~import std/control
+~import app/fs
+const outer_condition = true;
+const inner_condition = false;
+~app/fs:open(path: "test.txt")
+| opened f |> std/control:if(outer_condition)
+    | then |> std/control:if(inner_condition)
+        | then |> app/fs:close(file: f)
+        | else |> app/fs:close(file: f)
+    | else |> _
+pub fn main() void {}

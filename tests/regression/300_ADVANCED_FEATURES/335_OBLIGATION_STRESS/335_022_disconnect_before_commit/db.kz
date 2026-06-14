@@ -1,0 +1,63 @@
+// Library: DB with explicit commit-needs-connection constraint.
+//
+// connect → query → (commit | rollback) → disconnect
+//
+// commit and rollback both require conn: *Connection<connected> (not consuming
+// it — phantom annotation <connected> without ! means "must be in this state,
+// but don't consume the obligation"). This encodes the real-world invariant:
+// committing a transaction requires the connection to still be open.
+//
+// Grounding:
+//   - struct field phantom pattern: 330_027/db.kz:11-13 (Connection struct)
+//   - event with non-consuming phantom req: 330_027/db.kz:34 (query takes conn: *Connection<connected>)
+//   - obligation consume marker <!state>: 330_027/db.kz:46 (commit consumes <!transaction>)
+//   - disconnect consuming <!connected>: 330_027/db.kz:60
+
+const std = @import("std");
+
+const Connection = struct {
+    id: i32,
+};
+
+const Transaction = struct {
+    id: i32,
+};
+
+~pub event connect { url: []const u8 }
+| connected *Connection<connected!>
+
+~proc connect|zig {
+    const c = std.heap.page_allocator.create(Connection) catch unreachable;
+    c.* = Connection{ .id = 1 };
+    return .{ .connected = c };
+}
+
+~pub event query { conn: *Connection<connected> }
+| started *Transaction<transaction!>
+
+~proc query|zig {
+    const t = std.heap.page_allocator.create(Transaction) catch unreachable;
+    t.* = Transaction{ .id = 1 };
+    return .{ .started = t };
+}
+
+// commit requires conn in <connected> (non-consuming read) and consumes tx
+~pub event commit { tx: *Transaction<!transaction>, conn: *Connection<connected> }
+
+~proc commit|zig {
+    std.debug.print("Committing\n", .{});
+}
+
+// rollback requires conn in <connected> (non-consuming read) and consumes tx
+~pub event rollback { tx: *Transaction<!transaction>, conn: *Connection<connected> }
+
+~proc rollback|zig {
+    std.debug.print("Rolling back\n", .{});
+}
+
+// disconnect consumes connected! — after this conn is dead
+~pub event disconnect { conn: *Connection<!connected> }
+
+~proc disconnect|zig {
+    std.debug.print("Disconnecting\n", .{});
+}

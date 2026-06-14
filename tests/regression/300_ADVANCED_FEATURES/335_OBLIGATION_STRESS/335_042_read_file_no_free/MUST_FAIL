@@ -1,0 +1,5 @@
+RED PIN — design gap: std/io:read-file returns a bare []const u8 with no
+phantom obligation. The caller never frees the allocator-owned slice.
+The phantom checker cannot see the leak because the type carries no state.
+This test documents the gap; it will stay red until the IO surface gains
+an allocated! phantom or the leak is otherwise made visible to the checker.

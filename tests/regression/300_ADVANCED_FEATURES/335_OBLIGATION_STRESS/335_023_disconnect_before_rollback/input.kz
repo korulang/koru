@@ -1,0 +1,22 @@
+// PIN: on the failure path, disconnect is called before rollback — same
+// LIFO violation as 335_022 but on the error branch. The rule is symmetric:
+// both commit AND rollback require the connection still live (conn: <connected>).
+// Disconnecting first in the error path is as wrong as in the happy path.
+//
+// Legal order (330_027/input.kz:8): rollback(tx) |> disconnect(conn: c)
+// This test inverts that order.
+//
+// Grounding:
+//   - error-branch rollback pattern: 330_027/input.kz:8 (| else |> rollback(tx) |> disconnect)
+//   - rollback requiring conn:       ./db.kz:40 (conn: *Connection<connected>)
+//   - disconnect consuming conn:     ./db.kz:46 (~pub event disconnect { conn: *Connection<!connected> })
+~import app/db
+~import std/control
+
+const error_occurred = true;
+~app/db:connect(url: "postgres://localhost/test")
+| connected c |> app/db:query(conn: c)
+    | started tx |> std/control:if(error_occurred)
+        | then |> app/db:disconnect(conn: c) |> app/db:rollback(tx: tx, conn: c)
+        | else |> app/db:commit(tx: tx, conn: c) |> app/db:disconnect(conn: c)
+pub fn main() void {}

@@ -1,0 +1,56 @@
+// Library module: db (copy of 330_027/db.kz)
+// Database operations with layered cleanup obligations
+//
+// Pattern: connect → query → (commit OR rollback) → disconnect
+//
+// Grounding: 330_027_db_transaction_pattern/db.kz verbatim
+
+const std = @import("std");
+
+const Connection = struct {
+    id: i32,
+};
+
+const Transaction = struct {
+    conn: *Connection,
+};
+
+~pub event connect { url: []const u8 }
+| connected *Connection<connected!>
+
+~proc connect|zig {
+    std.debug.print("Connecting to: {s}\n", .{url});
+    const allocator = std.heap.page_allocator;
+    const c = allocator.create(Connection) catch unreachable;
+    c.* = Connection{ .id = 1 };
+    return .{ .connected = c };
+}
+
+~pub event query { conn: *Connection<connected>, sql: []const u8 }
+| started *Transaction<transaction!>
+
+~proc query|zig {
+    std.debug.print("Query: {s}\n", .{sql});
+    const allocator = std.heap.page_allocator;
+    const t = allocator.create(Transaction) catch unreachable;
+    t.* = Transaction{ .conn = conn };
+    return .{ .started = t };
+}
+
+~pub event commit { tx: *Transaction<!transaction> }
+
+~proc commit|zig {
+    std.debug.print("Committing transaction\n", .{});
+}
+
+~pub event rollback { tx: *Transaction<!transaction> }
+
+~proc rollback|zig {
+    std.debug.print("Rolling back transaction\n", .{});
+}
+
+~pub event disconnect { conn: *Connection<!connected> }
+
+~proc disconnect|zig {
+    std.debug.print("Disconnecting\n", .{});
+}

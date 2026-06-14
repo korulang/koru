@@ -1,0 +1,39 @@
+// PIN (design gap): A subflow that OPENS a resource internally and then
+// returns to `done {}` (a void branch constructor) without closing the
+// resource or propagating the opened! obligation. The obligation is created
+// inside the subflow Koru proc body and vanishes at the body boundary.
+//
+// This mirrors 518_obligation_lost_at_boundary/bad_subflow.kz — that test
+// uses a multi-file setup with a separate fs.kz; this is a single-file
+// self-contained pin that opens using the same fs.kz companion.
+//
+// The phantom checker SHOULD see that `f` carrying `<opened!>` was live at
+// the end of the `| opened` branch inside the proc body and no event consumed
+// <!opened>. The obligation leaks.
+//
+// PREDICTION: RED PIN — same failure mode as 518: the frontend accepts the
+// proc body, and the backend emits either invalid Zig (as in 518) or runs
+// without catching the leak. The expected error below is what SHOULD fire
+// when the obligation-at-proc-boundary path is enforced.
+//
+// Grounding:
+//   ~import syntax                  — 330_007/input.kz line 1
+//   ~pub event void (no branches)   — 330_020/input.kz line 2
+//   ~proc |zig with Koru body       — 518/bad_subflow.kz lines 6-12
+//   | opened f |> done {} call      — 518/bad_subflow.kz line 8
+//   *File<opened!> and app.fs:open  — 330_007/fs.kz lines 4-12
+
+~import app/fs
+
+// BAD: opens file inside the proc, forwards to `done {}` (void branch
+// constructor), never calling close(). Obligation on `f` is lost.
+~pub event work {}
+
+~proc work|zig {
+    ~app.fs:open(path: "data.txt")
+    | opened f |> done {}
+    // ERROR: f has <opened!> obligation — done {} does not discharge <!opened>
+}
+
+~work()
+pub fn main() void {}

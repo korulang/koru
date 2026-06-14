@@ -1,0 +1,5 @@
+Taint laundering via non-phantom-aware parameter: a []const u8<unsanitized!>
+value is passed to log-raw(data: []const u8). The parameter has no phantom
+annotation, so it cannot discharge the obligation. The <unsanitized!> obligation
+must remain live after the call and be flagged at scope exit — exactly as
+330_069 catches the direct-use variant.

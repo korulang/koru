@@ -1,0 +1,34 @@
+// PIN (design gap — RED): std/io:read-stdin allocates a []const u8 via
+// koru_allocator().readToEndAlloc (io.kz line 153) and returns it in the
+// `| ok []const u8` branch. No phantom obligation attaches to the slice.
+//
+// The caller below consumes the content for a length calculation and drops
+// it — the allocator-owned buffer leaks. The phantom checker has no handle
+// because `[]const u8` is a bare type with no phantom state.
+//
+// This is the stdin variant of 335_042 (read-file). Together they pin the
+// full IO-read surface gap: every readToEndAlloc path in io.kz leaks
+// invisibly because the output types carry no phantom.
+//
+// The intended fix is to add `[]const u8<allocated!>` to the OK branch
+// and a matching std/io:free-bytes { data: []const u8<!allocated> } event.
+// Once that lands, this test becomes green-reject.
+//
+// PREDICTION: RED PIN (compiler accepts today).
+//
+// Grounding:
+//   std/io:read-stdin event   — koru_std/io.kz line 146: event read-stdin {}
+//   | ok []const u8 branch    — koru_std/io.kz line 147
+//   | eof branch              — koru_std/io.kz line 148
+//   | failed branch           — koru_std/io.kz line 149
+//   ~import std/io            — 330_068/input.kz line 13
+
+~import std/io
+
+// Read all of stdin. Use the content, then drop the slice — no free.
+// The allocator-owned buffer leaks invisibly because []const u8 has
+// no phantom obligation forcing the caller to dispose it.
+~std/io:read-stdin()
+| ok content |> std/io:print.ln("{{ content:s }}")
+| eof |> _
+| failed _ |> _

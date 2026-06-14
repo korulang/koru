@@ -1,0 +1,21 @@
+// PIN: resource leaked on the else branch.
+// A sound linear type system must reject this: the obligation is
+// discharged in | then but the | else branch drops to _ without closing.
+// Austral rule: "a linear value must be used exactly once in each branch."
+//
+// Grounding:
+//   Legal both-branches form: 330_022_if_manual_both_branches/input.kz:5-7
+//     | then |> app/fs:close(file: f)
+//     | else |> app/fs:close(file: f)
+//   This test is that legal form with the | else discharge REMOVED.
+//
+//   Branch structure: 330_022_if_manual_both_branches/input.kz:5 (if + piped branches)
+//   const declaration: 330_022_if_manual_both_branches/input.kz:3
+~import std/control
+~import app/fs
+const condition = true;
+~app/fs:open(path: "test.txt")
+| opened f |> std/control:if(condition)
+    | then |> app/fs:close(file: f)
+    | else |> _
+pub fn main() void {}

@@ -1,0 +1,21 @@
+// PIN: an <instance!> resource in an error branch is also subject to KORU030 —
+// the auto-discharger does not distinguish happy vs error paths. When `append`
+// fails (| err), `owned` is still <instance!> at that branch's scope exit, and
+// both `free` and `release` match. KORU030 fires on the error branch.
+//
+// Grounding:
+//   - from-page return:      koru_std/string.kz:51 (| ok *String<view!>)
+//   - take signature:        koru_std/string.kz:74 (~pub event take { s: *String<!view> })
+//   - take return:           koru_std/string.kz:75 (| instance *String<instance!>)
+//   - free signature:        koru_std/string.kz:94 (~pub event free { s: *String<!view|instance> })
+//   - release signature:     koru_std/string.kz:82 (~pub event release { s: *String<!instance> })
+//   - append in error branch: 610_002_string_ownership/input.kz:10 (| err _ |> std/string:free(...))
+//     that test fixes the error branch explicitly; we omit the fix here
+~import std/string
+
+~std/string:from-page(text: "hello")
+| ok s |> std/string:take(s)
+    | instance owned |> std/string:append(s: owned, text: " world")
+        | ok |> std/string:free(s: owned)
+        | err _ |> _
+| err _ |> _

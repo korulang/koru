@@ -1,0 +1,26 @@
+// PIN: mid-chain error path leaks the connection.
+//
+// connect() opens *Connection<connected!>. query() READS the connection
+// (conn: *Connection<connected> — no consume marker) and can return | err.
+// On the | err path, the connection is still alive with connected! obligation
+// but the handler drops to _ without calling disconnect().
+//
+// Legal form (both paths discharge): 330_027_db_transaction_pattern/input.kz:4-8
+//   Both | then and | else call disconnect(conn: c).
+//
+// Rust analogy: Acquiring a resource, calling a fallible operation that borrows
+// it, and returning early via `?` — the resource is leaked because no RAII
+// destructor fires and no manual drop is in scope.
+//
+// Grounding:
+//   connect event + connected! obligation: 330_027_db_transaction_pattern/db.kz:20-29
+//   query reads (non-consuming) connection: 330_027_db_transaction_pattern/db.kz:34-43
+//   disconnect consumes connected!: 330_027_db_transaction_pattern/db.kz:62-64
+//   chain structure: 330_027_db_transaction_pattern/input.kz:4-8
+//   | err _ |> _ branch syntax: 330_061_inline_obligation_cascade/input.kz:81
+~import app/db
+~app/db:connect(url: "postgres://localhost/test")
+| connected c |> app/db:query(conn: c, sql: "SELECT 1")
+    | started tx |> app/db:rollback(tx) |> app/db:disconnect(conn: c)
+    | err _ |> _
+pub fn main() void {}

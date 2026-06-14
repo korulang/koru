@@ -1,0 +1,6 @@
+Taint laundering through a plain-typed echo: []const u8<unsanitized!> passed
+to echo(data: []const u8) which returns | out []const u8 (no phantom). The
+<unsanitized!> obligation is never discharged. The checker should block the
+print of `result` because the taint obligation from `s` was never satisfied.
+If the checker is blind after the echo boundary, this is a design gap — the
+plain-typed gateway launders the taint silently.
