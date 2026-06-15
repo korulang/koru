@@ -1,4 +1,4 @@
-// RED PIN — the list instance of the root effect/obligation bug (see
+// REGRESSION GUARD (was red; FIXED) — the list instance of the root effect/obligation bug (see
 // 630_002_effect_under_obligation_drops_output). Streaming into a list via
 // read-lines drops all output, because read-lines is nested under the
 // obligation-carrying `| list xs` (<list!>) branch — the same failure as

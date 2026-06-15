@@ -923,12 +923,23 @@ pub const AutoDischargeInserter = struct {
                 }
             }
 
-            // If this continuation has @scope annotation, treat it as a scope boundary
-            // The @scope annotation is the source of truth - not the event name
-            if (hasScope(nested)) {
+            // If this continuation has @scope annotation, treat it as a scope boundary.
+            // The @scope annotation is the source of truth - not the event name.
+            //
+            // ALSO enter a scope for effect branches (`! line`, `! each`): they lower
+            // to host loops that fire 0..N times, so they are repeating scope
+            // boundaries exactly like an @scope-annotated branch. Without this, an
+            // OUTER-scope obligation (e.g. a `<view!>`/`<list!>` binding from the
+            // enclosing `| ok s` / `| list xs`) counts as current-scope at a terminal
+            // INSIDE the effect body, so its disposal is spuriously injected into the
+            // per-iteration loop body — a double-free that aborts under the safety GPA
+            // and drops all output. The @scope annotation was previously the only
+            // recognized loop boundary, so a stdlib effect lowering to a loop was
+            // invisible to this pass.
+            if (hasScope(nested) or nested.kind == .effect) {
                 var scoped_context = try context.clone(self.allocator);
                 defer scoped_context.deinit();
-                scoped_context.enterScope(true); // @scope means we're in a scoped boundary
+                scoped_context.enterScope(true); // @scope or effect branch = repeating scope boundary
 
                 const result = try self.checkContinuation(nested, nested_event, nested_module, &scoped_context, program, flow, mode);
                 if (result.transformed) return result;

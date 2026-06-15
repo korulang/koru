@@ -1138,8 +1138,16 @@ pub const PhantomSemanticChecker = struct {
             return false;
         }
 
-        // Check for @scope annotation on the binding (e.g., | each _[@scope] |>)
+        // Check for @scope annotation on the binding (e.g., | each _[@scope] |>).
+        // ALSO treat an effect branch (`! line`, `! each`) as a scope boundary: it
+        // lowers to a host loop firing 0..N times, so an OUTER obligation must not
+        // be required to discharge INSIDE the effect body (that would be a
+        // per-iteration double-free) — it discharges after the loop (done/failed).
+        // This is the checker-side twin of the auto-discharge inserter's
+        // kind==.effect scope entry; the @scope annotation was previously the only
+        // recognized loop boundary, leaving stdlib effects invisible to both passes.
         const has_scope = blk: {
+            if (cont.kind == .effect) break :blk true;
             for (cont.binding_annotations) |ann| {
                 if (std.mem.eql(u8, ann, "@scope")) {
                     break :blk true;

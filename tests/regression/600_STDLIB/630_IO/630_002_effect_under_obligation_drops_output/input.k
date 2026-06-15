@@ -1,4 +1,4 @@
-// RED PIN — ROOT CAUSE: a nested effect (read-lines) loses its output when it is
+// REGRESSION GUARD (was the root-cause repro; FIXED) — ROOT CAUSE: a nested effect (read-lines) loses its output when it is
 // nested under an OBLIGATION-CARRYING branch. The obligation/auto-discharge
 // machinery and nested-effect lowering don't compose.
 //
