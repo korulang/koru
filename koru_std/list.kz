@@ -1,0 +1,89 @@
+// std/list — growable list with an active/free ownership model.
+//
+// First cut: monomorphized by hand for i64 (the trunk type). This mirrors
+// string.kz's String/u8: an owned handle carrying its allocator, with phantom
+// obligations on the ownership state. Genericity over element types (the
+// container-generating [transform] from the collections design) lands later by
+// replication; the obligation/phantom model proven here is the same for every T.
+//
+// Ownership states (phantom on *List_i64):
+//   <list!>  - new issues the obligation: this list must be freed (or drained).
+//   <list>   - borrowed: read/mutate in place (push, len), obligation untouched.
+//   <!list>  - consumed: free discharges the obligation.
+
+const std = @import("std");
+
+pub const List_i64 = struct {
+    items: std.ArrayList(i64),
+    allocator: std.mem.Allocator,
+
+    // Package-private — only free/auto-discharge calls this.
+    fn deinit(self: *List_i64) void {
+        self.items.deinit(self.allocator);
+        self.allocator.destroy(self);
+    }
+};
+
+// ============================================
+// Construction
+// ============================================
+
+// Concrete i64 constructor (runtime). The generic `new(i64)` transform rewrites
+// its call site to this; written here as a plain runtime event so the list
+// mechanism is exercisable directly while the transform is built. Carries the
+// <list!> ownership obligation.
+~pub event new-i64 {}
+| list *List_i64<list!>
+| err []const u8
+
+~proc new-i64|zig {
+    const allocator = koru_allocator();
+    const self = allocator.create(List_i64) catch {
+        return .{ .err = "allocation failed" };
+    };
+    self.* = .{
+        .items = std.ArrayList(i64).initCapacity(allocator, 0) catch {
+            allocator.destroy(self);
+            return .{ .err = "allocation failed" };
+        },
+        .allocator = allocator,
+    };
+    return .{ .list = self };
+}
+
+// ============================================
+// Mutation (borrow — obligation untouched)
+// ============================================
+
+// Append a value. Void, chains with `|>`. OOM panics (the approved split: a
+// growable push is loud-on-failure, not a per-call error branch).
+~pub event push { xs: *List_i64<list>, v: i64 }
+
+~proc push|zig {
+    xs.items.append(xs.allocator, v) catch {
+        @panic("std/list:push — out of memory");
+    };
+}
+
+// ============================================
+// Read (borrow)
+// ============================================
+
+// Current length as a scalar. (The `xs.len` expression form rides a separate
+// bridge; this event is the plain call form.)
+~pub event len { xs: *List_i64<list> }
+| len usize
+
+~proc len|zig {
+    return .{ .len = xs.items.items.len };
+}
+
+// ============================================
+// Teardown (consume — discharges <!list>)
+// ============================================
+
+~pub event free { xs: *List_i64<!list> }
+
+~proc free|zig {
+    xs.deinit();
+}
