@@ -28,9 +28,62 @@ pub const List_i64 = struct {
 // Construction
 // ============================================
 
-// Concrete i64 constructor (runtime). The generic `new(i64)` transform rewrites
-// its call site to this; written here as a plain runtime event so the list
-// mechanism is exercisable directly while the transform is built. Carries the
+// Generic constructor. `new(i64)` reads the element-type expression at comptime
+// and rewrites its call site to the concrete `new-<type>` runtime constructor
+// (e.g. `new-i64`). This is generic-by-name: when `new-f64` exists, `new(f64)`
+// routes to it automatically. A type expression is inherently comptime, so this
+// must be a [transform] — a plain event taking the type as an Expression would
+// make the whole flow comptime. The branches (`| list` / `| err`) carry over to
+// the concrete constructor unchanged.
+~[comptime|transform]pub event new {
+    expr: Expression,
+    invocation: *const Invocation,
+    item: *const Item,
+    allocator: std.mem.Allocator
+}
+| transformed SiteResult
+
+~proc new|zig {
+    const ast = @import("ast");
+
+    const flow = if (item.* == .flow) &item.flow else @panic("std/list:new: expected a flow site");
+
+    // Element type as written, e.g. "i64". Route to the concrete constructor of
+    // the same name suffix; an unsupported type lands on a missing event with a
+    // clear "event not found" rather than silently mis-monomorphizing.
+    const elem = std.mem.trim(u8, expr, " \t");
+    const seg = std.fmt.allocPrint(allocator, "new-{s}", .{elem}) catch unreachable;
+    const new_segments = allocator.alloc([]const u8, 1) catch unreachable;
+    new_segments[0] = seg;
+
+    const new_inv = ast.Invocation{
+        .path = ast.DottedPath{
+            .module_qualifier = if (invocation.path.module_qualifier) |mq| allocator.dupe(u8, mq) catch unreachable else null,
+            .segments = new_segments,
+        },
+        .args = &[_]ast.Arg{},
+    };
+
+    const new_item = ast.Item{
+        .flow = ast.Flow{
+            .body = ast.rootSite(new_inv, flow.body.continuations, flow.location),
+            .pre_label = if (flow.pre_label) |l| allocator.dupe(u8, l) catch unreachable else null,
+            .post_label = if (flow.post_label) |l| allocator.dupe(u8, l) catch unreachable else null,
+            .impl_of = flow.impl_of,
+            .super_shape = null,
+            .inline_body = null,
+            .preamble_code = null,
+            .is_pure = flow.is_pure,
+            .is_transitively_pure = flow.is_transitively_pure,
+            .location = flow.location,
+            .module = allocator.dupe(u8, flow.module) catch unreachable,
+        },
+    };
+
+    return .{ .transformed = .{ .replacement = new_item } };
+}
+
+// Concrete i64 constructor (runtime). `new(i64)` rewrites to this. Carries the
 // <list!> ownership obligation.
 ~pub event new-i64 {}
 | list *List_i64<list!>
