@@ -131,6 +131,21 @@ pub const List_i64 = struct {
     return .{ .len = xs.items.items.len };
 }
 
+// Remove and return the last element. <list> borrow: the list stays alive (the
+// binding keeps <list!>), so it can be popped again or freed. `empty` when there
+// is nothing to pop. For i64 the popped value carries no obligation; an element
+// type that DID would have its obligation reissued to `v` here.
+~pub event pop { xs: *List_i64<list> }
+| item i64
+| empty
+
+~proc pop|zig {
+    if (xs.items.pop()) |v| {
+        return .{ .item = v };
+    }
+    return .empty;
+}
+
 // ============================================
 // Teardown (consume — discharges <!list>)
 // ============================================
