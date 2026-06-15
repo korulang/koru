@@ -1,18 +1,11 @@
-// RED PIN — streaming into a list via read-lines is blocked. A list created as a
-// plain `| list xs` branch, with read-lines nested under it, produces NO output:
-// the nested effect doesn't lower outside flow-top / effect-cell position.
-//
-// Grounded contrast:
-//   - read-lines as the flow HEAD works (it prints "done").
-//   - read-lines nested under `capture ! as acc` works (green AoC day1).
-//   - read-lines nested under `new | list xs |>` (here) drops its output.
-//
-// This is the implementation diverging from the locked design: "a collection is
-// a capture whose value is an indexable container." The list must be CAPTURE-
-// SHAPED (an effect-cell, like `! as acc`) to compose with effect-streaming.
-// Until then, the canonical AoC "stream input into a collection" pattern can't
-// be expressed. Goes green when list creation is capture-shaped (or the effect
-// lowers correctly under a runtime branch).
+// RED PIN — the list instance of the root effect/obligation bug (see
+// 630_002_effect_under_obligation_drops_output). Streaming into a list via
+// read-lines drops all output, because read-lines is nested under the
+// obligation-carrying `| list xs` (<list!>) branch — the same failure as
+// nesting it under String<view!>. NOT a list-specific or capture-shaping issue:
+// it is the shared defect in how the obligation/auto-discharge machinery
+// composes with a nested effect. Goes green when 630_002's root is fixed; this
+// then unblocks the canonical AoC "stream input into a collection" pattern.
 import std/io
 import std/fs
 import std/list
