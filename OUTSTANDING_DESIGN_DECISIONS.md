@@ -15,7 +15,7 @@ are mostly "what is the right model now that we unified X?"
 
 ---
 
-## D1 — Nested capture: cell-routing, and does it stay at all?
+## D1 — Nested capture: RULED 2026-06-16 — stays; no-shadow field-routing
 **Tests:** `320_034_capture_nested` (implicit), `320_036_capture_nested_qualified`
 (field-name routing), `320_038_capture_binding_qualified` (binding-qualified) — all
 backend-exec, last green 2026-06-02.
@@ -28,19 +28,35 @@ capture's old `is_top` nested-decline guard AND added the trap. Multi-layer:
 layer 1 = this preamble crash; layer 2 = shape checker rejects the spliced capture
 continuations as `SHAPE002` duplicate handlers; likely layer 3 in emission. NOT a
 one-line fix.
-**DECISION NEEDED:**
-1. With two (or more) live cells, **which `captured { field: … }` write targets which
-   cell?** Candidates the trio encodes: (a) implicit/single-cell (ambiguous with
-   two), (b) field-name routing, (c) explicit `! as <name>`-qualified routing.
-2. **Does nested capture stay at all**, or is it rejected in favor of the
-   collections/store design (the canonical "build a collection THEN fold with an
-   accumulator" shape — see `320_098`, the collections memory)?
-   - If it stays: cell-decl must emit as front-of-`inline_body` (statement-shaped),
-     plus resolve the `SHAPE002` rejection, plus emission — a cross-pass rework.
-   - If it's rejected: clean compile-time error; the three tests flip to `MUST_FAIL`.
-**NOTE:** nbody's `arrayed_capture.kz` uses `capture` nested under a `for | each`
-(old `capture(...)`/`| as`/`| each` syntax) — i.e. nested capture was an intended,
-load-bearing pattern. Weigh that before rejecting.
+**RULED (Lars, 2026-06-16): nested capture STAYS. It is a codegen fix, not a
+design fork — the supposed routing ambiguity does not exist.** Model:
+
+- **Field-name routing, no shadowing.** `captured { F: v }` writes to the cell
+  whose struct declares field `F`. Cells nested inside each other may **not**
+  share field names — **shadowing is forbidden language-wide** (Lars's
+  preference, ratified as a global rule, not just for capture). With no
+  shadowing, the target cell for every `captured { F }` is unique by
+  construction. `captured { outer: … }` written inside an inner region reaches
+  past the inner cell to `outer` because only `outer` declares that field.
+- **Sub-rule:** nested captures require **named** `captured { F: v }` fields;
+  bare positional `captured { v }` is single-cell-only (ambiguous across cells).
+
+**Codegen work to land it** (verified against the source this turn):
+1. **Cell-decl `preamble_code` → `inline_body`** (statement-shaped) so a nested
+   cell has a home; removes the `transform_pass_runner.zig:86-88` wall.
+2. **Make the rewriter multi-cell.** `control.kz:207-257` (`Rewriter.rewrite`)
+   currently takes a single `target`/`cells` and recursively claims **every**
+   `captured` in its subtree onto that one cell (line 246-248, no field check,
+   no nested-boundary stop). It must instead route each `captured { F }` to the
+   cell declaring `F` and stop descending when it enters a nested capture (which
+   owns its own region).
+3. **`SHAPE002` duplicate-handler** — downstream of (1)/(2); depth NOT yet read,
+   verify once those land.
+
+Pins `320_034` (implicit/single→named), `320_036` (field-name), `320_038`
+(binding-qualified) go green when (1)-(3) land. nbody's `arrayed_capture.kz`
+(capture-as-outer-accumulator with `for`/`captured` nested *inside*) already
+worked and is untouched; this ruling is about `capture`-directly-under-`capture`.
 
 ## D2 — Obligation discharge: where does it belong now if/for are userland templates?
 **Tests:** `330_016_scope_nested`, `330_023_if_auto_both_branches` (backend-exec,
