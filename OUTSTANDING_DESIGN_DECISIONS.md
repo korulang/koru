@@ -43,17 +43,41 @@ design fork — the supposed routing ambiguity does not exist.** Model:
 - **Sub-rule:** nested captures require **named** `captured { F: v }` fields;
   bare positional `captured { v }` is single-cell-only (ambiguous across cells).
 
-**Codegen work to land it** (verified against the source this turn):
-1. **Cell-decl `preamble_code` → `inline_body`** (statement-shaped) so a nested
-   cell has a home; removes the `transform_pass_runner.zig:86-88` wall.
+**Codegen work to land it** (refined by a real attempt 2026-06-16):
+
+1. **Give the nested cell-decl a home — fix the RUNNER, not capture's lowering.**
+   Capture lowers the cell-decl as flow-level `preamble_code` (`control.kz:401`);
+   `itemToNode` rejects `preamble_code` at a nested graft (`transform_pass_runner.zig:86-88`).
+   - ❌ **Tried & reverted (don't repeat):** moving the cell-decl into `inline_body`
+     — `inline_body` REPLACES the whole body (`emitter_helpers.zig:3815`, ast.zig:593),
+     so it deletes every assignment + the after-read. And wrapping the body as
+     *children* of a leading `inline_code` continuation regressed the GUARDS
+     (`320_027`/`320_042`) with `KORU051` ("branch '' has 2 continuations") +
+     `KORU022` ("required branch 'as' not handled"): capture's 2-continuation body
+     is only legal via the `@shape_valid` exemption on the flow, and wrapping moves
+     it outside that exemption's reach. Lowering must stay untouched.
+   - ✅ **Right approach:** make `itemToNode`'s `.flow` case ACCEPT `preamble_code`
+     at a nested site — graft it as leading `inline_code` ahead of the body
+     children — instead of rejecting it. Confines the change to the nested path;
+     top-level capture (and its shape-exempt structure) is untouched.
+   - ⚠️ **Open question to ground first:** the nested-graft EMISSION contract —
+     does the grafted capture marker-invocation (`new_inv`, carrying
+     `@pass_ran`/`@shape_valid`) still matter at a nested site, or is the graft
+     just `preamble inline_code + f.body.continuations`? Read the emitter's
+     nested-continuation path before cutting.
 2. **Make the rewriter multi-cell.** `control.kz:207-257` (`Rewriter.rewrite`)
-   currently takes a single `target`/`cells` and recursively claims **every**
-   `captured` in its subtree onto that one cell (line 246-248, no field check,
-   no nested-boundary stop). It must instead route each `captured { F }` to the
-   cell declaring `F` and stop descending when it enters a nested capture (which
-   owns its own region).
-3. **`SHAPE002` duplicate-handler** — downstream of (1)/(2); depth NOT yet read,
-   verify once those land.
+   takes a single `target`/`cells` and recursively claims **every** `captured` in
+   its subtree onto that one cell (line 246-248, no field check, no nested-boundary
+   stop). Route each `captured { F }` to the cell declaring `F`; stop descending
+   at a nested capture (it owns its own region).
+3. **`SHAPE002` duplicate-handler** — downstream of (1)/(2); depth NOT yet read.
+
+**Verified this session:** attempt-1 (step 1 via wrapping) got `320_034` PAST the
+preamble crash (frontend compiled, backend generated) before hitting the shape
+checker — so the graft point is right; only the *mechanism* was wrong. NOTE: the
+live harness is currently FIRE-gated by a pre-existing error-code registry drift
+(11 dead declarations in `src/errors.zig`), so verify capture via direct
+`./zig-out/bin/koruc <input.kz>` until that's resolved.
 
 Pins `320_034` (implicit/single→named), `320_036` (field-name), `320_038`
 (binding-qualified) go green when (1)-(3) land. nbody's `arrayed_capture.kz`
