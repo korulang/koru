@@ -21,7 +21,7 @@ automatically.
 This document captures the design for adding dimensional arithmetic as a
 **compiler pass alongside the obligation checker**, in the spirit of the
 pluggable-semantic-checker architecture documented in
-`koru_std/compiler.kz:614` (`~std.compiler:coordinate`).
+`koru_std/compiler.kz:614` (`~std/compiler:coordinate`).
 
 ## Architectural fit
 
@@ -44,7 +44,7 @@ that *parses* a label as an algebraic expression — and that parsing is
 contained inside the pass, not exposed to the AST or type system.
 
 Like the obligation checker, the units checker is removable in user-space by
-overriding `~std.compiler:coordinate`.
+overriding `~std/compiler:coordinate`.
 
 ## Scope guard
 
@@ -220,7 +220,7 @@ string labels, error reporter) handles the rest.
 - **Composable with obligations**: the obligation checker and units checker
   dispatch on different label shapes (`!` presence). They co-exist on the
   same pipeline without conflict.
-- **Removable in user-space**: any user can override `~std.compiler:coordinate`
+- **Removable in user-space**: any user can override `~std/compiler:coordinate`
   and omit the units pass. The language doesn't *require* dimensional algebra;
   it provides it as a default-on convention.
 - **Scope-bounded**: only koru-native primitives. Arbitrary Zig types stay

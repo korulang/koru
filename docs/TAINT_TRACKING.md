@@ -5,7 +5,7 @@ captures the architectural decisions made during the design conversation
 about generalizing the obligation system to propagate through arithmetic on
 phantom-tagged values.
 
-**Note on stdlib signatures:** All `std.io:*`, `std.sanitize:*`, etc. examples
+**Note on stdlib signatures:** All `std/io:*`, `std/sanitize:*`, etc. examples
 in this document use placeholder shapes for the parameters and types. The
 exact stdlib API (parameter names, format-string handling, etc.) will be
 worked out at implementation time. The *type-level taint behavior* is the
@@ -82,19 +82,19 @@ etc.) — the system is open.
 **Sources** mark the entry point of untrusted data:
 
 ```
-std.io:read.ln       →  []const u8<untrusted!>
-std.io:read.env(k)   →  ?[]const u8<untrusted!>
-std.io:read.file(p)  →  []const u8<untrusted!>
-std.net:fetch.body   →  []const u8<untrusted!>
+std/io:read.ln       →  []const u8<untrusted!>
+std/io:read.env(k)   →  ?[]const u8<untrusted!>
+std/io:read.file(p)  →  []const u8<untrusted!>
+std/net:fetch.body   →  []const u8<untrusted!>
 ```
 
 **Sinks** require specific safe-labels:
 
 ```
-std.http:respond(body: []const u8<safe_html>)
-std.sql:execute(query: []const u8<safe_sql>)
-std.shell:exec(cmd: []const u8<safe_shell>)
-std.fs:write(path: []const u8<safe_path>, content: []const u8)
+std/http:respond(body: []const u8<safe_html>)
+std/sql:execute(query: []const u8<safe_sql>)
+std/shell:exec(cmd: []const u8<safe_shell>)
+std/fs:write(path: []const u8<safe_path>, content: []const u8)
 ```
 
 **Discharges** are events that transition `<untrusted!>` (or arithmetic
@@ -122,7 +122,7 @@ the propagated unit / origin label.
 **Permissive sinks** accept unions:
 
 ```
-std.io:print.ln(...)  // accepts <untrusted|sanitized>, doesn't care
+std/io:print.ln(...)  // accepts <untrusted|sanitized>, doesn't care
                       // (the exact signature is TBD; the type-level
                       // behavior is the point)
 ```
@@ -164,8 +164,8 @@ Casual scripts shouldn't be forced through the full ceremony for every
 returns plain (untagged) values:
 
 ```
-std.io:read.ln              →  []const u8<untrusted!>
-std.io:read.ln.unsafe       →  []const u8           // opt out, no taint
+std/io:read.ln              →  []const u8<untrusted!>
+std/io:read.ln.unsafe       →  []const u8           // opt out, no taint
 ```
 
 The `.unsafe` suffix carries the right cultural signal — same connotation
@@ -176,7 +176,7 @@ as Rust's `unsafe`. "I know what I'm doing; don't track this."
 Sinks that genuinely don't care use union phantoms:
 
 ```
-std.io:print.ln  accepts <untrusted|sanitized>  (or just no phantom restriction)
+std/io:print.ln  accepts <untrusted|sanitized>  (or just no phantom restriction)
 ```
 
 Note: `print.ln`'s signature in particular is TBD. It currently takes a
@@ -213,30 +213,30 @@ correct internally.
 ### SQL injection prevented
 
 ```koru
-~start = std.io:read.ln
+~start = std/io:read.ln
 | ln user_input |>
-    std.sql:execute(query: user_input)
+    std/sql:execute(query: user_input)
     //                     ^^^^^^^^^^ ERROR: expected <safe_sql>, got <untrusted!>
 ```
 
 Fix:
 
 ```koru
-~start = std.io:read.ln
+~start = std/io:read.ln
 | ln user_input |>
-    std.sanitize:sql_param(user_input)
+    std/sanitize:sql_param(user_input)
     | sanitized safe |>
-        std.sql:execute(query: safe)   // safe is <safe_sql>; sink accepts
+        std/sql:execute(query: safe)   // safe is <safe_sql>; sink accepts
 ```
 
 ### Cross-context confusion caught
 
 ```koru
-~start = std.io:read.ln
+~start = std/io:read.ln
 | ln raw |>
-    std.sanitize:html_escape(raw)
+    std/sanitize:html_escape(raw)
     | sanitized html_safe |>
-        std.sql:execute(query: html_safe)
+        std/sql:execute(query: html_safe)
         //                     ^^^^^^^^^ ERROR: expected <safe_sql>, got <safe_html>
 ```
 
@@ -245,9 +245,9 @@ The wrong-context bug is caught at compile time, not after a security audit.
 ### Taint propagation through string concatenation
 
 ```koru
-~start = std.io:read.ln
+~start = std/io:read.ln
 | ln user |>
-    std.shell:exec(cmd: "rm " ++ user)
+    std/shell:exec(cmd: "rm " ++ user)
     //                  ^^^^^^^^^^^^^ ERROR: expected <safe_shell>, got <untrusted!>
     //                  (concatenation preserves untrusted)
 ```
@@ -255,11 +255,11 @@ The wrong-context bug is caught at compile time, not after a security audit.
 Fix:
 
 ```koru
-~start = std.io:read.ln
+~start = std/io:read.ln
 | ln user |>
-    std.sanitize:shell_arg(user)
+    std/sanitize:shell_arg(user)
     | sanitized arg |>
-        std.shell:exec(cmd: "rm " ++ arg)
+        std/shell:exec(cmd: "rm " ++ arg)
         //                  ^^^^^^^^^^^^ ERROR: still <untrusted|safe_shell>?
 ```
 
@@ -275,20 +275,20 @@ problem and should reject.
 ### Permissive logging
 
 ```koru
-~start = std.io:read.ln
+~start = std/io:read.ln
 | ln user |>
-    std.io:print.ln("got: " ++ user)
+    std/io:print.ln("got: " ++ user)
     // OK — print.ln accepts <untrusted|sanitized>, doesn't enforce taint
 ```
 
 If the user prefers strict logging:
 
 ```koru
-~start = std.io:read.ln
+~start = std/io:read.ln
 | ln user |>
-    std.sanitize:passthrough_unsafe(user)
+    std/sanitize:passthrough_unsafe(user)
     | acknowledged safe |>
-        std.io:print.ln("got: " ++ safe)
+        std/io:print.ln("got: " ++ safe)
 ```
 
 The `passthrough_unsafe` discharge is a no-op transition — the author is
@@ -310,7 +310,7 @@ printing it anyway." Makes the safety boundary visible.
    carries its own taint, and `print.ln` accepts union or no constraint.
 5. **Stdlib opt-out scope.** Just `.unsafe` for sources, or also a way to
    tell the whole compilation "skip taint tracking for this module"?
-   (Equivalent to removing the taint pass via `~std.compiler:coordinate`
+   (Equivalent to removing the taint pass via `~std/compiler:coordinate`
    override.)
 
 ## Minimal viable stdlib for taint
@@ -318,24 +318,24 @@ printing it anyway." Makes the safety boundary visible.
 Initial implementation surface to make the feature shippable:
 
 - **Sources** (`<untrusted!>` producers):
-  - `std.io:read.ln` + `.unsafe`
-  - `std.io:read.env(key)` + `.unsafe`
-  - `std.io:read.file(path)` + `.unsafe`
-  - `std.io:read.args.get(idx)` (program args) + `.unsafe`
+  - `std/io:read.ln` + `.unsafe`
+  - `std/io:read.env(key)` + `.unsafe`
+  - `std/io:read.file(path)` + `.unsafe`
+  - `std/io:read.args.get(idx)` (program args) + `.unsafe`
 
 - **Discharges** (`<untrusted!>` → safe-label):
-  - `std.sanitize:html_escape` → `<safe_html>`
-  - `std.sanitize:sql_param` → `<safe_sql>`
-  - `std.sanitize:shell_arg` → `<safe_shell>`
-  - `std.sanitize:url_encode` → `<safe_url>`
-  - `std.sanitize:integer_parse` → `<verified>` or `| invalid`
-  - `std.sanitize:passthrough_unsafe` → `<safe_console>` (acknowledged passthrough)
+  - `std/sanitize:html_escape` → `<safe_html>`
+  - `std/sanitize:sql_param` → `<safe_sql>`
+  - `std/sanitize:shell_arg` → `<safe_shell>`
+  - `std/sanitize:url_encode` → `<safe_url>`
+  - `std/sanitize:integer_parse` → `<verified>` or `| invalid`
+  - `std/sanitize:passthrough_unsafe` → `<safe_console>` (acknowledged passthrough)
 
 - **Sinks** (when/if these stdlib modules exist):
-  - `std.http:respond` accepts `<safe_html>`
-  - `std.sql:execute` accepts `<safe_sql>`
-  - `std.shell:exec` accepts `<safe_shell>`
-  - `std.fs:write` accepts `<safe_path>` (with `std.sanitize:path_normalize`)
+  - `std/http:respond` accepts `<safe_html>`
+  - `std/sql:execute` accepts `<safe_sql>`
+  - `std/shell:exec` accepts `<safe_shell>`
+  - `std/fs:write` accepts `<safe_path>` (with `std/sanitize:path_normalize`)
 
 That's ~12 events. Small enough to ship in days once the underlying pass
 exists.
@@ -371,7 +371,7 @@ as the migration sweep from `[]` to `<>` (118 files, 422 changes, mechanical).
 - **Composes with units**: a value can carry BOTH unit and taint labels
   (e.g., `f64<usd!>`). The units checker fires on the non-`!` part; the
   obligation checker fires on the `!` part. Independent axes.
-- **Removable in user-space**: same `~std.compiler:coordinate` override
+- **Removable in user-space**: same `~std/compiler:coordinate` override
   story as units.
 - **Author-extensible**: nothing about `<safe_html>` is hardcoded. Any
   library can define its own safe-labels and discharge events.

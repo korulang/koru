@@ -179,8 +179,8 @@ Taps use `~tap()` with `->` to observe events **read-only**:
 ## Imports
 
 ```koru
-~import "path"
-~import "$alias/path"
+~import path
+~import alias/path
 ```
 
 **Path Aliases**:
@@ -192,8 +192,8 @@ Taps use `~tap()` with `->` to observe events **read-only**:
 
 ```koru
 ~import std/io
-~import "$lib/database"
-~import "utils/helpers"
+~import lib/database
+~import utils/helpers
 ```
 
 ---

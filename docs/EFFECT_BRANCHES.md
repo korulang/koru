@@ -88,7 +88,7 @@ Optional effect branches can also carry resume types: `! ?prompt []const u8 -> [
 
 ```
 ~count_to_three = for(0..3)
-! each _ |> std.io:println(text: "counting")
+! each _ |> std/io:print.ln("counting")
 | done |> result 3
 ```
 

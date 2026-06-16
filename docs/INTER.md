@@ -116,7 +116,7 @@ Koru solves all of this:
 **Progressive disclosure.** The AI only sees events in scope. Register capabilities explicitly:
 
 ```koru
-~std.runtime:register(scope: "file_ops") {
+~std/runtime:register(scope: "file_ops") {
     fs:open(10)    // 10 budget units
     fs:close(1)
     fs:read(5)

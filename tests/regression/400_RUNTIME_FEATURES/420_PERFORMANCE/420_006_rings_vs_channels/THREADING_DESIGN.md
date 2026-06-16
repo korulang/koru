@@ -43,18 +43,18 @@ Currently, the rings benchmark has this awkward pattern:
 
 **Basic usage:**
 ```koru
-~std.threading:spawn {
+~std/threading:spawn {
     ~producer_loop(ring: r.ring, i: 0)
     | done |> _
 }
 | spawned t |> consumer_loop(ring: r.ring)
-    | done |> std.threading:join(thread: t)
+    | done |> std/threading:join(thread: t)
         | joined |> validate(...)
 ```
 
 **With configuration parameters:**
 ```koru
-~std.threading:spawn(priority: 3, stack_size: 8192) {
+~std/threading:spawn(priority: 3, stack_size: 8192) {
     ~producer_loop(ring: r.ring, i: 0)
     | done |> _
 }
@@ -85,7 +85,7 @@ This visually separates "what to configure" from "what to do"!
 
 ```koru
 // HTTP server with handler flow
-~std.http:server(port: 8080, threads: 4) {
+~std/http:server(port: 8080, threads: 4) {
     ~handle_request(req: request)
     | response r |> send(r)
     | error e |> send_error(e)
@@ -93,14 +93,14 @@ This visually separates "what to configure" from "what to do"!
 | listening |> ...
 
 // Scheduled task
-~std.scheduler:every(interval: "5s") {
+~std/scheduler:every(interval: "5s") {
     ~cleanup_cache()
     | done |> log("Cache cleaned")
 }
 | scheduled |> ...
 
 // Database transaction with retry
-~std.db:transaction(isolation: "serializable", retries: 3) {
+~std/db:transaction(isolation: "serializable", retries: 3) {
     ~query(sql: "UPDATE accounts SET balance = balance - 100")
     | updated |> query(sql: "UPDATE accounts SET balance = balance + 100")
         | updated |> commit()
@@ -140,7 +140,7 @@ At **compile-time** (frontend or backend):
 
 ```koru
 // What you write:
-~std.threading:spawn {
+~std/threading:spawn {
     ~producer_loop(ring: r.ring, i: 0)
     | done |> _
 }
@@ -154,7 +154,7 @@ const work_flow = FlowAST{
         }},
     }
 };
-~std.threading:spawn(work: work_flow)
+~std/threading:spawn(work: work_flow)
 ```
 
 ### 3. Event Signature
@@ -233,7 +233,7 @@ Flows in `{ }` blocks can capture variables from outer scope:
 
 ```koru
 ~create_ring()
-| created r |> std.threading:spawn {
+| created r |> std/threading:spawn {
     // 'r.ring' is captured from outer scope!
     ~producer_loop(ring: r.ring, i: 0)
     | done |> _
@@ -297,7 +297,7 @@ This is like **closure capture**!
 
 // Main flow with beautiful threading
 ~create_ring()
-| created r |> std.threading:spawn {
+| created r |> std/threading:spawn {
     // Producer runs in spawned thread
     #produce producer_loop(ring: r.ring, i: 0)
     | continue c |> @produce(ring: r.ring, i: c.i)
@@ -306,7 +306,7 @@ This is like **closure capture**!
   | spawned t |> #consume consumer_loop(ring: r.ring, sum: 0)
       // Consumer runs in main thread
       | continue c |> @consume(ring: r.ring, sum: c.sum)
-      | done d |> std.threading:join(thread: t)
+      | done d |> std/threading:join(thread: t)
           | joined |> validate(sum: d.sum)
 ```
 

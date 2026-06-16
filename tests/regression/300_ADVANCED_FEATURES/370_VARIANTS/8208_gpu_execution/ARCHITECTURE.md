@@ -208,7 +208,7 @@ koru-gpu/
 ```
 
 User would:
-1. Import the package: `~import "koru-gpu"`
+1. Import the package: `~import koru-gpu`
 2. Use custom coordinator that includes the GLSL pass
 3. Done!
 

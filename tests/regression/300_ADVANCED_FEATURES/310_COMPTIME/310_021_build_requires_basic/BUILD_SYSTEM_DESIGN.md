@@ -16,12 +16,12 @@ Unlike traditional build systems (Make, CMake, etc.), Koru's build system:
 
 Just like FlowAST has implicit `{ flow }` syntax:
 ```koru
-~std.threading:spawn { ~work() | done |> _ }
+~std/threading:spawn { ~work() | done |> _ }
 ```
 
 Source type has implicit `{ zig_code }` syntax:
 ```koru
-~std.build:requires {
+~std/build:requires {
     exe.linkSystemLibrary("sqlite3");
 }
 ```
@@ -70,7 +70,7 @@ var build_requirements: std.ArrayList([]const u8) = undefined;
 
     // Walk AST, find all build:requires calls
     for (ast.items) |item| {
-        if (item.event == "std.build:requires") {
+        if (item.event == "std/build:requires") {
             // Extract Source parameter from AST node
             const source = item.params.source;
 
@@ -115,7 +115,7 @@ var build_requirements: std.ArrayList([]const u8) = undefined;
 
 **In user code:**
 ```koru
-~[comptime]import "std/build"
+~[comptime]import std/build
 
 ~[comptime]build:requires {
     exe.linkSystemLibrary("sqlite3");
@@ -133,7 +133,7 @@ var build_requirements: std.ArrayList([]const u8) = undefined;
 
 **User writes:**
 ```koru
-~[comptime]import "std/build"
+~[comptime]import std/build
 
 ~[comptime]build:requires {
     exe.linkSystemLibrary("sqlite3");
@@ -148,7 +148,7 @@ var build_requirements: std.ArrayList([]const u8) = undefined;
 
 **Step 1: Parse & Import**
 - Parse user file
-- Process `~[comptime]import "std/build"`
+- Process `~[comptime]import std/build`
 - Load build.kz's AST (including its top-level `~[comptime(optional)]collect(...)`)
 - Add to program AST
 
@@ -174,7 +174,7 @@ var build_requirements: std.ArrayList([]const u8) = undefined;
 ### Zero Boilerplate
 User just imports and declares requirements:
 ```koru
-~[comptime]import "std/build"
+~[comptime]import std/build
 ~[comptime]build:requires { exe.linkSystemLibrary("sqlite3"); }
 ```
 
@@ -196,7 +196,7 @@ Module authors control collection timing and behavior:
 ### Opt-Out Capability
 Don't want automatic build.zig generation?
 ```bash
-koruc input.kz --disable=std.build:collect
+koruc input.kz --disable=std/build:collect
 ```
 
 The `~[comptime(optional)]` annotation makes it configurable.
@@ -212,7 +212,7 @@ target_link_libraries(myapp sqlite3)
 **Koru:**
 ```koru
 # Same language, executed during compilation
-~std.build:requires {
+~std/build:requires {
     exe.linkSystemLibrary("sqlite3");
 }
 ```
@@ -231,7 +231,7 @@ This same pattern enables many compile-time features:
 ~compiler.fuse()
 
 // User code
-~[production]import "$compiler/optimize_hard"
+~[production]import compiler/optimize_hard
 // Optimizations run automatically on import!
 ```
 
@@ -256,7 +256,7 @@ The `~[comptime(optional)]` annotation controls **automatic execution**, not ava
 ### What --disable Does
 
 ```bash
-koruc input.kz --disable=std.build:collect
+koruc input.kz --disable=std/build:collect
 ```
 
 **Does NOT:**
@@ -271,16 +271,16 @@ koruc input.kz --disable=std.build:collect
 ### Custom Orchestration Example
 
 ```koru
-~[comptime]import "std/build"
+~[comptime]import std/build
 
 ~[comptime]event custom_build {}
 ~[comptime]proc custom_build {
     // Manually call collect with custom path
-    ~std.build:collect(path: "my_custom_build.zig")
+    ~std/build:collect(path: "my_custom_build.zig")
     | done |> _
 
     // Can call it multiple times!
-    ~std.build:collect(path: "build.debug.zig")
+    ~std/build:collect(path: "build.debug.zig")
     | done |> _
 }
 
@@ -289,7 +289,7 @@ koruc input.kz --disable=std.build:collect
 
 **Run with:**
 ```bash
-koruc input.kz --disable=std.build:collect
+koruc input.kz --disable=std/build:collect
 ```
 
 The automatic collection is skipped, but `custom_build()` can still invoke it manually. This enables **composability** - users build on top of standard modules rather than replacing them.

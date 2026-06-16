@@ -24,7 +24,7 @@ A Koru file follows this order:
 ~[comptime]
 
 ~import std/io
-~import "$app/domain"
+~import app/domain
 
 const std = @import("std");
 
@@ -41,7 +41,7 @@ const std = @import("std");
 
 // Top-level flow
 ~get(id: 1)
-| user u |> std.io:print.ln(text: u.name)
+| user u |> std/io:print.ln(text: u.name)
 | not_found |> _
 ```
 
@@ -552,10 +552,10 @@ Separate groups with blank line:
 
 ```koru
 ~import std/io
-~import "std/fs"
+~import std/fs
 
-~import "$app/config"
-~import "$app/domain/user"
+~import app/config
+~import app/domain/user
 ```
 
 ### No Import Aliasing
@@ -564,13 +564,13 @@ Koru has **no import aliasing**. The full module path is always required in invo
 
 ```koru
 ~import std/io
-~import "$app/domain/user"
+~import app/domain/user
 
 // Invocations use FULL paths - no shortcuts
-~std.io:print.ln(text: "Hello")           // Correct
+~std/io:print.ln(text: "Hello")           // Correct
 ~io:print.ln(text: "Hello")               // WRONG - no aliasing
 
-~app.domain.user:get(id: 42)              // Correct
+~app/domain/user:get(id: 42)              // Correct
 ~user:get(id: 42)                         // WRONG - no aliasing
 ```
 
@@ -590,8 +590,8 @@ If an event lives in `user.kz`, don't name it `get_user` - name it `get`:
 
 ```koru
 // In app/domain/user.kz
-~event get { id: u64 }        // GOOD: app.domain.user:get(id: 42)
-~event get_user { id: u64 }   // BAD:  app.domain.user:get_user(id: 42) - redundant
+~event get { id: u64 }        // GOOD: app/domain/user:get(id: 42)
+~event get_user { id: u64 }   // BAD:  app/domain/user:get_user(id: 42) - redundant
 ```
 
 **Use underscores for compound words (single concept):**
@@ -618,7 +618,7 @@ If an event lives in `user.kz`, don't name it `get_user` - name it `get`:
 
 The anatomy of an invocation:
 ```
-~std.io:print.ln(text: "hello")
+~std/io:print.ln(text: "hello")
  │    │  │     │
  │    │  │     └── variant (optional, after dot)
  │    │  └── event name

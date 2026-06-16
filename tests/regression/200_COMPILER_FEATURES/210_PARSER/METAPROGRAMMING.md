@@ -53,7 +53,7 @@
 **What we're BUILDING TOWARD (Phase 4 - std.codeGen):**
 ```koru
 ~renderHTML =
-  std.codeGen:generate.zig(
+  std/codeGen:generate.zig(
     generate: "input:render.generated"  // ← Explicit target!
   ) [ZigTemplate]{
     const html = try std.fmt.allocPrint(allocator,
@@ -69,7 +69,7 @@
 - Format string generation ✅
 - AST node creation ✅
 
-**What's missing for std.codeGen:**
+**What's missing for std/codeGen:**
 - Parameterized target events (currently hardcoded)
 - Library-ified/reusable code
 - Better error messages
@@ -444,7 +444,7 @@ fn topologicalSort(
 │                                                                  │
 │  // 2. Delegate to std.codeGen with EXPLICIT target             │
 │  ~renderHTML =                                                  │
-│    std.codeGen:generate.zig(                                    │
+│    std/codeGen:generate.zig(                                    │
 │      generate: "mymodule:render.generated"  // ← EXPLICIT!      │
 │    ) [ZigTemplate]{                                             │
 │      const html = try std.fmt.allocPrint(allocator,             │
@@ -468,7 +468,7 @@ fn topologicalSort(
 
 ---
 
-#### Step 4.1: Implement std.codeGen:generate.zig (THE HARD PART)
+#### Step 4.1: Implement std/codeGen:generate.zig (THE HARD PART)
 
 **Files**: Create `koru_std/codeGen/generate.kz`
 
@@ -486,7 +486,7 @@ fn topologicalSort(
 
 **Implementation approach**:
 ```zig
-~proc std.codeGen:generate.zig {
+~proc std/codeGen:generate.zig {
     // 1. Look up target event in program_ast
     const target_event = lookupEventInAST(program_ast, generate) orelse {
         std.debug.print("ERROR: Target event '{s}' not found in AST\n", .{generate});
@@ -579,7 +579,7 @@ fn buildItemFromCode(allocator: std.mem.Allocator, code: []const u8, branch: Bra
 **The user code**:
 ```koru
 ~import std/io
-~import "std/codeGen"
+~import std/codeGen
 
 ~event getUserData { } | data { name: []const u8, age: i32 }
 
@@ -598,7 +598,7 @@ fn buildItemFromCode(allocator: std.mem.Allocator, code: []const u8, branch: Bra
 
 // 2. Implementation with EXPLICIT target specification
 ~renderHTML =
-  std.codeGen:generate.zig(
+  std/codeGen:generate.zig(
     generate: "input:render.generated"  // ← EXPLICIT target!
   ) [ZigTemplate]{
     // Template for generating code
@@ -617,13 +617,13 @@ fn buildItemFromCode(allocator: std.mem.Allocator, code: []const u8, branch: Bra
 | data u |> renderHTML [HTML]{
     <h1>${u.name}</h1>
     <p>Age: ${u.age}</p>
-} | rendered r |> std.io:println(text: r.html)
+} | rendered r |> std/io:print.ln(r.html)
 ```
 
 **What happens at compile time**:
 1. `renderHTML [HTML]{ ... }` invokes the renderHTML event
-2. Since `renderHTML = std.codeGen:generate.zig(...)`, it delegates to std.codeGen
-3. std.codeGen:generate.zig proc:
+2. Since `renderHTML = std/codeGen:generate.zig(...)`, it delegates to std.codeGen
+3. std/codeGen:generate.zig proc:
    - Looks up `"input:render.generated"` in program_ast
    - Gets its signature: `{} | rendered { html: []const u8 }`
    - Parses `${u.name}` and `${u.age}` from HTML source
@@ -651,14 +651,14 @@ fn buildItemFromCode(allocator: std.mem.Allocator, code: []const u8, branch: Bra
 // HTML generator
 ~[comptime]pub event render.html { ... }
 ~render.html =
-  std.codeGen:generate.zig(generate: "mymodule:html.generated") [ZigTemplate]{ ... }
+  std/codeGen:generate.zig(generate: "mymodule:html.generated") [ZigTemplate]{ ... }
 
 ~pub event html.generated {} | rendered { html: []const u8 }
 
 // JSON generator (separate event, separate target!)
 ~[comptime]pub event render.json { ... }
 ~render.json =
-  std.codeGen:generate.zig(generate: "mymodule:json.generated") [ZigTemplate]{ ... }
+  std/codeGen:generate.zig(generate: "mymodule:json.generated") [ZigTemplate]{ ... }
 
 ~pub event json.generated {} | rendered { json: []const u8 }
 ```
@@ -677,7 +677,7 @@ fn buildItemFromCode(allocator: std.mem.Allocator, code: []const u8, branch: Bra
 }
 
 // ONE target - std.codeGen pattern
-~renderHTML = std.codeGen:generate.zig(generate: "module:render.generated") [ZigTemplate]{ ... }
+~renderHTML = std/codeGen:generate.zig(generate: "module:render.generated") [ZigTemplate]{ ... }
 ~pub event render.generated {} | rendered { html: []const u8 }
 
 // MANY targets - custom proc generates multiple events
@@ -715,7 +715,7 @@ fn buildItemFromCode(allocator: std.mem.Allocator, code: []const u8, branch: Bra
 **Users specify targets explicitly**:
 ```koru
 ~buildQuery =
-  std.codeGen:generate.sql(generate: "mymodule:query.generated") [SQLTemplate]{
+  std/codeGen:generate.sql(generate: "mymodule:query.generated") [SQLTemplate]{
     SELECT * FROM users WHERE id = ${user_id}
   }
 
@@ -738,7 +738,7 @@ fn buildItemFromCode(allocator: std.mem.Allocator, code: []const u8, branch: Bra
 - Koru philosophy: explicit is better than clever
 
 **Separation of Concerns**:
-- std.codeGen: Complex (interpolation, AST lookup, code generation)
+- std/codeGen: Complex (interpolation, AST lookup, code generation)
 - User code: Simple (declare target, write template)
 - Clear boundary between library and user code
 
@@ -765,7 +765,7 @@ fn buildItemFromCode(allocator: std.mem.Allocator, code: []const u8, branch: Bra
 
 #### Success Criteria
 
-- [ ] std.codeGen:generate.zig accepts `generate:` parameter
+- [ ] std/codeGen:generate.zig accepts `generate:` parameter
 - [ ] Looks up target event in program_ast by canonical name
 - [ ] Extracts target signature and uses it for code generation
 - [ ] Parses ${} interpolations from both HTML source and ZigTemplate
@@ -834,7 +834,7 @@ pub const Item = union(enum) {
 - Build steps are local (one file)
 - Comptime events are global (entire program + imports)
 
-**Solution**: Use fully qualified names like `"std.compiler:preprocess"`
+**Solution**: Use fully qualified names like `"std/compiler:preprocess"`
 
 **Benefits**:
 - ✅ Reuses familiar `depends_on` syntax from build steps
