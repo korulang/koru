@@ -33,11 +33,13 @@ design fork — the supposed routing ambiguity does not exist.** Model:
 
 - **Field-name routing, no shadowing.** `captured { F: v }` writes to the cell
   whose struct declares field `F`. Cells nested inside each other may **not**
-  share field names — **shadowing is forbidden language-wide** (Lars's
-  preference, ratified as a global rule, not just for capture). With no
-  shadowing, the target cell for every `captured { F }` is unique by
-  construction. `captured { outer: … }` written inside an inner region reaches
-  past the inner cell to `outer` because only `outer` declares that field.
+  share field names. No-shadowing is the convention (Lars prefers it
+  language-wide), but **rejection of shadowing is left to the Zig backend** — we
+  do NOT build a Koru-level shadow-checker (ruled 2026-06-16; `202c` stays a
+  deferred red). The job is only to make *correct* (non-shadowing) nested capture
+  compile; with no shadowing, the target cell for every `captured { F }` is
+  unique by construction. `captured { outer: … }` written inside an inner region
+  reaches past the inner cell to `outer` because only `outer` declares that field.
 - **Sub-rule:** nested captures require **named** `captured { F: v }` fields;
   bare positional `captured { v }` is single-cell-only (ambiguous across cells).
 
