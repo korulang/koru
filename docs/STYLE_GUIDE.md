@@ -277,7 +277,7 @@ Subflows are pure Koru. The compiler can reason about them, optimize them, and v
 **The hierarchy:**
 1. **Subflow (immediate)**: `~name = branch value` - simplest, most analyzable
 2. **Subflow (chained)**: `~name = other() | ok |> result` - still pure, still verifiable
-3. **Zig proc**: `~proc name { ... }` - imperative escape hatch, only when necessary
+3. **Zig proc**: `~proc name|zig { ... }` - imperative escape hatch, only when necessary (a callable proc needs a variant tag; bare `~proc name {}` only compiles if never called — see `8211_bare_proc_call_site_fails`)
 
 If you're reaching for a Zig proc, ask: *"Can this be a subflow?"*
 
@@ -311,7 +311,7 @@ The `~proc` keyword is reserved for Zig escape hatches. Use only when subflows c
 - Performance-critical code requiring manual optimization
 
 ```koru
-~proc authenticate {
+~proc authenticate|zig {
     if (token.len == 0) {
         return .{ .@"error" = .{ .reason = "Empty token" } };
     }
@@ -673,7 +673,7 @@ Always handle both success and error branches explicitly:
 For validation, fail fast:
 
 ```koru
-~proc validate {
+~proc validate|zig {
     if (input.len == 0) {
         return .{ .invalid = .{ .reason = "empty input" } };
     }

@@ -12,20 +12,22 @@ A TUI opens. The compiler becomes your development environment.
 
 ## Why This Isn't Crazy
 
-Every piece already exists:
+Every piece the vision leans on already exists in some form (this table is the
+dream's *premise*, not an audited status board — the regression suite is the
+only authority on what currently works):
 
-| Component | Status | Purpose |
-|-----------|--------|---------|
-| Event-driven architecture | ✅ | Everything is an observable transition |
-| Immutable AST cloning | ✅ | Transform without destroying original |
-| Universal taps (`~tap(* -> *)`) | ✅ | Observe every transition |
-| Budgeted interpreter | ✅ | Safe, metered execution |
-| Scope system | ✅ | Register capabilities, sandbox execution |
-| HandlePool/Bridge | ✅ | State persists across calls |
-| Compiler pipeline as events | ✅ | User-overridable passes |
-| Testing framework | ✅ | Mock injection, purity tracking |
-| Profile metatype | ✅ | Timing data built-in |
-| `koru:start`/`koru:end` | ✅ | Program lifecycle events |
+| Component | Purpose |
+|-----------|---------|
+| Event-driven architecture | Everything is an observable transition |
+| Immutable AST cloning | Transform without destroying original |
+| Universal taps (`~tap(* -> *)`) | Observe every transition |
+| Budgeted interpreter | Safe, metered execution |
+| Scope system | Register capabilities, sandbox execution |
+| HandlePool/Bridge | State persists across calls |
+| Compiler pipeline as events | User-overridable passes |
+| Testing framework | Mock injection, purity tracking |
+| Profile metatype | Timing data built-in |
+| `koru:start`/`koru:end` | Program lifecycle events |
 
 ## The REPL
 
@@ -99,19 +101,19 @@ Koru solves all of this:
 
 ```koru
 ~pub event fs:open { path: []const u8 }
-| handle []const u8[opened!]           // ← Phantom: creates obligation
+| handle []const u8<opened!>           // ← Phantom: creates obligation
 
-~pub event fs:close { h: []const u8[!opened] }  // ← Must discharge!
+~pub event fs:close { h: []const u8<!opened> }  // ← Must discharge!
 | closed {}
 
-~pub event fs:read { h: []const u8[opened] }    // ← Requires opened state
+~pub event fs:read { h: []const u8<opened> }    // ← Requires opened state
 | data { content: []const u8 }
 | eof {}
 ```
 
 **Event signatures are self-documenting.** The AI reads the types.
 
-**Phantom obligations are constraints.** `[opened!]` means "this creates an obligation". `[!opened]` means "this discharges it". The AI knows EXACTLY what must happen.
+**Phantom obligations are constraints.** `<opened!>` means "this creates an obligation". `<!opened>` means "this discharges it". The AI knows EXACTLY what must happen.
 
 **Progressive disclosure.** The AI only sees events in scope. Register capabilities explicitly:
 
@@ -129,9 +131,9 @@ Koru solves all of this:
 
 ```
 AI receives: scope "file_ops" with events:
-  - fs:open { path: str } → handle str[opened!]
-  - fs:close { h: str[!opened] } → closed
-  - fs:read { h: str[opened] } → data | eof
+  - fs:open { path: str } → handle str<opened!>
+  - fs:close { h: str<!opened> } → closed
+  - fs:read { h: str<opened> } → data | eof
 
 AI understands:
   1. open creates obligation (must close)
