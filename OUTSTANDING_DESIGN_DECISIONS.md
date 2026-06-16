@@ -15,7 +15,7 @@ are mostly "what is the right model now that we unified X?"
 
 ---
 
-## D1 — Nested capture: RULED 2026-06-16 — stays; no-shadow field-routing
+## D1 — Nested capture: RULED 2026-06-16; step-1 graft LANDED 2026-06-16 (distinct-field nesting green)
 **Tests:** `320_034_capture_nested` (implicit), `320_036_capture_nested_qualified`
 (field-name routing), `320_038_capture_binding_qualified` (binding-qualified) — all
 backend-exec, last green 2026-06-02.
@@ -43,46 +43,69 @@ design fork — the supposed routing ambiguity does not exist.** Model:
 - **Sub-rule:** nested captures require **named** `captured { F: v }` fields;
   bare positional `captured { v }` is single-cell-only (ambiguous across cells).
 
-**Codegen work to land it** (refined by a real attempt 2026-06-16):
+**Codegen work to land it** (step 1 LANDED 2026-06-16; findings below):
 
-1. **Give the nested cell-decl a home — fix the RUNNER, not capture's lowering.**
-   Capture lowers the cell-decl as flow-level `preamble_code` (`control.kz:401`);
-   `itemToNode` rejects `preamble_code` at a nested graft (`transform_pass_runner.zig:86-88`).
-   - ❌ **Tried & reverted (don't repeat):** moving the cell-decl into `inline_body`
-     — `inline_body` REPLACES the whole body (`emitter_helpers.zig:3815`, ast.zig:593),
-     so it deletes every assignment + the after-read. And wrapping the body as
-     *children* of a leading `inline_code` continuation regressed the GUARDS
-     (`320_027`/`320_042`) with `KORU051` ("branch '' has 2 continuations") +
-     `KORU022` ("required branch 'as' not handled"): capture's 2-continuation body
-     is only legal via the `@shape_valid` exemption on the flow, and wrapping moves
-     it outside that exemption's reach. Lowering must stay untouched.
-   - ✅ **Right approach:** make `itemToNode`'s `.flow` case ACCEPT `preamble_code`
-     at a nested site — graft it as leading `inline_code` ahead of the body
-     children — instead of rejecting it. Confines the change to the nested path;
-     top-level capture (and its shape-exempt structure) is untouched.
-   - ⚠️ **Open question to ground first:** the nested-graft EMISSION contract —
-     does the grafted capture marker-invocation (`new_inv`, carrying
-     `@pass_ran`/`@shape_valid`) still matter at a nested site, or is the graft
-     just `preamble inline_code + f.body.continuations`? Read the emitter's
-     nested-continuation path before cutting.
-2. **Make the rewriter multi-cell.** `control.kz:207-257` (`Rewriter.rewrite`)
-   takes a single `target`/`cells` and recursively claims **every** `captured` in
-   its subtree onto that one cell (line 246-248, no field check, no nested-boundary
-   stop). Route each `captured { F }` to the cell declaring `F`; stop descending
-   at a nested capture (it owns its own region).
-3. **`SHAPE002` duplicate-handler** — downstream of (1)/(2); depth NOT yet read.
+1. ✅ **DONE — give the nested cell-decl a home in the RUNNER.** `itemToNode`'s
+   `.flow` case now ACCEPTS `preamble_code` at a nested site: it grafts the
+   preamble as a void `inline_code` **node** carrying `f.body.continuations` as
+   that node's children (`transform_pass_runner.zig:86`). This reproduces the
+   flow-level emission contract EXACTLY — at flow level the emitter writes the
+   preamble verbatim, then emits the body continuations directly, and `return`s
+   *skipping the marker invocation* (`emitter_helpers.zig:3801`). At a nested
+   site, `inline_code` is a **void step** (`emitter_helpers.zig:7379`), and a
+   void step emits its children *directly as a void chain* (`:7492`), not as
+   result-switch arms — same code path (`emitContinuationBody`). **Open question
+   RESOLVED:** the marker invocation does NOT matter at a nested site; the graft
+   is just `preamble inline_code + f.body.continuations`, dropping the marker
+   exactly as the flow-level path drops it.
+   - ❌ **Tried & reverted earlier (don't repeat):** moving the cell-decl into
+     `inline_body` (REPLACES the whole body) or wrapping the body as *children* of
+     a leading `inline_code` continuation (regressed guards `320_027`/`320_042`
+     with `KORU051`/`KORU022` — moves capture's 2-cont body outside the
+     `@shape_valid` exemption). The landed fix touches NEITHER lowering nor the
+     shape exemption: it grafts at the runner, the preamble becomes the *node*
+     (not a wrapping cont), and the body rides as that node's children.
+2. **Step 2 (multi-cell rewriter) turned out UNNECESSARY for distinct-field
+   nesting.** D1 predicted the single-cell rewriter would mis-claim. It does NOT,
+   because `Rewriter.rewrite` only walks the `! as` body subtree
+   (`control.kz:257`) — the `| captured` terminal body is assembled separately
+   (`:276-301`) WITHOUT being rewritten. So a `captured` sitting in an inner
+   capture's terminal survives un-claimed; depth-first nesting then lets the
+   ENCLOSING capture claim it. Routing is **boundary-based**, not field-name
+   dispatch — and it produces correct cells whenever fields are distinct.
+   Verified green: `320_034` (→42), `320_036` (→`outer=10, inner=10`),
+   `670_015`/`670_010` (→`n=1`). Mis-routing (wrong field) is caught by the Zig
+   backend (no such field) — the "rejection deferred to Zig" model, satisfied.
+3. **STILL OPEN — capture nested under a NON-capture branch** (`670_011` scalar,
+   `670_012` obligation, `670_013` effect, `670_014` for_each, `320_098`):
+   now PAST the preamble trap, fails with **"Duplicate branch handler at same
+   indentation level"** (SHAPE002-class). Capture-under-capture and
+   capture-under-flow-head are green; capture under other continuation kinds is
+   not. This is the real remaining codegen depth (shape_checker + likely
+   emission). NOT a regression — these were never green (preamble trap before).
 
-**Verified this session:** attempt-1 (step 1 via wrapping) got `320_034` PAST the
-preamble crash (frontend compiled, backend generated) before hitting the shape
-checker — so the graft point is right; only the *mechanism* was wrong. NOTE: the
-live harness is currently FIRE-gated by a pre-existing error-code registry drift
-(11 dead declarations in `src/errors.zig`), so verify capture via direct
-`./zig-out/bin/koruc <input.kz>` until that's resolved.
+**320_038 binding-qualified shadowing — a DESIGN QUESTION for Lars, not a bug to
+patch.** Both cells declare field `count`; the test disambiguates with
+binding-qualified field names (`captured { inner.count: … }` / `{ outer.count: … }`).
+The rewriter treats the whole `inner.count` as a field name and emits
+`inner.inner.count = …` → Zig backend error. D1 RULED *no-shadow + field-name
+routing*; binding-qualified EXPLICIT cell routing (which also resolves shadowing)
+was not ruled in. Either 320_038 is stale intent (rewrite to distinct fields +
+field-name routing, per the ruling) OR binding-qualification is a sanctioned
+escape hatch the rewriter should honor (parse `binding.field`, route to `binding`,
+override the rewriter's `target`). **Lars rules.**
 
-Pins `320_034` (implicit/single→named), `320_036` (field-name), `320_038`
-(binding-qualified) go green when (1)-(3) land. nbody's `arrayed_capture.kz`
-(capture-as-outer-accumulator with `for`/`captured` nested *inside*) already
-worked and is untouched; this ruling is about `capture`-directly-under-`capture`.
+**Verified 2026-06-16 (this session):** built `koruc`, compiled+ran each target
+via direct `./zig-out/bin/koruc` (harness FINAL verdict is FIRE-gated by the
+pre-existing 11-dead-code `errors.zig` drift, but per-test PASS/FAIL prints).
+Full cached suite: **748/848 (was 745)**, +3 net = `320_034`/`320_036`/`670_015`
+red→green; guards `320_027`/`320_042`/const `320_043`/`320_044` stay green; no
+non-capture test newly broken (the fix only touches the `preamble_code` arm of
+`itemToNode`, which previously always errored → green→red is impossible).
+
+nbody's `arrayed_capture.kz` (capture-as-outer-accumulator with `for`/`captured`
+nested *inside*) already worked and is untouched; this work is about
+`capture`-directly-under-another-construct.
 
 ## D2 — Obligation discharge: where does it belong now if/for are userland templates?
 **Tests:** `330_016_scope_nested`, `330_023_if_auto_both_branches` (backend-exec,

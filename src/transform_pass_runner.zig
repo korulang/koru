@@ -83,9 +83,21 @@ const NodeConv = struct { node: ast.Node, children: []const ast.Continuation };
 fn itemToNode(item: *const ast.Item) !NodeConv {
     switch (item.*) {
         .flow => |*f| {
-            if (f.preamble_code != null) {
-                log.err("TRANSFORM ERROR: transform produced preamble_code for a nested site. preamble_code only exists at flow level; there is no preamble position inside a continuation. Use inline_body (statement-shaped) instead.\n", .{});
-                return error.TransformPreambleAtNestedSite;
+            if (f.preamble_code) |preamble| {
+                // A preamble-producing transform (e.g. `capture`: the
+                // `var <cell> = …;` decl) at a NESTED site. At flow level the
+                // emitter emits the preamble verbatim, then the body
+                // continuations directly, and SKIPS the marker invocation
+                // (emitter_helpers.zig:3801). A void `inline_code` node
+                // reproduces that contract exactly: the preamble emits
+                // verbatim, and because `inline_code` is a void step
+                // (emitter_helpers.zig:7379) its children emit directly as a
+                // void chain (:7492) — not as result-switch arms. The marker
+                // invocation is dropped here, mirroring the flow-level skip.
+                return .{
+                    .node = ast.Node{ .inline_code = preamble },
+                    .children = f.body.continuations,
+                };
             }
             var new_inv = f.inv().*;
             // Flow.inline_body delegates to Invocation.inline_body (canonical).
