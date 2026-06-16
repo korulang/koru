@@ -84,16 +84,13 @@ design fork — the supposed routing ambiguity does not exist.** Model:
    not. This is the real remaining codegen depth (shape_checker + likely
    emission). NOT a regression — these were never green (preamble trap before).
 
-**320_038 binding-qualified shadowing — a DESIGN QUESTION for Lars, not a bug to
-patch.** Both cells declare field `count`; the test disambiguates with
-binding-qualified field names (`captured { inner.count: … }` / `{ outer.count: … }`).
-The rewriter treats the whole `inner.count` as a field name and emits
-`inner.inner.count = …` → Zig backend error. D1 RULED *no-shadow + field-name
-routing*; binding-qualified EXPLICIT cell routing (which also resolves shadowing)
-was not ruled in. Either 320_038 is stale intent (rewrite to distinct fields +
-field-name routing, per the ruling) OR binding-qualification is a sanctioned
-escape hatch the rewriter should honor (parse `binding.field`, route to `binding`,
-override the rewriter's `target`). **Lars rules.**
+**320_038 binding-qualified shadowing — RESOLVED 2026-06-16: DELETED as stale
+intent.** It tested binding-qualified routing (`captured { inner.count: … }`) to
+disambiguate SHADOWED cell fields (both cells declared `count`) — which
+contradicts D1's no-shadow ruling, and binding-qualified routing was never ruled
+in. The surviving intent (distinct-field nesting) is already green in 320_036;
+binding-qualified `captured { x.y: }` appeared in zero other tests. Per greenfield
+doctrine the test followed the dead intent. Deleted in `1ccb01dc`.
 
 **Verified 2026-06-16 (this session):** built `koruc`, compiled+ran each target
 via direct `./zig-out/bin/koruc` (harness FINAL verdict is FIRE-gated by the
