@@ -576,14 +576,6 @@ pub const AutoDischargeInserter = struct {
         _: usize,
         mode: TransformMode,
     ) !TransformResult {
-        if (mode == .full) {
-            // Skip already-processed flows
-            for (flow.inv().annotations) |ann| {
-                if (std.mem.startsWith(u8, ann, "@auto_discharge_ran")) {
-                    return .{ .transformed = false, .program = program };
-                }
-            }
-        }
 
         // Get event info for this flow
         const event_name = try self.pathToString(flow.inv().path);
@@ -1484,13 +1476,12 @@ pub const AutoDischargeInserter = struct {
                 // Find and replace this continuation in the flow
                 // This is tricky because it's nested inside a foreach
                 const new_flow = try self.replaceContinuationAnywhere(flow, cont, new_cont);
-                const marked_flow = try self.markFlowProcessed(new_flow);
 
                 const new_program = try ast_functional.replaceFlowRecursive(
                     self.allocator,
                     program,
                     flow,
-                    .{ .flow = marked_flow },
+                    .{ .flow = new_flow },
                 ) orelse {
                     return .{ .transformed = false, .program = program };
                 };
@@ -1714,14 +1705,13 @@ pub const AutoDischargeInserter = struct {
             const new_flow = try self.replaceContinuationAnywhere(flow, cont, new_cont);
 
             // Mark flow as processed
-            const marked_flow = try self.markFlowProcessed(new_flow);
 
             // Replace in program
             const new_program = try ast_functional.replaceFlowRecursive(
                 self.allocator,
                 program,
                 flow,
-                .{ .flow = marked_flow },
+                .{ .flow = new_flow },
             ) orelse {
                 return .{ .transformed = false, .program = program };
             };
@@ -2236,13 +2226,12 @@ pub const AutoDischargeInserter = struct {
 
         // Replace the continuation in the flow
         const new_flow = try self.replaceContinuationAnywhere(flow, target_cont, new_target_cont);
-        const marked_flow = try self.markFlowProcessed(new_flow);
 
         const new_program = try ast_functional.replaceFlowRecursive(
             self.allocator,
             program,
             flow,
-            .{ .flow = marked_flow },
+            .{ .flow = new_flow },
         ) orelse {
             return .{ .transformed = false, .program = program };
         };
@@ -2357,13 +2346,12 @@ pub const AutoDischargeInserter = struct {
         };
 
         const new_flow = try self.replaceContinuationAnywhere(flow, actual_target, new_target_cont);
-        const marked_flow = try self.markFlowProcessed(new_flow);
 
         const new_program = try ast_functional.replaceFlowRecursive(
             self.allocator,
             program,
             flow,
-            .{ .flow = marked_flow },
+            .{ .flow = new_flow },
         ) orelse {
             return .{ .transformed = false, .program = program };
         };
@@ -2620,41 +2608,6 @@ pub const AutoDischargeInserter = struct {
         return cloned;
     }
 
-    /// Mark a flow as processed with @auto_discharge_ran annotation
-    fn markFlowProcessed(self: *AutoDischargeInserter, flow: ast.Flow) !ast.Flow {
-        var new_annotations = try self.allocator.alloc([]const u8, flow.inv().annotations.len + 1);
-
-        for (flow.inv().annotations, 0..) |ann, i| {
-            new_annotations[i] = try self.allocator.dupe(u8, ann);
-        }
-        new_annotations[flow.inv().annotations.len] = try self.allocator.dupe(u8, "@auto_discharge_ran");
-
-        var new_invocation = try ast_functional.cloneInvocation(self.allocator, flow.inv());
-        new_invocation.annotations = new_annotations;
-
-        // Clone flow annotations
-        var new_flow_annotations = try self.allocator.alloc([]const u8, flow.annotations.len);
-        for (flow.annotations, 0..) |ann, i| {
-            new_flow_annotations[i] = try self.allocator.dupe(u8, ann);
-        }
-
-        return .{
-            .body = ast.rootSite(new_invocation, flow.body.continuations, flow.location),
-            .annotations = new_flow_annotations,
-            .pre_label = if (flow.pre_label) |l| try self.allocator.dupe(u8, l) else null,
-            .post_label = if (flow.post_label) |l| try self.allocator.dupe(u8, l) else null,
-            .super_shape = flow.super_shape,
-            .inline_body = if (flow.inline_body) |b| try self.allocator.dupe(u8, b) else null,
-            .preamble_code = if (flow.preamble_code) |p| try self.allocator.dupe(u8, p) else null,
-            .is_pure = flow.is_pure,
-            .is_transitively_pure = flow.is_transitively_pure,
-            .location = flow.location,
-            .module = try self.allocator.dupe(u8, flow.module),
-            .impl_of = if (flow.impl_of) |io| try ast_functional.cloneDottedPath(self.allocator, &io) else null,
-            .impl_variant = if (flow.impl_variant) |v| try self.allocator.dupe(u8, v) else null,
-            .is_impl = flow.is_impl,
-        };
-    }
 
     /// Canonicalize a phantom state with module prefix
     fn canonicalizePhantom(self: *AutoDischargeInserter, phantom_str: []const u8, module: []const u8) ![]const u8 {

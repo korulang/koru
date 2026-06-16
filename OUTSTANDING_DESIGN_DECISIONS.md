@@ -104,19 +104,39 @@ nbody's `arrayed_capture.kz` (capture-as-outer-accumulator with `for`/`captured`
 nested *inside*) already worked and is untouched; this work is about
 `capture`-directly-under-another-construct.
 
-## D2 — Obligation discharge: where does it belong now if/for are userland templates?
-**Tests:** `330_016_scope_nested`, `330_023_if_auto_both_branches` (backend-exec,
-KORU030, last green 2026-05-29).
-**Grounded root:** two paths in `src/auto_discharge_inserter.zig` encode **opposite**
-rules about an explicit `|> _` terminal — the foreach path (`:1192`) discharges *at*
-the terminal; the general continuation path (`:957-962`) discharges *only when there
-is no* explicit terminal. Regressing commit **`9d35c581`** made if/for userland
-`|template|zig` procs, rerouting their branches from the foreach path (discharges)
-to the general path (skips) → per-branch discharge silently lost.
-**DECISION NEEDED:** Should obligation discharge be a **single terminator-driven pass
-that runs uniformly across all continuation kinds** (eliminating the two-policy
-split), now that the AST distinction between if/for and ordinary continuations is
-gone? Or keep a path distinction and re-thread if/for through the discharging one?
+## D2 — Obligation discharge for multi-terminal flows: FIXED 2026-06-16
+**Tests:** `330_023_if_auto_both_branches`, `336_003_string_instance_drop_discard_branch`
+→ GREEN. `330_016_scope_nested` discharge-layer fixed (now blocked on a SEPARATE
+nested-for emitter bug, below).
+**Doc's original framing was WRONG (corrected by grounding the real failure).** The
+"two opposite policies on explicit `|> _`" story didn't hold: single-terminal
+discharge already worked (330_015 for-loop, 330_022 manual-if green). The actual
+root cause: in `.full` mode the FIRST disposal called `markFlowProcessed`, stamping
+`@auto_discharge_ran` on the whole flow; the `.full` re-run then SKIPPED the entire
+flow (`auto_discharge_inserter.zig:582`). So a flow needing disposal at TWO terminals
+— `if`'s `then` AND `else`, or a nested loop's inner AND outer — only ever got the
+FIRST; the second was never revisited in `.full` (only later in `scope_exit_only`
+mode, which doesn't dispose). Proven via a `mode=full` vs `mode=scope_exit_only`
+trace at the dispose decision.
+**FIX (landed):** removed the `@auto_discharge_ran` per-flow short-circuit and the
+whole dead mechanism (the `:582` skip check, 4 `markFlowProcessed` call sites, the
+function). The fixpoint now finds EVERY terminal; the inserted `close` satisfies each
+terminal so re-walks are idempotent and it CONVERGES (`insertDisposals` returns
+`error.ValidationFailed`, never spurious `transformed=true`, when no disposal exists
+— so no infinite loop). Full no-cache suite: **750/847, ZERO regressions**, +2 real
+greens (330_023, 336_003). `markFlowProcessed` was a pure optimization that happened
+to break multi-terminal flows.
+**Orthogonal / deferred (NOT needed for these tests):**
+- **`@scope` declaration (was "(B)").** Ruled to do, but it's a PRECISION cleanup of
+  the `kind == .effect` heuristic (which over-broadly treats `! as` as a loop), not
+  what fixed discharge. Separate follow-up; spelling chosen `[@scope]`, needs parser
+  support for event-decl branch annotations (the `ast.Branch.annotations` field
+  exists; the parser never fills it).
+- **Nested-for `result_N` var shadowing (emitter).** `330_016` now passes discharge
+  but hits `result_e0_0 shadows local constant` — the dup-naming across nested-for
+  scopes (also affects 230_010/011). Separate emitter fix.
+- **`330_012` / `330_071`** explicit-with-multiple & aspire-chain — not yet diagnosed;
+  likely separate.
 
 ## D3 — Comptime-internal printing (and comptime events that need AST context)
 **Tests:** `310_050_build_flag_check`, `310_051_build_variants` (backend-compile);
