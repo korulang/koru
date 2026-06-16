@@ -35,16 +35,17 @@ transforms. Annotation.
 
 ## Current annotation uses
 
-### Event-name annotations: `~event close[!] { ... }`
+### Default-discharge annotation: `~[!]event close { ... }`
 
-The `[!]` after an event name marks it as the **default discharge** when
-multiple events could discharge the same obligation. Parsed as the event-
-declaration's `annotations` array (`src/parser.zig:1262`,
-`AnnotationBlockResult`). Used by `AutoDischargeInserter`
-(`src/auto_discharge_inserter.zig:1721` — `eventHasDefaultAnnotation`).
+The leading `[!]` annotation block (before `event`) marks an event as the
+**default discharge** when multiple events could discharge the same obligation.
+Parsed into the event declaration's `annotations` array (`AnnotationBlockResult`
+in `src/parser.zig`); consumed by `eventHasDefaultAnnotation` in
+`src/auto_discharge_inserter.zig`. Pinned by
+`tests/regression/300_ADVANCED_FEATURES/330_PHANTOM_TYPES/330_049_default_discharge_annotation`.
 
 ```koru
-~event close[!] { conn: *Connection<!active> }
+~[!]event close { conn: *Connection<!active> }
 | ok
 ```
 

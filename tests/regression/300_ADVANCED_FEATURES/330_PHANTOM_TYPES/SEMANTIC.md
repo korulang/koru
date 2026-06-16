@@ -2,7 +2,7 @@
 
 > Resource lifecycle tracking through field name identity
 
-**Parent**: [Phantom Types SPEC](./SPEC.md)
+**Tests are the spec:** `tests/regression/300_ADVANCED_FEATURES/330_PHANTOM_TYPES/` — every behavioral claim below is carried by a test there; this file is the WHY.
 
 ---
 
@@ -31,13 +31,13 @@ Resources are identified by the combination of:
 When an event has the **same field name** in input and output, it's the same resource:
 
 ```koru
-~event write { file: *File[open], data: []u8 }
-| written { file: *File[open] }  // Same field "file" = same resource
+~event write { file: *File<open>, data: []u8 }
+| written { file: *File<open> }  // Same field "file" = same resource
 ```
 
 The compiler tracks:
-- Input: `binding.file` with state `[open]`
-- Output: `new_binding.file` with state `[open]`
+- Input: `binding.file` with state `<open>`
+- Output: `new_binding.file` with state `<open>`
 - These refer to the **same underlying resource**
 
 ### Multiple Resources
@@ -46,7 +46,7 @@ Different field names = different identities:
 
 ```koru
 ~event open_two {}
-| opened { file1: *File[open!], file2: *File[open!] }
+| opened { file1: *File<open!>, file2: *File<open!> }
 
 | opened o |>
     close(o.file1)  // Closes file1
@@ -65,13 +65,13 @@ When phantom states match:
 
 ```koru
 ~event open {}
-| opened { file: *File[open!] }
+| opened { file: *File<open!> }
 
-~event close { file: *File[open] }
-| closed { file: *File[closed] }
+~event close { file: *File<open> }
+| closed { file: *File<closed> }
 
 ~open()
-| opened o |> close(o.file)  // ✅ [open!] matches [open]
+| opened o |> close(o.file)  // ✅ <open!> matches <open>
     | closed c |> _
 ```
 
@@ -82,7 +82,7 @@ When phantom states don't match:
 ```koru
 ~open()
 | opened o |> close(o.file)
-    | closed c |> close(c.file)  // ❌ [closed] doesn't match [open]
+    | closed c |> close(c.file)  // ❌ <closed> doesn't match <open>
 ```
 
 ---
@@ -94,9 +94,9 @@ When phantom states don't match:
 When a resource's state changes, old bindings become stale:
 
 ```koru
-| opened o |>  // o.file: [open]
+| opened o |>  // o.file: <open>
     close(o.file)
-    | closed c |>  // c.file: [closed]
+    | closed c |>  // c.file: <closed>
         read(o.file)  // ❌ Should this be allowed?
 ```
 
@@ -105,7 +105,7 @@ When a resource's state changes, old bindings become stale:
 **Once a binding is used in a state-changing event, it becomes invalidated in all child scopes.**
 
 The compiler tracks:
-1. `o.file` passed to `close()` which changes `[open]` → `[closed]`
+1. `o.file` passed to `close()` which changes `<open>` → `<closed>`
 2. `o.file` is **phantom-invalidated** after this point
 3. Must use `c.file` instead (the continuation with correct state)
 
@@ -126,19 +126,17 @@ The compiler tracks:
 The `!` suffix marks states requiring cleanup:
 
 ```koru
-*File[fs:open!]  // Requires cleanup
-*File[fs:closed] // No cleanup needed
+*File<fs:open!>  // Requires cleanup
+*File<fs:closed> // No cleanup needed
 ```
 
 ### Enforcement
 
-**IMPLEMENTED** - See tests 513-521 for working examples:
-- Test 514: Basic cleanup satisfaction
-- Test 515: Disposal consumes obligations (`[!state]` syntax)
-- Test 516: Use-after-disposal detection
-- Test 517: Obligations escape through interfaces
-- Test 518: Obligations lost at boundaries
-- Test 520-521: Multiple resource tracking
+**IMPLEMENTED** — carried by these passing tests:
+- `330_038_cleanup_obligation_satisfied` — cleanup obligation satisfied
+- `330_006_cleanup_consumed_by_disposal` — disposal consumes the obligation (`<!state>`)
+- `330_007_use_after_disposal` — use-after-disposal detected
+- `330_008_obligation_escapes_via_interface` — obligations escape through interfaces
 
 ---
 
@@ -148,14 +146,14 @@ The `!` suffix marks states requiring cleanup:
 
 ```koru
 ~event fs:open { path: []const u8 }
-| opened { file: *File[fs:open!] }
+| opened { file: *File<fs:open!> }
 | not_found {}
 
-~event fs:read { file: *File[fs:open] }
-| data { file: *File[fs:open], content: []u8 }
+~event fs:read { file: *File<fs:open> }
+| data { file: *File<fs:open>, content: []u8 }
 
-~event fs:close { file: *File[fs:open] }
-| closed { file: *File[fs:closed] }
+~event fs:close { file: *File<fs:open> }
+| closed { file: *File<fs:closed> }
 
 // Usage:
 ~fs:open(path: "/etc/passwd")
@@ -172,10 +170,10 @@ The `!` suffix marks states requiring cleanup:
 
 ```koru
 ~event db:connect {}
-| connected { read_conn: *Conn[db:open!], write_conn: *Conn[db:open!] }
+| connected { read_conn: *Conn<db:open!>, write_conn: *Conn<db:open!> }
 
-~event db:close { conn: *Conn[db:open] }
-| closed { conn: *Conn[db:closed] }
+~event db:close { conn: *Conn<db:open> }
+| closed { conn: *Conn<db:closed> }
 
 ~db:connect()
 | connected c |>
@@ -189,20 +187,20 @@ The `!` suffix marks states requiring cleanup:
 ### Generic States (State Variables)
 
 ```koru
-~event process<M'owned|borrowed> { data: *Data[M] }
-| done { data: *Data[M] }  // Preserves state
+~event process<M'owned|borrowed> { data: *Data<M> }
+| done { data: *Data<M> }  // Preserves state
 
 // Works with owned:
 ~alloc()
-| allocated a |>  // a.data: [owned]
+| allocated a |>  // a.data: <owned>
     process(a.data)
-    | done d |>  // d.data: [owned]
+    | done d |>  // d.data: <owned>
 
 // Works with borrowed:
 ~borrow(other_data)
-| borrowed b |>  // b.data: [borrowed]
+| borrowed b |>  // b.data: <borrowed>
     process(b.data)
-    | done d |>  // d.data: [borrowed]
+    | done d |>  // d.data: <borrowed>
 ```
 
 ---
@@ -215,7 +213,7 @@ The `!` suffix marks states requiring cleanup:
 - ✅ Module-qualified states
 - ✅ State compatibility checking
 - ✅ State variable parsing
-- ✅ Cleanup obligation enforcement (tests 513-521)
+- ✅ Cleanup obligation enforcement (`330_006`/`007`/`008`/`038`)
 - ⚠️ Identity tracking (semantic concept, not enforced yet)
 - ❌ Binding invalidation (not implemented)
 
@@ -235,7 +233,7 @@ Error: Phantom state invalidated
       close(o.file)
       | closed c |>
           read(o.file)
-               ^^^^^^^ o.file has phantom state [fs:closed] but was invalidated here
+               ^^^^^^^ o.file has phantom state <fs:closed> but was invalidated here
 
   Note: o.file was passed to close() which changed its state
   Help: Use c.file instead, which has the current phantom state

@@ -75,7 +75,7 @@ Optional effect branches can also carry resume types: `! ?prompt []const u8 -> [
 
 ### Glyph choice — why `!`
 
-`!` is already Koru's effect-tag in `[state!]` (creates obligation) and `[!state]` (discharges obligation). Promoting it to a branch-dispatch position for "this branch is an effect operation" makes `!` a unifying mark across the type system: same glyph for *type system has something effect-shaped to track here*, whether it's lifecycle-effect (obligation) or control-flow-effect (yield). The position-based disambiguation (`!` inside `[...]` vs `!` at branch-line-start) is straightforward for both parser and reader.
+`!` is already Koru's effect-tag in `<state!>` (creates obligation) and `<!state>` (discharges obligation). Promoting it to a branch-dispatch position for "this branch is an effect operation" makes `!` a unifying mark across the type system: same glyph for *type system has something effect-shaped to track here*, whether it's lifecycle-effect (obligation) or control-flow-effect (yield). The position-based disambiguation (`!` inside `<...>` vs `!` at branch-line-start) is straightforward for both parser and reader.
 
 ### Ordering rule
 
@@ -116,7 +116,7 @@ Same rules apply symmetrically to `!?`. The metatype tier is the consumer's opt-
 ### Proc impl (host language)
 
 ```
-~impl for(start: usize, end: usize) {
+~proc each-range|zig {
     var i = start;
     while (i < end) : (i += 1) {
         each(i);
@@ -171,7 +171,7 @@ This is a little obtuse for the proc-implementor (per-call obligation lifecycle 
 
 ### Phantom types
 
-Plain phantom states (`[state]`, no `!`) flow through `!` branches with no restriction.
+Plain phantom states (`<state>`, no `!`) flow through `!` branches with no restriction.
 
 ### Purity
 
@@ -195,7 +195,7 @@ The producer body does NOT need to be a loop. A single straight-line producer th
 
 6. **`return` vs last-expression for resume value.** Last-expression matches the rest of the flow language. Explicit `return` distinguishes "handler resumes with value X" from "handler decides to bail entirely." Worth picking deliberately.
 
-7. **Phantom types in resume direction.** Symmetric with payload (handler resumes with `*T[state!]` create-obligation, producer discharges in body before next iteration). Powerful but doubles the obligation-flow analysis surface. Land or defer?
+7. **Phantom types in resume direction.** Symmetric with payload (handler resumes with `*T<state!>` create-obligation, producer discharges in body before next iteration). Powerful but doubles the obligation-flow analysis surface. Land or defer?
 
 ## Implementation phases
 
