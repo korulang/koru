@@ -3473,8 +3473,14 @@ fn emitInlineCodeResolvingSplices(
             // tag keeps effect splices and continue hand-offs from colliding
             // when both appear in one template (a `for` with `! each` + `| done`).
             const saved_prefix = ctx.result_prefix;
-            var prefix_buf: [64]u8 = undefined;
-            ctx.result_prefix = std.fmt.bufPrint(&prefix_buf, "result_e{d}_", .{idx}) catch "result_";
+            var prefix_buf: [128]u8 = undefined;
+            // NEST the namespace inside the enclosing prefix instead of replacing
+            // it: a nested effect splice (e.g. `for` inside `for`) must get a
+            // prefix distinct from its parent's. Replacing collapses both to
+            // `result_e0_` → both emit `result_e0_0` at the same Zig function
+            // scope → "shadows local constant". Appending gives `result_e0_`
+            // (outer) vs `result_e0_e0_` (inner).
+            ctx.result_prefix = std.fmt.bufPrint(&prefix_buf, "{s}e{d}_", .{ saved_prefix, idx }) catch saved_prefix;
             defer ctx.result_prefix = saved_prefix;
             var c: usize = 0;
             try emitContinuationBody(emitter, ctx, cont, &c);

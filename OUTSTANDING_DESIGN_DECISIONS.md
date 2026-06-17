@@ -132,9 +132,15 @@ to break multi-terminal flows.
   what fixed discharge. Separate follow-up; spelling chosen `[@scope]`, needs parser
   support for event-decl branch annotations (the `ast.Branch.annotations` field
   exists; the parser never fills it).
-- **Nested-for `result_N` var shadowing (emitter).** `330_016` now passes discharge
-  but hits `result_e0_0 shadows local constant` — the dup-naming across nested-for
-  scopes (also affects 230_010/011). Separate emitter fix.
+- **Nested-for `result_N` var shadowing (emitter) — FIXED 2026-06-16.** `330_016`
+  green. Root cause: the effect-splice result prefix (`emitter_helpers.zig:3477`)
+  REPLACED the namespace with `result_e{d}_` from the local effect index, so a
+  nested `! each` (also idx 0) collided with its parent → both emitted
+  `result_e0_0` at the same Zig function scope → "shadows local constant". Fix:
+  NEST the prefix (append `e{d}_` to the enclosing prefix) so inner gets
+  `result_e0_e0_`. Single-level emission is byte-identical (`result_` →
+  `result_e0_`); only nested splices change. Full no-cache: 751/847, zero
+  regressions, +1 green (330_016).
 - **`330_012` / `330_071`** explicit-with-multiple & aspire-chain — not yet diagnosed;
   likely separate.
 
