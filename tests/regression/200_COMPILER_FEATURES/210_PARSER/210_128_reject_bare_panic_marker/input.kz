@@ -1,0 +1,13 @@
+// Test 210_128: MUST_FAIL — bare `| ?!` (panic marker with no branch name)
+//                          is a grammar error.
+//
+// `?!` is the panic-branch marker; it must be followed by a branch name
+// (e.g. `| ?!oom u32`). A bare `| ?!` with nothing after it is malformed
+// and must be rejected at parse time. This pins the grammar boundary so a
+// later loosening of the `?!` detection can't silently accept it.
+//
+// Expected: parser rejects `| ?!` with PARSE003 "branch missing name".
+
+~pub event e { n: u32 }
+| success u32
+| ?!

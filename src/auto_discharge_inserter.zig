@@ -27,6 +27,7 @@ pub const AutoDischargeInserter = struct {
     event_map: std.StringHashMap(EventInfo),
     synthetic_binding_counter: u32,
     warn_mode: bool, // When true, emit warnings about auto-inserted disposals
+    strict_panic_branches: bool, // When true (--panic-branches=strict), unhandled panic branches are compile errors (the crash-surface map, loud)
 
     /// Error set for recursive functions that need explicit error types
     pub const RecursiveError = std.mem.Allocator.Error || error{ ValidationFailed, NoSpaceLeft };
@@ -267,13 +268,14 @@ pub const AutoDischargeInserter = struct {
         }
     };
 
-    pub fn init(allocator: std.mem.Allocator, reporter: *errors.ErrorReporter, warn_mode: bool) !AutoDischargeInserter {
+    pub fn init(allocator: std.mem.Allocator, reporter: *errors.ErrorReporter, warn_mode: bool, strict_panic_branches: bool) !AutoDischargeInserter {
         return .{
             .allocator = allocator,
             .reporter = reporter,
             .event_map = std.StringHashMap(EventInfo).init(allocator),
             .synthetic_binding_counter = 0,
             .warn_mode = warn_mode,
+            .strict_panic_branches = strict_panic_branches,
         };
     }
 
@@ -2757,6 +2759,24 @@ pub const AutoDischargeInserter = struct {
 
         if (missing_optional.items.len == 0 and missing_panic.items.len == 0) {
             return null; // Nothing to synthesize
+        }
+
+        // Crash-surface map (strict mode): when --panic-branches=strict is set,
+        // every UNHANDLED panic branch is a compile error (KORU022) — the
+        // enumerated list of where the program can crash on a rare failure.
+        // Dev build (flag off) stays silent: the synthesized @panic is still
+        // there at runtime (ergonomic prototyping). Production/audit build
+        // (flag on) blocks compilation until each is handled or explicitly
+        // muted (`| <name> _ |> ...`). Same source, the flag flips it.
+        // Detection is free here (missing_panic already computed) — this is
+        // "also report + fail", not a new pass. Reuses KORU022 (missing required
+        // branch): in strict mode a panic branch IS required to be handled.
+        if (self.strict_panic_branches and missing_panic.items.len > 0) {
+            for (missing_panic.items) |branch_name| {
+                try self.reporter.addErrorAtLocation(.KORU022, flow.location,
+                    "panic branch '{s}' is unhandled — in strict mode (--panic-branches=strict) panic branches must be handled or explicitly muted (| {s} _ |> ...). Without strict mode this synthesizes @panic at runtime.", .{ branch_name, branch_name });
+            }
+            return error.ValidationFailed;
         }
 
         // Create new continuations array with synthesized branches

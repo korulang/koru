@@ -1,0 +1,14 @@
+// Test 210_129: MUST_FAIL — a branch name can't be both a panic branch
+//                          (`| ?!oom`) and a required branch (`| oom`).
+//
+// `?!` is a KIND marker on a branch (like `?` optional), not a separate
+// branch. Declaring `oom` twice — once as panic, once as required — is a
+// duplicate-name error, same as declaring any branch twice. This pins that
+// `?!` doesn't escape the duplicate-name check.
+//
+// Expected: parser rejects with PARSE003 "duplicate branch name 'oom'".
+
+~pub event e { n: u32 }
+| success u32
+| ?!oom u32
+| oom u32

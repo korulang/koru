@@ -2142,6 +2142,14 @@ const joinPathAlloc = struct {
     // Check if warnings are enabled for auto-discharge
     const warn_mode = CompilerEnv.hasFlag("auto-discharge=warn");
 
+    // Crash-surface map (strict mode): --panic-branches=strict makes every
+    // unhandled panic branch (| ?!...) a compile error (KORU022), enumerating
+    // where the program can crash on a rare failure. Dev build (flag off) stays
+    // silent — the synthesized @panic is still there at runtime; production/audit
+    // build (flag on) blocks compilation until each is handled or explicitly
+    // muted (`| <name> _ |> ...`). Same source, flag flips it.
+    const strict_panic_branches = CompilerEnv.hasFlag("panic-branches=strict");
+
     var mutable_ctx = ctx;
     mutable_ctx.current_pass = "auto_discharge";
 
@@ -2167,6 +2175,7 @@ const joinPathAlloc = struct {
         std.heap.page_allocator,
         &reporter,
         warn_mode,
+        strict_panic_branches,
     ) catch {
         mutable_ctx.errors.append(mutable_ctx.allocator, .{
             .message = "Failed to initialize auto-discharge inserter",

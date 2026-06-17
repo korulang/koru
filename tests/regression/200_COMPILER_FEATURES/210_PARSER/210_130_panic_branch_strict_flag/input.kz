@@ -1,0 +1,28 @@
+// Test 210_130: MUST_FAIL — --panic-branches=strict makes unhandled panic
+//                          branches compile errors (the crash-surface map).
+//
+// Panic branches are ignorable by default (210_127: unhandled | ?!oom
+// compiles, synthesizing a @panic arm). The --panic-branches=strict flag
+// flips the dev/production behavior: every UNHANDLED panic branch becomes a
+// compile error (KORU022) listing where the program can crash on a rare
+// failure. Same source — the flag flips it. Dev = silent auto-panic
+// (ergonomic); production/audit = handle each or explicitly mute.
+//
+// This is "see where you're ignoring your panics" as a compiler pass: run
+// with the flag, compilation fails enumerating every ignored panic branch.
+//
+// Expected: backend fails with KORU022 naming the unhandled panic branch
+// 'oom' and pointing at the flow. (Same input compiles WITHOUT the flag —
+// see 210_127.)
+
+~pub event alloc { n: usize }
+| success []u8
+| ?!oom usize
+
+~proc alloc|zig {
+    return .{ .success = &.{} };
+}
+
+~alloc(n: 4)
+| success _ |> _
+// NO `| oom _ |> _` handler — strict mode rejects this.
