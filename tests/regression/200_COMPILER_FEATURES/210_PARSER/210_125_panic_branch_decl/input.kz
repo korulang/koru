@@ -1,0 +1,19 @@
+// Test 210_125: panic branch (`| ?!oom`) at event decl.
+//
+// A THIRD branch kind alongside required (`|`) and optional (`| ?`):
+//   required `|`     — omit handler => compile error (you must decide)
+//   optional `| ?`   — omit handler => synthesized no-op (safe to ignore)
+//   panic    `| ?!`  — omit handler => synthesized @panic(...) (UNSAFE to
+//                      ignore; the path must not silently proceed)
+//
+// It is the typed, branch-shaped form of "assert, don't fall back / let it
+// fail loudly": the failure is visible in the type, recovery is opt-in,
+// ignoring it is loud. First customer: std/list:new OOM.
+//
+// This test pins ONLY the parse: a decl with a panic branch produces an AST
+// branch whose `is_panic` is true (and `is_optional` is false). Symmetric
+// with 210_076 (optional effect branch decl) which pins `is_optional`.
+
+~pub event alloc { n: usize }
+| success []u8
+| ?!oom usize

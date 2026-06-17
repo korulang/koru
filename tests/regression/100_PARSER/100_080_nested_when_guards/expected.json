@@ -38,6 +38,7 @@
                     "resume": null,
                     "resume_phantom": null,
                     "is_optional": false,
+                    "is_panic": false,
                     "payload": {
                         "fields": [
                             {
@@ -86,6 +87,7 @@
                     "resume": null,
                     "resume_phantom": null,
                     "is_optional": false,
+                    "is_panic": false,
                     "payload": {
                         "fields": [
                             {

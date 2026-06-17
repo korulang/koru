@@ -2728,6 +2728,11 @@ pub const AstSerializer = struct {
         try self.write(",\n");
 
         try self.writeIndent();
+        try self.write("\"is_panic\": ");
+        try self.write(if (branch.is_panic) "true" else "false");
+        try self.write(",\n");
+
+        try self.writeIndent();
         try self.write("\"payload\": ");
         try self.serializeShapeJson(&branch.payload);
 

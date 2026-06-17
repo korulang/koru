@@ -1525,9 +1525,15 @@ pub const Parser = struct {
                         branch_content = lexer.trim(branch_content[1..]);
                     }
 
-                    // Check for ? prefix (optional)
+                    // Check for ?! prefix (panic branch) before ? (optional).
+                    // `?!` is ONE marker: omit handler => synthesized @panic(...)
+                    // (UNSAFE to ignore). Not `?` (optional) + `!` (effect).
+                    var is_panic = false;
                     var is_optional = false;
-                    if (lexer.startsWith(branch_content, "?")) {
+                    if (lexer.startsWith(branch_content, "?!")) {
+                        is_panic = true;
+                        branch_content = lexer.trim(branch_content[2..]);
+                    } else if (lexer.startsWith(branch_content, "?")) {
                         is_optional = true;
                         branch_content = lexer.trim(branch_content[1..]);
                     }
@@ -1587,6 +1593,7 @@ pub const Parser = struct {
                         .payload = payload,
                         .is_deferred = is_deferred,
                         .is_optional = is_optional,
+                        .is_panic = is_panic,
                     };
 
                     try branches.append(self.allocator, branch);
@@ -7128,9 +7135,15 @@ pub const Parser = struct {
             branch_start = lexer.trim(after_bar[1..]);
         }
 
-        // Check for ? prefix (optional branch)
+        // Check for ?! prefix (panic branch) before ? (optional).
+        // `?!` is ONE marker: omit handler => synthesized @panic(...)
+        // (UNSAFE to ignore). Not `?` (optional) + `!` (effect).
+        var is_panic = false;
         var is_optional = false;
-        if (lexer.startsWith(branch_start, "?")) {
+        if (lexer.startsWith(branch_start, "?!")) {
+            is_panic = true;
+            branch_start = lexer.trim(branch_start[2..]);
+        } else if (lexer.startsWith(branch_start, "?")) {
             is_optional = true;
             branch_start = lexer.trim(branch_start[1..]);
         }
@@ -7318,6 +7331,7 @@ pub const Parser = struct {
                     .payload = ast.Shape{ .fields = &.{} },
                     .is_deferred = is_deferred,
                     .is_optional = is_optional,
+                    .is_panic = is_panic,
                     .kind = branch_kind,
                     .resume_type = resume_type,
                     .resume_phantom = resume_phantom,
@@ -7337,6 +7351,7 @@ pub const Parser = struct {
                     },
                     .is_deferred = is_deferred,
                     .is_optional = is_optional,
+                    .is_panic = is_panic,
                     .kind = branch_kind,
                     .resume_type = resume_type,
                     .resume_phantom = resume_phantom,
@@ -7442,6 +7457,7 @@ pub const Parser = struct {
                 .payload = ast.Shape{ .fields = fields },
                 .is_deferred = is_deferred,
                 .is_optional = is_optional,
+                .is_panic = is_panic,
                 .kind = branch_kind,
                 .resume_type = resume_type,
                 .resume_phantom = resume_phantom,
@@ -7564,6 +7580,7 @@ pub const Parser = struct {
             .payload = payload,
             .is_deferred = is_deferred,
             .is_optional = is_optional,
+            .is_panic = is_panic,
             .kind = branch_kind,
             .resume_type = resume_type,
             .resume_phantom = resume_phantom,

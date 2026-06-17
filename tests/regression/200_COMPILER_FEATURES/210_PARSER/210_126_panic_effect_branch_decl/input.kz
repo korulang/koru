@@ -1,0 +1,19 @@
+// Test 210_126: panic branch on the EFFECT side (`! ?!oom`) + glyph collision.
+//
+// `?!` must read as ONE "panic branch" marker, NOT as `?` (optional) + `!`
+// (effect introducer). Today `!` only appears as an effect introducer at the
+// start of a line, and `?` only as an optional marker right after the
+// introducer — so `?!` is free to mean "panic" as a unit on both sides:
+//   `| ?!oom`  — terminal panic branch
+//   `! ?!oom`  — effect panic branch
+//
+// This test pins:
+//   1. an effect panic branch decl parses with `is_panic: true`,
+//      `is_optional: false`, `kind: "effect"`;
+//   2. the collision invariant: `?!` is one marker (a single panic branch),
+//      not "optional effect" — i.e. it does NOT parse as `?` + `!`.
+
+~pub event tokenize { source: []const u8 }
+! token []const u8
+! ?!oom usize
+| done usize

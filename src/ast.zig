@@ -846,6 +846,7 @@ pub const Branch = struct {
     payload: Shape,
     is_deferred: bool = false,  // Marks &-branches that return event refs
     is_optional: bool = false,  // Marks ?-branches that don't need to be handled
+    is_panic: bool = false,  // Marks ?!-branches: unhandled => synthesized @panic(...) (UNSAFE to ignore)
     kind: BranchKind = .terminal,  // `|` = terminal (fires once, returns); `!` = effect (fires 0..N during proc run)
     resume_type: ?[]const u8 = null,  // Type after `->` on effect branches; null = -> void
     resume_phantom: ?[]const u8 = null,  // Phantom/obligation on the resume type, e.g. `-> *R<!state>` → "!state". Read from the effect-branch scope: `<!state>` discharges, `<state!>` would illegally escape.
