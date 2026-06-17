@@ -1,0 +1,104 @@
+// std/grid — a dense 2D i64 grid over a row-major flat buffer, with the same
+// owned-handle ownership model as std/list. First cut: i64 cells, hand-
+// monomorphized; genericity over the cell type lands later by replication (the
+// container-generating [transform] from the collections design), exactly as for
+// std/list. The flat `data[y*cols + x]` layout is deliberately the SAME
+// representation hand-written Zig/C/Rust use — so grid-backed workloads are
+// apples-to-apples benchmarkable and the only perf debt is the handle box below.
+//
+// Ownership states (phantom on *Grid_i64):
+//   <grid!>  - new issues the obligation: this grid must be freed.
+//   <grid>   - borrowed: read/mutate in place (set, get, count), obligation kept.
+//   <!grid>  - consumed: free discharges the obligation.
+
+const std = @import("std");
+
+pub const Grid_i64 = struct {
+    data: []i64,
+    cols: usize,
+    allocator: std.mem.Allocator,
+
+    // Package-private — only free/auto-discharge calls this.
+    fn deinit(self: *Grid_i64) void {
+        self.allocator.free(self.data);
+        self.allocator.destroy(self);
+    }
+};
+
+// ============================================
+// Construction
+// ============================================
+
+~[
+- aspirational
+  The grid HANDLE is heap-boxed (allocator.create(Grid_i64)) — escape-driven
+  local allocation (the no-silent-degradation doctrine: stack when the
+  obligation proves no-escape, heap only on explicit escape, error on ambiguity)
+  is NOT built yet, so this boxes the handle unconditionally. The rows*cols
+  backing buffer is heap regardless. Marked so the box debt is explicit and
+  greppable, not hidden behind a clean API; closes when the escape-allocation
+  model lands (shared with std/list and std/string). The `| err` branch is the
+  proven shape; upgrading allocation failure to a `| ?!oom` panic branch is the
+  immediate follow-up (panic-branches' first real collection customer).
+]pub event new { rows: usize, cols: usize }
+| grid *Grid_i64<grid!>
+| err []const u8
+
+~proc new|zig {
+    const allocator = koru_allocator();
+    const self = allocator.create(Grid_i64) catch {
+        return .{ .err = "allocation failed" };
+    };
+    const data = allocator.alloc(i64, rows * cols) catch {
+        allocator.destroy(self);
+        return .{ .err = "allocation failed" };
+    };
+    @memset(data, 0);
+    self.* = .{ .data = data, .cols = cols, .allocator = allocator };
+    return .{ .grid = self };
+}
+
+// ============================================
+// Mutation (borrow — obligation untouched)
+// ============================================
+
+// Set the cell at (x = column, y = row) to v. Void, chains with `|>`.
+~pub event set { g: *Grid_i64<grid>, x: usize, y: usize, v: i64 }
+
+~proc set|zig {
+    g.data[y * g.cols + x] = v;
+}
+
+// ============================================
+// Read (borrow)
+// ============================================
+
+// Cell value at (x, y).
+~pub event get { g: *Grid_i64<grid>, x: usize, y: usize }
+| val i64
+
+~proc get|zig {
+    return .{ .val = g.data[y * g.cols + x] };
+}
+
+// Count of nonzero cells across the whole grid.
+~pub event count-nonzero { g: *Grid_i64<grid> }
+| count i64
+
+~proc count-nonzero|zig {
+    var n: i64 = 0;
+    for (g.data) |c| {
+        if (c != 0) n += 1;
+    }
+    return .{ .count = n };
+}
+
+// ============================================
+// Teardown (consume — discharges <!grid>)
+// ============================================
+
+~pub event free { g: *Grid_i64<!grid> }
+
+~proc free|zig {
+    g.deinit();
+}
