@@ -15,7 +15,16 @@ const std = @import("std");
 // `| done n` delivers the line count after, `| failed e` the error.
 // The old array shape (`| lines [][]const u8`) was a structural leaker:
 // it returned allocator-owned slices no Koru caller could free.
-~pub event read-lines { path: []const u8 }
+~[
+- aspirational
+  read-lines exposes a per-line streaming surface but its implementation
+  SLURPS the whole file into memory (readToEndAlloc), so it is bounded by RAM
+  and OOMs on inputs larger than memory. The honest fix is true line-by-line
+  streaming - constant memory, any file size - deferred to a dedicated session.
+  Marked aspirational so the gap is explicit and greppable, never hidden behind
+  a clean API. Discipline to close it: a future --allow-aspirational gate flag
+  plus koruc --list-aspirational. See the no-silent-degradation doctrine.
+]pub event read-lines { path: []const u8 }
 ! line []const u8
 | done usize
 | failed []const u8

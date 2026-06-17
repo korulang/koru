@@ -112,7 +112,12 @@ const std = @import("std");
 
 // Read stdin as a stream of lines — the same effect contract as
 // std/fs:read-lines, sourced from stdin (the interactive/pipe vertical).
-~pub event read-lines {}
+~[
+- aspirational
+  Same gap as std/fs:read-lines: a per-line streaming surface backed by a
+  whole-stream slurp (readToEndAlloc), bounded by RAM. True streaming is the
+  deferred honest fix; marked so the gap is explicit and greppable.
+]pub event read-lines {}
 ! line []const u8
 | done usize
 | failed []const u8

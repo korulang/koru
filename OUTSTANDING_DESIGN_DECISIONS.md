@@ -1,5 +1,37 @@
 # Outstanding Design Decisions
 
+## WORK ORDER (2026-06-17) — `[aspirational]` annotation gate (make hidden gaps loud)
+
+**Context:** `read-lines` (std/fs + std/io) exposes a per-line *streaming*
+surface (`! line`) but its implementation SLURPS the whole file
+(`readToEndAlloc`) — RAM-bounded, OOMs on >RAM input. A well-formed API surface
+hiding a real problem (Lars is "extremely allergic" to exactly this). Streaming
+is the honest fix but was deferred; the gap is now marked, not hidden.
+
+**DONE this session:** both `read-lines` events carry a vertical
+`~[ - aspirational <prose> ]` annotation (the existing prose-block annotation
+system, `parser.zig:936-1024`; bullets = machine-read flags, prose = discarded
+rationale). `read-stdin`/`read-file` are NOT marked — a whole-content read being
+RAM-bounded is their honest contract, not a lie. Only the streaming-surface lies
+get the flag, so the gap-list stays signal.
+
+**TODO (dedicated/adjacent session) — the enforcement that makes it LOUD:**
+1. A compiler-flag gate: refuse to compile when `aspirational`-marked code is
+   **reachable** (dead-strip already computes reachability), unless
+   `--allow-aspirational` is passed — which prints exactly what it's letting
+   through. Polarity = **default-refuse** (CI/release reject; local dev opts in);
+   the softer default-allow+`--strict` is too weak per the doctrine.
+2. `koruc --list-aspirational` → enumerate every marked site = the canonical,
+   greppable gap-list to work against in clean sessions.
+3. First customer waiting: the two `read-lines`. Closing the gap = build true
+   line-by-line streaming (constant memory, any size), then remove the marks.
+
+Governs: [[no-silent-performance-degradation]] doctrine made structural — gaps
+become explicit, enforced, and enumerable instead of hidden behind clean APIs.
+
+---
+
+
 Surfaced by the 2026-06-15 cluster-by-cluster regression diagnosis (24 read-only
 sub-agents, consensus per cluster). These are decisions **Lars must rule on**
 before the corresponding regressions can be fixed *right* — fixing without the
