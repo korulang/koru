@@ -2,7 +2,7 @@
 // ingredients (statement example: 62842880). The AMOUNT LOOP is Koru
 // (for over 0..101) and the signed-property parse is Koru's now (named
 // groups; `-?` inside a group is fine — the ban is groups UNDER
-// quantifiers). Only the stored ingredient table is a leaf ← store.
+// quantifiers). Only the collected ingredient table is a leaf ← collections.
 
 import std/io
 import std/fs

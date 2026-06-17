@@ -2,7 +2,7 @@
 // on-all (1000000) → toggle row 0 (999000) → off 2x2 (998996).
 // Koru does the DISPATCH and the COORDINATES: three full-match patterns
 // classify the instruction, named groups deliver the rectangle typed.
-// Ledger: grid ← store (gap 2).
+// Ledger: grid ← collections (gap 2).
 
 import std/io
 import std/fs

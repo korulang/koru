@@ -2,7 +2,7 @@
 // BRIGHTNESS: on 0,0 (+1) then toggle-all (+2 each) → 2000001.
 // Koru does the DISPATCH and the COORDINATES: three full-match patterns
 // classify the instruction, named groups deliver the rectangle typed.
-// Ledger: brightness grid ← store (gap 2).
+// Ledger: brightness grid ← collections (gap 2).
 
 import std/io
 import std/fs

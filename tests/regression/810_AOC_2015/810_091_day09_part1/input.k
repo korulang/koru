@@ -1,7 +1,7 @@
 // AoC 2015 Day 9 Part 1 — shortest route visiting every city once
 // (statement example: London/Dublin/Belfast → 605). Koru: match extracts
-// the edge (named groups, typed distance); the flow stores and queries.
-// Ledger: distance table ← store; permutation search ← host.
+// the edge (named groups, typed distance); the flow collects and queries.
+// Ledger: distance table ← collections; permutation search ← host.
 
 import std/io
 import std/fs

@@ -1,6 +1,6 @@
 // AoC 2015 Day 19 Part 2 — fewest steps to fabricate the molecule from e
 // (statement: HOH → 3 steps). Greedy reverse-replacement leaf.
-// Ledger: search ← host; rule table ← store.
+// Ledger: search ← host; rule table ← collections.
 
 import std/io
 import std/fs

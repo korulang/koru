@@ -2,7 +2,7 @@
 // ghijklmn → ghjaabcc). One next-password per input line.
 // The increment-until-valid SEARCH IS KORU — a label fold on the subflow
 // RHS re-invokes one increment+validate step per iteration (210_123
-// greened; the loop came home). Ledger: buffer copy (prep) ← store;
+// greened; the loop came home). Ledger: buffer copy (prep) ← collections;
 // increment + validate themselves ← string-ops (gap 4).
 
 import std/io

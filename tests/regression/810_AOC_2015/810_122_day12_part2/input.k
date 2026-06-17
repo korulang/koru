@@ -1,6 +1,6 @@
 // AoC 2015 Day 12 Part 2 — sum numbers, but ignore any OBJECT (and its
 // children) containing the value "red" (arrays with "red" still count).
-// Statement examples: 6, 4, 0, 6. Ledger: structural JSON walk ← store +
+// Statement examples: 6, 4, 0, 6. Ledger: structural JSON walk ← collections +
 // string-ops (part 1's flat char machine can't see object boundaries).
 
 import std/io

@@ -2,7 +2,7 @@
 // sharing one visited set ("^v" → 3, "^>v<" → 3, "^v^v^v^v^v" → 11).
 // Parity lives in the cell (t); each direction arm writes its delta then
 // the parity-if moves the right actor and visits — write-then-use chains.
-// Ledger (shared with part 1): visit/house-count ← store; classify ← char
+// Ledger (shared with part 1): visit/house-count ← collections; classify ← char
 // dispatch.
 
 import std/io

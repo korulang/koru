@@ -1,6 +1,6 @@
 // AoC 2015 Day 17 Part 1 — ways to fit exactly 25 liters (statement
 // example: containers 20,15,10,5,5 p2: ways using the MINIMUM container count → 3). Ledger: subset
-// search ← host recursion; sizes ← store. Line intake is Koru.
+// search ← host recursion; sizes ← collections. Line intake is Koru.
 
 import std/io
 import std/fs

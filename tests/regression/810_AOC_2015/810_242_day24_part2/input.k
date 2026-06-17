@@ -1,6 +1,6 @@
 // AoC 2015 Day 24 Part 1 — balance packages into 4 equal groups (with the trunk); quantum
 // entanglement of the smallest front group (statement example → 44).
-// Ledger: subset search ← host; weights ← store. Intake is Koru.
+// Ledger: subset search ← host; weights ← collections. Intake is Koru.
 
 import std/io
 import std/fs

@@ -2,7 +2,7 @@
 // (">" → 2, "^>v<" → 4, "^v^v^v^v^v" → 2). PURE .k, CANONICAL SHAPE:
 // one walk per input line off disk.
 // The .kz ledger owes: classify (wants a char-dispatch surface), and the
-// visited SET (visit/house-count — THE store frontier, votes with
+// visited SET (visit/house-count — THE collections frontier, votes with
 // 320_034/036/038).
 
 import std/io

@@ -1,7 +1,7 @@
 // AoC 2015 Day 14 Part 2 — points: each second the leading reindeer gets
 // a point; max points at t=1000 (statement: Dancer 689). The sentence parse
 // is Koru's now (named groups, typed destructure); the per-second race
-// over N reindeer still needs a TABLE of specs — ledgered to the store.
+// over N reindeer still needs a TABLE of specs — ledgered to the collections.
 
 import std/io
 import std/fs

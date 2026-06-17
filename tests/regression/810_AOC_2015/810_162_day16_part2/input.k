@@ -1,7 +1,7 @@
 // AoC 2015 Day 16 Part 1 — which Sue matches the MFCSAM readout (RANGED: cats/trees are greater-than, pomeranians/goldfish less-than). The real input is personal-only, so
 // these Sues are CONSTRUCTED from the statement's readout with exactly
 // one match per part (hand-derived: part 1 → Sue 2, part 2 → Sue 1).
-// Ledger: property compare ← store/groups; per-line dispatch is Koru.
+// Ledger: property compare ← collections/groups; per-line dispatch is Koru.
 
 import std/io
 import std/fs

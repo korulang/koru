@@ -2,7 +2,7 @@
 // a top-level label fold threads (pc, a, b) through payloads, one decoded
 // step per iteration — the 203 pattern driving a real VM. The statement
 // example ends with a=2 (b untouched → 0). Ledger: instruction decode ←
-// host (string-ops); program table ← store.
+// host (string-ops); program table ← collections.
 
 import std/io
 import std/fs

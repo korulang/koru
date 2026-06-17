@@ -2,7 +2,7 @@
 // match on every listed property). The real input is personal-only, so
 // these Sues are CONSTRUCTED from the statement's readout with exactly
 // one match per part (hand-derived: part 1 → Sue 2, part 2 → Sue 1).
-// Ledger: property compare ← store/groups; per-line dispatch is Koru.
+// Ledger: property compare ← collections/groups; per-line dispatch is Koru.
 
 import std/io
 import std/fs

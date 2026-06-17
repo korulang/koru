@@ -1,7 +1,7 @@
 // AoC 2015 Day 19 Part 1 — distinct molecules after ONE replacement
 // (statement: HOH with 3 rules → 4). Koru: match splits rule lines from
 // the molecule line; set-of-results and replacement scan are leaves.
-// Ledger: result set ← store; rule split ← groups.
+// Ledger: result set ← collections; rule split ← groups.
 
 import std/io
 import std/fs

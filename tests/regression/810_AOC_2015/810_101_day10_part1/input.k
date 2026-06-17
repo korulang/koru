@@ -2,7 +2,7 @@
 // rounds → 312211 (the real puzzle runs 40 rounds on a personal input —
 // same machinery, bigger n). The ROUND LOOP is Koru (for over 0..5, state
 // held by the leaf between rounds); the string-building step is the leaf.
-// Ledger: growing-string round ← store/string-ops (gaps 2+4).
+// Ledger: growing-string round ← collections/string-ops (gaps 2+4).
 
 import std/io
 import std/fs

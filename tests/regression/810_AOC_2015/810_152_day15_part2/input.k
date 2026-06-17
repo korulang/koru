@@ -1,8 +1,8 @@
 // AoC 2015 Day 15 Part 2 — best 500-calorie cookie (statement example:
 // 57600000). The AMOUNT LOOP is Koru (for over 0..101) and the
 // signed-property parse is Koru's now (named groups; `-?` inside a group
-// is fine — the ban is groups UNDER quantifiers). Only the stored
-// ingredient table is a leaf ← store.
+// is fine — the ban is groups UNDER quantifiers). Only the collected
+// ingredient table is a leaf ← collections.
 
 import std/io
 import std/fs

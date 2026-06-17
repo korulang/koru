@@ -2,7 +2,7 @@
 // 330). Koru: match dispatches the two sentence forms (gain vs lose) AND
 // extracts names + amount (named groups, typed destructure). Table +
 // permutation search are leaves (day-9 family).
-// Ledger: happiness table ← store; permutations ← host search.
+// Ledger: happiness table ← collections; permutations ← host search.
 
 import std/io
 import std/fs

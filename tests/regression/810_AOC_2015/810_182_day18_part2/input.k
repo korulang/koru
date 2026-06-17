@@ -1,5 +1,5 @@
 // AoC 2015 Day 18 Part 1 — Conway lights, 6x6 statement grid, p2: corners STUCK on, 5 steps → 17. The STEP LOOP is Koru (for over 0..4); the grid and the
-// neighbor rule are leaves. Ledger: grid ← store.
+// neighbor rule are leaves. Ledger: grid ← collections.
 
 import std/io
 import std/fs
