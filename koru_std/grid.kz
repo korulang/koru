@@ -93,6 +93,18 @@ pub const Grid_i64 = struct {
     return .{ .count = n };
 }
 
+// Sum of all cell values across the whole grid.
+~pub event sum { g: *Grid_i64<grid> }
+| total i64
+
+~proc sum|zig {
+    var t: i64 = 0;
+    for (g.data) |c| {
+        t += c;
+    }
+    return .{ .total = t };
+}
+
 // ============================================
 // Teardown (consume — discharges <!grid>)
 // ============================================
