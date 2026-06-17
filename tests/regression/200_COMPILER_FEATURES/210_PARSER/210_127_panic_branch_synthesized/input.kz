@@ -1,0 +1,31 @@
+// Test 210_127: panic branch synthesis — unhandled `| ?!oom` is ignorable
+// (no compile error) but UNSAFE to ignore: the synthesized handler body is
+// @panic(...), so the program crashes LOUDLY if the branch ever fires.
+//
+// This is the runtime half of the doctrine: "assert, don't fall back / let
+// it fail loudly." The failure is visible in the type (| ?!), recovery is
+// opt-in (handle `| oom _ |> _` to mute), and ignoring it is loud (panic).
+//
+// What this test pins (COMPILE_ONLY — must compile):
+//   - The flow omits a handler for `oom` (a panic branch).
+//   - It MUST compile (panic branches are ignorable — no exhaustiveness
+//     error, unlike a missing required `|` branch).
+//   - The emitted switch MUST include an `.oom` arm whose body is
+//     @panic(...) — not an empty no-op (that's `| ?`), and not absent.
+//
+// Contrast 210_016 (optional branches ignored): there the unhandled
+// optional branches synthesize empty no-op bodies. Here the unhandled
+// panic branch synthesizes a @panic body. Same mechanism, loud body.
+
+~pub event alloc { n: usize }
+| success []u8
+| ?!oom usize
+
+~proc alloc|zig {
+    return .{ .success = &.{} };
+}
+
+~alloc(n: 4)
+| success _ |> _
+// NO `| oom _ |> _` handler — unhandled panic branch.
+// Must compile; emits .oom => @panic("...") arm.

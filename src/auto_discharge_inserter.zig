@@ -2729,9 +2729,17 @@ pub const AutoDischargeInserter = struct {
             try handled.put(cont.branch, {});
         }
 
-        // Find optional branches that need synthesis
+        // Find optional/panic branches that need synthesis.
+        // - optional (`| ?`): unhandled => synthesized NO-OP (safe to ignore).
+        // - panic    (`| ?!`): unhandled => synthesized @panic(...) (UNSAFE to
+        //   ignore; the path must not silently proceed). Same detection path,
+        //   different synthesized body.
+        // We track which missing branches are panic so the synthesized body
+        // differs (panic vs empty terminal).
         var missing_optional = try std.ArrayList([]const u8).initCapacity(self.allocator, 0);
         defer missing_optional.deinit(self.allocator);
+        var missing_panic = try std.ArrayList([]const u8).initCapacity(self.allocator, 0);
+        defer missing_panic.deinit(self.allocator);
 
         for (event_decl.branches) |branch| {
             // Effect (`!`) branches are NOT switch arms — they lower to fns in
@@ -2739,17 +2747,20 @@ pub const AutoDischargeInserter = struct {
             // fns for unhandled optional effect branches; switch padding here
             // would emit `.warn => |_| {}` on a union that has no `.warn`.
             if (branch.kind == .effect) continue;
-            if (branch.is_optional and !handled.contains(branch.name)) {
+            if (handled.contains(branch.name)) continue;
+            if (branch.is_panic) {
+                try missing_panic.append(self.allocator, branch.name);
+            } else if (branch.is_optional) {
                 try missing_optional.append(self.allocator, branch.name);
             }
         }
 
-        if (missing_optional.items.len == 0) {
+        if (missing_optional.items.len == 0 and missing_panic.items.len == 0) {
             return null; // Nothing to synthesize
         }
 
         // Create new continuations array with synthesized branches
-        const new_len = flow.body.continuations.len + missing_optional.items.len;
+        const new_len = flow.body.continuations.len + missing_optional.items.len + missing_panic.items.len;
         var new_continuations = try self.allocator.alloc(ast.Continuation, new_len);
         errdefer self.allocator.free(new_continuations);
 
@@ -2758,7 +2769,7 @@ pub const AutoDischargeInserter = struct {
             new_continuations[i] = try ast_functional.cloneContinuation(self.allocator, cont);
         }
 
-        // Add synthesized continuations for missing optional branches
+        // Add synthesized continuations for missing optional branches (NO-OP body).
         for (missing_optional.items, 0..) |branch_name, i| {
             const idx = flow.body.continuations.len + i;
             new_continuations[idx] = ast.Continuation{
@@ -2771,6 +2782,35 @@ pub const AutoDischargeInserter = struct {
                 .condition = null,
                 .condition_expr = null,
                 .node = .{ .terminal = {} }, // Terminal - triggers auto-discharge check
+                .indent = 0,
+                .continuations = &[_]ast.Continuation{},
+                .location = flow.location,
+            };
+        }
+
+        // Add synthesized continuations for missing PANIC branches (@panic body).
+        // Same shape as optional (discard binding, switch arm present) but the
+        // body is `@panic(...)` — UNSAFE to ignore. inline_code is emitted
+        // verbatim as the handler body and is NOT a terminal, so auto-discharge
+        // leaves it alone (no no-op discharge). The switch arm is exhaustive
+        // (so Zig accepts it) AND loud (panics if the branch ever fires).
+        for (missing_panic.items, 0..) |branch_name, i| {
+            const idx = flow.body.continuations.len + missing_optional.items.len + i;
+            const panic_msg = try std.fmt.allocPrint(
+                self.allocator,
+                "@panic(\"unhandled panic branch '{s}' fired at runtime\");",
+                .{branch_name},
+            );
+            new_continuations[idx] = ast.Continuation{
+                .branch = try self.allocator.dupe(u8, branch_name),
+                .binding = try self.allocator.dupe(u8, "_"), // Discard payload; auto-discharge renames to _auto_N
+                .binding_annotations = &[_][]const u8{},
+                .binding_type = .branch_payload,
+                .is_catchall = false,
+                .catchall_metatype = null,
+                .condition = null,
+                .condition_expr = null,
+                .node = .{ .inline_code = panic_msg }, // @panic(...) — loud, not a no-op
                 .indent = 0,
                 .continuations = &[_]ast.Continuation{},
                 .location = flow.location,

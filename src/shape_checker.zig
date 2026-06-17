@@ -129,6 +129,8 @@ pub const ShapeChecker = struct {
         for (event_branches) |branch| {
             // Skip optional branches - they don't need to be handled
             if (branch.is_optional) continue;
+            // Skip panic branches - ignorable (unhandled => synthesized @panic)
+            if (branch.is_panic) continue;
 
             var found = false;
             for (continuations) |cont| {
@@ -780,6 +782,7 @@ pub const ShapeChecker = struct {
             try declared.append(self.allocator, .{
                 .name = branch.name,
                 .is_optional = branch.is_optional,
+                .is_panic = branch.is_panic,
                 .kind = if (branch.kind == .effect) .effect else .terminal,
             });
         }

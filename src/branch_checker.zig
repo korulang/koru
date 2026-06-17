@@ -23,6 +23,7 @@ pub const BranchChecker = struct {
     pub const DeclaredBranch = struct {
         name: []const u8,
         is_optional: bool = false,
+        is_panic: bool = false,  // ?!-branch: unhandled => synthesized @panic (ignorable but UNSAFE to ignore)
         kind: Kind = .terminal,
     };
 
@@ -104,6 +105,7 @@ pub const BranchChecker = struct {
         // handled name it catches.
         for (declared, 0..) |decl, di| {
             if (decl.is_optional) continue; // Optional branches don't need handling
+            if (decl.is_panic) continue; // Panic branches are ignorable (unhandled => synthesized @panic)
 
             if (has_catchall) continue; // Catchall covers everything
 

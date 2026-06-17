@@ -594,6 +594,7 @@ pub const FlowChecker = struct {
             try declared.append(self.allocator, .{
                 .name = branch.name,
                 .is_optional = branch.is_optional,
+                .is_panic = branch.is_panic,
             });
         }
 
