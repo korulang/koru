@@ -62,6 +62,23 @@ pub const AutoDischargeInserter = struct {
         return false;
     }
 
+    /// Is `conts[i]` a sequential-prefix step? An unnamed (`branch=''`) continuation
+    /// followed by at least one more unnamed sibling is one of several SEQUENTIAL
+    /// steps under a single site (the emitter concatenates them; the capture
+    /// lowering produces the `! as` body chain and the `| captured` after-read chain
+    /// this way). All but the LAST such sibling are sequential prefixes: the flow
+    /// continues into the next sibling, so their tails are not flow exits and must
+    /// not trigger terminator auto-discharge. (Named branches are alternatives, not
+    /// a sequence — they are unaffected.)
+    fn isSequentialPrefix(conts: []const ast.Continuation, i: usize) bool {
+        if (conts[i].branch.len != 0) return false;
+        var j = i + 1;
+        while (j < conts.len) : (j += 1) {
+            if (conts[j].branch.len == 0) return true;
+        }
+        return false;
+    }
+
     /// Check if a binding escapes via a branch constructor field
     /// Returns true if the binding (or binding.field) appears in any field value
     fn bindingEscapesViaBranchConstructor(bc: *const ast.BranchConstructor, binding_name: []const u8) bool {
@@ -104,6 +121,18 @@ pub const AutoDischargeInserter = struct {
         scope_depth: u32, // Current scope depth (increments when entering loop body)
         is_repeating: bool, // True if we're inside a loop's `each` branch
         loop_entry_scope: ?u32, // Scope depth when we entered current @scope boundary (null if not in scope)
+        // True while walking a `branch=''` continuation that has a LATER `branch=''`
+        // sibling. Multiple unnamed continuations of one site are SEQUENTIAL steps,
+        // not alternative branches — the emitter concatenates them. The capture
+        // lowering produces exactly this (the `! as` body chain + the `| captured`
+        // after-read chain, as sibling void-chains). An inherited obligation must
+        // therefore flow THROUGH the chain and be discharged once at the final
+        // step — not at the tail of each step (which would double-free / use after
+        // free). When set, the tail of this step is NOT a flow exit, so terminator
+        // auto-discharge is suppressed; the obligation is discharged by the last
+        // sibling (processed with this flag clear). Cleared on entering a real
+        // nested scope (effect/loop), where normal scope rules take over.
+        in_sequential_prefix: bool,
 
         const BindingInfo = struct {
             phantom_state: []const u8,
@@ -120,6 +149,7 @@ pub const AutoDischargeInserter = struct {
                 .scope_depth = 0,
                 .is_repeating = false,
                 .loop_entry_scope = null,
+                .in_sequential_prefix = false,
             };
         }
 
@@ -188,6 +218,7 @@ pub const AutoDischargeInserter = struct {
             new_ctx.scope_depth = self.scope_depth;
             new_ctx.is_repeating = self.is_repeating;
             new_ctx.loop_entry_scope = self.loop_entry_scope;
+            new_ctx.in_sequential_prefix = self.in_sequential_prefix;
 
             var bind_iter = self.bindings.iterator();
             while (bind_iter.next()) |entry| {
@@ -222,6 +253,10 @@ pub const AutoDischargeInserter = struct {
             self.scope_depth += 1;
             // is_scoped means we're inside a @scope boundary - outer resources cannot be discharged here
             self.is_repeating = is_scoped;
+            // A real nested scope (effect/loop body) supersedes the sequential-prefix
+            // suppression: inside it, the normal scope rules (is_repeating / scope_depth)
+            // govern discharge. The prefix flag only governs the step's own flat tail.
+            self.in_sequential_prefix = false;
             // Record scope entry point when entering a @scope boundary
             if (is_scoped and self.loop_entry_scope == null) {
                 self.loop_entry_scope = self.scope_depth;
@@ -615,7 +650,12 @@ pub const AutoDischargeInserter = struct {
         var context = BindingContext.init(self.allocator);
         defer context.deinit();
 
-        for (flow.body.continuations) |*cont| {
+        for (flow.body.continuations, 0..) |*cont, cont_idx| {
+            // Capture at flow-head lowers to sibling `branch=''` continuations (the
+            // `! as` body chain + the `| captured` after-read chain) directly under
+            // the flow body. All but the last are sequential prefixes — not flow
+            // exits — so their inherited obligations flow to the final sibling.
+            const seq_prefix = isSequentialPrefix(flow.body.continuations, cont_idx);
             // If this continuation has @scope annotation, enter a new scope
             // The @scope annotation is the source of truth - not the event name
             if (hasScope(cont)) {
@@ -718,7 +758,11 @@ pub const AutoDischargeInserter = struct {
                     }
                 }
             } else {
-                const result = try self.checkContinuation(cont, event_info.decl, module_name, &context, program, flow, mode);
+                var seq_context = try context.clone(self.allocator);
+                defer seq_context.deinit();
+                if (seq_prefix) seq_context.in_sequential_prefix = true;
+
+                const result = try self.checkContinuation(cont, event_info.decl, module_name, &seq_context, program, flow, mode);
                 if (result.transformed) return result;
             }
         }
@@ -841,7 +885,9 @@ pub const AutoDischargeInserter = struct {
                     }
                 }
 
-                if (context.hasObligations()) {
+                if (context.hasObligations() and !context.in_sequential_prefix) {
+                    // (Sequential-prefix steps are not flow exits — see in_sequential_prefix.
+                    // Their obligations are discharged by the final sibling.)
                     // Count how many obligations are from current scope
                     var current_scope_count: u32 = 0;
                     var obl_iter = context.obligations();
@@ -896,11 +942,16 @@ pub const AutoDischargeInserter = struct {
         }
 
         // Check nested continuations
-        for (cont.continuations) |*nested| {
+        for (cont.continuations, 0..) |*nested, nested_idx| {
             // For nested continuations, we need to determine the event they belong to
             // This requires looking at the node in cont (if it's an invocation)
             var nested_event = event_decl;
             var nested_module = module_name;
+
+            // Multiple unnamed (`branch=''`) siblings are SEQUENTIAL steps under one
+            // site (the capture lowering's body chain + after-read chain). All but
+            // the last are sequential prefixes whose tails are not flow exits.
+            const seq_prefix = isSequentialPrefix(cont.continuations, nested_idx);
 
             if (cont.node) |node| {
                 if (node == .invocation) {
@@ -938,7 +989,11 @@ pub const AutoDischargeInserter = struct {
                 const result = try self.checkContinuation(nested, nested_event, nested_module, &scoped_context, program, flow, mode);
                 if (result.transformed) return result;
             } else {
-                const result = try self.checkContinuation(nested, nested_event, nested_module, &context, program, flow, mode);
+                var seq_context = try context.clone(self.allocator);
+                defer seq_context.deinit();
+                if (seq_prefix) seq_context.in_sequential_prefix = true;
+
+                const result = try self.checkContinuation(nested, nested_event, nested_module, &seq_context, program, flow, mode);
                 if (result.transformed) return result;
             }
         }
@@ -953,7 +1008,12 @@ pub const AutoDischargeInserter = struct {
             else
                 false;
 
-            if (!has_explicit_terminator and context.hasObligations()) {
+            if (!has_explicit_terminator and context.hasObligations() and !context.in_sequential_prefix) {
+                // (Sequential-prefix steps are not flow exits — the flow continues
+                // into the next sibling, which discharges the obligation. See
+                // in_sequential_prefix. This is the spot that previously injected a
+                // spurious free at the end of a `capture` body, before the
+                // `| captured` after-read used the binding.)
                 // Count how many obligations are from current scope
                 var current_scope_count: u32 = 0;
                 var obl_iter = context.obligations();

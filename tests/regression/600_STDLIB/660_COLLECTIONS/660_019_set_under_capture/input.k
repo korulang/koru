@@ -1,12 +1,14 @@
-// PIN (currently RED) — capture nested under a collection's <set!> obligation
-// branch mis-composes with the obligation/auto-discharge machinery. Here the
-// capture's `| captured` terminal output is DROPPED (prints nothing; expected
-// 1). Under a read-lines loop the SAME shape instead double-frees the <set!>
-// (counts are correct, then GPA "double free detected"). day03 is blocked on
-// this: its walk logic is correct (verified 2,4,2 in a scratch run) but the
-// set obligation discharge is buggy in this nesting. Sibling of the 2026-06-15
-// effect-under-obligation output-drop root; this is its collection+capture
-// manifestation. Belongs to the obligation work.
+// FIXED 2026-06-17 (was RED) — capture nested under a collection's <set!>
+// obligation. The capture transform lowers the `! as` body and the `| captured`
+// after-read into two SIBLING `branch=''` continuations; the auto-discharge
+// inserter read each as an independent flow exit and discharged the outer <set!>
+// at the end of BOTH — here the body's spurious free landed BEFORE `count`, so
+// `count` read a freed set, GPA-aborted, and ALL output was DROPPED (expected 1,
+// got nothing). Fix: auto_discharge_inserter now recognizes that multiple
+// `branch=''` siblings are SEQUENTIAL steps (the emitter concatenates them), so
+// an inherited obligation flows through and is discharged ONCE, at the final
+// sibling (`in_sequential_prefix`). Loop variant (was a double-free) is 660_020.
+// Sibling of the 2026-06-15 effect-under-obligation output-drop root.
 import std/io
 import std/set
 
