@@ -503,7 +503,7 @@ pub fn writeMangledSeg(emitter: *CodeEmitter, seg: []const u8) !void {
 }
 
 /// Resolve a module alias to its actual module path
-/// For example, "build" (from ~import "$std/build") -> "std.build"
+/// For example, "build" (from ~import std/build) -> "std.build"
 fn resolveModuleAlias(alias: []const u8, items: []const ast.Item) ?[]const u8 {
     for (items) |item| {
         switch (item) {

@@ -6126,7 +6126,7 @@ pub fn main() !void {
     // back to user coordinates so error output references the user's file as
     // they wrote it.
     if (inject_compiler and !user_already_imported_compiler) {
-        // import_line above is `~import "$std/compiler"\n` — exactly one line.
+        // import_line above is `~import std/compiler\n` — exactly one line.
         try parser.reporter.setUserSource(source, 1);
     }
 
