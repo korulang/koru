@@ -32,9 +32,14 @@ const std = @import("std");
     };
     defer __koru_rl_file.close();
 
-    const __koru_rl_content = __koru_rl_file.readToEndAlloc(koru_allocator(), 1024 * 1024 * 10) catch |err| {
+    // No artificial cap: read the whole file, bounded only by real memory.
+    // An over-RAM file fails LOUDLY as OutOfMemory rather than silently at an
+    // arbitrary limit. (`read-lines` should ultimately stream line-by-line for
+    // constant memory on >RAM inputs; that's a separate capability, not this
+    // bug — the bug was the silent 10MB cap.)
+    const __koru_rl_content = __koru_rl_file.readToEndAlloc(koru_allocator(), std.math.maxInt(usize)) catch |err| {
         const __koru_rl_msg = switch (err) {
-            error.OutOfMemory => "File too large",
+            error.OutOfMemory => "Out of memory reading file",
             else => "Failed to read file",
         };
         return .{ .failed = __koru_rl_msg };

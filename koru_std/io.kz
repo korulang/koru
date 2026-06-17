@@ -122,9 +122,9 @@ const std = @import("std");
     // lowering), so locals are __koru-prefixed to never collide with
     // user bindings in the surrounding flow.
     const __koru_rl_stdin = std.fs.File.stdin();
-    const __koru_rl_content = __koru_rl_stdin.readToEndAlloc(koru_allocator(), 1024 * 1024 * 10) catch |err| {
+    const __koru_rl_content = __koru_rl_stdin.readToEndAlloc(koru_allocator(), std.math.maxInt(usize)) catch |err| {
         const __koru_rl_msg = switch (err) {
-            error.OutOfMemory => "Input too large (max 10MB)",
+            error.OutOfMemory => "Out of memory reading stdin",
             else => "Failed to read stdin",
         };
         return .{ .failed = __koru_rl_msg };
@@ -150,9 +150,9 @@ const std = @import("std");
 
 ~proc read-stdin|zig {
     const stdin = std.fs.File.stdin();
-    const content = stdin.readToEndAlloc(koru_allocator(), 1024 * 1024 * 10) catch |err| {
+    const content = stdin.readToEndAlloc(koru_allocator(), std.math.maxInt(usize)) catch |err| {
         const msg = switch (err) {
-            error.OutOfMemory => "Input too large (max 10MB)",
+            error.OutOfMemory => "Out of memory reading stdin",
             else => "Failed to read stdin",
         };
         return .{ .failed = msg };
@@ -182,9 +182,9 @@ const std = @import("std");
     };
     defer file.close();
 
-    const content = file.readToEndAlloc(koru_allocator(), 1024 * 1024 * 10) catch |err| {
+    const content = file.readToEndAlloc(koru_allocator(), std.math.maxInt(usize)) catch |err| {
         const msg = switch (err) {
-            error.OutOfMemory => "File too large (max 10MB)",
+            error.OutOfMemory => "Out of memory reading file",
             else => "Failed to read file",
         };
         return .{ .failed = msg };
