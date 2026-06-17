@@ -1,0 +1,37 @@
+// std/crypto — cryptographic hash primitives (leaves over Zig's std.crypto).
+//
+// The primitives are deliberately thin: they do the cryptographic work (which
+// is not expressible in Koru and has no business being), while the algorithm
+// that USES them — e.g. AoC day04's unbounded search for the lowest n — stays
+// in Koru as a label fold. md5-check is the per-candidate leaf; the search is
+// the program.
+
+const std = @import("std");
+
+// Does md5(key ++ decimal(n)) begin with `zeros` hexadecimal-zero nibbles?
+//   found n   — yes: n is the answer.
+//   miss (n+1) — no: the caller's search should try the next candidate.
+// The +1 lives here so the Koru label fold just threads the returned value.
+~pub event md5-check { key: []const u8, n: i64, zeros: i64 }
+| found i64
+| miss i64
+
+~proc md5-check|zig {
+    var buf: [256]u8 = undefined;
+    const s = std.fmt.bufPrint(&buf, "{s}{d}", .{ key, n }) catch {
+        return .{ .miss = n + 1 };
+    };
+    var digest: [16]u8 = undefined;
+    std.crypto.hash.Md5.hash(s, &digest, .{});
+
+    const z: usize = if (zeros < 0) 0 else @intCast(zeros);
+    var i: usize = 0;
+    while (i < z) : (i += 1) {
+        // i-th hex nibble: high nibble of byte i/2 for even i, low for odd.
+        const nibble: u8 = if (i % 2 == 0) (digest[i / 2] >> 4) else (digest[i / 2] & 0x0F);
+        if (nibble != 0) {
+            return .{ .miss = n + 1 };
+        }
+    }
+    return .{ .found = n };
+}
