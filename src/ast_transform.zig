@@ -392,6 +392,7 @@ fn cloneContinuations(allocator: std.mem.Allocator, continuations: []const ast.C
             .node = if (cont.node) |node| try cloneStep(allocator, node) else null,
             .indent = cont.indent,
             .continuations = try cloneContinuations(allocator, cont.continuations),
+            .is_transformed_subtree = cont.is_transformed_subtree,
         };
     }
     return result;

@@ -79,7 +79,14 @@ const SitePosition = union(enum) {
 /// Harvested from the old graft path: a flow becomes its invocation + branch
 /// continuations (migrating inline_body to the canonical Invocation slot);
 /// inline_code becomes a raw host-code node with no children.
-const NodeConv = struct { node: ast.Node, children: []const ast.Continuation };
+const NodeConv = struct {
+    node: ast.Node,
+    children: []const ast.Continuation,
+    /// True only for the preamble graft (capture & friends): the children are a
+    /// synthesized `''` void-chain that must inherit the transform exemption at
+    /// the nested holding continuation. See ast.Continuation.is_transformed_subtree.
+    mark_transformed: bool = false,
+};
 fn itemToNode(item: *const ast.Item) !NodeConv {
     switch (item.*) {
         .flow => |*f| {
@@ -97,6 +104,7 @@ fn itemToNode(item: *const ast.Item) !NodeConv {
                 return .{
                     .node = ast.Node{ .inline_code = preamble },
                     .children = f.body.continuations,
+                    .mark_transformed = true,
                 };
             }
             var new_inv = f.inv().*;
@@ -225,6 +233,7 @@ fn spliceSiteResult(
                 target_inv,
                 conv.node,
                 conv.children,
+                conv.mark_transformed,
             );
             const np = maybe orelse {
                 log.err("TRANSFORM ERROR: nested site invocation not found during write-back.\n", .{});
@@ -278,7 +287,7 @@ fn spliceSiteResult(
             // replace node + children.
             const target_inv = &sr.holding.node.?.invocation;
             const maybe = if (nr.children) |ch|
-                try ast_functional.replaceInvocationNodeAndContinuationsRecursive(allocator, current, target_inv, nr.node, ch)
+                try ast_functional.replaceInvocationNodeAndContinuationsRecursive(allocator, current, target_inv, nr.node, ch, false)
             else
                 try ast_functional.replaceInvocationNodeRecursive(allocator, current, target_inv, nr.node);
             const np = maybe orelse {

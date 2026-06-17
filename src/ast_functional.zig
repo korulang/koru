@@ -252,6 +252,7 @@ pub fn replaceInvocationNodeAndContinuationsRecursive(
     target_invocation: *const ast.Invocation,
     new_node: ast.Node,
     new_continuations: []const ast.Continuation,
+    mark_transformed: bool,
 ) !?ast.Program {
     const result = try replaceInvocationNodeAndContinuationsInItems(
         allocator,
@@ -259,6 +260,7 @@ pub fn replaceInvocationNodeAndContinuationsRecursive(
         target_invocation,
         new_node,
         new_continuations,
+        mark_transformed,
     );
     if (result.found) {
         var new_annotations = try allocator.alloc([]const u8, source.module_annotations.len);
@@ -385,6 +387,7 @@ fn replaceInvocationNodeAndContinuationsInItems(
     target_invocation: *const ast.Invocation,
     new_node: ast.Node,
     new_continuations: []const ast.Continuation,
+    mark_transformed: bool,
 ) !ReplaceResult {
     var new_items = try allocator.alloc(ast.Item, items.len);
     var found = false;
@@ -398,6 +401,7 @@ fn replaceInvocationNodeAndContinuationsInItems(
                     target_invocation,
                     new_node,
                     new_continuations,
+                    mark_transformed,
                 );
                 if (cont_result.found) {
                     new_items[i] = ast.Item{
@@ -415,6 +419,7 @@ fn replaceInvocationNodeAndContinuationsInItems(
                     target_invocation,
                     new_node,
                     new_continuations,
+                    mark_transformed,
                 );
                 if (sub_result.found) {
                     new_items[i] = ast.Item{
@@ -484,6 +489,7 @@ fn replaceInvocationNodeAndContinuationsInContinuations(
     target_invocation: *const ast.Invocation,
     new_node: ast.Node,
     new_continuations: []const ast.Continuation,
+    mark_transformed: bool,
 ) !ReplaceContResult {
     var new_conts = try allocator.alloc(ast.Continuation, conts.len);
     var found = false;
@@ -499,6 +505,7 @@ fn replaceInvocationNodeAndContinuationsInContinuations(
                         cont,
                         new_node,
                         cloned_conts,
+                        mark_transformed,
                     );
                     found = true;
                     replaced = true;
@@ -514,6 +521,7 @@ fn replaceInvocationNodeAndContinuationsInContinuations(
                     target_invocation,
                     new_node,
                     new_continuations,
+                    mark_transformed,
                 );
                 if (sub.found) {
                     new_conts[i] = try cloneContinuationWithReplacedNested(allocator, cont, sub.conts);
@@ -630,6 +638,7 @@ fn cloneContinuationWithReplacedInvocation(
             cont,
             .{ .inline_code = new_flow.inline_body.? },
             empty_conts,
+            false,
         );
     }
 
@@ -660,6 +669,7 @@ fn cloneContinuationWithReplacedInvocation(
         .node = new_node,
         .indent = cont.indent,
         .continuations = new_continuations,
+        .is_transformed_subtree = cont.is_transformed_subtree,
         .location = cont.location,
     };
 }
@@ -669,6 +679,7 @@ fn cloneContinuationWithNodeAndContinuations(
     cont: *const ast.Continuation,
     new_node: ast.Node,
     new_continuations: []const ast.Continuation,
+    mark_transformed: bool,
 ) CloneError!ast.Continuation {
     var binding_annotations = try allocator.alloc([]const u8, cont.binding_annotations.len);
     errdefer allocator.free(binding_annotations);
@@ -690,6 +701,10 @@ fn cloneContinuationWithNodeAndContinuations(
         .node = new_node,
         .indent = cont.indent,
         .continuations = new_continuations,
+        // The grafted subtree (capture's `''` void-chain) inherits the transform
+        // exemption from the nested holding continuation. Falls back to the
+        // original continuation's flag when this isn't a preamble graft.
+        .is_transformed_subtree = mark_transformed or cont.is_transformed_subtree,
         .location = cont.location,
     };
 }
@@ -726,6 +741,7 @@ fn cloneContinuationWithReplacedNode(
         .node = new_node,
         .indent = cont.indent,
         .continuations = new_continuations,
+        .is_transformed_subtree = cont.is_transformed_subtree,
         .location = cont.location,
     };
 }
@@ -757,6 +773,7 @@ fn cloneContinuationWithReplacedNested(
         .node = cloned_step,
         .indent = cont.indent,
         .continuations = new_nested,
+        .is_transformed_subtree = cont.is_transformed_subtree,
         .location = cont.location,
     };
 }
@@ -1499,6 +1516,7 @@ pub fn cloneContinuation(allocator: std.mem.Allocator, cont: *const ast.Continua
         .node = cloned_step,
         .indent = cont.indent,
         .continuations = continuations,
+        .is_transformed_subtree = cont.is_transformed_subtree,
         .location = cont.location,
     };
 }

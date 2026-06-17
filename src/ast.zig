@@ -1026,6 +1026,18 @@ pub const Continuation = struct {
     indent: usize, // Track indentation level
     continuations: []const Continuation, // This node's branch continuations (e.g., | then |>, | else |>)
 
+    /// Marks this continuation as the head of a TRANSFORMED subtree grafted in
+    /// from a transform's lowered output (e.g. capture's `var <cell>` preamble +
+    /// its `''` void-chain continuations, spliced at a nested site by
+    /// transform_pass_runner). The subtree's children are synthesized, not
+    /// user-authored branches, so the structural branch-rules (SHAPE002
+    /// duplicate-handler, KORU050/051 when-clause exhaustiveness) do NOT apply —
+    /// the same exemption a transform FLOW carries at flow level via
+    /// `is_transformed`, propagated to the nested graft. Checkers short-circuit
+    /// the structural recursion when they descend into a flagged continuation.
+    /// Mistakes inside the subtree are caught downstream by the Zig backend.
+    is_transformed_subtree: bool = false,
+
     // FOUNDATIONAL: Every item knows where it came from
     location: errors.SourceLocation = .{ .file = "generated", .line = 0, .column = 0 },
 

@@ -76,10 +76,34 @@ design fork — the supposed routing ambiguity does not exist.** Model:
    Verified green: `320_034` (→42), `320_036` (→`outer=10, inner=10`),
    `670_015`/`670_010` (→`n=1`). Mis-routing (wrong field) is caught by the Zig
    backend (no such field) — the "rejection deferred to Zig" model, satisfied.
-3. **STILL OPEN — capture nested under a NON-capture branch** (`670_011` scalar,
-   `670_012` obligation, `670_013` effect, `670_014` for_each, `320_098`).
-   Capture-under-capture / under-flow-head are green; capture under other
-   continuation kinds is not. NOT a regression — never green (preamble trap before).
+3. **RESOLVED 2026-06-17 — capture nested under a NON-capture branch** (`670_011`
+   scalar, `670_012` obligation, `670_013` effect, `670_014` for_each, `320_098`)
+   **all GREEN.** Board 752→757 (89.4%), zero regressions; guards `320_027`/`320_042`
+   and the previously-green capture row (`320_034`/`036`, `670_010`/`015`) held.
+
+   **RULED (Lars, 2026-06-17): the flag, not a new node kind — coarse exemption,
+   trust the Zig backend for now.** "If we can improve our templating system and
+   flag them, that is going to be so much more powerful… allowing the Zig backend
+   to catch real mistakes is completely fine. It's not the way it's going to be
+   forever, but for now I think it's great."
+
+   **Mechanism that landed:** a new `is_transformed_subtree: bool` on
+   `ast.Continuation` (the nested mirror of the flow-level `is_transformed`). The
+   preamble graft (`transform_pass_runner.itemToNode`, `NodeConv.mark_transformed`)
+   stamps it on the holding continuation when it splices the `inline_code` preamble
+   + `''` void-chain; the flag is threaded through
+   `replaceInvocationNodeAndContinuations*` → `cloneContinuationWithNodeAndContinuations`,
+   and PRESERVED across every other clone path (general `cloneContinuation`, the
+   `With*` variants, `ast_transform.cloneContinuations`) so it survives subsequent
+   passes. Both checkers short-circuit the structural recursion when they descend
+   into a flagged continuation: `flow_checker.checkDuplicateBranchHandlers` (SHAPE002)
+   + `validateContinuationWhenClauses` (KORU050/051), and
+   `shape_checker.checkDuplicateBranchHandlers`. `shape_checker.checkBranchCoverage`
+   (:111) was NOT touched — it never fired once the earlier sites were exempted
+   (don't add speculative skips). KORU022/layer-3 emission never surfaced; the graft
+   already models the void chain correctly, so compilation + runtime are clean.
+
+   **Below: the original GROUNDING that mapped the cascade (kept for the record).**
 
    **GROUNDED 2026-06-17 (mapped the full cascade, then reverted the probes —
    too chunky to finish without risking the guards `320_027`/`320_042`).** The

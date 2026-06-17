@@ -491,6 +491,11 @@ pub const FlowChecker = struct {
     }
 
     fn validateContinuationWhenClauses(self: *FlowChecker, cont: *const ast.Continuation, location: errors.SourceLocation) !void {
+        // A transformed subtree (capture's grafted `''` void-chain) carries the
+        // transform exemption — its synthesized `''` children are sequential
+        // void-chain steps, not when-guarded branches, so KORU050/051 do not
+        // apply. Mirrors the flow-level `is_transformed` skip.
+        if (cont.is_transformed_subtree) return;
         // Validate when-clauses in nested continuations
         if (cont.continuations.len > 0) {
             try self.validateWhenClauseExhaustiveness(cont.continuations, location);
@@ -748,6 +753,11 @@ pub const FlowChecker = struct {
 
         // Recursively check nested continuations
         for (continuations) |cont| {
+            // A transformed subtree (capture's grafted `''` void-chain) carries
+            // the transform exemption — its synthesized children are not
+            // user-authored branches, so the duplicate-handler rule does not
+            // apply. Mirrors the flow-level `is_transform_flow` skip.
+            if (cont.is_transformed_subtree) continue;
             if (cont.continuations.len > 0) {
                 try self.checkDuplicateBranchHandlers(cont.continuations, location);
             }

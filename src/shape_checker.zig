@@ -1300,6 +1300,11 @@ pub const ShapeChecker = struct {
 
         // Recursively check nested continuations
         for (continuations) |cont| {
+            // A transformed subtree (capture's grafted `''` void-chain) carries
+            // the transform exemption — its synthesized children are not
+            // user-authored branches, so the duplicate-handler rule does not
+            // apply. Mirrors the flow-level transform skip.
+            if (cont.is_transformed_subtree) continue;
             try self.checkDuplicateBranchHandlers(cont.continuations);
         }
     }
