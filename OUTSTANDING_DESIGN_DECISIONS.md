@@ -77,12 +77,45 @@ design fork — the supposed routing ambiguity does not exist.** Model:
    `670_015`/`670_010` (→`n=1`). Mis-routing (wrong field) is caught by the Zig
    backend (no such field) — the "rejection deferred to Zig" model, satisfied.
 3. **STILL OPEN — capture nested under a NON-capture branch** (`670_011` scalar,
-   `670_012` obligation, `670_013` effect, `670_014` for_each, `320_098`):
-   now PAST the preamble trap, fails with **"Duplicate branch handler at same
-   indentation level"** (SHAPE002-class). Capture-under-capture and
-   capture-under-flow-head are green; capture under other continuation kinds is
-   not. This is the real remaining codegen depth (shape_checker + likely
-   emission). NOT a regression — these were never green (preamble trap before).
+   `670_012` obligation, `670_013` effect, `670_014` for_each, `320_098`).
+   Capture-under-capture / under-flow-head are green; capture under other
+   continuation kinds is not. NOT a regression — never green (preamble trap before).
+
+   **GROUNDED 2026-06-17 (mapped the full cascade, then reverted the probes —
+   too chunky to finish without risking the guards `320_027`/`320_042`).** The
+   D1 graft embeds capture's lowered **void-chain continuations** (`.branch = ""`,
+   the `! as`/`captured` steps) into the enclosing flow. At flow level these are
+   exempted by `@shape_valid` on the capture flow's invocation; at a nested graft
+   that exemption is GONE (the graft drops the marker invocation, by design — see
+   step 1). So every checker that special-cases capture's `''` chains now trips,
+   in a cascade (confirmed by probing `670_011` `capture-under-scalar`):
+     - **SHAPE002 "duplicate handler for branch ''"** — fires from THREE sites:
+       `shape_checker.zig:111` (`checkBranchCoverage`), `shape_checker.zig:1285`
+       (`checkDuplicateBranchHandlers`), and the real first-firing one
+       `flow_checker.zig:729` (`checkDuplicateBranchHandlers`). `''` is the
+       void-chain/sequential marker, never a named-branch collision.
+     - **KORU051 "branch '' has 2 continuations without 'when' (ambiguous)"** —
+       `flow_checker.zig` `validateWhenClauseExhaustiveness` — surfaces next, once
+       SHAPE002 is cleared. This is the SAME rule that regressed the guards in the
+       D1 step-1 wrapping attempt.
+     - Likely more flow-checker rules (KORU022 branch coverage) + a **layer-3
+       EMISSION** issue beneath (not yet reached).
+   **Why piecemeal `''`-exemption is the WRONG fix:** patching each checker to
+   skip `''` is whack-a-mole, risks wrongly exempting legitimate checks, and
+   doesn't address emission. **The principled fix:** propagate the
+   "already-validated, don't re-check" status (the `@shape_valid` exemption that
+   the capture FLOW carried) to the grafted subtree, and honor it UNIFORMLY across
+   shape_checker + flow_checker recursion (+ emission). Open design question: what
+   carries the exemption at a nested site — re-stamp `@shape_valid` on the holding
+   continuation and teach every checker's recursion to short-circuit on it, or a
+   dedicated "transformed-subtree" boundary marker? Note the flow-level checks key
+   the exemption on `flow.inv().annotations` / `is_transformed`
+   (`flow_checker.zig:89`), which a nested continuation has no equivalent of yet.
+   **Next-session entry point:** decide the exemption-propagation mechanism FIRST
+   (design), then apply it across the cascade, guarding `320_027`/`320_042` green
+   throughout; verify via direct `./zig-out/bin/koruc` on `670_011` (+ the rest of
+   the 670 capture-under-X row) — harness FINAL verdict still FIRE-gated by the
+   `errors.zig` registry drift.
 
 **320_038 binding-qualified shadowing — RESOLVED 2026-06-16: DELETED as stale
 intent.** It tested binding-qualified routing (`captured { inner.count: … }`) to
