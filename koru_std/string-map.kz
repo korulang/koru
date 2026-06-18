@@ -1,0 +1,127 @@
+// std/string-map — a hash map of String (byte-slice) keys → i64 values.
+//
+// NAIVE-PHASE SHAPE, pinned deliberately. The IDEAL surface is one generic
+// `std/map` whose key/value types are chosen at construction (`map:new(string,
+// i64)`) with ops that dispatch on the handle's concrete type. Koru can't
+// express that yet: events lower to a `<name>_event` struct member keyed by
+// NAME ONLY, so a second `set`/`get`/`free` (string-typed) in the `map` module
+// collides ("duplicate struct member name"). There is no overload-by-handle-type
+// and no type registry for the call site to resolve against — that is THE pinned
+// dispatch gap (see 660_024). Until it's built, a String-keyed map lives in its
+// own module with its own clean op surface (`string-map:set(m, k, v)`), rather
+// than contorting call sites with hash-to-i64 workarounds. The naivety is here in
+// the Zig impl (boxed handle, dupe-and-own keys), not in the .k that uses it.
+//
+// Ownership states (phantom on *Map_string_i64):
+//   <map!>  - new issues the obligation: this map must be freed.
+//   <map>   - borrowed: set / get / contains / count, obligation untouched.
+//   <!map>  - consumed: free discharges the obligation (and frees the duped keys).
+
+const std = @import("std");
+
+pub const Map_string_i64 = struct {
+    map: std.StringHashMapUnmanaged(i64),
+    allocator: std.mem.Allocator,
+
+    // Package-private — only free/auto-discharge calls this. Frees every duped
+    // key, then the table, then the boxed handle.
+    fn deinit(self: *Map_string_i64) void {
+        var it = self.map.keyIterator();
+        while (it.next()) |key_ptr| {
+            self.allocator.free(key_ptr.*);
+        }
+        self.map.deinit(self.allocator);
+        self.allocator.destroy(self);
+    }
+};
+
+// ============================================
+// Construction
+// ============================================
+
+~[
+- aspirational
+  Naive: the handle is heap-boxed AND every key is duped-and-owned (one fresh
+  allocation per distinct key, freed on teardown). Escape-driven allocation, a
+  borrow-keyed variant (keys that outlive the map, no dupe), and unification into
+  one generic `map` are the shared collections follow-ups. `| err` OOM is the
+  proven shape across collections; uniform panic-branch migration is the noted
+  follow-up.
+]pub event new {}
+| map *Map_string_i64<map!>
+| err []const u8
+
+~proc new|zig {
+    const allocator = koru_allocator();
+    const self = allocator.create(Map_string_i64) catch {
+        return .{ .err = "allocation failed" };
+    };
+    self.* = .{ .map = .{}, .allocator = allocator };
+    return .{ .map = self };
+}
+
+// ============================================
+// Mutation (borrow — obligation untouched)
+// ============================================
+
+// Insert or overwrite key → value. Dupes the key on first insert; an overwrite
+// reuses the already-stored key (no re-dupe, no leak). Void, chains with `|>`.
+~pub event set { m: *Map_string_i64<map>, k: []const u8, v: i64 }
+
+~proc set|zig {
+    const gop = m.map.getOrPut(m.allocator, k) catch {
+        @panic("std/string-map:set — out of memory");
+    };
+    if (!gop.found_existing) {
+        gop.key_ptr.* = m.allocator.dupe(u8, k) catch {
+            @panic("std/string-map:set — out of memory");
+        };
+    }
+    gop.value_ptr.* = v;
+}
+
+// ============================================
+// Read (borrow)
+// ============================================
+
+// Lookup by key. `value` on hit, `missing` when absent.
+~pub event get { m: *Map_string_i64<map>, k: []const u8 }
+| value i64
+| missing
+
+~proc get|zig {
+    if (m.map.get(k)) |v| {
+        return .{ .value = v };
+    }
+    return .missing;
+}
+
+// Membership test.
+~pub event contains { m: *Map_string_i64<map>, k: []const u8 }
+| yes
+| no
+
+~proc contains|zig {
+    if (m.map.contains(k)) {
+        return .yes;
+    }
+    return .no;
+}
+
+// Number of distinct keys.
+~pub event count { m: *Map_string_i64<map> }
+| count i64
+
+~proc count|zig {
+    return .{ .count = @intCast(m.map.count()) };
+}
+
+// ============================================
+// Teardown (consume — discharges <!map>)
+// ============================================
+
+~pub event free { m: *Map_string_i64<!map> }
+
+~proc free|zig {
+    m.deinit();
+}
