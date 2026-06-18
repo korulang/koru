@@ -227,6 +227,17 @@ pub const EmissionContext = struct {
     // Set by emitFlow when the target event has effect (`!`) branches and a Handlers
     // struct has been synthesized locally. Cleared after the invocation.
     pending_handlers_name: ?[]const u8 = null,
+    // ── Tail self-continuation loop lowering ─────────────────────────────────
+    // When a flow that implements event E re-enters E in tail position and
+    // forwards the result unchanged (e.g. `|> run(...) | done res => done res`),
+    // the handler is emitted as a `while (true)` loop over `var` input bindings
+    // instead of a stack-growing self-call carrying a by-value `Input` payload.
+    // See `emitSelfTailReentry` / `flowContainsSelfTailForward`. Set by
+    // `emitEventDeclForModule` around the flow body emission; the per-site
+    // reassign+continue is emitted in `emitContinuationBody`.
+    self_loop_active: bool = false,
+    self_loop_label: []const u8 = "__koru_self_loop",
+    self_loop_event_canonical: ?[]const u8 = null,
 };
 
 /// CodeEmitter - manages buffer and formatting
@@ -7367,6 +7378,22 @@ pub fn emitContinuationBody(
     } else {
         // Normal case - no label_with_invocation
 
+        // Tail self-continuation reentry: when this flow is being emitted as a
+        // self-loop (ctx.self_loop_active) and THIS continuation is the tail
+        // self-call of the handler's own event with identity-forwarding
+        // children, replace the self-call with state-var reassignment +
+        // `continue :label`. Skip the invocation, its result suppression, and
+        // the forwarding continuation — they would either reference an
+        // undeclared result var or be unreachable after the `continue`.
+        if (ctx.self_loop_active) {
+            if (ctx.self_loop_event_canonical) |canonical| {
+                if (continuationIsSelfTailForwarder(cont, canonical, ctx)) {
+                    try emitSelfTailReentry(emitter, ctx, cont);
+                    return;
+                }
+            }
+        }
+
         const is_metatype_binding = if (cont.node) |step| step == .metatype_binding else false;
         if (is_metatype_binding) {
             // Scope metatype bindings so identical names don't collide across observers.
@@ -9078,6 +9105,123 @@ fn emitEventDeclForModuleFromType(
     try code_emitter.write("};\n\n");
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// Tail self-continuation loop lowering
+// ═══════════════════════════════════════════════════════════════════════
+// A flow that implements event E and re-enters E in tail position while
+// forwarding the result unchanged is semantically a loop. Lowering it as a
+// self-call reconstructs a by-value `Input` literal every iteration, which on
+// ARM64 passes the >16-byte aggregate through memory and blocks LLVM's
+// tail-call optimization (measured: ~2.6x slower than Rust on the register
+// machine). Lowering it as a `while (true)` loop over `var` input bindings
+// removes the aggregate materialization entirely and lets the terminal branch
+// `return` fall out of the loop. See brief `glm_tail_loop_brief.md` §3.
+//
+// Detection is conservative and lives in two places that MUST agree:
+//   * `flowContainsSelfTailForward` — decides whether to set up the loop
+//     (var bindings + `while (true)` wrapper) in `emitEventDeclForModule`.
+//   * `continuationIsSelfTailForwarder` — decides at the call site whether to
+//     emit reassign+`continue` instead of the self-call. Both use the same
+//     `identityForwardsResult` predicate, so a miss degrades to the original
+//     call (correct, just unoptimized) rather than a miscompile.
+
+/// True if a branch_constructor continuation forwards its bound payload to the
+/// same branch unchanged. Covers `| B v => B v` (plain_value == binding) and the
+/// field-wise identity `| B v => B { x: v.x, y: v.y }`. A transform or a
+/// payload-mutating arm is NOT a forwarder and disqualifies the loop lowering.
+fn identityForwardsResult(cont: *const ast.Continuation) bool {
+    if (cont.node == null) return false;
+    if (cont.node.? != .branch_constructor) return false;
+    const bc = cont.node.?.branch_constructor;
+    if (!std.mem.eql(u8, bc.branch_name, cont.branch)) return false;
+    const binding = cont.binding orelse return false;
+
+    // `| B v => B v` — single plain value passthrough.
+    if (bc.plain_value) |pv| {
+        const trimmed = std.mem.trim(u8, pv, " \t");
+        return std.mem.eql(u8, trimmed, binding);
+    }
+
+    // `| B v => B { x: v.x, y: v.y, ... }` — field-wise identity. Every field
+    // must read `<binding>.<field_name>` (no transforms, no reordering).
+    if (bc.fields.len == 0) return false;
+    for (bc.fields) |field| {
+        const expr = field.expression_str orelse return false;
+        const trimmed = std.mem.trim(u8, expr, " \t");
+        var buf: [128]u8 = undefined;
+        const expected = std.fmt.bufPrint(&buf, "{s}.{s}", .{ binding, field.name }) catch return false;
+        if (!std.mem.eql(u8, trimmed, expected)) return false;
+    }
+    return true;
+}
+
+/// True if `cont` is a tail self-continuation of `event_canonical`: its node is
+/// an invocation of that event, and every child continuation forwards the
+/// result branch unchanged (so the self-call's result IS this invocation's
+/// result — the precondition for a sound loop rewrite).
+fn continuationIsSelfTailForwarder(
+    cont: *const ast.Continuation,
+    event_canonical: []const u8,
+    ctx: *EmissionContext,
+) bool {
+    if (cont.node == null) return false;
+    if (cont.node.? != .invocation) return false;
+    const inv = cont.node.?.invocation;
+    const inv_canonical = buildCanonicalEventName(&inv.path, ctx.allocator, ctx.main_module_name) catch return false;
+    defer ctx.allocator.free(inv_canonical);
+    if (!std.mem.eql(u8, inv_canonical, event_canonical)) return false;
+    if (cont.continuations.len == 0) return false;
+    for (cont.continuations) |*child| {
+        if (!identityForwardsResult(child)) return false;
+    }
+    return true;
+}
+
+/// Recursive walker: does any tail position in this continuation tree contain a
+/// self-tail-forwarder of `event_canonical`? Used at setup time to decide
+/// whether to wrap the handler body in a loop.
+pub fn flowContainsSelfTailForward(
+    conts: []const ast.Continuation,
+    event_canonical: []const u8,
+    ctx: *EmissionContext,
+) bool {
+    for (conts) |*cont| {
+        if (continuationIsSelfTailForwarder(cont, event_canonical, ctx)) return true;
+        if (cont.continuations.len > 0) {
+            if (flowContainsSelfTailForward(cont.continuations, event_canonical, ctx)) return true;
+        }
+    }
+    return false;
+}
+
+/// Emit the reassign+continue that replaces a tail self-call site. Each input
+/// field is reassigned from the corresponding invocation arg (pass-through args
+/// where `value == name` are skipped — they're already correct and emitting
+/// `x = x` would just copy the array for nothing). Then `continue :label`
+/// re-enters the loop top.
+fn emitSelfTailReentry(
+    emitter: *CodeEmitter,
+    ctx: *EmissionContext,
+    cont: *const ast.Continuation,
+) !void {
+    const inv = cont.node.?.invocation;
+    for (inv.args) |arg| {
+        const trimmed = std.mem.trim(u8, arg.value, " \t");
+        // Skip no-op pass-throughs (`ops: ops` → `ops = ops`). Avoids a
+        // pointless array copy and keeps the emitted loop clean.
+        if (std.mem.eql(u8, trimmed, arg.name)) continue;
+        try emitter.writeIndent();
+        try writeBranchName(emitter, arg.name);
+        try emitter.write(" = ");
+        try emitValue(emitter, ctx, arg.value);
+        try emitter.write(";\n");
+    }
+    try emitter.writeIndent();
+    try emitter.write("continue :");
+    try emitter.write(ctx.self_loop_label);
+    try emitter.write(";\n");
+}
+
 /// Emit a single event declaration for a module subset
 fn emitEventDeclForModule(
     code_emitter: *CodeEmitter,
@@ -9167,10 +9311,33 @@ fn emitEventDeclForModule(
     }
     code_emitter.indent_level += 1;
 
+    // Tail self-continuation detection: if this event's flow impl re-enters
+    // its own event in tail position and forwards the result unchanged, lower
+    // the handler as a `while (true)` loop over `var` input bindings instead of
+    // a stack-growing self-call (see `glm_tail_loop_brief.md`). The canonical
+    // name is reused as the self-call target to compare against at the emit
+    // site, so the setup-time and emit-time predicates share one source of
+    // truth.
+    const self_loop_canonical = buildCanonicalEventName(&event.path, ctx.allocator, ctx.main_module_name) catch null;
+    defer if (self_loop_canonical) |c| ctx.allocator.free(c);
+    var is_self_loop: bool = false;
+    if (self_loop_canonical) |canonical| {
+        if (findImplByPath(all_items, &event.path)) |found| {
+            switch (found) {
+                .flow => |flow| {
+                    is_self_loop = flowContainsSelfTailForward(flow.body.continuations, canonical, ctx);
+                },
+                else => {},
+            }
+        }
+    }
+
     // Emit input field bindings
     for (event.input.fields) |field| {
         try code_emitter.writeIndent();
-        try code_emitter.write("const ");
+        // Self-loop handlers reassign these from the tail self-call's args, so
+        // they must be `var`. Every other handler treats them as immutable.
+        try code_emitter.write(if (is_self_loop) "var " else "const ");
         try writeBranchName(code_emitter, field.name);
         try code_emitter.write(" = __koru_event_input.");
         try writeBranchName(code_emitter, field.name);
@@ -9227,8 +9394,38 @@ fn emitEventDeclForModule(
                 try code_emitter.write(";\n");
             },
             .flow => |flow| {
-                // Full flow impl - emit the flow body
-                try emitFlow(code_emitter, ctx, flow);
+                // Full flow impl - emit the flow body. For a tail
+                // self-continuation, wrap it in a labeled `while (true)` and
+                // arm the per-site reentry emission (see `emitSelfTailReentry`).
+                // The loop only exits via the terminal branch's `return`; the
+                // `unreachable` after it tells Zig the function can't fall off
+                // the end, matching how `#label` loops terminate.
+                if (is_self_loop) {
+                    if (self_loop_canonical) |canonical| {
+                        try code_emitter.writeIndent();
+                        try code_emitter.write(ctx.self_loop_label);
+                        try code_emitter.write(": while (true) {\n");
+                        code_emitter.indent_level += 1;
+                        const saved_active = ctx.self_loop_active;
+                        const saved_canonical = ctx.self_loop_event_canonical;
+                        ctx.self_loop_active = true;
+                        ctx.self_loop_event_canonical = canonical;
+                        defer {
+                            ctx.self_loop_active = saved_active;
+                            ctx.self_loop_event_canonical = saved_canonical;
+                        }
+                        try emitFlow(code_emitter, ctx, flow);
+                        code_emitter.indent_level -= 1;
+                        try code_emitter.writeIndent();
+                        try code_emitter.write("}\n");
+                        try code_emitter.writeIndent();
+                        try code_emitter.write("unreachable;\n");
+                    } else {
+                        try emitFlow(code_emitter, ctx, flow);
+                    }
+                } else {
+                    try emitFlow(code_emitter, ctx, flow);
+                }
             },
         }
         found_impl = true;

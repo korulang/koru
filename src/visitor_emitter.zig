@@ -2616,10 +2616,31 @@ pub const VisitorEmitter = struct {
                                     try self.code_emitter.write(sf_loc_str);
                                     try self.code_emitter.write("\n");
                                 }
+                                // Tail self-continuation detection: if this flow
+                                // re-enters its own event in tail position and forwards
+                                // the result unchanged, lower the handler as a `while
+                                // (true)` loop over `var` input bindings (see
+                                // emitter_helpers.flowContainsSelfTailForward / the
+                                // per-site `emitSelfTailReentry`). Computed here so the
+                                // binding kind, the loop wrapper, and the per-ctx flag
+                                // below all share one decision. `pre_label` flows keep
+                                // their own state-loop lowering, so we don't double-wrap.
+                                var dummy_ctx = emitter.EmissionContext{
+                                    .allocator = self.allocator,
+                                    .main_module_name = self.main_module_name,
+                                };
+                                const self_loop_canonical = emitter.buildCanonicalEventName(&event.path, self.allocator, self.main_module_name) catch null;
+                                defer if (self_loop_canonical) |c| self.allocator.free(c);
+                                const is_self_loop = if (self_loop_canonical) |c|
+                                    (flow.pre_label == null and emitter.flowContainsSelfTailForward(flow.body.continuations, c, &dummy_ctx))
+                                else false;
+
                                 // Generate implicit input bindings for consistency with procs
                                 for (event.input.fields) |field| {
                                     try self.code_emitter.writeIndent();
-                                    try self.code_emitter.write("const ");
+                                    // Self-loop handlers reassign these from the tail
+                                    // self-call's args, so they must be `var`.
+                                    try self.code_emitter.write(if (is_self_loop) "var " else "const ");
                                     try emitter.writeBranchName(self.code_emitter, field.name);
                                     try self.code_emitter.write(" = __koru_event_input.");
                                     try emitter.writeBranchName(self.code_emitter, field.name);
@@ -2634,6 +2655,17 @@ pub const VisitorEmitter = struct {
                                 }
                                 try self.code_emitter.writeIndent();
                                 try self.code_emitter.write("_ = &__koru_event_input;\n");
+
+                                // Wrap the body in a labeled `while (true)` so the tail
+                                // self-call lowers to `continue :label` (see
+                                // `emitSelfTailReentry`). The loop only exits via the
+                                // terminal branch's `return`; the `unreachable` after
+                                // mirrors how `#label` loops terminate.
+                                if (is_self_loop) {
+                                    try self.code_emitter.writeIndent();
+                                    try self.code_emitter.write("__koru_self_loop: while (true) {\n");
+                                    self.code_emitter.indent_level += 1;
+                                }
 
                                 // Check if the flow has preamble_code (from transforms like ~for, ~if, ~capture)
                                 // This means the flow contains a ForeachNode/ConditionalNode/CaptureNode in continuations
@@ -2655,6 +2687,8 @@ pub const VisitorEmitter = struct {
                                         .label_contexts = null,
                                         .is_sync = true,  // Handler context - no try needed
                                         .in_handler = true,
+                                        .self_loop_active = is_self_loop,
+                                        .self_loop_event_canonical = self_loop_canonical,
                                     };
 
                                     // Emit continuation bodies directly - the continuations contain the control flow node
@@ -2692,6 +2726,8 @@ pub const VisitorEmitter = struct {
                                             .label_contexts = null,
                                             .is_sync = true,
                                             .in_handler = true,
+                                            .self_loop_active = is_self_loop,
+                                            .self_loop_event_canonical = self_loop_canonical,
                                         };
                                         var inline_result_counter: usize = 0;
                                         try emitter.emitInlineBodyNode(self.code_emitter, &inline_ctx, inline_code, flow.body.continuations, &flow.inv().path, &inline_result_counter);
@@ -2808,6 +2844,8 @@ pub const VisitorEmitter = struct {
                                         .main_module_name = self.main_module_name,
                                         .is_sync = true,
                                         .in_handler = true,
+                                        .self_loop_active = is_self_loop,
+                                        .self_loop_event_canonical = self_loop_canonical,
                                     };
                                     try emitter.emitFlow(self.code_emitter, &label_fold_ctx, &flow);
                                 } else {
@@ -2935,6 +2973,18 @@ pub const VisitorEmitter = struct {
                                     const source_event_name = try emitter.buildCanonicalEventName(&flow.inv().path, self.allocator, self.main_module_name);
 
                                     try emitter.emitSubflowContinuations(self.code_emitter, flow.body.continuations, 0, indent_str, items_to_search, self.tap_registry, self.type_registry, self.main_module_name, source_event_name, "main_module");
+                                }
+                                // Close the self-loop `while (true)` wrapper opened before the
+                                // body dispatch. The body always exits via `return` (terminal
+                                // branch) or `continue` (tail self-call), so the loop never
+                                // falls through; `unreachable` tells Zig that, matching the
+                                // `#label` loop termination shape.
+                                if (is_self_loop) {
+                                    self.code_emitter.indent_level -= 1;
+                                    try self.code_emitter.writeIndent();
+                                    try self.code_emitter.write("}\n");
+                                    try self.code_emitter.writeIndent();
+                                    try self.code_emitter.write("unreachable;\n");
                                 }
                                 found_impl = true;
                                 break;
