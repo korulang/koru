@@ -221,12 +221,38 @@ pub const FlowChecker = struct {
         // Bindings starting with _ are explicit discards or synthetic bindings from auto-discharge
         if (cont.binding) |binding| {
             if (!std.mem.startsWith(u8, binding, "_")) {
-                // In frontend mode, skip the check when the binding's usage isn't
-                // visible yet: the node is a [transform] (consumes bindings during
-                // its rewrite) OR a [scope] construct (a binding may be suspended
-                // across the scope and discharged by auto_discharge later, e.g.
-                // `| opened f |> ~for(...) … | done` closes `f` after the loop).
-                const skip_check = self.mode == .frontend and self.isDeferredBindingInvocation(cont);
+                // A binding is validated in EXACTLY ONE mode, never both:
+                //  - frontend: when its usage is visible on the unexpanded AST
+                //    (the normal case — the original identifier is still present).
+                //  - all: only when its usage is DEFERRED — invisible until after
+                //    transforms run (a [transform] that consumes the binding during
+                //    its rewrite, or a template/scope construct).
+                // Re-checking an already-frontend-validated binding in `all` mode is
+                // what produced false KORU100s: by then the for/while template has
+                // renamed the loop variable to `__koru_item` and the capture write
+                // has lowered to an `.assignment` that no longer carries the original
+                // name, so the scan can't find a binding that is genuinely used
+                // (AoC day18's Conway grid: `for r |> for c |> captured { g[r][c]: … }`).
+                // The honest place to check a loop variable is frontend, on the
+                // intact `.foreach`; `all` only owns the deferred bindings frontend
+                // could not yet see.
+                // A template-PROC binding (the loop variable of `for`/`while`) is
+                // never reliably checkable here: the template renames it to
+                // `__koru_item` and may hoist the body into a
+                // `__koru_inline_scoped_N` function, so the original name is absent
+                // post-expansion. Skip it in BOTH modes (a genuinely-unused loop var
+                // is spelled `_`). [transform] DATA bindings are different — their
+                // usage IS visible after the transform runs — so they keep the
+                // frontend-defer / all-check split below.
+                const is_template_proc = if (cont.node) |n|
+                    (n == .invocation and self.invocationResolvesToTemplateProc(&n.invocation.path))
+                else
+                    false;
+                const deferred = self.isDeferredBindingInvocation(cont);
+                const skip_check = is_template_proc or switch (self.mode) {
+                    .frontend => deferred,
+                    .all => !deferred,
+                };
 
                 if (!skip_check and !self.isBindingUsed(cont, binding)) {
                     // ERROR: Unused binding
