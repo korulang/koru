@@ -208,6 +208,42 @@ pub const String = struct {
 }
 
 // ============================================
+// Split — effect-stream over separated pieces
+// ============================================
+
+// Split a raw byte-slice on a separator, firing `! piece` per piece DURING the
+// call (the read-lines streaming shape, one level down: `! line` is split-on-\n
+// of a file; this is split-on-<sep> of a slice). Operates on []const u8 — the
+// shape read-lines yields and regex named-groups capture — not a *String handle,
+// so it composes directly with line/capture without wrapping. Pieces are
+// BORROWED views into `s` (no allocation, no ownership), valid for the body.
+//
+// This is the naive-phase answer to variable-arity parsing: split into pieces,
+// match each whole piece with the anchored `regex:match`. The principled
+// alternative — a global/streaming regex (`scan`) that finds repeated matches
+// in place — is pinned (640_011) and waits on the engine's unanchored-search
+// "later cut"; split needs no engine work.
+~pub event split { s: []const u8, sep: []const u8 }
+! piece []const u8
+| done usize
+
+~proc split|zig {
+    var __koru_sp_n: usize = 0;
+    // An empty separator would loop forever in splitSequence; treat it as
+    // "the whole slice is one piece" rather than silently hang.
+    if (sep.len == 0) {
+        piece(s);
+        return .{ .done = 1 };
+    }
+    var __koru_sp_it = std.mem.splitSequence(u8, s, sep);
+    while (__koru_sp_it.next()) |__koru_sp_piece| {
+        piece(__koru_sp_piece);
+        __koru_sp_n += 1;
+    }
+    return .{ .done = __koru_sp_n };
+}
+
+// ============================================
 // Write operations - require instance
 // ============================================
 
