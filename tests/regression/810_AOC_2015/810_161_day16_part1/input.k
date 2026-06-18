@@ -1,19 +1,32 @@
-// AoC 2015 Day 16 Part 1 — which Sue matches the MFCSAM readout (exact
-// match on every listed property). The real input is personal-only, so
-// these Sues are CONSTRUCTED from the statement's readout with exactly
-// one match per part (hand-derived: part 1 → Sue 2, part 2 → Sue 1).
-// Ledger: property compare ← collections/groups; per-line dispatch is Koru.
-
+// AoC 2015 Day 16 Part 1 — which Sue matches the MFCSAM readout (exact match on
+// every listed property). Built in pure Koru: the readout is a std/string-map
+// (built once, borrowed per line, freed at read-lines `| done` — the canonical
+// obligation-under-effect-loop pattern). Each line: regex-capture `Sue N: rest`,
+// split the rest into `prop: val` pieces, match each piece, look the property up
+// in the readout, and fold an all-match flag (ok stays 1 only if every listed
+// property equals the readout). A matching Sue prints its number. (Sue 1 cats=8
+// vs 7 ✗, Sue 2 all match ✓, Sue 3 vizslas=1 vs 0 ✗ → 2.)
 import std/io
 import std/fs
+import std/regex
+import std/string
+import std/string-map
 
-pub event check-sue { line: []const u8, ranged: i64 }
-| match i64
-| no
-
-std/fs:read-lines(path: "tests/regression/810_AOC_2015/810_161_day16_part1/input.txt")
-! line l |> check-sue(line: l, ranged: 0)
-    | match n |> std/io:print.ln("{{ n:d }}")
-    | no |> _
-| done _ |> _
-| failed e |> std/io:print.ln("FAILED {{ e:s }}")
+std/string-map:new()
+| map r |> std/string-map:set(r, k: "children", v: 3) |> std/string-map:set(r, k: "cats", v: 7) |> std/string-map:set(r, k: "samoyeds", v: 2) |> std/string-map:set(r, k: "pomeranians", v: 3) |> std/string-map:set(r, k: "akitas", v: 0) |> std/string-map:set(r, k: "vizslas", v: 0) |> std/string-map:set(r, k: "goldfish", v: 5) |> std/string-map:set(r, k: "trees", v: 3) |> std/string-map:set(r, k: "cars", v: 2) |> std/string-map:set(r, k: "perfumes", v: 1) |> std/fs:read-lines(path: "tests/regression/810_AOC_2015/810_161_day16_part1/input.txt")
+    ! line l |> std/regex:match(l)
+        | `Sue (?<n>[0-9]+): (?<rest>.+)` { n: i64, rest: []const u8 } |> capture { ok: 1[i64], num: n }
+            ! as acc |> std/string:split(s: rest, sep: ", ")
+                ! piece pc |> std/regex:match(pc)
+                    | `(?<p>[a-z]+): (?<v>[0-9]+)` { p: []const u8, v: i64 } |> std/string-map:get(r, k: p)
+                        | value rv |> captured { ok: acc.ok * @intFromBool(rv == v) }
+                        | missing |> captured { ok: 0 }
+                    | no-match |> captured { ok: 0 }
+                | done _ |> _
+            | captured result |> if(result.ok == 1)
+                | then |> std/io:print.ln("{{ result.num:d }}")
+                | else |> _
+        | no-match |> _
+    | done _ |> std/string-map:free(r)
+    | failed e |> std/io:print.ln("FAILED {{ e:s }}")
+| err e |> std/io:print.ln("ERR {{ e:s }}")

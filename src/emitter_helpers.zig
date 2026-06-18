@@ -3438,10 +3438,21 @@ fn emitInlineCodeResolvingSplices(
                 // to discard — just the body.
             } else if (cont.destructure.len > 0) {
                 // Shape-destructure: bind the arg once, then per-field consts.
-                try emitter.write("const __koru_dst = ");
+                // SITE-UNIQUE temp name (location-suffixed, same lesson as the
+                // regex transform's __koru_match_in / __koru_sp): a match nested
+                // inside another match's branch inlines into the SAME frame here,
+                // so a fixed `__koru_dst` shadows the outer one and Zig rejects it
+                // (surfaced by AoC day16: `Sue …` match → per-piece match).
+                var dst_buf: [64]u8 = undefined;
+                const dst = std.fmt.bufPrint(&dst_buf, "__koru_dst_{d}_{d}", .{ cont.location.line, cont.location.column }) catch "__koru_dst";
+                try emitter.write("const ");
+                try emitter.write(dst);
+                try emitter.write(" = ");
                 try emitter.write(arg);
-                try emitter.write("; _ = &__koru_dst; ");
-                try emitDestructureConsts(emitter, cont.destructure, "__koru_dst");
+                try emitter.write("; _ = &");
+                try emitter.write(dst);
+                try emitter.write("; ");
+                try emitDestructureConsts(emitter, cont.destructure, dst);
             } else if (std.mem.eql(u8, binding, "_")) {
                 try emitter.write("_ = ");
                 try emitter.write(arg);
