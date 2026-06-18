@@ -1,0 +1,115 @@
+// std/map — a hash map of i64 keys → i64 values, with the same owned-handle
+// ownership model as std/set (map IS set-with-values: set is
+// AutoHashMapUnmanaged(i64, void), map is AutoHashMapUnmanaged(i64, i64)).
+// First cut: i64→i64 (pack composite keys — e.g. a 2D coordinate — into one i64
+// at the call site); genericity over the key/value types lands later by
+// replication (same as list / grid / set).
+//
+// Backed by Zig's std.AutoHashMapUnmanaged — the hashing has no business being
+// in Koru and isn't; the map is the thin owned-handle surface over it, exactly
+// like set is over the keys-only table.
+//
+// Ownership states (phantom on *Map_i64_i64):
+//   <map!>  - new issues the obligation: this map must be freed.
+//   <map>   - borrowed: set / get / contains / count, obligation untouched.
+//   <!map>  - consumed: free discharges the obligation.
+
+const std = @import("std");
+
+pub const Map_i64_i64 = struct {
+    map: std.AutoHashMapUnmanaged(i64, i64),
+    allocator: std.mem.Allocator,
+
+    // Package-private — only free/auto-discharge calls this.
+    fn deinit(self: *Map_i64_i64) void {
+        self.map.deinit(self.allocator);
+        self.allocator.destroy(self);
+    }
+};
+
+// ============================================
+// Construction
+// ============================================
+
+~[
+- aspirational
+  The map HANDLE is heap-boxed (allocator.create(Map_i64_i64)) — escape-driven
+  local allocation (the no-silent-degradation doctrine) is not built yet, so this
+  boxes the handle unconditionally. The hash table's own storage is heap
+  regardless. Marked so the box debt is explicit and greppable, not hidden;
+  closes with the shared escape-allocation model (list / grid / set / map /
+  string together). The `| err` branch is the proven shape across the
+  collections; upgrading allocation failure to a `| ?!oom` panic branch is the
+  uniform follow-up across all of them (panic-branches' first collection
+  customers), not a map-only fork.
+]pub event new {}
+| map *Map_i64_i64<map!>
+| err []const u8
+
+~proc new|zig {
+    const allocator = koru_allocator();
+    const self = allocator.create(Map_i64_i64) catch {
+        return .{ .err = "allocation failed" };
+    };
+    self.* = .{ .map = .{}, .allocator = allocator };
+    return .{ .map = self };
+}
+
+// ============================================
+// Mutation (borrow — obligation untouched)
+// ============================================
+
+// Insert or overwrite key → value. Void, chains with `|>`.
+~pub event set { m: *Map_i64_i64<map>, k: i64, v: i64 }
+
+~proc set|zig {
+    m.map.put(m.allocator, k, v) catch {
+        @panic("std/map:set — out of memory");
+    };
+}
+
+// ============================================
+// Read (borrow)
+// ============================================
+
+// Lookup by key. `value` on hit, `missing` when absent.
+~pub event get { m: *Map_i64_i64<map>, k: i64 }
+| value i64
+| missing
+
+~proc get|zig {
+    if (m.map.get(k)) |v| {
+        return .{ .value = v };
+    }
+    return .missing;
+}
+
+// Membership test (key present, value ignored).
+~pub event contains { m: *Map_i64_i64<map>, k: i64 }
+| yes
+| no
+
+~proc contains|zig {
+    if (m.map.contains(k)) {
+        return .yes;
+    }
+    return .no;
+}
+
+// Number of distinct keys.
+~pub event count { m: *Map_i64_i64<map> }
+| count i64
+
+~proc count|zig {
+    return .{ .count = @intCast(m.map.count()) };
+}
+
+// ============================================
+// Teardown (consume — discharges <!map>)
+// ============================================
+
+~pub event free { m: *Map_i64_i64<!map> }
+
+~proc free|zig {
+    m.deinit();
+}
