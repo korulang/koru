@@ -18,7 +18,7 @@ import std/io
 capture { total: 0[i64], g: [4][4]i64{ .{ 1, 1, 1, 1 }, .{ 1, 1, 1, 1 }, .{ 1, 1, 1, 1 }, .{ 1, 1, 1, 1 } } }
 ! as a |> for(1..3)
     ! each r |> for(1..3)
-        ! each c |> captured { total: a.total + @as(i64, @intFromBool((a.g[r][c] == 1 and ((a.g[r - 1][c - 1] + a.g[r - 1][c] + a.g[r - 1][c + 1] + a.g[r][c - 1] + a.g[r][c + 1] + a.g[r + 1][c - 1] + a.g[r + 1][c] + a.g[r + 1][c + 1]) >= 1 or (a.g[r - 1][c - 1] + a.g[r - 1][c] + a.g[r - 1][c + 1] + a.g[r][c - 1] + a.g[r][c + 1] + a.g[r + 1][c - 1] + a.g[r + 1][c] + a.g[r + 1][c + 1]) == 99)) or (a.g[r][c] == 0 and (a.g[r - 1][c - 1] + a.g[r - 1][c] + a.g[r - 1][c + 1] + a.g[r][c - 1] + a.g[r][c + 1] + a.g[r + 1][c - 1] + a.g[r + 1][c] + a.g[r + 1][c + 1]) == 99)) }
+        ! each c |> captured { total: a.total + @as(i64, @intFromBool((a.g[r][c] == 1 and ((a.g[r - 1][c - 1] + a.g[r - 1][c] + a.g[r - 1][c + 1] + a.g[r][c - 1] + a.g[r][c + 1] + a.g[r + 1][c - 1] + a.g[r + 1][c] + a.g[r + 1][c + 1]) >= 1 or (a.g[r - 1][c - 1] + a.g[r - 1][c] + a.g[r - 1][c + 1] + a.g[r][c - 1] + a.g[r][c + 1] + a.g[r + 1][c - 1] + a.g[r + 1][c] + a.g[r + 1][c + 1]) == 99)) or (a.g[r][c] == 0 and (a.g[r - 1][c - 1] + a.g[r - 1][c] + a.g[r - 1][c + 1] + a.g[r][c - 1] + a.g[r][c + 1] + a.g[r + 1][c - 1] + a.g[r + 1][c] + a.g[r + 1][c + 1]) == 99))) }
       | done |> _
   | done |> _
 | captured res |> std/io:print.ln("{{ res.total:d }}")
