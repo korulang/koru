@@ -1,0 +1,3 @@
+workload,language,n,wall_ms,output_hash,output,note
+register_machine,koru,20000000,1503.056,8849aded7b1e,"total = 150000000",
+register_machine,rust,20000000,576.949,8849aded7b1e,"total = 150000000",
