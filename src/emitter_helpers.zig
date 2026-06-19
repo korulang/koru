@@ -1942,6 +1942,25 @@ fn emitSubflowContinuationsWithDepth(
             .main_module_name = main_module_name, // Pass through for canonical event naming
             .current_source_event = source_event_name, // Set source event for inline tap emission!
         };
+        // A label-fold emitted through this subflow path (visitor emitter) still
+        // runs `emitContinuationBody`'s `label_with_invocation` arm, which
+        // registers each `#label` in `ctx.label_contexts` so a cross-level
+        // `@label` jump (e.g. an outer loop fired from inside an inner fold) can
+        // resolve its target handler/result-var and re-invoke it. Without this
+        // map the registration is skipped (guard is `if (ctx.label_contexts)`),
+        // the jump finds neither map entry nor current slot, and the outer loop's
+        // result var is never reassigned -> Zig "never mutated" + infinite loop.
+        // (emitFlow initializes the same map for the top-level flow path; this
+        // is the equivalent for the subflow/visitor path.)
+        var label_contexts = std.StringHashMap(LabelContext).init(ctx.allocator);
+        ctx.label_contexts = &label_contexts;
+        defer {
+            var it = label_contexts.valueIterator();
+            while (it.next()) |label_ctx| {
+                ctx.allocator.free(label_ctx.result_var);
+            }
+            label_contexts.deinit();
+        }
         var result_counter: usize = depth;
         const result_var = if (depth == 0) "result" else blk: {
             var buf: [32]u8 = undefined;
