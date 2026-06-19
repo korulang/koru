@@ -73,10 +73,8 @@ Hello World
 ### 010_002_simple_event
 
 ```koru
-// Test 002: Event and host proc declaration without flow
-// This should compile but not produce any output
-// Prefer subflow implementations for ordinary Koru logic; this test only
-// verifies the Zig host implementation boundary.
+// Event and host proc declaration without a flow. The proc is never
+// invoked, so the program compiles and produces no output.
 const std = @import("std");
 
 ~event hello {}

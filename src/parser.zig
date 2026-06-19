@@ -1041,6 +1041,17 @@ pub const Parser = struct {
         for (prefixes) |prefix| {
             if (std.mem.startsWith(u8, trimmed, prefix)) return true;
         }
+        // A bare module-qualified call/event ref, e.g. `std/io:print.ln(...)` — a
+        // Koru flow statement missing its `~`. The `<path>/<seg>:<name>` shape (a
+        // slash-path before the `:`) is unambiguously Koru: a Zig host line never
+        // spells a callee that way. Without this, such a line silently leaks into
+        // the emitted host source instead of producing a clean parse error.
+        if (std.mem.indexOfScalar(u8, trimmed, ':')) |colon| {
+            const head = trimmed[0..colon];
+            if (head.len > 0 and
+                std.mem.indexOfScalar(u8, head, '/') != null and
+                std.mem.indexOfAny(u8, head, " \t(={\"") == null) return true;
+        }
         return false;
     }
 
@@ -7987,8 +7998,14 @@ pub const Parser = struct {
         // or `.k` internal synthesis).
 
         // Extract the path — bare identifier-path only. Quotes are the old form.
+        // Strip a trailing `//` end-of-line comment first: an import path uses
+        // single-slash separators and never contains `//`, so the first `//`
+        // marks a comment (e.g. `~import std/io  // note`).
         var path: []const u8 = undefined;
-        const path_str = after_import;
+        const path_str = if (std.mem.indexOf(u8, after_import, "//")) |ci|
+            lexer.trim(after_import[0..ci])
+        else
+            after_import;
         if (lexer.startsWith(path_str, "\"") or lexer.startsWith(path_str, "'")) {
             // An import path is an identifier-path, not a string.
             const stripped = std.mem.trim(u8, path_str, "\"'");

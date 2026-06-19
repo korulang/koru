@@ -22,17 +22,17 @@ var focus_xor: u64 = 0;
     }
 }
 
-~proc onKey|zig {
+~proc on-key|zig {
     keys = keys + 1;
     if (ch == 113) { quits = quits + 1; }
 }
 
-~proc onResize|zig {
+~proc on-resize|zig {
     resizes = resizes + 1;
     width_sum = width_sum + width;
 }
 
-~proc onFocus|zig {
+~proc on-focus|zig {
     focus = focus + 1;
     focus_xor = focus_xor ^ id;
 }

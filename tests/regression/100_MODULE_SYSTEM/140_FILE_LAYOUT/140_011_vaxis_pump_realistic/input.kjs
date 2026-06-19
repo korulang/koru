@@ -19,17 +19,17 @@ let focus_xor = 0;
     }
 }
 
-~proc onKey|js {
+~proc on-key|js {
     keys = keys + 1;
     if (ch === 113) { quits = quits + 1; }
 }
 
-~proc onResize|js {
+~proc on-resize|js {
     resizes = resizes + 1;
     width_sum = width_sum + width;
 }
 
-~proc onFocus|js {
+~proc on-focus|js {
     focus = focus + 1;
     focus_xor = focus_xor ^ id;
 }

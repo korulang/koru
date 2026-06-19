@@ -19,4 +19,4 @@
 | captured final => result { final.sum, final.max }
 
 ~compute-stats()
-| result _ |> std/io:print.ln("done")
+| result r |> std/io:print.ln("sum={{ r.sum:d }} max={{ r.max:d }}")

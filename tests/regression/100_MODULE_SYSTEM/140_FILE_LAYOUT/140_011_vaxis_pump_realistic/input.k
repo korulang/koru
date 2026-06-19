@@ -15,13 +15,13 @@ pub event run { n: u64 }
 ! resize u64
 ! focus-in u64
 
-pub event onKey { ch: u64 }
-pub event onResize { width: u64 }
-pub event onFocus { id: u64 }
+pub event on-key { ch: u64 }
+pub event on-resize { width: u64 }
+pub event on-focus { id: u64 }
 pub event report {}
 
 run(n: 200)
-! key c |> onKey(ch: c)
-! resize w |> onResize(width: w)
-! focus-in f |> onFocus(id: f)
+! key c |> on-key(ch: c)
+! resize w |> on-resize(width: w)
+! focus-in f |> on-focus(id: f)
 report()

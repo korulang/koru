@@ -264,7 +264,8 @@ const Emitter = struct {
             }
         }
 
-        try self.writeFmt("  {s}_event: {{\n", .{name});
+        var name_buf: [256]u8 = undefined;
+        try self.writeFmt("  {s}_event: {{\n", .{lowerIdentBuf(&name_buf, name)});
         if (has_effect) {
             try self.write("    handler(input, H) {\n");
             // Bind each effect-branch op as a local: `const tick = H.tick;`
@@ -602,7 +603,8 @@ const Emitter = struct {
             try self.writeFmt("{s}}};\n", .{indent});
         }
 
-        const ev_name = event.path.segments[event.path.segments.len - 1];
+        var ev_name_buf: [256]u8 = undefined;
+        const ev_name = lowerIdentBuf(&ev_name_buf, event.path.segments[event.path.segments.len - 1]);
         const result_name: ?[]const u8 = if (needs_result) blk: {
             const rid = self.nextId();
             break :blk try std.fmt.allocPrint(self.allocator, "result_{d}", .{rid});

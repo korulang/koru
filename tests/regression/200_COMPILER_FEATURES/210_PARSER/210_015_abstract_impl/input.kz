@@ -1,26 +1,7 @@
-// ============================================================================
-// Test 064: Abstract Events and Implementation
-// ============================================================================
-// Abstract events allow declaring event signatures that can be implemented
-// elsewhere in the program. This enables:
-// - Library interfaces with user-provided implementations
-// - Customizable coordination (e.g., compiler.coordinate)
-// - Dependency inversion without runtime overhead
-//
-// Key properties:
-// - ~[abstract] event declares the signature
-// - ~proc in same file provides optional default implementation
-// - ~module:event = ... provides THE implementation (module qualifier required)
-// - Within implementation, event name delegates to default
-// - Compile-time resolution, no runtime dispatch
-//
-// Design rationale:
-// - Removes special-case hack for compiler.coordinate
-// - Explicit via module qualifier (: indicates impl)
-// - No inheritance hierarchies or virtual dispatch
-// - Single implementation enforced at compile time
-// - Delegation is explicit (not hidden like OOP super())
-// ============================================================================
+// Abstract events: `~[abstract]` declares a signature; a `~proc` in the same
+// file is an optional default implementation; `~module:event = ...` provides
+// THE implementation. Within an implementation, calling the event name
+// delegates to the default. Resolved at compile time — no runtime dispatch.
 
 const std = @import("std");
 
