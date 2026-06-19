@@ -1,0 +1,62 @@
+// CORE PROBE: carry an OWNED obligation ACROSS a label-fold back-edge via the
+// consume-in / issue-out (1:1 conserved) shape, with the SEED issued by a leaf.
+//
+// Design hypothesis (Lars's): carrying an obligation through a label-fold is
+// sound IFF each back-edge iteration CONSUMES the carried obligation and ISSUES
+// exactly one to carry forward — net zero inside, one seeded in, one escaping to
+// an outside disposer. This respects directionality: the body event consumes on
+// its INPUT and issues on its OUTPUT; `@loop` routes output -> input.
+//
+// SEED FIX (vs the failed 330_072): the obligation does NOT enter `spin` through
+// a consuming parameter (consume-on-input discharges at the door — KORU030).
+// Instead an ISSUING leaf `make()` runs INSIDE spin's flow and seeds the loop:
+//   ~spin = make()              make ISSUES <owned!>  (h0)
+//   | made h0 |> #loop step(h: h0)   seed the fold with the owned handle
+//   | again v |> @loop(h: v)    back-edge carries the re-issued handle
+//   | stop  r => finished r     escapes the obligation to the outside disposer
+// step CONSUMES <!owned> on input, RE-ISSUES <owned!> on each output branch.
+// `done` is the single outside disposer.
+//
+// Grammar grounded against:
+//   - 210_123 (#loop step(...) seed + `| again v |> @loop(...)` back-edge + `=> finished`)
+//   - 370_020 (obligation issued INSIDE the loop by an issuing leaf `create()`)
+//   - 330_072 (the consume-in/issue-out `step` proc shape; structure corrected here)
+//   - list.kz directionality (<owned!> issue, <!owned> consume)
+const std = @import("std");
+const Handle = struct { n: i32 };
+
+~event make {}
+| made *Handle<owned!>
+~proc make|zig {
+    const h = std.heap.page_allocator.create(Handle) catch unreachable;
+    h.* = .{ .n = 0 };
+    return .{ .made = h };
+}
+
+// step: consume the carried obligation on input, re-issue exactly one on output.
+~event step { h: *Handle<!owned> }
+| again *Handle<owned!>
+| stop *Handle<owned!>
+~proc step|zig {
+    h.n += 1;
+    if (h.n < 3) return .{ .again = h };
+    return .{ .stop = h };
+}
+
+~event done { h: *Handle<!owned> }
+~proc done|zig {
+    std.debug.print("n={}\n", .{h.n});
+    std.heap.page_allocator.destroy(h);
+}
+
+~event spin {}
+| finished *Handle<owned!>
+
+// Seed the fold from an ISSUING leaf, then consume-in/issue-out across @loop.
+~spin = make()
+| made h0 |> #loop step(h: h0)
+    | again v |> @loop(h: v)
+    | stop r => finished r
+
+~spin()
+| finished hf |> done(h: hf)

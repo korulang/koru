@@ -1,0 +1,59 @@
+// ELEMENT-LEVEL OBLIGATION MOVE inside a for-loop body (no back-edge yet).
+// std i64 collections carry NO element obligation (list.kz:150 — "for i64 the
+// popped value carries no obligation"), so 330_081's i64 shuffle is plain data.
+// To exercise a real per-element TRANSFER we hand-roll an obligation-carrying
+// element: `*Handle<owned!>`. `take` models popping the owned handle out of
+// container A (consume A's hold <!owned>, REISSUE a fresh <owned!> on the value);
+// `put` models pushing it into container B (consume <!owned>). Net per iteration:
+// one issue (take), one consume (put) — conserved, linearity holds IF the checker
+// tracks the move across the branch binding inside the loop body.
+//
+// This is the for-loop-BODY form (the move happens once per iteration, both
+// halves in the SAME scope — exactly Lars's framing: "issue it AND consume it in
+// the same scope"). 330_083 is the harder back-edge form.
+//
+// Obligation grammar grounded in 330_072 (issue `<owned!>` / consume `<!owned>`);
+// for-loop body grounded in 660_012 / 660_014.
+//
+// STATUS: RED (TODO, off-board). Blocker, verbatim:
+//   error[KORU032]: Cannot discharge outer-scope resource 'h0' inside @scope
+//   boundary. Handle outside the scope or escape via branch constructor.
+//     --> auto_discharge:44:0
+// The `for` is an @scope boundary; `take(h: h0)` CONSUMES the outer-owned h0
+// inside the loop body, and auto-discharge rejects consuming an outer-scope
+// resource inside the scope — even though `take` immediately RE-ISSUES <owned!>
+// on `v` and `put` consumes it in the SAME iteration (net conserved). The
+// phantom/auto-discharge model does not yet track an element-obligation MOVE as
+// conserved when the consumed handle is owned outside the loop. Flip to a clean
+// SUCCESS + drop the TODO marker once outer->inner move-through-scope is tracked.
+const std = @import("std");
+const Handle = struct { n: i32 };
+
+~event make {}
+| made *Handle<owned!>
+~proc make|zig {
+    const h = std.heap.page_allocator.create(Handle) catch unreachable;
+    h.* = .{ .n = 7 };
+    return .{ .made = h };
+}
+
+// Take the owned handle "out of A": consume the incoming hold, reissue it on the
+// popped value (the collection-memory pop-reissue move, hand-rolled).
+~event take { h: *Handle<!owned> }
+| popped *Handle<owned!>
+~proc take|zig {
+    return .{ .popped = h };
+}
+
+// Put the owned handle "into B": consume the obligation.
+~event put { h: *Handle<!owned> }
+~proc put|zig {
+    std.debug.print("moved n={}\n", .{h.n});
+    std.heap.page_allocator.destroy(h);
+}
+
+~make()
+| made h0 |> for(0..1)
+    ! each _ |> take(h: h0)
+        | popped v |> put(h: v)
+    | done |> _

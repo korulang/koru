@@ -1,0 +1,46 @@
+// NEGATIVE: a label-fold (#loop) carries an OWNED obligation across the back-edge,
+// but one branch path neither re-issues nor disposes it -> the obligation is
+// DROPPED (leak). Linearity requires every consume of <!owned> to be matched by
+// an issue <owned!> or a disposal; the `stop` branch here returns a void event
+// payload, silently dropping the consumed handle.
+// Grammar grounded against 330_072_obligation_transfer_through_loop (transfer
+// shape) and 210_123_label_on_subflow_rhs_panics (#loop / @loop fold form).
+const std = @import("std");
+const Handle = struct { n: i32 };
+
+~event make {}
+| made *Handle<owned!>
+~proc make|zig {
+    const h = std.heap.page_allocator.create(Handle) catch unreachable;
+    h.* = .{ .n = 0 };
+    return .{ .made = h };
+}
+
+// Consumes the carried handle. `again` re-issues (linearity OK on that edge),
+// but `stop` drops it: a void branch with no <owned!> output and no disposal.
+~event step { h: *Handle<!owned> }
+| again *Handle<owned!>
+| stop i32
+~proc step|zig {
+    h.n += 1;
+    if (h.n < 3) {
+        return .{ .again = h };
+    }
+    return .{ .stop = h.n };
+}
+
+~event spin { h: *Handle<!owned> }
+| finished i32
+
+~event report { n: i32 }
+~proc report|zig {
+    std.debug.print("n={}\n", .{n});
+}
+
+~spin = #loop step(h)
+| again v |> @loop(h: v)
+| stop r => finished r   // carried obligation never discharged on this path -> leak
+
+~make()
+| made h0 |> spin(h: h0)
+    | finished f |> report(n: f)

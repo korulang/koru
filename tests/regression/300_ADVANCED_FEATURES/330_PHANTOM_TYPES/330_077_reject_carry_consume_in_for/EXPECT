@@ -1,0 +1,4 @@
+BACKEND_COMPILE_ERROR
+CONTAINS error[KORU032]
+CONTAINS Cannot discharge outer-scope resource
+CONTAINS @scope boundary

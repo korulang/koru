@@ -1,0 +1,52 @@
+// BOUNDARY (negative): an owned obligation CANNOT be seeded into a label-fold by
+// entering through a CONSUMING parameter. Consume-on-input discharges the
+// obligation at the door, so by the time the handle reaches the loop body it
+// carries nothing — the seed is empty and the consuming `step` is fed a
+// non-owning value. The checker must reject it (KORU030).
+//
+// This isolates the structural lesson from the 330_072 probe: the seed must come
+// from an ISSUING leaf inside the flow (see GREEN 330_074), never from a
+// parameter. Directionality (phantom_semantic_checker.zig validatePhantom,
+// is_input branch) makes "an input parameter owns the obligation" inexpressible.
+//
+// EXPECTED: KORU030 — "argument 'h' carries no obligation here, but this event
+// consumes '<!owned>'." (the same rejection the 330_072 probe hit).
+const std = @import("std");
+const Handle = struct { n: i32 };
+
+~event step { h: *Handle<!owned> }
+| again *Handle<owned!>
+| stop *Handle<owned!>
+~proc step|zig {
+    h.n += 1;
+    if (h.n < 3) return .{ .again = h };
+    return .{ .stop = h };
+}
+
+~event done { h: *Handle<!owned> }
+~proc done|zig {
+    std.debug.print("n={}\n", .{h.n});
+    std.heap.page_allocator.destroy(h);
+}
+
+// `spin` tries to take the owned handle as a CONSUMING parameter and feed it to
+// the loop seed. The consume discharges `h` at spin's door, so `#loop step(h: h)`
+// is handed a value that carries no obligation -> KORU030.
+~event spin { h: *Handle<!owned> }
+| finished *Handle<owned!>
+
+~spin = #loop step(h)
+| again v |> @loop(h: v)
+| stop r => finished r
+
+~event make {}
+| made *Handle<owned!>
+~proc make|zig {
+    const h = std.heap.page_allocator.create(Handle) catch unreachable;
+    h.* = .{ .n = 0 };
+    return .{ .made = h };
+}
+
+~make()
+| made h0 |> spin(h: h0)
+    | finished hf |> done(h: hf)

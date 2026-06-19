@@ -1,0 +1,4 @@
+BACKEND_COMPILE_ERROR
+CONTAINS error[KORU030]
+CONTAINS carries no obligation here
+CONTAINS this event consumes

@@ -1,0 +1,28 @@
+// NEGATIVE: carry an OWNED obligation into a for(0..N) and consume it inside.
+// SOUNDNESS: for(0..N) may run 0 times (then the <owned!> obligation is never
+// discharged -> leak) OR >1 times (then the second iteration consumes a handle
+// that was already discharged on the first -> use-after-discharge). The
+// per-iteration count is not provable, so an in-loop consume of a singly-owned
+// obligation MUST be rejected.
+// Grammar grounded against 330_015_scope_for_loop_outer (for under a branch)
+// and 330_072_obligation_transfer_through_loop (<owned!>/<!owned> markers).
+const std = @import("std");
+const Handle = struct { n: i32 };
+
+~event make {}
+| made *Handle<owned!>
+~proc make|zig {
+    const h = std.heap.page_allocator.create(Handle) catch unreachable;
+    h.* = .{ .n = 0 };
+    return .{ .made = h };
+}
+
+~event consume { h: *Handle<!owned> }
+~proc consume|zig {
+    std.heap.page_allocator.destroy(h);
+}
+
+~make()
+| made h0 |> for(0..3)
+    ! each _ |> consume(h: h0)  // consumes the single owned handle every iteration
+    | done |> _

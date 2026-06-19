@@ -1,0 +1,5 @@
+OPEN DESIGN PROBE (not a pass/fail claim): can an owned obligation be carried
+across a loop back-edge via consume-in/issue-out? Currently rejected by KORU030.
+Unresolved whether this construction is mis-structured or a real language gap —
+kept TODO (off the board) until the design is settled. Already drove the
+KORU030 "input:owned" hint fix (now user-facing "<owned!>").

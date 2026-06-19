@@ -1,0 +1,2 @@
+b has tag=2
+b has tag=1

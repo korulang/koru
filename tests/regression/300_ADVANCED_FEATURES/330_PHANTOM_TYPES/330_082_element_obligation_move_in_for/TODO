@@ -1,0 +1,1 @@
+OPEN DESIGN PROBE (RED, off-board): element-obligation move A->B inside a for-loop body — blocked by KORU032 (consume of outer-owned handle inside @scope). See header.

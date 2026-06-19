@@ -1799,11 +1799,38 @@ pub const PhantomSemanticChecker = struct {
                     log.debug("[PHANTOM-FLOW]   Label '@{s}' not found in map, skipping jump arg validation\n", .{lj.label});
                 }
 
-                // Label jumps must not drop cleanup obligations.
-                // Exception: jumps to declared labels (#loop) are backward jumps that
-                // preserve the enclosing scope — obligations survive across iterations.
-                const is_loop_jump = self.label_map.contains(lj.label);
-                if (!is_loop_jump and context.hasUncleanedResources()) {
+                // Label jumps must not drop cleanup obligations. This holds for
+                // BOTH forward jumps and back-edge jumps to a declared label
+                // (`#loop` / `@loop`): a carried obligation must either be routed
+                // into the loop head's consuming input via a jump arg (so the next
+                // iteration re-consumes it) or be discharged before the jump.
+                //
+                // Back-edge jumps were previously exempt wholesale on the assumption
+                // that "obligations survive across iterations" — but that exemption
+                // also let a back-edge that DROPS the carried obligation pass
+                // (330_075_back_edge_drops_obligation), leaking it to a stage-D raw
+                // Zig error instead of a clean diagnostic. Conservation is now
+                // verified, not assumed. Green: 330_074 / 330_083 (carry routed via
+                // arg, or consumed before the jump). Caught: 330_075 / 370_020.
+                //
+                // LIMITATION 1 (per-loop obligation ownership): this per-jump check
+                // requires every live non-outer-scope obligation at the back-edge to
+                // route into THIS loop's head. For nested loops an obligation
+                // belonging to an enclosing loop is live at the inner back-edge but
+                // is not the inner head's to consume; the @scope mechanism marks
+                // such obligations outer-scope (skipped below), but loop nesting
+                // alone does not yet create that boundary. Nested label-folds that
+                // carry an outer obligation through an inner back-edge are not
+                // exercised by any current regression test and would need
+                // SCC-scoped ownership to be fully sound.
+                //
+                // LIMITATION 2 (reverse direction): this enforces the "live
+                // obligation must be carried" half of back-edge conservation. The
+                // reverse half — every consuming (`<!...>`) input of the loop head
+                // must be supplied by a jump arg — is not yet checked here; a body
+                // that disposes the carried obligation and back-edges with empty
+                // hands still falls to a stage-D error today.
+                if (context.hasUncleanedResources()) {
                     const uncleaned = try context.getUncleanedResources(self.allocator);
                     defer self.allocator.free(uncleaned);
 
@@ -2261,18 +2288,17 @@ pub const PhantomSemanticChecker = struct {
 
             switch (expected_parsed) {
                 .concrete => |concrete| {
-                    // Whether it's a requirement or consumption, we need the binding tracked
-                    const canonical_expected = try self.canonicalizePhantomState(expected_phantom.?, module_for_canon);
-                    defer self.allocator.free(canonical_expected);
-
+                    // Whether it's a requirement or consumption, we need the binding tracked.
+                    // Hints use the user-facing state spelling (e.g. `<owned!>`), never the
+                    // internal canonicalized form (`input:owned`), which is not writable syntax.
                     if (concrete.consumes_obligation) {
-                        // [!state] - consumption - argument must have an obligation to consume
+                        // [!state] - consumption - argument must carry the obligation to consume
                         try self.reporter.addError(
                             .KORU030,
                             location.line,
                             location.column,
-                            "Phantom state mismatch: argument '{s}' has no tracked phantom state, but event requires '<!{s}>' (consumption). Did you mean to pass a value with state '{s}'?",
-                            .{ arg.name, concrete.name, canonical_expected },
+                            "Phantom state mismatch: argument '{s}' carries no obligation here, but this event consumes '<!{s}>'. Pass a value that still holds its '<{s}!>' obligation.",
+                            .{ arg.name, concrete.name, concrete.name },
                         );
                     } else {
                         // [state] - requirement - argument must be in this state
@@ -2280,8 +2306,8 @@ pub const PhantomSemanticChecker = struct {
                             .KORU030,
                             location.line,
                             location.column,
-                            "Phantom state mismatch: argument '{s}' has no tracked phantom state, but event requires '<{s}>'. The value must be in state '{s}'.",
-                            .{ arg.name, expected_phantom.?, canonical_expected },
+                            "Phantom state mismatch: argument '{s}' has no tracked phantom state, but this event requires state '<{s}>'.",
+                            .{ arg.name, expected_phantom.? },
                         );
                     }
                     return false;

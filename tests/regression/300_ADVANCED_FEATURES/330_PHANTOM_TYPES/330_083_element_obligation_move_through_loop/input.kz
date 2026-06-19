@@ -1,0 +1,83 @@
+// ELEMENT-LEVEL OBLIGATION MOVE carried across a LOOP BACK-EDGE (the hard case).
+// Container-to-container framing of the 330_072 probe: A and B are hand-rolled
+// bins of owned handles; each back-edge iteration pops one owned `*Handle<owned!>`
+// out of A (consume A's hold, reissue the obligation on the popped value) and
+// pushes it into B (consume). The `#loop` label-fold carries the in-flight owned
+// handle back to the consuming param on `| again`; `| empty` ends the fold once A
+// is drained. Net per iteration: A loses one obligation, B gains one — conserved.
+// This tests whether the phantom model tracks an element obligation MOVED between
+// containers across the back-edge.
+//
+// Grammar grounded in GREEN 210_123 (`#loop` subflow + `@loop` re-invocation) and
+// 330_072 (issue `<owned!>` / consume `<!owned>` on the carried handle).
+const std = @import("std");
+
+// Bin = a tiny owned stack of handles. We model A as a fixed-size source we drain
+// and B as a sink we fill; both are plain (no obligation) — the OBLIGATION lives
+// on each Handle, which is what moves.
+const Handle = struct { tag: i32 };
+const Bin = struct { items: [4]?*Handle, n: usize };
+
+var bin_a: Bin = .{ .items = .{ null, null, null, null }, .n = 0 };
+var bin_b: Bin = .{ .items = .{ null, null, null, null }, .n = 0 };
+
+// Seed A with two owned handles. The seeded handles are owned by A (their
+// obligations are held inside bin_a); `seeded` carries no per-value obligation.
+// `| seeded i64` is identity-typed (carries the count) so the event is not a
+// single no-payload branch (PARSE003); same fix as 210_123.
+~event seed {}
+| seeded i64
+~proc seed|zig {
+    const a = std.heap.page_allocator.create(Handle) catch unreachable;
+    a.* = .{ .tag = 1 };
+    const b = std.heap.page_allocator.create(Handle) catch unreachable;
+    b.* = .{ .tag = 2 };
+    bin_a.items[0] = a;
+    bin_a.items[1] = b;
+    bin_a.n = 2;
+    return .{ .seeded = @intCast(bin_a.n) };
+}
+
+// Pop the next owned handle out of A: reissue the obligation onto the popped
+// value (`| moved` carries <owned!>); `| drained` when A is empty.
+~event pop-a {}
+| moved *Handle<owned!>
+| drained i64
+~proc pop-a|zig {
+    if (bin_a.n == 0) return .{ .drained = @intCast(bin_b.n) };
+    bin_a.n -= 1;
+    const h = bin_a.items[bin_a.n].?;
+    bin_a.items[bin_a.n] = null;
+    return .{ .moved = h };
+}
+
+// Push the owned handle into B: consume the obligation (B now holds it).
+~event push-b { h: *Handle<!owned> }
+~proc push-b|zig {
+    bin_b.items[bin_b.n] = h;
+    bin_b.n += 1;
+}
+
+// Free everything B holds at the end (drains B's obligations).
+~event free-b {}
+~proc free-b|zig {
+    var i: usize = 0;
+    while (i < bin_b.n) : (i += 1) {
+        std.debug.print("b has tag={}\n", .{bin_b.items[i].?.tag});
+        std.heap.page_allocator.destroy(bin_b.items[i].?);
+    }
+}
+
+// The shuttle: pop one off A, push into B, loop until A drained. The obligation
+// on the popped handle is carried from `pop-a`'s issue to `push-b`'s consume each
+// iteration; the back-edge re-enters `pop-a` for the next handle.
+~event shuttle {}
+| finished i64
+
+~shuttle = #loop pop-a()
+| moved v |> push-b(h: v) |> @loop()
+| drained c => finished c
+
+~seed()
+| seeded _ |> shuttle()
+    | finished _ |> free-b()

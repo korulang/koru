@@ -1,0 +1,57 @@
+// BASELINE (supported shape): own a resource OUTSIDE a label-fold, BORROW it
+// inside the fold across the back-edge, dispose AFTER the fold completes.
+// This is the label-fold analogue of GREEN 330_015 (own outside `for`, borrow
+// inside, dispose after) — mapping where the obligation/loop boundary actually
+// sits.
+//
+// Structure:
+//   make()  ISSUES <owned!>  (h0)
+//   |> spin(h: h0)           spin BORROWS <owned> (no consume at the door)
+//                            #loop step(...) folds a plain counter; the handle
+//                            is the OUTER-scope borrow, untouched per-iteration.
+//   |> done(h: h0)           done CONSUMES <!owned> after the fold — single disposer.
+//
+// The handle is a pure BORROW across the fold (never mutated), so it stays n=0;
+// the fold runs over an independent counter. Output: n=0.
+//
+// Grammar grounded against:
+//   - 210_123 (#loop / @loop label-fold over a plain counter)
+//   - 330_015 (own outside / borrow inside / dispose after)
+//   - list.kz directionality (<owned!> issue, <owned> borrow, <!owned> consume)
+const std = @import("std");
+const Handle = struct { n: i32 };
+
+~event make {}
+| made *Handle<owned!>
+~proc make|zig {
+    const h = std.heap.page_allocator.create(Handle) catch unreachable;
+    h.* = .{ .n = 0 };
+    return .{ .made = h };
+}
+
+// step folds a plain counter; it does NOT touch the handle's obligation.
+~event step { c: i32 }
+| next i32
+| done i32
+~proc step|zig {
+    if (c < 3) return .{ .next = c + 1 };
+    return .{ .done = c };
+}
+
+~event done { h: *Handle<!owned> }
+~proc done|zig {
+    std.debug.print("n={}\n", .{h.n});
+    std.heap.page_allocator.destroy(h);
+}
+
+// spin BORROWS the handle (untouched), runs the label-fold over a counter.
+~event spin { h: *Handle<owned> }
+| finished i32
+
+~spin = #loop step(c: 0)
+| next v |> @loop(c: v)
+| done r => finished r
+
+~make()
+| made h0 |> spin(h: h0)
+    | finished _ |> done(h: h0)
