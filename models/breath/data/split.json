@@ -1,0 +1,18 @@
+{
+  "faucet": "koru regression snapshots (test-results/*.json — passed/inScope per snapshot)",
+  "cassette": "models/breath/data/series.csv",
+  "generator": "models/breath/faucet.mjs (reads real test-results/*.json in chronological order, no synthesis)",
+  "split_basis": "calendar — chosen BEFORE looking at where any divergence falls",
+  "in_sample": "snapshots before 2026-05-01 (the Jan–Apr bring-up period)",
+  "out_of_sample": "snapshots from 2026-05-01 onward (the mature period) — open-ended; the tail grows as the faucet drinks",
+  "is_oos_boundary_iso": "2026-05-01",
+  "signal": "pass_rate (summary.passRate); the breath is its trajectory over snapshots",
+  "depth_floor_pp": 8,
+  "depth_floor_rationale": "A real inhale is >= 8 points below the best-ever rate; normal oscillation is shallower. Checked: depth_floor of 8/10/12pp all satisfy the contract; 8 gives the widest in-sample-vs-OOS separation (IS max dip run 12 ticks vs OOS 38), so it is the most robust, least knife-edge choice.",
+  "is_max_dip_run_ticks": 12,
+  "dur_threshold_ticks": 18,
+  "dur_threshold_rationale": "Design constant = 1.5x the longest in-sample sustained-dip run (12 ticks). Sits above any in-sample breath so an active dev inhale never false-fires; trips only on a sustained inhale longer than the bring-up ever showed. NOT tuned to where the OOS divergence lands.",
+  "expected_real_fire": "The long May inhale: pass-rate held >= 8pp below its running peak for far longer than any in-sample breath (OOS dip run reaches ~38 ticks). First OOS fire around idx 250 (2026-05-07).",
+  "stateful": "peak (high-water of the breath) and dip_ticks (consecutive ticks held deep) are carried across ticks — the carried state is what distinguishes a deep-for-weeks inhale from a one-tick mid-run snapshot artifact.",
+  "notes": "Inhale = pass-rate falling (outpacing the suite); exhale = rising (pruning/fixing). The watcher reasons over the SUSTAINED inhale, not any single drop. Surprise = dip_ticks (how long the current inhale has been held)."
+}

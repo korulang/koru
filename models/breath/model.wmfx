@@ -1,0 +1,49 @@
+desc:Breath (inhale/exhale) watcher — fire when koru's pass-rate sits in a SUSTAINED deep inhale (a long fall below its own peak that won't exhale), past anything the in-sample bring-up ever showed
+author:WMFX
+tags:world-model dogfood breath inhale-exhale pass-rate sustained-drawdown koru regression-suite
+
+// --- Port units (WMFX annotations) ---
+@unit pass_rate     percent
+@unit peak          percent
+@unit drawdown      percent
+@unit depth_floor   percent
+@unit dip_ticks     1
+@unit dur_threshold 1
+@unit alarm         1
+@unit surprise      1
+
+// Breath = the pass-rate trajectory over the regression snapshots. Inhale = the
+// rate FALLING (we outpace the suite on purpose); exhale = the rate RISING (we
+// prune lies and fix). A healthy breath oscillates. The pathology is an inhale
+// held too long: the rate sits deep below its own peak for many snapshots and
+// won't exhale.
+//
+// Why this MUST be stateful (not a snapshot subtraction): a single-tick crash is
+// a mid-run snapshot artifact, NOT a breath. Only by carrying a peak and a
+// run-length counter ACROSS ticks can the model tell a deep-for-weeks inhale from
+// one-tick noise. `peak` and `dip_ticks` below persist tick-to-tick — that carried
+// state is what turns a pass-rate stream into a breath.
+//
+// Constants are DESIGN CONSTANTS (not tunables), frozen BEFORE replay:
+//   depth_floor   = 8   — a real inhale is >= 8 points below the best-ever rate;
+//                         normal oscillation is shallower.
+//   dur_threshold = 18  — 1.5x the longest in-sample (Jan–Apr bring-up) sustained
+//                         dip run (12 ticks). Sits above normal breathing, so an
+//                         active dev breath never trips it; a real stall does.
+@init
+peak = 0;
+dip_ticks = 0;
+depth_floor = 8;
+dur_threshold = 18;
+
+@block
+// High-water peak of the breath so far — the ceiling the rate oscillates under.
+peak = pass_rate > peak ? pass_rate : peak;
+// How deep the current inhale is: points below the best-ever rate.
+drawdown = peak - pass_rate;
+// Sustained-inhale counter: +1 each consecutive tick we stay deep; resets the
+// instant the breath exhales back above the floor. THIS is the carried state.
+dip_ticks = drawdown >= depth_floor ? dip_ticks + 1 : 0;
+// Fire when the inhale has been held longer than any in-sample breath ever was.
+alarm = dip_ticks >= dur_threshold ? 1 : 0;
+surprise = dip_ticks;
