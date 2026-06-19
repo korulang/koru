@@ -1,0 +1,296 @@
+{
+  "subject": "koru-worldmodel",
+  "generated_at": "2026-06-19T05:19:59.301Z",
+  "scoreboard": {
+    "passed": 781,
+    "expected": 866,
+    "gap": 85,
+    "pass_rate": "90.2"
+  },
+  "instruments": [
+    {
+      "id": "wm-adapter",
+      "shape": "adapter",
+      "path": "wm/run.sh",
+      "watches": "koru regression suite — fires when a green test flips red"
+    },
+    {
+      "id": "probe_pass_floor",
+      "shape": "native",
+      "path": "models/probe_pass_floor/run.sh"
+    }
+  ],
+  "floats": [
+    {
+      "float": "2026-06-07-transparency",
+      "date": "2026-06-07",
+      "count": 21,
+      "gaps": [
+        {
+          "rank": 1,
+          "title": "Diagnostic-code registry coherence: emit ⊆ declared, declared ⊆ emitted, pinned ⊆ declared",
+          "intent": "Keep src/errors.zig the honest single source of truth for diagnostics: no code emitted that isn't declared, no code declared that's never emitted (a lie that claims the compiler catches something it doesn't), no test pinned to a code that can't fire.",
+          "faucet": "FACT (three sets, one scan): EMITTED = raw `error\\[([A-Z]+[0-9]+)\\]` string literals across src/ PLUS `.KORU###`/`.PARSE###`/etc enum-tag uses; DECLARED = enum members parsed from the `pub const ErrorCode = enum` block in src/errors.zig; PINNED = codes referenced in tests/**/{EXPECT,expected*.txt}. Emit the three set-differences: EMITTED\\DECLARED (orphan emits), DECLARED\\EMITTED (dead codes), PINNED\\DECLARED (rotten pins). INTENT (only to gate the dead-code arm): axis code_is_aspirational: +1 a newly-added enum member is marked reserved/aspirational with a comment, -1 a code is added or left with zero emit sites under no such marker.",
+          "gate": "Two arms. Pure-FACT arm (no judge): fire if EMITTED\\DECLARED >= 1 OR PINNED\\DECLARED >= 1 — a closed-registry set difference, deterministic. Dead-code arm: fire = FACT(DECLARED\\EMITTED introduced/grows by this diff) × INTENT(code_is_aspirational <= -0.5) × gain >= floor, so a benign reserved-code addition stays silent.",
+          "fires_on": "TODAY: EMITTED\\DECLARED = {KORU200} (src/main.zig:3604, verified absent from enum at src/errors.zig:3-86). DECLARED\\EMITTED = {KORU031,KORU042,KORU043,KORU052,KORU060,KORU061,KORU070,KORU082,KORU090,KORU091,PARSE002} — 11 codes with emit_sites=0, verified by grep. Also fires on a future rename like KORU044→KORU047 that leaves the 8 expected.txt pins dangling.",
+          "severity": "med",
+          "buildability": "high",
+          "corroborated_by": [
+            "two_source_drift.1",
+            "two_source_drift.4",
+            "unenforced_convention.1",
+            "unenforced_convention.3",
+            "dangerous_change_shape.3"
+          ]
+        },
+        {
+          "rank": 2,
+          "title": "Product version is one number across all five sites",
+          "intent": "A release has exactly one version; `koruc --version`, the manifest, the scaffolded-project templates, the CCP handshake, and the CHANGELOG must agree.",
+          "faucet": "FACT: collect version strings from src/main.zig `const version`, koru.json `.version`, the newest `## [X.Y.Z]` CHANGELOG header, and the hardcoded `\"version\": \"X.Y.Z\"` literals in ccp.zig + project_template.zig; whitelist build.zig.zon's `0.0.0` (documented Zig package-dedup placeholder). Returns the distinct release-version set and whether main.zig's version has a matching CHANGELOG header.",
+          "gate": "Pure FACT: fire = count(distinct non-placeholder versions) > 1 OR main.zig version has no `## [that-version]` CHANGELOG header. No judge.",
+          "fires_on": "TODAY: main.zig:36=0.1.7, koru.json:3=0.1.4, CHANGELOG newest=[0.1.3], project_template.zig:93/108=0.1.0 — four disagreeing values, no [0.1.7] header. CHANGELOG.md:87 is the receipt this already drifted once.",
+          "severity": "med",
+          "buildability": "high",
+          "corroborated_by": [
+            "two_source_drift.3"
+          ]
+        },
+        {
+          "rank": 3,
+          "title": "canonicalize post-condition: every DottedPath gets a module_qualifier, no silent null-skip downstream",
+          "intent": "The documented post-condition of canonicalize_names (every DottedPath has module_qualifier != null) must stay enforced as the AST grows, and consumers must assert it rather than silently papering over a null with `orelse`/`if(mq)`.",
+          "faucet": "FACT: AST-walk — enumerate every ast.Item/ast.Step variant that (transitively) holds a DottedPath field (grep ast.zig: `:\\s*\\??\\[?\\]?DottedPath` → ~15 fields), check each is reached by a canonicalizePath call in the src/canonicalize_names.zig walker; return count of uncovered path-bearing variants. INTENT axis path_coverage_complete: +1 a diff adding a path-bearing AST variant adds the matching walker call (or a justified skip), -1 it adds the variant with no walker edit; axis fallback_masks_invariant: +1 a downstream module_qualifier read asserts non-null, -1 it adds another silent `orelse`/`if(mq)`.",
+          "gate": "fire = FACT(uncovered path-bearing variants >= 1, i.e. a new variant added without a walker edit) × INTENT(path_coverage_complete <= -0.5) × gain >= floor. A benign walker rename/reorder keeps coverage at full → FACT=0 → silent.",
+          "fires_on": "FUTURE: a commit adding an ast.Item/ast.Step variant carrying a DottedPath without touching canonicalize_names.zig — the path keeps module_qualifier==null and continuation_codegen.zig:31 (`if (invocation.path.module_qualifier) |mq| {...}`, verified) silently emits a bare unqualified symbol, surfacing 3 steps later as a wrong-module/unknown-symbol error in generated Zig.",
+          "severity": "high",
+          "buildability": "high",
+          "corroborated_by": [
+            "silent_invariant.1"
+          ]
+        },
+        {
+          "rank": 4,
+          "title": "No orphaned expected.txt that degrades to a false-green compile-only test",
+          "intent": "A regression dir shipping expected.txt must carry a run/assert marker (MUST_RUN or EXPECT), or its expected output is never compared and the test silently passes the moment it compiles.",
+          "faucet": "FACT: walk tests/regression/**; flag dirs with expected.txt present, no MUST_RUN, no EXPECT. Return paths plus their SUCCESS/FAILURE marker state.",
+          "gate": "Pure FACT with a product-anchor clause: fire = (dir has expected.txt) AND NOT(MUST_RUN OR EXPECT) AND (SUCCESS present, no FAILURE). The SUCCESS-without-FAILURE clause isolates the dangerous false-green subset from merely-deferred TODOs.",
+          "fires_on": "LATENT TODAY: 9 dirs match the orphan shape (verified: e.g. 430_003_impl_override_only, 365_001_basic_intercept), but all 9 are FAILURE so the gate correctly holds. Flips to alarm the instant one compiles and gets a SUCCESS marker with its expected.txt still unchecked.",
+          "severity": "high",
+          "buildability": "high",
+          "corroborated_by": [
+            "unenforced_convention.2"
+          ]
+        },
+        {
+          "rank": 5,
+          "title": "Hand-authored doc code blocks must compile against the live compiler (stderr-gated, not exit-code)",
+          "intent": "Every fenced ```koru/```kz block in hand-authored Markdown (README first) must use only forms the current koruc accepts — the front door a new user copies must not be dead syntax.",
+          "faucet": "FACT: extract fenced koru/kz blocks from hand-authored .md (exclude files with a 'Generated by' header), write each to a temp .kz, run zig-out/bin/koruc, and fire on any block whose STDERR contains `error[`. CRITICAL: koruc exits 0 even on PARSE003 (verified), so gate on stderr `error[` match, never on exit code.",
+          "gate": "Pure FACT: fire = N_failing_blocks >= 1 in any non-generated doc. Compiler is the oracle.",
+          "fires_on": "TODAY: README.md:6 block → `error[PARSE003]: imports are bare — drop the ~` (verified live; also uses dead `std.io:` dot-namespace pinned by KORU035). Canonical form is bare `import std/io`.",
+          "severity": "high",
+          "buildability": "high",
+          "corroborated_by": [
+            "two_source_drift.2",
+            "rules_aware.1",
+            "rules_aware.2"
+          ]
+        },
+        {
+          "rank": 6,
+          "title": "A behavior-changing fix(...) under src/ must land with a regression test",
+          "intent": "CONTRIBUTING/AGENTS both mandate failing-test-first; a src/ behavior fix with no tests/ change ships a change with zero pinned evidence.",
+          "faucet": "FACT: for each `^fix` commit, `git show --name-only`; flag if it touches src/*.zig but no path under tests/. INTENT axis fix_is_test_pinned: +1 the diff adds/updates a regression exercising the fixed path, -1 a behavior-changing fix lands with no test and no stated untestability reason.",
+          "gate": "fire = FACT(fix touches src/, not tests/) × INTENT(fix_is_test_pinned <= -0.5) × gain >= floor. Judge suppresses docs/snapshot-only fix commits and fixes already covered by an existing re-run test.",
+          "fires_on": "VERIFIED: b203f6cb `fix(codegen): unbalanced closer...` touches only src/codegen_utils.zig, zero tests/. Control d87beceb `fix(parser): reject unbalanced...` lands with its tests/regression/100_081 — FACT half silent.",
+          "severity": "med",
+          "buildability": "med",
+          "corroborated_by": [
+            "unenforced_convention.4"
+          ]
+        }
+      ]
+    },
+    {
+      "float": "2026-06-18-gap-hunt",
+      "date": "2026-06-18",
+      "count": 14,
+      "gaps": [
+        {
+          "title": "proc bodies skip cross-module private-event visibility (KORU044 blind spot)",
+          "anchor": "src/main.zig:5415  (.proc_decl => {})",
+          "substrate": "test",
+          "severity": "high",
+          "buildability": "high",
+          "status": "unverified",
+          "found_by": [
+            "hunter1"
+          ],
+          "converged": false
+        },
+        {
+          "title": "4+ glob matchers with divergent semantics (tap vs transform dispatch disagree)",
+          "anchor": "src/runtime_registry.zig:260; src/shape_checker.zig:410; src/ast.zig:1758",
+          "substrate": "test",
+          "severity": "high",
+          "buildability": "high",
+          "status": "unverified",
+          "found_by": [
+            "hunter1",
+            "hunter3"
+          ],
+          "converged": true
+        },
+        {
+          "title": "annotation typo (e.g. [comptme]) compiles silently",
+          "anchor": "src/parser.zig:964",
+          "substrate": "test",
+          "severity": "n/a",
+          "buildability": "n/a",
+          "status": "rejected — Lars: compiler annotations are OPAQUE by design, not a bug",
+          "found_by": [
+            "hunter2",
+            "hunter3"
+          ],
+          "converged": true
+        },
+        {
+          "title": "[aspirational] stdlib markers have no compiler enforcement gate",
+          "anchor": "koru_std/fs.kz:19; OUTSTANDING_DESIGN_DECISIONS.md:1",
+          "substrate": "test",
+          "severity": "med",
+          "buildability": "med",
+          "status": "unverified — known planned TODO",
+          "found_by": [
+            "hunter1",
+            "hunter2"
+          ],
+          "converged": true
+        },
+        {
+          "title": "compiler_passes modules compiled but never wired in (dead_strip, purity_analyzer, effect_analyzer, metadata_aggregator)",
+          "anchor": "src/koru_lib_facade.zig:20; build.zig:800; absent from src/main.zig",
+          "substrate": "test",
+          "severity": "med",
+          "buildability": "high",
+          "status": "unverified",
+          "found_by": [
+            "hunter1",
+            "hunter3"
+          ],
+          "converged": true
+        },
+        {
+          "title": "MUST_FAIL negative tests that pass without pinning WHICH error fires",
+          "anchor": "tests/regression/500_INTEGRATION_TESTING/510_NEGATIVE_TESTS/510_011_invalid_module_qualifier (no expected_error.txt); 510_052 (FRONTEND_COMPILE_ERROR only)",
+          "substrate": "test",
+          "severity": "med",
+          "buildability": "high",
+          "status": "unverified",
+          "found_by": [
+            "hunter2",
+            "hunter3"
+          ],
+          "converged": true
+        },
+        {
+          "title": "TapRegistry emits a no-op placeholder into PRODUCTION output (taps silently do nothing)",
+          "anchor": "src/emitter_helpers.zig:830; src/visitor_emitter.zig:658",
+          "substrate": "test",
+          "severity": "med",
+          "buildability": "high",
+          "status": "unverified",
+          "found_by": [
+            "hunter1"
+          ],
+          "converged": false
+        },
+        {
+          "title": "duplicate ~proc silently last-wins (no diagnostic, unlike registerEvent)",
+          "anchor": "src/type_registry.zig:231",
+          "substrate": "test",
+          "severity": "med",
+          "buildability": "high",
+          "status": "unverified",
+          "found_by": [
+            "hunter1"
+          ],
+          "converged": false
+        },
+        {
+          "title": "wildcard tap matching zero events warns only via log.debug (invisible unless DEBUG=true)",
+          "anchor": "src/shape_checker.zig:611",
+          "substrate": "test",
+          "severity": "med",
+          "buildability": "high",
+          "status": "unverified",
+          "found_by": [
+            "hunter2"
+          ],
+          "converged": false
+        },
+        {
+          "title": "koruc init stamps hardcoded version 0.1.0 (drifts from compiler version 0.1.7)",
+          "anchor": "src/main.zig:5734 vs src/main.zig:36",
+          "substrate": "test",
+          "severity": "med",
+          "buildability": "high",
+          "status": "unverified",
+          "found_by": [
+            "hunter3"
+          ],
+          "converged": false
+        },
+        {
+          "title": "CCP 'ast' command documented but not implemented",
+          "anchor": "docs/CCP.md:59 vs src/ccp.zig:14",
+          "substrate": "test",
+          "severity": "med",
+          "buildability": "high",
+          "status": "unverified",
+          "found_by": [
+            "hunter3"
+          ],
+          "converged": false
+        },
+        {
+          "title": "obligation-matrix CELL key typo silently drops a cell to 'no cell yet'",
+          "anchor": "scripts/generate-obligation-matrix.js:113",
+          "substrate": "test",
+          "severity": "med",
+          "buildability": "high",
+          "status": "unverified",
+          "found_by": [
+            "hunter2"
+          ],
+          "converged": false
+        },
+        {
+          "title": "branch-constructor field names never validated against declared fields",
+          "anchor": "src/shape_checker.zig:1523  (TODO)",
+          "substrate": "test",
+          "severity": "med",
+          "buildability": "med",
+          "status": "unverified",
+          "found_by": [
+            "hunter3"
+          ],
+          "converged": false
+        },
+        {
+          "title": "effect-branch ordering (!-before-|) is convention-only, unenforced",
+          "anchor": "docs/EFFECT_BRANCHES.md:47",
+          "substrate": "test",
+          "severity": "low",
+          "buildability": "high",
+          "status": "unverified",
+          "found_by": [
+            "hunter3"
+          ],
+          "converged": false
+        }
+      ]
+    }
+  ]
+}

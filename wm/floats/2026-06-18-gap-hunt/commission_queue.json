@@ -1,0 +1,23 @@
+{
+  "float_run": "gap-hunt-2026-06-18",
+  "date": "2026-06-18",
+  "target": "/Users/larsde/src/koru",
+  "candidate_count": 14,
+  "method": "3 sealed blind hunters (sonnet), each self-grounded against the 2026-06-07 catalog and told to diverge from it. Consolidated here, convergences noted. STATUS: UNVERIFIED — every anchor is as the agents reported it; NOT yet re-checked against source (agent output is a hypothesis until grounded). Lars adjudicates each before it counts as a real gap.",
+  "commission_queue": [
+    { "title": "proc bodies skip cross-module private-event visibility (KORU044 blind spot)", "anchor": "src/main.zig:5415  (.proc_decl => {})", "substrate": "test", "severity": "high", "buildability": "high", "status": "unverified", "found_by": ["hunter1"], "converged": false },
+    { "title": "4+ glob matchers with divergent semantics (tap vs transform dispatch disagree)", "anchor": "src/runtime_registry.zig:260; src/shape_checker.zig:410; src/ast.zig:1758", "substrate": "test", "severity": "high", "buildability": "high", "status": "unverified", "found_by": ["hunter1", "hunter3"], "converged": true },
+    { "title": "annotation typo (e.g. [comptme]) compiles silently", "anchor": "src/parser.zig:964", "substrate": "test", "severity": "n/a", "buildability": "n/a", "status": "rejected — Lars: compiler annotations are OPAQUE by design, not a bug", "found_by": ["hunter2", "hunter3"], "converged": true },
+    { "title": "[aspirational] stdlib markers have no compiler enforcement gate", "anchor": "koru_std/fs.kz:19; OUTSTANDING_DESIGN_DECISIONS.md:1", "substrate": "test", "severity": "med", "buildability": "med", "status": "unverified — known planned TODO", "found_by": ["hunter1", "hunter2"], "converged": true },
+    { "title": "compiler_passes modules compiled but never wired in (dead_strip, purity_analyzer, effect_analyzer, metadata_aggregator)", "anchor": "src/koru_lib_facade.zig:20; build.zig:800; absent from src/main.zig", "substrate": "test", "severity": "med", "buildability": "high", "status": "unverified", "found_by": ["hunter1", "hunter3"], "converged": true },
+    { "title": "MUST_FAIL negative tests that pass without pinning WHICH error fires", "anchor": "tests/regression/500_INTEGRATION_TESTING/510_NEGATIVE_TESTS/510_011_invalid_module_qualifier (no expected_error.txt); 510_052 (FRONTEND_COMPILE_ERROR only)", "substrate": "test", "severity": "med", "buildability": "high", "status": "unverified", "found_by": ["hunter2", "hunter3"], "converged": true },
+    { "title": "TapRegistry emits a no-op placeholder into PRODUCTION output (taps silently do nothing)", "anchor": "src/emitter_helpers.zig:830; src/visitor_emitter.zig:658", "substrate": "test", "severity": "med", "buildability": "high", "status": "unverified", "found_by": ["hunter1"], "converged": false },
+    { "title": "duplicate ~proc silently last-wins (no diagnostic, unlike registerEvent)", "anchor": "src/type_registry.zig:231", "substrate": "test", "severity": "med", "buildability": "high", "status": "unverified", "found_by": ["hunter1"], "converged": false },
+    { "title": "wildcard tap matching zero events warns only via log.debug (invisible unless DEBUG=true)", "anchor": "src/shape_checker.zig:611", "substrate": "test", "severity": "med", "buildability": "high", "status": "unverified", "found_by": ["hunter2"], "converged": false },
+    { "title": "koruc init stamps hardcoded version 0.1.0 (drifts from compiler version 0.1.7)", "anchor": "src/main.zig:5734 vs src/main.zig:36", "substrate": "test", "severity": "med", "buildability": "high", "status": "unverified", "found_by": ["hunter3"], "converged": false },
+    { "title": "CCP 'ast' command documented but not implemented", "anchor": "docs/CCP.md:59 vs src/ccp.zig:14", "substrate": "test", "severity": "med", "buildability": "high", "status": "unverified", "found_by": ["hunter3"], "converged": false },
+    { "title": "obligation-matrix CELL key typo silently drops a cell to 'no cell yet'", "anchor": "scripts/generate-obligation-matrix.js:113", "substrate": "test", "severity": "med", "buildability": "high", "status": "unverified", "found_by": ["hunter2"], "converged": false },
+    { "title": "branch-constructor field names never validated against declared fields", "anchor": "src/shape_checker.zig:1523  (TODO)", "substrate": "test", "severity": "med", "buildability": "med", "status": "unverified", "found_by": ["hunter3"], "converged": false },
+    { "title": "effect-branch ordering (!-before-|) is convention-only, unenforced", "anchor": "docs/EFFECT_BRANCHES.md:47", "substrate": "test", "severity": "low", "buildability": "high", "status": "unverified", "found_by": ["hunter3"], "converged": false }
+  ]
+}
