@@ -288,6 +288,88 @@ concern (and the test is wrong about where the error belongs)?
 
 ---
 
+## WORK ORDER — phantom state cross-module resolution
+
+**Context.** A phantom state is only meaningful relative to its *declaring
+module*. Today `phantom_semantic_checker.zig` canonicalizes a **bare** state
+(`<list>`) against the **defining module of the field** that carries it
+(`event_decl.module`). That works inside the declaring module — `std/list`'s own
+`push { xs: *List_i64<list> }` canonicalizes to `std/list:list`. But it breaks
+the moment a state is referenced **outside** its declaring module: a user
+module's `rle { nxt: *List_i64<list> }` canonicalizes to `<user>:list`, which
+will never unify with the `std/list:list!` that `new-i64` issued. This is GAP B
+error 1 in the day10 handoff (`expected 'day10_wip_list_rle:list' but got
+'std.list:list!'`). The same mechanism blocks any user event that takes a
+std-collection handle param.
+
+**Why bare-is-not-enough (the scalar case).** Phantom states are not exclusive
+to handle types — scalars carry them too (`n: i64<epoch>`, `c: 22.5<celsius>`).
+A builtin scalar has no home module, so the state's module cannot be implied
+from the type. The state must name its own module. Applying the *same* rule to
+handle types (one resolution path, not two) is more consistent than
+special-casing handles.
+
+**DECISION (ratified 2026-06-19, design by GLM + Lars).** Phantom states carry
+their own module, independent of the field's type, mirroring how event/type
+paths already resolve (`std/list:push`). The rule:
+
+- **Bare** `<list>` / `<list!>` / `<!list>` — legal only **inside** the
+  declaring module; resolves to *this* module. (Equivalent to a self-qualified
+  reference.)
+- **Qualified** `<module/state>` — legal everywhere; **required** outside the
+  declaring module. A user module borrowing `std/list`'s list-state writes
+  `<std/list:list>`, `<std/list:list!>` (issue), `<std/list:!list>` (consume).
+- **`!`-modifiers stay on the state token**, never on the qualifier:
+  `std/list:!list` (consume), `std/list:list!` (issue), `std/list:list`
+  (borrow). The qualifier is a pure scope prefix; the `!` semantics are a
+  property of the state. (Rejected alternative `<!std/list:list>` — makes the
+  `!` a property of the whole cross-module reference, which is a category
+  error, and breaks uniform left-to-right parsing.)
+- **Union:** `<member|member>`, each member a fully-qualified-or-bare state per
+  the above, e.g. `<std/list:!list|app/coins:coins>`. Per-member qualifier;
+  no factored shared qualifier (members may come from different modules).
+- **Canonical separator: slash** (`std/list`), matching import paths — NOT dot.
+  The current canonical form emits dot (`std.list:list!`); that is a bug.
+  `module_map` is today keyed on the dot `local_name` (`std.list`) with the
+  slash import path as value; it must move to slash keys (or normalize at
+  lookup) so a written `<std/list:list>` resolves.
+
+**Verification stance (lexical, like events).** The checker resolves the
+qualifier through `module_map` and confirms the module is imported/declared —
+the same check it runs for event qualifiers. It does **not** verify "this state
+belongs to this type": a state's home is lexical, declared by usage, same as
+events. This **decouples** this design from the separate type-qualification gap
+(handle types like the list collection type carrying no `module_path`, so the
+emitter writes a bare unqualified type that's undeclared in a user module).
+That is its own concern ("issue 4" in the day10 brief); do not conflate.
+
+**Scope explicitly OUT of this design:**
+- Type `module_path` population for handle types (issue 4 / GAP B type half) —
+  separate. The state-qualification rule here does not depend on it.
+- Obligation threading through label-fold bodies (GAP B error 2: a `<!list>`
+  consume-param losing its tracked state across the fold) — narrower bug in
+  checker scoping, adjacent to the `29595b5a` seed-credit work; separate fix.
+- Changing the `~capture` transform to rewrite `=> captured {...}` in terminal
+  position (day10 symptom 2) — separate.
+
+**Landing plan (breaking tests first, no silent partial).**
+1. Add failing regression tests (honest RED) covering the rule: a user module
+   that references `std/list:list` cross-module and hits KORU030 today; a
+   scalar-phantom cross-module reference (`app/time:i64<app/coins:epoch>`);
+   the bare-outside-declaring-module rejection. Mark expected post-fix behavior.
+2. Fix canonical form to slash + `module_map` slash keying. Flip the
+   unification tests green.
+3. Enforce bare-state-only-inside-declaring-module (reject bare outside).
+4. Emit clearer KORU030 messages using the user-facing qualified spelling,
+   never the internal canonical form.
+
+**Status:** DESIGN RATIFIED, NOT YET IMPLEMENTED. The two unrelated fixes
+landed this session (commit `3e2cdaa8`: capture-fold body emission under
+continuation branches; positional-arg parsing with pre-dot operators) are safe
+forward progress independent of this design.
+
+---
+
 ## Non-decision follow-ups (fixes, not design — but don't lose them)
 - **`330_060`, `521`** — NOT regressions. Pre-existing MUST_FAIL *gaps* the harness
   only started detecting (commit `7ac02be1`). Need the missing validations BUILT:
