@@ -1,0 +1,7 @@
+OPEN FINDING (codegen, not phantom): an INLINE nested label-fold (#iloop inside
+the outer fold body, same scope) miscompiles to invalid Zig ("local variable is
+never mutated") at stage D — the frontend accepts it but the emitter produces bad
+code. This BLOCKS constructing the Limitation-1 phantom case: both reachable
+nested patterns (330_084 separate-transform, 330_085 held-across) pass cleanly,
+so the L1 obligation false-positive is not presently reachable. Off-board until
+the nested-fold emitter is fixed (or inline nesting is rejected at frontend).

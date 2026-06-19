@@ -1,0 +1,42 @@
+// PROBE for Limitation 1 (held-across, same scope): an obligation OWNED in the
+// same scope as a label-fold back-edge, the fold runs over a SCALAR (never
+// touches the handle), and the handle is escaped on the exit branch. h0 is live
+// (uncleaned) at `@loop(c: v)` but is NOT the loop's to consume — it is held
+// across and escaped on `fin`. If conservation is held-across-aware this is
+// sound; if not, the back-edge check false-flags h0 as a dropped obligation.
+// Mirrors 330_074 exactly, but the carried slot is a scalar and h0 is held.
+const std = @import("std");
+const Handle = struct { n: i32 };
+
+~event make {}
+| made *Handle<owned!>
+~proc make|zig {
+    const h = std.heap.page_allocator.create(Handle) catch unreachable;
+    h.* = .{ .n = 0 };
+    return .{ .made = h };
+}
+
+~event icount { c: i32 }
+| more i32
+| fin i32
+~proc icount|zig {
+    if (c < 3) return .{ .more = c + 1 };
+    return .{ .fin = c };
+}
+
+~event dispose { h: *Handle<!owned> }
+~proc dispose|zig {
+    std.debug.print("n={}\n", .{h.n});
+    std.heap.page_allocator.destroy(h);
+}
+
+~event spin {}
+| finished *Handle<owned!>
+
+~spin = make()
+| made h0 |> #loop icount(c: 0)
+    | more v |> @loop(c: v)
+    | fin _ => finished h0
+
+~spin()
+| finished hf |> dispose(h: hf)

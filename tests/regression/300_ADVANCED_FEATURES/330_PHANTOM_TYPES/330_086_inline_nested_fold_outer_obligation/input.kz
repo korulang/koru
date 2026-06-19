@@ -1,0 +1,51 @@
+// PROBE — the EXACT Limitation 1 shape: outer fold carries obligation v; INSIDE
+// the outer `again` branch (same scope, v live) an INLINE inner fold runs over a
+// scalar; at the inner back-edge `@iloop(c: k)` v is live+uncleaned but is NOT
+// the inner loop's to consume. If per-loop ownership is missing, the inner
+// back-edge false-flags v as a dropped obligation (KORU030).
+const std = @import("std");
+const Handle = struct { n: i32 };
+
+~event make {}
+| made *Handle<owned!>
+~proc make|zig {
+    const h = std.heap.page_allocator.create(Handle) catch unreachable;
+    h.* = .{ .n = 0 };
+    return .{ .made = h };
+}
+
+~event step { h: *Handle<!owned> }
+| again *Handle<owned!>
+| stop *Handle<owned!>
+~proc step|zig {
+    h.n += 1;
+    if (h.n < 2) return .{ .again = h };
+    return .{ .stop = h };
+}
+
+~event icount { c: i32 }
+| more i32
+| fin i32
+~proc icount|zig {
+    if (c < 2) return .{ .more = c + 1 };
+    return .{ .fin = c };
+}
+
+~event dispose { h: *Handle<!owned> }
+~proc dispose|zig {
+    std.debug.print("n={}\n", .{h.n});
+    std.heap.page_allocator.destroy(h);
+}
+
+~event spin {}
+| finished *Handle<owned!>
+
+~spin = make()
+| made h0 |> #oloop step(h: h0)
+    | again v |> #iloop icount(c: 0)
+        | more k |> @iloop(c: k)
+        | fin _ |> @oloop(h: v)
+    | stop r => finished r
+
+~spin()
+| finished hf |> dispose(h: hf)

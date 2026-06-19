@@ -1,0 +1,60 @@
+// PROBE for Limitation 1 (per-loop obligation ownership across NESTED loops):
+// the OUTER label-fold carries an owned obligation `v`; inside the `again`
+// branch — while `v` is live — an INNER label-fold runs, then the outer
+// back-edge `@oloop(h: v)` carries `v` forward. If the back-edge conservation
+// check is per-loop-aware, `v` is conserved at @oloop and the inner loop's
+// @iloop (which never touches v) is unaffected. If it is NOT, the inner back-edge
+// would false-flag `v` as a dropped obligation.
+// Grounded on 330_074 (the working carry) + 210_123 (label-fold grammar).
+const std = @import("std");
+const Handle = struct { n: i32 };
+
+~event make {}
+| made *Handle<owned!>
+~proc make|zig {
+    const h = std.heap.page_allocator.create(Handle) catch unreachable;
+    h.* = .{ .n = 0 };
+    return .{ .made = h };
+}
+
+~event step { h: *Handle<!owned> }
+| again *Handle<owned!>
+| stop *Handle<owned!>
+~proc step|zig {
+    h.n += 1;
+    if (h.n < 3) return .{ .again = h };
+    return .{ .stop = h };
+}
+
+~event done { h: *Handle<!owned> }
+~proc done|zig {
+    std.debug.print("n={}\n", .{h.n});
+    std.heap.page_allocator.destroy(h);
+}
+
+~event icount { k: i64 }
+| imore i64
+| idone i64
+~proc icount|zig {
+    if (k > 0) return .{ .imore = k - 1 };
+    return .{ .idone = k };
+}
+
+~event inner {}
+| ifin i64
+
+~inner = #iloop icount(k: 2)
+| imore k2 |> @iloop(k: k2)
+| idone r => ifin r
+
+~event spin {}
+| finished *Handle<owned!>
+
+~spin = make()
+| made h0 |> #oloop step(h: h0)
+    | again v |> inner()
+        | ifin _ |> @oloop(h: v)
+    | stop r => finished r
+
+~spin()
+| finished hf |> done(h: hf)
