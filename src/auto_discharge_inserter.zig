@@ -919,6 +919,25 @@ pub const AutoDischargeInserter = struct {
             if (node == .invocation) {
                 try self.checkInvocationSatisfiesObligations(&context, &node.invocation, module_name, flow);
             }
+            // A label-fold declaration `#label event(args)` seeds the loop by
+            // invoking `event` once before the first iteration. Its consuming
+            // (`<!X>`) inputs discharge the seed binding's obligation exactly like
+            // a plain invocation — the re-issued `<X!>` obligation arrives fresh
+            // on the body's output branches (`again v` / `stop r`), NOT on the
+            // seed binding. Without this credit, the seed binding (e.g. `h0` in
+            // `made h0 |> #loop step(h: h0)`) stays "live" at the loop's exit
+            // branch and auto-discharge inserts a spurious dispose of it there —
+            // while the same pointer escapes via `=> finished r` and is disposed
+            // again by the caller: a double-free (330_074/084/086). The phantom
+            // checker already models the seed this way (validateSingleInvocation
+            // on lwi.invocation); this mirrors it. Only declarations (`#label`)
+            // seed; `@label` jumps are handled by the label_jump path.
+            if (node == .label_with_invocation) {
+                const lwi = node.label_with_invocation;
+                if (lwi.is_declaration) {
+                    try self.checkInvocationSatisfiesObligations(&context, &lwi.invocation, module_name, flow);
+                }
+            }
 
             // Handle foreach nodes - recurse into branches with scope tracking
             if (node == .foreach) {

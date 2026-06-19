@@ -1,8 +1,0 @@
-AUTO-DISCHARGE DOUBLE-FREE (off-board): GLM's emitter fix lets this nested/carried
-label-fold COMPILE and re-invoke correctly (was the "never mutated" codegen bug).
-But it now exposes a separate auto-discharge bug — carrying an obligation through a
-loop (consume-in/issue-out) makes auto-discharge dispose the SEED binding h0 AND
-escape the re-issued handle r (=h0) to the caller, which disposes again =>
-double-free (calls destroy on h0 twice). The harness masks it (output still
-matches, no hard crash). Off-board until auto-discharge credits the loop-carried
-seed as consumed. See /tmp/nested-fold-codegen-brief.md.

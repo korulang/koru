@@ -1769,12 +1769,25 @@ pub const PhantomSemanticChecker = struct {
                 return self.validateSingleInvocation(&inv, context, event_map, current_module, location);
             },
             .label_with_invocation => |lwi| {
-                // If it's a declaration (#loop), mark parent obligations as outer scope
-                // so that @loop() jumps don't flag them as dropped.
+                // A declaration `#label event(args)` seeds the fold by invoking
+                // `event` ONCE before the first iteration. Its consuming (`<!X>`)
+                // inputs discharge the seed binding's obligation in the REAL
+                // context — the re-issued `<X!>` obligation arrives fresh on the
+                // body's output branches (`again v` / `stop r`), NOT on the seed
+                // binding. Validating in a throwaway scoped copy (as this used to)
+                // discarded that consumption, so the seed binding (e.g. `h0` in
+                // `made h0 |> #loop step(h: h0)`) reached the loop's exit
+                // terminator still "live" and — because auto_discharge_inserter
+                // also failed to credit the seed — either triggered a spurious
+                // KORU030 or got a double-free auto-dispose inserted next to the
+                // escaped pointer (330_074/084/086). Validating in `context`
+                // propagates the consume/clear so the exit branch sees no leftover
+                // obligation. The @scope outer-scope markings on `context` (applied
+                // by validateContinuation when entering the scoped continuation)
+                // are already correct for the body; the seed itself runs once at
+                // the head, so consuming the (non-outer) seed binding here is sound.
                 if (lwi.is_declaration) {
-                    var scoped_context = try BindingContext.inheritWithScope(context, self.allocator);
-                    defer scoped_context.deinit();
-                    return self.validateSingleInvocation(&lwi.invocation, &scoped_context, event_map, current_module, location);
+                    return self.validateSingleInvocation(&lwi.invocation, context, event_map, current_module, location);
                 } else {
                     // It's a jump without semantic args (legacy)
                     return true;
