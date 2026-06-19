@@ -1,0 +1,34 @@
+// Aspirational: cross-module phantom state unification (the ratified design,
+// OUTSTANDING_DESIGN_DECISIONS.md "phantom state cross-module resolution").
+//
+// A USER module references a phantom state DECLARED in an imported library
+// module, via the qualified form `<app/lib/store:secret>`. The qualified state
+// must RESOLVE through the import map and UNIFY with the `<secret!>` that
+// make-secret issues — so this compiles, runs, and prints "ok".
+//
+// Today this is RED: phantom_semantic_checker.zig keys module_map on the dot
+// local_name and canonicalizes with the dot separator, so a slash-qualified
+// app/lib/store:secret fails to resolve (KORU040 "Unknown module 'app/lib/store'
+// ... Module not imported") even though app/lib/store IS imported. The fix is
+// the ratified design: canonical form -> slash, module_map slash keying,
+// qualifier resolved through the import map like an event path.
+//
+// This is the scalar-phantom case (the obligation is on []const u8, a builtin
+// with no home module) — the case that proves bare-is-not-enough and the state
+// must name its own module. See also 330_088 (bare-outside rejection) and
+// 330_089 (taint-tracking capability use case).
+~import std/io
+~import app/lib/store
+
+// Consume app/lib/store's secret obligation cross-module.
+~event use-secret { s: []const u8<app/lib/store:!secret> }
+| used []const u8
+
+~proc use-secret|zig {
+    return .{ .used = s };
+}
+
+~app/lib/store:make-secret(payload: "shh")
+| secret s |> app/lib/store:reveal(s)
+    | plain p |> use-secret(p)
+        | used _ |> std/io:print.ln("ok")

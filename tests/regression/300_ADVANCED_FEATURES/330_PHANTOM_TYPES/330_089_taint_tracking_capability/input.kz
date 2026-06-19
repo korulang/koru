@@ -1,0 +1,59 @@
+// Aspirational: compile-time taint tracking — the motivating use case for the
+// ratified phantom cross-module design (OUTSTANDING_DESIGN_DECISIONS.md).
+//
+// A `taint` module declares a phantom-state VOCABULARY (the states ride on a
+// builtin scalar []const u8, which has no home module of its own — so the state
+// must name its own module rather than being implied by the type):
+//   <taint:tainted!>  issued by any untrusted-input source
+//   <taint:sanitized!> issued by the sanitizer
+//   <taint:!sanitized> consumed by the query sink (the `taint` module's
+//                      `sanitized` state, consume-marker on the state token)
+// A downstream `query` event CONSUMES <app/lib/taint:!sanitized> on its input,
+// so unsanitized data literally cannot reach the query — caught at compile time,
+// zero runtime cost. The value is still just a []const u8 at runtime.
+//
+// This is the case that proves the design's shape: taint is a property of DATA
+// (scalars/strings), not of any one type. A phantom state is a named,
+// module-scoped, type-orthogonal dataflow property — general capability
+// tracking (taint, authorization, provenance) with one mechanism.
+//
+// Resolution follows the MODULE SYSTEM (no virtual/synthetic namespaces): the
+// `taint` qualifier resolves through the import map, and the borrowing module
+// must import it.
+//
+// Current RED (honest): this trips KORU030 auto-discharge ("Resource 'c' with
+// phantom state <sanitized!> was not discharged. No event accepts <!sanitized>."
+// — the sanitized obligation issued by `sanitize` has no downstream consumer in
+// this flow). It does NOT hit the KORU040 cross-module resolution gap that
+// 330_087 isolates, because the consume-marker position (`!` on the state
+// token, <app/lib/taint:!sanitized>) is silently accepted by the current
+// checker where the issue-marker form (<...:tainted!>) is not. The
+// ratified-design fix changes this: once the qualified state resolves
+// cross-module, `query` consuming <!app/lib/taint:sanitized> discharges the
+// obligation and the flow compiles and prints "ok". 330_087 is the test that
+// pins the KORU040 resolution gap itself; this test pins the taint use case
+// and the ratified consume syntax (<module:!state>, ! on the state token).
+~import std/io
+~import app/lib/taint
+
+// Untrusted source: issues <app/lib/taint:tainted!>.
+~event read-input { }
+| line []const u8<app/lib/taint:tainted!>
+
+~proc read-input|zig {
+    return .{ .line = "untrusted" };
+}
+
+// Sink CONSUMES the sanitized obligation: <app/lib/taint:!sanitized>. Unsanitized
+// data can't land (it carries tainted!, not sanitized); and the obligation is
+// discharged here so auto-discharge has nothing to complain about — isolating
+// the cross-module-resolution gap as the sole RED reason.
+~event query { q: []const u8<app/lib/taint:!sanitized> }
+
+~proc query|zig {
+    return;
+}
+
+~read-input()
+| line l |> app/lib/taint:sanitize(s: l)
+    | clean c |> query(q: c) |> std/io:print.ln("ok")

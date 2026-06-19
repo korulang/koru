@@ -1,0 +1,21 @@
+// taint: a phantom-state VOCABULARY module (declares states, no types of its
+// own). The states ride on builtin scalars (`[]const u8`), which have no home
+// module — so the states must name their own module and be referenced qualified
+// from any other module. This is the minimal compile-time taint tracker.
+const std = @import("std");
+
+// Issue a tainted obligation: the value is untrusted and must be sanitized.
+~pub event tag-tainted { payload: []const u8 }
+| tainted []const u8<tainted!>
+
+~proc tag-tainted|zig {
+    return .{ .tainted = payload };
+}
+
+// Consume <!tainted>, issue <sanitized!>: the value is now safe.
+~pub event sanitize { s: []const u8<!tainted> }
+| clean []const u8<sanitized!>
+
+~proc sanitize|zig {
+    return .{ .clean = s };
+}

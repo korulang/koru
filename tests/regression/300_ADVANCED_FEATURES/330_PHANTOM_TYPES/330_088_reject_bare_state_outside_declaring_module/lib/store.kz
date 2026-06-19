@@ -1,0 +1,25 @@
+// A module that ISSUES a phantom-tagged scalar obligation, for the cross-module
+// unification tests (330_087, 330_088, 330_089).
+//
+// `secret` is a compile-time taint tag: `make-secret` issues `<secret!>` (an
+// obligation that the value must be `reveal`-ed before use); `reveal` consumes
+// `<!secret>` and returns a plain value. This is the minimal taint-tracking
+// vocabulary — a module that declares a phantom-state vocabulary carried on a
+// builtin scalar (no home module of its own), which is exactly why the state
+// must name its own module rather than being implied by the type.
+const std = @import("std");
+
+~pub event make-secret { payload: []const u8 }
+| secret []const u8<secret!>
+
+~proc make-secret|zig {
+    return .{ .secret = payload };
+}
+
+// Consume the secret obligation: discharges <secret!> -> a plain value.
+~pub event reveal { s: []const u8<!secret> }
+| plain []const u8
+
+~proc reveal|zig {
+    return .{ .plain = s };
+}

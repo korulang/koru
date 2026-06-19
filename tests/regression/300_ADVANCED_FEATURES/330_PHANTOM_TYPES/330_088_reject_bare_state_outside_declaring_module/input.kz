@@ -1,0 +1,29 @@
+// Aspirational: bare phantom state referenced OUTSIDE its declaring module must
+// be REJECTED (ratified design, OUTSTANDING_DESIGN_DECISIONS.md).
+//
+// Rule: bare `<secret>` / `<secret!>` / `<!secret>` is legal only INSIDE the
+// declaring module (resolves to *this* module). Referenced from a DIFFERENT
+// module it is ambiguous — the state's home cannot be inferred — and must be
+// written qualified: `<app/lib/store:secret>`. The checker must reject the
+// bare form with a clear error pointing the user at the qualified spelling.
+//
+// Today this is WRONG-GREEN: the bare `<secret>` on a user-module field
+// canonicalizes to `<user>:secret` (the field's defining module) and silently
+// compiles — it neither unifies with app/lib/store's secret nor errors. The
+// fix (ratified design) makes bare-outside a hard error so the ambiguity is
+// caught at the call site instead of producing a state that can never match.
+~import std/io
+~import app/lib/store
+
+// BARE <secret> in a USER module — outside app/lib/store. Must be rejected.
+~event use-secret { s: []const u8<secret> }
+| used []const u8
+
+~proc use-secret|zig {
+    return .{ .used = s };
+}
+
+~app/lib/store:make-secret(payload: "shh")
+| secret s |> app/lib/store:reveal(s)
+    | plain p |> use-secret(p)
+        | used _ |> std/io:print.ln("ok")
