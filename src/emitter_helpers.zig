@@ -1571,6 +1571,41 @@ fn continuationsHaveLabels(continuations: []const ast.Continuation) bool {
     return false;
 }
 
+/// Detect continuation subtrees the `return switch` optimization CANNOT emit.
+/// The return-switch fast path (emitSubflowContinuationsWithDepth) only knows
+/// how to lower `.invocation`, `.metatype_binding`, `.branch_constructor`, and
+/// `.terminal` arm bodies — every other node type falls through to an empty
+/// `else => {}` and emits nothing. The canonical case is a capture-fold grafted
+/// at a nested site: the transform runner replaces the holding continuation's
+/// invocation with an `.inline_code` node (the `var <cell>` preamble) whose
+/// children are a synthesized `''` void-chain (`is_transformed_subtree = true`).
+/// At top level (a transform's own flow) this emits fine via `emitFlow`'s
+/// void-step path; nested under a continuation branch the return-switch path
+/// silently drops the whole body (e.g. `.len => |n| ,`). When this fires, bail
+/// to the normal `emitContinuationBody` path, whose `is_void_step` branch
+/// (inline_code/foreach/assignment/...) emits the preamble + void-chain
+/// directly. This can only flip RED->GREEN: any such arm today yields broken
+/// Zig (empty switch arm), so no green test reaches here.
+fn continuationsHaveReturnSwitchUnemittable(continuations: []const ast.Continuation) bool {
+    for (continuations) |cont| {
+        if (cont.is_transformed_subtree) return true;
+        if (cont.node) |step| {
+            switch (step) {
+                // The only node kinds the return-switch path lowers.
+                .invocation, .metatype_binding, .branch_constructor, .terminal => {},
+                // label_* already force the normal path via continuationsHaveLabels;
+                // listed for completeness (bailing is still correct).
+                .label_with_invocation, .label_jump, .label_apply => {},
+                // Everything else (inline_code, foreach, conditional, assignment,
+                // switch_result, conditional_block, expression, deref) is dropped.
+                else => return true,
+            }
+        }
+        if (continuationsHaveReturnSwitchUnemittable(cont.continuations)) return true;
+    }
+    return false;
+}
+
 /// Helper to check if taps might fire for these continuations
 /// If taps are possible, we need to use normal continuation emission (not return switch)
 /// because emitContinuationBody/emitContinuationList handle tap emission
@@ -1923,12 +1958,19 @@ fn emitSubflowContinuationsWithDepth(
         return;
     }
 
-    // CRITICAL FIX: Check if any continuation has labels
-    // If yes, we CANNOT use "return switch" - must use normal continuation emission
-    // because labels create loops that must stay within the function
+    // CRITICAL FIX: Check if any continuation has labels, or carries a node the
+    // return-switch fast path can't lower (a grafted capture subtree's
+    // `.inline_code` preamble + void-chain, or any foreach/conditional/
+    // assignment/etc. arm body). If yes, we CANNOT use "return switch" — must
+    // use normal continuation emission: labels create loops that must stay
+    // within the function, and void/control-flow step bodies are only lowered
+    // by emitContinuationBody's `is_void_step` branch (the return-switch path
+    // drops them, emitting empty switch arms).
     // TODO: Also check for taps, but need to implement tap emission in return switch path
     // (redirecting to normal switch breaks module qualification for compiler infrastructure)
-    if (continuationsHaveLabels(continuations[start_idx..])) {
+    if (continuationsHaveLabels(continuations[start_idx..]) or
+        continuationsHaveReturnSwitchUnemittable(continuations[start_idx..]))
+    {
         // TODO: Add tap support - currently disabled to avoid breaking all tests
         // if (continuationsMightHaveTaps(continuations[start_idx..], tap_registry, source_event_name)) {
         // Use normal continuation emission which handles labels via emitContinuationBody

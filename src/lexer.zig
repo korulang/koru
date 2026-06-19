@@ -615,22 +615,27 @@ pub fn parseArgs(allocator: std.mem.Allocator, args_str: []const u8) ![]ArgPair 
                     // e.g., r.data.source -> name: "source", value: "r.data.source"
                     // BUT: Don't use shorthand for:
                     // - Range expressions like "0..p.n" (contains "..")
-                    // - Expressions with operators like "r.value > 10" (contains space/operators after last dot)
+                    // - Expressions with operators like "r.value > 10" (contains space/operators)
                     const has_range_op = std.mem.indexOf(u8, arg_slice, "..") != null;
 
-                    // Check if this looks like a complex expression (not just field access)
-                    // by seeing if the part after the last dot contains spaces or operators
+                    // Check if this looks like a complex expression (not just field access).
+                    // A shorthand field-name extraction is only valid for a PURE dotted-
+                    // identifier path (e.g. `r.data.source` -> `source`). Any operator or
+                    // space ANYWHERE in the arg makes it complex — including operators
+                    // BEFORE the last dot. The previous check only scanned the text after
+                    // the last dot, so `d == a.prev` (operators before the dot, plain
+                    // `prev` after) was misread as simple field access and the name
+                    // became `prev`, dropping the arg for any single-field event (e.g.
+                    // `~if`'s `cond`), emitting `if ()`. Scan the whole slice instead.
+                    // (Phantom suffixes `<...>` only attach to numeric/string/paren
+                    // tokens, which are dotless, so they never reach this dot branch.)
                     const is_complex_expr = blk: {
                         if (has_range_op) break :blk true;
-                        if (std.mem.lastIndexOf(u8, arg_slice, ".")) |last_dot| {
-                            const after_dot = arg_slice[last_dot + 1..];
-                            // If there's a space, operator, or paren after the field name, it's complex
-                            for (after_dot) |c| {
-                                if (c == ' ' or c == '>' or c == '<' or c == '=' or
-                                    c == '+' or c == '-' or c == '*' or c == '/' or
-                                    c == '!' or c == '&' or c == '|' or c == '(' or c == ')') {
-                                    break :blk true;
-                                }
+                        for (arg_slice) |c| {
+                            if (c == ' ' or c == '>' or c == '<' or c == '=' or
+                                c == '+' or c == '-' or c == '*' or c == '/' or
+                                c == '!' or c == '&' or c == '|' or c == '(' or c == ')') {
+                                break :blk true;
                             }
                         }
                         break :blk false;
