@@ -1,9 +1,35 @@
 // AoC 2015 Day 7 Part 1 — wire circuit (statement example: d=72 e=507
 // f=492 g=114 h=65412 i=65079). Koru DISPATCHES the gate forms via match;
-// collecting wires and the memoized recursive eval are leaves.
-// Ledger: wire map + memo ← collections (gap 2); operand extraction ← groups
-// (gap 1); recursive eval ← host (recursion of effectful events is out by
-// ruling — this is VALUE recursion, a future subflow question).
+// the gate-form dispatch (below) and operand extraction (groups) are green
+// idioms. Two gaps hold it RED:
+//
+//   1. STRUCTURED, STRING-KEYED STORE (the wire table). Each wire maps its
+//      NAME → a gate rule (op + up to two operands, each a literal OR another
+//      wire name). koru_std/string-map is string→i64 ONLY; there is no
+//      string-keyed store for a structured rule (a small record, or parallel
+//      maps op/lhs/rhs/lhs-is-wire/...). So the rules can be parsed and
+//      dispatched, but not STORED keyed by wire name for later lookup.
+//
+//   2. OBLIGATION THREADING of that store through the recursive eval. The
+//      ledger's old note ("recursive eval ← host / value recursion out by
+//      ruling") is now STALE: value recursion of events IS available
+//      (320_095, green — an event calling itself). The real blocker is that
+//      `query` would have to RANDOM-ACCESS the wire store inside its own
+//      recursion, i.e. carry the owned store-handle as a parameter — which
+//      trips the SAME phantom gap that holds day 22 (810_221) and day 10
+//      (810_101) RED:
+//
+//        error[KORU030]: Phantom state mismatch: expected 'input:<state>' but
+//          got 'std.<mod>:<state>!' for argument '<store>'
+//
+//      A user-event parameter's phantom state is namespaced to the user module
+//      ('input:'), and that does not unify with the std-collection-namespaced
+//      state the live handle carries ('std.list:'/'std.string-map:'), so an
+//      owned collection cannot be passed to a user event or threaded through a
+//      recursion/fold payload. Design-shaped (ownership transfer of a
+//      phantom-obligation resource across user-event params and recursion), not
+//      a missing leaf. Left RED honestly pending both pieces.
+//
 // (Part 2 — override wire b, re-eval — is defined against the personal
 // puzzle input and has no statement example; runnable form lands when a
 // real input is in play.)
