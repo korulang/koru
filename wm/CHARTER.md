@@ -190,6 +190,19 @@ should have been. A tool whose entire job is running world models must know what
 world model *is*. (Today it knows about shell scripts and nothing else — that is
 the inversion to fix.)
 
+**Floating is a discipline act, not a `wm` verb.** Eliciting what's worth watching
+— firing blind contestants, judging, converging on candidates — belongs to the
+methodology (the float brief → the `arbiters-worldmodel` skill), never to the tool.
+`wm` has no `float`/`new` verb and never will: it operates runnable models
+(`run`/`last`) and hands off to the discipline *at the artifact*. The discipline
+decides **what** to build into a runnable `.wmfx`; `wm` **runs** it. (So the "vapor
+verbs" once named in older docs aren't gaps in the tool — they're correctly
+absent.) Corollary, free from this split: because `wm` records an append-only
+time series per instrument (`runs.jsonl` + `last.json`), rendering "what's been
+happening" is mechanical — a generic renderer over the recorded series, not
+per-watcher bespoke code. The toolchain owning the data is what makes the
+transparency generalize.
+
 ---
 
 ## 4. Open questions for the reviewer ⚠

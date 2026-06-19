@@ -63,9 +63,50 @@ if (existsSync(snapPath)) {
   } catch { /* no readable snapshot — leave null, the page handles its absence */ }
 }
 
+// --- perf: world (measured) vs model (the promise), from the benchmark results ---
+// Same source the perf-promise probe reads; here we keep the per-workload detail the
+// scalar `signal` lines can't carry, so the page can VISUALIZE world-vs-model.
+let perf = null;
+const benchDir = join(ROOT, 'benchmarks', 'results');
+if (existsSync(benchDir)) {
+  const wl = {};
+  for (const f of readdirSync(benchDir).filter((f) => f.endsWith('.csv'))) {
+    for (const ln of readFileSync(join(benchDir, f), 'utf8').split('\n').slice(1)) {
+      if (!ln.trim()) continue;
+      const [workload, lang, , wall] = ln.split(',');
+      const ms = parseFloat(wall);
+      if (!workload || !lang || isNaN(ms)) continue;
+      (wl[workload] ??= {});
+      wl[workload][lang] = Math.min(wl[workload][lang] ?? Infinity, ms);
+    }
+  }
+  const workloads = Object.entries(wl)
+    .filter(([, l]) => l.koru !== undefined)
+    .map(([workload, langs]) => {
+      const koru = langs.koru;
+      const field = Object.entries(langs)
+        .filter(([l]) => l !== 'koru')
+        .map(([lang, ms]) => ({ lang, ms }))
+        .sort((a, b) => a.ms - b.ms);
+      const rival = field[0] ?? null;
+      return {
+        workload, koru, rival, fieldCount: field.length,
+        max: Math.max(koru, rival ? rival.ms : koru),
+        fastest: rival ? koru <= rival.ms : true,
+        host_backed: langs.zig !== undefined,
+      };
+    });
+  perf = {
+    promise_host: 'within 10% of the host language (Zig)',
+    workloads,
+    host_backed: workloads.filter((w) => w.host_backed).length,
+    koru_fastest: workloads.filter((w) => w.fastest).length,
+  };
+}
+
 // --- write the generated manifest ---
 writeFileSync(join(ROOT, 'wm', 'worldmodel.json'),
-  JSON.stringify({ subject: SUBJECT, generated_at: new Date().toISOString(), scoreboard, instruments, floats }, null, 2) + '\n');
+  JSON.stringify({ subject: SUBJECT, generated_at: new Date().toISOString(), scoreboard, perf, instruments, floats }, null, 2) + '\n');
 
 // --- render the EYES ---
 const c = { dim: '\x1b[2m', b: '\x1b[1m', g: '\x1b[32m', y: '\x1b[33m', r: '\x1b[31m', cy: '\x1b[36m', x: '\x1b[0m' };

@@ -1,11 +1,135 @@
 {
-  "subject": "koru-worldmodel",
-  "generated_at": "2026-06-19T05:19:59.301Z",
+  "subject": "koru",
+  "generated_at": "2026-06-19T06:42:27.143Z",
   "scoreboard": {
-    "passed": 781,
-    "expected": 866,
-    "gap": 85,
-    "pass_rate": "90.2"
+    "passed": 795,
+    "expected": 869,
+    "gap": 74,
+    "pass_rate": "91.5"
+  },
+  "perf": {
+    "promise_host": "within 10% of the host language (Zig)",
+    "workloads": [
+      {
+        "workload": "filter_map_reduce",
+        "koru": 26.656,
+        "rival": {
+          "lang": "rust",
+          "ms": 25.57
+        },
+        "fieldCount": 4,
+        "max": 26.656,
+        "fastest": false,
+        "host_backed": false
+      },
+      {
+        "workload": "multi_kind_dispatch",
+        "koru": 24.724,
+        "rival": {
+          "lang": "rust",
+          "ms": 23.901
+        },
+        "fieldCount": 4,
+        "max": 24.724,
+        "fastest": false,
+        "host_backed": false
+      },
+      {
+        "workload": "nested_3_levels",
+        "koru": 27.913,
+        "rival": {
+          "lang": "rust",
+          "ms": 25.098
+        },
+        "fieldCount": 2,
+        "max": 27.913,
+        "fastest": false,
+        "host_backed": false
+      },
+      {
+        "workload": "regex_match",
+        "koru": 44.356,
+        "rival": {
+          "lang": "rust",
+          "ms": 91.344
+        },
+        "fieldCount": 4,
+        "max": 91.344,
+        "fastest": true,
+        "host_backed": false
+      },
+      {
+        "workload": "regex_match_bound",
+        "koru": 46.378,
+        "rival": null,
+        "fieldCount": 0,
+        "max": 46.378,
+        "fastest": true,
+        "host_backed": false
+      },
+      {
+        "workload": "regex_match_groups",
+        "koru": 109.88,
+        "rival": {
+          "lang": "rust",
+          "ms": 296.197
+        },
+        "fieldCount": 4,
+        "max": 296.197,
+        "fastest": true,
+        "host_backed": false
+      },
+      {
+        "workload": "regex_redos",
+        "koru": 21.846,
+        "rival": {
+          "lang": "rust",
+          "ms": 22.129
+        },
+        "fieldCount": 4,
+        "max": 22.129,
+        "fastest": true,
+        "host_backed": false
+      },
+      {
+        "workload": "register_machine",
+        "koru": 1503.056,
+        "rival": {
+          "lang": "rust",
+          "ms": 576.949
+        },
+        "fieldCount": 1,
+        "max": 1503.056,
+        "fastest": false,
+        "host_backed": false
+      },
+      {
+        "workload": "sum_range_foldable",
+        "koru": 22.594,
+        "rival": {
+          "lang": "rust",
+          "ms": 21.48
+        },
+        "fieldCount": 4,
+        "max": 22.594,
+        "fastest": false,
+        "host_backed": false
+      },
+      {
+        "workload": "sum_range_xor",
+        "koru": 24.045,
+        "rival": {
+          "lang": "rust",
+          "ms": 24.27
+        },
+        "fieldCount": 4,
+        "max": 24.27,
+        "fastest": true,
+        "host_backed": false
+      }
+    ],
+    "host_backed": 0,
+    "koru_fastest": 5
   },
   "instruments": [
     {
@@ -18,6 +142,11 @@
       "id": "probe_pass_floor",
       "shape": "native",
       "path": "models/probe_pass_floor/run.sh"
+    },
+    {
+      "id": "probe_perf_promise",
+      "shape": "native",
+      "path": "models/probe_perf_promise/run.sh"
     }
   ],
   "floats": [
@@ -148,7 +277,7 @@
           "substrate": "test",
           "severity": "n/a",
           "buildability": "n/a",
-          "status": "rejected — Lars: compiler annotations are OPAQUE by design, not a bug",
+          "status": "rejected — koru annotations are opaque by design (intended behavior, not a bug)",
           "found_by": [
             "hunter2",
             "hunter3"
