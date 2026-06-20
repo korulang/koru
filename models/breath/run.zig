@@ -48,6 +48,16 @@ pub fn main() !void {
     var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
     const out = &stdout_writer.interface;
 
+    // Per-tick engine output — the real curve the world-model page visualizes.
+    // One row per snapshot: the input pass-rate plus the model's dip/alarm output.
+    // This is the engine's own record, written every run; the page never recomputes it.
+    var sig_file = try std.fs.cwd().createFile("models/breath/data/signal.csv", .{});
+    defer sig_file.close();
+    var sig_buffer: [8192]u8 = undefined;
+    var sig_writer = sig_file.writer(&sig_buffer);
+    const sig = &sig_writer.interface;
+    try sig.writeAll("idx,iso,rate,dip,alarm,slice\n");
+
     try out.writeAll("idx  slice  rate%  dip  alarm  iso\n");
     try out.writeAll("---  -----  -----  ---  -----  ---\n");
 
@@ -60,6 +70,12 @@ pub fn main() !void {
         if (@abs(model_state.dip_ticks - ref_out.dip_ticks) > 1e-9) mismatch += 1;
 
         const fired = model_state.alarm >= 0.5;
+
+        // Every tick goes to the per-tick artifact (the curve), not just fires.
+        try sig.print("{d},{s},{d:.1},{d:.0},{d:.0},{s}\n", .{
+            bar.idx, bar.iso, bar.pass_rate, model_state.dip_ticks, model_state.alarm,
+            if (bar.in_sample) "IS" else "OOS",
+        });
 
         if (bar.in_sample) {
             is_bars += 1;
@@ -97,7 +113,19 @@ pub fn main() !void {
         try out.print("  -> the long inhale: pass-rate held >= 8pp below its peak past any in-sample breath\n", .{});
     }
     try out.print("oracle mismatches: {d}\n", .{mismatch});
+
+    // Machine half — wm scrapes these `signal` lines into its run record (--json).
+    // Exit code speaks for the instrument (did the pass contract hold); these speak
+    // for the world (what the watcher actually saw).
+    try out.print("signal oos_fires {d}\n", .{oos_fires});
+    try out.print("signal in_sample_false_fires {d}\n", .{false_fires});
+    try out.print("signal first_fire_idx {d}\n", .{first_fire_idx});
+    try out.print("signal first_fire_rate {d:.1} pct\n", .{first_fire_rate});
+    try out.print("signal oracle_mismatches {d}\n", .{mismatch});
+    try out.print("signal in_sample_snapshots {d}\n", .{is_bars});
+    try out.print("signal oos_snapshots {d}\n", .{oos_bars});
     try out.flush();
+    try sig.flush();
 
     if (mismatch > 0) {
         std.debug.print("FAIL: model diverged from oracle on {d} check(s)\n", .{mismatch});

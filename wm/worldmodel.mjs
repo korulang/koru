@@ -10,20 +10,75 @@
 import { readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
 import { join, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
 
 const ROOT = process.argv[2] || dirname(dirname(fileURLToPath(import.meta.url))); // wm/ -> repo root
 const SUBJECT = basename(ROOT);
 
-// --- WHAT IT WATCHES: instruments discovered by convention (the shapes wm knows) ---
+// --- WHAT IT WATCHES: native WMFX models RUN THROUGH THE ENGINE; signals scraped from it ---
+// The honest source is `wm run <root> --only <model> --json`: it transpiles model.wmfx,
+// drives the engine against the oracle, and reports the `signal` lines the model fired.
+// "green" here means a real model ran — it can never mean "a script printed a number".
+const WATCHES = {
+  breath:
+    "koru's pass-rate across its whole snapshot history — fires when the breath goes wrong: " +
+    'a drawdown held ≥8pp below the running peak for longer than anything the in-sample ' +
+    'bring-up ever showed (a long inhale that never exhaled).',
+  'wm-adapter':
+    'koru regression suite — the wall that writes each snapshot; fires (red) when a green test flips red',
+};
+
+// Parse a native model's per-tick engine output (data/signal.csv) into a generic
+// series the page can chart for ANY instrument that emits one. No model knowledge here.
+function parseSeries(csv) {
+  const lines = csv.trim().split('\n');
+  lines.shift(); // header: idx,iso,rate,dip,alarm,slice
+  const points = [];
+  for (const ln of lines) {
+    if (!ln.trim()) continue;
+    const [idx, iso, rate, dip, alarm, slice] = ln.split(',');
+    points.push({
+      x: Number(idx), iso, y: Number(rate), dip: Number(dip),
+      fired: Number(alarm) >= 0.5, phase: slice === 'IS' ? 'in_sample' : 'oos',
+    });
+  }
+  return { x_label: 'snapshot #', y_label: 'pass rate %', points };
+}
+
 const instruments = [];
+const modelsDir = join(ROOT, 'models');
+
+// The adapter (wm/run.sh) is the regression wall — heavy and snapshot-WRITING. It is
+// LISTED here (its world-state readout IS the scoreboard below), but NOT fired during
+// page generation; the status ceremony is what runs it.
 if (existsSync(join(ROOT, 'wm', 'run.sh')))
   instruments.push({ id: 'wm-adapter', shape: 'adapter', path: 'wm/run.sh',
-    watches: 'koru regression suite — fires when a green test flips red' });
-const modelsDir = join(ROOT, 'models');
-if (existsSync(modelsDir))
-  for (const d of readdirSync(modelsDir))
-    if (existsSync(join(modelsDir, d, 'run.sh')))
-      instruments.push({ id: d, shape: 'native', path: `models/${d}/run.sh` });
+    watches: WATCHES['wm-adapter'], run_by: 'status ceremony (not page generation)' });
+
+// Native WMFX models — discovered by convention, then ACTUALLY RUN through the engine
+// so the manifest carries real fired signals (and the per-tick curve), not a re-scan.
+const nativeModels = existsSync(modelsDir)
+  ? readdirSync(modelsDir).filter((d) => existsSync(join(modelsDir, d, 'model.wmfx')))
+  : [];
+for (const name of nativeModels) {
+  const r = spawnSync('wm', ['run', ROOT, '--only', name, '--json'],
+    { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  if (!r.stdout) {
+    console.error(r.stderr || String(r.error));
+    throw new Error(`wm run --only ${name} produced no JSON — the engine did not run. ` +
+      'Refusing to emit a manifest without it (a manifest with faked signals is worse than none).');
+  }
+  const doc = JSON.parse(r.stdout);
+  const got = (doc.instruments || []).find((i) => i.name === name);
+  if (!got) throw new Error(`wm did not return instrument '${name}' — discovery/engine mismatch.`);
+  const inst = {
+    id: name, shape: 'native', path: `models/${name}/model.wmfx`,
+    watches: WATCHES[name], pass: got.pass, signals: got.signals || [],
+  };
+  const sigCsv = join(modelsDir, name, 'data', 'signal.csv');
+  if (existsSync(sigCsv)) inst.series = parseSeries(readFileSync(sigCsv, 'utf8'));
+  instruments.push(inst);
+}
 
 // --- WHAT IT'S MISSING: every float's commission queue ---
 const floatsDir = join(ROOT, 'wm', 'floats');
@@ -120,6 +175,9 @@ if (!instruments.length) out.push(`  ${c.dim}(none yet)${c.x}`);
 for (const i of instruments) {
   out.push(`  ${c.g}●${c.x} ${c.b}${i.id}${c.x}  ${c.dim}[${i.shape} · ${i.path}]${c.x}`);
   if (i.watches) out.push(`      ${c.dim}${i.watches}${c.x}`);
+  if (i.signals && i.signals.length)
+    out.push(`      ${c.g}signals${c.x} ${c.dim}${i.signals
+      .map((s) => `${s.name}=${s.value}${s.unit ? ` ${s.unit}` : ''}`).join('  ')}${c.x}`);
 }
 out.push('');
 
