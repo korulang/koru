@@ -514,16 +514,16 @@ const std = @import("std");
 
 // Test: handle both empty branches
 ~check-value(n: 42)
-    | positive |> std/io:print.ln("42 is positive")
-    | non-positive |> std/io:print.ln("42 is not positive")
+| positive |> std/io:print.ln("42 is positive")
+| non-positive |> std/io:print.ln("42 is not positive")
 
 ~check-value(n: -5)
-    | positive |> std/io:print.ln("-5 is positive")
-    | non-positive |> std/io:print.ln("-5 is not positive")
+| positive |> std/io:print.ln("-5 is positive")
+| non-positive |> std/io:print.ln("-5 is not positive")
 
 ~check-value(n: 0)
-    | positive |> std/io:print.ln("0 is positive")
-    | non-positive |> std/io:print.ln("0 is not positive")
+| positive |> std/io:print.ln("0 is positive")
+| non-positive |> std/io:print.ln("0 is not positive")
 ```
 
 **Output:**

@@ -1824,27 +1824,27 @@ const std = @import("std");
 ~import std/io
 
 ~event add-one { value: i32 }
-| done i32
+| result i32
 
-~add-one => done value + 1
+~add-one => result value + 1
 
 ~event add-two { value: i32 }
-| done i32
+| result i32
 
-~add-two => done value + 2
+~add-two => result value + 2
 
 ~event add-three { value: i32 }
-| done i32
+| result i32
 
-~add-three => done value + 3
+~add-three => result value + 3
 
 // Chain: 10 → add-one → add-two → add-three → print result
 // Depth 3: Three nested continuations
 // Test: 10 + 1 + 2 + 3 = 16
 ~add-one(value: 10)
-| done a |> add-two(value: a)
-    | done b |> add-three(value: b)
-        | done c |> std/io:print.ln("{{c:d}}")
+| result a |> add-two(value: a)
+    | result b |> add-three(value: b)
+        | result c |> std/io:print.ln("{{c:d}}")
 ```
 
 ### 213_nested_depth_4
@@ -2323,16 +2323,16 @@ Accept
 
 // Test: handle both empty branches
 ~check-value(n: 42)
-    | positive |> std/io:print.ln("42 is positive")
-    | non-positive |> std/io:print.ln("42 is not positive")
+| positive |> std/io:print.ln("42 is positive")
+| non-positive |> std/io:print.ln("42 is not positive")
 
 ~check-value(n: -5)
-    | positive |> std/io:print.ln("-5 is positive")
-    | non-positive |> std/io:print.ln("-5 is not positive")
+| positive |> std/io:print.ln("-5 is positive")
+| non-positive |> std/io:print.ln("-5 is not positive")
 
 ~check-value(n: 0)
-    | positive |> std/io:print.ln("0 is positive")
-    | non-positive |> std/io:print.ln("0 is not positive")
+| positive |> std/io:print.ln("0 is positive")
+| non-positive |> std/io:print.ln("0 is not positive")
 ```
 
 **Output:**
