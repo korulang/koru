@@ -1,0 +1,11 @@
+// TEST: MUST_FAIL — a bare (non-`~`) module-qualified line in a `.kz` file is a
+//       HOST LINE, not a Koru construct. It must NEVER be caught by the frontend.
+//
+// In `.kz`, Koru flow statements require the `~` prefix (a `.k` file auto-
+// synthesizes it). A bare `std/io:print.ln("hi")` is therefore passed through
+// verbatim as host (Zig) source. It happens not to be valid Zig, so the build
+// fails at the HOST compile stage (BACKEND_COMPILE_ERROR) — the correct place.
+// The frontend compiles cleanly; this is not a parser rejection.
+~import std/io
+
+std/io:print.ln("hi")
