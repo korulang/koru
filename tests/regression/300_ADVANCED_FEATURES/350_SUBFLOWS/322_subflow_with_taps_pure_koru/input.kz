@@ -1,0 +1,48 @@
+// ============================================================================
+// Test: Taps on Subflows — PURE KORU (no |zig, no std.debug.print)
+// Feature: Taps fire when a subflow transitions through one of its branches.
+// Goal: the same tap-on-subflow behaviour as the sibling 320_subflow_with_taps,
+//   but with ZERO Zig proc bodies — the arithmetic is a pure value continuation
+//   and every observable line goes through std/io. Written per korulang.org
+//   feedback j5799jz9: "we don't need a Zig-implementation for anything in this
+//   test-file, all can be implemented using pure Koru now."
+//
+// PINNED GAP (currently RED — desired output in expected.txt, not yet produced):
+//   The tap does NOT fire when `add-five` is a pure-Koru value continuation
+//   invoked THROUGH the `double` subflow. Verified isolation:
+//     - |zig add-five via subflow (320_subflow_with_taps) ........ tap FIRES
+//     - pure-Koru add-five called directly + tap ................. tap FIRES
+//     - pure-Koru add-five via subflow + tap (THIS test) ........ tap SILENT
+//   Hypothesis: the subflow inlines the pure-Koru value continuation, leaving
+//   no `add-five` boundary for the tap to hook (a |zig proc stays a real call
+//   boundary). The pin tracks closing that gap so a pure-Koru producer is as
+//   tappable through a subflow as a |zig one.
+// ============================================================================
+
+~import std/io
+~import std/taps
+
+// Base event: adds 5 to a number, as a pure value continuation.
+// (cf. 040_CONTROL_FLOW/211_nested_depth_2: `~add-one => done value + 1`)
+~event add-five { value: i32 }
+| result i32
+
+~add-five => result value + 5
+
+// Subflow that calls add-five and passes its result through.
+// (cf. 350_SUBFLOWS/303_subflow_chained)
+~event double { value: i32 }
+| result i32
+
+~double = add-five(value)
+| result r => result r
+
+// TAP: observe add-five -> result transitions and print purely.
+// (cf. 330_PHANTOM_TYPES/.../330_030_taps_with_auto_discharge: a tap whose
+//  continuation is a plain module-event invocation)
+~tap(add-five -> *)
+| result |> std/io:print.ln("TAP FIRED: add-five -> result observed!")
+
+// Execute the subflow — the tap fires during it, then print the final value.
+~double(value: 10)
+| result r |> std/io:print.ln("Final: {{ r:d }}")

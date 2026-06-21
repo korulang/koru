@@ -693,11 +693,18 @@ PY
         TEST_NAME=$(basename "$dir")
         CATEGORY_DIR="$(dirname "$dir")"
 
-        if [ -f "$dir/BENCHMARK" ]; then
+        if [ -f "$dir/BENCHMARK" ] || [ -f "$CATEGORY_DIR/BENCHMARK" ]; then
             BENCHMARK_TESTS=$((BENCHMARK_TESTS + 1))
             continue
         fi
         if [ -f "$dir/TODO" ]; then
+            TODO_TESTS=$((TODO_TESTS + 1))
+            continue
+        fi
+        # Category-level TODO counts as TODO, not "untested" — match the serial
+        # runner and run_single_test.sh. Without this, a category-TODO test has
+        # no SUCCESS/FAILURE/TODO marker and falls through to NO_MARKER_COUNT.
+        if [ -f "$CATEGORY_DIR/TODO" ]; then
             TODO_TESTS=$((TODO_TESTS + 1))
             continue
         fi

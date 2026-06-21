@@ -101,12 +101,20 @@ if [ "${KORU_CACHE_MODE:-off}" = "on" ]; then
         || cache_invalidate "$test_dir"
 fi
 
-if [ -f "$test_dir/BENCHMARK" ]; then
+if [ -f "$test_dir/BENCHMARK" ] || [ -f "$CATEGORY_DIR/BENCHMARK" ]; then
     echo -e "${CYAN}📊 BENCH${NC}  ${DIM}$TEST_NAME${NC}"
     exit 0
 fi
 if [ -f "$test_dir/TODO" ]; then
     echo -e "${YELLOW}📝 TODO ${NC}  ${DIM}$TEST_NAME${NC}"
+    exit 0
+fi
+# Category-level TODO: regression_run_one_test skips the test without writing a
+# SUCCESS/FAILURE marker (mirrors regression_lib.sh's category-TODO path), so we
+# must classify it here — otherwise it falls through to the "(unknown)" FAIL at
+# the bottom. The serial runner and the summary tally treat it as TODO; match them.
+if [ -f "$CATEGORY_DIR/TODO" ]; then
+    echo -e "${YELLOW}📝 TODO ${NC}  ${DIM}$TEST_NAME${NC} ${DIM}(category)${NC}"
     exit 0
 fi
 if [ -f "$CATEGORY_DIR/SKIP" ]; then
