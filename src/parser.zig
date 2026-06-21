@@ -565,8 +565,9 @@ pub const Parser = struct {
                 // cryptic downstream validation error. The "no native constant"
                 // gap this names is exactly the aspiration: a self-contained `.k`
                 // program needs Koru-native constants/functions to exist.
-                // NOTE: `const` is NOT here — it is a Koru keyword (control.kz),
-                // not host syntax. It lowers per-target and is legal in `.k`.
+                // NOTE: `const` is NOT here — it is a Koru keyword
+                // (declarations.kz), not host syntax. It lowers per-target and
+                // is legal in `.k`.
                 const host_decls = [_][]const u8{ "var ", "comptime ", "pub fn ", "fn ", "inline fn ", "export fn ", "extern fn " };
                 for (host_decls) |kw| {
                     if (std.mem.startsWith(u8, trimmed, kw)) {

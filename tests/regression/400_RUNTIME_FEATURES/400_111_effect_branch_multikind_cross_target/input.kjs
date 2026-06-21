@@ -11,8 +11,8 @@ let token_sum = 0;
     }
 }
 
-~proc onToken|js { tokens = tokens + 1; token_sum = token_sum + t; }
-~proc onWarning|js { warnings = warnings + 1; }
+~proc on-token|js { tokens = tokens + 1; token_sum = token_sum + t; }
+~proc on-warning|js { warnings = warnings + 1; }
 ~proc report|js {
     console.log("tokens=" + tokens + " warnings=" + warnings + " sum=" + token_sum);
 }

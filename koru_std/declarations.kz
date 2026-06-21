@@ -1,0 +1,57 @@
+// Koru Standard Library: Declarations
+// ====================================
+//
+// Name-introducing constructs that are neither control flow nor type
+// declarations. Today this is `const` — a module-level VALUE binding. It used
+// to live in `control.kz`, but a value declaration is not control flow; and it
+// is not a type, so it does not belong in `types.kz` either. It is its own
+// thing: a declaration.
+//
+// This module is auto-imported via `index.kz` (like `control`), so the `~const`
+// keyword is globally available whenever any std/* module is imported.
+
+~[comptime]
+
+// ============================================================================
+// CONST - module-level value declarations as a per-target TEMPLATE.
+// ============================================================================
+// ~const({ threshold: 5 }) | as cfg |> ...use cfg.threshold...
+//
+// Much simpler than capture:
+// - No mutation, so no `captured` branches to transform
+// - No runtime struct type conversion needed
+// - Just binds constants and flows through
+//
+// Syntax: const { name: "Claude", count: 42 }   (newline- OR comma-separated)
+//
+// ARCHITECTURE: `const` is a |template| proc over a `source: Source` block —
+// NOT a transform. The block is captured WHOLE as a Source (no first-field
+// truncation), and the `parse_fields` Zig FILTER (template_processor.zig) splits
+// it into `{ name, value }` records. Both the |zig| and |js| variants call that
+// SAME filter, so the two lowerings of a const block cannot drift. Each field
+// becomes a `const name = value;` declaration; values are emitted verbatim, and
+// per-target value shaping (a future `comptime_int` vs `number` split) rides the
+// variant boundary — exactly like `if`/`for`. This replaces the old
+// transform-+-codegen_utils.koruStructToConstDecls path ("emit Zig and hope").
+// `[declaration]`: this keyword template emits DECLARATIONS (names into the
+// enclosing scope), not a statement. The emitter splices a declaration flow's
+// rendered body directly at container scope (struct members), NOT wrapped in a
+// `flow()` function — so sibling flows see the names via Zig container-scope
+// lookup. Contrast `if`/`for`, which emit statements into a function body.
+~[keyword|declaration]pub event const { source: Source }
+
+// An optional `value[type]` base-type annotation (e.g. `count: 42[i32]`) is the
+// FIRST thing that genuinely diverges between the two variants: Zig pins the type
+// with `@as(i32, 42)`; JS erases it (numbers are numbers). Array literals diverge
+// too — `["a", "b"]` is valid JS but Zig needs `[_][]const u8{ … }` — so the Zig
+// value is pre-lowered by parse_fields into `f.zig` (arrays → `[_]T{…}`, typed
+// scalars → `@as(T, v)`, everything else verbatim). JS emits the value as-is.
+~proc const|template|zig {
+{% const fields = parse_fields(source) %}{% for f in fields %}const {{ f.name }} = {{ f.zig }};
+{% endfor %}
+}
+
+~proc const|template|js {
+{% const fields = parse_fields(source) %}{% for f in fields %}const {{ f.name }} = {{ f.value }};
+{% endfor %}
+}

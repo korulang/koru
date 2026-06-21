@@ -190,7 +190,7 @@ pub fn koruStructToZig(allocator: std.mem.Allocator, koru_struct: []const u8) Ex
 
 // NOTE: `koruStructToConstDecls` (the old Zig string-builder for `const {}`
 // module decls) was removed 2026-06-04. `const` is now a per-target template
-// over the `parse_fields` filter (koru_std/control.kz + template_processor.zig),
+// over the `parse_fields` filter (koru_std/declarations.kz + template_processor.zig),
 // so field parsing lives in one place both targets call — see
 // [[project_const_as_type_system_checkpoint]].
 

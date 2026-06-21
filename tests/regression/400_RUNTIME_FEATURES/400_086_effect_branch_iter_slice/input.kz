@@ -11,8 +11,6 @@
 
 ~import std/io
 
-const std = @import("std");
-
 ~pub event each-i32 { items: []const i32 }
 ! item i32
 

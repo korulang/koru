@@ -25,7 +25,8 @@
 //   ~[pub|soa]std/types:struct(Enemies) { hp: i32, x: f32, y: f32 }
 //   ~[packed]std/types:struct(NetworkPacket) { ... }
 //
-// NOTE: For const/var declarations, use raw Zig or ~const from control.kz
+// NOTE: For const declarations, use raw Zig or ~const (in std/declarations —
+// const is a value declaration, not a type, so it lives in its own module).
 
 ~[comptime|runtime]
 

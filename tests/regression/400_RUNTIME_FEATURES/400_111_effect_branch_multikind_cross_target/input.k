@@ -12,17 +12,17 @@
 //
 // NOTE on arg names: the JS inline-plain-handler path resolves dispatch args
 // by FIELD-name match, so the punned dispatch arg's name must equal the target
-// event's field name (onToken's field is `t`, dispatched as `onToken(t)`). The
+// event's field name (on-token's field is `t`, dispatched as `on-token(t)`). The
 // case where they differ is a real JS-emitter gap, pinned separately by
 // 400_112_effect_branch_arg_name_mismatch_cross_target.
 pub event tokenize { n: u64 }
 ! token u64
 ! warning u64
-pub event onToken { t: u64 }
-pub event onWarning { w: u64 }
+pub event on-token { t: u64 }
+pub event on-warning { w: u64 }
 pub event report {}
 
 tokenize(n: 5)
-! token t |> onToken(t)
-! warning w |> onWarning(w)
+! token t |> on-token(t)
+! warning w |> on-warning(w)
 report()

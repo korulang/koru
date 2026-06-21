@@ -234,7 +234,7 @@ const std = @import("std");
                                 isNamedInvocation(inv, "std.control", "for") or
                                 isNamedInvocation(inv, "std.control", "if") or
                                 isNamedInvocation(inv, "std.control", "capture") or
-                                isNamedInvocation(inv, "std.control", "const")
+                                isNamedInvocation(inv, "std.declarations", "const")
                             ) {
                                 return self.fail(info.continuation, inv.path.segments[0]);
                             }
