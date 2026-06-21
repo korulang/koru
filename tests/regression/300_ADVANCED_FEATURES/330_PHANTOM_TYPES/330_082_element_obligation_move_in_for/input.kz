@@ -1,31 +1,30 @@
-// ELEMENT-LEVEL OBLIGATION MOVE inside a for-loop body (no back-edge yet).
-// std i64 collections carry NO element obligation (list.kz:150 — "for i64 the
-// popped value carries no obligation"), so 330_081's i64 shuffle is plain data.
-// To exercise a real per-element TRANSFER we hand-roll an obligation-carrying
-// element: `*Handle<owned!>`. `take` models popping the owned handle out of
-// container A (consume A's hold <!owned>, REISSUE a fresh <owned!> on the value);
-// `put` models pushing it into container B (consume <!owned>). Net per iteration:
-// one issue (take), one consume (put) — conserved, linearity holds IF the checker
-// tracks the move across the branch binding inside the loop body.
+// BOUNDARY (MUST_FAIL): you may NOT discharge an outer-scope obligation inside a
+// scope. `h0 <owned!>` is owned OUTSIDE the `for`; `take(h: h0)` consumes it
+// INSIDE the @scope. Correctly rejected with KORU032.
 //
-// This is the for-loop-BODY form (the move happens once per iteration, both
-// halves in the SAME scope — exactly Lars's framing: "issue it AND consume it in
-// the same scope"). 330_083 is the harder back-edge form.
+// THE RULE — obligations and scopes, in full (this test pins clause 1):
+//   1. Inside a scope you may NOT discharge an obligation owned OUTSIDE the scope.
+//      (This test — rejected.)
+//   2. Inside a scope you MAY issue obligations and discharge them locally.
+//   3. From an effect branch OR a continuation branch you MAY let an issued
+//      obligation ESCAPE the scope — but then the event owning that branch must
+//      handle it: discharge it in its own implementation, or pass it on to
+//      another continuation/effect branch.
 //
-// Obligation grammar grounded in 330_072 (issue `<owned!>` / consume `<!owned>`);
-// for-loop body grounded in 660_012 / 660_014.
+// WHY THIS MUST BE REJECTED (it is NOT a checker gap — see 330_072 history):
+//   A `for`/effect body is a 0-to-N scope. Consuming the OUTER `h0` "once" only
+//   type-checks if the scope runs exactly once; on any re-fire it is a
+//   double-consume of an already-poisoned binding. Re-issuing `<owned!>` on the
+//   popped `v` does NOT rehabilitate `h0` — `v` is a DIFFERENT obligation on a
+//   DIFFERENT binding. There is no "conservation" that licenses the outer
+//   consume; the earlier conserved-move reading was simply wrong.
 //
-// STATUS: RED (TODO, off-board). Blocker, verbatim:
-//   error[KORU032]: Cannot discharge outer-scope resource 'h0' inside @scope
-//   boundary. Handle outside the scope or escape via branch constructor.
-//     --> auto_discharge:44:0
-// The `for` is an @scope boundary; `take(h: h0)` CONSUMES the outer-owned h0
-// inside the loop body, and auto-discharge rejects consuming an outer-scope
-// resource inside the scope — even though `take` immediately RE-ISSUES <owned!>
-// on `v` and `put` consumes it in the SAME iteration (net conserved). The
-// phantom/auto-discharge model does not yet track an element-obligation MOVE as
-// conserved when the consumed handle is owned outside the loop. Flip to a clean
-// SUCCESS + drop the TODO marker once outer->inner move-through-scope is tracked.
+// THE SOUND WAY to carry an obligation through a loop is GREEN 330_074: ISSUE it
+// from a leaf inside the scope and let it ESCAPE to an outside disposer (clause 3)
+// — never consume an outer binding in-scope. GREEN 330_083 shuttles by issuing
+// FRESH handles each lap. Both honor the rule; this test deliberately breaks it.
+//
+// EXPECTED: KORU032 "Cannot discharge outer-scope resource ... inside @scope".
 const std = @import("std");
 const Handle = struct { n: i32 };
 
