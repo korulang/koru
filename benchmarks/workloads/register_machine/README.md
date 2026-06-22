@@ -14,20 +14,30 @@ path; the only zig glue is argv-read and the accumulator (off the measured path)
 The Rust baseline writes the same machine the natural way: arrays borrowed by
 reference, inner step a plain loop. Identical work, identical output.
 
-## Finding (HEAD ~1c822cae, ReleaseFast, Apple Silicon)
+## NOT a valid head-to-head — this benchmark folds. See the blog.
 
-| language | n | wall_ms |
-|---|---|---|
-| koru | 20M | ~1503 |
-| rust | 20M | ~577 |
+This workload was the *motivating measurement* for tail-self-continuation loop
+lowering (`emitter_helpers.zig` "Tail self-continuation loop lowering", landed
+`c7337761` 2026-06-19). Its history, in two acts:
 
-**Koru ~2.6× slower than naive Rust.** At ReleaseFast the emitted `run` handler
-does a 224-byte copy of the whole `Input` at entry plus 64-byte `[8]i64` copies
-per call (10 memcpy-stub calls per invocation), in a non-tail recursive call with
-a 1424-byte frame — LLVM does not elide the copy. This is the motivating
-measurement for the escape-driven by-`*const` event-Input ABI (the "no silent
-performance degradation" arc): the target is Rust parity.
+**Act 1 — pre-lowering (HEAD ~1c822cae, measured 2026-06-18 22:41).** The
+emitted `run` handler did a 224-byte copy of the whole by-value `Input` at entry
+plus 64-byte `[8]i64` copies per call, in a non-tail recursive call with a
+1424-byte frame — LLVM could not elide the copy. Measured **koru ~1503ms vs rust
+~577ms, ~2.6× slower.**
 
-A payload-copy-dominated microbench (near-zero work per step) shows the same
-idiom ~71× slower — that's the amplified upper bound; the 2.6× here is the
-representative number with real per-step work.
+**Act 2 — post-lowering (current HEAD).** The self-tail-call is now lowered to a
+`while (true)` loop (no per-iteration aggregate copy), which made the inner
+decoder *visible to the optimizer* — and it **constant-folds**. koru now runs at
+**~33ms** (raw binary ~10ms) vs rust **~557ms**. But that ~16× is NOT a
+throughput win: koru folds the inner decode to a closed form, the naive Rust
+baseline (arrays borrowed by ref, plain loop) does not. Write the equivalent
+Rust as a `const` and it folds to ~10ms too.
+
+**So this is no longer a koru-vs-rust race in either direction** — which is why
+it is excluded from the world-model perf grid (no `results/register_machine.csv`).
+The real story is *foldability*, told in full in the blog post
+**"The Recursion That Was a Loop"** (`/blog/recursion-that-was-a-loop`,
+2026-06-19). The genuine throughput win the lowering buys — **~3× when folding
+is impossible** — needs a folding-impossible variant (program fed from argv) to
+measure honestly; that variant is not yet built.

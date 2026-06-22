@@ -1,11 +1,11 @@
 {
   "subject": "koru",
-  "generated_at": "2026-06-20T18:54:30.329Z",
+  "generated_at": "2026-06-21T21:45:05.489Z",
   "scoreboard": {
-    "passed": 817,
-    "expected": 883,
-    "gap": 66,
-    "pass_rate": "92.5"
+    "passed": 818,
+    "expected": 885,
+    "gap": 67,
+    "pass_rate": "92.4"
   },
   "perf": {
     "promise_host": "within 10% of the host language (Zig)",
@@ -89,18 +89,6 @@
         "fieldCount": 4,
         "max": 22.129,
         "fastest": true,
-        "host_backed": false
-      },
-      {
-        "workload": "register_machine",
-        "koru": 1503.056,
-        "rival": {
-          "lang": "rust",
-          "ms": 576.949
-        },
-        "fieldCount": 1,
-        "max": 1503.056,
-        "fastest": false,
         "host_backed": false
       },
       {

@@ -673,6 +673,9 @@ test "nfa: ReDoS pattern stays linear (no catastrophic backtracking)" {
 // is the natural "dead" sink (all transitions loop to it; non-accepting), so no
 // special-casing is needed. Matching stays linear-time / ReDoS-immune.
 
+/// A half-open match span [start, end) over the scanned input.
+pub const Span = struct { start: usize, end: usize };
+
 pub const Dfa = struct {
     n_states: usize,
     trans: []usize, // trans[state * 256 + byte] = next state
@@ -690,6 +693,48 @@ pub const Dfa = struct {
         var s = self.start;
         for (input) |c| s = self.trans[s * 256 + c];
         return self.accept[s];
+    }
+
+    /// Unanchored leftmost-LONGEST prefix match from `start`: returns the END
+    /// index of the longest prefix of input[start..] the DFA accepts (span is
+    /// [start, end)), or null if nothing — not even the empty match — matches.
+    /// This is the `match`-cut's missing twin: `matches` asks "whole input?",
+    /// this asks "longest from here?". Walks to end-of-input tracking the last
+    /// accept (correctness-first reference; the emitted version adds the
+    /// dead-state early-exit). O(input) per call.
+    pub fn searchLongestFrom(self: *const Dfa, input: []const u8, start: usize) ?usize {
+        var s = self.start;
+        var last_accept: ?usize = if (self.accept[s]) start else null;
+        var i = start;
+        while (i < input.len) : (i += 1) {
+            s = self.trans[s * 256 + input[i]];
+            if (self.accept[s]) last_accept = i + 1;
+        }
+        return last_accept;
+    }
+
+    /// All non-overlapping leftmost-longest matches, left to right — the
+    /// unanchored `scan` over the whole input. Empty matches advance one byte so
+    /// scanning always terminates. Spans owned by `alloc`. O(input²) reference
+    /// (try-each-start); the emitted matcher restarts from the dead state in a
+    /// single pass.
+    pub fn scanAll(self: *const Dfa, input: []const u8, alloc: std.mem.Allocator) ![]Span {
+        var out = std.ArrayList(Span){};
+        var pos: usize = 0;
+        while (pos <= input.len) {
+            var found = false;
+            var s: usize = pos;
+            while (s <= input.len) : (s += 1) {
+                if (self.searchLongestFrom(input, s)) |end| {
+                    try out.append(alloc, .{ .start = s, .end = end });
+                    pos = if (end > s) end else s + 1; // empty match: step one
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) break;
+        }
+        return out.toOwnedSlice(alloc);
     }
 };
 
@@ -800,6 +845,56 @@ test "dfa: flagship matches like the nfa" {
     try testing.expect(!dfa.matches("FOO@bar"));
     try testing.expect(!dfa.matches("foo@"));
     try testing.expect(!dfa.matches("@bar"));
+}
+
+test "searchLongestFrom: agrees with anchored matches at the boundaries" {
+    var dfa = try dfaFor(testing.allocator, "[a-z]+@[a-z]+");
+    defer dfa.deinit();
+    // whole-string match: longest from 0 consumes the whole input
+    try testing.expectEqual(@as(?usize, 7), dfa.searchLongestFrom("foo@bar", 0));
+    // unanchored: finds it starting mid-string, stops at the non-matching byte
+    try testing.expectEqual(@as(?usize, 9), dfa.searchLongestFrom("xxfoo@bar?", 2));
+    // a position that cannot start a match → null (not even empty: start state non-accepting)
+    try testing.expectEqual(@as(?usize, null), dfa.searchLongestFrom("foo@bar", 3));
+}
+
+test "scan: leftmost-longest, non-overlapping spans" {
+    var dfa = try dfaFor(testing.allocator, "[0-9]+");
+    defer dfa.deinit();
+    const spans = try dfa.scanAll("a12b345c", testing.allocator);
+    defer testing.allocator.free(spans);
+    try testing.expectEqual(@as(usize, 2), spans.len);
+    try testing.expectEqual(Span{ .start = 1, .end = 3 }, spans[0]); // "12"
+    try testing.expectEqual(Span{ .start = 4, .end = 7 }, spans[1]); // "345"
+}
+
+test "scan: longest wins at each start (greedy)" {
+    var dfa = try dfaFor(testing.allocator, "a+");
+    defer dfa.deinit();
+    const spans = try dfa.scanAll("baaa", testing.allocator);
+    defer testing.allocator.free(spans);
+    try testing.expectEqual(@as(usize, 1), spans.len);
+    try testing.expectEqual(Span{ .start = 1, .end = 4 }, spans[0]); // "aaa", not "a"
+}
+
+test "scan: no match yields no spans" {
+    var dfa = try dfaFor(testing.allocator, "[0-9]+");
+    defer dfa.deinit();
+    const spans = try dfa.scanAll("abc", testing.allocator);
+    defer testing.allocator.free(spans);
+    try testing.expectEqual(@as(usize, 0), spans.len);
+}
+
+test "scan: empty-capable pattern terminates (advance-by-one, matches JS matchAll)" {
+    var dfa = try dfaFor(testing.allocator, "[0-9]*");
+    defer dfa.deinit();
+    const spans = try dfa.scanAll("a5", testing.allocator);
+    defer testing.allocator.free(spans);
+    // "" @0, "5" @1, "" @2 — three, like /[0-9]*/g over "a5"
+    try testing.expectEqual(@as(usize, 3), spans.len);
+    try testing.expectEqual(Span{ .start = 0, .end = 0 }, spans[0]);
+    try testing.expectEqual(Span{ .start = 1, .end = 2 }, spans[1]);
+    try testing.expectEqual(Span{ .start = 2, .end = 2 }, spans[2]);
 }
 
 test "dfa: alternation, star, opt, anchors" {
@@ -1279,6 +1374,57 @@ pub fn emitMatcher(w: anytype, dfa: *const Dfa, name: []const u8) !void {
     try w.writeAll("}\n");
 }
 
+/// Emit `fn <name>(input: []const u8, from: usize) ?[2]usize { … }` — the
+/// unanchored leftmost-LONGEST finder: returns {start, end} of the next match
+/// at-or-after `from`, or null. Same DFA tables as `emitMatcher`; the only
+/// difference is the scan-from-each-start + track-last-accept loop — the baked,
+/// self-contained shape of `Dfa.scanAll`/`searchLongestFrom`. Correctness-first
+/// (try-each-start); the dead-state early-exit is a later speed cut.
+pub fn emitSearchMatcher(w: anytype, dfa: *const Dfa, name: []const u8) !void {
+    try w.print("fn {s}(input: []const u8, from: usize) ?[2]usize {{\n", .{name});
+    try w.writeAll("    const T = [_]u32{ ");
+    for (dfa.trans, 0..) |t, i| {
+        if (i != 0) try w.writeAll(", ");
+        try w.print("{d}", .{t});
+    }
+    try w.writeAll(" };\n");
+    try w.writeAll("    const A = [_]bool{ ");
+    for (dfa.accept, 0..) |acc, i| {
+        if (i != 0) try w.writeAll(", ");
+        try w.writeAll(if (acc) "true" else "false");
+    }
+    try w.writeAll(" };\n");
+    try w.writeAll("    var start: usize = from;\n");
+    try w.writeAll("    while (start <= input.len) : (start += 1) {\n");
+    try w.print("        var s: u32 = {d};\n", .{dfa.start});
+    try w.writeAll("        var last_end: ?usize = if (A[s]) start else null;\n");
+    try w.writeAll("        var i: usize = start;\n");
+    try w.writeAll("        while (i < input.len) : (i += 1) {\n");
+    try w.writeAll("            s = T[@as(usize, s) * 256 + @as(usize, input[i])];\n");
+    try w.writeAll("            if (A[s]) last_end = i + 1;\n");
+    try w.writeAll("        }\n");
+    try w.writeAll("        if (last_end) |e| return .{ start, e };\n");
+    try w.writeAll("    }\n");
+    try w.writeAll("    return null;\n");
+    try w.writeAll("}\n");
+}
+
+/// Compile a pattern to a self-contained unanchored search function (the
+/// span-finder `scan` loops over). Captures, if any, are extracted per span by
+/// the matcher from `compileCapturesToZig` — this only locates the spans.
+pub fn compileSearchToZig(out: std.mem.Allocator, pattern: []const u8, name: []const u8) ![]const u8 {
+    var arena = std.heap.ArenaAllocator.init(out);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var p = Parser.init(a, pattern);
+    const ast = try p.parse();
+    var nfa = try buildNfa(a, ast);
+    var dfa = try buildDfa(a, &nfa);
+    var buf = std.ArrayList(u8){};
+    try emitSearchMatcher(buf.writer(out), &dfa, name);
+    return buf.toOwnedSlice(out);
+}
+
 /// Compile a pattern WITH named groups straight to an emitted Zig captures
 /// matcher: `fn <name>(input: []const u8) ?[<2N>]u32` — null on no match,
 /// else the tag vector (2 byte-offsets per group, group-open order). The
@@ -1495,4 +1641,13 @@ test "emit: produces a well-formed matcher fn that encodes the DFA" {
         if (c == ',') commas += 1;
     }
     try testing.expectEqual(dfa.n_states * 256, commas + 1);
+}
+
+test "emit search: well-formed unanchored finder fn" {
+    const src = try compileSearchToZig(testing.allocator, "[0-9]+", "f0");
+    defer testing.allocator.free(src);
+    try testing.expect(std.mem.indexOf(u8, src, "fn f0(input: []const u8, from: usize) ?[2]usize") != null);
+    try testing.expect(std.mem.indexOf(u8, src, "const T = [_]u32{") != null);
+    try testing.expect(std.mem.indexOf(u8, src, "while (start <= input.len)") != null);
+    try testing.expect(std.mem.indexOf(u8, src, "if (last_end) |e| return .{ start, e };") != null);
 }
