@@ -1591,9 +1591,17 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
     // regardless of the user's --lang choice. --lang governs the final
     // user-program emission only; comptime emission is structurally Zig.
     const comptime_default_lang = "zig";
-    // First pass: Collect all transform events (max 16 transform events per file)
-    var transform_events: [16]TransformEvent = undefined;
-    var transform_count: usize = 0;
+    // First pass: Collect all transform events. UNBOUNDED — there is no
+    // principled cap on the NUMBER of distinct transforms a program may define.
+    // The only legitimate guard against runaway transformation is the fixpoint
+    // circuit-breaker in transform_pass_runner.zig (MAX_ITERATIONS), which
+    // catches a transform that never reaches a fixed point. This used to be a
+    // fixed `[16]TransformEvent` array whose `transform_count < 16` guard
+    // SILENTLY dropped every handler past the 16th (incl. ~3 implicit ones) —
+    // leaving those invocations un-transformed and tripping KORU022 at the call
+    // site. Pinned by 220_013_many_transforms_no_cap.
+    var transform_events = std.ArrayList(TransformEvent){};
+    defer transform_events.deinit(allocator);
 
     for (source_file.items) |item| {
         if (item == .event_decl) {
@@ -1655,7 +1663,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
             // Emit handlers for events that consume AST types
             const should_generate_handler = consumes_ast_types;
 
-            if (should_generate_handler and transform_count < 16) {
+            if (should_generate_handler) {
                 const stub_name = try joinPathSegments(allocator, event_decl.path.segments);
                 const match_name = try joinPathSegmentsWithDots(allocator, event_decl.path.segments);
 
@@ -1709,7 +1717,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                 // variants may live in any module that implements it).
                 const variant_targets_top = try collectVariantTargetsForEventPath(allocator, source_file.items, event_decl.path.segments, comptime_default_lang);
 
-                transform_events[transform_count] = .{
+                try transform_events.append(allocator, .{
                     .stub_name = stub_name,
                     .match_name = match_name,
                     .event_name = stub_name, // For top-level, stub_name = event_name
@@ -1730,8 +1738,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                     .has_failed = has_failed,
                     .failed_is_identity = failed_is_identity,
                     .variant_targets = variant_targets_top,
-                };
-                transform_count += 1;
+                });
             }
         }
 
@@ -1794,7 +1801,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                     // Emit handlers for events that consume AST types
                     const should_generate_handler = has_invocation_param or has_item_param or has_event_decl_param;
 
-                    if (should_generate_handler and transform_count < 16) {
+                    if (should_generate_handler) {
                         const event_name = try joinPathSegments(allocator, event_decl.path.segments);
                         // Note: don't free event_name - it's stored in transform_events
                         const match_name = try joinPathSegmentsWithDots(allocator, event_decl.path.segments);
@@ -1891,7 +1898,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                         // Collect variant targets from the same module (variants live alongside the event).
                         const variant_targets_mod = try collectVariantTargetsForEventPath(allocator, module.items, event_decl.path.segments, comptime_default_lang);
 
-                        transform_events[transform_count] = .{
+                        try transform_events.append(allocator, .{
                             .stub_name = stub_name,
                             .match_name = match_name,
                             .event_name = event_name, // Original event name for handler lookup
@@ -1913,8 +1920,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                             .failed_is_identity = failed_is_identity,
                             .qualifier = if (has_transform_proc) try allocator.dupe(u8, module.logical_name) else null,
                             .variant_targets = variant_targets_mod,
-                        };
-                        transform_count += 1;
+                        });
                     }
                 }
             }
@@ -1923,7 +1929,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
 
     // Cleanup allocated names when we're done
     defer {
-        for (transform_events[0..transform_count]) |event| {
+        for (transform_events.items) |event| {
             allocator.free(event.stub_name);
             allocator.free(event.match_name);
             allocator.free(event.event_name);
@@ -1938,7 +1944,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
         }
     }
 
-    if (transform_count == 0) return 0; // No transforms, nothing to generate
+    if (transform_events.items.len == 0) return 0; // No transforms, nothing to generate
 
     // Generate helper and handlers
     var buf: [4096]u8 = undefined;
@@ -1989,7 +1995,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
 
     // Individual stubs - called on flows that invoke transform events
     // NEW: Uses unified ASTNode interface - handlers receive (node, program, allocator)
-    for (transform_events[0..transform_count]) |event| {
+    for (transform_events.items) |event| {
         const stub = try std.fmt.bufPrint(&buf, "// Transform handler for: {s}\n", .{event.stub_name});
         try code_emitter.write(stub);
         // Handler type determined by parameter: *const Invocation = transform, *const EventDecl = derive
@@ -2299,7 +2305,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
     try code_emitter.write("    const transforms = &[_]transform_pass_runner.TransformEntry{\n");
 
     // Generate dispatch table entries for Koru-defined handlers (both transform and derive)
-    for (transform_events[0..transform_count]) |event| {
+    for (transform_events.items) |event| {
         var stub_ident_buf: [256]u8 = undefined;
         const stub_ident = lowerKebabIdent(&stub_ident_buf, event.stub_name);
         const entry_line = if (event.qualifier) |qualifier|
@@ -2334,7 +2340,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
     try code_emitter.write("// Alias for backward compatibility\n");
     try code_emitter.write("pub const process_all_transforms = run_pass;\n\n");
 
-    return transform_count;
+    return transform_events.items.len;
 }
 
 /// Helper: Join path segments with underscores for function names
