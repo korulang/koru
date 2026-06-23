@@ -22,16 +22,12 @@ std/string-map:new()
             | `(?<a>[A-Za-z]+) to (?<b>[A-Za-z]+) = (?<d>[0-9]+)` { a, b, d: i64 } |> std/string-map:get(names, k: a)
                 | value ia |> std/string-map:get(names, k: b)
                     | value ib |> std/map:set(dist, k: ia * 16 + ib, v: d) |> std/map:set(dist, k: ib * 16 + ia, v: d)
-                    | missing |> std/string-map:count(names)
-                        | count nb |> std/string-map:set(names, k: b, v: nb) |> std/map:set(dist, k: ia * 16 + nb, v: d) |> std/map:set(dist, k: nb * 16 + ia, v: d)
-                | missing |> std/string-map:count(names)
-                    | count na |> std/string-map:set(names, k: a, v: na) |> std/string-map:get(names, k: b)
+                    | missing |> std/string-map:count(names): nb |> std/string-map:set(names, k: b, v: nb) |> std/map:set(dist, k: ia * 16 + nb, v: d) |> std/map:set(dist, k: nb * 16 + ia, v: d)
+                | missing |> std/string-map:count(names): na |> std/string-map:set(names, k: a, v: na) |> std/string-map:get(names, k: b)
                         | value ib |> std/map:set(dist, k: na * 16 + ib, v: d) |> std/map:set(dist, k: ib * 16 + na, v: d)
-                        | missing |> std/string-map:count(names)
-                            | count nb |> std/string-map:set(names, k: b, v: nb) |> std/map:set(dist, k: na * 16 + nb, v: d) |> std/map:set(dist, k: nb * 16 + na, v: d)
+                        | missing |> std/string-map:count(names): nb |> std/string-map:set(names, k: b, v: nb) |> std/map:set(dist, k: na * 16 + nb, v: d) |> std/map:set(dist, k: nb * 16 + na, v: d)
             | no-match |> std/io:print.ln("BAD: {{ l:s }}")
-        | done _ |> std/string-map:count(names)
-            | count n |> capture { fact: 1[i64] }
+        | done _ |> std/string-map:count(names): n |> capture { fact: 1[i64] }
                 ! as fa |> for(1..@as(usize, @intCast(n + 1)))
                     ! each i |> captured { fact: fa.fact * @as(i64, @intCast(i)) }
                 | captured ff |> capture { best: 999999999[i64] }

@@ -13,6 +13,5 @@ std/set:new()
 | set s |> capture { x: 0[i64] }
     ! as pos |> for(0..3)
         ! each i |> std/set:add(s, v: @as(i64, @intCast(i)))
-    | captured _ |> std/set:count(s)
-        | count n |> std/io:print.ln("{{ n:d }}")
+    | captured _ |> std/set:count(s): n |> std/io:print.ln("{{ n:d }}")
 | err e |> std/io:print.ln("ERR {{ e:s }}")

@@ -15,6 +15,5 @@ import std/set
 std/set:new()
 | set s |> capture { x: 0[i64] }
     ! as pos |> captured { x: pos.x + 1 } |> std/set:add(s, v: pos.x)
-    | captured _ |> std/set:count(s)
-        | count n |> std/io:print.ln("{{ n:d }}")
+    | captured _ |> std/set:count(s): n |> std/io:print.ln("{{ n:d }}")
 | err e |> std/io:print.ln("ERR {{ e:s }}")

@@ -109,11 +109,10 @@ pub const Map_string_i64 = struct {
 }
 
 // Number of distinct keys.
-~pub event count { m: *Map_string_i64<map> }
-| count i64
+~pub event count { m: *Map_string_i64<map> } -> i64
 
 ~proc count|zig {
-    return .{ .count = @intCast(m.map.count()) };
+    return @intCast(m.map.count());
 }
 
 // ============================================

@@ -79,11 +79,10 @@ pub const Set_i64 = struct {
 }
 
 // Number of distinct keys.
-~pub event count { s: *Set_i64<set> }
-| count i64
+~pub event count { s: *Set_i64<set> } -> i64
 
 ~proc count|zig {
-    return .{ .count = @intCast(s.map.count()) };
+    return @intCast(s.map.count());
 }
 
 // ============================================

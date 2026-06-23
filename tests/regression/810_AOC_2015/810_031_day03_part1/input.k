@@ -14,8 +14,7 @@ std/fs:read-lines(path: "tests/regression/810_AOC_2015/810_031_day03_part1/input
     | set houses |> std/set:add(houses, v: (0 + 10000) * 100000 + (0 + 10000)) |> capture { x: 0[i64], y: 0[i64] }
         ! as pos |> for(m)
             ! each c |> captured { x: pos.x + @as(i64, @intFromBool(c == '>')) - @as(i64, @intFromBool(c == '<')), y: pos.y + @as(i64, @intFromBool(c == '^')) - @as(i64, @intFromBool(c == 'v')) } |> std/set:add(houses, v: (pos.x + 10000) * 100000 + (pos.y + 10000))
-        | captured _ |> std/set:count(houses)
-            | count n |> std/io:print.ln("{{ n:d }}")
+        | captured _ |> std/set:count(houses): n |> std/io:print.ln("{{ n:d }}")
     | err e |> std/io:print.ln("ERR {{ e:s }}")
 | done _ |> _
 | failed e |> std/io:print.ln("FAILED {{ e:s }}")

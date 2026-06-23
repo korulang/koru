@@ -33,7 +33,6 @@ std/grid:new(rows: 1000, cols: 1000)
                 | done |> _
             | done |> _
         | no-match |> std/io:print.ln("BAD: {{ l:s }}")
-    | done _ |> std/grid:count-nonzero(g)
-        | count n |> std/io:print.ln("{{ n:d }}") |> std/grid:free(g)
+    | done _ |> std/grid:count-nonzero(g): n |> std/io:print.ln("{{ n:d }}") |> std/grid:free(g)
     | failed e |> std/io:print.ln("FAILED {{ e:s }}") |> std/grid:free(g)
 | err e |> std/io:print.ln("ERR {{ e:s }}")

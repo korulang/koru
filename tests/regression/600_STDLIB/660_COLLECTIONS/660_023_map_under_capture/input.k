@@ -8,6 +8,5 @@ import std/map
 std/map:new()
 | map m |> capture { x: 0[i64] }
     ! as pos |> captured { x: pos.x + 1 } |> std/map:set(m, k: pos.x, v: 100)
-    | captured _ |> std/map:count(m)
-        | count n |> std/io:print.ln("{{ n:d }}")
+    | captured _ |> std/map:count(m): n |> std/io:print.ln("{{ n:d }}")
 | err e |> std/io:print.ln("ERR {{ e:s }}")

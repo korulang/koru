@@ -7,7 +7,6 @@ import std/string-map
 
 std/string-map:new()
 | map m |> std/string-map:set(m, k: "foo", v: 10) |> std/string-map:set(m, k: "bar", v: 20) |> std/string-map:set(m, k: "foo", v: 99) |> std/string-map:get(m, k: "foo")
-    | value v |> std/io:print.ln("foo={{ v:d }}") |> std/string-map:count(m)
-        | count n |> std/io:print.ln("keys={{ n:d }}") |> std/string-map:free(m)
+    | value v |> std/io:print.ln("foo={{ v:d }}") |> std/string-map:count(m): n |> std/io:print.ln("keys={{ n:d }}") |> std/string-map:free(m)
     | missing |> std/io:print.ln("MISSING") |> std/string-map:free(m)
 | err e |> std/io:print.ln("ERR {{ e:s }}")

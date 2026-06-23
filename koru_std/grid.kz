@@ -82,15 +82,14 @@ pub const Grid_i64 = struct {
 }
 
 // Count of nonzero cells across the whole grid.
-~pub event count-nonzero { g: *Grid_i64<grid> }
-| count i64
+~pub event count-nonzero { g: *Grid_i64<grid> } -> i64
 
 ~proc count-nonzero|zig {
     var n: i64 = 0;
     for (g.data) |c| {
         if (c != 0) n += 1;
     }
-    return .{ .count = n };
+    return n;
 }
 
 // Sum of all cell values across the whole grid.
