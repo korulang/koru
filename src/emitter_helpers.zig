@@ -7111,11 +7111,19 @@ fn emitPipelineStep(
 
     const needs_result = cont.continuations.len > 0;
 
-    const current_result = if (needs_result)
-        try std.fmt.allocPrint(ctx.allocator, "{s}{}", .{ ctx.result_prefix, result_counter.* })
-    else
-        "_";
-    defer if (needs_result) ctx.allocator.free(current_result);
+    // A `-> T` bare-return step binds its result to the call-site `: name`
+    // (return_binding). Use that as the step's result variable so the call, the
+    // unused-suppression, and the following pipeline all reference one name.
+    var alloc_result: ?[]const u8 = null;
+    const current_result = if (!needs_result)
+        "_"
+    else if (step.* == .invocation and step.invocation.return_binding != null)
+        step.invocation.return_binding.?
+    else blk: {
+        alloc_result = try std.fmt.allocPrint(ctx.allocator, "{s}{}", .{ ctx.result_prefix, result_counter.* });
+        break :blk alloc_result.?;
+    };
+    defer if (alloc_result) |r| ctx.allocator.free(r);
 
     try emitStep(emitter, ctx, step, current_result);
 
