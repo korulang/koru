@@ -5352,10 +5352,13 @@ fn emitInvocation(
     try emitter.writeIndent();
     // Don't use 'const' if result_var is "_" (discard)
     // Note: Labeled invocations (which need 'var') don't use this function - they emit manually
-    if (!std.mem.eql(u8, result_var, "_")) {
+    // A `-> T` bare-return call binds its result to the call-site `: name`
+    // (return_binding), so the following pipeline can reference it.
+    const bound_var = invocation.return_binding orelse result_var;
+    if (!std.mem.eql(u8, bound_var, "_")) {
         try emitter.write("const ");
     }
-    try emitter.write(result_var);
+    try emitter.write(bound_var);
     try emitter.write(" = ");
     // Only emit 'try' for async calls (is_sync = false means async)
     if (!ctx.is_sync) {
