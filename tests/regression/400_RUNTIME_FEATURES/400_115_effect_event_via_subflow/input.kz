@@ -1,0 +1,26 @@
+// PROPOSED / EMPTY FIELD (Barbour effect-typing arc) — pinned failing for the
+// Phase 1 baseline.
+//
+// Today EVERY effect-bearing event is `~proc`-backed (59 files declare an effect
+// arm, 0 implement one via subflow). The proc is the trust boundary: we trust
+// host code to fire effects and handle obligations "unsafe"-like. This pins the
+// uncovered case — an effect-bearing event implemented by a SUBFLOW — where the
+// effect firing and any obligation handling must be checked at the KORU FLOW
+// level instead of being trusted to opaque host code. That flow-level checking
+// of effects is the genuinely new surface this whole arc opens.
+//
+// Grounded baseline: the `! each usize | done usize` generator shape (400_100)
+// and subflow impl `~name => ...` (020_014).
+// FRONTIER (undesigned): the spelling for a subflow that FIRES `! each` per
+// element. The body below is intent, not established grammar.
+~import std/io
+
+~pub event gen { n: usize }
+! each usize
+| done usize
+
+~gen => for(0..n) ! each i | done n
+
+~gen(n: 3)
+! each i |> std/io:print.ln("{{ i:d }}")
+| done _ |> _

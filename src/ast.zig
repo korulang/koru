@@ -345,6 +345,13 @@ pub const EventDecl = struct {
     path: DottedPath,
     input: Shape,
     branches: []const Branch,
+    // `-> T` return: the event's SINGLE unnamed output, the one-arm sugar that
+    // replaces a redundant single named payload-branch (`| doubled i32`). Emitted
+    // as a bare value (no tagged union); the call site binds it with `-> name`.
+    // Symmetric with `Branch.resume_type` (an effect's single output). An event
+    // has EITHER `return_type` OR named `branches`, never both.
+    return_type: ?[]const u8 = null,
+    return_phantom: ?[]const u8 = null,  // Obligation/phantom on the return type, e.g. `-> *R<active!>` → "active!"
     is_public: bool = false,  // Whether this event is public (can be imported)
     is_implicit_flow: bool = false,  // Whether this event uses implicit flow parameter
     annotations: []const []const u8 = &[_][]const u8{},  // Event annotations like [pure|fusible|abstract]
@@ -393,6 +400,8 @@ pub const EventDecl = struct {
             mutable_branch.deinit(allocator);
         }
         allocator.free(@constCast(self.branches));
+        if (self.return_type) |rt| allocator.free(rt);
+        if (self.return_phantom) |rp| allocator.free(rp);
         for (self.annotations) |ann| {
             allocator.free(ann);
         }
@@ -937,6 +946,7 @@ pub const Invocation = struct {
     from_opaque_tap: bool = false,  // Marks steps from opaque taps (to skip nested tap observations)
     source_module: []const u8 = "", // Module where this invocation appears
     variant: ?[]const u8 = null,  // Variant selector: "gpu", "naive", etc. for ~event|variant() calls
+    return_binding: ?[]const u8 = null,  // `~double(a:21) -> d |> ...`: binds the event's single unnamed `-> T` return value to `d` for the following pipeline. Call-site twin of EventDecl.return_type.
 
     // Transform replacement: if set, emitter outputs this code instead of calling the handler.
     // The path is kept for shape validation (the shape checker uses it to verify branch coverage).
@@ -960,6 +970,9 @@ pub const Invocation = struct {
         }
         if (self.variant) |v| {
             allocator.free(@constCast(v));
+        }
+        if (self.return_binding) |rb| {
+            allocator.free(@constCast(rb));
         }
         if (self.inline_body) |ib| {
             allocator.free(ib);
@@ -1292,6 +1305,7 @@ pub const BranchConstructor = struct {
     fields: []const Field,  // Reuse Field type from Shape
     plain_value: ?[]const u8 = null, // For branches with a single plain value (not a struct)
     has_expressions: bool = false, // True if any field contains an expression (for procs)
+    is_bare_return: bool = false, // `~event -> expr`: the `->` bare-return impl (twin of `=>` branch ctor). branch_name is empty; plain_value is the expression; the emitter returns it directly (no tag). Pairs with EventDecl.return_type.
 
     pub fn deinit(self: *BranchConstructor, allocator: std.mem.Allocator) void {
         allocator.free(self.branch_name);

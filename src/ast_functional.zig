@@ -1251,6 +1251,8 @@ fn cloneEventDecl(allocator: std.mem.Allocator, event: *const ast.EventDecl) !as
         .path = try cloneDottedPath(allocator, &event.path),
         .input = try cloneShape(allocator, &event.input),
         .branches = branches,
+        .return_type = if (event.return_type) |rt| try allocator.dupe(u8, rt) else null,
+        .return_phantom = if (event.return_phantom) |rp| try allocator.dupe(u8, rp) else null,
         .is_public = event.is_public,
         .is_implicit_flow = event.is_implicit_flow,
         .annotations = annotations,
@@ -1465,6 +1467,10 @@ pub fn cloneInvocation(allocator: std.mem.Allocator, invocation: *const ast.Invo
             try allocator.dupe(u8, v)
         else
             null,
+        .return_binding = if (invocation.return_binding) |rb|
+            try allocator.dupe(u8, rb)
+        else
+            null,
         .inline_body = if (invocation.inline_body) |ib|
             try allocator.dupe(u8, ib)
         else
@@ -1652,6 +1658,7 @@ fn cloneBranchConstructor(allocator: std.mem.Allocator, bc: *const ast.BranchCon
         .fields = fields,
         .plain_value = if (bc.plain_value) |pv| try allocator.dupe(u8, pv) else null,
         .has_expressions = bc.has_expressions,
+        .is_bare_return = bc.is_bare_return,
     };
 }
 

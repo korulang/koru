@@ -1646,9 +1646,11 @@ pub const VisitorEmitter = struct {
             }
         }
 
-        // Output type — terminal branches only
+        // Output type — terminal branches only (bare `-> T` handled centrally)
         try self.code_emitter.writeIndent();
-        if (terminal_count == 0) {
+        if (try emitter.emitBareReturnOutput(self.code_emitter, event)) {
+            // bare-return Output emitted centrally
+        } else if (terminal_count == 0) {
             try self.code_emitter.write("pub const Output = void;\n");
         } else {
             try self.code_emitter.write("pub const Output = union(enum) {\n");
@@ -2537,6 +2539,19 @@ pub const VisitorEmitter = struct {
                                 .allocator = self.allocator,
                                 .main_module_name = self.main_module_name,
                             };
+                            if (bc.is_bare_return) {
+                                // `-> T` bare return: `return <value>;`, no tag.
+                                try self.code_emitter.writeIndent();
+                                try self.code_emitter.write("return ");
+                                if (bc.plain_value) |pv| {
+                                    try emitter.emitValue(self.code_emitter, &value_ctx, pv);
+                                } else {
+                                    try self.code_emitter.write("undefined");
+                                }
+                                try self.code_emitter.write(";\n");
+                                found_impl = true;
+                                break;
+                            }
                             try self.code_emitter.writeIndent();
                             try self.code_emitter.write("return .{ .");
                             try emitter.writeBranchName(self.code_emitter, bc.branch_name);

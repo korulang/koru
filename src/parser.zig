@@ -170,7 +170,7 @@ fn findTopLevelEquals(s: []const u8) ?usize {
     return null;
 }
 
-fn hasTopLevelArrow(s: []const u8) bool {
+fn indexOfTopLevelArrow(s: []const u8) ?usize {
     var paren_depth: i32 = 0;
     var brace_depth: i32 = 0;
     var in_string = false;
@@ -190,11 +190,118 @@ fn hasTopLevelArrow(s: []const u8) bool {
         if (c == '}') brace_depth -= 1;
 
         if (c == '-' and paren_depth == 0 and brace_depth == 0 and i + 1 < s.len and s[i + 1] == '>') {
-            return true;
+            return i;
         }
     }
 
-    return false;
+    return null;
+}
+
+fn hasTopLevelArrow(s: []const u8) bool {
+    return indexOfTopLevelArrow(s) != null;
+}
+
+/// `~event -> expr` is a bare-return implementation (the `->` twin of the `=>`
+/// branch constructor). Distinguished from a call-site `~event(args) -> d` bind
+/// by the absence of call parens on the event name: an impl has a top-level `->`
+/// with no `(` before it.
+fn isBareReturnImpl(s: []const u8) bool {
+    const arrow = indexOfTopLevelArrow(s) orelse return false;
+    // A call site (`~event(args): b`) has parens on the name — not an impl.
+    if (std.mem.indexOfScalar(u8, s[0..arrow], '(') != null) return false;
+    // A bare-return body is a single value expression. If it carries top-level
+    // branch continuations (`|` / `|>`) it's continuation/tap syntax (e.g. the
+    // abandoned `~src -> * | branch` output-tap form), not a bare return — let it
+    // fall through to the invocation path, which rejects a stray top-level `->`.
+    const body = s[arrow + 2 ..];
+    var depth: i32 = 0;
+    var in_str = false;
+    var i: usize = 0;
+    while (i < body.len) : (i += 1) {
+        const c = body[i];
+        if (c == '"' and (i == 0 or body[i - 1] != '\\')) {
+            in_str = !in_str;
+            continue;
+        }
+        if (in_str) continue;
+        if (c == '(' or c == '{' or c == '[') {
+            depth += 1;
+        } else if (c == ')' or c == '}' or c == ']') {
+            depth -= 1;
+        } else if (depth == 0 and c == '|') {
+            return false;
+        }
+    }
+    return true;
+}
+
+const ReturnArrowSplit = struct {
+    head: []const u8, // decl tail with the `-> T` suffix removed (NOT owned — slice of input)
+    return_type: ?[]const u8 = null, // owned dupe, or null
+    return_phantom: ?[]const u8 = null, // owned dupe, or null
+};
+
+/// Split a `-> T` (optionally `-> *R<phantom>`) return suffix off an event/flow
+/// decl tail. Scans at bracket/brace/angle/paren depth 0 so an arrow inside a
+/// `{...}` input payload, a `<...>` phantom, or `[...]` annotation is ignored —
+/// only the top-level return arrow is split. Caller owns the duped type/phantom.
+/// This is the event-level analogue of the effect-branch `-> U` resume parsing.
+fn splitTrailingReturnArrow(self: *Parser, s: []const u8) !ReturnArrowSplit {
+    var depth: i32 = 0;
+    var in_string = false;
+    var i: usize = 0;
+    var arrow_at: ?usize = null;
+    while (i + 1 < s.len) : (i += 1) {
+        const c = s[i];
+        if (c == '"' and (i == 0 or s[i - 1] != '\\')) {
+            in_string = !in_string;
+            continue;
+        }
+        if (in_string) continue;
+        if (c == '(' or c == '{' or c == '[' or c == '<') {
+            depth += 1;
+        } else if (c == ')' or c == '}' or c == ']' or c == '>') {
+            depth -= 1;
+        } else if (depth == 0 and c == '-' and s[i + 1] == '>') {
+            arrow_at = i;
+            break;
+        }
+    }
+    if (arrow_at == null) return .{ .head = s };
+
+    const head = lexer.trim(s[0..arrow_at.?]);
+    var rt = lexer.trim(s[arrow_at.? + 2 ..]);
+    var return_phantom: ?[]const u8 = null;
+    // Capture a trailing `<phantom>` on the return type, mirroring the
+    // effect-branch resume-type phantom capture at the `| !` parser.
+    if (rt.len > 0 and rt[rt.len - 1] == '>') {
+        var angle_depth: i32 = 0;
+        var j: usize = rt.len - 1;
+        const end_pos = j;
+        var start_pos: ?usize = null;
+        while (j > 0) : (j -= 1) {
+            if (rt[j] == '>') {
+                angle_depth += 1;
+            } else if (rt[j] == '<') {
+                angle_depth -= 1;
+                if (angle_depth == 0) {
+                    start_pos = j;
+                    break;
+                }
+            }
+        }
+        if (start_pos) |start| {
+            if (start > 0) {
+                const content = rt[start + 1 .. end_pos];
+                if (content.len > 0) {
+                    return_phantom = try self.allocator.dupe(u8, content);
+                    rt = lexer.trim(rt[0..start]);
+                }
+            }
+        }
+    }
+    const return_type: ?[]const u8 = if (rt.len > 0) try self.allocator.dupe(u8, rt) else null;
+    return .{ .head = head, .return_type = return_type, .return_phantom = return_phantom };
 }
 
 /// Find '{' at top level (not inside (), [] or strings)
@@ -1129,6 +1236,9 @@ pub const Parser = struct {
             // Event implementation via subflow: ~event.name = ...
             // NOTE: This only matches = outside of source blocks (checked above)
             return try self.parseSubflowImpl();
+        } else if (isBareReturnImpl(remaining)) {
+            // `~event -> expr` : bare-return impl (the `->` twin of `=>`).
+            return try self.parseSubflowImpl();
         } else if (std.mem.indexOfScalar(u8, remaining, '(') != null) {
             // It's an invocation with args
             return .{ .flow = try self.parseFlow(annotations.items) };
@@ -1403,7 +1513,17 @@ pub const Parser = struct {
             return error.ParseError;
         };
 
-        const trimmed_after_event = lexer.trim(after_event);
+        // Split a top-level `-> T` return suffix off the decl line BEFORE path /
+        // shape / same-line-branch parsing, so none of them see the return arrow.
+        const trimmed_after_event_raw = lexer.trim(after_event);
+        const return_split = try splitTrailingReturnArrow(self, trimmed_after_event_raw);
+        var return_type = return_split.return_type;
+        var return_phantom = return_split.return_phantom;
+        errdefer {
+            if (return_type) |rt| self.allocator.free(rt);
+            if (return_phantom) |rp| self.allocator.free(rp);
+        }
+        const trimmed_after_event = return_split.head;
         const brace_idx_opt = std.mem.indexOf(u8, trimmed_after_event, "{");
         const parsed_path_str = if (brace_idx_opt) |idx|
             lexer.trim(trimmed_after_event[0..idx])
@@ -1761,12 +1881,17 @@ pub const Parser = struct {
             .path = path,
             .input = input,
             .branches = try branches.toOwnedSlice(self.allocator),
+            .return_type = return_type,
+            .return_phantom = return_phantom,
             .is_public = is_public,
             .is_implicit_flow = is_implicit_flow,
             .annotations = annotations_copy,
             .location = self.getCurrentLocation(),
             .module = try self.allocator.dupe(u8, self.module_name),
         };
+        // Ownership transferred into event_decl; disarm the errdefer above.
+        return_type = null;
+        return_phantom = null;
 
         // Normalize kebab names -> snake BEFORE registration: the registry
         // KEBAB-CANONICAL: registry deep-copies the names verbatim (kebab).
@@ -3511,16 +3636,83 @@ pub const Parser = struct {
             );
             return error.ZigCodeInFlow;
         }
-        if (hasTopLevelArrow(clean)) {
+        // `->` is the PRODUCE glyph (decl/impl). The call site BINDS the result
+        // with `:` (the bind glyph, twin of `|`/`!`). A stray top-level `->` here
+        // is the abandoned form — reject it with a migration hint.
+        if (indexOfTopLevelArrow(clean) != null) {
             try self.reporter.addError(
                 .PARSE001,
                 self.current,
                 0,
-                "invalid flow invocation",
+                "bind a result with `:` not `->` (e.g. `~event(...): result |> ...`) — `->` is the produce glyph",
                 .{},
             );
             return error.ParseError;
         }
+
+        // `~event(args): b |> ...`: bind the event's single `-> T` return value to
+        // `b`, then continue with `|>`. The bind colon is the top-level `:` right
+        // after the call's `)` (arg colons live inside the parens; a module
+        // qualifier's `:` precedes the `(`). Strip `: b` so the rest of this parser
+        // sees a plain `event(args) |> ...`, and stash the binding.
+        var return_binding: ?[]const u8 = null;
+        var stitched_clean: ?[]const u8 = null;
+        defer if (stitched_clean) |s| self.allocator.free(s);
+        {
+            var depth: i32 = 0;
+            var idx: usize = 0;
+            var in_str = false;
+            var seen_open = false;
+            var close_paren: ?usize = null;
+            while (idx < clean.len) : (idx += 1) {
+                const c = clean[idx];
+                if (c == '"' and (idx == 0 or clean[idx - 1] != '\\')) {
+                    in_str = !in_str;
+                    continue;
+                }
+                if (in_str) continue;
+                if (c == '(') {
+                    depth += 1;
+                    seen_open = true;
+                } else if (c == ')') {
+                    depth -= 1;
+                    if (depth == 0 and seen_open) {
+                        close_paren = idx;
+                        break;
+                    }
+                }
+            }
+            if (close_paren) |cp| {
+                var j = cp + 1;
+                while (j < clean.len and (clean[j] == ' ' or clean[j] == '\t')) : (j += 1) {}
+                if (j < clean.len and clean[j] == ':') {
+                    var k = j + 1;
+                    while (k < clean.len and (clean[k] == ' ' or clean[k] == '\t')) : (k += 1) {}
+                    var name_end = k;
+                    while (name_end < clean.len and
+                        (std.ascii.isAlphanumeric(clean[name_end]) or
+                            clean[name_end] == '_' or clean[name_end] == '-')) : (name_end += 1)
+                    {}
+                    if (name_end == k) {
+                        try self.reporter.addError(
+                            .PARSE001,
+                            self.current,
+                            0,
+                            "expected a binding name after `:` (e.g. `~event(...): result |> ...`)",
+                            .{},
+                        );
+                        return error.ParseError;
+                    }
+                    return_binding = try self.allocator.dupe(u8, clean[k..name_end]);
+                    const before_colon = lexer.trim(clean[0..j]);
+                    const rest = lexer.trim(clean[name_end..]); // "|> ..." or ""
+                    const stitched = try std.fmt.allocPrint(self.allocator, "{s} {s}", .{ before_colon, rest });
+                    stitched_clean = stitched;
+                    clean = stitched;
+                }
+            }
+        }
+        errdefer if (return_binding) |rb| self.allocator.free(rb);
 
         // Find the first pipe that's not inside parentheses or braces
         var pipe_idx: ?usize = null;
@@ -3935,11 +4127,14 @@ pub const Parser = struct {
             }
         }
 
-        return ast.Invocation{
+        const result_invocation = ast.Invocation{
             .path = parsed_path,
             .args = try args.toOwnedSlice(self.allocator),
             .variant = variant,
+            .return_binding = return_binding,
         };
+        return_binding = null; // ownership transferred; disarm the errdefer
+        return result_invocation;
     }
 
     // Parses ~event = ... syntax. Returns either:
@@ -3962,6 +4157,41 @@ pub const Parser = struct {
 
         // Parse: ~event.name = ... or ~module:event = ...
         const after_tilde = lexer.trim(line[1..]);
+
+        // `~event -> expr` : bare-return impl (the `->` twin of `=>`). Returns the
+        // event's single unnamed `-> T` value directly — no branch name, no tag.
+        if (findTopLevelEquals(after_tilde) == null) {
+            if (indexOfTopLevelArrow(after_tilde)) |arrow_idx| {
+                const ep_str = lexer.trim(after_tilde[0..arrow_idx]);
+                const expr = lexer.trim(after_tilde[arrow_idx + 2 ..]);
+                if (expr.len == 0) {
+                    try self.reporter.addError(
+                        .PARSE003,
+                        self.current,
+                        1,
+                        "bare-return impl requires an expression after `->` (e.g. `~double -> a * 2`)",
+                        .{},
+                    );
+                    return error.InvalidSyntax;
+                }
+                var ep = try lexer.parseQualifiedPath(self.allocator, ep_str, ast);
+                errdefer ep.deinit(self.allocator);
+                return ast.Item{ .immediate_impl = .{
+                    .event_path = ep,
+                    .value = .{
+                        .branch_name = try self.allocator.dupe(u8, ""),
+                        .fields = &.{},
+                        .plain_value = try self.allocator.dupe(u8, expr),
+                        .has_expressions = true,
+                        .is_bare_return = true,
+                    },
+                    .location = self.getCurrentLocation(),
+                    .module = try self.allocator.dupe(u8, self.module_name),
+                    .is_impl = ep.module_qualifier != null,
+                } };
+            }
+        }
+
         const eq_idx = findTopLevelEquals(after_tilde) orelse {
             try self.reporter.addError(
                 .PARSE003,

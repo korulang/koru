@@ -103,6 +103,7 @@ pub const TypeRegistry = struct {
                 .branches = try new_registry.duplicateBranches(event_type.branches),
                 .is_public = event_type.is_public,
                 .is_implicit_flow = event_type.is_implicit_flow,
+                .return_type = if (event_type.return_type) |rt| try new_registry.allocator.dupe(u8, rt) else null,
             };
             try new_registry.events.put(key, cloned_event);
         }
@@ -194,6 +195,7 @@ pub const TypeRegistry = struct {
             .branches = try self.allocator.alloc(BranchType, event_decl.branches.len),
             .is_public = event_decl.is_public,
             .is_implicit_flow = is_implicit_flow,
+            .return_type = if (event_decl.return_type) |rt| try self.allocator.dupe(u8, rt) else null,
         };
         errdefer event_type.deinit(self.allocator);
         
@@ -454,8 +456,10 @@ pub const EventType = struct {
     branches: []BranchType,
     is_public: bool = false,
     is_implicit_flow: bool = false,  // True for events with single Source param
-    
+    return_type: ?[]const u8 = null,  // `-> T` bare return type (mirrors ast.EventDecl.return_type); null = branch-based event
+
     pub fn deinit(self: *EventType, allocator: std.mem.Allocator) void {
+        if (self.return_type) |rt| allocator.free(rt);
         if (self.input_shape) |shape| {
             for (shape.fields) |field| {
                 allocator.free(field.name);

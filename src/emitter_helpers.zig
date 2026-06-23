@@ -5152,15 +5152,28 @@ fn emitInvocation(
             //     const n = 5;  // bind input args
             //     break :blk .{ .branch = value };
             // };
-            // Use a labeled block to scope the input bindings and avoid redeclaration
+            // Use a labeled block to scope the input bindings and avoid redeclaration.
+            // `-> T` bare return: bind to the call-site `-> name` (return_binding),
+            // type is the bare return_type (not `.Output`), and the block yields the
+            // value directly (no tagged union) — see the `break :blk` below.
+            const bare_return = immediate_bc.is_bare_return;
+            const bind_name = if (bare_return)
+                (invocation.return_binding orelse result_var)
+            else
+                result_var;
             try emitter.writeIndent();
-            if (!std.mem.eql(u8, result_var, "_")) {
+            if (!std.mem.eql(u8, bind_name, "_")) {
                 try emitter.write("const ");
             }
-            try emitter.write(result_var);
+            try emitter.write(bind_name);
             try emitter.write(": ");
-            try emitInvocationTarget(emitter, ctx, &invocation.path);
-            try emitter.write(".Output = blk: {\n");
+            if (bare_return and event_decl != null and event_decl.?.return_type != null) {
+                try emitter.write(event_decl.?.return_type.?);
+            } else {
+                try emitInvocationTarget(emitter, ctx, &invocation.path);
+                try emitter.write(".Output");
+            }
+            try emitter.write(" = blk: {\n");
 
             emitter.indent_level += 1;
 
@@ -5223,10 +5236,17 @@ fn emitInvocation(
                 try emitter.write(";\n");
             }
 
-            // Emit the break with the branch constructor
+            // Emit the break with the branch constructor (or the bare value).
             try emitter.writeIndent();
             try emitter.write("break :blk ");
-            if (event_decl) |event| {
+            if (bare_return) {
+                // `-> T`: yield the expression directly, no `.{ .name = ... }` wrap.
+                if (immediate_bc.plain_value) |pv| {
+                    try emitValue(emitter, ctx, pv);
+                } else {
+                    try emitter.write("undefined");
+                }
+            } else if (event_decl) |event| {
                 try emitBranchConstructorWithEvent(emitter, ctx, &immediate_impl.value, event);
             } else if (ctx.type_registry) |type_registry| {
                 var resolved_event_type: ?type_registry_module.EventType = null;
@@ -8709,12 +8729,36 @@ pub fn emitArrayLiteralForField(
     }
 }
 
+/// Central bare-return Output emission. If the event has a `-> T` return, emits
+/// `pub const Output = T;` (no tagged union — the value type itself) and returns
+/// true so the caller skips its void/union logic. Returns false for ordinary
+/// (branch-based) events, leaving the caller's existing Output emission intact.
+/// Every `Output = ...` site routes through this so the bare-return case is
+/// handled in exactly one place.
+pub fn emitBareReturnOutput(emitter: *CodeEmitter, event: *const ast.EventDecl) !bool {
+    if (event.return_type) |rt| {
+        try emitter.write("pub const Output = ");
+        try emitter.write(rt);
+        try emitter.write(";\n");
+        return true;
+    }
+    return false;
+}
+
 fn emitBranchConstructorWithEventType(
     emitter: *CodeEmitter,
     ctx: *EmissionContext,
     bc: *const ast.BranchConstructor,
     event_type: type_registry_module.EventType,
 ) EmitError!void {
+    if (bc.is_bare_return) {
+        if (bc.plain_value) |pv| {
+            try emitValue(emitter, ctx, pv);
+        } else {
+            try emitter.write("undefined");
+        }
+        return;
+    }
     try emitter.write(".{ .");
     try writeBranchName(emitter, bc.branch_name);
     try emitter.write(" = ");
@@ -8762,6 +8806,14 @@ fn emitBranchConstructorWithEvent(
     bc: *const ast.BranchConstructor,
     event: *const ast.EventDecl,
 ) EmitError!void {
+    if (bc.is_bare_return) {
+        if (bc.plain_value) |pv| {
+            try emitValue(emitter, ctx, pv);
+        } else {
+            try emitter.write("undefined");
+        }
+        return;
+    }
     try emitter.write(".{ .");
     try writeBranchName(emitter, bc.branch_name);
     try emitter.write(" = ");
@@ -8811,6 +8863,15 @@ pub fn emitBranchConstructor(
     is_terminal: bool,
 ) !void {
     _ = is_terminal; // Terminal status doesn't affect branch constructor syntax
+    if (bc.is_bare_return) {
+        // `-> T` bare return: yield the value directly, no `.{ .name = ... }` wrap.
+        if (bc.plain_value) |pv| {
+            try emitValue(emitter, ctx, pv);
+        } else {
+            try emitter.write("undefined");
+        }
+        return;
+    }
     try emitter.write(".{ .");
     try writeBranchName(emitter, bc.branch_name);
     try emitter.write(" = ");
@@ -9086,9 +9147,13 @@ fn emitEventDeclForModuleFromType(
     try code_emitter.writeIndent();
     try code_emitter.write("};\n");
 
-    // Output union
+    // Output union (bare `-> T` return takes the value type directly)
     try code_emitter.writeIndent();
-    if (event_type.branches.len == 0) {
+    if (event_type.return_type) |rt| {
+        try code_emitter.write("pub const Output = ");
+        try code_emitter.write(rt);
+        try code_emitter.write(";\n");
+    } else if (event_type.branches.len == 0) {
         try code_emitter.write("pub const Output = void;\n");
     } else {
         try code_emitter.write("pub const Output = union(enum) {\n");
@@ -9327,9 +9392,11 @@ fn emitEventDeclForModule(
         }
     }
 
-    // Output union — terminal branches only
+    // Output union — terminal branches only (bare `-> T` handled centrally)
     try code_emitter.writeIndent();
-    if (terminal_count == 0) {
+    if (try emitBareReturnOutput(code_emitter, event)) {
+        // bare-return Output emitted centrally
+    } else if (terminal_count == 0) {
         try code_emitter.write("pub const Output = void;\n");
     } else {
         try code_emitter.write("pub const Output = union(enum) {\n");

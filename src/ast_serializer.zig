@@ -418,6 +418,24 @@ pub const AstSerializer = struct {
         try self.writeIndent();
         try self.write("},\n");
 
+        // Return type (`-> T` bare return) + its phantom/obligation
+        try self.writeIndent();
+        try self.write(".return_type = ");
+        if (event.return_type) |rt| {
+            try self.writeString(rt);
+        } else {
+            try self.write("null");
+        }
+        try self.write(",\n");
+        try self.writeIndent();
+        try self.write(".return_phantom = ");
+        if (event.return_phantom) |rp| {
+            try self.writeString(rp);
+        } else {
+            try self.write("null");
+        }
+        try self.write(",\n");
+
         // Is public
         try self.writeIndent();
         try self.write(".is_public = ");
@@ -842,6 +860,16 @@ pub const AstSerializer = struct {
         try self.write(".variant = ");
         if (invoc.variant) |v| {
             try self.writeString(v);
+        } else {
+            try self.write("null");
+        }
+        try self.write(",\n");
+
+        // `-> name` return binding (call site of a `-> T` event)
+        try self.writeIndent();
+        try self.write(".return_binding = ");
+        if (invoc.return_binding) |rb| {
+            try self.writeString(rb);
         } else {
             try self.write("null");
         }
@@ -1326,6 +1354,11 @@ pub const AstSerializer = struct {
         try self.writeIndent();
         try self.write(".has_expressions = ");
         try self.write(if (bc.has_expressions) "true" else "false");
+        try self.write(",\n");
+
+        try self.writeIndent();
+        try self.write(".is_bare_return = ");
+        try self.write(if (bc.is_bare_return) "true" else "false");
         try self.write(",\n");
 
         self.dedent();

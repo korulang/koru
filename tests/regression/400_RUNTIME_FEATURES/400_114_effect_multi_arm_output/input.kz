@@ -1,0 +1,33 @@
+// PROPOSED FORM (Barbour effect-typing arc) — NOT yet supported; pinned failing
+// to capture the baseline (Phase 1).
+//
+// An effect branch's OUTPUT is a TREE of named continuation arms, generalizing
+// the single anonymous `-> T` resume (cf. 400_085 `! double i32 -> i32`). Here
+// `! ask` yields an i32 and the handler resumes by SELECTING one arm —
+// `| halved i32` or `| timeout`. This is "effects having effects → sessions":
+// the effect's output is itself event-shaped. You never nest `!`; the
+// composition lives in the `|` tree.
+//
+// The resume-by-named-arm spelling (`=> halved v`) reuses the existing
+// branch-ctor resume grammar (cf. the subflow resume `~greet => greeting "..."`
+// in 020_014), now in effect-resume position.
+//
+// FRONTIER (undesigned): how the `~proc` CONSUMES a multi-arm resume value
+// (today `const r = ask(payload)` binds a single value; a sum needs handling).
+// This pin documents the SHAPE; the proc-side mechanics are the design work.
+~import std/io
+
+~pub event request { payload: i32 }
+! ask i32
+    | halved i32
+    | timeout
+| done i32
+
+~proc request|zig {
+    const r = ask(payload);
+    return .{ .done = r };
+}
+
+~request(payload: 20)
+! ask n => halved n / 2
+| done r |> std/io:print.ln("{{ r:d }}")
