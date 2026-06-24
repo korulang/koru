@@ -1,0 +1,25 @@
+// Produce-is-the-call: an effect arm resumes with the single payload produced
+// by calling a bare-return event. `->` is the produce glyph; its RHS may be an
+// event call (`mix(x: p)`), so the resume value flows straight from a nested
+// single-payload event — no intermediate `: bind`. The emitter binds the call
+// to a temp and returns it (`const r = mix-handler(...); return r;`), where
+// `mix` is itself a `-> T` bare return (plain payload, no tagged union).
+//
+// This is the hot-path shape the bare_return microbench needs: a single-payload
+// event invoked once per effect firing, its output threaded as the resume.
+~import std/io
+
+~pub event mix { x: i32 } -> i32
+~proc mix|zig { return x + 1; }
+
+~pub event driver {}
+! step i32 -> i32
+| done i32
+
+~proc driver|zig {
+    return .{ .done = step(41) };
+}
+
+~driver()
+! step p -> mix(x: p)
+| done r |> std/io:print.ln("{{ r:d }}")

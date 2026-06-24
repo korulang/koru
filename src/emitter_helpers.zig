@@ -5012,7 +5012,22 @@ fn emitHandlersStruct(
                 }
             };
 
-            if (resume_expr) |expr| {
+            // `->` produce-is-the-call sugar: the resume value is an event
+            // call (`! step p -> mix(x: p)`). Emit the invocation bound to a
+            // temp, then return it as the resume value.
+            const resume_inv: ?*const ast.Invocation = blk: {
+                if (branch.resume_type == null) break :blk null;
+                if (cont.continuations.len != 0) break :blk null;
+                if (cont.node == null) break :blk null;
+                if (cont.node.? != .invocation) break :blk null;
+                break :blk &cont.node.?.invocation;
+            };
+
+            if (resume_inv) |inv| {
+                try emitInvocation(emitter, ctx, inv, "__koru_resume");
+                try emitter.writeIndent();
+                try emitter.write("return __koru_resume;\n");
+            } else if (resume_expr) |expr| {
                 try emitter.writeIndent();
                 try emitter.write("return ");
                 try emitter.write(expr);

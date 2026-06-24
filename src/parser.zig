@@ -5828,7 +5828,15 @@ pub const Parser = struct {
                 if (indexOfTopLevelArrow(rest_nc)) |arrow_at| {
                     const produced = lexer.trim(rest_nc[arrow_at + 2 ..]);
                     if (produced.len > 0) {
-                        step = ast.Step{ .expression = try self.allocator.dupe(u8, produced) };
+                        // Produce-is-the-call sugar: `-> mix(x: p)` resumes with
+                        // the single payload produced by the event call. Parse it
+                        // as an invocation so the emitter emits the handler call
+                        // and returns its value; otherwise it's a Zig expression.
+                        if (looksLikeInvocation(produced)) {
+                            step = ast.Step{ .invocation = try self.parseEventInvocation(produced) };
+                        } else {
+                            step = ast.Step{ .expression = try self.allocator.dupe(u8, produced) };
+                        }
                     }
                 }
             }
