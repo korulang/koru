@@ -297,15 +297,14 @@ Hello, World!
 
 const std = @import("std");
 
-~event sum { numbers: []const i32 }
-| result i32
+~event sum { numbers: []const i32 } -> i32
 
 ~proc sum|zig {
     var total: i32 = 0;
     for (numbers) |n| {
         total += n;
     }
-    return .{ .result = total };
+    return total;
 }
 
 ~event check { expected: i32, actual: i32 }
@@ -319,8 +318,7 @@ const std = @import("std");
 }
 
 // Use array literal syntax
-~sum(numbers: [1, 2, 3, 4])
-| result r |> check(expected: 10, actual: r)
+~sum(numbers: [1, 2, 3, 4]): r |> check(expected: 10, actual: r)
 ```
 
 ### 030_012_struct_literal_inline
@@ -340,12 +338,11 @@ pub const Config = struct {
     retries: i32,
 };
 
-~event configure { config: Config }
-| configured i32
+~event configure { config: Config } -> i32
 
 ~proc configure|zig {
     const total = config.timeout * config.retries;
-    return .{ .configured = total };
+    return total;
 }
 
 ~event check { expected: i32, actual: i32 }
@@ -359,8 +356,7 @@ pub const Config = struct {
 }
 
 // Use struct literal syntax (Koru-style, not Zig-style)
-~configure(config: { timeout: 30, retries: 3 })
-| configured c |> check(expected: 90, actual: c)
+~configure(config: { timeout: 30, retries: 3 }): c |> check(expected: 90, actual: c)
 ```
 
 ## CONTROL FLOW
@@ -455,18 +451,16 @@ const std = @import("std");
     return .{ .invalid = "Value must be positive" };
 }
 
-~event double { value: i32 }
-| ok i32
+~event double { value: i32 } -> i32
 
 ~proc double|zig {
-    return .{ .ok = value * 2 };
+    return value * 2;
 }
 
-~event triple { value: i32 }
-| ok i32
+~event triple { value: i32 } -> i32
 
 ~proc triple|zig {
-    return .{ .ok = value * 3 };
+    return value * 3;
 }
 
 ~event success { result: i32 }
@@ -483,10 +477,8 @@ const std = @import("std");
 
 // Flow with multiple branching paths
 ~validate(value: 42)
-| valid v |> double(value: v)
-    | ok doubled |> success(result: doubled)
-| invalid e |> triple(value: -1)
-    | ok _ |> failure(msg: e)
+| valid v |> double(value: v): doubled |> success(result: doubled)
+| invalid e |> triple(value: -1): _ |> failure(msg: e)
 ```
 
 ### 233_empty_payload_branches
@@ -646,12 +638,11 @@ const std = @import("std");
     std.debug.print("Closed connection {}\n", .{conn});
 }
 
-~event log-error { conn: u32, msg: []const u8 }
-| logged u32
+~event log-error { conn: u32, msg: []const u8 } -> u32
 
 ~proc log-error|zig {
     std.debug.print("Error on connection {}: {s}\n", .{conn, msg});
-    return .{ .logged = conn };
+    return conn;
 }
 
 ~event cleanup { conn: u32 }
@@ -666,8 +657,7 @@ const std = @import("std");
     | connected c |> #process_loop process(c.conn)
         | done d |> close(conn: d) |> @accept_loop(c.server)
         | retry r |> @process_loop(conn: r)
-        | error e |> log-error(e.conn, e.msg)
-            | logged l |> cleanup(conn: l) |> @accept_loop(c.server)
+        | error e |> log-error(e.conn, e.msg): l |> cleanup(conn: l) |> @accept_loop(c.server)
     | failed f |> @accept_loop(server: f)
 | failed _ |> _
 ```
@@ -897,8 +887,7 @@ hello effect branches
 ~import std/io
 
 ~std/string:from-page(text: "hello")
-| ok s |> std/string:read(s)
-    | slice text |> std/io:print.ln("{{ text:s }}") |> std/string:free(s)
+| ok s |> std/string:read(s): text |> std/io:print.ln("{{ text:s }}") |> std/string:free(s)
 | err _ |> _
 ```
 

@@ -106,8 +106,7 @@ These are the receipts for the `koru-metaprogramming` skill — passing tests sh
 
 // === USE CASE 1: Property Testing ===
 
-~pub event sort { items: []i32 }
-| sorted []i32
+~pub event sort { items: []i32 } -> []i32
 
 // Reference implementation - simple, obviously correct
 ~proc sort|zig(reference) {
@@ -122,13 +121,13 @@ These are the receipts for the `koru-metaprogramming` skill — passing tests sh
             }
         }
     }
-    return .{ .sorted = result };
+    return result;
 }
 
 // Optimized implementation - complex, needs testing
 ~proc sort|zig(optimized) {
     // Introsort with median-of-three pivot - fast but subtle
-    return .{ .sorted = std.sort.sort(items) };
+    return std.sort.sort(items);
 }
 
 // Property test: both variants produce same output

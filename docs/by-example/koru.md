@@ -909,15 +909,14 @@ done
 
 const std = @import("std");
 
-~event sum { numbers: []const i32 }
-| result i32
+~event sum { numbers: []const i32 } -> i32
 
 ~proc sum|zig {
     var total: i32 = 0;
     for (numbers) |n| {
         total += n;
     }
-    return .{ .result = total };
+    return total;
 }
 
 ~event check { expected: i32, actual: i32 }
@@ -931,8 +930,7 @@ const std = @import("std");
 }
 
 // Use array literal syntax
-~sum(numbers: [1, 2, 3, 4])
-| result r |> check(expected: 10, actual: r)
+~sum(numbers: [1, 2, 3, 4]): r |> check(expected: 10, actual: r)
 ```
 
 ### 030_011_array_literal_bindings
@@ -947,22 +945,20 @@ const std = @import("std");
 
 const std = @import("std");
 
-~event getValue { id: i32 }
-| got i32
+~event getValue { id: i32 } -> i32
 
 ~proc getValue|zig {
-    return .{ .got = id * 10 };
+    return id * 10;
 }
 
-~event sumAll { values: []const i32 }
-| total i32
+~event sumAll { values: []const i32 } -> i32
 
 ~proc sumAll|zig {
     var sum: i32 = 0;
     for (values) |v| {
         sum += v;
     }
-    return .{ .total = sum };
+    return sum;
 }
 
 ~event check { expected: i32, actual: i32 }
@@ -976,11 +972,7 @@ const std = @import("std");
 }
 
 // Chain events and collect results in array literal
-~getValue(id: 1)
-| got a |> getValue(id: 2)
-    | got b |> getValue(id: 3)
-        | got c |> sumAll(values: [a, b, c])
-            | total t |> check(expected: 60, actual: t)
+~getValue(id: 1): a |> getValue(id: 2): b |> getValue(id: 3): c |> sumAll(values: [a, b, c]): t |> check(expected: 60, actual: t)
 ```
 
 ### 030_012_struct_literal_inline
@@ -1000,12 +992,11 @@ pub const Config = struct {
     retries: i32,
 };
 
-~event configure { config: Config }
-| configured i32
+~event configure { config: Config } -> i32
 
 ~proc configure|zig {
     const total = config.timeout * config.retries;
-    return .{ .configured = total };
+    return total;
 }
 
 ~event check { expected: i32, actual: i32 }
@@ -1019,8 +1010,7 @@ pub const Config = struct {
 }
 
 // Use struct literal syntax (Koru-style, not Zig-style)
-~configure(config: { timeout: 30, retries: 3 })
-| configured c |> check(expected: 90, actual: c)
+~configure(config: { timeout: 30, retries: 3 }): c |> check(expected: 90, actual: c)
 ```
 
 ### 030_013_array_of_structs
@@ -1236,31 +1226,27 @@ Negative branch works: -7
 const std = @import("std");
 
 // Events for testing scoping
-~event outer { x: i32 }
-| result i32
+~event outer { x: i32 } -> i32
 
 ~proc outer|zig {
     // x is accessible here directly
-    return .{ .result = x };
+    return x;
 }
 
-~event middle { y: i32 }
-| data i32
+~event middle { y: i32 } -> i32
 
 ~proc middle|zig {
-    return .{ .data = y * 2 };
+    return y * 2;
 }
 
-~event inner { z: i32 }
-| final i32
+~event inner { z: i32 } -> i32
 
 ~proc inner|zig {
-    return .{ .final = z * 3 };
+    return z * 3;
 }
 
 // Event with nested structure for field access testing
-~event nested-data { info: UserInfo }
-| processed i32
+~event nested-data { info: UserInfo } -> i32
 
 // Define the struct type inline
 const UserInfo = struct {
@@ -1273,7 +1259,7 @@ const UserInfo = struct {
 ~proc nested-data|zig {
     // Access nested field
     const len: i32 = @intCast(info.profile.name.len);
-    return .{ .processed = len };
+    return len;
 }
 
 // Event to demonstrate access to outer scope bindings
@@ -1287,10 +1273,7 @@ const UserInfo = struct {
 // Top-level flow to test scoping rules
 // Test 1: Bindings persist through nested continuations
 // r should be 10, d should be 20, f should be 60
-~outer(x: 10)
-| result r |> middle(y: r)
-    | data d |> inner(z: d)
-        | final f |> show-values(a: r, b: d, c: f)
+~outer(x: 10): r |> middle(y: r): d |> inner(z: d): f |> show-values(a: r, b: d, c: f)
 
 // The binding 'r' from outer should be accessible in all nested continuations
 // The binding 'd' from middle should be accessible in inner's continuation
@@ -1314,18 +1297,16 @@ Values from scope chain: 10 20 60
 
 const std = @import("std");
 
-~event first { value: i32 }
-| result i32
+~event first { value: i32 } -> i32
 
 ~proc first|zig {
-    return .{ .result = value * 2 };
+    return value * 2;
 }
 
-~event second { value: i32 }
-| data i32
+~event second { value: i32 } -> i32
 
 ~proc second|zig {
-    return .{ .data = value * 3 };
+    return value * 3;
 }
 
 ~event show { outer_val: i32, inner_val: i32 }
@@ -1335,9 +1316,7 @@ const std = @import("std");
 }
 
 // Test: Use unique binding names (r and d)
-~first(value: 10)
-| result r |> second(value: r)
-    | data d |> show(outer_val: r, inner_val: d)
+~first(value: 10): r |> second(value: r): d |> show(outer_val: r, inner_val: d)
 ```
 
 **Output:**
@@ -1745,12 +1724,11 @@ const std = @import("std");
     std.debug.print("Closed connection {}\n", .{conn});
 }
 
-~event log-error { conn: u32, msg: []const u8 }
-| logged u32
+~event log-error { conn: u32, msg: []const u8 } -> u32
 
 ~proc log-error|zig {
     std.debug.print("Error on connection {}: {s}\n", .{conn, msg});
-    return .{ .logged = conn };
+    return conn;
 }
 
 ~event cleanup { conn: u32 }
@@ -1765,8 +1743,7 @@ const std = @import("std");
     | connected c |> #process_loop process(c.conn)
         | done d |> close(conn: d) |> @accept_loop(c.server)
         | retry r |> @process_loop(conn: r)
-        | error e |> log-error(e.conn, e.msg)
-            | logged l |> cleanup(conn: l) |> @accept_loop(c.server)
+        | error e |> log-error(e.conn, e.msg): l |> cleanup(conn: l) |> @accept_loop(c.server)
     | failed f |> @accept_loop(server: f)
 | failed _ |> _
 ```
@@ -1795,18 +1772,16 @@ const std = @import("std");
     return .{ .invalid = "Value must be positive" };
 }
 
-~event double { value: i32 }
-| ok i32
+~event double { value: i32 } -> i32
 
 ~proc double|zig {
-    return .{ .ok = value * 2 };
+    return value * 2;
 }
 
-~event triple { value: i32 }
-| ok i32
+~event triple { value: i32 } -> i32
 
 ~proc triple|zig {
-    return .{ .ok = value * 3 };
+    return value * 3;
 }
 
 ~event success { result: i32 }
@@ -1823,10 +1798,8 @@ const std = @import("std");
 
 // Flow with multiple branching paths
 ~validate(value: 42)
-| valid v |> double(value: v)
-    | ok doubled |> success(result: doubled)
-| invalid e |> triple(value: -1)
-    | ok _ |> failure(msg: e)
+| valid v |> double(value: v): doubled |> success(result: doubled)
+| invalid e |> triple(value: -1): _ |> failure(msg: e)
 ```
 
 ### 211_nested_depth_2
@@ -2273,15 +2246,14 @@ const std = @import("std");
 }
 
 // Stage 4: Format
-~event format { value: i32 }
-| formatted []const u8
+~event format { value: i32 } -> []const u8
 
 ~proc format|zig {
     const allocator = std.heap.page_allocator;
     const text = std.fmt.allocPrint(allocator, "Result: {}", .{value}) catch {
-        return .{ .@"formatted" = "Error formatting" };
+        return "Error formatting";
     };
-    return .{ .@"formatted" = text };
+    return text;
 }
 
 // Stage 5: Display
@@ -2296,8 +2268,7 @@ const std = @import("std");
 ~parse(input: "42")
 | parsed p |> validate(value: p)
     | valid v |> transform(value: v)
-        | transformed t |> format(value: t)
-            | formatted f |> display(text: f)
+        | transformed t |> format(value: t): f |> display(text: f)
     | invalid i |> display(text: i)
 | invalid i |> display(text: i)
 ```
@@ -2543,26 +2514,22 @@ Testing subflow-defined semantics:
 // MUST_RUN: Verify identity values flow correctly at runtime
 ~import std/io
 
-~pub event get-number {}
-| value i32
+~pub event get-number {} -> i32
 
 ~proc get-number|zig {
-    return .{ .value = 42 };
+    return 42;
 }
 
-~pub event get-message {}
-| text []const u8
+~pub event get-message {} -> []const u8
 
 ~proc get-message|zig {
-    return .{ .text = "Hello from identity branch!" };
+    return "Hello from identity branch!";
 }
 
 // Test that identity values work correctly
-~get-number()
-| value n |> std/io:print.ln("Got number: {{ n:d }}")
+~get-number(): n |> std/io:print.ln("Got number: {{ n:d }}")
 
-~get-message()
-| text msg |> std/io:print.ln("{{ msg:s }}")
+~get-message(): msg |> std/io:print.ln("{{ msg:s }}")
 ```
 
 **Output:**
@@ -2728,11 +2695,10 @@ pub fn main() void {
 
 pub const Point = struct { x: i32, y: i32 };
 
-~event make-point { x: i32, y: i32 }
-| point Point
+~event make-point { x: i32, y: i32 } -> Point
 
 ~proc make-point|zig {
-    return .{ .point = Point{ .x = x, .y = y } };
+    return Point{ .x = x, .y = y };
 }
 
 ~event use-point { p: Point }
@@ -2742,8 +2708,7 @@ pub const Point = struct { x: i32, y: i32 };
 ~use-point => result { p.x, p.y }
 
 // Test it
-~make-point(x: 10, y: 20)
-| point pt |> use-point(p: pt)
+~make-point(x: 10, y: 20): pt |> use-point(p: pt)
     | result r |> std/io:print.ln("punning works: x={{ r.x:d }}, y={{ r.y:d }}")
 ```
 
