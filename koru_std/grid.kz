@@ -74,11 +74,10 @@ pub const Grid_i64 = struct {
 // ============================================
 
 // Cell value at (x, y).
-~pub event get { g: *Grid_i64<grid>, x: usize, y: usize }
-| val i64
+~pub event get { g: *Grid_i64<grid>, x: usize, y: usize } -> i64
 
 ~proc get|zig {
-    return .{ .val = g.data[y * g.cols + x] };
+    return g.data[y * g.cols + x];
 }
 
 // Count of nonzero cells across the whole grid.
@@ -93,15 +92,14 @@ pub const Grid_i64 = struct {
 }
 
 // Sum of all cell values across the whole grid.
-~pub event sum { g: *Grid_i64<grid> }
-| total i64
+~pub event sum { g: *Grid_i64<grid> } -> i64
 
 ~proc sum|zig {
     var t: i64 = 0;
     for (g.data) |c| {
         t += c;
     }
-    return .{ .total = t };
+    return t;
 }
 
 // ============================================

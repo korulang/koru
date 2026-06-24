@@ -26,8 +26,7 @@ std/grid:new(rows: 1000, cols: 1000)
             | done |> _
         | `toggle (?<x1>[0-9]+),(?<y1>[0-9]+) through (?<x2>[0-9]+),(?<y2>[0-9]+)` { x1: usize, y1: usize, x2: usize, y2: usize } |> for(y1..y2 + 1)
             ! each y |> for(x1..x2 + 1)
-                ! each x |> std/grid:get(g, x, y)
-                    | val v |> if(v == 0)
+                ! each x |> std/grid:get(g, x, y): v |> if(v == 0)
                         | then |> std/grid:set(g, x, y, 1)
                         | else |> std/grid:set(g, x, y, 0)
                 | done |> _
