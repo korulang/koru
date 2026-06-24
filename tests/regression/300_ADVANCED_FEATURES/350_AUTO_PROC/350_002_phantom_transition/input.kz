@@ -8,13 +8,12 @@ const std = @import("std");
 const Resource = struct { value: i32 };
 
 // Create resource - has a proc (does real work)
-~pub event create { value: i32 }
-| created *Resource<state_a!>
+~pub event create { value: i32 } -> *Resource<state_a!>
 
 ~proc create|zig {
     const r = std.heap.page_allocator.create(Resource) catch unreachable;
     r.* = Resource{ .value = value };
-    return .{ .created = r };
+    return r;
 }
 
 // Transition from state_a to state_b - NO PROC NEEDED
@@ -32,6 +31,5 @@ const Resource = struct { value: i32 };
 }
 
 // Test it
-~create(value: 99)
-| created c |> transition(r: c)
+~create(value: 99): c |> transition(r: c)
     | transitioned t |> cleanup(r: t)

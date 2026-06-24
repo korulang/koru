@@ -926,11 +926,32 @@ pub const PhantomSemanticChecker = struct {
             }
         }
 
+        // Bare-return bind at the FLOW HEAD: `~create(...): c |> transition(r: c)`
+        // binds `c` to create's `-> T<phantom>` return. Record its phantom in the
+        // root context so the chained continuation sees `c`'s obligation — the
+        // flow-head twin of the nested-continuation bare-return bind handled in
+        // validateContinuation. Without it, `c` reaches `transition(r: c)` with no
+        // tracked obligation. (The nested case never fires for a top-level head.)
+        if (flow.inv().return_binding) |rb| {
+            if (event_info.decl.return_phantom) |rp| {
+                const canonical_phantom = try self.canonicalizePhantomState(rp, module_name);
+                defer self.allocator.free(canonical_phantom);
+                if (event_info.decl.return_type) |rt| {
+                    const canonical_base_type = try self.canonicalizeBaseType(rt, null, module_name);
+                    defer self.allocator.free(canonical_base_type);
+                    try root_context.setWithType(rb, canonical_phantom, canonical_base_type);
+                } else {
+                    try root_context.set(rb, canonical_phantom);
+                }
+            }
+        }
+
         // For each continuation, validate phantom state flows
         // Pass both: current_module (where flow is defined, for name resolution)
-        // and module_name (where event is defined, for phantom qualification)
+        // and module_name (where event is defined, for phantom qualification).
+        // Pass root_context so the flow-head bare-return bind propagates.
         for (flow.body.continuations) |*cont_ptr| {
-            const cont_valid = try self.validateContinuation(cont_ptr, event_info.decl, module_name, current_module, event_map, flow.location, null, implementing_event);
+            const cont_valid = try self.validateContinuation(cont_ptr, event_info.decl, module_name, current_module, event_map, flow.location, &root_context, implementing_event);
             if (!cont_valid) {
                 has_errors = true;
                 // Continue checking for more errors
