@@ -1,0 +1,48 @@
+// Pin: nested INLINED effect events that share an input arg name emit
+// shadowing `const`s. `outer(n: 3)` inlines its body; inside its `! v` arm it
+// calls `leaf(n: 3)` which ALSO inlines — and both lower their `n` arg to
+// `const n = (3)` in NESTED scopes, so the inner one shadows the outer:
+//
+//     { const n = (3); ... { const n = (3); ... } }   // Zig: shadow error
+//
+// The fix is to give each inline frame's arg binding a scope-unique name (or
+// reuse the outer when identical). Surfaced by the nested_3_levels benchmark.
+//
+// Expected: outer fires `v` 3×; each firing inlines leaf, which fires `v` 3×;
+// each of those calls inc → counter = 3 × 3 = 9.
+~import std/io
+
+const std = @import("std");
+
+var counter: u64 = 0;
+
+~pub event leaf { n: u64 }
+! v u64
+
+~proc leaf|zig {
+    for (0..n) |i| v(i);
+}
+
+~pub event outer { n: u64 }
+! v u64
+
+~proc outer|zig {
+    for (0..n) |i| v(i);
+}
+
+~pub event inc {}
+
+~proc inc|zig {
+    counter +%= 1;
+}
+
+~pub event show {}
+
+~proc show|zig {
+    std.debug.print("{d}\n", .{counter});
+}
+
+~outer(n: 3)
+! v _ |> leaf(n: 3)
+    ! v _ |> inc()
+~show()

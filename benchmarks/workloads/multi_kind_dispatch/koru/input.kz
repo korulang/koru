@@ -1,12 +1,12 @@
-~import "std/io"
+~import std/io
 
 const std = @import("std");
 
 var input_n: u64 = 0;
 
-~pub event read_n {}
+~pub event read-n {}
 
-~proc read_n|zig {
+~proc read-n|zig {
     var args = std.process.args();
     _ = args.next();
     if (args.next()) |arg| {
@@ -34,8 +34,8 @@ var input_n: u64 = 0;
     return .{ .done = .{ .ticks = ticks, .tocks = tocks } };
 }
 
-~read_n()
+~read-n()
 ~ticker(n: input_n)
-! tick p |> p.acc + 1
-! tock p |> p.acc + 1
-| done r |> std.io:print.ln("ticks = {{ r.ticks:d }} tocks = {{ r.tocks:d }}")
+! tick p -> p.acc + 1
+! tock p -> p.acc + 1
+| done r |> std/io:print.ln("ticks = {{ r.ticks:d }} tocks = {{ r.tocks:d }}")

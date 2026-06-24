@@ -1,12 +1,12 @@
-~import "std/io"
+~import std/io
 
 const std = @import("std");
 
 var input_n: u64 = 0;
 
-~pub event read_n {}
+~pub event read-n {}
 
-~proc read_n|zig {
+~proc read-n|zig {
     var args = std.process.args();
     _ = args.next();
     if (args.next()) |arg| {
@@ -16,11 +16,11 @@ var input_n: u64 = 0;
     }
 }
 
-~pub event xor_range { n: u64 }
+~pub event xor-range { n: u64 }
 ! v { item: u64, acc: u64 } -> u64
 | done u64
 
-~proc xor_range|zig {
+~proc xor-range|zig {
     var acc: u64 = 0;
     for (0..n) |i| {
         acc = v(.{ .item = i, .acc = acc });
@@ -28,7 +28,7 @@ var input_n: u64 = 0;
     return .{ .done = acc };
 }
 
-~read_n()
-~xor_range(n: input_n)
-! v p |> p.acc ^ p.item
-| done r |> std.io:print.ln("xor = {{ r:d }}")
+~read-n()
+~xor-range(n: input_n)
+! v p -> p.acc ^ p.item
+| done r |> std/io:print.ln("xor = {{ r:d }}")

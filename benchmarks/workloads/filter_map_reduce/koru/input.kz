@@ -1,12 +1,12 @@
-~import "std/io"
+~import std/io
 
 const std = @import("std");
 
 var input_n: u64 = 0;
 
-~pub event read_n {}
+~pub event read-n {}
 
-~proc read_n|zig {
+~proc read-n|zig {
     var args = std.process.args();
     _ = args.next();
     if (args.next()) |arg| {
@@ -28,7 +28,7 @@ var input_n: u64 = 0;
     return .{ .done = acc };
 }
 
-~read_n()
+~read-n()
 ~fmr(n: input_n)
-! v p |> p.acc +% @as(u64, @intFromBool(p.item & 1 == 0)) *% p.item *% p.item
-| done r |> std.io:print.ln("result = {{ r:d }}")
+! v p -> p.acc +% @as(u64, @intFromBool(p.item & 1 == 0)) *% p.item *% p.item
+| done r |> std/io:print.ln("result = {{ r:d }}")
