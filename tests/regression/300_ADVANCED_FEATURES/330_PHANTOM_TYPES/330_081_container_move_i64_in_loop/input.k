@@ -14,12 +14,10 @@ import std/list
 
 std/list:new(i64)
 | list a |> std/list:push(a, 10) |> std/list:push(a, 20) |> std/list:push(a, 30) |> std/list:new(i64)
-    | list b |> std/list:len(a)
-        | len n |> for(0..n)
+    | list b |> std/list:len(a): n |> for(0..n)
             ! each _ |> std/list:pop(a)
                 | item v |> std/list:push(b, v)
                 | empty  |> _
-            | done |> std/list:len(b)
-                | len m |> std/io:print.ln("moved into b: {{ m:d }}") |> std/list:free(a) |> std/list:free(b)
+            | done |> std/list:len(b): m |> std/io:print.ln("moved into b: {{ m:d }}") |> std/list:free(a) |> std/list:free(b)
     | err e |> std/io:print.ln("ERR b {{ e:s }}")
 | err e |> std/io:print.ln("ERR a {{ e:s }}")

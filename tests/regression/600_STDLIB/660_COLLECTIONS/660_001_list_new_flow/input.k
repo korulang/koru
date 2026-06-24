@@ -8,6 +8,5 @@ import std/io
 import std/list
 
 std/list:new(i64)
-| list xs |> std/list:push(xs, 3) |> std/list:push(xs, 4) |> std/list:len(xs)
-    | len n |> std/io:print.ln("{{ n:d }}") |> std/list:free(xs)
+| list xs |> std/list:push(xs, 3) |> std/list:push(xs, 4) |> std/list:len(xs): n |> std/io:print.ln("{{ n:d }}") |> std/list:free(xs)
 | err e |> std/io:print.ln("ERR {{ e:s }}")

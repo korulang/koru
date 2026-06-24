@@ -124,11 +124,10 @@ pub const List_i64 = struct {
 
 // Current length as a scalar. (The `xs.len` expression form rides a separate
 // bridge; this event is the plain call form.)
-~pub event len { xs: *List_i64<list> }
-| len usize
+~pub event len { xs: *List_i64<list> } -> usize
 
 ~proc len|zig {
-    return .{ .len = xs.items.items.len };
+    return xs.items.items.len;
 }
 
 // Random access by index. <list> borrow — read, list untouched. `out-of-bounds`

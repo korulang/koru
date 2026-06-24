@@ -14,8 +14,7 @@ std/list:new(i64)
     ! line l |> std/regex:match(l)
         | `(?<n>[0-9]+)` { n: i64 } |> std/list:push(xs, n)
         | no-match |> _
-    | done _ |> std/list:len(xs)
-        | len n |> capture { mn: 999[i64] }
+    | done _ |> std/list:len(xs): n |> capture { mn: 999[i64] }
             ! as o1 |> for(0..(@as(usize, 1) << @as(u6, @intCast(n))))
                 ! each mask |> capture { s: 0[i64] }
                     ! as inner |> for(0..n)

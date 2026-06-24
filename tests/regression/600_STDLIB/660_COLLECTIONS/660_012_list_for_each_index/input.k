@@ -5,8 +5,7 @@ import std/io
 import std/list
 
 std/list:new(i64)
-| list xs |> std/list:push(xs, 10) |> std/list:push(xs, 20) |> std/list:push(xs, 30) |> std/list:len(xs)
-    | len n |> for(0..n)
+| list xs |> std/list:push(xs, 10) |> std/list:push(xs, 20) |> std/list:push(xs, 30) |> std/list:len(xs): n |> for(0..n)
         ! each i |> std/list:get(xs, i)
             | item v |> std/io:print.ln("{{ v:d }}")
             | out-of-bounds |> _

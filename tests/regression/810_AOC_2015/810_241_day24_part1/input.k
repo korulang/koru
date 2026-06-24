@@ -17,8 +17,7 @@ std/list:new(i64)
     ! line l |> std/regex:match(l)
         | `(?<n>[0-9]+)` { n: i64 } |> std/list:push(xs, n)
         | no-match |> _
-    | done _ |> std/list:len(xs)
-        | len n |> capture { sm: 0[i64] }
+    | done _ |> std/list:len(xs): n |> capture { sm: 0[i64] }
             ! as sa |> for(0..n)
                 ! each i |> std/list:get(xs, i)
                     | item v |> captured { sm: sa.sm + v }
