@@ -1,0 +1,7 @@
+ASPIRATIONAL: the budgeted interpreter is deferred pending a rewrite.
+
+Ruled 2026-06-25 (Lars). The budgeting model needs to change, and the budgeted
+interpreter is part of the runtime-interpreter subsystem that is being deferred
+wholesale for a rewrite (see 430_RUNTIME/TODO). Marked aspirational as a whole
+category — not cherry-picked. Reds are the rewrite's to-do list; greens are
+coincidental partial coverage.
