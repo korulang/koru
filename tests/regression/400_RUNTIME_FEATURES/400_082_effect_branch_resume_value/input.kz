@@ -1,13 +1,11 @@
-// Test: effect-branch handler returns a resume value via bare-expression body.
+// Test: effect-branch handler produces a resume value with the `->` glyph.
 //
 // Producer declares `! ask []const u8 -> []const u8` (yield a question,
-// resume with a reply) and uses the reply. Consumer's handler body is
-// `! ask _ |> "Alice"` — the bare string literal IS the resume value.
-//
-// No `result` keyword, no `*` marker, no `;` terminator. Lars's destiny
-// syntax (locked 2026-05-24): invocations always have parens, so anything
-// at body position without trailing parens after the path is a Zig
-// expression — terse and unambiguous.
+// resume with a reply) and uses the reply. The effect is declared `-> T`
+// (single payload, no branches), so the arm PRODUCES its resume value with
+// `->`, the function-like produce glyph: `! ask _ -> "Alice"`. Not `|>`
+// (which only chains a step) and not `=>` (which constructs a branch — there
+// are none here). The glyph is fixed by the declaration.
 
 ~import std/io
 
@@ -23,7 +21,7 @@ const std = @import("std");
 }
 
 ~prompt-user(question: "What's your name?")
-! ask _ |> "Alice"
+! ask _ -> "Alice"
 | done r |> std/io:print.blk {
     reply was: {{ r:s }}
 }

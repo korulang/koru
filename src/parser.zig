@@ -201,6 +201,26 @@ fn hasTopLevelArrow(s: []const u8) bool {
     return indexOfTopLevelArrow(s) != null;
 }
 
+/// Return `s` with a trailing `// ...` line comment removed (the `//` must be
+/// outside a string literal). Used so body-glyph detection never trips on a
+/// `->`/`|>`/`=>` that lives inside a trailing comment.
+fn stripTrailingLineComment(s: []const u8) []const u8 {
+    var in_string = false;
+    var i: usize = 0;
+    while (i + 1 < s.len) : (i += 1) {
+        const c = s[i];
+        if (c == '"' and (i == 0 or s[i - 1] != '\\')) {
+            in_string = !in_string;
+            continue;
+        }
+        if (in_string) continue;
+        if (c == '/' and s[i + 1] == '/') {
+            return lexer.trim(s[0..i]);
+        }
+    }
+    return s;
+}
+
 /// `~event -> expr` is a bare-return implementation (the `->` twin of the `=>`
 /// branch constructor). Distinguished from a call-site `~event(args) -> d` bind
 /// by the absence of call parens on the event name: an impl has a top-level `->`
@@ -5785,11 +5805,36 @@ pub const Parser = struct {
             };
         }
 
-        // Parse step if present. A body is introduced by `|>` (invocation/void
-        // chain) or `=>` (terminal construction) — both must enter here.
+        // Parse step if present. A body is introduced by one of three glyphs,
+        // each fixed by the producing event's declaration (see
+        // `project_effect_resume_value_syntax`):
+        //   `->`  produce the single payload (function-like; the resume value
+        //         of a `-> T` effect arm, or a single-payload event's output).
+        //   `|>`  chain a step (invocation / void continuation) — NEVER a value.
+        //   `=>`  construct a branch (for an event declared with branches).
         var step: ?ast.Step = null;
 
-        if (std.mem.indexOf(u8, rest, "|>") != null or std.mem.indexOf(u8, rest, "=>") != null) {
+        // `->` produce body: a single produce expression on the same line; the
+        // emitter returns it directly (resume value / bare return). Detected on
+        // a comment-stripped view so a `->` inside a trailing `// ...` comment
+        // is never mistaken for a producer, and only when neither `|>` nor `=>`
+        // is present — those are the chain/branch body-introducers and take
+        // precedence; a standalone `->` is the produce case.
+        {
+            const rest_nc = stripTrailingLineComment(rest);
+            if (std.mem.indexOf(u8, rest_nc, "|>") == null and
+                std.mem.indexOf(u8, rest_nc, "=>") == null)
+            {
+                if (indexOfTopLevelArrow(rest_nc)) |arrow_at| {
+                    const produced = lexer.trim(rest_nc[arrow_at + 2 ..]);
+                    if (produced.len > 0) {
+                        step = ast.Step{ .expression = try self.allocator.dupe(u8, produced) };
+                    }
+                }
+            }
+        }
+
+        if (step == null and (std.mem.indexOf(u8, rest, "|>") != null or std.mem.indexOf(u8, rest, "=>") != null)) {
             // Check for multi-line branch constructor in the pipeline
             var full_rest = rest;
             var allocated_rest: ?[]u8 = null;

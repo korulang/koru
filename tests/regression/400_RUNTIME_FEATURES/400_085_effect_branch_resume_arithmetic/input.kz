@@ -1,6 +1,7 @@
-// Test: effect-branch handler resumes with an arithmetic expression
-// using the binding. `n * 2` should evaluate the Zig expression and
-// send the result back as the resume value.
+// Test: effect-branch handler produces an arithmetic resume value with `->`.
+// The effect is declared `! double i32 -> i32`, so the arm produces with
+// `-> n * 2` — the Zig expression evaluates and is sent back as the resume
+// value. `->` is the produce glyph (not `=>`: there are no branches).
 
 ~import std/io
 
@@ -14,7 +15,7 @@
 }
 
 ~request(payload: 21)
-! double n => n * 2
+! double n -> n * 2
 | done r |> std/io:print.blk {
     result is {{ r:d }}
 }

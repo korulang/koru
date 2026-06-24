@@ -1,8 +1,8 @@
-// Test: effect-branch handler uses the binding itself as the resume value.
+// Test: effect-branch handler produces the binding itself as the resume value.
 //
-// `! transform q |> q` — the handler echoes its input. The bare identifier
-// `q` at body position IS the resume value (after the parser fix that
-// recognizes invocations always have parens, locked 2026-05-24).
+// The effect is declared `! squarify i32 -> i32`, so the arm produces with
+// `-> n` — the bare binding `n` echoed back as the resume value. `->` is the
+// produce glyph; `=>` would be illegal (the effect has no branches).
 
 ~import std/io
 
@@ -16,7 +16,7 @@
 }
 
 ~transform(payload: 7)
-! squarify n => n
+! squarify n -> n
 | done result |> std/io:print.blk {
     result is {{ result:d }}
 }

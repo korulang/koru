@@ -1,0 +1,22 @@
+// The canonical resume-value producer: an effect declared `-> T` (single
+// payload, no branches) has its resume value PRODUCED with `->`, the
+// function-like produce glyph. NOT `|>` (which only chains a step) and NOT
+// `=>` (which constructs a branch — illegal here, the effect has no branches).
+//
+// This pins R2 for resume values: the glyph is fixed by the effect's
+// declaration. `! ask []const u8 -> i32` is a singular-payload effect, so the
+// arm produces with `-> 42`. Mirror of the event-side bare return (020_021).
+~import std/io
+
+~pub event query { q: []const u8 }
+! ask []const u8 -> i32
+| done i32
+
+~proc query|zig {
+    const a = ask(q);
+    return .{ .done = a };
+}
+
+~query(q: "x")
+! ask _ -> 42
+| done r |> std/io:print.ln("{{ r:d }}")
