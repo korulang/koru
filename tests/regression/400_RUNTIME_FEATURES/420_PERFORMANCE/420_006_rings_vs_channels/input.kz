@@ -124,14 +124,13 @@ const MESSAGES: u64 = 10_000_000;
 // Koru Events - Ring Operations
 // ============================================================================
 
-~event create-ring {}
-| created *Ring
+~event create-ring {} -> *Ring
 
 ~proc create-ring|zig {
     // Allocate ring on heap (needs to outlive this function)
     const ring_storage = std.heap.page_allocator.create(Ring) catch unreachable;
     ring_storage.* = Ring.init();
-    return .{ .created = ring_storage };
+    return ring_storage;
 }
 
 ~event spawn-producer { ring: *Ring }
@@ -154,12 +153,11 @@ const MESSAGES: u64 = 10_000_000;
 
 }
 
-~event dequeue { ring: *Ring }
-| some u64
+~event dequeue { ring: *Ring } -> u64
 
 ~proc dequeue|zig {
     if (ring.tryDequeue()) |value| {
-        return .{ .some = value };
+        return value;
     } else {
     }
 }
@@ -168,8 +166,7 @@ const MESSAGES: u64 = 10_000_000;
 | continue { sum: u64, received: u64 }
 | done u64
 
-~consume-loop = dequeue(ring)
-| some msg |> check-if-done(sum: sum + msg.value, received: received + 1)
+~consume-loop = dequeue(ring): msg |> check-if-done(sum: sum + msg.value, received: received + 1)
     | continue s => continue { s.sum, s.received }
     | done s => done { s.sum }
 | none |> yield-then-continue(sum, received)
@@ -210,8 +207,7 @@ const MESSAGES: u64 = 10_000_000;
 // Main Flow - Idiomatic Koru Consumer Loop
 // ============================================================================
 
-~create-ring()
-| created r |> spawn-producer(r.ring) |> #loop consume-loop(r.ring, sum: 0, received: 0)
+~create-ring(): r |> spawn-producer(r.ring) |> #loop consume-loop(r.ring, sum: 0, received: 0)
     | continue s |> @loop(r.ring, s.sum, s.received)
     | done s |> validate(s.sum)
         | valid |> _

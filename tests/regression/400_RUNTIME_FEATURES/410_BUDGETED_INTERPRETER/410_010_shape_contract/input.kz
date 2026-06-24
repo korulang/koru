@@ -21,12 +21,11 @@ const std = @import("std");
 // Backend events the handler can call
 // =============================================================================
 
-~pub event db.user.get { id: i32 }
-| found []const u8
+~pub event db.user.get { id: i32 } -> []const u8
 
 ~proc db.user.get|zig {
     if (id == 1) {
-        return .{ .found = "Alice" };
+        return "Alice";
     }
 }
 

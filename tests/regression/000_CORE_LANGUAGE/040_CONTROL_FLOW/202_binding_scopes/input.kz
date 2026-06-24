@@ -7,31 +7,27 @@
 const std = @import("std");
 
 // Events for testing scoping
-~event outer { x: i32 }
-| result i32
+~event outer { x: i32 } -> i32
 
 ~proc outer|zig {
     // x is accessible here directly
-    return .{ .result = x };
+    return x;
 }
 
-~event middle { y: i32 }
-| data i32
+~event middle { y: i32 } -> i32
 
 ~proc middle|zig {
-    return .{ .data = y * 2 };
+    return y * 2;
 }
 
-~event inner { z: i32 }
-| final i32
+~event inner { z: i32 } -> i32
 
 ~proc inner|zig {
-    return .{ .final = z * 3 };
+    return z * 3;
 }
 
 // Event with nested structure for field access testing
-~event nested-data { info: UserInfo }
-| processed i32
+~event nested-data { info: UserInfo } -> i32
 
 // Define the struct type inline
 const UserInfo = struct {
@@ -44,7 +40,7 @@ const UserInfo = struct {
 ~proc nested-data|zig {
     // Access nested field
     const len: i32 = @intCast(info.profile.name.len);
-    return .{ .processed = len };
+    return len;
 }
 
 // Event to demonstrate access to outer scope bindings
@@ -58,10 +54,7 @@ const UserInfo = struct {
 // Top-level flow to test scoping rules
 // Test 1: Bindings persist through nested continuations
 // r should be 10, d should be 20, f should be 60
-~outer(x: 10)
-| result r |> middle(y: r)
-    | data d |> inner(z: d)
-        | final f |> show-values(a: r, b: d, c: f)
+~outer(x: 10): r |> middle(y: r): d |> inner(z: d): f |> show-values(a: r, b: d, c: f)
 
 // The binding 'r' from outer should be accessible in all nested continuations
 // The binding 'd' from middle should be accessible in inner's continuation

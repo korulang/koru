@@ -10,12 +10,11 @@ const std = @import("std");
 var tap_count: u64 = 0;
 
 // Event for loop iteration
-~event count { i: u64 }
-| next u64
+~event count { i: u64 } -> u64
 
 ~proc count|zig {
     if (i < 1_000_000) {
-        return .{ .next = i + 1 };
+        return i + 1;
     } else {
     }
 }
@@ -46,6 +45,5 @@ var tap_count: u64 = 0;
 ~count -> * | next n where n.i % 200_004 == 0 |> tap-point(n.i) | done |> _
 
 // Main loop
-~#loop count(i: 0)
-| next n |> @loop(n.i)
+~#loop count(i: 0): n |> @loop(n.i)
 |> print-result() | done |> _

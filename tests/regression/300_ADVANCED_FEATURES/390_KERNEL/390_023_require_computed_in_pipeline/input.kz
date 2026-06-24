@@ -14,15 +14,13 @@
     mass: f64,
 }
 
-~event get-count {}
-| n u32
+~event get-count {} -> u32
 
 ~proc get-count|zig {
-    return .{ .n = 3 };
+    return 3;
 }
 
-~get-count()
-| n _ |> std/kernel:init(Body) {
+~get-count(): _ |> std/kernel:init(Body) {
         { mass: 1.0 },
         { mass: 2.0 },
         { mass: 3.0 },

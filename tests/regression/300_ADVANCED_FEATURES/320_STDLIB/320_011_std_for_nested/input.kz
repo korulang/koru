@@ -13,11 +13,10 @@ const std = @import("std");
 ~import std/control
 
 // Event 1: double a number
-~event double { x: i32 }
-| result i32
+~event double { x: i32 } -> i32
 
 ~proc double|zig {
-    return .{ .result = x * 2 };
+    return x * 2;
 }
 
 // Event 2: print a number
@@ -40,6 +39,5 @@ const items = [_]i32{ 1, 2, 3 };
 // The for loop with chained events
 // Each item: double it, then print the result
 ~for(&items)
-! each item |> double(x: item)
-    | result r |> print-num(y: r)
+! each item |> double(x: item): r |> print-num(y: r)
 | done |> finalize()

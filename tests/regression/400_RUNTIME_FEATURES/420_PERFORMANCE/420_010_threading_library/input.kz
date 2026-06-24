@@ -173,13 +173,12 @@ fn consumerWorker(ctx: *anyopaque) *anyopaque {
 // Ring and Producer Setup (same as test 2005)
 // ============================================================================
 
-~event createRing {}
-| created *Ring
+~event createRing {} -> *Ring
 
 ~proc createRing|zig {
     const ring_storage = std.heap.page_allocator.create(Ring) catch unreachable;
     ring_storage.* = Ring.init();
-    return .{ .created = ring_storage };
+    return ring_storage;
 }
 
 ~event spawnProducer { ring: *Ring }
@@ -203,8 +202,7 @@ fn consumerWorker(ctx: *anyopaque) *anyopaque {
 // Consumer Spawning Using Threading Library
 // ============================================================================
 
-~event spawnConsumer { ring: *Ring, target: u64 }
-| spawned *ConsumerContext
+~event spawnConsumer { ring: *Ring, target: u64 } -> *ConsumerContext
 
 ~proc spawnConsumer|zig {
     // Allocate context on heap (must outlive this function)
@@ -216,7 +214,7 @@ fn consumerWorker(ctx: *anyopaque) *anyopaque {
         .count = 0,
     };
 
-    return .{ .spawned = ctx };
+    return ctx;
 }
 
 // ============================================================================
@@ -255,15 +253,13 @@ fn consumerWorker(ctx: *anyopaque) *anyopaque {
 // Helper Events: Wrap context casting in events
 // ============================================================================
 
-~event castToOpaque { context: *ConsumerContext }
-| casted *anyopaque
+~event castToOpaque { context: *ConsumerContext } -> *anyopaque
 
 ~proc castToOpaque|zig {
-    return .{ .casted = @as(*anyopaque, @ptrCast(context)) };
+    return @as(*anyopaque, @ptrCast(context));
 }
 
-~event extractContexts { results: []*anyopaque }
-| extracted []*ConsumerContext
+~event extractContexts { results: []*anyopaque } -> []*ConsumerContext
 
 ~proc extractContexts|zig {
     const contexts = std.heap.page_allocator.alloc(*ConsumerContext, results.len) catch unreachable;
@@ -272,7 +268,7 @@ fn consumerWorker(ctx: *anyopaque) *anyopaque {
         contexts[i] = @as(*ConsumerContext, @ptrCast(@alignCast(result)));
     }
 
-    return .{ .extracted = contexts };
+    return contexts;
 }
 
 // ============================================================================
@@ -301,21 +297,11 @@ fn consumerWorker(ctx: *anyopaque) *anyopaque {
     return .{ .collected = .{ .handles = handles } };
 }
 
-~createRing()
-| created r |> spawnProducer(r.ring) |> spawnConsumer(r.ring, target: MESSAGES_PER_CONSUMER)
-    | spawned ctx1 |> castToOpaque(ctx1.context)
-        | casted c1 |> threading:worker.spawn.async(work_fn: consumerWorker, context: c1.ptr)
-            | awaitable h1 |> spawnConsumer(r.ring, target: MESSAGES_PER_CONSUMER)
-                | spawned ctx2 |> castToOpaque(ctx2.context)
-                    | casted c2 |> threading:worker.spawn.async(work_fn: consumerWorker, context: c2.ptr)
-                        | awaitable h2 |> spawnConsumer(r.ring, target: MESSAGES_PER_CONSUMER)
-                            | spawned ctx3 |> castToOpaque(ctx3.context)
-                                | casted c3 |> threading:worker.spawn.async(work_fn: consumerWorker, context: c3.ptr)
-                                    | awaitable h3 |> spawnConsumer(r.ring, target: MESSAGES_PER_CONSUMER)
-                                        | spawned ctx4 |> castToOpaque(ctx4.context)
-                                            | casted c4 |> threading:worker.spawn.async(work_fn: consumerWorker, context: c4.ptr)
+~createRing(): r |> spawnProducer(r.ring) |> spawnConsumer(r.ring, target: MESSAGES_PER_CONSUMER): ctx1 |> castToOpaque(ctx1.context): c1 |> threading:worker.spawn.async(work_fn: consumerWorker, context: c1.ptr)
+            | awaitable h1 |> spawnConsumer(r.ring, target: MESSAGES_PER_CONSUMER): ctx2 |> castToOpaque(ctx2.context): c2 |> threading:worker.spawn.async(work_fn: consumerWorker, context: c2.ptr)
+                        | awaitable h2 |> spawnConsumer(r.ring, target: MESSAGES_PER_CONSUMER): ctx3 |> castToOpaque(ctx3.context): c3 |> threading:worker.spawn.async(work_fn: consumerWorker, context: c3.ptr)
+                                    | awaitable h3 |> spawnConsumer(r.ring, target: MESSAGES_PER_CONSUMER): ctx4 |> castToOpaque(ctx4.context): c4 |> threading:worker.spawn.async(work_fn: consumerWorker, context: c4.ptr)
                                                 | awaitable h4 |> collectHandles(h1: h1.handle, h2: h2.handle, h3: h3.handle, h4: h4.handle)
                                                     | collected handles |> threading:worker.spawn.join(handles.handles)
-                                                        | all-completed results |> extractContexts(results.results)
-                                                            | extracted e |> combineResults(e.contexts)
+                                                        | all-completed results |> extractContexts(results.results): e |> combineResults(e.contexts)
                                                                 | combined c |> validate(sum: c.total_sum, count: c.total_count)

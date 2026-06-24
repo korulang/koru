@@ -145,13 +145,12 @@ const AsyncHandle = struct {
 // Ring Creation
 // ============================================================================
 
-~event createRing {}
-| created *Ring
+~event createRing {} -> *Ring
 
 ~proc createRing|zig {
     const ring_storage = std.heap.page_allocator.create(Ring) catch unreachable;
     ring_storage.* = Ring.init();
-    return .{ .created = ring_storage };
+    return ring_storage;
 }
 
 // ============================================================================
@@ -206,8 +205,7 @@ const AsyncHandle = struct {
 // This is the advanced interface - caller gets a handle to async work.
 // Threading happens INSIDE the proc, but the event signature is still clean.
 
-~event consumeMessages.async { ring: *Ring, target: u64 }
-| awaitable AsyncHandle
+~event consumeMessages.async { ring: *Ring, target: u64 } -> AsyncHandle
 
 ~proc consumeMessages.async|zig {
     // Allocate result storage (shared between thread and caller)
@@ -234,7 +232,7 @@ const AsyncHandle = struct {
         }
     }.run, .{ ring, target, result_storage }) catch unreachable;
 
-    return .{ .awaitable = .{ .handle = .{ .thread = thread, .result_ptr = result_storage } } };
+    return .{ .handle = .{ .thread = thread, .result_ptr = result_storage } };
 }
 
 // ============================================================================
@@ -257,8 +255,7 @@ const AsyncHandle = struct {
 // Wait for multiple async operations to complete.
 // This is where the power of progressive disclosure shines!
 
-~event consumeMessages.join { handles: []const AsyncHandle }
-| all-completed []const ConsumeResult
+~event consumeMessages.join { handles: []const AsyncHandle } -> []const ConsumeResult
 
 ~proc consumeMessages.join|zig {
     // Allocate results array
@@ -313,8 +310,7 @@ const AsyncHandle = struct {
 // Helper: Start First Consumer (Kicks off the chain)
 // ============================================================================
 
-~event startConsumers { ring: *Ring }
-| started AsyncHandle
+~event startConsumers { ring: *Ring } -> AsyncHandle
 
 ~proc startConsumers|zig {
     // Just delegate to .async
@@ -340,7 +336,7 @@ const AsyncHandle = struct {
         }
     }.run, .{ ring, MESSAGES_PER_CONSUMER, result_storage }) catch unreachable;
 
-    return .{ .started = .{ .handle = .{ .thread = thread, .result_ptr = result_storage } } };
+    return .{ .handle = .{ .thread = thread, .result_ptr = result_storage } };
 }
 
 // ============================================================================
@@ -354,11 +350,5 @@ const AsyncHandle = struct {
 //
 // All at SEMANTIC level (events), not TECHNICAL level (raw threading)!
 
-~createRing()
-| created r |> spawnProducer(r.ring) |> startConsumers(r.ring)
-    | started h1 |> consumeMessages.async(r.ring, target: MESSAGES_PER_CONSUMER)
-        | awaitable h2 |> consumeMessages.async(r.ring, target: MESSAGES_PER_CONSUMER)
-            | awaitable h3 |> consumeMessages.async(r.ring, target: MESSAGES_PER_CONSUMER)
-                | awaitable h4 |> consumeMessages.join(handles: &[_]AsyncHandle{ h1.handle, h2.handle, h3.handle, h4.handle })
-                    | all-completed results |> combineResults(results.results)
+~createRing(): r |> spawnProducer(r.ring) |> startConsumers(r.ring): h1 |> consumeMessages.async(r.ring, target: MESSAGES_PER_CONSUMER): h2 |> consumeMessages.async(r.ring, target: MESSAGES_PER_CONSUMER): h3 |> consumeMessages.async(r.ring, target: MESSAGES_PER_CONSUMER): h4 |> consumeMessages.join(handles: &[_]AsyncHandle{ h1.handle, h2.handle, h3.handle, h4.handle }): results |> combineResults(results.results)
                         | combined c |> validate(sum: c.total_sum, count: c.total_count)

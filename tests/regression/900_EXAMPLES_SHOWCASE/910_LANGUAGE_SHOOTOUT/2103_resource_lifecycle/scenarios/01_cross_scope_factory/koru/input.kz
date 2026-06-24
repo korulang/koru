@@ -4,14 +4,13 @@ const std = @import("std");
 
 const File = struct { handle: i32 };
 
-~event open { path: []const u8 }
-| opened *File<opened!>
+~event open { path: []const u8 } -> *File<opened!>
 
 ~proc open|zig {
     std.debug.print("Opening\n", .{});
     const f = std.heap.page_allocator.create(File) catch unreachable;
     f.* = File{ .handle = 42 };
-    return .{ .opened = f };
+    return f;
 }
 
 ~event use { file: *File<opened> }
@@ -30,8 +29,7 @@ const File = struct { handle: i32 };
 ~event create { path: []const u8 }
 | created *File<opened!>
 
-~create = open(path)
-| opened f => created { f.file }
+~create = open(path): f => created { f.file }
 
 ~create(path: "test.txt")
 | created r |> use(r.file) |> use(r.file) |> use(r.file) |> close(r.file)

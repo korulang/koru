@@ -13,15 +13,13 @@
 }
 
 // Use it in an event signature
-~event greet { player: Player }
-| greeted []const u8
+~event greet { player: Player } -> []const u8
 
 ~proc greet|zig {
-    return .{ .greeted = player.name };
+    return player.name;
 }
 
 // Use it in a flow
 const p = Player{ .name = "Alice", .health = 100 };
 
-~greet(player: p)
-| greeted msg |> print.ln("Hello, {{ msg:s }}!")
+~greet(player: p): msg |> print.ln("Hello, {{ msg:s }}!")

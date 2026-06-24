@@ -10,12 +10,11 @@
 const std = @import("std");
 const Handle = struct { n: i32 };
 
-~event make {}
-| made *Handle<owned!>
+~event make {} -> *Handle<owned!>
 ~proc make|zig {
     const h = std.heap.page_allocator.create(Handle) catch unreachable;
     h.* = .{ .n = 0 };
-    return .{ .made = h };
+    return h;
 }
 
 // Consumes <!owned> but re-issues nothing (branch payloads are plain i32).
@@ -42,6 +41,5 @@ const Handle = struct { n: i32 };
 | again _ |> @loop(h)   // re-feeds already-consumed h -> use-after-discharge, no reissue
 | stop r => finished r
 
-~make()
-| made h0 |> spin(h: h0)
+~make(): h0 |> spin(h: h0)
     | finished f |> report(n: f)

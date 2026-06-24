@@ -25,8 +25,7 @@ var bin_b: Bin = .{ .items = .{ null, null, null, null }, .n = 0 };
 // obligations are held inside bin_a); `seeded` carries no per-value obligation.
 // `| seeded i64` is identity-typed (carries the count) so the event is not a
 // single no-payload branch (PARSE003); same fix as 210_123.
-~event seed {}
-| seeded i64
+~event seed {} -> i64
 ~proc seed|zig {
     const a = std.heap.page_allocator.create(Handle) catch unreachable;
     a.* = .{ .tag = 1 };
@@ -35,7 +34,7 @@ var bin_b: Bin = .{ .items = .{ null, null, null, null }, .n = 0 };
     bin_a.items[0] = a;
     bin_a.items[1] = b;
     bin_a.n = 2;
-    return .{ .seeded = @intCast(bin_a.n) };
+    return @intCast(bin_a.n);
 }
 
 // Pop the next owned handle out of A: reissue the obligation onto the popped
@@ -78,6 +77,5 @@ var bin_b: Bin = .{ .items = .{ null, null, null, null }, .n = 0 };
 | moved v |> push-b(h: v) |> @loop()
 | drained c => finished c
 
-~seed()
-| seeded _ |> shuttle()
+~seed(): _ |> shuttle()
     | finished _ |> free-b()

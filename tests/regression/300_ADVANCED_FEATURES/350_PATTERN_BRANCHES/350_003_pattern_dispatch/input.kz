@@ -25,11 +25,10 @@ pub const Params = struct {
 };
 
 // Event that returns a request
-~pub event incoming {}
-| request Request
+~pub event incoming {} -> Request
 
 ~proc incoming|zig {
-    return .{ .request = .{ .method = "GET", .path = "/users/42" } };
+    return .{ .method = "GET", .path = "/users/42" };
 }
 
 // This is what we WANT to work:

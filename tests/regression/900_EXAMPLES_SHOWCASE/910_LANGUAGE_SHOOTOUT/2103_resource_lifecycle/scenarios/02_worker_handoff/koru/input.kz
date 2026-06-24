@@ -14,14 +14,13 @@ const std = @import("std");
 
 const Conn = struct { id: i32 };
 
-~event connect { name: []const u8 }
-| connected *Conn<active!>
+~event connect { name: []const u8 } -> *Conn<active!>
 
 ~proc connect|zig {
     std.debug.print("Connect: {s}\n", .{name});
     const c = std.heap.page_allocator.create(Conn) catch unreachable;
     c.* = Conn{ .id = 42 };
-    return .{ .connected = c };
+    return c;
 }
 
 ~event process { conn: *Conn<active> }
@@ -38,7 +37,5 @@ const Conn = struct { id: i32 };
 }
 
 // Main flow: create A, create B, use both, cleanup both
-~connect(name: "A")
-| connected a |> connect(name: "B")
-    | connected b |> process(a.conn) |> process(b.conn) |> process(a.conn) |> process(b.conn) |> disconnect(a.conn) |> disconnect(b.conn)
+~connect(name: "A"): a |> connect(name: "B"): b |> process(a.conn) |> process(b.conn) |> process(a.conn) |> process(b.conn) |> disconnect(a.conn) |> disconnect(b.conn)
 

@@ -19,14 +19,13 @@ const std = @import("std");
 
 const File = struct { handle: i32 };
 
-~event open { path: []const u8 }
-| opened *File<opened!>
+~event open { path: []const u8 } -> *File<opened!>
 
 ~proc open|zig {
     std.debug.print("Open\n", .{});
     const f = std.heap.page_allocator.create(File) catch unreachable;
     f.* = File{ .handle = 42 };
-    return .{ .opened = f };
+    return f;
 }
 
 ~event write { file: *File<opened>, data: []const u8 }
@@ -44,8 +43,7 @@ const File = struct { handle: i32 };
 
 const should_write = true;
 
-~open(path: "test.txt")
-| opened f |> if(should_write)
+~open(path: "test.txt"): f |> if(should_write)
     | then |> write(f.file, data: "hello") |> close(f.file)
     | else |> close(f.file)
 

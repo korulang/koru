@@ -13,15 +13,14 @@
 const std = @import("std");
 
 // Work event: Process array element (this should be INLINED into loop body)
-~event process-element { array: []u64, i: u64, sum: u64 }
-| processed u64
+~event process-element { array: []u64, i: u64, sum: u64 } -> u64
 
 ~proc process-element|zig {
     // Simulate some work: square the element and add to sum
     const value = array[i];
     const squared = value * value;
     const new_sum = sum + squared;
-    return .{ .processed = new_sum };
+    return new_sum;
 }
 
 // Checker event: Loop through array indices
@@ -45,8 +44,7 @@ const std = @import("std");
 }
 
 // Initialize array event
-~event init-array {}
-| initialized []u64
+~event init-array {} -> []u64
 
 ~proc init-array|zig {
     // Create array 0..10000
@@ -58,7 +56,7 @@ const std = @import("std");
         array[i] = i;
     }
 
-    return .{ .initialized = array };
+    return array;
 }
 
 // Main flow: Loop with work body
@@ -74,8 +72,6 @@ const std = @import("std");
 //     sum += squared;  // Work body INLINED here!
 // }
 
-~init-array()
-| initialized init |> #work_loop loop-step(i: 0, limit: init.array.len, sum: 0)
-    | continue c |> process-element(init.array, c.i, c.sum)
-        | processed p |> @work_loop(i: c.i + 1, limit: init.array.len, p.sum)
+~init-array(): init |> #work_loop loop-step(i: 0, limit: init.array.len, sum: 0)
+    | continue c |> process-element(init.array, c.i, c.sum): p |> @work_loop(i: c.i + 1, limit: init.array.len, p.sum)
     | done d |> print(d.result)

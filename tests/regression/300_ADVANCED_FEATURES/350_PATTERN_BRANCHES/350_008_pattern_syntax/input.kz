@@ -12,13 +12,11 @@ pub const Request = struct {
 };
 
 // Event returns a request
-~pub event incoming {}
-| request Request
+~pub event incoming {} -> Request
 
 ~proc incoming|zig {
-    return .{ .request = .{ .method = "GET", .path = "/users/42" } };
+    return .{ .method = "GET", .path = "/users/42" };
 }
 
 // Call it
-~incoming()
-| request _ |> std/io:print.ln("got request")
+~incoming(): _ |> std/io:print.ln("got request")

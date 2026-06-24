@@ -24,8 +24,7 @@ const DT: f64 = 0.01;
 }
 
 // Parse command line args
-~event parse-args {}
-| n u32
+~event parse-args {} -> u32
 
 ~proc parse-args|zig {
     const args = std.process.argsAlloc(std.heap.page_allocator) catch unreachable;
@@ -34,7 +33,7 @@ const DT: f64 = 0.01;
         std.debug.print("Usage: nbody <iterations>\n", .{});
         std.process.exit(1);
     }
-    return .{ .n = std.fmt.parseInt(u32, args[1], 10) catch unreachable };
+    return std.fmt.parseInt(u32, args[1], 10) catch unreachable;
 }
 
 // Offset momentum so system has zero total momentum
@@ -55,8 +54,7 @@ const DT: f64 = 0.01;
 }
 
 // Calculate total energy
-~event energy { bodies: []const Body }
-| e f64
+~event energy { bodies: []const Body } -> f64
 
 ~proc energy|zig {
     var e: f64 = 0;
@@ -69,7 +67,7 @@ const DT: f64 = 0.01;
             e -= (b.mass * bodies[j].mass) / @sqrt(dx * dx + dy * dy + dz * dz);
         }
     }
-    return .{ .e = e };
+    return e;
 }
 
 // Print energy value
@@ -91,8 +89,7 @@ const DT: f64 = 0.01;
 }
 
 // Main flow
-~parse-args()
-| n iterations |> std/kernel:init(Body) {
+~parse-args(): iterations |> std/kernel:init(Body) {
         { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, mass: SOLAR_MASS },
         { x: 4.84143144246472090e+00, y: -1.16032004402742839e+00, z: -1.03622044471123109e-01, vx: 1.66007664274403694e-03 * DAYS_PER_YEAR, vy: 7.69901118419740425e-03 * DAYS_PER_YEAR, vz: -6.90460016972063023e-05 * DAYS_PER_YEAR, mass: 9.54791938424326609e-04 * SOLAR_MASS },
         { x: 8.34336671824457987e+00, y: 4.12479856412430479e+00, z: -4.03523417114321381e-01, vx: -2.76742510726862411e-03 * DAYS_PER_YEAR, vy: 4.99852801234917238e-03 * DAYS_PER_YEAR, vz: 2.30417297573763929e-05 * DAYS_PER_YEAR, mass: 2.85885980666130812e-04 * SOLAR_MASS },
@@ -100,8 +97,7 @@ const DT: f64 = 0.01;
         { x: 1.53796971148509165e+01, y: -2.59193146099879641e+01, z: 1.79258772950371181e-01, vx: 2.68067772490389322e-03 * DAYS_PER_YEAR, vy: 1.62824170038242295e-03 * DAYS_PER_YEAR, vz: -9.51592254519715870e-05 * DAYS_PER_YEAR, mass: 5.15138902046611451e-05 * SOLAR_MASS },
     }
     | kernel k |> offset-momentum(bodies: k.ptr[0..k.len])
-        |> energy(bodies: k.ptr[0..k.len])
-            | e e1 |> print-energy(e: e1)
+        |> energy(bodies: k.ptr[0..k.len]): e1 |> print-energy(e: e1)
                 |> for(0..iterations)
                     | each _ |> std/kernel:pairwise {
                             const dx = k.x - k.other.x;
@@ -117,5 +113,4 @@ const DT: f64 = 0.01;
                             k.other.vz += dz * k.mass * mag;
                         }
                         |> advance-positions(bodies: k.ptr[0..k.len])
-                    |> energy(bodies: k.ptr[0..k.len])
-                        | e e2 |> print-energy(e: e2)
+                    |> energy(bodies: k.ptr[0..k.len]): e2 |> print-energy(e: e2)

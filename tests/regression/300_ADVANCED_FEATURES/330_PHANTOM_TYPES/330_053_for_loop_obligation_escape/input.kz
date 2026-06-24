@@ -6,17 +6,15 @@ const Resource = struct {
     id: usize,
 };
 const allocator = std.heap.c_allocator;
-~event create { id: usize }
-| created *Resource<active!>
+~event create { id: usize } -> *Resource<active!>
 ~proc create|zig {
     const r = allocator.create(Resource) catch unreachable;
     r.* = Resource{ .id = id };
-    return .{ .created = r };
+    return r;
 }
 ~event use { r: *Resource<active> }
 ~proc use|zig {
     std.debug.print("using {}\n", .{r.id});
 }
 ~for(0..10)
-! each i |> create(id: i)
-    | created r |> use(r)  // use it, but can't dispose - no destroy event exists!
+! each i |> create(id: i): r |> use(r)  // use it, but can't dispose - no destroy event exists!

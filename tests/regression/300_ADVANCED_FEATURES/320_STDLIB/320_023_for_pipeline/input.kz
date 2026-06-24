@@ -11,15 +11,13 @@
 const std = @import("std");
 
 // Simple event that returns a count
-~event get-count {}
-| result u32
+~event get-count {} -> u32
 
 ~proc get-count|zig {
-    return .{ .result = 3 };
+    return 3;
 }
 
 // Main flow: pipeline ~for
-~get-count()
-| result r |> for(0..r)
+~get-count(): r |> for(0..r)
     ! each _ |> std/io:print.ln("iteration")
     | done |> std/io:print.ln("done")

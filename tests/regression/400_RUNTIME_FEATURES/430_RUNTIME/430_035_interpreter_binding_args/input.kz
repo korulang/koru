@@ -13,11 +13,10 @@
 const std = @import("std");
 
 // Event that produces a value
-~pub event produce {}
-| value []const u8
+~pub event produce {} -> []const u8
 
 ~proc produce|zig {
-    return .{ .value = "42" };
+    return "42";
 }
 
 // Event that consumes a value and echoes it

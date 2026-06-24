@@ -7,22 +7,20 @@
 
 const std = @import("std");
 
-~event getValue { id: i32 }
-| got i32
+~event getValue { id: i32 } -> i32
 
 ~proc getValue|zig {
-    return .{ .got = id * 10 };
+    return id * 10;
 }
 
-~event sumAll { values: []const i32 }
-| total i32
+~event sumAll { values: []const i32 } -> i32
 
 ~proc sumAll|zig {
     var sum: i32 = 0;
     for (values) |v| {
         sum += v;
     }
-    return .{ .total = sum };
+    return sum;
 }
 
 ~event check { expected: i32, actual: i32 }
@@ -36,8 +34,4 @@ const std = @import("std");
 }
 
 // Chain events and collect results in array literal
-~getValue(id: 1)
-| got a |> getValue(id: 2)
-    | got b |> getValue(id: 3)
-        | got c |> sumAll(values: [a, b, c])
-            | total t |> check(expected: 60, actual: t)
+~getValue(id: 1): a |> getValue(id: 2): b |> getValue(id: 3): c |> sumAll(values: [a, b, c]): t |> check(expected: 60, actual: t)

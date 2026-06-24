@@ -39,14 +39,12 @@ const Handle = struct { n: i32 };
 | again v |> @loop(h: v)
 | stop r => finished r
 
-~event make {}
-| made *Handle<owned!>
+~event make {} -> *Handle<owned!>
 ~proc make|zig {
     const h = std.heap.page_allocator.create(Handle) catch unreachable;
     h.* = .{ .n = 0 };
-    return .{ .made = h };
+    return h;
 }
 
-~make()
-| made h0 |> spin(h: h0)
+~make(): h0 |> spin(h: h0)
     | finished hf |> done(h: hf)

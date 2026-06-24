@@ -27,25 +27,21 @@ const LargeStruct = struct {
     data: [100]f64,  // 800 bytes - expensive to copy!
 };
 
-~event process-data { input: [100]f64 }
-| result [100]f64
+~event process-data { input: [100]f64 } -> [100]f64
 
 ~proc process-data|zig {
     var output_data = input;
     for (&output_data) |*val| {
         val.* *= 2.0;
     }
-    return .{ .result = output_data };
+    return output_data;
 }
 
-~event chain { values: [100]f64 }
-| done [100]f64
+~event chain { values: [100]f64 } -> [100]f64
 
 ~proc chain|zig {
-    return .{ .done = values };
+    return values;
 }
 
 // Test flow - currently copies 800 bytes twice!
-~process-data(input: [_]f64{1.0} ** 100)
-| result r |> chain(values: r.output)
-    | done _ |> _
+~process-data(input: [_]f64{1.0} ** 100): r |> chain(values: r.output): _ |> _

@@ -20,11 +20,9 @@ pub const Data = struct {
 };
 
 // Main flow: Use shorthand syntax (r.source) which should expand to (source: r.source)
-~start()
-| result r |> process(r.source, r.branch, r.destination)
+~start(): r |> process(r.source, r.branch, r.destination)
 
-~event start {}
-| result Data
+~event start {} -> Data
 
 ~proc start|zig {
     const data = Data{
@@ -32,5 +30,5 @@ pub const Data = struct {
         .branch = "success",
         .destination = null,
     };
-    return .{ .result = data };
+    return data;
 }

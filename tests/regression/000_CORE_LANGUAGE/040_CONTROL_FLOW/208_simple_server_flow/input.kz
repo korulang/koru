@@ -54,12 +54,11 @@ const std = @import("std");
     std.debug.print("Closed connection {}\n", .{conn});
 }
 
-~event log-error { conn: u32, msg: []const u8 }
-| logged u32
+~event log-error { conn: u32, msg: []const u8 } -> u32
 
 ~proc log-error|zig {
     std.debug.print("Error on connection {}: {s}\n", .{conn, msg});
-    return .{ .logged = conn };
+    return conn;
 }
 
 ~event cleanup { conn: u32 }
@@ -74,7 +73,6 @@ const std = @import("std");
     | connected c |> #process_loop process(c.conn)
         | done d |> close(conn: d) |> @accept_loop(c.server)
         | retry r |> @process_loop(conn: r)
-        | error e |> log-error(e.conn, e.msg)
-            | logged l |> cleanup(conn: l) |> @accept_loop(c.server)
+        | error e |> log-error(e.conn, e.msg): l |> cleanup(conn: l) |> @accept_loop(c.server)
     | failed f |> @accept_loop(server: f)
 | failed _ |> _

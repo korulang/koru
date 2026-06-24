@@ -20,21 +20,19 @@ const std = @import("std");
 
 pub const Widget = struct { id: u32 };
 
-~pub event acquire {}
-| got *Widget<raw!>
+~pub event acquire {} -> *Widget<raw!>
 
 ~proc acquire|zig {
     const w = std.heap.page_allocator.create(Widget) catch unreachable;
     w.* = .{ .id = 7 };
-    return .{ .got = w };
+    return w;
 }
 
 // Single-branch FORWARD transition raw! → cured!, takes only the resource.
-~pub event cure { w: *Widget<!raw> }
-| cured *Widget<cured!>
+~pub event cure { w: *Widget<!raw> } -> *Widget<cured!>
 
 ~proc cure|zig {
-    return .{ .cured = w };
+    return w;
 }
 
 // VOID terminal — consumes cured!, issues nothing.
@@ -44,5 +42,4 @@ pub const Widget = struct { id: u32 };
     std.heap.page_allocator.destroy(w);
 }
 
-~acquire()
-| got w |> std/io:print.ln("acquired {{ w.id:d }}")
+~acquire(): w |> std/io:print.ln("acquired {{ w.id:d }}")

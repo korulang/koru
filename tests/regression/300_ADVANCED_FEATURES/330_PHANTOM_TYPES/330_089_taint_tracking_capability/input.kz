@@ -37,11 +37,10 @@
 ~import app/lib/taint
 
 // Untrusted source: issues <app/lib/taint:tainted!>.
-~event read-input { }
-| line []const u8<app/lib/taint:tainted!>
+~event read-input { } -> []const u8<app/lib/taint:tainted!>
 
 ~proc read-input|zig {
-    return .{ .line = "untrusted" };
+    return "untrusted";
 }
 
 // Sink CONSUMES the sanitized obligation: <app/lib/taint:!sanitized>. Unsanitized
@@ -54,6 +53,5 @@
     return;
 }
 
-~read-input()
-| line l |> app/lib/taint:sanitize(s: l)
+~read-input(): l |> app/lib/taint:sanitize(s: l)
     | clean c |> query(q: c) |> std/io:print.ln("ok")

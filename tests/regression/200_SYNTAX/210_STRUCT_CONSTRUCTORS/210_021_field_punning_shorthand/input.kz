@@ -7,11 +7,10 @@
 
 pub const Point = struct { x: i32, y: i32 };
 
-~event make-point { x: i32, y: i32 }
-| point Point
+~event make-point { x: i32, y: i32 } -> Point
 
 ~proc make-point|zig {
-    return .{ .point = Point{ .x = x, .y = y } };
+    return Point{ .x = x, .y = y };
 }
 
 ~event use-point { p: Point }
@@ -21,6 +20,5 @@ pub const Point = struct { x: i32, y: i32 };
 ~use-point => result { p.x, p.y }
 
 // Test it
-~make-point(x: 10, y: 20)
-| point pt |> use-point(p: pt)
+~make-point(x: 10, y: 20): pt |> use-point(p: pt)
     | result r |> std/io:print.ln("punning works: x={{ r.x:d }}, y={{ r.y:d }}")

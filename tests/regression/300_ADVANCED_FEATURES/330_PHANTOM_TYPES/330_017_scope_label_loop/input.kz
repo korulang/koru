@@ -1,14 +1,12 @@
 ~import app/fs
 const std = @import("std");
-~event iterate { count: i32 }
-| next i32
+~event iterate { count: i32 } -> i32
 ~proc iterate|zig {
     if (count < 3) {
-        return .{ .next = count + 1 };
+        return count + 1;
     } else {
     }
 }
-~#loop iterate(count: 0)
-| next n |> app/fs:open(path: "test.txt")
+~#loop iterate(count: 0): n |> app/fs:open(path: "test.txt")
     | opened f |> @loop(n.count)  // Auto-close f before @loop
 |> _

@@ -40,10 +40,9 @@ const ZERO_DV = [5][3]f64{
 // Events
 // ============================================================================
 
-~event init {}
-| bodies [5]Body
+~event init {} -> [5]Body
 
-~proc init|zig { return .{ .bodies = BODIES }; }
+~proc init|zig { return BODIES; }
 
 ~event offset { bodies: []Body }
 
@@ -53,8 +52,7 @@ const ZERO_DV = [5][3]f64{
     bodies[0].vx = -px / SOLAR_MASS; bodies[0].vy = -py / SOLAR_MASS; bodies[0].vz = -pz / SOLAR_MASS;
 }
 
-~event energy { bodies: []const Body }
-| e f64
+~event energy { bodies: []const Body } -> f64
 
 ~proc energy|zig {
     var e: f64 = 0;
@@ -66,21 +64,20 @@ const ZERO_DV = [5][3]f64{
             e -= (b.mass * bodies[j].mass) / @sqrt(dx*dx + dy*dy + dz*dz);
         }
     }
-    return .{ .e = e };
+    return e;
 }
 
 ~event print-e { e: f64 }
 
 ~proc print-e|zig { std.debug.print("{d:.9}\n", .{e}); }
 
-~event parse {}
-| n u32
+~event parse {} -> u32
 
 ~proc parse|zig {
     const args = std.process.argsAlloc(std.heap.page_allocator) catch unreachable;
     defer std.process.argsFree(std.heap.page_allocator, args);
     if (args.len < 2) { std.debug.print("Usage: nbody <n>\n", .{}); unreachable; }
-    return .{ .n = std.fmt.parseInt(u32, args[1], 10) catch unreachable };
+    return std.fmt.parseInt(u32, args[1], 10) catch unreachable;
 }
 
 // Apply velocity deltas from [5][3] array and advance positions
@@ -120,11 +117,8 @@ const ZERO_DV = [5][3]f64{
 // MAIN FLOW - Using arrayed capture for velocity deltas!
 // ============================================================================
 
-~parse()
-| n iters |> init()
-    | bodies b[mutable] |> offset(bodies: b[0..])
-        |> energy(bodies: b[0..])
-            | e e1 |> print-e(e: e1)
+~parse(): iters |> init(): b[mutable] |> offset(bodies: b[0..])
+        |> energy(bodies: b[0..]): e1 |> print-e(e: e1)
                 |> for(0..iters)
                     | each |> capture({ dv: ZERO_DV })
                         | as acc |> for(0..5)
@@ -134,5 +128,4 @@ const ZERO_DV = [5][3]f64{
                                 |> _
                             |> _
                         | captured deltas |> apply(bodies: b[0..], dt: DT, deltas.dv)
-                    |> energy(bodies: b[0..])
-                        | e e2 |> print-e(e: e2)
+                    |> energy(bodies: b[0..]): e2 |> print-e(e: e2)

@@ -25,8 +25,7 @@ const Body = struct {
 // Event: Initialize planetary bodies
 // ============================================================================
 
-~event initialize-bodies {}
-| initialized [5]Body
+~event initialize-bodies {} -> [5]Body
 
 ~proc initialize-bodies|zig {
     const bodies_data = [_]Body{
@@ -68,7 +67,7 @@ const Body = struct {
             .mass = 5.15138902046611451e-05 * SOLAR_MASS,
         },
     };
-    return .{ .initialized = bodies_data };
+    return bodies_data;
 }
 
 // ============================================================================
@@ -129,8 +128,7 @@ const Body = struct {
 
 }
 
-~event calculate-energy { bodies: []const Body }
-| result f64
+~event calculate-energy { bodies: []const Body } -> f64
 
 ~proc calculate-energy|zig {
     var e: f64 = 0.0;
@@ -148,7 +146,7 @@ const Body = struct {
         }
     }
 
-    return .{ .result = e };
+    return e;
 }
 
 ~event print-energy { energy: f64 }
@@ -157,8 +155,7 @@ const Body = struct {
     std.debug.print("{d:.9}\n", .{energy});
 }
 
-~event parse-args {}
-| parsed u32
+~event parse-args {} -> u32
 
 ~proc parse-args|zig {
     const args = std.process.argsAlloc(std.heap.page_allocator) catch unreachable;
@@ -170,7 +167,7 @@ const Body = struct {
     }
 
     const n = std.fmt.parseInt(u32, args[1], 10) catch unreachable;
-    return .{ .parsed = n };
+    return n;
 }
 
 // ============================================================================
@@ -196,14 +193,10 @@ const Body = struct {
     | done |> _
 |> done {}
 
-~parse-args()
-| parsed p |> initialize-bodies()
-    | initialized init[mutable] |> offset-momentum(bodies: init.bodies[0..])
-        |> calculate-energy(bodies: init.bodies[0..])
-            | result r1 |> print-energy(r1.energy)
+~parse-args(): p |> initialize-bodies(): init[mutable] |> offset-momentum(bodies: init.bodies[0..])
+        |> calculate-energy(bodies: init.bodies[0..]): r1 |> print-energy(r1.energy)
                 | done |> for(0..p.n)
                     | each |> process-all-pairs(bodies: init.bodies[0..], dt: 0.01)
                         | done |> update-all-positions(bodies: init.bodies[0..], dt: 0.01)
-                    | done |> calculate-energy(bodies: init.bodies[0..])
-                        | result r2 |> print-energy(r2.energy)
+                    | done |> calculate-energy(bodies: init.bodies[0..]): r2 |> print-energy(r2.energy)
                             | done |> _

@@ -29,11 +29,10 @@ const std = @import("std");
 }
 
 // Event with a result branch
-~event get-value {}
-| value i32
+~event get-value {} -> i32
 
 ~proc get-value|zig {
-    return .{ .value = 42 };
+    return 42;
 }
 
 // Event to print
@@ -48,7 +47,5 @@ const std = @import("std");
 // Both branched events generate `result_N` with same N
 
 ~step-one()
-~get-value()
-| value v1 |> print-value(v: v1) |> for(0..2)
-    ! each _ |> step-two() |> get-value()
-        | value v2 |> print-value(v: v2)
+~get-value(): v1 |> print-value(v: v1) |> for(0..2)
+    ! each _ |> step-two() |> get-value(): v2 |> print-value(v: v2)

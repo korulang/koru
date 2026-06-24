@@ -16,15 +16,13 @@ const std = @import("std");
 ~proc step1|zig {
 }
 
-~event step2 {}
-| result i32
+~event step2 {} -> i32
 
 ~proc step2|zig {
-    return .{ .result = 42 };
+    return 42;
 }
 
 // Main flow: if is nested 2 levels deep
-~step1() |> step2()
-    | result r |> if(r > 10)
+~step1() |> step2(): r |> if(r > 10)
         | then |> std/io:print.ln("greater")
         | else |> std/io:print.ln("less")

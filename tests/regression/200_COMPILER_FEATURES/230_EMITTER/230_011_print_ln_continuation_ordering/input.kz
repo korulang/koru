@@ -21,11 +21,10 @@ const std = @import("std");
 ~proc step-two|zig {}
 
 // Branched event (like calculate-energy)
-~event get-result {}
-| value i32
+~event get-result {} -> i32
 
 ~proc get-result|zig {
-    return .{ .value = 42 };
+    return 42;
 }
 
 // Print event with a result (like print-energy)
@@ -36,17 +35,13 @@ const std = @import("std");
 }
 
 // Initial setup (like initialize-bodies)
-~event setup {}
-| ready i32
+~event setup {} -> i32
 
 ~proc setup|zig {
-    return .{ .ready = 1 };
+    return 1;
 }
 
 // Main flow - matches nbody structure
-~setup()
-| ready _ |> get-result()
-    | value v1 |> print-value(v: v1) |> for(0..3)
+~setup(): _ |> get-result(): v1 |> print-value(v: v1) |> for(0..3)
         ! each _ |> step-one() |> step-two()
-        | done |> get-result()
-            | value v2 |> std/io:print.ln("Result: {{ v2:d }}")
+        | done |> get-result(): v2 |> std/io:print.ln("Result: {{ v2:d }}")

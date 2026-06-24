@@ -16,27 +16,23 @@ const std = @import("std");
 | final i32
 
 // Two helper events with proc bodies, copied from 302_subflow_flow.
-~event double { value: i32 }
-| result i32
+~event double { value: i32 } -> i32
 
 ~proc double|zig {
-    return .{ .result = value * 2 };
+    return value * 2;
 }
 
-~event identity { value: i32 }
-| result i32
+~event identity { value: i32 } -> i32
 
 ~proc identity|zig {
-    return .{ .result = value };
+    return value;
 }
 
 // Default unvariant arm — passes value through.
-~greet = identity(value)
-| result r => final r
+~greet = identity(value): r => final r
 
 // Variant arm — doubles. Same shape as the default arm but |two-tagged.
-~greet|two = double(value)
-| result r => final r
+~greet|two = double(value): r => final r
 
 // Register the |two variant.
 ~std/build:variants {

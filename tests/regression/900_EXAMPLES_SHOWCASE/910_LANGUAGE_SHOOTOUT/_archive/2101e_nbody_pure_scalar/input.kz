@@ -40,10 +40,9 @@ const BODIES = [_]Body{
 // Events - with simplified branch syntax
 // ============================================================================
 
-~event init {}
-| bodies [5]Body
+~event init {} -> [5]Body
 
-~proc init|zig { return .{ .bodies = BODIES }; }
+~proc init|zig { return BODIES; }
 
 ~event offset { bodies: []Body }
 
@@ -53,8 +52,7 @@ const BODIES = [_]Body{
     bodies[0].vx = -px / SOLAR_MASS; bodies[0].vy = -py / SOLAR_MASS; bodies[0].vz = -pz / SOLAR_MASS;
 }
 
-~event energy { bodies: []const Body }
-| e f64
+~event energy { bodies: []const Body } -> f64
 
 ~proc energy|zig {
     var e: f64 = 0;
@@ -66,21 +64,20 @@ const BODIES = [_]Body{
             e -= (b.mass * bodies[j].mass) / @sqrt(dx*dx + dy*dy + dz*dz);
         }
     }
-    return .{ .e = e };
+    return e;
 }
 
 ~event print-e { e: f64 }
 
 ~proc print-e|zig { std.debug.print("{d:.9}\n", .{e}); }
 
-~event parse {}
-| n u32
+~event parse {} -> u32
 
 ~proc parse|zig {
     const args = std.process.argsAlloc(std.heap.page_allocator) catch unreachable;
     defer std.process.argsFree(std.heap.page_allocator, args);
     if (args.len < 2) { std.debug.print("Usage: nbody <n>\n", .{}); unreachable; }
-    return .{ .n = std.fmt.parseInt(u32, args[1], 10) catch unreachable };
+    return std.fmt.parseInt(u32, args[1], 10) catch unreachable;
 }
 
 // Event to apply computed deltas and advance positions
@@ -118,11 +115,8 @@ const BODIES = [_]Body{
 // MAIN FLOW - 100% Pure Koru flow structure!
 // ============================================================================
 
-~parse()
-| n iters |> init()
-    | bodies b[mutable] |> offset(bodies: b[0..])
-        |> energy(bodies: b[0..])
-            | e e1 |> print-e(e: e1)
+~parse(): iters |> init(): b[mutable] |> offset(bodies: b[0..])
+        |> energy(bodies: b[0..]): e1 |> print-e(e: e1)
                 |> for(0..iters)
                     | each |> capture({ dv0x: @as(f64,0), dv0y: @as(f64,0), dv0z: @as(f64,0), dv1x: @as(f64,0), dv1y: @as(f64,0), dv1z: @as(f64,0), dv2x: @as(f64,0), dv2y: @as(f64,0), dv2z: @as(f64,0), dv3x: @as(f64,0), dv3y: @as(f64,0), dv3z: @as(f64,0), dv4x: @as(f64,0), dv4y: @as(f64,0), dv4z: @as(f64,0) })
                         | as dv |> for(0..5)
@@ -132,5 +126,4 @@ const BODIES = [_]Body{
                                 |> _
                             |> _
                         | captured deltas |> apply(bodies: b[0..], dt: DT, deltas.dv0x, deltas.dv0y, deltas.dv0z, deltas.dv1x, deltas.dv1y, deltas.dv1z, deltas.dv2x, deltas.dv2y, deltas.dv2z, deltas.dv3x, deltas.dv3y, deltas.dv3z, deltas.dv4x, deltas.dv4y, deltas.dv4z)
-                    |> energy(bodies: b[0..])
-                        | e e2 |> print-e(e: e2)
+                    |> energy(bodies: b[0..]): e2 |> print-e(e: e2)

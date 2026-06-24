@@ -8,11 +8,10 @@
 ~import std/io
 
 // Event with single output branch
-~event compute { x: i32 }
-| done i32
+~event compute { x: i32 } -> i32
 
 ~proc compute|zig {
-    return .{ .done = x * 2 };
+    return x * 2;
 }
 
 // Event with two branches
@@ -30,13 +29,11 @@
 // Mixed flow: void events, single-branch events, and multi-branch events
 ~std/io:print.ln("Starting computation")
 
-~compute(x: 5)
-| done d |> validate(n: d)
+~compute(x: 5): d |> validate(n: d)
     | valid |> std/io:print.ln("Valid result")
     | invalid |> std/io:print.ln("Invalid result")
 
-~compute(x: -3)
-| done d |> validate(n: d)
+~compute(x: -3): d |> validate(n: d)
     | valid |> std/io:print.ln("Valid result")
     | invalid |> std/io:print.ln("Invalid result")
 

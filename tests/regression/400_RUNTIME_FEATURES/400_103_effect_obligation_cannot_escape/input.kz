@@ -10,12 +10,11 @@ const std = @import("std");
 const Resource = struct { id: usize };
 const allocator = std.heap.c_allocator;
 
-~event create { id: usize }
-| created *Resource<active!>
+~event create { id: usize } -> *Resource<active!>
 ~proc create|zig {
     const r = allocator.create(Resource) catch unreachable;
     r.* = Resource{ .id = id };
-    return .{ .created = r };
+    return r;
 }
 
 ~event use { r: *Resource<active> }
@@ -30,6 +29,5 @@ const allocator = std.heap.c_allocator;
 }
 
 ~gen(n: 3)
-! each i |> create(id: i)
-    | created r |> use(r)
+! each i |> create(id: i): r |> use(r)
 | done _ |> _

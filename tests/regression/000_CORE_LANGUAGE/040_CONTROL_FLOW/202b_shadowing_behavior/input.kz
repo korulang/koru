@@ -6,18 +6,16 @@
 
 const std = @import("std");
 
-~event first { value: i32 }
-| result i32
+~event first { value: i32 } -> i32
 
 ~proc first|zig {
-    return .{ .result = value * 2 };
+    return value * 2;
 }
 
-~event second { value: i32 }
-| data i32
+~event second { value: i32 } -> i32
 
 ~proc second|zig {
-    return .{ .data = value * 3 };
+    return value * 3;
 }
 
 ~event show { outer_val: i32, inner_val: i32 }
@@ -27,6 +25,4 @@ const std = @import("std");
 }
 
 // Test: Use unique binding names (r and d)
-~first(value: 10)
-| result r |> second(value: r)
-    | data d |> show(outer_val: r, inner_val: d)
+~first(value: 10): r |> second(value: r): d |> show(outer_val: r, inner_val: d)

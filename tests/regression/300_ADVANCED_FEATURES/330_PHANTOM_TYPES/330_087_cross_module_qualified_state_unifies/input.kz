@@ -21,14 +21,12 @@
 ~import app/lib/store
 
 // Consume app/lib/store's secret obligation cross-module.
-~event use-secret { s: []const u8<app/lib/store:!secret> }
-| used []const u8
+~event use-secret { s: []const u8<app/lib/store:!secret> } -> []const u8
 
 ~proc use-secret|zig {
-    return .{ .used = s };
+    return s;
 }
 
 ~app/lib/store:make-secret(payload: "shh")
 | secret s |> app/lib/store:reveal(s)
-    | plain p |> use-secret(p)
-        | used _ |> std/io:print.ln("ok")
+    | plain p |> use-secret(p): _ |> std/io:print.ln("ok")

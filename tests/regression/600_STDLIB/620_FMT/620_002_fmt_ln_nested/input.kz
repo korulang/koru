@@ -10,13 +10,11 @@
 ~import std/fmt
 ~import std/io
 
-~event get-name {}
-| name []const u8
+~event get-name {} -> []const u8
 
 ~proc get-name|zig {
-    return .{ .name = "World" };
+    return "World";
 }
 
-~get-name()
-| name n |> std/fmt:ln("Hello, {{ n:s }}!")
+~get-name(): n |> std/fmt:ln("Hello, {{ n:s }}!")
     | line l |> std/io:print.ln(l.text)

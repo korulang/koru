@@ -19,18 +19,16 @@ const std = @import("std");
     return .{ .invalid = "Value must be positive" };
 }
 
-~event double { value: i32 }
-| ok i32
+~event double { value: i32 } -> i32
 
 ~proc double|zig {
-    return .{ .ok = value * 2 };
+    return value * 2;
 }
 
-~event triple { value: i32 }
-| ok i32
+~event triple { value: i32 } -> i32
 
 ~proc triple|zig {
-    return .{ .ok = value * 3 };
+    return value * 3;
 }
 
 ~event success { result: i32 }
@@ -47,7 +45,5 @@ const std = @import("std");
 
 // Flow with multiple branching paths
 ~validate(value: 42)
-| valid v |> double(value: v)
-    | ok doubled |> success(result: doubled)
-| invalid e |> triple(value: -1)
-    | ok _ |> failure(msg: e)
+| valid v |> double(value: v): doubled |> success(result: doubled)
+| invalid e |> triple(value: -1): _ |> failure(msg: e)

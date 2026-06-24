@@ -40,8 +40,7 @@ const Body = struct {
 // Event 1: Initialize planetary bodies
 // ============================================================================
 
-~event initialize-bodies {}
-| initialized [5]Body[mutable]
+~event initialize-bodies {} -> [5]Body[mutable]
 
 ~proc initialize-bodies|zig {
     // Sun, Jupiter, Saturn, Uranus, Neptune
@@ -89,7 +88,7 @@ const Body = struct {
         },
     };
 
-    return .{ .initialized = bodies_data };
+    return bodies_data;
 }
 
 // ============================================================================
@@ -119,8 +118,7 @@ const Body = struct {
 // Event 3: Calculate total energy (kinetic + potential)
 // ============================================================================
 
-~event calculate-energy { bodies: []const Body }
-| result f64
+~event calculate-energy { bodies: []const Body } -> f64
 
 ~proc calculate-energy|zig {
     var e: f64 = 0.0;
@@ -140,7 +138,7 @@ const Body = struct {
         }
     }
 
-    return .{ .result = e };
+    return e;
 }
 
 // ============================================================================
@@ -217,8 +215,7 @@ const Body = struct {
 // Event 8: Parse command line argument
 // ============================================================================
 
-~event parse-args {}
-| parsed u32
+~event parse-args {} -> u32
 
 ~proc parse-args|zig {
     const args = std.process.argsAlloc(std.heap.page_allocator) catch unreachable;
@@ -230,7 +227,7 @@ const Body = struct {
     }
 
     const n = std.fmt.parseInt(u32, args[1], 10) catch unreachable;
-    return .{ .parsed = n };
+    return n;
 }
 
 // ============================================================================
@@ -238,15 +235,11 @@ const Body = struct {
 // Bodies array lives on the stack and is mutated in place through slices
 // ============================================================================
 
-~parse-args()
-| parsed p |> initialize-bodies()
-    | initialized init |> offset-momentum(bodies: init.bodies[0..])
-        |> calculate-energy(bodies: init.bodies[0..])
-            | result r1 |> print-energy(r1.energy)
+~parse-args(): p |> initialize-bodies(): init |> offset-momentum(bodies: init.bodies[0..])
+        |> calculate-energy(bodies: init.bodies[0..]): r1 |> print-energy(r1.energy)
                 |> #sim_loop simulation-step(i: 0, p.n)
                     | continue cont |> calculate-interactions(bodies: init.bodies[0..], dt: 0.01)
                         |> update-positions(bodies: init.bodies[0..], dt: 0.01)
                             |> @sim_loop(i: cont.i + 1, cont.n)
-                    |> calculate-energy(bodies: init.bodies[0..])
-                        | result r2 |> print-energy(r2.energy)
+                    |> calculate-energy(bodies: init.bodies[0..]): r2 |> print-energy(r2.energy)
                             |> _

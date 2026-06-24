@@ -7,15 +7,14 @@
 
 const std = @import("std");
 
-~event sum { numbers: []const i32 }
-| result i32
+~event sum { numbers: []const i32 } -> i32
 
 ~proc sum|zig {
     var total: i32 = 0;
     for (numbers) |n| {
         total += n;
     }
-    return .{ .result = total };
+    return total;
 }
 
 ~event check { expected: i32, actual: i32 }
@@ -29,5 +28,4 @@ const std = @import("std");
 }
 
 // Use array literal syntax
-~sum(numbers: [1, 2, 3, 4])
-| result r |> check(expected: 10, actual: r)
+~sum(numbers: [1, 2, 3, 4]): r |> check(expected: 10, actual: r)

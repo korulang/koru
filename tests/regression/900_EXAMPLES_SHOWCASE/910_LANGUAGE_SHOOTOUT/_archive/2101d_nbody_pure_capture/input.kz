@@ -34,11 +34,10 @@ const Body = struct {
 // ============================================================================
 
 // Returns bodies array - simplified branch!
-~event initialize-bodies {}
-| bodies [5]Body
+~event initialize-bodies {} -> [5]Body
 
 ~proc initialize-bodies|zig {
-    return .{ .bodies = [_]Body{
+    return [_]Body{
         .{ .x = 0, .y = 0, .z = 0, .vx = 0, .vy = 0, .vz = 0, .mass = SOLAR_MASS },
         .{
             .x = 4.84143144246472090e+00,
@@ -76,7 +75,7 @@ const Body = struct {
             .vz = -9.51592254519715870e-05 * DAYS_PER_YEAR,
             .mass = 5.15138902046611451e-05 * SOLAR_MASS,
         },
-    } };
+    };
 }
 
 // Void event - no branches needed!
@@ -99,8 +98,7 @@ const Body = struct {
 }
 
 // Returns energy - simplified branch!
-~event calculate-energy { bodies: []const Body }
-| energy f64
+~event calculate-energy { bodies: []const Body } -> f64
 
 ~proc calculate-energy|zig {
     var e: f64 = 0.0;
@@ -118,7 +116,7 @@ const Body = struct {
         }
     }
 
-    return .{ .energy = e };
+    return e;
 }
 
 // Void event - advances velocities
@@ -166,8 +164,7 @@ const Body = struct {
 }
 
 // Arg parsing - returns n
-~event parse-args {}
-| n u32
+~event parse-args {} -> u32
 
 ~proc parse-args|zig {
     const args = std.process.argsAlloc(std.heap.page_allocator) catch unreachable;
@@ -178,20 +175,16 @@ const Body = struct {
         unreachable;
     }
 
-    return .{ .n = std.fmt.parseInt(u32, args[1], 10) catch unreachable };
+    return std.fmt.parseInt(u32, args[1], 10) catch unreachable;
 }
 
 // ============================================================================
 // Main flow - IDIOMATIC KORU
 // ============================================================================
 
-~parse-args()
-| n iterations |> initialize-bodies()
-    | bodies b[mutable] |> offset-momentum(bodies: b[0..])
-        |> calculate-energy(bodies: b[0..])
-            | energy e1 |> print-energy(e: e1)
+~parse-args(): iterations |> initialize-bodies(): b[mutable] |> offset-momentum(bodies: b[0..])
+        |> calculate-energy(bodies: b[0..]): e1 |> print-energy(e: e1)
                 |> for(0..iterations)
                     | each |> advance-velocities(bodies: b[0..], dt: DT)
                         |> advance-positions(bodies: b[0..], dt: DT)
-                    |> calculate-energy(bodies: b[0..])
-                        | energy e2 |> print-energy(e: e2)
+                    |> calculate-energy(bodies: b[0..]): e2 |> print-energy(e: e2)

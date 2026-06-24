@@ -6,19 +6,18 @@
 ~import std/build
 
 // Define events that we'll configure variants for
-~event compute { x: i32 }
-| done i32
+~event compute { x: i32 } -> i32
 
 ~proc compute|zig {
-    return .{ .done = x };
+    return x;
 }
 
 ~proc compute|fast {
-    return .{ .done = x * 2 };
+    return x * 2;
 }
 
 ~proc compute|naive {
-    return .{ .done = x };
+    return x;
 }
 
 ~event blur { intensity: i32 }
@@ -27,11 +26,11 @@
 }
 
 ~proc blur|gpu {
-    return .{ .done = .{} };
+    return .{};
 }
 
 ~proc blur|cpu {
-    return .{ .done = .{} };
+    return .{};
 }
 
 // Define variant configurations for different build modes

@@ -8,12 +8,11 @@
 const std = @import("std");
 const Handle = struct { n: i32 };
 
-~event make {}
-| made *Handle<owned!>
+~event make {} -> *Handle<owned!>
 ~proc make|zig {
     const h = std.heap.page_allocator.create(Handle) catch unreachable;
     h.* = .{ .n = 0 };
-    return .{ .made = h };
+    return h;
 }
 
 // Consumes the carried handle. `again` re-issues (linearity OK on that edge),
@@ -41,6 +40,5 @@ const Handle = struct { n: i32 };
 | again v |> @loop(h: v)
 | stop r => finished r   // carried obligation never discharged on this path -> leak
 
-~make()
-| made h0 |> spin(h: h0)
+~make(): h0 |> spin(h: h0)
     | finished f |> report(n: f)

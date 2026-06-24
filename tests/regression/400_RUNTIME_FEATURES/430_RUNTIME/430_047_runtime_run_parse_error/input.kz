@@ -3,11 +3,10 @@
 ~import std/runtime
 ~import std/io
 
-~pub event ping {}
-| ok u64
+~pub event ping {} -> u64
 
 ~proc ping|zig {
-    return .{ .ok = 1 };
+    return 1;
 }
 
 ~std/runtime:register(scope: "api") {
