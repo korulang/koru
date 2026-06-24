@@ -14,13 +14,12 @@ const std = @import("std");
 
 const Resource = struct { id: usize };
 
-~event create {}
-| created *Resource<active!>
+~event create {} -> *Resource<active!>
 
 ~proc create|zig {
     const r = std.heap.page_allocator.create(Resource) catch unreachable;
     r.* = Resource{ .id = 42 };
-    return .{ .created = r };
+    return r;
 }
 
 ~event work { r: *Resource<active> }
@@ -37,8 +36,7 @@ const Resource = struct { id: usize };
 
 ~event run-one {}
 
-~run-one = create()
-| created r |> work(r) |> work(r) |> destroy(r)
+~run-one = create(): r |> work(r) |> work(r) |> destroy(r)
 
 ~for(0..10)
 ! each _ |> run-one()

@@ -2973,6 +2973,18 @@ pub const VisitorEmitter = struct {
                                     // by emitArgs in emitter_helpers.zig
                                     try self.code_emitter.write(" });\n");
 
+                                    // Bare-return bind at a subflow head
+                                    // (`~run-one = create(): r |> work(r)`): alias `result`
+                                    // to the call-site binding so downstream steps reference
+                                    // it. The head stays `result` for the continuation
+                                    // machinery; the alias also marks `result` used.
+                                    if (flow.inv().return_binding) |rb| {
+                                        try self.code_emitter.writeIndent();
+                                        try self.code_emitter.write("const ");
+                                        try self.code_emitter.write(rb);
+                                        try self.code_emitter.write(" = result;\n");
+                                    }
+
                                     // Generate switch on result
                                     // Calculate indent string for emitSubflowContinuations
                                     var indent_buf: [64]u8 = undefined;
