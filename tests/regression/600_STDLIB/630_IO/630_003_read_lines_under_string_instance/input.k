@@ -6,8 +6,7 @@ import std/fs
 import std/string
 
 std/string:from-page("x")
-| ok s |> std/string:take(s)
-    | instance o |> std/fs:read-lines(path: "tests/regression/810_AOC_2015/810_171_day17_part1/input.txt")
+| ok s |> std/string:take(s): o |> std/fs:read-lines(path: "tests/regression/810_AOC_2015/810_171_day17_part1/input.txt")
         ! line _ |> _
         | done _ |> std/io:print.ln("done") |> std/string:free(s: o)
         | failed _ |> std/io:print.ln("failed") |> std/string:free(s: o)

@@ -71,19 +71,17 @@ pub const String = struct {
 // ============================================
 
 // Take ownership - view becomes instance
-~pub event take { s: *String<!view> }
-| instance *String<instance!>
+~pub event take { s: *String<!view> } -> *String<instance!>
 
 ~proc take|zig {
-    return .{ .instance = s };
+    return s;
 }
 
 // Release ownership - instance becomes view
-~pub event release { s: *String<!instance> }
-| view *String<view!>
+~pub event release { s: *String<!instance> } -> *String<view!>
 
 ~proc release|zig {
-    return .{ .view = s };
+    return s;
 }
 
 // ============================================
@@ -105,18 +103,16 @@ pub const String = struct {
 // Read operations - work on view or instance
 // ============================================
 
-~pub event read { s: *String<view|instance> }
-| slice []const u8
+~pub event read { s: *String<view|instance> } -> []const u8
 
 ~proc read|zig {
-    return .{ .slice = s.data };
+    return s.data;
 }
 
-~pub event len { s: *String<view|instance> }
-| len usize
+~pub event len { s: *String<view|instance> } -> usize
 
 ~proc len|zig {
-    return .{ .len = s.data.len };
+    return s.data.len;
 }
 
 // ============================================

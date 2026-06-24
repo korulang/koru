@@ -17,7 +17,6 @@
 
 ~std/string:from-page(text: "a")
 | ok s1 |> std/string:from-page(text: "b")
-    | ok s2 |> std/string:read(s2)
-        | slice t |> std/io:print.ln("{{ t:s }}") |> std/string:free(s2) |> std/string:free(s1)
+    | ok s2 |> std/string:read(s2): t |> std/io:print.ln("{{ t:s }}") |> std/string:free(s2) |> std/string:free(s1)
     | err _ |> std/string:free(s1)
 | err _ |> _

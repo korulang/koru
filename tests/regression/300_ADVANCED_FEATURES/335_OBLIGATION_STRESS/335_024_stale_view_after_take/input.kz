@@ -15,7 +15,5 @@
 ~import std/string
 
 ~std/string:from-page(text: "hello")
-| ok s |> std/string:take(s)
-    | instance owned |> std/string:read(s)
-        | slice _ |> std/string:free(s: owned)
+| ok s |> std/string:take(s): owned |> std/string:read(s): _ |> std/string:free(s: owned)
 | err _ |> _

@@ -9,7 +9,6 @@
 
 ~std/string:from-page(text: "hello world")
 | ok s |> std/string:substring(s, start: 0, end: 5)
-    | ok sub |> std/string:read(sub)
-        | slice text |> std/io:print.ln("{{ text:s }}") |> std/string:free(sub) |> std/string:free(s)
+    | ok sub |> std/string:read(sub): text |> std/io:print.ln("{{ text:s }}") |> std/string:free(sub) |> std/string:free(s)
     | err _ |> std/string:free(s)
 | err _ |> _

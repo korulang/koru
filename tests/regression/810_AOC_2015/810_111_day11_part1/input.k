@@ -50,16 +50,13 @@ std/fs:read-lines(path: "tests/regression/810_AOC_2015/810_111_day11_part1/input
     | value n0 |> seek(n: n0 + 1)
         | found n |> std/string:from-page("abcdefghijklmnopqrstuvwxyz")
             | ok alpha |> std/string:from-page("")
-                | ok base |> std/string:take(base)
-                    | instance buf |> for(0..8)
+                | ok base |> std/string:take(base): buf |> for(0..8)
                         ! each k |> std/string:substring(alpha, start: @mod(@divTrunc(@as(usize, @intCast(n)), 8031810176 * @as(usize, @intFromBool(k == 0)) + 308915776 * @as(usize, @intFromBool(k == 1)) + 11881376 * @as(usize, @intFromBool(k == 2)) + 456976 * @as(usize, @intFromBool(k == 3)) + 17576 * @as(usize, @intFromBool(k == 4)) + 676 * @as(usize, @intFromBool(k == 5)) + 26 * @as(usize, @intFromBool(k == 6)) + 1 * @as(usize, @intFromBool(k == 7))), 26), end: @mod(@divTrunc(@as(usize, @intCast(n)), 8031810176 * @as(usize, @intFromBool(k == 0)) + 308915776 * @as(usize, @intFromBool(k == 1)) + 11881376 * @as(usize, @intFromBool(k == 2)) + 456976 * @as(usize, @intFromBool(k == 3)) + 17576 * @as(usize, @intFromBool(k == 4)) + 676 * @as(usize, @intFromBool(k == 5)) + 26 * @as(usize, @intFromBool(k == 6)) + 1 * @as(usize, @intFromBool(k == 7))), 26) + 1)
-                            | ok cs |> std/string:read(cs)
-                                | slice csl |> std/string:append(s: buf, text: csl)
+                            | ok cs |> std/string:read(cs): csl |> std/string:append(s: buf, text: csl)
                                     | ok |> std/string:free(cs)
                                     | err _ |> std/string:free(cs)
                             | err _ |> _
-                        | done |> std/string:read(buf)
-                            | slice all |> std/io:print.ln("{{ all:s }}") |> std/string:free(buf) |> std/string:free(alpha)
+                        | done |> std/string:read(buf): all |> std/io:print.ln("{{ all:s }}") |> std/string:free(buf) |> std/string:free(alpha)
                 | err _ |> std/string:free(alpha)
             | err _ |> _
 | done _ |> _

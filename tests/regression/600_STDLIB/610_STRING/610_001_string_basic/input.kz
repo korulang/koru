@@ -3,6 +3,5 @@
 ~import std/io
 
 ~std/string:from-page(text: "hello")
-| ok s |> std/string:read(s)
-    | slice text |> std/io:print.ln("{{ text:s }}") |> std/string:free(s)
+| ok s |> std/string:read(s): text |> std/io:print.ln("{{ text:s }}") |> std/string:free(s)
 | err _ |> _

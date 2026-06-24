@@ -960,6 +960,34 @@ pub const AutoDischargeInserter = struct {
             }
         }
 
+        // Bare-return bind: a `call(...): owned` node binds `owned` to the invoked
+        // event's `-> T<phantom>` return. Record its obligation here — the
+        // bare-return twin of the branch-payload binding above — so a dropped
+        // `owned` (e.g. `take(s): owned` with no explicit free) is auto-discharged
+        // and an explicitly-freed one is credited. Without it the transfer
+        // obligation is invisible to disposal and the bound name carries no state.
+        if (cont.node) |node| {
+            if (node == .invocation) {
+                if (node.invocation.return_binding) |rb| {
+                    const rb_event_name = try self.pathToString(node.invocation.path);
+                    defer self.allocator.free(rb_event_name);
+                    const rb_module = node.invocation.path.module_qualifier orelse module_name;
+                    const rb_qualified = try std.fmt.allocPrint(self.allocator, "{s}:{s}", .{ rb_module, rb_event_name });
+                    defer self.allocator.free(rb_qualified);
+                    if (self.event_map.get(rb_qualified)) |info| {
+                        if (info.decl.return_phantom) |rp| {
+                            // Canonicalize with the call-site module qualifier (rb_module),
+                            // matching the branch-payload path's use of the resolved call
+                            // module — not the bare decl module.
+                            const canonical = try self.canonicalizePhantom(rp, rb_module);
+                            defer self.allocator.free(canonical);
+                            try context.addBinding(rb, canonical, "__type_ref", info.decl.return_type orelse "");
+                        }
+                    }
+                }
+            }
+        }
+
         // Check nested continuations
         for (cont.continuations, 0..) |*nested, nested_idx| {
             // For nested continuations, we need to determine the event they belong to
@@ -1872,13 +1900,17 @@ pub const AutoDischargeInserter = struct {
         while (iter.next()) |entry| {
             const event_decl = entry.value_ptr.decl;
 
-            // Auto-discharge can only insert a VOID event (no continuation branch):
-            // the inserter appends a bare call, and any output branch — a re-issued
-            // obligation OR a plain value/error — needs handling it can't synthesize.
-            // So ANY branch disqualifies the event from auto-insertion (KORU083). The
-            // error-suggestion path (include_multi_branch) still lists branched
-            // dischargers so the user can call one explicitly.
-            if (!include_multi_branch and event_decl.branches.len > 0) continue;
+            // Auto-discharge can only insert a VOID event (no continuation branch
+            // AND no bare `-> T` return): the inserter appends a bare call, and any
+            // output — a branch (re-issued obligation OR plain value/error) or a
+            // bare-return value/transfer-obligation — needs a bind it can't
+            // synthesize. So ANY output disqualifies the event from auto-insertion
+            // (KORU083). A bare-return transfer like `take` (`-> *String<instance!>`)
+            // hands back a NEW obligation, so it never discharges — it must not be
+            // auto-inserted as a disposer. The error-suggestion path
+            // (include_multi_branch) still lists branched dischargers so the user can
+            // call one explicitly.
+            if (!include_multi_branch and (event_decl.branches.len > 0 or event_decl.return_type != null)) continue;
 
             // Self-loop suggestion filter: an event that consumes <state!> on
             // base_type but ALSO re-issues <state!> on the same base_type through

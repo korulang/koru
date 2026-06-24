@@ -14,8 +14,7 @@
 ~import std/string
 
 ~std/string:from-page(text: "hello")
-| ok s |> std/string:take(s)
-    | instance owned |> std/string:append(s: owned, text: " world")
+| ok s |> std/string:take(s): owned |> std/string:append(s: owned, text: " world")
         | ok |> std/string:free(s: owned)
         | err _ |> _
 | err _ |> _

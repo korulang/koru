@@ -1630,6 +1630,32 @@ pub const PhantomSemanticChecker = struct {
                     return !has_errors;
                 };
 
+                // Bare-return bind: `call(...): owned` introduces `owned` carrying the
+                // invoked event's `return_phantom` — the `-> T<phantom>` twin of a
+                // `| branch owned` payload phantom (recorded above for the branch
+                // form). Without this, a migrated transfer/obligation event (e.g.
+                // `take` → `-> *String<instance!>`) leaves the bound name with no
+                // tracked state, so a downstream consumer (`append(s: owned)`) fails
+                // its phantom precondition. Mirrors the branch-payload recording.
+                if (inv.return_binding) |rb| {
+                    if (nested_event_info.decl.return_phantom) |rp| {
+                        // Canonicalize with the call-site module qualifier (same source
+                        // the nested event uses for its required-state canonicalization),
+                        // NOT the bare decl module — otherwise `string:instance!` won't
+                        // match the consumer's `std.string:instance`.
+                        const ret_module = module_name;
+                        const canonical_phantom = try self.canonicalizePhantomState(rp, ret_module);
+                        defer self.allocator.free(canonical_phantom);
+                        if (nested_event_info.decl.return_type) |rt| {
+                            const canonical_base_type = try self.canonicalizeBaseType(rt, null, ret_module);
+                            defer self.allocator.free(canonical_base_type);
+                            try context.setWithType(rb, canonical_phantom, canonical_base_type);
+                        } else {
+                            try context.set(rb, canonical_phantom);
+                        }
+                    }
+                }
+
                 // Validate nested continuations against the invoked event (not parent event)
                 // Pass the current context down so disposed bindings propagate
                 for (cont.continuations) |*nested| {
