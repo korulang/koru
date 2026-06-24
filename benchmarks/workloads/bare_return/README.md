@@ -30,15 +30,47 @@ at ~1 ns/iter — the natural floor for a serial multiply-add recurrence.
 `koru` is the bare-return form. `zig` and `rust` are the same LCG loop written
 by hand (no event machinery, no union) — the ideal floor.
 
-## Result (Apple Silicon, ReleaseFast / opt-level 3, best of 5)
+## Result (Apple Silicon, ReleaseFast / opt-level 3)
 
-| N     | koru   | zig (ideal) | rust   |
-|-------|--------|-------------|--------|
-| 1e8   | 121 ms | 118 ms      | 118 ms |
-| 1e9   | 977 ms | 978 ms      | 977 ms |
+Wall-clock is **noise-limited** on this workload: a fully-dependent `madd`
+recurrence runs at the hardware latency floor in all four binaries, so they are
+indistinguishable. Across many interleaved 15–30 round batches (min-of-batch,
+n=1e9 and 2e9) the spread is always **≤0.8% with no stable ordering** — koru,
+rust, and even two *identical-code* Zig binaries have each been "slowest" in
+different runs. Two identical Zig programs differ by ~0.2–0.5% run-to-run; that
+is the noise floor, and the koru-vs-ideal difference lives inside it.
 
-**Dead heat.** Bare-return koru emits machine code identical in shape to
-hand-written Zig — the union-elimination closed the gap completely.
+So the honest claim is **parity**, and the *proof* is the machine code, not the
+stopwatch:
+
+```
+KORU hot loop                       IDEAL (zig/rust)
+  madd x, x, C1, C2                   madd x, x, C1, C2
+  sub  cnt, cnt, #1                   subs cnt, cnt, #1
+  cbnz cnt, top                       b.ne top
+```
+
+Same three instructions, same `madd` recurrence — the bare-return fully inlined,
+**zero** event/union/wrapper residue. (`sub;cbnz` vs `subs;b.ne` is a loop-control
+idiom choice with no measurable cost on a latency-bound loop; see the build note.)
+
+### Build-mode caveat (what "ReleaseFast" means here)
+
+koru's backend builds the **output binary at `ReleaseSmall`** by default
+(`+ -fstrip -fno-unwind-tables`); the `debug` compiler flag flips it to
+ReleaseFast. So `koru/a.out` as built by the normal path is *size*-optimized,
+and the `sub;cbnz` loop above is ReleaseSmall's codegen. To compare like-for-like
+against ReleaseFast zig/rust, rebuild `output_emitted.zig` at ReleaseFast:
+
+```bash
+cd koru && zig build-exe -O ReleaseFast -femit-bin=tuned \
+  --dep compiler_env -Mroot=output_emitted.zig -Mcompiler_env=compiler_env.zig
+```
+
+On *this* loop it changes nothing measurable (ReleaseSmall was fastest in one
+batch, ReleaseFast in another — all noise). But it is a latent silent-perf
+default worth knowing: on a workload where ReleaseSmall's different inlining /
+no-vectorization bites, the size-optimized default would quietly cost speed.
 
 ## Why (the emitted code)
 
