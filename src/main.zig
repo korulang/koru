@@ -1169,14 +1169,15 @@ fn generateBackendCode(allocator: std.mem.Allocator, input_file: []const u8, sou
             \\            exe_argv[exe_argc] = t; exe_argc += 1;
             \\        }
             \\        exe_argv[exe_argc] = "-O"; exe_argc += 1;
+            \\        // Hyper-performance language: the OUTPUT binary defaults to
+            \\        // ReleaseFast. ReleaseSmall was the orphaned default of a removed
+            \\        // `--tiny` flag — a silent perf-degradation (it benchmarked
+            \\        // size-optimized koru against ReleaseFast rivals). `--debug`
+            \\        // produces a real Debug build for debugging.
             \\        if (debug) {
-            \\            exe_argv[exe_argc] = "ReleaseFast"; exe_argc += 1;
+            \\            exe_argv[exe_argc] = "Debug"; exe_argc += 1;
             \\        } else {
-            \\            exe_argv[exe_argc] = "ReleaseSmall"; exe_argc += 1;
-            \\            exe_argv[exe_argc] = "-fstrip"; exe_argc += 1;
-            \\            exe_argv[exe_argc] = "-fno-unwind-tables"; exe_argc += 1;
-            \\            exe_argv[exe_argc] = "-z"; exe_argc += 1;
-            \\            exe_argv[exe_argc] = "norelro"; exe_argc += 1;
+            \\            exe_argv[exe_argc] = "ReleaseFast"; exe_argc += 1;
             \\        }
             \\        exe_argv[exe_argc] = emit_path; exe_argc += 1;
             \\        const result = __koru_std.process.Child.run(.{

@@ -210,7 +210,10 @@ pub fn emitOutputBuildZig(
         \\
         \\pub fn build(__koru_b: *std.Build) void {
         \\    const __koru_target = __koru_b.standardTargetOptions(.{});
-        \\    const __koru_optimize = __koru_b.standardOptimizeOption(.{});
+        \\    // Hyper-performance language: the OUTPUT binary defaults to ReleaseFast
+        \\    // (the `zig build` invocation passes no -Doptimize, so without this the
+        \\    // standard default would be Debug). -Doptimize still overrides.
+        \\    const __koru_optimize = __koru_b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseFast });
         \\
         \\    const __koru_exe = __koru_b.addExecutable(.{
         \\        .name = "output",

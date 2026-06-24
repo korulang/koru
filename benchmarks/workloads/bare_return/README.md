@@ -32,45 +32,53 @@ by hand (no event machinery, no union) — the ideal floor.
 
 ## Result (Apple Silicon, ReleaseFast / opt-level 3)
 
+Representative (min-of-15, interleaved, n=2e9, post-fix default `a.out`):
+
+| impl            | min (ms) | vs fastest |
+|-----------------|----------|------------|
+| koru (default)  | 1897.8   | +0.05%     |
+| zig (ideal)     | 1900.3   | +0.19%     |
+| rust            | 1896.8   | +0.00%     |
+
 Wall-clock is **noise-limited** on this workload: a fully-dependent `madd`
-recurrence runs at the hardware latency floor in all four binaries, so they are
-indistinguishable. Across many interleaved 15–30 round batches (min-of-batch,
-n=1e9 and 2e9) the spread is always **≤0.8% with no stable ordering** — koru,
-rust, and even two *identical-code* Zig binaries have each been "slowest" in
-different runs. Two identical Zig programs differ by ~0.2–0.5% run-to-run; that
-is the noise floor, and the koru-vs-ideal difference lives inside it.
+recurrence runs at the hardware latency floor in all binaries, so they are
+indistinguishable. Across many interleaved 15–30 round batches the ordering is
+not stable — koru, zig, and rust have each been "fastest" or "slowest" in
+different runs, all inside a ~0.2–0.5% noise floor (two *identical-code* Zig
+binaries differ by that much run-to-run). The koru-vs-ideal difference lives
+inside it.
 
 So the honest claim is **parity**, and the *proof* is the machine code, not the
 stopwatch:
 
 ```
-KORU hot loop                       IDEAL (zig/rust)
+KORU hot loop (default a.out)       IDEAL (zig/rust)
   madd x, x, C1, C2                   madd x, x, C1, C2
-  sub  cnt, cnt, #1                   subs cnt, cnt, #1
-  cbnz cnt, top                       b.ne top
+  subs cnt, cnt, #1                   subs cnt, cnt, #1
+  b.ne top                            b.ne top
 ```
 
-Same three instructions, same `madd` recurrence — the bare-return fully inlined,
-**zero** event/union/wrapper residue. (`sub;cbnz` vs `subs;b.ne` is a loop-control
-idiom choice with no measurable cost on a latency-bound loop; see the build note.)
+Identical loop — the bare-return fully inlined, **zero** event/union/wrapper
+residue.
 
-### Build-mode caveat (what "ReleaseFast" means here)
+### Build-mode fix (what this benchmark uncovered)
 
-koru's backend builds the **output binary at `ReleaseSmall`** by default
-(`+ -fstrip -fno-unwind-tables`); the `debug` compiler flag flips it to
-ReleaseFast. So `koru/a.out` as built by the normal path is *size*-optimized,
-and the `sub;cbnz` loop above is ReleaseSmall's codegen. To compare like-for-like
-against ReleaseFast zig/rust, rebuild `output_emitted.zig` at ReleaseFast:
+The *first* version of this benchmark measured koru **~0.5–0.8% behind**, and
+the cause was not the emission — it was the build. koru's backend defaulted the
+**output binary to `ReleaseSmall`** (the orphaned default of a removed `--tiny`
+flag), so `a.out` was *size*-optimized while zig/rust were ReleaseFast. The
+ReleaseSmall loop emitted `sub; cbnz`; ReleaseFast emits `subs; b.ne`. A
+genuine silent-perf-degradation — the exact thing the project's "no silent
+performance degradation" doctrine targets.
 
-```bash
-cd koru && zig build-exe -O ReleaseFast -femit-bin=tuned \
-  --dep compiler_env -Mroot=output_emitted.zig -Mcompiler_env=compiler_env.zig
-```
-
-On *this* loop it changes nothing measurable (ReleaseSmall was fastest in one
-batch, ReleaseFast in another — all noise). But it is a latent silent-perf
-default worth knowing: on a workload where ReleaseSmall's different inlining /
-no-vectorization bites, the size-optimized default would quietly cost speed.
+Fixed: koru now defaults the output binary to **ReleaseFast** (the common
+no-deps path in `src/main.zig`; the `build:requires` path via
+`emitOutputBuildZig` now sets `preferred_optimize_mode = .ReleaseFast`).
+`--debug` produces a real Debug build. The numbers above are the post-fix
+default `a.out`. (Historical note: even at ReleaseSmall the runtime delta was
+inside the noise floor on *this* latency-bound loop — but on a workload where
+ReleaseSmall's different inlining / no-vectorization bites, the size-optimized
+default would quietly cost speed.)
 
 ## Why (the emitted code)
 
