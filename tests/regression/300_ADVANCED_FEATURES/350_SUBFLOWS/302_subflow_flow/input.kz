@@ -11,11 +11,10 @@ const std = @import("std");
 ~import std/io
 
 // Helper event: doubles a number
-~event double { value: i32 }
-| result i32
+~event double { value: i32 } -> i32
 
 ~proc double|zig {
-    return .{ .result = value * 2 };
+    return value * 2;
 }
 
 // Event to test
@@ -23,8 +22,7 @@ const std = @import("std");
 | final i32
 
 // Subflow: calls double and maps its output
-~process = double(value: input)
-| result r => final r
+~process = double(value: input): r => final r
 
 // Helper to print i32
 ~event print-result { value: i32 }
