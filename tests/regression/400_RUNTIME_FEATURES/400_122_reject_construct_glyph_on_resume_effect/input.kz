@@ -1,0 +1,19 @@
+// Glyph discipline (KORU102): `=>` CONSTRUCTS a branch, so it is illegal on an
+// effect/event declared `-> T` (single payload, no branches). The resume value
+// of `! ask []const u8 -> i32` is PRODUCED with `->`, not constructed with `=>`.
+// Without this rejection, `=> 42` silently emits `return 42` — the exact
+// glyph ambiguity Phase 2 closes. Twin of the positive 400_116/400_117.
+~import std/io
+
+~pub event query { q: []const u8 }
+! ask []const u8 -> i32
+| done i32
+
+~proc query|zig {
+    const a = ask(q);
+    return .{ .done = a };
+}
+
+~query(q: "x")
+! ask _ => 42
+| done r |> std/io:print.ln("{{ r:d }}")

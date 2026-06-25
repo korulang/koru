@@ -103,21 +103,12 @@
             }
         },
         {
-            "type": "host_line",
-            "module": "input",
-            "location": {
-                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_080_body_position_expressions/input.kz",
-                "line": 12,
-                "col": 0
-            }
-        },
-        {
             "type": "parse_error",
             "code": "PARSE003",
             "message": "event declaration missing input shape",
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_080_body_position_expressions/input.kz",
-                "line": 13,
+                "line": 12,
                 "col": 1
             },
             "raw_text": "~pub event sample\n! one []const u8 -> []const u8\n! two []const u8 -> usize\n! three []const u8 -> []const u8\n! four []const u8 -> i32\n| done\n\n"
@@ -170,15 +161,8 @@
                     "binding_type": "branch_payload",
                     "condition": null,
                     "step":                     {
-                        "type": "branch_constructor",
-                        "branch_constructor": {
-                            "branch_name": "q",
-                            "fields": [
-
-                            ],
-                            "plain_value": null,
-                            "has_expressions": false
-                        }
+                        "type": "expression",
+                        "expression": "q"
                     },
                     "continuations": [
 
@@ -219,7 +203,7 @@
             "impl_of": null,
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_080_body_position_expressions/input.kz",
-                "line": 21,
+                "line": 20,
                 "col": 0
             }
         }

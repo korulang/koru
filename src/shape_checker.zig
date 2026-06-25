@@ -993,6 +993,18 @@ pub const ShapeChecker = struct {
 
                 // Branch constructors produce a single branch and don't need nested handling
                 if (step == .branch_constructor) {
+                    // Glyph discipline: `=>` CONSTRUCTS a branch. It is illegal when
+                    // the handled effect/event produces a single payload (`-> T`) —
+                    // there is no branch to construct; the payload is produced with
+                    // `->`. (See project_resume_glyph_rules_and_phase2.)
+                    if (resolveDeclaredBranch(event_branches, cont.branch)) |b| {
+                        if (b.resume_type) |rt| {
+                            try self.reporter.addErrorAtLocation(.KORU102, cont.location,
+                                "`=>` constructs a branch, but '{s}' is declared `-> {s}` (single payload, no branches) — use `->` to produce it",
+                                .{ cont.branch, rt });
+                            continue;
+                        }
+                    }
                     // Validate the branch constructor
                     try self.validateBranchConstructor(&step.branch_constructor, &cont);
                     continue;

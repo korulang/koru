@@ -1,13 +1,12 @@
-// Test 210_080: body-position content without trailing `(...)` or `{...}`
-// parses as an `.expression` Node, not as an invocation or branch_constructor.
+// Test 210_080: an effect arm PRODUCES its resume value with `->`, and the
+// produced value is any Zig expression without trailing `(...)` or `{...}`
+// (those would be an invocation). `->` is the produce glyph for a `-> T` effect
+// (not `|>`, which only chains; not `=>`, which constructs a branch — KORU102).
 //
-// Lars's rule (locked 2026-05-24): invocations always have parens (or a
-// Source-block `{`). Anything else at body position is a Zig expression.
-//
-// Shapes exercised here:
+// Shapes exercised here, all produced with `->`:
 //  - string literal:      "Alice"
 //  - integer literal:     42
-//  - bare identifier:     reply
+//  - bare identifier:     q
 //  - arithmetic:          1 + 2
 
 ~pub event sample
@@ -18,8 +17,8 @@
 | done
 
 ~sample()
-! one _ |> "Alice"
-! two _ |> 42
-! three q => q
-! four _ |> 1 + 2
+! one _ -> "Alice"
+! two _ -> 42
+! three q -> q
+! four _ -> 1 + 2
 | done |> _
