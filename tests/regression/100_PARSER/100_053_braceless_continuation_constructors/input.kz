@@ -9,11 +9,10 @@
 ~import std/io
 
 // Source event
-~pub event compute { x: i32 }
-| value i32
+~pub event compute { x: i32 } -> i32
 
 ~proc compute|zig {
-    return .{ .value = x * 2 };
+    return x * 2;
 }
 
 // Result event with identity branches
@@ -31,8 +30,7 @@
 ~event process { input: i32 }
 | result i32
 
-~process = compute(x: input)
-| value v => result v
+~process = compute(x: input): v => result v
 
 // Main test
 ~std/io:print.ln("Testing braceless in continuation:")

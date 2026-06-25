@@ -4455,7 +4455,52 @@ pub const Parser = struct {
                 break :blk false;
             };
 
-            const continuations = if (has_inline_chain)
+            // Same-line `=> construct` after a bare-return head bind
+            // (`~run = head(): v => ok v`): the construct has no `| branch` wrapper
+            // (the `: v` bind moved onto the head via return_binding), so neither
+            // the `|>` chain path nor the next-line parseContinuations sees it.
+            // Detect the depth-0 `=>` and build a void-branch construct continuation.
+            const same_line_arrow: ?usize = blk: {
+                if (has_inline_chain) break :blk null;
+                // Only the bare-return bind shape (`head(): v => construct`). A
+                // same-line `head() | branch r => construct` (single-pipe, no bind,
+                // e.g. 430_004/007) has NO return_binding and must keep flowing
+                // through parseContinuations — never treat its `=>` as the head's.
+                if (invocation.return_binding == null) break :blk null;
+                var i: usize = 0;
+                var pd: i32 = 0;
+                var bd: i32 = 0;
+                var ins = false;
+                while (i + 1 < inv_str.len) : (i += 1) {
+                    const c = inv_str[i];
+                    if (c == '"' and (i == 0 or inv_str[i - 1] != '\\')) {
+                        ins = !ins;
+                        continue;
+                    }
+                    if (ins) continue;
+                    if (c == '(') pd += 1;
+                    if (c == ')') pd -= 1;
+                    if (c == '{') bd += 1;
+                    if (c == '}') bd -= 1;
+                    if (pd == 0 and bd == 0 and c == '=' and inv_str[i + 1] == '>') break :blk i;
+                }
+                break :blk null;
+            };
+
+            const continuations = if (same_line_arrow) |aidx| arrow_blk: {
+                const construct_str = lexer.trim(inv_str[aidx + 2 ..]);
+                const ctor = try self.parseConstructString(construct_str);
+                const conts = try self.allocator.alloc(ast.Continuation, 1);
+                conts[0] = ast.Continuation{
+                    .branch = try self.allocator.dupe(u8, ""),
+                    .binding = null,
+                    .condition = null,
+                    .node = .{ .branch_constructor = ctor },
+                    .indent = 0,
+                    .continuations = &.{},
+                };
+                break :arrow_blk conts;
+            } else if (has_inline_chain)
                 try self.parseInlineContinuation(inv_str, lexer.getIndent(line))
             else
                 try self.parseContinuations(lexer.getIndent(line));
@@ -6882,6 +6927,25 @@ pub const Parser = struct {
 
     fn parseBranchConstructor(self: *Parser, content: []const u8) !ast.BranchConstructor {
         return self.parseBranchConstructorWithContext(content, self.isInProc());
+    }
+
+    /// Parse a branch-construct string in either form: braced `ok { f: v }`
+    /// (delegates to parseBranchConstructorWithContext) or braceless `ok v` /
+    /// `ok` (identity construct). Used for a same-line `=> construct` after a
+    /// bare-return head bind (`~run = head(): v => ok v`).
+    fn parseConstructString(self: *Parser, s: []const u8) !ast.BranchConstructor {
+        if (std.mem.indexOfScalar(u8, s, '{') != null) {
+            return self.parseBranchConstructorWithContext(s);
+        }
+        const sp = std.mem.indexOfAny(u8, s, &[_]u8{ ' ', '\t' });
+        const branch_name = if (sp) |idx| lexer.trim(s[0..idx]) else s;
+        const plain = if (sp) |idx| lexer.trim(s[idx..]) else "";
+        return ast.BranchConstructor{
+            .branch_name = try self.allocator.dupe(u8, branch_name),
+            .fields = &.{},
+            .plain_value = if (plain.len > 0) try self.allocator.dupe(u8, plain) else null,
+            .has_expressions = plain.len > 0,
+        };
     }
 
     fn parseBranchConstructorWithContext(self: *Parser, content: []const u8) !ast.BranchConstructor {
