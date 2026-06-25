@@ -1453,6 +1453,12 @@ pub fn cloneInvocation(allocator: std.mem.Allocator, invocation: *const ast.Invo
         annotations[i] = try allocator.dupe(u8, ann);
     }
 
+    var return_binding_annotations = try allocator.alloc([]const u8, invocation.return_binding_annotations.len);
+    errdefer allocator.free(return_binding_annotations);
+    for (invocation.return_binding_annotations, 0..) |ann, i| {
+        return_binding_annotations[i] = try allocator.dupe(u8, ann);
+    }
+
     return .{
         .path = try cloneDottedPath(allocator, &invocation.path),
         .args = args,
@@ -1471,6 +1477,7 @@ pub fn cloneInvocation(allocator: std.mem.Allocator, invocation: *const ast.Invo
             try allocator.dupe(u8, rb)
         else
             null,
+        .return_binding_annotations = return_binding_annotations,
         .inline_body = if (invocation.inline_body) |ib|
             try allocator.dupe(u8, ib)
         else

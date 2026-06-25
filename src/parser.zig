@@ -3676,6 +3676,7 @@ pub const Parser = struct {
         // qualifier's `:` precedes the `(`). Strip `: b` so the rest of this parser
         // sees a plain `event(args) |> ...`, and stash the binding.
         var return_binding: ?[]const u8 = null;
+        var return_binding_annotations: []const []const u8 = &[_][]const u8{};
         var stitched_clean: ?[]const u8 = null;
         defer if (stitched_clean) |s| self.allocator.free(s);
         {
@@ -3724,8 +3725,38 @@ pub const Parser = struct {
                         return error.ParseError;
                     }
                     return_binding = try self.allocator.dupe(u8, clean[k..name_end]);
+                    // Optional binding annotations: `: r[mutable]` — the call-site twin
+                    // of the branch-bind `| result r[mutable]` form. Capture them so the
+                    // emitter can honor `[mutable]` (bind `var`, not `const`).
+                    var rest_start = name_end;
+                    if (name_end < clean.len and clean[name_end] == '[') {
+                        const ann_close = std.mem.indexOfScalarPos(u8, clean, name_end, ']') orelse {
+                            try self.reporter.addError(
+                                .PARSE001,
+                                self.current,
+                                0,
+                                "unterminated binding annotation; expected `]` (e.g. `~event(...): r[mutable] |> ...`)",
+                                .{},
+                            );
+                            return error.ParseError;
+                        };
+                        const inner = clean[name_end + 1 .. ann_close];
+                        var ann_list = try std.ArrayList([]const u8).initCapacity(self.allocator, 2);
+                        errdefer {
+                            for (ann_list.items) |a| self.allocator.free(@constCast(a));
+                            ann_list.deinit(self.allocator);
+                        }
+                        var ann_it = std.mem.splitScalar(u8, inner, ',');
+                        while (ann_it.next()) |tok| {
+                            const t = lexer.trim(tok);
+                            if (t.len == 0) continue;
+                            try ann_list.append(self.allocator, try self.allocator.dupe(u8, t));
+                        }
+                        return_binding_annotations = try ann_list.toOwnedSlice(self.allocator);
+                        rest_start = ann_close + 1;
+                    }
                     const before_colon = lexer.trim(clean[0..j]);
-                    const rest = lexer.trim(clean[name_end..]); // "|> ..." or ""
+                    const rest = lexer.trim(clean[rest_start..]); // "|> ..." or ""
                     const stitched = try std.fmt.allocPrint(self.allocator, "{s} {s}", .{ before_colon, rest });
                     stitched_clean = stitched;
                     clean = stitched;
@@ -3733,6 +3764,10 @@ pub const Parser = struct {
             }
         }
         errdefer if (return_binding) |rb| self.allocator.free(rb);
+        errdefer {
+            for (return_binding_annotations) |a| self.allocator.free(@constCast(a));
+            if (return_binding_annotations.len > 0) self.allocator.free(@constCast(return_binding_annotations));
+        }
 
         // Find the first pipe that's not inside parentheses or braces
         var pipe_idx: ?usize = null;
@@ -4152,8 +4187,10 @@ pub const Parser = struct {
             .args = try args.toOwnedSlice(self.allocator),
             .variant = variant,
             .return_binding = return_binding,
+            .return_binding_annotations = return_binding_annotations,
         };
         return_binding = null; // ownership transferred; disarm the errdefer
+        return_binding_annotations = &[_][]const u8{}; // ownership transferred; disarm the errdefer
         return result_invocation;
     }
 

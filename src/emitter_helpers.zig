@@ -5370,8 +5370,14 @@ fn emitInvocation(
     // A `-> T` bare-return call binds its result to the call-site `: name`
     // (return_binding), so the following pipeline can reference it.
     const bound_var = invocation.return_binding orelse result_var;
+    const bound_mutable = blk: {
+        for (invocation.return_binding_annotations) |ann| {
+            if (std.mem.eql(u8, ann, "mutable")) break :blk true;
+        }
+        break :blk false;
+    };
     if (!std.mem.eql(u8, bound_var, "_")) {
-        try emitter.write("const ");
+        try emitter.write(if (bound_mutable) "var " else "const ");
     }
     try emitter.write(bound_var);
     try emitter.write(" = ");

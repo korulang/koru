@@ -3,11 +3,10 @@
 
 const std = @import("std");
 
-~event get-data {}
-| result i32
+~event get-data {} -> i32
 
 ~proc get-data|zig {
-    return .{ .result = 42 };
+    return 42;
 }
 
 // This event mutates the value it receives via a pointer
@@ -19,5 +18,4 @@ const std = @import("std");
 }
 
 // Test: Using [mutable] annotation so we can pass a mutable pointer
-~get-data()
-| result r[mutable] |> mutate-and-print(ptr: &r)
+~get-data(): r[mutable] |> mutate-and-print(ptr: &r)

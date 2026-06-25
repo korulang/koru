@@ -875,6 +875,19 @@ pub const AstSerializer = struct {
         }
         try self.write(",\n");
 
+        // `: r[mutable]` bind annotations (call site of a `-> T` event)
+        try self.writeIndent();
+        try self.write(".return_binding_annotations = &.{\n");
+        self.indent();
+        for (invoc.return_binding_annotations) |ann| {
+            try self.writeIndent();
+            try self.writeString(ann);
+            try self.write(",\n");
+        }
+        self.dedent();
+        try self.writeIndent();
+        try self.write("},\n");
+
         self.dedent();
         try self.writeIndent();
         try self.write("}");
