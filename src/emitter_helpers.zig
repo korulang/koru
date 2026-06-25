@@ -4164,6 +4164,29 @@ pub fn emitFlow(
                 try emitInlineEffectfulCall(emitter, ctx, flow.inv(), flow.body.continuations, elig, first_result, result_counter);
             } else {
                 try emitInvocation(emitter, ctx, flow.inv(), first_result);
+                // A bare-return head bind (`~e(...): name |> ...`) creates `name`
+                // at the head, outside the continuation machinery that suppresses
+                // unused branch binds. If no downstream continuation references
+                // `name`, emit the suppressor (mirrors the branch-bind path).
+                // containsIdentifier excludes string-literal matches, so `name`
+                // appearing only inside a literal like "no name given" is unused.
+                if (flow.inv().return_binding) |rb| {
+                    if (!std.mem.eql(u8, rb, "_")) {
+                        var rb_used = false;
+                        for (conts) |*c| {
+                            if (continuationUsesBinding(c, rb)) {
+                                rb_used = true;
+                                break;
+                            }
+                        }
+                        if (!rb_used) {
+                            try emitter.writeIndent();
+                            try emitter.write("_ = &");
+                            try writeBranchName(emitter, rb);
+                            try emitter.write(";\n");
+                        }
+                    }
+                }
             }
         }
 
