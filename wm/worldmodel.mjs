@@ -128,20 +128,27 @@ if (existsSync(benchDir)) {
   for (const f of readdirSync(benchDir).filter((f) => f.endsWith('.csv'))) {
     for (const ln of readFileSync(join(benchDir, f), 'utf8').split('\n').slice(1)) {
       if (!ln.trim()) continue;
-      const [workload, lang, , wall] = ln.split(',');
+      const [workload, lang, n, wall] = ln.split(',');
       const ms = parseFloat(wall);
-      if (!workload || !lang || isNaN(ms)) continue;
+      const ni = parseInt(n, 10);
+      if (!workload || !lang || isNaN(ms) || isNaN(ni)) continue;
       (wl[workload] ??= {});
-      wl[workload][lang] = Math.min(wl[workload][lang] ?? Infinity, ms);
+      // Compute-bound comparison: keep the wall time at the LARGEST n. The loop
+      // dominates there, not process startup. `min` across sizes hid the real
+      // per-iteration cost behind the smallest-n startup floor — which (with
+      // koru's output binary having been built ReleaseSmall until 220ec600) is
+      // exactly what masked koru's true parity with Rust.
+      const cur = wl[workload][lang];
+      if (!cur || ni > cur.n) wl[workload][lang] = { n: ni, ms };
     }
   }
   const workloads = Object.entries(wl)
     .filter(([, l]) => l.koru !== undefined)
     .map(([workload, langs]) => {
-      const koru = langs.koru;
+      const koru = langs.koru.ms;
       const field = Object.entries(langs)
         .filter(([l]) => l !== 'koru')
-        .map(([lang, ms]) => ({ lang, ms }))
+        .map(([lang, v]) => ({ lang, ms: v.ms }))
         .sort((a, b) => a.ms - b.ms);
       const rival = field[0] ?? null;
       return {

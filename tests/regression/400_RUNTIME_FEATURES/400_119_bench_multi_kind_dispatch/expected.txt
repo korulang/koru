@@ -1,0 +1,1 @@
+ticks = 50 tocks = 50

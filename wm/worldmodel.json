@@ -12,126 +12,114 @@
     "workloads": [
       {
         "workload": "filter_map_reduce",
-        "koru": 26.656,
+        "koru": 186.238,
         "rival": {
           "lang": "rust",
-          "ms": 25.57
+          "ms": 187.63
         },
         "fieldCount": 4,
-        "max": 26.656,
-        "fastest": false,
+        "max": 187.63,
+        "fastest": true,
         "host_backed": false
       },
       {
         "workload": "multi_kind_dispatch",
-        "koru": 24.724,
+        "koru": 154.493,
         "rival": {
           "lang": "rust",
-          "ms": 23.901
+          "ms": 158.2
         },
         "fieldCount": 4,
-        "max": 24.724,
-        "fastest": false,
-        "host_backed": false
-      },
-      {
-        "workload": "nested_3_levels",
-        "koru": 27.913,
-        "rival": {
-          "lang": "rust",
-          "ms": 25.098
-        },
-        "fieldCount": 2,
-        "max": 27.913,
-        "fastest": false,
+        "max": 158.2,
+        "fastest": true,
         "host_backed": false
       },
       {
         "workload": "regex_match",
-        "koru": 44.356,
+        "koru": 46.387,
         "rival": {
           "lang": "rust",
-          "ms": 91.344
+          "ms": 95.083
         },
         "fieldCount": 4,
-        "max": 91.344,
+        "max": 95.083,
         "fastest": true,
         "host_backed": false
       },
       {
         "workload": "regex_match_bound",
-        "koru": 46.378,
+        "koru": 47.731,
         "rival": null,
         "fieldCount": 0,
-        "max": 46.378,
+        "max": 47.731,
         "fastest": true,
         "host_backed": false
       },
       {
         "workload": "regex_match_groups",
-        "koru": 109.88,
+        "koru": 111.883,
         "rival": {
           "lang": "rust",
-          "ms": 296.197
+          "ms": 303.906
         },
         "fieldCount": 4,
-        "max": 296.197,
+        "max": 303.906,
         "fastest": true,
         "host_backed": false
       },
       {
         "workload": "regex_redos",
-        "koru": 21.846,
+        "koru": 29.546,
         "rival": {
           "lang": "rust",
-          "ms": 22.129
+          "ms": 29.999
         },
         "fieldCount": 4,
-        "max": 22.129,
+        "max": 29.999,
         "fastest": true,
         "host_backed": false
       },
       {
         "workload": "sum_range_foldable",
-        "koru": 22.594,
+        "koru": 24.141,
         "rival": {
           "lang": "rust",
-          "ms": 21.48
+          "ms": 24.05
         },
         "fieldCount": 4,
-        "max": 22.594,
+        "max": 24.141,
         "fastest": false,
         "host_backed": false
       },
       {
         "workload": "sum_range_xor",
-        "koru": 24.045,
+        "koru": 136.838,
         "rival": {
           "lang": "rust",
-          "ms": 24.27
+          "ms": 139.727
         },
         "fieldCount": 4,
-        "max": 24.27,
+        "max": 139.727,
         "fastest": true,
         "host_backed": false
       }
     ],
     "host_backed": 0,
-    "koru_fastest": 5
+    "koru_fastest": 7
   },
   "instruments": [
     {
       "id": "wm-adapter",
       "shape": "adapter",
       "path": "wm/run.sh",
-      "watches": "koru regression suite — the wall that writes each snapshot; fires (red) when a green test flips red",
+      "watches": "koru regression suite \u2014 the wall that writes each snapshot; fires (red) when a green test flips red",
       "run_by": "status ceremony (not page generation)"
     },
     {
       "id": "breath",
       "shape": "native",
       "path": "models/breath/model.wmfx",
-      "watches": "koru's pass-rate across its whole snapshot history — fires when the breath goes wrong: a drawdown held ≥8pp below the running peak for longer than anything the in-sample bring-up ever showed (a long inhale that never exhaled).",
+      "watches": "koru's pass-rate across its whole snapshot history \u2014 fires when the breath goes wrong: a drawdown held \u22658pp below the running peak for longer than anything the in-sample bring-up ever showed (a long inhale that never exhaled).",
       "pass": true,
       "signals": [
         {
@@ -5020,11 +5008,11 @@
       "gaps": [
         {
           "rank": 1,
-          "title": "Diagnostic-code registry coherence: emit ⊆ declared, declared ⊆ emitted, pinned ⊆ declared",
+          "title": "Diagnostic-code registry coherence: emit \u2286 declared, declared \u2286 emitted, pinned \u2286 declared",
           "intent": "Keep src/errors.zig the honest single source of truth for diagnostics: no code emitted that isn't declared, no code declared that's never emitted (a lie that claims the compiler catches something it doesn't), no test pinned to a code that can't fire.",
           "faucet": "FACT (three sets, one scan): EMITTED = raw `error\\[([A-Z]+[0-9]+)\\]` string literals across src/ PLUS `.KORU###`/`.PARSE###`/etc enum-tag uses; DECLARED = enum members parsed from the `pub const ErrorCode = enum` block in src/errors.zig; PINNED = codes referenced in tests/**/{EXPECT,expected*.txt}. Emit the three set-differences: EMITTED\\DECLARED (orphan emits), DECLARED\\EMITTED (dead codes), PINNED\\DECLARED (rotten pins). INTENT (only to gate the dead-code arm): axis code_is_aspirational: +1 a newly-added enum member is marked reserved/aspirational with a comment, -1 a code is added or left with zero emit sites under no such marker.",
-          "gate": "Two arms. Pure-FACT arm (no judge): fire if EMITTED\\DECLARED >= 1 OR PINNED\\DECLARED >= 1 — a closed-registry set difference, deterministic. Dead-code arm: fire = FACT(DECLARED\\EMITTED introduced/grows by this diff) × INTENT(code_is_aspirational <= -0.5) × gain >= floor, so a benign reserved-code addition stays silent.",
-          "fires_on": "TODAY: EMITTED\\DECLARED = {KORU200} (src/main.zig:3604, verified absent from enum at src/errors.zig:3-86). DECLARED\\EMITTED = {KORU031,KORU042,KORU043,KORU052,KORU060,KORU061,KORU070,KORU082,KORU090,KORU091,PARSE002} — 11 codes with emit_sites=0, verified by grep. Also fires on a future rename like KORU044→KORU047 that leaves the 8 expected.txt pins dangling.",
+          "gate": "Two arms. Pure-FACT arm (no judge): fire if EMITTED\\DECLARED >= 1 OR PINNED\\DECLARED >= 1 \u2014 a closed-registry set difference, deterministic. Dead-code arm: fire = FACT(DECLARED\\EMITTED introduced/grows by this diff) \u00d7 INTENT(code_is_aspirational <= -0.5) \u00d7 gain >= floor, so a benign reserved-code addition stays silent.",
+          "fires_on": "TODAY: EMITTED\\DECLARED = {KORU200} (src/main.zig:3604, verified absent from enum at src/errors.zig:3-86). DECLARED\\EMITTED = {KORU031,KORU042,KORU043,KORU052,KORU060,KORU061,KORU070,KORU082,KORU090,KORU091,PARSE002} \u2014 11 codes with emit_sites=0, verified by grep. Also fires on a future rename like KORU044\u2192KORU047 that leaves the 8 expected.txt pins dangling.",
           "severity": "med",
           "buildability": "high",
           "corroborated_by": [
@@ -5041,7 +5029,7 @@
           "intent": "A release has exactly one version; `koruc --version`, the manifest, the scaffolded-project templates, the CCP handshake, and the CHANGELOG must agree.",
           "faucet": "FACT: collect version strings from src/main.zig `const version`, koru.json `.version`, the newest `## [X.Y.Z]` CHANGELOG header, and the hardcoded `\"version\": \"X.Y.Z\"` literals in ccp.zig + project_template.zig; whitelist build.zig.zon's `0.0.0` (documented Zig package-dedup placeholder). Returns the distinct release-version set and whether main.zig's version has a matching CHANGELOG header.",
           "gate": "Pure FACT: fire = count(distinct non-placeholder versions) > 1 OR main.zig version has no `## [that-version]` CHANGELOG header. No judge.",
-          "fires_on": "TODAY: main.zig:36=0.1.7, koru.json:3=0.1.4, CHANGELOG newest=[0.1.3], project_template.zig:93/108=0.1.0 — four disagreeing values, no [0.1.7] header. CHANGELOG.md:87 is the receipt this already drifted once.",
+          "fires_on": "TODAY: main.zig:36=0.1.7, koru.json:3=0.1.4, CHANGELOG newest=[0.1.3], project_template.zig:93/108=0.1.0 \u2014 four disagreeing values, no [0.1.7] header. CHANGELOG.md:87 is the receipt this already drifted once.",
           "severity": "med",
           "buildability": "high",
           "corroborated_by": [
@@ -5052,9 +5040,9 @@
           "rank": 3,
           "title": "canonicalize post-condition: every DottedPath gets a module_qualifier, no silent null-skip downstream",
           "intent": "The documented post-condition of canonicalize_names (every DottedPath has module_qualifier != null) must stay enforced as the AST grows, and consumers must assert it rather than silently papering over a null with `orelse`/`if(mq)`.",
-          "faucet": "FACT: AST-walk — enumerate every ast.Item/ast.Step variant that (transitively) holds a DottedPath field (grep ast.zig: `:\\s*\\??\\[?\\]?DottedPath` → ~15 fields), check each is reached by a canonicalizePath call in the src/canonicalize_names.zig walker; return count of uncovered path-bearing variants. INTENT axis path_coverage_complete: +1 a diff adding a path-bearing AST variant adds the matching walker call (or a justified skip), -1 it adds the variant with no walker edit; axis fallback_masks_invariant: +1 a downstream module_qualifier read asserts non-null, -1 it adds another silent `orelse`/`if(mq)`.",
-          "gate": "fire = FACT(uncovered path-bearing variants >= 1, i.e. a new variant added without a walker edit) × INTENT(path_coverage_complete <= -0.5) × gain >= floor. A benign walker rename/reorder keeps coverage at full → FACT=0 → silent.",
-          "fires_on": "FUTURE: a commit adding an ast.Item/ast.Step variant carrying a DottedPath without touching canonicalize_names.zig — the path keeps module_qualifier==null and continuation_codegen.zig:31 (`if (invocation.path.module_qualifier) |mq| {...}`, verified) silently emits a bare unqualified symbol, surfacing 3 steps later as a wrong-module/unknown-symbol error in generated Zig.",
+          "faucet": "FACT: AST-walk \u2014 enumerate every ast.Item/ast.Step variant that (transitively) holds a DottedPath field (grep ast.zig: `:\\s*\\??\\[?\\]?DottedPath` \u2192 ~15 fields), check each is reached by a canonicalizePath call in the src/canonicalize_names.zig walker; return count of uncovered path-bearing variants. INTENT axis path_coverage_complete: +1 a diff adding a path-bearing AST variant adds the matching walker call (or a justified skip), -1 it adds the variant with no walker edit; axis fallback_masks_invariant: +1 a downstream module_qualifier read asserts non-null, -1 it adds another silent `orelse`/`if(mq)`.",
+          "gate": "fire = FACT(uncovered path-bearing variants >= 1, i.e. a new variant added without a walker edit) \u00d7 INTENT(path_coverage_complete <= -0.5) \u00d7 gain >= floor. A benign walker rename/reorder keeps coverage at full \u2192 FACT=0 \u2192 silent.",
+          "fires_on": "FUTURE: a commit adding an ast.Item/ast.Step variant carrying a DottedPath without touching canonicalize_names.zig \u2014 the path keeps module_qualifier==null and continuation_codegen.zig:31 (`if (invocation.path.module_qualifier) |mq| {...}`, verified) silently emits a bare unqualified symbol, surfacing 3 steps later as a wrong-module/unknown-symbol error in generated Zig.",
           "severity": "high",
           "buildability": "high",
           "corroborated_by": [
@@ -5077,10 +5065,10 @@
         {
           "rank": 5,
           "title": "Hand-authored doc code blocks must compile against the live compiler (stderr-gated, not exit-code)",
-          "intent": "Every fenced ```koru/```kz block in hand-authored Markdown (README first) must use only forms the current koruc accepts — the front door a new user copies must not be dead syntax.",
+          "intent": "Every fenced ```koru/```kz block in hand-authored Markdown (README first) must use only forms the current koruc accepts \u2014 the front door a new user copies must not be dead syntax.",
           "faucet": "FACT: extract fenced koru/kz blocks from hand-authored .md (exclude files with a 'Generated by' header), write each to a temp .kz, run zig-out/bin/koruc, and fire on any block whose STDERR contains `error[`. CRITICAL: koruc exits 0 even on PARSE003 (verified), so gate on stderr `error[` match, never on exit code.",
           "gate": "Pure FACT: fire = N_failing_blocks >= 1 in any non-generated doc. Compiler is the oracle.",
-          "fires_on": "TODAY: README.md:6 block → `error[PARSE003]: imports are bare — drop the ~` (verified live; also uses dead `std.io:` dot-namespace pinned by KORU035). Canonical form is bare `import std/io`.",
+          "fires_on": "TODAY: README.md:6 block \u2192 `error[PARSE003]: imports are bare \u2014 drop the ~` (verified live; also uses dead `std.io:` dot-namespace pinned by KORU035). Canonical form is bare `import std/io`.",
           "severity": "high",
           "buildability": "high",
           "corroborated_by": [
@@ -5094,8 +5082,8 @@
           "title": "A behavior-changing fix(...) under src/ must land with a regression test",
           "intent": "CONTRIBUTING/AGENTS both mandate failing-test-first; a src/ behavior fix with no tests/ change ships a change with zero pinned evidence.",
           "faucet": "FACT: for each `^fix` commit, `git show --name-only`; flag if it touches src/*.zig but no path under tests/. INTENT axis fix_is_test_pinned: +1 the diff adds/updates a regression exercising the fixed path, -1 a behavior-changing fix lands with no test and no stated untestability reason.",
-          "gate": "fire = FACT(fix touches src/, not tests/) × INTENT(fix_is_test_pinned <= -0.5) × gain >= floor. Judge suppresses docs/snapshot-only fix commits and fixes already covered by an existing re-run test.",
-          "fires_on": "VERIFIED: b203f6cb `fix(codegen): unbalanced closer...` touches only src/codegen_utils.zig, zero tests/. Control d87beceb `fix(parser): reject unbalanced...` lands with its tests/regression/100_081 — FACT half silent.",
+          "gate": "fire = FACT(fix touches src/, not tests/) \u00d7 INTENT(fix_is_test_pinned <= -0.5) \u00d7 gain >= floor. Judge suppresses docs/snapshot-only fix commits and fixes already covered by an existing re-run test.",
+          "fires_on": "VERIFIED: b203f6cb `fix(codegen): unbalanced closer...` touches only src/codegen_utils.zig, zero tests/. Control d87beceb `fix(parser): reject unbalanced...` lands with its tests/regression/100_081 \u2014 FACT half silent.",
           "severity": "med",
           "buildability": "med",
           "corroborated_by": [
@@ -5140,7 +5128,7 @@
           "substrate": "test",
           "severity": "n/a",
           "buildability": "n/a",
-          "status": "rejected — koru annotations are opaque by design (intended behavior, not a bug)",
+          "status": "rejected \u2014 koru annotations are opaque by design (intended behavior, not a bug)",
           "found_by": [
             "hunter2",
             "hunter3"
@@ -5153,7 +5141,7 @@
           "substrate": "test",
           "severity": "med",
           "buildability": "med",
-          "status": "unverified — known planned TODO",
+          "status": "unverified \u2014 known planned TODO",
           "found_by": [
             "hunter1",
             "hunter2"
