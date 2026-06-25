@@ -1,17 +1,15 @@
 # Koru
 
-Koru is an event continuation language that compiles to Zig. It provides a structured way to handle control flow through events, continuations, and taps.
+Koru is an event continuation/effect language with backends for Zig and JavaScript. It is aspirational and immature.
 
 ```koru
-~import std/io
+import std/io
 
-~event greet { name: []const u8 }
-| greeting []const u8
+event greet { name: []const u8 } -> []const u8
 
-~greet = greeting "Hello, " ++ name ++ "!"
+greet -> "Hello, " ++ name ++ "!"
 
-~greet ("World")
-| greeting msg |> std/io:print.ln(msg)
+greet ("World"): msg |> std/io:print.ln(msg)
 ```
 
 ## Building
@@ -25,6 +23,7 @@ zig build
 ## Links
 
 - [Website](https://korulang.org)
+- [X](https://x.com/korulang)
 - [Learn](https://korulang.org/learn)
 - [Status](https://korulang.org/status)
 - [Discord](https://discord.gg/tYWvdrda8h)
