@@ -14,17 +14,15 @@ const std = @import("std");
 
 fn helper(x: []const u8) []const u8 { return x; }
 
-~event greet { name: []const u8 }
-| greeting []const u8
+~event greet { name: []const u8 } -> []const u8
 
 ~proc greet|zig {
     const buf = std.fmt.comptimePrint("Hello {s}", .{name});
-    return .{ .greeting = buf };
+    return buf;
 }
 
 ~event transform { input: []const u8 }
 | result []const u8
 
 // INVALID: function call helper() inside branch constructor
-~greet(name: "world")
-| greeting g => result { value: helper(g.msg) }
+~greet(name: "world"): g => result { value: helper(g.msg) }
