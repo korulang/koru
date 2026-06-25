@@ -1,0 +1,4 @@
+Perhaps we shouldn't visualize the flow of programs that are supposed to fail? Hm. Perhaps only `MUST_RUN`?
+
+Feedback ID: j5726jqz
+From: /learn/000-core-language--020-events-flows/020-019-reject-destructure-unused-field

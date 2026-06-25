@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-06-24T23:54:29.743Z",
+  "timestamp": "2026-06-25T01:25:00.395Z",
   "summary": {
     "passed": 258,
     "failed": 0,
@@ -7,7 +7,7 @@
     "leaked": 0,
     "compileErrors": 0,
     "total": 270,
-    "suiteCount": 37,
+    "suiteCount": 36,
     "status": "success"
   },
   "suites": [
@@ -113,14 +113,6 @@
       "failed": 0,
       "skipped": 0,
       "total": 19,
-      "status": "success"
-    },
-    {
-      "name": "full_pipeline_tests",
-      "passed": 1,
-      "failed": 0,
-      "skipped": 1,
-      "total": 2,
       "status": "success"
     },
     {
