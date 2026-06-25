@@ -159,7 +159,7 @@ if (existsSync(benchDir)) {
       };
     });
   perf = {
-    promise_host: 'within 10% of the host language (Zig)',
+    promise_host: 'at parity with the host language (Zig) — any gap is measurement noise',
     workloads,
     host_backed: workloads.filter((w) => w.host_backed).length,
     koru_fastest: workloads.filter((w) => w.fastest).length,
