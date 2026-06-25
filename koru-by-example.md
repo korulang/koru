@@ -811,15 +811,14 @@ pub const Resource = struct {
     allocator: std.mem.Allocator,
 };
 
-~pub event create-resource { name: []const u8 }
-| created *Resource<allocated!>
+~pub event create-resource { name: []const u8 } -> *Resource<allocated!>
 
 ~proc create-resource|zig {
     const alloc = std.heap.page_allocator;
     const data = std.fmt.allocPrint(alloc, "Resource: {s}", .{name}) catch unreachable;
     const res = alloc.create(Resource) catch unreachable;
     res.* = .{ .data = data, .allocator = alloc };
-    return .{ .created = res };
+    return res;
 }
 
 ~pub event destroy-resource { res: *Resource<!allocated> }
@@ -831,8 +830,7 @@ pub const Resource = struct {
 
 // Simple sequential test
 ~std/io:print.ln("Test start")
-~create-resource(name: "Test")
-| created r |> destroy-resource(res: r) |> std/io:print.ln("Test done")
+~create-resource(name: "Test"): r |> destroy-resource(res: r) |> std/io:print.ln("Test done")
 ```
 
 **Output:**
