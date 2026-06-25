@@ -1856,10 +1856,18 @@ fn emitSubflowContinuationsWithDepth(
         const next_needs_switch = cont.continuations.len > 0 and
             !std.mem.eql(u8, cont.continuations[0].branch, "");
 
+        // A bare-return mid-chain bind (`mk(): v |>`) binds THIS step's result to
+        // `v`; the parent's result is then unused (the step is a fresh call), so it
+        // needs the same discard as the switch case below.
+        const step_has_return_binding = if (cont.node) |s|
+            (s == .invocation and s.invocation.return_binding != null)
+        else
+            false;
+
         // When we override the parent's result variable, discard it so Zig
         // doesn't flag it as an unused local constant. Parent variable is
         // `result` at depth 0, `nested_result_{depth-1}` otherwise.
-        if (next_needs_switch) {
+        if (next_needs_switch or step_has_return_binding) {
             try emitter.write(indent);
             if (depth == 0) {
                 try emitter.write("_ = &result;\n");
@@ -1875,7 +1883,14 @@ fn emitSubflowContinuationsWithDepth(
             switch (step) {
                 .invocation => |inv| {
                     try emitter.write(indent);
-                    if (next_needs_switch) {
+                    if (inv.return_binding) |rb| {
+                        // Bare-return mid-chain bind (`mk(): v |> consume(v)`): bind
+                        // the produced value so downstream steps can reference it,
+                        // instead of discarding the result with `_ =`.
+                        try emitter.write("const ");
+                        try writeBranchName(emitter, rb);
+                        try emitter.write(" = ");
+                    } else if (next_needs_switch) {
                         var buf: [32]u8 = undefined;
                         const decl = try std.fmt.bufPrint(&buf, "const nested_result_{d} = ", .{depth});
                         try emitter.write(decl);

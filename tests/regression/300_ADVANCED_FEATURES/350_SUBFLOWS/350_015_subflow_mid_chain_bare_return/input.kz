@@ -1,0 +1,22 @@
+// Test 350_015: bare-return (`-> T`) bind on a mid-chain subflow continuation.
+//
+// In a subflow body `~run = a() |> b(): v |> c(v)`, the bind `: v` on the
+// non-head invocation `b()` must bind b's produced value so the downstream
+// step can use it — previously the subflow continuation emitter discarded the
+// result with `_ =` and dropped the bind, leaving `v` undeclared.
+
+const std = @import("std");
+
+~event ping {}
+~proc ping|zig { std.debug.print("ping\n", .{}); }
+
+~event mk {} -> u32
+~proc mk|zig { return 42; }
+
+~event consume { v: u32 }
+~proc consume|zig { std.debug.print("got {d}\n", .{v}); }
+
+~event run {}
+~run = ping() |> mk(): v |> consume(v)
+
+~run()
