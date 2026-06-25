@@ -1,0 +1,29 @@
+// Test 508: Tap observing a bare-return (`-> T`) event.
+//
+// A bare-return event has no named branch, so the branch-name tap body
+// (`| result |> ...`) has nothing to match. Instead the tap binds the
+// produced value with `:` — the exact call-site bind rule as
+// `~compute(...): v |> ...`. Design ruled by Lars 2026-06-25.
+
+const std = @import("std");
+~import std/taps
+~import std/io
+
+~event compute { x: i32 } -> i32
+
+~proc compute|zig {
+    std.debug.print("compute({d})\n", .{x});
+    return x * 2;
+}
+
+~event observed { value: i32 }
+
+~proc observed|zig {
+    std.debug.print("[TAP] saw {d}\n", .{value});
+}
+
+// Observe compute's bare-return production; bind the produced value as `v`.
+~tap(compute -> *): v |> observed(value: v)
+
+// Main flow that triggers the tap.
+~compute(x: 21): r |> std/io:print.ln("main: {{ r:d }}")

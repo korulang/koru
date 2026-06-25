@@ -83,7 +83,22 @@ var metatype_global_counter: usize = 0;
     }
 
     // All tap branches - we support multiple handlers for same branch (fan-out)
-    const all_tap_branches = tap_flow.body.continuations;
+    var all_tap_branches = tap_flow.body.continuations;
+
+    // Bare-return tap surface: `~tap(e -> *): v |> obs(v)` carries the value bind
+    // `v` on the tap flow HEAD (return_binding), while the observer sits on a
+    // void-branch (`branch == ""`) continuation with no binding. Lift `v` onto
+    // that continuation so the wrap path rewrites it like a branch tap's payload
+    // bind (to the source event's produced value at the match site).
+    if (tap_flow.inv().return_binding) |head_bind| {
+        if (allocator.alloc(ast.Continuation, all_tap_branches.len) catch null) |patched| {
+            for (all_tap_branches, 0..) |tc, i| {
+                patched[i] = tc;
+                if (tc.branch.len == 0 and tc.binding == null) patched[i].binding = head_bind;
+            }
+            all_tap_branches = patched;
+        }
+    }
 
     // Pattern matching config
     // Any pattern with a glob wildcard (*) should be treated as wildcard
@@ -529,6 +544,7 @@ var metatype_global_counter: usize = 0;
             tap_is_opaque: bool,  // True if this tap has [opaque]
             tap_branch: []const u8,  // The tap's branch (e.g., "Profile", "Transition", or regular branch)
             source_event: ?[]const u8,  // Canonical source event for metatypes
+            source_produced: ?[]const u8,  // Bare-return source head's `: r` bind (the produced value in scope)
         ) !ast.Continuation {
             _ = mark_inserted;  // All invocations are now marked, so this parameter is unused
             // Check if this is a metatype tap (Profile, Transition, Audit)
@@ -565,6 +581,19 @@ var metatype_global_counter: usize = 0;
                     if (tap_condition) |cond| {
                         rewritten_condition = try rewriteBindingInValue(alloc, cond, tb, ub);
                     }
+                }
+            } else if (tap_binding != null and tap_branch.len == 0 and source_produced != null) {
+                // Bare-return tap (`~tap(e -> *): v |> obs(v)`): the source `-> T`
+                // event has no branch payload binding; its produced value is the
+                // source head's `: r` bind, already declared in scope. Rewrite the
+                // tap's `v` straight to that (`obs(value: v)` → `obs(value: r)`).
+                // No effective_binding synthesized — `r` already exists.
+                const tb = tap_binding.?;
+                const sp = source_produced.?;
+                rewritten_step = try rewriteStepBindingDeep(alloc, tap_stp, tb, sp);
+                tap_conts_to_use = try rewriteBindingInContinuations(alloc, tap_conts, tb, sp);
+                if (tap_condition) |cond| {
+                    rewritten_condition = try rewriteBindingInValue(alloc, cond, tb, sp);
                 }
             } else if (tap_binding != null) {
                 const tb = tap_binding.?;
@@ -794,6 +823,7 @@ var metatype_global_counter: usize = 0;
             containing_module: ?[]const u8,
             current_source_is_opaque: bool,
             opaque_events: *const std.StringHashMap(void),
+            source_produced: ?[]const u8,  // Bare-return source head's `: r` bind (produced value in scope at this level)
         ) !struct { conts: []ast.Continuation, modified: bool } {
             const source_event = buildCanonicalName(alloc, current_source_path, containing_module) catch null;
             const source_matches = source_wildcard or pathMatches(
@@ -859,6 +889,7 @@ var metatype_global_counter: usize = 0;
                         tap_is_opaque,
                         tap_cont.branch,
                         source_event,
+                        source_produced,
                     );
                     tap_inserted = true;
                     break;
@@ -924,6 +955,7 @@ var metatype_global_counter: usize = 0;
                             tap_is_opaque,
                             tap_cont.branch,
                             source_event,
+                            source_produced,
                         );
                         any_modified = true;
                         tap_inserted = true;
@@ -980,6 +1012,13 @@ var metatype_global_counter: usize = 0;
                 }
 
                 // Recurse before wrapping so nested transitions are transformed in-place.
+                // The produced value for the nested level is this step's bare-return
+                // bind (`step(): r |> ...`), so a deeper bare-return tap can reach it.
+                const next_source_produced: ?[]const u8 = if (this_cont.node) |s|
+                    (if (s == .invocation) s.invocation.return_binding
+                     else if (s == .label_with_invocation) s.label_with_invocation.invocation.return_binding
+                     else null)
+                else null;
                 const nested = try transformContinuations(
                     alloc,
                     this_cont.continuations,
@@ -997,6 +1036,7 @@ var metatype_global_counter: usize = 0;
                     containing_module,
                     next_source_is_opaque,
                     opaque_events,
+                    next_source_produced,
                 );
                 this_cont.continuations = nested.conts;
                 if (nested.modified) any_modified = true;
@@ -1039,6 +1079,7 @@ var metatype_global_counter: usize = 0;
                         tap_is_opaque,
                         tap_cont.branch,
                         source_event,
+                        source_produced,
                     );
                     wrap_count += 1;
                 }
@@ -1088,6 +1129,7 @@ var metatype_global_counter: usize = 0;
                 containing_module,
                 current_source_is_opaque,
                 opaque_events,
+                null,
             );
         }
     };
@@ -1149,6 +1191,7 @@ var metatype_global_counter: usize = 0;
                 flow.module,
                 invoked_is_opaque,
                 &opaque_events,
+                flow.inv().return_binding,
             ) catch unreachable;
 
             if (result.modified) {
@@ -1264,6 +1307,7 @@ var metatype_global_counter: usize = 0;
                         flow.module,
                         invoked_is_opaque,
                         &opaque_events,
+                        flow.inv().return_binding,
                     ) catch unreachable;
 
                     if (result.modified) {
