@@ -1018,27 +1018,40 @@ pub const PhantomSemanticChecker = struct {
                     return false;
                 }
 
-                // If step is an invocation, nested continuations belong to THAT event, not the void parent
-                switch (step.*) {
-                    .invocation => |*inv| {
-                        const step_event_name = try self.pathToString(inv.path);
-                        defer self.allocator.free(step_event_name);
-                        const step_module = inv.path.module_qualifier orelse flow_module;
-                        const step_qualified = try std.fmt.allocPrint(self.allocator, "{s}:{s}", .{ step_module, step_event_name });
-                        defer self.allocator.free(step_qualified);
+                // If step is an invocation, nested continuations belong to THAT event, not the void parent.
+                // A `#loop event(...)` label declaration is the same: its arms
+                // (`| again`/`| stop`, `| more`/`| fin`) are branches of the
+                // LABEL's invoked event, not the void head. Resolve through its
+                // inner invocation so the arms validate against the real event
+                // (e.g. `icount`) and pick up their `@scope` outer-scope marking
+                // — without this they fall to the fallback below, validate against
+                // the 0-branch void head, re-enter THIS void path, and the
+                // back-edge `@loop` drop-check never sees a carried obligation as
+                // outer-scope (spurious KORU030 for a held obligation that escapes
+                // after the loop, e.g. 330_085). The named-branch head takes the
+                // equivalent path via validateContinuation's nested-step handling.
+                const step_inv: ?*const ast.Invocation = switch (step.*) {
+                    .invocation => |*inv| inv,
+                    .label_with_invocation => |*lwi| if (lwi.is_declaration) &lwi.invocation else null,
+                    else => null,
+                };
+                if (step_inv) |inv| {
+                    const step_event_name = try self.pathToString(inv.path);
+                    defer self.allocator.free(step_event_name);
+                    const step_module = inv.path.module_qualifier orelse flow_module;
+                    const step_qualified = try std.fmt.allocPrint(self.allocator, "{s}:{s}", .{ step_module, step_event_name });
+                    defer self.allocator.free(step_qualified);
 
-                        if (event_map.get(step_qualified)) |step_event_info| {
-                            // Validate nested continuations against the step's event
-                            for (cont.continuations) |*nested| {
-                                const nested_valid = try self.validateContinuation(nested, step_event_info.decl, step_module, flow_module, event_map, location, &void_context, implementing_event);
-                                if (!nested_valid) {
-                                    return false;
-                                }
+                    if (event_map.get(step_qualified)) |step_event_info| {
+                        // Validate nested continuations against the step's event
+                        for (cont.continuations) |*nested| {
+                            const nested_valid = try self.validateContinuation(nested, step_event_info.decl, step_module, flow_module, event_map, location, &void_context, implementing_event);
+                            if (!nested_valid) {
+                                return false;
                             }
-                            return true;
                         }
-                    },
-                    else => {},
+                        return true;
+                    }
                 }
             }
             // Validate nested continuations recursively (fallback: against void event)

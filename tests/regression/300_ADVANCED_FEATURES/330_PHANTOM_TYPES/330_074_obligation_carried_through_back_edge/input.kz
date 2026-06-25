@@ -25,12 +25,11 @@
 const std = @import("std");
 const Handle = struct { n: i32 };
 
-~event make {}
-| made *Handle<owned!>
+~event make {} -> *Handle<owned!>
 ~proc make|zig {
     const h = std.heap.page_allocator.create(Handle) catch unreachable;
     h.* = .{ .n = 0 };
-    return .{ .made = h };
+    return h;
 }
 
 // step: consume the carried obligation on input, re-issue exactly one on output.
@@ -53,8 +52,7 @@ const Handle = struct { n: i32 };
 | finished *Handle<owned!>
 
 // Seed the fold from an ISSUING leaf, then consume-in/issue-out across @loop.
-~spin = make()
-| made h0 |> #loop step(h: h0)
+~spin = make(): h0 |> #loop step(h: h0)
     | again v |> @loop(h: v)
     | stop r => finished r
 

@@ -8,12 +8,11 @@
 const std = @import("std");
 const Handle = struct { n: i32 };
 
-~event make {}
-| made *Handle<owned!>
+~event make {} -> *Handle<owned!>
 ~proc make|zig {
     const h = std.heap.page_allocator.create(Handle) catch unreachable;
     h.* = .{ .n = 0 };
-    return .{ .made = h };
+    return h;
 }
 
 ~event icount { c: i32 }
@@ -33,8 +32,7 @@ const Handle = struct { n: i32 };
 ~event spin {}
 | finished *Handle<owned!>
 
-~spin = make()
-| made h0 |> #loop icount(c: 0)
+~spin = make(): h0 |> #loop icount(c: 0)
     | more v |> @loop(c: v)
     | fin _ => finished h0
 

@@ -1847,6 +1847,59 @@ fn emitSubflowContinuationsWithDepth(
         // Void event - emit step directly without switch
         const cont = &remaining_conts[0];
 
+        // A labeled-loop step as the void-chain step — e.g. a bare-return head
+        // bind feeding a fold: `make(): h0 |> #loop step(h: h0) | again v |>
+        // @loop(h: v) | stop r => ...`. The simple step switch below only lowers
+        // `.invocation`/`.branch_constructor`; a `.label_with_invocation` falls
+        // into its `else` and the whole loop is dropped (empty `.again => ,` arm,
+        // undefined `nested_result_*`). Route it through emitContinuationBody —
+        // the SAME helper the named-branch path uses (line ~2149) — which emits
+        // the loop state vars, the `while` with its back-edge arms, and the
+        // terminal-after-loop switch. emitContinuationBody consumes cont's nested
+        // continuations (the `@loop`/terminal arms), so we must NOT recurse below.
+        if (cont.node) |label_step| {
+            if (label_step == .label_with_invocation) {
+                // The head's `result` was aliased to the bind (`const <bind> =
+                // result;`) at the call site; it is otherwise unused here, so
+                // discard it (parent var is `result` at depth 0, else
+                // `nested_result_{depth-1}`).
+                try emitter.write(indent);
+                if (depth == 0) {
+                    try emitter.write("_ = &result;\n");
+                } else {
+                    var buf: [48]u8 = undefined;
+                    const discard = try std.fmt.bufPrint(&buf, "_ = &nested_result_{d};\n", .{depth - 1});
+                    try emitter.write(discard);
+                }
+
+                var ctx = EmissionContext{
+                    .allocator = std.heap.page_allocator,
+                    .indent_level = 0,
+                    .ast_items = all_items,
+                    .is_sync = true,
+                    .tap_registry = tap_registry,
+                    .type_registry = type_registry,
+                    .main_module_name = main_module_name,
+                    .current_source_event = source_event_name,
+                };
+                var label_contexts = std.StringHashMap(LabelContext).init(ctx.allocator);
+                ctx.label_contexts = &label_contexts;
+                defer {
+                    var it = label_contexts.valueIterator();
+                    while (it.next()) |label_ctx| {
+                        ctx.allocator.free(label_ctx.result_var);
+                    }
+                    label_contexts.deinit();
+                }
+                var label_counter: usize = depth;
+                const old_indent = emitter.indent_level;
+                emitter.indent_level = 0;
+                try emitContinuationBody(emitter, &ctx, cont, &label_counter);
+                emitter.indent_level = old_indent;
+                return;
+            }
+        }
+
         // If the next continuation needs to switch on a result (has a non-empty
         // branch), we must KEEP this step's return value instead of discarding
         // it — otherwise the downstream switch falls back to a stale `result`

@@ -25,12 +25,11 @@
 const std = @import("std");
 const Handle = struct { n: i32 };
 
-~event make {}
-| made *Handle<owned!>
+~event make {} -> *Handle<owned!>
 ~proc make|zig {
     const h = std.heap.page_allocator.create(Handle) catch unreachable;
     h.* = .{ .n = 0 };
-    return .{ .made = h };
+    return h;
 }
 
 ~event step { h: *Handle<!owned> }
@@ -55,8 +54,7 @@ const Handle = struct { n: i32 };
 // `again` branch and re-enters the fold without carrying it across the back-edge,
 // leaking the obligation. (`_` is used rather than a named binding so KORU100
 // unused-binding does not fire first; this exercises the phantom-drop path.)
-~spin = make()
-| made h0 |> #loop step(h: h0)
+~spin = make(): h0 |> #loop step(h: h0)
     | again _ |> @loop()
     | stop r => finished r
 

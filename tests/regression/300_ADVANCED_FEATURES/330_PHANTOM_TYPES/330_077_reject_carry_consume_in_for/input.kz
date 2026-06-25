@@ -9,12 +9,11 @@
 const std = @import("std");
 const Handle = struct { n: i32 };
 
-~event make {}
-| made *Handle<owned!>
+~event make {} -> *Handle<owned!>
 ~proc make|zig {
     const h = std.heap.page_allocator.create(Handle) catch unreachable;
     h.* = .{ .n = 0 };
-    return .{ .made = h };
+    return h;
 }
 
 ~event consume { h: *Handle<!owned> }
@@ -22,7 +21,6 @@ const Handle = struct { n: i32 };
     std.heap.page_allocator.destroy(h);
 }
 
-~make()
-| made h0 |> for(0..3)
+~make(): h0 |> for(0..3)
     ! each _ |> consume(h: h0)  // consumes the single owned handle every iteration
     | done |> _

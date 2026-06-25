@@ -650,6 +650,25 @@ pub const AutoDischargeInserter = struct {
         var context = BindingContext.init(self.allocator);
         defer context.deinit();
 
+        // Flow-head bare-return bind: `~make(): h0 |> ...` binds `h0` to the head
+        // event's `-> T<phantom>` return. Seed its obligation at scope 0 so it is
+        // tracked for disposal/scope exactly like a `| branch h0` payload bind —
+        // the head twin of the continuation-level bare-return recording below,
+        // and the auto-discharge counterpart of the phantom checker's flow-head
+        // threading. This makes the bare-return head form enforce the same
+        // obligation discharge the NAMED-BRANCH head form already does: an
+        // undischarged head obligation is a leak in both spellings (caught at
+        // flow exit, KORU030), and a discharge of it inside a loop `@scope` is an
+        // outer-scope violation in both (KORU032, 330_077/082). The two head
+        // spellings are the same program; they must type the same.
+        if (flow.inv().return_binding) |rb| {
+            if (event_info.decl.return_phantom) |rp| {
+                const canonical = try self.canonicalizePhantom(rp, module_name);
+                defer self.allocator.free(canonical);
+                try context.addBinding(rb, canonical, "__type_ref", event_info.decl.return_type orelse "");
+            }
+        }
+
         for (flow.body.continuations, 0..) |*cont, cont_idx| {
             // Capture at flow-head lowers to sibling `branch=''` continuations (the
             // `! as` body chain + the `| captured` after-read chain) directly under
