@@ -77,6 +77,7 @@ pub const ErrorCode = enum(u16) {
     KORU100, // Unused binding
     KORU101, // Binding on a payload-less branch (nothing to bind or discard)
     KORU102, // `=>` (branch construction) used where the event produces a single payload (`-> T`) — use `->`
+    KORU103, // `|>` (chain) used to introduce a bare value — `|>` chains steps; produce a value with `->`
 
     // Variant errors
     KORU110, // Event call site has only bare ~proc declarations (no variant tag)

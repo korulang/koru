@@ -17,5 +17,5 @@ var global_r = Resource{ .id = 99 };
 }
 
 ~borrow(n: 3)
-! lend _ |> &global_r
+! lend _ -> &global_r
 | done _ |> _

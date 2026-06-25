@@ -2,9 +2,9 @@
 // Test 510_102: MUST_FAIL — resume body produces a value of the wrong type.
 //
 // `! ask []const u8 -> []const u8` declares the resume type as a string,
-// but the consumer's handler body is `42` (an integer literal). The
-// synthesized Handlers fn declares return type `[]const u8`, so Zig's
-// type-checker rejects the wrong-typed return at backend compile.
+// but the consumer PRODUCES `-> 42` (an integer literal). The synthesized
+// Handlers fn declares return type `[]const u8`, so Zig's type-checker
+// rejects the wrong-typed return at backend compile.
 //
 // This locks the invariant: the resume-value path actually routes the
 // declared type to the synthesized fn signature, so type mismatches
@@ -21,5 +21,5 @@
 }
 
 ~prompt-user(question: "?")
-! ask _ |> 42
+! ask _ -> 42
 | done _ |> _

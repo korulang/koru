@@ -6728,6 +6728,21 @@ pub const Parser = struct {
             return ast.Step{ .invocation = try self.parseEventInvocation(clean_content) };
         }
 
+        // Glyph discipline (KORU103): `|>` CHAINS a step — an invocation or a `_`
+        // discard — it never introduces a bare VALUE. A value (literal, arithmetic,
+        // bare identifier, …) is PRODUCED with `->`. This kills the old
+        // `! v p |> p.acc + 1` resume spelling in favour of `! v p -> p.acc + 1`.
+        if (!std.mem.eql(u8, clean_content, "_")) {
+            try self.reporter.addError(
+                .KORU103,
+                self.current,
+                0,
+                "`|>` chains a step; it cannot introduce the value `{s}` — produce a value with `->` (e.g. `-> {s}`)",
+                .{ clean_content, clean_content },
+            );
+            return error.ParseError;
+        }
+
         // Anything else at body position is a Zig expression node: string
         // literal, numeric literal, anonymous struct literal, arithmetic
         // expression, effect-branch resume value, etc.

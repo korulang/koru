@@ -1,17 +1,13 @@
-// Test 210_079: parser produces an `.expression` Node for a Zig expression
-// at body position of an effect-branch handler.
-//
-// Today this misparses: bare `"Alice"` becomes a malformed Invocation with
-// path segments = [`"\"Alice\""`]. The right shape: an `.expression` Node
-// carrying the Zig source string, regardless of branch kind.
-//
-// Invocations always have parens (`thing()`); a body without trailing parens
-// after the path is an expression, not an invocation.
+// Test 210_079: the `->` producer carries a Zig expression at body position as
+// an `.expression` Node (not an invocation — invocations always have parens).
+// `! ask _ -> "Alice"` produces the resume value; the bare string is an
+// `.expression` Node carrying the Zig source. (`|>` cannot introduce a value —
+// that is KORU103; the producer glyph is `->`.)
 
 ~pub event prompt-user { question: []const u8 }
 ! ask []const u8 -> []const u8
 | done
 
 ~prompt-user(question: "X?")
-! ask _ |> "Alice"
+! ask _ -> "Alice"
 | done |> _

@@ -58,42 +58,6 @@
             }
         },
         {
-            "type": "host_line",
-            "module": "input",
-            "location": {
-                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_079_effect_branch_resume_expression/input.kz",
-                "line": 7,
-                "col": 0
-            }
-        },
-        {
-            "type": "host_line",
-            "module": "input",
-            "location": {
-                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_079_effect_branch_resume_expression/input.kz",
-                "line": 8,
-                "col": 0
-            }
-        },
-        {
-            "type": "host_line",
-            "module": "input",
-            "location": {
-                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_079_effect_branch_resume_expression/input.kz",
-                "line": 9,
-                "col": 0
-            }
-        },
-        {
-            "type": "host_line",
-            "module": "input",
-            "location": {
-                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_079_effect_branch_resume_expression/input.kz",
-                "line": 10,
-                "col": 0
-            }
-        },
-        {
             "type": "event_decl",
             "name": "prompt-user",
             "path": ["prompt-user"],
@@ -151,7 +115,7 @@
             ],
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_079_effect_branch_resume_expression/input.kz",
-                "line": 15,
+                "line": 11,
                 "col": 0
             }
         },
@@ -203,7 +167,7 @@
             "impl_of": null,
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_079_effect_branch_resume_expression/input.kz",
-                "line": 16,
+                "line": 12,
                 "col": 0
             }
         }

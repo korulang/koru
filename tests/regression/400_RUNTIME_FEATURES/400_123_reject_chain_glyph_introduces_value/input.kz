@@ -1,0 +1,19 @@
+// Glyph discipline (KORU103): `|>` CHAINS a step (an invocation, or a `_`
+// discard) — it never introduces a bare VALUE. The resume value of a `-> T`
+// effect is PRODUCED with `->`, not piped with `|>`. `! ask _ |> 42` was the
+// old loose spelling; it must now be `! ask _ -> 42` (cf. 400_116). Twin of the
+// `=>` rejection (KORU102, 400_122).
+~import std/io
+
+~pub event query { q: []const u8 }
+! ask []const u8 -> i32
+| done i32
+
+~proc query|zig {
+    const a = ask(q);
+    return .{ .done = a };
+}
+
+~query(q: "x")
+! ask _ |> 42
+| done r |> std/io:print.ln("{{ r:d }}")
