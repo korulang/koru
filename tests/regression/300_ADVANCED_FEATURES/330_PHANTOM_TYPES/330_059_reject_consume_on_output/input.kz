@@ -1,6 +1,5 @@
 const Connection = struct { id: i32 };
-~pub event connect { url: []const u8 }
-| ok *Connection<!connected>
+~pub event connect { url: []const u8 } -> *Connection<!connected>
 ~proc connect|zig {
-    return .{ .ok = undefined };
+    return undefined;
 }

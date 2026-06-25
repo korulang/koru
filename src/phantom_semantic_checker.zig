@@ -263,6 +263,15 @@ pub const PhantomSemanticChecker = struct {
                             }
                         }
                     }
+
+                    // Check the bare-return (`-> T<phantom>`) output phantom — same
+                    // output rule as branch fields (e.g. reject `!`-consume on output).
+                    if (event_decl.return_phantom) |phantom_str| {
+                        const phantom_valid = try self.validatePhantom(phantom_str, event_decl.path.segments[0], event_decl.location, false);
+                        if (!phantom_valid) {
+                            has_errors = true;
+                        }
+                    }
                 },
                 .module_decl => |module| {
                     // Check events in imported library modules
@@ -289,6 +298,13 @@ pub const PhantomSemanticChecker = struct {
                                             // Continue checking for more errors
                                         }
                                     }
+                                }
+                            }
+
+                            if (event_decl.return_phantom) |phantom_str| {
+                                const phantom_valid = try self.validatePhantom(phantom_str, event_decl.path.segments[0], event_decl.location, false);
+                                if (!phantom_valid) {
+                                    has_errors = true;
                                 }
                             }
                         }
