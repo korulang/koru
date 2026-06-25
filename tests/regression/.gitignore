@@ -33,6 +33,7 @@
 !**/expected_patterns.txt
 !**/expected.json
 !**/EXPECT
+!**/EXPECT_TIMEOUT
 !**/COMPILE_ONLY
 !**/SKIP
 !**/MUST_*

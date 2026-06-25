@@ -24,6 +24,10 @@ CYAN='\033[0;36m'
 DIM='\033[2m'
 NC='\033[0m'
 
+# run_one_test_watched + KORU_TEST_TIMEOUT come from regression_lib.sh (shared
+# with run_regression.sh's serial path). It runs each test in its own process
+# group and SIGKILLs the whole koruc→zig→backend tree on timeout.
+
 # Ensure category logic starts clean when invoked per-test.
 CURRENT_CATEGORY=""
 
@@ -39,9 +43,12 @@ if [ "${KORU_CACHE_MODE:-off}" = "on" ]; then
         KORU_COMPILER_MTIME=$(cache_compute_compiler_mtime "$SCRIPT_DIR")
     fi
     # Don't try to cache skip/todo/broken/benchmark — those have their own
-    # marker semantics and re-run cheaply.
+    # marker semantics and re-run cheaply. EXPECT_TIMEOUT is a watchdog self-test
+    # that must ACTUALLY run every time (a cached pass would hide a watchdog
+    # regression), and it's only a few seconds anyway.
     if [ ! -f "$test_dir/BENCHMARK" ] && [ ! -f "$test_dir/TODO" ] && \
        [ ! -f "$test_dir/SKIP" ] && [ ! -f "$test_dir/BROKEN" ] && \
+       [ ! -f "$test_dir/EXPECT_TIMEOUT" ] && \
        [ ! -f "$CATEGORY_DIR/SKIP" ] && [ ! -f "$CATEGORY_DIR/BENCHMARK" ] && \
        [ ! -f "$CATEGORY_DIR/TODO" ]; then
         if cache_check "$test_dir" "$KORU_COMPILER_MTIME"; then
@@ -60,7 +67,7 @@ if [ "$CACHE_HIT" = true ]; then
         # Force a fresh uncached run and compare outcomes.
         rm -f "$test_dir/SUCCESS" "$test_dir/FAILURE"
         cache_invalidate "$test_dir"
-        regression_run_one_test "$test_dir" >/dev/null 2>&1
+        run_one_test_watched "$test_dir" true
         uncached_outcome="unknown"
         [ -f "$test_dir/SUCCESS" ] && [ ! -f "$test_dir/FAILURE" ] && uncached_outcome="pass"
         [ -f "$test_dir/FAILURE" ] && uncached_outcome="fail"
@@ -87,9 +94,9 @@ if [ "$CACHE_HIT" = true ]; then
 fi
 
 if [ "${REGRESSION_QUIET:-false}" = "true" ]; then
-    regression_run_one_test "$test_dir" >/dev/null 2>&1
+    run_one_test_watched "$test_dir" true
 else
-    regression_run_one_test "$test_dir"
+    run_one_test_watched "$test_dir" false
 fi
 
 # After the test ran, update the cache. Both pass and fail outcomes are

@@ -901,6 +901,12 @@ while IFS= read -r -d '' test_dir; do
         continue
     fi
 
+    # NOTE: serial path calls regression_run_one_test directly (NOT the watchdog
+    # wrapper) — it increments PASSED_TESTS/FAILED_TESTS in-shell, which a
+    # backgrounded subshell would lose. The parallel path (run_single_test.sh,
+    # the default for full runs) reads disk markers instead, so it carries the
+    # watchdog. Serial is single-test/small-range, where a hang is visible and
+    # Ctrl-C-able (not an orphan), and the inner binary timeout still applies.
     regression_run_one_test "$test_dir"
 
     # Update cache after test ran. Cache_write writes on either outcome and

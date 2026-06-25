@@ -1258,6 +1258,10 @@ EOF
         # Run the program under a timeout so a runaway binary can't wedge the harness.
         # Override the default with REGRESSION_TEST_TIMEOUT (seconds).
         TEST_TIMEOUT="${REGRESSION_TEST_TIMEOUT:-30}"
+        # Watchdog self-test: an EXPECT_TIMEOUT test is SUPPOSED to hang at runtime
+        # (it pins the timeout safety net). Cap the binary timeout low so the
+        # self-test resolves in seconds rather than the default 30.
+        [ -f "$test_dir/EXPECT_TIMEOUT" ] && TEST_TIMEOUT="${SELFTEST_TIMEOUT:-5}"
         # Optional ARGS file: one argv entry per line, passed to the binary as
         # argv (and to node on the JS path). Lets CLI-style tests feed argv so
         # the same .kz can be exercised with real command-line arguments.
@@ -1276,8 +1280,25 @@ EOF
         fi
         RUN_EXIT=$?
         if [ $RUN_EXIT -eq 0 ]; then
+            if [ -f "$test_dir/EXPECT_TIMEOUT" ]; then
+                # The binary was SUPPOSED to hang but finished — a real infinite
+                # loop would NOT have been caught. That broken safety net is the fail.
+                echo -e "${RED}❌ EXPECT_TIMEOUT but the binary finished in <${TEST_TIMEOUT}s — the timeout net would not catch a hang${NC}"
+                echo "expect-timeout-but-finished" > "$test_dir/FAILURE"
+                FAILED_TESTS="$FAILED_TESTS $TEST_NAME(expect-timeout-but-finished)"
+                return 0
+            fi
             RUN_SUCCESS=true
         elif [ $RUN_EXIT -eq 124 ] || [ $RUN_EXIT -eq 137 ]; then
+            if [ -f "$test_dir/EXPECT_TIMEOUT" ]; then
+                # The runaway binary was caught by the timeout — exactly what the
+                # watchdog self-test pins. Pass.
+                echo -e "${GREEN}✅ Watchdog caught the expected hang after ${TEST_TIMEOUT}s${NC}"
+                rm -f "$test_dir/FAILURE"
+                mark_test_passed "$test_dir"
+                PASSED_TESTS=$((PASSED_TESTS + 1))
+                return 0
+            fi
             echo -e "${RED}❌ Test binary timed out after ${TEST_TIMEOUT}s${NC}"
             echo "timeout-${TEST_TIMEOUT}s" > "$test_dir/FAILURE"
             FAILED_TESTS="$FAILED_TESTS $TEST_NAME(timeout)"
@@ -1560,4 +1581,44 @@ EOF
     regression_check_js_equivalence "$test_dir"
 
     return 0
+}
+
+# ── Per-test watchdog (shared by run_single_test.sh and run_regression.sh serial)
+# The harness otherwise has NO timeout: a koru test that infinite-loops at runtime
+# (a non-terminating `#loop`), or a koruc/zig build that blows up on pathological
+# generated code, would spin FOREVER — block a worker and, once orphaned, become
+# an un-killable zombie that accumulates across runs (observed 2026-06-25).
+#
+# regression_run_one_test runs in its OWN process group (job control, `set -m`);
+# on expiry we SIGKILL the whole group (`kill -- -PGID`), tearing down the entire
+# koruc→zig→backend tree. Killing only the parent — the default — is exactly why
+# orphans survived. A fired watchdog is recorded as a loud FAILURE, never a silent
+# stall. Default 300s ≫ the slowest legit test (no false positives); tune via
+# KORU_TEST_TIMEOUT.
+: "${KORU_TEST_TIMEOUT:=300}"
+
+run_one_test_watched() {
+    local tdir="$1"
+    local quiet="${2:-false}"
+    set -m  # job control → the backgrounded job becomes its own process-group leader
+    if [ "$quiet" = "true" ]; then
+        regression_run_one_test "$tdir" >/dev/null 2>&1 &
+    else
+        regression_run_one_test "$tdir" &
+    fi
+    local job=$!
+    ( sleep "$KORU_TEST_TIMEOUT"; kill -KILL -"$job" 2>/dev/null ) &
+    local watchdog=$!
+    wait "$job" 2>/dev/null
+    local rc=$?
+    kill "$watchdog" 2>/dev/null; wait "$watchdog" 2>/dev/null
+    set +m
+    # rc 137 = 128 + SIGKILL(9): the watchdog fired (a koruc/zig-build compile hang —
+    # the inner binary run already has its own `timeout`). The killed test wrote no
+    # SUCCESS/FAILURE, so classify it as a hang here.
+    if [ "$rc" -eq 137 ]; then
+        rm -f "$tdir/SUCCESS"
+        echo "TIMEOUT after ${KORU_TEST_TIMEOUT}s — possible infinite loop / hang in compile (koruc or zig build)" > "$tdir/FAILURE"
+    fi
+    return "$rc"
 }
