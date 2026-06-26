@@ -68,7 +68,6 @@ pub const List_i64 = struct {
         .flow = ast.Flow{
             .body = ast.rootSite(new_inv, flow.body.continuations, flow.location),
             .pre_label = if (flow.pre_label) |l| allocator.dupe(u8, l) catch unreachable else null,
-            .post_label = if (flow.post_label) |l| allocator.dupe(u8, l) catch unreachable else null,
             .impl_of = flow.impl_of,
             .super_shape = null,
             .inline_body = null,

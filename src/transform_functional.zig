@@ -254,7 +254,7 @@ pub const SymbolTable = struct {
                         }
                     } else {
                         try self.flows.append(self.allocator, FlowInfo{
-                            .has_label = flow.pre_label != null or flow.post_label != null,
+                            .has_label = flow.pre_label != null,
                             .continuation_count = flow.body.continuations.len,
                         });
                     }

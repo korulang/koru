@@ -735,22 +735,6 @@ pub fn extractLabel(line: []const u8) ?[]const u8 {
     return label;
 }
 
-/// Extract label anchor/declaration (#label) from line
-pub fn extractLabelAnchor(line: []const u8) ?[]const u8 {
-    const idx = std.mem.lastIndexOf(u8, line, "#") orelse return null;
-    const label = trim(line[idx + 1..]);
-    if (label.len == 0) return null;
-    
-    // Make sure it's a valid identifier
-    for (label) |c| {
-        if (!std.ascii.isAlphanumeric(c) and c != '_' and c != '-') {
-            return null;
-        }
-    }
-    
-    return label;
-}
-
 /// Remove label from line if present
 pub fn withoutLabel(line: []const u8) []const u8 {
     // Find @ that's at depth 0 (not inside parens/braces) and preceded by space
@@ -799,16 +783,6 @@ pub fn withoutLabel(line: []const u8) []const u8 {
         return trim(line[0..idx]);
     }
     return line;
-}
-
-/// Remove a post-invocation label anchor (`event(...) #label`) if present.
-/// Only strips when a valid label identifier actually follows the `#` —
-/// a bare `#` elsewhere on the line (e.g. a pre-invocation `#label event(...)`)
-/// must NOT truncate the invocation.
-pub fn withoutLabelAnchor(line: []const u8) []const u8 {
-    if (extractLabelAnchor(line) == null) return line;
-    const idx = std.mem.lastIndexOf(u8, line, "#") orelse return line;
-    return trim(line[0..idx]);
 }
 
 /// Parse positional arguments for subflow invocations

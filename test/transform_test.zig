@@ -150,7 +150,6 @@ test "visitor pattern - collecting visitor" {
                 .args = try allocator.alloc(ast.Arg, 0),
             }, flow1_continuations, .{ .file = "generated", .line = 0, .column = 0 }),
             .pre_label = null,
-            .post_label = null,
         },
     });
     
@@ -222,7 +221,6 @@ test "inline small events - detection" {
                 .args = flow_args,
             }, flow_continuations, .{ .file = "generated", .line = 0, .column = 0 }),
             .pre_label = null,
-            .post_label = null,
         },
     });
     

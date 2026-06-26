@@ -598,16 +598,6 @@ pub const AstSerializer = struct {
         }
         try self.write(",\n");
 
-        // Post-label (always write, even if null)
-        try self.writeIndent();
-        try self.write(".post_label = ");
-        if (flow.post_label) |label| {
-            try self.writeString(label);
-        } else {
-            try self.write("null");
-        }
-        try self.write(",\n");
-
         // SuperShape for inline flows with union types
         try self.writeIndent();
         try self.write(".super_shape = ");
@@ -1980,14 +1970,6 @@ pub const AstSerializer = struct {
         }
         try self.write(",\n");
 
-        try self.writeIndent();
-        try self.write("\"post_label\": ");
-        if (flow.post_label) |label| {
-            try self.writeString(label);
-        } else {
-            try self.write("null");
-        }
-        try self.write(",\n");
 
         // impl_of (null for top-level flows, set for impl flows)
         try self.writeIndent();
@@ -2039,14 +2021,6 @@ pub const AstSerializer = struct {
         }
         try self.write(",\n");
 
-        try self.writeIndent();
-        try self.write("\"post_label\": ");
-        if (flow.post_label) |label| {
-            try self.writeString(label);
-        } else {
-            try self.write("null");
-        }
-        try self.write(",\n");
 
         // impl_of (null for top-level flows, set for impl flows)
         try self.writeIndent();

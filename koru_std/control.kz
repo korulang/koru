@@ -395,7 +395,6 @@ const std = @import("std");
         .body = ast.rootSite(new_invocation, new_conts.toOwnedSlice(allocator) catch unreachable, flow.location),
         .annotations = flow.annotations,
         .pre_label = flow.pre_label,
-        .post_label = flow.post_label,
         .super_shape = flow.super_shape,
         .inline_body = null,
         .preamble_code = preamble,

@@ -115,7 +115,6 @@ fn normalizeFlow(f: *ast.Flow) void {
     normalizeInvocation(f.invMut());
     normalizeContinuations(@constCast(f.body.continuations));
     mangleOpt(f.pre_label);
-    mangleOpt(f.post_label);
     if (f.impl_of) |*io| normalizeDottedPath(io);
     // impl_variant is a variant selector (target tag), not a symbol — leave it.
     if (f.super_shape) |*ss| {

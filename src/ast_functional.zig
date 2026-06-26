@@ -798,7 +798,6 @@ fn cloneFlowWithContinuations(
     return .{
         .body = ast.rootSite(try cloneInvocation(allocator, flow.inv()), continuations, flow.location),
         .pre_label = if (flow.pre_label) |l| try allocator.dupe(u8, l) else null,
-        .post_label = if (flow.post_label) |l| try allocator.dupe(u8, l) else null,
         .super_shape = null,
         .inline_body = if (flow.inline_body) |body| try allocator.dupe(u8, body) else null,
         .preamble_code = if (flow.preamble_code) |preamble| try allocator.dupe(u8, preamble) else null,
@@ -1290,7 +1289,6 @@ fn cloneFlow(allocator: std.mem.Allocator, flow: *const ast.Flow) CloneError!ast
     return .{
         .body = try cloneContinuation(allocator, &flow.body),
         .pre_label = if (flow.pre_label) |l| try allocator.dupe(u8, l) else null,
-        .post_label = if (flow.post_label) |l| try allocator.dupe(u8, l) else null,
         .super_shape = null, // TODO: clone super_shape if needed
         .inline_body = if (flow.inline_body) |body| try allocator.dupe(u8, body) else null,
         .preamble_code = if (flow.preamble_code) |preamble| try allocator.dupe(u8, preamble) else null,
@@ -1737,7 +1735,6 @@ pub fn replacePipelineStep(
         .body = ast.rootSite(try cloneInvocation(allocator, flow.inv()), new_continuations, flow.location),
         .annotations = try cloneStringSlice(allocator, flow.annotations),
         .pre_label = if (flow.pre_label) |l| try allocator.dupe(u8, l) else null,
-        .post_label = if (flow.post_label) |l| try allocator.dupe(u8, l) else null,
         .super_shape = null, // TODO: clone if needed
         .inline_body = if (flow.inline_body) |body| try allocator.dupe(u8, body) else null,
         .preamble_code = if (flow.preamble_code) |preamble| try allocator.dupe(u8, preamble) else null,
@@ -1820,7 +1817,6 @@ pub fn filterNestedContinuations(
         .body = ast.rootSite(try cloneInvocation(allocator, flow.inv()), new_continuations, flow.location),
         .annotations = try cloneStringSlice(allocator, flow.annotations),
         .pre_label = if (flow.pre_label) |l| try allocator.dupe(u8, l) else null,
-        .post_label = if (flow.post_label) |l| try allocator.dupe(u8, l) else null,
         .super_shape = null,
         .inline_body = if (flow.inline_body) |body| try allocator.dupe(u8, body) else null,
         .preamble_code = if (flow.preamble_code) |preamble| try allocator.dupe(u8, preamble) else null,
@@ -1944,7 +1940,6 @@ pub fn replacePipelineStepAtPath(
         .body = ast.rootSite(try cloneInvocation(allocator, flow.inv()), new_continuations, flow.location),
         .annotations = try cloneStringSlice(allocator, flow.annotations),
         .pre_label = if (flow.pre_label) |l| try allocator.dupe(u8, l) else null,
-        .post_label = if (flow.post_label) |l| try allocator.dupe(u8, l) else null,
         .super_shape = null,
         .inline_body = if (flow.inline_body) |body| try allocator.dupe(u8, body) else null,
         .preamble_code = if (flow.preamble_code) |preamble| try allocator.dupe(u8, preamble) else null,
@@ -2044,7 +2039,6 @@ pub fn filterNestedContinuationsAtPath(
         .body = ast.rootSite(try cloneInvocation(allocator, flow.inv()), new_continuations, flow.location),
         .annotations = try cloneStringSlice(allocator, flow.annotations),
         .pre_label = if (flow.pre_label) |l| try allocator.dupe(u8, l) else null,
-        .post_label = if (flow.post_label) |l| try allocator.dupe(u8, l) else null,
         .super_shape = null,
         .inline_body = if (flow.inline_body) |body| try allocator.dupe(u8, body) else null,
         .preamble_code = if (flow.preamble_code) |preamble| try allocator.dupe(u8, preamble) else null,
@@ -2654,7 +2648,6 @@ pub fn createFlow(
     return ast.Flow{
         .body = ast.rootSite(invocation, cloned_conts, .{ .file = "generated", .line = 0, .column = 0 }),
         .pre_label = null,
-        .post_label = null,
         .super_shape = null,
         .is_pure = true, // Flows are locally pure by default
         .is_transitively_pure = false, // Will be computed by purity checker

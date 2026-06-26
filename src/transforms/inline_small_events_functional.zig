@@ -76,7 +76,7 @@ fn inlineSmallEvents(
         switch (item.*) {
             .flow => |flow| {
                 // Skip flows with labels - they need special handling
-                if (flow.pre_label != null or flow.post_label != null) {
+                if (flow.pre_label != null) {
                     try new_items.append(allocator, try functional.cloneItem(allocator, item));
                 } else {
                     const path_str = try pathToString(allocator, flow.inv().path.segments);

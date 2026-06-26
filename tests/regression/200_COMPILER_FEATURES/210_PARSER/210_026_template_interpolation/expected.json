@@ -205,7 +205,6 @@
                 }
             ],
             "pre_label": null,
-            "post_label": null,
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_026_template_interpolation/input.kz",
                 "line": 31,

@@ -588,7 +588,6 @@ pub const Flow = struct {
     body: Continuation,
     annotations: []const []const u8 = &[_][]const u8{},  // Flow annotations like [depends_on("a", "b")]
     pre_label: ?[]const u8 = null,   // Label before invocation (#label event)
-    post_label: ?[]const u8 = null,  // Label after invocation (event #label)
     super_shape: ?SuperShape = null, // For inline flows with branch constructors
 
     // Zero-overhead control flow support:
@@ -652,7 +651,6 @@ pub const Flow = struct {
         }
         allocator.free(@constCast(self.annotations));
         if (self.pre_label) |l| allocator.free(l);
-        if (self.post_label) |l| allocator.free(l);
         if (self.inline_body) |ib| allocator.free(ib);
         if (self.super_shape) |*ss| {
             for (ss.branches) |*branch| {

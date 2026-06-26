@@ -3453,12 +3453,6 @@ pub const Parser = struct {
             }
         }
 
-        // Check for post-invocation label anchor (#label)
-        const post_label = if (lexer.extractLabelAnchor(remaining)) |l|
-            try self.allocator.dupe(u8, l)
-        else
-            null;
-
         // Check if this is an invocation of an implicit flow event
         const path_str = try self.pathToString(invocation.path);
         defer self.allocator.free(path_str);
@@ -3529,7 +3523,6 @@ pub const Parser = struct {
             .body = ast.rootSite(final_invocation, final_continuations, location),
             .annotations = flow_annotations,
             .pre_label = null, // Pre-label is handled in parseLabelAnchor
-            .post_label = post_label,
             .super_shape = null, // Will be set later for inline flows
             .location = location,
             .module = try self.allocator.dupe(u8, self.module_name),
@@ -3637,9 +3630,8 @@ pub const Parser = struct {
 
     fn parseEventInvocation(self: *Parser, line: []const u8) anyerror!ast.Invocation {
         // Parse event invocation
-        // Remove label anchors if present (both # and @ for now)
-        var clean = lexer.withoutLabelAnchor(line);
-        clean = lexer.withoutLabel(clean);
+        // Strip any `@label` jump anchor before parsing the invocation.
+        var clean = lexer.withoutLabel(line);
         log_debug("[DEBUG] parseEventInvocation: input='{s}'\n", .{clean});
 
         // `/` is the sole namespace separator; reject the old `.`-namespace form.
@@ -8317,7 +8309,6 @@ pub const Parser = struct {
             return .{ .flow = ast.Flow{
                 .body = ast.rootSite(invocation, continuations, self.getCurrentLocation()),
                 .pre_label = try self.allocator.dupe(u8, label_name),
-                .post_label = null,
                 .super_shape = null,
                 .location = self.getCurrentLocation(),
                 .module = try self.allocator.dupe(u8, self.module_name),

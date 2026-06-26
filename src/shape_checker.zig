@@ -490,23 +490,6 @@ pub const ShapeChecker = struct {
         }
         self.labels.clearRetainingCapacity();
 
-        // If this flow defines a post-invocation label, validate it
-        if (flow.post_label) |label_name| {
-            // Check if label was already declared
-            if (self.labels.get(label_name)) |_| {
-                log.debug("ERROR: Duplicate label '{s}' defined\n", .{label_name});
-                return error.DuplicateLabel;
-            }
-            // Register post-invocation label
-            try self.labels.put(try self.allocator.dupe(u8, label_name), LabelInfo{
-                .decl = null, // Flow-based label, not a LabelDecl
-                .expected_shape = null, // Will be determined from flow output
-                .line = 0,
-                .is_pre_invocation = false,
-                .jump_sites = try std.ArrayList(LabelInfo.JumpSite).initCapacity(self.allocator, 0),
-            });
-        }
-        
         // If this flow defines a pre-invocation label, validate it
         if (flow.pre_label) |label_name| {
             // Check if label was already declared

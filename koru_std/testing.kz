@@ -858,7 +858,6 @@ const emitFlowWithMocks = struct {
         .body = ast.rootSite(new_invocation, flow.body.continuations, flow.location),
         .annotations = flow.annotations,
         .pre_label = flow.pre_label,
-        .post_label = flow.post_label,
         .super_shape = flow.super_shape,
         .inline_body = assert_code,
         .is_pure = true,

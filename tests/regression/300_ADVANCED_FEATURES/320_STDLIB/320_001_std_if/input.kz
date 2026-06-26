@@ -76,7 +76,6 @@ const std = @import("std");
         }, flow.body.continuations, flow.location),
         .annotations = flow.annotations,
         .pre_label = flow.pre_label,
-        .post_label = flow.post_label,
         .super_shape = flow.super_shape,
         .is_pure = flow.is_pure,
         .is_transitively_pure = flow.is_transitively_pure,
