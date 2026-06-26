@@ -1,0 +1,20 @@
+const std = @import("std");
+
+~[comptime] event tick { n: i64 }
+| go i64
+
+~proc tick|zig {
+    return .{ .go = n };
+}
+
+~[comptime] event report { v: i64 }
+
+~proc report|zig {
+    std.debug.print("{}\n", .{v});
+}
+
+~[comptime] countdown = #loop tick(n: 5)
+| go i when i > 0 |> @loop(n: i - 1)
+| go i |> report(v: i)
+
+~[comptime] countdown()

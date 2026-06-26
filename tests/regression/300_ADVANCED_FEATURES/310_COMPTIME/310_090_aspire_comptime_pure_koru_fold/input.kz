@@ -1,0 +1,12 @@
+import std/io
+
+~[comptime] event comptime-sum {}
+| result i64
+
+comptime-sum = capture { s: 0[i64] }
+! as a |> for(1..10)
+    ! each i |> captured { s: a.s + @as(i64, @intCast(i)) }
+| captured r => result r.s
+
+~[comptime] comptime-sum()
+| result r |> std/io:print.ln("{{ r:d }}")

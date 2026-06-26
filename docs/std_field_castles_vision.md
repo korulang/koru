@@ -215,6 +215,81 @@ The histogram row is the point: the IR makes the dangerous case *loud*. Scatter'
 write-set isn't a static AP, so the gate fires and forces an explicit decision
 (atomics, or privatized partials) instead of a silently-serial GPU kernel.
 
+## Wheel ladder — MEASURED + the comptime-table summit route
+
+✅ Hand-rolled wheel climb on `std/field` (1000 passes @ N=1M, Apple Silicon):
+| rung | time | passes/sec | note |
+|---|---|---|---|
+| plain bit-field | 3.29 s | ~304 | bit RMW, no wheel |
+| odds-only | 1.16 s | ~860 | beats naive C i64 (~840) |
+| **mod-6 wheel** | **0.52 s** | **~1,910** | 2.28× past naive C; ~77% of the champion |
+| 🏆 champion `5760of30030` | — | ~2,490 | mod-30030 wheel (wheeled C/C++) |
+Correctness gated on the **raw** coprime count (mod-6 → 78,496 = π(10⁶)−2, hand-verified),
+not a coincidence. Each wheel rung ~doubles throughput.
+
+✅ **mod-6 is the hand-rolling ceiling.** One prime's marking is already a monster inline
+expression (two residues). mod-30 = 8 residues, mod-30030 = 5,760 — infeasible by hand;
+it's the table `primesieve.cpp` ships.
+
+🏗️ **The summit route = comptime-baked wheel tables (rung-3 index-transform).** This is the
+regex move exactly: ✅ regex is a sub-language read by a `[comptime|transform]` and baked to
+native DFA tables (NFA→DFA at comptime is harder work than a wheel). From a single constant
+`W`, comptime-derive: coprime residues, the **gap table** (the cyclic residue-gap sequence
+primesieve hand-writes), encode/decode, and a *table-driven mark walk* (one loop, not k
+strikes). The grotesque inline math dissolves into `wheel(30030)`.
+
+🏗️ Surface (proposed): a comptime index-transform MODIFIER on the field island, not a siloed
+DSL — `std/field:over(2..N) wheel(2*3*5*7*11*13)` — so it composes with for/if like every
+transform (the bolted-on-macro problem the kernel/Lisp post named). Island owns buffer+sweep;
+wheel-transform owns addressing. "A wheel is a regex for the number line; it's known at
+compile time, so compile it."
+
+## Comptime boundary — MEASURED (shapes how the table generator must be built)
+
+✅ **Pure-Koru comptime *computation* of a data table is blocked today.** `for`, `if`, and
+`capture` are themselves comptime *transforms*, and they don't nest inside a `[comptime]`
+evaluation — a `[comptime]` event implemented by a Koru capture-fold fails at the
+`! as ... for ...` line (KORU010 "stray continuation"). So the very vocabulary you'd use to
+*compute* the wheel (iterate, accumulate, branch) is unavailable for comptime data-generation.
+
+✅ What DOES work at comptime: `[comptime]` events whose bodies are `~proc |zig`, and
+comptime *flows* that orchestrate them with `|>` / array literals / `=>` (030_016, 210_030).
+The metacircular compiler (`optimizer.kz` is `~[comptime]`) is the proof comptime Koru runs.
+
+⇒ Two honest routes for the wheel-table generator:
+- **NOW (proven): a transform-with-Zig-computation**, exactly like regex bakes DFAs — the
+  transform's `~proc |zig` computes the gap table at comptime and emits it as a `const`
+  array. Real, shippable; the computation is Zig, not Koru.
+- **FUTURE (pure Koru all the way down):** either make comptime transforms *nest* inside
+  comptime evaluation (the limitation Lars named), or use non-transform control primitives
+  that may comptime-evaluate — `#loop` (label recursion) is the one candidate NOT yet ruled
+  out (`when` turned out to be tap-gating, not an arithmetic conditional). UNTESTED.
+
+## Architecture: why pure-Koru comptime computation is hard (and what's sanctioned)
+
+✅ **INSIGHT (Lars):** Koru's transforms are **pipeline passes**, not a re-entrant comptime
+interpreter. A transform rewrites the AST *during* a pass; it cannot recursively re-run the
+whole comptime pipeline inside itself. So comptime transforms (`for`/`if`/`capture`) **cannot
+nest fractally.** Jai (Blow) gets fractal comptime via a comptime *VM* that evaluates code to
+any depth; Koru has rewriting passes, not a VM. ⇒ pure-Koru comptime *computation*
+(iterate/filter/accumulate to build a table) essentially requires a **comptime Koru evaluator**
+— the aspirational-interpreter direction ([[project_interpreter_aspirational]]), not a patch.
+The "flex" and the interpreter rewrite are the same project.
+
+⚖️ **SANCTIONED:** Zig is a legal compile-time language for Koru. Computing the wheel table in
+a transform's `~proc |zig` at comptime (the regex→DFA pattern) is **NOT a shortcut** — it's a
+legitimate path, available NOW. The **banned** shortcut is faking it with **Liquid** (a parallel
+string-templating DSL) and calling it "Koru computing the table." Pure-Koru comptime computation
+is the aspirational **FLEX**, not a correctness requirement.
+
+🏗️ A **`std/table` (also list) comprehension** is acceptable — less elegant than pure-Koru
+comptime, but a fine surface. Its substance must be real (a Zig-comptime transform now, or the
+flex: a comptime Koru evaluator), **never a Liquid fake.**
+
+**Encoded as failing aspiration tests** (MUST_RUN, currently RED; green when the comptime Koru
+evaluator lands): `tests/regression/300_ADVANCED_FEATURES/310_COMPTIME/310_09x_aspire_*`. The
+learnings live as red dashboard items, not lost prose.
+
 ## The name
 
 `std/castles` is the working codename and it's perfect. Sober candidates: `std/field`
