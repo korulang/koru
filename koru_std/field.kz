@@ -81,6 +81,29 @@ pub const Field = struct {
     }
 }
 
+// Wheel-strided strike: for a prime `p`, set every bit `p*w` where `w` is a wheel
+// position (the residues in `wheel`, repeated every `period`) with `w >= p` and
+// `p*w <= limit`. The composite wheel positions of `p` are exactly `p * (wheel
+// positions >= p)`, so this marks only coprime-to-period multiples — ~`period/φ`
+// fewer strikes than the full `strike`. Assumes `wheel[0] == 1` (the unit residue),
+// used for the cheap per-block early-out.
+~pub event strike-wheel { f: *Field<field>, p: usize, wheel: []const usize, period: usize, limit: usize }
+
+~proc strike-wheel|zig {
+    var j: usize = 0;
+    while (true) : (j += 1) {
+        const base = period * j;
+        if (p * (base + 1) > limit) break; // smallest position in this block already exceeds
+        for (wheel) |res| {
+            const w = base + res;
+            if (w < p) continue; // only excludes a prefix in block 0
+            const m = p * w;
+            if (m > limit) break; // residues ascending -> the rest of this block exceeds too
+            f.data[m >> 6] |= (@as(u64, 1) << @as(u6, @intCast(m & 63)));
+        }
+    }
+}
+
 // ============================================
 // Read (borrow)
 // ============================================
