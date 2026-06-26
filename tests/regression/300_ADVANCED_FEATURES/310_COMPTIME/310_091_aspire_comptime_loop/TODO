@@ -1,0 +1,5 @@
+ASPIRATIONAL: pure-Koru comptime #loop (when-guarded labeled recursion) at compile time.
+
+Blocked: the comptime #loop subflow doesn't resolve (KORU040); same root as 310_090
+(transforms-as-pipeline-pass, no comptime VM). Surface provisional — pins the capability.
+Green when a comptime Koru evaluator lands. See docs/std_field_castles_vision.md.

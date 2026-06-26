@@ -1,0 +1,6 @@
+ASPIRATIONAL: pure-Koru comptime computation (a capture-fold) feeding runtime output.
+
+Blocked: capture/for are comptime TRANSFORMS (pipeline passes) that cannot nest inside
+comptime evaluation (KORU010). Needs a comptime Koru evaluator — the aspirational-
+interpreter direction, not a patch. Green when that lands. Reds here are the to-do list.
+See docs/std_field_castles_vision.md "Architecture: why pure-Koru comptime is hard".
