@@ -627,11 +627,10 @@ Done!
 
 const std = @import("std");
 
-~event get-data {}
-| result i32
+~event get-data {} -> i32
 
 ~proc get-data|zig {
-    return .{ .result = 42 };
+    return 42;
 }
 
 // This event mutates the value it receives via a pointer
@@ -643,8 +642,7 @@ const std = @import("std");
 }
 
 // Test: Using [mutable] annotation so we can pass a mutable pointer
-~get-data()
-| result r[mutable] |> mutate-and-print(ptr: &r)
+~get-data(): r[mutable] |> mutate-and-print(ptr: &r)
 ```
 
 **Output:**
@@ -2090,11 +2088,10 @@ const std = @import("std");
 
 ~import std/io
 
-~event greet { id: u32 }
-| ok []const u8
+~event greet { id: u32 } -> []const u8
 
 ~proc greet|zig {
-    return .{ .ok = "Alice" };
+    return "Alice";
 }
 
 // Binding is `name` — NOT used as a variable.
@@ -2103,8 +2100,7 @@ const std = @import("std");
 //      → continuationUsesBinding returns true (false positive)
 //      → emitter skips `_ = &name;` suppressor
 //      → Zig: "unused local constant 'name'"
-~greet(id: 1)
-| ok name |> std/io:print.ln("no name given")
+~greet(id: 1): name |> std/io:print.ln("no name given")
 ```
 
 **Output:**
@@ -2603,11 +2599,10 @@ Testing value braceless:
 ~import std/io
 
 // Source event
-~pub event compute { x: i32 }
-| value i32
+~pub event compute { x: i32 } -> i32
 
 ~proc compute|zig {
-    return .{ .value = x * 2 };
+    return x * 2;
 }
 
 // Result event with identity branches
@@ -2625,8 +2620,7 @@ Testing value braceless:
 ~event process { input: i32 }
 | result i32
 
-~process = compute(x: input)
-| value v => result v
+~process = compute(x: input): v => result v
 
 // Main test
 ~std/io:print.ln("Testing braceless in continuation:")
