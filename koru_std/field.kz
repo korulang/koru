@@ -1,0 +1,123 @@
+// std/field — a dense 1-bit-per-cell buffer (bitset) over a flat u64 word array,
+// with the same owned-handle ownership model as std/grid. Runtime-sized,
+// single-owner, in-place mutable. This is RUNG 1 of the std/field (codename
+// std/castles) vision: the bit-packed buffer primitive.
+//
+// What is Koru and what is the Zig leaf: the MARKING LOGIC (which cells, the
+// strided sweep, the prime guard) lives in Koru flow on top of this module. Only
+// the irreducible per-cell bit poke (set/test) and the popcount reduction (count)
+// are the Zig leaf — exactly parallel to std/grid:set / std/grid:count-nonzero.
+// The later cuts (the claims_descendants island that GENERATES the strided fill
+// so even the per-cell call disappears) sit ABOVE this primitive — see
+// docs/std_field_castles_vision.md.
+//
+// Ownership states (phantom on *Field):
+//   <field!>  - new issues the obligation: this field must be freed.
+//   <field>   - borrowed: read/mutate in place (set, test, count), obligation kept.
+//   <!field>  - consumed: free discharges the obligation.
+
+const std = @import("std");
+
+pub const Field = struct {
+    data: []u64,
+    bits: usize,
+    allocator: std.mem.Allocator,
+
+    // Package-private — only free/auto-discharge calls this.
+    fn deinit(self: *Field) void {
+        self.allocator.free(self.data);
+        self.allocator.destroy(self);
+    }
+};
+
+// ============================================
+// Construction
+// ============================================
+
+// ASPIRATIONAL (same debt as std/grid): the Field HANDLE is heap-boxed
+// unconditionally because escape-driven local allocation isn't built yet. The
+// word backing buffer is heap regardless. The `| err` branch is the proven shape;
+// upgrading to a `| ?!oom` panic branch is the follow-up.
+~pub event new { bits: usize }
+| field *Field<field!>
+| err []const u8
+
+~proc new|zig {
+    const allocator = koru_allocator();
+    const self = allocator.create(Field) catch {
+        return .{ .err = "allocation failed" };
+    };
+    const words = (bits + 63) / 64;
+    const data = allocator.alloc(u64, words) catch {
+        allocator.destroy(self);
+        return .{ .err = "allocation failed" };
+    };
+    @memset(data, 0);
+    self.* = .{ .data = data, .bits = bits, .allocator = allocator };
+    return .{ .field = self };
+}
+
+// ============================================
+// Mutation (borrow — obligation untouched)
+// ============================================
+
+// Set bit i to 1. Void, chains with `|>`. The irreducible per-cell poke.
+~pub event set { f: *Field<field>, i: usize }
+
+~proc set|zig {
+    f.data[i >> 6] |= (@as(u64, 1) << @as(u6, @intCast(i & 63)));
+}
+
+// Set every bit in the arithmetic progression {from, from+stride, ...} <= limit.
+// The IR's AP-write access pattern, fused: one tight strided bit-fill instead of a
+// per-cell `set` call through the flow. Word-blocking (precomputed per-stride
+// patterns) is a later refinement; this is the simple fused loop.
+~pub event strike { f: *Field<field>, from: usize, stride: usize, limit: usize }
+
+~proc strike|zig {
+    var m: usize = from;
+    while (m <= limit) : (m += stride) {
+        f.data[m >> 6] |= (@as(u64, 1) << @as(u6, @intCast(m & 63)));
+    }
+}
+
+// ============================================
+// Read (borrow)
+// ============================================
+
+// 1 if bit i is set, else 0.
+~pub event test { f: *Field<field>, i: usize } -> i64
+
+~proc test|zig {
+    return @as(i64, @intCast((f.data[i >> 6] >> @as(u6, @intCast(i & 63))) & 1));
+}
+
+// Count of UNSET bits in [lo, hi). Word-wise @popCount over the aligned middle —
+// the IR's "1-bit (+,0) reduction recognized as popcount", made real.
+~pub event count-zeros { f: *Field<field>, lo: usize, hi: usize } -> i64
+
+~proc count-zeros|zig {
+    const total_bits: i64 = @intCast(hi - lo);
+    var set_bits: i64 = 0;
+    var i: usize = lo;
+    while (i < hi and (i & 63) != 0) : (i += 1) {
+        set_bits += @as(i64, @intCast((f.data[i >> 6] >> @as(u6, @intCast(i & 63))) & 1));
+    }
+    while (i + 64 <= hi) : (i += 64) {
+        set_bits += @as(i64, @intCast(@popCount(f.data[i >> 6])));
+    }
+    while (i < hi) : (i += 1) {
+        set_bits += @as(i64, @intCast((f.data[i >> 6] >> @as(u6, @intCast(i & 63))) & 1));
+    }
+    return total_bits - set_bits;
+}
+
+// ============================================
+// Teardown (consume — discharges <!field>)
+// ============================================
+
+~pub event free { f: *Field<!field> }
+
+~proc free|zig {
+    f.deinit();
+}

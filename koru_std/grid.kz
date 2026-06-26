@@ -69,6 +69,26 @@ pub const Grid_i64 = struct {
     g.data[y * g.cols + x] = v;
 }
 
+// Reset every cell to 0 in place (borrow). Lets a caller reuse one grid across
+// many logical passes instead of new/free-ing each time — the construct owning
+// the buffer lifecycle, which kills the per-pass alloc/fault tax.
+~pub event clear { g: *Grid_i64<grid> }
+
+~proc clear|zig {
+    @memset(g.data, 0);
+}
+
+// Set every flat-index cell in the AP {from, from+stride, ...} <= limit to 1.
+// Incremental (m += stride), matching C's strided marking — no per-mark multiply.
+~pub event strike { g: *Grid_i64<grid>, from: usize, stride: usize, limit: usize }
+
+~proc strike|zig {
+    var m: usize = from;
+    while (m <= limit) : (m += stride) {
+        g.data[m] = 1;
+    }
+}
+
 // ============================================
 // Read (borrow)
 // ============================================
@@ -87,6 +107,19 @@ pub const Grid_i64 = struct {
     var n: i64 = 0;
     for (g.data) |c| {
         if (c != 0) n += 1;
+    }
+    return n;
+}
+
+// Count of zero cells in the flat index range [lo, hi). A tight reduction (the
+// IR's reduce field) — replaces a per-cell capture-fold count in callers.
+~pub event count-zeros { g: *Grid_i64<grid>, lo: usize, hi: usize } -> i64
+
+~proc count-zeros|zig {
+    var n: i64 = 0;
+    var i: usize = lo;
+    while (i < hi) : (i += 1) {
+        if (g.data[i] == 0) n += 1;
     }
     return n;
 }
