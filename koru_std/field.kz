@@ -152,16 +152,26 @@ pub const Field = struct {
             if (mod == firstMod or cycleLen >= stride) break;
         }
     }
+    // Double the cycle so the SIMD pair-loop never has a per-cycle scalar tail
+    // (2*cycleLen is always even, even when cycleLen is an odd prime). cycleMasks2
+    // holds the mask sequence repeated twice; we then OR `2*cycleLen` words with
+    // pure @Vector(2,u64) NEON. The post-loop scalar fixup handles the remainder
+    // (firstMod is back to its start since 2*cycleLen is a multiple of cycleLen).
+    var cycleMasks2 = [_]u64{0} ** 128;
+    for (0..cycleLen) |j| {
+        cycleMasks2[j] = cycleMasks[j];
+        cycleMasks2[cycleLen + j] = cycleMasks[j];
+    }
+    const dbl = cycleLen * 2;
     if (cycleLen > 0) {
-        while (wi + cycleLen <= fullWords) {
+        while (wi + dbl <= fullWords) {
             var idx: usize = 0;
-            while (idx + 2 <= cycleLen) : (idx += 2) {
+            while (idx < dbl) : (idx += 2) {
                 const v: @Vector(2, u64) = data[wi + idx ..][0..2].*;
-                const m: @Vector(2, u64) = .{ cycleMasks[idx], cycleMasks[idx + 1] };
+                const m: @Vector(2, u64) = cycleMasks2[idx ..][0..2].*;
                 data[wi + idx ..][0..2].* = v | m;
             }
-            while (idx < cycleLen) : (idx += 1) data[wi + idx] |= cycleMasks[idx];
-            wi += cycleLen;
+            wi += dbl;
         }
     }
     while (wi < fullWords) : (wi += 1) {
