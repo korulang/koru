@@ -86,8 +86,37 @@ pub const Field = struct {
     const start = from;
     if (start >= bitCount) return;
     if (stride >= 64) {
-        var b = start;
-        while (b < bitCount) : (b += stride) data[b >> 6] |= (@as(u64, 1) << @as(u6, @intCast(b & 63)));
+        // Sparse (<1 bit/word): 8-way-unrolled byte scatter. Precompute 8 marks'
+        // byte-offsets + bit-masks (the pattern repeats every 8 strides = `stride`
+        // bytes), OR 8 independent bytes per iteration so they pipeline. ~4x the
+        // dominant large-prime cost vs bit-at-a-time (measured). (solution_5.)
+        const bytes = std.mem.sliceAsBytes(data);
+        var bi = start;
+        const step8 = stride * 8;
+        var masks: [8]u8 = undefined;
+        var offs: [8]usize = undefined;
+        const base = bi >> 3;
+        for (0..8) |i| {
+            const mb = bi + stride * i;
+            masks[i] = @as(u8, 1) << @as(u3, @intCast(mb & 7));
+            offs[i] = (mb >> 3) - base;
+        }
+        var byteIdx = base;
+        const ge = if (bitCount > stride * 7) bitCount - stride * 7 else 0;
+        while (bi < ge) {
+            const q = byteIdx;
+            bytes[q + offs[0]] |= masks[0];
+            bytes[q + offs[1]] |= masks[1];
+            bytes[q + offs[2]] |= masks[2];
+            bytes[q + offs[3]] |= masks[3];
+            bytes[q + offs[4]] |= masks[4];
+            bytes[q + offs[5]] |= masks[5];
+            bytes[q + offs[6]] |= masks[6];
+            bytes[q + offs[7]] |= masks[7];
+            byteIdx += stride;
+            bi += step8;
+        }
+        while (bi < bitCount) : (bi += stride) bytes[bi >> 3] |= @as(u8, 1) << @as(u3, @intCast(bi & 7));
         return;
     }
     const delta = 64 % stride;
