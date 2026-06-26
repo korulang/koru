@@ -12,7 +12,12 @@ import { join, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
-const ROOT = process.argv[2] || dirname(dirname(fileURLToPath(import.meta.url))); // wm/ -> repo root
+// Positional arg = repo root; flags (e.g. --occupied) are filtered out so they don't get read as ROOT.
+const POSITIONAL = process.argv.slice(2).filter((a) => !a.startsWith('--'));
+const ROOT = POSITIONAL[0] || dirname(dirname(fileURLToPath(import.meta.url))); // wm/ -> repo root
+// Forward `--occupied` to the engine when the session occupant is us (or WM_OCCUPIED=1) — lets the
+// manifest regenerate during a live session (e.g. from the ceremony) instead of being refused.
+const OCCUPIED = process.argv.includes('--occupied') || process.env.WM_OCCUPIED === '1';
 const SUBJECT = basename(ROOT);
 
 // --- WHAT IT WATCHES: native WMFX models RUN THROUGH THE ENGINE; signals scraped from it ---
@@ -61,7 +66,7 @@ const nativeModels = existsSync(modelsDir)
   ? readdirSync(modelsDir).filter((d) => existsSync(join(modelsDir, d, 'model.wmfx')))
   : [];
 for (const name of nativeModels) {
-  const r = spawnSync('wm', ['run', ROOT, '--only', name, '--json'],
+  const r = spawnSync('wm', ['run', ROOT, '--only', name, '--json', ...(OCCUPIED ? ['--occupied'] : [])],
     { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
   if (!r.stdout) {
     console.error(r.stderr || String(r.error));

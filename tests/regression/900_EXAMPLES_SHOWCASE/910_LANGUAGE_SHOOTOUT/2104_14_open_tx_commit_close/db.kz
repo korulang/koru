@@ -55,7 +55,7 @@ const Transaction = struct { conn_handle: i32 };
     return .{ .rolled_back = c };
 }
 
-~[!]pub event close { conn: *Connection<!active> }
+~pub event close { conn: *Connection<!active> }
 
 ~proc close|zig {
     std.debug.print("Connection closed\n", .{});
