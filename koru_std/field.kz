@@ -104,6 +104,16 @@ pub const Field = struct {
     }
 }
 
+// Zero every bit — reset a field for reuse without reallocating. The lever for
+// alloc-once sieve loops: `new` once, `clear` each pass instead of new/free per
+// pass (the per-pass allocation/page-fault tax is the dominant cost once marking
+// is wheel-strided).
+~pub event clear { f: *Field<field> }
+
+~proc clear|zig {
+    @memset(f.data, 0);
+}
+
 // ============================================
 // Read (borrow)
 // ============================================
