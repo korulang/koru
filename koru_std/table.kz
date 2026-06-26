@@ -1,0 +1,62 @@
+// Koru Standard Library: Table comprehensions
+// ============================================
+//
+// `from(name) { <var> over <lo>..<hi> }` bakes a `const` table at COMPILE TIME
+// from a restricted, closed comprehension — the regex->DFA move generalized from
+// strings to data. Pure-Koru SURFACE (no `~` at the call site); the comprehension
+// is EVALUATED by the `table_from` Zig filter (template_processor.zig) and EMITTED
+// as a const array, exactly as `const` emits scalars via `parse_fields`. Both the
+// |zig and |js variants call the SAME filter, so the two lowerings of one
+// comprehension cannot drift — one source, two targets.
+//
+// v1: generator-only integer ranges (`x over 1..4` -> [1, 2, 3], upper-exclusive,
+// matching the sieve's `for(2..1001)`). Next: `keep <guard>` filters + reduce
+// monoids; the pure-Koru #loop evaluator (pin 310_091) is the flex that replaces
+// the Zig filter underneath. See docs/std_field_castles_vision.md.
+//
+// Signature precedent: std/types:enum/union take `{ expr: Expression, source:
+// Source }` (the `name(paren) { block }` shape); emission precedent: `const`
+// (declarations.kz), a `[keyword|declaration]` |template that splices a const
+// decl into the enclosing scope where sibling flows see it.
+
+~[comptime]
+
+~[keyword|declaration]pub event from { expr: Expression, source: Source }
+
+~proc from|template|zig {
+{% const rows = table_from(source) %}{% const ty = table_type(source) %}const {{ expr }} = [_]{{ ty }}{ {% for r in rows %}{{ r.v }}, {% endfor %}};
+}
+
+~proc from|template|js {
+{% const rows = table_from(source) %}const {{ expr }} = [{% for r in rows %}{{ r.v }}, {% endfor %}];
+}
+
+// `sum(name) { <table> }` reduces an in-scope table to its sum — the first table
+// CONSUMPTION primitive (a monoid reduce) and the prerequisite for feeding a
+// generated wheel into the sieve. The fold is comptime over a comptime const, so
+// `name` is itself a compile-time constant. The reduce is target-shaped: a Zig
+// `comptime` fold vs a JS `.reduce`, but the surface is one declaration.
+~[keyword|declaration]pub event sum { expr: Expression, source: Source }
+
+~proc sum|template|zig {
+const {{ expr }} = blk: { @setEvalBranchQuota(1_000_000); var __acc: i64 = 0; for ({{ source }}) |__v| __acc += __v; break :blk __acc; };
+}
+
+~proc sum|template|js {
+const {{ expr }} = {{ source }}.reduce((__a, __v) => __a + __v, 0);
+}
+
+// `gaps(name) { <comprehension> }` bakes the CYCLIC residue-gap table — the
+// consecutive differences a wheel sieve walks (step the next candidate by adding
+// the next gap, no per-candidate coprimality test). Same comprehension grammar as
+// `from`; the k gaps tile one period and sum to it. This is the table primesieve
+// ships hand-written for the big wheels — here, one line, derived at compile time.
+~[keyword|declaration]pub event gaps { expr: Expression, source: Source }
+
+~proc gaps|template|zig {
+{% const rows = table_gaps(source) %}{% const ty = table_type(source) %}const {{ expr }} = [_]{{ ty }}{ {% for r in rows %}{{ r.v }}, {% endfor %}};
+}
+
+~proc gaps|template|js {
+{% const rows = table_gaps(source) %}const {{ expr }} = [{% for r in rows %}{{ r.v }}, {% endfor %}];
+}

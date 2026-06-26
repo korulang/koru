@@ -226,6 +226,244 @@ fn parseFieldsFilter(allocator: std.mem.Allocator, args: []const liquid.Value) a
     return liquid.Value{ .array = try nodes.toOwnedSlice(allocator) };
 }
 
+/// Minimal integer-expression evaluator for comprehension `keep` guards. Supports
+/// the bound variable, integer literals, `+ - * / %`, comparisons (`== != < <= >
+/// >=` -> 1/0), `&& ||`, unary `! -`, parentheses, and the `gcd(a, b)` builtin —
+/// the coprimality test the prime-sieve wheel needs. Returns null on any parse
+/// error (caller treats it as a malformed comprehension). This is REAL comptime
+/// evaluation in Zig — the sanctioned regex->DFA path — not string substitution.
+const GuardEval = struct {
+    s: []const u8,
+    i: usize,
+    var_name: []const u8,
+    x: i64,
+
+    fn eval(s: []const u8, var_name: []const u8, x: i64) ?i64 {
+        var ge = GuardEval{ .s = s, .i = 0, .var_name = var_name, .x = x };
+        const v = ge.pOr() orelse return null;
+        ge.ws();
+        if (ge.i != ge.s.len) return null; // trailing junk = malformed
+        return v;
+    }
+
+    fn ws(self: *GuardEval) void {
+        while (self.i < self.s.len and (self.s[self.i] == ' ' or self.s[self.i] == '\t')) self.i += 1;
+    }
+    fn eat(self: *GuardEval, tok: []const u8) bool {
+        self.ws();
+        if (self.i + tok.len <= self.s.len and std.mem.eql(u8, self.s[self.i .. self.i + tok.len], tok)) {
+            self.i += tok.len;
+            return true;
+        }
+        return false;
+    }
+    fn pOr(self: *GuardEval) ?i64 {
+        var l = self.pAnd() orelse return null;
+        while (self.eat("||")) {
+            const r = self.pAnd() orelse return null;
+            l = if (l != 0 or r != 0) 1 else 0;
+        }
+        return l;
+    }
+    fn pAnd(self: *GuardEval) ?i64 {
+        var l = self.pCmp() orelse return null;
+        while (self.eat("&&")) {
+            const r = self.pCmp() orelse return null;
+            l = if (l != 0 and r != 0) 1 else 0;
+        }
+        return l;
+    }
+    fn pCmp(self: *GuardEval) ?i64 {
+        const l = self.pAdd() orelse return null;
+        if (self.eat("==")) return if (l == (self.pAdd() orelse return null)) 1 else 0;
+        if (self.eat("!=")) return if (l != (self.pAdd() orelse return null)) 1 else 0;
+        if (self.eat("<=")) return if (l <= (self.pAdd() orelse return null)) 1 else 0;
+        if (self.eat(">=")) return if (l >= (self.pAdd() orelse return null)) 1 else 0;
+        if (self.eat("<")) return if (l < (self.pAdd() orelse return null)) 1 else 0;
+        if (self.eat(">")) return if (l > (self.pAdd() orelse return null)) 1 else 0;
+        return l;
+    }
+    fn pAdd(self: *GuardEval) ?i64 {
+        var l = self.pMul() orelse return null;
+        while (true) {
+            if (self.eat("+")) {
+                l += self.pMul() orelse return null;
+            } else if (self.eat("-")) {
+                l -= self.pMul() orelse return null;
+            } else break;
+        }
+        return l;
+    }
+    fn pMul(self: *GuardEval) ?i64 {
+        var l = self.pUnary() orelse return null;
+        while (true) {
+            if (self.eat("*")) {
+                l *= self.pUnary() orelse return null;
+            } else if (self.eat("/")) {
+                const r = self.pUnary() orelse return null;
+                if (r == 0) return null;
+                l = @divTrunc(l, r);
+            } else if (self.eat("%")) {
+                const r = self.pUnary() orelse return null;
+                if (r == 0) return null;
+                l = @mod(l, r);
+            } else break;
+        }
+        return l;
+    }
+    fn pUnary(self: *GuardEval) ?i64 {
+        if (self.eat("!")) return if ((self.pUnary() orelse return null) == 0) 1 else 0;
+        if (self.eat("-")) return -(self.pUnary() orelse return null);
+        return self.pPrimary();
+    }
+    fn pPrimary(self: *GuardEval) ?i64 {
+        if (self.eat("(")) {
+            const v = self.pOr() orelse return null;
+            if (!self.eat(")")) return null;
+            return v;
+        }
+        if (self.eat("gcd")) {
+            if (!self.eat("(")) return null;
+            const a = self.pOr() orelse return null;
+            if (!self.eat(",")) return null;
+            const b = self.pOr() orelse return null;
+            if (!self.eat(")")) return null;
+            return gcd(a, b);
+        }
+        self.ws();
+        // Bound variable (identifier matching the generator's var name).
+        if (self.i < self.s.len and (std.ascii.isAlphabetic(self.s[self.i]) or self.s[self.i] == '_')) {
+            const start = self.i;
+            while (self.i < self.s.len and (std.ascii.isAlphanumeric(self.s[self.i]) or self.s[self.i] == '_')) self.i += 1;
+            const ident = self.s[start..self.i];
+            if (std.mem.eql(u8, ident, self.var_name)) return self.x;
+            return null; // unknown identifier — malformed for v1
+        }
+        // Integer literal.
+        const start = self.i;
+        while (self.i < self.s.len and std.ascii.isDigit(self.s[self.i])) self.i += 1;
+        if (self.i == start) return null;
+        return std.fmt.parseInt(i64, self.s[start..self.i], 10) catch null;
+    }
+    fn gcd(a_: i64, b_: i64) i64 {
+        var a = if (a_ < 0) -a_ else a_;
+        var b = if (b_ < 0) -b_ else b_;
+        while (b != 0) {
+            const t = b;
+            b = @mod(a, b);
+            a = t;
+        }
+        return a;
+    }
+};
+
+/// `table_from(comprehension_text)` filter: EVALUATE a v1 comprehension
+/// `<var> over <lo>..<hi>` at COMPILE TIME into the list of integer values it
+/// generates, returned as `{ v }` records the template bakes into a const table
+/// (`{% for r in table_from(source) %}{{ r.v }}, {% endfor %}`). Upper-exclusive,
+/// matching the sieve's `for(2..1001)`. This is the regex->DFA move generalized
+/// from strings to data: a restricted, closed comprehension read at comptime and
+/// lowered to a native table. The COMPUTATION here is real Zig integer iteration —
+/// the banned shortcut is FAKING the table via string-substitution, never using a
+/// template to EMIT a table a real evaluator computed. Both `|zig` and `|js`
+/// variants call THIS one filter, so the two lowerings cannot drift.
+/// The result of evaluating a comprehension: the generated values, the period (the
+/// range's upper bound, used by the gap table's cyclic wraparound), and the element
+/// type the table bakes to (`i64` by default; `x: usize over …` types it).
+const Comprehension = struct { values: []i64, period: i64, elem_type: []const u8 };
+
+/// Shared comptime evaluator for the `<var> over <lo>..<hi> [| keep <guard>]`
+/// comprehension grammar. The single source of truth both `table_from` and
+/// `table_gaps` (and future reduces) lower through — so the language has ONE
+/// evaluator, not one per surface. (Inhale phase: it lives here as a filter helper;
+/// the cohesion pass may re-home it to its own module behind this same interface.)
+fn evalComprehension(allocator: std.mem.Allocator, raw: []const u8) anyerror!Comprehension {
+    var input = std.mem.trim(u8, raw, " \t\n\r");
+    // The block interior may arrive with or without wrapping braces.
+    if (input.len >= 2 and input[0] == '{' and input[input.len - 1] == '}') {
+        input = std.mem.trim(u8, input[1 .. input.len - 1], " \t\n\r");
+    }
+    // An optional `| keep <guard>` clause filters the generated values; the guard
+    // is an integer expression over the bound variable, evaluated at COMPILE TIME.
+    var gen_part = input;
+    var guard: ?[]const u8 = null;
+    if (std.mem.indexOf(u8, input, "| keep ")) |kidx| {
+        gen_part = std.mem.trim(u8, input[0..kidx], " \t\n\r");
+        guard = std.mem.trim(u8, input[kidx + "| keep ".len ..], " \t\n\r");
+    }
+
+    const over_kw = " over ";
+    const over_idx = std.mem.indexOf(u8, gen_part, over_kw) orelse return error.BadArgs;
+    // The bound variable, with an optional `: <type>` annotation that types the
+    // baked table (`x: usize over …` -> `[_]usize{…}`; default `i64`).
+    const before_over = std.mem.trim(u8, gen_part[0..over_idx], " \t");
+    var var_name = before_over;
+    var elem_type: []const u8 = "i64";
+    if (std.mem.indexOfScalar(u8, before_over, ':')) |ci| {
+        var_name = std.mem.trim(u8, before_over[0..ci], " \t");
+        elem_type = std.mem.trim(u8, before_over[ci + 1 ..], " \t");
+    }
+    const gen = std.mem.trim(u8, gen_part[over_idx + over_kw.len ..], " \t\n\r");
+    const dotdot = findTopLevelRange(gen) orelse return error.BadArgs;
+    const lo = std.fmt.parseInt(i64, std.mem.trim(u8, gen[0..dotdot], " \t"), 10) catch return error.BadArgs;
+    const hi = std.fmt.parseInt(i64, std.mem.trim(u8, gen[dotdot + 2 ..], " \t"), 10) catch return error.BadArgs;
+
+    var vals: std.ArrayList(i64) = .empty;
+    var x = lo;
+    while (x < hi) : (x += 1) { // upper-exclusive, matching `for(2..1001)`
+        if (guard) |g| {
+            const keep = GuardEval.eval(g, var_name, x) orelse return error.BadArgs;
+            if (keep == 0) continue;
+        }
+        try vals.append(allocator, x);
+    }
+    return .{ .values = try vals.toOwnedSlice(allocator), .period = hi, .elem_type = elem_type };
+}
+
+/// `table_type(comprehension)`: the element type the table bakes to (default `i64`),
+/// so the `|zig` template can write `[_]<type>{…}`. The `|js` template ignores it.
+fn tableTypeFilter(allocator: std.mem.Allocator, args: []const liquid.Value) anyerror!liquid.Value {
+    if (args.len != 1 or args[0] != .string) return error.BadArgs;
+    const c = try evalComprehension(allocator, args[0].string);
+    return liquid.Value{ .string = c.elem_type };
+}
+
+/// Wrap a list of integers as `{ v }` records for the template's `{% for %}`.
+fn valuesToRecords(allocator: std.mem.Allocator, values: []const i64) anyerror!liquid.Value {
+    var nodes: std.ArrayList(*liquid.Context) = .empty;
+    for (values) |v| {
+        const node = try allocator.create(liquid.Context);
+        node.* = liquid.Context.init(allocator);
+        try node.put("v", .{ .string = try std.fmt.allocPrint(allocator, "{d}", .{v}) });
+        try nodes.append(allocator, node);
+    }
+    return liquid.Value{ .array = try nodes.toOwnedSlice(allocator) };
+}
+
+fn tableFromFilter(allocator: std.mem.Allocator, args: []const liquid.Value) anyerror!liquid.Value {
+    if (args.len != 1 or args[0] != .string) return error.BadArgs;
+    const c = try evalComprehension(allocator, args[0].string);
+    return valuesToRecords(allocator, c.values);
+}
+
+/// `table_gaps(comprehension)`: the CYCLIC differences between consecutive
+/// generated values — the residue-gap sequence a wheel sieve walks. The last gap
+/// wraps to the first value one period on (`values[0] + period - values[last]`),
+/// so the k gaps tile exactly one turn and sum to the period. For the mod-6 wheel
+/// [1,5] over period 6: gaps [4, 2] (sum 6). This is the table `primesieve.cpp`
+/// hand-writes for the big wheels — here it's derived at compile time.
+fn tableGapsFilter(allocator: std.mem.Allocator, args: []const liquid.Value) anyerror!liquid.Value {
+    if (args.len != 1 or args[0] != .string) return error.BadArgs;
+    const c = try evalComprehension(allocator, args[0].string);
+    if (c.values.len == 0) return liquid.Value{ .array = &.{} };
+    const gaps = try allocator.alloc(i64, c.values.len);
+    for (c.values, 0..) |v, i| {
+        const next = if (i + 1 < c.values.len) c.values[i + 1] else c.values[0] + c.period;
+        gaps[i] = next - v;
+    }
+    return valuesToRecords(allocator, gaps);
+}
+
 /// Walk the AST and process every proc whose variant chain begins with
 /// `template(once)|...`. Mutates ProcDecl.body and ProcDecl.target in place.
 /// Also runs the per-call template pass for bare `|template|...` procs:
@@ -407,6 +645,9 @@ fn renderTemplateInvocation(
     defer filters.deinit();
     try filters.put("parse_range", parseRangeFilter);
     try filters.put("parse_fields", parseFieldsFilter);
+    try filters.put("table_from", tableFromFilter);
+    try filters.put("table_gaps", tableGapsFilter);
+    try filters.put("table_type", tableTypeFilter);
 
     var comp_err: ?[]const u8 = null;
     const rendered = liquid.renderWithEnv(allocator, proc.body.text, &ctx, &comp_err, .{ .filters = &filters }) catch |err| {
