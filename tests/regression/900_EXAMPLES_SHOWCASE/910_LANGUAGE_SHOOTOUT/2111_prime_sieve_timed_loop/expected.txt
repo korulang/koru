@@ -1,0 +1,2 @@
+passes: 5
+validated primes: 78498
