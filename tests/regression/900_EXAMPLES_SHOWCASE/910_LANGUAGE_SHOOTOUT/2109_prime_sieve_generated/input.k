@@ -4,8 +4,9 @@
 // the per-word masks baked as immediate literals (the same residue-class trick the Zig
 // champion hand-writes with comptime). The Koru program just says "mark the multiples";
 // Koru's compiler generates the specialized SIMD marker per stride and dispatches at
-// runtime. Same machinery as regex->DFA and kernel->SIMD. Beats hand-written std/field:strike
-// and matches hand-tuned Zig (PrimeZig solution_3). Expected: 78,498 primes <= 1,000,000.
+// runtime. Same machinery as regex->DFA and kernel->SIMD. This pin proves the generated
+// marker is CORRECT: 78,498 primes <= 1,000,000. (Speed lives in the drag-race
+// submission, measured under the official protocol — not asserted here.)
 import std/io
 import std/field
 

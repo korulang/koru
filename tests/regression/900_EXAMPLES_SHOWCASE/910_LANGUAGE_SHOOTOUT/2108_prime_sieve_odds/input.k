@@ -1,10 +1,8 @@
 // Sieve of Eratosthenes, odds-only + stepMask word-wise marking — the fast path.
 // bit b is the odd number 2b+1, so prime p has a uniform bit-stride of p, which
 // std/field:strike marks word-wise (one OR per 64-bit word, NEON-lowered, doubled
-// cycle to drop the scalar tail) + an 8-way byte scatter for large strides. At 1000
-// passes this hits ~12,700 passes/sec (1M, single-thread) — within ~1.1x of the
-// hand-tuned NEON C++ champion (PlummersSoftwareLLC/Primes solution_5), in pure Koru.
-// Expected: 78,498 primes <= 1,000,000. (Contrast 2107: the elegant mod-30030 wheel,
+// cycle to drop the scalar tail) + an 8-way byte scatter for large strides, in pure
+// Koru. Expected: 78,498 primes <= 1,000,000. (Contrast 2107: the elegant mod-30030 wheel,
 // which does less work but scatters — a vectorization dead-end. See the blog.)
 import std/io
 import std/field
