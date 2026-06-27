@@ -694,8 +694,19 @@ pub const CompilerContext = struct {
 | created CompilerContext
 
 ~proc context-create|zig {
+    // PROGRAM_AST is a `pub const` global: on Linux/ELF its embedded array
+    // literals (`&[_]Continuation{...}`) are placed in read-only `.rodata`
+    // (mapped `r--p`). The metacircular pipeline MUTATES the AST in place via
+    // `@constCast` (template_processor writes `node.invocation.inline_body`;
+    // auto-discharge stamps `binding_annotations`), so `ctx.ast` MUST point at
+    // writable memory — otherwise the first in-place write SIGSEGVs. (macOS/
+    // Mach-O happened to place the same const writably, hiding the bug.)
+    // Deep-clone PROGRAM_AST onto the heap before any pass runs.
+    const ast_functional = @import("ast_functional");
+    const heap_ast = allocator.create(Program) catch unreachable;
+    heap_ast.* = ast_functional.cloneSourceFile(allocator, program_ast) catch unreachable;
     const ctx = CompilerContext{
-        .ast = program_ast,
+        .ast = heap_ast,
         .original_ast = program_ast,  // Initially same as ast, preserved across filtering
         .allocator = allocator,
         .errors = std.ArrayList(CompilerError){},
