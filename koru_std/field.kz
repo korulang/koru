@@ -291,20 +291,25 @@ pub const Field = struct {
         "    while (bi < ge) {{ const q = byteIdx; inline for (0..8) |k| bytes[q + offs[k]] |= masks[k]; byteIdx += stride; bi += step8; }}\n" ++
         "    while (bi < bitCount) : (bi += stride) bytes[bi >> 3] |= @as(u8, 1) << @as(u3, @intCast(bi & 7));\n}}\n\n", .{ L, C }) catch unreachable;
     code.appendSlice(allocator, sparse) catch unreachable;
-    // dispatch: switch on runtime stride to the generated marker
-    const do = std.fmt.allocPrint(allocator,
+    // dispatch via FUNCTION-POINTER LUT, not switch: a switch inlines all 31
+    // marker bodies into one function and thrashes the i-cache (~3-5% measured);
+    // a compact indirect call through a LUT avoids that and beats hand-tuned Zig.
+    const lut_open = std.fmt.allocPrint(allocator,
+        "const __mm_lut_{d}_{d} = blk: {{ var t = [_]?*const fn ([*]u64, usize, usize) void{{null}} ** 64;\n", .{ L, C }) catch unreachable;
+    code.appendSlice(allocator, lut_open) catch unreachable;
+    p = 3;
+    while (p < 64) : (p += 2) {
+        const ent = std.fmt.allocPrint(allocator, "    t[{d}] = __mm_{d}_{d}_{d};\n", .{ p, L, C, p }) catch unreachable;
+        code.appendSlice(allocator, ent) catch unreachable;
+    }
+    const disp = std.fmt.allocPrint(allocator,
+        "    break :blk t; }};\n" ++
         "fn __mm_disp_{d}_{d}(data: []u64, from: usize, stride: usize, limit: usize) void {{\n" ++
         "    if (stride >= 64) {{ __mm_sparse_{d}_{d}(data, from, stride, limit); return; }}\n" ++
         "    const bitCount = limit + 1; const fullWords = bitCount / 64; const tailBits = bitCount % 64;\n" ++
-        "    switch (stride) {{\n", .{ L, C, L, C }) catch unreachable;
-    code.appendSlice(allocator, do) catch unreachable;
-    p = 3;
-    while (p < 64) : (p += 2) {
-        const arm = std.fmt.allocPrint(allocator, "        {d} => __mm_{d}_{d}_{d}(data.ptr, fullWords, tailBits),\n", .{ p, L, C, p }) catch unreachable;
-        code.appendSlice(allocator, arm) catch unreachable;
-    }
-    const dc = std.fmt.allocPrint(allocator, "        else => __mm_sparse_{d}_{d}(data, from, stride, limit),\n    }}\n}}\n\n", .{ L, C }) catch unreachable;
-    code.appendSlice(allocator, dc) catch unreachable;
+        "    if (__mm_lut_{d}_{d}[stride]) |f| f(data.ptr, fullWords, tailBits) else __mm_sparse_{d}_{d}(data, from, stride, limit);\n" ++
+        "}}\n\n", .{ L, C, L, C, L, C, L, C }) catch unreachable;
+    code.appendSlice(allocator, disp) catch unreachable;
 
     // call-site dispatch (inline_body) referencing the lowered args
     const body = std.fmt.allocPrint(allocator, "//@koru:inline_stmt\n{{ __mm_disp_{d}_{d}(({s}).data, {s}, {s}, {s}); }}", .{ L, C, f_expr, from_expr, stride_expr, limit_expr }) catch unreachable;
