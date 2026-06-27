@@ -206,3 +206,35 @@ the language design. That means tests are increasingly authoritative — when a
 test disagrees with an intuition or a prose note, the test wins. Documentation
 (including this file) is interim scaffolding; it will be generated from tests
 once the spec crystallizes.
+
+## Results and benchmark claims — the highest-stakes statements in this repo
+
+Performance numbers are the claims most likely to leave this repo and land in a
+talk, a blog post, or a public channel. They get the strictest discipline. Every
+claim about a result carries a status, and you say which:
+
+- **SHOWN** — you ran *this exact thing this session* and the output is in front of
+  you, under conditions that match what the claim implies. Only SHOWN claims are
+  stated as fact.
+- **MEASURED (narrow)** — a real run, but in a configuration that may not match the
+  claim (a reused buffer vs. fresh allocation, an isolated probe, `time` over a
+  fixed pass count instead of the benchmark's own protocol). State the configuration
+  inside the sentence; never let it imply more than what was measured.
+- **UNVERIFIED** — extrapolation, memory, a "should be," a plan. Labeled as such.
+
+Hard rules:
+
+- **No comparison ("beats / matches / ties / faster than / on par with") unless it is
+  SHOWN under the other entry's exact rules, config, and protocol.** A number that is
+  real but compares across a category boundary (e.g. our `faithful=no` sieve vs. a
+  rival's `faithful=yes`) is not a weaker claim — it is a false one. Delete it and
+  state the conservative non-comparative fact instead.
+- **`time`-over-N-passes is an approximation, not a benchmark result.** A real
+  drag-race / benchmark number comes from running that benchmark's own harness and
+  protocol. Until then we have an estimate, and we say "estimate."
+- **A green test (e.g. a sieve printing 78498) proves CORRECTNESS, not speed.** Don't
+  let "it works and it's fast" travel as one claim when only the first half is SHOWN.
+
+This is the project-level instance of the STATUS STAMP discipline in the global
+CLAUDE.md. The cost of getting it wrong here is paid in public, on the maintainer's
+name — so when unsure, sandbag.
