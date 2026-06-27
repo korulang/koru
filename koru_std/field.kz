@@ -213,6 +213,126 @@ pub const Field = struct {
     }
 }
 
+// Mark every multiple of `stride` in [from, limit] — set the whole strided
+// residue class. Unlike `strike` (an arbitrary AP from `from`), this is a
+// [transform]: the COMPILER GENERATES a specialized, fully-unrolled marker per
+// stride and dispatches at runtime. Same move as regex->DFA, kernel->SIMD: a
+// restricted access pattern compiled to specialized native code. (v1: plumbing
+// proof — emits one simple correct marker; the per-stride unrolled codegen lands
+// next.)
+~[comptime|transform]pub event mark-multiples { f: *Field<field>, from: usize, stride: usize, limit: usize }
+
+~[transform]proc mark-multiples|zig {
+    const ast = @import("ast");
+    if (item.* != .flow) @panic("mark-multiples transform: containing item is not a flow");
+    const flow = &item.flow;
+
+    if (invocation.args.len < 4) {
+        const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"std/field:mark-multiples requires (f, from, stride, limit)\"); }}", .{}) catch unreachable;
+        var nf = flow.*;
+        nf.inline_body = msg;
+        return .{ .transformed = .{ .replacement = ast.Item{ .flow = nf } } };
+    }
+    const f_expr = invocation.args[0].value;
+    const from_expr = invocation.args[1].value;
+    const stride_expr = invocation.args[2].value;
+    const limit_expr = invocation.args[3].value;
+
+    const L = flow.location.line;
+    const C = flow.location.column;
+
+    // top-level generated functions (appended as inline_code)
+    var code = std.ArrayList(u8){};
+    // wordMask(p, r): in-word mask for residue class (p-1)/2 mod p, for a word
+    // whose base bit-index is r mod p. Composite multiples of prime p occupy
+    // exactly that residue class — so for comptime p the per-word pattern is
+    // fixed (period p) and bakes to immediate masks. (Proven in ceil_probe.)
+    const WM = struct {
+        fn mask(p: usize, r: usize) u64 {
+            const ii = (p - 1) / 2;
+            var m: u64 = 0;
+            var j: usize = 0;
+            while (j < 64) : (j += 1) {
+                if ((r + j) % p == ii % p) m |= (@as(u64, 1) << @as(u6, @intCast(j)));
+            }
+            return m;
+        }
+    };
+    // one fully-unrolled marker per dense stride (3,5,...,63), masks baked literal
+    var p: usize = 3;
+    while (p < 64) : (p += 2) {
+        const i = (p - 1) / 2;
+        const rstep = 64 % p;
+        const h = std.fmt.allocPrint(allocator, "fn __mm_{d}_{d}_{d}(data: [*]u64, fullWords: usize, tailBits: usize) void {{\n    const wm = [_]u64{{ ", .{ L, C, p }) catch unreachable;
+        code.appendSlice(allocator, h) catch unreachable;
+        var r: usize = 0;
+        while (r < p) : (r += 1) {
+            const lit = std.fmt.allocPrint(allocator, "0x{x}, ", .{WM.mask(p, r)}) catch unreachable;
+            code.appendSlice(allocator, lit) catch unreachable;
+        }
+        const mid = std.fmt.allocPrint(allocator, "}};\n    var w: usize = 0;\n    while (w + {d} <= fullWords) {{\n", .{p}) catch unreachable;
+        code.appendSlice(allocator, mid) catch unreachable;
+        var c: usize = 0;
+        while (c < p) : (c += 1) {
+            const rc = (c * rstep) % p;
+            const ln = std.fmt.allocPrint(allocator, "        data[w + {d}] |= 0x{x};\n", .{ c, WM.mask(p, rc) }) catch unreachable;
+            code.appendSlice(allocator, ln) catch unreachable;
+        }
+        const tl = std.fmt.allocPrint(allocator, "        w += {d};\n    }}\n    var r: usize = (w * {d}) % {d};\n    while (w < fullWords) : (w += 1) {{ data[w] |= wm[r]; r = (r + {d}) % {d}; }}\n    if (tailBits > 0) data[fullWords] |= wm[r] & ((@as(u64, 1) << @as(u6, @intCast(tailBits))) - 1);\n    data[{d}] &= ~(@as(u64, 1) << {d});\n}}\n\n", .{ p, rstep, p, rstep, p, i >> 6, i & 63 }) catch unreachable;
+        code.appendSlice(allocator, tl) catch unreachable;
+    }
+    // sparse path (stride >= 64): 8-way byte scatter
+    const sparse = std.fmt.allocPrint(allocator,
+        "fn __mm_sparse_{d}_{d}(data: []u64, from: usize, stride: usize, limit: usize) void {{\n" ++
+        "    const bitCount = limit + 1; const bytes = @import(\"std\").mem.sliceAsBytes(data);\n" ++
+        "    var bi = from; const step8 = stride * 8; var masks: [8]u8 = undefined; var offs: [8]usize = undefined; const base = bi >> 3;\n" ++
+        "    for (0..8) |k| {{ const mb = bi + stride * k; masks[k] = @as(u8, 1) << @as(u3, @intCast(mb & 7)); offs[k] = (mb >> 3) - base; }}\n" ++
+        "    var byteIdx = base; const ge = if (bitCount > stride * 7) bitCount - stride * 7 else 0;\n" ++
+        "    while (bi < ge) {{ const q = byteIdx; inline for (0..8) |k| bytes[q + offs[k]] |= masks[k]; byteIdx += stride; bi += step8; }}\n" ++
+        "    while (bi < bitCount) : (bi += stride) bytes[bi >> 3] |= @as(u8, 1) << @as(u3, @intCast(bi & 7));\n}}\n\n", .{ L, C }) catch unreachable;
+    code.appendSlice(allocator, sparse) catch unreachable;
+    // dispatch: switch on runtime stride to the generated marker
+    const do = std.fmt.allocPrint(allocator,
+        "fn __mm_disp_{d}_{d}(data: []u64, from: usize, stride: usize, limit: usize) void {{\n" ++
+        "    if (stride >= 64) {{ __mm_sparse_{d}_{d}(data, from, stride, limit); return; }}\n" ++
+        "    const bitCount = limit + 1; const fullWords = bitCount / 64; const tailBits = bitCount % 64;\n" ++
+        "    switch (stride) {{\n", .{ L, C, L, C }) catch unreachable;
+    code.appendSlice(allocator, do) catch unreachable;
+    p = 3;
+    while (p < 64) : (p += 2) {
+        const arm = std.fmt.allocPrint(allocator, "        {d} => __mm_{d}_{d}_{d}(data.ptr, fullWords, tailBits),\n", .{ p, L, C, p }) catch unreachable;
+        code.appendSlice(allocator, arm) catch unreachable;
+    }
+    const dc = std.fmt.allocPrint(allocator, "        else => __mm_sparse_{d}_{d}(data, from, stride, limit),\n    }}\n}}\n\n", .{ L, C }) catch unreachable;
+    code.appendSlice(allocator, dc) catch unreachable;
+
+    // call-site dispatch (inline_body) referencing the lowered args
+    const body = std.fmt.allocPrint(allocator, "//@koru:inline_stmt\n{{ __mm_disp_{d}_{d}(({s}).data, {s}, {s}, {s}); }}", .{ L, C, f_expr, from_expr, stride_expr, limit_expr }) catch unreachable;
+
+    // rebuild the flow: same invocation marked @pass_ran, inline_body = dispatch
+    const new_anns = allocator.alloc([]const u8, flow.inv().annotations.len + 1) catch unreachable;
+    for (flow.inv().annotations, 0..) |an, k| new_anns[k] = an;
+    new_anns[flow.inv().annotations.len] = allocator.dupe(u8, "@pass_ran(\"transform\")") catch unreachable;
+    const new_inv = ast.Invocation{
+        .path = flow.inv().path,
+        .args = flow.inv().args,
+        .annotations = new_anns,
+        .inserted_by_tap = flow.inv().inserted_by_tap,
+        .from_opaque_tap = flow.inv().from_opaque_tap,
+    };
+    var new_flow = flow.*;
+    new_flow.body = ast.rootSite(new_inv, flow.body.continuations, flow.location);
+    new_flow.inline_body = body;
+
+    const appended = allocator.alloc(ast.Item, 1) catch unreachable;
+    appended[0] = ast.Item{ .inline_code = ast.InlineCode{
+        .code = code.toOwnedSlice(allocator) catch unreachable,
+        .location = flow.location,
+        .module = flow.module,
+    } };
+    return .{ .transformed = .{ .replacement = ast.Item{ .flow = new_flow }, .appended = appended } };
+}
+
 // Zero every bit — reset a field for reuse without reallocating. The lever for
 // alloc-once sieve loops: `new` once, `clear` each pass instead of new/free per
 // pass (the per-pass allocation/page-fault tax is the dominant cost once marking
