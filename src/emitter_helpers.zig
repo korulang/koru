@@ -1591,8 +1591,19 @@ fn continuationsHaveReturnSwitchUnemittable(continuations: []const ast.Continuat
         if (cont.is_transformed_subtree) return true;
         if (cont.node) |step| {
             switch (step) {
-                // The only node kinds the return-switch path lowers.
-                .invocation, .metatype_binding, .branch_constructor, .terminal => {},
+                // An invocation carrying a rendered template body (`inline_body`,
+                // e.g. `~if`/`~for` lowered by the template processor) is NOT
+                // lowerable by the return-switch fast path: that path emits the
+                // raw `_event.handler(...)` call for the un-inlined event and
+                // drops the template body — yielding a call to a nonexistent
+                // `koru_<module>.<ev>_event` (the `if` template has no runtime
+                // event). Bail to the normal `emitContinuationBody` path, whose
+                // line ~7287 routes `inline_body` through `emitInlineBodyNode`
+                // (the SAME helper top-level flows use). The plain (no-inline_body)
+                // invocation stays on the fast path.
+                .invocation => |inv| if (inv.inline_body != null) return true,
+                // The other node kinds the return-switch path lowers directly.
+                .metatype_binding, .branch_constructor, .terminal => {},
                 // label_* already force the normal path via continuationsHaveLabels;
                 // listed for completeness (bailing is still correct).
                 .label_with_invocation, .label_jump, .label_apply => {},

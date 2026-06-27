@@ -1,0 +1,61 @@
+// GREEN (2026-06-27): `~if` as a NESTED continuation STEP, reached after a
+// value-producing head event, with the whole flow on the `return switch`
+// fast path — driven by a `#L`/`@L` label-fold loop.
+//
+// THE SHAPE: this is the structure of a pure-Koru self-timed benchmark loop
+// (read a clock, then `if(now < deadline)` decide live/expired, fold around a
+// label). Here the "clock" is the loop counter so the output is deterministic,
+// but the EMIT PATH is identical: `tick`'s head is a single-branch
+// value-producing event (`clock -> | t`), and its `| t n |> if(n < limit)`
+// continuation's STEP is the `~if` template.
+//
+// THE BUG THIS PINS (emitter_helpers.zig, `emitSubflowContinuationsWithDepth`
+// return-switch fast path): a `tick` this simple (no labels/captures of its
+// own, head produces one branch) qualified for the `return switch (result)`
+// optimization. That fast path emitted the `.t` arm's `if` STEP as a raw
+// `_event.handler(.{...})` call — but `~if` is a `|template|`, inlined by the
+// template processor into `inline_body`; it has no runtime event. The result
+// was a call to a nonexistent `koru_<module>.if_event`:
+//
+//     const nested_result_0 = koru_std.koru_control.if_event.handler(.{ .cond = n < limit });
+//                             ^^^ struct 'koru_std' has no member named 'koru_control'
+//
+// 320_096 fixed `if` in HEAD position (via emitContinuationBody/
+// emitInlineBodyNode); this nested-step-on-the-fast-path case was a separate
+// gap. THE FIX: `continuationsHaveReturnSwitchUnemittable` now treats an
+// `.invocation` carrying `inline_body` as un-lowerable by the fast path, so the
+// flow bails to the normal `emitContinuationBody` path, which routes the
+// template body through `emitInlineBodyNode` (the same helper top-level flows
+// use). Loop of 1_000_000 ticks -> "iterations: 1000000".
+~import std/io
+~import std/control
+
+// A single-branch value-producing head — mirrors `std/time:now() -> | t`, the
+// clock read at the top of the self-timed loop. Deterministic stand-in: echoes
+// the running pass count as branch `t`.
+~pub event clock { passes: i64 }
+| t i64
+
+~proc clock|zig {
+    return .{ .t = passes };
+}
+
+~pub event tick { limit: i64, passes: i64 }
+| live { limit: i64, passes: i64 }
+| expired i64
+
+~pub event run { limit: i64 }
+| total i64
+
+// Head = value-producing `clock`; nested STEP = `~if` deciding live/expired.
+~tick = clock(passes)
+| t n |> if(n < limit)
+    | then => live { limit, passes: n + 1 }
+    | else => expired n
+
+~run = #L tick(limit, passes: 0)
+| live l |> @L(l.limit, l.passes)
+| expired e => total e
+
+~run(limit: 1000000)
+| total n |> std/io:print.ln("iterations: {{ n:d }}")
