@@ -545,11 +545,14 @@ pub const CompilerContext = struct {
     backend_output_module.addImport("liquid", liquid_module);
     backend_output_module.addImport("struct_literal", struct_literal_module);
 
-    const backend_output_obj = b.addObject(.{
-        .name = "backend_output",
-        .root_module = backend_output_module,
-    });
-    exe.addObject(backend_output_obj);
+    // backend_output_emitted as a MODULE of the exe (single compilation unit =
+    // single std). Previously a separate `b.addObject` + `exe.addObject`, which
+    // gave backend_output its OWN std — so `std.os.environ` (and every std global)
+    // was duplicated: `start` set the exe's environ, but the emitted pipeline's
+    // getenv read the object's uninitialized copy → 0xAA → segfault on Linux
+    // (no-libc reads the global directly; macOS hid it by routing getenv via libc).
+    // One compilation = one std = one environ.
+    exe.root_module.addImport("backend_output", backend_output_module);
 
     exe.root_module.addImport("ast", ast_module);
     exe.root_module.addImport("ast_json", ast_json_module);

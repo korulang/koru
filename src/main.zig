@@ -314,9 +314,14 @@ fn generateBackendCode(allocator: std.mem.Allocator, input_file: []const u8, sou
 
         // Import ast for type access in extern fn signatures.
         // (ast_functional + emit_build_zig were unused dead imports — dropped.)
-        // (backend_output_emitted.zig is no longer source-imported here; backend.zig
-        //  reaches it via extern fn so it can be a separate compilation unit.)
-        try writer.writeAll("const __koru_ast = @import(\"ast\");\n\n");
+        // backend_output_emitted.zig is a MODULE of the SAME exe compilation now
+        // (one std). backend.zig still calls its handlers through the C-ABI
+        // extern-fn bridge below, but we force the module into the compilation so
+        // its `pub export fn` wrappers are emitted (otherwise dead-stripped →
+        // "undefined symbol: koru_coordinate"). One compilation = one std = one
+        // os.environ — fixes the dual-std segfault in getenv on Linux (no-libc).
+        try writer.writeAll("const __koru_ast = @import(\"ast\");\n");
+        try writer.writeAll("comptime { _ = @import(\"backend_output\"); }\n\n");
 
         // Extern wrappers — backend_output_emitted.zig exports these as
         // `pub export fn`. C-ABI flat extern struct because Zig 0.15 won't let
@@ -1923,7 +1928,15 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                         // Collect variant targets from the same module (variants live alongside the event).
                         const variant_targets_mod = try collectVariantTargetsForEventPath(allocator, module.items, event_decl.path.segments, comptime_default_lang);
 
-                        try transform_events.append(allocator, .{
+                        // NOTE: construct the struct in a named local BEFORE appending.
+                        // Inlining this literal as the append() argument tripped a
+                        // result-location aggregate-init miscompile on x86_64 (a `try`
+                        // in `.qualifier` perturbs the init), silently dropping
+                        // `.has_source`/`.has_expression` for print.blk/test → emitted
+                        // Input literals missing the required `.source` field. See the
+                        // x86 Linux drag-race build failure.
+                        const qualifier_val: ?[]const u8 = if (has_transform_proc) try allocator.dupe(u8, module.logical_name) else null;
+                        const new_te: TransformEvent = .{
                             .stub_name = stub_name,
                             .match_name = match_name,
                             .event_name = event_name, // Original event name for handler lookup
@@ -1943,9 +1956,10 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                             .returns_program = returns_program,
                             .has_failed = has_failed,
                             .failed_is_identity = failed_is_identity,
-                            .qualifier = if (has_transform_proc) try allocator.dupe(u8, module.logical_name) else null,
+                            .qualifier = qualifier_val,
                             .variant_targets = variant_targets_mod,
-                        });
+                        };
+                        try transform_events.append(allocator, new_te);
                     }
                 }
             }
