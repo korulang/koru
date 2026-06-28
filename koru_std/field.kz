@@ -270,15 +270,27 @@ pub const Field = struct {
             const lit = std.fmt.allocPrint(allocator, "0x{x}, ", .{WM.mask(p, r)}) catch unreachable;
             code.appendSlice(allocator, lit) catch unreachable;
         }
-        const mid = std.fmt.allocPrint(allocator, "}};\n    var w: usize = 0;\n    while (w + {d} <= fullWords) {{\n", .{p}) catch unreachable;
+        // SIMD bulk loop: process 4*p words per step as p @Vector(4,u64) OR-stores.
+        // 4*p is a multiple of both 4 (clean vector chunks, no per-step remainder)
+        // and the residue period p (so the baked per-word masks stay aligned across
+        // steps: after w += 4*p the residue is unchanged mod p). The explicit
+        // @Vector(4,u64) asks LLVM for 256-bit-wide paired NEON ops (two independent
+        // 128-bit ORs per chunk via ldp/stp) rather than leaving the doubling to
+        // autovectorization of the scalar OR sequence. Remainder words (< 4*p) drop
+        // to the scalar tail below.
+        const quad = 4 * p;
+        const mid = std.fmt.allocPrint(allocator, "}};\n    var w: usize = 0;\n    while (w + {d} <= fullWords) {{\n", .{quad}) catch unreachable;
         code.appendSlice(allocator, mid) catch unreachable;
-        var c: usize = 0;
-        while (c < p) : (c += 1) {
-            const rc = (c * rstep) % p;
-            const ln = std.fmt.allocPrint(allocator, "        data[w + {d}] |= 0x{x};\n", .{ c, WM.mask(p, rc) }) catch unreachable;
+        var base: usize = 0;
+        while (base < quad) : (base += 4) {
+            const m0 = WM.mask(p, (base * rstep) % p);
+            const m1 = WM.mask(p, ((base + 1) * rstep) % p);
+            const m2 = WM.mask(p, ((base + 2) * rstep) % p);
+            const m3 = WM.mask(p, ((base + 3) * rstep) % p);
+            const ln = std.fmt.allocPrint(allocator, "        {{ const _v: @Vector(4, u64) = data[w + {d} ..][0..4].*; data[w + {d} ..][0..4].* = _v | @Vector(4, u64){{ 0x{x}, 0x{x}, 0x{x}, 0x{x} }}; }}\n", .{ base, base, m0, m1, m2, m3 }) catch unreachable;
             code.appendSlice(allocator, ln) catch unreachable;
         }
-        const tl = std.fmt.allocPrint(allocator, "        w += {d};\n    }}\n    var r: usize = (w * {d}) % {d};\n    while (w < fullWords) : (w += 1) {{ data[w] |= wm[r]; r = (r + {d}) % {d}; }}\n    if (tailBits > 0) data[fullWords] |= wm[r] & ((@as(u64, 1) << @as(u6, @intCast(tailBits))) - 1);\n    data[{d}] &= ~(@as(u64, 1) << {d});\n}}\n\n", .{ p, rstep, p, rstep, p, i >> 6, i & 63 }) catch unreachable;
+        const tl = std.fmt.allocPrint(allocator, "        w += {d};\n    }}\n    var r: usize = (w * {d}) % {d};\n    while (w < fullWords) : (w += 1) {{ data[w] |= wm[r]; r = (r + {d}) % {d}; }}\n    if (tailBits > 0) data[fullWords] |= wm[r] & ((@as(u64, 1) << @as(u6, @intCast(tailBits))) - 1);\n    data[{d}] &= ~(@as(u64, 1) << {d});\n}}\n\n", .{ quad, rstep, p, rstep, p, i >> 6, i & 63 }) catch unreachable;
         code.appendSlice(allocator, tl) catch unreachable;
     }
     // sparse path (stride >= 64): 8-way byte scatter
