@@ -681,7 +681,19 @@ pub fn writeVariantComment(emitter: *CodeEmitter, variant: ?[]const u8) !void {
 
 /// Helper: Write field type with proper module path handling
 pub fn writeFieldType(emitter: *CodeEmitter, field: ast.Field, main_module_name: ?[]const u8) !void {
-    if (field.module_path) |module_path| {
+    // A bare foreign type carrying a module-qualified phantom (e.g.
+    // `*Field<std/field:field>`) has no module_path on the TYPE itself, but the
+    // phantom names the module the type lives in — the state belongs to that
+    // type. Fall back to the phantom's module so the type emits qualified
+    // (`*koru_std.koru_field.Field`). Only triggers for explicitly-qualified
+    // phantoms (a same-module phantom like `field!` has no `:`), so local
+    // std-module events are unaffected.
+    const effective_module_path: ?[]const u8 = field.module_path orelse blk: {
+        const ph = field.phantom orelse break :blk null;
+        const colon = std.mem.indexOfScalar(u8, ph, ':') orelse break :blk null;
+        break :blk ph[0..colon];
+    };
+    if (effective_module_path) |module_path| {
         // Cross-module type reference: module.path:Type -> prefix + koru_module.path.Type
         // Extract any type prefix (?*, *, [], []const) from the type name
         var type_name = field.type;

@@ -350,7 +350,7 @@ pub const PhantomSemanticChecker = struct {
                 }
 
                 if (concrete.module_path) |mod_path| {
-                    if (!self.module_map.contains(mod_path)) {
+                    if ((try self.lookupModule(mod_path)) == null) {
                         try self.reporter.addError(
                             .KORU040, // Unknown event/proc/subflow - using for unknown module
                             location.line,
@@ -372,7 +372,7 @@ pub const PhantomSemanticChecker = struct {
                 // Validate each member of the union
                 for (u.members) |member| {
                     if (member.module_path) |mod_path| {
-                        if (!self.module_map.contains(mod_path)) {
+                        if ((try self.lookupModule(mod_path)) == null) {
                             try self.reporter.addError(
                                 .KORU040,
                                 location.line,
@@ -402,6 +402,25 @@ pub const PhantomSemanticChecker = struct {
     ///
     /// This ensures base types from different modules with the same name
     /// are correctly distinguished during comparison.
+    /// Resolve a module path through module_map, tolerating slash/dot separator
+    /// differences. Users write the slash canon (KORU035: `*Field<std/field:field>`),
+    /// but the phantom subsystem keys modules in dot form (`std.field`). Try the path
+    /// as written, then with `/`<->`.` swapped, so either spelling resolves.
+    /// Returns the canonical module value (owned by module_map) or null if unknown.
+    fn lookupModule(self: *PhantomSemanticChecker, mod_path: []const u8) !?[]const u8 {
+        if (self.module_map.get(mod_path)) |canonical| return canonical;
+        const swapped = try self.allocator.alloc(u8, mod_path.len);
+        defer self.allocator.free(swapped);
+        for (mod_path, 0..) |ch, i| {
+            swapped[i] = switch (ch) {
+                '/' => '.',
+                '.' => '/',
+                else => ch,
+            };
+        }
+        return self.module_map.get(swapped);
+    }
+
     fn canonicalizeBaseType(
         self: *PhantomSemanticChecker,
         base_type: []const u8,
@@ -411,7 +430,7 @@ pub const PhantomSemanticChecker = struct {
         // If the field has an explicit module path (cross-module type reference),
         // resolve it through module_map. Otherwise use the defining module.
         const canonical_module = if (field_module_path) |mod_path| blk: {
-            if (self.module_map.get(mod_path)) |canonical| {
+            if (try self.lookupModule(mod_path)) |canonical| {
                 break :blk canonical;
             } else {
                 // Module not found in map - use as-is
@@ -444,7 +463,7 @@ pub const PhantomSemanticChecker = struct {
             .concrete => |concrete| {
                 const canonical_module = if (concrete.module_path) |mod_path| blk: {
                     // Already has module qualifier - resolve it through module_map
-                    if (self.module_map.get(mod_path)) |canonical| {
+                    if (try self.lookupModule(mod_path)) |canonical| {
                         break :blk canonical;
                     } else {
                         // Module not found - use as-is (error will be caught in validation)
@@ -474,7 +493,7 @@ pub const PhantomSemanticChecker = struct {
                     if (member.consumes_obligation) try result.append(self.allocator, '!');
 
                     const canonical_module = if (member.module_path) |mod_path| blk: {
-                        if (self.module_map.get(mod_path)) |canonical| {
+                        if (try self.lookupModule(mod_path)) |canonical| {
                             break :blk canonical;
                         } else {
                             break :blk mod_path;
@@ -823,16 +842,28 @@ pub const PhantomSemanticChecker = struct {
                         const impl_event_name = try self.pathToString(impl_path);
                         defer self.allocator.free(impl_event_name);
 
-                        const impl_qualified = try std.fmt.allocPrint(self.allocator, "{s}:{s}", .{ module, impl_event_name });
-                        defer self.allocator.free(impl_qualified);
-
-                        const impl_event: ?*const ast.EventDecl = if (event_map.get(impl_qualified)) |info| info.decl else null;
+                        // event_map is keyed by the event's canonical module. For
+                        // metacircular impls `current_module` carries it
+                        // (`std.compiler`); for a plain user program `current_module`
+                        // is null (→ "input") and the event lives under `flow.module`
+                        // (e.g. `min_flowparam`). Try both so the implementing event
+                        // resolves in either case — this is what lets a user flow's
+                        // own phantom-typed parameters get seeded (see validateFlow).
+                        const impl_event: ?*const ast.EventDecl = blk: {
+                            const q1 = try std.fmt.allocPrint(self.allocator, "{s}:{s}", .{ module, impl_event_name });
+                            defer self.allocator.free(q1);
+                            if (event_map.get(q1)) |info| break :blk info.decl;
+                            const q2 = try std.fmt.allocPrint(self.allocator, "{s}:{s}", .{ flow.module, impl_event_name });
+                            defer self.allocator.free(q2);
+                            if (event_map.get(q2)) |info| break :blk info.decl;
+                            break :blk null;
+                        };
 
                         if (impl_event) |ev| {
-                            log.debug("[PHANTOM-FLOW]   Impl flow implements event: '{s}'\n", .{impl_qualified});
+                            log.debug("[PHANTOM-FLOW]   Impl flow implements event: '{s}'\n", .{impl_event_name});
                             _ = ev;
                         } else {
-                            log.debug("[PHANTOM-FLOW]   Impl event '{s}' not found in event map\n", .{impl_qualified});
+                            log.debug("[PHANTOM-FLOW]   Impl event '{s}' not found in event map\n", .{impl_event_name});
                         }
 
                         if (!try self.validateFlow(flow, event_map, module, impl_event)) {
@@ -935,6 +966,37 @@ pub const PhantomSemanticChecker = struct {
         // Continuation validation only covers args on nested steps, not the flow head.
         var root_context = BindingContext.init(self.allocator);
         defer root_context.deinit();
+
+        // Seed the implementing event's phantom-carrying parameters into the root
+        // context, so the flow body can reference them. Example: a user flow
+        // `use1 = std/field:clear(f) |> ...` implements event
+        // `use1 { f: *Field<std/field:field> }`; without seeding `f`, the moment the
+        // body passes `f` to another phantom event it reads as untracked (KORU030).
+        // Borrow params (`<field>`, no `!`) carry no obligation, so no leak is
+        // synthesized. Per the explicit-qualification rule, such params are written
+        // module-qualified (`std/field:field`), so canonicalization resolves them to
+        // the type's home module rather than this flow's module.
+        if (implementing_event) |impl_ev| {
+            for (impl_ev.input.fields) |field| {
+                if (field.phantom) |phantom_str| {
+                    // Seed BORROW params only (a plain `<state>`). An obligation
+                    // marker (`!`) — consume `<!state>` or issue `<state!>` — is
+                    // governed by the directionality rule (validatePhantom is_input):
+                    // an input parameter cannot OWN an obligation, so seeding one
+                    // would defeat the rejection of "obligation-through-a-consuming-
+                    // param" (330_076/079/080). A borrow carries no obligation, so
+                    // seeding it is safe and is exactly what foreign-resource
+                    // threading needs (e.g. `*Field<std/field:field>`).
+                    if (std.mem.indexOfScalar(u8, phantom_str, '!') != null) continue;
+                    const canonical_phantom = try self.canonicalizePhantomState(phantom_str, impl_ev.module);
+                    defer self.allocator.free(canonical_phantom);
+                    const canonical_base_type = try self.canonicalizeBaseType(field.type, field.module_path, impl_ev.module);
+                    defer self.allocator.free(canonical_base_type);
+                    try root_context.setWithType(field.name, canonical_phantom, canonical_base_type);
+                }
+            }
+        }
+
         for (flow.inv().args) |arg| {
             const arg_valid = try self.validateArgument(arg, event_info.decl, module_name, &root_context, flow.location);
             if (!arg_valid) {
