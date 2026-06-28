@@ -314,6 +314,15 @@ pub fn build(b: *std.Build) void {
     ast_serializer_module.addImport("parser", parser_module);
     ast_serializer_module.addImport("log", log_module);
 
+    // AST ⇄ JSON reflective round-trip (replaces serialize-into-Zig-source).
+    const ast_json_module = b.createModule(.{
+        .root_source_file = b.path("src/ast_json.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    ast_json_module.addImport("ast", ast_module);
+    ast_json_module.addImport("parser", parser_module);
+
     // Compiler Config module - feature flags and configuration
     const compiler_config_module = b.createModule(.{
         .root_source_file = b.path("src/compiler_config.zig"),
@@ -503,6 +512,7 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("type_registry", type_registry_module);
     exe.root_module.addImport("keyword_registry", keyword_registry_module);
     exe.root_module.addImport("ast_serializer", ast_serializer_module);
+    exe.root_module.addImport("ast_json", ast_json_module);
     exe.root_module.addImport("ast_transform", ast_transform_module);
     exe.root_module.addImport("transforms/inline_small_events", inline_transform_module);
 
@@ -683,6 +693,11 @@ pub fn build(b: *std.Build) void {
     const ast_serializer_tests = b.addTest(.{
         .name = "ast_serializer_tests",
         .root_module = ast_serializer_module,
+    });
+
+    const ast_json_tests = b.addTest(.{
+        .name = "ast_json_tests",
+        .root_module = ast_json_module,
     });
 
     const lexer_tests = b.addTest(.{
@@ -890,6 +905,7 @@ pub fn build(b: *std.Build) void {
 
     const run_parser_tests = b.addRunArtifact(parser_tests);
     const run_ast_serializer_tests = b.addRunArtifact(ast_serializer_tests);
+    const run_ast_json_tests = b.addRunArtifact(ast_json_tests);
     const run_lexer_tests = b.addRunArtifact(lexer_tests);
     const run_shape_checker_tests = b.addRunArtifact(shape_checker_tests);
     const run_tap_collector_tests = b.addRunArtifact(tap_collector_tests);
@@ -1238,6 +1254,9 @@ pub fn build(b: *std.Build) void {
     const ast_functional_test_step = b.step("test-ast-functional", "Run ast_functional tests");
     ast_functional_test_step.dependOn(&run_ast_functional_tests.step);
 
+    const ast_json_test_step = b.step("test-ast-json", "Run ast_json round-trip tests");
+    ast_json_test_step.dependOn(&run_ast_json_tests.step);
+
     // Phantom semantic checker tests - obligation tracking and @scope boundaries
     const phantom_semantic_checker_tests = b.addTest(.{
         .name = "phantom_semantic_checker_tests",
@@ -1311,6 +1330,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_lexer_tests.step);
     test_step.dependOn(&run_parser_tests.step);
     test_step.dependOn(&run_ast_serializer_tests.step);
+    test_step.dependOn(&run_ast_json_tests.step);
     test_step.dependOn(&run_shape_checker_tests.step);
     test_step.dependOn(&run_tap_collector_tests.step);
     test_step.dependOn(&run_purity_checker_tests.step);

@@ -9,6 +9,62 @@
 : "${CYAN:=\033[0;36m}"
 : "${NC:=\033[0m}"
 
+# Portable SHA-256 over stdin → bare hex digest.
+_backend_sha256() {
+    if command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 | awk '{print $1}'
+    else
+        sha256sum | awk '{print $1}'
+    fi
+}
+
+# Cache key for a test's backend binary. The binary is fully determined by its
+# build inputs (backend.zig + the handler set + flags + module graph) and the
+# compiler-source salt — NOT by the program AST, which is now a runtime input
+# (program.ast.json) and is deliberately excluded. Tests with the same handler
+# set therefore collide to one key and share one built binary.
+backend_cache_key() {
+    local td="$1"
+    {
+        printf 'salt:%s\n' "$BACKEND_CACHE_SALT"
+        cat "$td/backend.zig" \
+            "$td/backend_output_emitted.zig" \
+            "$td/compiler_env.zig" \
+            "$td/build_backend.zig" 2>/dev/null
+    } | _backend_sha256
+}
+
+# Stage the backend binary for a test: restore from cache on a hit (placing it at
+# zig-out/bin/backend so the caller's existing `mv` path is untouched), else run
+# `zig build`. Sets BACKEND_CACHE_HIT for the caller's store-on-miss decision.
+# Args: $1 = test_dir, $2 = BUILD_FILE, $3 = cache key (may be empty).
+backend_stage_or_build() {
+    local td="$1" bf="$2" key="$3"
+    if [ "$BACKEND_CACHE_MODE" = "on" ] && [ -n "$key" ] && [ -f "$BACKEND_CACHE_DIR/$key" ]; then
+        mkdir -p "$td/zig-out/bin"
+        if cp "$BACKEND_CACHE_DIR/$key" "$td/zig-out/bin/backend" 2>/dev/null; then
+            chmod +x "$td/zig-out/bin/backend" 2>/dev/null
+            BACKEND_CACHE_HIT=true
+            return 0
+        fi
+    fi
+    BACKEND_CACHE_HIT=false
+    ( cd "$td" && zig build --build-file "$bf" --global-cache-dir "$ZIG_GLOBAL_CACHE" 2>"compile_backend.err" )
+}
+
+# Store a freshly-built backend binary into the cache (atomic via tmp+mv so
+# parallel workers never read a partial file). No-op on a hit or when disabled.
+backend_cache_store() {
+    local td="$1" key="$2"
+    [ "$BACKEND_CACHE_MODE" = "on" ] || return 0
+    [ "$BACKEND_CACHE_HIT" = true ] && return 0
+    [ -n "$key" ] || return 0
+    local tmp="$BACKEND_CACHE_DIR/.$key.$$.tmp"
+    if cp "$td/backend" "$tmp" 2>/dev/null; then
+        mv -f "$tmp" "$BACKEND_CACHE_DIR/$key" 2>/dev/null || rm -f "$tmp" 2>/dev/null
+    fi
+}
+
 # Resolve a test's module entry file: input.kz (host-impl entry) if present,
 # else input.k (pure-Koru entry — no host facet). Lets the harness run a
 # self-contained `.k` program, not just `.kz`-rooted modules.
@@ -499,6 +555,7 @@ regression_run_one_test() {
           "$test_dir/actual.json" \
           "$test_dir/temp_build.zig" \
           "$test_dir/build.zig" \
+          "$test_dir/program.ast.json" \
           "$test_dir/SUCCESS" \
           "$test_dir/FAILURE"
 
@@ -987,8 +1044,15 @@ EOF
         if [ -f "$test_dir/build_backend.zig" ]; then
             BUILD_FILE="build_backend.zig"
         fi
-        # Use shared global cache to speed up builds (koru modules are cached across tests)
-        if (cd "$test_dir" && zig build --build-file "$BUILD_FILE" --global-cache-dir "$ZIG_GLOBAL_CACHE" 2>"compile_backend.err"); then
+        # Backend-binary cache key (empty unless --backend-cache). Computed from the
+        # build inputs now in place; program.ast.json is excluded (runtime input).
+        BKEY=""
+        if [ "$BACKEND_CACHE_MODE" = "on" ]; then
+            BKEY=$(backend_cache_key "$test_dir")
+        fi
+        # Restore the backend from cache on a hit (placing it at zig-out/bin/backend),
+        # else `zig build`. Use shared global cache so koru modules cache across tests.
+        if backend_stage_or_build "$test_dir" "$BUILD_FILE" "$BKEY"; then
             # Check for memory leaks in backend compilation
             if [ -f "$test_dir/compile_backend.err" ] && grep -q "memory address.*leaked" "$test_dir/compile_backend.err"; then
                 if [ "$HAS_MEMORY_LEAK" = false ]; then
@@ -1013,6 +1077,9 @@ EOF
                 FAILED_TESTS="$FAILED_TESTS $TEST_NAME(backend-missing)"
                 return 0
             fi
+
+            # Store the freshly-built binary for sibling tests (no-op on a cache hit).
+            backend_cache_store "$test_dir" "$BKEY"
 
             # Run backend (it now generates AND compiles the final code)
             # Run from test directory so generated files (like build.zig) go to the right place
