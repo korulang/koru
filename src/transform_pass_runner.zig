@@ -90,7 +90,19 @@ const NodeConv = struct {
 fn itemToNode(item: *const ast.Item) !NodeConv {
     switch (item.*) {
         .flow => |*f| {
-            if (f.preamble_code) |preamble| {
+            // @preamble_then_call (escape-driven stack alloc, field:new.on-stack): the
+            // preamble declares caller-frame stack vars and we STILL make the routed
+            // call — UNLIKE ~const/~capture, whose preamble REPLACES the call. Carry the
+            // preamble on the invocation (Invocation.preamble_code) and fall through to
+            // the normal invocation node below; the nested emitter emits it before the call.
+            const keep_call = blk_kc: {
+                for (f.inv().annotations) |ann| {
+                    if (std.mem.eql(u8, ann, "@preamble_then_call")) break :blk_kc true;
+                }
+                break :blk_kc false;
+            };
+            if (f.preamble_code != null and !keep_call) {
+                const preamble = f.preamble_code.?;
                 // A preamble-producing transform (e.g. `capture`: the
                 // `var <cell> = …;` decl) at a NESTED site. At flow level the
                 // emitter emits the preamble verbatim, then the body
@@ -111,6 +123,11 @@ fn itemToNode(item: *const ast.Item) !NodeConv {
             // Flow.inline_body delegates to Invocation.inline_body (canonical).
             if (f.inline_body != null and new_inv.inline_body == null) {
                 new_inv.inline_body = f.inline_body;
+            }
+            // Carry a @preamble_then_call preamble onto the invocation so the nested
+            // emitter can emit it before the routed handler call.
+            if (f.preamble_code) |preamble| {
+                new_inv.preamble_code = preamble;
             }
             return .{ .node = ast.Node{ .invocation = new_inv }, .children = f.body.continuations };
         },

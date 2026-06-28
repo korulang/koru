@@ -1480,6 +1480,10 @@ pub fn cloneInvocation(allocator: std.mem.Allocator, invocation: *const ast.Invo
             try allocator.dupe(u8, ib)
         else
             null,
+        .preamble_code = if (invocation.preamble_code) |pc|
+            try allocator.dupe(u8, pc)
+        else
+            null,
     };
 }
 

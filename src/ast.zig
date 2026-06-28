@@ -952,6 +952,14 @@ pub const Invocation = struct {
     // This is the canonical location — Flow.inline_body delegates here.
     inline_body: ?[]const u8 = null,
 
+    // Transform PREAMBLE: setup statements emitted in the enclosing scope BEFORE the
+    // handler call (unlike inline_body, which replaces it). Escape-driven allocation
+    // (field:new.on-stack) uses it to declare caller-frame stack vars and STILL make
+    // the routed call. Flow.preamble_code is the flow-level twin; this is the slot a
+    // NESTED site carries it in (transform_pass_runner.itemToNode), gated by the
+    // @preamble_then_call annotation.
+    preamble_code: ?[]const u8 = null,
+
     pub fn deinit(self: *Invocation, allocator: std.mem.Allocator) void {
         var mutable_path = self.path;
         mutable_path.deinit(allocator);

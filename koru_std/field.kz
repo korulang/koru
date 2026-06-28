@@ -30,19 +30,77 @@ pub const Field = struct {
     }
 };
 
+// No-op allocator for STACK-placed fields: a FixedBufferAllocator over a tiny
+// static buffer. A stack Field stores this; `free` then calls .free/.destroy on
+// stack pointers, which are never "the last allocation" of this 8-byte arena, so
+// both are no-ops. Lets `free` stay byte-identical for heap and stack fields (no
+// free-site rewrite) — the escape-driven allocation lever. Single-threaded.
+var __field_noop_buf: [8]u8 = undefined;
+var __field_noop_fba = std.heap.FixedBufferAllocator.init(&__field_noop_buf);
+
 // ============================================
 // Construction
 // ============================================
 
-// ASPIRATIONAL (same debt as std/grid): the Field HANDLE is heap-boxed
-// unconditionally because escape-driven local allocation isn't built yet. The
-// word backing buffer is heap regardless. The `| err` branch is the proven shape;
-// upgrading to a `| ?!oom` panic branch is the follow-up.
-~pub event new { bits: usize }
+// `new` is a [transform]: at each call site it chooses the allocation strategy
+// (escape-driven — the first GENERAL local optimization done as a per-module
+// transform, per the castles plan). INCREMENT 1: it routes every site to the
+// heap constructor `new-heap`, byte-equivalent to the old behavior — proving the
+// transform conversion is transparent. INCREMENT 2 adds the stack lowering for
+// proven-local, comptime-sized fields. Mirrors std/list:new's
+// route-and-preserve-continuations shape (the `| field` / `| err` match carries
+// over to `new-heap` unchanged).
+~[comptime|transform]pub event new {
+    invocation: *const Invocation,
+    item: *const Item,
+    allocator: std.mem.Allocator
+}
+| transformed SiteResult
+
+~proc new|zig {
+    const ast = @import("ast");
+    const flow = if (item.* == .flow) &item.flow else @panic("std/field:new: expected a flow site");
+
+    // Route to the concrete heap constructor, forwarding the original args
+    // (`bits`) and preserving the downstream continuations (the | field / | err
+    // match). The stack path will branch here once escape analysis lands.
+    const seg = allocator.alloc([]const u8, 1) catch unreachable;
+    seg[0] = allocator.dupe(u8, "new-heap") catch unreachable;
+
+    const new_inv = ast.Invocation{
+        .path = ast.DottedPath{
+            .module_qualifier = if (invocation.path.module_qualifier) |mq| allocator.dupe(u8, mq) catch unreachable else null,
+            .segments = seg,
+        },
+        .args = invocation.args,
+    };
+
+    const new_item = ast.Item{
+        .flow = ast.Flow{
+            .body = ast.rootSite(new_inv, flow.body.continuations, flow.location),
+            .pre_label = if (flow.pre_label) |l| allocator.dupe(u8, l) catch unreachable else null,
+            .impl_of = flow.impl_of,
+            .super_shape = null,
+            .inline_body = null,
+            .preamble_code = null,
+            .is_pure = flow.is_pure,
+            .is_transitively_pure = flow.is_transitively_pure,
+            .location = flow.location,
+            .module = allocator.dupe(u8, flow.module) catch unreachable,
+        },
+    };
+
+    return .{ .transformed = .{ .replacement = new_item } };
+}
+
+// Heap constructor — the concrete runtime allocation. `new` routes here unless
+// the escape pass proves the field local (then it's stack-built at the call
+// site). The Field carries its allocator, so `free` is allocator-agnostic.
+~pub event new-heap { bits: usize }
 | field *Field<field!>
 | err []const u8
 
-~proc new|zig {
+~proc new-heap|zig {
     const allocator = koru_allocator();
     const self = allocator.create(Field) catch {
         return .{ .err = "allocation failed" };
@@ -55,6 +113,85 @@ pub const Field = struct {
     @memset(data, 0);
     self.* = .{ .data = data, .bits = bits, .allocator = allocator };
     return .{ .field = self };
+}
+
+// EXPLICIT stack constructor (Brick 1 of escape-driven allocation). Places the
+// Field and its word buffer in the CALLER's frame — no heap, no per-pass page
+// fault. Bare-return (`-> *Field`, no `err`: a stack buffer can't OOM). Must be a
+// [transform]: stack memory cannot be returned from a callee, so the construction
+// is inlined at the call site. `bits` must be comptime (Zig errors otherwise —
+// the array size is comptime). `free` rides the no-op allocator, unchanged.
+// Brick 2 will route a provably-local `new` here automatically.
+~[comptime|transform]pub event new.on-stack { bits: usize }
+| field *Field<field!>
+
+~[transform]proc new.on-stack|zig {
+    const ast = @import("ast");
+    if (item.* != .flow) @panic("std/field:new.on-stack: expected a flow site");
+    const flow = &item.flow;
+
+    if (invocation.args.len < 1) {
+        var nf = flow.*;
+        nf.inline_body = std.fmt.allocPrint(allocator, "@compileError(\"std/field:new.on-stack requires (bits)\")", .{}) catch unreachable;
+        return .{ .transformed = .{ .replacement = ast.Item{ .flow = nf } } };
+    }
+    const bits_expr = invocation.args[0].value;
+    const L = flow.location.line;
+    const C = flow.location.column;
+
+    // Caller-frame stack storage (comptime-sized). new-instack zeroes + wires it.
+    // Emitted by preamble_code, in the enclosing scope, so it outlives the
+    // continuations (until scope exit). `bits` must be comptime (Zig array size).
+    const preamble = std.fmt.allocPrint(allocator,
+        "var __fld_buf_{d}_{d}: [({s} + 63) / 64]u64 = undefined;\n" ++
+        "var __fld_self_{d}_{d}: koru_std.koru_field.Field = undefined;",
+        .{ L, C, bits_expr, L, C },
+    ) catch unreachable;
+
+    // Route to the concrete stack-wiring constructor. It carries <field!> on its
+    // signature, so the obligation survives the transform — same trick as
+    // list:new→new-i64. The preamble vars are passed by reference/slice.
+    const seg = allocator.alloc([]const u8, 1) catch unreachable;
+    seg[0] = allocator.dupe(u8, "new-instack") catch unreachable;
+    const args = allocator.alloc(ast.Arg, 3) catch unreachable;
+    args[0] = .{ .name = "buf", .value = std.fmt.allocPrint(allocator, "__fld_buf_{d}_{d}[0..]", .{ L, C }) catch unreachable };
+    args[1] = .{ .name = "slot", .value = std.fmt.allocPrint(allocator, "&__fld_self_{d}_{d}", .{ L, C }) catch unreachable };
+    args[2] = .{ .name = "bits", .value = allocator.dupe(u8, bits_expr) catch unreachable };
+    // Mark the routed call so the emitter emits our preamble (stack vars) and then
+    // STILL makes the normal handler call — unlike ~const/~for/~if/~capture, which
+    // set preamble_code to REPLACE the call. Without this marker the emitter would
+    // skip the new-instack call and the field binding would be undeclared.
+    const anns = allocator.alloc([]const u8, 1) catch unreachable;
+    anns[0] = allocator.dupe(u8, "@preamble_then_call") catch unreachable;
+    const new_inv = ast.Invocation{
+        .path = ast.DottedPath{
+            .module_qualifier = if (invocation.path.module_qualifier) |mq| allocator.dupe(u8, mq) catch unreachable else null,
+            .segments = seg,
+        },
+        .args = args,
+        .annotations = anns,
+    };
+
+    var new_flow = flow.*;
+    new_flow.body = ast.rootSite(new_inv, flow.body.continuations, flow.location);
+    new_flow.preamble_code = preamble;
+    new_flow.inline_body = null;
+
+    return .{ .transformed = .{ .replacement = ast.Item{ .flow = new_flow } } };
+}
+
+// Concrete stack-wiring constructor for `new.on-stack`. The transform's preamble
+// declares a caller-frame word buffer + Field slot and passes them here; this
+// zeroes the buffer and wires the Field with the no-op allocator (so `free` is a
+// safe no-op — no free-site rewrite). Carries <field!> so the obligation survives
+// the transform. Not meant to be called directly.
+~pub event new-instack { buf: []u64, slot: *Field, bits: usize }
+| field *Field<field!>
+
+~proc new-instack|zig {
+    @memset(buf, 0);
+    slot.* = .{ .data = buf, .bits = bits, .allocator = __field_noop_fba.allocator() };
+    return .{ .field = slot };
 }
 
 // ============================================

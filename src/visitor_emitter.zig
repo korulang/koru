@@ -2682,9 +2682,26 @@ pub const VisitorEmitter = struct {
                                     self.code_emitter.indent_level += 1;
                                 }
 
+                                // for/if/capture/~const set preamble_code to REPLACE the call (then inline
+                                // their continuations, no handler). A routed transform (field:new.on-stack→
+                                // new-instack) marks its invocation @preamble_then_call: emit the preamble
+                                // (stack vars) here, then fall through to the NORMAL handler call below.
+                                const keep_call = blk_kc: {
+                                    for (flow.inv().annotations) |ann| {
+                                        if (std.mem.eql(u8, ann, "@preamble_then_call")) break :blk_kc true;
+                                    }
+                                    break :blk_kc false;
+                                };
+                                if (flow.preamble_code != null and keep_call) {
+                                    try self.code_emitter.writeIndent();
+                                    try self.code_emitter.write(flow.preamble_code.?);
+                                    try self.code_emitter.write("\n");
+                                }
+
                                 // Check if the flow has preamble_code (from transforms like ~for, ~if, ~capture)
                                 // This means the flow contains a ForeachNode/ConditionalNode/CaptureNode in continuations
-                                if (flow.preamble_code) |preamble| {
+                                if (flow.preamble_code != null and !keep_call) {
+                                    const preamble = flow.preamble_code.?;
                                     // Emit the preamble (usually a comment like "// ~for transformed")
                                     try self.code_emitter.writeIndent();
                                     try self.code_emitter.write(preamble);

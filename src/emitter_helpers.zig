@@ -3975,21 +3975,34 @@ pub fn emitFlow(
         ctx.current_flow_location = prev_flow_location;
     }
 
-    // Preamble code: emitted BEFORE continuations, SKIPS the invocation
-    // Used by ~const to emit declaration while preserving AST structure for analysis
-    // After the preamble, we emit continuation bodies directly (no handler call)
+    // Preamble code: emitted BEFORE continuations. ~const/~for/~if/~capture set it
+    // to REPLACE the invocation (emit continuations directly, no handler call). A
+    // routed transform (field:new.on-stack→new-instack) marks its invocation
+    // @preamble_then_call: emit the preamble (caller-frame stack vars), then FALL
+    // THROUGH to the normal invocation+continuation emission so the handler call
+    // (and the field binding) still happen.
     if (flow.preamble_code) |preamble| {
+        var keep_call = false;
+        for (flow.inv().annotations) |ann| {
+            if (std.mem.eql(u8, ann, "@preamble_then_call")) {
+                keep_call = true;
+                break;
+            }
+        }
         try emitter.write(preamble);
         try emitter.write("\n");
 
-        // Now emit continuation bodies directly - no switch, no handler call
-        // The preamble already set up the binding (e.g., `const cfg = ...;`)
-        // Each continuation's node is the code that should run
-        var result_counter: usize = 0;
-        for (flow.body.continuations) |*cont| {
-            try emitContinuationBody(emitter, ctx, cont, &result_counter);
+        if (!keep_call) {
+            // Now emit continuation bodies directly - no switch, no handler call
+            // The preamble already set up the binding (e.g., `const cfg = ...;`)
+            // Each continuation's node is the code that should run
+            var result_counter: usize = 0;
+            for (flow.body.continuations) |*cont| {
+                try emitContinuationBody(emitter, ctx, cont, &result_counter);
+            }
+            return; // Done - don't emit the invocation
         }
-        return; // Done - don't emit the invocation
+        // else: fall through — emit the normal handler call + continuations below
     }
 
     // Zero-overhead control flow: if a template transform set inline_body, emit
@@ -7300,6 +7313,20 @@ pub fn emitContinuationBody(
     // continuation's children are the node's branch continuations. This is the
     // de-duplication that makes inline templates work at every depth, not just
     // top-level: one helper, both call sites.
+    // Escape-driven stack alloc: a nested invocation carrying preamble_code
+    // (field:new.on-stack→new-instack via @preamble_then_call) emits its caller-frame
+    // stack vars HERE, then falls through to the normal handler call + branch match
+    // below — so the vars are in scope for the call and the downstream continuations.
+    if (cont.node) |node| {
+        if (node == .invocation) {
+            if (node.invocation.preamble_code) |preamble| {
+                try emitter.writeIndent();
+                try emitter.write(preamble);
+                try emitter.write("\n");
+            }
+        }
+    }
+
     if (cont.node) |node| {
         if (node == .invocation) {
             if (node.invocation.inline_body) |inline_code_raw| {
