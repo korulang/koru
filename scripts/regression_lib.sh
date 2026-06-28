@@ -499,6 +499,7 @@ regression_run_one_test() {
           "$test_dir/actual.json" \
           "$test_dir/temp_build.zig" \
           "$test_dir/build.zig" \
+          "$test_dir/program.ast.json" \
           "$test_dir/SUCCESS" \
           "$test_dir/FAILURE"
 

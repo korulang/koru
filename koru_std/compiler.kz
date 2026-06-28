@@ -110,15 +110,17 @@ pub const CompilerContext = struct {
     });
     ast_module.addImport("errors", errors_module);
 
-    // Program AST module - per-user PROGRAM_AST constant, emitted alongside backend.zig.
-    // Split out so backend.zig itself stays byte-identical across user programs and
-    // Zig's content-addressed cache hits.
-    const program_ast_module = b.createModule(.{
-        .root_source_file = b.path("program_ast.zig"),
+    // AST ⇄ JSON reflective round-trip. The backend reads the per-user program AST
+    // from `program.ast.json` at runtime and deserializes it via this module — the
+    // AST is no longer compiled into the backend binary, so backend.zig stays
+    // byte-identical across user programs AND the built binary is reusable across
+    // any program with the same handler set.
+    const ast_json_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/ast_json.zig" },
         .target = target,
         .optimize = optimize,
     });
-    program_ast_module.addImport("ast", ast_module);
+    ast_json_module.addImport("ast", ast_module);
 
     // Compiler env module - per-user CompilerEnv struct (flags + env vars).
     // Also split out for the same byte-identical-backend.zig reason.
@@ -550,7 +552,7 @@ pub const CompilerContext = struct {
     exe.addObject(backend_output_obj);
 
     exe.root_module.addImport("ast", ast_module);
-    exe.root_module.addImport("program_ast", program_ast_module);
+    exe.root_module.addImport("ast_json", ast_json_module);
     exe.root_module.addImport("compiler_env", compiler_env_module);
     exe.root_module.addImport("ast_functional", ast_functional_module);
     exe.root_module.addImport("ast_serializer", ast_serializer_module);
@@ -694,19 +696,14 @@ pub const CompilerContext = struct {
 | created CompilerContext
 
 ~proc context-create|zig {
-    // PROGRAM_AST is a `pub const` global: on Linux/ELF its embedded array
-    // literals (`&[_]Continuation{...}`) are placed in read-only `.rodata`
-    // (mapped `r--p`). The metacircular pipeline MUTATES the AST in place via
-    // `@constCast` (template_processor writes `node.invocation.inline_body`;
-    // auto-discharge stamps `binding_annotations`), so `ctx.ast` MUST point at
-    // writable memory — otherwise the first in-place write SIGSEGVs. (macOS/
-    // Mach-O happened to place the same const writably, hiding the bug.)
-    // Deep-clone PROGRAM_AST onto the heap before any pass runs.
-    const ast_functional = @import("ast_functional");
-    const heap_ast = allocator.create(Program) catch unreachable;
-    heap_ast.* = ast_functional.cloneSourceFile(allocator, program_ast) catch unreachable;
+    // The seed AST is deserialized from `program.ast.json` onto the compile arena
+    // in the backend's main() — it is already writable heap memory, so the
+    // metacircular pipeline's in-place mutations (`@constCast` template inline_body
+    // writes, auto-discharge binding-annotation stamps) are safe with no clone.
+    // (This is why the old rodata-SIGSEGV heap-clone hack is gone: there is no
+    // longer a `pub const PROGRAM_AST` in read-only `.rodata` to mutate.)
     const ctx = CompilerContext{
-        .ast = heap_ast,
+        .ast = program_ast,
         .original_ast = program_ast,  // Initially same as ast, preserved across filtering
         .allocator = allocator,
         .errors = std.ArrayList(CompilerError){},

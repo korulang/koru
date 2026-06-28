@@ -270,15 +270,19 @@ fn generateBackendCode(allocator: std.mem.Allocator, input_file: []const u8, sou
     try writer.writeAll("// Koru Backend (Pass 2) — thin driver; PROGRAM_AST lives in program_ast.zig\n");
     try writer.writeAll("// This file IS the compiler backend - it generates final code at compile-time\n\n");
 
-    // Pull Program type and maybeDeinitAst from the per-user program_ast module.
-    // NOTE: we do NOT alias PROGRAM_AST itself with a `const`. Zig copies the value
-    // at the alias site, producing a different address — which breaks the identity
-    // check `source_ast == &PROGRAM_AST` inside maybeDeinitAst (compiled in
-    // program_ast.zig) and makes us free rodata-backed strings. Reference the
-    // constant via `program_ast_mod.PROGRAM_AST` instead.
-    try writer.writeAll("const program_ast_mod = @import(\"program_ast\");\n");
-    try writer.writeAll("const Program = program_ast_mod.Program;\n");
-    try writer.writeAll("const maybeDeinitAst = program_ast_mod.maybeDeinitAst;\n\n");
+    // The program AST is no longer baked into this binary as a `pub const`.
+    // It is read from `program.ast.json` at runtime (see main()) and deserialized
+    // onto the compile arena via the reflective ast_json round-trip. That makes
+    // this backend binary reusable across any program with the same handler set,
+    // and the seed AST lands on writable heap by construction — so the old
+    // rodata-SIGSEGV / heap-clone dance is gone. `Program` comes straight from
+    // the `ast` module; `ast_json` provides the deserializer.
+    try writer.writeAll("const Program = @import(\"ast\").Program;\n");
+    try writer.writeAll("const ast_json_mod = @import(\"ast_json\");\n");
+    // The seed AST and every transform output live on the compile arena, which
+    // reclaims them wholesale at teardown — nothing to free per-AST. Kept as a
+    // no-op so the existing `defer maybeDeinitAst(...)` call sites are untouched.
+    try writer.writeAll("fn maybeDeinitAst(_: *const Program) void {}\n\n");
 
     // Import emitter_helpers at top level so build:config can be queried during compilation
     try writer.writeAll("const emitter_helpers = @import(\"emitter_helpers\");\n");
@@ -996,6 +1000,26 @@ fn generateBackendCode(allocator: std.mem.Allocator, input_file: []const u8, sou
             \\
         );
 
+        // Seed AST: read the program AST from `program.ast.json` (written beside
+        // this backend by the frontend) and deserialize it onto the compile arena.
+        // This replaces the old baked-in `PROGRAM_AST` const. The backend runs in
+        // the same directory the frontend emitted into (`./backend output`), so a
+        // plain CWD-relative open is all that's needed — no extra argv plumbing.
+        try writer.writeAll(
+            \\    const seed_ast: *Program = blk: {
+            \\        const ast_file = __koru_std.fs.cwd().openFile("program.ast.json", .{}) catch |err| {
+            \\            __koru_std.debug.print("❌ Backend: cannot open program.ast.json: {s}\n", .{@errorName(err)});
+            \\            return err;
+            \\        };
+            \\        defer ast_file.close();
+            \\        const ast_json_bytes = try ast_file.readToEndAlloc(compile_allocator, 256 * 1024 * 1024);
+            \\        const p = try compile_allocator.create(Program);
+            \\        p.* = try ast_json_mod.deserialize(compile_allocator, ast_json_bytes);
+            \\        break :blk p;
+            \\    };
+            \\
+        );
+
         // Generate command checking code dynamically
         const cmd_result = try collectCommands(allocator, source_file);
         if (cmd_result.count > 0) {
@@ -1020,7 +1044,7 @@ fn generateBackendCode(allocator: std.mem.Allocator, input_file: []const u8, sou
                     \\            __koru_std.debug.print("🔧 Running command: {s}\n", .{{}});
                     \\            const cmd_name: []const u8 = "{s}";
                     \\            const argv_slice: []const []const u8 = args[2..];
-                    \\            koru_command_dispatch(@ptrCast(&cmd_name), &program_ast_mod.PROGRAM_AST, &allocator, @ptrCast(&argv_slice));
+                    \\            koru_command_dispatch(@ptrCast(&cmd_name), seed_ast, &allocator, @ptrCast(&argv_slice));
                     \\            return;
                     \\        }}
                     \\
@@ -1049,10 +1073,10 @@ fn generateBackendCode(allocator: std.mem.Allocator, input_file: []const u8, sou
             \\    // Apply compiler passes
             \\    // Each pass takes PROGRAM_AST pointer and current AST pointer
             \\    // Returns same pointer if no changes, or new heap-allocated AST if optimized
-            \\    const current_ast: *const Program = &program_ast_mod.PROGRAM_AST;
+            \\    const current_ast: *const Program = seed_ast;
             \\
             \\    // DUMP POINT 1: Original AST at backend entry
-            \\    dumpAST(&program_ast_mod.PROGRAM_AST, "1-backend-start", compile_allocator);
+            \\    dumpAST(seed_ast, "1-backend-start", compile_allocator);
             \\
             \\    // More passes can go here...
             \\
@@ -6899,13 +6923,11 @@ pub fn main() !void {
     log.debug("DEBUG: Writing output to {s}\n", .{output});
 
     // Pass 2: Generate the backend (code generator + compiler)
-    const ast_serializer = @import("ast_serializer");
-
-    // Serialize the AST for the backend
-    var serializer = try ast_serializer.AstSerializer.init(compile_allocator);
-    defer serializer.deinit();
-
-    const serialized_ast = try serializer.serialize(final_ast);
+    // Serialize the program AST to JSON. The backend reads this file at runtime
+    // (program.ast.json) and deserializes it onto the heap — the AST is a runtime
+    // input now, not baked into the backend binary. See generateBackendCode().
+    const ast_json = @import("ast_json");
+    const serialized_ast = try ast_json.serialize(compile_allocator, final_ast);
     // No need to free - compile_arena handles it
 
     // Generate backend_output_emitted.zig for comptime handlers FIRST
@@ -6938,9 +6960,11 @@ pub fn main() !void {
 
     const output_dir = std.fs.path.dirname(output) orelse ".";
 
-    // Write program_ast.zig: the per-user AST literal lives here so backend.zig
-    // can be byte-identical across user programs and cache.
-    const program_ast_path = try std.fs.path.join(allocator, &[_][]const u8{ output_dir, "program_ast.zig" });
+    // Write program.ast.json: the per-user AST as a data artifact the backend
+    // reads at runtime. Replaces program_ast.zig — the AST is no longer compiled
+    // into the backend binary, so the backend is reusable across programs that
+    // share a handler set (the caching layer this unlocks).
+    const program_ast_path = try std.fs.path.join(allocator, &[_][]const u8{ output_dir, "program.ast.json" });
     defer allocator.free(program_ast_path);
     const program_ast_file = try std.fs.cwd().createFile(program_ast_path, .{});
     defer program_ast_file.close();
