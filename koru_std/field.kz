@@ -61,12 +61,159 @@ var __field_noop_fba = std.heap.FixedBufferAllocator.init(&__field_noop_buf);
     const ast = @import("ast");
     const flow = if (item.* == .flow) &item.flow else @panic("std/field:new: expected a flow site");
 
-    // Route to the concrete heap constructor, forwarding the original args
-    // (`bits`) and preserving the downstream continuations (the | field / | err
-    // match). The stack path will branch here once escape analysis lands.
+    // BRICK 2 — automatic escape-driven placement. Read THIS site's obligation
+    // discharge (the obligation IS the lifetime). If the field is provably LOCAL —
+    // comptime-literal `bits`, the `<field!>` discharged by a `field:free` within the
+    // | field branch, and the binding never escaping (no branch-constructor / label-
+    // jump / non-field call carries it) — stack-place it (route to new-instack with a
+    // caller-frame preamble, exactly like new.on-stack). Otherwise → heap. CONSERVATIVE:
+    // any doubt → heap. A false "local" would be use-after-return; a missed "local"
+    // merely forgoes the optimization.
+    const Scan = struct {
+        bind: []const u8,
+        free_found: bool = false,
+        escapes: bool = false,
+
+        fn isFieldFree(inv: *const ast.Invocation) bool {
+            const segs = inv.path.segments;
+            return segs.len >= 1 and std.mem.eql(u8, segs[segs.len - 1], "free");
+        }
+        fn isFieldCall(inv: *const ast.Invocation) bool {
+            const mq = inv.path.module_qualifier orelse return false;
+            return std.mem.endsWith(u8, mq, "field");
+        }
+        fn isIdentChar(c: u8) bool {
+            return (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or (c >= '0' and c <= '9') or c == '_';
+        }
+        fn usesIdent(self: *@This(), hay: []const u8) bool {
+            var i: usize = 0;
+            while (std.mem.indexOfPos(u8, hay, i, self.bind)) |p| {
+                const before_ok = p == 0 or !isIdentChar(hay[p - 1]);
+                const after = p + self.bind.len;
+                const after_ok = after >= hay.len or !isIdentChar(hay[after]);
+                if (before_ok and after_ok) return true;
+                i = p + 1;
+            }
+            return false;
+        }
+        fn scanInv(self: *@This(), inv: *const ast.Invocation) void {
+            var bind_in_args = false;
+            for (inv.args) |a| {
+                if (self.usesIdent(a.value)) bind_in_args = true;
+            }
+            if (!bind_in_args) return;
+            if (isFieldFree(inv)) {
+                self.free_found = true;
+            } else if (!isFieldCall(inv)) {
+                self.escapes = true; // handed to a non-field event → may escape
+            }
+        }
+        fn scanNode(self: *@This(), node: *const ast.Node) void {
+            switch (node.*) {
+                .invocation => |*inv| self.scanInv(inv),
+                .label_with_invocation => |*lwi| self.scanInv(&lwi.invocation),
+                .label_jump => |*lj| {
+                    for (lj.args) |a| {
+                        if (self.usesIdent(a.value)) self.escapes = true;
+                    }
+                },
+                .branch_constructor => |*bc| {
+                    if (bc.plain_value) |pv| {
+                        if (self.usesIdent(pv)) self.escapes = true;
+                    }
+                    for (bc.fields) |fld| {
+                        if (fld.expression_str) |es| {
+                            if (self.usesIdent(es)) self.escapes = true;
+                        }
+                    }
+                },
+                .deref => |*d| {
+                    if (self.usesIdent(d.target)) self.escapes = true;
+                },
+                .conditional_block => |*cb| {
+                    for (cb.nodes) |*n| self.scanNode(n);
+                },
+                .foreach => |*fe| {
+                    for (fe.branches) |*br| self.scanConts(br.body);
+                },
+                .conditional => |*c| {
+                    for (c.branches) |*br| self.scanConts(br.body);
+                },
+                .switch_result => |*sr| {
+                    for (sr.branches) |*br| self.scanConts(br.body);
+                },
+                else => {},
+            }
+        }
+        fn scanConts(self: *@This(), conts: []const ast.Continuation) void {
+            for (conts) |*c| {
+                if (c.node) |*n| self.scanNode(n);
+                self.scanConts(c.continuations);
+            }
+        }
+    };
+
+    var bind: ?[]const u8 = null;
+    var field_children: []const ast.Continuation = &[_]ast.Continuation{};
+    for (flow.body.continuations) |*c| {
+        if (std.mem.eql(u8, c.branch, "field")) {
+            bind = c.binding;
+            field_children = c.continuations;
+        }
+    }
+    const bits_expr = if (invocation.args.len >= 1) std.mem.trim(u8, invocation.args[0].value, " \t") else "";
+    var bits_is_literal = bits_expr.len > 0;
+    for (bits_expr) |ch| {
+        if (ch < '0' or ch > '9') bits_is_literal = false;
+    }
+
+    var local = false;
+    if (bind != null and bind.?.len > 0 and bits_is_literal) {
+        var s = Scan{ .bind = bind.? };
+        s.scanConts(field_children);
+        local = s.free_found and !s.escapes;
+    }
+
+    if (local) {
+        // STACK path — identical lowering to new.on-stack: route to new-instack with a
+        // caller-frame preamble; drop the now-impossible | err branch.
+        const L = flow.location.line;
+        const C = flow.location.column;
+        const preamble = std.fmt.allocPrint(allocator,
+            "var __fld_buf_{d}_{d}: [({s} + 63) / 64]u64 = undefined;\n" ++
+            "var __fld_self_{d}_{d}: koru_std.koru_field.Field = undefined;",
+            .{ L, C, bits_expr, L, C },
+        ) catch unreachable;
+        const seg2 = allocator.alloc([]const u8, 1) catch unreachable;
+        seg2[0] = allocator.dupe(u8, "new-instack") catch unreachable;
+        const args2 = allocator.alloc(ast.Arg, 3) catch unreachable;
+        args2[0] = .{ .name = "buf", .value = std.fmt.allocPrint(allocator, "__fld_buf_{d}_{d}[0..]", .{ L, C }) catch unreachable };
+        args2[1] = .{ .name = "slot", .value = std.fmt.allocPrint(allocator, "&__fld_self_{d}_{d}", .{ L, C }) catch unreachable };
+        args2[2] = .{ .name = "bits", .value = allocator.dupe(u8, bits_expr) catch unreachable };
+        const anns2 = allocator.alloc([]const u8, 1) catch unreachable;
+        anns2[0] = allocator.dupe(u8, "@preamble_then_call") catch unreachable;
+        const inv2 = ast.Invocation{
+            .path = ast.DottedPath{
+                .module_qualifier = if (invocation.path.module_qualifier) |mq| allocator.dupe(u8, mq) catch unreachable else null,
+                .segments = seg2,
+            },
+            .args = args2,
+            .annotations = anns2,
+        };
+        var kept = std.ArrayList(ast.Continuation){};
+        for (flow.body.continuations) |c| {
+            if (!std.mem.eql(u8, c.branch, "err")) kept.append(allocator, c) catch unreachable;
+        }
+        var stack_flow = flow.*;
+        stack_flow.body = ast.rootSite(inv2, kept.toOwnedSlice(allocator) catch unreachable, flow.location);
+        stack_flow.preamble_code = preamble;
+        stack_flow.inline_body = null;
+        return .{ .transformed = .{ .replacement = ast.Item{ .flow = stack_flow } } };
+    }
+
+    // HEAP path — route to the concrete heap constructor, preserving | field / | err.
     const seg = allocator.alloc([]const u8, 1) catch unreachable;
     seg[0] = allocator.dupe(u8, "new-heap") catch unreachable;
-
     const new_inv = ast.Invocation{
         .path = ast.DottedPath{
             .module_qualifier = if (invocation.path.module_qualifier) |mq| allocator.dupe(u8, mq) catch unreachable else null,
@@ -74,23 +221,11 @@ var __field_noop_fba = std.heap.FixedBufferAllocator.init(&__field_noop_buf);
         },
         .args = invocation.args,
     };
-
-    const new_item = ast.Item{
-        .flow = ast.Flow{
-            .body = ast.rootSite(new_inv, flow.body.continuations, flow.location),
-            .pre_label = if (flow.pre_label) |l| allocator.dupe(u8, l) catch unreachable else null,
-            .impl_of = flow.impl_of,
-            .super_shape = null,
-            .inline_body = null,
-            .preamble_code = null,
-            .is_pure = flow.is_pure,
-            .is_transitively_pure = flow.is_transitively_pure,
-            .location = flow.location,
-            .module = allocator.dupe(u8, flow.module) catch unreachable,
-        },
-    };
-
-    return .{ .transformed = .{ .replacement = new_item } };
+    var heap_flow = flow.*;
+    heap_flow.body = ast.rootSite(new_inv, flow.body.continuations, flow.location);
+    heap_flow.preamble_code = null;
+    heap_flow.inline_body = null;
+    return .{ .transformed = .{ .replacement = ast.Item{ .flow = heap_flow } } };
 }
 
 // Heap constructor — the concrete runtime allocation. `new` routes here unless
