@@ -83,6 +83,12 @@ CLEAN_CACHE=false
 # Use --parallel N to run N tests concurrently
 PARALLEL_JOBS=1
 
+# Backend-binary cache (default: off). With --backend-cache, the built backend
+# compiler binary is reused across tests that share a handler set — sound because
+# the program AST is now a runtime input (program.ast.json), not baked into the
+# binary. Keyed on the backend's build inputs + a compiler-source salt.
+BACKEND_CACHE_MODE=off
+
 echo "════════════════════════════════════════"
 echo "    KORU REGRESSION TEST SUITE"
 echo "════════════════════════════════════════"
@@ -415,6 +421,10 @@ while [[ $# -gt 0 ]]; do
             KEEP_ARTIFACTS=true
             shift
             ;;
+        --backend-cache)
+            BACKEND_CACHE_MODE=on
+            shift
+            ;;
         --parallel)
             shift
             if [ -n "$1" ] && [ "$1" -eq "$1" ] 2>/dev/null; then
@@ -549,6 +559,22 @@ if [ "$CACHE_MODE" = "on" ]; then
         echo "🔍 Cache parity verification ENABLED — running each test twice"
         export KORU_VERIFY_CACHE=on
     fi
+fi
+
+# Backend-binary cache setup. The salt is the newest mtime across the compiler
+# sources (src/, koru_std/, build.zig, koruc) — any compiler/stdlib edit advances
+# it and invalidates every cached backend, so a stale binary can never be reused
+# across a source change. The cache dir persists across runs (the salt guards it).
+export BACKEND_CACHE_MODE
+export BACKEND_CACHE_DIR
+export BACKEND_CACHE_SALT
+if [ "$BACKEND_CACHE_MODE" = "on" ]; then
+    # shellcheck source=scripts/regression_cache.sh
+    source "$(dirname "${BASH_SOURCE[0]}")/scripts/regression_cache.sh"
+    BACKEND_CACHE_SALT=$(cache_compute_compiler_mtime "$(pwd)")
+    BACKEND_CACHE_DIR="$ZIG_GLOBAL_CACHE/koru-backend-cache"
+    mkdir -p "$BACKEND_CACHE_DIR"
+    echo "🗄  Backend-binary cache ENABLED (salt: $BACKEND_CACHE_SALT, dir: $BACKEND_CACHE_DIR)"
 fi
 # --clean should also drop per-test cache fingerprints (the Zig cache cleanup
 # above leaves them intact otherwise).
