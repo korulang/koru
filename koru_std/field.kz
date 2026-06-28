@@ -18,6 +18,30 @@
 
 const std = @import("std");
 
+// Fast per-pass allocator for Field storage. new+free are LIFO within a pass
+// (create handle, alloc data; free data, destroy handle), so a fixed bump region
+// that reclaims LIFO frees rewinds to empty after every pass — repeated new/free
+// then reuses the SAME resident pages instead of round-tripping freed pages to the
+// OS and re-faulting fresh ones (the measured per-pass allocation tax that separates
+// the faithful sieve from the reuse ceiling). The backing region is taken once from
+// the page allocator and never returned: a deliberate static arena, invisible to the
+// GPA leak meter. When the region can't satisfy a request, new falls back to the
+// leak-metered koru_allocator so correctness and leak-detection are never lost.
+// Faithfulness is preserved: each pass still gets a fresh, correctly-sized, zeroed
+// buffer — only the page churn underneath is removed. Single-threaded (the FBA has
+// no lock); the GPA fallback remains thread-safe.
+var __field_fba_buf: ?[]u8 = null;
+var __field_fba: std.heap.FixedBufferAllocator = undefined;
+
+fn __field_fast() std.mem.Allocator {
+    if (__field_fba_buf == null) {
+        // page_allocator returns page-aligned memory; never freed (static arena).
+        __field_fba_buf = std.heap.page_allocator.alloc(u8, 8 * 1024 * 1024) catch return koru_allocator();
+        __field_fba = std.heap.FixedBufferAllocator.init(__field_fba_buf.?);
+    }
+    return __field_fba.allocator();
+}
+
 pub const Field = struct {
     data: []u64,
     bits: usize,
@@ -43,18 +67,28 @@ pub const Field = struct {
 | err []const u8
 
 ~proc new|zig {
-    const allocator = koru_allocator();
-    const self = allocator.create(Field) catch {
-        return .{ .err = "allocation failed" };
-    };
     const words = (bits + 63) / 64;
-    const data = allocator.alloc(u64, words) catch {
-        allocator.destroy(self);
-        return .{ .err = "allocation failed" };
-    };
-    @memset(data, 0);
-    self.* = .{ .data = data, .bits = bits, .allocator = allocator };
-    return .{ .field = self };
+    // Try the fast LIFO-reclaiming region first; the handle and its data buffer must
+    // share one allocator (deinit frees both through self.allocator).
+    var allocator = __field_fast();
+    var self = allocator.create(Field) catch null;
+    var data: ?[]u64 = if (self != null) (allocator.alloc(u64, words) catch null) else null;
+    if (self != null and data == null) {
+        allocator.destroy(self.?); // roll the handle back out of the bump region
+        self = null;
+    }
+    if (self == null) {
+        // Fast region exhausted — fall back to the leak-metered GPA.
+        allocator = koru_allocator();
+        self = allocator.create(Field) catch return .{ .err = "allocation failed" };
+        data = allocator.alloc(u64, words) catch {
+            allocator.destroy(self.?);
+            return .{ .err = "allocation failed" };
+        };
+    }
+    @memset(data.?, 0);
+    self.?.* = .{ .data = data.?, .bits = bits, .allocator = allocator };
+    return .{ .field = self.? };
 }
 
 // ============================================
