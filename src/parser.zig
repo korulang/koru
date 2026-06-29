@@ -111,6 +111,7 @@ fn hasSourceBlock(s: []const u8) bool {
     var paren_depth: i32 = 0;
     var in_string = false;
     var seen_equals = false;
+    var seen_arrow = false;
 
     for (s, 0..) |c, i| {
         // Track string state (skip escaped quotes)
@@ -130,9 +131,16 @@ fn hasSourceBlock(s: []const u8) bool {
             seen_equals = true;
         }
 
-        // A `{` at paren_depth 0, with no prior `=`, means source block
+        // Track if we've seen `->` at top level. A `{` after a top-level `->` is
+        // the bare-return body (e.g. `~run -> { total: x*2 }`), not a source
+        // block — let it fall through to the isBareReturnImpl dispatch.
+        if (c == '-' and paren_depth == 0 and i + 1 < s.len and s[i + 1] == '>') {
+            seen_arrow = true;
+        }
+
+        // A `{` at paren_depth 0, with no prior `=` or `->`, means source block
         if (c == '{' and paren_depth == 0) {
-            return !seen_equals;
+            return !seen_equals and !seen_arrow;
         }
     }
 
@@ -7611,6 +7619,21 @@ pub const Parser = struct {
                 } else if (c == ']' or c == '}' or c == ')' or c == '>') {
                     depth -= 1;
                 } else if (depth == 0 and c == '-' and branch_start[idx + 1] == '>') {
+                    // `->` is the bare-return arrow and belongs on the EVENT
+                    // signature (`event x {} -> T`). On a terminal `|` branch
+                    // DECL it is illegal — only effect `!` branches carry a
+                    // `-> ResumeT` resume type. (A `->` in a branch HANDLER is
+                    // fine: that produces the value and is parsed elsewhere.)
+                    if (branch_kind == .terminal) {
+                        try self.reporter.addError(
+                            .PARSE003,
+                            self.current - 1,
+                            1,
+                            "'->' is not allowed in a continuation branch declaration - the bare-return arrow belongs on the event signature (`event x {{}} -> T`), not a `|` branch",
+                            .{},
+                        );
+                        return error.ParseError;
+                    }
                     var rt = lexer.trim(branch_start[idx + 2 ..]);
                     // Phantom-capture the resume type, same as a branch payload:
                     // `-> *R<!state>` → resume_type `*R`, resume_phantom `!state`.

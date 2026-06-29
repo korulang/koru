@@ -238,6 +238,13 @@ pub const EmissionContext = struct {
     self_loop_active: bool = false,
     self_loop_label: []const u8 = "__koru_self_loop",
     self_loop_event_canonical: ?[]const u8 = null,
+    // Set when emitting the body of a handler whose event has a bare `-> T`
+    // return. A `.expression` produce step (`| big b -> b * 100`) in this
+    // context IS the event's return value, so it lowers to `return EXPR;`
+    // instead of the generic `_ = EXPR;` discard. (The flat/proc bare-return
+    // impls already emit `return` via their own paths; this covers the
+    // continuation-HANDLER produce — see 020_025.)
+    bare_return_active: bool = false,
 };
 
 /// CodeEmitter - manages buffer and formatting
@@ -1555,8 +1562,11 @@ pub fn emitSubflowContinuations(
     main_module_name: ?[]const u8,
     source_event_name: ?[]const u8,
     module_prefix: []const u8,
+    // True when the enclosing handler's event has a bare `-> T` return; makes
+    // `.expression` produce arms lower to `return EXPR;` (see EmissionContext).
+    enclosing_bare_return: bool,
 ) !void {
-    try emitSubflowContinuationsWithDepth(emitter, continuations, start_idx, indent, all_items, 0, tap_registry, type_registry, main_module_name, source_event_name, module_prefix);
+    try emitSubflowContinuationsWithDepth(emitter, continuations, start_idx, indent, all_items, 0, tap_registry, type_registry, main_module_name, source_event_name, module_prefix, enclosing_bare_return);
 }
 
 /// Helper to check if any continuation in a list has a label
@@ -1856,6 +1866,7 @@ fn emitSubflowContinuationsWithDepth(
     main_module_name: ?[]const u8,
     source_event_name: ?[]const u8,
     module_prefix: []const u8,
+    enclosing_bare_return: bool,
 ) !void {
     if (start_idx >= continuations.len) return;
 
@@ -1904,6 +1915,7 @@ fn emitSubflowContinuationsWithDepth(
                     .type_registry = type_registry,
                     .main_module_name = main_module_name,
                     .current_source_event = source_event_name,
+                    .bare_return_active = enclosing_bare_return,
                 };
                 var label_contexts = std.StringHashMap(LabelContext).init(ctx.allocator);
                 ctx.label_contexts = &label_contexts;
@@ -2044,6 +2056,7 @@ fn emitSubflowContinuationsWithDepth(
                 main_module_name,
                 source_event_name,
                 module_prefix,
+                enclosing_bare_return,
             );
         }
         return;
@@ -2074,6 +2087,7 @@ fn emitSubflowContinuationsWithDepth(
             .type_registry = type_registry,
             .main_module_name = main_module_name, // Pass through for canonical event naming
             .current_source_event = source_event_name, // Set source event for inline tap emission!
+            .bare_return_active = enclosing_bare_return,
         };
         // A label-fold emitted through this subflow path (visitor emitter) still
         // runs `emitContinuationBody`'s `label_with_invocation` arm, which
@@ -2669,7 +2683,7 @@ fn emitSubflowContinuationsWithDepth(
                                 const extra = "            ";
                                 @memcpy(deeper_indent_buf[indent.len .. indent.len + extra.len], extra);
                                 const deeper_indent = deeper_indent_buf[0 .. indent.len + extra.len];
-                                try emitSubflowContinuationsWithDepth(emitter, cont.continuations, 0, deeper_indent, all_items, last_result_idx + 1, tap_registry, type_registry, main_module_name, source_event_name, module_prefix);
+                                try emitSubflowContinuationsWithDepth(emitter, cont.continuations, 0, deeper_indent, all_items, last_result_idx + 1, tap_registry, type_registry, main_module_name, source_event_name, module_prefix, enclosing_bare_return);
                             }
 
                             try emitter.write(indent);
@@ -2720,7 +2734,7 @@ fn emitSubflowContinuationsWithDepth(
                     const extra = "        ";
                     @memcpy(deeper_indent_buf[indent.len .. indent.len + extra.len], extra);
                     const deeper_indent = deeper_indent_buf[0 .. indent.len + extra.len];
-                    try emitSubflowContinuationsWithDepth(emitter, cont.continuations, 0, deeper_indent, all_items, last_result_idx + 1, tap_registry, type_registry, main_module_name, source_event_name, module_prefix);
+                    try emitSubflowContinuationsWithDepth(emitter, cont.continuations, 0, deeper_indent, all_items, last_result_idx + 1, tap_registry, type_registry, main_module_name, source_event_name, module_prefix, enclosing_bare_return);
                 }
 
                 try emitter.write(indent);
@@ -5310,7 +5324,7 @@ fn emitInvocation(
             try emitter.write(bind_name);
             try emitter.write(": ");
             if (bare_return and event_decl != null and event_decl.?.return_type != null) {
-                try emitter.write(event_decl.?.return_type.?);
+                try writeBareReturnType(emitter, event_decl.?.return_type.?);
             } else {
                 try emitInvocationTarget(emitter, ctx, &invocation.path);
                 try emitter.write(".Output");
@@ -8204,13 +8218,20 @@ fn emitStep(
             try emitter.write("\n");
         },
         .expression => |code| {
-            // A Zig expression at body position. In a generic context we
-            // discard the value to keep emission well-formed. The
-            // effect-branch-handler context overrides this in
-            // emitHandlersStruct, where the expression becomes the
-            // `return EXPR;` of the synthesized resume fn.
+            // A Zig expression at body position. In a bare-return handler the
+            // `->` produce IS the event's return value, so it lowers to
+            // `return EXPR;` (020_025: `| big b -> b * 100`). A bare `_`
+            // discard is never a produce, so it stays a discard even there.
+            // In a generic context we discard the value to keep emission
+            // well-formed. (The effect-branch-handler context has its own
+            // override in emitHandlersStruct, where the expression becomes the
+            // `return EXPR;` of the synthesized resume fn.)
             try emitter.writeIndent();
-            try emitter.write("_ = ");
+            if (ctx.bare_return_active and !std.mem.eql(u8, std.mem.trim(u8, code, " \t"), "_")) {
+                try emitter.write("return ");
+            } else {
+                try emitter.write("_ = ");
+            }
             try emitter.write(code);
             try emitter.write(";\n");
         },
@@ -8911,11 +8932,23 @@ pub fn emitArrayLiteralForField(
 pub fn emitBareReturnOutput(emitter: *CodeEmitter, event: *const ast.EventDecl) !bool {
     if (event.return_type) |rt| {
         try emitter.write("pub const Output = ");
-        try emitter.write(rt);
+        try writeBareReturnType(emitter, rt);
         try emitter.write(";\n");
         return true;
     }
     return false;
+}
+
+/// Write a bare-return `-> T` type as a Zig type. A record literal `{ f: T }`
+/// shares Koru/Zig field syntax and only needs the Zig anon-struct keyword in
+/// front: `struct { f: T }`. Scalars and slices pass through unchanged. Every
+/// site that lowers a `return_type` to a Zig type routes through here.
+pub fn writeBareReturnType(emitter: *CodeEmitter, rt: []const u8) !void {
+    const trimmed = std.mem.trim(u8, rt, " \t");
+    if (trimmed.len > 0 and trimmed[0] == '{') {
+        try emitter.write("struct ");
+    }
+    try emitter.write(rt);
 }
 
 fn emitBranchConstructorWithEventType(
@@ -9324,7 +9357,7 @@ fn emitEventDeclForModuleFromType(
     try code_emitter.writeIndent();
     if (event_type.return_type) |rt| {
         try code_emitter.write("pub const Output = ");
-        try code_emitter.write(rt);
+        try writeBareReturnType(code_emitter, rt);
         try code_emitter.write(";\n");
     } else if (event_type.branches.len == 0) {
         try code_emitter.write("pub const Output = void;\n");

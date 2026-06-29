@@ -2034,7 +2034,7 @@ pub const VisitorEmitter = struct {
                                     const source_event_name = try emitter.buildCanonicalEventName(&flow.inv().path, self.allocator, self.main_module_name);
                                     const compiler_module_name = try codegen_utils.buildKoruModulePath(self.allocator, "std.compiler");
                                     defer self.allocator.free(compiler_module_name);
-                                    try emitter.emitSubflowContinuations(self.code_emitter, flow.body.continuations, 0, indent_str, items_to_search, self.tap_registry, self.type_registry, self.main_module_name, source_event_name, compiler_module_name);
+                                    try emitter.emitSubflowContinuations(self.code_emitter, flow.body.continuations, 0, indent_str, items_to_search, self.tap_registry, self.type_registry, self.main_module_name, source_event_name, compiler_module_name, event.return_type != null);
 
                                     self.code_emitter.indent_level -= 1;
                                     try self.code_emitter.writeIndent();
@@ -2344,7 +2344,7 @@ pub const VisitorEmitter = struct {
                                                 }
 
                                                 const source_event_name = try emitter.buildCanonicalEventName(&flow.inv().path, self.allocator, self.main_module_name);
-                                                try emitter.emitSubflowContinuations(self.code_emitter, flow.body.continuations, 0, indent_str, self.all_items, self.tap_registry, self.type_registry, self.main_module_name, source_event_name, "main_module");
+                                                try emitter.emitSubflowContinuations(self.code_emitter, flow.body.continuations, 0, indent_str, self.all_items, self.tap_registry, self.type_registry, self.main_module_name, source_event_name, "main_module", event.return_type != null);
 
                                                 found_impl = true;
                                             }
@@ -2800,7 +2800,7 @@ pub const VisitorEmitter = struct {
                                         const indent_str = indent_buf[0..indent_pos];
 
                                         const source_event_name = try emitter.buildCanonicalEventName(&flow.inv().path, self.allocator, self.main_module_name);
-                                        try emitter.emitSubflowContinuations(self.code_emitter, flow.body.continuations, 0, indent_str, items_to_search, self.tap_registry, self.type_registry, self.main_module_name, source_event_name, "main_module");
+                                        try emitter.emitSubflowContinuations(self.code_emitter, flow.body.continuations, 0, indent_str, items_to_search, self.tap_registry, self.type_registry, self.main_module_name, source_event_name, "main_module", event.return_type != null);
                                       }
                                     } else {
                                         // Void/pipeline continuations -- emit inline code + branch constructors
@@ -3016,7 +3016,7 @@ pub const VisitorEmitter = struct {
                                     // Build canonical source event name for tap emission
                                     const source_event_name = try emitter.buildCanonicalEventName(&flow.inv().path, self.allocator, self.main_module_name);
 
-                                    try emitter.emitSubflowContinuations(self.code_emitter, flow.body.continuations, 0, indent_str, items_to_search, self.tap_registry, self.type_registry, self.main_module_name, source_event_name, "main_module");
+                                    try emitter.emitSubflowContinuations(self.code_emitter, flow.body.continuations, 0, indent_str, items_to_search, self.tap_registry, self.type_registry, self.main_module_name, source_event_name, "main_module", event.return_type != null);
                                 }
                                 // Close the self-loop `while (true)` wrapper opened before the
                                 // body dispatch. The body always exits via `return` (terminal
