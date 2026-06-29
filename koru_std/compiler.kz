@@ -1401,19 +1401,6 @@ const emitFlowWithMocks = struct {
     // on demand; reads go through code_emitter.buffer, never a stale local.
     var code_emitter = emitter_lib.CodeEmitter.initGrowable(ctx.allocator, 256 * 1024) catch unreachable;
 
-    // DEBUG: Check buffer state after init
-    log.debug("\n[BUFFER DEBUG] After CodeEmitter.init:\n", .{});
-    log.debug("[BUFFER DEBUG]   code_emitter.pos = {d}\n", .{code_emitter.pos});
-    log.debug("[BUFFER DEBUG]   First 50 bytes: ", .{});
-    for (code_emitter.buffer[0..@min(50, code_emitter.buffer.len)]) |byte| {
-        if (byte >= 32 and byte < 127) {
-            log.debug("{c}", .{byte});
-        } else {
-            log.debug("[{d}]", .{byte});
-        }
-    }
-    log.debug("\n", .{});
-
     // Use tap registry from context (built during transform_taps pass)
     // If no registry exists, build one from current AST (shouldn't happen in normal flow)
     const tap_registry = if (ctx.tap_registry) |registry|
@@ -1448,19 +1435,6 @@ const emitFlowWithMocks = struct {
     // Emit using visitor pattern!
     visitor_emitter.emit(ctx.ast) catch unreachable;
 
-    // DEBUG: Check buffer after emission
-    log.debug("\n[BUFFER DEBUG] After visitor_emitter.emit:\n", .{});
-    log.debug("[BUFFER DEBUG]   code_emitter.pos = {d}\n", .{code_emitter.pos});
-    log.debug("[BUFFER DEBUG]   First 50 bytes of buffer: ", .{});
-    for (code_emitter.buffer[0..@min(50, code_emitter.buffer.len)]) |byte| {
-        if (byte >= 32 and byte < 127) {
-            log.debug("{c}", .{byte});
-        } else {
-            log.debug("[{d}]", .{byte});
-        }
-    }
-    log.debug("\n", .{});
-
     // Get the emitted code
     const visitor_code = code_emitter.getOutput();
 
@@ -1479,17 +1453,6 @@ const emitFlowWithMocks = struct {
             std.debug.panic("js_emitter.emit failed: {s}", .{@errorName(err)});
         };
     } else visitor_code;
-
-    log.debug("[BUFFER DEBUG] final_code length = {d}\n", .{final_code.len});
-    log.debug("[BUFFER DEBUG]   First 50 bytes of final_code: ", .{});
-    for (final_code[0..@min(50, final_code.len)]) |byte| {
-        if (byte >= 32 and byte < 127) {
-            log.debug("{c}", .{byte});
-        } else {
-            log.debug("[{d}]", .{byte});
-        }
-    }
-    log.debug("\n\n", .{});
 
     var updated_ctx = ctx;
     updated_ctx.passes_completed += 1;
