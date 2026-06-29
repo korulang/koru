@@ -146,6 +146,12 @@ our framing is fair or spun.
 
 ## 7. The files under review (inlined in full)
 
+> ⚠️ **SUPERSEDED — these inline copies are the Round-1 (pre-fix) versions, kept for
+> historical context.** The canonical, corrected files are committed under
+> `submission/PrimeKoru/solution_1/`. Differences since: the `print.ln`→`eprint.ln`
+> validation split, the corrected (non-"SIMD") marker wording, the `korulang` output
+> label, and the README template title. Read the committed files, not these, for review.
+
 ### 7a. `faithful.k` — the entry source
 
 ```

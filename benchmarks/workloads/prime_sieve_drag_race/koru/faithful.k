@@ -31,5 +31,5 @@ std/time:now()
             | field g |> for(1..500)
                 ! each i |> std/field:test(g, i): pv |> if(pv == 0)
                     | then |> std/field:mark-multiples(g, 2 * i * (i + 1), 2 * i + 1, 499999)
-                | done |> std/field:count-zeros(g, 1, 500000): c |> std/io:eprint.ln("validated primes: {{ c + 1:d }}") |> std/io:print.ln("koru;{{ n:d }};{{ @as(f64, @floatFromInt(t1 - t0)) / 1000000000.0:f }};1;algorithm=base,faithful=yes,bits=1") |> std/field:free(g)
+                | done |> std/field:count-zeros(g, 1, 500000): c |> std/io:eprint.ln("validated primes: {{ c + 1:d }}") |> std/io:print.ln("korulang;{{ n:d }};{{ @as(f64, @floatFromInt(t1 - t0)) / 1000000000.0:f }};1;algorithm=base,faithful=yes,bits=1") |> std/field:free(g)
             | err _ |> _

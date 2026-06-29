@@ -3,8 +3,9 @@
 Koru's entry for Dave Plummer's software drag race (`PlummersSoftwareLLC/Primes`):
 a Sieve of Eratosthenes over primes ≤ 1,000,000, self-timed for 5 seconds, emitting
 the official result line. The flex is real: the marking is **compiler-generated**
-(`std/field:mark-multiples` is a `[transform]` that emits a per-stride unrolled SIMD
-marker). The sieve, the timing loop, and the pass count are all Koru; only the clock
+(`std/field:mark-multiples` is a `[transform]` that emits a per-stride unrolled,
+residue-specialized scalar marker with baked-immediate masks — the backend then
+auto-vectorizes it). The sieve, the timing loop, and the pass count are all Koru; only the clock
 read (`std/time:now`) is a Zig effect — how Koru does every effect.
 
 ## Entries (`koru/`)
@@ -17,8 +18,8 @@ read (`std/time:now`) is a Zig effect — how Koru does every effect.
   `*Field<std/field:field>`). Faster, but a different faithfulness category — compare
   only against other `faithful=no` entries.
 
-Both print `validated primes: 78498` then the official line
-`koru;<passes>;<seconds>;1;algorithm=base,faithful=<yes|no>,bits=1`.
+Both emit `validated primes: 78498` on stderr, then the official line on stdout:
+`korulang;<passes>;<seconds>;1;algorithm=base,faithful=<yes|no>,bits=1`.
 
 ## Run
 

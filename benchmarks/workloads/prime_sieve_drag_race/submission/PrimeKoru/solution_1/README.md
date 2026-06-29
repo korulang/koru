@@ -1,4 +1,4 @@
-# PrimeKoru solution_1 — Koru
+# Koru solution by korulang
 
 A Sieve of Eratosthenes in [Koru](https://github.com/korulang/koru), a high-level
 language whose compiler **generates** the specialized marker.
@@ -63,7 +63,7 @@ cheap underneath. If the maintainers read the rule differently, we're glad to di
 or re-tag — the base algorithm, the fresh-instance-per-pass structure, and `bits=1`
 are accurate regardless.
 
-## Build and run
+## Run instructions
 
 The Dockerfile builds the Koru toolchain (`koruc`) **from source** at a pinned tag,
 then compiles the sieve through Koru's full pipeline. Zig — `koruc`'s own build
@@ -82,7 +82,7 @@ Supports `amd64` and `arm64`.
 The official result line is written to **stdout**:
 
 ```
-koru;<passes>;<seconds>;1;algorithm=base,faithful=yes,bits=1
+korulang;<passes>;<seconds>;1;algorithm=base,faithful=yes,bits=1
 ```
 
 A correctness check (π(1,000,000) = 78,498) is written to **stderr** as auxiliary

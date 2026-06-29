@@ -1,0 +1,14 @@
+# koruc clobbers its CWD with build artifacts; this PR package stays source-only
+# (Dockerfile, README.md, faithful.k). Ignore anything a stray local compile drops.
+a.out
+out
+err
+backend.zig
+backend_output_emitted.zig
+build.zig
+build_backend.zig
+compiler_env.zig
+output_emitted.zig
+program.ast.json
+.zig-cache/
+zig-out/

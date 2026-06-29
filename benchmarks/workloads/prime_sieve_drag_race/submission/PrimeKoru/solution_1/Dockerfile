@@ -67,7 +67,7 @@ WORKDIR /work
 COPY --from=build /work/a.out /work/program.ast.json ./
 
 # Emits the official line on STDOUT (via std/io:print.ln):
-#   koru;<passes>;<seconds>;1;algorithm=base,faithful=yes,bits=1
+#   korulang;<passes>;<seconds>;1;algorithm=base,faithful=yes,bits=1
 # and the `validated primes: 78498` correctness check on STDERR (std/io:eprint.ln),
 # so only the result line reaches stdout.
 CMD ["./a.out"]

@@ -26,5 +26,5 @@ std/time:now()
 | t t0 |> std/field:new(bits: 500000)
     | field g |> run(deadline: t0 + 5000000000, f: g)
         | total n |> std/time:now()
-            | t t1 |> std/field:count-zeros(g, 1, 500000): c |> std/io:print.ln("validated primes: {{ c + 1:d }}") |> std/io:print.ln("koru;{{ n:d }};{{ @as(f64, @floatFromInt(t1 - t0)) / 1000000000.0:f }};1;algorithm=base,faithful=no,bits=1") |> std/field:free(g)
+            | t t1 |> std/field:count-zeros(g, 1, 500000): c |> std/io:eprint.ln("validated primes: {{ c + 1:d }}") |> std/io:print.ln("korulang;{{ n:d }};{{ @as(f64, @floatFromInt(t1 - t0)) / 1000000000.0:f }};1;algorithm=base,faithful=no,bits=1") |> std/field:free(g)
     | err _ |> _
