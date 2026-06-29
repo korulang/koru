@@ -1,0 +1,11 @@
+// Test: a SINGLE continuation branch carrying a payload is illegal.
+//
+// A single output must be expressed as a bare return `-> T`, never as a
+// one-branch tagged union. This is the with-payload sibling of the existing
+// single-void-branch rejection (parser.zig: "single branch with no payload is
+// redundant"). One branch is never the right shape: zero outputs => void event,
+// one output => `-> T`, two-or-more => a real tagged union with >= 2 branches.
+//
+// WRONG: one branch, with a payload — should be `~event run { x: i64 } -> i64`.
+~event run { x: i64 }
+| total i64
