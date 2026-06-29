@@ -1,18 +1,26 @@
 {
-  "timestamp": "2026-06-26T12:14:00.175Z",
+  "timestamp": "2026-06-29T00:32:44.457Z",
   "summary": {
-    "passed": 258,
+    "passed": 260,
     "failed": 0,
     "skipped": 12,
     "leaked": 0,
     "compileErrors": 0,
-    "total": 270,
-    "suiteCount": 36,
+    "total": 272,
+    "suiteCount": 37,
     "status": "success"
   },
   "suites": [
     {
       "name": "ast_functional_tests",
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "total": 2,
+      "status": "success"
+    },
+    {
+      "name": "ast_json_tests",
       "passed": 2,
       "failed": 0,
       "skipped": 0,
