@@ -238,6 +238,27 @@ const std = @import("std");
     expr: []const u8,
 }
 
+// eprint / eprint.ln — the stderr siblings of print / print.ln. Same engine
+// (__printInterpolate), routed to fd 2. They reuse print.impl for shape
+// checking (the reroute is analysis-only; the inline body does the write).
+~[keyword|comptime|transform]pub event eprint.ln {
+    expr: Expression,
+    invocation: *const Invocation,
+    item: *const Item,
+    program: *const Program,
+    allocator: std.mem.Allocator
+}
+| transformed SiteResult
+
+~[keyword|comptime|transform]pub event eprint {
+    expr: Expression,
+    invocation: *const Invocation,
+    item: *const Item,
+    program: *const Program,
+    allocator: std.mem.Allocator
+}
+| transformed SiteResult
+
 // ============================================================================
 // Shared interpolation engine for the comptime print family. `print` IS
 // `print.ln` without the trailing newline — ONE implementation, parameterized
@@ -256,6 +277,7 @@ fn __printInterpolate(
     allocator: std.mem.Allocator,
     comptime with_newline: bool,
     comptime label: []const u8,
+    to_fd: u8,
 ) @import("ast").SiteResult {
     const ast = @import("ast");
 
@@ -500,10 +522,18 @@ fn __printInterpolate(
             .{placeholder}
         ) catch unreachable
     else
+        // Write to to_fd (1 = stdout for print/print.ln, 2 = stderr for eprint/
+        // eprint.ln). Inline (struct { fn w }).w("fmt", .{args}) — the args tuple
+        // is evaluated in the OUTER scope, so captured interpolation vars work;
+        // the body holds the 64K stack buffer. Unbuffered posix.write of a
+        // bufPrint'd slice — no flush, version-stable (std.debug.print is
+        // stderr-only). NO `_` token: the flow/tap emitter rewrites a bare `_`
+        // to the binding name, so the discard goes through doNotOptimizeAway.
+        // (64K cap per call; longer output is dropped — rare, the suite catches it.)
         std.fmt.allocPrint(
             allocator,
-            "@import(\"std\").debug.print(\"{s}\", .{{{s}}});",
-            .{ format_buf.items, args_buf.items }
+            "(struct {{ fn __kw(comptime __f: []const u8, __a: anytype) void {{ var __kb: [65536]u8 = undefined; const __ks = @import(\"std\").fmt.bufPrint(&__kb, __f, __a) catch __kb[0..0]; @import(\"std\").mem.doNotOptimizeAway(@import(\"std\").posix.write({d}, __ks) catch @as(usize, 0)); }} }}).__kw(\"{s}\", .{{{s}}});",
+            .{ to_fd, format_buf.items, args_buf.items }
         ) catch unreachable;
 
     // Position-agnostic: the runner lifts nested sites into a synthetic
@@ -552,13 +582,27 @@ fn __printInterpolate(
 ~proc print.ln|zig {
     _ = invocation;
     _ = program;
-    return .{ .transformed = __printInterpolate(expr, item, allocator, true, "print.ln") };
+    return .{ .transformed = __printInterpolate(expr, item, allocator, true, "print.ln", 1) };
 }
 
 ~proc print|zig {
     _ = invocation;
     _ = program;
-    return .{ .transformed = __printInterpolate(expr, item, allocator, false, "print") };
+    return .{ .transformed = __printInterpolate(expr, item, allocator, false, "print", 1) };
+}
+
+// eprint family — same interpolation engine, routed to stderr (fd 2). The
+// stdout/stderr split: print/print.ln -> stdout, eprint/eprint.ln -> stderr.
+~proc eprint.ln|zig {
+    _ = invocation;
+    _ = program;
+    return .{ .transformed = __printInterpolate(expr, item, allocator, true, "eprint.ln", 2) };
+}
+
+~proc eprint|zig {
+    _ = invocation;
+    _ = program;
+    return .{ .transformed = __printInterpolate(expr, item, allocator, false, "eprint", 2) };
 }
 
 // ============================================================================
@@ -902,9 +946,13 @@ fn __printInterpolate(
             .{placeholder}
         ) catch unreachable
     else
+        // print.blk -> stdout (fd 1). Labeled-block posix.write of a bufPrint'd
+        // slice (std.debug.print is stderr-only). Block (not inline fn) so it can
+        // reference captured interpolation vars; ends in ';' so the emitter's
+        // terminator doesn't double up.
         std.fmt.allocPrint(
             allocator,
-            "@import(\"std\").debug.print(\"{s}\", .{{{s}}});",
+            "(struct {{ fn __kw(comptime __f: []const u8, __a: anytype) void {{ var __kb: [65536]u8 = undefined; const __ks = @import(\"std\").fmt.bufPrint(&__kb, __f, __a) catch __kb[0..0]; @import(\"std\").mem.doNotOptimizeAway(@import(\"std\").posix.write(1, __ks) catch @as(usize, 0)); }} }}).__kw(\"{s}\", .{{{s}}});",
             .{ format_buf.items, args_buf.items }
         ) catch unreachable;
 
@@ -1042,7 +1090,7 @@ fn __printInterpolate(
     // fd=2 (stderr) matches std.debug.print's destination so semantics align.
     const raw_io_prefix =
         "//@koru:inline_stmt\n{ const __kio = struct { " ++
-        "fn __kz_w(__kz_b: []const u8) void { _ = @import(\"std\").posix.write(2, __kz_b) catch {}; } " ++
+        "fn __kz_w(__kz_b: []const u8) void { _ = @import(\"std\").posix.write(1, __kz_b) catch {}; } " ++
         "fn __kz_wd(__kz_v: i64) void { " ++
         "var _buf: [20]u8 = undefined; var _n: usize = 0; var _v: u64 = undefined; " ++
         "if (__kz_v < 0) { __kz_w(\"-\"); _v = @intCast(-(__kz_v + 1)); _v += 1; " ++
@@ -1280,9 +1328,10 @@ fn __printInterpolate(
             .{placeholder}
         ) catch unreachable
     else if (needs_fmt)
+        // print.blk -> stdout (fd 1), :f/:any fallback. See the |zig site above.
         std.fmt.allocPrint(
             allocator,
-            "@import(\"std\").debug.print(\"{s}\", .{{{s}}});",
+            "(struct {{ fn __kw(comptime __f: []const u8, __a: anytype) void {{ var __kb: [65536]u8 = undefined; const __ks = @import(\"std\").fmt.bufPrint(&__kb, __f, __a) catch __kb[0..0]; @import(\"std\").mem.doNotOptimizeAway(@import(\"std\").posix.write(1, __ks) catch @as(usize, 0)); }} }}).__kw(\"{s}\", .{{{s}}});",
             .{ format_buf.items, args_buf.items }
         ) catch unreachable
     else blk: {

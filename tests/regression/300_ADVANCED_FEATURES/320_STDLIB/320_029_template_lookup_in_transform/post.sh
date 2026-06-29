@@ -18,9 +18,11 @@ fi
 # Check 3: Verify the template structure was used
 # The template produces: if (${condition}) { ${| then |} } else { ${| else |} }
 # The branch bodies are comptime print transforms — they land as inline
-# debug.print calls inside the if/else (print is a transform, not a runtime
-# handler, since 2026-06-11).
-if ! grep -q 'debug.print("Template says' "$OUTPUT_FILE"; then
+# stdout writes inside the if/else (print is a transform, not a runtime handler,
+# since 2026-06-11). The print family writes to stdout via an inline
+# (struct { fn w }).w("...", .{}) bufPrint+posix.write (since the 2026-06-29
+# stdout/stderr split), so the template text lands in the emitted .w(...) call.
+if ! grep -q ').__kw("Template says' "$OUTPUT_FILE"; then
     echo "FAIL: Expected inline print output for then/else bodies not found"
     exit 1
 fi
