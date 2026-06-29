@@ -1,0 +1,14 @@
+// A bare return of a RECORD type produced from a ~proc (the dominant impl
+// style). The decl output is the record `{ w: i64, h: i64 }`; the proc returns
+// it; the call site binds with `:` and reads fields. Companion to 020_024
+// (record, flat produce) on the proc axis.
+//
+// PINNED (2026-06-29): record bare returns are not yet built.
+~import std/io
+
+~pub event dims {} -> { w: i64, h: i64 }
+~proc dims|zig {
+    return .{ .w = 4, .h = 3 };
+}
+
+~dims(): d |> std/io:print.ln("{{ d.w:d }}x{{ d.h:d }}")

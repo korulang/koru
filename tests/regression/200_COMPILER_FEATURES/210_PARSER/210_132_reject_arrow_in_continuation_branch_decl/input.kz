@@ -1,0 +1,6 @@
+// `->` is illegal in a continuation-branch DECLARATION. The bare-return arrow
+// belongs on the EVENT signature (`event x {} -> T`); a `|` branch decl carries
+// only `| name PayloadType`. (`->` in a branch HANDLER is fine — that produces
+// the value; this is about the DECL.)
+~pub event run { x: i64 }
+| total i64 -> i64
