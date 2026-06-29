@@ -554,15 +554,52 @@ var __field_noop_fba = std.heap.FixedBufferAllocator.init(&__field_noop_buf);
         code.appendSlice(allocator, tl) catch unreachable;
     }
     // sparse path (stride >= 64): 8-way byte scatter
-    const sparse = std.fmt.allocPrint(allocator,
-        "fn __mm_sparse_{d}_{d}(data: []u64, from: usize, stride: usize, limit: usize) void {{\n" ++
-        "    const bitCount = limit + 1; const bytes = @import(\"std\").mem.sliceAsBytes(data);\n" ++
-        "    var bi = from; const step8 = stride * 8; var masks: [8]u8 = undefined; var offs: [8]usize = undefined; const base = bi >> 3;\n" ++
-        "    for (0..8) |k| {{ const mb = bi + stride * k; masks[k] = @as(u8, 1) << @as(u3, @intCast(mb & 7)); offs[k] = (mb >> 3) - base; }}\n" ++
-        "    var byteIdx = base; const ge = if (bitCount > stride * 7) bitCount - stride * 7 else 0;\n" ++
-        "    while (bi < ge) {{ const q = byteIdx; inline for (0..8) |k| bytes[q + offs[k]] |= masks[k]; byteIdx += stride; bi += step8; }}\n" ++
-        "    while (bi < bitCount) : (bi += stride) bytes[bi >> 3] |= @as(u8, 1) << @as(u3, @intCast(bi & 7));\n}}\n\n", .{ L, C }) catch unreachable;
-    code.appendSlice(allocator, sparse) catch unreachable;
+    // sparse path (stride >= 64): residue-specialized 8-way byte scatter. One marker
+    // per (from&7, stride&7) — lane `n`'s bit position (from + n*stride)&7 =
+    // (fr + n*st)&7 is fixed by the two residues, so its 8 masks become COMPILE-TIME
+    // IMMEDIATES. That removes the masks[8] array load which, together with offs[8],
+    // overflowed the ~14 GP registers and spilled every iteration — the sol3-parity
+    // lever (perf: L1 loads/pass ~456K->~247K, instructions ~648K->~450K). The 8-lane
+    // step (8*stride bits = stride bytes) is what keeps each lane's bit position
+    // invariant across the loop; the per-lane byte offsets (o0..o7) stay runtime but
+    // now fit in registers without the masks array.
+    var fr: usize = 0;
+    while (fr < 8) : (fr += 1) {
+        var st: usize = 0;
+        while (st < 8) : (st += 1) {
+            const sh = std.fmt.allocPrint(allocator,
+                "fn __mm_sp_{d}_{d}_{d}_{d}(data: []u64, from: usize, stride: usize, limit: usize) void {{\n" ++
+                "    const bitCount = limit + 1; const bytes = @import(\"std\").mem.sliceAsBytes(data);\n" ++
+                "    var bi = from; const step8 = stride * 8; const base = bi >> 3;\n", .{ L, C, fr, st }) catch unreachable;
+            code.appendSlice(allocator, sh) catch unreachable;
+            var n: usize = 0;
+            while (n < 8) : (n += 1) {
+                const ol = std.fmt.allocPrint(allocator, "    const o{d} = ((bi + stride * {d}) >> 3) - base;\n", .{ n, n }) catch unreachable;
+                code.appendSlice(allocator, ol) catch unreachable;
+            }
+            code.appendSlice(allocator, "    var byteIdx = base; const ge = if (bitCount > stride * 7) bitCount - stride * 7 else 0;\n    while (bi < ge) {\n") catch unreachable;
+            n = 0;
+            while (n < 8) : (n += 1) {
+                const bit = (fr + n * st) & 7;
+                const mask = @as(usize, 1) << @as(u6, @intCast(bit));
+                const sl = std.fmt.allocPrint(allocator, "        bytes[byteIdx + o{d}] |= 0x{x};\n", .{ n, mask }) catch unreachable;
+                code.appendSlice(allocator, sl) catch unreachable;
+            }
+            code.appendSlice(allocator, "        byteIdx += stride; bi += step8;\n    }\n    while (bi < bitCount) : (bi += stride) bytes[bi >> 3] |= @as(u8, 1) << @as(u3, @intCast(bi & 7));\n}\n\n") catch unreachable;
+        }
+    }
+    // sparse dispatch LUT: 64 fn pointers indexed by (from&7)*8 + (stride&7).
+    const splut_open = std.fmt.allocPrint(allocator, "const __mm_splut_{d}_{d} = [_]*const fn ([]u64, usize, usize, usize) void{{ ", .{ L, C }) catch unreachable;
+    code.appendSlice(allocator, splut_open) catch unreachable;
+    fr = 0;
+    while (fr < 8) : (fr += 1) {
+        var st2: usize = 0;
+        while (st2 < 8) : (st2 += 1) {
+            const e = std.fmt.allocPrint(allocator, "__mm_sp_{d}_{d}_{d}_{d}, ", .{ L, C, fr, st2 }) catch unreachable;
+            code.appendSlice(allocator, e) catch unreachable;
+        }
+    }
+    code.appendSlice(allocator, "};\n\n") catch unreachable;
     // dispatch via FUNCTION-POINTER LUT, not switch: a switch inlines all 31
     // marker bodies into one function and thrashes the i-cache (~3-5% measured);
     // a compact indirect call through a LUT avoids that and beats hand-tuned Zig.
@@ -577,9 +614,9 @@ var __field_noop_fba = std.heap.FixedBufferAllocator.init(&__field_noop_buf);
     const disp = std.fmt.allocPrint(allocator,
         "    break :blk t; }};\n" ++
         "fn __mm_disp_{d}_{d}(data: []u64, from: usize, stride: usize, limit: usize) void {{\n" ++
-        "    if (stride >= 64) {{ __mm_sparse_{d}_{d}(data, from, stride, limit); return; }}\n" ++
+        "    if (stride >= 64) {{ __mm_splut_{d}_{d}[(from & 7) * 8 + (stride & 7)](data, from, stride, limit); return; }}\n" ++
         "    const bitCount = limit + 1; const fullWords = bitCount / 64; const tailBits = bitCount % 64;\n" ++
-        "    if (__mm_lut_{d}_{d}[stride]) |f| f(data.ptr, fullWords, tailBits) else __mm_sparse_{d}_{d}(data, from, stride, limit);\n" ++
+        "    if (__mm_lut_{d}_{d}[stride]) |f| f(data.ptr, fullWords, tailBits) else __mm_splut_{d}_{d}[(from & 7) * 8 + (stride & 7)](data, from, stride, limit);\n" ++
         "}}\n\n", .{ L, C, L, C, L, C, L, C }) catch unreachable;
     code.appendSlice(allocator, disp) catch unreachable;
 
