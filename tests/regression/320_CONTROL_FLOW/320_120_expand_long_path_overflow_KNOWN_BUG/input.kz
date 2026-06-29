@@ -1,0 +1,33 @@
+// KNOWN BUG (parked TODO, found 2026-06-30 by a static-audit agent) —
+// stack-buffer overflow in the [expand] template-expansion path.
+//
+// WHERE: src/transform_pass_runner.zig, fn handleExpandIfMatches — four
+// @memcpy sites into fixed `[256]u8` buffers with NO bounds check:
+//   :1007-1016 (path_buf, incl. unguarded separator write :1011)
+//   :1025-1035 (event_path_buf, top-level event_decl, built while iterating
+//               program.items at :1020)
+//   :1043-1059 (event_path_buf, module event_decl)
+//   :734-743   (debug_path)
+// The IDENTICAL pattern IS guarded 550 lines up at :468 (flowStillMatchesTransform:
+//   `if (seg_path_len + seg.len > seg_path_buf.len) return false;`) — the expand
+// sites simply dropped that line. Asymmetric omission, verbatim-confirmed.
+//
+// TRIGGER: an [expand]-annotated event (or invocation) whose joined segment path
+// (segments + '.' separators) reaches >=256 bytes. In Debug this trips a Zig
+// slice-bounds panic; in ReleaseFast it is UB that corrupts the adjacent stack
+// frame (the event_decl-match loop state) -> can surface downstream as a spurious
+// "Unknown event referenced". Stack-layout dependent (ASLR), hence Linux-leaning.
+//
+// FIX: add the same `if (len + seg.len > buf.len) ...` guard the sibling at :468
+// has, at all four sites (reject with a clear "path too long" diagnostic, or grow
+// the buffer). Pin a >=256-byte-path [expand] test and flip this to MUST_FAIL/
+// MUST_RUN when fixed.
+//
+// CONTEXT: [expand] + std/template:define is the LEGACY template mechanism. The
+// keywords (if/for/capture) migrated OFF it to inline `|template|` procs in
+// koru_std/control.kz, so this path is superseded and exercised only by its own
+// handful of tests — hence parked TODO, not actively fixed. Revisit alongside the
+// [expand] deprecation decision.
+~import std/io
+
+~debug-print(value: 42)
