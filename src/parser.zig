@@ -5048,7 +5048,20 @@ pub const Parser = struct {
         }
 
         // Extract the continuation part after |>
-        const continuation_part = lexer.trim(full_line[pipe_idx.? + 2 ..]);
+        var continuation_part = lexer.trim(full_line[pipe_idx.? + 2 ..]);
+
+        // A trailing top-level `-> produce` on the LAST step of the chain
+        // (`... |> tail(args): v -> expr`) is the produce arm at the end of a
+        // chained subflow body (the metacircular `frontend` pipeline shape).
+        // `->` is not a chain delimiter (only `|>`/`=>` split), so it rides on
+        // the final segment; strip it here and attach a bare-return
+        // continuation to the innermost step below — the same node the
+        // non-chained `head(): v -> expr` produce uses.
+        var produce_tail: ?[]const u8 = null;
+        if (indexOfTopLevelArrow(continuation_part)) |aidx| {
+            produce_tail = lexer.trim(continuation_part[aidx + 2 ..]);
+            continuation_part = lexer.trim(continuation_part[0..aidx]);
+        }
 
         // Parse the pipeline steps from the continuation
         // Inline `~A() |> ...` is a void chain, not a branch handler body.
@@ -5066,8 +5079,31 @@ pub const Parser = struct {
         // branches under `~A() |> B()` attach to B, matching standalone-head shape.
         const nested_continuations = try self.parseContinuations(indent);
 
-        // Start with the last step
-        var current_continuations: []ast.Continuation = nested_continuations;
+        // Start with the last step's continuations. If the chain ends in a
+        // `-> produce` arm, that bare-return continuation is the innermost
+        // (attached to the final step); otherwise the multi-line nested
+        // continuations are.
+        var current_continuations: []ast.Continuation = if (produce_tail) |pt| blk: {
+            const conts = try self.allocator.alloc(ast.Continuation, 1);
+            conts[0] = ast.Continuation{
+                .branch = try self.allocator.dupe(u8, ""),
+                .binding = null,
+                .binding_type = .branch_payload,
+                .condition = null,
+                .condition_expr = null,
+                .node = .{ .branch_constructor = .{
+                    .branch_name = try self.allocator.dupe(u8, ""),
+                    .fields = &.{},
+                    .plain_value = try self.allocator.dupe(u8, pt),
+                    .has_expressions = true,
+                    .is_bare_return = true,
+                } },
+                .indent = indent,
+                .continuations = nested_continuations,
+                .location = self.getCurrentLocation(),
+            };
+            break :blk conts;
+        } else nested_continuations;
 
         // Work backwards through steps, building the chain
         var step_idx: usize = steps.len;
