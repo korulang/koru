@@ -1,0 +1,26 @@
+// Mid-chain `: bind` of a BARE-RETURN value inside a BRANCH HANDLER:
+//   ~start() | created c0 |> mk(x: c0): c1 |> use-it(x: c1)
+// `mk` is `-> i64`; its result is bound `: c1` mid-chain and used downstream.
+// This is the metacircular `coordinate` pipeline's shape — it consumes the
+// bare-return `frontend(ctx): c1 |> analysis(ctx: c1)` inside the `| created`
+// handler. Currently the emitter drops the binding: generated Zig references
+// an undeclared `c1` (use of undeclared identifier 'c1').
+//
+// Distinct from the subflow produce-arm bug (020_029/030, fixed): that was a
+// subflow body; this is a `:` bind on a bare-return STEP inside a `|` handler.
+~import std/io
+const std = @import("std");
+
+~pub event start {}
+| created i64
+
+~proc start|zig { return .{ .created = 5 }; }
+
+~pub event mk { x: i64 } -> i64
+~mk -> x + 1
+
+~pub event use-it { x: i64 }
+~proc use-it|zig { std.debug.print("got {d}\n", .{x}); }
+
+~start()
+| created c0 |> mk(x: c0): c1 |> use-it(x: c1)

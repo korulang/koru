@@ -2013,28 +2013,42 @@ fn emitSubflowContinuationsWithDepth(
                 .branch_constructor => |bc| {
                     // Terminal - emit return
                     try emitter.write(indent);
-                    try emitter.write("return .{ .");
-                    try writeBranchName(emitter, bc.branch_name);
-                    try emitter.write(" = ");
-                    // Check for plain value (identity branch constructor)
-                    if (bc.plain_value) |pv| {
-                        try emitter.write(pv);
-                    } else {
-                        try emitter.write(".{");
-                        for (bc.fields, 0..) |field, i| {
-                            if (i > 0) try emitter.write(", ");
-                            try emitter.write(" .");
-                            try emitter.write(field.name);
-                            try emitter.write(" = ");
-                            if (field.expression_str) |expr| {
-                                try emitter.write(expr);
-                            } else {
-                                try emitter.write(field.type);
-                            }
+                    if (bc.is_bare_return) {
+                        // Bare-return produce arm (`head(): v -> expr`): return the
+                        // value directly with no tag — the twin of the flat
+                        // `~e -> expr` impl. branch_name is empty here, so the
+                        // tagged form below would emit malformed `return .{ . = v }`.
+                        try emitter.write("return ");
+                        if (bc.plain_value) |pv| {
+                            try emitter.write(pv);
+                        } else {
+                            try emitter.write("undefined");
                         }
-                        try emitter.write(" }");
+                        try emitter.write(";\n");
+                    } else {
+                        try emitter.write("return .{ .");
+                        try writeBranchName(emitter, bc.branch_name);
+                        try emitter.write(" = ");
+                        // Check for plain value (identity branch constructor)
+                        if (bc.plain_value) |pv| {
+                            try emitter.write(pv);
+                        } else {
+                            try emitter.write(".{");
+                            for (bc.fields, 0..) |field, i| {
+                                if (i > 0) try emitter.write(", ");
+                                try emitter.write(" .");
+                                try emitter.write(field.name);
+                                try emitter.write(" = ");
+                                if (field.expression_str) |expr| {
+                                    try emitter.write(expr);
+                                } else {
+                                    try emitter.write(field.type);
+                                }
+                            }
+                            try emitter.write(" }");
+                        }
+                        try emitter.write(" };\n");
                     }
-                    try emitter.write(" };\n");
                 },
                 else => {},
             }
