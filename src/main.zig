@@ -3275,8 +3275,19 @@ fn processImport(allocator: std.mem.Allocator, parse_allocator: std.mem.Allocato
                 const file = try std.fs.cwd().openFile(file_path, .{});
                 defer file.close();
 
+                // Dupe the path into the arena: the parser stores it on
+                // reporter.file_name (and thus on every SourceLocation.file it
+                // produces — EventDecl, HostLine, …), so it must survive for the
+                // lifetime of the AST. The `files` slice this `file_path` belongs
+                // to is freed by the defer above when loadSubmodules returns, so
+                // passing it raw leaves every submodule item's location.file
+                // dangling — invisible until the AST is serialized to JSON, where
+                // the freed (0xAA-filled) bytes become invalid UTF-8. Same fix as
+                // loadFileWithCompanions.
+                const file_path_owned = try parse_alloc.dupe(u8, file_path);
+
                 const source = try file.readToEndAlloc(parse_alloc, 1024 * 1024);
-                var parser = try Parser.init(parse_alloc, source, file_path, &[_][]const u8{}, null);
+                var parser = try Parser.init(parse_alloc, source, file_path_owned, &[_][]const u8{}, null);
                 parser.fail_fast = false; // Don't validate event refs during import - allows transitive imports with circular deps
                 defer parser.deinit();
 
