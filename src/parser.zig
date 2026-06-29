@@ -3656,20 +3656,6 @@ pub const Parser = struct {
             );
             return error.ZigCodeInFlow;
         }
-        // `->` is the PRODUCE glyph (decl/impl). The call site BINDS the result
-        // with `:` (the bind glyph, twin of `|`/`!`). A stray top-level `->` here
-        // is the abandoned form — reject it with a migration hint.
-        if (indexOfTopLevelArrow(clean) != null) {
-            try self.reporter.addError(
-                .PARSE001,
-                self.current,
-                0,
-                "bind a result with `:` not `->` (e.g. `~event(...): result |> ...`) — `->` is the produce glyph",
-                .{},
-            );
-            return error.ParseError;
-        }
-
         // `~event(args): b |> ...`: bind the event's single `-> T` return value to
         // `b`, then continue with `|>`. The bind colon is the top-level `:` right
         // after the call's `)` (arg colons live inside the parens; a module
@@ -3767,6 +3753,22 @@ pub const Parser = struct {
         errdefer {
             for (return_binding_annotations) |a| self.allocator.free(@constCast(a));
             if (return_binding_annotations.len > 0) self.allocator.free(@constCast(return_binding_annotations));
+        }
+
+        // A top-level `->` with NO preceding `:` bind is the abandoned stray form
+        // (`event() -> v`) — reject with the migration hint. A `->` that FOLLOWS a
+        // `: bind` is the produce arm (`event(): v -> expr`), the twin of
+        // `: v => construct`; it's handled below as a bare-return continuation, so
+        // let it through. (The bind-strip above leaves the `-> expr` on `clean`.)
+        if (return_binding == null and indexOfTopLevelArrow(clean) != null) {
+            try self.reporter.addError(
+                .PARSE001,
+                self.current,
+                0,
+                "bind a result with `:` not `->` (e.g. `~event(...): result |> ...`) — `->` is the produce glyph",
+                .{},
+            );
+            return error.ParseError;
         }
 
         // Find the first pipe that's not inside parentheses or braces
@@ -4487,7 +4489,54 @@ pub const Parser = struct {
                 break :blk null;
             };
 
-            const continuations = if (same_line_arrow) |aidx| arrow_blk: {
+            // Same-line `-> produce` after a bare-return head bind
+            // (`~combo = head(): v -> v`): the produce arm, twin of the `=>`
+            // construct arm above. `->` produces the bound value (or any
+            // expression) as the enclosing event's bare `-> T` return, with no
+            // `| branch` wrapper. Detect the depth-0 `->` and build a
+            // bare-return continuation (same node the flat `~e -> expr` impl uses).
+            const same_line_produce: ?usize = blk: {
+                if (has_inline_chain) break :blk null;
+                if (invocation.return_binding == null) break :blk null;
+                var i: usize = 0;
+                var pd: i32 = 0;
+                var bd: i32 = 0;
+                var ins = false;
+                while (i + 1 < inv_str.len) : (i += 1) {
+                    const c = inv_str[i];
+                    if (c == '"' and (i == 0 or inv_str[i - 1] != '\\')) {
+                        ins = !ins;
+                        continue;
+                    }
+                    if (ins) continue;
+                    if (c == '(') pd += 1;
+                    if (c == ')') pd -= 1;
+                    if (c == '{') bd += 1;
+                    if (c == '}') bd -= 1;
+                    if (pd == 0 and bd == 0 and c == '-' and inv_str[i + 1] == '>') break :blk i;
+                }
+                break :blk null;
+            };
+
+            const continuations = if (same_line_produce) |pidx| produce_blk: {
+                const produce_str = lexer.trim(inv_str[pidx + 2 ..]);
+                const conts = try self.allocator.alloc(ast.Continuation, 1);
+                conts[0] = ast.Continuation{
+                    .branch = try self.allocator.dupe(u8, ""),
+                    .binding = null,
+                    .condition = null,
+                    .node = .{ .branch_constructor = .{
+                        .branch_name = try self.allocator.dupe(u8, ""),
+                        .fields = &.{},
+                        .plain_value = try self.allocator.dupe(u8, produce_str),
+                        .has_expressions = true,
+                        .is_bare_return = true,
+                    } },
+                    .indent = 0,
+                    .continuations = &.{},
+                };
+                break :produce_blk conts;
+            } else if (same_line_arrow) |aidx| arrow_blk: {
                 const construct_str = lexer.trim(inv_str[aidx + 2 ..]);
                 const ctor = try self.parseConstructString(construct_str);
                 const conts = try self.allocator.alloc(ast.Continuation, 1);
