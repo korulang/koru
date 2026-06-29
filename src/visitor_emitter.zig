@@ -2878,6 +2878,11 @@ pub const VisitorEmitter = struct {
                                         .in_handler = true,
                                         .self_loop_active = is_self_loop,
                                         .self_loop_event_canonical = self_loop_canonical,
+                                        // Bare-return `-> T`: the loop-EXIT arm produces the
+                                        // event's value (`| done e -> e`), so it must `return e;`
+                                        // not discard. Same signal as the switch path (020_025);
+                                        // this is the label-fold sibling (020_028).
+                                        .bare_return_active = event.return_type != null,
                                     };
                                     try emitter.emitFlow(self.code_emitter, &label_fold_ctx, &flow);
                                 } else {
