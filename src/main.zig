@@ -6715,13 +6715,22 @@ pub fn main() !void {
                     annotations[ann_idx] = try alloc.dupe(u8, ann);
                 }
 
+                // Dupe canonical_path ONCE onto the parse arena and share the owned
+                // copy for both .canonical_path and .location.file. `module.canonical_path`
+                // is owned by the ImportedModule (GPA allocator / imported_modules
+                // lifetime), NOT this AST arena — borrowing it raw into location.file
+                // leaves a SourceLocation.file whose backing memory lives outside the
+                // arena. Since the Dynamic-AST change serializes every location.file into
+                // program.ast.json, that's the same dangling-borrow family as the
+                // loadSubmodules / loadFileWithCompanions 0xAA fixes.
+                const canon_owned = try alloc.dupe(u8, module.canonical_path);
                 const module_decl = ast.ModuleDecl{
                     .logical_name = try alloc.dupe(u8, module.logical_name),
-                    .canonical_path = try alloc.dupe(u8, module.canonical_path),
+                    .canonical_path = canon_owned,
                     .items = module.source_file.items,
                     .is_system = is_system,
                     .annotations = annotations,
-                    .location = .{ .file = module.canonical_path, .line = 1, .column = 0 },
+                    .location = .{ .file = canon_owned, .line = 1, .column = 0 },
                 };
                 module.source_file.items = &.{};
                 try items.append(alloc, .{ .module_decl = module_decl });
@@ -6747,13 +6756,17 @@ pub fn main() !void {
                         annotations[ann_idx] = try alloc.dupe(u8, ann);
                     }
 
+                    // Same ownership fix as above: dupe submod.canonical_path once
+                    // onto the parse arena and share for .canonical_path and
+                    // .location.file (it's owned by the ImportedModule, not this arena).
+                    const submod_canon_owned = try alloc.dupe(u8, submod.canonical_path);
                     const module_decl = ast.ModuleDecl{
                         .logical_name = dotted_name,
-                        .canonical_path = try alloc.dupe(u8, submod.canonical_path),
+                        .canonical_path = submod_canon_owned,
                         .items = submod.source_file.items, // Transfer ownership
                         .is_system = is_system,
                         .annotations = annotations,
-                        .location = .{ .file = submod.canonical_path, .line = 1, .column = 0 },
+                        .location = .{ .file = submod_canon_owned, .line = 1, .column = 0 },
                     };
                     // Mark items as transferred
                     submod.source_file.items = &.{};
