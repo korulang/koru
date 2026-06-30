@@ -3,6 +3,8 @@ import std/time
 import std/field
 import std/control
 
+const { sieve_bits: 500000 }
+
 pub event tick { deadline: i128, passes: i64 }
 | live { deadline: i128, passes: i64 }
 | expired i64
@@ -16,7 +18,7 @@ tick = std/time:now()
     | else => expired passes
 
 run = #L tick(deadline, passes: 0)
-| live l |> std/field:new(bits: 500000)
+| live l |> std/field:new(bits: sieve_bits)
     | field f |> for(1..500)
         ! each i |> std/field:test(f, i): pv |> if(pv == 0)
             | then |> std/field:mark-multiples(f, 2 * i * (i + 1), 2 * i + 1, 499999)
@@ -27,7 +29,7 @@ run = #L tick(deadline, passes: 0)
 std/time:now()
 | t t0 |> run(deadline: t0 + 5000000000)
     | total n |> std/time:now()
-        | t t1 |> std/field:new(bits: 500000)
+        | t t1 |> std/field:new(bits: sieve_bits)
             | field g |> for(1..500)
                 ! each i |> std/field:test(g, i): pv |> if(pv == 0)
                     | then |> std/field:mark-multiples(g, 2 * i * (i + 1), 2 * i + 1, 499999)
