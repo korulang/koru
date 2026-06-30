@@ -1,7 +1,10 @@
 # Koru solution by korulang
 
-A Sieve of Eratosthenes in [Koru](https://github.com/korulang/koru), a high-level
+A Sieve of Eratosthenes in [Koru](https://korulang.org), a high-level
 language whose compiler **generates** the specialized marker.
+
+Koru: docs, examples, and design write-ups at [korulang.org](https://korulang.org) ·
+source at [github.com/korulang/koru](https://github.com/korulang/koru).
 
 ![Algorithm](https://img.shields.io/badge/Algorithm-base-green)
 ![Faithfulness](https://img.shields.io/badge/Faithful-yes-green)
