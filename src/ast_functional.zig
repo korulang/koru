@@ -1488,8 +1488,16 @@ pub fn cloneInvocation(allocator: std.mem.Allocator, invocation: *const ast.Invo
 }
 
 fn cloneArg(allocator: std.mem.Allocator, arg: *const ast.Arg) CloneError!ast.Arg {
-    // Copy pointers for source_value, expression_value, and parsed_expression -
-    // the original data in PROGRAM_AST persists, so pointer copies are safe for read-only access
+    // FOOTGUN (documented 2026-06-30): source_value / expression_value /
+    // parsed_expression are SHALLOW pointer copies. The old comment claimed
+    // safety because "PROGRAM_AST persists" — that's stale; the baked-in
+    // PROGRAM_AST is gone since the Dynamic-AST change. These copies are safe
+    // ONLY because the whole pipeline runs on a single compile arena freed at
+    // process exit, so the pointed-to nodes outlive every clone. If that
+    // invariant is ever broken (a scratch arena deinit'd mid-pipeline), these
+    // MUST be deep-cloned — needing recursive cloneExpression/cloneSource/
+    // cloneCapturedExpression helpers that do not exist yet. Same shallow copy
+    // applies to Continuation.condition_expr below.
     return .{
         .name = try allocator.dupe(u8, arg.name),
         .value = try allocator.dupe(u8, arg.value),

@@ -5727,7 +5727,13 @@ pub fn main() !void {
             log.debug("Memory leak detected\n", .{});
         }
     }
-    const allocator = gpa.allocator();
+    // Read-after-free diagnostic: when KORU_POISON is set, route frontend
+    // allocations through a poison allocator (fill-on-free + leak, or reuse mode)
+    // so any stale pointer into freed memory reads deterministic garbage on every
+    // OS. Inert unless KORU_POISON is set — normal builds use the GPA unchanged.
+    // See src/poison_allocator.zig. Used to hunt the location.file/0xAA dangle class.
+    var poison = @import("poison_allocator.zig").PoisonAllocator.init(std.heap.page_allocator);
+    const allocator = if (std.process.hasEnvVarConstant("KORU_POISON")) poison.allocator() else gpa.allocator();
 
     // Arena allocator for parse phase - all parsed data (AST, strings, etc.)
     // gets freed in one shot after compilation completes
