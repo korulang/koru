@@ -50,24 +50,24 @@ This entry is tagged `faithful=yes`. The case, stated plainly so reviewers can j
   (`std/field:new` … `std/field:free`) inside the timed loop — it is genuinely
   re-created from scratch each iteration, not a reused or static buffer.
 - The buffer is sized to the sieve and allocated by the per-pass `new`.
-- Koru's compiler applies **escape analysis**: it proves the per-pass `field` does not
-  escape the loop body and places it on the stack. This is a compiler optimization of
-  *where* the allocation lives — the program's meaning is unchanged — and it is the
-  same optimization the JVM performs (escape analysis / scalar replacement) for Java
-  entries already accepted as `faithful=yes` in this repository, and that Go performs
-  for non-escaping `make()`.
+- Koru's compiler *can* apply escape analysis and stack-place a non-escaping `field`
+  when its size is a bare compile-time-literal at the call site — but this entry
+  deliberately avoids that: the sieve size is introduced as a named constant
+  (`const { sieve_bits: 500000 }`, then `std/field:new(bits: sieve_bits)`), and an
+  identifier argument doesn't qualify for the stack-placement heuristic. Every
+  `new`/`free` in this program routes through the real, general-purpose heap
+  allocator — verified directly in the generated code (`new_heap_event.handler`, i.e.
+  `allocator.create`/`allocator.alloc`, on every call site) and by measurement
+  (real per-pass `mmap`/`free` activity, not a stack buffer). There is no faithfulness
+  wrinkle to argue about.
 
-One honest wrinkle, stated up front: the stack placement currently fires only when the
-sieve size is a **compile-time constant** (here, `500000`). A strict reading of
-"allocated dynamically at runtime" could question that — though the reference solutions
-likewise hardcode the 1,000,000 constant, and the *allocation itself* happens per pass.
-A runtime-sized variant would simply heap-allocate (and be faithful without argument),
-at a small speed cost.
+The base algorithm, the fresh-instance-per-pass allocation, and `bits=1` are accurate
+and unambiguous.
 
-In other words: the source models faithful per-pass allocation; the compiler makes it
-cheap underneath. If the maintainers read the rule differently, we're glad to discuss
-or re-tag — the base algorithm, the fresh-instance-per-pass structure, and `bits=1`
-are accurate regardless.
+Full methodology and reproduction steps (including the allocator fix that made this
+possible) are in
+[`docs/2026-06-30_koru_vs_rust_sol1_repro.md`](https://github.com/korulang/koru/blob/main/benchmarks/workloads/prime_sieve_drag_race/docs/2026-06-30_koru_vs_rust_sol1_repro.md)
+in the koru repo.
 
 ## Run instructions
 
