@@ -84,6 +84,9 @@ pub fn emitBuildZig(
         \\            .optimize = __koru_optimize,
         \\        }),
         \\    });
+        \\    // koru_allocator() backs onto std.heap.c_allocator (real libc malloc/free,
+        \\    // not a debug allocator that munmaps on every free) — needs libc linked.
+        \\    __koru_exe.linkLibC();
         \\
         \\
     );
@@ -223,6 +226,9 @@ pub fn emitOutputBuildZig(
         \\            .optimize = __koru_optimize,
         \\        }),
         \\    });
+        \\    // koru_allocator() backs onto std.heap.c_allocator (real libc malloc/free,
+        \\    // not a debug allocator that munmaps on every free) — needs libc linked.
+        \\    __koru_exe.linkLibC();
         \\
         \\
     );

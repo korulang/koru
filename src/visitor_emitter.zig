@@ -976,10 +976,11 @@ pub const VisitorEmitter = struct {
 
             // META-EVENT: koru:end taps now in AST via tap_transformer
 
-            // LEAK CHECK: the allocator spine's GPA reports leaks on deinit;
-            // a leaking produced program exits 1 so the harness fails the
-            // test. Zero leaks is an absolute invariant — no exemptions.
-            try self.code_emitter.write("    if (__koru_gpa.deinit() == .leak) {\n");
+            // LEAK CHECK: __koru_leak_count (the allocator spine's outstanding-
+            // allocation counter — see emitMainModuleStart) must be zero at
+            // exit; a leaking produced program exits 1 so the harness fails
+            // the test. Zero leaks is an absolute invariant — no exemptions.
+            try self.code_emitter.write("    if (__koru_leak_count != 0) {\n");
             try self.code_emitter.write("        @import(\"std\").debug.print(\"KORU LEAK CHECK FAILED: the produced program leaked (trace above)\\n\", .{});\n");
             try self.code_emitter.write("        @import(\"std\").process.exit(1);\n");
             try self.code_emitter.write("    }\n");

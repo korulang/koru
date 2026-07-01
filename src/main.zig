@@ -1193,6 +1193,9 @@ fn generateBackendCode(allocator: std.mem.Allocator, input_file: []const u8, sou
             \\        exe_argv[exe_argc] = "zig"; exe_argc += 1;
             \\        exe_argv[exe_argc] = "build-exe"; exe_argc += 1;
             \\        exe_argv[exe_argc] = emitted_file; exe_argc += 1;
+            \\        // koru_allocator() backs onto std.heap.c_allocator (real libc
+            \\        // malloc/free) -- needs libc linked on this direct build-exe path too.
+            \\        exe_argv[exe_argc] = "-lc"; exe_argc += 1;
             \\        if (build_target) |t| {
             \\            exe_argv[exe_argc] = "-target"; exe_argc += 1;
             \\            exe_argv[exe_argc] = t; exe_argc += 1;

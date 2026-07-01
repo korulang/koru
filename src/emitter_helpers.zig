@@ -809,20 +809,57 @@ pub fn emitMainModuleStart(emitter: *CodeEmitter, pub_compiler_env: bool) !void 
     } else {
         try emitter.write("const CompilerEnv = @import(\"compiler_env\").CompilerEnv;\n\n");
     }
-    // KORU ALLOCATOR SPINE — the one allocator stdlib runtime procs use,
-    // backed by a leak-reporting GPA. Emitted into BOTH outputs so proc
-    // bodies (pasted into both) always resolve; only the RUNTIME main()
-    // performs the deinit leak check and fails the process (exit 1) on
-    // leaks. This is a METER, not a mop: no arenas, no auto-free — real
-    // leaks in proc bodies must surface, loudly.
-    // `.safety = true` UNCONDITIONALLY: Stage D builds release binaries
-    // (ReleaseSmall/ReleaseFast), where DebugAllocator's tracking defaults
-    // OFF and deinit() lies `.ok` over real leaks. Every produced Koru
-    // binary leak-checks itself at exit, in every build mode — that IS the
-    // resource-safety claim.
-    try emitter.write("var __koru_gpa = @import(\"std\").heap.GeneralPurposeAllocator(.{ .safety = true }){};\n");
+    // KORU ALLOCATOR SPINE — the one allocator stdlib runtime procs use.
+    // Emitted into BOTH outputs so proc bodies (pasted into both) always
+    // resolve; only the RUNTIME main() performs the leak check and fails
+    // the process (exit 1) on leaks. This is a METER, not a mop: no
+    // arenas, no auto-free — real leaks in proc bodies must surface,
+    // loudly, in every build mode — that IS the resource-safety claim.
+    //
+    // Backed by std.heap.c_allocator (real libc malloc/free), NOT
+    // DebugAllocator/GeneralPurposeAllocator. MEASURED 2026-06-30 on the
+    // prime-sieve drag-race faithful entry (DO droplet, x86_64 Linux):
+    // DebugAllocator unconditionally munmaps a bucket's backing page the
+    // instant its last live slot is freed (debug_allocator.zig's
+    // `free()`: `if (bucket.freed_count == bucket.allocated_count) ...
+    // backing_allocator.rawFree(page, ...)`) — every allocate-then-free
+    // cycle is a fresh mmap, regardless of size or the configurable
+    // `page_size`. Isolated probe: ~120K alloc/free/3s, ~2M page-faults,
+    // 80% sys time. Same probe on c_allocator: ~72M alloc/free/3s, 56
+    // page-faults total, 0% sys time. DebugAllocator is a debug/bug-hunting
+    // tool (return-to-OS-on-empty makes use-after-free reliably segfault),
+    // not a throughput allocator — no amount of its own config tuning
+    // closes this gap. `__koru_leak_count` is OUR replacement for
+    // DebugAllocator's leak tracking: a plain outstanding-allocation
+    // counter, checked at exit. What this trades away: DebugAllocator's
+    // double-free/invalid-free detection at the allocator layer — Koru's
+    // primary defense there is already the phantom obligation system
+    // (double-free is a COMPILE-TIME error for well-typed programs), so
+    // this is a backstop loss, not a loss of the language's actual
+    // safety guarantee.
+    try emitter.write("var __koru_leak_count: usize = 0;\n");
+    try emitter.write("fn __koru_alloc(ctx: *anyopaque, len: usize, alignment: @import(\"std\").mem.Alignment, ret_addr: usize) ?[*]u8 {\n");
+    try emitter.write("    _ = ctx;\n");
+    try emitter.write("    const r = @import(\"std\").heap.c_allocator.rawAlloc(len, alignment, ret_addr);\n");
+    try emitter.write("    if (r != null) __koru_leak_count += 1;\n");
+    try emitter.write("    return r;\n");
+    try emitter.write("}\n");
+    try emitter.write("fn __koru_resize(ctx: *anyopaque, memory: []u8, alignment: @import(\"std\").mem.Alignment, new_len: usize, ret_addr: usize) bool {\n");
+    try emitter.write("    _ = ctx;\n");
+    try emitter.write("    return @import(\"std\").heap.c_allocator.rawResize(memory, alignment, new_len, ret_addr);\n");
+    try emitter.write("}\n");
+    try emitter.write("fn __koru_remap(ctx: *anyopaque, memory: []u8, alignment: @import(\"std\").mem.Alignment, new_len: usize, ret_addr: usize) ?[*]u8 {\n");
+    try emitter.write("    _ = ctx;\n");
+    try emitter.write("    return @import(\"std\").heap.c_allocator.rawRemap(memory, alignment, new_len, ret_addr);\n");
+    try emitter.write("}\n");
+    try emitter.write("fn __koru_free(ctx: *anyopaque, memory: []u8, alignment: @import(\"std\").mem.Alignment, ret_addr: usize) void {\n");
+    try emitter.write("    _ = ctx;\n");
+    try emitter.write("    @import(\"std\").heap.c_allocator.rawFree(memory, alignment, ret_addr);\n");
+    try emitter.write("    __koru_leak_count -= 1;\n");
+    try emitter.write("}\n");
+    try emitter.write("const __koru_vtable = @import(\"std\").mem.Allocator.VTable{ .alloc = __koru_alloc, .resize = __koru_resize, .remap = __koru_remap, .free = __koru_free };\n");
     try emitter.write("pub fn koru_allocator() @import(\"std\").mem.Allocator {\n");
-    try emitter.write("    return __koru_gpa.allocator();\n");
+    try emitter.write("    return .{ .ptr = undefined, .vtable = &__koru_vtable };\n");
     try emitter.write("}\n\n");
     try emitter.write("pub const main_module = struct {\n");
 }
