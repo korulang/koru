@@ -1,0 +1,6 @@
+name: confirmation
+kind: inferred
+shape: categorical
+face: in
+membrane: true
+note: a previously-held belief was confirmed by new evidence — the mirror of contradiction; the belief graduates from hopeful to measured
