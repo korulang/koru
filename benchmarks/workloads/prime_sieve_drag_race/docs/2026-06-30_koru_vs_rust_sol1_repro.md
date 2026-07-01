@@ -153,6 +153,34 @@ performance-relevant code change invalidates *every* comparison measured
 before it, not just the one it was made for. Re-check all of them, not just
 the one you were optimizing against.
 
+## 3c. Peak memory (RSS)
+
+```bash
+for i in $(seq 1 20); do
+  /usr/bin/time -v ./a.out > /dev/null 2>> koru_ram_raw.txt
+done
+grep "Maximum resident" koru_ram_raw.txt
+
+for i in $(seq 1 20); do
+  /usr/bin/time -v target/release/prime-sieve-rust --bits-extreme -t 1 -s 5 > /dev/null 2>> rust_ram_raw.txt
+done
+grep "Maximum resident" rust_ram_raw.txt
+```
+
+n=20 each, same box, current `origin/main` (`8f406a71`):
+
+| | mean (KB) | median | stdev | min | max |
+|---|---:|---:|---:|---:|---:|
+| Koru | 1,484.2 | 1,488.0 | 36.9 | 1,440 | 1,544 |
+| Rust `--bits-extreme` | 2,833.6 | 2,830.0 | 66.4 | 2,712 | 2,956 |
+
+Rust uses ~1.91x Koru's peak RSS (+1,349.4 KB). Both allocate the identical
+62.5KB sieve buffer per pass, so this isn't an algorithmic difference — it's
+baseline process footprint (binary size, loaded libc/libgcc pages, CLI-arg-
+parsing structures Rust's `clap`/`structopt` set up at startup), the same
+asymmetry the binary-size numbers already show, confirmed from an
+independent angle.
+
 ## 4. Binary size comparison
 
 ```bash
