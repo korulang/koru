@@ -83,11 +83,14 @@ CLEAN_CACHE=false
 # Use --parallel N to run N tests concurrently
 PARALLEL_JOBS=1
 
-# Backend-binary cache (default: off). With --backend-cache, the built backend
-# compiler binary is reused across tests that share a handler set — sound because
-# the program AST is now a runtime input (program.ast.json), not baked into the
-# binary. Keyed on the backend's build inputs + a compiler-source salt.
-BACKEND_CACHE_MODE=off
+# Backend-binary cache (default: ON). The built backend compiler binary is
+# reused across tests that share a handler set — sound because the program AST
+# is now a runtime input (program.ast.json), not baked into the binary. Keyed
+# on the backend's build inputs + a compiler-source salt, so any compiler/stdlib
+# edit invalidates every cached binary. Measured across the suite: 779 test
+# backends collapse to ~121 distinct binaries (top two keys cover 57% of tests).
+# Disable with --no-backend-cache when investigating cache-correctness.
+BACKEND_CACHE_MODE=on
 
 echo "════════════════════════════════════════"
 echo "    KORU REGRESSION TEST SUITE"
@@ -128,6 +131,7 @@ if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
     echo "  --cache                                Enable per-test result cache (skip unchanged tests)"
     echo "  --no-cache                             Disable result cache (default)"
     echo "  --verify-cache                         Run each test twice (cached + uncached), assert parity"
+    echo "  --no-backend-cache                     Disable backend-binary reuse across tests (default: on)"
     echo "  --keep-artifacts                        Keep per-test artifacts even on success (uses lots of disk)"
     echo "  --parallel N                           Run N tests concurrently (default: 1 = sequential)"
     echo ""
@@ -422,7 +426,12 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --backend-cache)
+            # Default since 2026-07: kept as an accepted no-op for muscle memory.
             BACKEND_CACHE_MODE=on
+            shift
+            ;;
+        --no-backend-cache)
+            BACKEND_CACHE_MODE=off
             shift
             ;;
         --parallel)

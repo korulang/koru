@@ -17,6 +17,19 @@ source "$SCRIPT_DIR/scripts/regression_lib.sh"
 # shellcheck source=./scripts/regression_cache.sh
 source "$SCRIPT_DIR/scripts/regression_cache.sh"
 
+# Backend-binary cache: default ON for standalone invocations too (when the
+# suite drives us it exports MODE/DIR/SALT itself, including MODE=off under
+# --no-backend-cache, and this block is skipped). Reuses a cached backend
+# binary across tests sharing a handler set; the compiler-mtime salt makes a
+# binary unusable after any compiler/stdlib edit. Disable a standalone run
+# with BACKEND_CACHE_MODE=off ./run_single_test.sh <test>.
+if [ -z "${BACKEND_CACHE_MODE:-}" ]; then
+    BACKEND_CACHE_MODE=on
+    BACKEND_CACHE_SALT=$(cache_compute_compiler_mtime "$SCRIPT_DIR")
+    BACKEND_CACHE_DIR="$ZIG_GLOBAL_CACHE/koru-backend-cache"
+    mkdir -p "$BACKEND_CACHE_DIR"
+fi
+
 GREEN='\033[0;32m'
 RED='\033[0;31m'
 YELLOW='\033[0;33m'
