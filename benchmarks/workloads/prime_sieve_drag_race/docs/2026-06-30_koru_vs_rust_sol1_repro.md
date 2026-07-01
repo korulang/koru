@@ -125,6 +125,34 @@ Koru at `DENSE_LIMIT=128`, Rust properly LTO'd):**
 
 Koru ahead of both: +0.47% (Welch t=12.68) and +0.72% (Welch t=18.47).
 
+## 3b. Re-verifying against Zig sol3 after the DENSE_LIMIT change — a mistake caught before publishing
+
+The `DENSE_LIMIT` widening (section 3 above, done to close the gap to Rust)
+is a general change to `mark-multiples` — it isn't specific to competing
+with Rust. We didn't re-check its effect against `PrimeZig/solution_3`
+until writing up the results, and almost published a stale number from
+*before* the widening (~+2%, "dead even"-ish). Caught it, re-ran:
+
+```bash
+# PrimeZig/solution_3, built as in section elsewhere in this doc (zig 0.8.0,
+# `zig build -Drelease-fast`, then run the specific spec line directly:
+./zig-out/bin/PrimeZig -l 51   # "best singlethreaded base runner"
+```
+
+Same protocol as everything else (n=20, bare metal, dedicated CPU, current
+koru `origin/main`):
+
+| | mean passes/5s | median | stdev |
+|---|---:|---:|---:|
+| Koru (current, `DENSE_LIMIT<=128`) | 49,281.20 | 49,274.0 | 73.66 |
+| Zig sol3 | 45,734.90 | 45,731.0 | 60.37 |
+
+**+7.75%** (Welch t=166.52, zero overlap across both twenty-sample sets) —
+not the ~2% figure from before the dense-marker widening. Lesson: a
+performance-relevant code change invalidates *every* comparison measured
+before it, not just the one it was made for. Re-check all of them, not just
+the one you were optimizing against.
+
 ## 4. Binary size comparison
 
 ```bash
