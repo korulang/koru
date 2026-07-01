@@ -530,9 +530,20 @@ var __field_noop_fba = std.heap.FixedBufferAllocator.init(&__field_noop_buf);
             return m;
         }
     };
-    // one fully-unrolled marker per dense stride (3,5,...,63), masks baked literal
+    // DENSE_LIMIT: how far the fully-unrolled dense-marker generation extends before
+    // falling back to the sparse 8-way byte-scatter path. This is a GENERAL parameter
+    // of the transform, not a benchmark-tuned constant: the dense/sparse split exists
+    // because dense markers avoid the sparse path's per-element scatter overhead, at
+    // the cost of one generated function per odd stride. The LUT-based dispatch (not
+    // a switch) means unused dense functions never get pulled into I-cache, so the
+    // only real cost of widening this is generated-code size and compile time, not
+    // runtime I-cache pressure. Doubled from the original word-width-driven 64 (one
+    // marker fits one u64 word's worth of residues) to 128, the next natural
+    // power-of-two step — not copied from any specific rival's cutoff or workload.
+    const DENSE_LIMIT: usize = 128;
+    // one fully-unrolled marker per dense stride (3,5,...,DENSE_LIMIT-1), masks baked literal
     var p: usize = 3;
-    while (p < 64) : (p += 2) {
+    while (p < DENSE_LIMIT) : (p += 2) {
         const i = (p - 1) / 2;
         const rstep = 64 % p;
         const h = std.fmt.allocPrint(allocator, "fn __mm_{d}_{d}_{d}(data: [*]u64, fullWords: usize, tailBits: usize) void {{\n    const wm = [_]u64{{ ", .{ L, C, p }) catch unreachable;
@@ -600,24 +611,23 @@ var __field_noop_fba = std.heap.FixedBufferAllocator.init(&__field_noop_buf);
         }
     }
     code.appendSlice(allocator, "};\n\n") catch unreachable;
-    // dispatch via FUNCTION-POINTER LUT, not switch: a switch inlines all 31
-    // marker bodies into one function and thrashes the i-cache (~3-5% measured);
+    // dispatch via FUNCTION-POINTER LUT, not switch: a switch inlines every generated
+    // marker body into one function and thrashes the i-cache (~3-5% measured);
     // a compact indirect call through a LUT avoids that and beats hand-tuned Zig.
-    const lut_open = std.fmt.allocPrint(allocator,
-        "const __mm_lut_{d}_{d} = blk: {{ var t = [_]?*const fn ([*]u64, usize, usize) void{{null}} ** 64;\n", .{ L, C }) catch unreachable;
+    const lut_open = std.fmt.allocPrint(allocator, "const __mm_lut_{d}_{d} = blk: {{ var t = [_]?*const fn ([*]u64, usize, usize) void{{null}} ** {d};\n", .{ L, C, DENSE_LIMIT }) catch unreachable;
     code.appendSlice(allocator, lut_open) catch unreachable;
     p = 3;
-    while (p < 64) : (p += 2) {
+    while (p < DENSE_LIMIT) : (p += 2) {
         const ent = std.fmt.allocPrint(allocator, "    t[{d}] = __mm_{d}_{d}_{d};\n", .{ p, L, C, p }) catch unreachable;
         code.appendSlice(allocator, ent) catch unreachable;
     }
     const disp = std.fmt.allocPrint(allocator,
         "    break :blk t; }};\n" ++
         "fn __mm_disp_{d}_{d}(data: []u64, from: usize, stride: usize, limit: usize) void {{\n" ++
-        "    if (stride >= 64) {{ __mm_splut_{d}_{d}[(from & 7) * 8 + (stride & 7)](data, from, stride, limit); return; }}\n" ++
+        "    if (stride >= {d}) {{ __mm_splut_{d}_{d}[(from & 7) * 8 + (stride & 7)](data, from, stride, limit); return; }}\n" ++
         "    const bitCount = limit + 1; const fullWords = bitCount / 64; const tailBits = bitCount % 64;\n" ++
         "    if (__mm_lut_{d}_{d}[stride]) |f| f(data.ptr, fullWords, tailBits) else __mm_splut_{d}_{d}[(from & 7) * 8 + (stride & 7)](data, from, stride, limit);\n" ++
-        "}}\n\n", .{ L, C, L, C, L, C, L, C }) catch unreachable;
+        "}}\n\n", .{ L, C, DENSE_LIMIT, L, C, L, C, L, C }) catch unreachable;
     code.appendSlice(allocator, disp) catch unreachable;
 
     // call-site dispatch (inline_body) referencing the lowered args
