@@ -77,14 +77,6 @@ fn isCommentLine(content: []const u8) bool {
 const Printer = struct {
     allocator: std.mem.Allocator,
     buf: std.ArrayList(u8) = .{},
-    /// True once the current physical line has opened a multi-line source
-    /// block; later blocks on the same line must not render inline (see
-    /// printSourceBlock). Reset at each new line the printer starts.
-    line_has_multiline_block: bool = false,
-    /// True when more flow lines (branch continuations) follow the current
-    /// physical line — set at line start. See printSourceBlock: inline-after-
-    /// multiline is only unsafe when a following line exists to misattach.
-    cur_line_followed: bool = false,
 
     fn write(self: *Printer, s: []const u8) PrintError!void {
         try self.buf.appendSlice(self.allocator, s);
@@ -123,7 +115,6 @@ const Printer = struct {
     // ── items ────────────────────────────────────────────────────────────
 
     fn printItem(self: *Printer, item: *const ast.Item) PrintError!void {
-        self.line_has_multiline_block = false;
         switch (item.*) {
             .host_line => |h| {
                 try self.write(h.content);
@@ -397,9 +388,8 @@ const Printer = struct {
         // close col 4, `| kernel k` col 4). Then the children shift one step.
         const kids = hasBranchChildren(root.continuations);
         const child_depth: usize = if (kids and lineCarriesMultilineBlock(node, root.continuations)) 1 else 0;
-        self.cur_line_followed = kids;
         try self.printInvocation(&node.invocation, if (kids) child_depth else 0);
-        try self.printChildren(root.continuations, child_depth, false);
+        try self.printChildren(root.continuations, child_depth);
         try self.write("\n");
     }
 
@@ -407,38 +397,27 @@ const Printer = struct {
     /// current line inline (` |> …` / ` => …` / ` -> …`); branch continuations
     /// each start a new line at `depth`. A chain APPEARING AFTER a branch has
     /// no source spelling — hard error (canon hazard if the corpus hits it).
-    /// `pending_after`: more flow lines exist after this whole list (an
-    /// ancestor has later branch continuations).
-    fn printChildren(self: *Printer, conts: []const ast.Continuation, depth: usize, pending_after: bool) PrintError!void {
+    fn printChildren(self: *Printer, conts: []const ast.Continuation, depth: usize) PrintError!void {
         var seen_branch = false;
-        for (conts, 0..) |*c, i| {
+        for (conts) |*c| {
             const is_chain = c.branch.len == 0 and !c.is_catchall;
             if (is_chain) {
                 if (seen_branch) return self.unprintable("chain continuation after branch continuation");
-                try self.printChainCont(c, depth, pending_after);
+                try self.printChainCont(c, depth);
             } else {
                 seen_branch = true;
-                var later = pending_after;
-                for (conts[i + 1 ..]) |*rest| {
-                    if (rest.branch.len > 0 or rest.is_catchall) {
-                        later = true;
-                        break;
-                    }
-                }
-                try self.printBranchCont(c, depth, later);
+                try self.printBranchCont(c, depth);
             }
         }
     }
 
-    fn printChainCont(self: *Printer, c: *const ast.Continuation, depth: usize, pending_after: bool) PrintError!void {
+    fn printChainCont(self: *Printer, c: *const ast.Continuation, depth: usize) PrintError!void {
         try self.printContHeaderChecks(c);
-        try self.printNodeJoined(c, depth, pending_after);
+        try self.printNodeJoined(c, depth);
     }
 
-    fn printBranchCont(self: *Printer, c: *const ast.Continuation, depth: usize, pending_after: bool) PrintError!void {
+    fn printBranchCont(self: *Printer, c: *const ast.Continuation, depth: usize) PrintError!void {
         try self.write("\n");
-        self.line_has_multiline_block = false;
-        self.cur_line_followed = pending_after or hasBranchChildren(c.continuations);
         try self.writeIndent(depth);
         try self.write(switch (c.kind) {
             .terminal => "|",
@@ -464,7 +443,7 @@ const Printer = struct {
             try self.printDestructure(c.destructure);
         }
         if (c.condition) |cond| try self.print(" when {s}", .{cond});
-        try self.printNodeJoined(c, depth + 1, pending_after);
+        try self.printNodeJoined(c, depth + 1);
     }
 
     fn hasBranchChildren(conts: []const ast.Continuation) bool {
@@ -546,7 +525,7 @@ const Printer = struct {
     /// Write a continuation's node with its joiner, then its children.
     /// Branch children of this node indent one level deeper than the line
     /// that carries it (`depth` is that level already, passed by the caller).
-    fn printNodeJoined(self: *Printer, c: *const ast.Continuation, depth: usize, pending_after: bool) PrintError!void {
+    fn printNodeJoined(self: *Printer, c: *const ast.Continuation, depth: usize) PrintError!void {
         const node = &(c.node orelse {
             // A branch with no node is `| name |> _`? No — the corpus spells
             // empty handlers with an explicit terminal node. Null node has no
@@ -593,7 +572,7 @@ const Printer = struct {
             .switch_result => return self.unprintable("switch_result (transform-produced)"),
             .assignment => return self.unprintable("assignment (transform-produced)"),
         }
-        try self.printChildren(c.continuations, depth, pending_after);
+        try self.printChildren(c.continuations, depth);
     }
 
     // ── invocations & args ───────────────────────────────────────────────
@@ -656,18 +635,14 @@ const Printer = struct {
             try self.write(" {}");
             return;
         }
-        // One-line content renders as inline braces (`capture { n: 0[i64] }`).
-        // ONE unsafe position: inline after a multi-line close on the same
-        // line (`} |> self { one-liner }`) WHEN more flow lines follow — the
-        // next branch line misattaches on reparse (390_091/092). With nothing
-        // following, inline there is itself the pinned spelling (320_093).
-        // The asymmetry is a parser canon signal for triage.
-        const unsafe_inline = self.line_has_multiline_block and self.cur_line_followed;
-        if (std.mem.indexOfScalar(u8, src.text, '\n') == null and !unsafe_inline) {
+        // One-line content renders as inline braces (`capture { n: 0[i64] }`)
+        // — safe in every position since the gatherer became brace-aware
+        // (netBraces, pinned by 210_139; this printer used to carry per-line
+        // state to dodge the misattachment).
+        if (std.mem.indexOfScalar(u8, src.text, '\n') == null) {
             try self.print(" {{ {s} }}", .{src.text});
             return;
         }
-        self.line_has_multiline_block = true;
         // A trailing '\n' in the stored text must NOT become an extra blank
         // line (const-style blocks keep their final newline, 010_005).
         try self.write(" {\n");

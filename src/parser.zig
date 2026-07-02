@@ -105,6 +105,36 @@ fn netParens(s: []const u8) i32 {
     return depth;
 }
 
+/// Net brace depth of a line, quote-aware (braces inside string/char
+/// literals are text, not structure — the paren twin of `netParens`).
+/// The multi-line source-block gatherer uses this to know WHEN a block
+/// actually closes: an indent-only heuristic swallowed a following branch
+/// line whenever an inline block closed mid-line (`} |> self { … }`),
+/// silently discarding that branch's header (pinned by 210_139).
+fn netBraces(s: []const u8) i32 {
+    var depth: i32 = 0;
+    var quote: u8 = 0;
+    var i: usize = 0;
+    while (i < s.len) : (i += 1) {
+        const c = s[i];
+        if (quote != 0) {
+            if (c == '\\') {
+                i += 1;
+            } else if (c == quote) {
+                quote = 0;
+            }
+            continue;
+        }
+        switch (c) {
+            '"', '\'' => quote = c,
+            '{' => depth += 1,
+            '}' => depth -= 1,
+            else => {},
+        }
+    }
+    return depth;
+}
+
 ///   - Source block:   `~event { content }`      - no = before {
 ///   - Subflow impl:   `~event = branch { ... }` - has = before {
 fn hasSourceBlock(s: []const u8) bool {
@@ -2836,8 +2866,12 @@ pub const Parser = struct {
     fn createImplicitFlowInvocation(self: *Parser, original: ast.Invocation, continuations: []ast.Continuation, event_type: type_registry.EventType) !ast.Invocation {
         _ = continuations; // No longer needed
 
-        // Determine which field is the implicit flow field
-        var flow_field_name: []const u8 = undefined;
+        // Determine which field is the implicit flow field. No Source field
+        // means there is nothing to inject — return the invocation unchanged.
+        // (This was `undefined` + conditional assignment: an event WITHOUT a
+        // Source input reaching here read garbage memory and overflowed in
+        // the allocator. Latent until 2026-07-02.)
+        var flow_field_name: ?[]const u8 = null;
 
         // EventType has input shape info
         const input_shape = event_type.input_shape orelse return original;
@@ -2847,11 +2881,12 @@ pub const Parser = struct {
                 break;
             }
         }
+        const source_field_name = flow_field_name orelse return original;
 
         // Check if source arg already exists - don't add duplicate
         var has_source_arg = false;
         for (original.args) |arg| {
-            if (std.mem.eql(u8, arg.name, flow_field_name)) {
+            if (std.mem.eql(u8, arg.name, source_field_name)) {
                 has_source_arg = true;
                 break;
             }
@@ -2873,7 +2908,7 @@ pub const Parser = struct {
 
         // Create synthetic Source argument
         const source_arg = ast.Arg{
-            .name = try self.allocator.dupe(u8, flow_field_name),
+            .name = try self.allocator.dupe(u8, source_field_name),
             .value = try self.allocator.dupe(u8, "<implicit_source>"),
         };
 
@@ -4937,7 +4972,18 @@ pub const Parser = struct {
             pos += 1;
         }
 
-        const source = source_buf[0..pos];
+        // ONE trailing-edge convention for stored Source text: trimmed. The
+        // continuation-position path (parseEventInvocation) has always
+        // trimmed; this root-position path kept a trailing newline, so the
+        // same block spelled at different positions stored different bytes
+        // (canon signal from the printer round-trip harness, 2026-07-02).
+        // The trailing newline is layout, not content — consumers that emit
+        // newlines normalize themselves (320_093: both conventions printed
+        // identical output). Dupe rather than sub-slice: callers free the
+        // returned text by its own ptr/len.
+        const trimmed_source = std.mem.trimRight(u8, source_buf[0..pos], " \t\r\n");
+        const source = try self.allocator.dupe(u8, trimmed_source);
+        self.allocator.free(source_buf);
 
         // Now parse any output continuations after the }
         // In strict mode (pipeline context), only collect continuations MORE indented than base_indent
@@ -6027,44 +6073,39 @@ pub const Parser = struct {
             var allocated_rest: ?[]u8 = null;
             defer if (allocated_rest) |ar| self.allocator.free(ar);
 
-            // If we have an opening brace without closing, collect multi-line content
+            // If the line leaves brace depth open, collect multi-line content.
+            // BRACE-AWARE: the gatherer tracks net depth (quote-aware) and
+            // stops the moment the block actually closes — whether on a bare
+            // `}` line or mid-line (`} |> self { … }`). The old indent-only
+            // heuristic ("stop only on a standalone `}`; swallow shallower
+            // lines that contain any `}`") silently consumed a FOLLOWING
+            // branch line whenever an inline block closed mid-line, dropping
+            // that branch's header and binding (pinned by 210_139).
             var is_multiline_source_block = false;
-            if (std.mem.indexOf(u8, rest, "{") != null and std.mem.indexOf(u8, rest, "}") == null) {
+            if (std.mem.indexOf(u8, rest, "{") != null and netBraces(rest) > 0) {
                 is_multiline_source_block = true;
                 var rest_buf = try std.ArrayList(u8).initCapacity(self.allocator, 256);
                 defer rest_buf.deinit(self.allocator);
                 try rest_buf.appendSlice(self.allocator, rest);
 
-                // Keep reading lines until we find the closing brace
-                _ = self.current; // Track that we're modifying current
-                while (self.current < self.lines.len) {
+                var brace_depth: i32 = netBraces(rest);
+                while (self.current < self.lines.len and brace_depth > 0) {
                     const next_line = self.lines[self.current];
                     const next_indent = lexer.getIndent(next_line);
                     const next_trimmed = lexer.trim(next_line);
 
-                    // Stop if we hit a line with less indentation (unless it contains a closing brace)
-                    if (next_indent < indent) {
-                        // Check if this line contains a closing brace
-                        if (std.mem.indexOf(u8, next_trimmed, "}") == null) {
-                            break;
-                        }
-                    } else if (next_indent == indent) {
-                        // At same indentation - only continue if this is just a closing brace
-                        if (!std.mem.eql(u8, next_trimmed, "}") and !std.mem.startsWith(u8, next_trimmed, "} ")) {
-                            // This is something else at the same level, not part of our constructor
-                            break;
-                        }
+                    // A shallower line with no closing brace can't be part of
+                    // this block — malformed input; stop and let downstream
+                    // parsing report it.
+                    if (next_indent < indent and std.mem.indexOf(u8, next_trimmed, "}") == null) {
+                        break;
                     }
 
                     // Add this line to our content (preserve newlines for Source blocks!)
                     try rest_buf.appendSlice(self.allocator, "\n");
                     try rest_buf.appendSlice(self.allocator, next_trimmed);
+                    brace_depth += netBraces(next_trimmed);
                     self.current += 1;
-
-                    // Check if we found the closing brace (must be standalone, not inside content like {{ }})
-                    if (std.mem.eql(u8, next_trimmed, "}")) {
-                        break;
-                    }
                 }
 
                 allocated_rest = try rest_buf.toOwnedSlice(self.allocator);
