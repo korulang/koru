@@ -1,0 +1,19 @@
+// Test 020_032: An event with a declared output, INVOKED in the flow, but with
+// NO implementation anywhere (no proc, no bare-return impl, no subflow) must be
+// a COMPILE ERROR — never a silent zero-default stub.
+//
+// Today the emitter's !found_impl path (visitor_emitter.zig) synthesizes
+// `return .{ .<first-terminal> = 0 }` and the program prints a confident wrong
+// answer. That silent fallback is how five AoC honest-red days printed zeros
+// instead of failing. The stub is legitimate ONLY where the handler is provably
+// never called (template procs, effect-only events, auto-proc passthrough) —
+// an invoked event with no implementation is a hole in the program and must
+// fail loudly at the koru level.
+//
+// Grounded on 020_021_event_arrow_return with the `~double -> a * 2`
+// implementation line deleted.
+~import std/io
+
+~pub event double { a: i32 } -> i32
+
+~double(a: 21): d |> std/io:print.ln("{{ d:d }}")

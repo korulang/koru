@@ -9,6 +9,8 @@ test "validate complete flow" {
         \\~event A { x: i32 }
         \\| ok i32
         \\
+        \\~A => ok x
+        \\
         \\~A(x: 1)
         \\| ok _ |> _
     ;

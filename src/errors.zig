@@ -36,6 +36,7 @@ pub const ErrorCode = enum(u16) {
     KORU044, // Private event access from another module
     KORU045, // Label requires parameters (pre-invocation label)
     KORU046, // Label does not accept parameters (post-invocation label)
+    KORU047, // Event invoked but has no implementation (emitter would silently stub zero-defaults/undefined)
     
     // Proc errors
     KORU050, // Proc without matching event
