@@ -1,0 +1,49 @@
+// REQUIREMENT (effect-branch borrow lifetime — ASPIRATION pin, currently RED):
+// The borrow `c: *Config` handed to a `! configure` handler points at a STACK
+// local inside the proc (`var cfg = Config{}; configure(&cfg);`). It is valid
+// ONLY during the synchronous firing. If the handler stashes it into a
+// module-level `var` (or otherwise lets it outlive the firing), that is a
+// use-after-return.
+//
+// sqlite3's row borrow (`*Statement<prepared!>`) makes escaping the borrow a
+// COMPILE error via a phantom obligation. This test asks the language to extend
+// the SAME protection to an effect-branch borrow: stashing `c` past the firing
+// boundary MUST be a frontend compile error naming the escape.
+//
+// CURRENT STATE (SHOWN 2026-07-03): NOT caught. `koruc --check` passes and
+// `koruc run` compiles and executes to `done 30`, exit clean — the escaping
+// borrow sails through. Effect-branch payload phantom states are decorative
+// (400_080's own comment: the phantom checker does not track obligations
+// through `!` branches). This pin is the honest-red demonstration of the gap;
+// whether/how to build the guarantee is a design call, and the exact diagnostic
+// wording/code is for whoever builds it to settle — this test asserts only that
+// the escape must not compile silently.
+const std = @import("std");
+
+const Config = struct {
+    timeout_ms: usize = 30,
+};
+
+// Module-level stash — the escape hatch.
+var stashed: ?*Config = null;
+
+// Handler stashes the firing-scoped borrow past the firing boundary.
+~event stash { cfg: *Config<ready> }
+~proc stash|zig {
+    stashed = cfg;                      // <-- escape: pointer outlives the firing
+}
+
+~pub event fetch { url: []const u8 }
+! ?configure *Config<ready>
+| done usize
+
+~proc fetch|zig {
+    _ = url;
+    var cfg = Config{};
+    configure(&cfg);                    // handler stashes &cfg into `stashed`
+    return .{ .done = cfg.timeout_ms };
+}
+
+~fetch(url: "http://example.com")
+! configure c |> stash(cfg: c)          // escape the borrow — MUST be rejected
+| done _ |> _
