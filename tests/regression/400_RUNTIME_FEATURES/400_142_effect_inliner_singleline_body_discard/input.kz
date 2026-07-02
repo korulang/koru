@@ -1,0 +1,26 @@
+// PINNED BUG (2026-07-02, surfaced by koru-libs config-effect spike): a |zig
+// proc containing an effect-branch call, whose body sits on ONE physical line
+// with a `_ = param;` discard, fails at backend — the effect-branch inliner
+// auto-emits `_ = &url;` for the param AND keeps the user's own `_ = url;`,
+// a double discard Zig rejects. The SAME program with a multi-line body
+// compiles and runs (prints "done 30"). Source layout must never change
+// codegen correctness => defect. Secondary defect: the failure surfaces as a
+// raw Zig diagnostic on generated output_emitted.zig with no koru-level wall.
+// Expected (correct) behavior below; today: backend failure — honest red.
+
+~import std/io
+
+const std = @import("std");
+const Config = struct { timeout_ms: usize = 30 };
+
+~pub event fetch { url: []const u8 }
+! ?configure *Config
+| done usize
+
+// The offending shape: entire proc body on one physical line, param discarded.
+~proc fetch|zig { _ = url; var cfg = Config{}; configure(&cfg); return .{ .done = cfg.timeout_ms }; }
+
+~fetch(url: "http://example.com")
+| done n |> std/io:print.blk {
+    done {{ n:d }}
+}
