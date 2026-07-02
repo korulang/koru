@@ -1,0 +1,6 @@
+name: contradiction
+kind: inferred
+shape: categorical
+face: in
+membrane: true
+note: a previously-held belief was refuted by new evidence — the belief flips and the prior framing is retired; the mirror of confirmation
