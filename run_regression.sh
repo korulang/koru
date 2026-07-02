@@ -496,6 +496,25 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# One suite run per CHECKOUT: per-test artifacts (backend.zig, SUCCESS/FAILURE
+# markers) live in the test dirs themselves, so two concurrent runs in the same
+# checkout silently corrupt each other's results. Separate worktrees are fine —
+# each has its own tests/ tree. mkdir is the portable atomic lock (no flock on
+# macOS); a stale lock from a dead run is taken over, not fought.
+KORU_RUN_LOCK="$SCRIPT_DIR/.regression-run.lock"
+if ! mkdir "$KORU_RUN_LOCK" 2>/dev/null; then
+    LOCK_PID=$(cat "$KORU_RUN_LOCK/pid" 2>/dev/null || echo "")
+    if [ -n "$LOCK_PID" ] && kill -0 "$LOCK_PID" 2>/dev/null; then
+        echo -e "${RED}❌ A regression run (pid $LOCK_PID) is already active in this checkout.${NC}"
+        echo "   Two runs in one checkout corrupt each other's test artifacts."
+        echo "   Wait for it, or run from a separate worktree."
+        exit 1
+    fi
+    echo "Stale suite lock (pid ${LOCK_PID:-unknown} gone) — taking over."
+fi
+echo $$ > "$KORU_RUN_LOCK/pid"
+trap 'rm -rf "$KORU_RUN_LOCK"' EXIT
+
 # Display what we're running
 if [ "$SMOKE_MODE" = true ]; then
     echo "🔥 SMOKE TEST MODE - Running curated test suite"
@@ -706,9 +725,10 @@ PY
         done < "$FILTERED_LIST"
     fi
 
-    # Run in parallel, capture output for debugging only
-    PARALLEL_OUTPUT="/tmp/koru-parallel-output.txt"
-    : > "$PARALLEL_OUTPUT"
+    # Run in parallel, capture output for debugging only. Per-run temp path
+    # (like LIST_FILE above): a fixed name let two concurrent runs — e.g. in
+    # different worktrees — truncate and interleave each other's output.
+    PARALLEL_OUTPUT=$(mktemp /tmp/koru-parallel-output.XXXXXX)
     env REGRESSION_QUIET=true CHECK_LEAKS="$CHECK_LEAKS" VERBOSE="$VERBOSE" ZIG_GLOBAL_CACHE="$ZIG_GLOBAL_CACHE" \
         xargs -0 -P "$PARALLEL_JOBS" -I{} ./run_single_test.sh {} < "$FILTERED_LIST" 2>&1 | \
         tee "$PARALLEL_OUTPUT"
