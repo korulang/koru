@@ -6260,8 +6260,12 @@ pub fn main() !void {
     // field), with location/indent trivia stripped. This is the tree-equality
     // surface for the printer roundtrip harness: parse(original) and
     // parse(print(original)) must serialize byte-identically under this mode.
+    // Both canon modes refuse broken trees: reporter errors OR embedded
+    // parse_error items (lenient mode can embed a parse_error node — e.g.
+    // from a failing imported module — while the reporter stays clean; a
+    // canonical form of a broken program is meaningless either way).
     if (ast_canon_mode) {
-        if (parser.reporter.hasErrors()) {
+        if (parser.reporter.hasErrors() or source_file.hasParseErrors()) {
             const stderr_writer = FileWriter{ .file = std.fs.File.stderr() };
             try parser.reporter.printErrors(stderr_writer);
             std.process.exit(1);
@@ -6272,10 +6276,9 @@ pub fn main() !void {
         return;
     }
 
-    // --print: canonical Koru source from the post-parse tree. Refuses trees
-    // with parse errors — a canonical form of a broken program is meaningless.
+    // --print: canonical Koru source from the post-parse tree.
     if (print_mode) {
-        if (parser.reporter.hasErrors()) {
+        if (parser.reporter.hasErrors() or source_file.hasParseErrors()) {
             const stderr_writer = FileWriter{ .file = std.fs.File.stderr() };
             try parser.reporter.printErrors(stderr_writer);
             std.process.exit(1);
