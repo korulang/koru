@@ -323,6 +323,16 @@ pub fn build(b: *std.Build) void {
     ast_json_module.addImport("ast", ast_module);
     ast_json_module.addImport("parser", parser_module);
 
+    // Canonical printer: post-parse AST → canonical Koru source (`koruc --print`).
+    const ast_printer_module = b.createModule(.{
+        .root_source_file = b.path("src/ast_printer.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    ast_printer_module.addImport("ast", ast_module);
+    ast_printer_module.addImport("parser", parser_module);
+    ast_printer_module.addImport("ast_json", ast_json_module);
+
     // Compiler Config module - feature flags and configuration
     const compiler_config_module = b.createModule(.{
         .root_source_file = b.path("src/compiler_config.zig"),
@@ -513,6 +523,7 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("keyword_registry", keyword_registry_module);
     exe.root_module.addImport("ast_serializer", ast_serializer_module);
     exe.root_module.addImport("ast_json", ast_json_module);
+    exe.root_module.addImport("ast_printer", ast_printer_module);
     exe.root_module.addImport("ast_transform", ast_transform_module);
     exe.root_module.addImport("transforms/inline_small_events", inline_transform_module);
 
@@ -1257,6 +1268,14 @@ pub fn build(b: *std.Build) void {
     const ast_json_test_step = b.step("test-ast-json", "Run ast_json round-trip tests");
     ast_json_test_step.dependOn(&run_ast_json_tests.step);
 
+    const ast_printer_tests = b.addTest(.{
+        .name = "ast_printer_tests",
+        .root_module = ast_printer_module,
+    });
+    const run_ast_printer_tests = b.addRunArtifact(ast_printer_tests);
+    const ast_printer_test_step = b.step("test-ast-printer", "Run canonical printer round-trip tests");
+    ast_printer_test_step.dependOn(&run_ast_printer_tests.step);
+
     // Phantom semantic checker tests - obligation tracking and @scope boundaries
     const phantom_semantic_checker_tests = b.addTest(.{
         .name = "phantom_semantic_checker_tests",
@@ -1331,6 +1350,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_parser_tests.step);
     test_step.dependOn(&run_ast_serializer_tests.step);
     test_step.dependOn(&run_ast_json_tests.step);
+    test_step.dependOn(&run_ast_printer_tests.step);
     test_step.dependOn(&run_shape_checker_tests.step);
     test_step.dependOn(&run_tap_collector_tests.step);
     test_step.dependOn(&run_purity_checker_tests.step);

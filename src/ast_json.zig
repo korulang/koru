@@ -46,8 +46,28 @@ fn isSkipped(comptime T: type) bool {
 pub fn serialize(allocator: std.mem.Allocator, program: *const ast.Program) ![]u8 {
     var buf = std.ArrayList(u8){};
     errdefer buf.deinit(allocator);
-    try writeValue(ast.Program, program.*, allocator, &buf);
+    try writeValue(ast.Program, program.*, allocator, &buf, false);
     return buf.toOwnedSlice(allocator);
+}
+
+/// Canonical serialization: identical to `serialize` but with layout/provenance
+/// trivia stripped — `location` (source coordinates) and `indent` (raw source
+/// indentation on continuations). Two parses of the same PROGRAM (e.g. the
+/// original file and its canonical reprint) compare byte-equal under this dump
+/// even though every node's coordinates differ. This is the tree-equality
+/// surface for the printer round-trip harness.
+pub fn serializeCanon(allocator: std.mem.Allocator, program: *const ast.Program) ![]u8 {
+    var buf = std.ArrayList(u8){};
+    errdefer buf.deinit(allocator);
+    try writeValue(ast.Program, program.*, allocator, &buf, true);
+    return buf.toOwnedSlice(allocator);
+}
+
+/// Trivia fields carry WHERE the source was written, never WHAT the program is.
+/// Matched by name: the AST uses `location` (errors.SourceLocation) and `indent`
+/// (Continuation) uniformly for these.
+fn isTrivia(name: []const u8) bool {
+    return std.mem.eql(u8, name, "location") or std.mem.eql(u8, name, "indent");
 }
 
 fn writeString(buf: *std.ArrayList(u8), allocator: std.mem.Allocator, s: []const u8) !void {
@@ -71,7 +91,7 @@ fn writeString(buf: *std.ArrayList(u8), allocator: std.mem.Allocator, s: []const
     try buf.append(allocator, '"');
 }
 
-fn writeValue(comptime T: type, value: T, allocator: std.mem.Allocator, buf: *std.ArrayList(u8)) error{OutOfMemory}!void {
+fn writeValue(comptime T: type, value: T, allocator: std.mem.Allocator, buf: *std.ArrayList(u8), strip_trivia: bool) error{OutOfMemory}!void {
     switch (@typeInfo(T)) {
         .bool => try buf.appendSlice(allocator, if (value) "true" else "false"),
         .int, .comptime_int => try buf.print(allocator, "{d}", .{value}),
@@ -80,7 +100,7 @@ fn writeValue(comptime T: type, value: T, allocator: std.mem.Allocator, buf: *st
         .void => try buf.appendSlice(allocator, "null"),
         .optional => |o| {
             if (value) |inner| {
-                try writeValue(o.child, inner, allocator, buf);
+                try writeValue(o.child, inner, allocator, buf, strip_trivia);
             } else {
                 try buf.appendSlice(allocator, "null");
             }
@@ -93,32 +113,34 @@ fn writeValue(comptime T: type, value: T, allocator: std.mem.Allocator, buf: *st
                     try buf.append(allocator, '[');
                     for (value, 0..) |item, i| {
                         if (i > 0) try buf.append(allocator, ',');
-                        try writeValue(p.child, item, allocator, buf);
+                        try writeValue(p.child, item, allocator, buf, strip_trivia);
                     }
                     try buf.append(allocator, ']');
                 }
             },
-            .one => try writeValue(p.child, value.*, allocator, buf),
+            .one => try writeValue(p.child, value.*, allocator, buf, strip_trivia),
             else => @compileError("ast_json: unsupported pointer size on " ++ @typeName(T)),
         },
         .array => |a| {
             try buf.append(allocator, '[');
             for (value, 0..) |item, i| {
                 if (i > 0) try buf.append(allocator, ',');
-                try writeValue(a.child, item, allocator, buf);
+                try writeValue(a.child, item, allocator, buf, strip_trivia);
             }
             try buf.append(allocator, ']');
         },
         .@"struct" => |s| {
             try buf.append(allocator, '{');
-            comptime var first = true;
+            var first = true;
             inline for (s.fields) |f| {
                 if (comptime !isSkipped(f.type)) {
-                    if (!first) try buf.append(allocator, ',');
-                    first = false;
-                    try writeString(buf, allocator, f.name);
-                    try buf.append(allocator, ':');
-                    try writeValue(f.type, @field(value, f.name), allocator, buf);
+                    if (!(strip_trivia and isTrivia(f.name))) {
+                        if (!first) try buf.append(allocator, ',');
+                        first = false;
+                        try writeString(buf, allocator, f.name);
+                        try buf.append(allocator, ':');
+                        try writeValue(f.type, @field(value, f.name), allocator, buf, strip_trivia);
+                    }
                 }
             }
             try buf.append(allocator, '}');
@@ -130,7 +152,7 @@ fn writeValue(comptime T: type, value: T, allocator: std.mem.Allocator, buf: *st
                 if (tag == @field(std.meta.Tag(T), f.name)) {
                     try writeString(buf, allocator, f.name);
                     try buf.append(allocator, ':');
-                    try writeValue(f.type, @field(value, f.name), allocator, buf);
+                    try writeValue(f.type, @field(value, f.name), allocator, buf, strip_trivia);
                 }
             }
             try buf.append(allocator, '}');

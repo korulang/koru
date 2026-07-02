@@ -3590,6 +3590,9 @@ const usage_header =
     \\  -o, --output <file>   Output file (default: <input>.zig)
     \\  -c, --check          Check only, don't emit code
     \\  --ast-json           Output AST as JSON (for parser tests)
+    \\  --ast-canon          Output complete post-parse AST as JSON, trivia-stripped
+    \\                       (tree-equality surface for the printer round-trip)
+    \\  --print              Print canonical Koru source from the post-parse AST
     \\  --list-imports       Output transitive resolved import paths as JSON array
     \\  --registry-json      Output TypeRegistry as JSON (for debugging)
     \\  --fail-fast          Stop at first parse error (default: continue)
@@ -5930,6 +5933,8 @@ pub fn main() !void {
     var check_only = false;
     var use_visitor = false; // Visitor pattern needs more work before becoming default
     var ast_json_mode = false; // Output AST as JSON
+    var ast_canon_mode = false; // Output COMPLETE post-parse AST as JSON, trivia-stripped (roundtrip tree-equality surface)
+    var print_mode = false; // Print canonical Koru source from the post-parse AST
     var list_imports_mode = false; // Output transitive imports as JSON list (for harness caching)
     var registry_json_mode = false; // Output TypeRegistry as JSON
     var ccp_mode = false; // CCP daemon mode for Studio integration
@@ -5959,6 +5964,12 @@ pub fn main() !void {
             try compiler_config.addFlag("ccp");
         } else if (std.mem.eql(u8, arg, "--ast-json")) {
             ast_json_mode = true;
+        } else if (std.mem.eql(u8, arg, "--ast-canon")) {
+            ast_canon_mode = true;
+            build_executable = false;
+        } else if (std.mem.eql(u8, arg, "--print")) {
+            print_mode = true;
+            build_executable = false;
         } else if (std.mem.eql(u8, arg, "--list-imports")) {
             list_imports_mode = true;
             build_executable = false;
@@ -6218,7 +6229,7 @@ pub fn main() !void {
     // against each other regardless of which facet declared them. Single-file
     // programs (no siblings) are untouched — the merge is a no-op. This is the
     // entry-side mirror of `loadFileWithCompanions` (used for imports).
-    if (!ast_json_mode) {
+    if (!ast_json_mode and !ast_canon_mode and !print_mode) {
         source_file = try mergeEntryCompanions(allocator, parse_allocator, input, source_file);
     }
 
@@ -6242,6 +6253,36 @@ pub fn main() !void {
             try parser.reporter.printErrors(stderr_writer);
             std.process.exit(1);
         }
+        return;
+    }
+
+    // --ast-canon: the COMPLETE post-parse tree (generic reflective dump, every
+    // field), with location/indent trivia stripped. This is the tree-equality
+    // surface for the printer roundtrip harness: parse(original) and
+    // parse(print(original)) must serialize byte-identically under this mode.
+    if (ast_canon_mode) {
+        if (parser.reporter.hasErrors()) {
+            const stderr_writer = FileWriter{ .file = std.fs.File.stderr() };
+            try parser.reporter.printErrors(stderr_writer);
+            std.process.exit(1);
+        }
+        const ast_json = @import("ast_json");
+        const json_output = try ast_json.serializeCanon(compile_allocator, &source_file);
+        try printStdout(allocator, "{s}\n", .{json_output});
+        return;
+    }
+
+    // --print: canonical Koru source from the post-parse tree. Refuses trees
+    // with parse errors — a canonical form of a broken program is meaningless.
+    if (print_mode) {
+        if (parser.reporter.hasErrors()) {
+            const stderr_writer = FileWriter{ .file = std.fs.File.stderr() };
+            try parser.reporter.printErrors(stderr_writer);
+            std.process.exit(1);
+        }
+        const ast_printer = @import("ast_printer");
+        const printed = try ast_printer.printProgram(compile_allocator, &source_file);
+        try printStdout(allocator, "{s}", .{printed});
         return;
     }
 
