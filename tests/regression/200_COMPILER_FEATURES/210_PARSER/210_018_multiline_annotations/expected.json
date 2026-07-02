@@ -77,9 +77,9 @@
                     },
                     {
                         "name": "source",
-                        "value": "zig build\n",
+                        "value": "zig build",
                         "source_value": {
-                            "text": "zig build\n",
+                            "text": "zig build",
                             "location": {
                                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_018_multiline_annotations/input.kz",
                                 "line": 14,
@@ -127,9 +127,9 @@
                     },
                     {
                         "name": "source",
-                        "value": "./zig-out/bin/main\n",
+                        "value": "./zig-out/bin/main",
                         "source_value": {
-                            "text": "./zig-out/bin/main\n",
+                            "text": "./zig-out/bin/main",
                             "location": {
                                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_018_multiline_annotations/input.kz",
                                 "line": 20,

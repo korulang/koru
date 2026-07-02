@@ -252,9 +252,9 @@
                 "args": [
                     {
                         "name": "source",
-                        "value": "<div>\n    <h1>Module-level test</h1>\n    <p>Syntax validated</p>\n</div>\n",
+                        "value": "<div>\n    <h1>Module-level test</h1>\n    <p>Syntax validated</p>\n</div>",
                         "source_value": {
-                            "text": "<div>\n    <h1>Module-level test</h1>\n    <p>Syntax validated</p>\n</div>\n",
+                            "text": "<div>\n    <h1>Module-level test</h1>\n    <p>Syntax validated</p>\n</div>",
                             "location": {
                                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_009_source_with_scope_capture/input.kz",
                                 "line": 39,
