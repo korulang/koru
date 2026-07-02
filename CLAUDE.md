@@ -48,6 +48,29 @@ teaches nothing — not failure itself.
 Koru is a compiler. Shortcuts cascade. When you hit a problem, stop and ask —
 don't silently work around it.
 
+## AoC — and every application cluster — is an instrument, never a goal
+
+Encoded 2026-07-02 at Lars's command, after a triage session where I twice made
+the AoC cluster the destination — first by proposing per-day solution
+commissions over a discovered compiler defect, then, corrected, by keeping AoC
+as the goal one layer up ("fix the compiler wall first *so the AoC push is
+debuggable*"). Both are the same inversion. We are making a compiler.
+
+- The `810_AOC_2015` reds are **Lars-ruled honest-red roadmap markers**
+  (e0097c96: "the cluster stops lying" — every `.kz` host-workaround facet
+  deleted, never to be slimmed again; `FRONTIERS.md` names each day's gap).
+  They are supposed to be red until the *language* can express them.
+- **The work is never "green day N."** Never commission a solution push, never
+  write AoC solutions as a deliverable, never rank work by which days it
+  unlocks. The work is closing the named language gaps — obligation-threading,
+  store composition under phantom namespacing, search/recursion, the regex DFA
+  ceiling, loud-failure walls — each justified in the compiler's own terms.
+- Days go green **as a side effect** of the language becoming capable. That is
+  the only green that counts; any other green is the lying the 2026-06-12
+  ruling deleted.
+- Detector: if you catch yourself ranking "which days can we green," re-rank as
+  "which compiler gaps do these reds name" and work those.
+
 ## You wrote 99.5% of Koru
 
 You — Claude — wrote ~99.5% of the code in this repo. Lars is the language
