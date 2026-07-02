@@ -1,0 +1,21 @@
+// Test 210_093: multi-arm effect-branch decl — SINGLE-LINE form (parse-accept).
+//
+// The unindented shorthand for the indented form (210_092). `|` arms riding the
+// `!` line ARE that effect's resume sum; unambiguous because the event's
+// terminal branches live on their own lines at base indent:
+//
+//     ! ask i32 | halved i32 | timeout    <- `ask` yields i32, resumes with
+//                                            one of {halved i32, timeout}
+//     | done i32                          <- terminal branch (base indent)
+//
+// Both spellings collapse to the SAME AST (modulo source locations): an effect
+// branch `ask` carrying a flat resume sum of arms [halved i32, timeout], plus a
+// terminal branch `done`. This pin and 210_092 share identical `branches`
+// structure — that equivalence IS the thing being pinned.
+//
+// PINNED FAILING (parse-accept): same gap as 210_092 — the flat decl-branch
+// collection doesn't yet peel same-line `|` arms into the preceding `!`'s
+// resume sum.
+~pub event request { payload: i32 }
+! ask i32 | halved i32 | timeout
+| done i32

@@ -848,6 +848,22 @@ pub const Field = struct {
 
 pub const BranchKind = enum { terminal, effect };
 
+/// One arm of an effect branch's multi-arm resume sum (`! ask i32 | halved i32 | timeout`).
+/// The effect's output generalizes from a single anonymous `-> T` to a flat sum of
+/// named arms; the handler resumes by constructing one (`=> halved n / 2`).
+/// Mutually exclusive with `Branch.resume_type` — an effect declares one or the other.
+pub const ResumeArm = struct {
+    name: []const u8,
+    type: ?[]const u8 = null, // null = arm carries no payload (`| timeout`)
+    phantom: ?[]const u8 = null, // per-arm obligation; same discharge-only rule as resume_phantom
+
+    pub fn deinit(self: *ResumeArm, allocator: std.mem.Allocator) void {
+        allocator.free(self.name);
+        if (self.type) |t| allocator.free(t);
+        if (self.phantom) |p| allocator.free(p);
+    }
+};
+
 pub const Branch = struct {
     name: []const u8,
     payload: Shape,
@@ -857,6 +873,7 @@ pub const Branch = struct {
     kind: BranchKind = .terminal,  // `|` = terminal (fires once, returns); `!` = effect (fires 0..N during proc run)
     resume_type: ?[]const u8 = null,  // Type after `->` on effect branches; null = -> void
     resume_phantom: ?[]const u8 = null,  // Phantom/obligation on the resume type, e.g. `-> *R<!state>` → "!state". Read from the effect-branch scope: `<!state>` discharges, `<state!>` would illegally escape.
+    resume_arms: ?[]const ResumeArm = null,  // Multi-arm resume sum on effect branches; null = not multi-arm. Mutually exclusive with resume_type.
     annotations: []const []const u8 = &[_][]const u8{},  // Branch annotations like [mutable]
 
     pub fn deinit(self: *Branch, allocator: std.mem.Allocator) void {
@@ -864,6 +881,13 @@ pub const Branch = struct {
         self.payload.deinit(allocator);
         if (self.resume_type) |rt| allocator.free(rt);
         if (self.resume_phantom) |rp| allocator.free(rp);
+        if (self.resume_arms) |arms| {
+            for (arms) |*arm| {
+                var mutable_arm = arm.*;
+                mutable_arm.deinit(allocator);
+            }
+            allocator.free(@constCast(arms));
+        }
         for (self.annotations) |annotation| {
             allocator.free(annotation);
         }

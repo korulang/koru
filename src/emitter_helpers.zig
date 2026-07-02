@@ -4525,7 +4525,10 @@ fn inlineEffectfulEligibility(ctx: *EmissionContext, inv: *const ast.Invocation,
     for (event_decl.branches) |b| {
         if (b.kind == .effect) {
             has_effect = true;
+            // A resuming effect (single `-> T` or multi-arm sum) needs the
+            // handler-call path — inline splicing cannot express a resume value.
             if (b.resume_type != null) return null;
+            if (b.resume_arms != null) return null;
         } else {
             has_terminal_branch = true;
         }
@@ -4953,6 +4956,32 @@ fn branchHasPayloadFieldsSearchAll(
     return true; // Conservative: assume has fields if not found
 }
 
+/// Write an effect branch's resume type: the single `-> T` type, the
+/// `union(enum)` synthesized from its multi-arm resume sum, or `void`.
+/// The union is emitted inline in the handler fn signature — the proc binds
+/// the result (`const r = ask(payload)`) and switches on it, so the single
+/// definition site is the only spelling the program needs.
+fn writeEffectResumeType(emitter: *CodeEmitter, branch: *const ast.Branch) !void {
+    if (branch.resume_arms) |arms| {
+        try emitter.write("union(enum) { ");
+        for (arms, 0..) |*arm, i| {
+            if (i > 0) try emitter.write(", ");
+            try writeBranchName(emitter, arm.name);
+            try emitter.write(": ");
+            const arm_type = arm.type orelse "void";
+            // A record arm (`| result { halved: i32, ... }`) carries its shape
+            // as a brace string; Zig spells that type `struct { ... }`.
+            if (arm_type.len > 0 and arm_type[0] == '{') try emitter.write("struct ");
+            try emitter.write(arm_type);
+        }
+        try emitter.write(" }");
+    } else if (branch.resume_type) |rt| {
+        try emitter.write(rt);
+    } else {
+        try emitter.write("void");
+    }
+}
+
 /// Effect-branches phase 3b: synthesize the local Handlers struct that carries
 /// the consumer's `!` branch bodies as static fns. See docs/EFFECT_BRANCHES.md.
 ///
@@ -5112,11 +5141,7 @@ fn emitHandlersStruct(
         }
 
         try emitter.write(") ");
-        if (branch.resume_type) |rt| {
-            try emitter.write(rt);
-        } else {
-            try emitter.write("void");
-        }
+        try writeEffectResumeType(emitter, branch);
         try emitter.write(" {\n");
         emitter.indent();
 
@@ -5183,6 +5208,48 @@ fn emitHandlersStruct(
             defer if (resume_expr_owned) |s| ctx.allocator.free(s);
 
             const resume_expr: ?[]const u8 = blk: {
+                // Multi-arm resume sum: `=> halved n / 2` constructs the chosen
+                // arm as a variant of the synthesized resume union; a payload-less
+                // arm (`=> timeout`) is its bare tag.
+                if (branch.resume_arms != null) {
+                    if (cont.continuations.len != 0) break :blk null;
+                    const node = cont.node orelse break :blk null;
+                    if (node != .branch_constructor) break :blk null;
+                    const bc = node.branch_constructor;
+                    var arm_buf: [128]u8 = undefined;
+                    const lowered_arm = lowerIdent(&arm_buf, bc.branch_name);
+                    if (bc.fields.len != 0) {
+                        // Record arm: `=> result { halved: X, quadrupled: Y }`
+                        // constructs the variant's struct payload.
+                        var built = try std.ArrayList(u8).initCapacity(ctx.allocator, 64);
+                        errdefer built.deinit(ctx.allocator);
+                        const w = built.writer(ctx.allocator);
+                        try w.print(".{{ .{s} = .{{", .{lowered_arm});
+                        for (bc.fields, 0..) |field, fi| {
+                            if (fi > 0) try w.writeAll(",");
+                            var fld_buf: [128]u8 = undefined;
+                            try w.print(" .{s} = ({s})", .{
+                                lowerIdent(&fld_buf, field.name),
+                                field.expression_str orelse field.type,
+                            });
+                        }
+                        try w.writeAll(" } }");
+                        resume_expr_owned = try built.toOwnedSlice(ctx.allocator);
+                    } else if (bc.plain_value) |pv| {
+                        resume_expr_owned = try std.fmt.allocPrint(
+                            ctx.allocator,
+                            ".{{ .{s} = ({s}) }}",
+                            .{ lowered_arm, pv },
+                        );
+                    } else {
+                        resume_expr_owned = try std.fmt.allocPrint(
+                            ctx.allocator,
+                            ".{s}",
+                            .{lowered_arm},
+                        );
+                    }
+                    break :blk resume_expr_owned.?;
+                }
                 if (branch.resume_type == null) break :blk null;
                 if (cont.continuations.len != 0) break :blk null;
                 const node = cont.node orelse break :blk null;
@@ -5294,11 +5361,7 @@ fn emitHandlersStruct(
             }
         }
         try emitter.write(") ");
-        if (branch.resume_type) |rt| {
-            try emitter.write(rt);
-        } else {
-            try emitter.write("void");
-        }
+        try writeEffectResumeType(emitter, &branch);
         try emitter.write(" {}\n");
     }
 

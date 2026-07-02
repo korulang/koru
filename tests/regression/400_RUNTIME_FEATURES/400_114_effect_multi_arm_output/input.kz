@@ -1,20 +1,21 @@
-// PROPOSED FORM (Barbour effect-typing arc) — NOT yet supported; pinned failing
-// to capture the baseline (Phase 1).
-//
-// An effect branch's OUTPUT is a TREE of named continuation arms, generalizing
-// the single anonymous `-> T` resume (cf. 400_085 `! double i32 -> i32`). Here
-// `! ask` yields an i32 and the handler resumes by SELECTING one arm —
-// `| halved i32` or `| timeout`. This is "effects having effects → sessions":
-// the effect's output is itself event-shaped. You never nest `!`; the
-// composition lives in the `|` tree.
+// Multi-arm resume sum ("effects having effects → sessions"): an effect
+// branch's OUTPUT generalizes from the single anonymous `-> T` resume
+// (cf. 400_085 `! double i32 -> i32`) to a flat SUM of named arms. Here
+// `! ask` yields an i32 and the handler resumes by SELECTING one arm with
+// `=>` — `| halved i32` or `| timeout`. You never nest `!`; the composition
+// lives in the `|` arm tree. Grammar pinned in 210_092 (indented) and
+// 210_093 (single-line).
 //
 // The resume-by-named-arm spelling (`=> halved v`) reuses the existing
 // branch-ctor resume grammar (cf. the subflow resume `~greet => greeting "..."`
-// in 020_014), now in effect-resume position.
+// in 020_014), now in effect-resume position. Glyph discipline holds: this
+// effect HAS arms, so `=>` constructs one (`->` is the single-resume producer
+// and is illegal here).
 //
-// FRONTIER (undesigned): how the `~proc` CONSUMES a multi-arm resume value
-// (today `const r = ask(payload)` binds a single value; a sum needs handling).
-// This pin documents the SHAPE; the proc-side mechanics are the design work.
+// The `~proc` consumes the multi-arm resume as a TAGGED UNION — the same way
+// it binds a scalar from a `-> T` effect today, `const r = ask(payload)`
+// binds the synthesized `union(enum) { halved: i32, timeout: void }` and the
+// proc dispatches with an ordinary Zig `switch`.
 ~import std/io
 
 ~pub event request { payload: i32 }
@@ -25,9 +26,12 @@
 
 ~proc request|zig {
     const r = ask(payload);
-    return .{ .done = r };
+    return switch (r) {
+        .halved => |v| .{ .done = v },
+        .timeout => .{ .done = -1 },
+    };
 }
 
 ~request(payload: 20)
-! ask n => halved n / 2
+! ask n => halved @divTrunc(n, 2)
 | done r |> std/io:print.ln("{{ r:d }}")

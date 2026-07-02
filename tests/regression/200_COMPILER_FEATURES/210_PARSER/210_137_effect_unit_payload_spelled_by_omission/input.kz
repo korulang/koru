@@ -1,0 +1,17 @@
+// A payload-less effect branch is spelled by OMISSION — `! ask | halved i32
+// | timeout` — never with a unit token. `()` is not a type in the decl
+// grammar; without this wall it parses as an identity payload whose type
+// string is literally "()" and dies three stages later as a misleading
+// KORU030. The unit exists only on the VALUE side: the proc calls `ask()`
+// positionally. (Ruled 2026-07-01: omission is the one spelling; no synonym.)
+~pub event request { payload: i32 }
+! ask () | halved i32 | timeout
+| done i32
+
+~proc request|zig {
+    const r = ask();
+    return switch (r) {
+        .halved => |v| .{ .done = v },
+        .timeout => .{ .done = -1 },
+    };
+}

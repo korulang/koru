@@ -1,0 +1,24 @@
+// Glyph discipline, produce side (dual of 400_122): `->` produces the single
+// anonymous resume value. When the effect declares named resume ARMS, there is
+// no anonymous value to produce — the handler must SELECT an arm with `=>`.
+// Without this wall, `-> n` would emit a bare value where the synthesized
+// resume union is expected and die as a raw Zig type error.
+~import std/io
+
+~pub event request { payload: i32 }
+! ask i32
+    | halved i32
+    | timeout
+| done i32
+
+~proc request|zig {
+    const r = ask(payload);
+    return switch (r) {
+        .halved => |v| .{ .done = v },
+        .timeout => .{ .done = -1 },
+    };
+}
+
+~request(payload: 20)
+! ask n -> n
+| done r |> std/io:print.ln("{{ r:d }}")

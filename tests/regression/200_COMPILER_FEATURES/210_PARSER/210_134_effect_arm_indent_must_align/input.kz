@@ -1,0 +1,17 @@
+// Resume arms live at exactly ONE level under their `!` line, all aligned.
+// A second level of indent has no meaning — the resume sum is FLAT (never
+// nest `!`; composition lives in the arm list). Misaligned arms are rejected
+// rather than silently re-bound. Sibling of the accept pins 210_092/093.
+~pub event request { payload: i32 }
+! ask i32
+    | halved i32
+        | timeout
+| done i32
+
+~proc request|zig {
+    const r = ask(payload);
+    return switch (r) {
+        .halved => |v| .{ .done = v },
+        .timeout => .{ .done = -1 },
+    };
+}

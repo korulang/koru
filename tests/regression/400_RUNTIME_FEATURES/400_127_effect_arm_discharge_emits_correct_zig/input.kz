@@ -1,0 +1,26 @@
+// Arm sibling of 400_106: a resume ARM may carry a discharge phantom
+// (`| granted *Resource<!active>`), and the phantom must be stripped from the
+// emitted Zig — the synthesized resume union field is `granted: *Resource`,
+// NOT `granted: *Resource<!active>`. Arm-ISSUE (`<active!>`) is the forbidden
+// direction, pinned in 400_124.
+const std = @import("std");
+const Resource = struct { id: usize };
+var global_r = Resource{ .id = 99 };
+
+~pub event borrow { n: usize }
+! lend usize
+    | granted *Resource<!active>
+    | denied
+| done usize
+~proc borrow|zig {
+    const r = lend(n);
+    switch (r) {
+        .granted => |g| std.debug.print("got {}\n", .{g.id}),
+        .denied => std.debug.print("denied\n", .{}),
+    }
+    return .{ .done = n };
+}
+
+~borrow(n: 3)
+! lend _ => granted &global_r
+| done _ |> _

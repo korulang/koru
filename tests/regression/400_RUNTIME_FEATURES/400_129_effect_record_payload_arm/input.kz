@@ -1,0 +1,22 @@
+// A resume arm may carry a RECORD payload: the synthesized union field is an
+// inline struct (`result: struct { halved: i32, quadrupled: i64 }`) and the
+// handler constructs it with the ordinary branch-ctor field form
+// (`=> result { halved: ..., quadrupled: ... }`). The proc consumes it like
+// any tagged union — switch, then field access. Scalar-arm sibling: 400_114.
+~import std/io
+
+~pub event request { payload: i32 }
+! ask i32 | result { halved: i32, quadrupled: i64 } | timeout
+| done i64
+
+~proc request|zig {
+    const r = ask(payload);
+    return switch (r) {
+        .result => |v| .{ .done = v.quadrupled + v.halved },
+        .timeout => .{ .done = -1 },
+    };
+}
+
+~request(payload: 20)
+! ask n => result { halved: @divTrunc(n, 2), quadrupled: @as(i64, n) * 4 }
+| done r |> std/io:print.ln("{{ r:d }}")

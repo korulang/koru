@@ -73,6 +73,37 @@ Default omitted resume is `-> void`.
 
 Optional effect branches can also carry resume types: `! ?prompt []const u8 -> []const u8` is an effect branch the consumer may skip; when handled, it resumes with the supplied value; when unhandled, the call is a no-op AND the producer-side resume is the default-of-resume-type (e.g., `""` for `[]const u8`, `0` for numeric, `void` for void). Whether default-of-type is acceptable here or whether unhandled optional with a non-void resume should be a compile error is an open question.
 
+### Multi-arm resume sums
+
+The resume generalizes from a single anonymous `-> T` to a flat SUM of named
+arms. `|` arms attached to a `!` — indented exactly one level under it
+(210_092), or riding the `!` line (210_093) — are that effect's resume sum;
+`|` arms at the event's base indent remain terminals. Both spellings collapse
+to the same AST.
+
+```
+~pub event request { payload: i32 }
+! ask i32
+    | halved i32
+    | timeout
+| done i32
+```
+
+- The handler resumes by SELECTING an arm with `=>`: `! ask n => halved @divTrunc(n, 2)`
+  (400_114). A payload-less arm is its bare tag: `=> timeout`.
+- The proc consumes the resume as a TAGGED UNION — `const r = ask(payload)`
+  binds the synthesized `union(enum) { halved: i32, timeout: void }` and
+  dispatches with an ordinary Zig `switch`.
+- Glyph discipline holds in both directions: `->` on an arms-effect is
+  rejected (KORU102, 400_125); `=>` on a single-`-> T` effect is rejected
+  (KORU102, 400_122); an unknown arm name is rejected (KORU021, 400_126).
+- `-> T` and arms are mutually exclusive on one `!` (210_135); arms align at
+  exactly one level (210_134); `!` never nests — the sum is flat (210_136).
+- Obligations ride per arm with the same directionality as the single resume:
+  an arm may DISCHARGE (`| granted *R<!active>`, 400_127) but never ISSUE
+  (`| granted *R<active!>` → KORU027, 400_124), because a `!` arm fires
+  0-to-N times.
+
 ### Glyph choice — why `!`
 
 `!` is already Koru's effect-tag in `<state!>` (creates obligation) and `<!state>` (discharges obligation). Promoting it to a branch-dispatch position for "this branch is an effect operation" makes `!` a unifying mark across the type system: same glyph for *type system has something effect-shaped to track here*, whether it's lifecycle-effect (obligation) or control-flow-effect (yield). The position-based disambiguation (`!` inside `<...>` vs `!` at branch-line-start) is straightforward for both parser and reader.

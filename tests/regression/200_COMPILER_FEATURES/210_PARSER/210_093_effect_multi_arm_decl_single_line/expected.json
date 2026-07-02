@@ -1,0 +1,261 @@
+{
+    "module_annotations": [
+
+    ],
+    "items": [
+        {
+            "type": "import_decl",
+            "path": "std/compiler",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_093_effect_multi_arm_decl_single_line/input.kz",
+                "line": 2,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_093_effect_multi_arm_decl_single_line/input.kz",
+                "line": 2,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_093_effect_multi_arm_decl_single_line/input.kz",
+                "line": 3,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_093_effect_multi_arm_decl_single_line/input.kz",
+                "line": 4,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_093_effect_multi_arm_decl_single_line/input.kz",
+                "line": 5,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_093_effect_multi_arm_decl_single_line/input.kz",
+                "line": 6,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_093_effect_multi_arm_decl_single_line/input.kz",
+                "line": 7,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_093_effect_multi_arm_decl_single_line/input.kz",
+                "line": 8,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_093_effect_multi_arm_decl_single_line/input.kz",
+                "line": 9,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_093_effect_multi_arm_decl_single_line/input.kz",
+                "line": 10,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_093_effect_multi_arm_decl_single_line/input.kz",
+                "line": 11,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_093_effect_multi_arm_decl_single_line/input.kz",
+                "line": 12,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_093_effect_multi_arm_decl_single_line/input.kz",
+                "line": 13,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_093_effect_multi_arm_decl_single_line/input.kz",
+                "line": 14,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_093_effect_multi_arm_decl_single_line/input.kz",
+                "line": 15,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_093_effect_multi_arm_decl_single_line/input.kz",
+                "line": 16,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_093_effect_multi_arm_decl_single_line/input.kz",
+                "line": 17,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_093_effect_multi_arm_decl_single_line/input.kz",
+                "line": 18,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_093_effect_multi_arm_decl_single_line/input.kz",
+                "line": 19,
+                "col": 0
+            }
+        },
+        {
+            "type": "event_decl",
+            "name": "request",
+            "path": ["request"],
+            "module": "input",
+            "input": {
+                "fields": [
+                    {
+                        "name": "payload",
+                        "type": "i32",
+                        "is_source": false,
+                        "is_file": false,
+                        "is_embed_file": false,
+                        "is_expression": false,
+                        "is_invocation_meta": false,
+                        "phantom": null
+                    }
+                ]
+            },
+            "branches": [
+                {
+                    "name": "ask",
+                    "kind": "effect",
+                    "resume": null,
+                    "resume_phantom": null,
+                    "resume_arms": [
+                        {
+                            "name": "halved",
+                            "type": "i32",
+                            "phantom": null
+                        },
+                        {
+                            "name": "timeout",
+                            "type": null,
+                            "phantom": null
+                        }
+                    ],
+                    "is_optional": false,
+                    "is_panic": false,
+                    "payload": {
+                        "fields": [
+                            {
+                                "name": "__type_ref",
+                                "type": "i32",
+                                "is_source": false,
+                                "is_file": false,
+                                "is_embed_file": false,
+                                "is_expression": false,
+                                "is_invocation_meta": false,
+                                "phantom": null
+                            }
+                        ]
+                    }
+                },
+                {
+                    "name": "done",
+                    "kind": "terminal",
+                    "resume": null,
+                    "resume_phantom": null,
+                    "is_optional": false,
+                    "is_panic": false,
+                    "payload": {
+                        "fields": [
+                            {
+                                "name": "__type_ref",
+                                "type": "i32",
+                                "is_source": false,
+                                "is_file": false,
+                                "is_embed_file": false,
+                                "is_expression": false,
+                                "is_invocation_meta": false,
+                                "phantom": null
+                            }
+                        ]
+                    }
+                }
+            ],
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_093_effect_multi_arm_decl_single_line/input.kz",
+                "line": 23,
+                "col": 0
+            }
+        }
+    ]
+}

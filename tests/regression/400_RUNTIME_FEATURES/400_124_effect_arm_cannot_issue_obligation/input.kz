@@ -1,0 +1,24 @@
+// Per-arm obligation rule (the multi-arm sibling of 400_107): each resume arm
+// IS a resume, so an arm that ISSUES an obligation (`| granted *R<active!>`)
+// would hand the proc a fresh obligation per firing that escapes the firing
+// un-discharged — incoherent at 0-to-N firing. Rejected at the SIGNATURE
+// level, per arm, without inspecting any body. Arm-DISCHARGE (`<!state>`)
+// stays coherent, mirroring 400_106.
+const std = @import("std");
+const Resource = struct { id: usize };
+var global_r = Resource{ .id = 99 };
+
+~pub event borrow { n: usize }
+! lend usize
+    | granted *Resource<active!>
+    | denied
+| done usize
+~proc borrow|zig {
+    const r = lend(n);
+    _ = r;
+    return .{ .done = n };
+}
+
+~borrow(n: 1)
+! lend _ => denied
+| done d |> _

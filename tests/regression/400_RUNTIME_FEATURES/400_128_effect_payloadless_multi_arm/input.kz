@@ -1,0 +1,23 @@
+// Payload-less effect with a multi-arm resume sum: the yield carries nothing,
+// the resume selects an arm. Emptiness is spelled by OMISSION (`! ask | ...`),
+// consistent with `! pong` (void effect), `| timeout` (void arm), `| done`
+// (void terminal) — never with a `()` unit token (rejected, 210_137). The
+// unit appears only on the VALUE side: the proc calls `ask()` positionally,
+// and the handler binds nothing (`! ask => halved 7`).
+~import std/io
+
+~pub event request { payload: i32 }
+! ask | halved i32 | timeout
+| done i32
+
+~proc request|zig {
+    const r = ask();
+    return switch (r) {
+        .halved => |v| .{ .done = v },
+        .timeout => .{ .done = -1 },
+    };
+}
+
+~request(payload: 20)
+! ask => halved 7
+| done r |> std/io:print.ln("{{ r:d }}")
