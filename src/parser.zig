@@ -1805,7 +1805,13 @@ pub const Parser = struct {
             // Capture the branch's line BEFORE parseBranch advances self.current,
             // so the KORU023 error points at the offending branch line.
             const branch_line = self.current + 1;
-            const branch = try self.parseBranch();
+            var branch = try self.parseBranch();
+
+            // Indented `|` lines under a `!` are its resume-arm sum (210_092);
+            // base-indent `|` lines fall through as terminal siblings.
+            if (branch.kind == .effect) {
+                try self.collectIndentedResumeArms(&branch, lexer.getIndent(self.lines[branch_line - 1]));
+            }
 
             // Ordering rule: effect `!` branches must precede terminal `|` branches.
             if (branch.kind == .effect and seen_terminal_branch) {
@@ -2034,7 +2040,13 @@ pub const Parser = struct {
             if (!lexer.isBranchContinuation(next_line)) break;
 
             const branch_line = self.current + 1;
-            const branch = try self.parseBranch();
+            var branch = try self.parseBranch();
+
+            // Indented `|` lines under a `!` are its resume-arm sum (210_092);
+            // base-indent `|` lines fall through as terminal siblings.
+            if (branch.kind == .effect) {
+                try self.collectIndentedResumeArms(&branch, lexer.getIndent(self.lines[branch_line - 1]));
+            }
 
             // Ordering rule: effect `!` branches must precede terminal `|` branches.
             if (branch.kind == .effect and seen_terminal_branch_v2) {
@@ -7589,6 +7601,29 @@ pub const Parser = struct {
                 return error.ParseError;
             }
         }
+
+        // Resume arms: each arm IS a resume, so the same issue-forbidden rule
+        // applies per arm (discharge `<!state>` stays legal per arm, like 400_106).
+        if (branch.resume_arms) |arms| {
+            for (arms) |*arm| {
+                if (arm.phantom) |raw| {
+                    const ap = lexer.trim(raw);
+                    if (ap.len > 0 and ap[ap.len - 1] == '!') {
+                        const col = self.columnOfInLine(branch_line, ap);
+                        try self.reporter.addErrorWithHint(
+                            .KORU027,
+                            branch_line,
+                            col,
+                            "resume arm '{s}' cannot issue an obligation",
+                            .{arm.name},
+                            "a `!` effect branch fires 0-to-N times, so resuming `<{s}>` (issue) would let the obligation escape un-discharged — drop the trailing `!`, or discharge in-scope with `<!{s}>`",
+                            .{ ap, ap[0 .. ap.len - 1] },
+                        );
+                        return error.ParseError;
+                    }
+                }
+            }
+        }
     }
 
     /// Locate the 1-based column of `needle` on the given 1-based source line,
@@ -7598,6 +7633,237 @@ pub const Parser = struct {
         const line_text = self.lines[line_1based - 1];
         if (std.mem.indexOf(u8, line_text, needle)) |idx| return idx + 1;
         return 1;
+    }
+
+    /// Find the first `|` at bracket depth 0 in a decl-branch line body, or null.
+    /// Used to split same-line resume arms off an effect branch head
+    /// (`ask i32 | halved i32 | timeout` → split at the first `|`).
+    /// The `>` of a `->` arrow is NOT a closing angle bracket — skip it so a
+    /// head like `ask i32 -> i32 | ...` still splits (and then gets rejected
+    /// by the both-forms check, with the right error).
+    fn findDepth0Pipe(content: []const u8) ?usize {
+        var depth: i32 = 0;
+        for (content, 0..) |c, idx| {
+            if (c == '[' or c == '{' or c == '(' or c == '<') {
+                depth += 1;
+            } else if (c == '>' and idx > 0 and content[idx - 1] == '-') {
+                // `->` arrow, not a bracket
+            } else if (c == ']' or c == '}' or c == ')' or c == '>') {
+                depth -= 1;
+            } else if (depth == 0 and c == '|') {
+                return idx;
+            }
+        }
+        return null;
+    }
+
+    /// Strip a trailing `<...>` phantom from a type string. Returns the type
+    /// without the phantom; writes the phantom content (if any) to `phantom_out`.
+    /// Same angle-scan as branch payloads and `-> T` resume types.
+    fn splitTrailingPhantom(type_str: []const u8, phantom_out: *?[]const u8) []const u8 {
+        phantom_out.* = null;
+        if (type_str.len == 0 or type_str[type_str.len - 1] != '>') return type_str;
+        var angle_depth: i32 = 0;
+        var j: usize = type_str.len - 1;
+        const end_pos = j;
+        var start_pos: ?usize = null;
+        while (j > 0) : (j -= 1) {
+            if (type_str[j] == '>') {
+                angle_depth += 1;
+            } else if (type_str[j] == '<') {
+                angle_depth -= 1;
+                if (angle_depth == 0) {
+                    start_pos = j;
+                    break;
+                }
+            }
+        }
+        if (start_pos) |start| {
+            if (start > 0) {
+                const content = type_str[start + 1 .. end_pos];
+                if (content.len > 0) {
+                    phantom_out.* = content;
+                    return lexer.trim(type_str[0..start]);
+                }
+            }
+        }
+        return type_str;
+    }
+
+    /// Parse one resume arm: `name`, `name Type`, or `name Type<phantom>`.
+    fn parseResumeArm(self: *Parser, content: []const u8, line_index: usize) !ast.ResumeArm {
+        const trimmed = lexer.trim(content);
+        if (trimmed.len == 0) {
+            try self.reporter.addError(
+                .PARSE003,
+                line_index + 1,
+                1,
+                "empty resume arm - expected 'name' or 'name Type' after '|'",
+                .{},
+            );
+            return error.ParseError;
+        }
+        if (std.mem.indexOf(u8, trimmed, "->") != null) {
+            try self.reporter.addError(
+                .PARSE003,
+                line_index + 1,
+                1,
+                "'->' is not allowed in a resume arm - the arm's type IS what the handler resumes with",
+                .{},
+            );
+            return error.ParseError;
+        }
+
+        // Arm name: first whitespace-delimited token. `-` is kebab word-glue,
+        // same as branch names.
+        var name_end: usize = 0;
+        while (name_end < trimmed.len and trimmed[name_end] != ' ' and trimmed[name_end] != '\t') : (name_end += 1) {}
+        const arm_name = trimmed[0..name_end];
+        try self.rejectSnakeName(arm_name, line_index, "resume arm");
+
+        var phantom_src: ?[]const u8 = null;
+        const type_src = splitTrailingPhantom(lexer.trim(trimmed[name_end..]), &phantom_src);
+
+        // Same wall as branch payloads: `()` is not a type; a payload-less
+        // arm is spelled by omission (`| timeout`).
+        if (std.mem.eql(u8, type_src, "()")) {
+            try self.reporter.addError(
+                .PARSE003,
+                line_index + 1,
+                1,
+                "'()' is not a payload type - a payload-less resume arm is spelled by omission (write `| {s}`)",
+                .{arm_name},
+            );
+            return error.ParseError;
+        }
+
+        return ast.ResumeArm{
+            .name = try self.allocator.dupe(u8, arm_name),
+            .type = if (type_src.len > 0) try self.allocator.dupe(u8, type_src) else null,
+            .phantom = if (phantom_src) |p| try self.allocator.dupe(u8, p) else null,
+        };
+    }
+
+    /// Parse a same-line resume-arm tail: `| halved i32 | timeout` (leading `|`
+    /// included). Segments are split on depth-0 `|`.
+    fn parseResumeArmList(self: *Parser, arms_src: []const u8, line_index: usize) ![]const ast.ResumeArm {
+        var arms = try std.ArrayList(ast.ResumeArm).initCapacity(self.allocator, 2);
+        errdefer {
+            for (arms.items) |*arm| arm.deinit(self.allocator);
+            arms.deinit(self.allocator);
+        }
+
+        var rest = arms_src;
+        while (rest.len > 0) {
+            std.debug.assert(rest[0] == '|');
+            const body = rest[1..];
+            const next_pipe = findDepth0Pipe(body);
+            const segment = if (next_pipe) |np| body[0..np] else body;
+            rest = if (next_pipe) |np| body[np..] else "";
+            try arms.append(self.allocator, try self.parseResumeArm(segment, line_index));
+        }
+
+        try self.rejectDuplicateResumeArms(arms.items, line_index);
+        return try arms.toOwnedSlice(self.allocator);
+    }
+
+    fn rejectDuplicateResumeArms(self: *Parser, arms: []const ast.ResumeArm, line_index: usize) !void {
+        for (arms, 0..) |*arm, i| {
+            for (arms[0..i]) |*earlier| {
+                if (std.mem.eql(u8, earlier.name, arm.name)) {
+                    try self.reporter.addError(
+                        .PARSE003,
+                        line_index + 1,
+                        1,
+                        "duplicate resume arm name '{s}'",
+                        .{arm.name},
+                    );
+                    return error.ParseError;
+                }
+            }
+        }
+    }
+
+    /// Multi-arm resume sum, indented form (210_092): `|` lines indented under
+    /// a `!` decl line are that effect's resume arms — exactly ONE level in,
+    /// all aligned. Base-indent `|` lines remain the event's terminal branches.
+    /// Called from the decl-branch collection loops right after parseBranch
+    /// returns an effect branch; consumes the arm lines.
+    fn collectIndentedResumeArms(self: *Parser, branch: *ast.Branch, effect_indent: usize) !void {
+        var arms = try std.ArrayList(ast.ResumeArm).initCapacity(self.allocator, 2);
+        errdefer {
+            for (arms.items) |*arm| arm.deinit(self.allocator);
+            arms.deinit(self.allocator);
+        }
+
+        var arm_indent: ?usize = null;
+        while (self.current < self.lines.len) {
+            const line = self.lines[self.current];
+            if (!lexer.isBranchContinuation(line)) break;
+            const indent = lexer.getIndent(line);
+            if (indent <= effect_indent) break; // base-indent sibling branch
+
+            const line_trimmed = lexer.trim(line);
+            if (line_trimmed[0] == '!') {
+                try self.reporter.addError(
+                    .PARSE003,
+                    self.current + 1,
+                    1,
+                    "effect branches never nest - composition lives in the '|' resume arms",
+                    .{},
+                );
+                return error.ParseError;
+            }
+            if (arm_indent) |ai| {
+                if (indent != ai) {
+                    try self.reporter.addError(
+                        .PARSE003,
+                        self.current + 1,
+                        1,
+                        "resume arms must align at exactly one level under their effect branch",
+                        .{},
+                    );
+                    return error.ParseError;
+                }
+            } else {
+                arm_indent = indent;
+            }
+
+            var content = lexer.trim(line_trimmed[1..]);
+            if (std.mem.indexOf(u8, content, "//")) |comment_idx| {
+                content = lexer.trim(content[0..comment_idx]);
+            }
+            try arms.append(self.allocator, try self.parseResumeArm(content, self.current));
+            self.current += 1;
+        }
+
+        if (arms.items.len == 0) return;
+
+        if (branch.resume_type != null) {
+            try self.reporter.addError(
+                .PARSE003,
+                self.current,
+                1,
+                "effect branch cannot declare both a '-> T' resume and named resume arms - the arms are the resume",
+                .{},
+            );
+            return error.ParseError;
+        }
+
+        // Merge with any same-line arms (mixed spelling is legal: arms riding
+        // the `!` line plus indented continuation arms are one flat sum).
+        if (branch.resume_arms) |existing| {
+            var merged = try std.ArrayList(ast.ResumeArm).initCapacity(self.allocator, existing.len + arms.items.len);
+            errdefer merged.deinit(self.allocator);
+            try merged.appendSlice(self.allocator, existing);
+            try merged.appendSlice(self.allocator, arms.items);
+            arms.clearRetainingCapacity();
+            self.allocator.free(@constCast(existing));
+            branch.resume_arms = try merged.toOwnedSlice(self.allocator);
+        } else {
+            branch.resume_arms = try arms.toOwnedSlice(self.allocator);
+        }
+        try self.rejectDuplicateResumeArms(branch.resume_arms.?, self.current);
     }
 
     fn parseBranch(self: *Parser) !ast.Branch {
@@ -7689,6 +7955,29 @@ pub const Parser = struct {
             branch_start = lexer.trim(branch_start[0..comment_idx]);
         }
 
+        // Multi-arm resume sum, single-line form (210_093):
+        //     ! ask i32 | halved i32 | timeout
+        // `|` segments riding the `!` line at depth 0 are the effect's resume
+        // arms. Split them off BEFORE resume-type/payload scanning so the head
+        // parses exactly like a plain effect branch. Only effect branches carry
+        // arms; a depth-0 `|` on a terminal decl line never occurs (terminal
+        // branches are one per line by construction).
+        var resume_arms: ?[]const ast.ResumeArm = null;
+        errdefer if (resume_arms) |arms| {
+            for (arms) |*arm| {
+                var mutable_arm = arm.*;
+                mutable_arm.deinit(self.allocator);
+            }
+            self.allocator.free(@constCast(arms));
+        };
+        if (branch_kind == .effect) {
+            if (findDepth0Pipe(branch_start)) |split_idx| {
+                const arms_src = branch_start[split_idx..];
+                branch_start = lexer.trim(branch_start[0..split_idx]);
+                resume_arms = try self.parseResumeArmList(arms_src, self.current - 1);
+            }
+        }
+
         // Detect resume type: `-> ResumeT` suffix on effect branches.
         // Scan at bracket/brace depth 0 so we don't trip on `->` inside a struct
         // payload `{ ... }` or a phantom-state `[...]`.
@@ -7758,6 +8047,19 @@ pub const Parser = struct {
             }
         }
 
+        // An effect's resume is EITHER a single anonymous `-> T` OR a named
+        // sum of arms — never both (the arms ARE the resume).
+        if (resume_type != null and resume_arms != null) {
+            try self.reporter.addError(
+                .PARSE003,
+                self.current - 1,
+                1,
+                "effect branch cannot declare both a '-> T' resume and named resume arms - the arms are the resume",
+                .{},
+            );
+            return error.ParseError;
+        }
+
         // Check for struct shape { ... } vs identity type
         const brace_idx = std.mem.indexOf(u8, branch_start, "{");
 
@@ -7823,6 +8125,22 @@ pub const Parser = struct {
             // Rest is the type, possibly with [annotation]
             const type_and_annotation = lexer.trim(after_name);
 
+            // `()` is not a type — an empty payload is spelled by OMISSION
+            // (`! ask`, `| done`). The unit exists only on the value side
+            // (the proc calls `ask()` positionally). Rejected here so the
+            // ML/Rust unit instinct gets a guiding koru-level diagnostic
+            // instead of a misleading KORU030 three stages later.
+            if (std.mem.eql(u8, type_and_annotation, "()")) {
+                try self.reporter.addError(
+                    .PARSE003,
+                    self.current,
+                    1,
+                    "'()' is not a payload type - an empty payload is spelled by omission (write `! {s}`; resume arms may follow: `! {s} | ok i32 | fail`)",
+                    .{ branch_name, branch_name },
+                );
+                return error.ParseError;
+            }
+
             // Check if this is an empty payload (just branch name, no type)
             if (type_and_annotation.len == 0) {
                 // Empty payload - like | done
@@ -7835,6 +8153,7 @@ pub const Parser = struct {
                     .kind = branch_kind,
                     .resume_type = resume_type,
                     .resume_phantom = resume_phantom,
+                    .resume_arms = resume_arms,
                     .annotations = try annotations.toOwnedSlice(self.allocator),
                 };
             }
@@ -7855,6 +8174,7 @@ pub const Parser = struct {
                     .kind = branch_kind,
                     .resume_type = resume_type,
                     .resume_phantom = resume_phantom,
+                    .resume_arms = resume_arms,
                     .annotations = try annotations.toOwnedSlice(self.allocator),
                 };
             }
@@ -7961,6 +8281,7 @@ pub const Parser = struct {
                 .kind = branch_kind,
                 .resume_type = resume_type,
                 .resume_phantom = resume_phantom,
+                .resume_arms = resume_arms,
                 .annotations = try annotations.toOwnedSlice(self.allocator),
             };
         }
@@ -8084,6 +8405,7 @@ pub const Parser = struct {
             .kind = branch_kind,
             .resume_type = resume_type,
             .resume_phantom = resume_phantom,
+            .resume_arms = resume_arms,
             .annotations = try annotations.toOwnedSlice(self.allocator),
         };
     }

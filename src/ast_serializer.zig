@@ -1521,6 +1521,38 @@ pub const AstSerializer = struct {
         try self.write(",\n");
 
         try self.writeIndent();
+        try self.write(".resume_arms = ");
+        if (branch.resume_arms) |arms| {
+            try self.write("&.{ ");
+            for (arms, 0..) |*arm, i| {
+                if (i > 0) try self.write(", ");
+                try self.write(".{ .name = ");
+                try self.writeString(arm.name);
+                try self.write(", .type = ");
+                if (arm.type) |t| {
+                    try self.write("\"");
+                    try self.write(t);
+                    try self.write("\"");
+                } else {
+                    try self.write("null");
+                }
+                try self.write(", .phantom = ");
+                if (arm.phantom) |p| {
+                    try self.write("\"");
+                    try self.write(p);
+                    try self.write("\"");
+                } else {
+                    try self.write("null");
+                }
+                try self.write(" }");
+            }
+            try self.write(" }");
+        } else {
+            try self.write("null");
+        }
+        try self.write(",\n");
+
+        try self.writeIndent();
         try self.write(".annotations = &.{");
         for (branch.annotations, 0..) |ann, i| {
             if (i > 0) try self.write(", ");
@@ -2748,6 +2780,51 @@ pub const AstSerializer = struct {
             try self.write("null");
         }
         try self.write(",\n");
+
+        // Emitted only on multi-arm effects — omitted (not null) elsewhere, so
+        // single-resume and terminal-branch snapshots stay untouched.
+        if (branch.resume_arms) |arms| {
+            try self.writeIndent();
+            try self.write("\"resume_arms\": [\n");
+            self.indent();
+            for (arms, 0..) |*arm, i| {
+                if (i > 0) try self.write(",\n");
+                try self.writeIndent();
+                try self.write("{\n");
+                self.indent();
+
+                try self.writeIndent();
+                try self.write("\"name\": ");
+                try self.writeString(arm.name);
+                try self.write(",\n");
+
+                try self.writeIndent();
+                try self.write("\"type\": ");
+                if (arm.type) |t| {
+                    try self.writeString(t);
+                } else {
+                    try self.write("null");
+                }
+                try self.write(",\n");
+
+                try self.writeIndent();
+                try self.write("\"phantom\": ");
+                if (arm.phantom) |p| {
+                    try self.writeString(p);
+                } else {
+                    try self.write("null");
+                }
+                try self.write("\n");
+
+                self.dedent();
+                try self.writeIndent();
+                try self.write("}");
+            }
+            try self.write("\n");
+            self.dedent();
+            try self.writeIndent();
+            try self.write("],\n");
+        }
 
         try self.writeIndent();
         try self.write("\"is_optional\": ");

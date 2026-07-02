@@ -1,0 +1,23 @@
+// Multi-arm resume: the `=>` construct must name one of the DECLARED arms.
+// `tripled` is not in `ask`'s resume sum { halved, timeout }; without this
+// wall the unknown arm sails through to a raw Zig error in the emitted union
+// construction. The koru-level diagnostic lists the legal arms.
+~import std/io
+
+~pub event request { payload: i32 }
+! ask i32
+    | halved i32
+    | timeout
+| done i32
+
+~proc request|zig {
+    const r = ask(payload);
+    return switch (r) {
+        .halved => |v| .{ .done = v },
+        .timeout => .{ .done = -1 },
+    };
+}
+
+~request(payload: 20)
+! ask n => tripled n
+| done r |> std/io:print.ln("{{ r:d }}")

@@ -1425,14 +1425,32 @@ fn cloneBranch(allocator: std.mem.Allocator, branch: *const ast.Branch) !ast.Bra
         cloned_annotations[i] = try allocator.dupe(u8, annotation);
     }
 
+    // Clone resume arms (multi-arm resume sum)
+    var cloned_arms: ?[]const ast.ResumeArm = null;
+    if (branch.resume_arms) |arms| {
+        const out = try allocator.alloc(ast.ResumeArm, arms.len);
+        for (arms, 0..) |*arm, i| {
+            out[i] = .{
+                .name = try allocator.dupe(u8, arm.name),
+                .type = if (arm.type) |t| try allocator.dupe(u8, t) else null,
+                .phantom = if (arm.phantom) |p| try allocator.dupe(u8, p) else null,
+            };
+        }
+        cloned_arms = out;
+    }
+
     return .{
         .name = try allocator.dupe(u8, branch.name),
         .payload = try cloneShape(allocator, &branch.payload),
         .is_deferred = branch.is_deferred,
         .is_optional = branch.is_optional,
+        // is_panic must survive the clone — a dropped flag silently demotes a
+        // panic branch to a required one downstream.
+        .is_panic = branch.is_panic,
         .kind = branch.kind,
         .resume_type = if (branch.resume_type) |rt| try allocator.dupe(u8, rt) else null,
         .resume_phantom = if (branch.resume_phantom) |rp| try allocator.dupe(u8, rp) else null,
+        .resume_arms = cloned_arms,
         .annotations = cloned_annotations,
     };
 }

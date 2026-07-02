@@ -1,11 +1,11 @@
 {
   "subject": "koru",
-  "generated_at": "2026-06-29T21:02:38.659Z",
+  "generated_at": "2026-07-02T00:47:15.882Z",
   "scoreboard": {
-    "passed": 825,
-    "expected": 892,
-    "gap": 67,
-    "pass_rate": "92.5"
+    "passed": 839,
+    "expected": 905,
+    "gap": 66,
+    "pass_rate": "92.7"
   },
   "perf": {
     "promise_host": "at parity with the host language (Zig) — any gap is measurement noise",
@@ -4998,6 +4998,13 @@
           }
         ]
       }
+    },
+    {
+      "id": "commit_cadence",
+      "shape": "native",
+      "path": "models/commit_cadence/model.wmfx",
+      "pass": false,
+      "signals": []
     }
   ],
   "floats": [

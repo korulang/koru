@@ -974,6 +974,21 @@ pub const ShapeChecker = struct {
                     continue;
                 }
 
+                // Glyph discipline, produce side: `->` produces the single
+                // anonymous resume value. When the effect declares named resume
+                // ARMS, there is no anonymous value — the handler must SELECT
+                // an arm with `=>`. (Dual of the KORU102 below.)
+                if (step == .expression) {
+                    if (resolveDeclaredBranch(event_branches, cont.branch)) |b| {
+                        if (b.kind == .effect and b.resume_arms != null) {
+                            try self.reporter.addErrorAtLocation(.KORU102, cont.location,
+                                "`->` produces a single resume value, but '{s}' declares named resume arms — construct one with `=>` (e.g. `=> {s} ...`)",
+                                .{ cont.branch, b.resume_arms.?[0].name });
+                            continue;
+                        }
+                    }
+                }
+
                 // Branch constructors produce a single branch and don't need nested handling
                 if (step == .branch_constructor) {
                     // Glyph discipline: `=>` CONSTRUCTS a branch. It is illegal when
@@ -986,6 +1001,34 @@ pub const ShapeChecker = struct {
                                 "`=>` constructs a branch, but '{s}' is declared `-> {s}` (single payload, no branches) — use `->` to produce it",
                                 .{ cont.branch, rt });
                             continue;
+                        }
+                        // Multi-arm resume: the constructed name must be one of
+                        // the declared arms. Without this wall, an unknown arm
+                        // would sail through to a raw Zig error in the emitted
+                        // union construction.
+                        if (b.kind == .effect) {
+                            if (b.resume_arms) |arms| {
+                                const bc_name = step.branch_constructor.branch_name;
+                                const known = for (arms) |*arm| {
+                                    if (std.mem.eql(u8, arm.name, bc_name)) break true;
+                                } else false;
+                                if (!known) {
+                                    var arm_names = try std.ArrayList(u8).initCapacity(self.allocator, 64);
+                                    defer arm_names.deinit(self.allocator);
+                                    for (arms, 0..) |*arm, ai| {
+                                        if (ai > 0) try arm_names.appendSlice(self.allocator, ", ");
+                                        try arm_names.appendSlice(self.allocator, arm.name);
+                                    }
+                                    try self.reporter.addErrorAtLocation(.KORU021, cont.location,
+                                        "effect '{s}' has no resume arm '{s}' (arms: {s})",
+                                        .{ cont.branch, bc_name, arm_names.items });
+                                    has_errors = true;
+                                }
+                                // Arm constructs resolve against the effect's
+                                // resume sum, not the event's branch set — skip
+                                // the event-branch constructor validation.
+                                continue;
+                            }
                         }
                     }
                     // Validate the branch constructor

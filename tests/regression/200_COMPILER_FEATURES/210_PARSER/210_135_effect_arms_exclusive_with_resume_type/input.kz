@@ -1,0 +1,13 @@
+// An effect's resume is EITHER a single anonymous `-> T` OR a named sum of
+// arms — never both. The arms ARE the resume; a `-> T` alongside them has
+// nothing left to type. Sibling of the accept pins 210_092/093.
+~pub event request { payload: i32 }
+! ask i32 -> i32
+    | halved i32
+    | timeout
+| done i32
+
+~proc request|zig {
+    const r = ask(payload);
+    return .{ .done = r };
+}
