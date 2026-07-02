@@ -181,7 +181,7 @@ pub const PhantomSemanticChecker = struct {
             base_state = base_state[0 .. base_state.len - 1];
         }
 
-        // Search all events for [!state] parameters
+        // Search all events for <!state> parameters
         var iter = self.disposal_event_map.iterator();
         while (iter.next()) |entry| {
             const event_decl = entry.value_ptr.decl;
@@ -997,8 +997,8 @@ pub const PhantomSemanticChecker = struct {
             }
         }
 
-        for (flow.inv().args) |arg| {
-            const arg_valid = try self.validateArgument(arg, event_info.decl, module_name, &root_context, flow.location);
+        for (flow.inv().args, 0..) |arg, arg_idx| {
+            const arg_valid = try self.validateArgument(arg, arg_idx, event_info.decl, module_name, &root_context, flow.location);
             if (!arg_valid) {
                 has_errors = true;
             }
@@ -1374,6 +1374,17 @@ pub const PhantomSemanticChecker = struct {
         if (cont.node) |step| {
             if (step == .terminal or step == .branch_constructor) {
                 is_terminator = true;
+            } else if (step == .invocation and cont.continuations.len == 0) {
+                // Implicit exit: a pipeline ending on an invocation with no
+                // nested continuations leaves the flow here. The insertion
+                // side has always treated this as an implicit terminator
+                // (auto_discharge_inserter, "treat as implicit terminator");
+                // without the same rule on the ENFORCEMENT side, an
+                // obligation born in an effect-handler pipeline
+                // (`! each i |> std/field:new | field f |> print.ln(...)`)
+                // was never balance-checked, so --auto-discharge=disable and
+                // ~[strict] silently accepted the leak (400_137).
+                is_terminator = true;
             }
         }
         if (is_terminator) {
@@ -1662,7 +1673,7 @@ pub const PhantomSemanticChecker = struct {
                         }
 
                         if (disposal_events.items.len == 0) {
-                            // Strip ! suffix from display_state for the [!state] suggestion
+                            // Strip ! suffix from display_state for the <!state> suggestion
                             const state_without_bang = if (std.mem.endsWith(u8, display_state, "!"))
                                 display_state[0 .. display_state.len - 1]
                             else
@@ -1936,8 +1947,8 @@ pub const PhantomSemanticChecker = struct {
                 const target_decl = self.label_map.get(lj.label);
                 if (target_decl) |decl| {
                     // Validate jump arguments against target event's signature
-                    for (lj.args) |arg| {
-                        const arg_valid = try self.validateArgument(arg, decl, decl.module, context, location);
+                    for (lj.args, 0..) |arg, arg_idx| {
+                        const arg_valid = try self.validateArgument(arg, arg_idx, decl, decl.module, context, location);
                         if (!arg_valid) {
                             has_errors = true;
                         }
@@ -2221,8 +2232,8 @@ pub const PhantomSemanticChecker = struct {
         };
 
         // Validate each argument against event signature
-        for (inv.args) |arg| {
-            const arg_valid = try self.validateArgument(arg, event_info.decl, module_name, context, location);
+        for (inv.args, 0..) |arg, arg_idx| {
+            const arg_valid = try self.validateArgument(arg, arg_idx, event_info.decl, module_name, context, location);
             if (!arg_valid) {
                 has_errors = true;
             }
@@ -2283,16 +2294,32 @@ pub const PhantomSemanticChecker = struct {
     fn validateArgument(
         self: *PhantomSemanticChecker,
         arg: ast.Arg,
+        arg_idx: usize,
         event_decl: *const ast.EventDecl,
         event_module: ?[]const u8, // Qualified module name from event lookup
         context: *BindingContext,
         location: errors.SourceLocation,
     ) !bool {
-        // Find the field in event input - get both phantom AND base type
+        // Find the field in event input - get both phantom AND base type.
+        // A NAMED arg (`free(s: owned)`) carries the param name in arg.name; a
+        // POSITIONAL arg (`free(s1)`) carries the VALUE in both arg.name and
+        // arg.value, so it resolves by POSITION. Matching positional args by
+        // name silently missed the param — and its <!state> consumption —
+        // whenever the binding name differed from the param name (610_012's
+        // trap, fixed in auto_discharge_inserter 2026-06-12; this is the same
+        // fix on the enforcement side).
         var expected_phantom: ?[]const u8 = null;
         var expected_base_type_raw: ?[]const u8 = null;
         var expected_module_path: ?[]const u8 = null;
-        for (event_decl.input.fields) |field| {
+        const is_positional = std.mem.eql(u8, arg.name, arg.value);
+        if (is_positional) {
+            if (arg_idx < event_decl.input.fields.len) {
+                const field = event_decl.input.fields[arg_idx];
+                expected_phantom = field.phantom;
+                expected_base_type_raw = field.type;
+                expected_module_path = field.module_path;
+            }
+        } else for (event_decl.input.fields) |field| {
             if (std.mem.eql(u8, field.name, arg.name)) {
                 expected_phantom = field.phantom;
                 expected_base_type_raw = field.type;
@@ -2432,7 +2459,7 @@ pub const PhantomSemanticChecker = struct {
             // No matching binding found - this is an error if phantom state is required
             // Parse expected_phantom to check what kind of requirement it is:
             // - [state] (no !) = requirement - the value MUST be in this state
-            // - [!state] (prefix !) = consumption - consumes an existing obligation
+            // - <!state> (prefix !) = consumption - consumes an existing obligation
             // Both cases require the binding to be tracked with the correct state.
             var expected_parsed = try phantom_parser.PhantomState.parse(self.allocator, expected_phantom.?);
             defer expected_parsed.deinit(self.allocator);
@@ -2443,7 +2470,7 @@ pub const PhantomSemanticChecker = struct {
                     // Hints use the user-facing state spelling (e.g. `<owned!>`), never the
                     // internal canonicalized form (`input:owned`), which is not writable syntax.
                     if (concrete.consumes_obligation) {
-                        // [!state] - consumption - argument must carry the obligation to consume
+                        // <!state> - consumption - argument must carry the obligation to consume
                         try self.reporter.addError(
                             .KORU030,
                             location.line,

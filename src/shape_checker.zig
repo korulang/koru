@@ -27,6 +27,13 @@ pub const ShapeChecker = struct {
     /// Main module name from the program being checked (e.g. "test" for test.kz).
     /// Used to resolve unqualified event/proc references.
     main_module_name: []const u8 = "",
+
+    /// Subflow-implemented effects: when validating a flow that implements an
+    /// event (`impl_of` set), this holds the implemented event's declaration so
+    /// calls to its own effect arms — `ping = pong(x)`, `! each i |> each(i)` —
+    /// resolve as ARM-FIRES instead of unknown events. Firing is a call
+    /// (ruled 2026-07-02); only the declaring event's impl may fire its arms.
+    current_impl_event: ?*const ast.EventDecl = null,
     
     pub fn init(allocator: std.mem.Allocator, reporter: *errors.ErrorReporter) !ShapeChecker {
         return ShapeChecker{
@@ -507,12 +514,28 @@ pub const ShapeChecker = struct {
             });
         }
         
+        // Subflow-implemented effects: resolve the implemented event (if any)
+        // so arm-calls anywhere in this flow's body validate as arm-fires.
+        const saved_impl_event = self.current_impl_event;
+        self.current_impl_event = blk: {
+            const impl_path = flow.impl_of orelse break :blk null;
+            const impl_info = (try self.lookupEventInfo(impl_path)) orelse break :blk null;
+            break :blk impl_info.decl;
+        };
+        defer self.current_impl_event = saved_impl_event;
+
         // Get the event being invoked
         const event_name = try self.pathToString(flow.inv().path);
         defer self.allocator.free(event_name);  // Free temp string after lookup
 
         const final_event_info = try self.lookupEventInfo(flow.inv().path) orelse {
             log.debug("ERROR: Unknown event '{s}'\n", .{event_name});
+            // Inside the declaring event's impl, the event's own effect arms
+            // are callable — the impl head `ping = pong(x)` FIRES the arm.
+            if (self.armOfImplEvent(flow.inv().path)) |arm| {
+                try self.validateArmFire(arm, flow.inv(), flow.body.continuations, location);
+                return;
+            }
             // Check if it's a subflow implementation
             if (self.impl_flows.get(event_name)) |impl_flow_info| {
                 // Implementation exists - it implements this event
@@ -541,7 +564,21 @@ pub const ShapeChecker = struct {
                 }
                 return;
             }
-            // Unknown event
+            // Unknown event. Pit-of-success wall: if the name matches an
+            // effect arm of a declared event, the user tried to fire an arm
+            // from OUTSIDE that event's impl — say so instead of leaving them
+            // with a bare "unknown event".
+            if (self.findEventOwningEffectArm(flow.inv().path)) |owner| {
+                const owner_name = try self.pathToString(owner.path);
+                defer self.allocator.free(owner_name);
+                try self.reporter.addErrorAtLocation(
+                    .KORU040,
+                    location,
+                    "'{s}' is an effect arm of event '{s}' — only that event's own implementation may fire it",
+                    .{ flow.inv().path.segments[flow.inv().path.segments.len - 1], owner_name },
+                );
+                return error.UnknownEvent;
+            }
             try self.reporter.addErrorAtLocation(
                 .KORU040,
                 location,
@@ -729,6 +766,122 @@ pub const ShapeChecker = struct {
         // Taps can observe only the branches they care about
     }
     
+    /// If `path` names an effect arm of the event currently being implemented
+    /// (single segment, module qualifier absent or matching the event's own),
+    /// return that arm. Non-impl flows have no current_impl_event, so arm
+    /// names never resolve outside the declaring event's implementation.
+    fn armOfImplEvent(self: *ShapeChecker, path: ast.DottedPath) ?*const ast.Branch {
+        const impl_ev = self.current_impl_event orelse return null;
+        if (path.segments.len != 1) return null;
+        if (path.module_qualifier) |mq| {
+            const emq = impl_ev.path.module_qualifier orelse return null;
+            if (!std.mem.eql(u8, mq, emq)) return null;
+        }
+        for (impl_ev.branches) |*b| {
+            if (b.kind == .effect and std.mem.eql(u8, b.name, path.segments[0])) return b;
+        }
+        return null;
+    }
+
+    /// Find a declared event owning an effect arm named by `path`'s last
+    /// segment. Diagnostic aid only: when an arm is called outside its
+    /// event's impl, the error can name the owner instead of "unknown event".
+    fn findEventOwningEffectArm(self: *ShapeChecker, path: ast.DottedPath) ?*const ast.EventDecl {
+        if (path.segments.len != 1) return null;
+        const name = path.segments[0];
+        var it = self.events.iterator();
+        while (it.next()) |entry| {
+            for (entry.value_ptr.decl.branches) |*b| {
+                if (b.kind == .effect and std.mem.eql(u8, b.name, name)) return entry.value_ptr.decl;
+            }
+        }
+        return null;
+    }
+
+    /// Validate an arm-fire: a call to one of the implemented event's own
+    /// effect arms from inside its impl subflow. The consuming shape is fixed
+    /// by the arm's declaration (mirroring what the proc side gets from Zig):
+    ///   - void arm      → bare call; nothing to bind, no branches to handle
+    ///   - `-> T` resume → call-site `:` bind, then ordinary continuation
+    ///   - multi-arm sum → `|` branches at the firing site, ALL arms handled
+    ///     (the proc side gets this exhaustiveness from Zig's switch)
+    fn validateArmFire(
+        self: *ShapeChecker,
+        arm: *const ast.Branch,
+        inv: *const ast.Invocation,
+        continuations: []const ast.Continuation,
+        location: errors.SourceLocation,
+    ) anyerror!void {
+        if (arm.resume_arms) |arms| {
+            if (inv.return_binding != null) {
+                try self.reporter.addErrorAtLocation(.KORU102, location,
+                    "effect '{s}' resumes with named arms — handle them as `|` branches at the firing site, not a `:` bind",
+                    .{arm.name});
+                return error.ValidationFailed;
+            }
+            var has_errors = false;
+            for (continuations) |*cont| {
+                if (cont.branch.len == 0) continue;
+                const known = for (arms) |*ra| {
+                    if (std.mem.eql(u8, ra.name, cont.branch)) break true;
+                } else false;
+                if (!known) {
+                    var arm_names = try std.ArrayList(u8).initCapacity(self.allocator, 64);
+                    defer arm_names.deinit(self.allocator);
+                    for (arms, 0..) |*ra, ai| {
+                        if (ai > 0) try arm_names.appendSlice(self.allocator, ", ");
+                        try arm_names.appendSlice(self.allocator, ra.name);
+                    }
+                    try self.reporter.addErrorAtLocation(.KORU021, cont.location,
+                        "effect '{s}' has no resume arm '{s}' (arms: {s})",
+                        .{ arm.name, cont.branch, arm_names.items });
+                    has_errors = true;
+                }
+            }
+            for (arms) |*ra| {
+                const handled = for (continuations) |*cont| {
+                    if (std.mem.eql(u8, cont.branch, ra.name)) break true;
+                } else false;
+                if (!handled) {
+                    try self.reporter.addErrorAtLocation(.KORU022, location,
+                        "resume arm '{s}' of effect '{s}' must be handled at the firing site",
+                        .{ ra.name, arm.name });
+                    has_errors = true;
+                }
+            }
+            if (has_errors) return error.ValidationFailed;
+            _ = try self.validateNestedContinuations(continuations, location);
+            return;
+        }
+        if (arm.resume_type) |rt| {
+            for (continuations) |*cont| {
+                if (cont.branch.len != 0) {
+                    try self.reporter.addErrorAtLocation(.KORU102, cont.location,
+                        "effect '{s}' is declared `-> {s}` (single payload, no arms) — bind it at the call site (`{s}(...): name`)",
+                        .{ arm.name, rt, arm.name });
+                    return error.ValidationFailed;
+                }
+            }
+            _ = try self.validateNestedContinuations(continuations, location);
+            return;
+        }
+        // Void arm: fire-and-continue, nothing comes back.
+        if (inv.return_binding != null) {
+            try self.reporter.addErrorAtLocation(.KORU102, location,
+                "effect '{s}' carries no resume value — remove the `:` bind", .{arm.name});
+            return error.ValidationFailed;
+        }
+        for (continuations) |*cont| {
+            if (cont.branch.len != 0) {
+                try self.reporter.addErrorAtLocation(.KORU021, cont.location,
+                    "effect '{s}' carries no resume value — there are no branches to handle at the firing site",
+                    .{arm.name});
+                return error.ValidationFailed;
+            }
+        }
+        _ = try self.validateNestedContinuations(continuations, location);
+    }
+
     /// Resolve a handled continuation branch name against declared event
     /// branches: exact name first, then a declared raw-name CLASS branch
     /// (literally named `*`, spelled `| \`*\` *` in the decl) catches any
@@ -1056,8 +1209,27 @@ pub const ShapeChecker = struct {
                     // main-module events (including a flow calling ITSELF —
                     // value recursion) match the "main_module:name" key.
                     const nested_event_info = (try self.lookupEventInfo(step.invocation.path)) orelse {
-                        // Unknown event in pipeline - must fail!
+                        // Arm-fire as a chain step: `! each i |> each(i)` inside
+                        // the declaring event's impl calls the event's own arm.
+                        if (self.armOfImplEvent(step.invocation.path)) |arm| {
+                            try self.validateArmFire(arm, &step.invocation, cont.continuations, location);
+                            continue;
+                        }
+                        // Unknown event in pipeline - must fail! Report with the
+                        // name and location: this used to return a bare error
+                        // that the coordinator rendered as a nameless "Unknown
+                        // event referenced" with no KORU code or position.
                         log.debug("ERROR: Unknown event '{s}' in pipeline\n", .{nested_event_name});
+                        if (self.findEventOwningEffectArm(step.invocation.path)) |owner| {
+                            const owner_name = try self.pathToString(owner.path);
+                            defer self.allocator.free(owner_name);
+                            try self.reporter.addErrorAtLocation(.KORU040, location,
+                                "'{s}' is an effect arm of event '{s}' — only that event's own implementation may fire it",
+                                .{ step.invocation.path.segments[step.invocation.path.segments.len - 1], owner_name });
+                            return error.UnknownEvent;
+                        }
+                        try self.reporter.addErrorAtLocation(.KORU040, location,
+                            "unknown event '{s}' in pipeline", .{nested_event_name});
                         return error.UnknownEvent;
                     };
 

@@ -245,6 +245,20 @@ pub const EmissionContext = struct {
     // impls already emit `return` via their own paths; this covers the
     // continuation-HANDLER produce — see 020_025.)
     bare_return_active: bool = false,
+    // ── Subflow-implemented effects (400_130-137) ────────────────────────────
+    // Set while emitting the body of an impl subflow of an effect-bearing
+    // event. Calls to that event's own effect arms — `ping = pong(x)` at the
+    // head, `|> each(i)` in a chain — lower to `__H.<arm>(...)`, the
+    // consumer's handler-struct fn (the same comptime dispatch a `|zig` proc
+    // body reaches through the `const each = __H.each;` aliases). Qualified
+    // through `__H` so a Handlers struct synthesized INSIDE this handler
+    // (e.g. for a nested `for(..)`) can never shadow the arm name.
+    impl_event_decl: ?*const ast.EventDecl = null,
+    // Resume arms of the arm-fire whose sum is being consumed as `|` branches
+    // (`request = ask(payload) | halved v => ... | timeout => ...`). The
+    // continuation-switch machinery answers payload questions from this when
+    // the branch set isn't an event's (the head is an arm, not an event).
+    current_resume_arms: ?[]const ast.ResumeArm = null,
 };
 
 /// CodeEmitter - manages buffer and formatting
@@ -4181,6 +4195,19 @@ pub fn emitFlow(
     else
         null;
 
+    // Subflow-implemented effects: when the head fires one of the implemented
+    // event's own arms, its multi-arm resume sum is consumed as `|` branches
+    // right here at the firing site (`request = ask(payload) | halved v => …`).
+    // Expose the declared arms so the continuation switch can answer payload
+    // questions from the resume sum (the head is an arm, not an event).
+    const head_arm: ?*const ast.Branch = if (ctx.impl_event_decl) |impl_ev|
+        findEffectArm(impl_ev, &flow.inv().path)
+    else
+        null;
+    const saved_resume_arms = ctx.current_resume_arms;
+    if (head_arm) |arm| ctx.current_resume_arms = arm.resume_arms;
+    defer ctx.current_resume_arms = saved_resume_arms;
+
     var event_has_effect_branch = false;
     if (event_decl_for_partition) |ed| {
         for (ed.branches) |b| {
@@ -5370,6 +5397,58 @@ fn emitHandlersStruct(
     try emitter.write("};\n");
 }
 
+/// Subflow-implemented effects: if `path` names an effect arm of `event`
+/// (single segment, module qualifier absent or matching the event's own),
+/// return that arm. Used with EmissionContext.impl_event_decl so arm names
+/// only ever resolve inside the declaring event's own implementation.
+pub fn findEffectArm(event: *const ast.EventDecl, path: *const ast.DottedPath) ?*const ast.Branch {
+    if (path.segments.len != 1) return null;
+    if (path.module_qualifier) |mq| {
+        if (event.path.module_qualifier) |emq| {
+            if (!std.mem.eql(u8, mq, emq)) return null;
+        }
+    }
+    for (event.branches) |*b| {
+        if (b.kind == .effect and std.mem.eql(u8, b.name, path.segments[0])) return b;
+    }
+    return null;
+}
+
+/// Write the call expression for an arm-fire: `__H.<arm>(<payload>)`.
+/// The consumer-side handler fn takes the payload POSITIONALLY (identity
+/// payload → the bare value, multi-field → one anon struct, void → no args)
+/// — see emitHandlersStruct's signature emission, which this must mirror.
+fn writeArmFireCallExpr(
+    emitter: *CodeEmitter,
+    ctx: *EmissionContext,
+    invocation: *const ast.Invocation,
+    arm: *const ast.Branch,
+) !void {
+    try emitter.write("__H.");
+    try writeBranchName(emitter, arm.name);
+    try emitter.write("(");
+    const is_identity = arm.payload.fields.len == 1 and
+        std.mem.eql(u8, arm.payload.fields[0].name, "__type_ref");
+    if (arm.payload.fields.len == 0 and !arm.payload.is_wildcard) {
+        // Payloadless arm — bare `ask()`.
+    } else if (is_identity or arm.payload.is_wildcard) {
+        if (invocation.args.len > 0) {
+            try emitValue(emitter, ctx, invocation.args[0].value);
+        }
+    } else {
+        try emitter.write(".{ ");
+        for (invocation.args, 0..) |arg, i| {
+            if (i > 0) try emitter.write(", ");
+            try emitter.write(".");
+            try writeBranchName(emitter, arg.name);
+            try emitter.write(" = ");
+            try emitValue(emitter, ctx, arg.value);
+        }
+        try emitter.write(" }");
+    }
+    try emitter.write(")");
+}
+
 /// Emit an invocation (const result = event.handler(...))
 /// If an ImmediateImpl exists for this path, inline the value instead
 fn emitInvocation(
@@ -5378,6 +5457,31 @@ fn emitInvocation(
     invocation: *const ast.Invocation,
     result_var: []const u8,
 ) !void {
+    // Subflow-implemented effects: inside the declaring event's impl, a call
+    // to one of its own effect arms IS the firing — lower it to the
+    // consumer's handler-struct fn via the comptime `__H` param, never to an
+    // event handler call. A resuming arm binds its value to the call-site
+    // `:` name (or the pipeline's result var); a void arm is a bare call.
+    if (ctx.impl_event_decl) |impl_ev| {
+        if (findEffectArm(impl_ev, &invocation.path)) |arm| {
+            const has_resume = arm.resume_type != null or arm.resume_arms != null;
+            try emitter.writeIndent();
+            if (has_resume) {
+                const bound_var = invocation.return_binding orelse result_var;
+                if (std.mem.eql(u8, bound_var, "_")) {
+                    try emitter.write("_ = ");
+                } else {
+                    try emitter.write("const ");
+                    try emitter.write(bound_var);
+                    try emitter.write(" = ");
+                }
+            }
+            try writeArmFireCallExpr(emitter, ctx, invocation, arm);
+            try emitter.write(";\n");
+            return;
+        }
+    }
+
     // Handle special test assertions that should be inlined
     if (invocation.path.segments.len == 2) {
         const first = invocation.path.segments[0];
@@ -7074,10 +7178,24 @@ fn emitContinuationCase(
     const needs_mutable_capture = bindingHasMutableAnnotation(cont);
 
     // Check if branch has payload fields - empty payloads shouldn't be captured
-    const has_payload_fields = if (ctx.current_source_event) |event_name|
+    var has_payload_fields = if (ctx.current_source_event) |event_name|
         branchHasPayloadFields(ctx, event_name, cont.branch)
     else
         false; // Can't verify — omit capture to avoid shadowing
+
+    // Resume-arm switch at an arm-fire site (subflow-implemented effects):
+    // the cases are arms of the fired effect's resume sum, not branches of
+    // an event, so payload presence comes from the arm declaration.
+    if (!has_payload_fields) {
+        if (ctx.current_resume_arms) |arms| {
+            for (arms) |*ra| {
+                if (std.mem.eql(u8, ra.name, cont.branch)) {
+                    has_payload_fields = ra.type != null;
+                    break;
+                }
+            }
+        }
+    }
 
     // Only emit capture syntax if the branch has payload fields
     if (has_payload_fields) {
@@ -9848,6 +9966,12 @@ fn emitEventDeclForModule(
                 // The loop only exits via the terminal branch's `return`; the
                 // `unreachable` after it tells Zig the function can't fall off
                 // the end, matching how `#label` loops terminate.
+                // Subflow-implemented effects: inside this impl body, the
+                // event's own effect arms are callable — expose the event so
+                // arm-calls lower to `__H.<arm>(...)`.
+                const saved_impl_event = ctx.impl_event_decl;
+                if (has_effect) ctx.impl_event_decl = event;
+                defer ctx.impl_event_decl = saved_impl_event;
                 if (is_self_loop) {
                     if (self_loop_canonical) |canonical| {
                         try code_emitter.writeIndent();

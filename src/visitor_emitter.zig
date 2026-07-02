@@ -2699,6 +2699,26 @@ pub const VisitorEmitter = struct {
                                     try self.code_emitter.write("\n");
                                 }
 
+                                // Subflow-implemented effects: the impl head FIRES one of the
+                                // event's own effect arms by CALLING it (`ping = pong(x)`,
+                                // `query = ask(q): a => done a`, multi-arm consumed as `|`
+                                // branches). Route through emitFlow with the implemented
+                                // event in context — the arm-call lowers to `__H.<arm>(...)`
+                                // and the resume sum drives the continuation switch.
+                                if (emitter.findEffectArm(event, &flow.inv().path) != null) {
+                                    var arm_fire_ctx = emitter.EmissionContext{
+                                        .allocator = self.allocator,
+                                        .ast_items = self.all_items,
+                                        .tap_registry = self.tap_registry,
+                                        .type_registry = self.type_registry,
+                                        .main_module_name = self.main_module_name,
+                                        .is_sync = true,
+                                        .in_handler = true,
+                                        .impl_event_decl = event,
+                                        .bare_return_active = event.return_type != null,
+                                    };
+                                    try emitter.emitFlow(self.code_emitter, &arm_fire_ctx, &flow);
+                                } else
                                 // Check if the flow has preamble_code (from transforms like ~for, ~if, ~capture)
                                 // This means the flow contains a ForeachNode/ConditionalNode/CaptureNode in continuations
                                 if (flow.preamble_code != null and !keep_call) {
@@ -2722,6 +2742,7 @@ pub const VisitorEmitter = struct {
                                         .in_handler = true,
                                         .self_loop_active = is_self_loop,
                                         .self_loop_event_canonical = self_loop_canonical,
+                                        .impl_event_decl = event,
                                     };
 
                                     // Emit continuation bodies directly - the continuations contain the control flow node
@@ -2761,6 +2782,7 @@ pub const VisitorEmitter = struct {
                                             .in_handler = true,
                                             .self_loop_active = is_self_loop,
                                             .self_loop_event_canonical = self_loop_canonical,
+                                            .impl_event_decl = event,
                                         };
                                         var inline_result_counter: usize = 0;
                                         try emitter.emitInlineBodyNode(self.code_emitter, &inline_ctx, inline_code, flow.body.continuations, &flow.inv().path, &inline_result_counter);
@@ -2879,6 +2901,7 @@ pub const VisitorEmitter = struct {
                                         .in_handler = true,
                                         .self_loop_active = is_self_loop,
                                         .self_loop_event_canonical = self_loop_canonical,
+                                        .impl_event_decl = event,
                                         // Bare-return `-> T`: the loop-EXIT arm produces the
                                         // event's value (`| done e -> e`), so it must `return e;`
                                         // not discard. Same signal as the switch path (020_025);
@@ -3081,7 +3104,7 @@ pub const VisitorEmitter = struct {
                         var found_match = false;
                         for (event.input.fields) |in_field| {
                             if (eql(u8, out_field.name, in_field.name)) {
-                                // Compare base types (strip phantom annotations like [state!])
+                                // Compare base types (strip phantom annotations like <state!>)
                                 const out_base = stripPhantom(out_field.type);
                                 const in_base = stripPhantom(in_field.type);
                                 if (eql(u8, out_base, in_base)) {
