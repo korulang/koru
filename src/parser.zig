@@ -7074,6 +7074,23 @@ pub const Parser = struct {
         var branch_name = lexer.trim(content[0..brace_idx]);
         var fields_content: []const u8 = content[brace_idx + 1 .. closing_idx];
 
+        // Empty constructor braces are a relic: `=> done {}` and `=> done`
+        // used to parse to DIFFERENT trees (the braces flipped
+        // has_expressions), a two-spellings-one-meaning wart. Ruled illegal
+        // 2026-07-02: a payloadless construct has exactly one spelling.
+        if (!std.mem.eql(u8, branch_name, ".") and lexer.trim(fields_content).len == 0) {
+            try self.reporter.addErrorWithHint(
+                .PARSE003,
+                self.current + 1,
+                @intCast(brace_idx + 1),
+                "empty constructor braces on '{s}' — a payloadless branch constructs with its name alone",
+                .{branch_name},
+                "drop the braces: write '=> {s}' instead of '=> {s} {{}}'",
+                .{ branch_name, branch_name },
+            );
+            return error.ParseError;
+        }
+
         // A regular `name { ... }` construction requires a valid single-identifier
         // branch name (`.` is the `.{ ... }` immediate shorthand, handled below).
         // Rejects malformed names like `invalid name { ... }` (space in name).

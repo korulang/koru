@@ -330,13 +330,10 @@ const Printer = struct {
             try self.print(" {s}", .{pv});
             return;
         }
-        // `=> done {}` and bare `=> done` parse to DIFFERENT trees — the
-        // explicit empty braces set has_expressions (510_066 vs 240) — so
-        // the printer preserves which one the tree holds.
-        if (ctor.fields.len == 0) {
-            if (ctor.has_expressions) try self.write(" {}");
-            return;
-        }
+        // A payloadless construct is spelled by its name alone — the braced
+        // relic `=> done {}` is rejected at parse time (210_138), so an
+        // empty-fields ctor has exactly one spelling.
+        if (ctor.fields.len == 0) return;
         if (ctor.fields.len > 0) {
             try self.write(" { ");
             for (ctor.fields, 0..) |*f, i| {

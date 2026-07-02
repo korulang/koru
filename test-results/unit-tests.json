@@ -1,13 +1,13 @@
 {
-  "timestamp": "2026-07-02T14:29:37.548Z",
+  "timestamp": "2026-07-02T21:18:16.048Z",
   "summary": {
-    "passed": 260,
+    "passed": 263,
     "failed": 0,
     "skipped": 12,
     "leaked": 0,
     "compileErrors": 0,
-    "total": 272,
-    "suiteCount": 37,
+    "total": 275,
+    "suiteCount": 38,
     "status": "success"
   },
   "suites": [
@@ -25,6 +25,14 @@
       "failed": 0,
       "skipped": 0,
       "total": 2,
+      "status": "success"
+    },
+    {
+      "name": "ast_printer_tests",
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "total": 3,
       "status": "success"
     },
     {
