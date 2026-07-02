@@ -50,6 +50,7 @@ const ParseError = error{
     MalformedArgs,
     MalformedContinuation,
     MalformedBranchConstructor,
+    EmptyBranchConstructor,
     MalformedNode,
     UnbalancedParens,
     UnbalancedBraces,
@@ -788,11 +789,10 @@ fn parseBranchConstructor(allocator: std.mem.Allocator, text: []const u8) ParseE
     const inner = lexer.trim(text[brace_start + 1 .. brace_end]);
 
     if (inner.len == 0) {
-        // Empty constructor: name {}
-        return .{
-            .branch_name = try allocator.dupe(u8, branch_name),
-            .fields = try allocator.alloc(ast.Field, 0),
-        };
+        // Empty constructor braces (`done {}`) are a rejected relic — a
+        // payloadless construct has exactly one spelling: the bare name.
+        // Mirrors the parser.zig wall (ruled 2026-07-02).
+        return ParseError.EmptyBranchConstructor;
     }
 
     // Check if inner content has colons (field: value pairs) or is a plain value

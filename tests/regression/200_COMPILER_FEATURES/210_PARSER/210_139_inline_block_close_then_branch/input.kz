@@ -1,0 +1,32 @@
+// ============================================================================
+// Test 210_139: a branch line FOLLOWING an inline block that closes mid-line
+//
+// `} |> print.blk { chained }` closes the multi-line block and chains an
+// inline block on the SAME line. The multi-line gatherer must see the block
+// close there (brace depth, not indent heuristics) and leave the next line
+// alone. The old indent-only scanner kept gathering — the `| low l` line
+// below (containing braces of its own) was swallowed whole: its branch
+// header and binding silently DISCARDED, its body chained unconditionally
+// onto the block above. The program compiled and printed "low" on the high
+// path. Surfaced by the canonical-printer round-trip harness (390_091/092),
+// fixed 2026-07-02 by brace-aware gathering (netBraces).
+// ============================================================================
+
+~import std/io
+
+~event pick { n: i32 }
+| high i32
+| low i32
+
+~proc pick|zig {
+    if (n > 5) {
+        return .{ .high = n };
+    }
+    return .{ .low = n };
+}
+
+~pick(n: 10)
+| high h |> std/io:print.blk {
+        high {{ h:d }}
+    } |> std/io:print.blk { chained }
+| low l |> std/io:print.blk { low {{ l:d }} }
