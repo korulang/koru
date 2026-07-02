@@ -8725,10 +8725,50 @@ fn emitStep(
             try emitter.write("}\n");
         },
         .assignment => |asgn| {
-            // Emit direct field assignments: target.field = expr;
-            // This handles both scalar fields (target.sum = expr) and
-            // indexed fields (target.arr[i] = expr) - Zig parses arr[i] correctly
-            for (asgn.fields) |field| {
+            // SNAPSHOT SEMANTICS (ruled 2026-07-02, pinned 320_102): every
+            // field expression reads the INCOMING accumulator state, then all
+            // stores land — simultaneous assignment, so the meaning of a
+            // `captured { }` literal cannot depend on its field order. All RHS
+            // hoist into block-scoped temps before any store: the same loads
+            // and stores as the sequential form, reordered; LLVM register-
+            // allocates the temps — no copies, no extra work. Temps are
+            // index-named (field names can be `arr[i]`) and the block scope
+            // keeps repeated assignment nodes from colliding.
+            // (continuation_codegen's whole-struct-literal form is snapshot
+            // by construction; this partial-update form must match it.)
+            if (asgn.fields.len > 1) {
+                try emitter.writeIndent();
+                try emitter.write("{\n");
+                emitter.indent_level += 1;
+                for (asgn.fields, 0..) |field, i| {
+                    var name_buf: [32]u8 = undefined;
+                    const tmp = try std.fmt.bufPrint(&name_buf, "__koru_asgn_{d}", .{i});
+                    try emitter.writeIndent();
+                    try emitter.write("const ");
+                    try emitter.write(tmp);
+                    try emitter.write(" = ");
+                    if (field.expression_str) |expr| {
+                        try emitter.write(expr);
+                    } else {
+                        try emitter.write(field.type);
+                    }
+                    try emitter.write(";\n");
+                }
+                for (asgn.fields, 0..) |field, i| {
+                    var name_buf: [32]u8 = undefined;
+                    const tmp = try std.fmt.bufPrint(&name_buf, "__koru_asgn_{d}", .{i});
+                    try emitter.writeIndent();
+                    try emitter.write(asgn.target);
+                    try emitter.write(".");
+                    try emitter.write(field.name); // Can be "sum" or "arr[i]"
+                    try emitter.write(" = ");
+                    try emitter.write(tmp);
+                    try emitter.write(";\n");
+                }
+                emitter.indent_level -= 1;
+                try emitter.writeIndent();
+                try emitter.write("}\n");
+            } else for (asgn.fields) |field| {
                 try emitter.writeIndent();
                 try emitter.write(asgn.target);
                 try emitter.write(".");

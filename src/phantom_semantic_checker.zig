@@ -2427,7 +2427,11 @@ pub const PhantomSemanticChecker = struct {
         // disposed binding from a DIFFERENT site is (330_079/080).
         const event_path_str = try self.pathToString(event_decl.path);
         defer self.allocator.free(event_path_str);
-        const site_key = try std.fmt.allocPrint(self.allocator, "{s}@{s}#{s}={s}", .{ site_tag orelse "call", event_path_str, arg.name, arg.value });
+        // The arg's VALUE POINTER identifies the syntactic site: each parsed
+        // node owns its arg strings, so two textual `free(s)` steps get
+        // distinct keys (610_006 double-free stays caught) while a re-walk of
+        // the SAME node reuses the same allocation and dedupes.
+        const site_key = try std.fmt.allocPrint(self.allocator, "{s}@{s}#{s}={s}/{x}", .{ site_tag orelse "call", event_path_str, arg.name, arg.value, @intFromPtr(arg.value.ptr) });
         defer self.allocator.free(site_key);
 
         // Check if the binding has been disposed
