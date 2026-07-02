@@ -1,0 +1,6 @@
+name: lars-mood
+kind: inferred
+shape: scalar
+face: in
+membrane: false
+note: an agent's running estimate of Lars's mood/energy this session (0..1)

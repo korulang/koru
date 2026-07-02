@@ -1,0 +1,6 @@
+name: gap-found
+kind: inferred
+shape: categorical
+face: in
+membrane: false
+note: identified a concrete gap holding the work back

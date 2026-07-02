@@ -1,0 +1,6 @@
+name: contradiction
+kind: inferred
+shape: categorical
+face: in
+membrane: true
+note: a previously-held belief was flipped by new evidence

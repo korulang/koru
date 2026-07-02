@@ -1,6 +1,6 @@
 // TEST: Multiple exec calls in a single transaction
 //
-// exec() consumes [!started|!active] and produces [active!]
+// exec() consumes [!started|!active] and produces <active!>
 // This means you can chain multiple execs - each one consumes
 // the previous active state and produces a new one.
 //

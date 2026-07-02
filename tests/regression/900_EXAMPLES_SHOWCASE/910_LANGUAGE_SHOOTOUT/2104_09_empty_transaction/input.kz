@@ -1,7 +1,7 @@
 // TEST: Try to commit a transaction without executing anything
 //
-// begin() produces Transaction[started!]
-// commit() requires Transaction[!active]
+// begin() produces Transaction<started!>
+// commit() requires Transaction<!active>
 // These states don't match! You can't commit an empty transaction.
 //
 // This prevents wasteful "BEGIN; COMMIT;" patterns.

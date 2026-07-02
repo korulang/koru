@@ -934,7 +934,7 @@ pub const AutoDischargeInserter = struct {
             }
 
             // Check invocations for obligation satisfaction
-            // (when binding is passed to [!state] parameter)
+            // (when binding is passed to <!state> parameter)
             if (node == .invocation) {
                 try self.checkInvocationSatisfiesObligations(&context, &node.invocation, module_name, flow);
             }
@@ -1914,7 +1914,7 @@ pub const AutoDischargeInserter = struct {
             base_state = base_state[0 .. base_state.len - 1];
         }
 
-        // Search all events for [!state] parameters
+        // Search all events for <!state> parameters
         var iter = self.event_map.iterator();
         while (iter.next()) |entry| {
             const event_decl = entry.value_ptr.decl;
@@ -1944,7 +1944,7 @@ pub const AutoDischargeInserter = struct {
             for (event_decl.input.fields) |field| {
                 if (field.phantom) |field_phantom| {
                     // Filter by base type: the field's type must match the obligation's base type
-                    // This ensures close(*Connection[!active]) only matches *Connection obligations,
+                    // This ensures close(*Connection<!active>) only matches *Connection obligations,
                     // not *Transaction obligations that also have an "active" phantom state
                     if (!std.mem.eql(u8, field.type, base_type)) continue;
 

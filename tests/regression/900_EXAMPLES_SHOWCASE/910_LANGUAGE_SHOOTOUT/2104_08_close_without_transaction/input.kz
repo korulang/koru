@@ -1,7 +1,7 @@
 // TEST: Try to close a connection without using it
 //
-// connect() produces Connection[connected!]
-// close() requires Connection[!active]
+// connect() produces Connection<connected!>
+// close() requires Connection<!active>
 // These states don't match! You can't close a fresh connection.
 //
 // This is THE KEY INSIGHT: you MUST use the connection meaningfully

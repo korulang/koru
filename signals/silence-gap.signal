@@ -1,0 +1,6 @@
+name: silence-gap
+kind: measured
+shape: scalar
+face: in
+membrane: false
+note: minutes since the last human turn while work is open; unusual silence = confusion or disengagement

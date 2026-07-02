@@ -1,0 +1,6 @@
+name: correction-rate
+kind: measured
+shape: scalar
+face: in
+membrane: false
+note: fraction of human turns that correct or redirect the agent; rising = drift, misalignment, trust erosion before it's said

@@ -1,0 +1,6 @@
+name: instruction-repeat
+kind: measured
+shape: scalar
+face: in
+membrane: true
+note: times the human restates the same instruction in a session; each repeat is a trust event worth recording

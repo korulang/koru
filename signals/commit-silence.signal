@@ -1,0 +1,6 @@
+name: commit-silence
+kind: measured
+shape: scalar
+face: in
+membrane: false
+note: minutes of silence before each commit (computed from git, not declared); a WMFX watchdog fires when the dev loop goes quieter than its in-sample cadence

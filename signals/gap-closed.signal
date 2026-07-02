@@ -1,0 +1,6 @@
+name: gap-closed
+kind: inferred
+shape: categorical
+face: in
+membrane: false
+note: closed a previously-identified gap

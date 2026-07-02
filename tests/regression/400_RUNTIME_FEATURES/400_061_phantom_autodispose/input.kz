@@ -1,7 +1,7 @@
 // Test: Auto-discharge for phantom obligations
 //
 // Tests that the compiler automatically inserts cleanup
-// when [allocated!] obligation is not manually discharged
+// when <allocated!> obligation is not manually discharged
 
 ~import std/io
 
@@ -43,6 +43,6 @@ pub const Resource = struct {
 ~std/io:print.ln("Test start")
 ~create-resource(name: "AutoDisposed")
 | created r |> use-resource(res: r)
-    // Obligation [allocated!] should trigger auto-discharge here
+    // Obligation <allocated!> should trigger auto-discharge here
 
 ~std/io:print.ln("Test done")

@@ -800,7 +800,7 @@ Closing file
 ```koru
 // Test: Simple phantom obligations
 //
-// Tests that [allocated!] obligation can be discharged with [!allocated]
+// Tests that <allocated!> obligation can be discharged with <!allocated>
 
 ~import std/io
 

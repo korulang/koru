@@ -1,5 +1,5 @@
 // Test: Handle pool tracks opened resources
-// Resources with [state!] are added to handle pool
+// Resources with <state!> are added to handle pool
 // Response includes active handles
 
 ~import std/runtime

@@ -1,0 +1,6 @@
+name: test-health
+kind: measured
+shape: categorical
+face: in
+membrane: false
+note: green | red | regression vs last commit; a green->red transition is a durable belief-change

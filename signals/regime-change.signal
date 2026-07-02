@@ -1,0 +1,6 @@
+name: regime-change
+kind: inferred
+shape: categorical
+face: in
+membrane: true
+note: the way we work, or understand the domain, just shifted

@@ -1,0 +1,6 @@
+name: human-frustration
+kind: inferred
+shape: scalar
+face: in
+membrane: true
+note: the human's emotional register, read from tone, repetition, escalation; a threshold crossing is durable

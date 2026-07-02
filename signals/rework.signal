@@ -1,0 +1,6 @@
+name: rework
+kind: measured
+shape: scalar
+face: in
+membrane: true
+note: fraction of commits undoing same-session work; a reversal loop is an early-warning belief-change

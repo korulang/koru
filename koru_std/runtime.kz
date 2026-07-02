@@ -197,8 +197,8 @@ const koru_parser = @import("koru_parser");
     //   module:*                - include all events under module prefix
     //
     // Obligations are extracted from event signatures using phantom types:
-    //   [state!] in output = creates obligation (! suffix)
-    //   [!state] in input = discharges obligation (! prefix)
+    //   <state!> in output = creates obligation (! suffix)
+    //   <!state> in input = discharges obligation (! prefix)
 
     // Local CreateSpec/DischargeSpec for codegen (mirrors runtime types)
     const LocalCreateSpec = struct {
@@ -571,7 +571,7 @@ const koru_parser = @import("koru_parser");
 
             const default_module = module_name orelse "main";
 
-            // Check input fields for [!state] (discharges)
+            // Check input fields for <!state> (discharges)
             for (ed.input.fields) |field| {
                 if (field.phantom) |phantom_str| {
                     const result = parsePhantom(alloc, phantom_str);
@@ -590,7 +590,7 @@ const koru_parser = @import("koru_parser");
                 }
             }
 
-            // Check branch output fields for [state!] (creates)
+            // Check branch output fields for <state!> (creates)
             for (ed.branches) |branch| {
                 for (branch.payload.fields) |field| {
                     if (field.phantom) |phantom_str| {

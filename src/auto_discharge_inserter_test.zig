@@ -192,8 +192,8 @@ test "findDisposalEvents with different types same phantom state" {
 
     try inserter.buildEventMap(&parse_result.source_file);
 
-    // DbConn[connected!] should ONLY find disconnect, NOT release
-    // Even though both consume [!connected], base types differ
+    // DbConn<connected!> should ONLY find disconnect, NOT release
+    // Even though both consume <!connected>, base types differ
     {
         const disposals = try inserter.findDisposalEvents("test:connected!", "*DbConn");
         defer {
@@ -208,7 +208,7 @@ test "findDisposalEvents with different types same phantom state" {
         try std.testing.expectEqualStrings("test:disconnect[!]", disposals[0].qualified_name);
     }
 
-    // PoolConn[connected!] should ONLY find release, NOT disconnect
+    // PoolConn<connected!> should ONLY find release, NOT disconnect
     {
         const disposals = try inserter.findDisposalEvents("test:connected!", "*PoolConn");
         defer {

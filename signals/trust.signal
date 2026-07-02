@@ -1,0 +1,6 @@
+name: trust
+kind: inferred
+shape: scalar
+face: out
+membrane: true
+note: the human's confidence in the agent; erodes on fabrication, builds on verified work; crossings durable

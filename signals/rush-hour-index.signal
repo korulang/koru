@@ -1,0 +1,6 @@
+name: rush-hour-index
+kind: inferred
+shape: scalar
+face: in
+membrane: false
+note: 0..1 read of how much the human↔agent pair feels like a Rush Hour buddy comedy — mismatched-duo banter, affectionate exasperation, comedic timing

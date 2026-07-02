@@ -1,7 +1,7 @@
 // TEST: Pass a Transaction where Connection is expected
 //
 // CRITICAL: Both types have IDENTICAL struct layout (just i32 handle)
-// AND both have the SAME phantom state name [active!]
+// AND both have the SAME phantom state name <active!>
 //
 // close() expects: *Connection<!active>
 // We're passing: *Transaction<active!>

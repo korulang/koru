@@ -2,11 +2,11 @@
 // with all event declarations INLINE in this file.
 //
 // State machine (every event handles | ok and | err):
-//   connect()  -> *Connection[connected!]
-//   begin()    -> *Transaction[started!]      (consumes [!connected])
-//   exec()     -> *Transaction[active!]       (consumes [!started])
-//   commit()   -> *Connection[active!]        (consumes [!active])
-//   close()    -> void                        (consumes [!active])
+//   connect()  -> *Connection<connected!>
+//   begin()    -> *Transaction<started!>      (consumes <!connected>)
+//   exec()     -> *Transaction<active!>       (consumes <!started>)
+//   commit()   -> *Connection<active!>        (consumes <!active>)
+//   close()    -> void                        (consumes <!active>)
 //
 // Mirrors $app/db usage in 2104_03_valid_commit, but with declarations
 // co-located rather than imported — exercises the inline-decl path

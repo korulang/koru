@@ -1,7 +1,7 @@
 // File library with phantom types for cross-scope resource management
 //
 // THE KORU SOLUTION:
-// - Obligations [opened!] track what needs cleanup
+// - Obligations <opened!> track what needs cleanup
 // - Obligations ESCAPE scopes naturally through branch constructors
 // - Cleanup happens via explicit events, not implicit Drop
 // - Compiler PROVES all paths satisfy obligations
@@ -51,7 +51,7 @@ pub const File = struct {
 
 // Batch close - consumes obligations for ALL files at once
 // This is what RAII cannot express: cleanup multiple resources in one operation
-~pub event close-batch { files: []*File[!opened] }
+~pub event close-batch { files: []*File<!opened> }
 | closed usize
 
 ~proc close-batch|zig {
