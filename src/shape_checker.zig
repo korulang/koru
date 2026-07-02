@@ -812,6 +812,70 @@ pub const ShapeChecker = struct {
         continuations: []const ast.Continuation,
         location: errors.SourceLocation,
     ) anyerror!void {
+        // Payload shape at the firing site follows the BRANCH convention
+        // (arms are branches, and firing is construction's call-twin):
+        //   - payloadless arm  → bare fire, `ask()`        (like `=> timeout`)
+        //   - identity payload → one bare value, `pong(x)` (like `=> done n`)
+        //   - record payload   → NAMED fields, `token(kind: 1, val: n)`
+        //     (like `=> result { halved: ..., quadrupled: ... }`)
+        // Ruled 2026-07-02. A positional fire against a record arm reads as
+        // punning and is rejected; a named arg whose value happens to equal
+        // its field name (`token(kind: kind)`) is named, and fine.
+        const is_identity_payload = arm.payload.fields.len == 1 and
+            std.mem.eql(u8, arm.payload.fields[0].name, "__type_ref");
+        if (arm.payload.fields.len == 0 and !arm.payload.is_wildcard) {
+            if (inv.args.len != 0) {
+                try self.reporter.addErrorAtLocation(.KORU030, location,
+                    "effect '{s}' carries no payload — fire it bare: {s}()",
+                    .{ arm.name, arm.name });
+                return error.ValidationFailed;
+            }
+        } else if (is_identity_payload or arm.payload.is_wildcard) {
+            if (inv.args.len != 1) {
+                try self.reporter.addErrorAtLocation(.KORU030, location,
+                    "effect '{s}' carries a single anonymous payload — fire it with exactly one value: {s}(value)",
+                    .{ arm.name, arm.name });
+                return error.ValidationFailed;
+            }
+        } else {
+            var field_names = try std.ArrayList(u8).initCapacity(self.allocator, 64);
+            defer field_names.deinit(self.allocator);
+            for (arm.payload.fields, 0..) |*f, fi| {
+                if (fi > 0) try field_names.appendSlice(self.allocator, ", ");
+                try field_names.appendSlice(self.allocator, f.name);
+                try field_names.appendSlice(self.allocator, ": ...");
+            }
+            var shape_errors = false;
+            for (inv.args) |arg| {
+                const known = for (arm.payload.fields) |*f| {
+                    if (std.mem.eql(u8, f.name, arg.name)) break true;
+                } else false;
+                if (known) continue;
+                if (std.mem.eql(u8, arg.name, arg.value)) {
+                    try self.reporter.addErrorAtLocation(.KORU030, location,
+                        "effect '{s}' carries a record payload — fire it with named fields: {s}({s})",
+                        .{ arm.name, arm.name, field_names.items });
+                } else {
+                    try self.reporter.addErrorAtLocation(.KORU021, location,
+                        "effect '{s}' has no payload field '{s}' (fields: {s})",
+                        .{ arm.name, arg.name, field_names.items });
+                }
+                shape_errors = true;
+            }
+            for (arm.payload.fields) |*f| {
+                const provided = for (inv.args) |arg| {
+                    if (std.mem.eql(u8, arg.name, f.name)) break true;
+                } else false;
+                if (!provided) {
+                    try self.reporter.addErrorAtLocation(.KORU022, location,
+                        "effect '{s}' payload field '{s}' missing at the firing site ({s}({s}))",
+                        .{ arm.name, f.name, arm.name, field_names.items });
+                    shape_errors = true;
+                }
+            }
+            if (shape_errors) return error.ValidationFailed;
+        }
+
         if (arm.resume_arms) |arms| {
             if (inv.return_binding != null) {
                 try self.reporter.addErrorAtLocation(.KORU102, location,
