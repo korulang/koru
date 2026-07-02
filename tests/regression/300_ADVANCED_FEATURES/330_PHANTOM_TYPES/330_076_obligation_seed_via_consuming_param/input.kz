@@ -11,11 +11,11 @@
 // walls stay red next door: 330_079 (double-consume) / 330_080 (re-feed of a
 // consumed binding).
 //
-// CURRENTLY RED (honest): a transform-fused walk of this flow re-validates the
-// flattened loop body with iteration bindings collapsed, mis-reading the legal
-// thread as use-after-discharge ('v'). The fused graft is not flagged
-// is_transformed_subtree, so the phantom checker's short-circuit misses it.
-// Fixing that walk is the remaining work this pin now tracks.
+// GREEN since the auto-discharge inserter learned to credit back-edge jump
+// args (what first read as a "fused walk" was the inserter planting a
+// spurious double-free disposal under the @loop jump because it never
+// credited jump args against the round event's consuming params — the
+// phantom checker was correctly rejecting the bad insertion).
 const std = @import("std");
 const Handle = struct { n: i32 };
 

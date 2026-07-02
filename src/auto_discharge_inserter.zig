@@ -25,6 +25,12 @@ pub const AutoDischargeInserter = struct {
     allocator: std.mem.Allocator,
     reporter: *errors.ErrorReporter,
     event_map: std.StringHashMap(EventInfo),
+    /// label name -> the fold's seed invocation. A back-edge `@label(args)`
+    /// routes its args into the SAME event's consuming params as the seed —
+    /// jump args must credit discharges exactly like invocation args, or the
+    /// carried obligation reads as live after the jump and a spurious (double-
+    /// free) disposal gets inserted under the back edge (330_076).
+    label_seed_map: std.StringHashMap(*const ast.Invocation),
     synthetic_binding_counter: u32,
     warn_mode: bool, // When true, emit warnings about auto-inserted disposals
     strict_panic_branches: bool, // When true (--panic-branches=strict), unhandled panic branches are compile errors (the crash-surface map, loud)
@@ -308,6 +314,7 @@ pub const AutoDischargeInserter = struct {
             .allocator = allocator,
             .reporter = reporter,
             .event_map = std.StringHashMap(EventInfo).init(allocator),
+            .label_seed_map = std.StringHashMap(*const ast.Invocation).init(allocator),
             .synthetic_binding_counter = 0,
             .warn_mode = warn_mode,
             .strict_panic_branches = strict_panic_branches,
@@ -320,6 +327,7 @@ pub const AutoDischargeInserter = struct {
             self.allocator.free(key.*);
         }
         self.event_map.deinit();
+        self.label_seed_map.deinit();
     }
 
     /// Main entry point - run the auto-discharge pass on a program
@@ -625,6 +633,13 @@ pub const AutoDischargeInserter = struct {
         const event_info = self.event_map.get(qualified_name) orelse {
             return .{ .transformed = false, .program = program };
         };
+
+        // A pre-label fold head (`~spin = #loop step(h)`): the flow's own
+        // invocation is the fold's seed; register it so back-edge jump args
+        // credit against the round event's consuming params.
+        if (flow.pre_label) |pre_label| {
+            try self.label_seed_map.put(pre_label, flow.inv());
+        }
 
         // Synthesize continuations for unhandled optional branches
         // This ensures all optional branches get switch cases and auto-discharge can handle them
@@ -955,6 +970,18 @@ pub const AutoDischargeInserter = struct {
                 const lwi = node.label_with_invocation;
                 if (lwi.is_declaration) {
                     try self.checkInvocationSatisfiesObligations(&context, &lwi.invocation, module_name, flow);
+                    try self.label_seed_map.put(lwi.label, &lwi.invocation);
+                }
+            }
+            // A back-edge `@label(args)` re-feeds the fold's round event: its
+            // args bind the SAME consuming params as the seed's, so they credit
+            // discharges identically (the next iteration re-consumes). Without
+            // this, the carried obligation reads live after the jump and a
+            // spurious double-free disposal lands under the back edge (330_076).
+            if (node == .label_jump) {
+                const lj = node.label_jump;
+                if (self.label_seed_map.get(lj.label)) |seed_inv| {
+                    try self.creditConsumingArgs(&context, seed_inv, lj.args, module_name, flow);
                 }
             }
 
@@ -1642,8 +1669,38 @@ pub const AutoDischargeInserter = struct {
         defer self.allocator.free(qualified_name);
 
         const event_info = self.event_map.get(qualified_name) orelse return;
-        const event_decl = event_info.decl;
+        try self.creditConsumingArgsForDecl(context, invocation.args, event_info.decl, flow);
+    }
 
+    /// Credit a back-edge `@label(args)` jump: resolve the fold's round event
+    /// from the registered seed invocation and credit the JUMP's args against
+    /// its consuming params, exactly as the seed's args were.
+    fn creditConsumingArgs(
+        self: *AutoDischargeInserter,
+        context: *BindingContext,
+        seed_inv: *const ast.Invocation,
+        jump_args: []const ast.Arg,
+        module_name: []const u8,
+        flow: *const ast.Flow,
+    ) !void {
+        const event_name = try self.pathToString(seed_inv.path);
+        defer self.allocator.free(event_name);
+        const inv_module = seed_inv.path.module_qualifier orelse module_name;
+        const qualified_name = try std.fmt.allocPrint(self.allocator, "{s}:{s}", .{ inv_module, event_name });
+        defer self.allocator.free(qualified_name);
+        const event_info = self.event_map.get(qualified_name) orelse return;
+        try self.creditConsumingArgsForDecl(context, jump_args, event_info.decl, flow);
+    }
+
+    /// The shared crediting walk: which args bind consuming (`<!state>`)
+    /// params, and clear those obligations.
+    fn creditConsumingArgsForDecl(
+        self: *AutoDischargeInserter,
+        context: *BindingContext,
+        args: []const ast.Arg,
+        event_decl: *const ast.EventDecl,
+        flow: *const ast.Flow,
+    ) !void {
         // Check each argument to see if it satisfies (discharges) an obligation.
         //
         // Resolving which PARAMETER an arg binds is the subtle part. A NAMED arg
@@ -1654,7 +1711,7 @@ pub const AutoDischargeInserter = struct {
         // binding happened to equal the param name (`free(s)` where the binding is
         // also `s`); any other binding silently failed to discharge, producing a
         // false KORU030 on every multi-resource flow (610_011/610_012).
-        for (invocation.args, 0..) |arg, arg_idx| {
+        for (args, 0..) |arg, arg_idx| {
             const is_positional = std.mem.eql(u8, arg.name, arg.value);
             const field_idx: ?usize = blk: {
                 if (is_positional) {
