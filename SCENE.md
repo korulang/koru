@@ -54,7 +54,7 @@ both. The messaging follows from the move: *don't rewrite, assimilate.*
 
 **`koru-libs` is this bed's worked ground** — where "assimilate" gets proven,
 package by package, showcase by showcase. (sqlite3 already wraps C SQLite behind
-phantom obligations: `conn[opened!]` — the compiler will not let you forget to
+phantom obligations: `*Connection<opened!>` — the compiler will not let you forget to
 close it.)
 
 ## What it says no to
