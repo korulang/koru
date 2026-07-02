@@ -1,50 +1,55 @@
 #!/bin/bash
-# Verify: ~[pure] proc gets is_pure=true and is_transitively_pure=true.
-# Layer 3 demonstration: annotation lifts the default impure assumption.
+# The AST is a runtime artifact now: program.ast.json (dynamic-AST, ff5ccb08).
+# The old Zig-source literal (program_ast.zig) is no longer emitted — checking
+# it validated a stale fossil from whatever run last produced one (found
+# 2026-07-02: main was green against a four-day-old file). This script reads
+# the JSON the compiler actually wrote THIS run.
 
-if [ ! -f "backend.zig" ]; then
-    echo "✗ backend.zig not found"
+if [ ! -f "program.ast.json" ]; then
+    echo "✗ program.ast.json not found — backend did not run"
     exit 1
 fi
 
-# AST literal moved from backend.zig to program_ast.zig (split landed 2026-05-20).
-# Concatenate both so grep -n / sed -n by line number still work.
-cat backend.zig program_ast.zig 2>/dev/null > _combined_emit.zig
+python3 - <<'PYEOF'
 
-PROC_LINE=$(grep -n 'proc_decl = ProcDecl' _combined_emit.zig | while read line; do
-    linenum=$(echo "$line" | cut -d: -f1)
-    if sed -n "$((linenum)),$((linenum + 5))p" _combined_emit.zig | grep -q '"compute"'; then
-        echo "$linenum"
-        break
-    fi
-done)
+import json, sys
 
-if [ -z "$PROC_LINE" ]; then
-    echo "✗ Could not find compute proc"
-    exit 1
-fi
+def load():
+    return json.load(open("program.ast.json"))
 
-# The ProcDecl block now spans more lines (body is a Source literal: text +
-# location + scope + phantom_type). Bound the block at its own `.module =` field
-# rather than a fixed window — robust to body length, and won't bleed into a
-# neighbouring proc (which would falsely match is_pure on negative tests).
-PROC_END=$(awk -v s="$PROC_LINE" 'NR>s && /\.module = /{print NR; exit}' _combined_emit.zig)
-PROC=$(sed -n "$((PROC_LINE)),$((PROC_END))p" _combined_emit.zig)
+def walk(o, kind):
+    """Yield every node of the given decl kind (event_decl / proc_decl / flow)."""
+    if isinstance(o, dict):
+        if kind in o and isinstance(o[kind], dict):
+            yield o[kind]
+        for v in o.values():
+            yield from walk(v, kind)
+    elif isinstance(o, list):
+        for v in o:
+            yield from walk(v, kind)
 
-if echo "$PROC" | grep -q 'is_pure = true'; then
-    echo "✓ compute proc: is_pure = true (annotation lifted default)"
-else
-    echo "✗ FAIL: compute should be is_pure = true (has ~[pure] annotation)"
-    exit 1
-fi
+def find_decl(d, kind, module, name):
+    for n in walk(d, kind):
+        p = n.get("path", {})
+        if p.get("module_qualifier") == module and p.get("segments") == [name]:
+            return n
+    return None
 
-if echo "$PROC" | grep -q 'is_transitively_pure = true'; then
-    echo "✓ compute proc: is_transitively_pure = true (no calls, so trivially transitive)"
-else
-    echo "✗ FAIL: compute should be is_transitively_pure = true"
-    exit 1
-fi
+def check(node, what, expect_pure, expect_trans):
+    if node is None:
+        print(f"✗ Could not find {what} in program.ast.json"); sys.exit(1)
+    if node.get("is_pure") is not expect_pure:
+        print(f"✗ FAIL: {what} should be is_pure = {str(expect_pure).lower()}"); sys.exit(1)
+    print(f"✓ {what}: is_pure = {str(expect_pure).lower()}")
+    if node.get("is_transitively_pure") is not expect_trans:
+        print(f"✗ FAIL: {what} should be is_transitively_pure = {str(expect_trans).lower()}"); sys.exit(1)
+    print(f"✓ {what}: is_transitively_pure = {str(expect_trans).lower()}")
 
-echo ""
-echo "✓ ~[pure] annotation correctly propagates to is_pure=true and is_transitively_pure=true"
-exit 0
+
+# ~[pure] proc gets is_pure=true and is_transitively_pure=true (Layer 3:
+# annotation lifts the default impure assumption).
+d = load()
+check(find_decl(d, "proc_decl", "input", "compute"), "compute proc", True, True)
+print()
+print("✓ ~[pure] annotation correctly propagates to is_pure/is_transitively_pure")
+PYEOF

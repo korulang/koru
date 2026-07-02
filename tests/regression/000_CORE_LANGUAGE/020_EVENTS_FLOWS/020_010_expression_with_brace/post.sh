@@ -1,21 +1,37 @@
 #!/bin/bash
-# Verify Expression argument with braces was parsed correctly
-# The argument should have name="val" and value="{ foo: 1 }"
+# The AST is a runtime artifact now: program.ast.json (dynamic-AST, ff5ccb08).
+# The old Zig-source literal (program_ast.zig) is no longer emitted — checking
+# it validated a stale fossil from whatever run last produced one (found
+# 2026-07-02: main was green against a four-day-old file). This script reads
+# the JSON the compiler actually wrote THIS run.
 
-# Get the directory of this script
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-
-# AST literal moved from backend.zig to program_ast.zig (split landed 2026-05-20).
-# Concatenate both so grep finds serialized AST contents regardless of layout.
-cat "$SCRIPT_DIR/backend.zig" "$SCRIPT_DIR/program_ast.zig" 2>/dev/null > "$SCRIPT_DIR/_combined_emit.zig"
-
-if grep -q 'Arg{ .name = "val", .value = "{ foo: 1 }"' "$SCRIPT_DIR/_combined_emit.zig"; then
-    echo "✓ Expression argument parsed correctly: name='val', value='{ foo: 1 }'"
-    exit 0
-else
-    echo "ERROR: Expression argument not parsed correctly"
-    echo "Expected: Arg{ .name = \"val\", .value = \"{ foo: 1 }\" ... }"
-    echo "Searching backend.zig for 'val' args:"
-    grep -n "Arg.*val" "$SCRIPT_DIR/_combined_emit.zig" | head -5
+if [ ! -f "program.ast.json" ]; then
+    echo "✗ program.ast.json not found — backend did not run"
     exit 1
 fi
+
+python3 - <<'PYEOF'
+import json, sys
+
+# Expression argument with braces parsed correctly: name="val", value="{ foo: 1 }".
+d = json.load(open("program.ast.json"))
+
+def args(o):
+    if isinstance(o, dict):
+        if "args" in o and isinstance(o["args"], list):
+            for a in o["args"]:
+                if isinstance(a, dict):
+                    yield a
+        for v in o.values():
+            yield from args(v)
+    elif isinstance(o, list):
+        for v in o:
+            yield from args(v)
+
+hit = any(a.get("name") == "val" and a.get("value") == "{ foo: 1 }" for a in args(d))
+if not hit:
+    print("ERROR: Expression argument not parsed correctly")
+    print('Expected an arg with name="val", value="{ foo: 1 }"')
+    sys.exit(1)
+print("✓ Expression argument parsed correctly: name=val, value={ foo: 1 }")
+PYEOF

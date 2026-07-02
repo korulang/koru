@@ -1,28 +1,74 @@
 #!/bin/bash
-# Verify module annotations are correctly serialized in backend.zig
-# post.sh runs in the test directory, so use relative paths
+# The AST is a runtime artifact now: program.ast.json (dynamic-AST, ff5ccb08).
+# The old Zig-source literal (program_ast.zig) is no longer emitted — checking
+# it validated a stale fossil from whatever run last produced one (found
+# 2026-07-02: main was green against a four-day-old file). This script reads
+# the JSON the compiler actually wrote THIS run.
 
-# AST literal moved from backend.zig to program_ast.zig (split landed 2026-05-20).
-# Concatenate both so grep finds serialized AST contents regardless of layout.
-cat backend.zig program_ast.zig 2>/dev/null > _combined_emit.zig
-
-# Check std.io has [comptime|runtime] annotations
-# Pattern: .annotations = &.{"comptime", "runtime"}...io.kz
-if ! grep -q 'annotations = &\.{"comptime", "runtime"}.*io\.kz' _combined_emit.zig; then
-    echo "FAIL: std.io should have annotations = &.{\"comptime\", \"runtime\"}"
-    grep "io\.kz" _combined_emit.zig | head -1 || echo "(not found)"
+if [ ! -f "program.ast.json" ]; then
+    echo "✗ program.ast.json not found — backend did not run"
     exit 1
 fi
 
-# Check std.compiler has [comptime] annotation only
-# Pattern: .annotations = &.{"comptime"}...compiler.kz
-if ! grep -q 'annotations = &\.{"comptime"}.*compiler\.kz' _combined_emit.zig; then
-    echo "FAIL: std.compiler should have annotations = &.{\"comptime\"}"
-    grep "compiler\.kz" _combined_emit.zig | head -1 || echo "(not found)"
-    exit 1
-fi
+python3 - <<'PYEOF'
 
-# NOTE: compiler_requirements.kz was removed - its functionality merged into compiler.kz
+import json, sys
 
-echo "PASS: All module annotations correctly serialized"
-exit 0
+def load():
+    return json.load(open("program.ast.json"))
+
+def walk(o, kind):
+    """Yield every node of the given decl kind (event_decl / proc_decl / flow)."""
+    if isinstance(o, dict):
+        if kind in o and isinstance(o[kind], dict):
+            yield o[kind]
+        for v in o.values():
+            yield from walk(v, kind)
+    elif isinstance(o, list):
+        for v in o:
+            yield from walk(v, kind)
+
+def find_decl(d, kind, module, name):
+    for n in walk(d, kind):
+        p = n.get("path", {})
+        if p.get("module_qualifier") == module and p.get("segments") == [name]:
+            return n
+    return None
+
+def check(node, what, expect_pure, expect_trans):
+    if node is None:
+        print(f"✗ Could not find {what} in program.ast.json"); sys.exit(1)
+    if node.get("is_pure") is not expect_pure:
+        print(f"✗ FAIL: {what} should be is_pure = {str(expect_pure).lower()}"); sys.exit(1)
+    print(f"✓ {what}: is_pure = {str(expect_pure).lower()}")
+    if node.get("is_transitively_pure") is not expect_trans:
+        print(f"✗ FAIL: {what} should be is_transitively_pure = {str(expect_trans).lower()}"); sys.exit(1)
+    print(f"✓ {what}: is_transitively_pure = {str(expect_trans).lower()}")
+
+
+# Module annotations survive into the runtime AST: std.io is
+# [comptime|runtime], std.compiler is [comptime] only.
+d = load()
+def module(name):
+    def scan(o):
+        if isinstance(o, dict):
+            if o.get("logical_name") == name and "annotations" in o:
+                return o
+            for v in o.values():
+                r = scan(v)
+                if r is not None: return r
+        elif isinstance(o, list):
+            for v in o:
+                r = scan(v)
+                if r is not None: return r
+        return None
+    return scan(d)
+io = module("std.io")
+comp = module("std.compiler")
+import sys
+if io is None or sorted(io.get("annotations", [])) != ["comptime", "runtime"]:
+    print("FAIL: std.io should have annotations [comptime, runtime], got", io and io.get("annotations")); sys.exit(1)
+if comp is None or comp.get("annotations") != ["comptime"]:
+    print("FAIL: std.compiler should have annotations [comptime], got", comp and comp.get("annotations")); sys.exit(1)
+print("PASS: All module annotations correctly serialized")
+PYEOF

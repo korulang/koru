@@ -1,86 +1,71 @@
 #!/bin/bash
-# Verify: Subflow calling impure proc should be transitively IMPURE
+# The AST is a runtime artifact now: program.ast.json (dynamic-AST, ff5ccb08).
+# The old Zig-source literal (program_ast.zig) is no longer emitted — checking
+# it validated a stale fossil from whatever run last produced one (found
+# 2026-07-02: main was green against a four-day-old file). This script reads
+# the JSON the compiler actually wrote THIS run.
 
-if [ ! -f "backend.zig" ]; then
-    echo "✗ backend.zig not found"
+if [ ! -f "program.ast.json" ]; then
+    echo "✗ program.ast.json not found — backend did not run"
     exit 1
 fi
 
-# AST literal moved from backend.zig to program_ast.zig (split landed 2026-05-20).
-# Concatenate both so grep -n / sed -n by line number still work.
-cat backend.zig program_ast.zig 2>/dev/null > _combined_emit.zig
+python3 - <<'PYEOF'
 
-# Check log proc - should be IMPURE (not marked ~[pure])
-PROC_LINE=$(grep -n 'proc_decl = ProcDecl' _combined_emit.zig | while read line; do
-    linenum=$(echo "$line" | cut -d: -f1)
-    # Check if "log" appears in next 5 lines
-    if sed -n "$((linenum)),$((linenum + 5))p" _combined_emit.zig | grep -q '"log"'; then
-        echo "$linenum"
+import json, sys
+
+def load():
+    return json.load(open("program.ast.json"))
+
+def walk(o, kind):
+    """Yield every node of the given decl kind (event_decl / proc_decl / flow)."""
+    if isinstance(o, dict):
+        if kind in o and isinstance(o[kind], dict):
+            yield o[kind]
+        for v in o.values():
+            yield from walk(v, kind)
+    elif isinstance(o, list):
+        for v in o:
+            yield from walk(v, kind)
+
+def find_decl(d, kind, module, name):
+    for n in walk(d, kind):
+        p = n.get("path", {})
+        if p.get("module_qualifier") == module and p.get("segments") == [name]:
+            return n
+    return None
+
+def check(node, what, expect_pure, expect_trans):
+    if node is None:
+        print(f"✗ Could not find {what} in program.ast.json"); sys.exit(1)
+    if node.get("is_pure") is not expect_pure:
+        print(f"✗ FAIL: {what} should be is_pure = {str(expect_pure).lower()}"); sys.exit(1)
+    print(f"✓ {what}: is_pure = {str(expect_pure).lower()}")
+    if node.get("is_transitively_pure") is not expect_trans:
+        print(f"✗ FAIL: {what} should be is_transitively_pure = {str(expect_trans).lower()}"); sys.exit(1)
+    print(f"✓ {what}: is_transitively_pure = {str(expect_trans).lower()}")
+
+
+# Subflow calling an impure proc is transitively IMPURE (locally pure, though —
+# flows are always locally pure).
+d = load()
+check(find_decl(d, "proc_decl", "input", "log"), "log proc", False, False)
+target = None
+for f in walk(d, "flow"):
+    if "\"log\"" in json.dumps(f.get("body", [])) or "log" in json.dumps(f.get("body", []))[:4000]:
+        if f.get("module") in (None, "", "input") or True:
+            pass
+    if "log" in json.dumps(f.get("body", [])):
+        target = f
         break
-    fi
-done)
-
-if [ -z "$PROC_LINE" ]; then
-    echo "✗ Could not find log proc"
-    exit 1
-fi
-
-# The ProcDecl block now spans more lines (body is a Source literal: text +
-# location + scope + phantom_type). Bound the block at its own `.module =` field
-# rather than a fixed window — robust to body length, and won't bleed into a
-# neighbouring proc (which would falsely match is_pure on negative tests).
-PROC_END=$(awk -v s="$PROC_LINE" 'NR>s && /\.module = /{print NR; exit}' _combined_emit.zig)
-PROC=$(sed -n "$((PROC_LINE)),$((PROC_END))p" _combined_emit.zig)
-
-if echo "$PROC" | grep -q 'is_pure = false'; then
-    echo "✓ log proc: is_pure = false (unmarked, defaults to impure)"
-else
-    echo "✗ FAIL: log should be is_pure = false (no ~[pure] annotation)"
-    exit 1
-fi
-
-if echo "$PROC" | grep -q 'is_transitively_pure = false'; then
-    echo "✓ log proc: is_transitively_pure = false"
-else
-    echo "✗ FAIL: log should be is_transitively_pure = false"
-    exit 1
-fi
-
-# Check the top-level subflow - should be transitively IMPURE
-FLOW_LINE=$(grep -n '\.flow = Flow{' _combined_emit.zig | while read line; do
-    linenum=$(echo "$line" | cut -d: -f1)
-    # Check if "log" appears in next 10 lines
-    if sed -n "$((linenum)),$((linenum + 40))p" _combined_emit.zig | grep -q '"log"'; then
-        echo "$linenum"
-        break
-    fi
-done)
-
-if [ -z "$FLOW_LINE" ]; then
-    echo "✗ Could not find Flow calling log"
-    exit 1
-fi
-
-FLOW=$(sed -n "${FLOW_LINE},$((FLOW_LINE + 50))p" _combined_emit.zig)
-
-# Flows are always locally pure
-if echo "$FLOW" | grep -q '.is_pure = true'; then
-    echo "✓ subflow: is_pure = true (flows are always locally pure)"
-else
-    echo "✗ FAIL: subflow should be is_pure = true"
-    exit 1
-fi
-
-# Subflow calls impure event, should be transitively IMPURE
-if echo "$FLOW" | grep -q '.is_transitively_pure = false'; then
-    echo "✓ subflow: is_transitively_pure = false (calls impure log)"
-else
-    echo "✗ FAIL: subflow should be is_transitively_pure = FALSE"
-    echo "  It calls log (impure) - should NOT propagate transitive purity"
-    exit 1
-fi
-
-echo ""
-echo "✓ Subflow correctly marked transitively impure when calling impure proc"
-
-exit 0
+if target is None:
+    print("✗ Could not find the subflow calling log"); import sys; sys.exit(1)
+if target.get("is_pure") is not True:
+    print("✗ FAIL: subflow should be is_pure = true (flows are always locally pure)"); import sys; sys.exit(1)
+print("✓ subflow: is_pure = true (flows are always locally pure)")
+if target.get("is_transitively_pure") is not False:
+    print("✗ FAIL: subflow should be is_transitively_pure = FALSE (calls impure log)"); import sys; sys.exit(1)
+print("✓ subflow: is_transitively_pure = false (calls impure log)")
+print()
+print("✓ Subflow correctly marked transitively impure when calling impure proc")
+PYEOF

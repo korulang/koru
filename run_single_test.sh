@@ -17,6 +17,21 @@ source "$SCRIPT_DIR/scripts/regression_lib.sh"
 # shellcheck source=./scripts/regression_cache.sh
 source "$SCRIPT_DIR/scripts/regression_cache.sh"
 
+# A standalone single-test run during a full suite run in the SAME checkout
+# clobbers that test's artifacts/markers under the suite's feet (this bit us
+# 2026-07-02, minutes after the suite-level lock landed). The suite's own
+# workers are exempt (they run under REGRESSION_QUIET=true). Escape hatch:
+# KORU_SUITE_LOCK_BYPASS=1 when you know the colliding test sets are disjoint.
+if [ "${REGRESSION_QUIET:-false}" != "true" ] && [ -z "${KORU_SUITE_LOCK_BYPASS:-}" ] && [ -d "$SCRIPT_DIR/.regression-run.lock" ]; then
+    SUITE_PID=$(cat "$SCRIPT_DIR/.regression-run.lock/pid" 2>/dev/null || echo "")
+    if [ -n "$SUITE_PID" ] && kill -0 "$SUITE_PID" 2>/dev/null; then
+        echo "❌ A full suite run (pid $SUITE_PID) is active in this checkout — a single-test"
+        echo "   run would clobber its per-test artifacts. Wait, use another worktree, or"
+        echo "   KORU_SUITE_LOCK_BYPASS=1 if you are certain the test sets are disjoint."
+        exit 1
+    fi
+fi
+
 # Backend-binary cache: default ON for standalone invocations too (when the
 # suite drives us it exports MODE/DIR/SALT itself, including MODE=off under
 # --no-backend-cache, and this block is skipped). Reuses a cached backend
