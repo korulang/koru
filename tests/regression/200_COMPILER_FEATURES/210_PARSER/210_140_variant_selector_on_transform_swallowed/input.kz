@@ -1,0 +1,24 @@
+// TEST (aspirational): the parser SILENTLY SWALLOWS a |variant selector
+// on a transform invocation with a source block.
+//
+//   ~std/kernel:init(Body)|gpu { ... }
+//
+// parses with exit 0 today, but "gpu" appears NOWHERE in the AST — the
+// token is dropped without a diagnostic. By the maximalist-parser tenet
+// the parser does not value-judge: it must CARRY the selector
+// (Invocation.variant, ast.zig — "gpu", "naive", etc.) and let later
+// stages rule on legality. A silent drop is the worst of both.
+//
+// expected.json pins the carried form: the init invocation's variant
+// field is "gpu". Discovered 2026-07-03 while pinning the trellis
+// variant guard (680_011), which reads this selector.
+
+~import std/kernel
+
+~std/kernel:shape(Body) {
+    mass: f64,
+}
+
+~std/kernel:init(Body)|gpu {
+    { mass: 1.0 },
+}

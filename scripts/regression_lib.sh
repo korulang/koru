@@ -556,6 +556,8 @@ regression_run_one_test() {
           "$test_dir/temp_build.zig" \
           "$test_dir/build.zig" \
           "$test_dir/program.ast.json" \
+          "$test_dir/program_ast.zig" \
+          "$test_dir/_combined_emit.zig" \
           "$test_dir/SUCCESS" \
           "$test_dir/FAILURE"
 

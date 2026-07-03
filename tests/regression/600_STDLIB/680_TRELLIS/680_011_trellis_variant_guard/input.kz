@@ -1,0 +1,52 @@
+// TEST (aspirational): std/trellis:guard — CAPABILITY-FLOAT early warning.
+//
+// The categorization payoff: variant selection consults trellis
+// membership. guard binds a variant tag to a trellis; any flow that
+// REQUESTS that variant (|gpu selector) but does not satisfy the trellis
+// dies at the request site with a located, koru-level message — early
+// warning instead of generated-code wreckage three stages later.
+//
+// Desired message shape (pinned as substring in expected_error.txt):
+//
+//   flow requests variant "gpu" but does not satisfy trellis "gpu-legal": std/kernel:step is not gpu-legal
+//
+// LADDER NOTE (each rung is its own red reason, in order):
+//   1. std/trellis:guard does not exist yet.
+//   2. The parser SILENTLY SWALLOWS the |gpu selector on a transform
+//      invocation (pinned as 210_140) — until that carries, the guard
+//      has nothing to read.
+//   3. Membership annotations (rung 2 of the categorization engine)
+//      carry the per-flow verdict the guard consumes.
+//
+// SURFACE NOTE (caps ruling, 2026-07-03): Lars ruled that mechanism
+// vocabulary must not leak into annotations — capability requirements are
+// declared as `~[cap("...")]` intent annotations that trellis REASONS
+// OVER, not as trellis(...)/guard bindings. The guard-invocation spelling
+// below is a placeholder; the binding design for transform-invocation
+// variants (no proc to annotate) is open — see
+// baton_trellis_capability_annotations. The MESSAGE shape is the stable
+// part of this pin.
+
+~import std/trellis
+~import std/kernel
+~import std/io
+
+~std/trellis:define("gpu-legal")
+| `std/kernel:init/kernel/std/kernel:step.*` _ => error "std/kernel:step is not gpu-legal (sequential outer iteration)"
+| `.*` _ => ok
+
+~std/trellis:guard(variant: "gpu", trellis: "gpu-legal")
+
+~std/kernel:shape(Body) {
+    mass: f64,
+}
+
+// VIOLATION: requests |gpu but uses step — fails the gpu-legal trellis.
+~std/kernel:init(Body)|gpu {
+    { mass: 1.0 },
+}
+| kernel k |> std/kernel:step(0..2)
+    | step |> std/kernel:self { k.mass += 0.5 }
+| computed c |> std/io:print.blk {
+        b={{ c[0].mass:f }}
+    }
