@@ -1,0 +1,25 @@
+// OPTIONAL RESUME ARMS, proc side — designed 2026-07-03. A `~proc |zig` impl
+// gets the presence truth as a NULLABLE FUNCTION POINTER alias: for an
+// optional arm the emitter binds
+//     const ask: ?*const fn (...) T = if (@hasDecl(__H, "ask")) &__H.ask else null;
+// instead of today's synthesized no-op (which is invalid Zig for any
+// value-resuming arm, and poisons @hasDecl for all of them). The proc then
+// writes idiomatic Zig: `if (ask) |f| ...` — comptime-known null, folds away.
+//
+// This consumer OMITS the handler, so the unwrap fails and the proc's own
+// explicit fallback wins: prints 0.
+~import std/io
+
+~pub event query { q: i64 }
+! ?ask i64 -> i64
+| done i64
+
+~proc query|zig {
+    if (ask) |f| {
+        return .{ .done = f(q) };
+    }
+    return .{ .done = 0 };
+}
+
+~query(q: 41)
+| done r |> std/io:print.ln("{{ r:d }}")
