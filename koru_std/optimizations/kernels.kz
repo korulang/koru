@@ -18,8 +18,7 @@
 // KERNEL OPTIMIZATION EVENT
 // ============================================================
 
-~pub event optimize { ctx: std/compiler:CompilerContext }
-| ctx std/compiler:CompilerContext
+~pub event optimize { ctx: std/compiler:CompilerContext } -> std/compiler:CompilerContext
 
 ~proc optimize|zig {
     // Phase 1: Infrastructure - pass through unchanged
@@ -43,7 +42,7 @@
     //   - Eliminate intermediate function calls
     //   - Generate single fused loop
 
-    return .{ .ctx = updated_ctx };
+    return updated_ctx;
 }
 
 // ============================================================

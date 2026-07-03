@@ -1770,7 +1770,7 @@ pub const VisitorEmitter = struct {
 
         // Output type — terminal branches only (bare `-> T` handled centrally)
         try self.code_emitter.writeIndent();
-        if (try emitter.emitBareReturnOutput(self.code_emitter, event)) {
+        if (try emitter.emitBareReturnOutput(self.code_emitter, event, self.main_module_name)) {
             // bare-return Output emitted centrally
         } else if (terminal_count == 0) {
             try self.code_emitter.write("pub const Output = void;\n");

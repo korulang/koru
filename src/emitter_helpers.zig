@@ -1666,7 +1666,7 @@ pub fn emitSubflowContinuations(
     // `.expression` produce arms lower to `return EXPR;` (see EmissionContext).
     enclosing_bare_return: bool,
 ) !void {
-    try emitSubflowContinuationsWithDepth(emitter, continuations, start_idx, indent, all_items, 0, tap_registry, type_registry, main_module_name, source_event_name, module_prefix, enclosing_bare_return);
+    try emitSubflowContinuationsWithDepth(emitter, continuations, start_idx, indent, all_items, 0, tap_registry, type_registry, main_module_name, source_event_name, module_prefix, enclosing_bare_return, null);
 }
 
 /// Helper to check if any continuation in a list has a label
@@ -1967,6 +1967,11 @@ fn emitSubflowContinuationsWithDepth(
     source_event_name: ?[]const u8,
     module_prefix: []const u8,
     enclosing_bare_return: bool,
+    // Actual name of the parent step's result when it deviates from the
+    // `result`/`nested_result_{depth-1}` formula — a `: bind` names the parent
+    // const after the bind, and every formula-derived discard here would
+    // otherwise reference a nonexistent variable.
+    parent_result_name: ?[]const u8,
 ) !void {
     if (start_idx >= continuations.len) return;
 
@@ -1998,7 +2003,11 @@ fn emitSubflowContinuationsWithDepth(
                 // discard it (parent var is `result` at depth 0, else
                 // `nested_result_{depth-1}`).
                 try emitter.write(indent);
-                if (depth == 0) {
+                if (parent_result_name) |prn| {
+                    try emitter.write("_ = &");
+                    try emitter.write(prn);
+                    try emitter.write(";\n");
+                } else if (depth == 0) {
                     try emitter.write("_ = &result;\n");
                 } else {
                     var buf: [48]u8 = undefined;
@@ -2057,7 +2066,11 @@ fn emitSubflowContinuationsWithDepth(
         // `result` at depth 0, `nested_result_{depth-1}` otherwise.
         if (next_needs_switch or step_has_return_binding) {
             try emitter.write(indent);
-            if (depth == 0) {
+            if (parent_result_name) |prn| {
+                try emitter.write("_ = &");
+                try emitter.write(prn);
+                try emitter.write(";\n");
+            } else if (depth == 0) {
                 try emitter.write("_ = &result;\n");
             } else {
                 var buf: [48]u8 = undefined;
@@ -2106,7 +2119,58 @@ fn emitSubflowContinuationsWithDepth(
                         try emitter.write(".");
                         try writeBranchName(emitter, arg.name);
                         try emitter.write(" = ");
-                        try emitter.write(arg.value);
+                        // A Koru array literal `[a, b]` needs its element type from
+                        // the target event's field to become `&[_]T{ a, b }` — raw
+                        // passthrough is a Zig syntax error. all_items may be
+                        // module-scoped here, so cross-module targets resolve via
+                        // the (global) type registry's canonical key.
+                        const av = std.mem.trim(u8, arg.value, " \t");
+                        if (av.len >= 2 and av[0] == '[' and av[av.len - 1] == ']') {
+                            const field: *const ast.Field = blk: {
+                                if (findEventDeclByPath(all_items, &inv.path)) |target_decl| {
+                                    for (target_decl.input.fields) |*f| {
+                                        if (std.mem.eql(u8, f.name, arg.name)) break :blk f;
+                                    }
+                                }
+                                var name_buf: [512]u8 = undefined;
+                                var pos: usize = 0;
+                                if (inv.path.module_qualifier) |mq| {
+                                    @memcpy(name_buf[pos .. pos + mq.len], mq);
+                                    pos += mq.len;
+                                    name_buf[pos] = ':';
+                                    pos += 1;
+                                } else if (main_module_name) |mmn| {
+                                    @memcpy(name_buf[pos .. pos + mmn.len], mmn);
+                                    pos += mmn.len;
+                                    name_buf[pos] = ':';
+                                    pos += 1;
+                                }
+                                for (inv.path.segments, 0..) |seg, seg_i| {
+                                    if (seg_i > 0) {
+                                        name_buf[pos] = '.';
+                                        pos += 1;
+                                    }
+                                    @memcpy(name_buf[pos .. pos + seg.len], seg);
+                                    pos += seg.len;
+                                }
+                                if (type_registry.getEventType(name_buf[0..pos])) |et| {
+                                    if (et.input_shape) |shape| {
+                                        for (shape.fields) |*f| {
+                                            if (std.mem.eql(u8, f.name, arg.name)) break :blk f;
+                                        }
+                                    }
+                                }
+                                return error.ArrayLiteralMissingType;
+                            };
+                            var lit_ctx = EmissionContext{
+                                .allocator = std.heap.page_allocator,
+                                .main_module_name = main_module_name,
+                                .type_registry = type_registry,
+                            };
+                            try emitArrayLiteralForField(emitter, &lit_ctx, field, av);
+                        } else {
+                            try emitter.write(arg.value);
+                        }
                     }
                     try emitter.write(" });\n");
                 },
@@ -2118,9 +2182,16 @@ fn emitSubflowContinuationsWithDepth(
                         // value directly with no tag — the twin of the flat
                         // `~e -> expr` impl. branch_name is empty here, so the
                         // tagged form below would emit malformed `return .{ . = v }`.
+                        // Route through emitValue so a Koru record literal
+                        // `{ f: v }` lowers to `.{ .f = v }` instead of raw Zig.
                         try emitter.write("return ");
                         if (bc.plain_value) |pv| {
-                            try emitter.write(pv);
+                            var val_ctx = EmissionContext{
+                                .allocator = std.heap.page_allocator,
+                                .main_module_name = main_module_name,
+                                .type_registry = type_registry,
+                            };
+                            try emitValue(emitter, &val_ctx, pv);
                         } else {
                             try emitter.write("undefined");
                         }
@@ -2158,6 +2229,10 @@ fn emitSubflowContinuationsWithDepth(
         // result above, so the recursive switch picks up our `nested_result_{depth}`
         // via its own `nested_result_{(depth+1) - 1}` lookup.
         if (cont.continuations.len > 0) {
+            const step_bind: ?[]const u8 = if (cont.node) |st|
+                (if (st == .invocation) st.invocation.return_binding else null)
+            else
+                null;
             try emitSubflowContinuationsWithDepth(
                 emitter,
                 cont.continuations,
@@ -2171,6 +2246,10 @@ fn emitSubflowContinuationsWithDepth(
                 source_event_name,
                 module_prefix,
                 enclosing_bare_return,
+                // A bind-named step is the new parent; a switch-assigned step
+                // follows the formula (pass null); otherwise the parent is
+                // unchanged at this level.
+                step_bind orelse (if (next_needs_switch) null else parent_result_name),
             );
         }
         return;
@@ -2600,8 +2679,17 @@ fn emitSubflowContinuationsWithDepth(
                             // Emit invocation step (could be a tap or regular invocation)
                             try emitter.write(indent);
                             var buf: [64]u8 = undefined;
-                            const var_name = try std.fmt.bufPrint(&buf, "        const nested_result_{d} = ", .{depth + step_idx});
-                            try emitter.write(var_name);
+                            if (inv.return_binding) |rb| {
+                                // Bare-return bind on the arm's step (`| tag b |> f(): v |> ...`):
+                                // downstream chain steps reference `v`, so the result
+                                // must be declared under the bind name, not nested_result_N.
+                                try emitter.write("        const ");
+                                try writeBranchName(emitter, rb);
+                                try emitter.write(" = ");
+                            } else {
+                                const var_name = try std.fmt.bufPrint(&buf, "        const nested_result_{d} = ", .{depth + step_idx});
+                                try emitter.write(var_name);
+                            }
 
                             // Emit module qualifier if present
                             if (inv.path.module_qualifier) |mq| {
@@ -2694,8 +2782,14 @@ fn emitSubflowContinuationsWithDepth(
 
                             // Suppress unused variable warning (result might not be used, e.g., for taps)
                             try emitter.write(indent);
-                            const suppress_unused = try std.fmt.bufPrint(&buf, "        _ = &nested_result_{d};\n", .{depth + step_idx});
-                            try emitter.write(suppress_unused);
+                            if (inv.return_binding) |rb| {
+                                try emitter.write("        _ = &");
+                                try writeBranchName(emitter, rb);
+                                try emitter.write(";\n");
+                            } else {
+                                const suppress_unused = try std.fmt.bufPrint(&buf, "        _ = &nested_result_{d};\n", .{depth + step_idx});
+                                try emitter.write(suppress_unused);
+                            }
                         },
                         .metatype_binding => |mb| {
                             // Emit metatype construction (Profile/Transition/Audit)
@@ -2797,7 +2891,7 @@ fn emitSubflowContinuationsWithDepth(
                                 const extra = "            ";
                                 @memcpy(deeper_indent_buf[indent.len .. indent.len + extra.len], extra);
                                 const deeper_indent = deeper_indent_buf[0 .. indent.len + extra.len];
-                                try emitSubflowContinuationsWithDepth(emitter, cont.continuations, 0, deeper_indent, all_items, last_result_idx + 1, tap_registry, type_registry, main_module_name, source_event_name, module_prefix, enclosing_bare_return);
+                                try emitSubflowContinuationsWithDepth(emitter, cont.continuations, 0, deeper_indent, all_items, last_result_idx + 1, tap_registry, type_registry, main_module_name, source_event_name, module_prefix, enclosing_bare_return, if (cont.node) |st| (if (st == .invocation) st.invocation.return_binding else null) else null);
                             }
 
                             try emitter.write(indent);
@@ -2848,7 +2942,7 @@ fn emitSubflowContinuationsWithDepth(
                     const extra = "        ";
                     @memcpy(deeper_indent_buf[indent.len .. indent.len + extra.len], extra);
                     const deeper_indent = deeper_indent_buf[0 .. indent.len + extra.len];
-                    try emitSubflowContinuationsWithDepth(emitter, cont.continuations, 0, deeper_indent, all_items, last_result_idx + 1, tap_registry, type_registry, main_module_name, source_event_name, module_prefix, enclosing_bare_return);
+                    try emitSubflowContinuationsWithDepth(emitter, cont.continuations, 0, deeper_indent, all_items, last_result_idx + 1, tap_registry, type_registry, main_module_name, source_event_name, module_prefix, enclosing_bare_return, if (cont.node) |st| (if (st == .invocation) st.invocation.return_binding else null) else null);
                 }
 
                 try emitter.write(indent);
@@ -5591,7 +5685,7 @@ fn emitInvocation(
             try emitter.write(bind_name);
             try emitter.write(": ");
             if (bare_return and event_decl != null and event_decl.?.return_type != null) {
-                try writeBareReturnType(emitter, event_decl.?.return_type.?);
+                try writeBareReturnType(emitter, event_decl.?.return_type.?, ctx.main_module_name);
             } else {
                 try emitInvocationTarget(emitter, ctx, &invocation.path);
                 try emitter.write(".Output");
@@ -9266,10 +9360,10 @@ pub fn emitArrayLiteralForField(
 /// (branch-based) events, leaving the caller's existing Output emission intact.
 /// Every `Output = ...` site routes through this so the bare-return case is
 /// handled in exactly one place.
-pub fn emitBareReturnOutput(emitter: *CodeEmitter, event: *const ast.EventDecl) !bool {
+pub fn emitBareReturnOutput(emitter: *CodeEmitter, event: *const ast.EventDecl, main_module_name: ?[]const u8) !bool {
     if (event.return_type) |rt| {
         try emitter.write("pub const Output = ");
-        try writeBareReturnType(emitter, rt);
+        try writeBareReturnType(emitter, rt, main_module_name);
         try emitter.write(";\n");
         return true;
     }
@@ -9280,10 +9374,33 @@ pub fn emitBareReturnOutput(emitter: *CodeEmitter, event: *const ast.EventDecl) 
 /// shares Koru/Zig field syntax and only needs the Zig anon-struct keyword in
 /// front: `struct { f: T }`. Scalars and slices pass through unchanged. Every
 /// site that lowers a `return_type` to a Zig type routes through here.
-pub fn writeBareReturnType(emitter: *CodeEmitter, rt: []const u8) !void {
+pub fn writeBareReturnType(emitter: *CodeEmitter, rt: []const u8, main_module_name: ?[]const u8) !void {
     const trimmed = std.mem.trim(u8, rt, " \t");
     if (trimmed.len > 0 and trimmed[0] == '{') {
         try emitter.write("struct ");
+        try emitter.write(rt);
+        return;
+    }
+    // Module-qualified scalar `mod/path:Type` must lower to the mangled Zig
+    // module path (`koru_std.koru_compiler.CompilerContext`) — raw passthrough
+    // of the `:` is a Zig syntax error. Pointer/slice prefixes sit in front of
+    // the qualifier, so strip them first (mirrors writeQualifiedType).
+    var remaining = trimmed;
+    var prefix: []const u8 = "";
+    const prefixes = [_][]const u8{ "[]const ", "[]", "?*const ", "?*", "*const ", "*", "?" };
+    for (prefixes) |candidate| {
+        if (std.mem.startsWith(u8, remaining, candidate)) {
+            prefix = candidate;
+            remaining = remaining[candidate.len..];
+            break;
+        }
+    }
+    if (std.mem.indexOfScalar(u8, remaining, ':')) |colon| {
+        try emitter.write(prefix);
+        try writeModulePath(emitter, remaining[0..colon], main_module_name);
+        try emitter.write(".");
+        try emitter.write(remaining[colon + 1 ..]);
+        return;
     }
     try emitter.write(rt);
 }
@@ -9694,7 +9811,7 @@ fn emitEventDeclForModuleFromType(
     try code_emitter.writeIndent();
     if (event_type.return_type) |rt| {
         try code_emitter.write("pub const Output = ");
-        try writeBareReturnType(code_emitter, rt);
+        try writeBareReturnType(code_emitter, rt, ctx.main_module_name);
         try code_emitter.write(";\n");
     } else if (event_type.branches.len == 0) {
         try code_emitter.write("pub const Output = void;\n");
@@ -10215,7 +10332,7 @@ fn emitEventDeclForModule(
 
     // Output union — terminal branches only (bare `-> T` handled centrally)
     try code_emitter.writeIndent();
-    if (try emitBareReturnOutput(code_emitter, event)) {
+    if (try emitBareReturnOutput(code_emitter, event, ctx.main_module_name)) {
         // bare-return Output emitted centrally
     } else if (terminal_count == 0) {
         try code_emitter.write("pub const Output = void;\n");

@@ -19,8 +19,7 @@
 
 // Optimization segment: AST transformations for performance (abstract, can be overridden)
 // This is where we create IR nodes (NativeLoop, etc.)
-~[comptime|abstract] pub event optimize { ctx: std/compiler:CompilerContext }
-| ctx std/compiler:CompilerContext
+~[comptime|abstract] pub event optimize { ctx: std/compiler:CompilerContext } -> std/compiler:CompilerContext
 
 // ============================================================
 // DEFAULT OPTIMIZE IMPLEMENTATION
@@ -29,6 +28,4 @@
 // Users can override with ~std/compiler:optimize = ...
 
 // Default optimization pipeline - chains all optimization passes
-~optimize = std/optimizations/kernels:optimize(ctx)
-| ctx c1 |> std/optimizations/loops:optimize(ctx: c1)
-  | ctx c2 => ctx c2
+~optimize = std/optimizations/kernels:optimize(ctx): c1 |> std/optimizations/loops:optimize(ctx: c1): c2 -> c2

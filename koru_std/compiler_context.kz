@@ -55,8 +55,7 @@ pub const CompilerContext = struct {
     ast: Program,
     allocator: std.mem.Allocator,
     error_policy: ErrorPolicy
-}
-| created CompilerContext
+} -> CompilerContext
 
 ~proc init|zig {
     var ctx = CompilerContext{
@@ -69,12 +68,11 @@ pub const CompilerContext = struct {
         .passes_completed = 0,
     };
 
-    return .{ .created = ctx };
+    return ctx;
 }
 
 // Begin a compilation pass (increments metrics, emits CCP events)
-~pub event begin-pass { ctx: CompilerContext, name: []const u8 }
-| continued CompilerContext
+~pub event begin-pass { ctx: CompilerContext, name: []const u8 } -> CompilerContext
 
 ~proc begin-pass|zig {
     var ctx = ctx;
@@ -85,12 +83,11 @@ pub const CompilerContext = struct {
     //     emit_ccp_event("pass_started", .{ .pass = name });
     // }
 
-    return .{ .continued = ctx };
+    return ctx;
 }
 
 // End a compilation pass (increments pass counter, emits CCP events)
-~pub event end-pass { ctx: CompilerContext }
-| continued CompilerContext
+~pub event end-pass { ctx: CompilerContext } -> CompilerContext
 
 ~proc end-pass|zig {
     var ctx = ctx;
@@ -108,7 +105,7 @@ pub const CompilerContext = struct {
     }
 
     ctx.current_pass = null;
-    return .{ .continued = ctx };
+    return ctx;
 }
 
 // Report a compilation error
@@ -116,8 +113,7 @@ pub const CompilerContext = struct {
     ctx: CompilerContext,
     message: []const u8,
     location: SourceLocation
-}
-| continued CompilerContext
+} -> CompilerContext
 
 ~proc report-error|zig {
     var ctx = ctx;
@@ -146,7 +142,7 @@ pub const CompilerContext = struct {
 
     // TODO: Emit CCP error event if --ccp flag is set
 
-    return .{ .continued = ctx };
+    return ctx;
 }
 
 // Report a compilation warning
@@ -154,8 +150,7 @@ pub const CompilerContext = struct {
     ctx: CompilerContext,
     message: []const u8,
     location: SourceLocation
-}
-| continued CompilerContext
+} -> CompilerContext
 
 ~proc report-warning|zig {
     var ctx = ctx;
@@ -184,12 +179,11 @@ pub const CompilerContext = struct {
 
     // TODO: Emit CCP warning event if --ccp flag is set
 
-    return .{ .continued = ctx };
+    return ctx;
 }
 
 // Report an informational message
-~pub event info { ctx: CompilerContext, message: []const u8 }
-| continued CompilerContext
+~pub event info { ctx: CompilerContext, message: []const u8 } -> CompilerContext
 
 ~proc info|zig {
     // TODO: Check if --verbose flag is set before printing
@@ -197,7 +191,7 @@ pub const CompilerContext = struct {
         std.debug.print("INFO: {s}\n", .{message});
     // }
 
-    return .{ .continued = ctx };
+    return ctx;
 }
 
 // Check if compilation should abort due to errors
@@ -218,46 +212,42 @@ pub const CompilerContext = struct {
 }
 
 // Query: Get current pass count
-~pub event pass-count { ctx: CompilerContext }
-| count { ctx: CompilerContext, value: u32 }
+~pub event pass-count { ctx: CompilerContext } -> { ctx: CompilerContext, value: u32 }
 
 ~proc pass-count|zig {
-    return .{ .count = .{
+    return .{
         .ctx = ctx,
         .value = ctx.passes_completed
-    } };
+    };
 }
 
 // Query: Get error count
-~pub event error-count { ctx: CompilerContext }
-| count { ctx: CompilerContext, value: u32 }
+~pub event error-count { ctx: CompilerContext } -> { ctx: CompilerContext, value: u32 }
 
 ~proc error-count|zig {
     const err_count: u32 = @intCast(ctx.errors.items.len);
-    return .{ .count = .{
+    return .{
         .ctx = ctx,
         .value = err_count
-    } };
+    };
 }
 
 // Query: Get warning count
-~pub event warning-count { ctx: CompilerContext }
-| count { ctx: CompilerContext, value: u32 }
+~pub event warning-count { ctx: CompilerContext } -> { ctx: CompilerContext, value: u32 }
 
 ~proc warning-count|zig {
     const warn_count: u32 = @intCast(ctx.warnings.items.len);
-    return .{ .count = .{
+    return .{
         .ctx = ctx,
         .value = warn_count
-    } };
+    };
 }
 
 // Update AST in context (used by transformation passes)
-~pub event update-ast { ctx: CompilerContext, ast: Program }
-| continued CompilerContext
+~pub event update-ast { ctx: CompilerContext, ast: Program } -> CompilerContext
 
 ~proc update-ast|zig {
     var ctx = ctx;
     ctx.ast = ast;
-    return .{ .continued = ctx };
+    return ctx;
 }
