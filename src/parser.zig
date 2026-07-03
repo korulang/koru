@@ -5880,6 +5880,7 @@ pub const Parser = struct {
         if (destructure.len == 0) {
             if (parts.peek()) |next| {
             if (!std.mem.startsWith(u8, next, "|>") and !std.mem.startsWith(u8, next, "=>") and
+                !std.mem.startsWith(u8, next, "->") and
                 !std.mem.startsWith(u8, next, "@") and !std.mem.eql(u8, next, "when"))
             {
                 // Check if binding has annotations: identifier[ann1|ann2|...]
@@ -6283,18 +6284,81 @@ pub const Parser = struct {
                 full_rest = allocated_rest.?;
             }
 
+            // A trailing top-level `-> produce` on the LAST step of the arm's
+            // chain (`| else |> f(x): v -> g(v)`) is the bare-return produce
+            // arm — same chain-tail grammar parseInlineContinuation strips for
+            // flow-level chains (020_030). `->` is not a chain delimiter, so it
+            // rides on the final segment; without this strip the invocation
+            // parser's arg scan silently swallowed it (return_binding kept,
+            // produce dropped). Detect on a comment-stripped view.
+            var produce_tail: ?[]const u8 = null;
+            {
+                const full_nc = stripTrailingLineComment(full_rest);
+                if (indexOfTopLevelArrow(full_nc)) |aidx| {
+                    const pt = lexer.trim(full_nc[aidx + 2 ..]);
+                    if (pt.len > 0) {
+                        produce_tail = pt;
+                        full_rest = lexer.trim(full_nc[0..aidx]);
+                    }
+                }
+            }
+
             // Branch handler body — `_` allowed as sole step.
             const steps = try self.parsePipelineSteps(full_rest, true, location);
             defer self.allocator.free(steps);
+
+            // The stripped produce becomes the innermost continuation of the
+            // chain: a bare-return branch_constructor (the same node the
+            // subflow-head `head(): v -> expr` produce uses).
+            const produce_conts: []const ast.Continuation = if (produce_tail) |pt| blk: {
+                const conts = try self.allocator.alloc(ast.Continuation, 1);
+                conts[0] = ast.Continuation{
+                    .branch = try self.allocator.dupe(u8, ""),
+                    .binding = null,
+                    .binding_annotations = &[_][]const u8{},
+                    .binding_type = .branch_payload,
+                    .condition = null,
+                    .condition_expr = null,
+                    .node = .{ .branch_constructor = .{
+                        .branch_name = try self.allocator.dupe(u8, ""),
+                        .fields = &.{},
+                        .plain_value = try self.allocator.dupe(u8, pt),
+                        .has_expressions = true,
+                        .is_bare_return = true,
+                    } },
+                    .indent = indent,
+                    .continuations = &.{},
+                    .location = location,
+                };
+                break :blk conts;
+            } else &[_]ast.Continuation{};
+
             if (steps.len > 0) {
                 step = steps[0];
+
+                if (steps.len == 1 and produce_tail != null) {
+                    return ast.Continuation{
+                        .branch = owned_branch,
+                        .binding = binding,
+                        .destructure = destructure,
+                        .binding_annotations = binding_annotations,
+                        .binding_type = .branch_payload,
+                        .condition = condition,
+                        .condition_expr = condition_expr,
+                        .node = step,
+                        .indent = indent,
+                        .continuations = produce_conts,
+                        .location = location,
+                    };
+                }
 
                 // FIX: Chain additional steps as nested continuations
                 // | done |> step1 |> step2 |> step3 should create:
                 //   Continuation(step1) -> Continuation(step2) -> Continuation(step3)
                 if (steps.len > 1) {
-                    // Build chain from back to front
-                    var current_nested: []const ast.Continuation = &[_]ast.Continuation{};
+                    // Build chain from back to front; a stripped `-> produce`
+                    // sits innermost, attached to the final step.
+                    var current_nested: []const ast.Continuation = produce_conts;
 
                     var step_idx: usize = steps.len;
                     while (step_idx > 1) { // Skip steps[0], it's already in 'step'
