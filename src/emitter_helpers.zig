@@ -9809,16 +9809,68 @@ fn emitSelfTailReentry(
     cont: *const ast.Continuation,
 ) !void {
     const inv = cont.node.?.invocation;
+    // SNAPSHOT / SIMULTANEOUS ASSIGNMENT (same defect + fix as captured{},
+    // ruled 2026-07-02, pinned 320_102 & 320_121): a tail self-re-entry
+    // reassigns the loop's `var` bindings. Emitted sequentially, a later arg's
+    // RHS reads an EARLIER binding that was already stored — e.g. gcd's
+    // `a = b; b = @mod(a, b);` reads the new `a`, and nestedloop's `k = k - 1;
+    // acc = ... k` reads the decremented `k`. Silent wrong answers. Stage every
+    // reassigned RHS into a block-scoped temp against the INCOMING state, then
+    // store — the same loads/stores, reordered; LLVM register-allocates the
+    // temps (no copies). No-op pass-throughs (`ops: ops`) never change, so they
+    // need neither store nor staging.
+    var n_reassign: usize = 0;
     for (inv.args) |arg| {
         const trimmed = std.mem.trim(u8, arg.value, " \t");
-        // Skip no-op pass-throughs (`ops: ops` → `ops = ops`). Avoids a
-        // pointless array copy and keeps the emitted loop clean.
         if (std.mem.eql(u8, trimmed, arg.name)) continue;
+        n_reassign += 1;
+    }
+    if (n_reassign > 1) {
         try emitter.writeIndent();
-        try writeBranchName(emitter, arg.name);
-        try emitter.write(" = ");
-        try emitValue(emitter, ctx, arg.value);
-        try emitter.write(";\n");
+        try emitter.write("{\n");
+        emitter.indent_level += 1;
+        var i: usize = 0;
+        for (inv.args) |arg| {
+            const trimmed = std.mem.trim(u8, arg.value, " \t");
+            if (std.mem.eql(u8, trimmed, arg.name)) continue;
+            var name_buf: [40]u8 = undefined;
+            const tmp = try std.fmt.bufPrint(&name_buf, "__koru_reentry_{d}", .{i});
+            try emitter.writeIndent();
+            try emitter.write("const ");
+            try emitter.write(tmp);
+            try emitter.write(" = ");
+            try emitValue(emitter, ctx, arg.value);
+            try emitter.write(";\n");
+            i += 1;
+        }
+        i = 0;
+        for (inv.args) |arg| {
+            const trimmed = std.mem.trim(u8, arg.value, " \t");
+            if (std.mem.eql(u8, trimmed, arg.name)) continue;
+            var name_buf: [40]u8 = undefined;
+            const tmp = try std.fmt.bufPrint(&name_buf, "__koru_reentry_{d}", .{i});
+            try emitter.writeIndent();
+            try writeBranchName(emitter, arg.name);
+            try emitter.write(" = ");
+            try emitter.write(tmp);
+            try emitter.write(";\n");
+            i += 1;
+        }
+        emitter.indent_level -= 1;
+        try emitter.writeIndent();
+        try emitter.write("}\n");
+    } else {
+        for (inv.args) |arg| {
+            const trimmed = std.mem.trim(u8, arg.value, " \t");
+            // Skip no-op pass-throughs (`ops: ops` → `ops = ops`). Avoids a
+            // pointless array copy and keeps the emitted loop clean.
+            if (std.mem.eql(u8, trimmed, arg.name)) continue;
+            try emitter.writeIndent();
+            try writeBranchName(emitter, arg.name);
+            try emitter.write(" = ");
+            try emitValue(emitter, ctx, arg.value);
+            try emitter.write(";\n");
+        }
     }
     try emitter.writeIndent();
     try emitter.write("continue :");
