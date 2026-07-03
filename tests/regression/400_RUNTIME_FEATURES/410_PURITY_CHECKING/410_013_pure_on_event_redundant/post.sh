@@ -1,22 +1,49 @@
 #!/bin/bash
-# Verify: program with [pure] on an event compiled cleanly.
-# Annotations are open metadata at the frontend — misplaced
-# annotations are not rejected.
+# Verify: [pure] on an event is legal (annotations are open metadata) and the program compiles.
+#
+# Re-pointed 2026-07-03: the serialized-AST Zig literal (backend.zig /
+# program_ast.zig) is RETIRED — the backend loads program.ast.json at
+# runtime, so that JSON is the serialized AST and the artifact to assert
+# against. The old grep-the-Zig-literal form passed on stale artifacts
+# only (the harness never cleaned program_ast.zig).
 
-if [ ! -f "backend.zig" ]; then
-    echo "✗ backend.zig not found — program failed to compile, but [pure] on event should be legal"
+if [ ! -f "program.ast.json" ]; then
+    echo "✗ program.ast.json not found"
     exit 1
 fi
 
-# AST literal moved from backend.zig to program_ast.zig (split landed 2026-05-20).
-# Concatenate both so grep finds serialized AST contents regardless of layout.
-cat backend.zig program_ast.zig 2>/dev/null > _combined_emit.zig
+python3 - <<'EOF'
+import json, sys
+d = json.load(open('program.ast.json'))
 
-if grep -q '"noop"' _combined_emit.zig; then
-    echo "✓ program with [pure] on event compiled cleanly (annotations are open metadata)"
-else
-    echo "✗ FAIL: noop event not found in backend.zig"
-    exit 1
-fi
+def find(kind, name):
+    for it in d['items']:
+        if kind in it:
+            v = it[kind]
+            segs = (v.get('path') or {}).get('segments') or []
+            if segs and segs[-1] == name:
+                return v
+    return None
 
-exit 0
+def first_flow():
+    for it in d['items']:
+        if 'flow' in it:
+            return it['flow']
+    return None
+
+def check(entity, label, field, want):
+    if entity is None:
+        print(f"✗ Could not find {label}")
+        sys.exit(1)
+    got = entity.get(field)
+    if got is not want:
+        print(f"✗ FAIL: {label} should have {field} = {str(want).lower()}, got {str(got).lower()}")
+        sys.exit(1)
+
+e = find('event_decl', 'noop')
+if e is None:
+    print("✗ FAIL: noop event not found in program.ast.json")
+    sys.exit(1)
+print("✓ program with [pure] on event compiled cleanly (annotations are open metadata)")
+EOF
+exit $?

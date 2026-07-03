@@ -1,47 +1,51 @@
 #!/bin/bash
-# Verify: event with [pure] proc impl derives is_pure=true on the
-# event declaration itself. Layer 2: event purity is computed from
-# impl purity (AND across impls).
+# Verify: event derives is_pure=true from its ~[pure] proc impl.
+#
+# Re-pointed 2026-07-03: the serialized-AST Zig literal (backend.zig /
+# program_ast.zig) is RETIRED — the backend loads program.ast.json at
+# runtime, so that JSON is the serialized AST and the artifact to assert
+# against. The old grep-the-Zig-literal form passed on stale artifacts
+# only (the harness never cleaned program_ast.zig).
 
-if [ ! -f "backend.zig" ]; then
-    echo "✗ backend.zig not found"
+if [ ! -f "program.ast.json" ]; then
+    echo "✗ program.ast.json not found"
     exit 1
 fi
 
-# AST literal moved from backend.zig to program_ast.zig (split landed 2026-05-20).
-# Concatenate both so grep -n / sed -n by line number still work.
-cat backend.zig program_ast.zig 2>/dev/null > _combined_emit.zig
+python3 - <<'EOF'
+import json, sys
+d = json.load(open('program.ast.json'))
 
-# Find the event declaration for compute
-EVENT_LINE=$(grep -n 'event_decl = EventDecl' _combined_emit.zig | while read line; do
-    linenum=$(echo "$line" | cut -d: -f1)
-    if sed -n "$((linenum)),$((linenum + 5))p" _combined_emit.zig | grep -q '"compute"'; then
-        echo "$linenum"
-        break
-    fi
-done)
+def find(kind, name):
+    for it in d['items']:
+        if kind in it:
+            v = it[kind]
+            segs = (v.get('path') or {}).get('segments') or []
+            if segs and segs[-1] == name:
+                return v
+    return None
 
-if [ -z "$EVENT_LINE" ]; then
-    echo "✗ Could not find compute event_decl"
-    exit 1
-fi
+def first_flow():
+    for it in d['items']:
+        if 'flow' in it:
+            return it['flow']
+    return None
 
-EVENT=$(sed -n "$((EVENT_LINE)),$((EVENT_LINE + 40))p" _combined_emit.zig)
+def check(entity, label, field, want):
+    if entity is None:
+        print(f"✗ Could not find {label}")
+        sys.exit(1)
+    got = entity.get(field)
+    if got is not want:
+        print(f"✗ FAIL: {label} should have {field} = {str(want).lower()}, got {str(got).lower()}")
+        sys.exit(1)
 
-if echo "$EVENT" | grep -q 'is_pure = true'; then
-    echo "✓ compute event: is_pure = true (derived from pure proc impl)"
-else
-    echo "✗ FAIL: compute event should be is_pure = true (derived from ~[pure] proc impl)"
-    exit 1
-fi
-
-if echo "$EVENT" | grep -q 'is_transitively_pure = true'; then
-    echo "✓ compute event: is_transitively_pure = true (derived)"
-else
-    echo "✗ FAIL: compute event should be is_transitively_pure = true"
-    exit 1
-fi
-
-echo ""
-echo "✓ Event correctly derives is_pure=true from its pure proc impl"
-exit 0
+e = find('event_decl', 'compute')
+check(e, 'compute event', 'is_pure', True)
+print("✓ compute event: is_pure = true (derived from pure proc impl)")
+check(e, 'compute event', 'is_transitively_pure', True)
+print("✓ compute event: is_transitively_pure = true (derived)")
+print()
+print("✓ Event correctly derives is_pure=true from its pure proc impl")
+EOF
+exit $?

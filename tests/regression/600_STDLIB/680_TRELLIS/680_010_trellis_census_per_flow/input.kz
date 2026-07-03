@@ -1,0 +1,51 @@
+// TEST (aspirational): std/trellis:census — PER-FLOW categorization.
+//
+// enforce/check judge the WHOLE PROGRAM as one verdict. Categorization
+// proper needs per-flow membership: "flow A satisfies gpu-legal, flow B
+// does not". census makes that observable with zero naming machinery:
+// at Stage C it judges EVERY user flow against the trellis separately
+// and splices the tally as a runtime print:
+//
+//   trellis "gpu-legal": 1/2 flows
+//
+// Two kernel flows below: the first (self only) is gpu-legal; the second
+// uses std/kernel:step — sequential outer iteration, not gpu-legal under
+// this trellis. Program-wide check would say "error" once; census says
+// 1 of 2, proving the verdict is computed per flow.
+//
+// This is rung 1 of the categorization engine (per-flow scope); rung 2
+// (membership annotations on flows) rides the same walker and is pinned
+// implicitly by the variant guard (680_011).
+
+~import std/trellis
+~import std/kernel
+~import std/io
+
+~std/trellis:define("gpu-legal")
+| `std/kernel:init/kernel/std/kernel:step.*` _ => error "std/kernel:step is not gpu-legal (sequential outer iteration)"
+| `.*` _ => ok
+
+~std/kernel:shape(Body) {
+    mass: f64,
+}
+
+// Flow 1: pairwise/self only — gpu-legal.
+~std/kernel:init(Body) {
+    { mass: 3.0 },
+}
+| kernel k |> std/kernel:self { k.mass *= 2.0 }
+| computed c |> std/io:print.blk {
+        a={{ c[0].mass:f }}
+    }
+
+// Flow 2: uses step — NOT gpu-legal.
+~std/kernel:init(Body) {
+    { mass: 1.0 },
+}
+| kernel k |> std/kernel:step(0..2)
+    | step |> std/kernel:self { k.mass += 0.5 }
+| computed c |> std/io:print.blk {
+        b={{ c[0].mass:f }}
+    }
+
+~std/trellis:census("gpu-legal")
