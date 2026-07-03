@@ -146,6 +146,9 @@ pub const Evaluator = struct {
     /// Set on every error: names exactly what failed. The pipeline turns this
     /// into the koru-level diagnostic; it is never optional information.
     diag: []const u8 = "",
+    /// The Stage A-generated dispatch table (THE THUNK LAW). Empty until the
+    /// pipeline wires it in; resolution falls through to subflow/bare-return.
+    thunks: []const Thunk = &.{},
 
     pub fn init(allocator: std.mem.Allocator) Evaluator {
         return .{ .allocator = allocator };
@@ -377,7 +380,250 @@ pub const Evaluator = struct {
         }
         return self.fail(error.UnsupportedBuiltin, "comptime evaluation: builtin @{s} is not comptime-evaluable (known: @as, @intCast, @truncate, @divTrunc, @rem, @mod)", .{bc.name});
     }
+
+    // ------------------------------------------------------------
+    // The flow walker (rung two) — methods share the allocator, the
+    // diagnostic contract, and the expression core above.
+    // ------------------------------------------------------------
+
+    pub fn setThunks(self: *Evaluator, thunks: []const Thunk) void {
+        self.thunks = thunks;
+    }
+
+    fn findThunk(self: *const Evaluator, name: []const u8) ?*const Thunk {
+        for (self.thunks) |*t| {
+            if (std.mem.eql(u8, t.event_name, name)) return t;
+        }
+        return null;
+    }
+
+    /// Parse + evaluate expression TEXT (an argument value, a when-guard) in
+    /// `env`. The single text→Value path for the walker and the Folder both.
+    pub fn evalText(self: *Evaluator, env: *Env, text: []const u8) EvalError!Value {
+        var parser = expression_parser.ExpressionParser.init(self.allocator, text);
+        const expr = parser.parse() catch |err| {
+            return self.fail(error.UnsupportedConstruct, "comptime evaluation: `{s}` did not parse as an expression ({s})", .{ text, @errorName(err) });
+        };
+        return self.evalExpr(env, expr);
+    }
+
+    fn evalArgs(self: *Evaluator, env: *Env, args: []const ast.Arg) EvalError![]ArgValue {
+        const out = self.allocator.alloc(ArgValue, args.len) catch return error.OutOfMemory;
+        for (args, 0..) |arg, i| {
+            out[i] = .{ .name = arg.name, .value = try self.evalText(env, arg.value) };
+        }
+        return out;
+    }
+
+    /// Resolve + call an invocation target — a thunk, a subflow
+    /// implementation, or a pure-Koru bare-return impl, in that order. Loud
+    /// named wall otherwise.
+    pub fn invokePath(self: *Evaluator, items: []const ast.Item, path: *const ast.DottedPath, args: []const ArgValue) EvalError!ThunkResult {
+        const name = lastSegment(path);
+
+        if (self.findThunk(name)) |thunk| {
+            return thunk.call(self.allocator, args);
+        }
+
+        if (findSubflowImpl(items, path)) |sub| {
+            const value = try self.walkFlow(items, sub, args);
+            return .{ .branch = null, .payload = value };
+        }
+
+        if (findBareReturnImpl(items, path)) |impl| {
+            var env = Env.init(self.allocator);
+            for (args) |a| try env.bind(a.name, a.value);
+            const plain = impl.value.plain_value orelse
+                return self.fail(error.UnsupportedConstruct, "comptime walk: impl of `{s}` has no bare-return expression", .{name});
+            const value = try self.evalText(&env, plain);
+            return .{ .branch = null, .payload = value };
+        }
+
+        return self.fail(error.UnsupportedConstruct, "comptime walk: `{s}` is not callable at comptime — not in the thunk table (no source-time proc handler), no subflow implementation, no bare-return impl", .{name});
+    }
+
+    /// Walk a subflow implementation with `args` bound in a FRESH scope — a
+    /// subflow body sees its own arguments, never the caller's bindings.
+    /// Returns the walked flow's value (null = void).
+    pub fn walkFlow(self: *Evaluator, items: []const ast.Item, flow: *const ast.Flow, args: []const ArgValue) EvalError!?Value {
+        var env = Env.init(self.allocator);
+        for (args) |a| try env.bind(a.name, a.value);
+        return self.walkLabeledBody(items, &flow.body, flow.pre_label, &env);
+    }
+
+    const Outcome = union(enum) {
+        result: ThunkResult,
+        jump: Jump,
+        none,
+    };
+
+    const Jump = struct {
+        label: []const u8,
+        /// Evaluated in the arm's scope BEFORE bubbling — a jump carries
+        /// values, never unevaluated text.
+        args: []ArgValue,
+    };
+
+    /// The labeled-loop core: invoke the head, dispatch the arms, re-enter
+    /// the head with the jump's arguments when the matched chain bubbles a
+    /// `@label(...)` naming this flow's `#label`.
+    fn walkLabeledBody(self: *Evaluator, items: []const ast.Item, body: *const ast.Continuation, pre_label: ?[]const u8, env: *Env) EvalError!?Value {
+        if (body.node == null or body.node.? != .invocation)
+            return self.fail(error.UnsupportedConstruct, "comptime walk: flow head must be an invocation", .{});
+        const inv = &body.node.?.invocation;
+
+        var head_args: []const ArgValue = try self.evalArgs(env, inv.args);
+        var iterations: usize = 0;
+        while (true) {
+            iterations += 1;
+            if (iterations > WALK_ITERATION_WALL)
+                return self.fail(error.UnsupportedConstruct, "comptime walk: labeled loop `#{s}` exceeded {d} iterations — non-terminating comptime loop?", .{ pre_label orelse "<unlabeled>", WALK_ITERATION_WALL });
+
+            const result = try self.invokePath(items, &inv.path, head_args);
+
+            if (body.continuations.len == 0) return result.payload;
+
+            const outcome = try self.dispatchArms(items, body.continuations, result, env);
+            switch (outcome) {
+                .jump => |j| {
+                    const label = pre_label orelse
+                        return self.fail(error.UnsupportedConstruct, "comptime walk: `@{s}(...)` jump but the flow head carries no `#label` anchor", .{j.label});
+                    if (!std.mem.eql(u8, j.label, label))
+                        return self.fail(error.UnsupportedConstruct, "comptime walk: jump to `@{s}` but the enclosing anchor is `#{s}` — nested labels are a later rung", .{ j.label, label });
+                    head_args = j.args;
+                    continue;
+                },
+                .result => |r| return r.payload,
+                .none => return null,
+            }
+        }
+    }
+
+    /// Match `result` against the arms IN ORDER: the branch name must equal
+    /// the constructed branch; the payload binds FIRST so the when-guard can
+    /// see it; a guarded arm matches only when its guard is true. First match
+    /// wins — the runtime's arm semantics, interpreted.
+    fn dispatchArms(self: *Evaluator, items: []const ast.Item, arms: []const ast.Continuation, result: ThunkResult, env: *Env) EvalError!Outcome {
+        const branch = result.branch orelse
+            return self.fail(error.UnsupportedConstruct, "comptime walk: a void call cannot dispatch branch arms", .{});
+
+        for (arms) |*arm| {
+            if (!std.mem.eql(u8, arm.branch, branch)) continue;
+            if (arm.destructure.len > 0)
+                return self.fail(error.UnsupportedConstruct, "comptime walk: shape-destructure arms are a later rung", .{});
+
+            var arm_env = env.child();
+            if (arm.binding) |b| {
+                const payload = result.payload orelse
+                    return self.fail(error.UnsupportedConstruct, "comptime walk: arm `| {s} {s}` binds a payload but branch `{s}` carried none", .{ arm.branch, b, branch });
+                try arm_env.bind(b, payload);
+            }
+
+            if (try self.armGuardPasses(arm, &arm_env)) {
+                return self.walkArm(items, arm, &arm_env);
+            }
+        }
+        return self.fail(error.UnsupportedConstruct, "comptime walk: branch `{s}` matched no arm — name unhandled or every guard false", .{branch});
+    }
+
+    fn armGuardPasses(self: *Evaluator, arm: *const ast.Continuation, env: *Env) EvalError!bool {
+        if (arm.condition_expr) |expr| return (try self.evalExpr(env, expr)).expectBool();
+        if (arm.condition) |text| return (try self.evalText(env, text)).expectBool();
+        return true;
+    }
+
+    /// Execute a matched arm: its node, then — when the node produced a
+    /// dispatchable result and the arm has nested arms — recurse. Jumps
+    /// bubble up to the enclosing labeled loop.
+    fn walkArm(self: *Evaluator, items: []const ast.Item, arm: *const ast.Continuation, env: *Env) EvalError!Outcome {
+        const node = arm.node orelse return .none;
+        switch (node) {
+            .terminal => return .none,
+            .label_jump => |lj| {
+                return .{ .jump = .{ .label = lj.label, .args = try self.evalArgs(env, lj.args) } };
+            },
+            .invocation => |chain_inv| {
+                const args = try self.evalArgs(env, chain_inv.args);
+                const result = try self.invokePath(items, &chain_inv.path, args);
+                if (arm.continuations.len == 0) return .{ .result = result };
+                return self.dispatchArms(items, arm.continuations, result, env);
+            },
+            else => return self.fail(error.UnsupportedConstruct, "comptime walk: arm node `{s}` is a later rung", .{@tagName(node)}),
+        }
+    }
 };
+
+// ============================================================
+// The flow walker — branch dispatch, when-guards, labeled loops
+// ============================================================
+//
+// Rung two of the comptime interpreter: walk a [comptime] flow the way the
+// runtime emitter would have COMPILED it — invoke the head, dispatch the
+// constructed branch over the arms (bind the payload, evaluate the when-guard,
+// first match wins), follow the matched arm's chain, and re-enter the labeled
+// head when the chain ends in an `@label(...)` jump.
+//
+// Calls resolve through THE THUNK LAW (docs/comptime_core_ast_inventory.md
+// §6a): a source-time event with a proc handler is callable at comptime
+// because Stage A emitted a wrapper — a thunk — marshalling Values into the
+// handler's Input struct and its Output back into (branch, Value). Stage B
+// compiled handler and wrapper natively; the walker calls through the table.
+// Resolution order: thunk, subflow implementation, pure-Koru bare-return
+// impl. Anything else is a loud named wall, never a guess.
+
+/// A named argument value, marshalled across the thunk boundary.
+pub const ArgValue = struct {
+    name: []const u8,
+    value: Value,
+};
+
+/// What one call produced: the branch the callee constructed and that
+/// branch's payload. A void callee (report) produces neither.
+pub const ThunkResult = struct {
+    branch: ?[]const u8 = null,
+    payload: ?Value = null,
+};
+
+/// One entry of the Stage A-generated dispatch table. `call` is a bare
+/// function pointer on purpose: the generated wrappers are top-level fns
+/// closing over nothing — the compiled handler IS the context.
+pub const Thunk = struct {
+    /// Resolution key: the event path's last segment (module-qualified
+    /// resolution joins in a later rung, with a loud wall on ambiguity).
+    event_name: []const u8,
+    call: *const fn (allocator: std.mem.Allocator, args: []const ArgValue) EvalError!ThunkResult,
+};
+
+/// Runaway-comptime wall. A labeled loop that re-enters its head more than
+/// this many times is almost certainly non-terminating at compile time; the
+/// walker stops LOUDLY instead of hanging the build.
+pub const WALK_ITERATION_WALL: usize = 1_000_000;
+
+/// Find a named subflow implementation (`name = #loop tick(...) | ...`,
+/// carried as a Flow with `impl_of` set) — the walker's second resolution
+/// tier, after the thunk table.
+pub fn findSubflowImpl(items: []const ast.Item, path: *const ast.DottedPath) ?*const ast.Flow {
+    for (items) |*item| {
+        switch (item.*) {
+            .flow => |*flow| {
+                if (flow.impl_of) |*impl_path| {
+                    if (pathsMatch(impl_path, path)) return flow;
+                }
+            },
+            .module_decl => |*module| {
+                for (module.items) |*mod_item| {
+                    if (mod_item.* == .flow) {
+                        if (mod_item.flow.impl_of) |*impl_path| {
+                            if (pathsMatch(impl_path, path)) return &mod_item.flow;
+                        }
+                    }
+                }
+            },
+            else => {},
+        }
+    }
+    return null;
+}
 
 // ============================================================
 // The fold pass — Stage C partial evaluation of [comptime] flows
@@ -539,11 +785,8 @@ pub const Folder = struct {
     }
 
     fn evalText(self: *Folder, env: *Env, text: []const u8) EvalError!Value {
-        var parser = expression_parser.ExpressionParser.init(self.allocator, text);
-        const expr = parser.parse() catch |err| {
-            return self.evaluator.fail(error.UnsupportedConstruct, "comptime fold: `{s}` did not parse as an expression ({s})", .{ text, @errorName(err) });
-        };
-        return self.evaluator.evalExpr(env, expr);
+        // One text→Value path for fold and walk both — the Evaluator's.
+        return self.evaluator.evalText(env, text);
     }
 
     fn literalText(self: *Folder, value: Value) EvalError![]const u8 {

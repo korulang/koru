@@ -142,3 +142,198 @@ test "unsupported constructs fail loudly with a named diagnostic" {
     try std.testing.expectError(error.UnsupportedBuiltin, evaluator.evalExpr(&env, expr));
     try std.testing.expect(std.mem.indexOf(u8, evaluator.diag, "floatFromInt") != null);
 }
+
+// ============================================================
+// The flow walker (rung two) — countdown through a fake thunk table
+// ============================================================
+//
+// The AST below is hand-built to the EXACT shape Stage A parses for
+// 310_091_aspire_comptime_loop (verified against its program_ast.zig):
+//
+//   countdown = #loop tick(n: 5)
+//   | go i when i > 0 |> @loop(n: i - 1)
+//   | go i |> report(v: i)
+//
+// tick and report are fake thunks here — the generated Stage A table calls
+// compiled handlers; the walker cannot tell the difference, which is the
+// point of the table.
+
+var tick_calls: std.ArrayListUnmanaged(i64) = .{};
+var reported: std.ArrayListUnmanaged(i64) = .{};
+var thunk_arena: ?std.mem.Allocator = null;
+
+fn tickThunk(allocator: std.mem.Allocator, args: []const comptime_eval.ArgValue) comptime_eval.EvalError!comptime_eval.ThunkResult {
+    _ = allocator;
+    if (args.len != 1 or !std.mem.eql(u8, args[0].name, "n")) return error.UnknownField;
+    const n = try args[0].value.expectInt();
+    tick_calls.append(thunk_arena.?, n) catch return error.OutOfMemory;
+    return .{ .branch = "go", .payload = .{ .int = n } };
+}
+
+fn reportThunk(allocator: std.mem.Allocator, args: []const comptime_eval.ArgValue) comptime_eval.EvalError!comptime_eval.ThunkResult {
+    _ = allocator;
+    if (args.len != 1 or !std.mem.eql(u8, args[0].name, "v")) return error.UnknownField;
+    const v = try args[0].value.expectInt();
+    reported.append(thunk_arena.?, v) catch return error.OutOfMemory;
+    return .{}; // void: no branch, no payload
+}
+
+fn segPath(arena: std.mem.Allocator, name: []const u8) !ast.DottedPath {
+    const segments = try arena.alloc([]const u8, 1);
+    segments[0] = name;
+    return .{ .segments = segments };
+}
+
+test "flow walker: when-guarded #loop countdown through the thunk table" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    tick_calls = .{};
+    reported = .{};
+    thunk_arena = arena;
+
+    // | go i when i > 0 |> @loop(n: i - 1)
+    const jump_args = try arena.alloc(ast.Arg, 1);
+    jump_args[0] = .{ .name = "n", .value = "i - 1" };
+    // | go i |> report(v: i)
+    const report_args = try arena.alloc(ast.Arg, 1);
+    report_args[0] = .{ .name = "v", .value = "i" };
+
+    const arms = try arena.alloc(ast.Continuation, 2);
+    arms[0] = .{
+        .branch = "go",
+        .binding = "i",
+        .condition = "i > 0",
+        .node = .{ .label_jump = .{ .label = "loop", .args = jump_args } },
+        .indent = 1,
+        .continuations = &.{},
+    };
+    arms[1] = .{
+        .branch = "go",
+        .binding = "i",
+        .condition = null,
+        .node = .{ .invocation = .{ .path = try segPath(arena, "report"), .args = report_args } },
+        .indent = 1,
+        .continuations = &.{},
+    };
+
+    // countdown = #loop tick(n: 5)
+    const head_args = try arena.alloc(ast.Arg, 1);
+    head_args[0] = .{ .name = "n", .value = "5" };
+    const countdown = ast.Flow{
+        .body = .{
+            .branch = "",
+            .binding = null,
+            .condition = null,
+            .node = .{ .invocation = .{ .path = try segPath(arena, "tick"), .args = head_args } },
+            .indent = 0,
+            .continuations = arms,
+        },
+        .pre_label = "loop",
+        .impl_of = try segPath(arena, "countdown"),
+    };
+
+    const items = try arena.alloc(ast.Item, 1);
+    items[0] = .{ .flow = countdown };
+
+    var evaluator = Evaluator.init(arena);
+    const thunks = [_]comptime_eval.Thunk{
+        .{ .event_name = "tick", .call = &tickThunk },
+        .{ .event_name = "report", .call = &reportThunk },
+    };
+    evaluator.setThunks(&thunks);
+
+    // Invoke countdown() the way the Folder will: by path, no args.
+    const result = try evaluator.invokePath(items, &(try segPath(arena, "countdown")), &.{});
+
+    // tick ran 6 times (5..0), report exactly once with the terminal 0.
+    try std.testing.expectEqualSlices(i64, &.{ 5, 4, 3, 2, 1, 0 }, tick_calls.items);
+    try std.testing.expectEqualSlices(i64, &.{0}, reported.items);
+    try std.testing.expect(result.branch == null);
+    try std.testing.expect(result.payload == null);
+}
+
+test "flow walker: unhandled branch and non-terminating loop fail loudly" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    tick_calls = .{};
+    reported = .{};
+    thunk_arena = arena;
+
+    // A labeled flow whose single arm ALWAYS jumps: must hit the iteration
+    // wall loudly, never hang.
+    const arms = try arena.alloc(ast.Continuation, 1);
+    const jump_args2 = try arena.alloc(ast.Arg, 1);
+    jump_args2[0] = .{ .name = "n", .value = "i" };
+    arms[0] = .{
+        .branch = "go",
+        .binding = "i",
+        .condition = null,
+        .node = .{ .label_jump = .{ .label = "loop", .args = jump_args2 } },
+        .indent = 1,
+        .continuations = &.{},
+    };
+    const head_args = try arena.alloc(ast.Arg, 1);
+    head_args[0] = .{ .name = "n", .value = "1" };
+    const spin = ast.Flow{
+        .body = .{
+            .branch = "",
+            .binding = null,
+            .condition = null,
+            .node = .{ .invocation = .{ .path = try segPath(arena, "tick"), .args = head_args } },
+            .indent = 0,
+            .continuations = arms,
+        },
+        .pre_label = "loop",
+        .impl_of = try segPath(arena, "spin"),
+    };
+    const items = try arena.alloc(ast.Item, 1);
+    items[0] = .{ .flow = spin };
+
+    var evaluator = Evaluator.init(arena);
+    const thunks = [_]comptime_eval.Thunk{
+        .{ .event_name = "tick", .call = &tickThunk },
+    };
+    evaluator.setThunks(&thunks);
+
+    const err = evaluator.invokePath(items, &(try segPath(arena, "spin")), &.{});
+    try std.testing.expectError(error.UnsupportedConstruct, err);
+    try std.testing.expect(std.mem.indexOf(u8, evaluator.diag, "iterations") != null);
+
+    // And a branch no arm handles names itself in the diagnostic.
+    var evaluator2 = Evaluator.init(arena);
+    const bad_thunks = [_]comptime_eval.Thunk{
+        .{ .event_name = "tick", .call = &tickThunk },
+    };
+    evaluator2.setThunks(&bad_thunks);
+    const bad_arms = try arena.alloc(ast.Continuation, 1);
+    bad_arms[0] = .{
+        .branch = "done",
+        .binding = null,
+        .condition = null,
+        .node = null,
+        .indent = 1,
+        .continuations = &.{},
+    };
+    const head_args2 = try arena.alloc(ast.Arg, 1);
+    head_args2[0] = .{ .name = "n", .value = "1" };
+    const mismatched = ast.Flow{
+        .body = .{
+            .branch = "",
+            .binding = null,
+            .condition = null,
+            .node = .{ .invocation = .{ .path = try segPath(arena, "tick"), .args = head_args2 } },
+            .indent = 0,
+            .continuations = bad_arms,
+        },
+        .impl_of = try segPath(arena, "mismatched"),
+    };
+    const items2 = try arena.alloc(ast.Item, 1);
+    items2[0] = .{ .flow = mismatched };
+    const err2 = evaluator2.invokePath(items2, &(try segPath(arena, "mismatched")), &.{});
+    try std.testing.expectError(error.UnsupportedConstruct, err2);
+    try std.testing.expect(std.mem.indexOf(u8, evaluator2.diag, "go") != null);
+}
