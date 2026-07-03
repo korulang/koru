@@ -5880,6 +5880,7 @@ pub const Parser = struct {
         if (destructure.len == 0) {
             if (parts.peek()) |next| {
             if (!std.mem.startsWith(u8, next, "|>") and !std.mem.startsWith(u8, next, "=>") and
+                !std.mem.startsWith(u8, next, "->") and
                 !std.mem.startsWith(u8, next, "@") and !std.mem.eql(u8, next, "when"))
             {
                 // Check if binding has annotations: identifier[ann1|ann2|...]
