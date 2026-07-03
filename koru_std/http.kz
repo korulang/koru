@@ -52,22 +52,21 @@ const std = @import("std");
 }
 
 // HTTP Response Builder
-~pub event http.response { status: u16, status_text: []const u8, headers: []const u8, body: []const u8 }
-| formatted []const u8
+~pub event http.response { status: u16, status_text: []const u8, headers: []const u8, body: []const u8 } -> []const u8
 
 ~proc http.response|zig {
     const allocator = koru_allocator();
-    
-    const response = std.fmt.allocPrint(allocator, 
+
+    const response = std.fmt.allocPrint(allocator,
         "HTTP/1.1 {} {s}\r\n{s}\r\nContent-Length: {}\r\n\r\n{s}",
         .{status, status_text, headers, body.len, body}
     ) catch {
         // Fallback response
         const fallback = "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 5\r\n\r\nError";
-        return .{ .@"formatted" = .{ .data = fallback } };
+        return fallback;
     };
-    
-    return .{ .@"formatted" = .{ .data = response } };
+
+    return response;
 }
 
 // Route matching
@@ -93,8 +92,7 @@ const std = @import("std");
 }
 
 // Simple JSON response helper
-~pub event http.json-response { status: u16, json: []const u8 }
-| response []const u8
+~pub event http.json-response { status: u16, json: []const u8 } -> []const u8
 
 ~proc http.json-response|zig {
     const allocator = koru_allocator();
@@ -113,15 +111,14 @@ const std = @import("std");
         .{status, status_text, json.len, json}
     ) catch {
         const fallback = "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 5\r\n\r\nError";
-        return .{ .@"response" = .{ .data = fallback } };
+        return fallback;
     };
-    
-    return .{ .@"response" = .{ .data = response } };
+
+    return response;
 }
 
 // HTML response helper
-~pub event http.html-response { status: u16, html: []const u8 }
-| response []const u8
+~pub event http.html-response { status: u16, html: []const u8 } -> []const u8
 
 ~proc http.html-response|zig {
     const allocator = koru_allocator();
@@ -138,15 +135,14 @@ const std = @import("std");
         .{status, status_text, html.len, html}
     ) catch {
         const fallback = "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 5\r\n\r\nError";
-        return .{ .@"response" = .{ .data = fallback } };
+        return fallback;
     };
-    
-    return .{ .@"response" = .{ .data = response } };
+
+    return response;
 }
 
 // Static file serving helper
-~pub event http.mime-type { extension: []const u8 }
-| type []const u8
+~pub event http.mime-type { extension: []const u8 } -> []const u8
 
 ~proc http.mime-type|zig {
     const mime = if (std.mem.eql(u8, extension, ".html")) "text/html"
@@ -159,7 +155,7 @@ const std = @import("std");
         else if (std.mem.eql(u8, extension, ".txt")) "text/plain"
         else "application/octet-stream";
     
-    return .{ .@"type" = .{ .mime = mime } };
+    return mime;
 }
 
 // URL decode helper
@@ -199,8 +195,7 @@ const std = @import("std");
 }
 
 // Parse query string
-~pub event http.parse-query { query: []const u8 }
-| params []const u8  // Simplified: key=value,key2=value2 format
+~pub event http.parse-query { query: []const u8 } -> []const u8  // Simplified: key=value,key2=value2 format
 
 ~proc http.parse-query|zig {
     const allocator = koru_allocator();
@@ -217,5 +212,5 @@ const std = @import("std");
         first = false;
     }
     
-    return .{ .@"params" = .{ .data = result.toOwnedSlice() catch "" } };
+    return result.toOwnedSlice() catch "";
 }

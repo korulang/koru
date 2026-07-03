@@ -8,12 +8,18 @@
 // entry so Koru index 0 is the program/script and index i is process.argv[i+1]
 // — matching the Zig facet's indexing exactly.
 
+// GAP (2026-07-04): the JS emitter has no bare-return support yet
+// (js_emitter.zig never reads return_type). `all`/`count`/`rest` moved to
+// `-> T` in the single-return-form migration; these bodies return the bare
+// value symmetric with the Zig facet, UNVERIFIED against the JS backend
+// until it learns bare-return.
+
 ~proc all|js {
-    return { tag: "args", args: process.argv.slice(1) };
+    return process.argv.slice(1);
 }
 
 ~proc count|js {
-    return { tag: "count", count: process.argv.length - 1 };
+    return process.argv.length - 1;
 }
 
 ~proc get|js {
@@ -24,5 +30,5 @@
 }
 
 ~proc rest|js {
-    return { tag: "args", args: process.argv.slice(2) };
+    return process.argv.slice(2);
 }

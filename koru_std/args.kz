@@ -28,11 +28,11 @@ fn _get_argv() [][:0]u8 {
 }
 
 ~proc all|zig {
-    return .{ .args = _get_argv() };
+    return _get_argv();
 }
 
 ~proc count|zig {
-    return .{ .count = _get_argv().len };
+    return _get_argv().len;
 }
 
 ~proc get|zig {
@@ -46,7 +46,7 @@ fn _get_argv() [][:0]u8 {
 ~proc rest|zig {
     const argv = _get_argv();
     if (argv.len <= 1) {
-        return .{ .args = &.{} };
+        return &.{};
     }
-    return .{ .args = argv[1..] };
+    return argv[1..];
 }

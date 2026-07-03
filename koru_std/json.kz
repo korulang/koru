@@ -32,29 +32,25 @@ pub const JsonValue = union(enum) {
 // Object Builder - Create JSON objects
 // ============================================================================
 
-~pub event object.new { allocator: ?std.mem.Allocator }
-| ok *JsonObject<building!>
+~pub event object.new { allocator: ?std.mem.Allocator } -> *JsonObject<building!>
 
 ~proc object.new|zig {
     const alloc = allocator orelse koru_allocator();
-    
-    const obj = alloc.create(JsonObject) catch {
-        return .{ .ok = undefined }; // Should have error branch
-    };
-    
+
+    const obj = alloc.create(JsonObject) catch @panic("std/json object.new: allocation failed");
+
     obj.* = .{
         .buffer = std.ArrayList(u8).init(alloc),
         .allocator = alloc,
         .field_count = 0,
     };
-    
+
     obj.buffer.append('{') catch {};
-    
-    return .{ .ok = obj };
+
+    return obj;
 }
 
-~pub event object.set { obj: *JsonObject<building!>, key: []const u8, value: JsonValue }
-| ok *JsonObject<building!>
+~pub event object.set { obj: *JsonObject<building!>, key: []const u8, value: JsonValue } -> *JsonObject<building!>
 
 ~proc object.set|zig {
     const writer = obj.buffer.writer();
@@ -94,46 +90,41 @@ pub const JsonValue = union(enum) {
     }
     
     obj.field_count += 1;
-    return .{ .ok = obj };
+    return obj;
 }
 
-~pub event object.finish { obj: *JsonObject<!building> }
-| json []const u8
+~pub event object.finish { obj: *JsonObject<!building> } -> []const u8
 
 ~proc object.finish|zig {
     obj.buffer.append('}') catch {};
     const result = obj.buffer.toOwnedSlice() catch "";
     // Note: caller owns the slice, should free with obj.allocator
-    return .{ .json = result };
+    return result;
 }
 
 // ============================================================================
 // Array Builder - Create JSON arrays
 // ============================================================================
 
-~pub event array.new { allocator: ?std.mem.Allocator }
-| ok *JsonObject<building!>  // Reuse JsonObject for simplicity
+~pub event array.new { allocator: ?std.mem.Allocator } -> *JsonObject<building!>  // Reuse JsonObject for simplicity
 
 ~proc array.new|zig {
     const alloc = allocator orelse koru_allocator();
-    
-    const obj = alloc.create(JsonObject) catch {
-        return .{ .ok = undefined };
-    };
-    
+
+    const obj = alloc.create(JsonObject) catch @panic("std/json array.new: allocation failed");
+
     obj.* = .{
         .buffer = std.ArrayList(u8).init(alloc),
         .allocator = alloc,
         .field_count = 0,
     };
-    
+
     obj.buffer.append('[') catch {};
-    
-    return .{ .ok = obj };
+
+    return obj;
 }
 
-~pub event array.push { arr: *JsonObject<building!>, value: JsonValue }
-| ok *JsonObject<building!>
+~pub event array.push { arr: *JsonObject<building!>, value: JsonValue } -> *JsonObject<building!>
 
 ~proc array.push|zig {
     const writer = arr.buffer.writer();
@@ -166,16 +157,15 @@ pub const JsonValue = union(enum) {
     }
     
     arr.field_count += 1;
-    return .{ .ok = arr };
+    return arr;
 }
 
-~pub event array.finish { arr: *JsonObject<!building> }
-| json []const u8
+~pub event array.finish { arr: *JsonObject<!building> } -> []const u8
 
 ~proc array.finish|zig {
     arr.buffer.append(']') catch {};
     const result = arr.buffer.toOwnedSlice() catch "";
-    return .{ .json = result };
+    return result;
 }
 
 // ============================================================================

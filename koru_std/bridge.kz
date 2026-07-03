@@ -69,40 +69,37 @@ pub const Bridge = struct {
 // CREATE - Create a new bridge session
 // ============================================================================
 
-~pub event create { id: []const u8 }
-| session *Bridge<session!>
+~pub event create { id: []const u8 } -> *Bridge<session!>
 
 ~proc create|zig {
     const allocator = koru_allocator();
     const br = allocator.create(Bridge) catch unreachable;
     br.* = Bridge.init(allocator, id);
-    return .{ .session = br };
+    return br;
 }
 
 // ============================================================================
 // GET_HANDLES - Query handles currently on the bridge
 // ============================================================================
 
-~pub event get-handles { br: *Bridge }
-| handles u32
+~pub event get-handles { br: *Bridge } -> u32
 
 ~proc get-handles|zig {
-    return .{ .handles = br.getHandleCount() };
+    return br.getHandleCount();
 }
 
 // ============================================================================
 // CLOSE - End a bridge session, discharge all handles
 // ============================================================================
 
-~pub event close { br: *Bridge<!session> }
-| closed u32
+~pub event close { br: *Bridge<!session> } -> u32
 
 ~proc close|zig {
     const count = br.getHandleCount();
     br.dischargeAll(null); // TODO: pass dispatcher
     br.deinit();
     koru_allocator().destroy(br);
-    return .{ .closed = count };
+    return count;
 }
 
 // ============================================================================

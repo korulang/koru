@@ -6,10 +6,9 @@
 //   ~import std/time
 //   ~import std/io
 //
-//   ~std/time:now()
-//   | t start |> do_work()
-//       |> std/time:elapsed(start: start.ns)
-//           | duration d |> std/io:print.ln("work: {{ d.ms:f }}ms")
+//   ~std/time:now(): start |> do_work()
+//       |> std/time:elapsed(start: start): d
+//           |> std/io:print.ln("work: {{ d.ms:f }}ms")
 
 ~[comptime|runtime]
 
@@ -20,11 +19,10 @@ const std = @import("std");
 // ============================================================================
 
 // Get current timestamp in nanoseconds
-~pub event now {}
-| t i128
+~pub event now {} -> i128
 
 ~proc now|zig {
-    return .{ .t = std.time.nanoTimestamp() };
+    return std.time.nanoTimestamp();
 }
 
 // ============================================================================
@@ -32,19 +30,18 @@ const std = @import("std");
 // ============================================================================
 
 // Calculate elapsed time since start
-~pub event elapsed { start: i128 }
-| duration { ns: i128, us: f64, ms: f64, s: f64 }
+~pub event elapsed { start: i128 } -> { ns: i128, us: f64, ms: f64, s: f64 }
 
 ~proc elapsed|zig {
     const end = std.time.nanoTimestamp();
     const ns = end - start;
     const ns_f: f64 = @floatFromInt(ns);
-    return .{ .duration = .{
+    return .{
         .ns = ns,
         .us = ns_f / 1_000.0,
         .ms = ns_f / 1_000_000.0,
         .s = ns_f / 1_000_000_000.0,
-    }};
+    };
 }
 
 // Print elapsed time to stderr (for use inside comptime event overrides)

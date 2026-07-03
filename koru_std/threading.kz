@@ -59,8 +59,7 @@ pub const WorkerHandle = struct {
 // Advanced interface - spawn and return handle for later joining
 // Threading happens INSIDE the proc, but event signature is clean
 
-~event worker.spawn.async { work_fn: WorkFn, context: *anyopaque }
-| awaitable WorkerHandle
+~event worker.spawn.async { work_fn: WorkFn, context: *anyopaque } -> WorkerHandle
 
 ~proc worker.spawn.async|zig {
     // Spawn thread with work function
@@ -72,10 +71,10 @@ pub const WorkerHandle = struct {
     }.run, .{ work_fn, context }) catch unreachable;
 
     // Return handle (thread + context pointer for result retrieval)
-    return .{ .awaitable = .{ .handle = .{
+    return .{
         .thread = thread,
         .result_ptr = context,
-    } } };
+    };
 }
 
 // ============================================================================
@@ -83,15 +82,14 @@ pub const WorkerHandle = struct {
 // ============================================================================
 // Explicitly wait for one worker to complete
 
-~event worker.spawn.await { handle: WorkerHandle }
-| completed *anyopaque
+~event worker.spawn.await { handle: WorkerHandle } -> *anyopaque
 
 ~proc worker.spawn.await|zig {
     // Block until thread completes
     handle.thread.join();
 
     // Return result pointer (caller must cast to expected type)
-    return .{ .completed = handle.result_ptr };
+    return handle.result_ptr;
 }
 
 // ============================================================================
@@ -100,8 +98,7 @@ pub const WorkerHandle = struct {
 // Wait for multiple workers to complete
 // This is where progressive disclosure really shines!
 
-~event worker.spawn.join { handles: []const WorkerHandle }
-| all-completed []*anyopaque
+~event worker.spawn.join { handles: []const WorkerHandle } -> []*anyopaque
 
 ~proc worker.spawn.join|zig {
     // Allocate results array
@@ -113,7 +110,7 @@ pub const WorkerHandle = struct {
         results[i] = h.result_ptr;
     }
 
-    return .{ .all_completed = results };
+    return results;
 }
 
 // ============================================================================

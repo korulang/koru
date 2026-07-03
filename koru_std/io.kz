@@ -55,19 +55,18 @@ const std = @import("std");
 
 // Simple line reader - returns the line, or empty string on EOF/error
 // No error handling, just returns what it gets
-~pub event read.ln {}
-| ok []const u8
+~pub event read.ln {} -> []const u8
 
 ~proc read.ln|zig {
     const stdin = std.fs.File.stdin();
     var buf: [4096]u8 = undefined;
-    const n = stdin.read(&buf) catch return .{ .ok = "" };
-    if (n == 0) return .{ .ok = "" };
+    const n = stdin.read(&buf) catch return "";
+    if (n == 0) return "";
     // Find newline and exclude it
     var end: usize = 0;
     while (end < n and buf[end] != '\n') : (end += 1) {}
     const duped = koru_allocator().dupe(u8, buf[0..end]) catch "";
-    return .{ .ok = duped };
+    return duped;
 }
 
 // Debug print for development
@@ -199,8 +198,7 @@ const std = @import("std");
 }
 
 // Get command line arguments
-~pub event args {}
-| ok []const []const u8
+~pub event args {} -> []const []const u8
 
 ~proc args|zig {
     var arg_list = std.ArrayList([]const u8).init(koru_allocator());
@@ -208,7 +206,7 @@ const std = @import("std");
     while (iter.next()) |arg| {
         arg_list.append(arg) catch continue;
     }
-    return .{ .ok = .{ .argv = arg_list.toOwnedSlice() catch &.{} } };
+    return arg_list.toOwnedSlice() catch &.{};
 }
 
 // ============================================================================
