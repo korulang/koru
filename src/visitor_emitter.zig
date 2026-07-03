@@ -1564,6 +1564,118 @@ pub const VisitorEmitter = struct {
         try self.code_emitter.write("};\n\n");
     }
 
+    /// Emit the body of a handler for an event `entry` that belongs to a
+    /// mutual-tail-recursion `group`. Lowers the whole cycle into ONE combined
+    /// dispatch loop: shared `var` input bindings, a `__koru_fn` enum state var
+    /// seeded to `entry`, and a `while (true) switch (__koru_fn) {...}` whose
+    /// arms are each member's inline subflow body. A tail-forward to member G
+    /// inside any arm lowers (via `emitContinuationBody` under `ctx.mutual_group`)
+    /// to `__koru_fn = .<G>; <reassign>; continue :__koru_self_loop;` — so the
+    /// cross-handler recursion disappears entirely. The `>16-byte by-value Input`
+    /// per-call cost and the stack growth are both gone; the loop constant-folds
+    /// where the opaque recursive calls couldn't.
+    fn emitMutualGroupHandler(
+        self: *VisitorEmitter,
+        entry: *const ast.EventDecl,
+        group: *const emitter.MutualGroup,
+        all_items: []const ast.Item,
+    ) !void {
+        // Debug marker naming the cycle.
+        try self.code_emitter.writeIndent();
+        try self.code_emitter.write("// >>> MUTUAL-LOOP:");
+        for (group.members) |m| {
+            try self.code_emitter.write(" ");
+            try self.code_emitter.write(m.tag);
+        }
+        try self.code_emitter.write("\n");
+
+        // Shared `var` input bindings (mutated by the per-member reentries).
+        for (entry.input.fields) |field| {
+            try self.code_emitter.writeIndent();
+            try self.code_emitter.write("var ");
+            try emitter.writeBranchName(self.code_emitter, field.name);
+            try self.code_emitter.write(" = __koru_event_input.");
+            try emitter.writeBranchName(self.code_emitter, field.name);
+            try self.code_emitter.write(";\n");
+        }
+        for (entry.input.fields) |field| {
+            try self.code_emitter.writeIndent();
+            try self.code_emitter.write("_ = &");
+            try emitter.writeBranchName(self.code_emitter, field.name);
+            try self.code_emitter.write(";\n");
+        }
+        try self.code_emitter.writeIndent();
+        try self.code_emitter.write("_ = &__koru_event_input;\n");
+
+        // Dispatch-state enum, seeded to THIS handler's own event.
+        const entry_canon = try emitter.buildCanonicalEventName(&entry.path, self.allocator, self.main_module_name);
+        defer self.allocator.free(entry_canon);
+        const entry_tag = group.tagFor(entry_canon) orelse return error.MutualEntryNotInGroup;
+        try self.code_emitter.writeIndent();
+        try self.code_emitter.write("var __koru_fn: enum { ");
+        for (group.members, 0..) |m, i| {
+            if (i > 0) try self.code_emitter.write(", ");
+            try self.code_emitter.write(m.tag);
+        }
+        try self.code_emitter.write(" } = .");
+        try self.code_emitter.write(entry_tag);
+        try self.code_emitter.write(";\n");
+
+        // Combined loop.
+        try self.code_emitter.writeIndent();
+        try self.code_emitter.write("__koru_self_loop: while (true) {\n");
+        self.code_emitter.indent_level += 1;
+        try self.code_emitter.writeIndent();
+        try self.code_emitter.write("switch (__koru_fn) {\n");
+        self.code_emitter.indent_level += 1;
+
+        for (group.members) |m| {
+            try self.code_emitter.writeIndent();
+            try self.code_emitter.write(".");
+            try self.code_emitter.write(m.tag);
+            try self.code_emitter.write(" => {\n");
+            self.code_emitter.indent_level += 1;
+
+            // Emit this member's inline subflow body with the group in context,
+            // so its tail-forwards lower to `__koru_fn = .<G>; ...; continue`.
+            // Same inline-statement dispatch the normal handler path uses; the
+            // shared `var` input bindings and the loop wrapper are already open.
+            var arm_ctx = emitter.EmissionContext{
+                .allocator = self.allocator,
+                .ast_items = all_items,
+                .tap_registry = self.tap_registry,
+                .type_registry = self.type_registry,
+                .main_module_name = self.main_module_name,
+                .is_sync = true,
+                .in_handler = true,
+                .mutual_group = group,
+                .impl_event_decl = m.event,
+                .bare_return_active = m.event.return_type != null,
+            };
+            var arm_counter: usize = 0;
+            try emitter.emitInlineBodyNode(
+                self.code_emitter,
+                &arm_ctx,
+                m.flow.inline_body.?,
+                m.flow.body.continuations,
+                &m.flow.inv().path,
+                &arm_counter,
+            );
+
+            self.code_emitter.indent_level -= 1;
+            try self.code_emitter.writeIndent();
+            try self.code_emitter.write("},\n");
+        }
+        self.code_emitter.indent_level -= 1;
+        try self.code_emitter.writeIndent();
+        try self.code_emitter.write("}\n");
+        self.code_emitter.indent_level -= 1;
+        try self.code_emitter.writeIndent();
+        try self.code_emitter.write("}\n");
+        try self.code_emitter.writeIndent();
+        try self.code_emitter.write("unreachable;\n");
+    }
+
     /// Emit a complete event declaration with Input, Output, and handler
     fn emitEventDecl(self: *VisitorEmitter, event: *const ast.EventDecl, all_items: []const ast.Item) !void {
         const eql = std.mem.eql;
@@ -2085,6 +2197,23 @@ pub const VisitorEmitter = struct {
             log.debug("{s}.", .{seg});
         }
         log.debug(" in {} items\n", .{items_to_search.len});
+
+        // MUTUAL-TAIL-RECURSION GROUP: if this event and a cycle of sibling
+        // events tail-forward to each other (`is-even`↔`is-odd`), lower the
+        // whole cycle into ONE combined `while (true) switch (__koru_fn) {...}`
+        // dispatch loop — the mutual generalization of the self-tail-loop
+        // lowering. Detection is conservative (uniform input shape, clean cycle,
+        // lowerable inline subflow bodies); a miss falls through to ordinary
+        // call-based emission below. Effect-bearing events keep their handler
+        // signature and are left on the normal path.
+        if (!has_effect) {
+            if (try emitter.detectMutualGroup(event, items_to_search, self.allocator, self.main_module_name)) |group_val| {
+                var group = group_val;
+                defer group.deinit(self.allocator);
+                try self.emitMutualGroupHandler(event, &group, items_to_search);
+                found_impl = true;
+            }
+        }
 
         // FIRST: Check top-level items for cross-module overrides (e.g., ~std.compiler:coordinate = ...)
         // This ensures user-defined overrides take precedence over module-internal implementations

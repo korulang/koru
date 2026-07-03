@@ -190,6 +190,44 @@ pub const LabelContext = struct {
     handlers_name: ?[]const u8 = null,
 };
 
+/// One member of a mutual-tail-recursion group: the event's canonical name and
+/// the Zig enum tag (mangled event path) used for the combined dispatch loop's
+/// `__koru_fn` state variable.
+pub const MutualMember = struct {
+    canonical: []const u8,
+    tag: []const u8,
+    event: *const ast.EventDecl,
+    flow: *const ast.Flow,
+};
+
+/// A cycle of events that tail-forward to each other (`is-even`↔`is-odd`). The
+/// whole cycle lowers into ONE `while (true) switch (__koru_fn) {...}` loop per
+/// member handler — the mutual generalization of the self-tail-loop lowering
+/// (see `detectMutualGroup` / `emitMutualTailReentry`). Owns its member strings;
+/// call `deinit` after the handler is emitted.
+pub const MutualGroup = struct {
+    members: []MutualMember,
+
+    pub fn tagFor(self: *const MutualGroup, canonical: []const u8) ?[]const u8 {
+        for (self.members) |m| {
+            if (std.mem.eql(u8, m.canonical, canonical)) return m.tag;
+        }
+        return null;
+    }
+
+    pub fn contains(self: *const MutualGroup, canonical: []const u8) bool {
+        return self.tagFor(canonical) != null;
+    }
+
+    pub fn deinit(self: *MutualGroup, allocator: std.mem.Allocator) void {
+        for (self.members) |m| {
+            allocator.free(m.canonical);
+            allocator.free(m.tag);
+        }
+        allocator.free(self.members);
+    }
+};
+
 pub const EmissionContext = struct {
     allocator: std.mem.Allocator,
     indent_level: usize = 0,
@@ -238,6 +276,15 @@ pub const EmissionContext = struct {
     self_loop_active: bool = false,
     self_loop_label: []const u8 = "__koru_self_loop",
     self_loop_event_canonical: ?[]const u8 = null,
+    // ── Mutual-tail-recursion group lowering ─────────────────────────────────
+    // When set, the handler body is being emitted inside a combined dispatch
+    // loop (`__koru_self_loop: while (true) switch (__koru_fn) {...}`) that
+    // covers a whole cycle of events tail-forwarding to each other. A tail
+    // continuation that forwards to any member G lowers to `__koru_fn = .<G>;
+    // <reassign args>; continue :__koru_self_loop;` instead of a cross-handler
+    // call. See `detectMutualGroup` / `emitMutualTailReentry`. The degenerate
+    // 1-cycle (an event forwarding to itself) stays on the `self_loop_*` path.
+    mutual_group: ?*const MutualGroup = null,
     // Set when emitting the body of a handler whose event has a bare `-> T`
     // return. A `.expression` produce step (`| big b -> b * 100`) in this
     // context IS the event's return value, so it lowers to `return EXPR;`
@@ -7894,6 +7941,22 @@ pub fn emitContinuationBody(
             }
         }
 
+        // Mutual-group reentry: a tail-forward to any group member G lowers to
+        // `__koru_fn = .<G>; <reassign>; continue` inside the combined dispatch
+        // loop (see `detectMutualGroup` / `emitMutualTailReentry`).
+        if (ctx.mutual_group) |group| {
+            if (isTailForwarder(cont)) {
+                const inv = cont.node.?.invocation;
+                if (buildCanonicalEventName(&inv.path, ctx.allocator, ctx.main_module_name) catch null) |target| {
+                    defer ctx.allocator.free(target);
+                    if (group.tagFor(target)) |tag| {
+                        try emitMutualTailReentry(emitter, ctx, cont, tag);
+                        return;
+                    }
+                }
+            }
+        }
+
         const is_metatype_binding = if (cont.node) |step| step == .metatype_binding else false;
         if (is_metatype_binding) {
             // Scope metatype bindings so identical names don't collide across observers.
@@ -9759,26 +9822,34 @@ fn identityForwardsResult(cont: *const ast.Continuation) bool {
     return true;
 }
 
-/// True if `cont` is a tail self-continuation of `event_canonical`: its node is
-/// an invocation of that event, and every child continuation forwards the
-/// result branch unchanged (so the self-call's result IS this invocation's
-/// result — the precondition for a sound loop rewrite).
-fn continuationIsSelfTailForwarder(
-    cont: *const ast.Continuation,
-    event_canonical: []const u8,
-    ctx: *EmissionContext,
-) bool {
+/// True if `cont` is a tail-forwarder: its node is an event invocation and every
+/// child continuation forwards the result branch unchanged (so the call's result
+/// IS this invocation's result). The invocation TARGET is not constrained here —
+/// this is the shared shape check behind both the self-loop (target == the
+/// event itself) and the mutual-group (target == any group member) lowerings.
+fn isTailForwarder(cont: *const ast.Continuation) bool {
     if (cont.node == null) return false;
     if (cont.node.? != .invocation) return false;
-    const inv = cont.node.?.invocation;
-    const inv_canonical = buildCanonicalEventName(&inv.path, ctx.allocator, ctx.main_module_name) catch return false;
-    defer ctx.allocator.free(inv_canonical);
-    if (!std.mem.eql(u8, inv_canonical, event_canonical)) return false;
     if (cont.continuations.len == 0) return false;
     for (cont.continuations) |*child| {
         if (!identityForwardsResult(child)) return false;
     }
     return true;
+}
+
+/// True if `cont` is a tail self-continuation of `event_canonical`: a
+/// tail-forwarder whose invocation targets that same event (the precondition for
+/// a sound self-loop rewrite).
+fn continuationIsSelfTailForwarder(
+    cont: *const ast.Continuation,
+    event_canonical: []const u8,
+    ctx: *EmissionContext,
+) bool {
+    if (!isTailForwarder(cont)) return false;
+    const inv = cont.node.?.invocation;
+    const inv_canonical = buildCanonicalEventName(&inv.path, ctx.allocator, ctx.main_module_name) catch return false;
+    defer ctx.allocator.free(inv_canonical);
+    return std.mem.eql(u8, inv_canonical, event_canonical);
 }
 
 /// Recursive walker: does any tail position in this continuation tree contain a
@@ -9798,27 +9869,27 @@ pub fn flowContainsSelfTailForward(
     return false;
 }
 
-/// Emit the reassign+continue that replaces a tail self-call site. Each input
-/// field is reassigned from the corresponding invocation arg (pass-through args
-/// where `value == name` are skipped — they're already correct and emitting
-/// `x = x` would just copy the array for nothing). Then `continue :label`
-/// re-enters the loop top.
-fn emitSelfTailReentry(
+/// Emit the input-field reassignments for a tail-call reentry. Each input field
+/// is reassigned from the corresponding invocation arg (pass-through args where
+/// `value == name` are skipped — they're already correct and emitting `x = x`
+/// would just copy the array for nothing). Shared by the self-loop and
+/// mutual-group reentries; the caller emits the `continue` (and, for mutual, the
+/// `__koru_fn = .<target>;` dispatch-state update) around it.
+fn emitTailReargs(
     emitter: *CodeEmitter,
     ctx: *EmissionContext,
-    cont: *const ast.Continuation,
+    inv: *const ast.Invocation,
 ) !void {
-    const inv = cont.node.?.invocation;
     // SNAPSHOT / SIMULTANEOUS ASSIGNMENT (same defect + fix as captured{},
-    // ruled 2026-07-02, pinned 320_102 & 320_121): a tail self-re-entry
-    // reassigns the loop's `var` bindings. Emitted sequentially, a later arg's
-    // RHS reads an EARLIER binding that was already stored — e.g. gcd's
-    // `a = b; b = @mod(a, b);` reads the new `a`, and nestedloop's `k = k - 1;
-    // acc = ... k` reads the decremented `k`. Silent wrong answers. Stage every
-    // reassigned RHS into a block-scoped temp against the INCOMING state, then
-    // store — the same loads/stores, reordered; LLVM register-allocates the
-    // temps (no copies). No-op pass-throughs (`ops: ops`) never change, so they
-    // need neither store nor staging.
+    // ruled 2026-07-02, pinned 320_102 & 320_121): a tail reentry reassigns the
+    // loop's `var` bindings. Emitted sequentially, a later arg's RHS reads an
+    // EARLIER binding that was already stored — e.g. gcd's `a = b; b = @mod(a, b);`
+    // reads the new `a`, and nestedloop's `k = k - 1; acc = ... k` reads the
+    // decremented `k`. Silent wrong answers. Stage every reassigned RHS into a
+    // block-scoped temp against the INCOMING state, then store — LLVM register-
+    // allocates the temps (no copies). No-op pass-throughs (`x: x`) need neither
+    // store nor staging. SHARED by the self-loop AND mutual-group reentries, so
+    // the simultaneous fix covers the mutual multi-arg path too.
     var n_reassign: usize = 0;
     for (inv.args) |arg| {
         const trimmed = std.mem.trim(u8, arg.value, " \t");
@@ -9872,10 +9943,213 @@ fn emitSelfTailReentry(
             try emitter.write(";\n");
         }
     }
+}
+
+/// Emit the reassign+continue that replaces a tail self-call site, then
+/// `continue :label` re-enters the loop top.
+fn emitSelfTailReentry(
+    emitter: *CodeEmitter,
+    ctx: *EmissionContext,
+    cont: *const ast.Continuation,
+) !void {
+    try emitTailReargs(emitter, ctx, &cont.node.?.invocation);
     try emitter.writeIndent();
     try emitter.write("continue :");
     try emitter.write(ctx.self_loop_label);
     try emitter.write(";\n");
+}
+
+/// Emit the dispatch-state update + reassign + continue that replaces a mutual
+/// tail-forward to another group member G: `__koru_fn = .<G>; <reassign args>;
+/// continue :label;`. Setting `__koru_fn` first is safe because it's an
+/// independent enum var — the arg reassignments below still read the current
+/// input values. The combined loop then re-enters and its `switch (__koru_fn)`
+/// selects G's arm.
+fn emitMutualTailReentry(
+    emitter: *CodeEmitter,
+    ctx: *EmissionContext,
+    cont: *const ast.Continuation,
+    tag: []const u8,
+) !void {
+    try emitter.writeIndent();
+    try emitter.write("__koru_fn = .");
+    try emitter.write(tag);
+    try emitter.write(";\n");
+    try emitTailReargs(emitter, ctx, &cont.node.?.invocation);
+    try emitter.writeIndent();
+    try emitter.write("continue :");
+    try emitter.write(ctx.self_loop_label);
+    try emitter.write(";\n");
+}
+
+/// True if all of `a`'s and `b`'s input fields match by name and type (order
+/// included). The mutual-group loop declares ONE set of `var` input bindings
+/// shared by every member arm, so members must have identical input shape.
+fn inputShapesMatch(a: *const ast.EventDecl, b: *const ast.EventDecl) bool {
+    if (a.input.fields.len != b.input.fields.len) return false;
+    for (a.input.fields, b.input.fields) |fa, fb| {
+        if (!std.mem.eql(u8, fa.name, fb.name)) return false;
+        if (!std.mem.eql(u8, fa.type, fb.type)) return false;
+    }
+    return true;
+}
+
+/// Build the Zig enum tag for an event: its path segments joined by `_`, kebab
+/// `-` mangled to `_` (matching the event struct's `<name>_event` prefix). Owned
+/// by the caller.
+fn mangledEventTag(event: *const ast.EventDecl, allocator: std.mem.Allocator) ![]u8 {
+    var buf: std.ArrayList(u8) = .empty;
+    errdefer buf.deinit(allocator);
+    for (event.path.segments, 0..) |seg, i| {
+        if (i > 0) try buf.append(allocator, '_');
+        for (seg) |c| try buf.append(allocator, if (c == '-') '_' else c);
+    }
+    return try buf.toOwnedSlice(allocator);
+}
+
+/// True if `flow` is a mutual-group-lowerable subflow impl: a plain `if`-style
+/// inline-statement body with named value-return continuations (the shape
+/// `emitMutualGroupHandler` re-emits per arm). Preamble/label/effect-arm/
+/// non-inline shapes are rejected — the group falls back to call-based emission.
+fn isLowerableMutualMember(event: *const ast.EventDecl, flow: *const ast.Flow) bool {
+    if (flow.preamble_code != null) return false;
+    if (flow.pre_label != null) return false;
+    if (findEffectArm(event, &flow.inv().path) != null) return false;
+    const inline_code = flow.inline_body orelse return false;
+    if (std.mem.indexOf(u8, inline_code, "//@koru:inline_stmt\n") == null) return false;
+    for (flow.body.continuations) |c| {
+        if (c.branch.len > 0) return true;
+    }
+    return false;
+}
+
+/// Walk a continuation tree, appending the invocation path of every
+/// tail-forwarder found (a forwarder's identity children are not recursed into —
+/// they carry no further calls).
+fn collectTailForwardPaths(
+    conts: []const ast.Continuation,
+    out: *std.ArrayList(*const ast.DottedPath),
+    allocator: std.mem.Allocator,
+) !void {
+    for (conts) |*cont| {
+        if (isTailForwarder(cont)) {
+            try out.append(allocator, &cont.node.?.invocation.path);
+            continue;
+        }
+        if (cont.continuations.len > 0) {
+            try collectTailForwardPaths(cont.continuations, out, allocator);
+        }
+    }
+}
+
+/// Detect the mutual-tail-recursion group containing `start_event`: the closure
+/// of events reachable from it via tail-forwards, provided that closure is a
+/// clean cycle back to `start_event`, every member shares its input shape, and
+/// every member's impl is a lowerable inline subflow. Returns null (→ fall back
+/// to ordinary call-based emission) on any deviation — a miss is slow, never
+/// wrong. The degenerate 1-cycle (pure self-recursion) is intentionally rejected
+/// here so it stays on the existing `flowContainsSelfTailForward` path.
+pub fn detectMutualGroup(
+    start_event: *const ast.EventDecl,
+    all_items: []const ast.Item,
+    allocator: std.mem.Allocator,
+    main_module_name: ?[]const u8,
+) !?MutualGroup {
+    const MemberRec = struct {
+        canon: []const u8,
+        event: *const ast.EventDecl,
+        flow: *const ast.Flow,
+    };
+    var members: std.ArrayList(MemberRec) = .empty;
+    var success = false;
+    defer {
+        if (!success) {
+            for (members.items) |m| allocator.free(m.canon);
+        }
+        members.deinit(allocator);
+    }
+
+    // addMember: append (canon, event, flow) if the event isn't already present
+    // and its impl is a lowerable subflow. Returns false to abort the whole
+    // group (non-flow impl, missing impl, or unlowerable shape).
+    const addMember = struct {
+        fn call(
+            list: *std.ArrayList(MemberRec),
+            alloc: std.mem.Allocator,
+            mmn: ?[]const u8,
+            items: []const ast.Item,
+            evt: *const ast.EventDecl,
+        ) !bool {
+            const canon = try buildCanonicalEventName(&evt.path, alloc, mmn);
+            for (list.items) |m| {
+                if (std.mem.eql(u8, m.canon, canon)) {
+                    alloc.free(canon);
+                    return true; // already a member
+                }
+            }
+            const impl = findImplByPath(items, &evt.path) orelse {
+                alloc.free(canon);
+                return false;
+            };
+            if (impl != .flow or !isLowerableMutualMember(evt, impl.flow)) {
+                alloc.free(canon);
+                return false;
+            }
+            try list.append(alloc, .{ .canon = canon, .event = evt, .flow = impl.flow });
+            return true;
+        }
+    }.call;
+
+    if (!try addMember(&members, allocator, main_module_name, all_items, start_event)) return null;
+    const start_canon = members.items[0].canon;
+    var forwards_to_start = false;
+
+    var qi: usize = 0;
+    while (qi < members.items.len) : (qi += 1) {
+        const flow = members.items[qi].flow;
+        var targets: std.ArrayList(*const ast.DottedPath) = .empty;
+        defer targets.deinit(allocator);
+        try collectTailForwardPaths(flow.body.continuations, &targets, allocator);
+        for (targets.items) |tpath| {
+            const target_canon = try buildCanonicalEventName(tpath, allocator, main_module_name);
+            defer allocator.free(target_canon);
+            if (std.mem.eql(u8, target_canon, start_canon)) forwards_to_start = true;
+            const target_event = findEventDeclByPath(all_items, tpath) orelse return null;
+            if (!try addMember(&members, allocator, main_module_name, all_items, target_event)) return null;
+        }
+    }
+
+    // Validity gates: a genuine multi-member cycle back to the start, uniform
+    // input shape across members.
+    if (members.items.len < 2) return null;
+    if (!forwards_to_start) return null;
+    for (members.items[1..]) |m| {
+        if (!inputShapesMatch(start_event, m.event)) return null;
+    }
+
+    // Build the tags first (the only remaining fallible allocations). Kept in a
+    // separate array with its own errdefer so it never overlaps the outer defer
+    // that owns the member canons — assembling `out_members` below is then
+    // allocation-free, so canon ownership transfers without a double-free window.
+    const tags = try allocator.alloc([]u8, members.items.len);
+    var tag_built: usize = 0;
+    errdefer {
+        for (tags[0..tag_built]) |t| allocator.free(t);
+        allocator.free(tags);
+    }
+    for (members.items, 0..) |rec, i| {
+        tags[i] = try mangledEventTag(rec.event, allocator);
+        tag_built += 1;
+    }
+
+    const out_members = try allocator.alloc(MutualMember, members.items.len);
+    // Past this point nothing can fail: transfer canon + tag ownership.
+    for (members.items, 0..) |rec, i| {
+        out_members[i] = .{ .canonical = rec.canon, .tag = tags[i], .event = rec.event, .flow = rec.flow };
+    }
+    allocator.free(tags); // slice only; the strings are now owned by out_members
+    success = true; // canon + tag ownership now held by out_members
+    return MutualGroup{ .members = out_members };
 }
 
 /// Emit a single event declaration for a module subset
