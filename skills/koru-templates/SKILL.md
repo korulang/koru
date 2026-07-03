@@ -9,5 +9,5 @@ description: Control flow in Koru: `~if` and `~for` as templates over continuati
 
 ## Worked examples
 
-0 passing tests, verbatim, in [`../../docs/by-example/koru-templates.md`](../../docs/by-example/koru-templates.md). The tests are the spec — read them as the authority on what is actually legal. This skill is the map; the shard is the territory.
+8 passing tests, verbatim, in [`../../docs/by-example/koru-templates.md`](../../docs/by-example/koru-templates.md). The tests are the spec — read them as the authority on what is actually legal. This skill is the map; the shard is the territory.
 
