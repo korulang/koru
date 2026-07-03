@@ -2872,6 +2872,11 @@ pub const VisitorEmitter = struct {
                                         .self_loop_active = is_self_loop,
                                         .self_loop_event_canonical = self_loop_canonical,
                                         .impl_event_decl = event,
+                                        // Bare-return `-> T`: a produce arm inside the transformed
+                                        // control flow (`if(...) | then -> x`) IS the event's return
+                                        // value, so expression steps must `return x;` not discard.
+                                        // Same signal as the label-fold ctx below.
+                                        .bare_return_active = event.return_type != null,
                                     };
 
                                     // Emit continuation bodies directly - the continuations contain the control flow node
@@ -2912,6 +2917,10 @@ pub const VisitorEmitter = struct {
                                             .self_loop_active = is_self_loop,
                                             .self_loop_event_canonical = self_loop_canonical,
                                             .impl_event_decl = event,
+                                            // Bare-return `-> T`: a produce arm spliced from an
+                                            // inline-stmt template (`if(...) | then -> x`) IS the
+                                            // event's return value — `return x;`, not a discard.
+                                            .bare_return_active = event.return_type != null,
                                         };
                                         var inline_result_counter: usize = 0;
                                         try emitter.emitInlineBodyNode(self.code_emitter, &inline_ctx, inline_code, flow.body.continuations, &flow.inv().path, &inline_result_counter);
