@@ -1,0 +1,40 @@
+// TEST: std/trellis — CATEGORIZATION surface: check-as-dispatch.
+//
+// Where `enforce` is a law (violation = compile error), `check` is a
+// QUESTION: does the program match this trellis? The answer arrives as
+// ordinary branch dispatch — `| ok |>` / `| error msg |>` — resolved at
+// comptime (the trellis library computes the verdict in Stage C and the
+// losing branch is dead code by construction).
+//
+// This is the capability-float substrate: the same mechanism, invoked by
+// the compiler rather than the user, lets variant selection ask "is this
+// flow gpu-legal? simd-fusable?" and float the best variant whose trellis
+// the flow satisfies — early warning instead of generated-code wreckage.
+//
+// This program conforms to "kernel-shape", so the ok branch fires.
+
+~import std/trellis
+~import std/kernel
+~import std/io
+
+~std/trellis:define("kernel-shape")
+| `std/kernel:init/kernel/.*` => ok
+| `.*/std/kernel:pairwise` => error "std/kernel:pairwise found outside std/kernel:init"
+| `.*/std/kernel:self` => error "std/kernel:self found outside std/kernel:init"
+
+~std/kernel:shape(Body) {
+    mass: f64,
+}
+
+~std/kernel:init(Body) {
+    { mass: 1.0 },
+    { mass: 2.0 },
+}
+| kernel k |> std/kernel:self { k.mass *= 2.0 }
+| computed c |> std/io:print.blk {
+        mass[0]={{ c[0].mass:f }} mass[1]={{ c[1].mass:f }}
+    }
+
+~std/trellis:check("kernel-shape")
+| ok |> std/io:print.ln("categorized: kernel-shape")
+| error msg |> std/io:print.ln(msg)
