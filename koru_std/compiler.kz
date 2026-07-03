@@ -800,6 +800,14 @@ pub const CompilerContext = struct {
 ~proc fold-comptime|zig {
     const comptime_eval = @import("comptime_eval");
     var folder = comptime_eval.Folder.init(ctx.allocator);
+    // THE THUNK LAW: hand the walker the Stage A-generated dispatch table so
+    // interpreted comptime Koru can call the natively-compiled handlers.
+    // Same @hasDecl pattern as the comptime_main call — the table only
+    // exists when the user program has thunkable comptime events.
+    const backend_output = @import("backend_output_emitted.zig");
+    if (@hasDecl(backend_output, "koru_comptime_thunks")) {
+        folder.setThunks(&backend_output.koru_comptime_thunks);
+    }
     const folded = folder.fold(ctx.ast) catch {
         log.err("comptime fold failed: {s}\n", .{folder.diag()});
         @panic("comptime evaluation failed — see the diagnostic above");

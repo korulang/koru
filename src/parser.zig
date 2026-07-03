@@ -1293,10 +1293,10 @@ pub const Parser = struct {
         } else if (findTopLevelEquals(remaining) != null) {
             // Event implementation via subflow: ~event.name = ...
             // NOTE: This only matches = outside of source blocks (checked above)
-            return try self.parseSubflowImpl();
+            return try self.parseSubflowImpl(annotations.items);
         } else if (isBareReturnImpl(remaining)) {
             // `~event -> expr` : bare-return impl (the `->` twin of `=>`).
-            return try self.parseSubflowImpl();
+            return try self.parseSubflowImpl(annotations.items);
         } else if (std.mem.indexOfScalar(u8, remaining, '(') != null) {
             // It's an invocation with args
             return .{ .flow = try self.parseFlow(annotations.items) };
@@ -4246,7 +4246,16 @@ pub const Parser = struct {
     // Parses ~event = ... syntax. Returns either:
     //   Item{ .immediate_impl = ... } for branch constructor bodies
     //   Item{ .flow = Flow{ .impl_of = event_path, ... } } for flow bodies
-    fn parseSubflowImpl(self: *Parser) !ast.Item {
+    /// Duplicate caller-owned annotations for attachment to a produced item
+    /// (the caller frees its originals after the parse call returns).
+    fn dupeAnnotations(self: *Parser, annotations: [][]const u8) ![]const []const u8 {
+        if (annotations.len == 0) return &.{};
+        const out = try self.allocator.alloc([]const u8, annotations.len);
+        for (annotations, 0..) |ann, i| out[i] = try self.allocator.dupe(u8, ann);
+        return out;
+    }
+
+    fn parseSubflowImpl(self: *Parser, annotations: [][]const u8) !ast.Item {
         if (self.current >= self.lines.len) {
             try self.reporter.addError(
                 .PARSE001,
@@ -4262,7 +4271,18 @@ pub const Parser = struct {
         self.current += 1;
 
         // Parse: ~event.name = ... or ~module:event = ...
-        const after_tilde = lexer.trim(line[1..]);
+        var after_tilde = lexer.trim(line[1..]);
+
+        // Skip past a leading annotation block — the caller (parseKoruConstruct)
+        // already parsed it and hands it in via `annotations`. Without this skip
+        // the bracket text leaks INTO the impl path segment (`~[comptime]
+        // countdown = ...` registered the subflow as "[comptime] countdown"),
+        // mangling the name every later resolution looks up.
+        if (std.mem.startsWith(u8, after_tilde, "[")) {
+            if (std.mem.indexOf(u8, after_tilde, "]")) |close_pos| {
+                after_tilde = lexer.trim(after_tilde[close_pos + 1 ..]);
+            }
+        }
 
         // `~event -> expr` : bare-return impl (the `->` twin of `=>`). Returns the
         // event's single unnamed `-> T` value directly — no branch name, no tag.
@@ -4291,6 +4311,7 @@ pub const Parser = struct {
                         .has_expressions = true,
                         .is_bare_return = true,
                     },
+                    .annotations = try self.dupeAnnotations(annotations),
                     .location = self.getCurrentLocation(),
                     .module = try self.allocator.dupe(u8, self.module_name),
                     .is_impl = ep.module_qualifier != null,
@@ -4606,6 +4627,7 @@ pub const Parser = struct {
                 .pre_label = sub_pre_label,
                 .impl_of = event_path,
                 .impl_variant = impl_variant,
+                .annotations = try self.dupeAnnotations(annotations),
                 .is_impl = event_path.module_qualifier != null,
                 .location = self.getCurrentLocation(),
                 .module = try self.allocator.dupe(u8, self.module_name),
@@ -4751,6 +4773,7 @@ pub const Parser = struct {
                 .body = ast.rootSite(invocation, continuations, self.getCurrentLocation()),
                 .impl_of = event_path,
                 .impl_variant = impl_variant,
+                .annotations = try self.dupeAnnotations(annotations),
                 .is_impl = event_path.module_qualifier != null,
                 .location = self.getCurrentLocation(),
                 .module = try self.allocator.dupe(u8, self.module_name),
@@ -4785,6 +4808,7 @@ pub const Parser = struct {
             .pre_label = sub_pre_label,
             .impl_of = event_path,
             .impl_variant = impl_variant,
+            .annotations = try self.dupeAnnotations(annotations),
             .is_impl = event_path.module_qualifier != null,
             .location = self.getCurrentLocation(),
             .module = try self.allocator.dupe(u8, self.module_name),

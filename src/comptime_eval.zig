@@ -652,31 +652,47 @@ pub const Folder = struct {
         return self.evaluator.diag;
     }
 
-    /// Returns the input program untouched when nothing is foldable.
+    /// Hand the walker its Stage A-generated dispatch table (THE THUNK LAW).
+    pub fn setThunks(self: *Folder, thunks: []const Thunk) void {
+        self.evaluator.setThunks(thunks);
+    }
+
+    /// Returns the input program untouched when nothing is consumable.
+    /// Foldable flows are rewritten to their residue; walkable flows are
+    /// EXECUTED to completion and dropped — they happened at compile time,
+    /// nothing of them reaches runtime.
     pub fn fold(self: *Folder, program: *const ast.Program) EvalError!*const ast.Program {
         var found = false;
         for (program.items) |item| {
-            if (item == .flow and self.findFoldableImpl(program, &item.flow) != null) {
+            if (item == .flow and flowIsInterpreterConsumable(program.items, &item.flow) != null) {
                 found = true;
                 break;
             }
         }
         if (!found) return program;
 
-        const new_items = self.allocator.alloc(ast.Item, program.items.len) catch return error.OutOfMemory;
-        for (program.items, 0..) |item, i| {
+        var new_items = std.ArrayList(ast.Item).initCapacity(self.allocator, program.items.len) catch return error.OutOfMemory;
+        for (program.items) |item| {
             if (item == .flow) {
-                if (self.findFoldableImpl(program, &item.flow)) |impl| {
-                    new_items[i] = .{ .flow = try self.foldFlow(&item.flow, impl) };
+                if (flowIsInterpreterConsumable(program.items, &item.flow)) |consumable| {
+                    switch (consumable) {
+                        .fold => |impl| {
+                            new_items.append(self.allocator, .{ .flow = try self.foldFlow(&item.flow, impl) }) catch return error.OutOfMemory;
+                        },
+                        .walk => |sub| {
+                            try self.walkFlowToCompletion(program, &item.flow, sub);
+                            // Fully consumed at comptime: no residue item.
+                        },
+                    }
                     continue;
                 }
             }
-            new_items[i] = item;
+            new_items.append(self.allocator, item) catch return error.OutOfMemory;
         }
 
         const new_program = self.allocator.create(ast.Program) catch return error.OutOfMemory;
         new_program.* = .{
-            .items = new_items,
+            .items = new_items.toOwnedSlice(self.allocator) catch return error.OutOfMemory,
             .module_annotations = program.module_annotations,
             .main_module_name = program.main_module_name,
             .allocator = program.allocator,
@@ -685,9 +701,17 @@ pub const Folder = struct {
         return new_program;
     }
 
-    fn findFoldableImpl(self: *Folder, program: *const ast.Program, flow: *const ast.Flow) ?*const ast.ImmediateImpl {
-        _ = self;
-        return flowIsFoldable(program.items, flow);
+    /// Run a walkable flow through the interpreter. Residue continuations on
+    /// a walked flow are a later rung — for now the flow must be FULLY
+    /// comptime, and the walk's effects (thunked prints, file IO) happen
+    /// right here, during compilation.
+    fn walkFlowToCompletion(self: *Folder, program: *const ast.Program, flow: *const ast.Flow, sub: *const ast.Flow) EvalError!void {
+        if (flow.body.continuations.len != 0)
+            return self.evaluator.fail(error.UnsupportedConstruct, "comptime walk: residue continuations on a walked flow are a later rung — the flow must be fully comptime", .{});
+        const inv = &flow.body.node.?.invocation;
+        var env = Env.init(self.allocator);
+        const args = try self.evaluator.evalArgs(&env, inv.args);
+        _ = try self.evaluator.walkFlow(program.items, sub, args);
     }
 
     fn foldFlow(self: *Folder, flow: *const ast.Flow, impl: *const ast.ImmediateImpl) EvalError!ast.Flow {
@@ -835,6 +859,57 @@ pub fn flowIsFoldable(items: []const ast.Item, flow: *const ast.Flow) ?*const as
         if (field.is_source) return null;
     }
     return findBareReturnImpl(items, &inv.path);
+}
+
+/// A [comptime] flow whose head invocation resolves to a SUBFLOW
+/// implementation is WALKED by the interpreter. Comptime-ness derives from
+/// the call site: the flow's own [comptime] annotation OR the invoked
+/// event's — the subflow definition itself needs no marking (though marking
+/// it is legal and harmless).
+pub fn flowIsWalkable(items: []const ast.Item, flow: *const ast.Flow) ?*const ast.Flow {
+    if (flow.body.node == null or flow.body.node.? != .invocation) return null;
+    const inv = &flow.body.node.?.invocation;
+    const comptime_by_flow = hasAnnotationPart(flow.annotations, "comptime");
+    const comptime_by_event = if (findEventDecl(items, &inv.path)) |decl|
+        hasAnnotationPart(decl.annotations, "comptime")
+    else
+        false;
+    if (!comptime_by_flow and !comptime_by_event) return null;
+    return findSubflowImpl(items, &inv.path);
+}
+
+/// What the interpreter consumes at Stage C: a foldable flow (bare-return
+/// head, rung one) or a walkable flow (subflow-implemented head, rung two).
+pub const InterpreterConsumable = union(enum) {
+    fold: *const ast.ImmediateImpl,
+    walk: *const ast.Flow,
+};
+
+pub fn flowIsInterpreterConsumable(items: []const ast.Item, flow: *const ast.Flow) ?InterpreterConsumable {
+    if (flowIsFoldable(items, flow)) |impl| return .{ .fold = impl };
+    if (flowIsWalkable(items, flow)) |sub| return .{ .walk = sub };
+    return null;
+}
+
+/// THE Stage A skip predicate — shared by BOTH visitor_emitter emission
+/// sites (comptime_flowN bodies + the comptime_main call loop). True when
+/// the interpreter owns this flow at Stage C: emitting it as comptime_flowN
+/// would double-run it (a definition entered on demand would run standalone —
+/// the 733MB-of-zeros failure shape) or break Stage B on runtime-effectful
+/// residue.
+pub fn flowIsInterpreterOwned(items: []const ast.Item, flow: *const ast.Flow) bool {
+    if (flowIsInterpreterConsumable(items, flow) != null) return true;
+    // A comptime subflow DEFINITION is entered by the walker when its event
+    // is invoked — never a standalone comptime flow for comptime_main to
+    // call. Comptime-ness is the def's own annotation OR the implemented
+    // event's (derivation: marking the def is legal, not required).
+    if (flow.impl_of) |*impl_path| {
+        if (hasAnnotationPart(flow.annotations, "comptime")) return true;
+        if (findEventDecl(items, impl_path)) |decl| {
+            if (hasAnnotationPart(decl.annotations, "comptime")) return true;
+        }
+    }
+    return false;
 }
 
 pub fn hasAnnotationPart(annotations: []const []const u8, part: []const u8) bool {

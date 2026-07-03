@@ -746,10 +746,11 @@ pub const VisitorEmitter = struct {
 
                     // Only emit calls to comptime flows that are not [norun] or [transform]
                     if (invokes_comptime_event) {
-                        // Interpreter-foldable flows were never emitted as
-                        // comptime_flowN (see visitItem) — skip their calls too,
-                        // or the numbering desyncs.
-                        if (comptime_eval.flowIsFoldable(self.all_items, &flow) != null) {
+                        // Interpreter-owned flows (foldable, walkable, or
+                        // walker-entered subflow definitions) were never
+                        // emitted as comptime_flowN (see visitItem) — skip
+                        // their calls too, or the numbering desyncs.
+                        if (comptime_eval.flowIsInterpreterOwned(self.all_items, &flow)) {
                             continue;
                         }
                         // Check if this flow invokes a [norun] or [transform] event
@@ -821,6 +822,10 @@ pub const VisitorEmitter = struct {
             // Close comptime_main()
             self.code_emitter.dedent();
             try self.code_emitter.write("}\n");
+
+            // THE THUNK LAW table: every [comptime] event with a compiled
+            // proc handler becomes callable from the Stage C interpreter.
+            try self.emitComptimeThunkTable();
         } else {
             // ========================================================================
             // RUNTIME MODE: Emit main() that calls all runtime flows
@@ -1134,11 +1139,15 @@ pub const VisitorEmitter = struct {
                     if (self.emit_mode == .runtime_only) {
                         return;  // Skip comptime flows in runtime mode
                     }
-                    // Interpreter-foldable flows (pure-Koru bare-return impl) are
-                    // consumed by the Stage-C fold-comptime pass — their runtime-
-                    // effectful residue cannot compile as a comptime_flowN body.
+                    // Interpreter-owned flows are consumed by the Stage-C
+                    // fold-comptime pass: foldable flows leave runtime-
+                    // effectful residue that cannot compile as a
+                    // comptime_flowN body; walkable flows and walker-entered
+                    // subflow DEFINITIONS would double-run if emitted (a
+                    // definition called standalone by comptime_main is the
+                    // infinite-countdown failure shape).
                     // MUST stay in sync with the comptime_main call loop (Phase 2).
-                    if (comptime_eval.flowIsFoldable(self.all_items, &flow) != null) {
+                    if (comptime_eval.flowIsInterpreterOwned(self.all_items, &flow)) {
                         return;
                     }
                     // Fall through to emit as comptime_flowN() in .comptime_only mode
@@ -3770,6 +3779,176 @@ pub const VisitorEmitter = struct {
         event_path: *const ast.DottedPath,
     ) bool {
         return self.findProcInItems(self.all_items, event_path, null);
+    }
+
+    /// Scalar kinds the thunk boundary marshals this rung. Anything else
+    /// keeps the event OUT of the table — the walker's "not in the thunk
+    /// table" wall then names it, loudly, at the call site.
+    const ThunkScalar = enum { int, float, boolean, string };
+
+    fn thunkScalarOfType(type_text: []const u8) ?ThunkScalar {
+        const t = std.mem.trim(u8, type_text, " ");
+        if (std.mem.eql(u8, t, "bool")) return .boolean;
+        if (std.mem.eql(u8, t, "f64") or std.mem.eql(u8, t, "f32")) return .float;
+        if (std.mem.eql(u8, t, "[]const u8")) return .string;
+        const ints = [_][]const u8{ "i64", "i32", "i16", "i8", "u64", "u32", "u16", "u8", "usize", "isize" };
+        for (ints) |it| {
+            if (std.mem.eql(u8, t, it)) return .int;
+        }
+        return null;
+    }
+
+    /// True when every input field and every branch payload of `decl` fits
+    /// the rung's thunk boundary: scalar params, branches carrying zero or
+    /// one scalar field, no `-> T` return, no Source params.
+    fn eventIsThunkable(decl: *const ast.EventDecl) bool {
+        if (decl.return_type != null) return false;
+        for (decl.input.fields) |field| {
+            if (field.is_source or field.is_file) return false;
+            if (thunkScalarOfType(field.type) == null) return false;
+        }
+        for (decl.branches) |branch| {
+            if (branch.kind != .terminal) return false;
+            if (branch.payload.fields.len > 1) return false;
+            if (branch.payload.fields.len == 1 and thunkScalarOfType(branch.payload.fields[0].type) == null) return false;
+        }
+        return true;
+    }
+
+    /// Collect the events REACHABLE from interpreter-consumable flows: their
+    /// head invocations, everything invoked in their continuation trees, and
+    /// — transitively — the bodies of subflow implementations they call.
+    /// The thunk table is restricted to this set on purpose: taking &handler
+    /// for an event forces Zig to analyze its proc body, and an ill-typed
+    /// handler nobody calls at comptime must stay lazily unanalyzed (exactly
+    /// as it is for runtime emission) rather than break Stage B.
+    fn collectComptimeReachableEvents(self: *VisitorEmitter, set: *std.StringHashMapUnmanaged(void)) !void {
+        for (self.all_items) |*item| {
+            if (item.* != .flow) continue;
+            const flow = &item.flow;
+            if (comptime_eval.flowIsInterpreterConsumable(self.all_items, flow) == null) continue;
+            try self.collectInvokedEvents(&flow.body, set);
+        }
+    }
+
+    fn collectInvokedEvents(self: *VisitorEmitter, cont: *const ast.Continuation, set: *std.StringHashMapUnmanaged(void)) !void {
+        if (cont.node) |node| {
+            const inv: ?*const ast.Invocation = switch (node) {
+                .invocation => |*i| i,
+                .label_with_invocation => |*lwi| &lwi.invocation,
+                else => null,
+            };
+            if (inv) |i| {
+                const name = i.path.segments[i.path.segments.len - 1];
+                if (!set.contains(name)) {
+                    set.put(self.allocator, name, {}) catch return error.OutOfMemory;
+                    if (comptime_eval.findSubflowImpl(self.all_items, &i.path)) |sub| {
+                        try self.collectInvokedEvents(&sub.body, set);
+                    }
+                }
+            }
+        }
+        for (cont.continuations) |*child| {
+            try self.collectInvokedEvents(child, set);
+        }
+    }
+
+    /// THE THUNK LAW, generated (docs/comptime_core_ast_inventory.md §6a):
+    /// for each main-module [comptime] event with a proc handler that is
+    /// REACHABLE from an interpreter-consumable flow, emit a wrapper
+    /// marshalling interpreter Values ↔ the compiled handler's Input/Output
+    /// structs, plus the `koru_comptime_thunks` table the fold-comptime pass
+    /// hands to the walker. Module-nested events are a later rung (the table
+    /// is additive; absence only narrows what comptime code can call).
+    fn emitComptimeThunkTable(self: *VisitorEmitter) !void {
+        var reachable: std.StringHashMapUnmanaged(void) = .{};
+        defer reachable.deinit(self.allocator);
+        try self.collectComptimeReachableEvents(&reachable);
+        if (reachable.count() == 0) return;
+
+        var thunked = std.ArrayList(*const ast.EventDecl).initCapacity(self.allocator, 8) catch return error.OutOfMemory;
+        defer thunked.deinit(self.allocator);
+        for (self.all_items) |*item| {
+            if (item.* != .event_decl) continue;
+            const decl = &item.event_decl;
+            if (!reachable.contains(decl.path.segments[decl.path.segments.len - 1])) continue;
+            if (!annotation_parser.hasPart(decl.annotations, "comptime")) continue;
+            if (!self.eventHasProcHandler(&decl.path)) continue;
+            if (!eventIsThunkable(decl)) continue;
+            thunked.append(self.allocator, decl) catch return error.OutOfMemory;
+        }
+        if (thunked.items.len == 0) return;
+
+        try self.code_emitter.write("\n// THE THUNK LAW: comptime-callable events, compiled natively at Stage B,\n");
+        try self.code_emitter.write("// dispatched by the Stage C interpreter through koru_comptime_thunks.\n");
+        try self.code_emitter.write("const __koru_ce = @import(\"comptime_eval\");\n");
+
+        for (thunked.items) |decl| {
+            const name = decl.path.segments[decl.path.segments.len - 1];
+            var buf = std.ArrayList(u8).initCapacity(self.allocator, 1024) catch return error.OutOfMemory;
+            defer buf.deinit(self.allocator);
+            const w = buf.writer(self.allocator);
+
+            w.print("fn __koru_thunk_{s}(__alloc: @import(\"std\").mem.Allocator, __args: []const __koru_ce.ArgValue) __koru_ce.EvalError!__koru_ce.ThunkResult {{\n", .{name}) catch return error.OutOfMemory;
+            w.writeAll("    _ = __alloc;\n") catch return error.OutOfMemory;
+            if (decl.input.fields.len == 0) {
+                w.writeAll("    if (__args.len != 0) return error.UnknownField;\n") catch return error.OutOfMemory;
+                w.print("    const __input: main_module.{s}_event.Input = .{{}};\n", .{name}) catch return error.OutOfMemory;
+            } else {
+                w.print("    var __input: main_module.{s}_event.Input = undefined;\n", .{name}) catch return error.OutOfMemory;
+                w.writeAll("    var __bound: usize = 0;\n") catch return error.OutOfMemory;
+                w.writeAll("    for (__args) |__a| {\n") catch return error.OutOfMemory;
+                for (decl.input.fields) |field| {
+                    const kind = thunkScalarOfType(field.type).?;
+                    w.print("        if (@import(\"std\").mem.eql(u8, __a.name, \"{s}\")) {{\n", .{field.name}) catch return error.OutOfMemory;
+                    switch (kind) {
+                        .int => w.print("            __input.{s} = switch (__a.value) {{ .int => |__v| @intCast(__v), else => return error.TypeMismatch }};\n", .{field.name}) catch return error.OutOfMemory,
+                        .float => w.print("            __input.{s} = switch (__a.value) {{ .float => |__v| @floatCast(__v), .int => |__v| @floatFromInt(__v), else => return error.TypeMismatch }};\n", .{field.name}) catch return error.OutOfMemory,
+                        .boolean => w.print("            __input.{s} = switch (__a.value) {{ .boolean => |__v| __v, else => return error.TypeMismatch }};\n", .{field.name}) catch return error.OutOfMemory,
+                        .string => w.print("            __input.{s} = switch (__a.value) {{ .string => |__v| __v, else => return error.TypeMismatch }};\n", .{field.name}) catch return error.OutOfMemory,
+                    }
+                    w.writeAll("            __bound += 1;\n            continue;\n        }\n") catch return error.OutOfMemory;
+                }
+                w.writeAll("        return error.UnknownField;\n    }\n") catch return error.OutOfMemory;
+                w.print("    if (__bound != {d}) return error.UnknownField;\n", .{decl.input.fields.len}) catch return error.OutOfMemory;
+            }
+
+            if (decl.branches.len == 0) {
+                // Void handler: side effects only (comptime print, IO).
+                w.print("    main_module.{s}_event.handler(__input);\n", .{name}) catch return error.OutOfMemory;
+                w.writeAll("    return .{};\n") catch return error.OutOfMemory;
+            } else {
+                w.print("    const __out = main_module.{s}_event.handler(__input);\n", .{name}) catch return error.OutOfMemory;
+                w.writeAll("    switch (__out) {\n") catch return error.OutOfMemory;
+                for (decl.branches) |branch| {
+                    if (branch.payload.fields.len == 0) {
+                        w.print("        .{s} => return .{{ .branch = \"{s}\", .payload = null }},\n", .{ branch.name, branch.name }) catch return error.OutOfMemory;
+                    } else {
+                        const kind = thunkScalarOfType(branch.payload.fields[0].type).?;
+                        const ctor = switch (kind) {
+                            .int => ".{ .int = @intCast(__v) }",
+                            .float => ".{ .float = @floatCast(__v) }",
+                            .boolean => ".{ .boolean = __v }",
+                            .string => ".{ .string = __v }",
+                        };
+                        w.print("        .{s} => |__v| return .{{ .branch = \"{s}\", .payload = {s} }},\n", .{ branch.name, branch.name, ctor }) catch return error.OutOfMemory;
+                    }
+                }
+                w.writeAll("    }\n") catch return error.OutOfMemory;
+            }
+            w.writeAll("}\n") catch return error.OutOfMemory;
+            try self.code_emitter.write(buf.items);
+        }
+
+        try self.code_emitter.write("pub const koru_comptime_thunks = [_]__koru_ce.Thunk{\n");
+        for (thunked.items) |decl| {
+            const name = decl.path.segments[decl.path.segments.len - 1];
+            var line = std.ArrayList(u8).initCapacity(self.allocator, 128) catch return error.OutOfMemory;
+            defer line.deinit(self.allocator);
+            line.writer(self.allocator).print("    .{{ .event_name = \"{s}\", .call = &__koru_thunk_{s} }},\n", .{ name, name }) catch return error.OutOfMemory;
+            try self.code_emitter.write(line.items);
+        }
+        try self.code_emitter.write("};\n");
     }
 
     fn findProcInItems(
