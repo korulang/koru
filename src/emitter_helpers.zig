@@ -191,8 +191,8 @@ pub const LabelContext = struct {
 };
 
 /// One member of a mutual-tail-recursion group: the event's canonical name and
-/// the Zig enum tag (mangled event path) used for the combined dispatch loop's
-/// `__koru_fn` state variable.
+/// the Zig enum tag (mangled event path) used as the combined labeled switch's
+/// case for this member.
 pub const MutualMember = struct {
     canonical: []const u8,
     tag: []const u8,
@@ -201,10 +201,11 @@ pub const MutualMember = struct {
 };
 
 /// A cycle of events that tail-forward to each other (`is-even`↔`is-odd`). The
-/// whole cycle lowers into ONE `while (true) switch (__koru_fn) {...}` loop per
-/// member handler — the mutual generalization of the self-tail-loop lowering
-/// (see `detectMutualGroup` / `emitMutualTailReentry`). Owns its member strings;
-/// call `deinit` after the handler is emitted.
+/// whole cycle lowers into ONE labeled switch per member handler
+/// (`__koru_self_loop: switch (…entry…) {…}`, arms jumping via
+/// `continue :label .<G>`) — the mutual generalization of the self-tail-loop
+/// lowering (see `detectMutualGroup` / `emitMutualTailReentry`). Owns its
+/// member strings; call `deinit` after the handler is emitted.
 pub const MutualGroup = struct {
     members: []MutualMember,
 
@@ -277,13 +278,14 @@ pub const EmissionContext = struct {
     self_loop_label: []const u8 = "__koru_self_loop",
     self_loop_event_canonical: ?[]const u8 = null,
     // ── Mutual-tail-recursion group lowering ─────────────────────────────────
-    // When set, the handler body is being emitted inside a combined dispatch
-    // loop (`__koru_self_loop: while (true) switch (__koru_fn) {...}`) that
-    // covers a whole cycle of events tail-forwarding to each other. A tail
-    // continuation that forwards to any member G lowers to `__koru_fn = .<G>;
-    // <reassign args>; continue :__koru_self_loop;` instead of a cross-handler
-    // call. See `detectMutualGroup` / `emitMutualTailReentry`. The degenerate
-    // 1-cycle (an event forwarding to itself) stays on the `self_loop_*` path.
+    // When set, the handler body is being emitted inside a combined LABELED
+    // SWITCH (`__koru_self_loop: switch (…entry…) {...}`) that covers a whole
+    // cycle of events tail-forwarding to each other. A tail continuation that
+    // forwards to any member G lowers to `<reassign args>;
+    // continue :__koru_self_loop .<G>;` — a direct jump to G's arm — instead
+    // of a cross-handler call. See `detectMutualGroup` / `emitMutualTailReentry`.
+    // The degenerate 1-cycle (an event forwarding to itself) stays on the
+    // `self_loop_*` path.
     mutual_group: ?*const MutualGroup = null,
     // Set when emitting the body of a handler whose event has a bare `-> T`
     // return. A `.expression` produce step (`| big b -> b * 100`) in this
@@ -9977,26 +9979,23 @@ fn emitSelfTailReentry(
     try emitter.write(";\n");
 }
 
-/// Emit the dispatch-state update + reassign + continue that replaces a mutual
-/// tail-forward to another group member G: `__koru_fn = .<G>; <reassign args>;
-/// continue :label;`. Setting `__koru_fn` first is safe because it's an
-/// independent enum var — the arg reassignments below still read the current
-/// input values. The combined loop then re-enters and its `switch (__koru_fn)`
-/// selects G's arm.
+/// Emit the reassign + continue that replaces a mutual tail-forward to another
+/// group member G: `<reassign args>; continue :label .<G>;`. The combined loop
+/// is a LABELED SWITCH, so the continue operand jumps directly to G's arm —
+/// no dispatch-state variable, no per-step re-dispatch (that state-var form
+/// benched 1.38x slower on the mutual kernel).
 fn emitMutualTailReentry(
     emitter: *CodeEmitter,
     ctx: *EmissionContext,
     cont: *const ast.Continuation,
     tag: []const u8,
 ) !void {
-    try emitter.writeIndent();
-    try emitter.write("__koru_fn = .");
-    try emitter.write(tag);
-    try emitter.write(";\n");
     try emitTailReargs(emitter, ctx, &cont.node.?.invocation);
     try emitter.writeIndent();
     try emitter.write("continue :");
     try emitter.write(ctx.self_loop_label);
+    try emitter.write(" .");
+    try emitter.write(tag);
     try emitter.write(";\n");
 }
 

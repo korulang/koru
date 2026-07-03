@@ -1579,15 +1579,16 @@ pub const VisitorEmitter = struct {
     }
 
     /// Emit the body of a handler for an event `entry` that belongs to a
-    /// mutual-tail-recursion `group`. Lowers the whole cycle into ONE combined
-    /// dispatch loop: shared `var` input bindings, a `__koru_fn` enum state var
-    /// seeded to `entry`, and a `while (true) switch (__koru_fn) {...}` whose
-    /// arms are each member's inline subflow body. A tail-forward to member G
-    /// inside any arm lowers (via `emitContinuationBody` under `ctx.mutual_group`)
-    /// to `__koru_fn = .<G>; <reassign>; continue :__koru_self_loop;` — so the
-    /// cross-handler recursion disappears entirely. The `>16-byte by-value Input`
-    /// per-call cost and the stack growth are both gone; the loop constant-folds
-    /// where the opaque recursive calls couldn't.
+    /// mutual-tail-recursion `group`. Lowers the whole cycle into ONE labeled
+    /// switch: shared `var` input bindings, `__koru_self_loop: switch` seeded
+    /// to `entry`, whose arms are each member's inline subflow body. A
+    /// tail-forward to member G inside any arm lowers (via
+    /// `emitContinuationBody` under `ctx.mutual_group`) to `<reassign>;
+    /// continue :__koru_self_loop .<G>;` — a direct threaded jump to G's arm,
+    /// so the cross-handler recursion disappears entirely with NO dispatch
+    /// state variable. The `>16-byte by-value Input` per-call cost and the
+    /// stack growth are both gone; the loop constant-folds where the opaque
+    /// recursive calls couldn't.
     fn emitMutualGroupHandler(
         self: *VisitorEmitter,
         entry: *const ast.EventDecl,
@@ -1621,26 +1622,23 @@ pub const VisitorEmitter = struct {
         try self.code_emitter.writeIndent();
         try self.code_emitter.write("_ = &__koru_event_input;\n");
 
-        // Dispatch-state enum, seeded to THIS handler's own event.
+        // Combined loop: a LABELED SWITCH seeded to THIS handler's own event.
+        // `continue :__koru_self_loop .<G>` in an arm jumps DIRECTLY to G's arm
+        // — no dispatch-state variable, no re-dispatch per step. The old
+        // `var __koru_fn` + `while (true) switch (__koru_fn)` form cost ~1.38x
+        // on the mutual kernel (A/B on emitted Zig, 23.6→17.1ms ≈ C's 18.0).
         const entry_canon = try emitter.buildCanonicalEventName(&entry.path, self.allocator, self.main_module_name);
         defer self.allocator.free(entry_canon);
         const entry_tag = group.tagFor(entry_canon) orelse return error.MutualEntryNotInGroup;
         try self.code_emitter.writeIndent();
-        try self.code_emitter.write("var __koru_fn: enum { ");
+        try self.code_emitter.write("__koru_self_loop: switch (@as(enum { ");
         for (group.members, 0..) |m, i| {
             if (i > 0) try self.code_emitter.write(", ");
             try self.code_emitter.write(m.tag);
         }
-        try self.code_emitter.write(" } = .");
+        try self.code_emitter.write(" }, .");
         try self.code_emitter.write(entry_tag);
-        try self.code_emitter.write(";\n");
-
-        // Combined loop.
-        try self.code_emitter.writeIndent();
-        try self.code_emitter.write("__koru_self_loop: while (true) {\n");
-        self.code_emitter.indent_level += 1;
-        try self.code_emitter.writeIndent();
-        try self.code_emitter.write("switch (__koru_fn) {\n");
+        try self.code_emitter.write(")) {\n");
         self.code_emitter.indent_level += 1;
 
         for (group.members) |m| {
@@ -1680,9 +1678,6 @@ pub const VisitorEmitter = struct {
             try self.code_emitter.writeIndent();
             try self.code_emitter.write("},\n");
         }
-        self.code_emitter.indent_level -= 1;
-        try self.code_emitter.writeIndent();
-        try self.code_emitter.write("}\n");
         self.code_emitter.indent_level -= 1;
         try self.code_emitter.writeIndent();
         try self.code_emitter.write("}\n");
