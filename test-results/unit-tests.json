@@ -1,12 +1,12 @@
 {
-  "timestamp": "2026-07-03T14:09:13.020Z",
+  "timestamp": "2026-07-03T18:01:32.594Z",
   "summary": {
-    "passed": 245,
+    "passed": 236,
     "failed": 0,
-    "skipped": 12,
+    "skipped": 10,
     "leaked": 0,
-    "compileErrors": 1,
-    "total": 257,
+    "compileErrors": 2,
+    "total": 246,
     "suiteCount": 38,
     "status": "failure"
   },
@@ -294,11 +294,12 @@
     },
     {
       "name": "visitor_emitter_tests",
-      "passed": 9,
+      "passed": 0,
       "failed": 0,
-      "skipped": 2,
-      "total": 11,
-      "status": "success"
+      "skipped": 0,
+      "total": 0,
+      "compileErrors": 1,
+      "status": "compile_error"
     },
     {
       "name": "where_clause_integration_tests",
