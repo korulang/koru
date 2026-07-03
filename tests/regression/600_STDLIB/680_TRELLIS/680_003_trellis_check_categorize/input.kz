@@ -18,9 +18,9 @@
 ~import std/io
 
 ~std/trellis:define("kernel-shape")
-| `std/kernel:init/kernel/.*` => ok
-| `.*/std/kernel:pairwise` => error "std/kernel:pairwise found outside std/kernel:init"
-| `.*/std/kernel:self` => error "std/kernel:self found outside std/kernel:init"
+| `std/kernel:init/kernel/.*` _ => ok
+| `.*std/kernel:pairwise` _ => error "std/kernel:pairwise found outside std/kernel:init"
+| `.*std/kernel:self` _ => error "std/kernel:self found outside std/kernel:init"
 
 ~std/kernel:shape(Body) {
     mass: f64,
