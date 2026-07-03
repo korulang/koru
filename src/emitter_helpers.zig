@@ -9822,17 +9822,35 @@ fn identityForwardsResult(cont: *const ast.Continuation) bool {
     return true;
 }
 
+/// True if a child continuation bare-return-produces the parent invocation's
+/// `: bind` unchanged — `f(...): v -> v` — the single-return-form twin of the
+/// `| B v => B v` passthrough. The binding lives on the INVOCATION
+/// (return_binding), not on the child, so this can't ride on
+/// `identityForwardsResult`'s cont.binding check.
+fn bareReturnForwardsBinding(cont: *const ast.Continuation, return_binding: ?[]const u8) bool {
+    const rb = return_binding orelse return false;
+    if (cont.node == null) return false;
+    if (cont.node.? != .branch_constructor) return false;
+    const bc = cont.node.?.branch_constructor;
+    if (!bc.is_bare_return) return false;
+    const pv = bc.plain_value orelse return false;
+    return std.mem.eql(u8, std.mem.trim(u8, pv, " \t"), rb);
+}
+
 /// True if `cont` is a tail-forwarder: its node is an event invocation and every
 /// child continuation forwards the result branch unchanged (so the call's result
-/// IS this invocation's result). The invocation TARGET is not constrained here —
-/// this is the shared shape check behind both the self-loop (target == the
-/// event itself) and the mutual-group (target == any group member) lowerings.
+/// IS this invocation's result) — either the tagged `| B v => B v` passthrough
+/// or the bare-return `: v -> v` produce. The invocation TARGET is not
+/// constrained here — this is the shared shape check behind both the self-loop
+/// (target == the event itself) and the mutual-group (target == any group
+/// member) lowerings.
 fn isTailForwarder(cont: *const ast.Continuation) bool {
     if (cont.node == null) return false;
     if (cont.node.? != .invocation) return false;
     if (cont.continuations.len == 0) return false;
+    const rb = cont.node.?.invocation.return_binding;
     for (cont.continuations) |*child| {
-        if (!identityForwardsResult(child)) return false;
+        if (!identityForwardsResult(child) and !bareReturnForwardsBinding(child, rb)) return false;
     }
     return true;
 }
