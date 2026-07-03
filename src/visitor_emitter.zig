@@ -8,6 +8,7 @@ const type_registry_module = @import("type_registry");
 const annotation_parser = @import("annotation_parser");
 const codegen_utils = @import("codegen_utils");
 const file_types = @import("file_types");
+const comptime_eval = @import("comptime_eval");
 
 /// Variant-tag string this emitter targets — same namespace as `--lang`,
 /// `proc.target`, and `file_types.hostLangOfFile`. Selects both `|zig` proc
@@ -745,6 +746,12 @@ pub const VisitorEmitter = struct {
 
                     // Only emit calls to comptime flows that are not [norun] or [transform]
                     if (invokes_comptime_event) {
+                        // Interpreter-foldable flows were never emitted as
+                        // comptime_flowN (see visitItem) — skip their calls too,
+                        // or the numbering desyncs.
+                        if (comptime_eval.flowIsFoldable(self.all_items, &flow) != null) {
+                            continue;
+                        }
                         // Check if this flow invokes a [norun] or [transform] event
                         const event_decl = self.findEventDeclInItems(self.all_items, &flow.inv().path);
                         var flow_returns_program = false;
@@ -1126,6 +1133,13 @@ pub const VisitorEmitter = struct {
                     // BUT if is_transformed, the transform already ran - treat as runtime
                     if (self.emit_mode == .runtime_only) {
                         return;  // Skip comptime flows in runtime mode
+                    }
+                    // Interpreter-foldable flows (pure-Koru bare-return impl) are
+                    // consumed by the Stage-C fold-comptime pass — their runtime-
+                    // effectful residue cannot compile as a comptime_flowN body.
+                    // MUST stay in sync with the comptime_main call loop (Phase 2).
+                    if (comptime_eval.flowIsFoldable(self.all_items, &flow) != null) {
+                        return;
                     }
                     // Fall through to emit as comptime_flowN() in .comptime_only mode
                     // Skip normal filtering - comptime flows are already filtered by mode

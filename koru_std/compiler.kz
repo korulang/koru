@@ -162,6 +162,15 @@ pub const CompilerContext = struct {
     expression_parser_module.addImport("lexer", lexer_module);
     expression_parser_module.addImport("ast", ast_module);
 
+    // Comptime evaluator — the comptime Koru interpreter (fold-comptime pass)
+    const comptime_eval_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/comptime_eval.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    comptime_eval_module.addImport("ast", ast_module);
+    comptime_eval_module.addImport("expression_parser", expression_parser_module);
+
     // Union collector
     const union_collector_module = b.createModule(.{
         .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/union_collector.zig" },
@@ -454,6 +463,7 @@ pub const CompilerContext = struct {
     visitor_emitter_module.addImport("annotation_parser", annotation_parser_module);
     visitor_emitter_module.addImport("codegen_utils", codegen_utils_module);
     visitor_emitter_module.addImport("file_types", file_types_module);
+    visitor_emitter_module.addImport("comptime_eval", comptime_eval_module);
 
     // JS-target emitter (spike): minimal AST→JS for pump.kz. Gated behind
     // --lang=js in emit-zig; the default Zig path never references it.
@@ -539,6 +549,7 @@ pub const CompilerContext = struct {
     backend_output_module.addImport("tap_transformer", tap_transformer_module);
     backend_output_module.addImport("template_processor", template_processor_module);
     backend_output_module.addImport("expression_parser", expression_parser_module);
+    backend_output_module.addImport("comptime_eval", comptime_eval_module);
     backend_output_module.addImport("errors", errors_module);
     backend_output_module.addImport("continuation_codegen", continuation_codegen_module);
     backend_output_module.addImport("template_utils", template_utils_module);
@@ -568,6 +579,7 @@ pub const CompilerContext = struct {
     exe.root_module.addImport("visitor_emitter", visitor_emitter_module);
     exe.root_module.addImport("parser", parser_module);
     exe.root_module.addImport("expression_parser", expression_parser_module);
+    exe.root_module.addImport("comptime_eval", comptime_eval_module);
     exe.root_module.addImport("emit_build_zig", emit_build_zig_module);
     exe.root_module.addImport("shape_checker", shape_checker_module);
     exe.root_module.addImport("flow_checker", flow_checker_module);
@@ -776,14 +788,39 @@ pub const CompilerContext = struct {
     return .{ .ctx = updated_ctx };
 }
 
+// Comptime interpreter fold: partial evaluation of [comptime] flows whose
+// head event has a pure-Koru bare-return impl. The interpreter (comptime_eval)
+// evaluates the head at Stage C and rewrites the flow to its runtime residue
+// with the folded value spliced in. Failure is LOUD: an unfoldable foldable
+// flow is a compile error carrying the evaluator's diagnostic, never a silent
+// pass-through. See docs/comptime_core_ast_inventory.md.
+~pub event fold-comptime { ctx: CompilerContext }
+| ctx CompilerContext
+
+~proc fold-comptime|zig {
+    const comptime_eval = @import("comptime_eval");
+    var folder = comptime_eval.Folder.init(ctx.allocator);
+    const folded = folder.fold(ctx.ast) catch {
+        log.err("comptime fold failed: {s}\n", .{folder.diag()});
+        @panic("comptime evaluation failed — see the diagnostic above");
+    };
+
+    var updated_ctx = ctx;
+    updated_ctx.ast = folded;
+    updated_ctx.passes_completed += 1;
+    updated_ctx.current_pass = "fold_comptime";
+    return .{ .ctx = updated_ctx };
+}
+
 // Frontend segment: Early AST processing (abstract, can be overridden)
 ~[comptime|abstract] pub event frontend { ctx: CompilerContext }
 | ctx CompilerContext
 
 ~frontend = process-ccp-commands(ctx)
 | ctx c1 |> process-template-procs(ctx: c1)
-  | ctx c2 |> evaluate-comptime(ctx: c2)
-    | ctx c3 => ctx c3
+  | ctx c2 |> fold-comptime(ctx: c2)
+    | ctx c3 |> evaluate-comptime(ctx: c3)
+      | ctx c4 => ctx c4
 
 // Analysis segment: Validation passes (abstract, can be overridden)
 ~[comptime|abstract] pub event analysis { ctx: CompilerContext }

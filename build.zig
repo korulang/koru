@@ -106,6 +106,15 @@ pub fn build(b: *std.Build) void {
     expression_parser_module.addImport("lexer", lexer_module);
     expression_parser_module.addImport("ast", ast_module);
 
+    // Comptime evaluator module — the comptime Koru interpreter core
+    const comptime_eval_module = b.createModule(.{
+        .root_source_file = b.path("src/comptime_eval.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    comptime_eval_module.addImport("ast", ast_module);
+    comptime_eval_module.addImport("expression_parser", expression_parser_module);
+
     // Expression code generator module
     const expression_codegen_module = b.createModule(.{
         .root_source_file = b.path("src/expression_codegen.zig"),
@@ -382,6 +391,7 @@ pub fn build(b: *std.Build) void {
     visitor_emitter_module.addImport("codegen_utils", codegen_utils_module);
     visitor_emitter_module.addImport("log", log_module);
     visitor_emitter_module.addImport("file_types", file_types_module);
+    visitor_emitter_module.addImport("comptime_eval", comptime_eval_module);
 
     // Tap Pattern Matcher module - pattern matching for tap registration
     const glob_pattern_matcher_module = b.createModule(.{
@@ -1307,6 +1317,22 @@ pub fn build(b: *std.Build) void {
     const run_auto_discharge_inserter_tests = b.addRunArtifact(auto_discharge_inserter_tests);
     const auto_discharge_test_step = b.step("test-auto-discharge", "Run auto-discharge inserter tests");
     auto_discharge_test_step.dependOn(&run_auto_discharge_inserter_tests.step);
+
+    // Comptime evaluator tests — expression core of the comptime interpreter
+    const comptime_eval_tests = b.addTest(.{
+        .name = "comptime_eval_tests",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/comptime_eval_test.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    comptime_eval_tests.root_module.addImport("ast", ast_module);
+    comptime_eval_tests.root_module.addImport("expression_parser", expression_parser_module);
+    comptime_eval_tests.root_module.addImport("comptime_eval", comptime_eval_module);
+    const run_comptime_eval_tests = b.addRunArtifact(comptime_eval_tests);
+    const comptime_eval_test_step = b.step("test-comptime-eval", "Run comptime evaluator tests");
+    comptime_eval_test_step.dependOn(&run_comptime_eval_tests.step);
 
     // Phantom semantic checker integration tests - validates full type checking (base type + phantom state)
     const phantom_checker_integration_tests = b.addTest(.{
