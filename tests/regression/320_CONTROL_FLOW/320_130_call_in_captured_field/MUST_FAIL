@@ -1,0 +1,9 @@
+A call inside a CAPTURED field expression is illegal — calls are not
+expressions; the idiom is bind-first, exactly how every green benchmark
+kernel folds (`g(a: i): x |> captured { acc: s.acc + x }`).
+
+INTENTIONAL PIN — currently RED as wrong-error: the compiler accepts the
+shape and leaks the call's Koru syntax verbatim into emitted Zig (raw
+Stage-D host error). Named finding: the PARSE003 branch-constructor purity
+guard does NOT cover captured fields. One of the five open surfaces mapped
+2026-07-05. Goes green when the single expression-admission wall lands.
