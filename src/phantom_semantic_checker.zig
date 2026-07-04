@@ -2839,7 +2839,7 @@ test "BindingContext - disposal poisoning" {
     try std.testing.expect(!ctx.isDisposed("file"));
 
     // Mark as disposed
-    try ctx.markDisposed("file");
+    try ctx.markDisposed("file", "close()");
 
     // Now it's poisoned
     try std.testing.expect(ctx.isDisposed("file"));
@@ -2904,7 +2904,7 @@ test "BindingContext - inherit disposed state" {
     defer parent.deinit();
 
     try parent.set("file", "opened!");
-    try parent.markDisposed("file");
+    try parent.markDisposed("file", "close()");
 
     var child = try TestBindingContext.inherit(&parent, allocator);
     defer child.deinit();
