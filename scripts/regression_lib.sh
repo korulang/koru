@@ -1720,7 +1720,13 @@ run_one_test_watched() {
         regression_run_one_test "$tdir" &
     fi
     local job=$!
-    ( sleep "$KORU_TEST_TIMEOUT"; kill -KILL -"$job" 2>/dev/null ) &
+    # NOTE: redirect the watchdog subshell's fds to /dev/null. Otherwise it
+    # inherits run_single_test.sh's stdout — which under the parallel path is the
+    # pipe into `tee`. Killing the watchdog (below) orphans its `sleep`, which
+    # then holds the pipe's write-end open for the full timeout, so `tee` never
+    # sees EOF and the whole `xargs -P8 | tee` pipeline stalls to KORU_TEST_TIMEOUT
+    # — silently collapsing --parallel N to serial. (Measured: 333s vs 45s / 25 tests.)
+    ( sleep "$KORU_TEST_TIMEOUT"; kill -KILL -"$job" 2>/dev/null ) >/dev/null 2>&1 </dev/null &
     local watchdog=$!
     wait "$job" 2>/dev/null
     local rc=$?
