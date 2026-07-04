@@ -1,0 +1,7 @@
+name: regression_single_test_seconds
+kind: measured
+shape: scalar
+face: in
+membrane: false
+route: surface, wmfx=regression_shape
+note: wall seconds of one standalone single-test run (note carries the test id)
