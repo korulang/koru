@@ -1,0 +1,277 @@
+// Koru Standard Library: Reactive Stores
+// ========================================
+//
+// Application state as a compiled-reactivity substrate. The FULL design —
+// 9 rulings, adversary-stamped theses, the open queue — lives in
+// tests/regression/600_STDLIB/690_STORE/DESIGN.md (delete-when-pinned).
+// The pins (690_001..008) are the acceptance tests; this file grows until
+// they green, rung by rung.
+//
+// THE SPINE (ruled 2026-07-04):
+//   - A store is COMPTIME-NAMED and second-class (ruling 9): never a value,
+//     never passed, never nested. `create(game) { ... }` declares name +
+//     shape + seed; anyone anywhere links by name.
+//   - `stored { game.field: expr }` is the SOLE write path.
+//   - Subscriptions (`watch`) compile INTO the write path — tap-style,
+//     producer owns the guard, NO runtime registry (ruling 7).
+//   - Ruling (f): all writes route through ONE centralizing write-subflow
+//     per store; watches/interceptors/guards splice there ONCE.
+//   - Writes interleave, never overlap: write + full cascade is the
+//     atomicity unit ((h) lean); birth is not a write (O9 lean — the seed
+//     is stored in memory, never dispatched as an event).
+//
+// RUNG ONE, SLICE ONE (this file, current state):
+//   - `create`: singleton (one-row) store — emits the module-scope typed
+//     cell (capture's @Type builder, module-scoped via host_line).
+//   - `stored`: rewrites the block's dotted targets into direct cell
+//     writes. (f)'s centralizing subflow arrives with `watch` in slice
+//     two — until watches exist there is nothing to splice, and the
+//     direct write is observationally identical.
+//   - `watch`: EXPLICIT WALL — replaces its site with a @compileError
+//     naming the slice. Loud, never silent (KORU047 doctrine).
+//
+// SLICE TWO (next): watch collection via whole-program walk (kernel's
+// findShapeSource pattern), the generated write-subflow per store ((f)),
+// watch bodies + guards spliced as its continuations, transplant-purity
+// free-name check in this transform (ruling (a): the wall lives HERE,
+// koru-level diagnostic, pre-checker).
+//
+// ARCHITECTURE (mirrors capture, control.kz:147-410, the second
+// [transform]proc migrant lineage):
+//   - `create` parses its seed via the struct_literal projector; the cell
+//     is a runtime var with an explicit @Type-built struct type (anon
+//     literals are comptime — same trick as capture's preamble).
+//   - `stored` parses its block via the projector; each field name is a
+//     dotted path `<store>.<field>`; the value expression is rewritten
+//     boundary-aware (`game.entities` → `__koru_store_game.entities`).
+//   - Validation happens IN the transforms (loud @compileError), not the
+//     shape checker — checkers run after transforms (capture precedent).
+
+const std = @import("std");
+
+// ============================================================================
+// STORE.CREATE — declare + instantiate a store (singleton rung)
+// ============================================================================
+//
+//   ~std/store:create(game) { entities: 0[i64] }
+//
+// Name arg + seed block (kernel:shape's surface). Seed fields use the
+// bracket type annotation (`0[i64]`) — the same parser as const/capture.
+// Effect branches on create (interceptors, ruling 4) land in slice three.
+
+~[keyword|comptime|transform]pub event create {
+    expr: Expression,
+    source: Source,
+    invocation: *const Invocation,
+    item: *const Item,
+    program: *const Program,
+    allocator: std.mem.Allocator
+}
+| transformed SiteResult
+
+~[transform]proc create|zig {
+    const ast = @import("ast");
+    const struct_literal = @import("struct_literal");
+
+    if (item.* != .flow) @panic("store:create transform: containing item is not a flow - walker dispatch contract broken");
+    const flow = &item.flow;
+
+    // Store name from the paren arg (kernel:shape's quote-strip).
+    var store_name: []const u8 = "";
+    var seed_text: ?[]const u8 = null;
+    for (invocation.args) |arg| {
+        if (std.mem.eql(u8, arg.name, "expr")) {
+            var n = arg.value;
+            if (n.len >= 2 and n[0] == '"') n = n[1 .. n.len - 1];
+            store_name = n;
+        } else if (std.mem.eql(u8, arg.name, "source")) {
+            seed_text = arg.value;
+        }
+    }
+    if (store_name.len == 0 or seed_text == null) {
+        const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"std/store:create requires a name and a seed block: create(name) {{ field: value[type] }}\"); }}", .{}) catch unreachable;
+        return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+    }
+
+    // Seed fields via the projector (capture's path exactly).
+    const expr_braced = std.fmt.allocPrint(allocator, "{{{s}}}", .{seed_text.?}) catch unreachable;
+    const cell_fields = struct_literal.parseFields(allocator, expr_braced) catch &[_]struct_literal.StructField{};
+    if (cell_fields.len == 0) {
+        const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"std/store:create({s}): seed block has no fields\"); }}", .{store_name}) catch unreachable;
+        return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+    }
+
+    // Build the seed literal with @as-pinned types (capture's init_zig).
+    var seed = std.ArrayList(u8).initCapacity(allocator, 64) catch unreachable;
+    seed.appendSlice(allocator, ".{ ") catch unreachable;
+    for (cell_fields, 0..) |cf, i| {
+        if (i > 0) seed.appendSlice(allocator, ", ") catch unreachable;
+        seed.append(allocator, '.') catch unreachable;
+        seed.appendSlice(allocator, cf.name) catch unreachable;
+        seed.appendSlice(allocator, " = ") catch unreachable;
+        const peeled = struct_literal.peelBaseType(cf.value);
+        if (peeled.type.len > 0) {
+            seed.appendSlice(allocator, "@as(") catch unreachable;
+            seed.appendSlice(allocator, peeled.type) catch unreachable;
+            seed.appendSlice(allocator, ", ") catch unreachable;
+            seed.appendSlice(allocator, peeled.value) catch unreachable;
+            seed.appendSlice(allocator, ")") catch unreachable;
+        } else {
+            seed.appendSlice(allocator, cf.value) catch unreachable;
+        }
+    }
+    seed.appendSlice(allocator, " }") catch unreachable;
+    const init_zig = seed.toOwnedSlice(allocator) catch unreachable;
+
+    // Module-scope typed cell: capture's @Type comptime builder, emitted as
+    // a host_line item (kernel's static_item mechanism). The explicit
+    // struct type makes the cell a RUNTIME var (anon literals are comptime).
+    var p = std.ArrayList(u8).initCapacity(allocator, 512) catch unreachable;
+    p.appendSlice(allocator, "const __KoruStoreT_") catch unreachable;
+    p.appendSlice(allocator, store_name) catch unreachable;
+    p.appendSlice(allocator, " = comptime blk: {\n") catch unreachable;
+    p.appendSlice(allocator, "    const __info = @typeInfo(@TypeOf(") catch unreachable;
+    p.appendSlice(allocator, init_zig) catch unreachable;
+    p.appendSlice(allocator, "));\n") catch unreachable;
+    p.appendSlice(allocator, "    var __fields: [__info.@\"struct\".fields.len]@import(\"std\").builtin.Type.StructField = undefined;\n") catch unreachable;
+    p.appendSlice(allocator, "    for (__info.@\"struct\".fields, 0..) |__f, __i| {\n") catch unreachable;
+    p.appendSlice(allocator, "        __fields[__i] = .{ .name = __f.name, .type = __f.type, .default_value_ptr = null, .is_comptime = false, .alignment = __f.alignment };\n") catch unreachable;
+    p.appendSlice(allocator, "    }\n") catch unreachable;
+    p.appendSlice(allocator, "    break :blk @Type(.{ .@\"struct\" = .{ .layout = .auto, .fields = &__fields, .decls = &.{}, .is_tuple = false } });\n") catch unreachable;
+    p.appendSlice(allocator, "};\n") catch unreachable;
+    p.appendSlice(allocator, "var __koru_store_") catch unreachable;
+    p.appendSlice(allocator, store_name) catch unreachable;
+    p.appendSlice(allocator, ": __KoruStoreT_") catch unreachable;
+    p.appendSlice(allocator, store_name) catch unreachable;
+    p.appendSlice(allocator, " = ") catch unreachable;
+    p.appendSlice(allocator, init_zig) catch unreachable;
+    p.appendSlice(allocator, ";") catch unreachable;
+    const cell_decl = p.toOwnedSlice(allocator) catch unreachable;
+
+    const appended = allocator.alloc(ast.Item, 1) catch unreachable;
+    appended[0] = ast.Item{ .host_line = ast.HostLine{
+        .content = cell_decl,
+        .location = flow.location,
+        .module = allocator.dupe(u8, flow.module) catch unreachable,
+    } };
+
+    // The create site itself dissolves — the cell IS the store (birth is
+    // not a write: nothing dispatches here, O9 lean).
+    const consumed = std.fmt.allocPrint(allocator, "// std/store: '{s}' created (cell at module scope)", .{store_name}) catch unreachable;
+    const replacement = ast.Item{ .host_line = ast.HostLine{
+        .content = consumed,
+        .location = flow.location,
+        .module = allocator.dupe(u8, flow.module) catch unreachable,
+    } };
+
+    return .{ .transformed = .{ .replacement = replacement, .appended = appended } };
+}
+
+// ============================================================================
+// STORE.STORED — the sole write path
+// ============================================================================
+//
+//   ~std/store:stored { game.entities: game.entities + 1 }
+//
+// Block fields are dotted lvalue paths (`<store>.<field>`); value
+// expressions may read store fields by the same dotted names. Slice one
+// emits the direct cell write; the (f) centralizing subflow takes over in
+// slice two when there are watches to splice.
+
+~[keyword|comptime|transform]pub event stored {
+    source: Source,
+    invocation: *const Invocation,
+    item: *const Item,
+    program: *const Program,
+    allocator: std.mem.Allocator
+}
+| transformed SiteResult
+
+~[transform]proc stored|zig {
+    const ast = @import("ast");
+    const struct_literal = @import("struct_literal");
+
+    if (item.* != .flow) @panic("store:stored transform: containing item is not a flow - walker dispatch contract broken");
+    const flow = &item.flow;
+
+    var block_text: ?[]const u8 = null;
+    for (invocation.args) |arg| {
+        if (std.mem.eql(u8, arg.name, "source")) block_text = arg.value;
+    }
+    if (block_text == null) {
+        const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"std/store:stored requires a write block: stored {{ store.field: expr }}\"); }}", .{}) catch unreachable;
+        return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+    }
+
+    const braced = std.fmt.allocPrint(allocator, "{{{s}}}", .{block_text.?}) catch unreachable;
+    const writes = struct_literal.parseFields(allocator, braced) catch &[_]struct_literal.StructField{};
+
+    // Boundary-aware store-name rewrite: `game.entities` → the cell path,
+    // only where `game` is a whole identifier followed by a dot.
+    const Rewrite = struct {
+        fn isIdent(ch: u8) bool {
+            return (ch >= 'a' and ch <= 'z') or (ch >= 'A' and ch <= 'Z') or (ch >= '0' and ch <= '9') or ch == '_' or ch == '-';
+        }
+        fn storeRefs(alloc: std.mem.Allocator, text: []const u8, name: []const u8) []const u8 {
+            var out = std.ArrayList(u8).initCapacity(alloc, text.len + 32) catch unreachable;
+            var i: usize = 0;
+            while (i < text.len) {
+                const at_boundary = i == 0 or !isIdent(text[i - 1]);
+                if (at_boundary and i + name.len < text.len and
+                    std.mem.startsWith(u8, text[i..], name) and text[i + name.len] == '.')
+                {
+                    out.appendSlice(alloc, "__koru_store_") catch unreachable;
+                    out.appendSlice(alloc, name) catch unreachable;
+                    i += name.len;
+                } else {
+                    out.append(alloc, text[i]) catch unreachable;
+                    i += 1;
+                }
+            }
+            return out.toOwnedSlice(alloc) catch unreachable;
+        }
+    };
+
+    // Each write: `<store>.<field>: <expr>` → `__koru_store_<store>.<field> = <expr'>;`
+    var code = std.ArrayList(u8).initCapacity(allocator, 128) catch unreachable;
+    for (writes) |w| {
+        const dot = std.mem.indexOfScalar(u8, w.name, '.') orelse {
+            const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"std/store:stored target '{s}' must be a dotted store path (store.field)\"); }}", .{w.name}) catch unreachable;
+            return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+        };
+        const target_store = w.name[0..dot];
+        const rewritten_expr = Rewrite.storeRefs(allocator, w.value, target_store);
+        code.appendSlice(allocator, "__koru_store_") catch unreachable;
+        code.appendSlice(allocator, w.name) catch unreachable;
+        code.appendSlice(allocator, " = ") catch unreachable;
+        code.appendSlice(allocator, rewritten_expr) catch unreachable;
+        code.appendSlice(allocator, ";\n") catch unreachable;
+    }
+
+    return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{
+        .code = code.toOwnedSlice(allocator) catch unreachable,
+        .location = flow.location,
+        .module = flow.module,
+    } } } };
+}
+
+// ============================================================================
+// STORE.WATCH — subscriptions (SLICE TWO — explicit wall, never silent)
+// ============================================================================
+
+~[keyword|comptime|transform]pub event watch {
+    expr: Expression,
+    invocation: *const Invocation,
+    item: *const Item,
+    program: *const Program,
+    allocator: std.mem.Allocator
+}
+| transformed SiteResult
+
+~[transform]proc watch|zig {
+    const ast = @import("ast");
+    if (item.* != .flow) @panic("store:watch transform: containing item is not a flow - walker dispatch contract broken");
+    const flow = &item.flow;
+    const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"std/store:watch is rung-one SLICE TWO (the (f) centralizing write-subflow + tap-splice); create/stored land first — see 690_STORE/DESIGN.md\"); }}", .{}) catch unreachable;
+    return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+}
