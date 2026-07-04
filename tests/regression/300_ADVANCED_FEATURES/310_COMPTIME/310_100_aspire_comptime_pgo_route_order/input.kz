@@ -1,0 +1,26 @@
+// ASPIRATION — currently RED, a PIN not a regression (never been green).
+//
+// PGO-SHAPED LOWERING (the Orisha north star, named 2026-07-04): a template's
+// |koru facet emits code whose SHAPE is computed from profile data at compile
+// time — here, route dispatch ordered hottest-first. The router is ordinary
+// runtime code; only its ORDER is decided during compilation. Because the
+// lowering target is Koru (not host text), the reordered dispatch is
+// analyzed, optimized, and emitted per-target like hand-written source, and
+// `koruc --print` can show what the profile decided.
+//
+// ASPIRATIONAL bits: the [template]/|koru head (pinned at 310_099) and the
+// `order_by_hits` Liquid filter (INVENTED — custom-filter precedent is
+// parse_range, template_processor.zig; spelling open). The fragment tier —
+// routes held as first-class AST values in comptime Koru, assembled in
+// computed order — is the eventual mechanism; its surface is deliberately
+// UNRULED and this pin does not invent it. When ruled, this pin upgrades.
+~import std/io
+
+~pub event routes { profile: []const u8 }
+
+~[template] proc routes|koru {
+    {% const ordered = order_by_hits(profile) %}
+    std/io:print.ln("dispatch order: {{ ordered }}")
+}
+
+~routes(profile: "home:3,api:41,health:8")

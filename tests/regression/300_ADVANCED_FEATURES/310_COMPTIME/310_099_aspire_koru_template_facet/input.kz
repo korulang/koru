@@ -1,0 +1,26 @@
+// ASPIRATION — currently RED, a PIN not a regression (never been green).
+//
+// THE |koru TEMPLATE FACET (ruled 2026-07-04): alongside |zig and |js, a
+// template proc can carry a |koru variant whose rendered output is KORU
+// SOURCE — Liquid-processed, then parsed by the real parser into AST nodes,
+// never spliced as host text. First consumer: the comptime interpreter — in
+// a [comptime] context the |koru facet is selected, the rendered impl is
+// parsed, evaluated at Stage C, and the value spliced into the residue.
+//
+// Also encodes the ruled head shape `~[template] proc name|koru`: the
+// consumption mode lives in the annotation beside its sibling [transform]
+// (control.kz:151), and the pipe path is name|target only. Today's
+// `~proc name|template|zig` form (control.kz:35) predates this ruling.
+//
+// Grounded surface: event/call/bind/fold shape mirrors 310_098 (green);
+// Liquid arg substitution mirrors 250_001 (green). ASPIRATIONAL bits: the
+// [template] annotation placement, the |koru facet, parse-the-rendering.
+~import std/io
+
+~[comptime] pub event double-sum { a: i64, b: i64 } -> i64
+
+~[template] proc double-sum|koru {
+    -> ({{ a }} + {{ b }}) * 2
+}
+
+~[comptime] double-sum(a: 20, b: 1): r |> std/io:print.ln("{{ r:d }}")
