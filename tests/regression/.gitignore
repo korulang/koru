@@ -31,6 +31,7 @@
 !**/expected_output.txt
 !**/expected_error.txt
 !**/expected_patterns.txt
+!**/expected_comptime.txt
 !**/expected.json
 !**/EXPECT
 !**/EXPECT_TIMEOUT
