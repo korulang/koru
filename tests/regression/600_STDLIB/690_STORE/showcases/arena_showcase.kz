@@ -1,0 +1,111 @@
+// ARENA SHOWCASE — a small combat simulation written entirely in the
+// designed std/store surface (tests/regression/600_STDLIB/690_STORE/
+// DESIGN.md + pins 690_001..690_008). UNVERIFIED / ASPIRATIONAL like every
+// 690 pin: std/store does not exist in the compiler yet (all eight pins
+// are honest RED — "KORU002: module not found: 'std/store'"). This file
+// has not been compiled or run; every construct is either a literal pin
+// shape or an explicitly marked extrapolation. See the accompanying GAPS
+// list for every place the design was silent or ambiguous.
+//
+// Two stores:
+//   `scoreboard` — a singleton aggregate store (alive count, total enemy
+//   hp pool, kill count). Ruling 2: scalars are usually derived
+//   aggregates.
+//   `game` — the plural entity arena, fixed capacity (O10).
+// Interceptors on `game`'s create keep `scoreboard` coherent (ruling 4,
+// grounded shape: 690_003). A field watch on `scoreboard` prints a status
+// line on every aggregate change. A query on `game` models an arena
+// hazard (query-row addressing / UPDATE WHERE — grounded shape: 690_005,
+// 690_008). Repeatable per-tick combat damage uses HANDLE addressing
+// (`game[r].hp`, O2 ruling 2026-07-04) because query-row addressing is an
+// enter-triggered standing rule, not a repeatable action — see GAPS #4.
+// Death uses `take` (O2's move-semantics verb, 690_007) followed by an
+// invented discharge call, `give-back`, since DESIGN.md O2/690_007 name
+// the disposal verb explicitly undesigned but float "give-back" as a
+// candidate spelling.
+//
+// PARSER RULE HONORED (src/parser.zig KORU010, verified this session):
+// `|>` is inline glue and can never start a line — every continuation
+// stays glued to its predecessor no matter how long; only a fresh `!`/`|`
+// branch head may start a new (indented) line.
+
+~import std/io
+~import std/store
+
+// --- Aggregate store. ---
+~std/store:create(scoreboard) { alive: 0[i64], total_enemy_hp: 0[i64], kills: 0[i64] }
+
+// --- The arena. Fixed capacity (O10: capacity is DECLARED at create,
+// never silently grown). `capacity: 3` as a create-call argument is
+// INVENTED — no pin declares a capacity anywhere; DESIGN.md rules the
+// POLICY (fixed pool, `| full` sibling) but never a spelling. Argument
+// placement follows ruling 8's split ("how it behaves" lives in
+// invocation args, not the block).
+//
+// Interceptors below attach directly to create, schema-level and
+// unconditional (ruling 4). `inserted`/`removed` with a plain destructure
+// payload extrapolate 690_003's SINGLETON `updated { old, new }` shape
+// onto PLURAL multi-field CRUD lifecycle events (ruling 5 names the three
+// primitives; no pin exercises them on a multi-row, multi-field store —
+// INVENTED). `! hp { old, new }` merges 690_004's field-named branch with
+// 690_003's old/new destructure (never combined in a pin) and, since no
+// pin gives a field-named interceptor sibling-field (`kind`) context on a
+// plural store, deliberately fires unconditionally — safe here only
+// because this showcase writes hp exclusively on enemy rows post-insert
+// (see GAPS #6). create()+interceptors are consecutive below, uninterrupted
+// (KORU010: standalone comments cannot split a head from its handlers,
+// nor sibling handlers from each other — verified against src/parser.zig
+// this session), so all rationale lives in this one header instead. ---
+~std/store:create(game, capacity: 3) { hp: i64, kind: i64 } // INVENTED: capacity syntax undesigned (O10 rules the policy, not the spelling)
+! inserted { hp, kind } |> std/store:stored { scoreboard.alive: scoreboard.alive + 1 } |> if(kind == 1)
+    | then |> std/store:stored { scoreboard.total_enemy_hp: scoreboard.total_enemy_hp + hp }
+    | else |> _
+! hp { old, new } |> std/store:stored { scoreboard.total_enemy_hp: scoreboard.total_enemy_hp + new - old }
+! removed { hp, kind } |> std/store:stored { scoreboard.alive: scoreboard.alive - 1 } |> if(kind == 1)
+    | then |> std/store:stored { scoreboard.total_enemy_hp: scoreboard.total_enemy_hp - hp } |> std/store:stored { scoreboard.kills: scoreboard.kills + 1 }
+    | else |> _
+
+// Per-tick status feed — one watch, three field branches. 690_001 pins
+// exactly one field branch per watch; three siblings here is a light
+// extrapolation (structurally identical to an event's multiple `!`
+// branches, e.g. 020_035's two `! pair` arms).
+~std/store:watch(scoreboard)
+! alive a |> std/io:print.ln("status: alive={{ a:d }}") // INVENTED (light): multiple field branches under one watch()
+! total_enemy_hp t |> std/io:print.ln("status: enemy_hp_pool={{ t:d }}")
+! kills k |> std/io:print.ln("status: kills={{ k:d }}")
+
+// Combat log — grounded verbatim, 690_008's exact shape.
+~std/store:watch(game)
+! hp h |> std/io:print.ln("combat: hp now {{ h:d }}")
+
+// Arena hazard — an enter-triggered standing rule: any enemy that spawns
+// above 50 hp takes immediate chip damage. Grounded shape: 690_005's
+// projection+pun+compound `when`, 690_008's `stored { entity.field: ... }`
+// write head.
+~std/store:query(game)
+! query { entity.hp, entity.kind } when kind == 1 and hp > 50 |> std/store:stored { entity.hp: entity.hp - 5 }
+
+// --- Roster + combat. Row handles have no grounded top-level/module-scope
+// binding form (every pin uses a handle only inside the SAME chain that
+// bound it), so the entire arena — spawn, combat, death, reinforcement —
+// is ONE nested chain; e1/e2 stay in scope because everything that needs
+// them lives inside their `| row` continuations. See GAPS #7 (no join
+// point after a branch — every "can't happen given these numbers" arm is
+// a short, terminal diagnostic instead of a duplicated continuation, in
+// the spirit of the project's assert-loudly doctrine). ---
+~std/store:insert(game) { hp: 100, kind: 0 }
+    | row _ |> std/store:insert(game) { hp: 60, kind: 1 }
+        | row e1 |> std/store:insert(game) { hp: 45, kind: 1 }
+            | row e2 |> for(0..2)
+                ! each _ |> std/store:stored { game[e1].hp: game[e1].hp - 10 } |> std/store:stored { game[e2].hp: game[e2].hp - 15 }
+                | done |> std/store:insert(game) { hp: 30, kind: 1 }
+                    | row _ |> std/io:print.ln("unexpected: arena had room before combat resolved")
+                    | full |> std/io:print.ln("arena full: reinforcement must wait") |> std/store:stored { game[e1].hp: game[e1].hp - 10 } |> std/store:stored { game[e2].hp: game[e2].hp - 15 } |> if(game[e2].hp <= 0)
+                        | then |> std/store:take(game[e2])
+                            | item i |> std/io:print.ln("enemy-2 falls: final hp {{ i.hp:d }}") |> std/store:give-back(i) |> std/store:insert(game) { hp: 30, kind: 1 } // INVENTED: `give-back` — disposal verb undesigned (DESIGN.md O2/690_007 float this spelling as a candidate)
+                                | row _ |> std/io:print.ln("reinforcement joins the arena")
+                                | full |> std/io:print.ln("unexpected: still full after a death")
+                        | else |> std/io:print.ln("unexpected: enemy-2 survived the sweep")
+            | full |> std/io:print.ln("arena full: enemy-2 could not spawn")
+        | full |> std/io:print.ln("arena full: enemy-1 could not spawn")
+    | full |> std/io:print.ln("arena full: player could not spawn")
