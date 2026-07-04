@@ -1,16 +1,18 @@
-// PIN (2026-07-05, honest red): a value-event call nested directly as a
-// named argument to another call — r1(x: r1(x: 5)) — passes Stage A/B but
-// the emitter pastes the INNER CALL'S KORU SYNTAX VERBATIM into the emitted
-// Zig, which dies at Stage D with a raw host error:
-//     output_emitted.zig: error: expected ')', found ':'
-// Two defects in one: the mis-lowering, and the Zig-leak diagnostic (the
-// koru-level wall "nested calls in argument position aren't lowered — bind
-// the inner result first" doesn't exist).
+// PIN (2026-07-05, honest red — RULED by Lars this session): a value-event
+// call nested directly as a named argument to another call —
+// r1(x: r1(x: 5)) — is ILLEGAL. The language idiom is bind-first:
+//     r1(x: 5): a |> r1(x: a)
+// and the corpus is uniformly written that way.
 //
-// The corpus-wide idiom binds intermediates (`r1(x: 5): a |> r1(x: a)`),
-// which is why no test ever hit this. Surfaced by the wordfreq kernel port.
+// Today the compiler ACCEPTS this at Stage A/B and then pastes the inner
+// call's KORU SYNTAX VERBATIM into the emitted Zig, dying at Stage D with a
+// raw host error (output_emitted.zig: expected ')', found ':'). That is the
+// defect this pin holds red: the koru-level wall doesn't exist, and a Zig
+// leak stands where the diagnostic should be.
 //
-// Correct behavior: compiles and prints r1(r1(5)) = r1(84035) = 1412376245.
+// Goes green when the compiler rejects this at the koru level with a
+// diagnostic that names the construct and hints bind-the-inner-result-first.
+// Surfaced by the wordfreq kernel port (koru-benchmarks 19/22).
 import std/io
 
 pub event r1 { x: i64 } -> i64
