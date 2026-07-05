@@ -1,14 +1,14 @@
 {
-  "timestamp": "2026-07-04T13:21:19.731Z",
+  "timestamp": "2026-07-05T01:07:51.285Z",
   "summary": {
-    "passed": 245,
+    "passed": 263,
     "failed": 0,
     "skipped": 12,
     "leaked": 0,
-    "compileErrors": 1,
-    "total": 257,
+    "compileErrors": 0,
+    "total": 275,
     "suiteCount": 38,
-    "status": "failure"
+    "status": "success"
   },
   "suites": [
     {
@@ -181,12 +181,11 @@
     },
     {
       "name": "phantom_semantic_checker_tests",
-      "passed": 0,
+      "passed": 18,
       "failed": 0,
       "skipped": 0,
-      "total": 0,
-      "compileErrors": 2,
-      "status": "compile_error"
+      "total": 18,
+      "status": "success"
     },
     {
       "name": "purity_analyzer_tests",

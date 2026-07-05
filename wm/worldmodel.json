@@ -1,11 +1,11 @@
 {
   "subject": "koru",
-  "generated_at": "2026-07-04T15:08:35.028Z",
+  "generated_at": "2026-07-05T01:33:45.012Z",
   "scoreboard": {
-    "passed": 870,
-    "expected": 946,
-    "gap": 76,
-    "pass_rate": "92.0"
+    "passed": 884,
+    "expected": 965,
+    "gap": 81,
+    "pass_rate": "91.6"
   },
   "perf": {
     "promise_host": "at parity with the host language (Zig) — any gap is measurement noise",
