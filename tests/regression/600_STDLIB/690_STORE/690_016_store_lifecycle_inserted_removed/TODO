@@ -1,0 +1,5 @@
+IDEA PIN (ruling 5, rung two): CRUD lifecycle effects are THE primitive —
+plural stores emit inserted/removed; interceptors on them maintain a
+derived counter in another store (the entities-counter-is-COUNT(*)
+insight from ruling 2). Payload shape for plural lifecycle branches is
+the gauntlet-2 vocabulary-unification open.

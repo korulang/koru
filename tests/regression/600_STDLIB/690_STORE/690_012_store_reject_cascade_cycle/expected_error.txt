@@ -1,0 +1,1 @@
+store cascade cycle: alpha.x -> beta.y -> alpha.x — interceptor contracts must be acyclic; a convergent self-write needs @converges

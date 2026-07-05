@@ -641,6 +641,31 @@ day one — the AoC pattern pointed at performance.
   temporality ambiguity — reframe when (l) is ruled. Deferred pending O10
   ratification: the `| full` fixed-capacity insert pin.
 
+**IDEA PINS (TODO-marked, 2026-07-05 — Lars: capture every in-flight
+idea as a test before the rung-one merge; excluded from the % until
+promoted to honest reds):**
+
+- 690_009_store_chain_envelope_multi_write — (i) chain-envelope: a
+  multi-field stored block is ONE atomic unit, dispatch at envelope end.
+- 690_010_store_multi_watch_same_field — ruling 4: many subscriptions,
+  all fire; needs the sequencing splice (today a loud wall).
+- 690_011_store_insert_capacity_full_branch — O10: declared capacity +
+  `| full` exhaustion branch (capacity spelling PROVISIONAL).
+- 690_012_store_reject_cascade_cycle — T2/(d): cross-store interceptor
+  cycle rejected at comptime WITH THE CYCLE NAMED (MUST_FAIL).
+- 690_013_store_cross_store_guard_closure — (j): taps follow the guard's
+  free-name closure; writing the guard's store re-fires.
+- 690_014_store_stripe_scan_firing — (l)/O13: `stripe(game)` = the
+  scan-driven firing mode of the standing rules (verb PROVISIONAL).
+- 690_015_store_take_give_back_disposal — (k): `give-back` discharges the
+  taken row's obligation (spelling PROVISIONAL; 690_007's legal sibling).
+- 690_016_store_lifecycle_inserted_removed — ruling 5: inserted/removed
+  interceptors maintaining COUNT(*) in a second store.
+- 690_017_store_backend_arms_di — T8: `! ?persist` optional-arm DI,
+  comptime presence, zero cost uninstalled (install surface PROVISIONAL).
+- 690_018_store_declared_key_addressing — O2 head 3: `pool[id: 7].hp`,
+  key index as a declared cost (marking spelling PROVISIONAL).
+
 All seven original 690 pins RAN 2026-07-04 (QA pass): every one fails at
 Stage A — `KORU002: module not found: 'std/store'` — honest red. Mechanism
 note (corrected after tracing regression_lib.sh): the MUST_FAILs stay red

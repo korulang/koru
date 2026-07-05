@@ -1,0 +1,5 @@
+IDEA PIN (queue (l) + O13 stripe ruling): event-driven (write) and
+scan-driven (stripe) are two firing modes of ONE query definition —
+`stripe(game)` runs the standing compiled rules across the corpus NOW.
+The imperative sweep IS the stripe; per-frame stripe = the natural
+frame-batch boundary. Verb spelling PROVISIONAL.

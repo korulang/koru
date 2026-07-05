@@ -1,0 +1,23 @@
+// ASPIRATION — TODO idea pin. O10 (RULED-LEAN 2026-07-04): (i) capacity
+// declared at create — fixed static memory, the MAX_ENTITIES pool idiom;
+// silent autogrow is the exact shape the no-silent-perf ruling kills.
+// (ii) EXHAUSTION IS A BRANCH: fixed-mode insert grows a `| full`
+// sibling. PROVISIONAL: the `capacity:` arg spelling (ruling 8 puts
+// behavior directives in invocation args) and the `insert` verb (O2).
+
+~import std/io
+~import std/store
+
+~std/store:create(pool, capacity: 2) { hp: i64 }
+
+~std/store:insert(pool) { hp: 1 }
+| row _ |> std/io:print.ln("ok")
+| full |> std/io:print.ln("full")
+
+~std/store:insert(pool) { hp: 2 }
+| row _ |> std/io:print.ln("ok")
+| full |> std/io:print.ln("full")
+
+~std/store:insert(pool) { hp: 3 }
+| row _ |> std/io:print.ln("ok")
+| full |> std/io:print.ln("full")
