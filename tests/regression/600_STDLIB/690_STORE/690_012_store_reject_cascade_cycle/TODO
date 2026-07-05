@@ -1,0 +1,3 @@
+IDEA PIN (T2, cycle policy (d)): interceptors writing other stores form a
+comptime-visible FIELD-LEVEL graph; cycles are rejected with the cycle
+NAMED. Graph must close over watch-triggered writes too (gauntlet 2).

@@ -604,14 +604,25 @@ day one — the AoC pattern pointed at performance.
   Koru-level boolean connective before this pin. Grounds 690_005's
   compound query guard.
 - 690_001_store_create_stored_watch — hello-store: create/stored/watch,
-  singleton. MUST_RUN, aspirational RED (rung 1).
+  singleton. MUST_RUN, **GREEN (SHOWN 2026-07-05)** — rung one landed:
+  koru_std/store.kz compiles create into the module-scope cell + the (f)
+  centralizing write-subflow (apply event/proc + void write event + impl
+  flow whose arms are the transplanted watch branches); stored sites are
+  plain calls into it (worktree ~/src/koru-store, branch `store`).
 - 690_002_store_watch_guard_producer_if — `when` compiled into the write
-  path. MUST_RUN, aspirational RED (rung 1).
+  path. MUST_RUN, **GREEN (SHOWN 2026-07-05)** — guard rides as the arm's
+  condition, unguarded do-nothing sibling keeps dispatch exhaustive
+  (210_085 coverage rule).
 - 690_003_store_interceptor_cross_store_sync — interceptors as contract;
   `updated { old, new }` usage-synthesized payload ((c) lean). MUST_RUN,
-  aspirational RED (rung 1).
+  **GREEN (SHOWN 2026-07-05)** — an `updated` interceptor flips the store's
+  apply payload to {old,new}; the nested `stored` in its body compiles to a
+  call into the OTHER store's write-subflow (real cross-subflow cascade).
 - 690_004_store_no_torn_state — write+cascade atomicity, watches observe
-  settled state only ((h) lean). MUST_RUN, aspirational RED (rung 1).
+  settled state only ((h) lean). MUST_RUN, **GREEN (SHOWN 2026-07-05)** —
+  same-field interceptor+watch sequenced in one arm, interceptor first;
+  store reads in watch bodies rewritten to the cell (incl. inside `{{ }}`
+  interpolations).
 - 690_005_store_plural_query_watch — plurality, query DSL (path projection,
   genuine rename, pun, compound when). `insert` verb and `query` branch
   name PROVISIONAL (O2/O1). MUST_RUN, aspirational RED (rung 2).
@@ -629,6 +640,31 @@ day one — the AoC pattern pointed at performance.
   aspirational RED (rung 2). NOTE (gauntlet 2): carries the query-
   temporality ambiguity — reframe when (l) is ruled. Deferred pending O10
   ratification: the `| full` fixed-capacity insert pin.
+
+**IDEA PINS (TODO-marked, 2026-07-05 — Lars: capture every in-flight
+idea as a test before the rung-one merge; excluded from the % until
+promoted to honest reds):**
+
+- 690_009_store_chain_envelope_multi_write — (i) chain-envelope: a
+  multi-field stored block is ONE atomic unit, dispatch at envelope end.
+- 690_010_store_multi_watch_same_field — ruling 4: many subscriptions,
+  all fire; needs the sequencing splice (today a loud wall).
+- 690_011_store_insert_capacity_full_branch — O10: declared capacity +
+  `| full` exhaustion branch (capacity spelling PROVISIONAL).
+- 690_012_store_reject_cascade_cycle — T2/(d): cross-store interceptor
+  cycle rejected at comptime WITH THE CYCLE NAMED (MUST_FAIL).
+- 690_013_store_cross_store_guard_closure — (j): taps follow the guard's
+  free-name closure; writing the guard's store re-fires.
+- 690_014_store_stripe_scan_firing — (l)/O13: `stripe(game)` = the
+  scan-driven firing mode of the standing rules (verb PROVISIONAL).
+- 690_015_store_take_give_back_disposal — (k): `give-back` discharges the
+  taken row's obligation (spelling PROVISIONAL; 690_007's legal sibling).
+- 690_016_store_lifecycle_inserted_removed — ruling 5: inserted/removed
+  interceptors maintaining COUNT(*) in a second store.
+- 690_017_store_backend_arms_di — T8: `! ?persist` optional-arm DI,
+  comptime presence, zero cost uninstalled (install surface PROVISIONAL).
+- 690_018_store_declared_key_addressing — O2 head 3: `pool[id: 7].hp`,
+  key index as a declared cost (marking spelling PROVISIONAL).
 
 All seven original 690 pins RAN 2026-07-04 (QA pass): every one fails at
 Stage A — `KORU002: module not found: 'std/store'` — honest red. Mechanism

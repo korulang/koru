@@ -1,0 +1,17 @@
+// ASPIRATION — TODO idea pin (designed rejection). T2 + queue (d): the
+// interceptor cascade graph is comptime-visible; a cross-store cycle
+// (alpha's contract writes beta, beta's writes alpha) is rejected at
+// compile time WITH THE CYCLE NAMED — never an infinite cascade at
+// runtime. Field-level graph; @converges carve-out for clamp shapes is
+// the open (d) detail.
+
+~import std/io
+~import std/store
+
+~std/store:create(alpha) { x: 0[i64] }
+! updated { old, new } |> std/store:stored { beta.y: new }
+
+~std/store:create(beta) { y: 0[i64] }
+! updated { old, new } |> std/store:stored { alpha.x: new }
+
+~std/store:stored { alpha.x: 1 }

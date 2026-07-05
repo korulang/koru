@@ -1,0 +1,24 @@
+// ASPIRATION — TODO idea pin. Ruling 5: stores emit inserted/updated/
+// removed, and everything reactive compiles down into these same
+// interceptor branches. Here the store's own contract maintains COUNT(*)
+// in a second store (ruling 2: stored scalars are often derived
+// aggregates). DESIGN.md ruling 4 shows this exact interceptor shape
+// (`! inserted { hp } |> stored { ... }`). Plural lifecycle payload
+// vocabulary = gauntlet-2 open; destructure shape PROVISIONAL.
+
+~import std/io
+~import std/store
+
+~std/store:create(stats) { count: 0[i64] }
+
+~std/store:create(pool) { hp: i64 }
+! inserted { hp } |> std/store:stored { stats.count: stats.count + 1 }
+! removed { hp } |> std/store:stored { stats.count: stats.count - 1 }
+
+~std/store:watch(stats)
+! count c |> std/io:print.ln("count {{ c:d }}")
+
+~std/store:insert(pool) { hp: 1 }
+| row a |> std/store:insert(pool) { hp: 2 }
+    | row b |> std/store:take(pool[b]): item
+        |> std/store:give-back(item)

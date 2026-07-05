@@ -1,0 +1,4 @@
+IDEA PIN (queue (j), gauntlet-2 x2 convergence): a watch guard referencing
+ANOTHER store's field must compile taps at THAT store's write sites too —
+taps follow the guard's full free-name closure. Otherwise the guard store
+is decorative (the todo-app filter-tabs failure).

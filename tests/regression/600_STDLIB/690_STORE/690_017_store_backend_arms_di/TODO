@@ -1,0 +1,6 @@
+IDEA PIN (T8): the storage backend is DI-able via optional resume arms —
+the store declares `! ?persist`; a consumer installs the handler and every
+write flows through it (called BY the store, so deltas see every write);
+nobody installs it and presence resolves at comptime, the in-memory
+layout inlines, zero cost. Arm shape (void side-effecting vs scalar
+resume) is the ORM-showcase open; spelling PROVISIONAL.
