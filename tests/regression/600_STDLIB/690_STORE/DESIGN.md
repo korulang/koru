@@ -625,7 +625,10 @@ day one — the AoC pattern pointed at performance.
   interpolations).
 - 690_005_store_plural_query_watch — plurality, query DSL (path projection,
   genuine rename, pun, compound when). `insert` verb and `query` branch
-  name PROVISIONAL (O2/O1). MUST_RUN, aspirational RED (rung 2).
+  name PROVISIONAL (O2/O1). MUST_RUN, **GREEN (SHOWN 2026-07-05, rung
+  two)** — SoA plural cell, per-line qrow/qbody/qsweep units, standing
+  enter gated on `__site_line` (a query hears only inserts below it);
+  mandatory punning enforced in projections.
 - 690_006_store_reject_watch_body_ambient_context — transplant-purity
   rejection, koru-level diagnostic. MUST_FAIL (designed negative).
   expected_error.txt is DOCUMENTARY (harness checks EXPECT CONTAINS lines
@@ -634,12 +637,23 @@ day one — the AoC pattern pointed at performance.
   `<game:item!>` obligation). REWRITTEN 2026-07-04 to handle addressing
   (`insert | row r`, `take(game[r])`) per the four-heads ruling — the
   original `index: 0` spelling was incoherent (position ≠ identity).
-  MUST_FAIL (designed negative). Disposal verb undesigned.
+  MUST_FAIL (designed negative), **GREEN AS DESIGNED (SHOWN
+  2026-07-05)** — take's `| item` identity payload carries the
+  synthesized `<game-item!>` obligation (spelling: unqualified
+  store-name-prefixed state; the `game:item` colon form would collide
+  with module-qualifier validation); KORU030 rejects the leak with
+  "Resource 'i' obligation <game-item!> was not discharged". Disposal
+  verb still undesigned (690_015).
 - 690_008_store_update_where — query-row addressing head: `stored {
   entity.hp: ... }` under a query branch = UPDATE WHERE. MUST_RUN,
-  aspirational RED (rung 2). NOTE (gauntlet 2): carries the query-
-  temporality ambiguity — reframe when (l) is ruled. Deferred pending O10
-  ratification: the `| full` fixed-capacity insert pin.
+  **GREEN (SHOWN 2026-07-05, rung two)** — the site's sweep covers
+  pre-existing rows ((l) lean as built: sweep at program position +
+  standing enters below it; field updates do NOT re-evaluate membership
+  this rung, which is the O1 enter/leave question left open). Pin
+  adjusted: `entity.hp / 2` → `@divTrunc(entity.hp, 2)` — integer-div
+  LOWERING is 010_063's gap, not this pin's subject. NOTE (gauntlet 2):
+  reframe when (l) is ruled. Deferred pending O10 ratification: the
+  `| full` fixed-capacity insert pin.
 
 **IDEA PINS (TODO-marked, 2026-07-05 — Lars: capture every in-flight
 idea as a test before the rung-one merge; excluded from the % until

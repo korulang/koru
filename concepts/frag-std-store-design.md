@@ -63,6 +63,21 @@ parser now accepts dotted paths as destructure field names (ruling 6's
 projection grammar; PARSE001 loosened per the maximalist tenet).
 690_005 GREEN.
 
+**Rung two grew five more greens (2026-07-05 late):** take obligations
+(`<store-item!>` on the `| item` identity payload — Field.phantom, the
+660_027 pattern; KORU030 now says "obligation" by name), UPDATE WHERE
+(indexed lvalue head `store[row].field`; site-replacement transforms
+preserve impl_of because a query body's head IS an impl flow's head),
+multi-watch fan-out in source order, declared capacity with `| full`
+exhaustion-as-a-branch, and T2's cascade-cycle rejection. The cycle
+graph is **FIELD-level, not store-level** — the store-level version
+false-positived on 690_004's same-store hp→shield derivation (caught as
+a regression, reworked same session). Walker fact overturned: nested
+`stored` sites transform BEFORE their enclosing create's head fires, so
+coordination-time scans must read both spellings of a write (raw
+`std/store:stored` and rewritten `__store_write_*`). 690 board:
+11/11 runnable green, 9 TODO.
+
 **The perf instrument (2026-07-05):** ecs_bench_suite's seven workloads
 are mapped as the store's honest-ABSENT benchmark battery
 (`koru-benchmarks/suites/ecs-store` — board, provenance, M2 Pro criterion

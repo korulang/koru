@@ -751,7 +751,7 @@ pub const AutoDischargeInserter = struct {
                                             .KORU030,
                                             flow.location.line,
                                             flow.location.column,
-                                            "Resource '{s}' with phantom state <{s}> was not discharged at scope exit.",
+                                            "Resource '{s}' obligation <{s}> was not discharged at scope exit.",
                                             .{ display_name, display_state },
                                         );
                                     }
@@ -1229,7 +1229,7 @@ pub const AutoDischargeInserter = struct {
                                             .KORU030,
                                             flow.location.line,
                                             flow.location.column,
-                                            "Resource '{s}' with phantom state <{s}> was not discharged at scope exit.",
+                                            "Resource '{s}' obligation <{s}> was not discharged at scope exit.",
                                             .{ display_name, display_state },
                                         );
                                     }
@@ -1590,7 +1590,7 @@ pub const AutoDischargeInserter = struct {
                                 .KORU030,
                                 flow.location.line,
                                 flow.location.column,
-                                "Resource '{s}' with phantom state <{s}> was not discharged.",
+                                "Resource '{s}' obligation <{s}> was not discharged.",
                                 .{ display_name, display_state },
                             );
                         }
@@ -1844,7 +1844,7 @@ pub const AutoDischargeInserter = struct {
                             .KORU030,
                             flow.location.line,
                             flow.location.column,
-                            "Resource '{s}' with phantom state <{s}> was not discharged. No event accepts <!{s}>.",
+                            "Resource '{s}' obligation <{s}> was not discharged. No event accepts <!{s}>.",
                             .{ display_name, display_state, state_without_bang },
                         );
                     }

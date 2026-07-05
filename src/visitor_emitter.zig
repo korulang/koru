@@ -2152,6 +2152,14 @@ pub const VisitorEmitter = struct {
                                         try self.code_emitter.write(" });\n");
                                     }
 
+                                    // A head with no continuations has no switch to
+                                    // consume `result` — discard-guard it (same
+                                    // hygiene as nested_result_N in arm emission).
+                                    if (flow.body.continuations.len == 0) {
+                                        try self.code_emitter.writeIndent();
+                                        try self.code_emitter.write("_ = &result;\n");
+                                    }
+
                                     // Emit continuations
                                     var indent_buf: [64]u8 = undefined;
                                     var indent_pos: usize = 0;
@@ -2467,6 +2475,13 @@ pub const VisitorEmitter = struct {
                                                         try self.code_emitter.write(arg.value);
                                                     }
                                                     try self.code_emitter.write(" });\n");
+                                                }
+
+                                                // A head with no continuations has no switch to
+                                                // consume `result` — discard-guard it.
+                                                if (flow.body.continuations.len == 0) {
+                                                    try self.code_emitter.writeIndent();
+                                                    try self.code_emitter.write("_ = &result;\n");
                                                 }
 
                                                 // Generate switch on result with continuations
@@ -3174,6 +3189,14 @@ pub const VisitorEmitter = struct {
                                     // NOTE: Comptime injection of program/allocator is now handled
                                     // by emitArgs in emitter_helpers.zig
                                     try self.code_emitter.write(" });\n");
+
+                                    // A head with no continuations has no switch to
+                                    // consume `result` — discard-guard it (same hygiene
+                                    // as nested_result_N in arm emission).
+                                    if (flow.body.continuations.len == 0 and flow.inv().return_binding == null) {
+                                        try self.code_emitter.writeIndent();
+                                        try self.code_emitter.write("_ = &result;\n");
+                                    }
 
                                     // Bare-return bind at a subflow head
                                     // (`~run-one = create(): r |> work(r)`): alias `result`
