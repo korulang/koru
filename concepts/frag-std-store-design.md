@@ -22,10 +22,25 @@ and three hostile showcase programs, that this spine holds:
 - Writes interleave, never overlap: write + full cascade is the atomicity
   unit; the chain is the envelope lean covers multi-write grouping.
 
+**Rung one is BUILT and green (2026-07-05, branch `store`):** the (f)
+subflow is real — `create` coordinates, appending per store the typed
+cell, an apply event/proc announcing the written field as a terminal
+branch (`{old,new}` payload usage-synthesized per the (c) lean), and the
+write event implemented by a generated flow whose arms are the
+transplanted interceptor+watch branches. This is the first
+transform-minted callable with a Koru-level body in the compiler; the
+cross-store cascade is ordinary calls through generated subflows.
+Transplant purity (ruling a) is enforced at rewrite time with a
+koru-level diagnostic. 690_001-004 run green; 690_006 rejects as
+designed.
+
 Key substrate facts flipped during the walk: the multi-cell capture
 routing believed to be a RED frontier (320_036's own header) already
 passes; boolean connectives in when-guards existed in the parser but were
 never once exercised by the corpus until 020_036 pinned them green.
+Implementation added one more: cloneContinuation's documented shallow
+expression/source-pointer footgun bites for real — a transform rewriting
+cloned bodies must swap in fresh structs or it mutates the original tree.
 
 The full residue (rulings, stamped theses, gauntlet verdicts, open
 queue) lives in `tests/regression/600_STDLIB/690_STORE/DESIGN.md`, which

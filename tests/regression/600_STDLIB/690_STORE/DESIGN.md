@@ -546,6 +546,38 @@ O-number, mount/unmount refusal paragraph, store-minting codegen).
     REC (pending): planner-generated maintenance fires FIRST, then user
     interceptors in declaration order, depth-first.
 
+## The perf north star — ecs_bench_suite mapping (2026-07-05, Lars-directed)
+
+Cloned to ~/src/ecs_bench_suite (rust-gamedev, ARCHIVED — their retro:
+"speed is only one aspect"; we take the PROTOCOL as donor and the
+workloads as gap-flags, instrument never destination). Site integration:
+benchmarks.json already has the shape (per-entry ABSENT markers, vendored
+corpus convention, koru-benchmarks feeds the live board — the Osprey
+compute-kernels category, other session's machinery; coordinate, don't
+collide). Target: an `ecs-store` category, seven entries, mostly ABSENT
+day one — the AoC pattern pointed at performance.
+
+- **ONE-TO-ONE (ballpark entries):** Simple Insert (10k×4-component
+  inserts → rung-2 insert path + pool + `| full`); Simple Iter (pos+=vel
+  → standing query + stripe — the SINGLE-query base case where fusion
+  gives no edge: the baseline we must MATCH, and (l)/iteration-contract's
+  falsifier); Heavy Compute (mat4x4 invert ×100 → compute-bound stripe;
+  mostly Zig codegen, kernels board already at C-parity; mat4x4 column
+  substrate grounded via 2-D cells 320_057).
+- **DISSOLVED-BY-DESIGN (category-boundary entries — the drag-race
+  lesson applies at full force; label or die):** Fragmented Iter
+  (measures archetype fragmentation — a cost the no-archetype ruling
+  refuses to have; show the same workload without the disease, labeled a
+  different category, NEVER quoted as a win); Add/Remove Component
+  (measures archetype MIGRATION; ours is a presence-bit flip per O13 —
+  same workload name, categorically different operation). These two are
+  where the central refusal gets validated or embarrassed.
+- **GAP-NAMERS (honest-ABSENT until rungs land):** System Scheduling
+  (T7/O7 outer parallelism from disjointness proofs — rung 4; ALSO the
+  fusion stress case: their three systems overlap on C, naive fusion
+  illegal → forces stratification (h)); Serialize (the whole-row/
+  serialization hole from gauntlet 2 — still needs its O-number).
+
 ## Rung ladder (build order, each rung shippable)
 
 1. **Scalar singleton store** — `create` / `link` / `stored` / scalar `watch`;
@@ -572,14 +604,25 @@ O-number, mount/unmount refusal paragraph, store-minting codegen).
   Koru-level boolean connective before this pin. Grounds 690_005's
   compound query guard.
 - 690_001_store_create_stored_watch — hello-store: create/stored/watch,
-  singleton. MUST_RUN, aspirational RED (rung 1).
+  singleton. MUST_RUN, **GREEN (SHOWN 2026-07-05)** — rung one landed:
+  koru_std/store.kz compiles create into the module-scope cell + the (f)
+  centralizing write-subflow (apply event/proc + void write event + impl
+  flow whose arms are the transplanted watch branches); stored sites are
+  plain calls into it (worktree ~/src/koru-store, branch `store`).
 - 690_002_store_watch_guard_producer_if — `when` compiled into the write
-  path. MUST_RUN, aspirational RED (rung 1).
+  path. MUST_RUN, **GREEN (SHOWN 2026-07-05)** — guard rides as the arm's
+  condition, unguarded do-nothing sibling keeps dispatch exhaustive
+  (210_085 coverage rule).
 - 690_003_store_interceptor_cross_store_sync — interceptors as contract;
   `updated { old, new }` usage-synthesized payload ((c) lean). MUST_RUN,
-  aspirational RED (rung 1).
+  **GREEN (SHOWN 2026-07-05)** — an `updated` interceptor flips the store's
+  apply payload to {old,new}; the nested `stored` in its body compiles to a
+  call into the OTHER store's write-subflow (real cross-subflow cascade).
 - 690_004_store_no_torn_state — write+cascade atomicity, watches observe
-  settled state only ((h) lean). MUST_RUN, aspirational RED (rung 1).
+  settled state only ((h) lean). MUST_RUN, **GREEN (SHOWN 2026-07-05)** —
+  same-field interceptor+watch sequenced in one arm, interceptor first;
+  store reads in watch bodies rewritten to the cell (incl. inside `{{ }}`
+  interpolations).
 - 690_005_store_plural_query_watch — plurality, query DSL (path projection,
   genuine rename, pun, compound when). `insert` verb and `query` branch
   name PROVISIONAL (O2/O1). MUST_RUN, aspirational RED (rung 2).

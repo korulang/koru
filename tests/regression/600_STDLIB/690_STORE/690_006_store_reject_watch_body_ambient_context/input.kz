@@ -11,8 +11,9 @@
 // anywhere — organizational principle, ruling 4); placement is not the
 // crime, the ambient reference is.
 //
-// Branch-payload grammar grounded: `| found { name: []const u8, ... }`
-// decl (020_016); whole-payload binding on a `|` branch (`| ready ctx |>`)
+// Branch-payload grammar: single-payload branches use identity syntax
+// (`| ready []const u8` — the parser rejects single-field braces,
+// PARSE003); whole-payload binding on a `|` branch (`| ready ctx |>`)
 // grounded via 910_LANGUAGE_SHOOTOUT/2104_17 (`| connected c |>
 // app/db:tx.begin(conn: c)`). Note: expected_error.txt here is
 // DOCUMENTARY (the designed diagnostic text) — the harness checks the
@@ -24,12 +25,12 @@
 ~std/store:create(game) { entities: 0[i64] }
 
 ~pub event setup {}
-| ready { label: []const u8 }
+| ready []const u8
 
 ~proc setup|zig {
-    return .{ .ready = .{ .label = "local" } };
+    return .{ .ready = "local" };
 }
 
 ~setup()
 | ready ctx |> std/store:watch(game)
-    ! entities e |> std/io:print.ln("{{ ctx.label:s }}: {{ e:d }}")
+    ! entities e |> std/io:print.ln("{{ ctx:s }}: {{ e:d }}")
