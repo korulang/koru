@@ -78,6 +78,18 @@ coordination-time scans must read both spellings of a write (raw
 `std/store:stored` and rewritten `__store_write_*`). 690 board:
 11/11 runnable green, 9 TODO.
 
+**And two more (2026-07-05, later still): stripe + the cross-store
+reactive closure.** `stripe(store)` is real — announce-only re-dispatch
+(peek proc reads CURRENT values, the announce subflow re-fires the same
+watch arms; no write, so interceptors correctly do NOT run). And
+690_013 closed the gauntlet's headline hole ("the filter tab that does
+nothing"): a watch guarded on ANOTHER store's field splices an
+announce-call into that store's write path, so writing `ui.mode` re-
+evaluates game's guarded watch — level-trigger on write; edge-trigger
+dedup stays undesigned. Emitter root-fix along the way: an empty
+terminal arm in the expression path now emits `{}` instead of NOTHING
+(`.mode => ,` was a Zig parse error). 690 board: 13/13 runnable green.
+
 **The perf instrument (2026-07-05):** ecs_bench_suite's seven workloads
 are mapped as the store's honest-ABSENT benchmark battery
 (`koru-benchmarks/suites/ecs-store` — board, provenance, M2 Pro criterion
