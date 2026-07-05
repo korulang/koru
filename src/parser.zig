@@ -5568,12 +5568,12 @@ pub const Parser = struct {
                 }
             }
 
-            if (!std.mem.eql(u8, name, "_") and !isValidIdentifier(name)) {
+            if (!std.mem.eql(u8, name, "_") and !isValidIdentifier(name) and !isValidDottedName(name)) {
                 try self.reporter.addError(
                     .PARSE001,
                     self.current,
                     indent + 2,
-                    "Invalid destructure field name '{s}' - must be a valid identifier or '_'.",
+                    "Invalid destructure field name '{s}' - must be a valid identifier, dotted path, or '_'.",
                     .{name},
                 );
                 return error.InvalidBinding;
@@ -8510,6 +8510,21 @@ pub const Parser = struct {
     /// Split fields on commas, but respect bracket boundaries
     /// e.g., "a: Type[x,y], b: Other" -> ["a: Type[x,y]", "b: Other"]
     /// Check if a string is a valid identifier (letters, numbers, underscores, no leading digit)
+    /// A dotted path of valid identifiers (`entity.hp`). Projection-style
+    /// destructures (std/store query blocks, ruling 6) carry these; the
+    /// parser accepts the shape and consumers judge the semantics
+    /// (maximalist-parser tenet — a dotted name that reaches a consumer
+    /// with no path semantics is that consumer's diagnostic to raise).
+    fn isValidDottedName(name: []const u8) bool {
+        var it = std.mem.splitScalar(u8, name, '.');
+        var segments: usize = 0;
+        while (it.next()) |seg| {
+            if (!isValidIdentifier(seg)) return false;
+            segments += 1;
+        }
+        return segments >= 2;
+    }
+
     fn isValidIdentifier(name: []const u8) bool {
         if (name.len == 0) return false;
 

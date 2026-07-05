@@ -47,6 +47,22 @@ declares f64 fields green in the corpus (390_001) through the same
 transform substrate store.kz uses, so compound columns (f32/vec3/mat4x4,
 pin 690_020) are extension work, not invention.
 
+**Rung two started (2026-07-05, branch store-rung-two): plurality is
+real.** Bare-type seed fields (`hp: i64`) declare a PLURAL store — SoA
+column arrays + len, insert/inserth (handle branch), per-query
+qrow/qbody/qsweep units keyed by SOURCE LINE (transform order can never
+skew unit numbering), row-addressed apply/write subflow, take
+(swap-remove). Two load-bearing mechanisms: standing query enters carry
+the insert site's `__site_line` as a comptime arg, so a query only hears
+inserts below it in source (690_005 fires on insert, 690_008 sweeps
+pre-existing rows instead of double-firing); and generated |zig procs
+call generated events directly (`main_module.<n>_event.handler(.{...})`)
+— which met dead_strip's koru-visible-only reachability model and was
+answered by the designed `retain` annotation, not a workaround. The
+parser now accepts dotted paths as destructure field names (ruling 6's
+projection grammar; PARSE001 loosened per the maximalist tenet).
+690_005 GREEN.
+
 **The perf instrument (2026-07-05):** ecs_bench_suite's seven workloads
 are mapped as the store's honest-ABSENT benchmark battery
 (`koru-benchmarks/suites/ecs-store` — board, provenance, M2 Pro criterion
