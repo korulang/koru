@@ -1,0 +1,35 @@
+# Template lowering targets are languages, and Koru is one of them (belief)
+
+A Koru template proc's facet tag names the **language of its rendered text**.
+`|zig` renders Zig, `|js` renders JS, and — ruled 2026-07-04 — `|koru`
+renders Koru source, which is parsed by the real parser into AST nodes and
+never spliced as host text. Comptime contexts select the `|koru` facet; the
+comptime interpreter evaluates the parsed rendering. This is distinct from
+`|ast` by design: `[transform]` procs construct nodes programmatically,
+facets render languages — two mechanisms, two names.
+
+Corollaries held with it:
+
+- The proc-head shape is `~[template] proc name|koru`: the consumption mode
+  lives in the annotation (beside `[transform]`), and the pipe path is
+  name|target only. The older `~proc name|template|zig` spelling predates
+  this.
+- The full loop this opens: comptime Koru computes → data → Liquid renders →
+  Koru source → parsed AST → interpreted or emitted. The input side (values
+  crossing into Liquid context) is the data→Liquid bridge; liquid.zig and
+  parser.zig are already compiled into the Stage-C backend, so the bridge is
+  Value-marshalling, not new machinery.
+- A construct authored only as `|koru` is target-independent — every backend
+  emits it through the normal pipeline. The north-star application is
+  PGO-shaped lowering (Orisha route dispatch reordered from profile data at
+  compile time).
+- Deliberately open, not part of this belief: surface spellings for the core
+  nodes (foreach/conditional/assignment) and the fragment/AST-as-value
+  surface.
+
+Prior state this extends (was valid, now grown): template lowering was
+host-text-only, and template-ness lived in the pipe path.
+
+Provenance: session INTERPRETER 2026-07-04/05 (Lars + Claude); pins
+310_099/310_100 @e478834a, 310_101 @1ab16a7. Migrated from koru-membrane
+frag-0001@c4db2bf when interlock v2 established the in-repo corpus.
