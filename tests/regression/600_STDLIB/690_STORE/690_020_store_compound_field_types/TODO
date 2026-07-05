@@ -1,0 +1,1 @@
+IDEA PIN (residue-tier, no spelling yet): compound store field types — f32/f64 scalar columns, vec3, mat4x4. Prerequisite for every one-to-one ecs-store benchmark entry; kernel:shape's green f64 fields (390_001) prove the transform substrate already handles float columns — rung one's non-i64 wall is scoping, not architecture. See residue.md.

@@ -665,6 +665,15 @@ promoted to honest reds):**
   comptime presence, zero cost uninstalled (install surface PROVISIONAL).
 - 690_018_store_declared_key_addressing — O2 head 3: `pool[id: 7].hp`,
   key index as a declared cost (marking spelling PROVISIONAL).
+- 690_019_store_batch_insert_fused_cascade — RESIDUE-TIER (first of the
+  tier: TODO + residue.md, no input.kz — batch surface uninvented): T2's
+  acyclic DAG topo-sorted + fused, batches column-wise over SoA, batch =
+  the transaction envelope; O9 sibling (per-row vs plural dispatch) open.
+- 690_020_store_compound_field_types — RESIDUE-TIER: f32/f64, vec3,
+  mat4x4 columns; prerequisite for every one-to-one ecs-store entry;
+  kernel:shape's green f64 fields (390_001) prove the substrate — rung
+  one's non-i64 wall is scoping, not architecture. Vec-watch granularity
+  ruling open.
 
 All seven original 690 pins RAN 2026-07-04 (QA pass): every one fails at
 Stage A — `KORU002: module not found: 'std/store'` — honest red. Mechanism

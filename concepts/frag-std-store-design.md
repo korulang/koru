@@ -41,6 +41,27 @@ never once exercised by the corpus until 020_036 pinned them green.
 Implementation added one more: cloneContinuation's documented shallow
 expression/source-pointer footgun bites for real — a transform rewriting
 cloned bodies must swap in fresh structs or it mutates the original tree.
+And the ecs-store gap analysis (2026-07-05) added a fourth: rung one's
+non-i64 column wall is **scoping, not architecture** — kernel:shape
+declares f64 fields green in the corpus (390_001) through the same
+transform substrate store.kz uses, so compound columns (f32/vec3/mat4x4,
+pin 690_020) are extension work, not invention.
+
+**The perf instrument (2026-07-05):** ecs_bench_suite's seven workloads
+are mapped as the store's honest-ABSENT benchmark battery
+(`koru-benchmarks/suites/ecs-store` — board, provenance, M2 Pro criterion
+baselines of six reference engines). Three one-to-one ballparks
+(simple_iter's ~3.3µs legion sweep is O13's falsifier bar), two
+dissolved-by-design entries validating NO-ARCHETYPES (the engines
+disagree with each other by 36-40× on the archetype pathologies), two
+gap-namers (schedule = the rung-4 no-threads bet; serialize = the
+O-numberless whole-store verb). Kernel stays separate: pairwise
+relationship-math over held values is kernel's charter, standing rules
+over named reactive state are the store's — the suite needs zero
+pairwise. Idea pins now have a **residue tier** below the
+provisional-spelling tier: TODO + residue.md, no input.kz, for ideas
+whose surface is honestly uninvented (690_019 batch+fusion, 690_020
+compound columns).
 
 The full residue (rulings, stamped theses, gauntlet verdicts, open
 queue) lives in `tests/regression/600_STDLIB/690_STORE/DESIGN.md`, which
