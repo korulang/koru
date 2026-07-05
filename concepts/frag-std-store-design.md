@@ -90,6 +90,16 @@ dedup stays undesigned. Emitter root-fix along the way: an empty
 terminal arm in the expression path now emits `{}` instead of NOTHING
 (`.mode => ,` was a Zig parse error). 690 board: 13/13 runnable green.
 
+**The rung-two sweep total (2026-07-05 night): the runnable 690 board
+went 8/20 → 15/21.** Chain envelope (write-all-then-announce-all — the
+(i) lean executable; envwrite is the write-only half, announce the
+dispatch half, so watches observe settled multi-field state), and f64
+scalar columns (690_021, tier 1 of 690_020 — uniform-type singletons;
+value-type threads through apply/write/envwrite/peek). Four pins stay
+TODO with their walls named in-file: (k)-disposal gates 015/016, T8
+design gates 017, whole-program rewrite gates 018's rvalue key paths,
+rung-3 planner gates 019.
+
 **The perf instrument (2026-07-05):** ecs_bench_suite's seven workloads
 are mapped as the store's honest-ABSENT benchmark battery
 (`koru-benchmarks/suites/ecs-store` — board, provenance, M2 Pro criterion

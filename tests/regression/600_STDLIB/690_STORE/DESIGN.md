@@ -655,6 +655,19 @@ day one — the AoC pattern pointed at performance.
   reframe when (l) is ruled. Deferred pending O10 ratification: the
   `| full` fixed-capacity insert pin.
 
+**RUNG-TWO SWEEP (2026-07-05 night, branch store-rung-two): eight idea
+pins PROMOTED AND GREEN** — 690_009 (chain envelope: envwrite-all THEN
+announce-all, dispatch order = write order per the (i) lean), 690_010
+(multi-watch fan-out, source order), 690_011 (capacity + `| full` via
+__store_insertf), 690_012 (field-level cascade-cycle rejection, both
+write spellings scanned), 690_013 (cross-store guard closure via
+announce splice — the gauntlet-2 headline hole), 690_014 (stripe:
+announce-only sweep), plus new spelling pin 690_021 (f64 scalar
+columns, 690_020 tier 1). STILL GATED (walls named in each TODO):
+690_015/016 on the (k) disposal ruling, 690_017 on T8 granularity +
+connection purity, 690_018 on whole-program rewrite for rvalue key
+paths, 690_019 on rung-3 planner machinery.
+
 **IDEA PINS (TODO-marked, 2026-07-05 — Lars: capture every in-flight
 idea as a test before the rung-one merge; excluded from the % until
 promoted to honest reds):**
