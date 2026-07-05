@@ -1,0 +1,1 @@
+IDEA PIN (residue-tier, no spelling yet): batch insert + full cascade fusion — T2's acyclic comptime cascade DAG topo-sorted and fused into one straight-line body per write site, batches applied column-wise over SoA (SIMD), batch = the transaction envelope. See residue.md.
