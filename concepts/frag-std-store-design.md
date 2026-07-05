@@ -47,6 +47,59 @@ declares f64 fields green in the corpus (390_001) through the same
 transform substrate store.kz uses, so compound columns (f32/vec3/mat4x4,
 pin 690_020) are extension work, not invention.
 
+**Rung two started (2026-07-05, branch store-rung-two): plurality is
+real.** Bare-type seed fields (`hp: i64`) declare a PLURAL store — SoA
+column arrays + len, insert/inserth (handle branch), per-query
+qrow/qbody/qsweep units keyed by SOURCE LINE (transform order can never
+skew unit numbering), row-addressed apply/write subflow, take
+(swap-remove). Two load-bearing mechanisms: standing query enters carry
+the insert site's `__site_line` as a comptime arg, so a query only hears
+inserts below it in source (690_005 fires on insert, 690_008 sweeps
+pre-existing rows instead of double-firing); and generated |zig procs
+call generated events directly (`main_module.<n>_event.handler(.{...})`)
+— which met dead_strip's koru-visible-only reachability model and was
+answered by the designed `retain` annotation, not a workaround. The
+parser now accepts dotted paths as destructure field names (ruling 6's
+projection grammar; PARSE001 loosened per the maximalist tenet).
+690_005 GREEN.
+
+**Rung two grew five more greens (2026-07-05 late):** take obligations
+(`<store-item!>` on the `| item` identity payload — Field.phantom, the
+660_027 pattern; KORU030 now says "obligation" by name), UPDATE WHERE
+(indexed lvalue head `store[row].field`; site-replacement transforms
+preserve impl_of because a query body's head IS an impl flow's head),
+multi-watch fan-out in source order, declared capacity with `| full`
+exhaustion-as-a-branch, and T2's cascade-cycle rejection. The cycle
+graph is **FIELD-level, not store-level** — the store-level version
+false-positived on 690_004's same-store hp→shield derivation (caught as
+a regression, reworked same session). Walker fact overturned: nested
+`stored` sites transform BEFORE their enclosing create's head fires, so
+coordination-time scans must read both spellings of a write (raw
+`std/store:stored` and rewritten `__store_write_*`). 690 board:
+11/11 runnable green, 9 TODO.
+
+**And two more (2026-07-05, later still): stripe + the cross-store
+reactive closure.** `stripe(store)` is real — announce-only re-dispatch
+(peek proc reads CURRENT values, the announce subflow re-fires the same
+watch arms; no write, so interceptors correctly do NOT run). And
+690_013 closed the gauntlet's headline hole ("the filter tab that does
+nothing"): a watch guarded on ANOTHER store's field splices an
+announce-call into that store's write path, so writing `ui.mode` re-
+evaluates game's guarded watch — level-trigger on write; edge-trigger
+dedup stays undesigned. Emitter root-fix along the way: an empty
+terminal arm in the expression path now emits `{}` instead of NOTHING
+(`.mode => ,` was a Zig parse error). 690 board: 13/13 runnable green.
+
+**The rung-two sweep total (2026-07-05 night): the runnable 690 board
+went 8/20 → 15/21.** Chain envelope (write-all-then-announce-all — the
+(i) lean executable; envwrite is the write-only half, announce the
+dispatch half, so watches observe settled multi-field state), and f64
+scalar columns (690_021, tier 1 of 690_020 — uniform-type singletons;
+value-type threads through apply/write/envwrite/peek). Four pins stay
+TODO with their walls named in-file: (k)-disposal gates 015/016, T8
+design gates 017, whole-program rewrite gates 018's rvalue key paths,
+rung-3 planner gates 019.
+
 **The perf instrument (2026-07-05):** ecs_bench_suite's seven workloads
 are mapped as the store's honest-ABSENT benchmark battery
 (`koru-benchmarks/suites/ecs-store` — board, provenance, M2 Pro criterion

@@ -121,6 +121,71 @@ const std = @import("std");
             const msg = std.fmt.allocPrint(alloc, "comptime {{ @compileError(\"{s}\"); }}", .{inner}) catch unreachable;
             return ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = loc, .module = module } };
         }
+        fn isIdentChar(ch: u8) bool {
+            return (ch >= 'a' and ch <= 'z') or (ch >= 'A' and ch <= 'Z') or (ch >= '0' and ch <= '9') or ch == '_' or ch == '-';
+        }
+        fn mkPathH(alloc: std.mem.Allocator, module: []const u8, name: []const u8) ast.DottedPath {
+            const segs = alloc.alloc([]const u8, 1) catch unreachable;
+            segs[0] = alloc.dupe(u8, name) catch unreachable;
+            return ast.DottedPath{ .module_qualifier = alloc.dupe(u8, module) catch unreachable, .segments = segs };
+        }
+        // Boundary-aware `<store>.` → `__koru_store_<store>.` rewrite over a
+        // continuation tree (transplanted bodies read other stores' cells).
+        fn storeRefsH(alloc: std.mem.Allocator, text: []const u8, name: []const u8) []const u8 {
+            var out = std.ArrayList(u8).initCapacity(alloc, text.len + 32) catch unreachable;
+            var i: usize = 0;
+            while (i < text.len) {
+                const at_boundary = i == 0 or !isIdentChar(text[i - 1]);
+                if (at_boundary and i + name.len < text.len and
+                    std.mem.startsWith(u8, text[i..], name) and text[i + name.len] == '.')
+                {
+                    out.appendSlice(alloc, "__koru_store_") catch unreachable;
+                    out.appendSlice(alloc, name) catch unreachable;
+                    i += name.len;
+                } else {
+                    out.append(alloc, text[i]) catch unreachable;
+                    i += 1;
+                }
+            }
+            return out.toOwnedSlice(alloc) catch unreachable;
+        }
+        fn storeRefsContH(alloc: std.mem.Allocator, cont: *ast.Continuation, names: []const []const u8) void {
+            const ast2 = @import("ast");
+            if (cont.condition) |cond| {
+                var cnd = cond;
+                for (names) |nm| cnd = storeRefsH(alloc, cnd, nm);
+                @constCast(cont).condition = cnd;
+            }
+            if (cont.node) |*n| {
+                switch (@constCast(n).*) {
+                    .invocation => |*inv| {
+                        const skip = blk: {
+                            if (inv.path.module_qualifier) |mq| {
+                                if (std.mem.eql(u8, mq, "std.store")) break :blk true;
+                            }
+                            break :blk false;
+                        };
+                        if (!skip) {
+                            for (inv.args) |*a| {
+                                var v = a.value;
+                                for (names) |nm| v = storeRefsH(alloc, v, nm);
+                                @constCast(a).value = v;
+                                if (a.expression_value) |ev| {
+                                    var t = ev.text;
+                                    for (names) |nm| t = storeRefsH(alloc, t, nm);
+                                    const fresh = alloc.create(ast2.CapturedExpression) catch unreachable;
+                                    fresh.* = ev.*;
+                                    fresh.text = t;
+                                    @constCast(a).expression_value = fresh;
+                                }
+                            }
+                        }
+                    },
+                    else => {},
+                }
+            }
+            for (cont.continuations) |*c| storeRefsContH(alloc, @constCast(c), names);
+        }
     };
 
     // Store name + seed block from the invocation args.
@@ -144,20 +209,991 @@ const std = @import("std");
         return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:create({s}): seed block has no fields", .{store_name}) } };
     }
 
-    // Field table: names + host types. Rung one is scalar-i64 only — anything
-    // else is a loud wall, not a silent guess.
+    // ------------------------------------------------------------------
+    // T2 / queue (d): the interceptor cascade graph is comptime-visible;
+    // a cross-store cycle is rejected WITH THE CYCLE NAMED (690_012) -
+    // never an infinite cascade at runtime. Runs on every create; the
+    // first-in-source member of any cycle still sees all others
+    // untransformed, so detection cannot be skewed by transform order.
+    // ------------------------------------------------------------------
+    {
+        const CycleEdge = struct {
+            from: []const u8,
+            from_field: []const u8,
+            to: []const u8,
+            to_field: []const u8,
+        };
+        var edges = std.ArrayList(CycleEdge).initCapacity(allocator, 8) catch unreachable;
+        const EdgeScan = struct {
+            fn seedFields(alloc: std.mem.Allocator, seed2: []const u8) []const []const u8 {
+                const struct_literal2 = @import("struct_literal");
+                const braced2 = std.fmt.allocPrint(alloc, "{{{s}}}", .{seed2}) catch unreachable;
+                const cf2 = struct_literal2.parseFields(alloc, braced2) catch return &[_][]const u8{};
+                const names2 = alloc.alloc([]const u8, cf2.len) catch unreachable;
+                for (cf2, 0..) |c2, ci2| names2[ci2] = c2.name;
+                return names2;
+            }
+            // Field-name lookup for a store still visible as an
+            // untransformed create (seed order) or already coordinated
+            // (apply-event branch order).
+            fn fieldNameByIndex(alloc: std.mem.Allocator, prog: *const ast.Program, store: []const u8, idx: usize) []const u8 {
+                const struct_literal2 = @import("struct_literal");
+                const apply_name2 = std.fmt.allocPrint(alloc, "__store_apply_{s}", .{store}) catch unreachable;
+                for (prog.items) |pi2| {
+                    switch (pi2) {
+                        .event_decl => |*ed2| {
+                            if (ed2.path.segments.len == 1 and std.mem.eql(u8, ed2.path.segments[0], apply_name2)) {
+                                if (idx < ed2.branches.len) return ed2.branches[idx].name;
+                            }
+                        },
+                        .flow => |*f2| {
+                            const inv2 = f2.inv();
+                            if (inv2.path.segments.len != 1 or !std.mem.eql(u8, inv2.path.segments[0], "create")) continue;
+                            const mq2 = inv2.path.module_qualifier orelse continue;
+                            if (!std.mem.eql(u8, mq2, "std.store")) continue;
+                            var matches2 = false;
+                            var seed3: ?[]const u8 = null;
+                            for (inv2.args) |a2| {
+                                if (std.mem.eql(u8, a2.name, "expr")) {
+                                    var v2 = a2.value;
+                                    if (v2.len >= 2 and v2[0] == '"') v2 = v2[1 .. v2.len - 1];
+                                    matches2 = std.mem.eql(u8, v2, store);
+                                } else if (std.mem.eql(u8, a2.name, "source")) {
+                                    seed3 = a2.value;
+                                }
+                            }
+                            if (!matches2 or seed3 == null) continue;
+                            const braced3 = std.fmt.allocPrint(alloc, "{{{s}}}", .{seed3.?}) catch unreachable;
+                            const cf3 = struct_literal2.parseFields(alloc, braced3) catch continue;
+                            if (idx < cf3.len) return cf3[idx].name;
+                        },
+                        else => {},
+                    }
+                }
+                return "?";
+            }
+            fn scanCont(alloc: std.mem.Allocator, prog: *const ast.Program, cont: *const ast.Continuation, from: []const u8, from_field: []const u8, list: *std.ArrayList(CycleEdge)) void {
+                if (cont.node) |n| {
+                    switch (n) {
+                        .invocation => |inv| {
+                            // Raw spelling: std/store:stored { to.field: ... }
+                            if (inv.path.module_qualifier) |mq| {
+                                if (std.mem.eql(u8, mq, "std.store") and inv.path.segments.len == 1 and std.mem.eql(u8, inv.path.segments[0], "stored")) {
+                                    for (inv.args) |a| {
+                                        if (!std.mem.eql(u8, a.name, "source")) continue;
+                                        const struct_literal2 = @import("struct_literal");
+                                        const braced2 = std.fmt.allocPrint(alloc, "{{{s}}}", .{a.value}) catch unreachable;
+                                        const writes2 = struct_literal2.parseFields(alloc, braced2) catch continue;
+                                        for (writes2) |w2| {
+                                            const dot2 = std.mem.indexOfScalar(u8, w2.name, '.') orelse continue;
+                                            list.append(alloc, .{
+                                                .from = from,
+                                                .from_field = from_field,
+                                                .to = alloc.dupe(u8, w2.name[0..dot2]) catch unreachable,
+                                                .to_field = alloc.dupe(u8, w2.name[dot2 + 1 ..]) catch unreachable,
+                                            }) catch unreachable;
+                                        }
+                                    }
+                                }
+                            }
+                            // Rewritten spelling: __store_write_<to>(field: <idx>, ...)
+                            // (the walker transforms nested stored sites BEFORE
+                            // their enclosing create's head - both spellings are
+                            // live during coordination).
+                            if (inv.path.segments.len == 1 and std.mem.startsWith(u8, inv.path.segments[0], "__store_write_")) {
+                                const to_store = inv.path.segments[0]["__store_write_".len..];
+                                var fidx2: usize = 0;
+                                for (inv.args) |a| {
+                                    if (std.mem.eql(u8, a.name, "field")) {
+                                        fidx2 = std.fmt.parseInt(usize, std.mem.trim(u8, a.value, " "), 10) catch 0;
+                                    }
+                                }
+                                list.append(alloc, .{
+                                    .from = from,
+                                    .from_field = from_field,
+                                    .to = alloc.dupe(u8, to_store) catch unreachable,
+                                    .to_field = alloc.dupe(u8, fieldNameByIndex(alloc, prog, to_store, fidx2)) catch unreachable,
+                                }) catch unreachable;
+                            }
+                        },
+                        else => {},
+                    }
+                }
+                for (cont.continuations) |*c| scanCont(alloc, prog, c, from, from_field, list);
+            }
+        };
+        for (program.items) |pi| {
+            if (pi != .flow) continue;
+            const cfp = &pi.flow;
+            if (!H.isStoreInv(cfp, "create", null)) continue;
+            var cname: []const u8 = "";
+            var cseed: []const u8 = "";
+            for (cfp.inv().args) |a| {
+                if (std.mem.eql(u8, a.name, "expr")) cname = H.stripQuotes(a.value);
+                if (std.mem.eql(u8, a.name, "source")) cseed = a.value;
+            }
+            if (cname.len == 0) continue;
+            // FIELD-LEVEL graph (the whole point of the T2 detector): the
+            // trigger of a field interceptor is that field; `updated`
+            // triggers on every field of the store. hp->shield inside one
+            // store is NOT a cycle (690_004); alpha.x->beta.y->alpha.x is.
+            const seed_fields = EdgeScan.seedFields(allocator, cseed);
+            for (cfp.body.continuations) |*icont| {
+                const bname2 = std.mem.trim(u8, icont.branch, " ");
+                if (std.mem.eql(u8, bname2, "updated")) {
+                    for (seed_fields) |sf| {
+                        EdgeScan.scanCont(allocator, program, icont, cname, sf, &edges);
+                    }
+                } else {
+                    EdgeScan.scanCont(allocator, program, icont, cname, bname2, &edges);
+                }
+            }
+        }
+        // DFS from this store looking for a path back to itself.
+        var path = std.ArrayList(CycleEdge).initCapacity(allocator, 8) catch unreachable;
+        const Dfs = struct {
+            fn nodeEql(a_s: []const u8, a_f: []const u8, b_s: []const u8, b_f: []const u8) bool {
+                return std.mem.eql(u8, a_s, b_s) and std.mem.eql(u8, a_f, b_f);
+            }
+            fn walk(list: []const CycleEdge, at_s: []const u8, at_f: []const u8, t_s: []const u8, t_f: []const u8, depth: usize, pth: *std.ArrayList(CycleEdge), alloc: std.mem.Allocator) bool {
+                if (depth > 16) return false;
+                for (list) |e| {
+                    if (!nodeEql(e.from, e.from_field, at_s, at_f)) continue;
+                    pth.append(alloc, e) catch unreachable;
+                    if (nodeEql(e.to, e.to_field, t_s, t_f)) return true;
+                    if (walk(list, e.to, e.to_field, t_s, t_f, depth + 1, pth, alloc)) return true;
+                    _ = pth.pop();
+                }
+                return false;
+            }
+        };
+        var cycle_found = false;
+        for (edges.items) |se| {
+            if (!std.mem.eql(u8, se.from, store_name)) continue;
+            path.clearRetainingCapacity();
+            if (Dfs.walk(edges.items, se.from, se.from_field, se.from, se.from_field, 0, &path, allocator)) {
+                cycle_found = true;
+                break;
+            }
+        }
+        if (cycle_found) {
+            var msg = std.ArrayList(u8).initCapacity(allocator, 128) catch unreachable;
+            msg.appendSlice(allocator, "std/store: store cascade cycle: ") catch unreachable;
+            for (path.items, 0..) |e, ei| {
+                if (ei == 0) {
+                    msg.appendSlice(allocator, e.from) catch unreachable;
+                    msg.appendSlice(allocator, ".") catch unreachable;
+                    msg.appendSlice(allocator, e.from_field) catch unreachable;
+                }
+                msg.appendSlice(allocator, " -> ") catch unreachable;
+                msg.appendSlice(allocator, e.to) catch unreachable;
+                msg.appendSlice(allocator, ".") catch unreachable;
+                msg.appendSlice(allocator, e.to_field) catch unreachable;
+            }
+            msg.appendSlice(allocator, " - interceptor contracts must be acyclic; a convergent self-write needs @converges (unbuilt, queue (d))") catch unreachable;
+            return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "{s}", .{msg.items}) } };
+        }
+    }
+
+    // Field table: names + host types. Two store shapes, told apart by the
+    // seed block (ruling 2 — the store IS the table):
+    //   seeded fields  (`entities: 0[i64]`) — SINGLETON store, rung one.
+    //   bare-type fields (`hp: i64`)        — PLURAL store (rows), rung two.
+    // Mixing is a loud wall. Scalar i64 columns only (compound types are
+    // pin 690_020's walk).
+    var seeded_count: usize = 0;
+    var bare_count: usize = 0;
+    for (cell_fields) |cf| {
+        const peeled = struct_literal.peelBaseType(cf.value);
+        if (peeled.type.len != 0) seeded_count += 1 else bare_count += 1;
+    }
+    if (seeded_count != 0 and bare_count != 0) {
+        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:create({s}): mixing seeded fields (singleton) and bare-type fields (plural rows) in one store is not a shape - seed every field or none", .{store_name}) } };
+    }
+    const is_plural = bare_count != 0;
+
     const field_names = allocator.alloc([]const u8, cell_fields.len) catch unreachable;
     const field_types = allocator.alloc([]const u8, cell_fields.len) catch unreachable;
     for (cell_fields, 0..) |cf, i| {
+        if (is_plural) {
+            if (!std.mem.eql(u8, std.mem.trim(u8, cf.value, " "), "i64")) {
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:create({s}): column '{s}' is {s} - rung two supports i64 columns only (compound column types are pinned at 690_020)", .{ store_name, cf.name, cf.value }) } };
+            }
+            field_names[i] = cf.name;
+            field_types[i] = "i64";
+            continue;
+        }
         const peeled = struct_literal.peelBaseType(cf.value);
         if (peeled.type.len == 0) {
             return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:create({s}): field '{s}' needs a bracket type annotation (e.g. `{s}: 0[i64]`) — rung one", .{ store_name, cf.name, cf.name }) } };
         }
-        if (!std.mem.eql(u8, peeled.type, "i64")) {
-            return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:create({s}): field '{s}' is {s} — rung one supports i64 fields only", .{ store_name, cf.name, peeled.type }) } };
+        // Scalar widening (690_020 tier 1): i64/i32/f64/f32 columns — the
+        // kernel:shape f64 precedent (390_001) applied to the store cell.
+        const known_scalar = std.mem.eql(u8, peeled.type, "i64") or std.mem.eql(u8, peeled.type, "i32") or
+            std.mem.eql(u8, peeled.type, "f64") or std.mem.eql(u8, peeled.type, "f32");
+        if (!known_scalar) {
+            return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:create({s}): field '{s}' is {s} — scalar columns are i64/i32/f64/f32 (vec/mat tiers are pinned at 690_020)", .{ store_name, cf.name, peeled.type }) } };
         }
         field_names[i] = cf.name;
         field_types[i] = peeled.type;
+    }
+    // The write plumbing carries ONE value type; mixed-type singletons are
+    // the per-field-event slice (690_020 tier 1 boundary).
+    if (!is_plural) {
+        for (field_types[1..]) |ft| {
+            if (!std.mem.eql(u8, ft, field_types[0])) {
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:create({s}): mixed column types in one store are a later slice - all fields must share one scalar type for now", .{store_name}) } };
+            }
+        }
+    }
+    const value_type: []const u8 = if (cell_fields.len > 0 and !is_plural) field_types[0] else "i64";
+
+    // ------------------------------------------------------------------
+    // PLURAL STORE (rung two) — a separate coordinator path. Generates:
+    //   1. The SoA cell: one column array per field + len.
+    //   2. `__store_insert_<s>`  (void) and `__store_inserth_<s>`
+    //      (`| row i64` handle branch) event+proc pairs. The proc appends
+    //      the row, then fires standing query enters — but ONLY for query
+    //      sites ABOVE the insert site in source (`__site_line` is a
+    //      comptime-constant arg; the position check compiles away).
+    //   3. Per query site (keyed by source line, so transform order can
+    //      never skew numbering):
+    //        `__store_qrow_<s>_L<n>`   — guard + projection over one row,
+    //                                    calls the body event on match.
+    //        `__store_qbody_<s>_L<n>`  — the transplanted body as an impl
+    //                                    flow; projected names + __koru_qrow
+    //                                    arrive as event inputs.
+    //        `__store_qsweep_<s>_L<n>` — the imperative sweep over existing
+    //                                    rows ((l) lean: the sweep IS the
+    //                                    query's program-position firing).
+    //   4. The row-addressed apply/write pair — same (f) centralizing
+    //      subflow as rung one, plus `row`; watch bodies splice here, and
+    //      UPDATE WHERE (`stored { entity.f: ... }` under a query branch)
+    //      compiles into calls to it.
+    //   5. `__store_take_<s>` — swap-remove through the handle head,
+    //      returning `| item { fields }` (obligation wiring: 690_007).
+    // ------------------------------------------------------------------
+    if (is_plural) {
+        if (flow.body.continuations.len != 0) {
+            return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:create({s}): interceptors on a plural store (inserted/removed lifecycle) are pinned at 690_016 - not built yet", .{store_name}) } };
+        }
+
+        // Declared capacity (O10: fixed static memory; exhaustion is a
+        // branch). Default stays a fixed pool with a LOUD overflow panic
+        // (capacity-declared inserts that want graceful exhaustion handle
+        // `| full`).
+        var cap_buf: usize = 1024;
+        for (invocation.args) |a| {
+            if (std.mem.eql(u8, a.name, "capacity")) {
+                cap_buf = std.fmt.parseInt(usize, std.mem.trim(u8, a.value, " "), 10) catch {
+                    return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:create({s}): capacity must be an integer literal (got '{s}')", .{ store_name, a.value }) } };
+                };
+            }
+        }
+        const CAP: usize = cap_buf;
+
+        // ---- collect this store's watch arms (field-granular, plural) ----
+        const WatchArmP = struct {
+            field_idx: usize,
+            cont: ast.Continuation,
+        };
+        var pwatch_arms = std.ArrayList(WatchArmP).initCapacity(allocator, 4) catch unreachable;
+        for (program.items) |pi| {
+            if (pi != .flow) continue;
+            const wf = &pi.flow;
+            if (!H.isStoreInv(wf, "watch", store_name)) continue;
+            for (wf.body.continuations) |*wc| {
+                const fidx: usize = blk: {
+                    for (field_names, 0..) |fname, i| {
+                        if (std.mem.eql(u8, std.mem.trim(u8, wc.branch, " "), fname)) break :blk i;
+                    }
+                    return .{ .transformed = .{ .replacement = H.errItem(allocator, wf.location, wf.module, "std/store:watch({s}): '{s}' is not a field of store '{s}'", .{ store_name, wc.branch, store_name }) } };
+                };
+                for (pwatch_arms.items) |existing| {
+                    if (existing.field_idx == fidx) {
+                        return .{ .transformed = .{ .replacement = H.errItem(allocator, wf.location, wf.module, "std/store:watch({s}): field '{s}' is watched more than once - multi-watch sequencing is pinned at 690_010", .{ store_name, wc.branch }) } };
+                    }
+                }
+                if (wc.condition != null) {
+                    return .{ .transformed = .{ .replacement = H.errItem(allocator, wf.location, wf.module, "std/store:watch({s}): guarded watches on plural stores are a later slice", .{store_name}) } };
+                }
+                const cloned = ast_functional.cloneContinuation(allocator, wc) catch unreachable;
+                pwatch_arms.append(allocator, .{ .field_idx = fidx, .cont = cloned }) catch unreachable;
+            }
+        }
+
+        // ---- collect this store's query sites (keyed by source line) ----
+        const QuerySite = struct {
+            line: usize,
+            // projection: parallel arrays — bound name / store field index
+            proj_names: [][]const u8,
+            proj_fields: []usize,
+            guard: ?[]const u8,
+            body: ast.Continuation,
+        };
+        var qsites = std.ArrayList(QuerySite).initCapacity(allocator, 4) catch unreachable;
+        for (program.items) |pi| {
+            if (pi != .flow) continue;
+            const qf = &pi.flow;
+            if (!H.isStoreInv(qf, "query", store_name)) continue;
+            if (qf.body.continuations.len != 1) {
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, qf.location, qf.module, "std/store:query({s}): exactly one `! query {{ ... }}` branch per query site this rung", .{store_name}) } };
+            }
+            const qc = &qf.body.continuations[0];
+            if (!std.mem.eql(u8, std.mem.trim(u8, qc.branch, " "), "query")) {
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, qf.location, qf.module, "std/store:query({s}): branch '{s}' - the row branch is spelled `! query {{ projection }}` (O1 fire-vocabulary is open; only `query` exists)", .{ store_name, qc.branch }) } };
+            }
+            if (qc.destructure.len == 0) {
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, qf.location, qf.module, "std/store:query({s}): the query branch needs a projection block: `! query {{ entity.field, name: entity.field }}`", .{store_name}) } };
+            }
+            var pnames = std.ArrayList([]const u8).initCapacity(allocator, qc.destructure.len) catch unreachable;
+            var pfields = std.ArrayList(usize).initCapacity(allocator, qc.destructure.len) catch unreachable;
+            for (qc.destructure) |df| {
+                // Two projection shapes (ruling 6 + O2):
+                //   `entity.hp`              — pun: binds `hp`
+                //   `enemy_kind: entity.kind` — genuine rename
+                // A redundant label (`kind: entity.kind`) violates mandatory
+                // punning and is rejected.
+                var bound: []const u8 = undefined;
+                var path: []const u8 = undefined;
+                if (df.type_text) |tt| {
+                    bound = df.name;
+                    path = tt;
+                } else {
+                    path = df.name;
+                    const last_dot = std.mem.lastIndexOfScalar(u8, df.name, '.') orelse {
+                        return .{ .transformed = .{ .replacement = H.errItem(allocator, qf.location, qf.module, "std/store:query({s}): projection entry '{s}' is not a path - project store fields as `entity.<field>`", .{ store_name, df.name }) } };
+                    };
+                    bound = df.name[last_dot + 1 ..];
+                }
+                if (!std.mem.startsWith(u8, path, "entity.")) {
+                    return .{ .transformed = .{ .replacement = H.errItem(allocator, qf.location, qf.module, "std/store:query({s}): projection path '{s}' must root at `entity.` (the bound row)", .{ store_name, path }) } };
+                }
+                const fname = path["entity.".len..];
+                if (df.type_text != null and std.mem.eql(u8, bound, fname)) {
+                    return .{ .transformed = .{ .replacement = H.errItem(allocator, qf.location, qf.module, "std/store:query({s}): `{s}: entity.{s}` is a redundant label - punning is mandatory; write `entity.{s}`", .{ store_name, bound, fname, fname }) } };
+                }
+                const fidx: usize = blk: {
+                    for (field_names, 0..) |fn2, i| {
+                        if (std.mem.eql(u8, fn2, fname)) break :blk i;
+                    }
+                    return .{ .transformed = .{ .replacement = H.errItem(allocator, qf.location, qf.module, "std/store:query({s}): 'entity.{s}' - '{s}' is not a field of store '{s}'", .{ store_name, fname, fname, store_name }) } };
+                };
+                pnames.append(allocator, bound) catch unreachable;
+                pfields.append(allocator, fidx) catch unreachable;
+            }
+            const body_clone = ast_functional.cloneContinuation(allocator, qc) catch unreachable;
+            qsites.append(allocator, .{
+                .line = qf.location.line,
+                .proj_names = pnames.toOwnedSlice(allocator) catch unreachable,
+                .proj_fields = pfields.toOwnedSlice(allocator) catch unreachable,
+                .guard = if (qc.condition) |c| allocator.dupe(u8, c) catch unreachable else null,
+                .body = body_clone,
+            }) catch unreachable;
+        }
+
+        // ---- rewrite transplanted bodies ----
+        // Query bodies execute inside the qbody handler where the projected
+        // names and `__koru_qrow` are event inputs. `entity.<f>` references:
+        //   - in a nested `std/store:stored` block: the TARGET rewrites to
+        //     the indexed lvalue head (`<store>[__koru_qrow].<f>` — O2
+        //     query-row head), the VALUE side to a direct fresh column read.
+        //   - anywhere else: direct fresh column read.
+        const PRewrite = struct {
+            fn colRead(alloc: std.mem.Allocator, store: []const u8, field: []const u8) []const u8 {
+                return std.fmt.allocPrint(alloc, "__koru_store_{s}.{s}[@as(usize, @intCast(__koru_qrow))]", .{ store, field }) catch unreachable;
+            }
+            fn entityRefs(alloc: std.mem.Allocator, text: []const u8, store: []const u8, fields: []const []const u8, target_form: bool) []const u8 {
+                var out = std.ArrayList(u8).initCapacity(alloc, text.len + 32) catch unreachable;
+                var i: usize = 0;
+                while (i < text.len) {
+                    const at_boundary = i == 0 or !H.isIdentChar(text[i - 1]);
+                    if (at_boundary and std.mem.startsWith(u8, text[i..], "entity.")) {
+                        const fstart = i + "entity.".len;
+                        var fend = fstart;
+                        while (fend < text.len and H.isIdentChar(text[fend])) fend += 1;
+                        const fname = text[fstart..fend];
+                        var known = false;
+                        for (fields) |f| {
+                            if (std.mem.eql(u8, f, fname)) known = true;
+                        }
+                        if (known) {
+                            if (target_form) {
+                                const t = std.fmt.allocPrint(alloc, "{s}[__koru_qrow].{s}", .{ store, fname }) catch unreachable;
+                                out.appendSlice(alloc, t) catch unreachable;
+                            } else {
+                                out.appendSlice(alloc, colRead(alloc, store, fname)) catch unreachable;
+                            }
+                            i = fend;
+                            continue;
+                        }
+                    }
+                    out.append(alloc, text[i]) catch unreachable;
+                    i += 1;
+                }
+                return out.toOwnedSlice(alloc) catch unreachable;
+            }
+            // A stored block is `target: value` pairs — target keys keep the
+            // indexed-lvalue form, values read columns directly.
+            fn storedBlock(alloc: std.mem.Allocator, text: []const u8, store: []const u8, fields: []const []const u8) []const u8 {
+                const braced2 = std.fmt.allocPrint(alloc, "{{{s}}}", .{text}) catch unreachable;
+                const struct_literal2 = @import("struct_literal");
+                const pairs = struct_literal2.parseFields(alloc, braced2) catch return text;
+                var out = std.ArrayList(u8).initCapacity(alloc, text.len + 64) catch unreachable;
+                for (pairs, 0..) |pr, i| {
+                    if (i > 0) out.appendSlice(alloc, ", ") catch unreachable;
+                    out.appendSlice(alloc, entityRefs(alloc, pr.name, store, fields, true)) catch unreachable;
+                    out.appendSlice(alloc, ": ") catch unreachable;
+                    out.appendSlice(alloc, entityRefs(alloc, pr.value, store, fields, false)) catch unreachable;
+                }
+                return out.toOwnedSlice(alloc) catch unreachable;
+            }
+            fn walkCont(alloc: std.mem.Allocator, cont: *ast.Continuation, store: []const u8, fields: []const []const u8) void {
+                if (cont.node) |*n| {
+                    switch (@constCast(n).*) {
+                        .invocation => |*inv| {
+                            const is_stored = blk: {
+                                if (inv.path.module_qualifier) |mq| {
+                                    if (std.mem.eql(u8, mq, "std.store") and inv.path.segments.len == 1 and std.mem.eql(u8, inv.path.segments[0], "stored")) break :blk true;
+                                }
+                                break :blk false;
+                            };
+                            for (inv.args) |*a| {
+                                if (is_stored and std.mem.eql(u8, a.name, "source")) {
+                                    @constCast(a).value = storedBlock(alloc, a.value, store, fields);
+                                    if (a.source_value) |sv| {
+                                        const fresh = alloc.create(ast.Source) catch unreachable;
+                                        fresh.* = sv.*;
+                                        fresh.text = storedBlock(alloc, sv.text, store, fields);
+                                        @constCast(a).source_value = fresh;
+                                    }
+                                } else {
+                                    @constCast(a).value = entityRefs(alloc, a.value, store, fields, false);
+                                    if (a.expression_value) |ev| {
+                                        const fresh = alloc.create(ast.CapturedExpression) catch unreachable;
+                                        fresh.* = ev.*;
+                                        fresh.text = entityRefs(alloc, ev.text, store, fields, false);
+                                        @constCast(a).expression_value = fresh;
+                                    }
+                                    if (a.source_value) |sv| {
+                                        const fresh = alloc.create(ast.Source) catch unreachable;
+                                        fresh.* = sv.*;
+                                        fresh.text = entityRefs(alloc, sv.text, store, fields, false);
+                                        @constCast(a).source_value = fresh;
+                                    }
+                                }
+                            }
+                        },
+                        else => {},
+                    }
+                }
+                for (cont.continuations) |*c| walkCont(alloc, @constCast(c), store, fields);
+            }
+        };
+        for (qsites.items) |*qs| PRewrite.walkCont(allocator, &qs.body, store_name, field_names);
+
+        // Store-name rewriting for watch bodies (other stores readable —
+        // same as rung one).
+        var pstore_names = std.ArrayList([]const u8).initCapacity(allocator, 4) catch unreachable;
+        for (program.items) |pi| {
+            switch (pi) {
+                .flow => |*f| {
+                    if (H.isStoreInv(f, "create", null)) {
+                        for (f.inv().args) |a| {
+                            if (std.mem.eql(u8, a.name, "expr")) pstore_names.append(allocator, H.stripQuotes(a.value)) catch unreachable;
+                        }
+                    }
+                },
+                .event_decl => |*ed| {
+                    if (ed.path.segments.len == 1 and std.mem.startsWith(u8, ed.path.segments[0], "__store_apply_")) {
+                        pstore_names.append(allocator, ed.path.segments[0]["__store_apply_".len..]) catch unreachable;
+                    }
+                },
+                else => {},
+            }
+        }
+        for (pwatch_arms.items) |*wa| H.storeRefsContH(allocator, &wa.cont, pstore_names.items);
+
+        // ---- unit 1: the SoA cell ----
+        var pc = std.ArrayList(u8).initCapacity(allocator, 512) catch unreachable;
+        pc.appendSlice(allocator, "const __KoruStoreT_") catch unreachable;
+        pc.appendSlice(allocator, store_name) catch unreachable;
+        pc.appendSlice(allocator, " = struct {\n") catch unreachable;
+        for (field_names) |fname| {
+            const col = std.fmt.allocPrint(allocator, "    {s}: [{d}]i64 = undefined,\n", .{ fname, CAP }) catch unreachable;
+            pc.appendSlice(allocator, col) catch unreachable;
+        }
+        pc.appendSlice(allocator, "    len: usize = 0,\n};\n") catch unreachable;
+        pc.appendSlice(allocator, "var __koru_store_") catch unreachable;
+        pc.appendSlice(allocator, store_name) catch unreachable;
+        pc.appendSlice(allocator, ": __KoruStoreT_") catch unreachable;
+        pc.appendSlice(allocator, store_name) catch unreachable;
+        pc.appendSlice(allocator, " = .{};") catch unreachable;
+        // The row-value type: what take extracts (obligation rides on it).
+        pc.appendSlice(allocator, "\nconst __KoruStoreRow_") catch unreachable;
+        pc.appendSlice(allocator, store_name) catch unreachable;
+        pc.appendSlice(allocator, " = struct {") catch unreachable;
+        for (field_names, 0..) |fname, fi| {
+            if (fi > 0) pc.appendSlice(allocator, ",") catch unreachable;
+            pc.appendSlice(allocator, " ") catch unreachable;
+            pc.appendSlice(allocator, fname) catch unreachable;
+            pc.appendSlice(allocator, ": i64") catch unreachable;
+        }
+        pc.appendSlice(allocator, " };") catch unreachable;
+        const pcell_decl = pc.toOwnedSlice(allocator) catch unreachable;
+
+        var appended_items = std.ArrayList(ast.Item).initCapacity(allocator, 8 + qsites.items.len * 3) catch unreachable;
+        appended_items.append(allocator, ast.Item{ .host_line = ast.HostLine{
+            .content = pcell_decl,
+            .location = flow.location,
+            .module = allocator.dupe(u8, flow.module) catch unreachable,
+        } }) catch unreachable;
+
+        // ---- shared: the row-append text + standing-enter calls ----
+        var ap = std.ArrayList(u8).initCapacity(allocator, 512) catch unreachable;
+        {
+            const grow = std.fmt.allocPrint(allocator,
+                \\if (__koru_store_{s}.len >= {d}) @panic("std/store: store '{s}' is full (capacity {d}) - declared capacity and the `| full` branch are pinned at 690_011");
+                \\const __koru_new_row = __koru_store_{s}.len;
+                \\
+            , .{ store_name, CAP, store_name, CAP, store_name }) catch unreachable;
+            ap.appendSlice(allocator, grow) catch unreachable;
+            for (field_names) |fname| {
+                const w = std.fmt.allocPrint(allocator, "__koru_store_{s}.{s}[__koru_new_row] = {s};\n", .{ store_name, fname, fname }) catch unreachable;
+                ap.appendSlice(allocator, w) catch unreachable;
+            }
+            const bump = std.fmt.allocPrint(allocator, "__koru_store_{s}.len += 1;\n", .{store_name}) catch unreachable;
+            ap.appendSlice(allocator, bump) catch unreachable;
+            // Standing enters: a query subscribes inserts that FOLLOW it in
+            // source. `__site_line` is comptime-constant per call site, so
+            // the position check costs nothing at runtime.
+            for (qsites.items) |qs| {
+                const call = std.fmt.allocPrint(allocator,
+                    \\if (__site_line > {d}) {{
+                    \\    main_module.__store_qrow_{s}_L{d}_event.handler(.{{ .row = @as(i64, @intCast(__koru_new_row)) }});
+                    \\}}
+                    \\
+                , .{ qs.line, store_name, qs.line }) catch unreachable;
+                ap.appendSlice(allocator, call) catch unreachable;
+            }
+        }
+        const append_text = ap.toOwnedSlice(allocator) catch unreachable;
+
+        const mkInsertInput = struct {
+            fn call(alloc: std.mem.Allocator, fnames: []const []const u8) []ast.Field {
+                const fields = alloc.alloc(ast.Field, fnames.len + 1) catch unreachable;
+                for (fnames, 0..) |fname, i| {
+                    fields[i] = ast.Field{ .name = alloc.dupe(u8, fname) catch unreachable, .type = alloc.dupe(u8, "i64") catch unreachable };
+                }
+                fields[fnames.len] = ast.Field{ .name = alloc.dupe(u8, "__site_line") catch unreachable, .type = alloc.dupe(u8, "i64") catch unreachable };
+                return fields;
+            }
+        }.call;
+
+        // ---- unit 2: insert (void) + inserth (`| row i64`) ----
+        {
+            const insert_name = std.fmt.allocPrint(allocator, "__store_insert_{s}", .{store_name}) catch unreachable;
+            appended_items.append(allocator, ast.Item{ .event_decl = ast.EventDecl{
+                .path = H.mkPathH(allocator, flow.module, insert_name),
+                .input = ast.Shape{ .fields = mkInsertInput(allocator, field_names) },
+                .branches = &[_]ast.Branch{},
+                .is_public = false,
+                .is_implicit_flow = false,
+                .annotations = &[_][]const u8{},
+                .location = flow.location,
+                .module = allocator.dupe(u8, flow.module) catch unreachable,
+            } }) catch unreachable;
+            const body = std.fmt.allocPrint(allocator, "{s}return;", .{append_text}) catch unreachable;
+            appended_items.append(allocator, ast.Item{ .proc_decl = ast.ProcDecl{
+                .path = H.mkPathH(allocator, flow.module, insert_name),
+                .body = ast.Source{ .text = body, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
+                .annotations = &[_][]const u8{},
+                .target = allocator.dupe(u8, "zig") catch unreachable,
+                .location = flow.location,
+                .module = allocator.dupe(u8, flow.module) catch unreachable,
+            } }) catch unreachable;
+
+            const inserth_name = std.fmt.allocPrint(allocator, "__store_inserth_{s}", .{store_name}) catch unreachable;
+            const row_branches = allocator.alloc(ast.Branch, 1) catch unreachable;
+            const row_pf = allocator.alloc(ast.Field, 1) catch unreachable;
+            row_pf[0] = ast.Field{ .name = allocator.dupe(u8, "__type_ref") catch unreachable, .type = allocator.dupe(u8, "i64") catch unreachable };
+            row_branches[0] = ast.Branch{
+                .name = allocator.dupe(u8, "row") catch unreachable,
+                .payload = ast.Shape{ .fields = row_pf },
+                .kind = .terminal,
+                .annotations = &[_][]const u8{},
+            };
+            appended_items.append(allocator, ast.Item{ .event_decl = ast.EventDecl{
+                .path = H.mkPathH(allocator, flow.module, inserth_name),
+                .input = ast.Shape{ .fields = mkInsertInput(allocator, field_names) },
+                .branches = row_branches,
+                .is_public = false,
+                .is_implicit_flow = false,
+                .annotations = &[_][]const u8{},
+                .location = flow.location,
+                .module = allocator.dupe(u8, flow.module) catch unreachable,
+            } }) catch unreachable;
+            const hbody = std.fmt.allocPrint(allocator, "{s}return .{{ .row = @as(i64, @intCast(__koru_new_row)) }};", .{append_text}) catch unreachable;
+            appended_items.append(allocator, ast.Item{ .proc_decl = ast.ProcDecl{
+                .path = H.mkPathH(allocator, flow.module, inserth_name),
+                .body = ast.Source{ .text = hbody, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
+                .annotations = &[_][]const u8{},
+                .target = allocator.dupe(u8, "zig") catch unreachable,
+                .location = flow.location,
+                .module = allocator.dupe(u8, flow.module) catch unreachable,
+            } }) catch unreachable;
+        }
+
+
+        // insertf: row + full — exhaustion is a BRANCH (O10, 690_011).
+        {
+            const insertf_name = std.fmt.allocPrint(allocator, "__store_insertf_{s}", .{store_name}) catch unreachable;
+            const f_branches = allocator.alloc(ast.Branch, 2) catch unreachable;
+            const f_row_pf = allocator.alloc(ast.Field, 1) catch unreachable;
+            f_row_pf[0] = ast.Field{ .name = allocator.dupe(u8, "__type_ref") catch unreachable, .type = allocator.dupe(u8, "i64") catch unreachable };
+            f_branches[0] = ast.Branch{
+                .name = allocator.dupe(u8, "row") catch unreachable,
+                .payload = ast.Shape{ .fields = f_row_pf },
+                .kind = .terminal,
+                .annotations = &[_][]const u8{},
+            };
+            f_branches[1] = ast.Branch{
+                .name = allocator.dupe(u8, "full") catch unreachable,
+                .payload = ast.Shape{ .fields = &[_]ast.Field{} },
+                .kind = .terminal,
+                .annotations = &[_][]const u8{},
+            };
+            appended_items.append(allocator, ast.Item{ .event_decl = ast.EventDecl{
+                .path = H.mkPathH(allocator, flow.module, insertf_name),
+                .input = ast.Shape{ .fields = mkInsertInput(allocator, field_names) },
+                .branches = f_branches,
+                .is_public = false,
+                .is_implicit_flow = false,
+                .annotations = &[_][]const u8{},
+                .location = flow.location,
+                .module = allocator.dupe(u8, flow.module) catch unreachable,
+            } }) catch unreachable;
+            const fcheck = std.fmt.allocPrint(allocator, "if (__koru_store_{s}.len >= {d}) return .{{ .full = .{{}} }};\n", .{ store_name, CAP }) catch unreachable;
+            const fbody = std.fmt.allocPrint(allocator, "{s}{s}return .{{ .row = @as(i64, @intCast(__koru_new_row)) }};", .{ fcheck, append_text }) catch unreachable;
+            appended_items.append(allocator, ast.Item{ .proc_decl = ast.ProcDecl{
+                .path = H.mkPathH(allocator, flow.module, insertf_name),
+                .body = ast.Source{ .text = fbody, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
+                .annotations = &[_][]const u8{},
+                .target = allocator.dupe(u8, "zig") catch unreachable,
+                .location = flow.location,
+                .module = allocator.dupe(u8, flow.module) catch unreachable,
+            } }) catch unreachable;
+        }
+
+        // ---- unit 4: the row-addressed apply/write pair ((f), plural) ----
+        {
+            const papply_name = std.fmt.allocPrint(allocator, "__store_apply_{s}", .{store_name}) catch unreachable;
+            const pwrite_name = std.fmt.allocPrint(allocator, "__store_write_{s}", .{store_name}) catch unreachable;
+
+            const in_fields = allocator.alloc(ast.Field, 3) catch unreachable;
+            in_fields[0] = ast.Field{ .name = allocator.dupe(u8, "row") catch unreachable, .type = allocator.dupe(u8, "i64") catch unreachable };
+            in_fields[1] = ast.Field{ .name = allocator.dupe(u8, "field") catch unreachable, .type = allocator.dupe(u8, "i64") catch unreachable };
+            in_fields[2] = ast.Field{ .name = allocator.dupe(u8, "value") catch unreachable, .type = allocator.dupe(u8, "i64") catch unreachable };
+
+            const papply_branches = allocator.alloc(ast.Branch, field_names.len) catch unreachable;
+            for (field_names, 0..) |fname, i| {
+                const pf = allocator.alloc(ast.Field, 1) catch unreachable;
+                pf[0] = ast.Field{ .name = allocator.dupe(u8, "__type_ref") catch unreachable, .type = allocator.dupe(u8, "i64") catch unreachable };
+                papply_branches[i] = ast.Branch{
+                    .name = allocator.dupe(u8, fname) catch unreachable,
+                    .payload = ast.Shape{ .fields = pf },
+                    .kind = .terminal,
+                    .annotations = &[_][]const u8{},
+                };
+            }
+            appended_items.append(allocator, ast.Item{ .event_decl = ast.EventDecl{
+                .path = H.mkPathH(allocator, flow.module, papply_name),
+                .input = ast.Shape{ .fields = in_fields },
+                .branches = papply_branches,
+                .is_public = false,
+                .is_implicit_flow = false,
+                .annotations = &[_][]const u8{},
+                .location = flow.location,
+                .module = allocator.dupe(u8, flow.module) catch unreachable,
+            } }) catch unreachable;
+
+            var pbody = std.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
+            pbody.appendSlice(allocator, "const __koru_r = @as(usize, @intCast(row));\nreturn switch (field) {\n") catch unreachable;
+            for (field_names, 0..) |fname, i| {
+                const arm = std.fmt.allocPrint(allocator, "    {d} => blk: {{ __koru_store_{s}.{s}[__koru_r] = value; break :blk .{{ .{s} = value }}; }},\n", .{ i, store_name, fname, fname }) catch unreachable;
+                pbody.appendSlice(allocator, arm) catch unreachable;
+            }
+            pbody.appendSlice(allocator, "    else => unreachable,\n};") catch unreachable;
+            appended_items.append(allocator, ast.Item{ .proc_decl = ast.ProcDecl{
+                .path = H.mkPathH(allocator, flow.module, papply_name),
+                .body = ast.Source{ .text = pbody.toOwnedSlice(allocator) catch unreachable, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
+                .annotations = &[_][]const u8{},
+                .target = allocator.dupe(u8, "zig") catch unreachable,
+                .location = flow.location,
+                .module = allocator.dupe(u8, flow.module) catch unreachable,
+            } }) catch unreachable;
+
+            const win_fields = allocator.alloc(ast.Field, 3) catch unreachable;
+            win_fields[0] = ast.Field{ .name = allocator.dupe(u8, "row") catch unreachable, .type = allocator.dupe(u8, "i64") catch unreachable };
+            win_fields[1] = ast.Field{ .name = allocator.dupe(u8, "field") catch unreachable, .type = allocator.dupe(u8, "i64") catch unreachable };
+            win_fields[2] = ast.Field{ .name = allocator.dupe(u8, "value") catch unreachable, .type = allocator.dupe(u8, "i64") catch unreachable };
+            appended_items.append(allocator, ast.Item{ .event_decl = ast.EventDecl{
+                .path = H.mkPathH(allocator, flow.module, pwrite_name),
+                .input = ast.Shape{ .fields = win_fields },
+                .branches = &[_]ast.Branch{},
+                .is_public = false,
+                .is_implicit_flow = false,
+                .annotations = &[_][]const u8{},
+                .location = flow.location,
+                .module = allocator.dupe(u8, flow.module) catch unreachable,
+            } }) catch unreachable;
+
+            const wapply_args = allocator.alloc(ast.Arg, 3) catch unreachable;
+            wapply_args[0] = ast.Arg{ .name = allocator.dupe(u8, "row") catch unreachable, .value = allocator.dupe(u8, "row") catch unreachable };
+            wapply_args[1] = ast.Arg{ .name = allocator.dupe(u8, "field") catch unreachable, .value = allocator.dupe(u8, "field") catch unreachable };
+            wapply_args[2] = ast.Arg{ .name = allocator.dupe(u8, "value") catch unreachable, .value = allocator.dupe(u8, "value") catch unreachable };
+            const wapply_inv = ast.Invocation{
+                .path = H.mkPathH(allocator, flow.module, papply_name),
+                .args = wapply_args,
+            };
+
+            var warms = std.ArrayList(ast.Continuation).initCapacity(allocator, field_names.len) catch unreachable;
+            for (field_names, 0..) |fname, i| {
+                var arm_body: ?ast.Continuation = null;
+                for (pwatch_arms.items) |*wa| {
+                    if (wa.field_idx == i) {
+                        var a = ast_functional.cloneContinuation(allocator, &wa.cont) catch unreachable;
+                        a.branch = allocator.dupe(u8, fname) catch unreachable;
+                        a.kind = .terminal;
+                        a.binding = if (wa.cont.binding) |b| allocator.dupe(u8, b) catch unreachable else allocator.dupe(u8, "_") catch unreachable;
+                        arm_body = a;
+                    }
+                }
+                if (arm_body) |a| {
+                    warms.append(allocator, a) catch unreachable;
+                } else {
+                    warms.append(allocator, ast.Continuation{
+                        .branch = allocator.dupe(u8, fname) catch unreachable,
+                        .binding = allocator.dupe(u8, "_") catch unreachable,
+                        .kind = .terminal,
+                        .condition = null,
+                        .node = .terminal,
+                        .indent = 1,
+                        .continuations = &[_]ast.Continuation{},
+                        .location = flow.location,
+                    }) catch unreachable;
+                }
+            }
+            appended_items.append(allocator, ast.Item{ .flow = ast.Flow{
+                .body = ast.rootSite(wapply_inv, warms.toOwnedSlice(allocator) catch unreachable, flow.location),
+                .pre_label = null,
+                .impl_of = H.mkPathH(allocator, flow.module, pwrite_name),
+                .super_shape = null,
+                .inline_body = null,
+                .preamble_code = null,
+                .is_pure = false,
+                .is_transitively_pure = false,
+                .location = flow.location,
+                .module = allocator.dupe(u8, flow.module) catch unreachable,
+            } }) catch unreachable;
+        }
+
+        // ---- unit 3: per-query units (qrow / qbody / qsweep) ----
+        for (qsites.items) |*qs| {
+            const qrow_name = std.fmt.allocPrint(allocator, "__store_qrow_{s}_L{d}", .{ store_name, qs.line }) catch unreachable;
+            const qbody_name = std.fmt.allocPrint(allocator, "__store_qbody_{s}_L{d}", .{ store_name, qs.line }) catch unreachable;
+            const qsweep_name = std.fmt.allocPrint(allocator, "__store_qsweep_{s}_L{d}", .{ store_name, qs.line }) catch unreachable;
+
+            // qrow: guard + projection over one row; fires the body event.
+            const qrow_in = allocator.alloc(ast.Field, 1) catch unreachable;
+            qrow_in[0] = ast.Field{ .name = allocator.dupe(u8, "row") catch unreachable, .type = allocator.dupe(u8, "i64") catch unreachable };
+            const retain_ann = blk: {
+                const anns = allocator.alloc([]const u8, 1) catch unreachable;
+                anns[0] = allocator.dupe(u8, "retain") catch unreachable;
+                break :blk anns;
+            };
+            appended_items.append(allocator, ast.Item{ .event_decl = ast.EventDecl{
+                .path = H.mkPathH(allocator, flow.module, qrow_name),
+                .input = ast.Shape{ .fields = qrow_in },
+                .branches = &[_]ast.Branch{},
+                .is_public = false,
+                .is_implicit_flow = false,
+                .annotations = retain_ann,
+                .location = flow.location,
+                .module = allocator.dupe(u8, flow.module) catch unreachable,
+            } }) catch unreachable;
+
+            var qr = std.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
+            qr.appendSlice(allocator, "const __koru_r = @as(usize, @intCast(row));\n") catch unreachable;
+            for (qs.proj_names, qs.proj_fields) |pname, pfidx| {
+                const ld = std.fmt.allocPrint(allocator, "const {s} = __koru_store_{s}.{s}[__koru_r];\n_ = &{s};\n", .{ pname, store_name, field_names[pfidx], pname }) catch unreachable;
+                qr.appendSlice(allocator, ld) catch unreachable;
+            }
+            if (qs.guard) |g| {
+                const gz = std.fmt.allocPrint(allocator, "if (!({s})) return;\n", .{g}) catch unreachable;
+                qr.appendSlice(allocator, gz) catch unreachable;
+            }
+            qr.appendSlice(allocator, "main_module.") catch unreachable;
+            qr.appendSlice(allocator, qbody_name) catch unreachable;
+            qr.appendSlice(allocator, "_event.handler(.{ ") catch unreachable;
+            for (qs.proj_names, 0..) |pname, i| {
+                if (i > 0) qr.appendSlice(allocator, ", ") catch unreachable;
+                const p = std.fmt.allocPrint(allocator, ".{s} = {s}", .{ pname, pname }) catch unreachable;
+                qr.appendSlice(allocator, p) catch unreachable;
+            }
+            if (qs.proj_names.len > 0) qr.appendSlice(allocator, ", ") catch unreachable;
+            qr.appendSlice(allocator, ".__koru_qrow = row });\nreturn;") catch unreachable;
+            appended_items.append(allocator, ast.Item{ .proc_decl = ast.ProcDecl{
+                .path = H.mkPathH(allocator, flow.module, qrow_name),
+                .body = ast.Source{ .text = qr.toOwnedSlice(allocator) catch unreachable, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
+                .annotations = &[_][]const u8{},
+                .target = allocator.dupe(u8, "zig") catch unreachable,
+                .location = flow.location,
+                .module = allocator.dupe(u8, flow.module) catch unreachable,
+            } }) catch unreachable;
+
+            // qbody: the transplanted body as an impl flow; inputs = the
+            // projected names + the row cursor.
+            const qbody_in = allocator.alloc(ast.Field, qs.proj_names.len + 1) catch unreachable;
+            for (qs.proj_names, 0..) |pname, i| {
+                qbody_in[i] = ast.Field{ .name = allocator.dupe(u8, pname) catch unreachable, .type = allocator.dupe(u8, "i64") catch unreachable };
+            }
+            qbody_in[qs.proj_names.len] = ast.Field{ .name = allocator.dupe(u8, "__koru_qrow") catch unreachable, .type = allocator.dupe(u8, "i64") catch unreachable };
+            appended_items.append(allocator, ast.Item{ .event_decl = ast.EventDecl{
+                .path = H.mkPathH(allocator, flow.module, qbody_name),
+                .input = ast.Shape{ .fields = qbody_in },
+                .branches = &[_]ast.Branch{},
+                .is_public = false,
+                .is_implicit_flow = false,
+                .annotations = retain_ann,
+                .location = flow.location,
+                .module = allocator.dupe(u8, flow.module) catch unreachable,
+            } }) catch unreachable;
+
+            const body_node = qs.body.node orelse {
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:query({s}): the query branch needs a body (`|> ...`)", .{store_name}) } };
+            };
+            if (body_node != .invocation) {
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:query({s}): the query body must start with an invocation this rung", .{store_name}) } };
+            }
+            appended_items.append(allocator, ast.Item{ .flow = ast.Flow{
+                .body = ast.rootSite(body_node.invocation, qs.body.continuations, flow.location),
+                .pre_label = null,
+                .impl_of = H.mkPathH(allocator, flow.module, qbody_name),
+                .super_shape = null,
+                .inline_body = null,
+                .preamble_code = null,
+                .is_pure = false,
+                .is_transitively_pure = false,
+                .location = flow.location,
+                .module = allocator.dupe(u8, flow.module) catch unreachable,
+            } }) catch unreachable;
+
+            // qsweep: the imperative sweep over the rows that exist when
+            // the query's program position executes.
+            appended_items.append(allocator, ast.Item{ .event_decl = ast.EventDecl{
+                .path = H.mkPathH(allocator, flow.module, qsweep_name),
+                .input = ast.Shape{ .fields = &[_]ast.Field{} },
+                .branches = &[_]ast.Branch{},
+                .is_public = false,
+                .is_implicit_flow = false,
+                .annotations = &[_][]const u8{},
+                .location = flow.location,
+                .module = allocator.dupe(u8, flow.module) catch unreachable,
+            } }) catch unreachable;
+            const sweep_body = std.fmt.allocPrint(allocator,
+                \\var __koru_i: usize = 0;
+                \\while (__koru_i < __koru_store_{s}.len) : (__koru_i += 1) {{
+                \\    main_module.{s}_event.handler(.{{ .row = @as(i64, @intCast(__koru_i)) }});
+                \\}}
+                \\return;
+            , .{ store_name, qrow_name }) catch unreachable;
+            appended_items.append(allocator, ast.Item{ .proc_decl = ast.ProcDecl{
+                .path = H.mkPathH(allocator, flow.module, qsweep_name),
+                .body = ast.Source{ .text = sweep_body, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
+                .annotations = &[_][]const u8{},
+                .target = allocator.dupe(u8, "zig") catch unreachable,
+                .location = flow.location,
+                .module = allocator.dupe(u8, flow.module) catch unreachable,
+            } }) catch unreachable;
+        }
+
+        // ---- unit 5: take — swap-remove through the handle head ----
+        {
+            const take_name = std.fmt.allocPrint(allocator, "__store_take_{s}", .{store_name}) catch unreachable;
+            const take_in = allocator.alloc(ast.Field, 1) catch unreachable;
+            take_in[0] = ast.Field{ .name = allocator.dupe(u8, "row") catch unreachable, .type = allocator.dupe(u8, "i64") catch unreachable };
+            // Identity payload: the row VALUE carrying the store-named
+            // obligation (<store-item!> — 660_027's pattern, no generics).
+            const item_pf = allocator.alloc(ast.Field, 1) catch unreachable;
+            item_pf[0] = ast.Field{
+                .name = allocator.dupe(u8, "__type_ref") catch unreachable,
+                .type = std.fmt.allocPrint(allocator, "__KoruStoreRow_{s}", .{store_name}) catch unreachable,
+                .phantom = std.fmt.allocPrint(allocator, "{s}-item!", .{store_name}) catch unreachable,
+            };
+            const take_branches = allocator.alloc(ast.Branch, 1) catch unreachable;
+            take_branches[0] = ast.Branch{
+                .name = allocator.dupe(u8, "item") catch unreachable,
+                .payload = ast.Shape{ .fields = item_pf },
+                .kind = .terminal,
+                .annotations = &[_][]const u8{},
+            };
+            appended_items.append(allocator, ast.Item{ .event_decl = ast.EventDecl{
+                .path = H.mkPathH(allocator, flow.module, take_name),
+                .input = ast.Shape{ .fields = take_in },
+                .branches = take_branches,
+                .is_public = false,
+                .is_implicit_flow = false,
+                .annotations = &[_][]const u8{},
+                .location = flow.location,
+                .module = allocator.dupe(u8, flow.module) catch unreachable,
+            } }) catch unreachable;
+
+            var tb = std.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
+            const thead = std.fmt.allocPrint(allocator,
+                \\const __koru_r = @as(usize, @intCast(row));
+                \\if (__koru_r >= __koru_store_{s}.len) @panic("std/store: take({s}[...]) - row handle out of range (generational staleness checks are O10)");
+                \\
+            , .{ store_name, store_name }) catch unreachable;
+            tb.appendSlice(allocator, thead) catch unreachable;
+            for (field_names) |fname| {
+                const ld = std.fmt.allocPrint(allocator, "const __koru_out_{s} = __koru_store_{s}.{s}[__koru_r];\n", .{ fname, store_name, fname }) catch unreachable;
+                tb.appendSlice(allocator, ld) catch unreachable;
+            }
+            const swap = std.fmt.allocPrint(allocator, "const __koru_last = __koru_store_{s}.len - 1;\nif (__koru_r != __koru_last) {{\n", .{store_name}) catch unreachable;
+            tb.appendSlice(allocator, swap) catch unreachable;
+            for (field_names) |fname| {
+                const mv = std.fmt.allocPrint(allocator, "    __koru_store_{s}.{s}[__koru_r] = __koru_store_{s}.{s}[__koru_last];\n", .{ store_name, fname, store_name, fname }) catch unreachable;
+                tb.appendSlice(allocator, mv) catch unreachable;
+            }
+            const tail = std.fmt.allocPrint(allocator, "}}\n__koru_store_{s}.len = __koru_last;\n", .{store_name}) catch unreachable;
+            tb.appendSlice(allocator, tail) catch unreachable;
+            tb.appendSlice(allocator, "return .{ .item = .{ ") catch unreachable;
+            for (field_names, 0..) |fname, i| {
+                if (i > 0) tb.appendSlice(allocator, ", ") catch unreachable;
+                const o = std.fmt.allocPrint(allocator, ".{s} = __koru_out_{s}", .{ fname, fname }) catch unreachable;
+                tb.appendSlice(allocator, o) catch unreachable;
+            }
+            tb.appendSlice(allocator, " } };") catch unreachable;
+            appended_items.append(allocator, ast.Item{ .proc_decl = ast.ProcDecl{
+                .path = H.mkPathH(allocator, flow.module, take_name),
+                .body = ast.Source{ .text = tb.toOwnedSlice(allocator) catch unreachable, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
+                .annotations = &[_][]const u8{},
+                .target = allocator.dupe(u8, "zig") catch unreachable,
+                .location = flow.location,
+                .module = allocator.dupe(u8, flow.module) catch unreachable,
+            } }) catch unreachable;
+        }
+
+        const pconsumed = std.fmt.allocPrint(allocator, "// std/store: plural store '{s}' created (SoA cell + insert/query/write/take units)", .{store_name}) catch unreachable;
+        return .{ .transformed = .{
+            .replacement = ast.Item{ .host_line = ast.HostLine{
+                .content = pconsumed,
+                .location = flow.location,
+                .module = allocator.dupe(u8, flow.module) catch unreachable,
+            } },
+            .appended = appended_items.toOwnedSlice(allocator) catch unreachable,
+        } };
     }
 
     // ------------------------------------------------------------------
@@ -227,13 +1263,100 @@ const std = @import("std");
                 }
                 return .{ .transformed = .{ .replacement = H.errItem(allocator, wf.location, wf.module, "std/store:watch({s}): '{s}' is not a field of store '{s}'", .{ store_name, wc.branch, store_name }) } };
             };
-            for (watch_arms.items) |existing| {
-                if (existing.field_idx == fidx) {
-                    return .{ .transformed = .{ .replacement = H.errItem(allocator, wf.location, wf.module, "std/store:watch({s}): field '{s}' is watched more than once - multi-watch sequencing is a later slice", .{ store_name, wc.branch }) } };
-                }
-            }
+            // Ruling 4: subscriptions are consumer-level and MANY - every
+            // watch on a field fires, in source order (690_010).
             const cloned = ast_functional.cloneContinuation(allocator, wc) catch unreachable;
             watch_arms.append(allocator, .{ .field_idx = fidx, .cont = cloned }) catch unreachable;
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Cross-store guard closure (690_013): a watch on store T guarded by
+    // `when S.field == ...` must re-evaluate when S.field is WRITTEN -
+    // S's write path announces T's watched field (level-trigger on write;
+    // edge-trigger/dedup is undesigned). Collected here, spliced into
+    // this store's arms below.
+    // ------------------------------------------------------------------
+    const ForeignGuard = struct {
+        local_field_idx: usize, // which of OUR fields the guard reads
+        target_store: []const u8,
+        target_field_idx: usize, // watched field's index in the target store
+    };
+    var foreign_guards = std.ArrayList(ForeignGuard).initCapacity(allocator, 2) catch unreachable;
+    {
+        const FG = struct {
+            fn fieldOrderOf(alloc: std.mem.Allocator, prog: *const ast.Program, store: []const u8) ?[]const []const u8 {
+                const struct_literal2 = @import("struct_literal");
+                // Already-coordinated stores: read the apply event's branches.
+                const apply_name2 = std.fmt.allocPrint(alloc, "__store_apply_{s}", .{store}) catch unreachable;
+                for (prog.items) |pi2| {
+                    if (pi2 != .event_decl) continue;
+                    const ed2 = &pi2.event_decl;
+                    if (ed2.path.segments.len == 1 and std.mem.eql(u8, ed2.path.segments[0], apply_name2)) {
+                        const names2b = alloc.alloc([]const u8, ed2.branches.len) catch unreachable;
+                        for (ed2.branches, 0..) |b2, bi2| names2b[bi2] = b2.name;
+                        return names2b;
+                    }
+                }
+                for (prog.items) |pi2| {
+                    if (pi2 != .flow) continue;
+                    const f2 = &pi2.flow;
+                    const inv2 = f2.inv();
+                    if (inv2.path.segments.len != 1 or !std.mem.eql(u8, inv2.path.segments[0], "create")) continue;
+                    const mq2 = inv2.path.module_qualifier orelse continue;
+                    if (!std.mem.eql(u8, mq2, "std.store")) continue;
+                    var matches2 = false;
+                    var seed3: ?[]const u8 = null;
+                    for (inv2.args) |a2| {
+                        if (std.mem.eql(u8, a2.name, "expr")) {
+                            var v2 = a2.value;
+                            if (v2.len >= 2 and v2[0] == '"') v2 = v2[1 .. v2.len - 1];
+                            matches2 = std.mem.eql(u8, v2, store);
+                        } else if (std.mem.eql(u8, a2.name, "source")) {
+                            seed3 = a2.value;
+                        }
+                    }
+                    if (!matches2 or seed3 == null) continue;
+                    const braced3 = std.fmt.allocPrint(alloc, "{{{s}}}", .{seed3.?}) catch unreachable;
+                    const cf3 = struct_literal2.parseFields(alloc, braced3) catch continue;
+                    const names3 = alloc.alloc([]const u8, cf3.len) catch unreachable;
+                    for (cf3, 0..) |c3, ci3| names3[ci3] = c3.name;
+                    return names3;
+                }
+                return null;
+            }
+        };
+        for (program.items) |pi| {
+            if (pi != .flow) continue;
+            const wfg = &pi.flow;
+            if (!H.isStoreInv(wfg, "watch", null)) continue;
+            var target_store: []const u8 = "";
+            for (wfg.inv().args) |a| {
+                if (std.mem.eql(u8, a.name, "expr")) target_store = H.stripQuotes(a.value);
+            }
+            if (target_store.len == 0 or std.mem.eql(u8, target_store, store_name)) continue;
+            const t_order = FG.fieldOrderOf(allocator, program, target_store) orelse continue;
+            for (wfg.body.continuations) |*wcg| {
+                const cond = wcg.condition orelse continue;
+                // Which of OUR fields does the guard read (`<store>.<field>`)?
+                for (cell_fields, 0..) |cfw, lf_idx| {
+                    const needle = std.fmt.allocPrint(allocator, "{s}.{s}", .{ store_name, cfw.name }) catch unreachable;
+                    if (std.mem.indexOf(u8, cond, needle) == null) continue;
+                    // The watched field's index in the target store.
+                    const wbranch = std.mem.trim(u8, wcg.branch, " ");
+                    const t_idx: usize = blk: {
+                        for (t_order, 0..) |tn, ti| {
+                            if (std.mem.eql(u8, tn, wbranch)) break :blk ti;
+                        }
+                        break :blk 0;
+                    };
+                    foreign_guards.append(allocator, .{
+                        .local_field_idx = lf_idx,
+                        .target_store = allocator.dupe(u8, target_store) catch unreachable,
+                        .target_field_idx = t_idx,
+                    }) catch unreachable;
+                }
+            }
         }
     }
 
@@ -369,6 +1492,13 @@ const std = @import("std");
             }
         }
         fn rewriteCont(alloc: std.mem.Allocator, cont: *ast.Continuation, names: []const []const u8) void {
+            // Guards ride as arm conditions at the write site - their
+            // cross-store reads rewrite to the cells too (690_013).
+            if (cont.condition) |cond| {
+                var cnd = cond;
+                for (names) |nm| cnd = storeRefs(alloc, cnd, nm);
+                @constCast(cont).condition = cnd;
+            }
             if (cont.node) |*n| rewriteNode(alloc, @constCast(n), names);
             for (cont.continuations) |*c| rewriteCont(alloc, @constCast(c), names);
         }
@@ -430,10 +1560,10 @@ const std = @import("std");
     const write_name = std.fmt.allocPrint(allocator, "__store_write_{s}", .{store_name}) catch unreachable;
 
     const mkInput = struct {
-        fn call(alloc: std.mem.Allocator) []ast.Field {
+        fn call(alloc: std.mem.Allocator, vtype: []const u8) []ast.Field {
             const fields = alloc.alloc(ast.Field, 2) catch unreachable;
             fields[0] = ast.Field{ .name = alloc.dupe(u8, "field") catch unreachable, .type = alloc.dupe(u8, "i64") catch unreachable };
-            fields[1] = ast.Field{ .name = alloc.dupe(u8, "value") catch unreachable, .type = alloc.dupe(u8, "i64") catch unreachable };
+            fields[1] = ast.Field{ .name = alloc.dupe(u8, "value") catch unreachable, .type = alloc.dupe(u8, vtype) catch unreachable };
             return fields;
         }
     }.call;
@@ -471,7 +1601,7 @@ const std = @import("std");
 
     const apply_event_item = ast.Item{ .event_decl = ast.EventDecl{
         .path = mkPath(allocator, flow.module, apply_name),
-        .input = ast.Shape{ .fields = mkInput(allocator) },
+        .input = ast.Shape{ .fields = mkInput(allocator, value_type) },
         .branches = apply_branches,
         .is_public = false,
         .is_implicit_flow = false,
@@ -508,7 +1638,7 @@ const std = @import("std");
     // ------------------------------------------------------------------
     const write_event_item = ast.Item{ .event_decl = ast.EventDecl{
         .path = mkPath(allocator, flow.module, write_name),
-        .input = ast.Shape{ .fields = mkInput(allocator) },
+        .input = ast.Shape{ .fields = mkInput(allocator, value_type) },
         .branches = &[_]ast.Branch{},
         .is_public = false,
         .is_implicit_flow = false,
@@ -566,6 +1696,7 @@ const std = @import("std");
         // Gather this field's spliced bodies in firing order.
         var segments = std.ArrayList(*const ast.Continuation).initCapacity(allocator, 4) catch unreachable;
         var watch_seg: ?*const ast.Continuation = null;
+        var watch_count: usize = 0;
         if (old_new_mode) {
             for (updated_iceptors.items) |*ui| segments.append(allocator, ui) catch unreachable;
         } else {
@@ -574,13 +1705,40 @@ const std = @import("std");
             }
             for (watch_arms.items) |*wa| {
                 if (wa.field_idx == i) {
-                    watch_seg = &wa.cont;
+                    if (watch_seg == null) watch_seg = &wa.cont;
+                    watch_count += 1;
                     segments.append(allocator, &wa.cont) catch unreachable;
                 }
             }
         }
 
-        if (segments.items.len == 0) {
+        // Foreign-guard announce steps for THIS field (690_013).
+        var fg_steps = std.ArrayList(ast.Continuation).initCapacity(allocator, 2) catch unreachable;
+        for (foreign_guards.items) |fg| {
+            if (fg.local_field_idx != i) continue;
+            const t_announce = std.fmt.allocPrint(allocator, "__store_announce_{s}", .{fg.target_store}) catch unreachable;
+            const fg_args = allocator.alloc(ast.Arg, 1) catch unreachable;
+            fg_args[0] = ast.Arg{
+                .name = allocator.dupe(u8, "field") catch unreachable,
+                .value = std.fmt.allocPrint(allocator, "{d}", .{fg.target_field_idx}) catch unreachable,
+            };
+            fg_steps.append(allocator, ast.Continuation{
+                .branch = allocator.dupe(u8, "") catch unreachable,
+                .binding = null,
+                .kind = .terminal,
+                .condition = null,
+                .node = .{ .invocation = ast.Invocation{
+                    .path = mkPath(allocator, flow.module, t_announce),
+                    .args = fg_args,
+                } },
+                .indent = 1,
+                .continuations = &[_]ast.Continuation{},
+                .is_transformed_subtree = true,
+                .location = flow.location,
+            }) catch unreachable;
+        }
+
+        if (segments.items.len == 0 and fg_steps.items.len == 0) {
             arms.append(allocator, ast.Continuation{
                 .branch = allocator.dupe(u8, fname) catch unreachable,
                 .binding = allocator.dupe(u8, "_") catch unreachable,
@@ -593,10 +1751,25 @@ const std = @import("std");
             }) catch unreachable;
             continue;
         }
+        if (segments.items.len == 0) {
+            // Arm exists ONLY to re-announce foreign guarded watches.
+            var fg_arm = fg_steps.items[0];
+            fg_arm.branch = allocator.dupe(u8, fname) catch unreachable;
+            fg_arm.binding = allocator.dupe(u8, "_") catch unreachable;
+            for (fg_steps.items[1..]) |*extra| {
+                Graft.atEnds(allocator, &fg_arm, extra);
+            }
+            arms.append(allocator, fg_arm) catch unreachable;
+            continue;
+        }
 
-        const watch_guarded = watch_seg != null and watch_seg.?.condition != null;
+        var any_watch_guarded = false;
+        for (segments.items) |seg| {
+            if (seg.condition != null) any_watch_guarded = true;
+        }
+        const watch_guarded = any_watch_guarded;
         if (watch_guarded and segments.items.len > 1) {
-            return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:create({s}): a guarded watch on a field that also has interceptors is a later slice", .{store_name}) } };
+            return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:create({s}): a guarded watch on a field that also has interceptors or sibling watches is a later slice", .{store_name}) } };
         }
 
         var arm = ast_functional.cloneContinuation(allocator, segments.items[0]) catch unreachable;
@@ -623,9 +1796,21 @@ const std = @import("std");
             }
         }
         for (segments.items[1..]) |seg| {
-            const step = Graft.asVoidStep(allocator, seg);
+            var step = Graft.asVoidStep(allocator, seg);
+            // A sibling watch body references ITS OWN binding; the arm binds
+            // the FIRST watch's name. Rewrite (taps' binding-rewrite shape).
+            if (!old_new_mode) {
+                if (seg.binding) |sb| {
+                    if (arm.binding) |ab| {
+                        if (!std.mem.eql(u8, sb, ab) and !std.mem.eql(u8, sb, "_")) {
+                            Rewrite.rewriteIdentInCont(allocator, &step, sb, ab);
+                        }
+                    }
+                }
+            }
             Graft.atEnds(allocator, &arm, &step);
         }
+        for (fg_steps.items) |*fgs| Graft.atEnds(allocator, &arm, fgs);
         arms.append(allocator, arm) catch unreachable;
 
         if (watch_guarded) {
@@ -656,6 +1841,206 @@ const std = @import("std");
     } };
 
     // ------------------------------------------------------------------
+    // Unit 6+7: ANNOUNCE (dispatch-only re-fire of standing watches with
+    // CURRENT values - no write, no interceptors) and STRIPE (the
+    // imperative sweep verb, (l)/O13: announce every field). 690_014.
+    // ------------------------------------------------------------------
+    var stripe_items = std.ArrayList(ast.Item).initCapacity(allocator, 4) catch unreachable;
+    if (!old_new_mode) {
+        const announce_name = std.fmt.allocPrint(allocator, "__store_announce_{s}", .{store_name}) catch unreachable;
+        const peek_name = std.fmt.allocPrint(allocator, "__store_peek_{s}", .{store_name}) catch unreachable;
+        const stripe_name = std.fmt.allocPrint(allocator, "__store_stripe_{s}", .{store_name}) catch unreachable;
+
+        const ann_in = allocator.alloc(ast.Field, 1) catch unreachable;
+        ann_in[0] = ast.Field{ .name = allocator.dupe(u8, "field") catch unreachable, .type = allocator.dupe(u8, "i64") catch unreachable };
+        const peek_in = allocator.alloc(ast.Field, 1) catch unreachable;
+        peek_in[0] = ast.Field{ .name = allocator.dupe(u8, "field") catch unreachable, .type = allocator.dupe(u8, "i64") catch unreachable };
+        const ann_branches = allocator.alloc(ast.Branch, cell_fields.len) catch unreachable;
+        for (field_names, 0..) |fname, i| {
+            const pf = allocator.alloc(ast.Field, 1) catch unreachable;
+            pf[0] = ast.Field{ .name = allocator.dupe(u8, "__type_ref") catch unreachable, .type = allocator.dupe(u8, field_types[i]) catch unreachable };
+            ann_branches[i] = ast.Branch{
+                .name = allocator.dupe(u8, fname) catch unreachable,
+                .payload = ast.Shape{ .fields = pf },
+                .kind = .terminal,
+                .annotations = &[_][]const u8{},
+            };
+        }
+        const retain_ann2 = blk: {
+            const anns = allocator.alloc([]const u8, 1) catch unreachable;
+            anns[0] = allocator.dupe(u8, "retain") catch unreachable;
+            break :blk anns;
+        };
+        stripe_items.append(allocator, ast.Item{ .event_decl = ast.EventDecl{
+            .path = mkPath(allocator, flow.module, peek_name),
+            .input = ast.Shape{ .fields = peek_in },
+            .branches = ann_branches,
+            .is_public = false,
+            .is_implicit_flow = false,
+            .annotations = &[_][]const u8{},
+            .location = flow.location,
+            .module = allocator.dupe(u8, flow.module) catch unreachable,
+        } }) catch unreachable;
+        // announce: the VOID dispatcher (retained — raw-Zig callers only).
+        stripe_items.append(allocator, ast.Item{ .event_decl = ast.EventDecl{
+            .path = mkPath(allocator, flow.module, announce_name),
+            .input = ast.Shape{ .fields = ann_in },
+            .branches = &[_]ast.Branch{},
+            .is_public = false,
+            .is_implicit_flow = false,
+            .annotations = retain_ann2,
+            .location = flow.location,
+            .module = allocator.dupe(u8, flow.module) catch unreachable,
+        } }) catch unreachable;
+
+        // Peek proc: read the CURRENT value, announce the field branch.
+        var pk = std.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
+        pk.appendSlice(allocator, "return switch (field) {\n") catch unreachable;
+        for (field_names, 0..) |fname, i| {
+            const arm = std.fmt.allocPrint(allocator, "    {d} => .{{ .{s} = __koru_store_{s}.{s} }},\n", .{ i, fname, store_name, fname }) catch unreachable;
+            pk.appendSlice(allocator, arm) catch unreachable;
+        }
+        pk.appendSlice(allocator, "    else => unreachable,\n};") catch unreachable;
+        stripe_items.append(allocator, ast.Item{ .proc_decl = ast.ProcDecl{
+            .path = mkPath(allocator, flow.module, peek_name),
+            .body = ast.Source{ .text = pk.toOwnedSlice(allocator) catch unreachable, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
+            .annotations = &[_][]const u8{},
+            .target = allocator.dupe(u8, "zig") catch unreachable,
+            .location = flow.location,
+            .module = allocator.dupe(u8, flow.module) catch unreachable,
+        } }) catch unreachable;
+
+        // The announce impl flow re-dispatches the SAME watch arms (fresh
+        // clones - the shared-pointer footgun is real).
+        var ann_arms = std.ArrayList(ast.Continuation).initCapacity(allocator, cell_fields.len) catch unreachable;
+        for (field_names, 0..) |fname, i| {
+            var seg_list = std.ArrayList(*const ast.Continuation).initCapacity(allocator, 4) catch unreachable;
+            for (watch_arms.items) |*wa| {
+                if (wa.field_idx == i) seg_list.append(allocator, &wa.cont) catch unreachable;
+            }
+            if (seg_list.items.len == 0) {
+                ann_arms.append(allocator, ast.Continuation{
+                    .branch = allocator.dupe(u8, fname) catch unreachable,
+                    .binding = allocator.dupe(u8, "_") catch unreachable,
+                    .kind = .terminal,
+                    .condition = null,
+                    .node = .terminal,
+                    .indent = 1,
+                    .continuations = &[_]ast.Continuation{},
+                    .location = flow.location,
+                }) catch unreachable;
+                continue;
+            }
+            var arm2 = ast_functional.cloneContinuation(allocator, seg_list.items[0]) catch unreachable;
+            arm2.branch = allocator.dupe(u8, fname) catch unreachable;
+            arm2.kind = .terminal;
+            arm2.binding = if (seg_list.items[0].binding) |b| allocator.dupe(u8, b) catch unreachable else allocator.dupe(u8, "_") catch unreachable;
+            for (seg_list.items[1..]) |seg| {
+                var step2 = Graft.asVoidStep(allocator, seg);
+                if (seg.binding) |sb| {
+                    if (arm2.binding) |ab| {
+                        if (!std.mem.eql(u8, sb, ab) and !std.mem.eql(u8, sb, "_")) {
+                            Rewrite.rewriteIdentInCont(allocator, &step2, sb, ab);
+                        }
+                    }
+                }
+                Graft.atEnds(allocator, &arm2, &step2);
+            }
+            const guarded2 = arm2.condition != null;
+            ann_arms.append(allocator, arm2) catch unreachable;
+            if (guarded2) {
+                ann_arms.append(allocator, ast.Continuation{
+                    .branch = allocator.dupe(u8, fname) catch unreachable,
+                    .binding = allocator.dupe(u8, "_") catch unreachable,
+                    .kind = .terminal,
+                    .condition = null,
+                    .node = .terminal,
+                    .indent = arm2.indent,
+                    .continuations = &[_]ast.Continuation{},
+                    .location = flow.location,
+                }) catch unreachable;
+            }
+        }
+        const ann_call_args = allocator.alloc(ast.Arg, 1) catch unreachable;
+        ann_call_args[0] = ast.Arg{ .name = allocator.dupe(u8, "field") catch unreachable, .value = allocator.dupe(u8, "field") catch unreachable };
+        stripe_items.append(allocator, ast.Item{ .flow = ast.Flow{
+            .body = ast.rootSite(ast.Invocation{
+                .path = mkPath(allocator, flow.module, peek_name),
+                .args = ann_call_args,
+            }, ann_arms.toOwnedSlice(allocator) catch unreachable, flow.location),
+            .pre_label = null,
+            .impl_of = mkPath(allocator, flow.module, announce_name),
+            .super_shape = null,
+            .inline_body = null,
+            .preamble_code = null,
+            .is_pure = false,
+            .is_transitively_pure = false,
+            .location = flow.location,
+            .module = allocator.dupe(u8, flow.module) catch unreachable,
+        } }) catch unreachable;
+
+        // envwrite: write-only (no dispatch) - the chain-envelope's first
+        // half (690_009): all writes land, THEN announce dispatches.
+        {
+            const envw_name = std.fmt.allocPrint(allocator, "__store_envwrite_{s}", .{store_name}) catch unreachable;
+            const ew_in = allocator.alloc(ast.Field, 2) catch unreachable;
+            ew_in[0] = ast.Field{ .name = allocator.dupe(u8, "field") catch unreachable, .type = allocator.dupe(u8, "i64") catch unreachable };
+            ew_in[1] = ast.Field{ .name = allocator.dupe(u8, "value") catch unreachable, .type = allocator.dupe(u8, value_type) catch unreachable };
+            stripe_items.append(allocator, ast.Item{ .event_decl = ast.EventDecl{
+                .path = mkPath(allocator, flow.module, envw_name),
+                .input = ast.Shape{ .fields = ew_in },
+                .branches = &[_]ast.Branch{},
+                .is_public = false,
+                .is_implicit_flow = false,
+                .annotations = &[_][]const u8{},
+                .location = flow.location,
+                .module = allocator.dupe(u8, flow.module) catch unreachable,
+            } }) catch unreachable;
+            var ew = std.ArrayList(u8).initCapacity(allocator, 128) catch unreachable;
+            ew.appendSlice(allocator, "switch (field) {\n") catch unreachable;
+            for (field_names, 0..) |fname, i| {
+                const arm3 = std.fmt.allocPrint(allocator, "    {d} => __koru_store_{s}.{s} = value,\n", .{ i, store_name, fname }) catch unreachable;
+                ew.appendSlice(allocator, arm3) catch unreachable;
+            }
+            ew.appendSlice(allocator, "    else => unreachable,\n}\nreturn;") catch unreachable;
+            stripe_items.append(allocator, ast.Item{ .proc_decl = ast.ProcDecl{
+                .path = mkPath(allocator, flow.module, envw_name),
+                .body = ast.Source{ .text = ew.toOwnedSlice(allocator) catch unreachable, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
+                .annotations = &[_][]const u8{},
+                .target = allocator.dupe(u8, "zig") catch unreachable,
+                .location = flow.location,
+                .module = allocator.dupe(u8, flow.module) catch unreachable,
+            } }) catch unreachable;
+        }
+
+        // stripe: loop the fields, announcing each.
+        stripe_items.append(allocator, ast.Item{ .event_decl = ast.EventDecl{
+            .path = mkPath(allocator, flow.module, stripe_name),
+            .input = ast.Shape{ .fields = &[_]ast.Field{} },
+            .branches = &[_]ast.Branch{},
+            .is_public = false,
+            .is_implicit_flow = false,
+            .annotations = &[_][]const u8{},
+            .location = flow.location,
+            .module = allocator.dupe(u8, flow.module) catch unreachable,
+        } }) catch unreachable;
+        var sb2 = std.ArrayList(u8).initCapacity(allocator, 128) catch unreachable;
+        for (field_names, 0..) |_, i| {
+            const call2 = std.fmt.allocPrint(allocator, "main_module.{s}_event.handler(.{{ .field = {d} }});\n", .{ announce_name, i }) catch unreachable;
+            sb2.appendSlice(allocator, call2) catch unreachable;
+        }
+        sb2.appendSlice(allocator, "return;") catch unreachable;
+        stripe_items.append(allocator, ast.Item{ .proc_decl = ast.ProcDecl{
+            .path = mkPath(allocator, flow.module, stripe_name),
+            .body = ast.Source{ .text = sb2.toOwnedSlice(allocator) catch unreachable, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
+            .annotations = &[_][]const u8{},
+            .target = allocator.dupe(u8, "zig") catch unreachable,
+            .location = flow.location,
+            .module = allocator.dupe(u8, flow.module) catch unreachable,
+        } }) catch unreachable;
+    }
+
+    // ------------------------------------------------------------------
     // Assemble: the create site dissolves into a comment; the five
     // generated units append as top-level items.
     // ------------------------------------------------------------------
@@ -666,7 +2051,7 @@ const std = @import("std");
         .module = allocator.dupe(u8, flow.module) catch unreachable,
     } };
 
-    const appended = allocator.alloc(ast.Item, 5) catch unreachable;
+    const appended = allocator.alloc(ast.Item, 5 + stripe_items.items.len) catch unreachable;
     appended[0] = ast.Item{ .host_line = ast.HostLine{
         .content = cell_decl,
         .location = flow.location,
@@ -676,6 +2061,7 @@ const std = @import("std");
     appended[2] = apply_proc_item;
     appended[3] = write_event_item;
     appended[4] = impl_flow_item;
+    for (stripe_items.items, 0..) |si, sii| appended[5 + sii] = si;
 
     return .{ .transformed = .{ .replacement = replacement, .appended = appended } };
 }
@@ -715,6 +2101,11 @@ const std = @import("std");
             const inner = std.fmt.allocPrint(alloc, fmt, args) catch unreachable;
             const msg = std.fmt.allocPrint(alloc, "comptime {{ @compileError(\"{s}\"); }}", .{inner}) catch unreachable;
             return ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = loc, .module = module } };
+        }
+        fn mkPathH2(alloc: std.mem.Allocator, module: []const u8, name: []const u8) ast.DottedPath {
+            const segs2 = alloc.alloc([]const u8, 1) catch unreachable;
+            segs2[0] = alloc.dupe(u8, name) catch unreachable;
+            return ast.DottedPath{ .module_qualifier = alloc.dupe(u8, module) catch unreachable, .segments = segs2 };
         }
         fn isIdent(ch: u8) bool {
             return (ch >= 'a' and ch <= 'z') or (ch >= 'A' and ch <= 'Z') or (ch >= '0' and ch <= '9') or ch == '_' or ch == '-';
@@ -794,16 +2185,135 @@ const std = @import("std");
     if (writes.len == 0) {
         return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:stored: write block is empty", .{}) } };
     }
+
+    // THE CHAIN IS THE ENVELOPE ((i) lean, 690_009): a multi-field block
+    // is ONE atomic unit - every write lands (write-only envwrite), THEN
+    // dispatch runs in write order (announce, which reads settled state).
     if (writes.len > 1) {
-        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:stored: multi-field write blocks are the rung-two chain-envelope - one field per stored block for now", .{}) } };
+        // All targets must be the same singleton store this rung.
+        var env_store: []const u8 = "";
+        const env_fields = allocator.alloc([]const u8, writes.len) catch unreachable;
+        const env_values = allocator.alloc([]const u8, writes.len) catch unreachable;
+        for (writes, 0..) |wm, wi| {
+            const dotm = std.mem.indexOfScalar(u8, wm.name, '.') orelse {
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:stored: envelope target '{s}' must be store.field", .{wm.name}) } };
+            };
+            const st = wm.name[0..dotm];
+            if (env_store.len == 0) {
+                env_store = st;
+            } else if (!std.mem.eql(u8, env_store, st)) {
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:stored: a multi-field envelope writes ONE store this rung ('{s}' vs '{s}')", .{ env_store, st }) } };
+            }
+            env_fields[wi] = wm.name[dotm + 1 ..];
+            env_values[wi] = H.storeRefs(allocator, wm.value, st);
+        }
+        const order_env = H.fieldOrder(allocator, program, env_store) orelse {
+            return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:stored: unknown store '{s}'", .{env_store}) } };
+        };
+        const env_idx = allocator.alloc(usize, writes.len) catch unreachable;
+        for (env_fields, 0..) |ef, wi| {
+            env_idx[wi] = blk: {
+                for (order_env, 0..) |fname, i| {
+                    if (std.mem.eql(u8, fname, ef)) break :blk i;
+                }
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:stored: '{s}' is not a field of store '{s}'", .{ ef, env_store }) } };
+            };
+        }
+        // Build the chain: envwrite each, then announce each (write order).
+        const envw_name = std.fmt.allocPrint(allocator, "__store_envwrite_{s}", .{env_store}) catch unreachable;
+        const ann_name = std.fmt.allocPrint(allocator, "__store_announce_{s}", .{env_store}) catch unreachable;
+        const total = writes.len * 2;
+        var invs = allocator.alloc(ast.Invocation, total) catch unreachable;
+        for (writes, 0..) |_, wi| {
+            const a1 = allocator.alloc(ast.Arg, 2) catch unreachable;
+            a1[0] = ast.Arg{ .name = allocator.dupe(u8, "field") catch unreachable, .value = std.fmt.allocPrint(allocator, "{d}", .{env_idx[wi]}) catch unreachable };
+            a1[1] = ast.Arg{ .name = allocator.dupe(u8, "value") catch unreachable, .value = env_values[wi] };
+            invs[wi] = ast.Invocation{
+                .path = H.mkPathH2(allocator, flow.module, envw_name),
+                .args = a1,
+            };
+            const a2 = allocator.alloc(ast.Arg, 1) catch unreachable;
+            a2[0] = ast.Arg{ .name = allocator.dupe(u8, "field") catch unreachable, .value = std.fmt.allocPrint(allocator, "{d}", .{env_idx[wi]}) catch unreachable };
+            invs[writes.len + wi] = ast.Invocation{
+                .path = H.mkPathH2(allocator, flow.module, ann_name),
+                .args = a2,
+            };
+        }
+        // Nested void chain, last step innermost.
+        var chain: []ast.Continuation = &[_]ast.Continuation{};
+        var k: usize = total;
+        while (k > 1) {
+            k -= 1;
+            const one = allocator.alloc(ast.Continuation, 1) catch unreachable;
+            one[0] = ast.Continuation{
+                .branch = allocator.dupe(u8, "") catch unreachable,
+                .binding = null,
+                .kind = .terminal,
+                .condition = null,
+                .node = .{ .invocation = invs[k] },
+                .indent = 1,
+                .continuations = chain,
+                .is_transformed_subtree = true,
+                .location = flow.location,
+            };
+            chain = one;
+        }
+        return .{ .transformed = .{ .replacement = ast.Item{ .flow = ast.Flow{
+            .body = ast.rootSite(invs[0], chain, flow.location),
+            .pre_label = null,
+            .impl_of = flow.impl_of,
+            .super_shape = null,
+            .inline_body = null,
+            .preamble_code = null,
+            .is_pure = false,
+            .is_transitively_pure = false,
+            .location = flow.location,
+            .module = allocator.dupe(u8, flow.module) catch unreachable,
+        } } } };
     }
 
     const w = writes[0];
-    const dot = std.mem.indexOfScalar(u8, w.name, '.') orelse {
-        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:stored target '{s}' must be a dotted store path (store.field)", .{w.name}) } };
+    // Two lvalue heads this rung (O2: one path grammar, four heads):
+    //   `store.field`            — elided-singleton head (singleton stores)
+    //   `store[handle].field`    — handle / query-row head (plural stores)
+    var target_store: []const u8 = undefined;
+    var target_field: []const u8 = undefined;
+    var row_expr: ?[]const u8 = null;
+    if (std.mem.indexOfScalar(u8, w.name, '[')) |lb| {
+        const rb = std.mem.lastIndexOfScalar(u8, w.name, ']') orelse {
+            return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:stored: malformed addressing head '{s}'", .{w.name}) } };
+        };
+        if (rb + 1 >= w.name.len or w.name[rb + 1] != '.') {
+            return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:stored: addressing head '{s}' needs a field: store[handle].field", .{w.name}) } };
+        }
+        target_store = std.mem.trim(u8, w.name[0..lb], " ");
+        row_expr = std.mem.trim(u8, w.name[lb + 1 .. rb], " ");
+        target_field = w.name[rb + 2 ..];
+    } else {
+        const dot = std.mem.indexOfScalar(u8, w.name, '.') orelse {
+            return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:stored target '{s}' must be a dotted store path (store.field)", .{w.name}) } };
+        };
+        target_store = w.name[0..dot];
+        target_field = w.name[dot + 1 ..];
+    }
+
+    // A plural store's write surface is row-addressed; the elided-singleton
+    // head on it has no row to mean.
+    const is_plural_store = blk: {
+        const inserth_name = std.fmt.allocPrint(allocator, "__store_inserth_{s}", .{target_store}) catch unreachable;
+        for (program.items) |pi| {
+            if (pi != .event_decl) continue;
+            const ed = &pi.event_decl;
+            if (ed.path.segments.len == 1 and std.mem.eql(u8, ed.path.segments[0], inserth_name)) break :blk true;
+        }
+        break :blk false;
     };
-    const target_store = w.name[0..dot];
-    const target_field = w.name[dot + 1 ..];
+    if (row_expr == null and is_plural_store) {
+        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:stored: '{s}' is a plural store - address the row ({s}[handle].{s}, or write through a query branch)", .{ target_store, target_store, target_field }) } };
+    }
+    if (row_expr != null and !is_plural_store) {
+        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:stored: '{s}' is a singleton store - write it as {s}.{s}", .{ target_store, target_store, target_field }) } };
+    }
 
     const order = H.fieldOrder(allocator, program, target_store) orelse {
         return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:stored: unknown store '{s}' - no std/store:create({s}) found", .{ target_store, target_store }) } };
@@ -820,12 +2330,21 @@ const std = @import("std");
     const write_name = std.fmt.allocPrint(allocator, "__store_write_{s}", .{target_store}) catch unreachable;
     const segs = allocator.alloc([]const u8, 1) catch unreachable;
     segs[0] = write_name;
-    const call_args = allocator.alloc(ast.Arg, 2) catch unreachable;
-    call_args[0] = ast.Arg{
+    const n_args: usize = if (row_expr != null) 3 else 2;
+    const call_args = allocator.alloc(ast.Arg, n_args) catch unreachable;
+    var ai: usize = 0;
+    if (row_expr) |re| {
+        call_args[ai] = ast.Arg{
+            .name = allocator.dupe(u8, "row") catch unreachable,
+            .value = allocator.dupe(u8, re) catch unreachable,
+        };
+        ai += 1;
+    }
+    call_args[ai] = ast.Arg{
         .name = allocator.dupe(u8, "field") catch unreachable,
         .value = std.fmt.allocPrint(allocator, "{d}", .{field_idx}) catch unreachable,
     };
-    call_args[1] = ast.Arg{
+    call_args[ai + 1] = ast.Arg{
         .name = allocator.dupe(u8, "value") catch unreachable,
         .value = rewritten_expr,
     };
@@ -840,7 +2359,7 @@ const std = @import("std");
     return .{ .transformed = .{ .replacement = ast.Item{ .flow = ast.Flow{
         .body = ast.rootSite(write_inv, &[_]ast.Continuation{}, flow.location),
         .pre_label = null,
-        .impl_of = null,
+        .impl_of = flow.impl_of, // preserved: the site may BE an impl flow's head (e.g. a query body)
         .super_shape = null,
         .inline_body = null,
         .preamble_code = null,
@@ -1111,4 +2630,485 @@ const std = @import("std");
         return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:watch({s}): the watch precedes its store's create in source - declare the store first (rung-one ordering)", .{store_name}) } };
     }
     return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:watch({s}): unknown store - no std/store:create({s}) found", .{ store_name, store_name }) } };
+}
+
+// ============================================================================
+// STORE.INSERT — append a row to a plural store (rung two)
+// ============================================================================
+//
+//   ~std/store:insert(game) { hp: 30, kind: 1 }              — bare append
+//   ~std/store:insert(game) { hp: 50, kind: 1 } | row r |> … — handle form
+//
+// Rewritten into `__store_insert_<s>(…)` (void) or `__store_inserth_<s>(…)`
+// (`| row i64`) — the site's own continuations ride along. `__site_line`
+// carries the site's source position so standing query enters stay honest
+// about program order (a query only hears inserts BELOW it in source).
+
+~[keyword|comptime|transform]pub event insert {
+    expr: Expression,
+    source: Source,
+    invocation: *const Invocation,
+    item: *const Item,
+    program: *const Program,
+    allocator: std.mem.Allocator
+}
+| transformed SiteResult
+
+~[transform]proc insert|zig {
+    const ast = @import("ast");
+    const ast_functional = @import("ast_functional");
+    const struct_literal = @import("struct_literal");
+
+    if (item.* != .flow) @panic("store:insert transform: containing item is not a flow - walker dispatch contract broken");
+    const flow = &item.flow;
+
+    const H = struct {
+        fn stripQuotes(n: []const u8) []const u8 {
+            if (n.len >= 2 and n[0] == '"') return n[1 .. n.len - 1];
+            return n;
+        }
+        fn errItem(alloc: std.mem.Allocator, loc: anytype, module: []const u8, comptime fmt: []const u8, args: anytype) ast.Item {
+            const inner = std.fmt.allocPrint(alloc, fmt, args) catch unreachable;
+            const msg = std.fmt.allocPrint(alloc, "comptime {{ @compileError(\"{s}\"); }}", .{inner}) catch unreachable;
+            return ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = loc, .module = module } };
+        }
+        fn mkPathH(alloc: std.mem.Allocator, module: []const u8, name: []const u8) ast.DottedPath {
+            const segs = alloc.alloc([]const u8, 1) catch unreachable;
+            segs[0] = alloc.dupe(u8, name) catch unreachable;
+            return ast.DottedPath{ .module_qualifier = alloc.dupe(u8, module) catch unreachable, .segments = segs };
+        }
+        // Column order from the generated apply event (coordinator ran) or
+        // the untransformed create's seed block.
+        fn fieldOrder(alloc: std.mem.Allocator, prog: *const ast.Program, store: []const u8) ?[]const []const u8 {
+            const apply_name = std.fmt.allocPrint(alloc, "__store_apply_{s}", .{store}) catch unreachable;
+            for (prog.items) |pi| {
+                if (pi != .event_decl) continue;
+                const ed = &pi.event_decl;
+                if (ed.path.segments.len == 1 and std.mem.eql(u8, ed.path.segments[0], apply_name)) {
+                    const names = alloc.alloc([]const u8, ed.branches.len) catch unreachable;
+                    for (ed.branches, 0..) |b, i| names[i] = b.name;
+                    return names;
+                }
+            }
+            for (prog.items) |pi| {
+                if (pi != .flow) continue;
+                const f = &pi.flow;
+                const inv = f.inv();
+                if (inv.path.segments.len != 1 or !std.mem.eql(u8, inv.path.segments[0], "create")) continue;
+                const mq = inv.path.module_qualifier orelse continue;
+                if (!std.mem.eql(u8, mq, "std.store")) continue;
+                var name_matches = false;
+                var seed: ?[]const u8 = null;
+                for (inv.args) |a| {
+                    if (std.mem.eql(u8, a.name, "expr")) {
+                        name_matches = std.mem.eql(u8, stripQuotes(a.value), store);
+                    } else if (std.mem.eql(u8, a.name, "source")) {
+                        seed = a.value;
+                    }
+                }
+                if (!name_matches or seed == null) continue;
+                const braced = std.fmt.allocPrint(alloc, "{{{s}}}", .{seed.?}) catch unreachable;
+                const cf = struct_literal.parseFields(alloc, braced) catch &[_]struct_literal.StructField{};
+                if (cf.len == 0) return null;
+                const names = alloc.alloc([]const u8, cf.len) catch unreachable;
+                for (cf, 0..) |c, i| names[i] = c.name;
+                return names;
+            }
+            return null;
+        }
+    };
+
+    var store_name: []const u8 = "";
+    var block_text: ?[]const u8 = null;
+    for (invocation.args) |arg| {
+        if (std.mem.eql(u8, arg.name, "expr")) store_name = H.stripQuotes(arg.value);
+        if (std.mem.eql(u8, arg.name, "source")) block_text = arg.value;
+    }
+    if (store_name.len == 0 or block_text == null) {
+        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:insert requires a store name and a row block: insert(name) {{ field: value }}", .{}) } };
+    }
+
+    const order = H.fieldOrder(allocator, program, store_name) orelse {
+        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:insert: unknown store '{s}' - no std/store:create({s}) found", .{ store_name, store_name }) } };
+    };
+
+    const braced = std.fmt.allocPrint(allocator, "{{{s}}}", .{block_text.?}) catch unreachable;
+    const row_fields = struct_literal.parseFields(allocator, braced) catch &[_]struct_literal.StructField{};
+    if (row_fields.len != order.len) {
+        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:insert({s}): a row block names every column exactly once ({d} given, {d} declared)", .{ store_name, row_fields.len, order.len }) } };
+    }
+
+    // Args in declared column order; every column required.
+    const call_args = allocator.alloc(ast.Arg, order.len + 1) catch unreachable;
+    for (order, 0..) |col, i| {
+        const val: []const u8 = blk: {
+            for (row_fields) |rf| {
+                if (std.mem.eql(u8, rf.name, col)) break :blk rf.value;
+            }
+            return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:insert({s}): row block is missing column '{s}'", .{ store_name, col }) } };
+        };
+        call_args[i] = ast.Arg{
+            .name = allocator.dupe(u8, col) catch unreachable,
+            .value = allocator.dupe(u8, val) catch unreachable,
+        };
+    }
+    call_args[order.len] = ast.Arg{
+        .name = allocator.dupe(u8, "__site_line") catch unreachable,
+        .value = std.fmt.allocPrint(allocator, "{d}", .{flow.location.line}) catch unreachable,
+    };
+
+    // Handle form iff the site handles `| row …`; anything else on an
+    // insert site is a loud wall this rung.
+    const site_is_head = invocation == flow.inv();
+    var has_row_cont = false;
+    var has_full_cont = false;
+    if (site_is_head) {
+        for (flow.body.continuations) |*c| {
+            const bname = std.mem.trim(u8, c.branch, " ");
+            if (std.mem.eql(u8, bname, "row")) {
+                has_row_cont = true;
+            } else if (std.mem.eql(u8, bname, "full")) {
+                has_full_cont = true;
+            } else {
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:insert({s}): branch '{s}' - insert answers `| row <binding>` and `| full` only (inserted/removed lifecycle is pinned at 690_016)", .{ store_name, c.branch }) } };
+            }
+        }
+    }
+
+    const target = if (has_full_cont)
+        std.fmt.allocPrint(allocator, "__store_insertf_{s}", .{store_name}) catch unreachable
+    else if (has_row_cont)
+        std.fmt.allocPrint(allocator, "__store_inserth_{s}", .{store_name}) catch unreachable
+    else
+        std.fmt.allocPrint(allocator, "__store_insert_{s}", .{store_name}) catch unreachable;
+
+    const call_inv = ast.Invocation{
+        .path = H.mkPathH(allocator, flow.module, target),
+        .args = call_args,
+    };
+
+    const conts: []ast.Continuation = if (has_row_cont or has_full_cont) blk: {
+        const cloned = allocator.alloc(ast.Continuation, flow.body.continuations.len) catch unreachable;
+        for (flow.body.continuations, 0..) |*c, i| {
+            cloned[i] = ast_functional.cloneContinuation(allocator, c) catch unreachable;
+        }
+        break :blk cloned;
+    } else &[_]ast.Continuation{};
+
+    return .{ .transformed = .{ .replacement = ast.Item{ .flow = ast.Flow{
+        .body = ast.rootSite(call_inv, conts, flow.location),
+        .pre_label = null,
+        .impl_of = flow.impl_of, // preserved: the site may BE an impl flow's head (e.g. a query body)
+        .super_shape = null,
+        .inline_body = null,
+        .preamble_code = null,
+        .is_pure = false,
+        .is_transitively_pure = false,
+        .location = flow.location,
+        .module = allocator.dupe(u8, flow.module) catch unreachable,
+    } } } };
+}
+
+// ============================================================================
+// STORE.QUERY — row-level subscription + imperative sweep (rung two)
+// ============================================================================
+//
+// The coordinator (create) has already transplanted this site's projection,
+// guard, and body into the per-line qrow/qbody units and spliced standing
+// enters into the insert path. The site itself becomes the SWEEP over the
+// rows that exist when its program position executes ((l) lean: the
+// imperative sweep IS the stripe).
+
+~[keyword|comptime|transform]pub event query {
+    expr: Expression,
+    invocation: *const Invocation,
+    item: *const Item,
+    program: *const Program,
+    allocator: std.mem.Allocator
+}
+| transformed SiteResult
+
+~[transform]proc query|zig {
+    const ast = @import("ast");
+
+    if (item.* != .flow) @panic("store:query transform: containing item is not a flow - walker dispatch contract broken");
+    const flow = &item.flow;
+
+    const H = struct {
+        fn stripQuotes(n: []const u8) []const u8 {
+            if (n.len >= 2 and n[0] == '"') return n[1 .. n.len - 1];
+            return n;
+        }
+        fn errItem(alloc: std.mem.Allocator, loc: anytype, module: []const u8, comptime fmt: []const u8, args: anytype) ast.Item {
+            const inner = std.fmt.allocPrint(alloc, fmt, args) catch unreachable;
+            const msg = std.fmt.allocPrint(alloc, "comptime {{ @compileError(\"{s}\"); }}", .{inner}) catch unreachable;
+            return ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = loc, .module = module } };
+        }
+        fn mkPathH(alloc: std.mem.Allocator, module: []const u8, name: []const u8) ast.DottedPath {
+            const segs = alloc.alloc([]const u8, 1) catch unreachable;
+            segs[0] = alloc.dupe(u8, name) catch unreachable;
+            return ast.DottedPath{ .module_qualifier = alloc.dupe(u8, module) catch unreachable, .segments = segs };
+        }
+    };
+
+    var store_name: []const u8 = "";
+    for (invocation.args) |arg| {
+        if (std.mem.eql(u8, arg.name, "expr")) store_name = H.stripQuotes(arg.value);
+    }
+    if (store_name.len == 0) {
+        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:query requires a store name: query(name)", .{}) } };
+    }
+
+    // The coordinator names this site's units by its source line.
+    const qsweep_name = std.fmt.allocPrint(allocator, "__store_qsweep_{s}_L{d}", .{ store_name, flow.location.line }) catch unreachable;
+    var unit_exists = false;
+    for (program.items) |pi| {
+        if (pi != .event_decl) continue;
+        const ed = &pi.event_decl;
+        if (ed.path.segments.len == 1 and std.mem.eql(u8, ed.path.segments[0], qsweep_name)) {
+            unit_exists = true;
+            break;
+        }
+    }
+    if (!unit_exists) {
+        var create_exists = false;
+        for (program.items) |pi| {
+            if (pi != .flow) continue;
+            const f = &pi.flow;
+            const inv = f.inv();
+            if (inv.path.segments.len != 1 or !std.mem.eql(u8, inv.path.segments[0], "create")) continue;
+            const mq = inv.path.module_qualifier orelse continue;
+            if (!std.mem.eql(u8, mq, "std.store")) continue;
+            for (inv.args) |a| {
+                if (std.mem.eql(u8, a.name, "expr") and std.mem.eql(u8, H.stripQuotes(a.value), store_name)) create_exists = true;
+            }
+        }
+        if (create_exists) {
+            return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:query({s}): the query precedes its store's create in source - declare the store first", .{store_name}) } };
+        }
+        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:query({s}): unknown store - no std/store:create({s}) found (or the store is a seeded singleton - queries need a plural store)", .{ store_name, store_name }) } };
+    }
+
+    const sweep_inv = ast.Invocation{
+        .path = H.mkPathH(allocator, flow.module, qsweep_name),
+        .args = &[_]ast.Arg{},
+    };
+    return .{ .transformed = .{ .replacement = ast.Item{ .flow = ast.Flow{
+        .body = ast.rootSite(sweep_inv, &[_]ast.Continuation{}, flow.location),
+        .pre_label = null,
+        .impl_of = flow.impl_of, // preserved: the site may BE an impl flow's head (e.g. a query body)
+        .super_shape = null,
+        .inline_body = null,
+        .preamble_code = null,
+        .is_pure = false,
+        .is_transitively_pure = false,
+        .location = flow.location,
+        .module = allocator.dupe(u8, flow.module) catch unreachable,
+    } } } };
+}
+
+// ============================================================================
+// STORE.TAKE — extract a row with ownership through the handle head
+// ============================================================================
+//
+//   std/store:take(game[r]) | item i |> …
+//
+// Swap-remove (legal: position is never identity — O2/O10.iii). Compiles to
+// `__store_take_<s>(row: <handle>)`; the `| item {fields}` branch carries
+// the row out. Obligation wiring (a taken row must be consumed or given
+// back — 690_007/690_015) rides on the take event's phantom.
+
+~[keyword|comptime|transform]pub event take {
+    expr: Expression,
+    invocation: *const Invocation,
+    item: *const Item,
+    program: *const Program,
+    allocator: std.mem.Allocator
+}
+| transformed SiteResult
+
+~[transform]proc take|zig {
+    const ast = @import("ast");
+    const ast_functional = @import("ast_functional");
+
+    if (item.* != .flow) @panic("store:take transform: containing item is not a flow - walker dispatch contract broken");
+    const flow = &item.flow;
+
+    const H = struct {
+        fn stripQuotes(n: []const u8) []const u8 {
+            if (n.len >= 2 and n[0] == '"') return n[1 .. n.len - 1];
+            return n;
+        }
+        fn errItem(alloc: std.mem.Allocator, loc: anytype, module: []const u8, comptime fmt: []const u8, args: anytype) ast.Item {
+            const inner = std.fmt.allocPrint(alloc, fmt, args) catch unreachable;
+            const msg = std.fmt.allocPrint(alloc, "comptime {{ @compileError(\"{s}\"); }}", .{inner}) catch unreachable;
+            return ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = loc, .module = module } };
+        }
+        fn mkPathH(alloc: std.mem.Allocator, module: []const u8, name: []const u8) ast.DottedPath {
+            const segs = alloc.alloc([]const u8, 1) catch unreachable;
+            segs[0] = alloc.dupe(u8, name) catch unreachable;
+            return ast.DottedPath{ .module_qualifier = alloc.dupe(u8, module) catch unreachable, .segments = segs };
+        }
+    };
+
+    var target_text: []const u8 = "";
+    for (invocation.args) |arg| {
+        if (std.mem.eql(u8, arg.name, "expr")) target_text = H.stripQuotes(arg.value);
+    }
+    const lb = std.mem.indexOfScalar(u8, target_text, '[') orelse {
+        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:take addresses a row: take(store[handle]) - '{s}' has no addressing head", .{target_text}) } };
+    };
+    if (target_text.len == 0 or target_text[target_text.len - 1] != ']') {
+        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:take: malformed addressing head '{s}'", .{target_text}) } };
+    }
+    const store_name = std.mem.trim(u8, target_text[0..lb], " ");
+    const row_expr = std.mem.trim(u8, target_text[lb + 1 .. target_text.len - 1], " ");
+    if (store_name.len == 0 or row_expr.len == 0) {
+        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:take: malformed addressing head '{s}' - take(store[handle])", .{target_text}) } };
+    }
+
+    const take_name = std.fmt.allocPrint(allocator, "__store_take_{s}", .{store_name}) catch unreachable;
+    var unit_exists = false;
+    for (program.items) |pi| {
+        if (pi != .event_decl) continue;
+        const ed = &pi.event_decl;
+        if (ed.path.segments.len == 1 and std.mem.eql(u8, ed.path.segments[0], take_name)) {
+            unit_exists = true;
+            break;
+        }
+    }
+    if (!unit_exists) {
+        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:take({s}[...]): unknown or not-yet-created plural store '{s}'", .{ store_name, store_name }) } };
+    }
+
+    const call_args = allocator.alloc(ast.Arg, 1) catch unreachable;
+    call_args[0] = ast.Arg{
+        .name = allocator.dupe(u8, "row") catch unreachable,
+        .value = allocator.dupe(u8, row_expr) catch unreachable,
+    };
+    const call_inv = ast.Invocation{
+        .path = H.mkPathH(allocator, flow.module, take_name),
+        .args = call_args,
+    };
+
+    // The take site is usually NESTED (under insert's `| row r`); its own
+    // continuations (`| item i |> …`) ride along on the replacement.
+    const FindSite = struct {
+        fn call(cont: *const ast.Continuation, target: *const ast.Invocation) ?*const ast.Continuation {
+            if (cont.node) |*n| {
+                if (n.* == .invocation and &n.invocation == target) return cont;
+            }
+            for (cont.continuations) |*c| {
+                if (call(c, target)) |found| return found;
+            }
+            return null;
+        }
+    }.call;
+    const site = FindSite(&flow.body, invocation);
+
+    const conts: []ast.Continuation = blk: {
+        if (site) |sc| {
+            const cloned = allocator.alloc(ast.Continuation, sc.continuations.len) catch unreachable;
+            for (sc.continuations, 0..) |*c, i| {
+                cloned[i] = ast_functional.cloneContinuation(allocator, c) catch unreachable;
+            }
+            break :blk cloned;
+        }
+        break :blk &[_]ast.Continuation{};
+    };
+
+    return .{ .transformed = .{ .replacement = ast.Item{ .flow = ast.Flow{
+        .body = ast.rootSite(call_inv, conts, flow.location),
+        .pre_label = null,
+        .impl_of = flow.impl_of, // preserved: the site may BE an impl flow's head (e.g. a query body)
+        .super_shape = null,
+        .inline_body = null,
+        .preamble_code = null,
+        .is_pure = false,
+        .is_transitively_pure = false,
+        .location = flow.location,
+        .module = allocator.dupe(u8, flow.module) catch unreachable,
+    } } } };
+}
+
+// ============================================================================
+// STORE.STRIPE — the imperative sweep verb ((l)/O13, 690_014)
+// ============================================================================
+//
+//   ~std/store:stripe(game)
+//
+// Announce-only: standing watches re-fire with CURRENT values. No write
+// happens, so interceptors (the write contract) do NOT run. Compiles to
+// the generated `__store_stripe_<s>` unit.
+
+~[keyword|comptime|transform]pub event stripe {
+    expr: Expression,
+    invocation: *const Invocation,
+    item: *const Item,
+    program: *const Program,
+    allocator: std.mem.Allocator
+}
+| transformed SiteResult
+
+~[transform]proc stripe|zig {
+    const ast = @import("ast");
+
+    if (item.* != .flow) @panic("store:stripe transform: containing item is not a flow - walker dispatch contract broken");
+    const flow = &item.flow;
+
+    const H = struct {
+        fn stripQuotes(n: []const u8) []const u8 {
+            if (n.len >= 2 and n[0] == '"') return n[1 .. n.len - 1];
+            return n;
+        }
+        fn errItem(alloc: std.mem.Allocator, loc: anytype, module: []const u8, comptime fmt: []const u8, args: anytype) ast.Item {
+            const inner = std.fmt.allocPrint(alloc, fmt, args) catch unreachable;
+            const msg = std.fmt.allocPrint(alloc, "comptime {{ @compileError(\"{s}\"); }}", .{inner}) catch unreachable;
+            return ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = loc, .module = module } };
+        }
+        fn mkPathH(alloc: std.mem.Allocator, module: []const u8, name: []const u8) ast.DottedPath {
+            const segs = alloc.alloc([]const u8, 1) catch unreachable;
+            segs[0] = alloc.dupe(u8, name) catch unreachable;
+            return ast.DottedPath{ .module_qualifier = alloc.dupe(u8, module) catch unreachable, .segments = segs };
+        }
+    };
+
+    var store_name: []const u8 = "";
+    for (invocation.args) |arg| {
+        if (std.mem.eql(u8, arg.name, "expr")) store_name = H.stripQuotes(arg.value);
+    }
+    if (store_name.len == 0) {
+        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:stripe requires a store name: stripe(name)", .{}) } };
+    }
+
+    const stripe_name = std.fmt.allocPrint(allocator, "__store_stripe_{s}", .{store_name}) catch unreachable;
+    var unit_exists = false;
+    for (program.items) |pi| {
+        if (pi != .event_decl) continue;
+        const ed = &pi.event_decl;
+        if (ed.path.segments.len == 1 and std.mem.eql(u8, ed.path.segments[0], stripe_name)) {
+            unit_exists = true;
+            break;
+        }
+    }
+    if (!unit_exists) {
+        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:stripe({s}): unknown store, or a store shape without a stripe unit this rung (plural / {{old,new}}-mode stripe is a later slice)", .{store_name}) } };
+    }
+
+    const stripe_inv = ast.Invocation{
+        .path = H.mkPathH(allocator, flow.module, stripe_name),
+        .args = &[_]ast.Arg{},
+    };
+    return .{ .transformed = .{ .replacement = ast.Item{ .flow = ast.Flow{
+        .body = ast.rootSite(stripe_inv, &[_]ast.Continuation{}, flow.location),
+        .pre_label = null,
+        .impl_of = flow.impl_of,
+        .super_shape = null,
+        .inline_body = null,
+        .preamble_code = null,
+        .is_pure = false,
+        .is_transitively_pure = false,
+        .location = flow.location,
+        .module = allocator.dupe(u8, flow.module) catch unreachable,
+    } } } };
 }

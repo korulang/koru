@@ -1,6 +1,6 @@
-IDEA PIN (T8): the storage backend is DI-able via optional resume arms —
-the store declares `! ?persist`; a consumer installs the handler and every
-write flows through it (called BY the store, so deltas see every write);
-nobody installs it and presence resolves at comptime, the in-memory
-layout inlines, zero cost. Arm shape (void side-effecting vs scalar
-resume) is the ORM-showcase open; spelling PROVISIONAL.
+IDEA PIN (T8) — DESIGN-GATED (2026-07-05 sweep): `! ?persist`
+optional-arm DI needs the T8 firing-granularity ruling (per-write?
+batch?) AND the connection-purity resolution (a handler holding a live
+conn vs transplant purity — the ORM-showcase collision). Optional-arm
+machinery exists (400_144); the store-side semantics are the open half.
+Not machinery-cheap; needs the walk.

@@ -33,6 +33,12 @@ not invention.
 
 1. **Scalar widening** — f32/f64 (and other int widths) column types with
    seeded and bare-type declarations. Kernel precedent applies directly.
+   **TIER 1 SHIPPED for singletons (2026-07-05, spelling pin 690_021
+   GREEN):** uniform-type i64/i32/f64/f32 seeded columns flow through
+   the whole write path (cell, apply/write value type, envwrite, peek/
+   announce). Mixed-type stores and PLURAL column widening are walled
+   loudly (per-field write events / typed SoA columns = the remainder
+   of this tier).
 2. **Fixed-arity vector fields** — `vec3`-shaped columns. Substrate
    candidate: 2-D cells (320_057, the indexed-lvalue shape O2's handle
    head already leans on). Open: is a vec3 one column of 3-lane elements

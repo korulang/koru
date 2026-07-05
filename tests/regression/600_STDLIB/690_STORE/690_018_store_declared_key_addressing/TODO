@@ -1,5 +1,8 @@
-IDEA PIN (O2 four-heads ruling, head 3): a field marked key at create
-makes `pool[id: 7].hp` a legal addressing head; the key index is a
-DECLARED cost (lands on ruling (g): costs live at the declaration). Key
-MARKING spelling PROVISIONAL; key COLLISION policy is the gauntlet-2
-open (reject-or-branch, never silent overwrite).
+IDEA PIN (O2 head 3) — WALLED on infra (2026-07-05 sweep): key
+addressing as an LVALUE (stored target) is buildable today, but the pin
+also uses `pool[id: 7].hp` as an RVALUE inside a print interpolation in
+ORDINARY user flow text — rewriting that needs either whole-program
+rewrite capability for store transforms (taps-style whole_program
+rebuild; SiteResult is replacement+appended only) or expression-layer
+lowering of key paths. Infrastructure/design fork — float to Lars.
+Lvalue-only subset could pin separately if wanted.

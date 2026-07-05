@@ -2888,7 +2888,10 @@ fn emitSubflowContinuationsWithDepth(
                             }
                             try emitter.write(" }");
                         },
-                        else => {},
+                        // A terminal (or any node this expression path can't
+                        // lower) must still be a Zig expression — an empty
+                        // block, never NOTHING (`.mode => ,` is a parse error).
+                        else => try emitter.write("{}"),
                     }
                 } else {
                     try emitter.write("{}");

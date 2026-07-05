@@ -30,5 +30,7 @@
 ~std/store:insert(game) { hp: 60, kind: 2 }
 ~std/store:insert(game) { hp: 80, kind: 1 }
 
+// (@divTrunc, not `/`: integer-division LOWERING is the expression-layer
+// gap pinned at 010_063 — this pin tests the addressing head, not division.)
 ~std/store:query(game)
-! query { entity.hp, entity.kind } when kind == 1 |> std/store:stored { entity.hp: entity.hp / 2 }
+! query { entity.hp, entity.kind } when kind == 1 |> std/store:stored { entity.hp: @divTrunc(entity.hp, 2) }
