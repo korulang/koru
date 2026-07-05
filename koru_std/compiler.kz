@@ -276,6 +276,7 @@ pub const CompilerContext = struct {
     flow_checker_module.addImport("log", log_module);
     flow_checker_module.addImport("branch_checker", branch_checker_module);
     flow_checker_module.addImport("annotation_parser", annotation_parser_module);
+    flow_checker_module.addImport("expression_parser", expression_parser_module);
 
     // Phantom semantic checker - validates phantom type states
     const phantom_semantic_checker_module = b.createModule(.{

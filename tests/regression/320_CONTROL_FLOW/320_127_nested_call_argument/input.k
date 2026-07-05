@@ -1,17 +1,14 @@
-// PIN (2026-07-05, honest red — RULED by Lars this session): a value-event
-// call nested directly as a named argument to another call —
-// r1(x: r1(x: 5)) — is ILLEGAL. The language idiom is bind-first:
+// PIN (2026-07-05, Lars-ruled): a value-event call nested directly as a
+// named argument to another call — r1(x: r1(x: 5)) — is ILLEGAL. The
+// language idiom is bind-first:
 //     r1(x: 5): a |> r1(x: a)
-// and the corpus is uniformly written that way.
+// and the corpus is uniformly written that way. Composition lives in the
+// flow, where purity, obligations, and lifetimes are checkable — never
+// inside expressions.
 //
-// Today the compiler ACCEPTS this at Stage A/B and then pastes the inner
-// call's KORU SYNTAX VERBATIM into the emitted Zig, dying at Stage D with a
-// raw host error (output_emitted.zig: expected ')', found ':'). That is the
-// defect this pin holds red: the koru-level wall doesn't exist, and a Zig
-// leak stands where the diagnostic should be.
-//
-// Goes green when the compiler rejects this at the koru level with a
-// diagnostic that names the construct and hints bind-the-inner-result-first.
+// Guarded by the KORU104 expression-admission wall (flow_checker, Stage A).
+// Before the wall, this passed Stage A/B and the emitter pasted the inner
+// call's Koru syntax verbatim into emitted Zig (raw Stage-D host error).
 // Surfaced by the wordfreq kernel port (koru-benchmarks 19/22).
 import std/io
 

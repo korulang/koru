@@ -1,7 +1,7 @@
 A call inside a FOR range-bound expression is illegal — calls are not
 expressions; the idiom is bind-first (`g(a: 4): n |> for(1..n)`).
 
-INTENTIONAL PIN — currently RED as wrong-error: the compiler accepts the
-shape and leaks the call's Koru syntax verbatim into emitted Zig (raw
-Stage-D host error). One of the five open surfaces mapped 2026-07-05.
-Goes green when the single expression-admission wall lands.
+Guarded by the KORU104 expression-admission wall (flow_checker, Stage A) —
+for-bounds parse as invocation arguments, so the argument walk covers
+them. Previously the call's Koru syntax leaked verbatim into emitted Zig
+(raw Stage-D error).

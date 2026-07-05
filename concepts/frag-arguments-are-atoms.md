@@ -22,31 +22,41 @@ feeding an outer call) — is written bind-first: dataflow stays visible in
 the chain, where the language's checkers and the reader can see it. Nesting
 calls in arguments would smuggle dataflow out of the flow.
 
-Compiler state vs. this belief — the full surface map (probed 2026-07-05,
-seven probes, all SHOWN):
+**The wall is BUILT (2026-07-05, same session as the ruling): KORU104, the
+expression-admission wall**, in flow_checker's frontend pass (Stage A,
+pre-transform — every text it judges is user-authored). One predicate
+(`expression_parser.textContainsCall`: structural parse + string-aware
+raw-scan fallback), one walk over every expression carrier reachable from
+a flow: invocation arguments (which covers if-conditions and for-bounds —
+both parse as invocation args), `when` clauses, produce (`->`) bodies
+(including `immediate_impl` items, the bare-return impl kind), branch-
+constructor and captured fields, label-jump args, body-position
+expressions. Diagnostic: "nested call in <surface> — calls are not
+expressions; use event chaining: bind the result first."
 
-- **Guarded (2):** branch-constructor fields (parser.zig PARSE003,
-  structural containsFunctionCall + raw-scan fallback) and std/io
-  interpolation expressions (io.kz @compileError). Both already say "use
-  event chaining instead" — the wall's canonical hint.
-- **Open (5):** invocation arguments (pin 320_127), if-conditions
-  (320_128), produce `->` RHS (320_129), captured fields (320_130 — the
-  PARSE003 guard does NOT cover captured), for range-bounds (320_131).
-  All five accept the shape through Stage A/B and leak the call's Koru
-  syntax verbatim into emitted Zig (raw Stage-D host error).
+The wall does not judge the QUOTING surfaces: Source-typed args (opaque
+code blocks) and declared-`Expression` params (comptime capture — the text
+is data handed to a transform proc, never executed in the flow; 210_036/
+210_046 pin that verbatim capture). Those are the metaprogramming escape
+hatch, exempt by design, keyed off the declared param type — never off
+the text's shape.
 
-The architectural defect: the guard was built per-surface (hand-wired
-twice) instead of as ONE expression-admission wall every surface passes
-through — so each new expression position defaults to OPEN. The fix ruled
-directionally: a single choke point ("an expression admits atoms,
-operators, builtins; never a call"), koru-level diagnostic, event-chaining
-hint, consulted by every expression consumer including future ones (`.k`
-body-expression parsing, expression-layer A).
+The five formerly-open surfaces are pinned as permanent MUST_FAIL guards,
+all green against the wall: 320_127 (args), 320_128 (if-condition),
+320_129 (produce), 320_130 (captured — the PARSE003 branch-ctor guard
+never covered captured fields), 320_131 (for-bound). The pre-existing
+guards remain as parse-time belts: PARSE003 branch ctors (now sharing the
+one predicate) and std/io interpolations.
 
-Latency of the danger, stated narrowly: in all seven probed shapes the
-leak happens to die at Stage D because pasted Koru syntax / unmangled
-event names don't resolve in emitted Zig. No silent-success path was
-found — but that is luck of syntax and name-mangling, not a guarantee.
+History of the map (probed 2026-07-05, seven probes, all SHOWN): 2 guarded
+per-surface, 5 open — the architectural defect was per-surface hand-wired
+guards instead of one wall, so every new expression position defaulted to
+OPEN. In all seven probed shapes the leak died at Stage D only by luck of
+syntax and name-mangling (no silent-success path found, but no guarantee
+either). Open edges: `.k` body-expression parsing (expression-layer A)
+must consult the same predicate when it lands; a transform declaring
+whether its Source payload is expression-shaped (capture/captured are
+name-cased in the wall today) is an undesigned contract.
 
 Displaces the belief carried in pin commit 032b0e69, which encoded the
 argument-position shape as legal-but-mislowered ("fix = make the emitter

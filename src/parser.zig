@@ -43,36 +43,6 @@ pub fn tryParseArgExpression(allocator: std.mem.Allocator, arg: *ast.Arg) void {
     } else |_| {}
 }
 
-/// Check if a raw expression string contains a non-builtin function call.
-/// Scans for '(' preceded by an identifier character (not '@'), skipping strings.
-/// Used as a fallback when the expression parser can't fully parse the value.
-fn containsNonBuiltinCall(s: []const u8) bool {
-    var in_string = false;
-    for (s, 0..) |c, i| {
-        if (c == '"' and (i == 0 or s[i - 1] != '\\')) {
-            in_string = !in_string;
-            continue;
-        }
-        if (in_string) continue;
-        if (c == '(' and i > 0) {
-            const prev = s[i - 1];
-            // Builtins: @name(...) — prev would be alphanumeric from the builtin name
-            // but the char before that would be '@'. Scan back to check.
-            if (std.ascii.isAlphanumeric(prev) or prev == '_') {
-                // Walk back to find the start of the identifier
-                var j: usize = i - 1;
-                while (j > 0 and (std.ascii.isAlphanumeric(s[j - 1]) or s[j - 1] == '_' or s[j - 1] == '.')) {
-                    j -= 1;
-                }
-                // If preceded by '@', it's a builtin — skip
-                if (j > 0 and s[j - 1] == '@') continue;
-                return true;
-            }
-        }
-    }
-    return false;
-}
-
 /// Check if line has a source block pattern: `eventName { ... }` or `eventName(args) { ... }`
 /// Source blocks are opaque - their content should not affect parsing decisions.
 /// Returns true if there's a `{` that's NOT inside parentheses AND no `=` before it.
@@ -7427,36 +7397,17 @@ pub const Parser = struct {
                 // Branch constructors must be pure — no side effects, no function calls.
                 // Builtins (@as, @intCast), arithmetic, array indexing, and conditionals
                 // are allowed. If you need to compute a value, use event chaining.
-                {
-                    var expr_parser = expression_parser.ExpressionParser.init(self.allocator, field_value);
-                    defer expr_parser.deinit();
-                    if (expr_parser.parse()) |expr| {
-                        defer expr.deinit(self.allocator);
-                        if (expression_parser.containsFunctionCall(expr)) {
-                            try self.reporter.addError(
-                                .PARSE003,
-                                self.current + 1,
-                                1,
-                                "branch constructor field '{s}' contains a function call — branch constructors must be pure. Use event chaining instead.",
-                                .{field_name},
-                            );
-                            return error.ParseError;
-                        }
-                    } else |_| {
-                        // Expression didn't parse — still check for function calls
-                        // via raw string scan. A '(' not preceded by '@' strongly
-                        // indicates a function call (builtins use @name()).
-                        if (containsNonBuiltinCall(field_value)) {
-                            try self.reporter.addError(
-                                .PARSE003,
-                                self.current + 1,
-                                1,
-                                "branch constructor field '{s}' contains a function call — branch constructors must be pure. Use event chaining instead.",
-                                .{field_name},
-                            );
-                            return error.ParseError;
-                        }
-                    }
+                // (Shares the one expression-admission predicate with the KORU104
+                // wall in flow_checker — never a second implementation.)
+                if (expression_parser.textContainsCall(self.allocator, field_value)) {
+                    try self.reporter.addError(
+                        .PARSE003,
+                        self.current + 1,
+                        1,
+                        "branch constructor field '{s}' contains a function call — branch constructors must be pure. Use event chaining instead.",
+                        .{field_name},
+                    );
+                    return error.ParseError;
                 }
 
                 // Always store expression string for code generation

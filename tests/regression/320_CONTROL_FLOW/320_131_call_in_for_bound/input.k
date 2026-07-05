@@ -1,11 +1,12 @@
-// PIN (2026-07-05, honest red): a call inside a FOR range-bound expression
-// is ILLEGAL — calls are not expressions (core rule; see 320_127 and
-// concepts/frag-arguments-are-atoms). The idiom is bind-first:
+// PIN (2026-07-05): a call inside a FOR range-bound expression is ILLEGAL —
+// calls are not expressions (see concepts/frag-arguments-are-atoms). The
+// idiom is bind-first:
 //     g(a: 4): n |> for(1..n) ...
-// Today the compiler accepts this through Stage A/B and pastes the call's
-// Koru syntax verbatim into emitted Zig: `for (1..g(a: 4))` — raw Stage-D
-// host error. Goes green when the expression-admission wall rejects it at
-// the koru level with an event-chaining hint.
+//
+// Guarded by the KORU104 expression-admission wall (flow_checker, Stage A);
+// for-bounds parse as invocation arguments, so the argument walk covers
+// them. Before the wall: `for (1..g(a: 4))` pasted verbatim into emitted
+// Zig, raw Stage-D host error.
 import std/io
 
 pub event g { a: i64 } -> i64

@@ -1,12 +1,13 @@
-// PIN (2026-07-05, honest red): a call inside a CAPTURED field expression
-// is ILLEGAL — calls are not expressions (core rule; see 320_127 and
-// concepts/frag-arguments-are-atoms). The idiom is bind-first:
+// PIN (2026-07-05): a call inside a CAPTURED field expression is ILLEGAL —
+// calls are not expressions (see concepts/frag-arguments-are-atoms). The
+// idiom is bind-first, exactly how every green benchmark kernel folds:
 //     g(a: i): x |> captured { acc: s.acc + x }
-// (exactly how every green kernel folds — collatz, gcdsum). Note the
-// branch-constructor purity guard (PARSE003) does NOT cover captured
-// fields — this pin holds that hole open. Today the compiler accepts the
-// shape and pastes the call's Koru syntax verbatim into emitted Zig — raw
-// Stage-D host error. Goes green when the expression-admission wall lands.
+//
+// Guarded by the KORU104 expression-admission wall (flow_checker, Stage A).
+// capture/captured carry their brace payload as a Source-typed arg; the
+// wall parses it as a field-expression list and judges each field. Note
+// the PARSE003 branch-ctor guard never covered captured fields — this pin
+// holds the wall that does. Before: verbatim Koru leak into emitted Zig.
 import std/io
 
 pub event g { a: i64 } -> i64

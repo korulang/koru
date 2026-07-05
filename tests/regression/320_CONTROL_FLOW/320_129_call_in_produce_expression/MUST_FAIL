@@ -1,8 +1,7 @@
 A call inside a PRODUCE (->) expression is illegal — calls are not
 expressions; the idiom is bind-first (`g(a: 4): x -> 1 + x`).
 
-INTENTIONAL PIN — currently RED as wrong-error: the compiler accepts the
-shape and leaks the call's Koru syntax verbatim into emitted Zig (raw
-Stage-D host error) instead of rejecting at the koru level. One of the
-five open surfaces mapped 2026-07-05. Goes green when the single
-expression-admission wall lands.
+Guarded by the KORU104 expression-admission wall (flow_checker, Stage A).
+Bare-return impls parse as `immediate_impl` items (not flows) with the
+produce text in value.plain_value — the wall walks those items explicitly.
+Previously the call leaked verbatim into emitted Zig (raw Stage-D error).
