@@ -1,0 +1,34 @@
+// RED PIN (type-system design walk, 2026-07-06/07). The "reads
+// naturally" guarantee: a struct block is a list of FIELD PRODUCERS —
+// a literal field row is the trivial producer, a comprehension clause
+// is the generative one, MIXED FREELY in one block. A row is a
+// comprehension clause iff it opens with `<binder> over`; otherwise it
+// is a literal field. The common case stays byte-for-byte what any
+// systems programmer expects; the power is an optional row form, not a
+// different construct. Spellings PROVISIONAL.
+
+~import std/types
+~import std/io
+
+const std = @import("std");
+
+~std/types:struct(Particle) {
+    id: i64,
+    i over 0..2 -> pos{i}: f64
+    i over 0..2 -> vel{i}: f64
+    alive: bool,
+}
+
+~event main {}
+
+~proc main|zig {
+    const p = Particle{
+        .id = 1,
+        .pos0 = 0.5, .pos1 = 1.5,
+        .vel0 = 0.0, .vel1 = -9.8,
+        .alive = true,
+    };
+    std.debug.print("p{d} at ({d:.1}, {d:.1})\n", .{ p.id, p.pos0, p.pos1 });
+}
+
+~main()

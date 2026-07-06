@@ -1,27 +1,37 @@
-// TEST: MUST_FAIL - Instantiated generics with different params are distinct
-//
-// Option<i32> and Option<f32> are different types.
-// Koru should reject passing one where the other is expected.
-//
-// Expected: Compilation error - type mismatch
+// RED PIN, MUST_FAIL (type-system design walk, 2026-07-06/07).
+// REWRITTEN from the dead `Option<i32>`/`Option<f32>` generation.
+// Distinct stamped identities are distinct types: box#f64 flowing into
+// an event expecting box#i64 must be rejected — at the KORU layer, by
+// the registry-backed checker, with a diagnostic naming both types
+// (not a Zig error pointing into generated code; today binding/payload
+// types are strings the checker cannot reason about — the 2026-07-06
+// walk's "checked earlier" requirement). Spelling PROVISIONAL.
 
 ~import std/types
 
-~struct(Option<T>) { some: T, none }
-~type(OptionalInt = Option<i32>)
-~type(OptionalFloat = Option<f32>)
+const std = @import("std");
 
-~event process-int { val: OptionalInt }
-
-~proc process-int|zig {
+~std/types:struct(box#i64) {
+    value: i64,
 }
 
-~event main {}
-
-~proc main|zig {
-    // ERROR: Passing OptionalFloat where OptionalInt is expected
-    const f = OptionalFloat{ .some = 3.14 };
-    ~process_int(val: f)
+~std/types:struct(box#f64) {
+    value: f64,
 }
 
-~main()
+~event make-float-box {}
+| made box#f64
+
+~proc make-float-box|zig {
+    return .{ .made = @"box#f64"{ .value = 3.14 } };
+}
+
+~event show-int-box { b: box#i64 }
+
+~proc show-int-box|zig {
+    std.debug.print("Value: {d}\n", .{b.value});
+}
+
+// ERROR: box#f64 where box#i64 is expected
+~make-float-box()
+| made m |> show-int-box(b: m)

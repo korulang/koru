@@ -1,20 +1,38 @@
-// TEST: MUST_FAIL - Wrong number of type parameters in instantiation
-//
-// Pair<A, B> requires two type params, but only one is provided.
-// Koru should reject this at compile time.
-//
-// Expected: Compilation error - wrong number of type parameters
+// RED PIN, MUST_FAIL (type-system design walk, 2026-07-06/07).
+// REWRITTEN — the old "wrong arity in Pair<A>" intent belonged to the
+// banned parametric grammar. The surviving intent is the deeper one:
+// NOMINAL DISTINCTNESS. Two structurally identical declared types are
+// DIFFERENT types; cross-use is rejected at the Koru layer citing both
+// declarations. Today's scaffolding emits plain Zig aliases, so this
+// leaks through silently — which is exactly the old cluster TODO's
+// named gap ("without nominal distinctness"), now pinned as a
+// rejection.
 
 ~import std/types
 
-~struct(Pair<A, B>) { first: A, second: B }
+const std = @import("std");
 
-// ERROR: Pair needs 2 type params, only 1 provided
-~type(BadPair = Pair<i32>)
-
-~event main {}
-
-~proc main|zig {
+~std/types:struct(Meters) {
+    v: i64,
 }
 
-~main()
+~std/types:struct(Feet) {
+    v: i64,
+}
+
+~event get-altitude {}
+| alt Feet
+
+~proc get-altitude|zig {
+    return .{ .alt = Feet{ .v = 30000 } };
+}
+
+~event show-meters { m: Meters }
+
+~proc show-meters|zig {
+    std.debug.print("{d}m\n", .{m.v});
+}
+
+// ERROR: Feet where Meters is expected — same shape, distinct types
+~get-altitude()
+| alt a |> show-meters(m: a)

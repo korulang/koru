@@ -1,24 +1,32 @@
-// TEST: Basic generic instantiation with ~type
-//
-// ~type(OptionalInt = Option<i32>) creates a concrete type
-// by substituting i32 for T in Option<T>.
-//
-// Expected: Compiles and emits a concrete Zig struct
+// RED PIN (type-system design walk, 2026-07-06/07). REWRITTEN from the
+// dead `~type(OptionalInt = Option<i32>)` alias generation. Under the
+// stamped-name convention the alias DISSOLVES: the deterministic name
+// IS the identity, spellable anywhere. This pin = registry breakdown
+// #4 (generic event param): a stamped type named in an EVENT SIGNATURE
+// — the boundary the old alias existed to cross. The event's param
+// type is the stamped name itself; no alias declaration anywhere.
+// Spelling PROVISIONAL.
 
 ~import std/types
 
 const std = @import("std");
 
-~struct(Option<T>) { value: ?T = null }
-~type(OptionalInt = Option<i32>)
-
-~event test-opt {}
-
-~proc test-opt|zig {
-    const opt = OptionalInt{ .value = 123 };
-    if (opt.value) |v| {
-        std.debug.print("Value: {d}\n", .{v});
-    }
+~std/types:struct(box#i64) {
+    value: i64,
 }
 
-~test-opt()
+~event make-box {}
+| made box#i64
+
+~proc make-box|zig {
+    return .{ .made = @"box#i64"{ .value = 123 } };
+}
+
+~event show-box { b: box#i64 }
+
+~proc show-box|zig {
+    std.debug.print("Value: {d}\n", .{b.value});
+}
+
+~make-box()
+| made m |> show-box(b: m)

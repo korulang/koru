@@ -1,23 +1,23 @@
-// TEST: ~struct with two type parameters
-//
-// ~struct(Pair<A, B>) { first: A, second: B } defines a generic struct
-// with multiple type parameters.
-//
-// Expected: Compiles and runs with instantiated Pair
+// RED PIN (type-system design walk, 2026-07-06/07). REWRITTEN from the
+// dead `~struct(Pair<A, B>)` generation. Two type parameters in the
+// stamped-name convention: FLAT repetition, `entry#i64#f64` — position
+// carries which parameter is which, exactly as it did in the banned
+// angle-bracket form. Spelling PROVISIONAL.
 
 ~import std/types
 
 const std = @import("std");
 
-~struct(Pair<A, B>) { first: A, second: B }
-
-~type(StringIntPair = Pair<[]const u8, i32>)
-
-~event test-pair {}
-
-~proc test-pair|zig {
-    const p = StringIntPair{ .first = "answer", .second = 42 };
-    std.debug.print("{s}: {d}\n", .{ p.first, p.second });
+~std/types:struct(entry#i64#f64) {
+    key: i64,
+    value: f64,
 }
 
-~test-pair()
+~event test-entry {}
+
+~proc test-entry|zig {
+    const e = @"entry#i64#f64"{ .key = 7, .value = 3.5 };
+    std.debug.print("{d} = {d:.1}\n", .{ e.key, e.value });
+}
+
+~test-entry()

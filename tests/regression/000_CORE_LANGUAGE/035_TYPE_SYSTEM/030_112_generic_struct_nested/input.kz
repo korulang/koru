@@ -1,23 +1,31 @@
-// TEST: Generic struct with two type parameters (Result pattern)
-//
-// ~struct(Result<T, E>) is a common pattern for error handling.
-//
-// Expected: Compiles and runs with Result<i32, []const u8>
+// RED PIN (type-system design walk, 2026-07-06/07). REWRITTEN from the
+// dead `~struct(Result<T, E>)` generation. This pin marks the OPEN
+// composition question: a stamped name whose parameter is ITSELF a
+// stamped name needs a grouping spelling — flat `#` repetition is
+// ambiguous (`wrapper#box#i64`: box#i64 in wrapper, or box-of-i64-in-
+// wrapper-of-box?). PROVISIONAL spelling uses parens for grouping;
+// the ruling (2026-07-06 walk) deliberately deferred this until demand
+// piles up — this pin IS a demand marker, per the registry baton's
+// naive-now-registry-when-it-piles-up direction.
 
 ~import std/types
 
 const std = @import("std");
 
-~struct(Result<T, E>) { ok: ?T = null, err: ?E = null }
-~type(IntResult = Result<i32, []const u8>)
-
-~event test-result {}
-
-~proc test-result|zig {
-    const success = IntResult{ .ok = 42, .err = null };
-    if (success.ok) |val| {
-        std.debug.print("Ok: {d}\n", .{val});
-    }
+~std/types:struct(box#i64) {
+    value: i64,
 }
 
-~test-result()
+~std/types:struct(wrapper#(box#i64)) {
+    inner: box#i64,
+}
+
+~event test-nested {}
+
+~proc test-nested|zig {
+    const inner = @"box#i64"{ .value = 77 };
+    const wrapped = @"wrapper#(box#i64)"{ .inner = inner };
+    std.debug.print("Nested value: {d}\n", .{wrapped.inner.value});
+}
+
+~test-nested()

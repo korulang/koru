@@ -1,21 +1,35 @@
-// TEST: Instantiate generic with two type parameters
-//
-// ~type(StringIntEntry = Entry<[]const u8, i32>) substitutes both params.
-//
-// Expected: Compiles with both type parameters substituted
+// RED PIN (type-system design walk, 2026-07-06/07). REWRITTEN from the
+// dead `~type(StringIntEntry = Entry<...>)` generation. The alias-
+// dissolution pin: the SAME stamped name spelled at two independent
+// sites (a declaration site and a consumption site, no alias, no
+// import of a type binding) must resolve to the SAME registry
+// identity. Deterministic name = shared identity — this is the
+// registry acting as the symbol table a naming convention can lean on.
+// Spelling PROVISIONAL.
 
 ~import std/types
 
 const std = @import("std");
 
-~struct(Entry<K, V>) { key: K, value: V }
-~type(StringIntEntry = Entry<[]const u8, i32>)
-
-~event test-entry {}
-
-~proc test-entry|zig {
-    const e = StringIntEntry{ .key = "count", .value = 42 };
-    std.debug.print("{s} = {d}\n", .{ e.key, e.value });
+~std/types:struct(entry#i64#i64) {
+    key: i64,
+    value: i64,
 }
 
-~test-entry()
+// Site A constructs by the stamped name.
+~event make-entry {}
+| made entry#i64#i64
+
+~proc make-entry|zig {
+    return .{ .made = @"entry#i64#i64"{ .key = 1, .value = 42 } };
+}
+
+// Site B consumes by spelling the same name independently.
+~event show-entry { e: entry#i64#i64 }
+
+~proc show-entry|zig {
+    std.debug.print("{d} = {d}\n", .{ e.key, e.value });
+}
+
+~make-entry()
+| made m |> show-entry(e: m)

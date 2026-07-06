@@ -1,13 +1,12 @@
-// TEST: Using nominal types in event pipelines
-//
-// Define nominal types ~string and ~int, then use them
-// as event parameters in a pipeline.
-//
-// Expected: Compiles and runs with nominal types in events
+// RED PIN (type-system design walk, 2026-07-06/07). Intent kept
+// (nominal primitive types as event parameters), dead `~const(...) |
+// as` form replaced with the flat const declaration (decls are
+// module-scope, visible to sibling flows). Under the registry design,
+// Username/UserId are registry entries and the call-site argument
+// types are checked against them at the Koru layer.
 
 ~import std/types
 ~import std/io
-~import std/control
 
 const std = @import("std");
 
@@ -22,7 +21,6 @@ const std = @import("std");
     std.debug.print("Hello {s} (ID: {d})\n", .{ name, id });
 }
 
-// Use in a pipeline
-~const({ user: "alice", uid: @as(i64, 42) })
-| as data |> greet-user(name: data.user, id: data.uid)
-    
+~const { user: "alice", uid: 42 }
+
+~greet-user(name: user, id: uid)

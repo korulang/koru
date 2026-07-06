@@ -15,4 +15,4 @@
 // Use it to prove it compiled
 const player = Player{ .name = "Alice", .health = 100 };
 
-~print.ln("Player: {{ player.name:s }}, Health: {{ player.health:d }}")
+~std/io:print.ln("Player: {{ player.name:s }}, Health: {{ player.health:d }}")
