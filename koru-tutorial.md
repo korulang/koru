@@ -54,6 +54,29 @@ std/io:print.blk {
 The answer is 42.
 ```
 
+### 020_014_pure_subflow_impl
+
+```koru
+// Test: Pure subflow implementation (no proc needed)
+// From the README example - this is idiomatic Koru
+// This is the default authoring model for ordinary event behavior.
+~import std/io
+
+~event greet { name: []const u8 }
+| greeting []const u8
+
+~greet => greeting "Hello, " ++ name ++ "!"
+
+~greet (name: "World")
+| greeting msg |> std/io:print.ln(msg)
+```
+
+**Output:**
+
+```
+Hello, World!
+```
+
 ### 201_multiple_branches
 
 ```koru
