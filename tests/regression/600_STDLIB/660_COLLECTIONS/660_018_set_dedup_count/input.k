@@ -5,5 +5,5 @@ import std/io
 import std/set
 
 std/set:new()
-| set s |> std/set:add(s, 5) |> std/set:add(s, 5) |> std/set:add(s, 3) |> std/set:count(s): n |> std/io:print.ln("{{ n:d }}") |> std/set:free(s)
+| set s |> std/set:add(s, v: 5) |> std/set:add(s, v: 5) |> std/set:add(s, v: 3) |> std/set:count(s): n |> std/io:print.ln("{{ n:d }}") |> std/set:free(s)
 | err e |> std/io:print.ln("ERR {{ e:s }}")

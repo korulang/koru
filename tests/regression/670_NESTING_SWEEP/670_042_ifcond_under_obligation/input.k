@@ -4,7 +4,7 @@
 import std/io
 import std/string
 
-std/string:from-page("x")
+std/string:from-page(text: "x")
 | ok s |> if(1 == 1)
     | then |> std/io:print.ln("then") |> std/string:free(s)
     | else |> std/io:print.ln("else") |> std/string:free(s)

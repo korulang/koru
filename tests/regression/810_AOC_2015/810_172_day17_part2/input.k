@@ -12,7 +12,7 @@ import std/regex
 std/list:new(i64)
 | list xs |> std/fs:read-lines(path: "tests/regression/810_AOC_2015/810_172_day17_part2/input.txt")
     ! line l |> std/regex:match(l)
-        | `(?<n>[0-9]+)` { n: i64 } |> std/list:push(xs, n)
+        | `(?<n>[0-9]+)` { n: i64 } |> std/list:push(xs, v: n)
         | no-match |> _
     | done _ |> std/list:len(xs): n |> capture { mn: 999[i64] }
             ! as o1 |> for(0..(@as(usize, 1) << @as(u6, @intCast(n))))
@@ -26,7 +26,7 @@ std/list:new(i64)
                 ! as o2 |> for(0..(@as(usize, 1) << @as(u6, @intCast(n))))
                     ! each mask2 |> capture { s2: 0[i64] }
                         ! as inner2 |> for(0..n)
-                            ! each j |> std/list:get(xs, j)
+                            ! each j |> std/list:get(xs, i: j)
                                 | item v2 |> captured { s2: inner2.s2 + v2 * @intFromBool((mask2 >> @as(u6, @intCast(j))) & 1 == 1) }
                                 | out-of-bounds |> _
                         | captured sub2 |> captured { cnt: o2.cnt + @intFromBool(sub2.s2 == 25 and @as(i64, @intCast(@popCount(mask2))) == m1.mn) }

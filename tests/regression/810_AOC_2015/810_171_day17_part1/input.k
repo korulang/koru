@@ -13,7 +13,7 @@ import std/regex
 std/list:new(i64)
 | list xs |> std/fs:read-lines(path: "tests/regression/810_AOC_2015/810_171_day17_part1/input.txt")
     ! line l |> std/regex:match(l)
-        | `(?<n>[0-9]+)` { n: i64 } |> std/list:push(xs, n)
+        | `(?<n>[0-9]+)` { n: i64 } |> std/list:push(xs, v: n)
         | no-match |> _
     | done _ |> std/list:len(xs): n |> capture { cnt: 0[i64] }
             ! as outer |> for(0..(@as(usize, 1) << @as(u6, @intCast(n))))

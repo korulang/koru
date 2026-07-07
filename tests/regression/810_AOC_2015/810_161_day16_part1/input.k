@@ -13,12 +13,12 @@ import std/string
 import std/string-map
 
 std/string-map:new()
-| map r |> std/string-map:set(r, k: "children", v: 3) |> std/string-map:set(r, k: "cats", v: 7) |> std/string-map:set(r, k: "samoyeds", v: 2) |> std/string-map:set(r, k: "pomeranians", v: 3) |> std/string-map:set(r, k: "akitas", v: 0) |> std/string-map:set(r, k: "vizslas", v: 0) |> std/string-map:set(r, k: "goldfish", v: 5) |> std/string-map:set(r, k: "trees", v: 3) |> std/string-map:set(r, k: "cars", v: 2) |> std/string-map:set(r, k: "perfumes", v: 1) |> std/fs:read-lines(path: "tests/regression/810_AOC_2015/810_161_day16_part1/input.txt")
+| map m |> std/string-map:set(m, k: "children", v: 3) |> std/string-map:set(m, k: "cats", v: 7) |> std/string-map:set(m, k: "samoyeds", v: 2) |> std/string-map:set(m, k: "pomeranians", v: 3) |> std/string-map:set(m, k: "akitas", v: 0) |> std/string-map:set(m, k: "vizslas", v: 0) |> std/string-map:set(m, k: "goldfish", v: 5) |> std/string-map:set(m, k: "trees", v: 3) |> std/string-map:set(m, k: "cars", v: 2) |> std/string-map:set(m, k: "perfumes", v: 1) |> std/fs:read-lines(path: "tests/regression/810_AOC_2015/810_161_day16_part1/input.txt")
     ! line l |> std/regex:match(l)
         | `Sue (?<n>[0-9]+): (?<rest>.+)` { n: i64, rest: []const u8 } |> capture { ok: 1[i64], num: n }
             ! as acc |> std/string:split(s: rest, sep: ", ")
                 ! piece pc |> std/regex:match(pc)
-                    | `(?<p>[a-z]+): (?<v>[0-9]+)` { p: []const u8, v: i64 } |> std/string-map:get(r, k: p)
+                    | `(?<p>[a-z]+): (?<v>[0-9]+)` { p: []const u8, v: i64 } |> std/string-map:get(m, k: p)
                         | value rv |> captured { ok: acc.ok * @intFromBool(rv == v) }
                         | missing |> captured { ok: 0 }
                     | no-match |> captured { ok: 0 }
@@ -27,6 +27,6 @@ std/string-map:new()
                 | then |> std/io:print.ln("{{ result.num:d }}")
                 | else |> _
         | no-match |> _
-    | done _ |> std/string-map:free(r)
+    | done _ |> std/string-map:free(m)
     | failed e |> std/io:print.ln("FAILED {{ e:s }}")
 | err e |> std/io:print.ln("ERR {{ e:s }}")

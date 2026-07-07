@@ -36,15 +36,15 @@ run = #L tick(limit, passes: 0)
 | live l |> std/field:new(bits: 500000)
     | field f |> for(1..500)
         ! each i |> std/field:test(f, i): pv |> if(pv == 0)
-            | then |> std/field:mark-multiples(f, 2 * i * (i + 1), 2 * i + 1, 499999)
+            | then |> std/field:mark-multiples(f, from: 2 * i * (i + 1), stride: 2 * i + 1, limit: 499999)
         | done |> std/field:free(f) |> @L(l.limit, passes: l.passes + 1)
     | err _ |> _
 | expired e => total e
 
 run(limit: 5)
 | total n |> std/field:new(bits: 500000)
-    | field g |> for(1..500)
-        ! each i |> std/field:test(g, i): pv |> if(pv == 0)
-            | then |> std/field:mark-multiples(g, 2 * i * (i + 1), 2 * i + 1, 499999)
-        | done |> std/field:count-zeros(g, 1, 500000): c |> std/io:print.ln("passes: {{ n:d }}") |> std/io:print.ln("validated primes: {{ c + 1:d }}") |> std/field:free(g)
+    | field f |> for(1..500)
+        ! each i |> std/field:test(f, i): pv |> if(pv == 0)
+            | then |> std/field:mark-multiples(f, from: 2 * i * (i + 1), stride: 2 * i + 1, limit: 499999)
+        | done |> std/field:count-zeros(f, lo: 1, hi: 500000): c |> std/io:print.ln("passes: {{ n:d }}") |> std/io:print.ln("validated primes: {{ c + 1:d }}") |> std/field:free(f)
     | err _ |> _
