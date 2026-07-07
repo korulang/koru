@@ -66,7 +66,8 @@ pub const ErrorCode = enum(u16) {
     PARSE003, // Malformed construct
     PARSE004, // Unbalanced braces
     PARSE005, // Redundant explicit label where punning would produce the same name
-    
+    PARSE006, // Bare argument does not name a parameter — explicit `name: value` label required
+
     // Type inference errors
     TYPE001, // Branch not found in expected union
     TYPE002, // Branch constructor where union not expected

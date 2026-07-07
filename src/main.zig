@@ -5567,6 +5567,60 @@ fn enforceInvocationVisibilityInNode(
     }
 }
 
+/// PARSE006 — a bare argument must pun to an actual parameter of the callee.
+///
+/// The parser stores each argument's punned name — the trailing `.`-segment of a
+/// path, or the whole token — in `arg.name`. An explicit `label: value` stores
+/// the written label there (which, being a real parameter name, always matches),
+/// and an implicit-expression arg is pre-remapped to `expr`. So the rule is
+/// uniform: every argument's `name` must match one of the callee's parameters.
+///
+/// A bare argument whose punned name matches nothing — `echo(other)`, `echo(5)`,
+/// `echo(box.other)` against `echo { v: i32 }` — is rejected here at the koru
+/// frontend. The old behavior bound bare args positionally BY INDEX (emitter
+/// `.v = <arg-by-position>`), so a name mismatch either compiled silently against
+/// the wrong parameter or leaked into malformed emitted Zig (`undeclared 'v'`).
+/// This is the bare-side twin of PARSE005 (which rejects a REDUNDANT label);
+/// together they make punning the single, enforced call-site spelling.
+fn checkBareArgPunning(
+    invocation: *const ast.Invocation,
+    event_decl: *const ast.EventDecl,
+    reporter: *ErrorReporter,
+    location: errors.SourceLocation,
+) !void {
+    const fields = event_decl.input.fields;
+    const event_display = if (invocation.path.segments.len > 0)
+        invocation.path.segments[invocation.path.segments.len - 1]
+    else
+        "event";
+    const suggest_field = if (fields.len > 0) fields[0].name else "name";
+
+    for (invocation.args) |arg| {
+        // Expression/Source args are already resolved to their parameter
+        // (implicit `expr`/`source` binding included) — not raw puns to check.
+        if (arg.expression_value != null or arg.source_value != null) continue;
+
+        var matches = false;
+        for (fields) |field| {
+            if (std.mem.eql(u8, field.name, arg.name)) {
+                matches = true;
+                break;
+            }
+        }
+        if (matches) continue;
+
+        try reporter.addErrorWithHint(
+            .PARSE006,
+            location.line,
+            location.column,
+            "bare argument '{s}' does not name a parameter of '{s}' — an explicit label is required",
+            .{ arg.value, event_display },
+            "write it with an explicit label: '{s}: {s}'",
+            .{ suggest_field, arg.value },
+        );
+    }
+}
+
 fn checkInvocationVisibility(
     invocation: *const ast.Invocation,
     all_items: []const ast.Item,
@@ -5576,6 +5630,7 @@ fn checkInvocationVisibility(
     location: errors.SourceLocation,
 ) !void {
     const event_decl = emitter_helpers.findEventDeclByPath(all_items, &invocation.path) orelse return;
+    try checkBareArgPunning(invocation, event_decl, reporter, location);
     const source_module = if (invocation.source_module.len > 0)
         invocation.source_module
     else
