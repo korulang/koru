@@ -1,0 +1,2 @@
+Opening file
+Disposed file (auto-discharged)
