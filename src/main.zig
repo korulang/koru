@@ -5567,6 +5567,19 @@ fn enforceInvocationVisibilityInNode(
     }
 }
 
+/// A transform-walker "machinery" parameter type — the injected context a
+/// `[transform]` handler receives (`*const Invocation`, `*const Item`, `*const
+/// Program`, `std.mem.Allocator`). Never a user-facing call argument. Matched by
+/// substring: these types only appear as injected machinery, and the caller
+/// (checkBareArgPunning) only acts when EVERY parameter is machinery, so an
+/// incidental user type sharing one of these names cannot cause a false reject.
+fn isTransformMachineryType(type_str: []const u8) bool {
+    return std.mem.indexOf(u8, type_str, "Invocation") != null or
+        std.mem.indexOf(u8, type_str, "*const Item") != null or
+        std.mem.indexOf(u8, type_str, "Program") != null or
+        std.mem.indexOf(u8, type_str, "Allocator") != null;
+}
+
 /// PARSE006 — a bare argument must pun to an actual parameter of the callee.
 ///
 /// The parser stores each argument's punned name — the trailing `.`-segment of a
@@ -5611,6 +5624,33 @@ fn checkBareArgPunning(
         }
     }
     if (has_implicit_slot) return;
+
+    // Handler-injection transform exemption. Some `[transform]` events declare
+    // ONLY the transform walker's injected machinery as parameters — `*const
+    // Invocation`, `*const Item`, `*const Program`, `std.mem.Allocator` (e.g.
+    // `~for`'s cousins `new`, `ln`, `router`, `field:new`). The compiler passes
+    // those in; the USER's call arguments are read positionally from
+    // `invocation.args` inside the handler body and never bind to a declared
+    // parameter. There is thus no parameter for a call-site arg to pun against,
+    // so PARSE006 does not apply.
+    //
+    // DECISION (2026-07-07, Lars): exempt these rather than force each transform
+    // to declare a user-facing parameter. The cleaner long-term shape is for a
+    // transform's signature to describe its CALL SITE (e.g. `field:new { bits:
+    // Expression }`, the way `match`/`char` now do) with the machinery injected
+    // implicitly — revisit here if we take that on. Also unifies a prior
+    // inconsistency: `list:new(i64)` was already exempt while `field:new(bits)`
+    // was not.
+    if (fields.len > 0) {
+        var all_machinery = true;
+        for (fields) |field| {
+            if (!isTransformMachineryType(field.type)) {
+                all_machinery = false;
+                break;
+            }
+        }
+        if (all_machinery) return;
+    }
 
     for (invocation.args) |arg| {
         // Expression/Source args are already resolved to their parameter
