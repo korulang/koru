@@ -424,14 +424,19 @@ pub const VisitorEmitter = struct {
         for (source_file.items) |item| {
             switch (item) {
                 .event_decl => |event| {
-                    // Check if event has comptime params (implicitly comptime)
-                    var has_comptime_params = false;
-                    for (event.input.fields) |field| {
-                        if (field.is_source or
-                            field.is_expression or
-                            std.mem.indexOf(u8, field.type, "Program") != null) {
-                            has_comptime_params = true;
-                            break;
+                    // Comptime-only is EXPLICIT: `[comptime]`/`[norun]`, or a
+                    // `Program`-typed param (the metacircular compiler AST).
+                    // `Expression`/`Source` params do NOT imply comptime — they
+                    // are just captured strings and can lower to runtime code
+                    // (e.g. `~if`/`~for` templates).
+                    var has_comptime_params = annotation_parser.hasPart(event.annotations, "comptime") or
+                        annotation_parser.hasPart(event.annotations, "norun");
+                    if (!has_comptime_params) {
+                        for (event.input.fields) |field| {
+                            if (std.mem.indexOf(u8, field.type, "Program") != null) {
+                                has_comptime_params = true;
+                                break;
+                            }
                         }
                     }
 
@@ -4175,12 +4180,13 @@ pub const VisitorEmitter = struct {
             }
             log.debug("\n", .{});
 
-            // Check if event has comptime parameters
+            // A `Program`-typed param (metacircular compiler AST) is genuinely
+            // comptime. `Expression`/`Source` are NOT — they are captured
+            // strings that can lower to runtime code, so comptime-ness for them
+            // is decided by the explicit annotation below.
             for (decl.input.fields) |field| {
-                if (field.is_source or field.is_expression or
-                    std.mem.indexOf(u8, field.type, "Program") != null or
-                    std.mem.eql(u8, field.type, "Expression")) {
-                    log.debug("  Event has comptime parameter: {s}\n", .{field.name});
+                if (std.mem.indexOf(u8, field.type, "Program") != null) {
+                    log.debug("  Event has Program (comptime) parameter: {s}\n", .{field.name});
                     return true;
                 }
             }

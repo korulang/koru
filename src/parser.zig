@@ -1842,15 +1842,14 @@ pub const Parser = struct {
         // Check if this is an implicit flow event
         const is_implicit_flow = self.checkImplicitFlowEvent(&input);
 
-        // Check if any field has is_expression or is_source - auto-add comptime annotation
-        var needs_comptime = false;
-        for (input.fields) |field| {
-            if (field.is_expression or field.is_source) {
-                needs_comptime = true;
-                break;
-            }
-        }
-
+        // `Expression`/`Source` params do NOT imply `[comptime]`. Representation
+        // (a captured source string) and timing (when the event runs) are
+        // orthogonal axes: an `Expression` is just another way to pass a string,
+        // and it can survive to runtime the same way it survives comptime. The
+        // old auto-stamp coupled them, which wrongly flipped runtime-emitting
+        // keyword templates (`~if`/`~for`) to pure-comptime and filtered their
+        // lowered code out of the runtime module. Comptime is now EXPLICIT: an
+        // event is comptime-only iff it carries `[comptime]` in its annotations.
         // Combined annotations (passed-in + trailing)
         var all_annotations = try std.ArrayList([]const u8).initCapacity(self.allocator, 0);
         defer all_annotations.deinit(self.allocator);
@@ -1860,15 +1859,6 @@ pub const Parser = struct {
         }
         for (trailing_annotations.items) |ann| {
             try all_annotations.append(self.allocator, ann);
-        }
-
-        // Check if comptime is already in annotations
-        var has_comptime = false;
-        for (all_annotations.items) |ann| {
-            if (std.mem.eql(u8, ann, "comptime")) {
-                has_comptime = true;
-                break;
-            }
         }
 
         // Validate: [keyword] requires pub
@@ -1901,14 +1891,10 @@ pub const Parser = struct {
             return error.ParseError;
         }
 
-        // Copy annotations, adding comptime if needed
-        const extra_annotations: usize = if (needs_comptime and !has_comptime) 1 else 0;
-        var annotations_copy = try self.allocator.alloc([]const u8, all_annotations.items.len + extra_annotations);
+        // Copy annotations verbatim — comptime is explicit, never synthesized.
+        var annotations_copy = try self.allocator.alloc([]const u8, all_annotations.items.len);
         for (all_annotations.items, 0..) |ann, i| {
             annotations_copy[i] = try self.allocator.dupe(u8, ann);
-        }
-        if (needs_comptime and !has_comptime) {
-            annotations_copy[all_annotations.items.len] = try self.allocator.dupe(u8, "comptime");
         }
 
         var event_decl = ast.EventDecl{

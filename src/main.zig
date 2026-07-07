@@ -5595,6 +5595,23 @@ fn checkBareArgPunning(
         "event";
     const suggest_field = if (fields.len > 0) fields[0].name else "name";
 
+    // Implicit-expression / implicit-source capability: an event with an
+    // `expr: Expression` or `source: Source` param takes a bare expression /
+    // source block implicitly (`~if(x > 0)`, `~for(0..n)`) — the arg binds to
+    // that param regardless of its own spelling. Such a bare arg is legal even
+    // before the parser's implicit remap has run, so detect the capability
+    // directly here rather than depend on remap timing.
+    var has_implicit_slot = false;
+    for (fields) |field| {
+        if ((field.is_expression and std.mem.eql(u8, field.name, "expr")) or
+            (field.is_source and std.mem.eql(u8, field.name, "source")))
+        {
+            has_implicit_slot = true;
+            break;
+        }
+    }
+    if (has_implicit_slot) return;
+
     for (invocation.args) |arg| {
         // Expression/Source args are already resolved to their parameter
         // (implicit `expr`/`source` binding included) — not raw puns to check.
