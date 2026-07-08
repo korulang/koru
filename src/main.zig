@@ -5666,15 +5666,31 @@ fn checkBareArgPunning(
         }
         if (matches) continue;
 
-        try reporter.addErrorWithHint(
-            .PARSE006,
-            location.line,
-            location.column,
-            "bare argument '{s}' does not name a parameter of '{s}' — an explicit label is required",
-            .{ arg.value, event_display },
-            "write it with an explicit label: '{s}: {s}'",
-            .{ suggest_field, arg.value },
-        );
+        if (arg.had_explicit_label) {
+            // The author WROTE `name: value`, but `name` is not a parameter of
+            // the callee — an unknown-parameter error, caught at the koru
+            // frontend rather than leaking as a raw Zig "no field named" later.
+            try reporter.addErrorWithHint(
+                .PARSE006,
+                location.line,
+                location.column,
+                "unknown parameter '{s}' — '{s}' has no parameter named '{s}'",
+                .{ arg.name, event_display, arg.name },
+                "remove the argument, or label it with a real parameter (e.g. '{s}:')",
+                .{suggest_field},
+            );
+        } else {
+            // A bare argument whose punned name matches nothing — needs a label.
+            try reporter.addErrorWithHint(
+                .PARSE006,
+                location.line,
+                location.column,
+                "bare argument '{s}' does not name a parameter of '{s}' — an explicit label is required",
+                .{ arg.value, event_display },
+                "write it with an explicit label: '{s}: {s}'",
+                .{ suggest_field, arg.value },
+            );
+        }
     }
 }
 

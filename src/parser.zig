@@ -4089,6 +4089,7 @@ pub const Parser = struct {
                         .name = arg.name,
                         .value = arg.value,
                         .phantom_type = arg.phantom_type,
+                        .had_explicit_label = arg.had_explicit_label,
                     };
                     tryParseArgExpression(self.allocator, &ast_arg);
                     try args.append(self.allocator, ast_arg);
@@ -6951,6 +6952,7 @@ pub const Parser = struct {
                         .name = arg.name,
                         .value = arg.value,
                         .phantom_type = arg.phantom_type,
+                        .had_explicit_label = arg.had_explicit_label,
                     };
                     tryParseArgExpression(self.allocator, &ast_arg);
                     try arg_list.append(self.allocator, ast_arg);
