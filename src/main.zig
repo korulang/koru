@@ -7284,7 +7284,8 @@ pub fn main() !void {
                 try sym_buf.appendSlice(alloc, "koru_mlir_");
                 for (proc.path.segments, 0..) |seg, seg_i| {
                     if (seg_i > 0) try sym_buf.append(alloc, '_');
-                    try sym_buf.appendSlice(alloc, seg);
+                    // Kebab event names are canonical Koru; symbols can't carry '-'.
+                    for (seg) |ch| try sym_buf.append(alloc, if (ch == '-') '_' else ch);
                 }
                 const sym = sym_buf.items;
                 // Write <sym>.mlir into the output dir (the build root for build_output.zig).

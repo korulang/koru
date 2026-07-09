@@ -3438,7 +3438,8 @@ pub const VisitorEmitter = struct {
                             try sym_buf.appendSlice(self.allocator, "koru_mlir_");
                             for (event.path.segments, 0..) |seg, si| {
                                 if (si > 0) try sym_buf.append(self.allocator, '_');
-                                try sym_buf.appendSlice(self.allocator, seg);
+                                // Kebab event names are canonical Koru; symbols can't carry '-'.
+                                for (seg) |ch| try sym_buf.append(self.allocator, if (ch == '-') '_' else ch);
                             }
                             mlir_sym = try sym_buf.toOwnedSlice(self.allocator);
 
