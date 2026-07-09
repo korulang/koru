@@ -7248,11 +7248,77 @@ pub fn main() !void {
         try printStdout(allocator, "✓ Generated {s} (for backend compilation)\n", .{build_user_path});
     }
 
-    // Generate build_output.zig for OUTPUT binary (build:requires)
-    if (build_requirements_raw.len > 0) {
-        try printStdout(allocator, "✓ Found {d} build requirement(s) for output binary\n", .{build_requirements_raw.len});
+    // Synthesize build requirements for |mlir variants. Each MLIR proc body is
+    // compiled AOT (mlir-opt -> mlir-translate -> clang -c) to an object and
+    // linked into the output binary via exe.addObjectFile. These are NOT user
+    // ~build:requires — the compiler synthesizes them into the SAME pipeline the
+    // moment it sees a |mlir proc (hooking the pipeline, not the user surface).
+    // PoC: MLIR toolchain path hardcoded to the Homebrew LLVM 19 prefix; future
+    // work resolves the tool through the deps/requires family.
+    var mlir_build_reqs = try std.ArrayList(emit_build_zig.BuildRequirement).initCapacity(allocator, 0);
+    defer {
+        for (mlir_build_reqs.items) |r| allocator.free(r.source_code);
+        mlir_build_reqs.deinit(allocator);
+    }
+    {
+        const mlir_template =
+            \\            const SYM_lower = b.addSystemCommand(&.{ "/opt/homebrew/opt/llvm/bin/mlir-opt", "--pass-pipeline=builtin.module(convert-scf-to-cf,expand-strided-metadata,finalize-memref-to-llvm,convert-arith-to-llvm,convert-cf-to-llvm,convert-func-to-llvm,reconcile-unrealized-casts)" });
+            \\            SYM_lower.addFileArg(b.path("SYM.mlir"));
+            \\            const SYM_lowered = SYM_lower.captureStdOut();
+            \\            const SYM_tr = b.addSystemCommand(&.{ "/opt/homebrew/opt/llvm/bin/mlir-translate", "--mlir-to-llvmir" });
+            \\            SYM_tr.addFileArg(SYM_lowered);
+            \\            const SYM_ll = SYM_tr.captureStdOut();
+            \\            const SYM_cc = b.addSystemCommand(&.{ "/opt/homebrew/opt/llvm/bin/clang", "-c", "-x", "ir" });
+            \\            SYM_cc.addFileArg(SYM_ll);
+            \\            SYM_cc.addArg("-o");
+            \\            const SYM_obj = SYM_cc.addOutputFileArg("SYM.o");
+            \\            exe.addObjectFile(SYM_obj);
+            \\
+        ;
+        const Mlir = struct {
+            fn emitProc(alloc: std.mem.Allocator, proc: ast.ProcDecl, out_dir: []const u8, tmpl: []const u8, out: *std.ArrayList(emit_build_zig.BuildRequirement)) !void {
+                const tgt = proc.target orelse return;
+                if (!std.mem.eql(u8, tgt, "mlir")) return;
+                var sym_buf = std.ArrayList(u8){};
+                defer sym_buf.deinit(alloc);
+                try sym_buf.appendSlice(alloc, "koru_mlir_");
+                for (proc.path.segments, 0..) |seg, seg_i| {
+                    if (seg_i > 0) try sym_buf.append(alloc, '_');
+                    try sym_buf.appendSlice(alloc, seg);
+                }
+                const sym = sym_buf.items;
+                // Write <sym>.mlir into the output dir (the build root for build_output.zig).
+                const mlir_name = try std.fmt.allocPrint(alloc, "{s}.mlir", .{sym});
+                defer alloc.free(mlir_name);
+                const mlir_path = try std.fs.path.join(alloc, &[_][]const u8{ out_dir, mlir_name });
+                defer alloc.free(mlir_path);
+                const mf = try std.fs.cwd().createFile(mlir_path, .{});
+                defer mf.close();
+                try mf.writeAll(proc.body.text);
+                // Synthesize the build.zig block that compiles + links this object.
+                const src = try std.mem.replaceOwned(u8, alloc, tmpl, "SYM", sym);
+                try out.append(alloc, .{ .module_name = "mlir", .source_code = src });
+            }
+            fn run(alloc: std.mem.Allocator, items: []const ast.Item, out_dir: []const u8, tmpl: []const u8, out: *std.ArrayList(emit_build_zig.BuildRequirement)) !void {
+                for (items) |item| {
+                    switch (item) {
+                        .proc_decl => |proc| try @This().emitProc(alloc, proc, out_dir, tmpl, out),
+                        .module_decl => |mod| {
+                            for (mod.items) |mi| {
+                                if (mi == .proc_decl) try @This().emitProc(alloc, mi.proc_decl, out_dir, tmpl, out);
+                            }
+                        },
+                        else => {},
+                    }
+                }
+            }
+        };
+        try Mlir.run(allocator, source_file.items, output_dir, mlir_template, &mlir_build_reqs);
+    }
 
-        var output_build_reqs = try std.ArrayList(emit_build_zig.BuildRequirement).initCapacity(allocator, build_requirements_raw.len);
+    // Generate build_output.zig for OUTPUT binary (user build:requires + synthesized MLIR links)
+    if (build_requirements_raw.len > 0 or mlir_build_reqs.items.len > 0) {
+        var output_build_reqs = try std.ArrayList(emit_build_zig.BuildRequirement).initCapacity(allocator, build_requirements_raw.len + mlir_build_reqs.items.len);
         defer output_build_reqs.deinit(allocator);
 
         for (build_requirements_raw) |req| {
@@ -7261,6 +7327,14 @@ pub fn main() !void {
                 .source_code = req,
             });
         }
+        for (mlir_build_reqs.items) |req| {
+            try output_build_reqs.append(allocator, req);
+        }
+
+        if (build_requirements_raw.len > 0)
+            try printStdout(allocator, "✓ Found {d} build requirement(s) for output binary\n", .{build_requirements_raw.len});
+        if (mlir_build_reqs.items.len > 0)
+            try printStdout(allocator, "✓ Synthesized {d} MLIR object link(s) for output binary\n", .{mlir_build_reqs.items.len});
 
         // Generate build_output.zig - this will be used to compile output_emitted.zig
         const build_output_path = try std.fs.path.join(allocator, &[_][]const u8{ output_dir, "build_output.zig" });
