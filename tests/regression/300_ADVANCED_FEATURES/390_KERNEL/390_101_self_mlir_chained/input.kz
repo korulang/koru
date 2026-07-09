@@ -1,16 +1,15 @@
 // Test 390_101: chained self|mlir ops COMPOSE — the buffer/memref ABI pin.
 //
-// RED PIN (2026-07-09). Slice 1b of the MLIR arc. 390_100 (slice 1a) proved
-// the kernel transform generates MLIR, but under the scalar ABI each generated
-// kernel INTERNALIZES the init values — so two chained ops both compute from
-// the ORIGINAL init and the second silently overwrites the first (init 1,2,3:
-// *=2 then +=1 yields 2,3,4 instead of 3,5,7 — a wrong answer, not an error).
+// Two chained self|mlir ops must behave like their Zig-loop siblings in
+// 390_060: init 1,2,3 through `*=2` then `+=1` yields 3,5,7. This holds
+// because the generated MLIR takes the host buffer as a memref argument
+// (bare-ptr call convention: convert-func-to-llvm{use-bare-ptr-memref-call-conv=1}
+// → C `void f(double*)`) and mutates it IN PLACE — each op sees its
+// predecessor's writes.
 //
-// This pin goes green only when the generated MLIR takes the host buffer as a
-// memref argument (bare-ptr call convention, proven by hand 2026-07-09:
-// convert-func-to-llvm{use-bare-ptr-memref-call-conv=1} → C `void f(double*)`)
-// and mutates it IN PLACE, so ops compose like their Zig-loop siblings in
-// 390_060.
+// The pin guards against the internalize-init failure shape: a kernel that
+// bakes the init values into its own body computes every op from t0, so the
+// chain silently prints 2,3,4 — a wrong answer, not an error.
 
 ~import std/kernel
 ~import std/io
