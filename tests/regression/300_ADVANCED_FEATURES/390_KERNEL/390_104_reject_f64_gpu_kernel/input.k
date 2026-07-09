@@ -6,14 +6,14 @@
 // degrades. First concrete instance of the capability lattice: the compiler
 // knows what the target can carry, and says so.
 
-~import std/kernel
-~import std/io
+import std/kernel
+import std/io
 
-~std/kernel:shape(Body) {
+std/kernel:shape(Body) {
     mass: f64,
 }
 
-~std/kernel:init(Body) {
+std/kernel:init(Body) {
     { mass: 1.0 },
     { mass: 2.0 },
     { mass: 3.0 },
