@@ -1,0 +1,26 @@
+// TEST: TWO chained std/fmt:ln hops — the [expand] result constant must be
+// unique per splice, not a fixed name.
+//
+// Sibling facet of 620_003 (same root defect: [expand] splice result names
+// minted outside the function-global counter). With a fixed name, the second
+// splice's switch nests inside the first's arm and Zig rejects:
+//
+//   error: local constant '__expand_result' shadows local constant from outer scope
+//
+// The fix mints __expand_result_<N> from the shared result counter, so any
+// chain depth of [expand] splices stays shadow-free.
+
+~import app/net
+~import std/fmt
+
+~app/net:connect(host: "localhost")
+| ok c |> std/fmt:ln("GET /conn/{{ c:d }}")
+    | line req |> std/fmt:ln("wrapped: {{ req.text:s }}")
+        | line req2 |> app/net:write(conn: c, data: req2.text)
+            | ok w |> app/net:read(conn: w)
+                | ok r |> app/net:shutdown(r.conn)
+                    | ok |> _
+                    | err _ |> _
+                | err _ |> _
+            | err _ |> _
+| err _ |> _

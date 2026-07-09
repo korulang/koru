@@ -1,0 +1,42 @@
+// Minimal network-shaped module: a chain of branch-outcome events
+// (connect -> write -> read -> shutdown) with | ok / | err branches,
+// used to pin the emitter result_N collision when a std/fmt:ln hop
+// is spliced into the chain.
+
+const std = @import("std");
+
+~pub event connect { host: []const u8 }
+| ok i32
+| err []const u8
+
+~proc connect|zig {
+    _ = host;
+    return .{ .ok = 7 };
+}
+
+~pub event write { conn: i32, data: []const u8 }
+| ok i32
+| err []const u8
+
+~proc write|zig {
+    std.debug.print("write: {s}\n", .{data});
+    return .{ .ok = conn };
+}
+
+~pub event read { conn: i32 }
+| ok { conn: i32, n: i32 }
+| err []const u8
+
+~proc read|zig {
+    std.debug.print("read from conn {d}\n", .{conn});
+    return .{ .ok = .{ .conn = conn, .n = 42 } };
+}
+
+~pub event shutdown { conn: i32 }
+| ok
+| err []const u8
+
+~proc shutdown|zig {
+    std.debug.print("shutdown conn {d}\n", .{conn});
+    return .{ .ok = .{} };
+}

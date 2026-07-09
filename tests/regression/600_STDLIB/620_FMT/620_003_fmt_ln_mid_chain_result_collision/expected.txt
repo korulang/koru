@@ -1,0 +1,3 @@
+write: GET /conn/7
+read from conn 7
+shutdown conn 7

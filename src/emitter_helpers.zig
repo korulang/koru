@@ -3843,7 +3843,7 @@ fn writeInlineCodeWithLabel(
 /// identically at every depth — there is no "only top-level" path. Covers:
 ///   - statement / void-continuation inline emission (incl. the `! each`
 ///     effect-branch Handlers bridge), and
-///   - the `[expand]` `switch (__expand_result)` form.
+///   - the `[expand]` `switch (__expand_result_N)` form.
 /// `continuations` are the node's branch continuations; `path` is the invoked
 /// event's path (for effect-branch lookup).
 pub fn emitInlineBodyNode(
@@ -4041,19 +4041,35 @@ pub fn emitInlineBodyNode(
     // [expand] events with branches: template provides the expression,
     // continuations provide the switch arms.
     if (continuations.len > 0) {
-        // Emit: const __expand_result = <inline_code>;
+        // The expand result constant is minted from the shared counter, NOT a
+        // fixed name: two chained [expand] splices (fmt:ln |> fmt:ln) nest
+        // their switches in the same Zig function, and a fixed `__expand_result`
+        // shadows across them. Pinned by 620_004_fmt_ln_chained_expand_collision.
+        const expand_var = try std.fmt.allocPrint(ctx.allocator, "__expand_result_{d}", .{result_counter.*});
+        defer ctx.allocator.free(expand_var);
+        result_counter.* += 1;
+
+        // Emit: const __expand_result_N = <inline_code>;
         try emitter.writeIndent();
-        try emitter.write("const __expand_result = ");
+        try emitter.write("const ");
+        try emitter.write(expand_var);
+        try emitter.write(" = ");
         try writeInlineCodeWithLabel(emitter, ctx, inline_code);
         try emitter.write(";\n");
 
-        // Emit: switch (__expand_result) { ... }
+        // Emit: switch (__expand_result_N) { ... }
         try emitter.writeIndent();
-        try emitter.write("switch (__expand_result) {\n");
+        try emitter.write("switch (");
+        try emitter.write(expand_var);
+        try emitter.write(") {\n");
         emitter.indent();
 
-        // Emit each continuation as a switch arm
-        var step_idx: usize = 0;
+        // Emit each continuation as a switch arm. The arms share the CALLER's
+        // result counter: an [expand] splice (e.g. std/fmt:ln mid-chain) emits
+        // its arms in the same Zig function scope as the enclosing flow, so a
+        // fresh 0-based counter here re-issues result_N names that shadow the
+        // enclosing scope's (`local constant 'result_0' shadows local constant
+        // from outer scope`). Pinned by 620_003_fmt_ln_mid_chain_result_collision.
         for (continuations) |*cont| {
             try emitter.writeIndent();
             try emitter.write(".");
@@ -4076,7 +4092,7 @@ pub fn emitInlineBodyNode(
             emitter.indent();
 
             // Emit the continuation body
-            try emitContinuationBody(emitter, ctx, cont, &step_idx);
+            try emitContinuationBody(emitter, ctx, cont, result_counter);
 
             emitter.dedent();
             try emitter.writeIndent();
