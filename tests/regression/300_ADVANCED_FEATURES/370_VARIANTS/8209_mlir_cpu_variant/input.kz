@@ -1,0 +1,42 @@
+// Test 8209: MLIR CPU variant — the walking skeleton for the MLIR backend.
+//
+// RED PIN (2026-07-09). This captures the first slice of the "compile a Koru
+// subtree to MLIR" roadmap: a `|mlir` proc variant whose opaque body is MLIR
+// text, selected explicitly, that must be lowered by the MLIR toolchain
+// (mlir-opt -> mlir-translate, pinned to LLVM/MLIR 19), compiled into the
+// binary, run, and produce the doubled result.
+//
+// It fails today because "mlir" is not a handled target: it is absent from the
+// emitter's foreign_targets list ({gpu, js, python, wasm, glsl}) and there is
+// no compile.target pass for it (contrast koru_std/gpu.kz, which shells GLSL ->
+// SPIR-V as BuildSteps). The honest end state is that this goes GREEN when the
+// MLIR backend leaf exists — mirroring 8205's zig+gpu variant coexistence, but
+// for a target that actually runs.
+//
+// Scalar calling convention on purpose (one i32 in, one i32 out): the smallest
+// thing that proves Koru -> emitted MLIR -> lowered -> linked -> ran. Buffers
+// and the kernel:self shape come in later slices.
+
+~import std/io
+
+~pub event compute { value: i32 }
+| done i32
+
+// Zig fallback — always works, and defines the answer the MLIR variant must match.
+~proc compute|zig {
+    return .{ .done = value * 2 };
+}
+
+// MLIR implementation — opaque MLIR text body (balanced braces, like the GLSL
+// body in 8205). The compiler must route this through the MLIR toolchain.
+~proc compute|mlir {
+    func.func @koru_mlir_compute(%arg0: i32) -> i32 {
+        %two = arith.constant 2 : i32
+        %r = arith.muli %arg0, %two : i32
+        return %r : i32
+    }
+}
+
+// Explicitly select the MLIR variant (the |variant suffix, resolved at compile time).
+~compute|mlir(value: 21)
+| done d |> std/io:print.ln("result: {{ d:d }}")

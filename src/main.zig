@@ -2263,6 +2263,38 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                     try code_emitter.write("            break :blk null;\n");
                     try code_emitter.write("        };\n");
 
+                    // Loud wall (KORU122): a selected variant that matches NO
+                    // declared variant proc must never silently fall back to the
+                    // default body — a transform "running" through the wrong
+                    // machinery is a lying green. Names the declared variants.
+                    try code_emitter.write("        if (__variant_opt) |__v| {\n");
+                    try code_emitter.write("            const __koru_declared = [_][]const u8{");
+                    for (event.variant_targets, 0..) |target, ti| {
+                        const decl_entry = try std.fmt.bufPrint(&buf, "{s} \"{s}\"", .{ if (ti > 0) "," else "", target });
+                        try code_emitter.write(decl_entry);
+                    }
+                    try code_emitter.write(" };\n");
+                    try code_emitter.write("            var __koru_variant_known = false;\n");
+                    try code_emitter.write("            for (__koru_declared) |__t| {\n");
+                    try code_emitter.write("                if (__koru_std.mem.eql(u8, __v, __t)) __koru_variant_known = true;\n");
+                    try code_emitter.write("            }\n");
+                    try code_emitter.write("            if (!__koru_variant_known) {\n");
+                    var declared_list_buf: [512]u8 = undefined;
+                    var declared_list_len: usize = 0;
+                    for (event.variant_targets) |target| {
+                        const piece = std.fmt.bufPrint(declared_list_buf[declared_list_len..], " |{s}", .{target}) catch break;
+                        declared_list_len += piece.len;
+                    }
+                    const wall_msg = try std.fmt.allocPrint(allocator,
+                        \\                __koru_std.debug.print("error[KORU122]: transform `{s}` has no `|{{s}}` variant — the call site (or build config) selects one\n  declared variants:{s}\n  a `|variant` tag on a transform invocation selects the variant that produces that output; it never falls back to the default body\n  fix: declare `~proc {s}|{{s}} {{{{ ... }}}}` next to the existing variants, or drop the tag\n", .{{ __v, __v }});
+                        \\
+                    , .{ canonical_name, declared_list_buf[0..declared_list_len], event.match_name });
+                    defer allocator.free(wall_msg);
+                    try code_emitter.write(wall_msg);
+                    try code_emitter.write("                __koru_std.process.exit(1);\n");
+                    try code_emitter.write("            }\n");
+                    try code_emitter.write("        }\n");
+
                     try code_emitter.write("        const result = if (__variant_opt) |__v| (");
                     for (event.variant_targets) |target| {
                         const mangled = try emitter_helpers.mangleVariant(allocator, target);
@@ -2273,6 +2305,17 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                     try code_emitter.write("handler.handler(input))");
                     try code_emitter.write(" else handler.handler(input);\n");
                 } else {
+                    // Same wall for a transform with NO variant procs: a call-site
+                    // `|variant` tag must not be silently ignored (KORU122).
+                    try code_emitter.write("        if (invocation.variant) |__v| {\n");
+                    const no_variants_msg = try std.fmt.allocPrint(allocator,
+                        \\            __koru_std.debug.print("error[KORU122]: transform `{s}` declares no variants, but the call site selects `|{{s}}`\n  fix: declare `~proc {s}|{{s}} {{{{ ... }}}}` next to the transform, or drop the tag\n", .{{ __v, __v }});
+                        \\
+                    , .{ event.match_name, event.match_name });
+                    defer allocator.free(no_variants_msg);
+                    try code_emitter.write(no_variants_msg);
+                    try code_emitter.write("            __koru_std.process.exit(1);\n");
+                    try code_emitter.write("        }\n");
                     try code_emitter.write("        const result = handler.handler(input);\n");
                 }
                 try code_emitter.write("        return switch (result) {\n");
@@ -7248,11 +7291,116 @@ pub fn main() !void {
         try printStdout(allocator, "✓ Generated {s} (for backend compilation)\n", .{build_user_path});
     }
 
-    // Generate build_output.zig for OUTPUT binary (build:requires)
-    if (build_requirements_raw.len > 0) {
-        try printStdout(allocator, "✓ Found {d} build requirement(s) for output binary\n", .{build_requirements_raw.len});
+    // Synthesize build requirements for |mlir variants. Each MLIR proc body is
+    // compiled AOT (mlir-opt -> mlir-translate -> clang -c) to an object and
+    // linked into the output binary via exe.addObjectFile. These are NOT user
+    // ~build:requires — the compiler synthesizes them into the SAME pipeline the
+    // moment it sees a |mlir proc (hooking the pipeline, not the user surface).
+    // PoC: MLIR toolchain path hardcoded to the Homebrew LLVM 19 prefix; future
+    // work resolves the tool through the deps/requires family.
+    var mlir_build_reqs = try std.ArrayList(emit_build_zig.BuildRequirement).initCapacity(allocator, 0);
+    defer {
+        for (mlir_build_reqs.items) |r| allocator.free(r.source_code);
+        mlir_build_reqs.deinit(allocator);
+    }
+    {
+        // The link step is a build-TIME glob over `*.mlir` in the build root:
+        // whoever writes a .mlir file gets lowered + linked. Stage A writes one
+        // per user `|mlir` proc (below); Stage-C transforms (e.g. kernel:self|mlir)
+        // write theirs while the backend runs — before Stage D's `zig build`
+        // reads build_output.zig — so generated kernels ride the same seam with
+        // no symbol coordination across stages.
+        const mlir_glob_req =
+            \\            var __mlir_dir = b.build_root.handle.openDir(".", .{ .iterate = true }) catch @panic("mlir: cannot open build root");
+            \\            defer __mlir_dir.close();
+            \\            var __mlir_it = __mlir_dir.iterate();
+            \\            while (__mlir_it.next() catch @panic("mlir: build-root iteration failed")) |__mlir_entry| {
+            \\                if (__mlir_entry.kind != .file) continue;
+            \\                if (!std.mem.endsWith(u8, __mlir_entry.name, ".mlir")) continue;
+            \\                const __mlir_name = b.dupe(__mlir_entry.name);
+            \\                const __mlir_lower = b.addSystemCommand(&.{ "/opt/homebrew/opt/llvm/bin/mlir-opt", "--pass-pipeline=builtin.module(convert-scf-to-cf,expand-strided-metadata,finalize-memref-to-llvm,convert-arith-to-llvm,convert-cf-to-llvm,convert-func-to-llvm{use-bare-ptr-memref-call-conv=1},reconcile-unrealized-casts)" });
+            \\                __mlir_lower.addFileArg(b.path(__mlir_name));
+            \\                const __mlir_lowered = __mlir_lower.captureStdOut();
+            \\                const __mlir_tr = b.addSystemCommand(&.{ "/opt/homebrew/opt/llvm/bin/mlir-translate", "--mlir-to-llvmir" });
+            \\                __mlir_tr.addFileArg(__mlir_lowered);
+            \\                const __mlir_ll = __mlir_tr.captureStdOut();
+            \\                const __mlir_cc = b.addSystemCommand(&.{ "/opt/homebrew/opt/llvm/bin/clang", "-c", "-x", "ir" });
+            \\                __mlir_cc.addFileArg(__mlir_ll);
+            \\                __mlir_cc.addArg("-o");
+            \\                const __mlir_obj = __mlir_cc.addOutputFileArg(b.fmt("{s}.o", .{__mlir_name}));
+            \\                exe.addObjectFile(__mlir_obj);
+            \\            }
+            \\
+        ;
+        const Mlir = struct {
+            fn emitProc(alloc: std.mem.Allocator, proc: ast.ProcDecl, out_dir: []const u8) !bool {
+                const tgt = proc.target orelse return false;
+                if (!std.mem.eql(u8, tgt, "mlir")) return false;
+                var sym_buf = std.ArrayList(u8){};
+                defer sym_buf.deinit(alloc);
+                try sym_buf.appendSlice(alloc, "koru_mlir_");
+                for (proc.path.segments, 0..) |seg, seg_i| {
+                    if (seg_i > 0) try sym_buf.append(alloc, '_');
+                    // Kebab event names are canonical Koru; symbols can't carry '-'.
+                    for (seg) |ch| try sym_buf.append(alloc, if (ch == '-') '_' else ch);
+                }
+                const sym = sym_buf.items;
+                // Write <sym>.mlir into the output dir (the build root for build_output.zig).
+                const mlir_name = try std.fmt.allocPrint(alloc, "{s}.mlir", .{sym});
+                defer alloc.free(mlir_name);
+                const mlir_path = try std.fs.path.join(alloc, &[_][]const u8{ out_dir, mlir_name });
+                defer alloc.free(mlir_path);
+                const mf = try std.fs.cwd().createFile(mlir_path, .{});
+                defer mf.close();
+                try mf.writeAll(proc.body.text);
+                return true;
+            }
+            // A Stage-C transform can only write its generated .mlir while the
+            // backend runs, so Stage A must decide "this program will link MLIR"
+            // from the raw AST: any invocation carrying the `mlir` variant tag.
+            fn contHasMlirVariant(cont: *const ast.Continuation) bool {
+                if (cont.node) |*nd| {
+                    if (nd.* == .invocation) {
+                        if (nd.invocation.variant) |v| {
+                            if (std.mem.eql(u8, v, "mlir")) return true;
+                        }
+                    }
+                }
+                for (cont.continuations) |*child| {
+                    if (contHasMlirVariant(child)) return true;
+                }
+                return false;
+            }
+            fn run(alloc: std.mem.Allocator, items: []const ast.Item, out_dir: []const u8) !bool {
+                var needs_link = false;
+                for (items) |*item| {
+                    switch (item.*) {
+                        .proc_decl => |proc| {
+                            if (try emitProc(alloc, proc, out_dir)) needs_link = true;
+                        },
+                        .flow => |*f| {
+                            if (contHasMlirVariant(&f.body)) needs_link = true;
+                        },
+                        .module_decl => |*mod| {
+                            if (try run(alloc, mod.items, out_dir)) needs_link = true;
+                        },
+                        else => {},
+                    }
+                }
+                return needs_link;
+            }
+        };
+        if (try Mlir.run(allocator, source_file.items, output_dir)) {
+            try mlir_build_reqs.append(allocator, .{
+                .module_name = "mlir",
+                .source_code = try allocator.dupe(u8, mlir_glob_req),
+            });
+        }
+    }
 
-        var output_build_reqs = try std.ArrayList(emit_build_zig.BuildRequirement).initCapacity(allocator, build_requirements_raw.len);
+    // Generate build_output.zig for OUTPUT binary (user build:requires + synthesized MLIR links)
+    if (build_requirements_raw.len > 0 or mlir_build_reqs.items.len > 0) {
+        var output_build_reqs = try std.ArrayList(emit_build_zig.BuildRequirement).initCapacity(allocator, build_requirements_raw.len + mlir_build_reqs.items.len);
         defer output_build_reqs.deinit(allocator);
 
         for (build_requirements_raw) |req| {
@@ -7261,6 +7409,14 @@ pub fn main() !void {
                 .source_code = req,
             });
         }
+        for (mlir_build_reqs.items) |req| {
+            try output_build_reqs.append(allocator, req);
+        }
+
+        if (build_requirements_raw.len > 0)
+            try printStdout(allocator, "✓ Found {d} build requirement(s) for output binary\n", .{build_requirements_raw.len});
+        if (mlir_build_reqs.items.len > 0)
+            try printStdout(allocator, "✓ Synthesized {d} MLIR object link(s) for output binary\n", .{mlir_build_reqs.items.len});
 
         // Generate build_output.zig - this will be used to compile output_emitted.zig
         const build_output_path = try std.fs.path.join(allocator, &[_][]const u8{ output_dir, "build_output.zig" });

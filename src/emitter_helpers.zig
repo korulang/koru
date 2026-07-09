@@ -448,10 +448,58 @@ pub const CodeEmitter = struct {
         return codegen_utils.needsEscaping(word);
     }
 
-    /// Write a line of text with Zig keyword escaping for field access (.keyword -> .@"keyword")
+    /// Write a line of text with Zig keyword escaping for field access (.keyword -> .@"keyword").
+    ///
+    /// String-literal content is OPAQUE to escaping: a multiline-string line
+    /// (leading `\\`) is written verbatim, and `"..."` / `'...'` spans on
+    /// ordinary lines are never rewritten. Proc bodies carry foreign text in
+    /// string literals — MLIR (`scf.for`), GLSL, user-facing messages — and
+    /// escaping inside them corrupts that text byte-for-byte (the 390_100
+    /// `scf.@"for"` corruption that pinned this).
     fn writeLineWithKeywordEscaping(self: *CodeEmitter, line: []const u8) !void {
+        // Zig multiline string literal line: everything after `\\` is string
+        // content, and `\\` can only be preceded by whitespace on its line.
+        const stripped = std.mem.trimLeft(u8, line, " \t");
+        if (std.mem.startsWith(u8, stripped, "\\\\")) {
+            try self.write(line);
+            return;
+        }
+
         var pos: usize = 0;
+        var in_string = false; // inside "..."
+        var in_char = false; // inside '...'
+        var backslash_escaped = false; // previous char was '\' inside a literal
         while (pos < line.len) {
+            const c = line[pos];
+
+            // Inside a string/char literal: copy verbatim, only track the exit.
+            if (in_string or in_char) {
+                try self.write(line[pos .. pos + 1]);
+                if (backslash_escaped) {
+                    backslash_escaped = false;
+                } else if (c == '\\') {
+                    backslash_escaped = true;
+                } else if (in_string and c == '"') {
+                    in_string = false;
+                } else if (in_char and c == '\'') {
+                    in_char = false;
+                }
+                pos += 1;
+                continue;
+            }
+            if (c == '"') {
+                in_string = true;
+                try self.write(line[pos .. pos + 1]);
+                pos += 1;
+                continue;
+            }
+            if (c == '\'') {
+                in_char = true;
+                try self.write(line[pos .. pos + 1]);
+                pos += 1;
+                continue;
+            }
+
             // Look for field access pattern: .identifier
             if (line[pos] == '.' and pos + 1 < line.len) {
                 const after_dot = pos + 1;

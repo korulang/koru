@@ -1,0 +1,33 @@
+// Test 390_100: kernel:self|mlir — the COMPILER generates the MLIR kernel.
+//
+// RED PIN (2026-07-09). Slice 1a of the MLIR arc: 8209 proved a hand-written
+// |mlir body lowers/links/runs; 8210 proved the loop shape (scf.for) survives
+// the same pipe. This pin says the kernel transform itself now writes that
+// MLIR — `std/kernel:self|mlir` selects the MLIR-producing variant of the self
+// transform (same convention as const|template|js: the tag on a transform
+// variant names the language its OUTPUT is written in), and the generated
+// memref/scf/arith kernel must produce the same answer as the Zig loop in
+// 390_040_self_basic.
+//
+// ABI (slice 1b, 2026-07-09): the generated func takes the host buffer as a
+// memref argument (bare-ptr call convention → C `void f(double*)`) and mutates
+// it in place — one call per op, and chained ops compose (390_101 pins that).
+// The original 1a skeleton internalized init values and extracted per element;
+// that machinery is gone.
+
+~import std/kernel
+~import std/io
+
+~std/kernel:shape(Body) {
+    mass: f64,
+}
+
+~std/kernel:init(Body) {
+    { mass: 1.0 },
+    { mass: 2.0 },
+    { mass: 3.0 },
+}
+| kernel k |> std/kernel:self|mlir { k.mass *= 2.0 }
+| computed c |> std/io:print.blk {
+        mass[0]={{ c[0].mass:f }} mass[1]={{ c[1].mass:f }} mass[2]={{ c[2].mass:f }}
+    }

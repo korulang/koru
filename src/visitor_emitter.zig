@@ -3423,6 +3423,53 @@ pub const VisitorEmitter = struct {
                         }
                         if (!matches) continue;
 
+                        // MLIR variant: the opaque body is MLIR text compiled AOT
+                        // to an object and linked in. Here we emit an `extern fn`
+                        // decl (resolved at link time to the symbol the MLIR
+                        // func.func lowers to) plus a thin wrapper that calls it.
+                        // PoC shape: symbol `koru_mlir_<event-path>`, params = input
+                        // fields in order, return = first terminal branch's scalar.
+                        const is_mlir_variant = eql(u8, target, "mlir");
+                        var mlir_sym: []const u8 = "";
+                        var mlir_call_args: []const u8 = "";
+                        var mlir_ret_branch: []const u8 = "";
+                        if (is_mlir_variant) {
+                            var sym_buf = std.ArrayList(u8){};
+                            try sym_buf.appendSlice(self.allocator, "koru_mlir_");
+                            for (event.path.segments, 0..) |seg, si| {
+                                if (si > 0) try sym_buf.append(self.allocator, '_');
+                                // Kebab event names are canonical Koru; symbols can't carry '-'.
+                                for (seg) |ch| try sym_buf.append(self.allocator, if (ch == '-') '_' else ch);
+                            }
+                            mlir_sym = try sym_buf.toOwnedSlice(self.allocator);
+
+                            var params_buf = std.ArrayList(u8){};
+                            var args_buf = std.ArrayList(u8){};
+                            for (event.input.fields, 0..) |ifld, fi| {
+                                if (fi > 0) {
+                                    try params_buf.appendSlice(self.allocator, ", ");
+                                    try args_buf.appendSlice(self.allocator, ", ");
+                                }
+                                try params_buf.appendSlice(self.allocator, ifld.name);
+                                try params_buf.appendSlice(self.allocator, ": ");
+                                try params_buf.appendSlice(self.allocator, ifld.type);
+                                try args_buf.appendSlice(self.allocator, ifld.name);
+                            }
+                            mlir_call_args = try args_buf.toOwnedSlice(self.allocator);
+
+                            var mlir_ret_type: []const u8 = "void";
+                            for (event.branches) |br| {
+                                if (br.kind == .terminal) {
+                                    mlir_ret_branch = br.name;
+                                    if (br.payload.fields.len >= 1) mlir_ret_type = br.payload.fields[0].type;
+                                    break;
+                                }
+                            }
+                            const extern_decl = try std.fmt.allocPrint(self.allocator, "extern fn {s}({s}) {s};\n", .{ mlir_sym, params_buf.items, mlir_ret_type });
+                            try self.code_emitter.writeIndent();
+                            try self.code_emitter.write(extern_decl);
+                        }
+
                         // Emit variant handler
                         try self.code_emitter.writeIndent();
                         try self.code_emitter.write("pub fn ");
@@ -3463,6 +3510,17 @@ pub const VisitorEmitter = struct {
                         if (is_template_variant) {
                             try self.code_emitter.writeIndent();
                             try self.code_emitter.write("unreachable; // |template| proc — inlined at call sites\n");
+                        } else if (is_mlir_variant) {
+                            // Thin wrapper: call the AOT-linked MLIR symbol, wrap the
+                            // scalar result in the terminal branch.
+                            if (mlir_ret_branch.len == 0) {
+                                try self.code_emitter.writeIndent();
+                                try self.code_emitter.write("@compileError(\"MLIR variant PoC supports single terminal-branch scalar events only\");\n");
+                            } else {
+                                const ret_line = try std.fmt.allocPrint(self.allocator, "return .{{ .{s} = {s}({s}) }};\n", .{ mlir_ret_branch, mlir_sym, mlir_call_args });
+                                try self.code_emitter.writeIndent();
+                                try self.code_emitter.write(ret_line);
+                            }
                         } else {
                             // Rewrite _ = field to _ = &field (see main handler comment)
                             var variant_proc_body: []const u8 = proc.body.text;

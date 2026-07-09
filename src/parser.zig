@@ -2973,6 +2973,7 @@ pub const Parser = struct {
         return ast.Invocation{
             .path = original.path,
             .args = try new_args.toOwnedSlice(self.allocator),
+            .variant = original.variant,
         };
     }
 
@@ -3038,6 +3039,7 @@ pub const Parser = struct {
         return ast.Invocation{
             .path = original.path,
             .args = try new_args.toOwnedSlice(self.allocator),
+            .variant = original.variant,
         };
     }
 
@@ -7052,6 +7054,19 @@ pub const Parser = struct {
             const c = content[i];
             if (std.ascii.isAlphanumeric(c) or c == '_' or c == '-' or c == '.' or c == ':' or c == '/' or c == '[' or c == ']') continue;
             break;
+        }
+        // Optional `|variant` suffix (e.g. `std/kernel:self|mlir { ... }`).
+        // The `|` must be immediately followed by an identifier start, so this
+        // can never swallow a `|>` chain glyph (its next char is `>`).
+        if (i + 1 < content.len and content[i] == '|' and
+            (std.ascii.isAlphabetic(content[i + 1]) or content[i + 1] == '_'))
+        {
+            i += 1;
+            while (i < content.len) : (i += 1) {
+                const c = content[i];
+                if (std.ascii.isAlphanumeric(c) or c == '_' or c == '-' or c == '[' or c == ']') continue;
+                break;
+            }
         }
         // After the path, skip whitespace
         while (i < content.len and (content[i] == ' ' or content[i] == '\t')) : (i += 1) {}
