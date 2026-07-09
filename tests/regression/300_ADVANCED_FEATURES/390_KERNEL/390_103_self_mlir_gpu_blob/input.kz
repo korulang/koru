@@ -1,0 +1,36 @@
+// Test 390_103: self|mlir[gpu] — the kernel reaches SPIR-V (GPU rung B).
+//
+// The [gpu] parameter routes the SAME generated kernel through the GPU
+// lowering: the transform emits a gpu.module (block-per-element indexing,
+// StorageBuffer memref, entry-point ABI), Stage D lowers it via
+// convert-gpu-to-spirv and serializes a .spv blob, and spirv-val gates the
+// build — an invalid blob is a loud compile failure, never a shipped one.
+//
+// Coexistence (the 8205 pattern): the CPU kernel is still generated, linked,
+// and computes the numbers below, so this pin both RUNS and proves the blob.
+// Host dispatch through Vulkan/MoltenVK is the next rung; until then the GPU
+// artifact is produced and validated but not executed.
+//
+// f32 on purpose: Apple GPUs have no Float64 — f64 shapes under [gpu] are a
+// loud KORU123 wall, the first concrete instance of the capability lattice.
+//
+// RESIDUAL: the call-site `[gpu]` parameter is scaffolding — target selection
+// belongs to the (separate) per-event selection-language endeavor; this knob
+// dies the day that lands.
+
+~import std/kernel
+~import std/io
+
+~std/kernel:shape(Body) {
+    mass: f32,
+}
+
+~std/kernel:init(Body) {
+    { mass: 1.0 },
+    { mass: 2.0 },
+    { mass: 3.0 },
+}
+| kernel k |> std/kernel:self|mlir[gpu] { k.mass *= 2.0 }
+| computed c |> std/io:print.blk {
+        mass[0]={{ c[0].mass:f }} mass[1]={{ c[1].mass:f }} mass[2]={{ c[2].mass:f }}
+    }

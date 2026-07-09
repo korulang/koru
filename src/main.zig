@@ -7317,6 +7317,20 @@ pub fn main() !void {
             \\            while (__mlir_it.next() catch @panic("mlir: build-root iteration failed")) |__mlir_entry| {
             \\                if (__mlir_entry.kind != .file) continue;
             \\                if (!std.mem.endsWith(u8, __mlir_entry.name, ".mlir")) continue;
+            \\                if (std.mem.endsWith(u8, __mlir_entry.name, ".gpu.mlir")) {
+            \\                    // GPU lowering: gpu.module -> SPIR-V dialect -> serialized
+            \\                    // blob, gated by spirv-val — an invalid blob fails the
+            \\                    // build loudly instead of shipping. Host dispatch through
+            \\                    // Vulkan is the next rung; nothing links from this yet.
+            \\                    const __gpu_name = b.dupe(__mlir_entry.name);
+            \\                    const __gpu_step = b.addSystemCommand(&.{ "sh", "-c",
+            \\                        "/opt/homebrew/opt/llvm/bin/mlir-opt --pass-pipeline='builtin.module(convert-gpu-to-spirv, spirv.module(spirv-lower-abi-attrs, spirv-update-vce))' \"$1\" | awk '/^  spirv.module/{f=1} f{print substr($0,3)} f && /^  \\}$/{exit}' | /opt/homebrew/opt/llvm/bin/mlir-translate --no-implicit-module --serialize-spirv -o \"$2\" && /usr/local/bin/spirv-val \"$2\"",
+            \\                        "koru-spv" });
+            \\                    __gpu_step.addFileArg(b.path(__gpu_name));
+            \\                    __gpu_step.addArg(b.fmt("{s}.spv", .{__gpu_name[0 .. __gpu_name.len - ".mlir".len]}));
+            \\                    exe.step.dependOn(&__gpu_step.step);
+            \\                    continue;
+            \\                }
             \\                const __mlir_name = b.dupe(__mlir_entry.name);
             \\                const __mlir_lower = b.addSystemCommand(&.{ "/opt/homebrew/opt/llvm/bin/mlir-opt", "--pass-pipeline=builtin.module(convert-scf-to-cf,expand-strided-metadata,finalize-memref-to-llvm,convert-arith-to-llvm,convert-cf-to-llvm,convert-func-to-llvm{use-bare-ptr-memref-call-conv=1},reconcile-unrealized-casts)" });
             \\                __mlir_lower.addFileArg(b.path(__mlir_name));
@@ -7362,7 +7376,11 @@ pub fn main() !void {
                 if (cont.node) |*nd| {
                     if (nd.* == .invocation) {
                         if (nd.invocation.variant) |v| {
-                            if (std.mem.eql(u8, v, "mlir")) return true;
+                            // Match the variant BASE: `mlir` and parameterized
+                            // forms like `mlir[gpu]` both mean MLIR artifacts
+                            // will exist at Stage D.
+                            const v_base = if (std.mem.indexOfScalar(u8, v, '[')) |bi| v[0..bi] else v;
+                            if (std.mem.eql(u8, v_base, "mlir")) return true;
                         }
                     }
                 }
