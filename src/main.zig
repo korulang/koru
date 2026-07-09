@@ -7318,7 +7318,7 @@ pub fn main() !void {
             \\                if (__mlir_entry.kind != .file) continue;
             \\                if (!std.mem.endsWith(u8, __mlir_entry.name, ".mlir")) continue;
             \\                const __mlir_name = b.dupe(__mlir_entry.name);
-            \\                const __mlir_lower = b.addSystemCommand(&.{ "/opt/homebrew/opt/llvm/bin/mlir-opt", "--pass-pipeline=builtin.module(convert-scf-to-cf,expand-strided-metadata,finalize-memref-to-llvm,convert-arith-to-llvm,convert-cf-to-llvm,convert-func-to-llvm,reconcile-unrealized-casts)" });
+            \\                const __mlir_lower = b.addSystemCommand(&.{ "/opt/homebrew/opt/llvm/bin/mlir-opt", "--pass-pipeline=builtin.module(convert-scf-to-cf,expand-strided-metadata,finalize-memref-to-llvm,convert-arith-to-llvm,convert-cf-to-llvm,convert-func-to-llvm{use-bare-ptr-memref-call-conv=1},reconcile-unrealized-casts)" });
             \\                __mlir_lower.addFileArg(b.path(__mlir_name));
             \\                const __mlir_lowered = __mlir_lower.captureStdOut();
             \\                const __mlir_tr = b.addSystemCommand(&.{ "/opt/homebrew/opt/llvm/bin/mlir-translate", "--mlir-to-llvmir" });

@@ -9,12 +9,11 @@
 // memref/scf/arith kernel must produce the same answer as the Zig loop in
 // 390_040_self_basic.
 //
-// Scalar-ABI knot (deliberate, points at the buffer-ABI slice): the buffer
-// cannot cross the extern boundary yet, so the generated MLIR is
-// index-parameterized — it internalizes the compile-time-known init values,
-// runs the full self loop, and returns element i; the Zig side fills the
-// buffer by calling it once per element. Wasteful on purpose; the wart IS the
-// walking skeleton's arrow at the memref ABI.
+// ABI (slice 1b, 2026-07-09): the generated func takes the host buffer as a
+// memref argument (bare-ptr call convention → C `void f(double*)`) and mutates
+// it in place — one call per op, and chained ops compose (390_101 pins that).
+// The original 1a skeleton internalized init values and extracted per element;
+// that machinery is gone.
 
 ~import std/kernel
 ~import std/io
