@@ -1,4 +1,4 @@
-// Test 390_103: self|mlir[gpu] — the kernel reaches SPIR-V (GPU rung B).
+// Test 390_103: self|mlir[gpu] — the kernel RUNS on the GPU (GPU rung C).
 //
 // The [gpu] parameter routes the SAME generated kernel through the GPU
 // lowering: the transform emits a gpu.module (block-per-element indexing,
@@ -6,10 +6,11 @@
 // convert-gpu-to-spirv and serializes a .spv blob, and spirv-val gates the
 // build — an invalid blob is a loud compile failure, never a shipped one.
 //
-// Coexistence (the 8205 pattern): the CPU kernel is still generated, linked,
-// and computes the numbers below, so this pin both RUNS and proves the blob.
-// Host dispatch through Vulkan/MoltenVK is the next rung; until then the GPU
-// artifact is produced and validated but not executed.
+// Then it EXECUTES: the host binary @imports the emitted koru_gpu_dispatch
+// runtime, which uploads the buffer, dispatches the SPIR-V blob on the local
+// Vulkan device (Apple M2 Pro via MoltenVK), and reads the result back — so
+// the numbers below are computed ON THE GPU OF THE MACHINE THAT COMPILED THE
+// KERNEL. The buffer is mutated in place, same contract as the CPU |mlir path.
 //
 // f32 on purpose: Apple GPUs have no Float64 — f64 shapes under [gpu] are a
 // loud KORU123 wall, the first concrete instance of the capability lattice.

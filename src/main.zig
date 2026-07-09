@@ -7320,8 +7320,12 @@ pub fn main() !void {
             \\                if (std.mem.endsWith(u8, __mlir_entry.name, ".gpu.mlir")) {
             \\                    // GPU lowering: gpu.module -> SPIR-V dialect -> serialized
             \\                    // blob, gated by spirv-val — an invalid blob fails the
-            \\                    // build loudly instead of shipping. Host dispatch through
-            \\                    // Vulkan is the next rung; nothing links from this yet.
+            \\                    // build loudly instead of shipping. The output binary
+            \\                    // @imports koru_gpu_dispatch.zig (@cImport vulkan) and
+            \\                    // dispatches the blob on the local device, so the exe
+            \\                    // links libvulkan/libc here (PoC hardcoded prefixes, same
+            \\                    // family as the LLVM path; rpath so the loader finds
+            \\                    // @rpath/libvulkan at runtime).
             \\                    const __gpu_name = b.dupe(__mlir_entry.name);
             \\                    const __gpu_step = b.addSystemCommand(&.{ "sh", "-c",
             \\                        "/opt/homebrew/opt/llvm/bin/mlir-opt --pass-pipeline='builtin.module(convert-gpu-to-spirv, spirv.module(spirv-lower-abi-attrs, spirv-update-vce))' \"$1\" | awk '/^  spirv.module/{f=1} f{print substr($0,3)} f && /^  \\}$/{exit}' | /opt/homebrew/opt/llvm/bin/mlir-translate --no-implicit-module --serialize-spirv -o \"$2\" && /usr/local/bin/spirv-val \"$2\"",
@@ -7329,6 +7333,11 @@ pub fn main() !void {
             \\                    __gpu_step.addFileArg(b.path(__gpu_name));
             \\                    __gpu_step.addArg(b.fmt("{s}.spv", .{__gpu_name[0 .. __gpu_name.len - ".mlir".len]}));
             \\                    exe.step.dependOn(&__gpu_step.step);
+            \\                    exe.linkLibC();
+            \\                    exe.addIncludePath(.{ .cwd_relative = "/usr/local/include" });
+            \\                    exe.addLibraryPath(.{ .cwd_relative = "/usr/local/lib" });
+            \\                    exe.linkSystemLibrary("vulkan");
+            \\                    exe.addRPath(.{ .cwd_relative = "/usr/local/lib" });
             \\                    continue;
             \\                }
             \\                const __mlir_name = b.dupe(__mlir_entry.name);
