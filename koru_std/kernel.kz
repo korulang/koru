@@ -278,6 +278,9 @@ const std = @import("std");
     const KernelOp = struct {
         op_type: []const u8,
         body_text: []const u8,
+        // Call-site variant tag (`std/kernel:self|mlir { ... }`): selects the
+        // backend the fused emission generates for this op. null = Zig loop.
+        variant: ?[]const u8 = null,
     };
 
     const KernelPlan = struct {
@@ -351,6 +354,7 @@ const std = @import("std");
                                             ops_list.append(a, .{
                                                 .op_type = if (is_pairwise) "pairwise" else "self",
                                                 .body_text = bt,
+                                                .variant = inv.variant,
                                             }) catch unreachable;
                                         }
                                     }
@@ -385,6 +389,7 @@ const std = @import("std");
                                             ops_list.append(a, .{
                                                 .op_type = if (is_pairwise) "pairwise" else "self",
                                                 .body_text = bt,
+                                                .variant = inv.variant,
                                             }) catch unreachable;
                                         }
                                     }
@@ -423,6 +428,7 @@ const std = @import("std");
                             ops.append(alloc, .{
                                 .op_type = if (is_pairwise) "pairwise" else "self",
                                 .body_text = bt,
+                                .variant = inv.variant,
                             }) catch unreachable;
                         }
                     }
@@ -596,6 +602,8 @@ const std = @import("std");
             binding: []const u8,
             static_name_ref: []const u8,
             elem_count: usize,
+            init_source: []const u8,
+            shape_fields: []const ast.Field,
         ) []const u8 {
             if (ops.len == 0) return "";
 
@@ -613,8 +621,13 @@ const std = @import("std");
                 code.appendSlice(alloc, step_open) catch unreachable;
             }
 
-            for (ops) |op| {
+            for (ops, 0..) |op, op_idx| {
                 if (std.mem.eql(u8, op.op_type, "pairwise")) {
+                    // Loud wall (KORU122): pairwise has no backend variants yet.
+                    if (op.variant) |vt| {
+                        std.debug.print("error[KORU122]: kernel op `pairwise` supports no variants yet (got `|{s}`) — |mlir generation lands on `self` first\n", .{vt});
+                        std.process.exit(1);
+                    }
                     // Transform body: k.other.X -> ptr[j].X, k.X -> ptr[i].X
                     const binding_other = std.fmt.allocPrint(alloc, "{s}.other", .{binding}) catch unreachable;
                     const self_ref = std.fmt.allocPrint(alloc, "{s}[i]", .{ptr_name}) catch unreachable;
@@ -659,6 +672,151 @@ const std = @import("std");
                         .{ elem_count, elem_count, body.items }
                     ) catch unreachable) catch unreachable;
                 } else if (std.mem.eql(u8, op.op_type, "self")) {
+                    if (op.variant) |vt| {
+                        // Loud wall (KORU122): an unknown backend tag never falls
+                        // back to the Zig loop — that green would lie about which
+                        // machinery computed the answer.
+                        if (!std.mem.eql(u8, vt, "mlir")) {
+                            std.debug.print("error[KORU122]: kernel op `self` has no `|{s}` variant — supported: |mlir (generated MLIR kernel) or no tag (Zig loop)\n", .{vt});
+                            std.process.exit(1);
+                        }
+                        if (step_range != null) {
+                            std.debug.print("error[KORU123]: `self|mlir` under `std/kernel:step` is not supported yet — the generated MLIR bakes the init state, so re-running it per step would recompute from t0\n", .{});
+                            std.process.exit(1);
+                        }
+                        // ---- |mlir: the compiler writes the kernel ----
+                        // Walking-skeleton scope: `<k>.<field> <op>= <literal>` on a
+                        // single-field f64 shape with compile-time-known init values.
+                        // The buffer stays host-side (scalar ABI): the generated func
+                        // internalizes the init constants, runs the FULL self loop,
+                        // and returns element i; the host fills the buffer one call
+                        // per element. Wasteful on purpose — this wart is the arrow
+                        // pointing at the buffer/memref ABI slice.
+                        const bt = std.mem.trim(u8, op.body_text, " \t\n\r;");
+                        if (!std.mem.startsWith(u8, bt, binding) or bt.len <= binding.len or bt[binding.len] != '.') {
+                            std.debug.print("error[KORU123]: `self|mlir` currently generates MLIR only for `{s}.<field> <op>= <literal>` (op: * + - /) — got `{s}`\n", .{ binding, bt });
+                            std.process.exit(1);
+                        }
+                        var rest = bt[binding.len + 1 ..];
+                        var fld_end: usize = 0;
+                        while (fld_end < rest.len and (std.ascii.isAlphanumeric(rest[fld_end]) or rest[fld_end] == '_')) fld_end += 1;
+                        const field_name = rest[0..fld_end];
+                        rest = std.mem.trimLeft(u8, rest[fld_end..], " \t");
+                        if (rest.len < 3 or rest[1] != '=') {
+                            std.debug.print("error[KORU123]: `self|mlir` currently generates MLIR only for `{s}.<field> <op>= <literal>` (op: * + - /) — got `{s}`\n", .{ binding, bt });
+                            std.process.exit(1);
+                        }
+                        const mlir_arith_op: []const u8 = switch (rest[0]) {
+                            '*' => "arith.mulf",
+                            '+' => "arith.addf",
+                            '-' => "arith.subf",
+                            '/' => "arith.divf",
+                            else => blk: {
+                                std.debug.print("error[KORU123]: `self|mlir` supports ops * + - / — got `{c}=` in `{s}`\n", .{ rest[0], bt });
+                                std.process.exit(1);
+                                break :blk "";
+                            },
+                        };
+                        const lit_raw = std.mem.trim(u8, rest[2..], " \t");
+                        if (lit_raw.len == 0) {
+                            std.debug.print("error[KORU123]: `self|mlir` needs a literal operand — got `{s}`\n", .{bt});
+                            std.process.exit(1);
+                        }
+                        const lit = if (std.mem.indexOfAny(u8, lit_raw, ".eE") != null)
+                            lit_raw
+                        else
+                            std.fmt.allocPrint(alloc, "{s}.0", .{lit_raw}) catch unreachable;
+
+                        if (shape_fields.len != 1 or !std.mem.eql(u8, shape_fields[0].type, "f64") or !std.mem.eql(u8, shape_fields[0].name, field_name)) {
+                            std.debug.print("error[KORU123]: `self|mlir` currently supports exactly one f64 shape field matching the body's `{s}` — the shape declares {d} field(s)\n", .{ field_name, shape_fields.len });
+                            std.process.exit(1);
+                        }
+
+                        // Init values for the field, parsed from the compile-time init source.
+                        var init_vals = std.ArrayList([]const u8).initCapacity(alloc, elem_count) catch unreachable;
+                        var scan: []const u8 = init_source;
+                        while (std.mem.indexOf(u8, scan, field_name)) |p| {
+                            var after = scan[p + field_name.len ..];
+                            after = std.mem.trimLeft(u8, after, " \t");
+                            if (after.len > 0 and after[0] == ':') {
+                                after = std.mem.trimLeft(u8, after[1..], " \t");
+                                var num_end: usize = 0;
+                                while (num_end < after.len and (std.ascii.isDigit(after[num_end]) or after[num_end] == '.' or after[num_end] == '-' or after[num_end] == '+' or after[num_end] == 'e' or after[num_end] == 'E')) num_end += 1;
+                                if (num_end > 0) {
+                                    const v_raw = after[0..num_end];
+                                    const v = if (std.mem.indexOfAny(u8, v_raw, ".eE") != null) v_raw else std.fmt.allocPrint(alloc, "{s}.0", .{v_raw}) catch unreachable;
+                                    init_vals.append(alloc, v) catch unreachable;
+                                }
+                                scan = after;
+                            } else {
+                                scan = scan[p + field_name.len ..];
+                            }
+                        }
+                        if (init_vals.items.len != elem_count) {
+                            std.debug.print("error[KORU123]: `self|mlir` needs compile-time-known init values — parsed {d} `{s}` values from the init source, expected {d}\n", .{ init_vals.items.len, field_name, elem_count });
+                            std.process.exit(1);
+                        }
+
+                        // Generate the MLIR kernel: internal memref, baked init
+                        // constants, the scf.for self loop, extract element %arg0.
+                        const sym = std.fmt.allocPrint(alloc, "koru_mlir_{s}_self_{d}", .{ static_name_ref, op_idx }) catch unreachable;
+                        var mlir = std.ArrayList(u8).initCapacity(alloc, 1024) catch unreachable;
+                        mlir.appendSlice(alloc, std.fmt.allocPrint(alloc,
+                            \\func.func @{s}(%arg0: i64) -> f64 {{
+                            \\  %buf = memref.alloca() : memref<{d}xf64>
+                            \\
+                        , .{ sym, elem_count }) catch unreachable) catch unreachable;
+                        for (init_vals.items, 0..) |v, vi| {
+                            mlir.appendSlice(alloc, std.fmt.allocPrint(alloc,
+                                \\  %i{d} = arith.constant {d} : index
+                                \\  %v{d} = arith.constant {s} : f64
+                                \\  memref.store %v{d}, %buf[%i{d}] : memref<{d}xf64>
+                                \\
+                            , .{ vi, vi, vi, v, vi, vi, elem_count }) catch unreachable) catch unreachable;
+                        }
+                        mlir.appendSlice(alloc, std.fmt.allocPrint(alloc,
+                            \\  %lb = arith.constant 0 : index
+                            \\  %ub = arith.constant {d} : index
+                            \\  %st = arith.constant 1 : index
+                            \\  %k = arith.constant {s} : f64
+                            \\  scf.for %i = %lb to %ub step %st {{
+                            \\    %x = memref.load %buf[%i] : memref<{d}xf64>
+                            \\    %y = {s} %x, %k : f64
+                            \\    memref.store %y, %buf[%i] : memref<{d}xf64>
+                            \\  }}
+                            \\  %ridx = arith.index_cast %arg0 : i64 to index
+                            \\  %r = memref.load %buf[%ridx] : memref<{d}xf64>
+                            \\  return %r : f64
+                            \\}}
+                            \\
+                        , .{ elem_count, lit, elem_count, mlir_arith_op, elem_count, elem_count }) catch unreachable) catch unreachable;
+
+                        // Write <sym>.mlir into the build root (Stage C runs there;
+                        // Stage D's build_output.zig glob lowers + links it).
+                        {
+                            const fname = std.fmt.allocPrint(alloc, "{s}.mlir", .{sym}) catch unreachable;
+                            const mf = std.fs.cwd().createFile(fname, .{}) catch |e| {
+                                std.debug.print("error: `self|mlir` cannot write {s}: {s}\n", .{ fname, @errorName(e) });
+                                std.process.exit(1);
+                            };
+                            defer mf.close();
+                            mf.writeAll(mlir.items) catch unreachable;
+                        }
+
+                        // Host glue: fill the buffer one scalar call per element.
+                        code.appendSlice(alloc, std.fmt.allocPrint(alloc,
+                            \\
+                            \\{{
+                            \\    const __koru_mlir_self_{d} = @extern(*const fn (i64) callconv(.c) f64, .{{ .name = "{s}" }});
+                            \\    for (0..{d}) |i| {{
+                            \\        {s}[i].{s} = __koru_mlir_self_{d}(@intCast(i));
+                            \\    }}
+                            \\}}
+                            ,
+                            .{ op_idx, sym, elem_count, ptr_name, field_name, op_idx }
+                        ) catch unreachable) catch unreachable;
+                        continue;
+                    }
                     // Transform body: k.X -> ptr[i].X
                     const self_ref = std.fmt.allocPrint(alloc, "{s}[i]", .{ptr_name}) catch unreachable;
 
@@ -739,7 +897,7 @@ const std = @import("std");
         ) catch unreachable;
 
         // Generate static-backed initialization (proof-of-concept)
-        const fused_code = generateKernelOpsCode(allocator, kernel_plan.ops, kernel_plan.step_range, kernel_binding_name, static_name, count);
+        const fused_code = generateKernelOpsCode(allocator, kernel_plan.ops, kernel_plan.step_range, kernel_binding_name, static_name, count, source.text, type_fields);
         const return_branch = if (has_computed_continuation) "computed" else "kernel";
         proc_body = std.fmt.allocPrint(
             allocator,
@@ -758,7 +916,7 @@ const std = @import("std");
             ,
             .{ static_name, type_name, single_init }
         ) catch unreachable;
-        const fused_code = generateKernelOpsCode(allocator, kernel_plan.ops, kernel_plan.step_range, kernel_binding_name, static_name, 1);
+        const fused_code = generateKernelOpsCode(allocator, kernel_plan.ops, kernel_plan.step_range, kernel_binding_name, static_name, 1, source.text, type_fields);
         const return_branch = if (has_computed_continuation) "computed" else "kernel";
         proc_body = std.fmt.allocPrint(
             allocator,
@@ -1350,6 +1508,15 @@ const std = @import("std");
             return null;
         }
     }.searchItems;
+
+    // The fused path (kernel:init claims the subtree) handles |mlir generation;
+    // this standalone transform only fires for self OUTSIDE a kernel-init
+    // subtree, where |mlir isn't wired yet. Never silently run the Zig loop
+    // for a tagged call — that green would lie about the backend.
+    if (invocation.variant) |vt| {
+        std.debug.print("error[KORU123]: `std/kernel:self|{s}` outside a `std/kernel:init` subtree is not supported yet — backend variants are generated by the fused kernel path\n", .{vt});
+        std.process.exit(1);
+    }
 
     const search_result = findInvocationRecursive(program.items, invocation) orelse {
         @panic("kernel.self: could not find invocation in AST");

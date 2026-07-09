@@ -89,6 +89,8 @@ pub const ErrorCode = enum(u16) {
     // Template / metaprogramming errors
     KORU120, // Template-asserted contract violation (`{% comp error %}` reached)
     KORU121, // Per-call template construct has no variant for the build target
+    KORU122, // Transform invocation requests a |variant the transform doesn't declare — never silently falls back
+    KORU123, // Kernel |mlir generation restriction — the walking skeleton rejects shapes it can't generate yet
 
     // Module structure errors
     KORU200, // Ambiguous module structure (both foo.kz and foo/ exist)
