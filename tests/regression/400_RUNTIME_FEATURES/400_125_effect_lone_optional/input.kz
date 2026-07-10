@@ -1,0 +1,28 @@
+// Test 400_125: a LONE optional effect branch — `! ?warn` as the event's only
+// branch. Positive coverage of the "single optional effect arm" grid cell.
+//
+// `! ?warn []const u8` carries a payload, so the redundant-no-payload rule does
+// NOT apply; it parses as an OPTIONAL EFFECT branch named "warn" and runs. The
+// `?` modifier is stripped on the lone-branch path exactly as with siblings
+// (cf. 210_076) — the single-branch case does NOT diverge.
+//
+// Dispatch handles the arm by NAME (`! warn w`): the `?` is a declaration
+// property, not repeated at the call site.
+//
+// DESIGN (effect vs continuation, ruled 2026-06-27): effect branches are flexible
+// — 0, a lone arm (void or payload, plain or `?`-optional), or many — and the
+// `?`/`when` modifiers apply uniformly regardless of count.
+~import std/io
+
+~pub event maybe { n: usize }
+! ?warn []const u8
+
+~proc maybe|zig {
+    var i: usize = 0;
+    while (i < n) : (i += 1) { warn("beep"); }
+}
+
+~maybe(n: 2)
+! warn w |> std/io:print.blk {
+    {{ w:s }}
+}

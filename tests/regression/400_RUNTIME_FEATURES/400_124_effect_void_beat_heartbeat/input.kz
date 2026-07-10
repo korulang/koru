@@ -1,0 +1,28 @@
+// Test 400_124: a LONE payloadless effect branch — a "heartbeat".
+//
+// `! beat` is the event's only branch: no payload, no resume, no terminal. It
+// fires for the fact of firing. This is the simplest void effect — the mouse-
+// move / keypress / tick shape — and it is NOT redundant because it MULTIFIRES:
+// the consumer body (`|> print thump`) runs once per beat, which calling the
+// proc directly cannot reproduce.
+//
+// DESIGN (effect vs continuation surfaces, ruled 2026-06-27): the redundant-
+// single-branch rejection (PARSE003) is a CONTINUATION (`|`) rule — a lone empty
+// terminal carries nothing and is genuinely redundant. It must NOT apply to an
+// EFFECT (`!`) arm, which is a yield point. Effect branches allow {0, a single
+// payloadless arm, many}; continuation branches do not.
+//
+// Currently RED: PARSE003 rejects this lone `! beat`. Pinned MUST_RUN to drive
+// scoping that rejection to terminal branches only.
+~import std/io
+
+~pub event heartbeat { n: usize }
+! beat
+
+~proc heartbeat|zig {
+    var i: usize = 0;
+    while (i < n) : (i += 1) { beat(); }
+}
+
+~heartbeat(n: 3)
+! beat |> std/io:print.ln("thump")
