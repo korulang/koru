@@ -59,4 +59,16 @@ node -e '
     `(world state; wall exit '"${wall_exit}"')`
   );
 '
+
+# World-model faucet — surface the per-test FLIPS + the whole-run VERDICT onto the
+# Cordial signals bus (koru.regression.test + test-health). PURE EXHAUST, kept OUT
+# of run_regression.sh so the runner stays dumb (see wm/producer/): the adapter is
+# the one layer that knows about both the suite and the world. The scalar timing
+# signals above ride wm→wmbus; the rich per-test + categorical verdict cards need a
+# direct POST, so the producer sends them itself. Best-effort — a down bus must
+# never red this instrument; output to stderr so `wm run` scrapes only signal lines.
+if command -v bun >/dev/null 2>&1; then
+  bun wm/producer/cordial.ts >&2 \
+    || echo "wm-adapter: NOTE — cordial world-model faucet skipped (bus down or producer error)" >&2
+fi
 exit 0
