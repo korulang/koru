@@ -17,6 +17,14 @@ cd "$(dirname "$0")/.."
 mtime() { node -e 'try{process.stdout.write(String(Math.floor(require("fs").statSync(process.argv[1]).mtimeMs)))}catch{process.stdout.write("0")}' "$1"; }
 
 before=$(mtime test-results/latest.json)
+
+# START beat — a purely-visual trace onto the Cordial board that the suite is now
+# running (so an empty board reads as idle, not mid-run). Best-effort; keeps
+# run_regression.sh dumb — the adapter brackets the run, the runner never learns.
+if command -v bun >/dev/null 2>&1; then
+  bun wm/producer/cordial.ts --start >&2 || true
+fi
+
 # Time the wall so the suite's OWN runtime becomes a measured world-signal
 # (scraped by `wm run --json`, pumped to the Cordial bus by wmbus.ts). Capture
 # real/user/sys seconds; run_regression's own stderr shares the temp file, so we
@@ -59,4 +67,16 @@ node -e '
     `(world state; wall exit '"${wall_exit}"')`
   );
 '
+
+# World-model faucet — surface the per-test FLIPS + the whole-run VERDICT onto the
+# Cordial signals bus (koru.regression.test + test-health). PURE EXHAUST, kept OUT
+# of run_regression.sh so the runner stays dumb (see wm/producer/): the adapter is
+# the one layer that knows about both the suite and the world. The scalar timing
+# signals above ride wm→wmbus; the rich per-test + categorical verdict cards need a
+# direct POST, so the producer sends them itself. Best-effort — a down bus must
+# never red this instrument; output to stderr so `wm run` scrapes only signal lines.
+if command -v bun >/dev/null 2>&1; then
+  bun wm/producer/cordial.ts >&2 \
+    || echo "wm-adapter: NOTE — cordial world-model faucet skipped (bus down or producer error)" >&2
+fi
 exit 0

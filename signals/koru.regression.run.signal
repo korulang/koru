@@ -1,0 +1,7 @@
+name: koru.regression.run
+kind: measured
+shape: categorical
+face: in
+membrane: false
+route: surface
+note: a PURELY VISUAL run-lifecycle trace beat — value "started" when the suite begins (bracketing the per-test flips and the test-health verdict), or "trace" for a free breadcrumb. surface only: no wake, no model. A trace log to the Cordial board, nothing more.
