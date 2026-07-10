@@ -5,6 +5,7 @@ const lexer = @import("lexer");
 const errors = @import("errors");
 const type_registry = @import("type_registry");
 const expression_parser = @import("expression_parser");
+const annotation_parser = @import("annotation_parser");
 const ModuleResolver = @import("module_resolver").ModuleResolver;
 const module_resolver_mod = @import("module_resolver");
 const file_types = @import("file_types");
@@ -1089,16 +1090,17 @@ pub const Parser = struct {
             annotations.deinit(self.allocator);
         }
 
-        // Check if ] is on the same line (inline syntax)
-        if (std.mem.indexOf(u8, content_with_bracket, "]")) |close_bracket| {
+        // Check if the block's closing ] is on the same line (inline syntax).
+        // Nesting- and string-aware: entries like custom(foo[1]) or doc("a]b")
+        // never close the block early, and pipes inside them never delimit.
+        if (annotation_parser.findBlockClose(content_with_bracket[1..])) |rel_close| {
             // Inline syntax: [a|b|c]
+            const close_bracket = rel_close + 1;
             const ann_str = content_with_bracket[1..close_bracket];
-            var ann_iter = std.mem.splitScalar(u8, ann_str, '|');
-            while (ann_iter.next()) |ann| {
-                const trimmed_ann = lexer.trim(ann);
-                if (trimmed_ann.len > 0) {
-                    try annotations.append(self.allocator, try self.allocator.dupe(u8, trimmed_ann));
-                }
+            const entries = try annotation_parser.splitEntries(self.allocator, ann_str);
+            defer self.allocator.free(entries);
+            for (entries) |entry| {
+                try annotations.append(self.allocator, try self.allocator.dupe(u8, entry));
             }
             const remaining = content_with_bracket[close_bracket + 1 ..];
             return AnnotationBlockResult{
@@ -1121,14 +1123,20 @@ pub const Parser = struct {
                 continue;
             }
 
-            // Check if this line contains the closing ]
-            if (std.mem.indexOf(u8, trimmed, "]")) |bracket_idx| {
+            // Check if this line contains the block's closing ] — nesting- and
+            // string-aware, so a bullet like `- custom(foo[1])` or prose
+            // mentioning `tests[3]` never closes the block early.
+            if (annotation_parser.findBlockClose(trimmed)) |bracket_idx| {
                 // Found closing bracket
                 // Check if there's a bullet annotation on this line before the ]
                 if (trimmed.len > 0 and isBulletMarker(trimmed[0])) {
-                    const ann_content = lexer.trim(trimmed[1..bracket_idx]); // Skip the - and content after ]
-                    if (ann_content.len > 0) {
-                        try annotations.append(self.allocator, try self.allocator.dupe(u8, ann_content));
+                    const bullet_content = lexer.trim(trimmed[1..bracket_idx]); // Skip the - and content after ]
+                    if (bullet_content.len > 0) {
+                        const entries = try annotation_parser.splitEntries(self.allocator, bullet_content);
+                        defer self.allocator.free(entries);
+                        for (entries) |entry| {
+                            try annotations.append(self.allocator, try self.allocator.dupe(u8, entry));
+                        }
                     }
                 }
                 const remaining = lexer.trim(trimmed[bracket_idx + 1 ..]); // Content after ]
@@ -1145,10 +1153,16 @@ pub const Parser = struct {
             // markdown buffer where bullets are canonical flags and prose is
             // human rationale. Discipline (why-not-what, no double-definitions)
             // is held in docs, not enforced by the parser.
+            // Bullet content splits through the same tokenizer as inline
+            // entries, so vertical and inline blocks produce identical lists.
             if (trimmed.len > 1 and isBulletMarker(trimmed[0]) and (trimmed[1] == ' ' or trimmed[1] == '\t')) {
-                const ann_content = lexer.trim(trimmed[1..]); // Skip the bullet marker
-                if (ann_content.len > 0) {
-                    try annotations.append(self.allocator, try self.allocator.dupe(u8, ann_content));
+                const bullet_content = lexer.trim(trimmed[1..]); // Skip the bullet marker
+                if (bullet_content.len > 0) {
+                    const entries = try annotation_parser.splitEntries(self.allocator, bullet_content);
+                    defer self.allocator.free(entries);
+                    for (entries) |entry| {
+                        try annotations.append(self.allocator, try self.allocator.dupe(u8, entry));
+                    }
                 }
                 self.current += 1;
                 continue;

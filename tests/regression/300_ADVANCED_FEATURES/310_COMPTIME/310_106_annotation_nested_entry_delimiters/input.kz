@@ -1,0 +1,24 @@
+// Pins the annotation-block tokenizer: entries are delimited nesting- and
+// string-aware — nested ()/[] pairs and "..." strings never close the block
+// or split an entry. Annotations stay opaque entries (consumers interpret);
+// this pins only the DELIMITING, inline ≡ vertical.
+
+const std = @import("std");
+
+~[custom(foo(bar: 1))|other[x, y]|doc("pipes | and ] stay put")]event guarded {}
+
+~[
+- custom(foo(bar: 1))
+- doc("vertical ] too")
+]event vertical-guarded {}
+
+~proc guarded|zig {
+    std.debug.print("guarded ran\n", .{});
+}
+
+~proc vertical-guarded|zig {
+    std.debug.print("vertical-guarded ran\n", .{});
+}
+
+~guarded()
+~vertical-guarded()

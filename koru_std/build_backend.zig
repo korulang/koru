@@ -120,6 +120,7 @@ parser_module.addImport("errors", errors_module);
 parser_module.addImport("log", log_module);
 parser_module.addImport("type_registry", type_registry_module);
 parser_module.addImport("expression_parser", expression_parser_module);
+parser_module.addImport("annotation_parser", annotation_parser_module);
 parser_module.addImport("union_collector", union_collector_module);
 parser_module.addImport("module_resolver", module_resolver_module);
 parser_module.addImport("file_types", file_types_module);
