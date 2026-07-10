@@ -1,0 +1,46 @@
+// FRONTIER (pinned RED): a direct-return (`->`) event that CONSUMES a phantom
+// obligation and MINTS a fresh one of the same name loses track of the
+// re-minted obligation when called TWICE in a row in one flow — the phantom
+// semantic checker rejects the SECOND call.
+//
+// Surfaced 2026-07-10 by independent LIFT-challenge contestants building
+// @korulang/yyjson: `mut.set.str` used the direct-return accessor form (the
+// sqlite3/pcre2 house style for non-branching accessors) and hit this the
+// moment two field-sets were chained. Minimal, yyjson-free repro.
+//
+//   ~make(): h0 |> bump(h: h0): h1 |> bump(h: h1): h2 |> dispose(h: h2)
+//
+// EXPECTED (if fixed): compiles and runs, printing `n=2`.
+// ACTUAL: error[KORU030]: Phantom state mismatch: argument 'h' carries no
+// obligation here, but this event consumes '<!owned>' — on the SECOND `bump`.
+// See expected_error.txt.
+//
+// The equivalent BRANCHING event (`| ok *Handle<owned!>`) chains twice fine
+// (that is the shipped workaround in yyjson); only the direct-return spelling
+// drops the re-minted obligation. So the phantom checker's re-mint tracking is
+// wrong specifically for `->` producers chained in sequence.
+
+const std = @import("std");
+const Handle = struct { n: i32 };
+
+~event make {} -> *Handle<owned!>
+~proc make|zig {
+    const h = std.heap.page_allocator.create(Handle) catch unreachable;
+    h.* = .{ .n = 0 };
+    return h;
+}
+
+// direct-return event: consumes <!owned>, mints fresh <owned!>
+~event bump { h: *Handle<!owned> } -> *Handle<owned!>
+~proc bump|zig {
+    h.n += 1;
+    return h;
+}
+
+~event dispose { h: *Handle<!owned> }
+~proc dispose|zig {
+    std.debug.print("n={}\n", .{h.n});
+    std.heap.page_allocator.destroy(h);
+}
+
+~make(): h0 |> bump(h: h0): h1 |> bump(h: h1): h2 |> dispose(h: h2)
