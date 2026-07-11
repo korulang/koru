@@ -6552,9 +6552,13 @@ pub fn main() !void {
 
     // Check if there's a potential command name in args
     // Args pattern: koruc input.kz <command> <...args for command>
-    // Find input file position, then check next arg
+    // Find input file position, then check next arg. Match against the RAW arg
+    // the user typed (`input_file.?`), not the stem-resolved `input`: a bare
+    // stem (`koruc pump build`) resolves `input` to `pump.kz`, which never
+    // equals the `pump` sitting in argv — so the command would silently fall
+    // through to a full build. The raw arg is the position the command follows.
     for (args, 0..) |arg, arg_idx| {
-        if (std.mem.eql(u8, arg, input)) {
+        if (std.mem.eql(u8, arg, input_file.?)) {
             // Check if there's a next arg that might be a command
             if (arg_idx + 1 < args.len) {
                 const potential_command = args[arg_idx + 1];
