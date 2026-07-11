@@ -278,6 +278,9 @@ const std = @import("std");
     const KernelOp = struct {
         op_type: []const u8,
         body_text: []const u8,
+        // Call-site variant tag (`std/kernel:self|mlir { ... }`): selects the
+        // backend the fused emission generates for this op. null = Zig loop.
+        variant: ?[]const u8 = null,
     };
 
     const KernelPlan = struct {
@@ -351,6 +354,7 @@ const std = @import("std");
                                             ops_list.append(a, .{
                                                 .op_type = if (is_pairwise) "pairwise" else "self",
                                                 .body_text = bt,
+                                                .variant = inv.variant,
                                             }) catch unreachable;
                                         }
                                     }
@@ -385,6 +389,7 @@ const std = @import("std");
                                             ops_list.append(a, .{
                                                 .op_type = if (is_pairwise) "pairwise" else "self",
                                                 .body_text = bt,
+                                                .variant = inv.variant,
                                             }) catch unreachable;
                                         }
                                     }
@@ -423,6 +428,7 @@ const std = @import("std");
                             ops.append(alloc, .{
                                 .op_type = if (is_pairwise) "pairwise" else "self",
                                 .body_text = bt,
+                                .variant = inv.variant,
                             }) catch unreachable;
                         }
                     }
@@ -596,6 +602,7 @@ const std = @import("std");
             binding: []const u8,
             static_name_ref: []const u8,
             elem_count: usize,
+            shape_fields: []const ast.Field,
         ) []const u8 {
             if (ops.len == 0) return "";
 
@@ -613,8 +620,13 @@ const std = @import("std");
                 code.appendSlice(alloc, step_open) catch unreachable;
             }
 
-            for (ops) |op| {
+            for (ops, 0..) |op, op_idx| {
                 if (std.mem.eql(u8, op.op_type, "pairwise")) {
+                    // Loud wall (KORU122): pairwise has no backend variants yet.
+                    if (op.variant) |vt| {
+                        std.debug.print("error[KORU122]: kernel op `pairwise` supports no variants yet (got `|{s}`) — |mlir generation lands on `self` first\n", .{vt});
+                        std.process.exit(1);
+                    }
                     // Transform body: k.other.X -> ptr[j].X, k.X -> ptr[i].X
                     const binding_other = std.fmt.allocPrint(alloc, "{s}.other", .{binding}) catch unreachable;
                     const self_ref = std.fmt.allocPrint(alloc, "{s}[i]", .{ptr_name}) catch unreachable;
@@ -659,6 +671,434 @@ const std = @import("std");
                         .{ elem_count, elem_count, body.items }
                     ) catch unreachable) catch unreachable;
                 } else if (std.mem.eql(u8, op.op_type, "self")) {
+                    if (op.variant) |vt| {
+                        // Split `base[param]` — the bracket parameter selects the
+                        // LOWERING TARGET of the same representation (|mlir[gpu]),
+                        // never a different implementation. RESIDUAL: the call-site
+                        // parameter is scaffolding until the per-event selection
+                        // language lands.
+                        var variant_base: []const u8 = vt;
+                        var variant_param: ?[]const u8 = null;
+                        if (std.mem.indexOfScalar(u8, vt, '[')) |bracket_idx| {
+                            if (vt[vt.len - 1] == ']') {
+                                variant_base = vt[0..bracket_idx];
+                                variant_param = vt[bracket_idx + 1 .. vt.len - 1];
+                            }
+                        }
+                        // Loud wall (KORU122): an unknown backend tag never falls
+                        // back to the Zig loop — that green would lie about which
+                        // machinery computed the answer.
+                        if (!std.mem.eql(u8, variant_base, "mlir")) {
+                            std.debug.print("error[KORU122]: kernel op `self` has no `|{s}` variant — supported: |mlir (generated MLIR kernel, optional [gpu] lowering) or no tag (Zig loop)\n", .{vt});
+                            std.process.exit(1);
+                        }
+                        const gpu_target = if (variant_param) |vp| blk: {
+                            if (!std.mem.eql(u8, vp, "gpu")) {
+                                std.debug.print("error[KORU122]: `self|mlir` has no `[{s}]` lowering — supported: [gpu] (SPIR-V blob) or no parameter (host CPU)\n", .{vp});
+                                std.process.exit(1);
+                            }
+                            break :blk true;
+                        } else false;
+                        // ---- |mlir: the compiler writes the kernel ----
+                        // The generated func takes the HOST buffer as a memref
+                        // argument (bare-ptr call convention → C `void f(elem*)`)
+                        // and mutates it in place, so chained ops compose (390_101)
+                        // and `step` re-invocation is semantically sound. Remaining
+                        // walking-skeleton scope: `<k>.<field> <op>= <literal>`
+                        // bodies on a single-field f64/f32 shape (f32 only for [gpu]:
+                        // Apple GPUs carry no Float64).
+                        const bt = std.mem.trim(u8, op.body_text, " \t\n\r;");
+                        if (!std.mem.startsWith(u8, bt, binding) or bt.len <= binding.len or bt[binding.len] != '.') {
+                            std.debug.print("error[KORU123]: `self|mlir` currently generates MLIR only for `{s}.<field> <op>= <literal>` (op: * + - /) — got `{s}`\n", .{ binding, bt });
+                            std.process.exit(1);
+                        }
+                        var rest = bt[binding.len + 1 ..];
+                        var fld_end: usize = 0;
+                        while (fld_end < rest.len and (std.ascii.isAlphanumeric(rest[fld_end]) or rest[fld_end] == '_')) fld_end += 1;
+                        const field_name = rest[0..fld_end];
+                        rest = std.mem.trimLeft(u8, rest[fld_end..], " \t");
+                        if (rest.len < 3 or rest[1] != '=') {
+                            std.debug.print("error[KORU123]: `self|mlir` currently generates MLIR only for `{s}.<field> <op>= <literal>` (op: * + - /) — got `{s}`\n", .{ binding, bt });
+                            std.process.exit(1);
+                        }
+                        const mlir_arith_op: []const u8 = switch (rest[0]) {
+                            '*' => "arith.mulf",
+                            '+' => "arith.addf",
+                            '-' => "arith.subf",
+                            '/' => "arith.divf",
+                            else => blk: {
+                                std.debug.print("error[KORU123]: `self|mlir` supports ops * + - / — got `{c}=` in `{s}`\n", .{ rest[0], bt });
+                                std.process.exit(1);
+                                break :blk "";
+                            },
+                        };
+                        const lit_raw = std.mem.trim(u8, rest[2..], " \t");
+                        if (lit_raw.len == 0) {
+                            std.debug.print("error[KORU123]: `self|mlir` needs a literal operand — got `{s}`\n", .{bt});
+                            std.process.exit(1);
+                        }
+                        const lit = if (std.mem.indexOfAny(u8, lit_raw, ".eE") != null)
+                            lit_raw
+                        else
+                            std.fmt.allocPrint(alloc, "{s}.0", .{lit_raw}) catch unreachable;
+
+                        if (shape_fields.len != 1 or !std.mem.eql(u8, shape_fields[0].name, field_name)) {
+                            std.debug.print("error[KORU123]: `self|mlir` currently supports exactly one shape field matching the body's `{s}` — the shape declares {d} field(s)\n", .{ field_name, shape_fields.len });
+                            std.process.exit(1);
+                        }
+                        const elem_type = shape_fields[0].type;
+                        if (!std.mem.eql(u8, elem_type, "f64") and !std.mem.eql(u8, elem_type, "f32")) {
+                            std.debug.print("error[KORU123]: `self|mlir` supports f64/f32 shape fields — `{s}` is {s}\n", .{ field_name, elem_type });
+                            std.process.exit(1);
+                        }
+                        if (gpu_target and std.mem.eql(u8, elem_type, "f64")) {
+                            std.debug.print("error[KORU123]: `self|mlir[gpu]` requires an f32 shape — Apple GPUs (SPIR-V via MoltenVK) carry no Float64; `{s}` is f64\n", .{field_name});
+                            std.process.exit(1);
+                        }
+
+                        // Generate the MLIR kernel: the host buffer arrives as a
+                        // memref argument; the scf.for self loop mutates it in place.
+                        const sym = std.fmt.allocPrint(alloc, "koru_mlir_{s}_self_{d}", .{ static_name_ref, op_idx }) catch unreachable;
+                        const mlir = std.fmt.allocPrint(alloc,
+                            \\func.func @{s}(%buf: memref<{d}x{s}>) {{
+                            \\  %lb = arith.constant 0 : index
+                            \\  %ub = arith.constant {d} : index
+                            \\  %st = arith.constant 1 : index
+                            \\  %k = arith.constant {s} : {s}
+                            \\  scf.for %i = %lb to %ub step %st {{
+                            \\    %x = memref.load %buf[%i] : memref<{d}x{s}>
+                            \\    %y = {s} %x, %k : {s}
+                            \\    memref.store %y, %buf[%i] : memref<{d}x{s}>
+                            \\  }}
+                            \\  return
+                            \\}}
+                            \\
+                        , .{ sym, elem_count, elem_type, elem_count, lit, elem_type, elem_count, elem_type, mlir_arith_op, elem_type, elem_count, elem_type }) catch unreachable;
+
+                        // Write <sym>.mlir into the build root (Stage C runs there;
+                        // Stage D's build_output.zig glob lowers + links it).
+                        {
+                            const fname = std.fmt.allocPrint(alloc, "{s}.mlir", .{sym}) catch unreachable;
+                            const mf = std.fs.cwd().createFile(fname, .{}) catch |e| {
+                                std.debug.print("error: `self|mlir` cannot write {s}: {s}\n", .{ fname, @errorName(e) });
+                                std.process.exit(1);
+                            };
+                            defer mf.close();
+                            mf.writeAll(mlir) catch unreachable;
+                        }
+
+                        // [gpu]: ALSO emit the GPU form of the same kernel —
+                        // gpu.module/gpu.func, block-per-element indexing, SPIR-V
+                        // entry-point ABI. Stage D routes `.gpu.mlir` through the
+                        // SPIR-V pipeline to a spirv-val-gated blob. The CPU kernel
+                        // above stays linked and computes (8205 coexistence); host
+                        // dispatch through Vulkan is the next rung.
+                        if (gpu_target) {
+                            const gpu_mlir = std.fmt.allocPrint(alloc,
+                                \\module attributes {{
+                                \\  gpu.container_module,
+                                \\  spirv.target_env = #spirv.target_env<#spirv.vce<v1.3, [Shader], [SPV_KHR_storage_buffer_storage_class]>, #spirv.resource_limits<>>
+                                \\}} {{
+                                \\  gpu.module @koru_gpu_kernels {{
+                                \\    gpu.func @{s}_gpu(%buf: memref<{d}xf32, #spirv.storage_class<StorageBuffer>>) kernel
+                                \\      attributes {{spirv.entry_point_abi = #spirv.entry_point_abi<workgroup_size = [1, 1, 1]>}} {{
+                                \\      %i = gpu.block_id x
+                                \\      %x = memref.load %buf[%i] : memref<{d}xf32, #spirv.storage_class<StorageBuffer>>
+                                \\      %k = arith.constant {s} : f32
+                                \\      %y = {s} %x, %k : f32
+                                \\      memref.store %y, %buf[%i] : memref<{d}xf32, #spirv.storage_class<StorageBuffer>>
+                                \\      gpu.return
+                                \\    }}
+                                \\  }}
+                                \\}}
+                                \\
+                            , .{ sym, elem_count, elem_count, lit, mlir_arith_op, elem_count }) catch unreachable;
+                            const gpu_fname = std.fmt.allocPrint(alloc, "{s}.gpu.mlir", .{sym}) catch unreachable;
+                            const gf = std.fs.cwd().createFile(gpu_fname, .{}) catch |e| {
+                                std.debug.print("error: `self|mlir[gpu]` cannot write {s}: {s}\n", .{ gpu_fname, @errorName(e) });
+                                std.process.exit(1);
+                            };
+                            defer gf.close();
+                            gf.writeAll(gpu_mlir) catch unreachable;
+
+                            // Runtime dispatch helper (static): output_emitted.zig
+                            // @imports this to upload -> dispatch -> readback on the
+                            // local Vulkan device (M2 Pro / MoltenVK). @cImport(vulkan);
+                            // the build-root glob links libvulkan + libc onto the exe.
+                            const gpu_rt = std.fs.cwd().createFile("koru_gpu_dispatch.zig", .{}) catch |e| {
+                                std.debug.print("error: `self|mlir[gpu]` cannot write koru_gpu_dispatch.zig: {s}\n", .{@errorName(e)});
+                                std.process.exit(1);
+                            };
+                            defer gpu_rt.close();
+                            gpu_rt.writeAll(
+                            \\const std = @import("std");
+                            \\const vk = @cImport({
+                            \\    @cInclude("stdlib.h");
+                            \\    @cInclude("vulkan/vulkan.h");
+                            \\});
+                            \\
+                            \\fn zi(comptime T: type, fields: anytype) T {
+                            \\    return std.mem.zeroInit(T, fields);
+                            \\}
+                            \\
+                            \\/// Dispatch one SPIR-V compute kernel over `buf` (n f32, one thread/element via
+                            \\/// block_id x) on the local Vulkan device (M2 Pro / MoltenVK). Mutates in place.
+                            \\pub fn koruGpuDispatchF32(spv: []const u8, entry: [*:0]const u8, buf: [*]f32, n: u32) void {
+                            \\    const bytes: vk.VkDeviceSize = @as(vk.VkDeviceSize, n) * @sizeOf(f32);
+                            \\
+                            \\    // Point the Vulkan loader at MoltenVK (portability ICD). Hardcoded PoC path,
+                            \\    // same family as the hardcoded LLVM toolchain path — resolves through
+                            \\    // deps/requires later. setenv before the first Vulkan call so the loader
+                            \\    // sees it at ICD enumeration.
+                            \\    _ = vk.setenv("VK_ICD_FILENAMES", "/usr/local/share/vulkan/icd.d/MoltenVK_icd.json", 1);
+                            \\
+                            \\    // instance (MoltenVK is a portability driver)
+                            \\    const inst_exts = [_][*:0]const u8{ "VK_KHR_portability_enumeration", "VK_KHR_get_physical_device_properties2" };
+                            \\    const app = zi(vk.VkApplicationInfo, .{ .sType = vk.VK_STRUCTURE_TYPE_APPLICATION_INFO, .apiVersion = vk.VK_API_VERSION_1_2 });
+                            \\    var inst: vk.VkInstance = undefined;
+                            \\    check(vk.vkCreateInstance(&zi(vk.VkInstanceCreateInfo, .{
+                            \\        .sType = vk.VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
+                            \\        .flags = 0x00000001, // ENUMERATE_PORTABILITY_BIT_KHR
+                            \\        .pApplicationInfo = &app,
+                            \\        .enabledExtensionCount = 2,
+                            \\        .ppEnabledExtensionNames = &inst_exts,
+                            \\    }), null, &inst), "vkCreateInstance");
+                            \\
+                            \\    var ndev: u32 = 0;
+                            \\    check(vk.vkEnumeratePhysicalDevices(inst, &ndev, null), "enumPD count");
+                            \\    if (ndev == 0) @panic("koru gpu: no Vulkan device");
+                            \\    var pds: [8]vk.VkPhysicalDevice = undefined;
+                            \\    if (ndev > 8) ndev = 8;
+                            \\    check(vk.vkEnumeratePhysicalDevices(inst, &ndev, &pds), "enumPD");
+                            \\    const pd = pds[0];
+                            \\
+                            \\    var nqf: u32 = 0;
+                            \\    vk.vkGetPhysicalDeviceQueueFamilyProperties(pd, &nqf, null);
+                            \\    var qfs: [16]vk.VkQueueFamilyProperties = undefined;
+                            \\    if (nqf > 16) nqf = 16;
+                            \\    vk.vkGetPhysicalDeviceQueueFamilyProperties(pd, &nqf, &qfs);
+                            \\    var qfi: u32 = 0xFFFF_FFFF;
+                            \\    var i: u32 = 0;
+                            \\    while (i < nqf) : (i += 1) {
+                            \\        if (qfs[i].queueFlags & vk.VK_QUEUE_COMPUTE_BIT != 0) {
+                            \\            qfi = i;
+                            \\            break;
+                            \\        }
+                            \\    }
+                            \\    if (qfi == 0xFFFF_FFFF) @panic("koru gpu: no compute queue");
+                            \\
+                            \\    const prio: f32 = 1.0;
+                            \\    const qci = zi(vk.VkDeviceQueueCreateInfo, .{
+                            \\        .sType = vk.VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+                            \\        .queueFamilyIndex = qfi,
+                            \\        .queueCount = 1,
+                            \\        .pQueuePriorities = &prio,
+                            \\    });
+                            \\    const dev_exts = [_][*:0]const u8{"VK_KHR_portability_subset"};
+                            \\    var dev: vk.VkDevice = undefined;
+                            \\    check(vk.vkCreateDevice(pd, &zi(vk.VkDeviceCreateInfo, .{
+                            \\        .sType = vk.VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+                            \\        .queueCreateInfoCount = 1,
+                            \\        .pQueueCreateInfos = &qci,
+                            \\        .enabledExtensionCount = 1,
+                            \\        .ppEnabledExtensionNames = &dev_exts,
+                            \\    }), null, &dev), "vkCreateDevice");
+                            \\    var queue: vk.VkQueue = undefined;
+                            \\    vk.vkGetDeviceQueue(dev, qfi, 0, &queue);
+                            \\
+                            \\    // storage buffer, host-visible
+                            \\    var vbuf: vk.VkBuffer = undefined;
+                            \\    check(vk.vkCreateBuffer(dev, &zi(vk.VkBufferCreateInfo, .{
+                            \\        .sType = vk.VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+                            \\        .size = bytes,
+                            \\        .usage = vk.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                            \\        .sharingMode = vk.VK_SHARING_MODE_EXCLUSIVE,
+                            \\    }), null, &vbuf), "vkCreateBuffer");
+                            \\    var mr: vk.VkMemoryRequirements = undefined;
+                            \\    vk.vkGetBufferMemoryRequirements(dev, vbuf, &mr);
+                            \\    var mp: vk.VkPhysicalDeviceMemoryProperties = undefined;
+                            \\    vk.vkGetPhysicalDeviceMemoryProperties(pd, &mp);
+                            \\    const want = vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | vk.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+                            \\    var mti: u32 = 0xFFFF_FFFF;
+                            \\    var m: u32 = 0;
+                            \\    while (m < mp.memoryTypeCount) : (m += 1) {
+                            \\        if ((mr.memoryTypeBits & (@as(u32, 1) << @intCast(m))) != 0 and
+                            \\            (mp.memoryTypes[m].propertyFlags & want) == want)
+                            \\        {
+                            \\            mti = m;
+                            \\            break;
+                            \\        }
+                            \\    }
+                            \\    if (mti == 0xFFFF_FFFF) @panic("koru gpu: no host-visible memory");
+                            \\    var mem: vk.VkDeviceMemory = undefined;
+                            \\    check(vk.vkAllocateMemory(dev, &zi(vk.VkMemoryAllocateInfo, .{
+                            \\        .sType = vk.VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+                            \\        .allocationSize = mr.size,
+                            \\        .memoryTypeIndex = mti,
+                            \\    }), null, &mem), "vkAllocateMemory");
+                            \\    check(vk.vkBindBufferMemory(dev, vbuf, mem, 0), "vkBindBufferMemory");
+                            \\
+                            \\    // upload host buffer -> device
+                            \\    var mapped: ?*anyopaque = null;
+                            \\    check(vk.vkMapMemory(dev, mem, 0, bytes, 0, &mapped), "vkMapMemory in");
+                            \\    {
+                            \\        const dst: [*]f32 = @ptrCast(@alignCast(mapped.?));
+                            \\        @memcpy(dst[0..n], buf[0..n]);
+                            \\    }
+                            \\    vk.vkUnmapMemory(dev, mem);
+                            \\
+                            \\    // shader module from the compiler's blob
+                            \\    var sm: vk.VkShaderModule = undefined;
+                            \\    check(vk.vkCreateShaderModule(dev, &zi(vk.VkShaderModuleCreateInfo, .{
+                            \\        .sType = vk.VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+                            \\        .codeSize = spv.len,
+                            \\        .pCode = @as([*c]const u32, @ptrCast(@alignCast(spv.ptr))),
+                            \\    }), null, &sm), "vkCreateShaderModule");
+                            \\
+                            \\    // descriptor set layout: binding 0 storage buffer, compute
+                            \\    const dslb = zi(vk.VkDescriptorSetLayoutBinding, .{
+                            \\        .binding = 0,
+                            \\        .descriptorType = vk.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                            \\        .descriptorCount = 1,
+                            \\        .stageFlags = vk.VK_SHADER_STAGE_COMPUTE_BIT,
+                            \\    });
+                            \\    var dsl: vk.VkDescriptorSetLayout = undefined;
+                            \\    check(vk.vkCreateDescriptorSetLayout(dev, &zi(vk.VkDescriptorSetLayoutCreateInfo, .{
+                            \\        .sType = vk.VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+                            \\        .bindingCount = 1,
+                            \\        .pBindings = &dslb,
+                            \\    }), null, &dsl), "vkCreateDescriptorSetLayout");
+                            \\    var pl: vk.VkPipelineLayout = undefined;
+                            \\    check(vk.vkCreatePipelineLayout(dev, &zi(vk.VkPipelineLayoutCreateInfo, .{
+                            \\        .sType = vk.VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+                            \\        .setLayoutCount = 1,
+                            \\        .pSetLayouts = &dsl,
+                            \\    }), null, &pl), "vkCreatePipelineLayout");
+                            \\
+                            \\    // compute pipeline
+                            \\    var pipe: vk.VkPipeline = undefined;
+                            \\    const cpci = zi(vk.VkComputePipelineCreateInfo, .{
+                            \\        .sType = vk.VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+                            \\        .stage = zi(vk.VkPipelineShaderStageCreateInfo, .{
+                            \\            .sType = vk.VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                            \\            .stage = vk.VK_SHADER_STAGE_COMPUTE_BIT,
+                            \\            .module = sm,
+                            \\            .pName = entry,
+                            \\        }),
+                            \\        .layout = pl,
+                            \\    });
+                            \\    check(vk.vkCreateComputePipelines(dev, null, 1, &cpci, null, &pipe), "vkCreateComputePipelines");
+                            \\
+                            \\    // descriptor pool + set
+                            \\    const dps = zi(vk.VkDescriptorPoolSize, .{ .type = vk.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .descriptorCount = 1 });
+                            \\    var dp: vk.VkDescriptorPool = undefined;
+                            \\    check(vk.vkCreateDescriptorPool(dev, &zi(vk.VkDescriptorPoolCreateInfo, .{
+                            \\        .sType = vk.VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+                            \\        .maxSets = 1,
+                            \\        .poolSizeCount = 1,
+                            \\        .pPoolSizes = &dps,
+                            \\    }), null, &dp), "vkCreateDescriptorPool");
+                            \\    var ds: vk.VkDescriptorSet = undefined;
+                            \\    check(vk.vkAllocateDescriptorSets(dev, &zi(vk.VkDescriptorSetAllocateInfo, .{
+                            \\        .sType = vk.VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+                            \\        .descriptorPool = dp,
+                            \\        .descriptorSetCount = 1,
+                            \\        .pSetLayouts = &dsl,
+                            \\    }), &ds), "vkAllocateDescriptorSets");
+                            \\    const dbi = zi(vk.VkDescriptorBufferInfo, .{ .buffer = vbuf, .offset = 0, .range = bytes });
+                            \\    const wds = zi(vk.VkWriteDescriptorSet, .{
+                            \\        .sType = vk.VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                            \\        .dstSet = ds,
+                            \\        .dstBinding = 0,
+                            \\        .descriptorCount = 1,
+                            \\        .descriptorType = vk.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                            \\        .pBufferInfo = &dbi,
+                            \\    });
+                            \\    vk.vkUpdateDescriptorSets(dev, 1, &wds, 0, null);
+                            \\
+                            \\    // record + dispatch (n,1,1)
+                            \\    var cp: vk.VkCommandPool = undefined;
+                            \\    check(vk.vkCreateCommandPool(dev, &zi(vk.VkCommandPoolCreateInfo, .{
+                            \\        .sType = vk.VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+                            \\        .queueFamilyIndex = qfi,
+                            \\    }), null, &cp), "vkCreateCommandPool");
+                            \\    var cb: vk.VkCommandBuffer = undefined;
+                            \\    check(vk.vkAllocateCommandBuffers(dev, &zi(vk.VkCommandBufferAllocateInfo, .{
+                            \\        .sType = vk.VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+                            \\        .commandPool = cp,
+                            \\        .level = vk.VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+                            \\        .commandBufferCount = 1,
+                            \\    }), &cb), "vkAllocateCommandBuffers");
+                            \\    check(vk.vkBeginCommandBuffer(cb, &zi(vk.VkCommandBufferBeginInfo, .{
+                            \\        .sType = vk.VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+                            \\        .flags = vk.VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+                            \\    })), "vkBeginCommandBuffer");
+                            \\    vk.vkCmdBindPipeline(cb, vk.VK_PIPELINE_BIND_POINT_COMPUTE, pipe);
+                            \\    vk.vkCmdBindDescriptorSets(cb, vk.VK_PIPELINE_BIND_POINT_COMPUTE, pl, 0, 1, &ds, 0, null);
+                            \\    vk.vkCmdDispatch(cb, n, 1, 1);
+                            \\    check(vk.vkEndCommandBuffer(cb), "vkEndCommandBuffer");
+                            \\    const si = zi(vk.VkSubmitInfo, .{
+                            \\        .sType = vk.VK_STRUCTURE_TYPE_SUBMIT_INFO,
+                            \\        .commandBufferCount = 1,
+                            \\        .pCommandBuffers = &cb,
+                            \\    });
+                            \\    check(vk.vkQueueSubmit(queue, 1, &si, null), "vkQueueSubmit");
+                            \\    check(vk.vkQueueWaitIdle(queue), "vkQueueWaitIdle");
+                            \\
+                            \\    // readback device -> host buffer
+                            \\    check(vk.vkMapMemory(dev, mem, 0, bytes, 0, &mapped), "vkMapMemory out");
+                            \\    {
+                            \\        const src: [*]f32 = @ptrCast(@alignCast(mapped.?));
+                            \\        @memcpy(buf[0..n], src[0..n]);
+                            \\    }
+                            \\    vk.vkUnmapMemory(dev, mem);
+                            \\
+                            \\    // teardown (skeleton: destroy the big handles; process exit reclaims the rest)
+                            \\    vk.vkDestroyPipeline(dev, pipe, null);
+                            \\    vk.vkDestroyShaderModule(dev, sm, null);
+                            \\    vk.vkDestroyDevice(dev, null);
+                            \\    vk.vkDestroyInstance(inst, null);
+                            \\}
+                            \\
+                            \\fn check(r: vk.VkResult, comptime what: []const u8) void {
+                            \\    if (r != vk.VK_SUCCESS) {
+                            \\        std.debug.print("koru gpu: {s} failed = {d}\n", .{ what, r });
+                            \\        @panic("koru gpu dispatch failed");
+                            \\    }
+                            \\}
+                            ) catch unreachable;
+                        }
+
+                        if (gpu_target) {
+                            // Host glue routes to the GPU: embed the validated SPIR-V
+                            // blob and dispatch on the local device. The buffer is
+                            // mutated in place — same contract as the CPU path, so the
+                            // computed continuation reads GPU results.
+                            code.appendSlice(alloc, std.fmt.allocPrint(alloc,
+                                \\
+                                \\{{
+                                \\    const __koru_gpu_{d} = @import("koru_gpu_dispatch.zig");
+                                \\    __koru_gpu_{d}.koruGpuDispatchF32(@embedFile("{s}.gpu.spv"), "{s}_gpu", @ptrCast({s}), {d});
+                                \\}}
+                                ,
+                                .{ op_idx, op_idx, sym, sym, ptr_name, elem_count }
+                            ) catch unreachable) catch unreachable;
+                        } else {
+                            // Host glue: ONE call, buffer mutated in place. Single-field
+                            // shape (walled above) makes [*]Body layout-identical to
+                            // [*]elem for the bare-ptr convention.
+                            code.appendSlice(alloc, std.fmt.allocPrint(alloc,
+                                \\
+                                \\{{
+                                \\    const __koru_mlir_self_{d} = @extern(*const fn ([*]{s}) callconv(.c) void, .{{ .name = "{s}" }});
+                                \\    __koru_mlir_self_{d}(@ptrCast({s}));
+                                \\}}
+                                ,
+                                .{ op_idx, elem_type, sym, op_idx, ptr_name }
+                            ) catch unreachable) catch unreachable;
+                        }
+                        continue;
+                    }
                     // Transform body: k.X -> ptr[i].X
                     const self_ref = std.fmt.allocPrint(alloc, "{s}[i]", .{ptr_name}) catch unreachable;
 
@@ -739,7 +1179,7 @@ const std = @import("std");
         ) catch unreachable;
 
         // Generate static-backed initialization (proof-of-concept)
-        const fused_code = generateKernelOpsCode(allocator, kernel_plan.ops, kernel_plan.step_range, kernel_binding_name, static_name, count);
+        const fused_code = generateKernelOpsCode(allocator, kernel_plan.ops, kernel_plan.step_range, kernel_binding_name, static_name, count, type_fields);
         const return_branch = if (has_computed_continuation) "computed" else "kernel";
         proc_body = std.fmt.allocPrint(
             allocator,
@@ -758,7 +1198,7 @@ const std = @import("std");
             ,
             .{ static_name, type_name, single_init }
         ) catch unreachable;
-        const fused_code = generateKernelOpsCode(allocator, kernel_plan.ops, kernel_plan.step_range, kernel_binding_name, static_name, 1);
+        const fused_code = generateKernelOpsCode(allocator, kernel_plan.ops, kernel_plan.step_range, kernel_binding_name, static_name, 1, type_fields);
         const return_branch = if (has_computed_continuation) "computed" else "kernel";
         proc_body = std.fmt.allocPrint(
             allocator,
@@ -1350,6 +1790,15 @@ const std = @import("std");
             return null;
         }
     }.searchItems;
+
+    // The fused path (kernel:init claims the subtree) handles |mlir generation;
+    // this standalone transform only fires for self OUTSIDE a kernel-init
+    // subtree, where |mlir isn't wired yet. Never silently run the Zig loop
+    // for a tagged call — that green would lie about the backend.
+    if (invocation.variant) |vt| {
+        std.debug.print("error[KORU123]: `std/kernel:self|{s}` outside a `std/kernel:init` subtree is not supported yet — backend variants are generated by the fused kernel path\n", .{vt});
+        std.process.exit(1);
+    }
 
     const search_result = findInvocationRecursive(program.items, invocation) orelse {
         @panic("kernel.self: could not find invocation in AST");

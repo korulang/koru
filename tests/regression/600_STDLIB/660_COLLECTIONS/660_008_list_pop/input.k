@@ -5,7 +5,7 @@ import std/io
 import std/list
 
 std/list:new(i64)
-| list xs |> std/list:push(xs, 3) |> std/list:push(xs, 4) |> std/list:pop(xs)
+| list xs |> std/list:push(xs, v: 3) |> std/list:push(xs, v: 4) |> std/list:pop(xs)
     | item v |> std/io:print.ln("popped {{ v:d }}") |> std/list:free(xs)
     | empty  |> std/io:print.ln("empty") |> std/list:free(xs)
 | err e |> std/io:print.ln("ERR {{ e:s }}")

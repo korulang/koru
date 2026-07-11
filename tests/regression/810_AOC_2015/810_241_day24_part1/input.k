@@ -15,7 +15,7 @@ import std/regex
 std/list:new(i64)
 | list xs |> std/fs:read-lines(path: "tests/regression/810_AOC_2015/810_241_day24_part1/input.txt")
     ! line l |> std/regex:match(l)
-        | `(?<n>[0-9]+)` { n: i64 } |> std/list:push(xs, n)
+        | `(?<n>[0-9]+)` { n: i64 } |> std/list:push(xs, v: n)
         | no-match |> _
     | done _ |> std/list:len(xs): n |> capture { sm: 0[i64] }
             ! as sa |> for(0..n)
@@ -26,7 +26,7 @@ std/list:new(i64)
                 ! as o1 |> for(0..(@as(usize, 1) << @as(u6, @intCast(n))))
                     ! each mask |> capture { s: 0[i64] }
                         ! as inner |> for(0..n)
-                            ! each ix |> std/list:get(xs, ix)
+                            ! each ix |> std/list:get(xs, i: ix)
                                 | item v2 |> captured { s: inner.s + v2 * @as(i64, @intFromBool((mask >> @as(u6, @intCast(ix))) & 1 == 1)) }
                                 | out-of-bounds |> _
                         | captured sub |> captured { mn: @min(o1.mn, @as(i64, @intCast(@popCount(mask))) + @as(i64, @intFromBool(sub.s != @divTrunc(st.sm, 3))) * 999) }
@@ -34,7 +34,7 @@ std/list:new(i64)
                     ! as o2 |> for(0..(@as(usize, 1) << @as(u6, @intCast(n))))
                         ! each mask2 |> capture { s2: 0[i64], p: 1[i64] }
                             ! as inner2 |> for(0..n)
-                                ! each j |> std/list:get(xs, j)
+                                ! each j |> std/list:get(xs, i: j)
                                     | item v3 |> captured { s2: inner2.s2 + v3 * @as(i64, @intFromBool((mask2 >> @as(u6, @intCast(j))) & 1 == 1)), p: inner2.p * (v3 * @as(i64, @intFromBool((mask2 >> @as(u6, @intCast(j))) & 1 == 1)) + (1 - @as(i64, @intFromBool((mask2 >> @as(u6, @intCast(j))) & 1 == 1)))) }
                                     | out-of-bounds |> _
                             | captured sub2 |> captured { mq: @min(o2.mq, sub2.p + @as(i64, @intFromBool(sub2.s2 != @divTrunc(st.sm, 3) or @as(i64, @intCast(@popCount(mask2))) != m1.mn)) * 999999999) }

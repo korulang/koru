@@ -1,0 +1,34 @@
+// ASPIRATION — currently RED, a PIN not a regression (never been green).
+//
+// THE DATA→LIQUID BRIDGE (named 2026-07-04): comptime Koru computes a VALUE;
+// that value crosses into a template's Liquid context as DATA — completing
+// the loop comptime-Koru → data → Liquid → Koru source → parsed AST.
+//
+// Today this is impossible twice over:
+// 1. PHASE ORDER: templates render in frontend (process-template-procs)
+//    BEFORE comptime evaluation (fold-comptime/evaluate-comptime), so a
+//    template arg fed from a comptime binding receives raw call-site TEXT
+//    ("v"), never the evaluated value.
+// 2. MARSHALLING: the Liquid context is built only by the compiler from the
+//    invocation node — there is no channel from interpreter Values into
+//    template data. Scalars here; the same bridge carries arrays/cells for
+//    `{% for %}` iteration (the tier that dissolves 310_100's invented
+//    order_by_hits filter: comptime Koru computes the order, Liquid just
+//    renders it).
+//
+// Grounded surface: comptime event/impl/bind mirrors 310_098 (green); arg
+// passing from a binding mirrors green branch-arg shapes; the |koru facet
+// and [template] head are the 310_099 aspiration. ASPIRATIONAL bit unique
+// to THIS pin: a comptime-evaluated value arriving in Liquid as data.
+~import std/io
+
+~[comptime] pub event answer {} -> i64
+~answer -> 6 * 7
+
+~pub event show-n { n: i64 }
+
+~[template] proc show-n|koru {
+    std/io:print.ln("n = {{ n }}")
+}
+
+~[comptime] answer(): v |> show-n(n: v)

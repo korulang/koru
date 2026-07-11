@@ -1,0 +1,30 @@
+// FRONTIER PIN: boolean connective `and` inside a when-guard, over
+// destructured names. The expression parser carries and/or keywords
+// (src/expression_parser.zig matchKeywordBoundary "and") but a full
+// corpus sweep (2026-07-04 QA) found ZERO passing test exercising a
+// Koru-level boolean connective anywhere — every corpus `when` guard is
+// a single comparison, and every `and` in the tree lives inside raw
+// |zig proc bodies. Plumbing-exists-but-never-exercised = ungrounded.
+// This pin grounds it (or names the gap, if red): compound selection is
+// the store-query guard shape (`when hp > 40 and kind == 1`, 690_005).
+//
+// Same coverage shape as 020_035: unguarded fallback sibling (210_085
+// rule, 400_089 rescue).
+
+~import std/io
+
+~pub event scan-pairs {}
+! pair { a: i64, b: i64 }
+| done
+
+~proc scan-pairs|zig {
+    pair(.{ .a = 1, .b = 2 });
+    pair(.{ .a = 3, .b = 4 });
+    pair(.{ .a = 5, .b = 6 });
+    return .done;
+}
+
+~scan-pairs()
+! pair { a, b } when a > 2 and b < 6 |> std/io:print.ln("big {{ a:d }}+{{ b:d }}")
+! pair { a, b } |> std/io:print.ln("small {{ a:d }}+{{ b:d }}")
+| done |> std/io:print.ln("done")

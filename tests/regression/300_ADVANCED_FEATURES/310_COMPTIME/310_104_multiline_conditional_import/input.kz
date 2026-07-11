@@ -1,0 +1,33 @@
+// Pins the multiline annotation block attaching to an import — one grammar
+// with the inline form (310_027/029 pin inline `~[profile]import`): bullets
+// are the annotation entries, prose lines are human rationale (discarded by
+// the parser, kept for the reader), and the entries gate the import exactly
+// as they would inline.
+//
+// The imported module registers a tap, so the import is load-bearing: the
+// [TAP] line in the output IS the import surviving the gate. Run with
+// --profile (COMPILER_FLAGS), so the gate must KEEP the import.
+
+const std = @import("std");
+
+~[
+- profile
+Tracing is opt-in; the tracer module only rides along when asked for.
+]import app/test_lib/tracer
+
+~event compute { x: i32 }
+| result i32
+
+~proc compute|zig {
+    std.debug.print("compute({d})\n", .{x});
+    return .{ .result = x * 2 };
+}
+
+~event display { value: i32 }
+
+~proc display|zig {
+    std.debug.print("Final: {d}\n", .{value});
+}
+
+~compute(x: 21)
+| result r |> display(value: r)

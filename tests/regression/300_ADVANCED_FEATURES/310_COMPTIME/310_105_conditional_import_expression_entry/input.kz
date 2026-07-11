@@ -1,0 +1,31 @@
+// Pins annotation entries as EXPRESSIONS over the compiler context: the
+// entry `build == "release"` is a comparison evaluated against the compiler
+// context (the --build flag provides the `build` binding), not an opaque
+// word string-matched against the flag list. Pipe stays a list delimiter;
+// logic lives INSIDE an entry, owned by its author; the consumer (here the
+// import gate) decides which entries to honor.
+//
+// The imported module registers a tap, so the import is load-bearing: the
+// [TAP] line in the output IS the expression evaluating true. Run with
+// --build=release (COMPILER_FLAGS), so the gate must KEEP the import.
+
+const std = @import("std");
+
+~[build == "release"]import app/test_lib/tracer
+
+~event compute { x: i32 }
+| result i32
+
+~proc compute|zig {
+    std.debug.print("compute({d})\n", .{x});
+    return .{ .result = x * 2 };
+}
+
+~event display { value: i32 }
+
+~proc display|zig {
+    std.debug.print("Final: {d}\n", .{value});
+}
+
+~compute(x: 21)
+| result r |> display(value: r)

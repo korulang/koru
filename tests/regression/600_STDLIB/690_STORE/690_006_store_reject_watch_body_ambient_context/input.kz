@@ -1,0 +1,36 @@
+// NEGATIVE TEST (designed rejection — transplant purity, DESIGN.md T1 +
+// ruling (a)). A watch body executes at the store's WRITE SITES, not at
+// its lexical position — so it may reference only its own branch bindings
+// and comptime-known names (module decls, qualified calls, store names).
+// Here the body reaches for `ctx`, a RUNTIME binding of the enclosing
+// flow: rejected, with a koru-level diagnostic (never a raw Zig
+// undeclared-identifier leak — the check lives IN the store transform,
+// rewrite-time, per the 2026-07-04 ruling).
+//
+// The watch's lexical placement mid-flow is otherwise LEGAL (links live
+// anywhere — organizational principle, ruling 4); placement is not the
+// crime, the ambient reference is.
+//
+// Branch-payload grammar: single-payload branches use identity syntax
+// (`| ready []const u8` — the parser rejects single-field braces,
+// PARSE003); whole-payload binding on a `|` branch (`| ready ctx |>`)
+// grounded via 910_LANGUAGE_SHOOTOUT/2104_17 (`| connected c |>
+// app/db:tx.begin(conn: c)`). Note: expected_error.txt here is
+// DOCUMENTARY (the designed diagnostic text) — the harness checks the
+// EXPECT CONTAINS lines, not this file, when both are present.
+
+~import std/io
+~import std/store
+
+~std/store:create(game) { entities: 0[i64] }
+
+~pub event setup {}
+| ready []const u8
+
+~proc setup|zig {
+    return .{ .ready = "local" };
+}
+
+~setup()
+| ready ctx |> std/store:watch(game)
+    ! entities e |> std/io:print.ln("{{ ctx:s }}: {{ e:d }}")

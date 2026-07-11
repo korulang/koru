@@ -751,7 +751,7 @@ pub const AutoDischargeInserter = struct {
                                             .KORU030,
                                             flow.location.line,
                                             flow.location.column,
-                                            "Resource '{s}' with phantom state <{s}> was not discharged at scope exit.",
+                                            "Resource '{s}' obligation <{s}> was not discharged at scope exit.",
                                             .{ display_name, display_state },
                                         );
                                     }
@@ -1229,7 +1229,7 @@ pub const AutoDischargeInserter = struct {
                                             .KORU030,
                                             flow.location.line,
                                             flow.location.column,
-                                            "Resource '{s}' with phantom state <{s}> was not discharged at scope exit.",
+                                            "Resource '{s}' obligation <{s}> was not discharged at scope exit.",
                                             .{ display_name, display_state },
                                         );
                                     }
@@ -1590,7 +1590,7 @@ pub const AutoDischargeInserter = struct {
                                 .KORU030,
                                 flow.location.line,
                                 flow.location.column,
-                                "Resource '{s}' with phantom state <{s}> was not discharged.",
+                                "Resource '{s}' obligation <{s}> was not discharged.",
                                 .{ display_name, display_state },
                             );
                         }
@@ -1844,7 +1844,7 @@ pub const AutoDischargeInserter = struct {
                             .KORU030,
                             flow.location.line,
                             flow.location.column,
-                            "Resource '{s}' with phantom state <{s}> was not discharged. No event accepts <!{s}>.",
+                            "Resource '{s}' obligation <{s}> was not discharged. No event accepts <!{s}>.",
                             .{ display_name, display_state, state_without_bang },
                         );
                     }
@@ -2147,8 +2147,7 @@ pub const AutoDischargeInserter = struct {
         const disposal_event = disposal.qualified_name[colon_idx + 1 ..];
 
         // Create invocation for disposal call
-        var segments = try self.allocator.alloc([]const u8, 1);
-        segments[0] = try self.allocator.dupe(u8, disposal_event);
+        const segments = try self.eventNameToSegments(disposal_event);
 
         var args = try self.allocator.alloc(ast.Arg, 1);
         args[0] = .{
@@ -2341,8 +2340,7 @@ pub const AutoDischargeInserter = struct {
         const disposal_module = disposal.qualified_name[0..colon_idx];
         const disposal_event = disposal.qualified_name[colon_idx + 1 ..];
 
-        var segments = try self.allocator.alloc([]const u8, 1);
-        segments[0] = try self.allocator.dupe(u8, disposal_event);
+        const segments = try self.eventNameToSegments(disposal_event);
 
         var args = try self.allocator.alloc(ast.Arg, 1);
         args[0] = .{
@@ -2462,8 +2460,7 @@ pub const AutoDischargeInserter = struct {
         const disposal_module = disposal.qualified_name[0..colon_idx];
         const disposal_event = disposal.qualified_name[colon_idx + 1 ..];
 
-        var segments = try self.allocator.alloc([]const u8, 1);
-        segments[0] = try self.allocator.dupe(u8, disposal_event);
+        const segments = try self.eventNameToSegments(disposal_event);
 
         var args = try self.allocator.alloc(ast.Arg, 1);
         args[0] = .{
@@ -2821,6 +2818,31 @@ pub const AutoDischargeInserter = struct {
     }
 
     /// Convert a dotted path to a string
+    /// Split an event name (possibly dotted, e.g. `dispose.file`) into its
+    /// path segments — the inverse of `pathToString`. A synthetic disposal
+    /// call must carry the SAME multi-segment path a real parsed call would;
+    /// a single-segment blob makes the emitter mis-resolve a dotted disposer
+    /// to `<module>.<first-segment>` and leak a host error
+    /// (see tests/regression/.../330_090_auto_discharge_dotted_disposer).
+    fn eventNameToSegments(self: *AutoDischargeInserter, event_name: []const u8) ![][]const u8 {
+        var count: usize = 1;
+        for (event_name) |ch| {
+            if (ch == '.') count += 1;
+        }
+        const segments = try self.allocator.alloc([]const u8, count);
+        var i: usize = 0;
+        var start: usize = 0;
+        for (event_name, 0..) |ch, idx| {
+            if (ch == '.') {
+                segments[i] = try self.allocator.dupe(u8, event_name[start..idx]);
+                i += 1;
+                start = idx + 1;
+            }
+        }
+        segments[i] = try self.allocator.dupe(u8, event_name[start..]);
+        return segments;
+    }
+
     fn pathToString(self: *AutoDischargeInserter, path: ast.DottedPath) ![]const u8 {
         if (path.segments.len == 0) return try self.allocator.dupe(u8, "");
         if (path.segments.len == 1) return try self.allocator.dupe(u8, path.segments[0]);

@@ -1,26 +1,32 @@
-// TEST: ~struct with single type parameter
+// RED PIN (type-system design walk, 2026-07-06/07). REWRITTEN from the
+// dead generation: `~struct(Option<T>)` parametric grammar is banned
+// (generics-are-a-comptime-library ruling, 2026-06-13; `<>` is the
+// phantom channel). The intent — a parameterized type — survives as a
+// STAMPED NAME: `#` marks a monomorphized type identity in the name
+// itself (ruled direction 2026-07-06: layout-determining identity lives
+// in the part that survives phantom erasure — the name).
 //
-// ~struct(Option<T>) { value: ?T = null } defines a generic struct
-// ~type(OptionalInt = Option<i32>) instantiates it with concrete type.
-//
-// Expected: Compiles and runs with instantiated generic
+// This pin claims ONLY: `#` is legal in a declared type name, and the
+// declared type is emitted and usable (host side may see it as the
+// Zig quoted identifier @"box#i64" — emission spelling PROVISIONAL).
+// The stamping/family MECHANISM (who mints box#T for all T) is
+// deliberately NOT pinned — that is the comprehension/generation
+// design, still open.
 
 ~import std/types
+~import std/io
 
 const std = @import("std");
 
-~struct(Option<T>) { value: ?T = null }
-
-// Instantiate it with ~type
-~type(OptionalInt = Option<i32>)
-
-~event test-option {}
-
-~proc test-option|zig {
-    const opt = OptionalInt{ .value = 42 };
-    if (opt.value) |v| {
-        std.debug.print("Got: {d}\n", .{v});
-    }
+~std/types:struct(box#i64) {
+    value: i64,
 }
 
-~test-option()
+~event main {}
+
+~proc main|zig {
+    const b = @"box#i64"{ .value = 42 };
+    std.debug.print("Got: {d}\n", .{b.value});
+}
+
+~main()

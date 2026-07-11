@@ -1,0 +1,7 @@
+name: regression_tests
+kind: measured
+shape: scalar
+face: in
+membrane: false
+route: surface, wmfx=regression_shape
+note: total tests in the snapshot for the run the timing describes

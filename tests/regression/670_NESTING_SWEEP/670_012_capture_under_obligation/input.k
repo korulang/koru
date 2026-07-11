@@ -6,7 +6,7 @@
 import std/io
 import std/string
 
-std/string:from-page("x")
+std/string:from-page(text: "x")
 | ok s |> capture { n: 0[i64] }
     ! as acc |> captured { n: acc.n + 1 }
     | captured r |> std/io:print.ln("n={{ r.n:d }}") |> std/string:free(s)

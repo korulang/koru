@@ -5,6 +5,7 @@ const lexer = @import("lexer");
 const errors = @import("errors");
 const type_registry = @import("type_registry");
 const expression_parser = @import("expression_parser");
+const annotation_parser = @import("annotation_parser");
 const ModuleResolver = @import("module_resolver").ModuleResolver;
 const module_resolver_mod = @import("module_resolver");
 const file_types = @import("file_types");
@@ -41,36 +42,6 @@ pub fn tryParseArgExpression(allocator: std.mem.Allocator, arg: *ast.Arg) void {
             mutable_expr.deinit(allocator);
         }
     } else |_| {}
-}
-
-/// Check if a raw expression string contains a non-builtin function call.
-/// Scans for '(' preceded by an identifier character (not '@'), skipping strings.
-/// Used as a fallback when the expression parser can't fully parse the value.
-fn containsNonBuiltinCall(s: []const u8) bool {
-    var in_string = false;
-    for (s, 0..) |c, i| {
-        if (c == '"' and (i == 0 or s[i - 1] != '\\')) {
-            in_string = !in_string;
-            continue;
-        }
-        if (in_string) continue;
-        if (c == '(' and i > 0) {
-            const prev = s[i - 1];
-            // Builtins: @name(...) — prev would be alphanumeric from the builtin name
-            // but the char before that would be '@'. Scan back to check.
-            if (std.ascii.isAlphanumeric(prev) or prev == '_') {
-                // Walk back to find the start of the identifier
-                var j: usize = i - 1;
-                while (j > 0 and (std.ascii.isAlphanumeric(s[j - 1]) or s[j - 1] == '_' or s[j - 1] == '.')) {
-                    j -= 1;
-                }
-                // If preceded by '@', it's a builtin — skip
-                if (j > 0 and s[j - 1] == '@') continue;
-                return true;
-            }
-        }
-    }
-    return false;
 }
 
 /// Check if line has a source block pattern: `eventName { ... }` or `eventName(args) { ... }`
@@ -237,6 +208,37 @@ fn indexOfTopLevelArrow(s: []const u8) ?usize {
 
 fn hasTopLevelArrow(s: []const u8) bool {
     return indexOfTopLevelArrow(s) != null;
+}
+
+/// Index of the first top-level construct/produce arrow — `=>` (construct) or
+/// `->` (produce) — outside parens, braces, and string literals. An invocation
+/// HEAD ends here: everything after the arrow is a bare-return continuation that
+/// the caller re-parses from the original line. Used to isolate the head so the
+/// source-block pre-checks never mistake a braced constructor payload
+/// (`... => final { r }`) for a source block on the branch name (pinned 100_085).
+fn indexOfTopLevelHeadArrow(s: []const u8) ?usize {
+    var paren_depth: i32 = 0;
+    var brace_depth: i32 = 0;
+    var in_string = false;
+    var i: usize = 0;
+    while (i < s.len) : (i += 1) {
+        const c = s[i];
+        if (c == '"' and (i == 0 or s[i - 1] != '\\')) {
+            in_string = !in_string;
+            continue;
+        }
+        if (in_string) continue;
+        if (c == '(') paren_depth += 1;
+        if (c == ')') paren_depth -= 1;
+        if (c == '{') brace_depth += 1;
+        if (c == '}') brace_depth -= 1;
+        if (paren_depth == 0 and brace_depth == 0 and
+            (c == '=' or c == '-') and i + 1 < s.len and s[i + 1] == '>')
+        {
+            return i;
+        }
+    }
+    return null;
 }
 
 /// Return `s` with a trailing `// ...` line comment removed (the `//` must be
@@ -1119,16 +1121,17 @@ pub const Parser = struct {
             annotations.deinit(self.allocator);
         }
 
-        // Check if ] is on the same line (inline syntax)
-        if (std.mem.indexOf(u8, content_with_bracket, "]")) |close_bracket| {
+        // Check if the block's closing ] is on the same line (inline syntax).
+        // Nesting- and string-aware: entries like custom(foo[1]) or doc("a]b")
+        // never close the block early, and pipes inside them never delimit.
+        if (annotation_parser.findBlockClose(content_with_bracket[1..])) |rel_close| {
             // Inline syntax: [a|b|c]
+            const close_bracket = rel_close + 1;
             const ann_str = content_with_bracket[1..close_bracket];
-            var ann_iter = std.mem.splitScalar(u8, ann_str, '|');
-            while (ann_iter.next()) |ann| {
-                const trimmed_ann = lexer.trim(ann);
-                if (trimmed_ann.len > 0) {
-                    try annotations.append(self.allocator, try self.allocator.dupe(u8, trimmed_ann));
-                }
+            const entries = try annotation_parser.splitEntries(self.allocator, ann_str);
+            defer self.allocator.free(entries);
+            for (entries) |entry| {
+                try annotations.append(self.allocator, try self.allocator.dupe(u8, entry));
             }
             const remaining = content_with_bracket[close_bracket + 1 ..];
             return AnnotationBlockResult{
@@ -1151,14 +1154,20 @@ pub const Parser = struct {
                 continue;
             }
 
-            // Check if this line contains the closing ]
-            if (std.mem.indexOf(u8, trimmed, "]")) |bracket_idx| {
+            // Check if this line contains the block's closing ] — nesting- and
+            // string-aware, so a bullet like `- custom(foo[1])` or prose
+            // mentioning `tests[3]` never closes the block early.
+            if (annotation_parser.findBlockClose(trimmed)) |bracket_idx| {
                 // Found closing bracket
                 // Check if there's a bullet annotation on this line before the ]
                 if (trimmed.len > 0 and isBulletMarker(trimmed[0])) {
-                    const ann_content = lexer.trim(trimmed[1..bracket_idx]); // Skip the - and content after ]
-                    if (ann_content.len > 0) {
-                        try annotations.append(self.allocator, try self.allocator.dupe(u8, ann_content));
+                    const bullet_content = lexer.trim(trimmed[1..bracket_idx]); // Skip the - and content after ]
+                    if (bullet_content.len > 0) {
+                        const entries = try annotation_parser.splitEntries(self.allocator, bullet_content);
+                        defer self.allocator.free(entries);
+                        for (entries) |entry| {
+                            try annotations.append(self.allocator, try self.allocator.dupe(u8, entry));
+                        }
                     }
                 }
                 const remaining = lexer.trim(trimmed[bracket_idx + 1 ..]); // Content after ]
@@ -1175,10 +1184,16 @@ pub const Parser = struct {
             // markdown buffer where bullets are canonical flags and prose is
             // human rationale. Discipline (why-not-what, no double-definitions)
             // is held in docs, not enforced by the parser.
+            // Bullet content splits through the same tokenizer as inline
+            // entries, so vertical and inline blocks produce identical lists.
             if (trimmed.len > 1 and isBulletMarker(trimmed[0]) and (trimmed[1] == ' ' or trimmed[1] == '\t')) {
-                const ann_content = lexer.trim(trimmed[1..]); // Skip the bullet marker
-                if (ann_content.len > 0) {
-                    try annotations.append(self.allocator, try self.allocator.dupe(u8, ann_content));
+                const bullet_content = lexer.trim(trimmed[1..]); // Skip the bullet marker
+                if (bullet_content.len > 0) {
+                    const entries = try annotation_parser.splitEntries(self.allocator, bullet_content);
+                    defer self.allocator.free(entries);
+                    for (entries) |entry| {
+                        try annotations.append(self.allocator, try self.allocator.dupe(u8, entry));
+                    }
                 }
                 self.current += 1;
                 continue;
@@ -1293,10 +1308,10 @@ pub const Parser = struct {
         } else if (findTopLevelEquals(remaining) != null) {
             // Event implementation via subflow: ~event.name = ...
             // NOTE: This only matches = outside of source blocks (checked above)
-            return try self.parseSubflowImpl();
+            return try self.parseSubflowImpl(annotations.items);
         } else if (isBareReturnImpl(remaining)) {
             // `~event -> expr` : bare-return impl (the `->` twin of `=>`).
-            return try self.parseSubflowImpl();
+            return try self.parseSubflowImpl(annotations.items);
         } else if (std.mem.indexOfScalar(u8, remaining, '(') != null) {
             // It's an invocation with args
             return .{ .flow = try self.parseFlow(annotations.items) };
@@ -1872,15 +1887,14 @@ pub const Parser = struct {
         // Check if this is an implicit flow event
         const is_implicit_flow = self.checkImplicitFlowEvent(&input);
 
-        // Check if any field has is_expression or is_source - auto-add comptime annotation
-        var needs_comptime = false;
-        for (input.fields) |field| {
-            if (field.is_expression or field.is_source) {
-                needs_comptime = true;
-                break;
-            }
-        }
-
+        // `Expression`/`Source` params do NOT imply `[comptime]`. Representation
+        // (a captured source string) and timing (when the event runs) are
+        // orthogonal axes: an `Expression` is just another way to pass a string,
+        // and it can survive to runtime the same way it survives comptime. The
+        // old auto-stamp coupled them, which wrongly flipped runtime-emitting
+        // keyword templates (`~if`/`~for`) to pure-comptime and filtered their
+        // lowered code out of the runtime module. Comptime is now EXPLICIT: an
+        // event is comptime-only iff it carries `[comptime]` in its annotations.
         // Combined annotations (passed-in + trailing)
         var all_annotations = try std.ArrayList([]const u8).initCapacity(self.allocator, 0);
         defer all_annotations.deinit(self.allocator);
@@ -1890,15 +1904,6 @@ pub const Parser = struct {
         }
         for (trailing_annotations.items) |ann| {
             try all_annotations.append(self.allocator, ann);
-        }
-
-        // Check if comptime is already in annotations
-        var has_comptime = false;
-        for (all_annotations.items) |ann| {
-            if (std.mem.eql(u8, ann, "comptime")) {
-                has_comptime = true;
-                break;
-            }
         }
 
         // Validate: [keyword] requires pub
@@ -1918,9 +1923,14 @@ pub const Parser = struct {
             }
         }
 
-        // Reject single void-returning branch: | branch with no payload is redundant.
-        // Use a void event (0 branches) instead.
-        if (branches.items.len == 1 and branches.items[0].payload.fields.len == 0 and !branches.items[0].payload.is_wildcard) {
+        // Reject single void-returning TERMINAL branch: a lone `| branch` with no
+        // payload carries nothing and is redundant — use a void event (0 branches).
+        // This is a CONTINUATION (`|`) rule only. An EFFECT (`!`) arm is a yield
+        // point that MULTIFIRES (the "heartbeat" — `! beat` fires 0..N per proc
+        // run), so a lone payloadless effect arm is NOT redundant and is allowed
+        // (ruled 2026-06-27; pinned by 400_152). Effect branches allow
+        // {0, one payloadless arm, many}; terminal branches do not.
+        if (branches.items.len == 1 and branches.items[0].kind == .terminal and branches.items[0].payload.fields.len == 0 and !branches.items[0].payload.is_wildcard) {
             try self.reporter.addError(
                 .PARSE003,
                 event_line_index + 1,
@@ -1931,14 +1941,10 @@ pub const Parser = struct {
             return error.ParseError;
         }
 
-        // Copy annotations, adding comptime if needed
-        const extra_annotations: usize = if (needs_comptime and !has_comptime) 1 else 0;
-        var annotations_copy = try self.allocator.alloc([]const u8, all_annotations.items.len + extra_annotations);
+        // Copy annotations verbatim — comptime is explicit, never synthesized.
+        var annotations_copy = try self.allocator.alloc([]const u8, all_annotations.items.len);
         for (all_annotations.items, 0..) |ann, i| {
             annotations_copy[i] = try self.allocator.dupe(u8, ann);
-        }
-        if (needs_comptime and !has_comptime) {
-            annotations_copy[all_annotations.items.len] = try self.allocator.dupe(u8, "comptime");
         }
 
         var event_decl = ast.EventDecl{
@@ -3017,6 +3023,7 @@ pub const Parser = struct {
         return ast.Invocation{
             .path = original.path,
             .args = try new_args.toOwnedSlice(self.allocator),
+            .variant = original.variant,
         };
     }
 
@@ -3082,6 +3089,7 @@ pub const Parser = struct {
         return ast.Invocation{
             .path = original.path,
             .args = try new_args.toOwnedSlice(self.allocator),
+            .variant = original.variant,
         };
     }
 
@@ -3840,10 +3848,23 @@ pub const Parser = struct {
             }
         }
 
-        const invocation_part = if (pipe_idx) |idx|
+        const invocation_part_full = if (pipe_idx) |idx|
             clean[0..idx]
         else
             clean;
+
+        // The invocation HEAD ends at the first top-level construct/produce arrow
+        // (`=> ctor` / `-> expr`). A bare-return bind (`head(): r => final { r }`)
+        // leaves the arrow tail glued onto `clean` after the `: r` strip; the
+        // caller re-parses that tail into a continuation, so the head parse must
+        // stop at the arrow. Without this, the braced constructor payload's `{`
+        // trips the source-block detection below and hijacks the parse — freeing
+        // the head's args into an undefined AST (SIGSEGV in the serializer;
+        // pinned by 100_085). The braceless twin has no `{` and never hit it.
+        const invocation_part = if (indexOfTopLevelHeadArrow(invocation_part_full)) |he|
+            lexer.trim(invocation_part_full[0..he])
+        else
+            invocation_part_full;
 
         // Check for Source block syntax: eventName <Type>{ ... }
         const source_block_marker = std.mem.indexOf(u8, invocation_part, ">{");
@@ -4133,6 +4154,7 @@ pub const Parser = struct {
                         .name = arg.name,
                         .value = arg.value,
                         .phantom_type = arg.phantom_type,
+                        .had_explicit_label = arg.had_explicit_label,
                     };
                     tryParseArgExpression(self.allocator, &ast_arg);
                     try args.append(self.allocator, ast_arg);
@@ -4246,7 +4268,16 @@ pub const Parser = struct {
     // Parses ~event = ... syntax. Returns either:
     //   Item{ .immediate_impl = ... } for branch constructor bodies
     //   Item{ .flow = Flow{ .impl_of = event_path, ... } } for flow bodies
-    fn parseSubflowImpl(self: *Parser) !ast.Item {
+    /// Duplicate caller-owned annotations for attachment to a produced item
+    /// (the caller frees its originals after the parse call returns).
+    fn dupeAnnotations(self: *Parser, annotations: [][]const u8) ![]const []const u8 {
+        if (annotations.len == 0) return &.{};
+        const out = try self.allocator.alloc([]const u8, annotations.len);
+        for (annotations, 0..) |ann, i| out[i] = try self.allocator.dupe(u8, ann);
+        return out;
+    }
+
+    fn parseSubflowImpl(self: *Parser, annotations: [][]const u8) !ast.Item {
         if (self.current >= self.lines.len) {
             try self.reporter.addError(
                 .PARSE001,
@@ -4262,7 +4293,18 @@ pub const Parser = struct {
         self.current += 1;
 
         // Parse: ~event.name = ... or ~module:event = ...
-        const after_tilde = lexer.trim(line[1..]);
+        var after_tilde = lexer.trim(line[1..]);
+
+        // Skip past a leading annotation block — the caller (parseKoruConstruct)
+        // already parsed it and hands it in via `annotations`. Without this skip
+        // the bracket text leaks INTO the impl path segment (`~[comptime]
+        // countdown = ...` registered the subflow as "[comptime] countdown"),
+        // mangling the name every later resolution looks up.
+        if (std.mem.startsWith(u8, after_tilde, "[")) {
+            if (std.mem.indexOf(u8, after_tilde, "]")) |close_pos| {
+                after_tilde = lexer.trim(after_tilde[close_pos + 1 ..]);
+            }
+        }
 
         // `~event -> expr` : bare-return impl (the `->` twin of `=>`). Returns the
         // event's single unnamed `-> T` value directly — no branch name, no tag.
@@ -4291,6 +4333,7 @@ pub const Parser = struct {
                         .has_expressions = true,
                         .is_bare_return = true,
                     },
+                    .annotations = try self.dupeAnnotations(annotations),
                     .location = self.getCurrentLocation(),
                     .module = try self.allocator.dupe(u8, self.module_name),
                     .is_impl = ep.module_qualifier != null,
@@ -4606,6 +4649,7 @@ pub const Parser = struct {
                 .pre_label = sub_pre_label,
                 .impl_of = event_path,
                 .impl_variant = impl_variant,
+                .annotations = try self.dupeAnnotations(annotations),
                 .is_impl = event_path.module_qualifier != null,
                 .location = self.getCurrentLocation(),
                 .module = try self.allocator.dupe(u8, self.module_name),
@@ -4751,6 +4795,7 @@ pub const Parser = struct {
                 .body = ast.rootSite(invocation, continuations, self.getCurrentLocation()),
                 .impl_of = event_path,
                 .impl_variant = impl_variant,
+                .annotations = try self.dupeAnnotations(annotations),
                 .is_impl = event_path.module_qualifier != null,
                 .location = self.getCurrentLocation(),
                 .module = try self.allocator.dupe(u8, self.module_name),
@@ -4785,6 +4830,7 @@ pub const Parser = struct {
             .pre_label = sub_pre_label,
             .impl_of = event_path,
             .impl_variant = impl_variant,
+            .annotations = try self.dupeAnnotations(annotations),
             .is_impl = event_path.module_qualifier != null,
             .location = self.getCurrentLocation(),
             .module = try self.allocator.dupe(u8, self.module_name),
@@ -5574,12 +5620,12 @@ pub const Parser = struct {
                 }
             }
 
-            if (!std.mem.eql(u8, name, "_") and !isValidIdentifier(name)) {
+            if (!std.mem.eql(u8, name, "_") and !isValidIdentifier(name) and !isValidDottedName(name)) {
                 try self.reporter.addError(
                     .PARSE001,
                     self.current,
                     indent + 2,
-                    "Invalid destructure field name '{s}' - must be a valid identifier or '_'.",
+                    "Invalid destructure field name '{s}' - must be a valid identifier, dotted path, or '_'.",
                     .{name},
                 );
                 return error.InvalidBinding;
@@ -6971,6 +7017,7 @@ pub const Parser = struct {
                         .name = arg.name,
                         .value = arg.value,
                         .phantom_type = arg.phantom_type,
+                        .had_explicit_label = arg.had_explicit_label,
                     };
                     tryParseArgExpression(self.allocator, &ast_arg);
                     try arg_list.append(self.allocator, ast_arg);
@@ -7070,6 +7117,19 @@ pub const Parser = struct {
             const c = content[i];
             if (std.ascii.isAlphanumeric(c) or c == '_' or c == '-' or c == '.' or c == ':' or c == '/' or c == '[' or c == ']') continue;
             break;
+        }
+        // Optional `|variant` suffix (e.g. `std/kernel:self|mlir { ... }`).
+        // The `|` must be immediately followed by an identifier start, so this
+        // can never swallow a `|>` chain glyph (its next char is `>`).
+        if (i + 1 < content.len and content[i] == '|' and
+            (std.ascii.isAlphabetic(content[i + 1]) or content[i + 1] == '_'))
+        {
+            i += 1;
+            while (i < content.len) : (i += 1) {
+                const c = content[i];
+                if (std.ascii.isAlphanumeric(c) or c == '_' or c == '-' or c == '[' or c == ']') continue;
+                break;
+            }
         }
         // After the path, skip whitespace
         while (i < content.len and (content[i] == ' ' or content[i] == '\t')) : (i += 1) {}
@@ -7403,36 +7463,17 @@ pub const Parser = struct {
                 // Branch constructors must be pure — no side effects, no function calls.
                 // Builtins (@as, @intCast), arithmetic, array indexing, and conditionals
                 // are allowed. If you need to compute a value, use event chaining.
-                {
-                    var expr_parser = expression_parser.ExpressionParser.init(self.allocator, field_value);
-                    defer expr_parser.deinit();
-                    if (expr_parser.parse()) |expr| {
-                        defer expr.deinit(self.allocator);
-                        if (expression_parser.containsFunctionCall(expr)) {
-                            try self.reporter.addError(
-                                .PARSE003,
-                                self.current + 1,
-                                1,
-                                "branch constructor field '{s}' contains a function call — branch constructors must be pure. Use event chaining instead.",
-                                .{field_name},
-                            );
-                            return error.ParseError;
-                        }
-                    } else |_| {
-                        // Expression didn't parse — still check for function calls
-                        // via raw string scan. A '(' not preceded by '@' strongly
-                        // indicates a function call (builtins use @name()).
-                        if (containsNonBuiltinCall(field_value)) {
-                            try self.reporter.addError(
-                                .PARSE003,
-                                self.current + 1,
-                                1,
-                                "branch constructor field '{s}' contains a function call — branch constructors must be pure. Use event chaining instead.",
-                                .{field_name},
-                            );
-                            return error.ParseError;
-                        }
-                    }
+                // (Shares the one expression-admission predicate with the KORU104
+                // wall in flow_checker — never a second implementation.)
+                if (expression_parser.textContainsCall(self.allocator, field_value)) {
+                    try self.reporter.addError(
+                        .PARSE003,
+                        self.current + 1,
+                        1,
+                        "branch constructor field '{s}' contains a function call — branch constructors must be pure. Use event chaining instead.",
+                        .{field_name},
+                    );
+                    return error.ParseError;
                 }
 
                 // Always store expression string for code generation
@@ -8535,6 +8576,21 @@ pub const Parser = struct {
     /// Split fields on commas, but respect bracket boundaries
     /// e.g., "a: Type[x,y], b: Other" -> ["a: Type[x,y]", "b: Other"]
     /// Check if a string is a valid identifier (letters, numbers, underscores, no leading digit)
+    /// A dotted path of valid identifiers (`entity.hp`). Projection-style
+    /// destructures (std/store query blocks, ruling 6) carry these; the
+    /// parser accepts the shape and consumers judge the semantics
+    /// (maximalist-parser tenet — a dotted name that reaches a consumer
+    /// with no path semantics is that consumer's diagnostic to raise).
+    fn isValidDottedName(name: []const u8) bool {
+        var it = std.mem.splitScalar(u8, name, '.');
+        var segments: usize = 0;
+        while (it.next()) |seg| {
+            if (!isValidIdentifier(seg)) return false;
+            segments += 1;
+        }
+        return segments >= 2;
+    }
+
     fn isValidIdentifier(name: []const u8) bool {
         if (name.len == 0) return false;
 

@@ -1,0 +1,211 @@
+// ORM SHOWCASE — a `users` store fronting SQLite through std/store's T8 seam.
+//
+// STATUS: DESIGN EXPLORATION, NOT A PIN. std/store does not exist yet — every
+// tests/regression/600_STDLIB/690_STORE/*/input.kz fails at Stage A with
+// KORU002 "module not found: 'std/store'" (DESIGN.md, pin ledger, QA pass
+// 2026-07-04). This program additionally exercises T8 (storage-backend DI via
+// optional resume arms), which has ZERO pin coverage anywhere — none of the
+// eight 690 pins install a `?fetch`/`?persist`/`?evict` handler. Every point
+// where the design forces an invention is marked `// INVENTED:` with the
+// grounding (or absence of grounding) stated explicitly. See the numbered
+// GAPS list delivered alongside this file for the open questions each
+// invention raises.
+
+~import std/io
+~import std/fmt
+~import std/store
+~import libs/sqlite3
+
+// A local hard-failure sink. Nothing in std/io exposes a callable panic at
+// the pure-Koru surface (grep: no `std/io:panic` anywhere in the corpus;
+// @panic only ever appears inside `~proc ...|zig` bodies) — this is the
+// GROUNDED idiom for "turn a required `| err` branch into a loud crash"
+// (mirrors 400_143's `~event stash {...} ~proc stash|zig {...}` shape: a
+// tiny custom event+proc pair, not a language builtin).
+~pub event fatal { msg: []const u8 }
+~proc fatal|zig { @panic(msg); }
+
+// ---------------------------------------------------------------------------
+// STEP 1 — open the database, then declare + back the store.
+//
+// `libs/sqlite3:open` / `:exec` / `:query.literal` / `:col.int` / `:col.text`
+// call shapes are GROUNDED verbatim against koru-libs/sqlite3/index.kz and
+// its tests/*.kz (query_parameterized.kz's `! row r |> col.int(r, index: 0):
+// id |> ...` chain is the exact per-row binding idiom used below).
+//
+// `create`'s shape-block grammar (`{ field: Type, ... }` for a plural store)
+// is GROUNDED (690_005/690_008). Field types stay plain declared columns —
+// `id` is NOT marked as a declared key. O2's "declared key" addressing head
+// (`game[id: 7].hp`) is a 2026-07-04 RULING with no marking syntax specified
+// and NO pin exercising it; inventing bracket/annotation syntax for it here
+// would be unguided guessing on top of an already-open question, so this
+// program avoids that head entirely and addresses rows through the two
+// heads that DO have pins: the insert-returned handle (690_007) and the
+// query-row head (690_008). See GAPS.
+// ---------------------------------------------------------------------------
+
+~libs/sqlite3:open(path: "users.db")
+| db conn |>
+    libs/sqlite3:exec(conn, sql: "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL)")
+    | ok conn2 |>
+        // INVENTED: `create` nested inside a continuation instead of sitting
+        // at column 0 like every 690 pin. Grounded partial precedent: ruling
+        // 1 explicitly splits "declaration is comptime (hoisted, like any
+        // event decl, regardless of textual position)" from "instantiation
+        // is runtime (the moment a store comes alive)" — this store's
+        // coming-alive is legitimately gated on the DB being ready, so its
+        // instantiation moves into the gate. No pin shows `create` anywhere
+        // but column 0, because no existing pin gates instantiation on
+        // anything. This is new ground, not a read precedent. See GAPS #1.
+        ~std/store:create(users) { id: i64, name: []const u8, email: []const u8 }
+
+        // INVENTED, the central hot spot: storage-backend arms. Attached in
+        // the exact trailing position `create`'s interceptors use — GROUNDED
+        // shape (690_003: `! updated { old, new } |> ...` sits directly
+        // under create's shape block; ruling 4 sanctions attaching effect
+        // branches to `create`). Everything else here is invented:
+        //
+        // - No `?fetch`/`?persist`/`?evict` DECLARATION line exists anywhere
+        //   below — these are assumed FRAMEWORK-SYNTHESIZED per-store from
+        //   the declared columns, the same way `inserted`/`updated`/
+        //   `removed` are never user-declared (ruling 5). T8's own prose
+        //   names exactly `?fetch`/`?persist`; `evict` is this showcase's
+        //   extension for the delete path the task asked for. GAPS #2, #6.
+        // - They are VOID arms (no `->`), not value-resuming ones, despite
+        //   T8 saying "resume arms" — see GAPS #3 for why.
+        // - `conn2` is closed over from the enclosing continuation. This
+        //   reads as legal ONLY under the "one centralizing subflow per
+        //   store" architecture DESIGN.md's own adversary review recommends
+        //   (ruling queue (f)) — under THAT model these three bodies are
+        //   defined exactly ONCE (here), not duplicated per write-site like
+        //   watches, so T1's transplant-purity wall (which exists because
+        //   watch bodies get COPIED to remote call sites) doesn't obviously
+        //   apply. If storage arms instead compile per-call-site (the naive
+        //   tap default), this closure capture is exactly what 690_006
+        //   rejects for `ctx`, and the connection needs a different home.
+        //   This is GAPS #1, the load-bearing one — the rest of the program
+        //   is only as real as this holds.
+
+        ! fetch |>
+            // Fires once, synchronously, right here. GAPS #2: DESIGN.md
+            // names no firing granularity ("per-write? per-query? batching?"
+            // is literally the open phrase in T8). "Once, at install, to
+            // hydrate the whole table" is this program's answer — the only
+            // reading that fits plurality-native + declared-capacity SoA
+            // (O10): the planner needs row count and data resident before
+            // any reactive machinery is correct, so a lazy per-key fetch (a
+            // real ORM's usual move) doesn't fit this design's static-layout
+            // commitments. Rows arrive via ordinary `insert` — genuine
+            // inserts, so `inserted`/query-enter fire for each (distinct
+            // from O9/O9b's "creation seed", which is about the STORE's own
+            // birth, not data loaded into it afterward).
+            libs/sqlite3:query.literal(conn2, sql: "SELECT id, name, email FROM users")
+            ! row r |>
+                libs/sqlite3:col.int(r, index: 0): id |>
+                libs/sqlite3:col.text(r, index: 1): name |>
+                libs/sqlite3:col.text(r, index: 2): email |>
+                std/store:insert(users) { id: id, name: name, email: email }
+            | done _ |> _
+            | err e |> fatal(msg: e.msg)
+
+        ! persist { id, name, email } |>
+            // Fires once per successful insert AND once per query-scoped
+            // `stored` write to this row (GAPS #2b: one arm handling both,
+            // via SQL upsert, sidesteps having to name two separate
+            // framework hooks). The full three-column image arriving here
+            // even for a single-field `stored { entity.name: ... }` write
+            // is an extension of ruling (c)'s "usage-synthesized" principle
+            // (there: {old,new} materialized only because a handler
+            // destructures both; here: the full row materialized because
+            // `persist`'s handler destructures all three columns) — ruling
+            // (c) itself only covers a two-field {old,new} pair, so
+            // stretching it to a whole row is this program's extrapolation,
+            // not a read fact.
+            //
+            // `exec`'s `sql` parameter is a raw, unparameterized string
+            // (GROUNDED: index.kz's exec proc calls sqlite3_exec directly on
+            // whatever bytes it's given — no bind-parameter path exists for
+            // mutations, only `~query(){{...}}`'s SELECT-only transform
+            // does bind parameters). `std/fmt:blk` is a real, GROUNDED
+            // koru_std/fmt.kz construct ({{ }} interpolation, comptime
+            // transform, produces `*FormattedText<allocated!>`) but has
+            // ZERO test coverage anywhere in the corpus — using it here is
+            // plausible, not proven. Neither `fmt.blk` nor raw `exec`
+            // performs actual SQL parameter binding, so embedding `name`/
+            // `email` this way is exactly the string-built-SQL shape a real
+            // ORM exists to prevent. Named plainly as GAP #7 (a koru-libs/
+            // sqlite3 library gap, not a store-design gap).
+            std/fmt:blk {
+                INSERT INTO users (id, name, email) VALUES ({{ id:d }}, '{{ name:s }}', '{{ email:s }}')
+                ON CONFLICT(id) DO UPDATE SET name = '{{ name:s }}', email = '{{ email:s }}'
+            }
+            | formatted f |>
+                libs/sqlite3:exec(conn2, sql: f.text)
+                | ok _ |> _
+                | err e |> fatal(msg: e.msg)
+
+        ! evict { id } |>
+            // Fires at `take` (O2: take synthesizes the `removed` lifecycle
+            // event with an obligation attached) — matches the task's own
+            // "evict -> DELETE" mapping directly. GAPS #5: O2 itself says
+            // the DISPOSAL verb (give-back vs destroy) is still undesigned;
+            // firing the DB delete at `take` rather than at final disposal
+            // means a future "give the row back" path would need to UNDO
+            // this delete (re-insert), which is not designed anywhere.
+            // Accepted as an open hole for this showcase.
+            std/fmt:blk {
+                DELETE FROM users WHERE id = {{ id:d }}
+            }
+            | formatted f |>
+                libs/sqlite3:exec(conn2, sql: f.text)
+                | ok _ |> _
+                | err e |> fatal(msg: e.msg)
+    | err e |> fatal(msg: e.msg)
+| err e |> fatal(msg: e.msg)
+
+// ---------------------------------------------------------------------------
+// STEP 2 — reactivity. GROUNDED query-watch shape (690_005/690_008): opaque
+// projector block, mandatory punning (`entity.name` binds `name`), `when`
+// sees the projected names. This is the "reactivity survives a DB-backed
+// store" proof: it fires from the SAME write cascade that just ran `persist`
+// above — same interleave-not-overlap guarantee (ruling (h)), regardless of
+// what the backend underneath is.
+// ---------------------------------------------------------------------------
+
+~std/store:query(users)
+! query { entity.id, entity.name } when entity.id > 0 |> std/io:print.ln("live: user {{ id:d }} is now {{ name:s }}")
+
+// ---------------------------------------------------------------------------
+// STEP 3 — application code. ONLY store constructs from here down:
+// insert / stored / query / take. No SQL, no `conn`, no `libs/sqlite3`
+// reference below this line — O8 (sole write path) holds by CONSTRUCTION,
+// not convention: nothing downstream even has a handle to the connection to
+// violate it with. The SQLite file is never touched except from inside the
+// three arm bodies above.
+// ---------------------------------------------------------------------------
+
+~std/store:insert(users) { id: 1, name: "Alice", email: "alice@example.com" }
+| row r1 |> _
+
+~std/store:insert(users) { id: 2, name: "Bob", email: "bob@example.com" }
+| row r2 |> _
+
+// UPDATE WHERE — the query-row addressing head, GROUNDED shape (690_008):
+// the query selects, the `stored` block under it writes through the bound
+// row. Rewrites Alice's display name; the watch above fires again for id 1,
+// and `persist` above upserts the change back to users.db.
+~std/store:query(users)
+! query { entity.id, entity.name } when entity.id == 1 |> std/store:stored { entity.name: "Alice Cooper" }
+
+// DELETE — insert-returned handle (GROUNDED, 690_007) into `take` (GROUNDED
+// call shape, 690_007: `std/store:take(game[r])`). `discard` is INVENTED:
+// O2 explicitly leaves the disposal verb undesigned ("give-back? destructure-
+// consume?"); this showcase only exercises the destroy path, so it invents
+// the minimal verb needed to discharge the `<users:item!>` obligation
+// 690_007 pins as mandatory. The SQL DELETE already happened inside `evict`
+// when `take` fired above; `discard` here is a pure phantom-obligation
+// discharge, no further I/O.
+~std/store:insert(users) { id: 3, name: "Carol", email: "carol@example.com" }
+| row r3 |>
+    std/store:take(users[r3])
+    | item i |> std/store:discard(i) |> std/io:print.ln("removed {{ i.name:s }}")

@@ -34,7 +34,14 @@ pub const ShapeChecker = struct {
     /// resolve as ARM-FIRES instead of unknown events. Firing is a call
     /// (ruled 2026-07-02); only the declaring event's impl may fire its arms.
     current_impl_event: ?*const ast.EventDecl = null,
-    
+
+    /// PRESENCE (`if(arm)` / `when arm`, ruled 2026-07-03): optional-arm names
+    /// whose presence is established on the current walk path — pushed entering
+    /// the `| then` of `if(<arm>)` and any continuation guarded `when <arm>`,
+    /// popped on the way out. validateArmFire consults this to wall unguarded
+    /// value-resuming optional fires (KORU130).
+    presence_arms: std.ArrayList([]const u8) = .empty,
+
     pub fn init(allocator: std.mem.Allocator, reporter: *errors.ErrorReporter) !ShapeChecker {
         return ShapeChecker{
             .allocator = allocator,
@@ -76,6 +83,7 @@ pub const ShapeChecker = struct {
             self.allocator.free(entry.key_ptr.*);
         }
         self.impl_flows.deinit();
+        self.presence_arms.deinit(self.allocator);
         self.type_engine.deinit();
     }
     
@@ -584,6 +592,7 @@ pub const ShapeChecker = struct {
                     event.decl.branches,
                     flow.body.continuations,
                     location,
+                    flow.inv(),
                 );
 
                 if (!covered) {
@@ -622,6 +631,7 @@ pub const ShapeChecker = struct {
             final_event_info.decl.branches,
             flow.body.continuations,
             location,
+            flow.inv(),
         );
 
         if (!covered) {
@@ -945,6 +955,54 @@ pub const ShapeChecker = struct {
         return null;
     }
 
+    /// PRESENCE: a bare identifier — the only shape an arm name in condition
+    /// position can take. Anything with operators, calls, spaces or dots is a
+    /// runtime value condition, never a presence test.
+    fn isBareIdent(text: []const u8) bool {
+        if (text.len == 0) return false;
+        for (text, 0..) |ch, i| {
+            const alpha = (ch >= 'a' and ch <= 'z') or (ch >= 'A' and ch <= 'Z') or ch == '_';
+            const digit = ch >= '0' and ch <= '9';
+            if (i == 0) {
+                if (!alpha) return false;
+            } else if (!(alpha or digit or ch == '-')) return false;
+        }
+        return true;
+    }
+
+    /// PRESENCE: resolve condition-position text against the enclosing impl
+    /// event's effect arms. Inside the declaring event's impl, an arm's bare
+    /// name in `if`-condition / `when`-guard position IS the presence
+    /// expression (arm-first, ruled 2026-07-03). Null outside impls or for
+    /// non-arm conditions.
+    fn presenceArmByName(self: *ShapeChecker, text: []const u8) ?*const ast.Branch {
+        const impl_ev = self.current_impl_event orelse return null;
+        const trimmed = std.mem.trim(u8, text, " \t");
+        if (!isBareIdent(trimmed)) return null;
+        for (impl_ev.branches) |*b| {
+            if (b.kind == .effect and std.mem.eql(u8, b.name, trimmed)) return b;
+        }
+        return null;
+    }
+
+    /// PRESENCE: an invocation that is a presence test — `if(<arm>)` inside
+    /// the arm's declaring event's impl. Returns the tested arm.
+    fn presenceTestedArm(self: *ShapeChecker, inv: *const ast.Invocation) ?*const ast.Branch {
+        if (inv.path.segments.len == 0) return null;
+        if (!std.mem.eql(u8, inv.path.segments[inv.path.segments.len - 1], "if")) return null;
+        if (inv.args.len != 1) return null;
+        const text = if (inv.args[0].expression_value) |ev| ev.text else inv.args[0].value;
+        return self.presenceArmByName(text);
+    }
+
+    /// PRESENCE: is `arm`'s presence established on the current walk path?
+    fn presenceEstablished(self: *ShapeChecker, arm_name: []const u8) bool {
+        for (self.presence_arms.items) |n| {
+            if (std.mem.eql(u8, n, arm_name)) return true;
+        }
+        return false;
+    }
+
     /// Find a declared event owning an effect arm named by `path`'s last
     /// segment. Diagnostic aid only: when an arm is called outside its
     /// event's impl, the error can name the owner instead of "unknown event".
@@ -974,6 +1032,21 @@ pub const ShapeChecker = struct {
         continuations: []const ast.Continuation,
         location: errors.SourceLocation,
     ) anyerror!void {
+        // PRESENCE WALL (KORU130): a `?` optional arm that RESUMES a value may
+        // be absent — an unguarded fire would bind a value that might not
+        // exist. No no-op can be synthesized (a fn with a mandatory return and
+        // an empty body is not a thing) and a fabricated default would be a
+        // silent fallback, so the fire must sit under a presence test on the
+        // arm (`if(<arm>) | then` or `when <arm>`).
+        if (arm.is_optional and (arm.resume_type != null or arm.resume_arms != null) and
+            !self.presenceEstablished(arm.name))
+        {
+            try self.reporter.addErrorAtLocation(.KORU130, location,
+                "effect '{s}' is optional and resumes a value — a consumer may omit the handler, so the fire must sit under a presence test: if({s}) | then |> {s}(...): ... | else |> <your fallback>",
+                .{ arm.name, arm.name, arm.name });
+            return error.ValidationFailed;
+        }
+
         // Payload shape at the firing site follows the BRANCH convention
         // (arms are branches, and firing is construction's call-twin):
         //   - payloadless arm  → bare fire, `ask()`        (like `=> timeout`)
@@ -1128,9 +1201,28 @@ pub const ShapeChecker = struct {
         event_branches: []const ast.Branch,
         continuations: []const ast.Continuation,
         location: errors.SourceLocation,
+        // The invocation these continuations handle, when the caller has it.
+        // Presence resolution needs it: `if(<arm>)` establishes the arm for
+        // the `| then` subtree, and `if(<required arm>)` is the KORU131 wall.
+        parent_inv: ?*const ast.Invocation,
     ) !bool {
         // Track if we found any errors (but continue checking to find all of them)
         var has_errors = false;
+
+        // PRESENCE WALL (KORU131): `if(<required arm>)` — a required arm is
+        // always installed (exhaustiveness guarantees a handler), so testing
+        // for it is a meaningless always-true and almost certainly a misread
+        // of the contract. Reject and say why, never fold to `true` silently.
+        if (parent_inv) |pinv| {
+            if (self.presenceTestedArm(pinv)) |arm| {
+                if (!arm.is_optional) {
+                    try self.reporter.addErrorAtLocation(.KORU131, location,
+                        "presence test on '{s}' — a required arm is always installed (exhaustiveness guarantees a handler), so `if({s})` is always true; presence tests are for `?` optional arms",
+                        .{ arm.name, arm.name });
+                    has_errors = true;
+                }
+            }
+        }
 
         // Use pure BranchChecker for branch name validation
         // Convert AST types to BranchChecker types
@@ -1171,10 +1263,26 @@ pub const ShapeChecker = struct {
             // Transition acts as a catchall
             const is_catchall = cont.is_catchall or std.mem.eql(u8, cont.branch, "Transition");
 
+            // PRESENCE (ruled 2026-07-03): a `when <optional arm>` guard is a
+            // COMPTIME partition over CONSUMERS — per consumer it is
+            // all-or-nothing, statically known — not a runtime per-firing hole
+            // (the 210_084/085 rationale), so it counts as FULL coverage of
+            // the branch. A presence test on a REQUIRED arm is the KORU131
+            // wall, same as in `if` position.
+            const presence_guard: ?*const ast.Branch = if (cont.condition) |c| self.presenceArmByName(c) else null;
+            if (presence_guard) |arm| {
+                if (!arm.is_optional) {
+                    try self.reporter.addErrorAtLocation(.KORU131, cont.location,
+                        "presence test on '{s}' — a required arm is always installed (exhaustiveness guarantees a handler), so `when {s}` is always true; presence tests are for `?` optional arms",
+                        .{ arm.name, arm.name });
+                    has_errors = true;
+                }
+            }
+
             if (!is_metatype) {
                 try handled.append(self.allocator, .{
                     .name = cont.branch,
-                    .has_when_guard = cont.condition != null,
+                    .has_when_guard = cont.condition != null and presence_guard == null,
                     .is_catchall = is_catchall,
                 });
             } else if (is_catchall) {
@@ -1296,6 +1404,31 @@ pub const ShapeChecker = struct {
 
         // For each continuation, check if it properly handles or terminates
         for (continuations) |cont| {
+            // PRESENCE scope: entering the `| then` of `if(<optional arm>)`,
+            // or a continuation guarded `when <optional arm>`, establishes the
+            // arm's presence for everything validated inside this subtree —
+            // fires of the arm in here are guarded (KORU130 stands down).
+            var presence_pushed: usize = 0;
+            if (parent_inv) |pinv| {
+                if (self.presenceTestedArm(pinv)) |arm| {
+                    if (arm.is_optional and std.mem.eql(u8, cont.branch, "then")) {
+                        try self.presence_arms.append(self.allocator, arm.name);
+                        presence_pushed += 1;
+                    }
+                }
+            }
+            if (cont.condition) |c| {
+                if (self.presenceArmByName(c)) |arm| {
+                    if (arm.is_optional) {
+                        try self.presence_arms.append(self.allocator, arm.name);
+                        presence_pushed += 1;
+                    }
+                }
+            }
+            defer for (0..presence_pushed) |_| {
+                _ = self.presence_arms.pop();
+            };
+
             // Check if this continuation terminates with _
             if (cont.node) |step| {
                 if (step == .terminal) {
@@ -1475,6 +1608,7 @@ pub const ShapeChecker = struct {
                         nested_event_info.decl.branches,
                         cont.continuations,
                         location,
+                        &step.invocation,
                     );
                     if (!nested_covered) {
                         return false;
@@ -1570,6 +1704,7 @@ pub const ShapeChecker = struct {
                                 nested_event_info.decl.branches,
                                 cont.continuations,
                                 location,
+                                &step.invocation,
                             );
                             if (!covered) {
                                 all_valid = false;
@@ -1707,6 +1842,7 @@ pub const ShapeChecker = struct {
             event_info.decl.branches,
             flow.body.continuations,
             flow.location,
+            flow.inv(),
         );
         if (!covered) {
             // Error already reported by checkBranchCoverageWithTerminals
@@ -2240,7 +2376,7 @@ test "for shape: two unguarded done handlers - KORU028" {
         .{ .branch = "done", .binding = null, .kind = .terminal, .condition = null, .node = null, .indent = 0, .continuations = &[_]ast.Continuation{}, .location = loc },
     };
 
-    const covered = try checker.checkBranchCoverageWithTerminals("for", &branches, &continuations, loc);
+    const covered = try checker.checkBranchCoverageWithTerminals("for", &branches, &continuations, loc, null);
     try std.testing.expect(!covered);
 
     var saw_koru028 = false;
@@ -2269,7 +2405,7 @@ test "for shape: each plus single done - valid" {
         .{ .branch = "done", .binding = null, .kind = .terminal, .condition = null, .node = null, .indent = 0, .continuations = &[_]ast.Continuation{}, .location = loc },
     };
 
-    const covered = try checker.checkBranchCoverageWithTerminals("for", &branches, &continuations, loc);
+    const covered = try checker.checkBranchCoverageWithTerminals("for", &branches, &continuations, loc, null);
     try std.testing.expect(covered);
 }
 

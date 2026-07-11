@@ -1,33 +1,23 @@
-// FRONTIER (pinned RED on the JS target): effect-branch dispatch where the
-// dispatch arg's name DIFFERS from the target event's field name.
+// Cross-target dispatch under Koru's named-parameter rule. The effect handler
+// `! tick i` sends its bound value to the `onTick` event, whose field is `slot`.
+// Koru only supports NAMED parameters — a call's meaning must be derivable
+// without context-hunting — so the dispatch is spelled `onTick(slot: i)`, never
+// positionally. Both targets resolve the arg by name and print `hits=1`.
 //
-// The effect branch binds `! tick i`, dispatched as `onTick(i)`. But onTick's
-// field is named `slot`, so this is a POSITIONAL arg whose name (`i`) does not
-// match the field (`slot`). The Zig path resolves the arg by position and
-// passes. The JS inline-plain-handler path (src/js_emitter.zig:421-429,
-// `emitInlinePlainHandler`) resolves dispatch args ONLY by field-name match:
-//
-//     const arg_val = argValueByName(inv.args, field.name) orelse
-//         return JsEmitError.UnsupportedConstruct;   // <- aborts here
-//
-// `argValueByName` looks up `arg.name == field.name`; the punned arg's name is
-// the binding `i`, the field is `slot`, no match → UnsupportedConstruct →
-// the backend dies via Abort trap (signal 6) when emitting JS.
-//
-// DIVERGENCE OBSERVED:
-//   Zig  : compiles + runs, prints `hits=1`
-//   JS   : koruc --lang=js panics — `js_emitter.emit failed: UnsupportedConstruct`
-//          at js_emitter.zig:424 (emitInlinePlainHandler), no output_emitted.js
-//
-// FIX SHAPE: the JS inline-plain-handler must resolve dispatch args
-// POSITIONALLY (zip event.input.fields with inv.args by index) when there is
-// no name match — matching the Zig path — instead of requiring field-name
-// equality. Until then this test stays RED on JS and GREEN on Zig.
+// HISTORY: this was a JS-target frontier pin (2026-06-01). It was written
+// positionally as `onTick(i)`, which the Zig emitter bound BY INDEX while the JS
+// `emitInlinePlainHandler` resolved BY FIELD-NAME only and aborted
+// (UnsupportedConstruct) on the `i`/`slot` mismatch — a cross-target divergence.
+// The punning wall (PARSE006) forecloses it at the frontend: a bare arg that
+// doesn't pun to a parameter is rejected on EVERY target, so a positional
+// mismatch can never reach an emitter. Labeled dispatch resolves by name
+// identically on Zig and JS, so the old "make JS resolve positionally" fix is
+// unnecessary — the rule closed the gap by construction. Green on both.
 pub event ticker { n: u64 }
 ! tick u64
 pub event onTick { slot: u64 }
 pub event report {}
 
 ticker(n: 1)
-! tick i |> onTick(i)
+! tick i |> onTick(slot: i)
 report()

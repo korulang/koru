@@ -1,1 +1,0 @@
-Type system is scaffolding only — `~string`/`~int`/`~float`/`~bool`/`~struct`/`~type` emit plain Zig aliases without nominal distinctness or parametric tracking. Needs design + implementation.

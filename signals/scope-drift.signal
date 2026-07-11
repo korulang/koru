@@ -4,3 +4,4 @@ shape: categorical
 face: out
 membrane: true
 note: drift from the session's stated goal: on-track | soft-drift | hard-detour; hard-detour is memorable
+route: surface, wake

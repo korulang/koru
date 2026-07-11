@@ -1,0 +1,2 @@
+hp now 20
+hp now 40

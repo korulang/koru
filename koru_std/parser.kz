@@ -122,6 +122,13 @@ pub const ParseResult = parser_impl.ParseResult;
     });
     ast_mangle_module.addImport("ast", ast_module);
 
+    // Annotation parser - block-entry delimiting + parametrized annotation queries
+    const annotation_parser_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/annotation_parser.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+
     // Parser module - the main parser with all its dependencies
     const parser_module = b.createModule(.{
         .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/parser.zig" },
@@ -134,6 +141,7 @@ pub const ParseResult = parser_impl.ParseResult;
     parser_module.addImport("errors", errors_module);
     parser_module.addImport("type_registry", type_registry_module);
     parser_module.addImport("expression_parser", expression_parser_module);
+    parser_module.addImport("annotation_parser", annotation_parser_module);
     parser_module.addImport("union_collector", union_collector_module);
     parser_module.addImport("module_resolver", module_resolver_module);
     parser_module.addImport("file_types", file_types_module);

@@ -1,0 +1,38 @@
+// Test 8210: MLIR CPU loop — prove scf.for + iter_args lowers/links/runs AOT.
+//
+// Builds on 8209 (scalar |mlir): same scalar-in/scalar-out ABI, but the MLIR
+// body now contains a LOOP (scf.for with an accumulator via iter_args). This is
+// the lowering the kernel transform will generate, so it de-risks the next
+// slice (kernel:self/pairwise -> generated MLIR). sum-upto(10) = 0+1+..+9 = 45.
+
+~import std/io
+
+~pub event sum-upto { n: i64 }
+| total i64
+
+// Zig fallback — defines the answer.
+~proc sum-upto|zig {
+    var acc: i64 = 0;
+    var i: i64 = 0;
+    while (i < n) : (i += 1) acc += i;
+    return .{ .total = acc };
+}
+
+// MLIR implementation — a real loop (scf.for + iter_args accumulator).
+~proc sum-upto|mlir {
+    func.func @koru_mlir_sum_upto(%arg0: i64) -> i64 {
+        %c0 = arith.constant 0 : i64
+        %lb = arith.constant 0 : index
+        %step = arith.constant 1 : index
+        %n = arith.index_cast %arg0 : i64 to index
+        %sum = scf.for %i = %lb to %n step %step iter_args(%acc = %c0) -> (i64) {
+            %iv = arith.index_cast %i : index to i64
+            %next = arith.addi %acc, %iv : i64
+            scf.yield %next : i64
+        }
+        return %sum : i64
+    }
+}
+
+~sum-upto|mlir(n: 10)
+| total t |> std/io:print.ln("sum: {{ t:d }}")

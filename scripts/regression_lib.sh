@@ -92,6 +92,35 @@ mark_test_passed() {
     fi
 }
 
+# Comptime-output expectation (expected_comptime.txt): each line must appear
+# VERBATIM as its own line, IN ORDER, in the Stage C output (backend.out then
+# backend.err). This is the channel that pins what a program prints DURING
+# compilation — the comptime interpreter's thunked effects. actual.txt only
+# ever sees the final binary's runtime output, so without this file a fully-
+# comptime program has no observable to pin. Exact-LINE matching on purpose:
+# Stage C output carries pipeline noise ("Compiler coordination: ..."), and a
+# substring match would let short expectations pass against it vacuously.
+# Requires MUST_RUN — the folded residue must still build and run.
+check_expected_comptime() {
+    local expected_file="$1"
+    local test_dir="$2"
+    local combined="$test_dir/.comptime_combined.$$"
+    cat "$test_dir/backend.out" "$test_dir/backend.err" 2>/dev/null > "$combined"
+    local pos=1
+    local want found
+    while IFS= read -r want || [ -n "$want" ]; do
+        found=$(tail -n +"$pos" "$combined" | grep -n -x -F -m1 -- "$want" | cut -d: -f1)
+        if [ -z "$found" ]; then
+            echo "  Comptime line not found (in order, exact): $want"
+            rm -f "$combined"
+            return 1
+        fi
+        pos=$((pos + found))
+    done < "$expected_file"
+    rm -f "$combined"
+    return 0
+}
+
 # Match a patterns file against an actual-output file.
 # Each non-empty, non-comment line in the patterns file is a POSIX ERE regex
 # that MUST match somewhere in the actual output (grep -E semantics).
@@ -1388,6 +1417,21 @@ EOF
             return 0
         fi
         
+        # COMPTIME-OUTPUT GATE: what the program printed DURING compilation
+        # (the comptime interpreter's thunked effects, captured in
+        # backend.out/backend.err). A gate, not a branch: it composes with
+        # any runtime expectation below.
+        if [ -f "$test_dir/expected_comptime.txt" ]; then
+            if ! check_expected_comptime "$test_dir/expected_comptime.txt" "$test_dir"; then
+                echo -e "${RED}❌ Comptime output mismatch${NC}"
+                echo "  Expected (exact lines, in order): $test_dir/expected_comptime.txt"
+                echo "  Stage C output: $test_dir/backend.out + $test_dir/backend.err"
+                echo "comptime-output" > "$test_dir/FAILURE"
+                FAILED_TESTS="$FAILED_TESTS $TEST_NAME(comptime-output)"
+                return 0
+            fi
+        fi
+
         # Check if we have expected output or post-validation script
         if [ -f "$test_dir/expected.txt" ]; then
             # Compare outputs after trimming trailing whitespace
@@ -1676,7 +1720,13 @@ run_one_test_watched() {
         regression_run_one_test "$tdir" &
     fi
     local job=$!
-    ( sleep "$KORU_TEST_TIMEOUT"; kill -KILL -"$job" 2>/dev/null ) &
+    # NOTE: redirect the watchdog subshell's fds to /dev/null. Otherwise it
+    # inherits run_single_test.sh's stdout — which under the parallel path is the
+    # pipe into `tee`. Killing the watchdog (below) orphans its `sleep`, which
+    # then holds the pipe's write-end open for the full timeout, so `tee` never
+    # sees EOF and the whole `xargs -P8 | tee` pipeline stalls to KORU_TEST_TIMEOUT
+    # — silently collapsing --parallel N to serial. (Measured: 333s vs 45s / 25 tests.)
+    ( sleep "$KORU_TEST_TIMEOUT"; kill -KILL -"$job" 2>/dev/null ) >/dev/null 2>&1 </dev/null &
     local watchdog=$!
     wait "$job" 2>/dev/null
     local rc=$?

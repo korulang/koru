@@ -1,0 +1,34 @@
+// ============================================================================
+// Test 210_094: MUST_FAIL — a BARE argument whose punned name matches NO
+//   parameter must be REJECTED. This is the bare-side twin of 210_091's
+//   legal `echo(v: other)`.
+//
+//   Koru has exactly three legal argument forms:
+//     1. implicit expression for an `Expr`-typed FIRST parameter (n/a: v is i32)
+//     2. explicit `name: value` — ONLY when the value cannot be punned
+//     3. punning — a bare token whose name matches a parameter
+//   `echo(other)` is NONE of these: `other` puns to 'other', but the only
+//   parameter is 'v'. The legal spelling is `echo(v: other)` (see 210_091).
+//
+// CURRENT BEHAVIOR (the bug this pins): compiles clean. The emit path
+//   (emitter_helpers.zig ~5975) treats a bare arg as positional and binds it
+//   to parameter[idx] BY INDEX, never checking that 'other' puns to 'v'.
+//   RED until the frontend rejects it. Exact diagnostic code/wording is a
+//   design call (TBD with the fix); expected_patterns below is the target.
+// ============================================================================
+
+~import std/io
+
+~event echo { v: i32 }
+| out i32
+
+~echo => out v
+
+~event src {}
+| got i32
+
+~proc src|zig { return .{ .got = 5 }; }
+
+~src()
+| got other |> echo(other)
+    | out r |> std/io:print.ln("{{ r:d }}")

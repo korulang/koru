@@ -1,0 +1,24 @@
+// Test 390_104: f64 shapes cannot target the GPU — the capability wall.
+//
+// Apple GPUs (SPIR-V via MoltenVK) carry no Float64. A `self|mlir[gpu]` op on
+// an f64 shape must die loudly at the koru level (KORU123) naming the
+// constraint — never lower to a blob that fails downstream or silently
+// degrades. First concrete instance of the capability lattice: the compiler
+// knows what the target can carry, and says so.
+
+import std/kernel
+import std/io
+
+std/kernel:shape(Body) {
+    mass: f64,
+}
+
+std/kernel:init(Body) {
+    { mass: 1.0 },
+    { mass: 2.0 },
+    { mass: 3.0 },
+}
+| kernel k |> std/kernel:self|mlir[gpu] { k.mass *= 2.0 }
+| computed c |> std/io:print.blk {
+        mass[0]={{ c[0].mass:f }} mass[1]={{ c[1].mass:f }} mass[2]={{ c[2].mass:f }}
+    }

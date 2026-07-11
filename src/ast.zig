@@ -1312,6 +1312,10 @@ pub const Arg = struct {
     /// The suffix is stripped from `value`; the label name lives here. The
     /// phantom checker trusts the assertion — author asserts, checker matches.
     phantom_type: ?[]const u8 = null,
+    /// True when the author wrote an explicit `name: value` label (vs. a bare
+    /// punning arg). Lets diagnostics distinguish "bare arg needs a label" from
+    /// "explicit label names a parameter that doesn't exist" (PARSE006).
+    had_explicit_label: bool = false,
 
     pub fn deinit(self: *Arg, allocator: std.mem.Allocator) void {
         allocator.free(self.name);

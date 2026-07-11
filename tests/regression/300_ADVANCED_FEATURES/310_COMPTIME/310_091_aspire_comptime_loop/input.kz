@@ -13,6 +13,8 @@ const std = @import("std");
     std.debug.print("{}\n", .{v});
 }
 
+~[comptime] pub event countdown {}
+
 ~[comptime] countdown = #loop tick(n: 5)
 | go i when i > 0 |> @loop(n: i - 1)
 | go i |> report(v: i)

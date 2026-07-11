@@ -1,0 +1,1 @@
+obligation <game:item!> issued by take is never discharged — a taken row is owned and must be consumed or given back

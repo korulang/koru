@@ -1,0 +1,15 @@
+// Pins: a bare STEM on the CLI (`koruc input hello`) dispatches a frontend
+// command exactly as the explicit facet (`koruc input.kz hello`) does. The
+// stem is the real unit of compilation — `.k`/`.kz`/`.kjs` are facets — so
+// command dispatch must key off the raw arg the user typed, not the
+// extension-resolved path.
+
+~import std/build
+
+~std/build:command.sh(name: "hello") {
+  echo "Hello from Koru!"
+}
+
+~std/build:command.sh(name: "args") {
+  echo "Args: $@"
+}

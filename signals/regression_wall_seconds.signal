@@ -1,0 +1,7 @@
+name: regression_wall_seconds
+kind: measured
+shape: scalar
+face: in
+membrane: false
+route: surface, wmfx=regression_shape
+note: full-suite wall-clock seconds (wm adapter, full unfiltered runs only)

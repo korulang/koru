@@ -4,6 +4,7 @@ const ast = @import("ast");
 const errors = @import("errors");
 const branch_checker = @import("branch_checker");
 const annotation_parser = @import("annotation_parser");
+const expression_parser = @import("expression_parser");
 
 /// The flow checker validates control flow properties:
 /// 1. When-clause exhaustiveness (exactly one continuation without `when` per branch)
@@ -63,6 +64,14 @@ pub const FlowChecker = struct {
                     try self.validateFlow(flow, flow.location);
                 },
                 .proc_decl => {},
+                // `~event -> expr` bare-return impls are their own item kind;
+                // the produce expression rides in value.plain_value and must
+                // pass the KORU104 expression-admission wall too.
+                .immediate_impl => |*ii| {
+                    if (self.mode == .frontend) {
+                        try self.checkBranchConstructorPurity(&ii.value, ii.location);
+                    }
+                },
                 .module_decl => |*module| {
                     // Validate flows in imported modules
                     for (module.items) |*module_item| {
@@ -71,6 +80,11 @@ pub const FlowChecker = struct {
                                 try self.validateFlow(flow, flow.location);
                             },
                             .proc_decl => {},
+                            .immediate_impl => |*ii| {
+                                if (self.mode == .frontend) {
+                                    try self.checkBranchConstructorPurity(&ii.value, ii.location);
+                                }
+                            },
                             else => {},
                         }
                     }
@@ -94,6 +108,14 @@ pub const FlowChecker = struct {
 
         // === FRONTEND CHECKS (syntactic, always run) ===
         // These run even for transformed flows
+
+        // KORU104: the expression-admission wall — calls are not expressions,
+        // anywhere. Frontend mode only: it runs pre-transform, so every
+        // expression text in the AST is user-authored surface syntax (post-
+        // transform nodes carry synthesized code the wall must not judge).
+        if (self.mode == .frontend and !is_transformed) {
+            try self.checkExpressionPurity(&flow.body);
+        }
 
         // Check for duplicate branch handlers at each level
         if (!is_transform_flow) {
@@ -133,6 +155,204 @@ pub const FlowChecker = struct {
             // Only run in 'all' mode - requires transforms to be applied first
             // Skip for transformed flows - their branch structure has changed
             try self.validateBranchCoverage(flow, location);
+        }
+    }
+
+    // =========================================================================
+    // KORU104 — the expression-admission wall.
+    //
+    // An expression admits atoms, operators, and builtins — never a call.
+    // Composition lives in the flow via explicit binds (`event(args): x |>`),
+    // which is what keeps purity, obligation accounting, and lifetime proofs
+    // sound: every analysis treats expressions as opaque effect-free
+    // computation, so a call hiding inside one is invisible to all of them.
+    //
+    // This walk is the SINGLE choke point for every expression-carrying
+    // position reachable from a flow: invocation arguments (which covers
+    // `if(...)` conditions and `for(...)` bounds — both parse as invocation
+    // args), `when` clauses, produce (`->`) bodies, branch-constructor and
+    // captured fields, label-jump args, and body-position expressions. The
+    // per-surface guards that predate it (PARSE003 branch ctors, std/io
+    // interpolations) stay as parse-time belts; this is the wall.
+    // =========================================================================
+
+    fn reportCallInExpression(self: *FlowChecker, surface: []const u8, location: errors.SourceLocation) !void {
+        try self.reporter.addErrorWithHint(
+            .KORU104,
+            location.line,
+            location.column,
+            "nested call in {s} — calls are not expressions; use event chaining: bind the result first",
+            .{surface},
+            "rewrite as `event(args): x |> ...` and use `x` here",
+            .{},
+        );
+    }
+
+    fn exprTextHasCall(self: *FlowChecker, text: []const u8) bool {
+        if (text.len == 0) return false;
+        return expression_parser.textContainsCall(self.allocator, text);
+    }
+
+    fn checkExpressionPurity(self: *FlowChecker, cont: *const ast.Continuation) anyerror!void {
+        // Transform-grafted subtrees carry synthesized code, not user syntax.
+        if (cont.is_transformed_subtree) return;
+
+        if (cont.condition) |c| {
+            if (self.exprTextHasCall(c)) {
+                try self.reportCallInExpression("the `when` condition", cont.location);
+            }
+        }
+        if (cont.node) |*node| {
+            try self.checkNodeExpressionPurity(node, cont.location);
+        }
+        for (cont.continuations) |*nested| {
+            try self.checkExpressionPurity(nested);
+        }
+    }
+
+    fn checkNodeExpressionPurity(self: *FlowChecker, node: *const ast.Node, location: errors.SourceLocation) anyerror!void {
+        switch (node.*) {
+            .invocation => |*inv| try self.checkInvocationArgsPurity(inv, location),
+            .label_with_invocation => |*lwi| try self.checkInvocationArgsPurity(&lwi.invocation, location),
+            .label_jump => |*lj| {
+                for (lj.args) |*arg| try self.checkArgPurity(arg, location);
+            },
+            .deref => |*d| {
+                if (d.args) |args| for (args) |*arg| try self.checkArgPurity(arg, location);
+            },
+            .branch_constructor => |*bc| try self.checkBranchConstructorPurity(bc, location),
+            .conditional => |*c| {
+                if (self.exprTextHasCall(c.condition)) {
+                    try self.reportCallInExpression("the condition", location);
+                }
+                for (c.branches) |*branch| {
+                    for (branch.body) |*bcont| try self.checkExpressionPurity(bcont);
+                }
+            },
+            .conditional_block => |*cb| {
+                if (cb.condition) |cnd| {
+                    if (self.exprTextHasCall(cnd)) {
+                        try self.reportCallInExpression("the condition", location);
+                    }
+                }
+                for (cb.nodes) |*n| try self.checkNodeExpressionPurity(n, location);
+            },
+            .foreach => |*fe| {
+                if (self.exprTextHasCall(fe.iterable)) {
+                    try self.reportCallInExpression("an iteration bound", location);
+                }
+                for (fe.branches) |*branch| {
+                    for (branch.body) |*bcont| try self.checkExpressionPurity(bcont);
+                }
+            },
+            .expression => |text| {
+                if (self.exprTextHasCall(text)) {
+                    try self.reportCallInExpression("an expression body", location);
+                }
+            },
+            // switch_result / assignment / inline_code are transform-generated
+            // (never present pre-transform); terminal / labels carry no
+            // expression text.
+            else => {},
+        }
+    }
+
+    /// Shared by flow-nested branch constructors AND `immediate_impl` items
+    /// (the `~event -> expr` bare-return impl parses as its own item kind,
+    /// carrying the produce expression in `plain_value`).
+    fn checkBranchConstructorPurity(self: *FlowChecker, bc: *const ast.BranchConstructor, location: errors.SourceLocation) anyerror!void {
+        if (bc.plain_value) |pv| {
+            if (self.exprTextHasCall(pv)) {
+                const surface = if (bc.is_bare_return) "a produce (`->`) expression" else "a branch-constructor value";
+                try self.reportCallInExpression(surface, location);
+            }
+        }
+        for (bc.fields) |*field| {
+            if (field.expression_str) |es| {
+                if (self.exprTextHasCall(es)) {
+                    var buf: [256]u8 = undefined;
+                    const surface = std.fmt.bufPrint(&buf, "field '{s}'", .{field.name}) catch "a field expression";
+                    try self.reportCallInExpression(surface, location);
+                }
+            }
+        }
+    }
+
+    fn checkInvocationArgsPurity(self: *FlowChecker, inv: *const ast.Invocation, location: errors.SourceLocation) anyerror!void {
+        if (inv.inserted_by_tap) return;
+        // `capture { ... }` / `captured { ... }` carry their brace payload as a
+        // single Source-typed arg — but that source is a FIELD-EXPRESSION LIST,
+        // not an opaque code block, so the wall parses and judges it. (The
+        // general contract — a transform declaring whether its Source payload
+        // is expression-shaped — is an open design item; these two are the
+        // shipped constructs that need it today.)
+        const segs = inv.path.segments;
+        const last_seg: []const u8 = if (segs.len > 0) segs[segs.len - 1] else "";
+        const is_capture_family = std.mem.eql(u8, last_seg, "capture") or std.mem.eql(u8, last_seg, "captured");
+        for (inv.args) |*arg| {
+            if (arg.source_value) |sv| {
+                if (is_capture_family) try self.checkCaptureFieldsPurity(sv.text, location);
+                continue;
+            }
+            try self.checkArgPurity(arg, location);
+        }
+    }
+
+    /// Judge a capture-family brace payload: `acc: <expr>, n: <expr>` — split
+    /// on top-level commas, take the text after each field's first `:`, and
+    /// run the one admission predicate on it.
+    fn checkCaptureFieldsPurity(self: *FlowChecker, source_text: []const u8, location: errors.SourceLocation) anyerror!void {
+        var depth: i32 = 0;
+        var in_str = false;
+        var start: usize = 0;
+        var i: usize = 0;
+        while (i <= source_text.len) : (i += 1) {
+            const at_end = i == source_text.len;
+            if (!at_end) {
+                const c = source_text[i];
+                if (c == '"' and (i == 0 or source_text[i - 1] != '\\')) {
+                    in_str = !in_str;
+                    continue;
+                }
+                if (in_str) continue;
+                if (c == '(' or c == '[' or c == '{') {
+                    depth += 1;
+                    continue;
+                }
+                if (c == ')' or c == ']' or c == '}') {
+                    depth -= 1;
+                    continue;
+                }
+                if (c != ',' or depth != 0) continue;
+            }
+            const field = std.mem.trim(u8, source_text[start..i], " \t\n");
+            start = i + 1;
+            const colon = std.mem.indexOfScalar(u8, field, ':') orelse continue;
+            const name = std.mem.trim(u8, field[0..colon], " \t");
+            const vtext = std.mem.trim(u8, field[colon + 1 ..], " \t\n");
+            if (self.exprTextHasCall(vtext)) {
+                var buf: [256]u8 = undefined;
+                const surface = std.fmt.bufPrint(&buf, "captured field '{s}'", .{name}) catch "a captured field";
+                try self.reportCallInExpression(surface, location);
+            }
+        }
+    }
+
+    fn checkArgPurity(self: *FlowChecker, arg: *const ast.Arg, location: errors.SourceLocation) anyerror!void {
+        // Source-typed arguments are opaque code blocks by design (the
+        // metaprogramming surface) — the wall does not judge them. (Capture-
+        // family sources are handled field-wise in checkInvocationArgsPurity.)
+        if (arg.source_value != null) return;
+        // Declared-Expression parameters are the comptime QUOTING surface:
+        // the text is captured verbatim and handed to a transform proc as
+        // data — it never executes in this flow, so call-shaped text there
+        // is not a call. (parser sets expression_value exactly when the
+        // event's field is declared `Expression`.)
+        if (arg.expression_value != null) return;
+        if (self.exprTextHasCall(arg.value)) {
+            var buf: [256]u8 = undefined;
+            const surface = std.fmt.bufPrint(&buf, "argument '{s}'", .{arg.name}) catch "an argument";
+            try self.reportCallInExpression(surface, location);
         }
     }
 

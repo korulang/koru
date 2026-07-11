@@ -112,6 +112,28 @@ is about unsolicited or surprising changes, not every commit.
 `MUST_FAIL` indicates a NEGATIVE TEST. It is NOT a marker for "a test that is
 failing when it should not be."
 
+## Test comments: no state prose — the harness owns red/green
+
+(Lars-ruled 2026-07-09, after three "RED PIN … fails today because …" comments
+outlived their redness and reached the public learn pages as lies.)
+
+A test's red/green state, why it currently fails, when it flipped, what commit
+broke it — all of that is **algorithmically encoded** (MUST_RUN + the harness
+verdict, snapshot history, `--regressions`). Prose that duplicates
+algorithmically-derivable state is context poison: it is stale the moment the
+state flips, and nothing in the workflow flips the prose with it.
+
+- **Write intent, not state.** A test comment says what the test *pins* — the
+  shape it guards, the failure it exists to catch — which no tool can derive.
+  It never says "this is red", "fails today because", "goes green when".
+- **If state-prose is genuinely needed as scaffolding** (to get a work order
+  moving), tag it `RESIDUAL:` so gardening passes can grep it out later.
+  Untagged state-prose is a defect.
+- **Detector for the legacy backlog:**
+  `grep -rlE "RED PIN|fails today|currently (red|failing)|goes green when" tests/regression --include="input.kz"`
+  — these predate the ruling; clean them in gardening passes, preserving the
+  intent half of each comment.
+
 ## Metacircular compilation: four stages, not two
 
 Koru's own compilation pipeline is written in Koru (`koru_std/compiler.kz`). A

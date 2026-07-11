@@ -31,7 +31,7 @@ const std = @import("std");
 
 // Nested flow with namespaced events: connect, bind the result, thread into send
 ~net.connect(host: "localhost")
-| connected c |> net.send(c, data: "hello")
+| connected id |> net.send(id, data: "hello")
     | sent _ |> _
     | failed _ |> _
 | failed _ |> _

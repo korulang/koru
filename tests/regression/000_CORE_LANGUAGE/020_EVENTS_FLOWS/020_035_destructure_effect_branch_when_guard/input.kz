@@ -1,0 +1,29 @@
+// Destructure + when-guard on an EFFECT branch — the composition of
+// 020_018 (! pair { a, b }) and 020_016 (| found { … } when age > 40).
+// The guard must see the destructured names, same as on a continuation
+// branch. This is the store-watch query shape: projection (destructure)
+// + selection (when), both comptime-visible.
+//
+// COVERAGE RULE (learned the hard way — first draft of this pin had only
+// the guarded handler and was correctly rejected KORU022): a required `!`
+// branch with only when-guarded handlers is incomplete coverage (ruled,
+// pinned 210_085); the rescue is an unguarded fallback sibling (400_089's
+// shape, mirrored here).
+
+~import std/io
+
+~pub event scan-pairs {}
+! pair { a: i64, b: i64 }
+| done
+
+~proc scan-pairs|zig {
+    pair(.{ .a = 1, .b = 2 });
+    pair(.{ .a = 3, .b = 4 });
+    pair(.{ .a = 5, .b = 6 });
+    return .done;
+}
+
+~scan-pairs()
+! pair { a, b } when a > 2 |> std/io:print.ln("big {{ a:d }}+{{ b:d }}")
+! pair { a, b } |> std/io:print.ln("small {{ a:d }}+{{ b:d }}")
+| done |> std/io:print.ln("done")

@@ -22,7 +22,12 @@ pub fn main() !void {
     const alloc = gpa.allocator();
 
     const csv_path = "models/commit_cadence/data/series.csv";
-    const bars = try loadCsv(alloc, csv_path);
+    const bars = loadCsv(alloc, csv_path) catch |err| {
+        if (err == error.FileNotFound) {
+            std.debug.print("FAIL: cassette missing at {s} — generate it from the repo's real history:\n  node models/commit_cadence/gitcsv.mjs . {s}\n", .{ csv_path, csv_path });
+        }
+        return err;
+    };
     defer {
         for (bars) |b| {
             alloc.free(b.iso);

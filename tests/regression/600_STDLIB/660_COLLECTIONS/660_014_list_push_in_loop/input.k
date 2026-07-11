@@ -5,6 +5,6 @@ import std/io
 import std/list
 std/list:new(i64)
 | list xs |> for(0..5)
-    ! each _ |> std/list:push(xs, 1)
+    ! each _ |> std/list:push(xs, v: 1)
     | done |> std/list:len(xs): m |> std/io:print.ln("len={{ m:d }}") |> std/list:free(xs)
 | err e |> std/io:print.ln("ERR {{ e:s }}")

@@ -448,10 +448,58 @@ pub const CodeEmitter = struct {
         return codegen_utils.needsEscaping(word);
     }
 
-    /// Write a line of text with Zig keyword escaping for field access (.keyword -> .@"keyword")
+    /// Write a line of text with Zig keyword escaping for field access (.keyword -> .@"keyword").
+    ///
+    /// String-literal content is OPAQUE to escaping: a multiline-string line
+    /// (leading `\\`) is written verbatim, and `"..."` / `'...'` spans on
+    /// ordinary lines are never rewritten. Proc bodies carry foreign text in
+    /// string literals — MLIR (`scf.for`), GLSL, user-facing messages — and
+    /// escaping inside them corrupts that text byte-for-byte (the 390_100
+    /// `scf.@"for"` corruption that pinned this).
     fn writeLineWithKeywordEscaping(self: *CodeEmitter, line: []const u8) !void {
+        // Zig multiline string literal line: everything after `\\` is string
+        // content, and `\\` can only be preceded by whitespace on its line.
+        const stripped = std.mem.trimLeft(u8, line, " \t");
+        if (std.mem.startsWith(u8, stripped, "\\\\")) {
+            try self.write(line);
+            return;
+        }
+
         var pos: usize = 0;
+        var in_string = false; // inside "..."
+        var in_char = false; // inside '...'
+        var backslash_escaped = false; // previous char was '\' inside a literal
         while (pos < line.len) {
+            const c = line[pos];
+
+            // Inside a string/char literal: copy verbatim, only track the exit.
+            if (in_string or in_char) {
+                try self.write(line[pos .. pos + 1]);
+                if (backslash_escaped) {
+                    backslash_escaped = false;
+                } else if (c == '\\') {
+                    backslash_escaped = true;
+                } else if (in_string and c == '"') {
+                    in_string = false;
+                } else if (in_char and c == '\'') {
+                    in_char = false;
+                }
+                pos += 1;
+                continue;
+            }
+            if (c == '"') {
+                in_string = true;
+                try self.write(line[pos .. pos + 1]);
+                pos += 1;
+                continue;
+            }
+            if (c == '\'') {
+                in_char = true;
+                try self.write(line[pos .. pos + 1]);
+                pos += 1;
+                continue;
+            }
+
             // Look for field access pattern: .identifier
             if (line[pos] == '.' and pos + 1 < line.len) {
                 const after_dot = pos + 1;
@@ -2982,7 +3030,10 @@ fn emitSubflowContinuationsWithDepth(
                             }
                             try emitter.write(" }");
                         },
-                        else => {},
+                        // A terminal (or any node this expression path can't
+                        // lower) must still be a Zig expression — an empty
+                        // block, never NOTHING (`.mode => ,` is a parse error).
+                        else => try emitter.write("{}"),
                     }
                 } else {
                     try emitter.write("{}");
@@ -3072,7 +3123,16 @@ fn emitSubflowContinuationsWithDepth(
                     } else {
                         try emitter.write("else if (");
                     }
-                    try emitter.write(condition);
+                    // Presence rewrite: a bare optional-arm name in guard position
+                    // is a comptime `@hasDecl(__H, ...)` presence test, not a value
+                    // guard (400_146/147/150).
+                    const cond_out: []const u8 = blk: {
+                        const alloc = emitter.allocator orelse break :blk condition;
+                        const sen = source_event_name orelse break :blk condition;
+                        const ev = findEventByName(all_items, sen, alloc, main_module_name) orelse break :blk condition;
+                        break :blk (try presenceConditionRewrite(alloc, condition, ev)) orelse condition;
+                    };
+                    try emitter.write(cond_out);
                     try emitter.write(") ");
                 } else {
                     // No when-clause - this is the else case
@@ -3739,8 +3799,17 @@ fn emitInlineCodeResolvingSplices(
                 try emitter.write("{ ");
                 const guarded = cont.condition != null;
                 if (guarded) {
+                    // Presence rewrite (400_147): a bare optional-arm name as a
+                    // `when` guard is a comptime `@hasDecl(__H, ...)` presence
+                    // test — the guard text is written HERE (not baked by the
+                    // template), so this is the guard's rewrite site.
+                    const cond_out: []const u8 = blk: {
+                        const alloc = emitter.allocator orelse break :blk cont.condition.?;
+                        const ev = ctx.impl_event_decl orelse break :blk cont.condition.?;
+                        break :blk (try presenceConditionRewrite(alloc, cont.condition.?, ev)) orelse cont.condition.?;
+                    };
                     try emitter.write("if (");
-                    try emitter.write(cont.condition.?);
+                    try emitter.write(cond_out);
                     try emitter.write(") { ");
                 }
                 // Give the spliced body a unique `result_N` namespace, so a
@@ -3856,8 +3925,16 @@ fn emitInlineCodeResolvingSplices(
             }
             const guarded = cont.condition != null;
             if (guarded) {
+                // Presence rewrite (400_147): `! each i when <optional arm>`
+                // — the guard is written here at splice time, so a bare
+                // optional-arm name becomes the comptime @hasDecl test.
+                const cond_out: []const u8 = blk: {
+                    const alloc = emitter.allocator orelse break :blk cont.condition.?;
+                    const ev = ctx.impl_event_decl orelse break :blk cont.condition.?;
+                    break :blk (try presenceConditionRewrite(alloc, cont.condition.?, ev)) orelse cont.condition.?;
+                };
                 try emitter.write("if (");
-                try emitter.write(cont.condition.?);
+                try emitter.write(cond_out);
                 try emitter.write(") { ");
             }
             // Give the spliced effect body a unique `result_N` namespace, so a
@@ -3934,7 +4011,7 @@ fn writeInlineCodeWithLabel(
 /// identically at every depth — there is no "only top-level" path. Covers:
 ///   - statement / void-continuation inline emission (incl. the `! each`
 ///     effect-branch Handlers bridge), and
-///   - the `[expand]` `switch (__expand_result)` form.
+///   - the `[expand]` `switch (__expand_result_N)` form.
 /// `continuations` are the node's branch continuations; `path` is the invoked
 /// event's path (for effect-branch lookup).
 pub fn emitInlineBodyNode(
@@ -4132,19 +4209,35 @@ pub fn emitInlineBodyNode(
     // [expand] events with branches: template provides the expression,
     // continuations provide the switch arms.
     if (continuations.len > 0) {
-        // Emit: const __expand_result = <inline_code>;
+        // The expand result constant is minted from the shared counter, NOT a
+        // fixed name: two chained [expand] splices (fmt:ln |> fmt:ln) nest
+        // their switches in the same Zig function, and a fixed `__expand_result`
+        // shadows across them. Pinned by 620_004_fmt_ln_chained_expand_collision.
+        const expand_var = try std.fmt.allocPrint(ctx.allocator, "__expand_result_{d}", .{result_counter.*});
+        defer ctx.allocator.free(expand_var);
+        result_counter.* += 1;
+
+        // Emit: const __expand_result_N = <inline_code>;
         try emitter.writeIndent();
-        try emitter.write("const __expand_result = ");
+        try emitter.write("const ");
+        try emitter.write(expand_var);
+        try emitter.write(" = ");
         try writeInlineCodeWithLabel(emitter, ctx, inline_code);
         try emitter.write(";\n");
 
-        // Emit: switch (__expand_result) { ... }
+        // Emit: switch (__expand_result_N) { ... }
         try emitter.writeIndent();
-        try emitter.write("switch (__expand_result) {\n");
+        try emitter.write("switch (");
+        try emitter.write(expand_var);
+        try emitter.write(") {\n");
         emitter.indent();
 
-        // Emit each continuation as a switch arm
-        var step_idx: usize = 0;
+        // Emit each continuation as a switch arm. The arms share the CALLER's
+        // result counter: an [expand] splice (e.g. std/fmt:ln mid-chain) emits
+        // its arms in the same Zig function scope as the enclosing flow, so a
+        // fresh 0-based counter here re-issues result_N names that shadow the
+        // enclosing scope's (`local constant 'result_0' shadows local constant
+        // from outer scope`). Pinned by 620_003_fmt_ln_mid_chain_result_collision.
         for (continuations) |*cont| {
             try emitter.writeIndent();
             try emitter.write(".");
@@ -4167,7 +4260,7 @@ pub fn emitInlineBodyNode(
             emitter.indent();
 
             // Emit the continuation body
-            try emitContinuationBody(emitter, ctx, cont, &step_idx);
+            try emitContinuationBody(emitter, ctx, cont, result_counter);
 
             emitter.dedent();
             try emitter.writeIndent();
@@ -5152,6 +5245,51 @@ fn writeEffectResumeType(emitter: *CodeEmitter, branch: *const ast.Branch) !void
     }
 }
 
+/// Emit the presence-aware alias for an OPTIONAL effect arm inside a handler
+/// body — a nullable function pointer that is comptime-known present/absent:
+///
+///   const ask: ?*const fn (i64) i64 = if (@hasDecl(__H, "ask")) &__H.ask else null;
+///   _ = &ask;
+///
+/// This replaces the plain `const ask = __H.ask` alias, which would force
+/// `__H.ask` to exist even when the consumer omitted the handler. Because the
+/// optional is comptime-known, a presence guard folds and Zig analyzes only the
+/// taken branch: `if (ask) | then | else` (400_146), `when ask` (400_147), and
+/// the proc-side `if (ask) |f| ...` (400_148). The `@hasDecl` key mirrors the
+/// handler-struct field name (`writeBranchName`); simple ASCII arm names in the
+/// corpus (`ask`/`note`) equal `b.name`.
+pub fn emitOptionalArmNullableAlias(emitter: *CodeEmitter, branch: *const ast.Branch, main_module_name: ?[]const u8) !void {
+    try emitter.writeIndent();
+    try emitter.write("const ");
+    try writeBranchName(emitter, branch.name);
+    try emitter.write(": ?*const fn (");
+    if (branch.payload.fields.len != 0) {
+        if (branch.payload.fields.len == 1 and std.mem.eql(u8, branch.payload.fields[0].name, "__type_ref")) {
+            try writeFieldType(emitter, branch.payload.fields[0], main_module_name);
+        } else {
+            try emitter.write("struct { ");
+            for (branch.payload.fields, 0..) |field, fi| {
+                if (fi > 0) try emitter.write(", ");
+                try writeBranchName(emitter, field.name);
+                try emitter.write(": ");
+                try writeFieldType(emitter, field, main_module_name);
+            }
+            try emitter.write(" }");
+        }
+    }
+    try emitter.write(") ");
+    try writeEffectResumeType(emitter, branch);
+    try emitter.write(" = if (@hasDecl(__H, \"");
+    try emitter.write(branch.name);
+    try emitter.write("\")) &__H.");
+    try writeBranchName(emitter, branch.name);
+    try emitter.write(" else null;\n");
+    try emitter.writeIndent();
+    try emitter.write("_ = &");
+    try writeBranchName(emitter, branch.name);
+    try emitter.write(";\n");
+}
+
 /// Effect-branches phase 3b: synthesize the local Handlers struct that carries
 /// the consumer's `!` branch bodies as static fns. See docs/EFFECT_BRANCHES.md.
 ///
@@ -5172,13 +5310,6 @@ fn emitHandlersStruct(
     try emitter.write(handlers_name);
     try emitter.write(" = struct {\n");
     emitter.indent();
-
-    // Track which effect branches the consumer explicitly handled (by name)
-    // so we can synthesize no-op fns for unhandled OPTIONAL effect branches.
-    // The proc body references `__H.NAME` for every declared effect branch;
-    // without a no-op fallback for unhandled optionals, Zig errors at compile.
-    var handled = std.StringHashMap(void).init(ctx.allocator);
-    defer handled.deinit();
 
     // Group continuations by branch name. Two sibling handlers for the same
     // `!` branch name (e.g., `! tick i when i > 0 |> a` + `! tick _ |> b`)
@@ -5237,8 +5368,6 @@ fn emitHandlersStruct(
             }
             unreachable;
         };
-
-        try handled.put(branch.name, {});
 
         // Pick a parameter name. If all conts in the group share a binding
         // (common case) and that binding isn't `_`, use it directly so the
@@ -5497,43 +5626,17 @@ fn emitHandlersStruct(
         try emitter.write("}\n");
     }
 
-    // Synthesize no-op fns for unhandled OPTIONAL effect branches. The proc
-    // body references `__H.NAME` unconditionally for every declared effect
-    // branch; optional ones the consumer omits lower to no-op calls per the
-    // doc spec ("handler simply isn't installed in the comptime struct, call
-    // lowers to nothing" — we install a no-op so the comptime alias resolves).
-    for (event_decl.branches) |branch| {
-        if (branch.kind != .effect) continue;
-        if (!branch.is_optional) continue;
-        if (handled.contains(branch.name)) continue;
-
-        // Void-payload effects emit a no-arg no-op so the producer's `name()`
-        // call resolves; a `void` param would require `name({})` at the producer.
-        const is_void_payload = branch.payload.fields.len == 0;
-
-        try emitter.writeIndent();
-        try emitter.write("fn ");
-        try writeBranchName(emitter, branch.name);
-        try emitter.write("(");
-        if (!is_void_payload) {
-            try emitter.write("_: ");
-            if (branch.payload.fields.len == 1 and std.mem.eql(u8, branch.payload.fields[0].name, "__type_ref")) {
-                try writeFieldType(emitter, branch.payload.fields[0], ctx.main_module_name);
-            } else {
-                try emitter.write("struct { ");
-                for (branch.payload.fields, 0..) |field, fi| {
-                    if (fi > 0) try emitter.write(", ");
-                    try writeBranchName(emitter, field.name);
-                    try emitter.write(": ");
-                    try writeFieldType(emitter, field, ctx.main_module_name);
-                }
-                try emitter.write(" }");
-            }
-        }
-        try emitter.write(") ");
-        try writeEffectResumeType(emitter, &branch);
-        try emitter.write(" {}\n");
-    }
+    // NO synthesized no-ops for unhandled OPTIONAL effect branches — the
+    // handlers struct carries ONLY what the consumer actually installed, so
+    // `@hasDecl(__H, ...)` IS the presence truth (400_146/147/154 — a
+    // synthesized stand-in is indistinguishable from a real install and made
+    // presence lie for omitting consumers). The 210_076 contract ("unhandled
+    // optional fires are no-ops") is honored at the FIRE site instead: a void
+    // optional fire emits under a comptime `@hasDecl` guard that folds to
+    // nothing when the handler is absent — same zero cost the inlined no-op
+    // had. Value-resuming optional fires need no stand-in either: they are
+    // only reachable under a presence guard (unguarded = the KORU130 wall),
+    // whose false case is comptime-pruned.
 
     emitter.dedent();
     try emitter.writeIndent();
@@ -5553,6 +5656,40 @@ pub fn findEffectArm(event: *const ast.EventDecl, path: *const ast.DottedPath) ?
     }
     for (event.branches) |*b| {
         if (b.kind == .effect and std.mem.eql(u8, b.name, path.segments[0])) return b;
+    }
+    return null;
+}
+
+/// Presence-expression rewrite for an `if`/`when` CONDITION string. A bare
+/// effect-arm name in guard position is a presence test — "did the consumer
+/// install this arm" (ruled 2026-07-03):
+///   - optional arm → returns null (emit verbatim). The bare name already
+///     aliases to a comptime-known nullable fn ptr (emitOptionalArmNullableAlias),
+///     so `if (ask)` / `when ask` fold and Zig analyzes only the taken branch.
+///     (400_146/147)
+///   - required arm → `@compileError(...)` wall: a required arm is always
+///     installed, so testing for it is a meaningless always-true. Its plain
+///     `const pong = __H.pong` alias is a fn, not a bool, so without this wall
+///     it would leak a raw Zig type error instead of a koru diagnostic. (400_150)
+/// Returns null when `cond` is not a REQUIRED bare arm name — emit it verbatim.
+/// A non-null result is owned by `allocator`.
+fn presenceConditionRewrite(allocator: std.mem.Allocator, cond: []const u8, event: *const ast.EventDecl) !?[]const u8 {
+    const trimmed = std.mem.trim(u8, cond, " \t");
+    for (event.branches) |*b| {
+        if (b.kind != .effect) continue;
+        if (!std.mem.eql(u8, trimmed, b.name)) continue;
+        if (b.is_optional) {
+            // Comptime presence test. `if (opt)` is NOT a bool in Zig (it needs a
+            // capture), so the condition becomes `@hasDecl(__H, "ask")` — a real
+            // bool, comptime-known → Zig analyzes only the taken branch. (The
+            // nullable-ptr alias serves the proc side's `if (ask) |f|` and fires.)
+            return try std.fmt.allocPrint(allocator, "@hasDecl(__H, \"{s}\")", .{b.name});
+        }
+        return try std.fmt.allocPrint(
+            allocator,
+            "@compileError(\"presence test on '{s}' — a required arm is always installed, so testing for it is meaningless\")",
+            .{b.name},
+        );
     }
     return null;
 }
@@ -5618,6 +5755,14 @@ fn emitInvocation(
                     try emitter.write(bound_var);
                     try emitter.write(" = ");
                 }
+            } else if (arm.is_optional) {
+                // Void OPTIONAL fire: no handler may be installed, and the
+                // handlers struct carries no synthesized stand-in (presence
+                // truth, 400_154). The 210_076 no-op contract lives HERE — a
+                // comptime guard that folds the call away when absent.
+                try emitter.write("if (@hasDecl(__H, \"");
+                try emitter.write(arm.name);
+                try emitter.write("\")) ");
             }
             try writeArmFireCallExpr(emitter, ctx, invocation, arm);
             try emitter.write(";\n");
@@ -8311,7 +8456,12 @@ fn emitStep(
             if (cb.condition_expr) |expr| {
                 try emitExpression(emitter, ctx, expr, null);
             } else if (cb.condition) |cond| {
-                try emitter.write(cond);
+                const cond_out: []const u8 = blk: {
+                    const alloc = emitter.allocator orelse break :blk cond;
+                    const ev = ctx.impl_event_decl orelse break :blk cond;
+                    break :blk (try presenceConditionRewrite(alloc, cond, ev)) orelse cond;
+                };
+                try emitter.write(cond_out);
             }
 
             try emitter.write(") {\n");
@@ -8751,7 +8901,17 @@ fn emitStep(
 
             try emitter.writeIndent();
             try emitter.write("if (");
-            try emitter.write(cond.condition);
+            // Presence rewrite: a bare optional-arm name in the condition is a
+            // comptime `@hasDecl(__H, ...)` presence test (400_146); on a required
+            // arm it is the 400_150 wall. Resolved against the impl event.
+            {
+                const cond_out: []const u8 = blk: {
+                    const alloc = emitter.allocator orelse break :blk cond.condition;
+                    const ev = ctx.impl_event_decl orelse break :blk cond.condition;
+                    break :blk (try presenceConditionRewrite(alloc, cond.condition, ev)) orelse cond.condition;
+                };
+                try emitter.write(cond_out);
+            }
             try emitter.write(") {\n");
             emitter.indent();
 
@@ -10413,8 +10573,15 @@ fn emitEventDeclForModule(
     // Yielding-branch aliases — `const X = __H.X;` so the body can call X(...)
     // directly without qualifying through __H. Zero runtime cost (comptime).
     if (has_effect) {
-        for (event.branches) |b| {
+        for (event.branches) |*b| {
             if (b.kind != .effect) continue;
+            // Optional arms get a nullable-fn-ptr alias (comptime-known present/
+            // absent), so a presence guard folds and the omitted-handler case
+            // never forces `__H.X` to exist. (400_146/147/148)
+            if (b.is_optional) {
+                try emitOptionalArmNullableAlias(code_emitter, b, ctx.main_module_name);
+                continue;
+            }
             try code_emitter.writeIndent();
             try code_emitter.write("const ");
             try writeBranchName(code_emitter, b.name);

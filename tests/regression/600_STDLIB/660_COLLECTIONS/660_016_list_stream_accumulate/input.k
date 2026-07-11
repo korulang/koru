@@ -9,7 +9,7 @@ import std/list
 
 std/list:new(i64)
 | list xs |> std/fs:read-lines(path: "tests/regression/810_AOC_2015/810_171_day17_part1/input.txt")
-    ! line _ |> std/list:push(xs, 1)
+    ! line _ |> std/list:push(xs, v: 1)
     | done _ |> std/list:len(xs): m |> std/io:print.ln("count={{ m:d }}") |> std/list:free(xs)
     | failed _ |> std/io:print.ln("failed") |> std/list:free(xs)
 | err _ |> std/io:print.ln("err")

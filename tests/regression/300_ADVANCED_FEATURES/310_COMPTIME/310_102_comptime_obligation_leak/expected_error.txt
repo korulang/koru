@@ -1,0 +1,1 @@
+obligation <unsanitized!> on the line payload is never discharged in comptime code — this flow runs during compilation; route it through a consumer of <!unsanitized> before evaluation ends

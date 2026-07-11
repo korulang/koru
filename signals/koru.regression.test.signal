@@ -1,0 +1,7 @@
+name: koru.regression.test
+kind: measured
+shape: categorical
+face: in
+membrane: false
+route: surface, wmfx=regression_shape
+note: one card per per-test FLIP (green<->red) between consecutive full runs; value = the new status (success|failure), note carries the test id + failure reason. Raw per-test telemetry — the shape engine derives flap/pass-rate; a regression's WAKE comes from the test-health verdict card, never from the per-test flood.

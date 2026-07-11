@@ -1,0 +1,48 @@
+// FRONTIER (pinned RED): the effect-branch inliner reuses the callee event's
+// OWN declared parameter name verbatim as the inlined body's local `const`
+// binding at the call site, with no gensym / alpha-renaming. If the caller
+// already holds a local of that same name earlier in the same flow, Zig's
+// no-shadow rule turns two individually-correct pieces of code into a hard
+// backend build error.
+//
+// Related to 800_002 (a switch-capture vs. handler fn-param shadow) but
+// DISTINCT: there the collision is a branch capture *inside* the handler; here
+// it is the inlined *call-site* const vs. a *caller-scope* local. A fix for one
+// need not fix the other — both should go green once the inliner alpha-renames
+// the names it introduces.
+//
+// Surfaced 2026-07-10 by a LIFT-challenge contestant building @korulang/yyjson:
+// `array.each`'s `v: []const i32` parameter collided with a caller binding also
+// named `v` from an earlier `root(doc): v`. Minimal, yyjson-free repro below.
+//
+// `get-count` returns i32 directly (`-> i32`), destructured into a binding
+// named `v` — ordinary caller code. `each-i32` is an effect-branch event
+// (`! item`) whose own parameter is ALSO named `v`, coincidentally. Calling it
+// downstream of the `v` binding should be fine (unrelated variables in
+// unrelated code) — instead the inliner's substitution for `each-i32`'s `v`
+// collides with the caller's `v`.
+//
+// EXPECTED (if the hygiene gap is fixed): compiles and runs, printing
+//   count: 3
+//   saw 10
+//   saw 20
+//   saw 30
+// ACTUAL: output_emitted.zig: error: local constant 'v' shadows local constant
+// from outer scope — see expected_error.txt.
+
+~import std/io
+
+~pub event get-count { n: i32 } -> i32
+~proc get-count|zig {
+    return n;
+}
+
+~pub event each-i32 { v: []const i32 }
+! item i32
+
+~proc each-i32|zig {
+    for (v) |it| item(it);
+}
+
+~get-count(n: 3): v |> std/io:print.ln("count: {{ v:d }}") |> each-i32(v: &[_]i32{ 10, 20, 30 })
+! item x |> std/io:print.ln("saw {{ x:d }}")

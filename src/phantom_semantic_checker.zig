@@ -1732,7 +1732,7 @@ pub const PhantomSemanticChecker = struct {
                                 .KORU030,
                                 location.line,
                                 location.column,
-                                "Resource '{s}' <{s}> was not discharged. No event accepts <!{s}>.",
+                                "Resource '{s}' carries obligation <{s}> was not discharged. No event accepts <!{s}>.",
                                 .{ display_name, display_state, state_without_bang },
                             );
                         } else if (disposal_events.items.len == 1) {
@@ -1740,7 +1740,7 @@ pub const PhantomSemanticChecker = struct {
                                 .KORU030,
                                 location.line,
                                 location.column,
-                                "Resource '{s}' <{s}> was not discharged. Call: {s}",
+                                "Resource '{s}' carries obligation <{s}> was not discharged. Call: {s}",
                                 .{ display_name, display_state, disposal_events.items[0] },
                             );
                         } else {
@@ -1755,7 +1755,7 @@ pub const PhantomSemanticChecker = struct {
                                 .KORU030,
                                 location.line,
                                 location.column,
-                                "Resource '{s}' <{s}> was not discharged. Call one of: {s}",
+                                "Resource '{s}' carries obligation <{s}> was not discharged. Call one of: {s}",
                                 .{ display_name, display_state, fbs.getWritten() },
                             );
                         }
@@ -2839,7 +2839,7 @@ test "BindingContext - disposal poisoning" {
     try std.testing.expect(!ctx.isDisposed("file"));
 
     // Mark as disposed
-    try ctx.markDisposed("file");
+    try ctx.markDisposed("file", "close()");
 
     // Now it's poisoned
     try std.testing.expect(ctx.isDisposed("file"));
@@ -2904,7 +2904,7 @@ test "BindingContext - inherit disposed state" {
     defer parent.deinit();
 
     try parent.set("file", "opened!");
-    try parent.markDisposed("file");
+    try parent.markDisposed("file", "close()");
 
     var child = try TestBindingContext.inherit(&parent, allocator);
     defer child.deinit();

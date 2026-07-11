@@ -1,0 +1,7 @@
+ASPIRATIONAL: PGO-shaped |koru lowering — dispatch order computed from
+profile data at compile time, rendered as Koru, emitted as ordinary runtime
+code (the Orisha north star).
+
+Blocked: everything 310_099 needs, plus the order_by_hits filter (invented
+spelling) and, eventually, the fragment/AST-as-value surface (deliberately
+unruled — this pin upgrades when it is). Reds here are the to-do list.

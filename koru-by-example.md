@@ -273,7 +273,7 @@ Void events work correctly
 
 ~greet => greeting "Hello, " ++ name ++ "!"
 
-~greet ("World")
+~greet (name: "World")
 | greeting msg |> std/io:print.ln(msg)
 ```
 

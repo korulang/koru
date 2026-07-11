@@ -695,6 +695,56 @@ pub fn containsFunctionCall(expr: *const Expression) bool {
     }
 }
 
+/// THE expression-admission predicate: does this raw expression text contain
+/// a (non-builtin) call? An expression admits atoms, operators, and builtins —
+/// never a call. Every surface that accepts an expression (invocation
+/// arguments, if/when conditions, produce bodies, captured fields, for
+/// bounds, branch-constructor fields, interpolations) must consult this one
+/// wall; a surface that skips it defaults to OPEN, which is how the 320_127
+/// family of leaks happened. Parses structurally when possible; falls back
+/// to a string-aware raw scan when the text isn't a parseable expression
+/// (Koru call syntax like `g(a: 4)` doesn't parse as a Zig-subset
+/// expression — exactly the shape the fallback must still catch).
+pub fn textContainsCall(allocator: std.mem.Allocator, text: []const u8) bool {
+    var parser = ExpressionParser.init(allocator, text);
+    defer parser.deinit();
+    if (parser.parse()) |expr| {
+        defer {
+            var mutable = @constCast(expr);
+            mutable.deinit(allocator);
+        }
+        return containsFunctionCall(expr);
+    } else |_| {
+        return rawScanContainsCall(text);
+    }
+}
+
+/// Raw-scan fallback for unparseable expression text: a '(' preceded by an
+/// identifier character indicates a call, unless the identifier is a
+/// builtin (@name). String contents are skipped.
+pub fn rawScanContainsCall(s: []const u8) bool {
+    var in_string = false;
+    for (s, 0..) |c, i| {
+        if (c == '"' and (i == 0 or s[i - 1] != '\\')) {
+            in_string = !in_string;
+            continue;
+        }
+        if (in_string) continue;
+        if (c == '(' and i > 0) {
+            const prev = s[i - 1];
+            if (std.ascii.isAlphanumeric(prev) or prev == '_') {
+                var j: usize = i - 1;
+                while (j > 0 and (std.ascii.isAlphanumeric(s[j - 1]) or s[j - 1] == '_' or s[j - 1] == '.')) {
+                    j -= 1;
+                }
+                if (j > 0 and s[j - 1] == '@') continue;
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 /// Convert an expression to a string (for code generation)
 pub fn expressionToString(expr: *const Expression, writer: anytype) !void {
     switch (expr.node) {

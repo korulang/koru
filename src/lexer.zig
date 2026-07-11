@@ -673,29 +673,37 @@ pub fn parseArgs(allocator: std.mem.Allocator, args_str: []const u8) ![]ArgPair 
 /// there's no dot. `v: v` → punned name `v` matches → redundant. `v: p.x` →
 /// punned name `x` ≠ `v` → not redundant. `v: 5` → not punnable → not
 /// redundant (must keep the label).
-pub fn isRedundantExplicitLabel(arg: ArgPair) bool {
-    if (!arg.had_explicit_label) return false;
-    if (arg.value.len == 0) return false;
-
-    // Reject anything that isn't a pure dotted-identifier path.
-    for (arg.value) |c| {
+/// The parameter name a value would pun to — the segment after the last `.`,
+/// or the whole token when there's no dot — or `null` when the value CANNOT
+/// pun. A value is punnable only when it's a pure dotted-identifier path: no
+/// operators, parens, brackets, quotes, spaces, `..`, leading/trailing dot, or
+/// leading digit. Literals (`5`, `"s"`) and expressions (`1 + 2`) return null.
+/// This is the single punnability predicate — both PARSE005 (redundant label)
+/// and PARSE006 (bare arg names no parameter) resolve punning through it.
+pub fn punnableName(value: []const u8) ?[]const u8 {
+    if (value.len == 0) return null;
+    for (value) |c| {
         switch (c) {
             'a'...'z', 'A'...'Z', '0'...'9', '_', '.' => {},
-            else => return false,
+            else => return null,
         }
     }
-    // Reject `..` (range op) — `0..n` would slip past the per-char check.
-    if (std.mem.indexOf(u8, arg.value, "..") != null) return false;
-    // Reject leading or trailing dot (`.foo` is Zig enum literal; `foo.` is malformed).
-    if (arg.value[0] == '.' or arg.value[arg.value.len - 1] == '.') return false;
-    // Reject leading digit (numeric literals like `0x10`, `42`).
-    if (arg.value[0] >= '0' and arg.value[0] <= '9') return false;
+    // `..` (range op) — `0..n` would slip past the per-char check.
+    if (std.mem.indexOf(u8, value, "..") != null) return null;
+    // Leading/trailing dot (`.foo` is a Zig enum literal; `foo.` is malformed).
+    if (value[0] == '.' or value[value.len - 1] == '.') return null;
+    // Leading digit (numeric literals like `0x10`, `42`).
+    if (value[0] >= '0' and value[0] <= '9') return null;
 
-    const punned_name = if (std.mem.lastIndexOfScalar(u8, arg.value, '.')) |dot_idx|
-        arg.value[dot_idx + 1 ..]
+    return if (std.mem.lastIndexOfScalar(u8, value, '.')) |dot_idx|
+        value[dot_idx + 1 ..]
     else
-        arg.value;
+        value;
+}
 
+pub fn isRedundantExplicitLabel(arg: ArgPair) bool {
+    if (!arg.had_explicit_label) return false;
+    const punned_name = punnableName(arg.value) orelse return false;
     return std.mem.eql(u8, punned_name, arg.name);
 }
 

@@ -372,10 +372,26 @@ fn createDefaultEventDecl(event: *const ast.EventDecl, allocator: std.mem.Alloca
         new_segments[i] = seg;
     }
 
-    // @retain: .default is called from override's generated Zig code (_default_handler),
-    // not from Koru flows, so the dead strip can't see the reference.
-    const retain_ann = try allocator.alloc([]const u8, 1);
-    retain_ann[0] = "retain";
+    // Preserve the original event's own annotations (notably phase markers
+    // like `comptime`/`runtime`) — the created `.default` decl otherwise goes
+    // through the exact same EmitMode filtering (shouldFilter in
+    // emitter_helpers.zig) as any other event_decl, and that filter looks at
+    // item-level annotations OR the enclosing module's annotations. For
+    // koru_std modules (blanket module-level `[comptime]`, e.g.
+    // koru_std/compiler.kz) an item with no phase annotation still passes.
+    // For externally-imported library modules with no module-level
+    // `[comptime]`, dropping the item's own `comptime` annotation here (as
+    // this used to do, replacing it with just `["retain"]`) silently filtered
+    // the `.default` decl out of comptime-only emission, so `<event>_default_event`
+    // was never emitted as a module member — even though resolution had
+    // correctly created and retained the decl in the AST.
+    //
+    // @retain: .default is called from override's generated Zig code
+    // (_default_handler), not from Koru flows, so the dead strip can't see
+    // the reference — append it alongside the preserved annotations.
+    var new_annotations = try allocator.alloc([]const u8, event.annotations.len + 1);
+    @memcpy(new_annotations[0..event.annotations.len], event.annotations);
+    new_annotations[event.annotations.len] = "retain";
 
     return ast.EventDecl{
         .path = .{
@@ -384,7 +400,7 @@ fn createDefaultEventDecl(event: *const ast.EventDecl, allocator: std.mem.Alloca
         },
         .input = event.input,
         .branches = event.branches,
-        .annotations = retain_ann,
+        .annotations = new_annotations,
         .is_public = false, // .default is internal
         .location = event.location,
         .module = event.module, // Same module as the abstract

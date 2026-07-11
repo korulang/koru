@@ -1,24 +1,20 @@
-// TEST: Generic instantiation with a Koru-defined named type
-//
-// ~type(UserIdBox = Box<UserId>) uses a ~int defined type.
-// The instantiation substitutes the nominal type.
-//
-// Expected: Compiles and emits struct with the nominal type
+// RED PIN (type-system design walk, 2026-07-06/07). REWRITTEN from the
+// dead `~type(UserIdBox = Box<UserId>)` generation. This pin =
+// registry breakdown #2: a stamped type inside a CAPTURE CELL. The
+// cell must NAME the generated type's identity — the case that today
+// only works by leaking the raw Zig type. With stamped names the cell
+// type is just the name. Spelling PROVISIONAL (capture-cell typing of
+// a Koru-minted type is itself part of the ask).
 
 ~import std/types
+~import std/io
+~import std/control
 
-const std = @import("std");
-
-~int(UserId)
-~struct(Box<T>) { value: T }
-~type(UserIdBox = Box<UserId>)
-
-~event test-box {}
-
-~proc test-box|zig {
-    const uid: UserId = 999;
-    const box = UserIdBox{ .value = uid };
-    std.debug.print("UserId: {d}\n", .{box.value});
+~std/types:struct(acc#i64) {
+    total: i64,
 }
 
-~test-box()
+~capture({ a: acc#i64{ .total = 0 } })
+| as state |> for(&[_]i64{ 10, 20, 30 })
+    | each n => captured { a: acc#i64{ .total = state.a.total + n } }
+| captured final |> std/io:print.ln("Total: {{ final.a.total:d }}")

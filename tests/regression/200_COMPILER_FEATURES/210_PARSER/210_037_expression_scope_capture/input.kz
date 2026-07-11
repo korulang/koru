@@ -1,11 +1,16 @@
-// Test: Expression implicit mapping and auto-comptime
-// 1. Verifies that Expression args with dots (like 'data.value > 10') correctly map to 'expr'
-// 2. Verifies that Expression fields auto-add 'comptime' annotation (no [comptime] needed)
+// Test: Expression implicit mapping under EXPLICIT comptime.
+// Verifies that Expression args with dots (like 'data.value > 10') correctly
+// map to the implicit 'expr' param.
+//
+// NOTE: `Expression` no longer auto-adds `[comptime]`. Representation (a
+// captured source string) and timing (when the event runs) are orthogonal
+// axes; coupling them wrongly flipped runtime-emitting keyword templates
+// (~if/~for) to pure-comptime. Comptime is now explicit — an event that
+// splices its captured expression at compile time declares `[comptime]`.
 
 const std = @import("std");
 
-// Event with Expression field - should auto-mark as comptime
-~event check-expr { expr: Expression }
+~[comptime]event check-expr { expr: Expression }
 
 // Proc receives expr as []const u8
 ~proc check-expr|zig {

@@ -67,7 +67,7 @@ The answer is 42.
 
 ~greet => greeting "Hello, " ++ name ++ "!"
 
-~greet ("World")
+~greet (name: "World")
 | greeting msg |> std/io:print.ln(msg)
 ```
 

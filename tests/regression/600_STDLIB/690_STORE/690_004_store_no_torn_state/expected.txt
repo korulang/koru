@@ -1,0 +1,2 @@
+hp 5 shield 10
+hp 9 shield 18

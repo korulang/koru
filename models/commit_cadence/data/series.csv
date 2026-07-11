@@ -1,0 +1,1352 @@
+idx,iso,gap_min,files,ins,del,sha,subject
+0,2025-12-29T03:30:41,0.0,1646,205944,0,551c44f4355f,Initial commit
+1,2025-12-29T03:36:09,5.5,1,0,1,0199cca42639,chore: ignore temp_build.zig in regression tests
+2,2025-12-29T03:37:14,1.1,1,1,1,643f326f9376,fix: narrow temp_build.zig ignore to current directory
+3,2025-12-29T06:49:09,191.9,76,501,210,ff6da807585a,feat: Integrate FlowChecker into the main compilation pipeline and simplify flow output syntax by removing redundant variable captures.
+4,2025-12-29T06:59:13,10.1,10,14,14,746984ed5230,fix: Remove unused bindings from test files (batch 2)
+5,2025-12-29T08:00:06,60.9,27,91,223,c893e9c1d9d6,fix: Remove unused bindings from test files (batch 3)
+6,2025-12-29T09:45:59,105.9,2,39,6,b3f241d51cdc,refactor: Split FlowChecker into frontend/backend modes
+7,2025-12-29T10:01:22,15.4,1,11,11,75c87149fdc4,tix: paths in AST have changed
+8,2025-12-29T14:27:58,266.6,7,29,15,7c53012a9347,fix: Ensure unique type names for nested captures and update parser initialization calls.
+9,2025-12-29T15:16:22,48.4,2,2,0,353f710fac57,feat: Add is_optional field to NamedBranch for synthesized branches
+10,2025-12-29T18:03:30,167.1,14,85,70,59c3261baa8a,feat: Rename capture's done branch to captured for semantic clarity
+11,2025-12-29T22:10:57,247.4,2,4,4,914dcb26526b,fix: Use _ as default for binding in for transform  generate unique names in emitter
+12,2025-12-30T01:52:49,221.9,6,57,17,2569a854767b,feat: Support array indexing in captured { } blocks
+13,2025-12-30T04:20:12,147.4,3,168,32,4a002eb02c85,feat: Add nbody_arrayed_capture language shootout example and update multiline_annotations expected output.
+14,2025-12-30T05:03:34,43.4,4,158,5,c5c9759c8445,feat: add nbody subflow regression test and fix parser's brace depth line advancement.
+15,2025-12-30T05:17:39,14.1,1,2,0,7fce2a99248f,feat: add `is_optional` flag to captured branches.
+16,2025-12-30T05:25:54,8.3,1,3,2,9710d20596cd,refactor: convert energy calculation's `while` loop to a `for` loop and add design note
+17,2025-12-30T05:57:45,31.9,2,51,35,84bc8e7ea820,feat: Introduce `is_void_step` to correctly handle assignment steps in the emitter  preventing unnecessary result variable generation and modifying continuation emission.
+18,2025-12-30T07:06:16,68.5,8,146,36,c6ea91b2a1d0,feat: introduce `plain_value` field for `BranchConstructor` and add regression tests for subflow branches.
+19,2025-12-30T07:13:44,7.5,1,3,0,b3a564a37486,fix: add plain_value field to expected parser output for multiline branch constructors
+20,2025-12-30T09:29:43,136.0,6,77,30,618fb1d9a0e0,feat: enhance `std.io:print.ln` transform to target specific invocations  move unused binding checks to post-transform validation  and improve compiler error reporting.
+21,2025-12-30T10:18:39,48.9,6,41,16,07571abcc172,feat: Update flow checker to run KORU100 unused binding check in frontend mode  skipping transform invocations via annotation parsing.
+22,2025-12-30T14:38:36,259.9,4,134,43,7b42276e31aa,feat: Refactor N-body subflows with `const` captures and chained energy calculation  optimize Zig reference  and add a benchmarking script.
+23,2025-12-30T17:53:35,195.0,6,161,0,60c02cb064e5,feat: add new regression test for dynamic shape kernel and update pairwise basic test with nbody benchmark.
+24,2025-12-30T17:56:33,3.0,3,209,101,13d38ff67d1d,wip: kernel DSL - init works  continuations broken
+25,2025-12-31T00:39:52,403.3,3,47,45,e670726ea027,fix: Update regression test expected outputs for parser formatting  line numbers  and AST structure.
+26,2025-12-31T10:53:11,613.3,4,139,3,c8b5b300b220,fix: Handle special characters inside single-line source blocks
+27,2025-12-31T11:10:17,17.1,4,37,1,741dba3cbccf,fix: Reject nested flows (~) inside continuations with clear error
+28,2025-12-31T14:40:51,210.6,8,21,11,483f74b1cc39,fix: Support taps on labeled invocations by checking `label_with_invocation` nodes
+29,2025-12-31T14:46:04,5.2,3,7,4,f50dc7ef6d37,feat: Update tap chain tests to reflect new chained tap behavior and migrate void event transition test to library syntax
+30,2025-12-31T15:54:02,68.0,5,39,19,e72acffbda39,fix: Support module-qualified event patterns in tap matching and argument parsing
+31,2025-12-31T16:08:35,14.6,1,12,2,06a21ba65211,fix: Update SKIP reason for cross-module taps test - infinite loop in transform walker  not segfault
+32,2025-12-31T16:31:33,23.0,5,90,20,2d521cb6b865,fix: Support cross-module tap transforms by descending into module_decl items and using fallback_module for path matching
+33,2025-12-31T17:22:01,50.5,1,52,1,2040c9ce283e,feat: Add PRIORITY marker system for tracking high-priority test issues
+34,2025-12-31T18:13:43,51.7,3,252,0,1b32d52288a0,feat: Add 'app' path alias pointing to examples directory
+35,2026-01-01T01:38:38,444.9,2,3,3,35577b059048,WIP: vaxis example with index.kz structure
+36,2026-01-01T01:42:38,4.0,3,14,45,6d8314d078f0,Module system: index.kz gets parent namespace
+37,2026-01-01T01:54:28,11.8,1,14,14,20766e21a9d8,Add error for ambiguous module structure (foo.kz + foo/)
+38,2026-01-01T02:03:00,8.5,1,6,12,cf7b0a095caf,Fix build:requires test to use stdlib event
+39,2026-01-01T02:42:31,39.5,2,22,7,4d25cee7e9e2,CompilerRequiresCollector: match std.compiler:requires
+40,2026-01-01T03:01:37,19.1,1,76,0,cc73bdb364c3,Parser: preserve source args during module imports
+41,2026-01-01T03:24:58,23.4,4,217,57,8d9b1365de8d,Separate build:requires from compiler:requires
+42,2026-01-01T07:57:46,272.8,6,362,328,f7c420786aa1,Fix transitive imports in directory modules  vaxis now builds
+43,2026-01-01T08:42:36,44.8,18,195,0,2735b513e2e0,test: Add auto-dispose design tests for phantom obligation system
+44,2026-01-01T11:01:16,138.7,15,395,13,074e9175e32f,wip: Auto-dispose infrastructure (checker-based  needs refactor to AST pass)
+45,2026-01-01T13:50:03,168.8,12,953,211,627290669f78,refactor: Extract auto-dispose from checker to separate AST pass
+46,2026-01-01T14:54:32,64.5,2,48,10,a830910f89de,refactor: Track obligation satisfaction in auto-dispose inserter
+47,2026-01-01T15:59:41,65.2,3,471,9,f9a77a01d016,refactor: Add scope tracking to auto-dispose for loop handling
+48,2026-01-01T16:32:16,32.6,17,24,5,18247aff91b8,test: Remove auto-dispose test expectations (tests still failing)
+49,2026-01-01T22:44:50,372.6,8,131,34,d5df0afca79d,refactor: Auto-dispose now handles discard bindings (_) by synthesizing real names
+50,2026-01-02T03:16:39,271.8,8,132,13,7b834fbd112c,refactor: Validate subflow implementations and skip transformed flow checks
+51,2026-01-02T04:31:17,74.6,1,4,0,52c1dc620cb6,refactor: Check plain_value in branch constructors for binding usage
+52,2026-01-02T06:11:06,99.8,7,96,16,b390ac4574eb,refactor: Add [@scope] annotation to loop branches for obligation tracking
+53,2026-01-02T06:51:22,40.3,8,187,21,815876db4b04,refactor: Remove [@scope] annotation  use branch name detection for loop scopes
+54,2026-01-02T08:10:27,79.1,3,9,18,612bed8c026d,refactor: Allow pre-loop obligations to flow through repeating contexts to done branch
+55,2026-01-02T10:44:30,154.1,13,386,0,9d93a971d3bd,feat: Add regression tests for phantom types covering if statements  nested loops  and transaction patterns.
+56,2026-01-02T11:28:27,44.0,2,8,3,0213becac277,refactor: Fix variable shadowing in if-statement code generation by scoping result prefixes
+57,2026-01-02T13:20:32,112.1,4,148,0,b883e8cf23d8,refactor: Synthesize continuations for unhandled optional branches to enable auto-dispose
+58,2026-01-02T14:46:51,86.3,3,19,1,e0a52c647e43,refactor: Add auto-dispose=disable compiler flag to allow manual obligation handling
+59,2026-01-03T04:10:10,803.3,2,19,8,a2d37bd97ace,refactor: Change auto-dispose flag from disable to warn mode for debugging
+60,2026-01-03T04:42:37,32.5,3,12,15,ef0b024f3019,refactor: Consolidate subflow into fs.kz and demonstrate subflow composition pattern
+61,2026-01-03T08:59:08,256.5,1,183,0,566676f47c1f,feat: add Koru language syntax reference documentation
+62,2026-01-03T09:38:28,39.3,6,92,12,82f2f2b60dcf,refactor: Fix auto-dispose handling for branch constructors and subflow implementations
+63,2026-01-03T12:56:06,197.6,2,12,44,913b0a3f3954,refactor: Simplify auto-dispose by removing branch_constructor handling and subflow_impl processing
+64,2026-01-03T12:56:19,0.2,12,257,64,ddc7ff8a5808,refactor: Add auto-dispose=disable flag and fix branch_constructor handling as flow terminator
+65,2026-01-03T16:36:41,220.4,16,326,20,e24eb505bc46,refactor: Fix auto-dispose for subflows and add declaration-level transform support
+66,2026-01-03T16:38:52,2.2,2,6,6,58251e08e542,refactor: Update print calls to use println and format specifiers in transform tests
+67,2026-01-04T00:54:51,496.0,5,403,180,054c67251fe9,refactor: Add type-driven detection for transform and derive handlers
+68,2026-01-04T01:47:13,52.4,6,153,0,6fa5af3b2026,feat: Add regression tests for tap auto-dispose and a MUST_FAIL test for tap binding substitution.
+69,2026-01-04T02:05:15,18.0,4,117,38,d522c2b68b03,refactor: Implement tap binding substitution to support payload access in taps
+70,2026-01-04T04:11:32,126.3,7,334,23,56361dbff345,refactor: Replace branch name detection with @scope annotation for scope boundary tracking
+71,2026-01-04T05:00:16,48.7,3,14,57,fa545104b8e6,refactor: Remove outer-scope obligation checks at terminators inside @scope boundaries
+72,2026-01-04T06:18:18,78.0,7,63,7,43e188b19e0d,refactor: Remove debug print statements from scope annotation tracking
+73,2026-01-04T07:20:20,62.0,6,370,17,6611a083af43,refactor: Add module-qualified event resolution support for #loop and event handlers
+74,2026-01-04T09:07:21,107.0,1,7,265,f843311bf4b0,refactor: Simplify module event resolution by using all_items in EmissionContext
+75,2026-01-04T09:25:46,18.4,2,19,9,bad836afa73e,refactor: Add phantom obligation tracking to vaxis TTY lifecycle
+76,2026-01-04T12:27:43,181.9,14,533,52,c341e20369f7,refactor: Update vaxis example to handle terminal responses and improve event filtering
+77,2026-01-04T16:01:14,213.5,16,6566,80,70a1d4bcb6e3,refactor: Add existing struct mode support for capture blocks and prevent obligation disposal on escaping bindings
+78,2026-01-04T16:52:47,51.5,5,425,70,7f0d56d56201,feat: Implement parser generator derive handler with phantom regex patterns
+79,2026-01-04T17:15:33,22.8,2,11,16,81f02cdd97d8,feat: Pure Koru flows for parser generator test
+80,2026-01-04T17:20:34,5.0,1,1,2,a86db7c3d1dd,fix: Use inline @import("std") in generated parser code
+81,2026-01-04T17:22:28,1.9,2,0,0,e89a8de33d4b,fix: Add MUST_RUN marker and fix expected output filename
+82,2026-01-04T17:30:01,7.5,1,28,0,8ab31a01604d,docs: Add parser generator vision notes
+83,2026-01-04T17:52:20,22.3,6,102,2,21a186dbbaf6,refactor: Increase comptime backend code buffer from 256KB to 1MB
+84,2026-01-04T18:24:52,32.5,2,73,0,644fb92e91d8,test: Add regression test for tap when clause filtering.
+85,2026-01-04T21:36:25,191.6,1,83,11,03c96efbbdc0,fix: Handle Zig 0.15 switch exhaustiveness for while-guarded branches
+86,2026-01-04T21:36:26,0.0,3,36,23,1181befe8890,fix: Implement tap when clause filtering with proper binding rewriting
+87,2026-01-04T21:56:31,20.1,3,27,0,738551907216,test: Add regression test for tap shorthand syntax
+88,2026-01-05T05:14:57,438.4,1,254,0,f76a2f45309c,docs: Add actor system spec to regression test suite
+89,2026-01-05T07:09:35,114.6,6,131,43,da8fd88ab607,feat: Support multi-branch fan-out in tap transform
+90,2026-01-05T15:54:47,525.2,4,229,16,6476d41d5170,fix: Prevent infinite recursion in wildcard taps by marking inserted invocations
+91,2026-01-05T22:50:00,415.2,4,191,0,2b2f75f2641f,feat: Add @koru/sqlite - first official library package
+92,2026-01-05T23:19:46,29.8,4,80,16,ec22f08e2972,feat: Add nested obligation test  improve SQLite library
+93,2026-01-06T12:55:43,816.0,19,8963,433,4052551ac109,refactor: Clean up vaxis example  add when-guard test and show_key helper
+94,2026-01-06T13:12:07,16.4,2,8,2,121b48eca509,fix: Prevent backend from overwriting .kz source files when run directly
+95,2026-01-06T14:06:09,54.0,3,71,1,40782e0206ab,feat: Add void chain continuation validation for phantom checker
+96,2026-01-06T15:15:13,69.1,3,308,10,094773160204,feat: Add CLI command system with ~std.package:install implementation
+97,2026-01-06T17:12:46,117.5,3,113,517,14ac5ba80423,feat: Add koruc init command and $node path alias support
+98,2026-01-06T17:18:49,6.0,4,46,8,a22b97f1c062,feat: Add identifier escaping for npm scoped packages (@koru/*)
+99,2026-01-06T17:49:29,30.7,1,2,0,a63539f4c570,feat: Add codegen_utils dependency to emitter modules for identifier escaping
+100,2026-01-06T19:09:30,80.0,4,127,1,8867ac8234d1,feat: Prepare @korulang/sqlite3 for npm publish and fix parser duplicate source args
+101,2026-01-07T05:05:49,596.3,3,0,8184,9ba7fc9a55ff,refactor: remove inline compiler module definitions from `backend.zig` and add a `.gitignore` for sqlite.
+102,2026-01-07T05:06:01,0.2,2,390,21,160b069ef8aa,feat: Add support for state unions in phantom state parsing and compatibility  and ignore SQLite test artifacts.
+103,2026-01-07T06:18:59,73.0,3,398,1,e02eb004cda1,feat: add state_union phantom type handling and comprehensive BindingContext unit tests
+104,2026-01-07T10:32:08,253.2,9,399,149,5512c4c3fcb6,fix: Update generated backend.zig with correct source file path and line numbers
+105,2026-01-07T11:25:19,53.2,46,90,627,963730a35855,feat: Remove old benchmark tests and `SKIP` files  and add new performance feature `TODO`s.
+106,2026-01-07T11:55:39,30.3,5,37,6,8c816c59f58a,feat: Add `when-clause` support for taps in the emitter and update regression tests to the new `~tap()` syntax.
+107,2026-01-07T13:50:58,115.3,4,203,17,40262339ecc7,feat: Add metatype struct synthesis and AST scanning for Profile/Transition/Audit taps
+108,2026-01-07T16:35:32,164.6,8,384,53,c36e4e3e2034,feat: Introduce `rings` standard library module with new regression tests and update compiler backend infrastructure.
+109,2026-01-08T06:19:09,823.6,11,245,77,adc95f45cfd1,feat: Fix profiler tap ordering and prevent double-wrapping of tap-inserted invocations
+110,2026-01-08T06:37:02,17.9,1,11,9,4aa36c3a36ad,feat: Fix keyword resolution to respect user-provided module qualifiers
+111,2026-01-08T11:21:00,284.0,2,99,20,dbe8232d3664,feat: Fix empty payload branch capture in emitter to skip binding when branch has no fields
+112,2026-01-08T14:46:45,205.8,13,290,71,504e8ec1d9ba,feat: Fix joinPath stack memory corruption by switching to heap allocation and add parser runtime build requirements
+113,2026-01-08T17:54:03,187.3,4,55,29,1ef32bdda2dd,feat: Improve parser error messages and fix inline flow validation for fire-and-forget patterns
+114,2026-01-08T18:03:20,9.3,1,7,10,216933770f3f,feat: Replace opaque pointer casting with properly typed ParseResult in parser runtime test
+115,2026-01-08T18:49:06,45.8,5,51,4,b1cd86db011a,feat: Re-export ParseResult type from parser module to enable module:Type syntax in event declarations
+116,2026-01-08T20:07:51,78.8,4,103,1,dd23226fba42,feat: Add AST serialization to JSON in parser module with dump.ast event and proc
+117,2026-01-09T11:05:12,897.4,27,10722,479,4d37e8528dc6,feat: Add runtime_registry module and refactor build system for installed compiler paths
+118,2026-01-09T14:26:36,201.4,4,819,0,b2cf95288589,feat: Add runtime_control library with expression evaluator for runtime conditionals
+119,2026-01-09T14:36:53,10.3,4,576,6,929d4982fd12,feat: Add ~if runtime conditional support to interpreter
+120,2026-01-09T14:50:19,13.4,3,378,0,62ac08971461,test: Add end-to-end test for interpreter ~if runtime conditionals
+121,2026-01-09T15:20:12,29.9,2,455,0,856f355ec03f,add runtime expression parsing tests for ~if conditionals
+122,2026-01-09T15:28:02,7.8,2,29,8,29e5f54ff943,wire ExpressionParser into interpreter for ~if complex expressions
+123,2026-01-09T16:01:26,33.4,1,126,1,b545dcf002f3,add AST validation pass and payload_json parsing to interpreter
+124,2026-01-09T16:10:23,8.9,1,11,78,734a0c99e8d6,remove JSON overhead from interpreter dispatch - direct field handoff
+125,2026-01-09T17:07:42,57.3,12,149,207,7592660f498e,refactor registry to generate standalone inline types  fix 14/15 runtime tests
+126,2026-01-09T17:14:38,6.9,1,77,3,aa032feaf127,add std.interpreter:eval event for pre-parsed AST execution
+127,2026-01-09T17:39:12,24.6,4,204,0,c7134c18321c,add honest cross-language dispatch benchmarks
+128,2026-01-10T07:57:19,858.1,14,555,209,d73590a565f6,refactor interpreter and runtime to use shared AST types and fix scope lookup
+129,2026-01-10T08:38:38,41.3,2,151,87,8931b6f936ed,remove completed build module deduplication task
+130,2026-01-10T09:53:48,75.2,12,428,1,f5a42d64f666,add honest interpreter benchmark and cleanup workdir
+131,2026-01-10T12:46:56,173.1,15,179,182,0d90ff32947b,fix build requirement deduplication and centralize keyword escaping
+132,2026-01-10T13:34:13,47.3,6,88,9,caab721f63bc,fix interpreter dataflow: bindings now resolve in event args
+133,2026-01-10T14:02:58,28.8,5,481,22,46a8b33a972c,add interpreter for loop and scope-based capability control
+134,2026-01-10T14:40:00,37.0,1,26,0,61c6dd2c291d,add parse-only benchmark to isolate parser vs execution overhead
+135,2026-01-10T14:40:44,0.7,1,152,0,e476f4b46d19,add codex task for interpreter performance optimization
+136,2026-01-10T16:23:50,103.1,3,73,30,b283aacccae7,fix field extraction for unions with different payload types
+137,2026-01-10T20:27:36,243.8,1,83,1,56bac04ca827,add circuit breaker to transform pass runner
+138,2026-01-10T20:28:16,0.7,2,8,3,24f0c0641495,docs: added
+139,2026-01-11T07:38:15,670.0,7,319,74,3fe59486c421,fix Source blocks in pipeline continuations and nested transform handling
+140,2026-01-11T08:04:53,26.6,1,6,3,2a405e33313e,fix underscore binding suppression in switch arms
+141,2026-01-11T09:09:07,64.2,1,42,8,a3cf7ee16f0b,fix Source block parsing in branch continuations
+142,2026-01-11T11:17:31,128.4,11,386,13,a90a17ce14f9,add switch_result AST node and expand with continuations support
+143,2026-01-11T11:43:33,26.0,6,17,21,d6d21feea3ab,WIP: migrate expand templates from ${ } to Liquid {{ }} syntax
+144,2026-01-11T12:01:31,18.0,5,18,7,68e542f0b7f5,complete Liquid migration for expand templates
+145,2026-01-11T12:01:48,0.3,2,90,56,8698ea28b181,refactor interpreter field value handling
+146,2026-01-11T13:20:54,79.1,9,94,12,13e19cec58ce,merge Codex interpreter improvements
+147,2026-01-11T15:18:17,117.4,9,20,623,219fffd65366,remove 623 lines of duplicated build:requires from interpreter tests
+148,2026-01-11T19:34:37,256.3,5,171,4,7b5f297f950c,fix void chaining branch constructors  add honest interpreter benchmark
+149,2026-01-11T20:05:11,30.6,1,163,0,41cb9056e666,add interpreter optimization design doc
+150,2026-01-11T20:23:46,18.6,1,372,0,fe78eb474516,expand interpreter optimization spec for Codex handoff
+151,2026-01-11T21:01:42,37.9,3,1749,47,250ae2bd43ed,revert accidental code duplication in interpreter.kz
+152,2026-01-12T00:30:10,208.5,21,1133,39,1edb2de94150,fix escape checker to match by value  not field name
+153,2026-01-12T00:39:00,8.8,12,124,33,e90940fb81dd,fix nested branch shadowing by only capturing used bindings
+154,2026-01-12T01:05:51,26.9,4,1837,760,93dbd0a22ee5,fix void event chaining codegen - emit sequential calls not switch
+155,2026-01-12T03:01:09,115.3,3,220,2866,c6bff20a6fe2,restore interpreter.kz and runtime.kz from last good state
+156,2026-01-12T03:37:40,36.5,1,2,16,d4f7f626c6c0,update benchmark to use void events (no branch overhead)
+157,2026-01-12T08:40:06,302.4,21,189,52,576e09408d75,fix auto-dispose for identity branches and implicit pipeline terminators
+158,2026-01-12T18:56:10,616.1,7,612,0,f9cc70f6cf7f,add orisha_collector module and [norun] event filtering
+159,2026-01-12T19:17:41,21.5,2,0,251,ed7f9e153b03,Move orisha-static example to ~/src/orisha repo
+160,2026-01-12T20:37:34,79.9,1,11,2,43c932185c84,fix auto-import: skip index.kz when it's the entry file itself
+161,2026-01-12T20:49:47,12.2,3,57,4,fda8004d8dae,add program/allocator injection for [comptime] events
+162,2026-01-12T21:37:48,48.0,3,103,0,499b6caefd72,add stub test for comptime Program return feature
+163,2026-01-13T13:24:11,946.4,3,94,7,9d74fad10909,add description field to shell commands and implement help command
+164,2026-01-13T23:08:17,584.1,14,613,67,a60659d3430d,fix identity branch codegen and phantom tracking for __type_ref fields
+165,2026-01-14T09:20:00,611.7,6,256,1,a43cf0ffe9c9,add type_registry field to Program and implement TypeRegistry.clone()
+166,2026-01-14T10:20:48,60.8,3,154,30,1988da283e8d,implement test transform with AST parsing and mock detection
+167,2026-01-14T12:27:47,127.0,2,308,33,5ff3e0db6335,add flow walker and purity checker to test transform
+168,2026-01-14T12:48:00,20.2,1,32,304,d34fa8ae89c9,add ~[pure] annotation to assert.ok proc
+169,2026-01-14T14:42:07,114.1,2,156,42,41a6694f8f51,implement mock substitution in test transform
+170,2026-01-14T14:54:04,11.9,4,67,6,876e2a3d426c,add comprehensive test cases for mock substitution and purity
+171,2026-01-14T15:01:01,7.0,2,53,1,2466aabf2bcc,auto-inline constant events in tests (the flex)
+172,2026-01-14T18:15:48,194.8,8,465,37,43831b3f3864,add purity-aware flow walker for test framework
+173,2026-01-14T18:39:08,23.3,2,31,2,cc9a40f99975,add ~[pure] to assert.fail and emit invocation arguments in tests
+174,2026-01-14T20:58:58,139.8,2,652,324,ea7b5d8dc1cd,implement test generation transform using real emitter infrastructure
+175,2026-01-14T21:45:11,46.2,1,233,0,98504b285fd7,doc: Update TESTING_ARCHITECTURE.md
+176,2026-01-14T22:50:53,65.7,7,167,21,174b29853258,implement assert() as compile-time transform replacing assert.ok()
+177,2026-01-14T23:25:34,34.7,2,142,29,03f867a534e9,implement test transform using normal emitter on transformed AST
+178,2026-01-15T00:59:21,93.8,3,322,10,8c91ec144169,add module_prefix parameter to emitter for test module code generation
+179,2026-01-15T01:20:21,21.0,2,133,50,1a482f8720ba,implement test module generation with mock substitution and local event resolution
+180,2026-01-15T09:46:22,506.0,11,234,36,44dcb3329102,implement assert.ok/fail as compile-time noops with proper type annotations for inline mocks
+181,2026-01-15T10:30:56,44.6,3,30,23,5b0301ec012e,implement cross-module mocking by resolving event paths in imported modules
+182,2026-01-15T11:39:30,68.6,4,49,6,7f7d5d0db8eb,replace @panic with std.testing.expect for idiomatic Zig test assertions
+183,2026-01-15T14:14:53,155.4,2,326,1,68c300514ebe,implement native Koru build commands with flow-based execution and MVP Zig emission
+184,2026-01-15T17:50:40,215.8,6,190,13,4bb5599ec460,implement pattern branch syntax for compile-time transform matching
+185,2026-01-15T19:08:16,77.6,2,11,1,50e023b379d6,implement ~pub proc syntax for public procedure declarations
+186,2026-01-15T22:59:43,231.4,6,203,11,284f778473ee,implement mock shape validation with compile-time error reporting
+187,2026-01-15T23:46:00,46.3,70,73,6,e90b205f5af8,document known test failures and feature gaps with TODO/SKIP markers
+188,2026-01-15T23:49:45,3.8,25,0,25,2612acb272f5,revert: remove TODO markers from actual bugs - failures should fail honestly
+189,2026-01-16T00:25:33,35.8,14,103,70,f919ac7be3c4,normalize ProgramAST to Program  remove backwards-compat alias
+190,2026-01-16T00:34:04,8.5,1,34,6,1ee38c1b945f,speed up regression tests with shared Zig cache
+191,2026-01-16T00:50:26,16.4,2,225,0,30b7ac92a5b1,add --parallel N flag for concurrent test execution
+192,2026-01-16T06:49:44,359.3,1,616,0,984a236852b1,docs: Add REGRESSION_SUITE_REWRITE.md
+193,2026-01-16T10:11:31,201.8,6,1312,980,51c963287168,refactor: extract shared regression test logic for parallel parity
+194,2026-01-16T14:02:49,231.3,3,48,81,0f714d55faa8,fix: handle multi-line function calls in pipeline continuations
+195,2026-01-16T14:16:44,13.9,1,5,0,a534790bbe71,fix: add missing koru.json for 407 test
+196,2026-01-16T15:09:09,52.4,2,1,0,0b232eaff0eb,fix: add missing shift in --verbose flag parsing
+197,2026-01-16T19:43:59,274.8,23,498,49,6c555f36ad95,fix: improve parallel test filtering and add auto-proc passthrough synthesis
+198,2026-01-16T20:10:53,26.9,7,80,80,f4250a9691c8,refactor: rename auto_dispose_inserter to auto_discharge_inserter
+199,2026-01-16T20:11:44,0.8,83,180,180,74e03f78ca3f,refactor: rename auto_dispose to auto_discharge throughout codebase
+200,2026-01-16T20:31:55,20.2,2,22,24,5f483cd13e3d,refactor: simplify event variant syntax in string module
+201,2026-01-16T20:55:35,23.7,8,174,61,c0bb7f9b8b56,feat: add [!] annotation for default disposal event selection
+202,2026-01-16T21:46:12,50.6,3,177,37,770268e11215,fix: handle implicit terminators in void event chains for auto-discharge
+203,2026-01-16T22:08:08,21.9,2,31,15,2d1cef54998c,fix: prevent sibling branch collection after Source blocks in parseContinuations
+204,2026-01-16T23:47:58,99.8,2,32,6,fa988e6cc011,fix: revert strict continuation mode for event invocations
+205,2026-01-16T23:48:09,0.2,3,140,85,051c4d819211,fix: correct obligation tracking in non-scoped foreach branches and conditionals
+206,2026-01-17T00:32:38,44.5,1,4,1,941afa2573e9,fix: add fallback to "each" branch name for foreach loop body detection
+207,2026-01-17T00:56:26,23.8,2,3,4,7f7c8d2e0c05,fix: remove fallback to "each" branch name for foreach loop body detection
+208,2026-01-17T13:21:50,745.4,10,179,1,560b74e9aa25,fix: validate [!] annotation only on single-outcome events
+209,2026-01-17T17:05:11,223.3,10,455,3,2709f898f299,feat: add support for Koru array and struct literal syntax in event arguments
+210,2026-01-17T21:07:01,241.8,12,146,71,b3b4edbfa2c3,fix: rename emitter parameter to code_emitter in emitFlowWithMocks for consistency
+211,2026-01-17T21:42:57,35.9,9,65,35,d116811c7aee,fix: consolidate phantom type test events into data.kz modules
+212,2026-01-17T22:28:57,46.0,29,16,1241,e62c374d6aa1,fix: remove obsolete metaprogramming design tests 106-108
+213,2026-01-18T11:13:57,765.0,20,642,0,55ab9c19fe1c,feat: add 700_EVENT_GLOBBING test suite for event globbing and AI-native toolchain
+214,2026-01-18T11:21:28,7.5,2,91,0,fa79971da0c5,feat: add fractal abstract events test for compiler pipeline
+215,2026-01-18T11:22:45,1.3,2,78,84,818fc3ce11cc,fix: update fractal pipeline test to reflect ACTUAL compiler.kz syntax
+216,2026-01-18T16:50:56,328.2,2,71,0,a8bb23e9f18b,feat: add glob + variant syntax test (700_005)
+217,2026-01-18T16:58:50,7.9,2,80,41,eea642f23ba5,fix: variants aren't just targets - they enable PROPERTY TESTING!
+218,2026-01-18T19:27:34,148.7,12,66,59,106f82cf1358,refactor: rename tap_pattern_matcher to glob_pattern_matcher
+219,2026-01-18T19:49:10,21.6,3,533,0,0dba5c3c74f8,feat: add glob matcher spec for Codex implementation
+220,2026-01-19T22:26:33,1597.4,13,756,206,0e702cf9fb54,feat: implement glob event matching for compile-time transforms
+221,2026-01-19T22:33:29,6.9,4,40,10,4e1bd1517000,feat: add Levenshtein distance for helpful typo suggestions in glob transforms
+222,2026-01-19T22:52:11,18.7,2,0,101,383c103da979,chore: remove 700_004 pruning test - belongs in ast_functional unit tests
+223,2026-01-19T22:59:38,7.5,3,37,12,c9bda576c9ba,feat: support brackets in event names for generics-as-library pattern
+224,2026-01-19T23:16:47,17.1,2,9,14,79c3e1f6c67d,feat: enable 700_011 generic parameter extraction test
+225,2026-01-19T23:21:59,5.2,5,21,17,6318f5f0aecb,style: use semicolon delimiter for generic params [T:u32;N:1024]
+226,2026-01-20T10:30:15,668.3,3,125,0,5c4f3c69f50e,test: add 330_055 cascading auto-discharge TODO test
+227,2026-01-20T10:43:45,13.5,11,10,78,f2c0edfb3327,chore: clean up broken tests (7 → 4 broken)
+228,2026-01-20T11:58:00,74.3,39,41,273,19d0435e82ea,fix: honest test suite - expose hidden bugs  remove incomplete tests
+229,2026-01-20T12:07:14,9.2,2,45,14,2927417d1e71,fix: parser accepts escaped backslashes in strings (\\t ≠ \t)
+230,2026-01-20T12:53:53,46.6,2,2,0,dfdfafeda48b,chore: mark aspirational tests as TODO
+231,2026-01-20T12:55:50,1.9,1,1,0,254e55b6d50c,fix: 330_003 now expects phantom validation error
+232,2026-01-20T13:07:28,11.6,3,0,1,4771ffb53f88,fix: enable 205_nested_labels test with MUST_RUN
+233,2026-01-20T13:08:37,1.1,1,0,0,179f5e31e5ff,fix: enable 320_040_for_inside_if with MUST_RUN
+234,2026-01-20T13:33:23,24.8,3,0,0,cb3af2163d21,fix: enable 220_020/021/022 with MUST_RUN
+235,2026-01-20T13:33:53,0.5,3,0,0,e4e852c01f96,fix: enable 901/902/220_010 with MUST_RUN
+236,2026-01-20T13:35:22,1.5,4,0,0,7c50fe54f5cf,fix: enable 030_010-013 array/struct literal tests with MUST_RUN
+237,2026-01-20T13:36:18,0.9,1,0,0,442fd0cc3f35,fix: enable more tests with MUST_RUN (203d  010_002  010_003)
+238,2026-01-20T22:03:00,506.7,11,622,80,a1b146233523,feat: implement scope-exit auto-discharge for resource cleanup
+239,2026-01-21T00:09:46,126.8,4,257,292,cfeb0490ce11,feat: implement two-phase auto-discharge for nested scope cleanup
+240,2026-01-21T01:29:10,79.4,1,36,2,2c68de90d40c,fix: load index.kz content when importing directories
+241,2026-01-21T03:10:44,101.6,9,339,17,bfb7ff8593a1,feat: enforce visibility for cross-module event calls (KORU044)
+242,2026-01-21T04:14:29,63.8,43,96,96,32e4892f8b3c,fix: add ~pub to library events in test files
+243,2026-01-21T11:56:41,462.2,6,0,63,229c79d16218,fix: remove obsolete test 407 (invalid shorthand syntax)
+244,2026-01-21T12:03:33,6.9,23,12,27,69815f33a634,fix: remove SKIP from tap migration tests  fix old tap syntax
+245,2026-01-21T12:52:37,49.1,13,329,4,60e693efc82c,feat: fix tap test 210_035  design interceptor feature (365_xxx)
+246,2026-01-21T12:57:24,4.8,4,75,27,200c22f9e552,fix: correct SPEC.md examples  add negative test for function calls
+247,2026-01-21T13:00:27,3.0,3,8,6,9fd3dc05aabc,fix: update 310_036 tap syntax  document terminal invocation bug
+248,2026-01-21T13:01:33,1.1,1,0,1,9b10bcea5e62,fix: mark terminal invocation tap bug as PRIORITY
+249,2026-01-21T13:02:01,0.5,1,14,0,f87290549bae,fix: add PRIORITY file for terminal invocation tap bug
+250,2026-01-21T13:02:28,0.5,1,0,0,9850de55c70d,fix: add MUST_RUN so terminal tap bug test runs properly
+251,2026-01-21T13:51:08,48.7,6,228,38,74f8af7b3ca5,fix: emit taps namespace with AST-collected events/branches for ~tap() syntax
+252,2026-01-21T15:01:42,70.6,1,151,0,f14032bb5c73,docs: add CODEX task spec for tap destination matching fix
+253,2026-01-21T18:09:51,188.2,9,192,216,41849a95c5b1,fix: tap destination matching  coyote time  and void emission
+254,2026-01-21T20:06:04,116.2,1,3,1,30cf02823f8a,fix: update 320_subflow_with_taps to new tap syntax
+255,2026-01-21T20:52:51,46.8,2,58,140,1450dd265feb,feat: parser rejects old tap syntax with helpful error
+256,2026-01-22T04:12:47,439.9,1,18,3,8100a7af0608,feat: make compiler.coordinate abstract with default impl
+257,2026-01-22T04:19:37,6.8,2,40,76,1b876ce1fa9c,test: validate abstract compiler.coordinate pattern works
+258,2026-01-22T06:09:04,109.5,4,151,175,02ff25671540,refactor: clean up compiler pipeline naming and use identity branches
+259,2026-01-22T06:13:48,4.7,1,4,8,df4f49b28396,style: keep flow declarations on single line with shorthand params
+260,2026-01-22T06:46:39,32.9,5,24,521,37948c9e4588,refactor: remove compiler magic  rely on abstract/impl for coordinate override
+261,2026-01-22T06:48:25,1.8,2,4,352,660d86faf855,refactor: remove dead compiler_coordination.zig (-335 lines)
+262,2026-01-22T07:57:57,69.5,3,120,12,e1dfc336b72a,fix: implement working abstract/impl mechanism with delegation support
+263,2026-01-22T08:01:33,3.6,4,4,0,2432efb2d9cf,chore: mark failing tests with appropriate TODO/PRIORITY markers
+264,2026-01-22T11:18:38,197.1,6,130,31,69117bfc3f3f,fix: improve universal wildcard tap handling and add debug logging
+265,2026-01-22T16:52:56,334.3,1,741,0,1dc81414ca60,docs: add Koru style guide
+266,2026-01-22T16:55:43,2.8,1,22,9,5fba68911dc5,docs: fix annotation style - no space before pub keyword
+267,2026-01-22T16:57:32,1.8,1,8,3,4a6cfc1d451a,docs: remove invalid single-line branch syntax
+268,2026-01-22T17:11:53,14.3,3,78,35,07db51a4cf0e,feat: implement field punning shorthand in branch constructors
+269,2026-01-22T17:16:09,4.3,1,4,0,b8b7091693fc,docs: note single empty branches will become compiler error
+270,2026-01-22T17:55:20,39.2,16,779,38,13095c68ab30,refactor: replace abstract keyword with [abstract] annotation
+271,2026-01-22T18:09:40,14.3,4,67,0,a1e6c9314bbd,test: add pipeline profiling test (430_008)
+272,2026-01-22T18:13:28,3.8,1,4,9,94b9c93d792a,style: cleaner flow syntax for pipeline profiling
+273,2026-01-22T18:25:00,11.5,5,121,0,7ba736933146,feat: add composed timing test and stdlib time module
+274,2026-01-22T18:33:43,8.7,5,79,3,b3e99bce12e8,feat: AST dump at arbitrary pipeline stages (430_010)
+275,2026-01-22T18:44:33,10.8,2,4,9,01c6161667ed,refactor: make ast_dump a void event for cleaner syntax
+276,2026-01-22T19:28:45,44.2,3,87,60,5aa77830a4fe,feat: expand $std/time and migrate timing tests to use it
+277,2026-01-22T19:40:50,12.1,27,213,28,9bfbc58825c8,feat: field punning shorthand works! { c.ast  c.code } → { ast: c.ast  code: c.code }
+278,2026-01-22T20:10:56,30.1,7,234,33,192a2ad419a5,docs: add KERNEL_FIX_SPEC.md for Codex handoff
+279,2026-01-22T20:31:24,20.5,1,209,0,f7661ff25d95,docs: expand kernel spec with design vision and Codex Q&A
+280,2026-01-22T21:11:09,39.8,6,223,126,0e89bca83251,fix: kernel init/pairwise working with view model
+281,2026-01-22T21:26:34,15.4,8,87,0,202c1368a631,fix: add std import to 390_005 user event test
+282,2026-01-22T21:41:40,15.1,6,15,10,5b1919b61f62,feat: add layout hint field to KernelView (stubbed to "aos")
+283,2026-01-22T21:48:37,7.0,3,42,0,8448f4e16abe,feat: add n-body benchmark using kernel:pairwise
+284,2026-01-22T21:56:36,8.0,3,18,0,2cab705aec4b,test: add 390_021 proving multi-line pairwise bodies work
+285,2026-01-22T21:56:54,0.3,3,16,0,a29a1a77c44e,test: add 390_022 capturing single-line shape bug (TODO)
+286,2026-01-22T22:48:14,51.3,4,424,14,8c2f4dd16775,fix: parse inline source block args correctly
+287,2026-01-22T23:03:07,14.9,1,71,0,cbccc7a287fb,docs: add nbody benchmark status summary
+288,2026-01-22T23:22:59,19.9,7,886,45,6d1c27b342e7,perf: nbody optimization experiments - 4% gap unsolved
+289,2026-01-22T23:30:45,7.8,2,209,45,3f52a48352d8,perf: BREAKTHROUGH - match Rust via pointer aliasing fix
+290,2026-01-22T23:45:01,14.3,2,49,16,cd1bc4acf5b8,perf: implement noalias pointer pattern in kernel:pairwise codegen
+291,2026-01-23T00:01:01,16.0,4,43,5,7ed9702cf968,fix: use __koru_std to avoid shadowing user's std import in kernel codegen
+292,2026-01-23T00:08:03,7.0,4,115,0,3c638f0c3fa8,docs: document kernel:init pipeline limitation for Codex to fix
+293,2026-01-23T00:16:26,8.4,2,112,37,d024366e474c,feat: allow kernel:init in pipeline steps  not just top-level
+294,2026-01-23T00:24:46,8.3,3,89,15,f91ea7cab649,feat: full nbody benchmark using kernel:pairwise
+295,2026-01-23T00:25:25,0.7,1,24,10,22f5e7c7e187,docs: update NBODY_STATUS.md with kernel:pairwise benchmark results
+296,2026-01-23T02:02:41,97.3,2,157,20,3bf32cb8891e,feat: Correctly parse escaped characters in string and character literals and enable loop unrolling for small kernel initializers with `noalias` parameters.
+297,2026-01-23T02:46:48,44.1,2,73,69,ed970fff700a,use static kernel backing
+298,2026-01-23T03:02:20,15.5,1,30,5,e48a074c552c,update nbody benchmarks
+299,2026-01-23T03:34:18,32.0,2,14,2,f4d6134318c4,fix: kernel:pairwise supports multi-line Source blocks
+300,2026-01-23T12:43:04,548.8,9,7443,1949,72a9e08b0d4f,feat: Void events  while loops  and interpreter refactor
+301,2026-01-23T18:43:29,360.4,12,548,6,b5122cf4d7f8,feat: Add budget tracking and handle pool foundation for interpreter
+302,2026-01-23T18:50:19,6.8,2,61,17,b58e65f1c616,feat: Parse event costs from scope registration
+303,2026-01-23T19:19:15,28.9,2,136,6,43421fc10024,feat: Wire handle pool to obligation tracking in scope registration
+304,2026-01-23T19:25:26,6.2,1,139,71,37c2a54eea29,docs: Clarify bridges as integration layer in SPEC
+305,2026-01-23T19:32:42,7.3,3,339,30,2de7e3ae01ff,feat: Add bridge library for persistent interpreter sessions
+306,2026-01-23T19:49:08,16.4,7,55,54,c522006fa4de,fix: Remove wrong obligation syntax from scope registration
+307,2026-01-23T19:59:00,9.9,3,190,45,d1c1fc52c20f,feat: Extract obligations from event signatures (multiple per event)
+308,2026-01-23T20:31:58,33.0,12,41,22,3e452fd9f684,fix: Resolve 11 test regressions from budgeted interpreter changes
+309,2026-01-23T20:55:29,23.5,1,0,266,c0919aedfaf2,refactor: Move bridge library to koru-libs
+310,2026-01-23T23:23:06,147.6,3,203,18,351246a7a2d4,add runtime eval and parse helpers
+311,2026-01-23T23:31:45,8.7,1,4,3,99b367d985ee,docs: Soften `prose`-use in AGENTS.md
+312,2026-01-23T23:50:46,19.0,2,390,84,8eef4ff3996f,fix runtime registry pointers
+313,2026-01-24T00:21:44,31.0,4,251,67,20df3610b9cf,fix runtime registry scopes
+314,2026-01-24T00:57:34,35.8,1,1,61,27727f772729,fix ast json formatting
+315,2026-01-24T01:12:37,15.1,2,43,0,a6182ea3b2ad,add dotted scope regression
+316,2026-01-24T01:27:24,14.8,1,42,0,b62850512578,add typed arg registry regression
+317,2026-01-24T01:33:20,5.9,3,42,0,577bc44f5b45,add debug scope regression
+318,2026-01-24T02:04:08,30.8,4,95,0,74a0ee7e35c6,add runtime run wrapper
+319,2026-01-24T02:09:45,5.6,3,27,0,91c82d16575b,add runtime run budget regression
+320,2026-01-24T02:12:08,2.4,6,61,0,9e8a1e4c5455,add runtime run error regressions
+321,2026-01-24T02:21:08,9.0,3,27,0,2db2835be974,add runtime run parse error regression
+322,2026-01-24T13:29:10,668.0,5,39,3,fb7bc3c0f433,add fail-fast runtime parsing
+323,2026-01-24T13:59:35,30.4,5,39,1,0e5b42b2b5a8,add runtime lenient parse regression
+324,2026-01-24T14:16:15,16.7,1,1,0,14e506ac8e4d,lock old tap parse error
+325,2026-01-24T14:26:40,10.4,2,38,36,22b94f2967b7,drop old tap syntax hint
+326,2026-01-24T15:15:43,49.0,1,47,0,7f906dd34b5b,add interpreter status doc
+327,2026-01-24T15:38:11,22.5,1,43,9,f06fcd5ef45a,turn status into work doc
+328,2026-01-24T16:27:24,49.2,1,254,0,768a8a067edc,revise handle registry spec
+329,2026-01-24T16:47:04,19.7,1,101,16,622a3448faa0,clarify scope-local handles
+330,2026-01-24T16:49:53,2.8,1,4,0,e0f05783b00a,add scope enforcement options
+331,2026-01-24T16:51:18,1.4,1,44,8,a9125278b95b,add handle registry implementation plan
+332,2026-01-24T17:51:29,60.2,1,21,1,0c2703192189,add handle realm opt-in
+333,2026-01-24T18:26:22,34.9,2,342,54,df280b8def77,Handle registry Phase 1-2: CreateSpec/DischargeSpec and wiring
+334,2026-01-24T18:28:32,2.2,2,34,8,9bc70aa13349,Scope isolation in findByHandleId + spec updates
+335,2026-01-24T18:52:59,24.4,1,89,3,2161a938258a,Phase 3: Auto-discharge invocation
+336,2026-01-24T19:17:15,24.3,4,120,53,465f1926a46d,add eval auto-discharge cleanup
+337,2026-01-24T19:39:10,21.9,1,4,0,e88aaedf87f7,fix eval auto-discharge expected output
+338,2026-01-24T20:32:25,53.3,4,81,0,cc00530c7521,auto-discharge on budget exhaustion
+339,2026-01-24T20:45:24,13.0,1,1,1,9766c6f37035,fix budget auto-discharge test source
+340,2026-01-24T22:47:26,122.0,2,24,6,63e3debaa47d,remove auto_discharged result
+341,2026-01-24T22:47:42,0.3,22,79,85,692f1ca9fc06,enable budgeted interpreter regressions
+342,2026-01-24T23:34:26,46.7,3,15,0,566ea5ed1122,add parser todo for pipes in strings
+343,2026-01-25T00:07:46,33.3,3,20,8,cef271ff920c,skip |> inside string literals when detecting inline continuations
+344,2026-01-25T04:09:12,241.4,7,99,1,4b49c507e7fa,support identity branches with phantoms in runtime dispatcher
+345,2026-01-25T04:20:24,11.2,3,17,0,3b1fa3d175bf,add test for nullable cross-module types (currently failing)
+346,2026-01-25T04:28:36,8.2,2,28,0,7f15eefaa99e,add test: optional branches should require catch-all
+347,2026-01-25T13:17:56,529.3,3,86,0,77b92f5282b4,add test: cross-session handle discharge (Hollywood OS pattern)
+348,2026-01-25T17:57:51,279.9,6,464,11,4a68bc32286c,fix: array literal emission in subflow implementations + inter.kz integration
+349,2026-01-25T18:49:40,51.8,2,15,10,9e3795dbf6eb,docs: clarify requires.npm is for Koru packages  not JS/TS imports
+350,2026-01-25T18:51:44,2.1,1,2,2,6ffad2b0c6b6,fix: use real @korulang packages in test
+351,2026-01-25T22:33:57,222.2,2,43,5,afd8665171e9,fix: cross-module type prefixes (?*  []const  etc.)
+352,2026-01-25T22:35:42,1.8,3,89,19,0330c1d202d1,feat: --inter flag receives full CompilerContext with AST
+353,2026-01-25T22:45:42,10.0,1,6,6,2296b84996c9,fix: update post.sh to match input.kz package names
+354,2026-01-26T00:09:33,83.8,3,216,97,ac33eb0475d9,feat: interactive --inter REPL with AST stats
+355,2026-01-26T00:36:55,27.4,2,19,2,ac98d2a2e93b,feat: add pass names to CompilerContext for --inter visibility
+356,2026-01-26T00:49:15,12.3,1,13,12,84b02f8c65e8,refactor: run transforms BEFORE comptime events in evaluate_comptime
+357,2026-01-26T01:09:25,20.2,3,479,0,b208aa6ef027,feat: add std library modules (bridge  env  json)
+358,2026-01-26T01:09:31,0.1,5,687,7045,c7a01c237572,refactor: cleanup profiler  backend  and flag.declare naming
+359,2026-01-26T01:09:35,0.1,3,32,0,2830d3780a11,test: add meta-event taps test (koru:start/koru:end)
+360,2026-01-26T01:09:40,0.1,2,104,2,534aed02d869,chore: track CLAUDE.md project memory files
+361,2026-01-26T01:26:33,16.9,1,16,18,6a2599f2c6c1,refactor: remove transform_taps pass from pipeline
+362,2026-01-26T02:10:14,43.7,23,1,1038,fe7d7f5dffe0,chore: triage TODO/SKIP tests - delete outdated  mark priorities
+363,2026-01-26T02:11:08,0.9,7,57,0,f9481ae66e2b,chore: track PRIORITY files in regression tests
+364,2026-01-26T02:16:06,5.0,40,20,19,09347f141351,chore: add BENCHMARK marker  convert bare SKIPs to TODOs
+365,2026-01-26T02:50:57,34.9,3,47,41,ce012250fede,chore: diagnose cross-module tap issue in 110_013
+366,2026-01-26T02:56:49,5.9,3,41,47,f5dea4739150,Revert "chore: diagnose cross-module tap issue in 110_013"
+367,2026-01-26T04:10:17,73.5,25,258,81,eed1d06ba780,Triage regressions: Fix parser issues  mark tap features as PRIORITY
+368,2026-01-26T04:43:40,33.4,1,39,18,7e1330310982,Fix wildcard pattern matching in tap transform
+369,2026-01-26T05:17:14,33.6,13,218,11,b36cf31237eb,Add isolated metatype binding tests for Profile  Transition  Audit
+370,2026-01-26T05:28:05,10.8,1,308,272,afcb8daae06d,track CLAUDE.md files in git; use 48-hour window for regression categorization
+371,2026-01-26T10:48:04,320.0,6,24,15,6b47131b21b3,WIP: Metatype binding tests and Audit struct fixes
+372,2026-01-26T11:01:12,13.1,5,3,51,7a7451cbb1dd,Fix metatype test expected output ordering
+373,2026-01-26T12:14:14,73.0,12,135,2,3daf655ac33c,Fix BranchEnum keyword escaping in metatype bindings + add metatype tests
+374,2026-01-26T12:29:37,15.4,1,28,4,0ff6d5afbe13,WIP: Metatype binding variable collision investigation
+375,2026-01-26T12:47:52,18.3,1,137,0,96acad9f852c,Add investigation notes for 310_044 metatype binding collision
+376,2026-01-26T12:48:21,0.5,1,179,0,f98976c91ef2,Add Codex specification: Fix metatype tests and multi-branch tap syntax
+377,2026-01-26T13:44:19,56.0,1,216,0,99eb14317100,Add Codex specification: Fix wildcard metatype tap binding scope
+378,2026-01-26T14:36:59,52.7,3,405,0,9e96af6d9997,feat: Add std.deps for system dependency management
+379,2026-01-26T17:17:04,160.1,3,513,0,1bcb79083a60,add ccp daemon mode
+380,2026-01-26T17:49:08,32.1,1,1,1,753b02fbdaeb,doc ccp daemon mode
+381,2026-01-26T17:51:51,2.7,13,2829,1189,ad830db81ec1,Fix: Add missing payload field to Audit metatype emission in emitStep
+382,2026-01-26T17:58:13,6.4,6,26,69,610837dcb1c3,Fix: Update wildcard metatype tap expected outputs
+383,2026-01-26T18:17:04,18.9,1,15,11,28dbc9a81149,Update project consciousness: Metatype infrastructure now complete
+384,2026-01-26T18:18:41,1.6,2,2,13,c12dbfb13b39,Fix: Update module event globbing test expected output
+385,2026-01-26T18:19:20,0.7,1,162,0,b6eedf763497,Add comprehensive triage report for remaining 11 test failures
+386,2026-01-26T18:38:00,18.7,3,0,23,60d02d985b88,Fix: Update universal wildcard metatype expected output
+387,2026-01-26T18:38:36,0.6,1,173,0,7bdf02b9b553,Add final triage report: 438/531 passing (82.5%)
+388,2026-01-26T19:53:12,74.6,1,1,1,0597e96d6acd,fix: Use underscore for unused binding in field punning test
+389,2026-01-26T22:04:30,131.3,4,1,0,c90d3660c94f,fix: Add missing test files and mark performance tests as BENCHMARK
+390,2026-01-26T22:20:24,15.9,4,12417,1,5bd6dc8a598a,chore: Add test snapshots to git for regression detection
+391,2026-01-26T22:28:35,8.2,6,26,0,480ba753aa34,revert: Remove BENCHMARK markers from performance tests
+392,2026-01-26T22:30:58,2.4,5,0,5,0dbca51e0c59,fix: Remove BENCHMARK markers from language shootout tests
+393,2026-01-26T22:34:31,3.5,5,5,0,d9b14e753565,Revert "fix: Remove BENCHMARK markers from language shootout tests"
+394,2026-01-26T22:39:21,4.8,1,62,0,747027d6667b,doc: Add critical warnings about destructive git commands and file operations
+395,2026-01-26T23:34:21,55.0,16,125,20,2b7867d0745c,test: Fix path issues  add metatype binding tests (430 passing)
+396,2026-01-27T00:54:06,79.8,2,12,13,92e2fafee188,fix metatype tap binding emission
+397,2026-01-27T00:54:18,0.2,8,8,22,a708d38edd6b,update tap syntax fixtures
+398,2026-01-27T01:06:19,12.0,3,95,2,687c3e7d6b48,test: Fix 310_025 qualified patterns + add metatype emission docs
+399,2026-01-27T01:15:01,8.7,3,29,0,20aa2787f620,test: Add 310_038 tap terminal void event
+400,2026-01-27T01:20:45,5.7,3,3,1,987e2229e43e,test: Mark tap execution order bug as PRIORITY
+401,2026-01-27T01:27:25,6.7,1,23,11,0666dd2aa2f9,fix void tap ordering
+402,2026-01-27T01:56:46,29.4,3,0,3,b9a5d65b1941,test: Tap execution order fixed - 435 passing
+403,2026-01-27T11:24:17,567.5,8,403,359,587abea21628,fix tap metatype binding uniqueness
+404,2026-01-27T11:34:27,10.2,8,37493,18,14d25f421721,chore: Track test-results snapshots + update CLAUDE.md
+405,2026-01-27T11:40:12,5.8,1,0,1,3e9e54282566,test: Enable 310_017 namespace wildcards - Profile now works
+406,2026-01-27T11:57:31,17.3,7,44,35,18f4ed939f6b,test: Enable 310_001/310_002 tap imports  add 310_039 binding bug test
+407,2026-01-27T12:14:56,17.4,3,26,0,3ab1f258dca6,add branch payload discard regression test
+408,2026-01-27T13:29:12,74.3,5,46,30,4ecd9bb9a450,fix: Validate branch payloads require binding  fix 220_004 imports
+409,2026-01-27T15:23:57,114.8,46,37646,66,c441e65130a5,fix: Add binding discards for branches with payloads
+410,2026-01-27T17:12:21,108.4,7,6318,13,641a6fe66a75,feat: Update parser and AST to support core language features including basic syntax  event flows  types  and control flow.
+411,2026-01-27T17:14:24,2.0,6,30,15,2a067194b198,refactor: Add `variant: null` field to parsed structures in regression test expectations.
+412,2026-01-27T18:23:14,68.8,3,136,3,389503c5c078,feat: Implement variant selection for procs and invocations
+413,2026-01-27T20:20:16,117.0,24,955,39,65e06da2dd69,feat: Add InvocationMeta and VariantRegistry for build-time variant selection
+414,2026-01-27T20:36:42,16.4,1,3,0,687dad91e7a7,fix: Clean up stale SUCCESS markers in early-return test paths
+415,2026-01-28T03:02:38,385.9,5,25152,1,1c84323fabef,chore: update test result snapshots (444 passing)
+416,2026-01-26T13:38:09,-2244.5,25,667,567,df281338deef,Add --verbose/--debug flags  silence debug spew by default
+417,2026-01-28T12:28:45,2810.6,6,88,31,ff24d3017649,feat: Add {{ ENTRY }} and {{ KORU_HOME }} path interpolation
+418,2026-01-28T14:44:31,135.8,14,313,50,7ce7a00f7ef5,fix: Resolve 43 regressions from log module changes
+419,2026-01-28T17:12:57,148.4,1,175,33,ec484c8973f2,feat: Add koruc deps and koruc deps install commands
+420,2026-01-28T18:31:48,78.8,6,31481,1,cbda66aa6077,chore: Update test results by creating new timestamped JSON files and modifying the latest results.
+421,2026-01-28T19:43:42,71.9,3,12,0,6448eecc169b,fix: Add explicit libc linking for tests using c_allocator
+422,2026-01-28T20:06:26,22.7,2,6297,1,bfa2d72d1ae9,chore: Record new test run results and update the latest results file.
+423,2026-01-29T16:40:06,1233.7,36,13203,8,cf4a42e0d24f,feat: Introduce pattern branching and `args` standard library  and update various budgeted interpreter and runtime regression tests.
+424,2026-01-30T02:21:18,581.2,5,21,17,e26fc6cdc717,treat pattern branches as normal branches
+425,2026-01-30T08:45:16,384.0,4,127,183,c0f692bfbafc,refactor: Honest n-body benchmark with fair comparisons
+426,2026-01-30T09:06:24,21.1,1,47,46,0e542d0ffbf3,docs: Update n-body benchmark with Rust split_at_mut pattern
+427,2026-01-30T09:09:51,3.5,1,32,2,b225cb9fb71f,docs: Emphasize the expert knowledge gap in benchmarks
+428,2026-01-30T10:59:08,109.3,79,495,1011,15ba0f157faa,perf: Inline kernel:pairwise code  removing struct wrapper overhead
+429,2026-01-30T14:00:04,180.9,3,32,34,f86ab7504a5f,remove deprecated ~impl keyword  use module qualifier instead
+430,2026-01-30T15:22:58,82.9,7,167,52,3ba56f2b2493,fix: Parse module paths in identity branch types
+431,2026-01-30T15:27:43,4.8,2,16,5,f78b934c6126,fix: Handle sentinel syntax in branch type parsing and update test
+432,2026-01-30T15:44:10,16.4,11,50973,1,5d1c47d3f799,chore: Update test results with a new run  archive previous results  and add a new test library file.
+433,2026-01-30T17:51:09,127.0,8,56,8,4d816fd90d37,feat: reject pub proc syntax - only events can be public
+434,2026-01-30T18:05:18,14.2,1,40,0,12955ee4acc8,docs: capture DX improvement opportunities from Orisha session
+435,2026-01-31T13:06:36,1141.3,69,32600,33,64119e0778a2,feat: Add negative test suite for parser error handling
+436,2026-01-31T13:54:18,47.7,18,52,0,6e29b18efaf3,feat: Add more negative tests with PRIORITY flags for DX improvements
+437,2026-01-31T14:10:41,16.4,23,128,25,d4882951b4c6,fix: Implement 5 parser quick wins for better error messages
+438,2026-01-31T14:32:43,22.0,2,6619,1,ce3021e062e1,chore: Update test results - 469 passing (all-time high)
+439,2026-02-01T15:42:03,1509.3,28,7039,72,38409eee54a7,fix: Improve parser error messages and add negative tests
+440,2026-02-01T16:21:17,39.2,1,17,17,336e1c34d897,docs: Update project consciousness with open-source framing context
+441,2026-02-03T12:06:46,2625.5,36,28164,1081,a14f5af1290c,feat: improve parser error messages and add nested when guards
+442,2026-02-03T16:57:06,290.3,6,141,19,0952e1d110c3,feat: support comments inside flow continuations
+443,2026-02-03T18:24:23,87.3,8,13390,26,de336c5d12a8,fix: detect dropped cleanup obligations in label jumps
+444,2026-02-03T20:27:56,123.5,4,107,1,0886563d4ef1,fix: allow @scope to suspend outer obligations in label jumps
+445,2026-02-03T20:49:57,22.0,11,6696,1706,166e8dc581ff,chore: remove outdated docs and add test snapshot
+446,2026-02-04T16:06:43,1156.8,30,6725,28,4b17edbcdf24,refactor: rename polyglot tests to variants and update project docs
+447,2026-02-04T23:09:45,423.0,20,36649,194,9bc6e92c5c79,feat: improve array literal validation and testing framework
+448,2026-02-05T01:21:16,131.5,6,13440,20,c0e9c0bbef98,fix: correct phase annotation inheritance for module-level comptime
+449,2026-02-05T21:57:08,1235.9,1,33,3,55b2303fce3b,fix: gate parse_error AST nodes before emission (C1 defense-in-depth)
+450,2026-02-05T22:01:36,4.5,2,21,11,389f6c2ec010,fix: use real source locations in KORU040 unknown event errors (C4)
+451,2026-02-05T22:22:22,20.8,1,269,0,3fba93b1a770,docs: add technical debt workdoc for systematic compiler hardening
+452,2026-02-05T22:38:58,16.6,1,15,75,2543285d1460,refactor: remove dead parseMultiLineInvocation (H2 investigation)
+453,2026-02-06T17:41:04,1142.1,4,13423,1,5eda980fa13f,feat: serialize phantom type annotations in AST JSON output
+454,2026-02-06T18:43:25,62.4,16,13502,61,b866230cab80,feat: improve KORU030 error messages and update test expectations
+455,2026-02-06T23:39:38,296.2,10,7023,112,507030e28c08,feat: support inline_body emission for subflow implementations
+456,2026-02-07T02:24:06,164.5,9,13565,4,00fe3eeaf1af,feat: use expression field name for transform handler codegen
+457,2026-02-07T17:02:21,878.3,1,363,0,f02393dae9f1,docs: add AST rewrite workdoc for Flow/SubflowImpl merge
+458,2026-02-07T17:32:23,30.0,14,76,71,d1464d6183ea,chore: purge all references to ~impl as a keyword
+459,2026-02-07T17:44:23,12.0,1,36,19,fac9cd6cbb8b,refactor(ast): merge SubflowImpl into Flow  add ImmediateImpl
+460,2026-02-07T18:04:05,19.7,24,1236,1178,aadfa77d6caa,refactor: update all consumers to use unified Flow/ImmediateImpl AST
+461,2026-02-07T18:27:19,23.2,20,4833,3189,4a999b3354b7,refactor: update koru_std  fix is_impl as stored field
+462,2026-02-07T18:45:44,18.4,3,20,2,f1af30d86994,fix: add stored is_impl to ImmediateImpl (same fix as Flow)
+463,2026-02-07T18:46:22,0.6,7,12,0,750c588ff7aa,test: update AST JSON snapshots for impl_of field
+464,2026-02-07T18:54:10,7.8,2,9,3,3fe08ea0b3d0,fix: skip impl flows in main/comptime_main call generation
+465,2026-02-07T19:04:57,10.8,1,2,0,a31022324361,fix: preserve impl_of/is_impl in expand transform
+466,2026-02-07T19:17:36,12.7,2,6740,1,591eda57f6a8,chore: remove debug prints from visitor_emitter
+467,2026-02-07T20:24:57,67.3,6,147,40,908bdb37085d,fix flow impl propagation and test/thunk emission
+468,2026-02-07T20:43:22,18.4,2,6740,1,5d604c5a95e7,update regression snapshot
+469,2026-02-08T12:21:38,938.3,44,16,695,c47d68a7e2de,remove inline flows: events must use continuations  not call/return
+470,2026-02-08T12:37:35,15.9,10,1,126,b1ded47f5463,triage: delete 2 wrong tests  fix build_requires test
+471,2026-02-08T12:43:32,6.0,2,6750,6,4c425d802477,chore: update prose memory and add regression snapshot
+472,2026-02-08T13:44:59,61.5,45,59,597,a64cf08b0759,triage: reject ~proc = syntax  fix CCP  clean up inline flow remnants
+473,2026-02-08T14:15:30,30.5,10,13175,619,f732be3661cb,refactor: remove inline flow emission  allow when-clause duplicate branches
+474,2026-02-08T14:39:41,24.2,14,6529,182,1fdd0be8d0ea,refactor: remove empty inline_flows fields from AST definitions
+475,2026-02-08T15:31:08,51.5,2,136,12,d7eaff09b54e,feat: emit inline_stmt bodies as statements
+476,2026-02-09T18:33:57,1622.8,8,467,358,2098d429a7d5,hardening: purge inline_flows  fix flow checker  fmt stdlib  inline stmt emission
+477,2026-02-10T10:49:43,975.8,16,65494,57,8d8f2ae4db66,fix: fmt escape handling  inline_body on Invocation  pipeline codegen
+478,2026-02-10T11:59:11,69.5,1,62,2,8067750fa9c8,fix: Value.toJson serialization + arena lifetime for error messages
+479,2026-02-10T13:05:45,66.6,2,21,7,9e273bc40d77,fix: make interpreter bindings honest
+480,2026-02-10T13:12:40,6.9,4,88,0,b32cb6d14c34,test: cover interpreter identity branches
+481,2026-02-10T13:18:08,5.5,2,15,0,656058e38cd9,test: add __branch identity case
+482,2026-02-10T13:26:43,8.6,2,10,3,2d69c41cf0bc,fix: expose Branch metatype in interpreter bindings
+483,2026-02-10T13:37:42,11.0,2,6553,1,7cdfc35f40ed,test: add regression snapshot for 877601a
+484,2026-02-10T13:43:13,5.5,1,1,3,0a51e6e24b2e,test: use subflow form in interpreter identity case
+485,2026-02-10T14:25:37,42.4,3,1,3,d527e4bd96c3,test: activate tap when-clause filtering regression test
+486,2026-02-10T16:52:06,146.5,2,313,0,25a2e94ba068,test: exercise phantom imports in checker unit
+487,2026-02-10T17:28:49,36.7,14,0,4192,77a0113d4de4,chore: remove temporary codex work docs
+488,2026-02-10T18:53:20,84.5,4,1438,0,ba4a4ba9d252,feat: add lightweight flow parser for interpreter eval
+489,2026-02-10T20:43:33,110.2,4,234,85,071371abdc22,perf: wire flow_parser into compiled interpreter — 144x speedup
+490,2026-02-11T08:14:33,691.0,10,7220,73,7eff5b97f835,feat: add cached interpreter eval with thread-local state pooling
+491,2026-02-11T09:18:32,64.0,64,307,1568,81f6743a9f3a,test: restructure optional branches — fix syntax  move out of benchmarks
+492,2026-02-11T09:20:27,1.9,7,0,101,b9de89b1454f,test: remove optional branch tests that assume destructuring syntax
+493,2026-02-11T09:21:15,0.8,7,101,0,d8c42a743a2d,Revert "test: remove optional branch tests that assume destructuring syntax"
+494,2026-02-11T09:52:20,31.1,10,13209,72,5df2a822ea7d,fix: wrap when-guard conditions in parentheses for valid Zig if-syntax
+495,2026-02-11T14:28:47,276.4,14,718,99,c593f3001afb,feat: Zig package dependencies + vaxis Hello World
+496,2026-02-11T14:36:37,7.8,5,13216,7,e344c81b2d72,test: add vaxis standalone example and regression snapshots
+497,2026-02-11T21:53:21,436.7,21,33398,22,32681fe0f266,feat: struct keyword  label loop scopes  and field shadowing
+498,2026-02-12T15:45:31,1072.2,1,24,3,c0956a802446,feat: add dead strip pass stub to compiler pipeline
+499,2026-02-12T18:47:02,181.5,11,20146,9,cb8ab8cfd1f0,feat: implement dead strip pass with @retain annotations
+500,2026-02-12T19:34:49,47.8,8,6643,172,e198929af2a8,test: update regression inputs and add test snapshot
+501,2026-02-12T22:41:58,187.2,24,13520,77,edcf6c8c5ccc,feat: raw I/O fast path for print.ln/print.blk with format specifier validation
+502,2026-02-12T23:23:58,42.0,5,6616,13,473c1424ad9c,test: update regression inputs and add test snapshot
+503,2026-02-13T00:18:25,54.5,3,13207,1,a9305d842994,test: update regression inputs and add test snapshot
+504,2026-02-13T01:28:49,70.4,4,6615,3,f5e29038d786,feat: add --tiny flag for minimal binary size optimization
+505,2026-02-13T02:36:09,67.3,4,6610,7,22813b45db92,feat: default to ReleaseSmall  add --debug flag for dev builds
+506,2026-02-13T05:25:15,169.1,5,247,12,d32e8f8d08b6,feat: variant-aware emission + build:config for cross-compilation
+507,2026-02-13T17:40:07,734.9,6,24927,6452,29b6f66f116a,feat: regenerate tcp-echo backend from unified AST schema
+508,2026-02-13T22:11:01,270.9,5,6699,25,3a386bf8e836,feat: support comptime program return from comptime flows
+509,2026-02-14T10:16:28,725.5,7,13288,30,df2ab9b1243d,feat: improve comptime event detection with pointer/const-aware Program type checking
+510,2026-02-14T10:18:43,2.3,2,6604,1,0e2ac5beac09,test: add regression snapshot for 2026-02-14 (487/565 passing)
+511,2026-02-15T01:07:33,888.8,1,14,18,a5e2907bf73b,docs: update prose-generated project consciousness snapshot
+512,2026-02-15T01:26:38,19.1,9,50,48,7d57f473fb4a,docs: update tap syntax from `~source -> dest` to `~tap(source -> dest)`
+513,2026-02-15T01:35:37,9.0,1,87,49,9d4e1f5e12ed,docs: update regression SPEC.md with current directory structure
+514,2026-02-15T01:59:43,24.1,4,6605,28,c14d0e600dbd,test: add regression snapshot for 2026-02-15 (487/565 passing)
+515,2026-02-15T05:38:10,218.4,8,913,191,c516fa49193d,fix nested transform replacements
+516,2026-02-15T06:01:41,23.5,3,201,160,94bffc3fe2cf,fix nested transform handlers
+517,2026-02-15T22:27:26,985.8,16,26640,100,777d35460e61,feat: simplify transform invocation replacement and harden catchall parser
+518,2026-02-16T00:14:32,107.1,6,13368,12,a96044953eba,feat: emit metatype bindings in catch-all optional branches
+519,2026-02-16T07:23:25,428.9,1,56,0,c2be540166ec,fix: handle same-pointer transform returns without aborting pipeline
+520,2026-02-16T09:23:23,120.0,3,20,126,7b1d2969689e,drop virtual flow lookup
+521,2026-02-16T11:55:38,152.3,6,26545,212,d818f013f8af,chore: add test snapshots and remove stale syntax doc
+522,2026-02-17T00:09:51,734.2,4,6692,2,ec467f73c56f,feat: add source location markers to emitted code
+523,2026-02-17T22:22:10,1332.3,2,40,0,7f7ec52f30ed,feat: add source markers for subflow traceability
+524,2026-02-18T02:03:58,221.8,66,0,45118,1176e61a92c1,chore: remove stale examples/ and libs/ directories
+525,2026-02-18T02:04:36,0.6,32,4,1341,0563831ff085,chore: remove fusion optimization system
+526,2026-02-18T02:05:19,0.7,2,377,0,9d075f230fc4,feat: add release script and changelog for v0.1.3
+527,2026-02-18T13:59:32,714.2,7,72,2,cfe6427346ba,feat: support library-owned loops tappable from user code
+528,2026-02-19T00:29:57,630.4,8,19798,6,dbe863106ee4,feat: support bare expressions in print_ln via auto-wrapping
+529,2026-02-19T01:56:00,86.0,8,13321,12,b82e8d0f67ee,feat: add pairwise outer-range support with ForeachNode fusion
+530,2026-02-19T02:47:10,51.2,6,6890,3,373bd314661a,feat: implement kernel.self comptime transform for per-element iteration
+531,2026-02-19T09:40:06,412.9,10,122,58,1e811c09ccc9,feat: refactor pairwise codegen to use noalias inline fn wrapper
+532,2026-02-19T09:51:25,11.3,2,6641,1,8912630a64d1,test: snapshot regression results at 87.0% pass rate (495/569)
+533,2026-02-19T10:48:38,57.2,9,13318,60,a80ed2cb6afe,fix: reuse parseEventInvocation for source block arg parsing
+534,2026-02-19T11:39:31,50.9,7,6654,8,3be1495bdb8a,fix: handle all-optional catch-all branch in continuation emitter
+535,2026-02-19T13:01:12,81.7,7,13308,33,29c34511e8e1,test: snapshot regression results at 87.7% pass rate (499/569)
+536,2026-02-20T02:43:26,822.2,4,6747,158,ba31ec8c2fb9,refactor: read status from snapshot; fix io raw write to stdout
+537,2026-02-20T02:50:53,7.5,1,16,9,12294a300a2c,refactor: add color and emoji output to run_single_test.sh
+538,2026-02-20T03:01:12,10.3,1,2,2,ba87994dc627,`refactor: trim whitespace in SKIP output formatting`
+539,2026-02-21T04:06:30,1505.3,32,20113,302,d1cbf60c54ff,feat: add :f format specifier and simplify time stdlib
+540,2026-02-21T04:20:41,14.2,2,6663,1,8745c4e33829,`test: snapshot regression results at 88.1% pass rate (503/571)`
+541,2026-02-21T04:50:25,29.7,5,58,56,68cb82f0de5a,refactor: simplify kernel type to native Zig slice
+542,2026-02-21T05:37:23,47.0,2,6674,1,262f92f009d7,`test: snapshot regression results at 88.1% pass rate (504/572)`
+543,2026-02-21T10:59:57,322.6,9,6782,8,3a5ababf2160,feat: support optional Expression params (?Expression) in comptime transforms
+544,2026-02-21T11:44:17,44.3,4,6705,9,1389840af2b6,`test: snapshot regression results at 88.1% pass rate (505/573)`
+545,2026-02-22T07:44:58,1200.7,48,6778,33,2ed05c602045,`test: snapshot regression results at 88.0% pass rate (504/573) and add phantom type tests`
+546,2026-02-24T04:20:49,2675.8,17,6959,1,5de370576a0b,`docs: add 330_051 obligation semantics analysis and resolution`
+547,2026-02-24T05:23:48,63.0,10,6877,61,e1c48bb20031,feat: per-member `!` in phantom union types for selective discharge
+548,2026-02-24T12:13:26,409.6,3,1,273,ed2b57eddb74,`chore: bump version to 0.1.4  remove resolved 330_051 docs`
+549,2026-02-24T21:33:58,560.5,1,15,14,9209367c6dc7,docs: update project consciousness for v0.1.4 release
+550,2026-03-01T07:13:48,6339.8,1,19,14,7a977d9a70ac,feat: Update project consciousness to reflect libpq wrapping with semantic phantom types  refine phantom obligation semantics  and introduce new kernel transform syntax.
+551,2026-03-01T15:06:45,472.9,4,64,10,852bc0a13bfd,feat: forward trailing args to comptime backend for deps install
+552,2026-03-02T22:28:36,1881.8,16,27235,6,53fb6f616f3a,feat: emit [comptime|norun] events with proc handlers
+553,2026-03-06T18:47:15,5538.6,9,6867,4,c659c7ad9ba9,feat: rewrite field discards to use address-of in emitted Zig proc bodies
+554,2026-03-13T11:23:16,9636.0,41,28783,525,6cd6b75fcfd3,feat: add builtin_call  array_index  conditional  function_call to expression AST
+555,2026-03-13T14:48:09,204.9,14,13804,11,2eedfc4e727e,feat: parse arg values into expression AST during parsing
+556,2026-03-19T13:11:54,8543.8,30,896,189,cc75bd5f112c,feat: improve KORU021 and KORU030 error messages
+557,2026-03-19T13:20:57,9.1,7,20718,34,e9d80182eb4c,fix: show valid disposal events in KORU030 error messages
+558,2026-03-19T13:22:59,2.0,1,1,1,c9136b425b3f,fix: update expected_error.txt for improved KORU021 message
+559,2026-03-19T14:36:41,73.7,9,13841,77,b99b1f6be4eb,refactor: replace std.debug.print with structured log module
+560,2026-03-19T15:03:36,26.9,3,6891,19,15755bff3939,fix: filter disposal events by base type in auto-discharge inserter
+561,2026-03-19T16:11:40,68.1,5,7106,3,6d24654a99e5,test: add unit tests for auto-discharge inserter base type filtering
+562,2026-03-20T11:30:58,1159.3,35,26471,38,2d917fedc93e,feat: add base type validation to phantom semantic checker
+563,2026-03-20T16:03:30,272.5,17,7166,201,081384216897,refactor: make base type checking lazy  delegate to Zig by default
+564,2026-03-20T23:27:18,443.8,8,232,0,a5d3c6a47e44,test: add failing tests for dynamic help discovery
+565,2026-03-20T23:32:26,5.1,1,246,68,a5b5199adaae,feat: dynamic help discovery from full AST
+566,2026-03-20T23:44:18,11.9,2,6949,1,c59888e3480f,test: add regression snapshot for 2026-03-20 (526/597 passing)
+567,2026-03-20T23:50:53,6.6,2,53,26,11ddbe140dbe,test: update 310_055 with aspirational subcommand syntax
+568,2026-03-20T23:52:10,1.3,1,56,14,10cdd11fbc72,docs: add implementation checklist for command subcommands
+569,2026-03-21T00:22:25,30.3,4,7089,39,e8249668b6fd,feat: add subcommand support to command declarations and help output
+570,2026-03-25T13:10:12,6527.8,1,67,0,2e22c9eacdb8,docs: add README
+571,2026-03-25T13:23:49,13.6,1,4,6,cd96876b010e,docs: fix README example to use modern syntax
+572,2026-03-25T13:29:26,5.6,6,31,34,b1e6c6a64db5,docs: honest README - example is aspirational
+573,2026-03-25T13:34:12,4.8,3,20,12,1c9ce71012a2,fix: resolve positional args in immediate impl expressions
+574,2026-03-25T13:39:53,5.7,2,5,9,ad3ffdb77118,fix: README example uses std.io:print.ln with template syntax
+575,2026-03-25T13:41:31,1.6,3,5,5,97683ebc9208,feat: print.ln accepts bare expressions  defaults to :s format
+576,2026-03-25T13:48:26,6.9,1,5,2,d1a31dea8482,fix: print.ln respects explicit format specs in bare expressions
+577,2026-03-25T14:21:19,32.9,3,6961,12,afe87907e560,docs: clean up README
+578,2026-03-29T15:08:47,5807.5,64,9020,775,ac09f6d5c078,feat: add type system regression tests and kernel scope PDRs
+579,2026-03-31T00:14:02,1985.3,41,15679,499,470eb04fce83,feat: add nominal types  kernel scope validation  and type system tests
+580,2026-03-31T02:38:56,144.9,32,14874,676,1bafa9015ad6,feat: implement kernel lexical scope validation and multi-op fusion
+581,2026-03-31T17:49:35,910.6,5,14475,13,9e424dfd1a71,feat: clarify kernel computed branch requirement
+582,2026-03-31T20:41:13,171.6,10,14729,17,e2d7e3fe7bd4,feat: implement kernel op fusion and claims_descendants support
+583,2026-03-31T20:56:07,14.9,2,7235,1,52427a58d30e,test: add regression snapshot 2026-03-31T20-49-17
+584,2026-03-31T22:13:21,77.2,5,7284,3,96e344acd2ba,test: add regression snapshot and kernel fusion example
+585,2026-04-01T16:20:11,1086.8,12,14677,38,e752f0c31921,feat: add kernel step iteration and fix parser formatting
+586,2026-04-01T18:43:13,143.0,5,7351,4,9ae8f2e58bb4,feat: support multi-level pipeline chain parsing
+587,2026-04-01T19:48:00,64.8,1,4,6,94deb05a1c46,feat: multi-step nbody benchmark using kernel step
+588,2026-04-01T20:04:53,16.9,3,56,0,65491b38ea86,test: add multi-step nbody with kernel step fusion
+589,2026-04-02T01:35:57,331.1,4,7317,7,e1925e7dcfe3,test: add regression snapshot and update nbody kernel fusion
+590,2026-04-02T03:43:37,127.7,5,22350,474,31abf811595b,fix: always capture branch bindings and suppress unused warnings
+591,2026-04-02T05:01:55,78.3,4,8,29,a3e968997af3,feat: nbody benchmark with capture-based energy  clean output
+592,2026-04-02T07:16:08,134.2,3,241,5,e15e6abe3628,chore: add nbody reference implementations and update benchmark results
+593,2026-04-02T07:37:02,20.9,6,342,5,b72f418d7230,feat: add SBCL reference and track all nbody language implementations
+594,2026-04-02T07:39:11,2.1,3,155,1,ea2a5206b72d,feat: add GHC (Haskell) reference to nbody benchmark
+595,2026-04-02T08:17:10,38.0,2,22,5,a82e07823831,feat: add scalarized C variants and GHC to nbody shootout
+596,2026-04-03T22:47:41,2310.5,11,15426,1,3d54daaa6f8c,feat: add parser tests and SBCL nbody reference
+597,2026-04-03T23:25:40,38.0,4,7317,181,a2cb78391eec,refactor: remove raw I/O fast-path from print.ln and print.blk
+598,2026-04-03T23:49:09,23.5,1,5,0,b0618fe97082,fix: normalize Windows backslash paths in koru_home for build.zig generation
+599,2026-04-03T23:56:34,7.4,1,1,1,92d34264015d,chore: bump version to 0.1.6
+600,2026-04-04T00:51:29,54.9,1,1,1,ebb13ccb74b4,docs: remove "asynchronous" from README description
+601,2026-04-08T00:18:55,5727.4,5,122,40,9bfd341479f9,feat: add | step |> branch syntax for kernel iteration
+602,2026-04-09T11:55:39,2136.7,14,29303,26,3d0e374fd38d,feat: detect and reject function calls in print template expressions
+603,2026-04-09T22:15:21,619.7,7,7366,6,2aac87be3227,feat: reject Zig-style struct syntax in parser
+604,2026-04-09T23:10:10,54.8,12,7470,9,d407d15ff24f,feat: validate phantom obligation direction on input/output params
+605,2026-04-10T18:11:07,1141.0,7,7406,6,808258a806f0,feat: reject untracked phantom args that require specific state
+606,2026-04-10T18:50:00,38.9,3,7407,1,50b23aae9196,fix: resolve phantom binding mismatch after auto-discharge renames
+607,2026-04-10T19:36:54,46.9,9,7425,52,84a83aa14fcd,feat: reject Zig-style struct syntax in pattern branch params
+608,2026-04-10T20:02:04,25.2,9,7495,59,7d3aad3ab10f,feat: enforce branch constructor purity in all contexts
+609,2026-04-14T12:51:33,5329.5,604,17190,2417,869cd2942f20,feat: enforce identity branch syntax for empty and single-field payloads
+610,2026-04-14T13:47:53,56.3,2,20,8,0f80c818d4bc,fix: detect identity syntax in transform return types
+611,2026-04-14T18:29:57,282.1,1,210,0,f24171f34d49,docs: track tests needing identity syntax migration
+612,2026-04-14T19:08:57,39.0,1,29,5,a88d35526a53,docs: add transformation rules to migration guide
+613,2026-04-16T14:24:58,2596.0,12,25,25,bd4743287f39,migrate: update 12 tests to identity branch syntax
+614,2026-04-16T21:50:29,445.5,8,52,52,e64982a1dbcb,migrate: update 8 more control flow tests to identity syntax
+615,2026-04-16T21:54:19,3.8,5,18,18,c3172d9b0fb5,migrate: update 5 more tests to identity syntax
+616,2026-04-16T21:57:44,3.4,4,19,19,565e24155282,migrate: update 4 import tests to identity syntax
+617,2026-04-16T22:01:42,4.0,3,4,4,b93bf668fc00,migrate: update 3 more tests to identity syntax
+618,2026-04-16T22:04:43,3.0,10,17597,2381,f9f1c85d2169,migrate: update 4 stdlib tests to identity syntax
+619,2026-04-17T09:59:46,715.0,2,7,7,1c3477aa7aee,migrate: update 2 more tests to identity syntax
+620,2026-04-17T10:02:17,2.5,3,10,10,800d628b86b6,migrate: update 3 subflow tests to identity syntax
+621,2026-04-17T10:03:50,1.6,2,7,7,2d621c2d2020,migrate: update 2 more subflow tests to identity syntax
+622,2026-04-17T10:05:45,1.9,2,11,9,b9b619679bcc,migrate: update 2 more tests to identity syntax
+623,2026-04-17T10:08:05,2.3,4,17,13,ebfd3b1ca3f4,migrate: fix inline comments on branch declarations in 4 optional branch tests
+624,2026-04-17T11:23:09,75.1,16,7410,22,b746e653238b,migrate: fix identity syntax in 310  330  220 series tests
+625,2026-04-17T11:29:44,6.6,10,28,29,58e5a1f1f927,migrate: fix identity syntax in 210  220 series tests
+626,2026-04-17T11:53:51,24.1,5,8,8,0d7b5ddfeb6f,migrate: fix identity syntax in 210  220 series (batch 2)
+627,2026-04-17T13:24:07,90.3,8,14,14,79d8064d68b8,migrate: fix identity syntax in 330 phantom type tests
+628,2026-04-17T13:30:52,6.8,4,10,10,c9e461e4c428,migrate: fix identity syntax in 2104 language shootout tests
+629,2026-04-17T13:34:52,4.0,3,3,3,0ebe6dd9f8db,migrate: fix identity syntax in 360  370  505 tests
+630,2026-04-17T13:38:37,3.8,3,7,7,767479996ef9,migrate: fix identity syntax in 430  505 tests
+631,2026-04-17T13:39:57,1.3,1,1,1,0979c6f9eb59,migrate: fix identity syntax in 910 phantom test
+632,2026-04-17T14:07:26,27.5,11,7413,25,2c74e88d3c76,migrate: fix identity syntax in 220  355  395 tests
+633,2026-04-17T14:11:32,4.1,6,12,12,53e282d767ba,migrate: fix identity syntax in 519  522  523  525  610 tests
+634,2026-04-17T14:13:45,2.2,4,25,25,adcbbd408d5a,migrate: fix identity syntax in 2104 language shootout tests
+635,2026-04-17T14:47:40,33.9,8,7398,10,94026b69faaf,migrate: regenerate expected AST for identity syntax changes
+636,2026-04-17T15:13:08,25.5,4,7392,4,2f5d05db1819,migrate: fix identity syntax in AST tests and comptime tests
+637,2026-04-17T15:15:15,2.1,1,2,2,e1cfe668d2a6,migrate: fix identity syntax in 350_005 static router test
+638,2026-04-17T15:20:16,5.0,1,3,3,980090d5d30f,migrate: fix identity syntax in 395_008 complex flow test (partial - emitter bug remains)
+639,2026-04-18T14:10:51,1370.6,2,106,63,a6bc6aa46464,fix: rewrite bare binding identifiers in tap when clauses and args
+640,2026-04-18T14:58:39,47.8,4,7434,5,7a2a10acb6c0,fix: handle identity branches in transform event 'failed' branch
+641,2026-04-18T15:05:03,6.4,9,34,32,5fb7b40dfc93,migrate: 9 more tests to identity branch syntax
+642,2026-04-18T21:34:36,389.6,9,41,34,df6ed5d4948d,fix: identity-branch stub handler + migrate 7 tests
+643,2026-04-18T22:17:04,42.5,7,29559,13,55c0bae818eb,refactor: simplify validation_error to plain string payload
+644,2026-04-18T23:42:24,85.3,6,7510,2,7acc378bb632,``` feat: validate identity branch constructor shape in shape_checker
+645,2026-04-19T15:40:47,958.4,1,80,0,9c51ce786097,test: pin identity-branch phantom state tracking bug
+646,2026-04-19T15:48:29,7.7,2,99,285,96cde59b8e17,docs: hand-maintain CLAUDE.md  drop prose template
+647,2026-04-19T17:07:08,78.7,3,170,8,915ba0f3c1f1,feat: run unit tests by default  capture results in status
+648,2026-04-19T17:16:17,9.2,3,7881,1,da589223e87a,test: capture latest regression and unit test results
+649,2026-04-19T17:40:49,24.5,2,7640,1,d17ef5ca050b,test: capture regression run at 2026-04-19T17-38-02
+650,2026-04-22T01:11:11,3330.4,47,42,44,d64f62d2aa05,fix: identity branch phantom types + strict compile-only harness audit
+651,2026-04-25T15:49:19,5198.1,689,57674,5206,86a60d29f225,feat: variant dispatch  raw_posix print fast path  harness hardening
+652,2026-05-05T11:19:36,14130.3,32,77243,27,2013527465cf,feat: register variant config under canonical event names
+653,2026-05-05T12:32:52,73.3,14,15557,259,a8b77fdd5147,fix: handle identity branch constructors in escape detection
+654,2026-05-05T13:26:24,53.5,11,15299,7,4110bb31fa8c,feat: reject single empty branch events in parser
+655,2026-05-05T14:32:39,66.3,51,7664,15808,cca6857b4c1d,feat: reject single empty branch events; remove tour test artifacts
+656,2026-05-05T15:28:55,56.3,8,11986,5440,fb9986c12d86,feat: reject single empty branches; migrate stdlib to void events
+657,2026-05-05T16:24:41,55.8,120,18446,3124,c3df72f844d2,``` refactor: migrate phantom-type tests to identity branch syntax
+658,2026-05-05T16:43:56,19.3,8,207,151,bffe16f3f7bd,fix: migrate stdlib and tests to void events (single-empty-branch rule)
+659,2026-05-05T16:45:27,1.5,1,10,1,0654aed4fe17,docs: add language truth hierarchy to AGENTS.md
+660,2026-05-05T17:02:14,16.8,385,592,1675,e9003faa2899,fix: bulk-remove single-empty-branch continuations across test suite
+661,2026-05-05T17:32:21,30.1,17,7636,167,d9036764b810,fix: restore and fix parser tests  regenerate AST snapshots
+662,2026-05-05T17:38:06,5.8,2,0,3,fc9a1c8d7511,fix: additional parser tests and remaining single-empty-branch violations
+663,2026-05-06T10:50:16,1032.2,110,15153,259,ee29ebe86bb4,fix: remove remaining single-empty-branches across 104 test files
+664,2026-05-06T10:59:35,9.3,3,4,4,c61d364c769c,fix: restore string tests incorrectly modified by bulk script
+665,2026-05-06T12:41:51,102.3,21,7907,37,7d6e1c5fa4e4,fix: migrate control flow tests to void event syntax
+666,2026-05-06T16:48:46,246.9,6,38,18,6511fc4f9add,refactor: change wildcard branch payload syntax from `{ * }` to bare `*`
+667,2026-05-06T17:02:21,13.6,2,7575,1,cd4c24b332f9,``` chore: add regression test results for commit 6511fc4f ```
+668,2026-05-06T17:36:48,34.5,3,6,48,c1a425892692,fix: remove empty branches from nested when guards test
+669,2026-05-06T19:51:40,134.9,14,7671,25,c45a13dc2c92,test: update regression tests for void event syntax migration
+670,2026-05-06T20:10:20,18.7,22,13,147,6a93f6a651c8,test: remove obsolete tests and migrate remaining to void event syntax
+671,2026-05-06T20:32:12,21.9,2,7520,1,f48e5b993f45,``` chore: add regression test results for commit 6a93f6a6 ```
+672,2026-05-06T21:41:36,69.4,60,108,108,4515b861419c,test: complete identity branch syntax migration across regression tests
+673,2026-05-06T21:53:46,12.2,2,7520,1,e06d31c9980a,test: add regression results for commit 4515b861
+674,2026-05-06T22:21:28,27.7,14,7534,21,31c2ed39c749,test: clean up regression inputs and update expected outputs
+675,2026-05-06T23:16:21,54.9,16,7552,33,6a9effe629a3,test: clean up regression inputs and add results snapshot
+676,2026-05-07T13:04:07,827.8,13,7590,8,70dc4102c640,test: add flow checker negative tests and update regression inputs
+677,2026-05-07T13:53:38,49.5,12,7559,14,3d762cb6a682,test: update regression inputs and add results snapshot
+678,2026-05-07T14:57:22,63.7,8,4,9,60d89b02a8ea,test: replace bare `|> _` with explicit branch handlers
+679,2026-05-07T16:18:11,80.8,1,1,1,09bdbfdfdbb7,chore: update unit-tests.json timestamp
+680,2026-05-07T20:09:56,231.8,2,7542,1,a52901f00826,test: add regression results snapshot for 2026-05-07T16-33-54
+681,2026-05-09T11:54:20,2384.4,10,84,4,5958d31e0da9,docs: clarify branches-are-equal model and no-payload rules
+682,2026-05-09T13:38:38,104.3,5,7546,2,e06f12abb13c,test: update 210_058 cross-module comptime test and snapshot results
+683,2026-05-09T20:23:47,405.1,8,7702,4,7c75a9f9762b,feat: reject `|>` at line start as malformed syntax
+684,2026-05-09T21:01:02,37.3,4,15106,2,059c92281a39,chore: add regression results snapshots for 2026-05-09
+685,2026-05-10T00:08:08,187.1,52,7866,31,b5771522a703,test: add expected.txt fixtures for parser/checker rejection tests
+686,2026-05-10T10:50:43,642.6,2,7553,1,1da040c60790,test: add regression results snapshot for 2026-05-10
+687,2026-05-10T12:09:32,78.8,18,7782,66,dd3253e0583b,feat: render parser errors with hints  spans  and user line numbers
+688,2026-05-10T13:21:15,71.7,62,7615,175,7a3d52489119,test: clean up regression test inputs and snapshot 2026-05-10 results
+689,2026-05-10T14:09:16,48.0,10,7567,18,67f01589d218,test: update regression inputs and snapshot 2026-05-10 results
+690,2026-05-10T17:31:55,202.7,12,15106,10,1cd3b5c9451c,test: clean up generic struct test inputs and snapshot 2026-05-10 results
+691,2026-05-10T20:11:18,159.4,5,7561,9,e401ffdecfb2,fix(parser): attach same-indent branches to last step in void chain
+692,2026-05-11T10:05:10,833.9,8,7578,30,dadd97c1d766,test: convert 210_014 to MUST_FAIL and clean up 320 for-loop tests
+693,2026-05-12T11:29:42,1524.5,5,15159,9,6742cf3b0cfa,fix(parser): reject `_` outside branch handler body (KORU010)
+694,2026-05-12T12:29:07,59.4,1,2,2,583d1683df02,fix(parser): bail after KORU010 to avoid duplicate diagnostic
+695,2026-05-12T13:19:03,49.9,14,7,35,b49d6a0def36,test: clean up 310_COMPTIME tap tests to canonical inline layout
+696,2026-05-12T13:27:42,8.7,20,48,87,89c334dbd3b2,test: clean up 420_PERFORMANCE tests to canonical inline layout
+697,2026-05-12T13:58:24,30.7,19,0,222,d84b3b938ed8,test: delete bulk-remove-damaged purity tests
+698,2026-05-12T14:05:38,7.2,10,12,32,0add561aba1e,test: clean up 330/370 phantom-type tests to canonical inline layout
+699,2026-05-12T14:07:32,1.9,2,132,1,e08a0631b1b5,feat(snapshot): capture per-language LOC alongside each test snapshot
+700,2026-05-12T14:17:44,10.2,22,51,103,fcc0fcb37790,test: clean up scattered regression tests to canonical inline layout
+701,2026-05-12T14:20:52,3.1,8,15,67,93f6885a318e,test: fold 2103_resource_lifecycle scenarios to canonical inline layout
+702,2026-05-12T14:39:38,18.8,3,7525,2,031a8cbdc733,test: snapshot regression run at 2026-05-12T14-38-01 (443/573)
+703,2026-05-12T14:59:02,19.4,2,53,10,cd81fdcc38cb,fix(loc): exclude generated zig output from the language count
+704,2026-05-12T16:50:12,111.2,1,56,0,a0fc30438cbe,docs: frame triage as design work  not blame attribution
+705,2026-05-12T18:58:47,128.6,44,22619,51,a2f2fb558b54,test: sweep stale trailing newlines from regression inputs
+706,2026-05-13T10:32:00,933.2,47,7895,637,9bea5f3cce61,refactor: tighten AST defaults  agent guardrails  and test wiring
+707,2026-05-13T11:19:31,47.5,24,7431,99,24eb60e14555,test: snapshot regression run and prune stale tests
+708,2026-05-13T12:18:39,59.1,7,7503,30,9ed53ebb988a,feat(parser): reject single-no-payload branches and line-start `|>`
+709,2026-05-13T13:38:41,80.0,9,7427,32,78d85beabf21,test: refresh regression snapshot and clean stale label test inputs
+710,2026-05-13T15:51:43,133.0,11,7456,36,4f4822b08171,refactor(parser): drop return/break/continue terminal hint
+711,2026-05-14T01:42:29,590.8,5,14841,33,c65f4d3c9b38,refactor(shape-checker): use addErrorAtLocation for richer diagnostics
+712,2026-05-14T03:28:20,105.8,10,7416,50,c90ded48a36c,test: refresh regression snapshots after parser and shape-checker refactors
+713,2026-05-14T04:04:07,35.8,6,9,16,5f9211b077c6,test(regression): fix layout violations in 5 test inputs
+714,2026-05-14T05:10:46,66.7,17,14893,99,cb247f582555,feat(parser): reject comments that split flow chains (KORU010)
+715,2026-05-14T05:49:23,38.6,14,7439,31,75e01937a312,test(regression): fix layout violations in runtime test inputs
+716,2026-05-14T12:13:12,383.8,1,1,1,399c4b2a8e07,test(regression): drop .message from identity-branch e in 430_038
+717,2026-05-14T12:56:58,43.8,3,7410,2,3c587967c536,test: snapshot regression results after identity-branch sweep
+718,2026-05-14T13:47:22,50.4,4,2,2,0480ab3479d6,test(regression): retarget 220_006 to Stage C where KORU030 fires
+719,2026-05-14T14:04:45,17.4,3,7410,2,78711aa4415d,test: snapshot regression results at 508/620 after identity sweep
+720,2026-05-14T22:50:51,526.1,8,2,60,5ffbf626be33,test: drop stale regression cases  park runtime interpreter bugs
+721,2026-05-15T01:07:28,136.6,19,14745,75,8d9f10aad2ff,test: drop stale regression cases  refresh circular imports test
+722,2026-05-15T13:13:49,726.4,4,7410,30,7c5b6c9a50eb,feat(parser): route inline `|>` chains with source blocks to terminal event
+723,2026-05-15T14:23:19,69.5,15,7271,303,02daf4cd08d7,``` test: drop stale derives/phantom/transforms cases  snapshot 508/554 ```
+724,2026-05-15T15:15:01,51.7,6,7293,26,b57e811c249c,test: refresh 395 testing fixtures  snapshot 511/554
+725,2026-05-15T15:58:29,43.5,6,7388,44,7366b2f02f4c,feat(regression): add expected_patterns.txt for regex-based output validation
+726,2026-05-15T18:32:03,153.6,23,14816,484,a0dbbc4a702e,test(purity): add 4 demonstration tests for three-layer purity model
+727,2026-05-16T00:49:42,377.6,4,95,1,8b65893ef4dc,test(purity): add 410_005 positive case for transitive purity
+728,2026-05-16T08:16:52,447.2,15,22112,7,349380119a6d,feat: add build/run commands and fix parser chain truncation
+729,2026-05-16T16:39:33,502.7,5,14672,6,d85a895d3038,fix(auto-discharge): preserve branch_constructor value through void disposal
+730,2026-05-18T15:10:14,2790.7,25,7843,18,d56eb7e9aa3f,feat(docker-test): add outside-the-bubble npm package smoke test
+731,2026-05-19T00:39:01,568.8,6,7514,15,bf34b1baee29,``` feat(regression): add EXPECT CONTAINS/NOT_CONTAINS assertions + pin MUST_FAIL errors
+732,2026-05-19T01:03:09,24.1,25,7370,1,3c274560009c,test(regression): add EXPECT files pinning error reasons for negative tests
+733,2026-05-19T02:37:51,94.7,3,7353,3,26ac43c45164,fix(phantom-checker): use stable AST pointers in disposal event map
+734,2026-05-19T14:46:31,728.7,9,14699,1,122a7b15e37d,test(regression): add EXPECT files for 6 negative tests
+735,2026-05-19T15:54:23,67.9,3,136,32,b9ace413e488,fix(regression): fold continuation chains inline in 220_022 and 390_090
+736,2026-05-19T16:04:53,10.5,2,7347,1,b4b08ddef5bc,test(regression): add 2026-05-19 run snapshot
+737,2026-05-19T16:27:35,22.7,3,85,5,61f6fe067d23,test(regression): add 210_064 capturing parser data-loss bug
+738,2026-05-19T16:42:12,14.6,3,7389,2,2c9590710561,fix(parser): route inline `|>` tail through parseInlineContinuation
+739,2026-05-19T16:58:34,16.4,3,7392,4,51914d494ec5,``` fix(emitter): preserve result through void chain before branch switch
+740,2026-05-19T17:15:44,17.2,4,0,34,76298482ebf7,test(regression): delete 330_004 as redundant
+741,2026-05-19T17:15:50,0.1,1,10,3,85bdf416cc4e,docs: mark BUG #0 (parser-drops-second-call) as fixed
+742,2026-05-19T17:29:15,13.4,11,7462,1,0a5395fd5034,test: add expected_patterns.txt for 8 regression tests
+743,2026-05-19T17:43:16,14.0,1,39,0,1f976df37f50,docs: encode "Koru is emit-only with the host language" principle
+744,2026-05-19T17:55:05,11.8,4,83,21,30bdf44de975,feat(regression): support post.sh as MUST_FAIL pin  use it for 330_062
+745,2026-05-19T18:17:30,22.4,2,7347,1,920da5f80538,test: add regression results snapshot (520/562 passing  92.5%)
+746,2026-05-19T22:35:38,258.1,10,7394,44,27287d601167,feat(parser): reject inline flows in proc bodies (KORU003)
+747,2026-05-19T22:51:19,15.7,1,32,5,28fa8308b95f,fix(parser): require word boundary on inline-flow keyword filter
+748,2026-05-19T23:40:58,49.6,95,75,10,b72459f3005c,test(regression): mark type-system as TODO and add category-level TODO support
+749,2026-05-20T00:48:10,67.2,4,14656,6,2031885d06a5,test: update regression snapshots (520/562  92.5% pass rate)
+750,2026-05-20T06:08:09,320.0,5,403,12,094674d27afb,feat(regression): per-test result cache with parity verification
+751,2026-05-20T16:17:47,609.6,14,51346,26,21d9ac29b995,test: update tap test snapshots and add regression result history
+752,2026-05-20T18:23:56,126.2,12,7393,2,d7b3ab834aae,chore: add demo scaffolding and test result snapshot
+753,2026-05-20T19:41:54,78.0,17,25973,81,e3d10efadddf,feat: split PROGRAM_AST into separate program_ast.zig module
+754,2026-05-20T21:15:56,94.0,2,85,0,9a31f32a5edc,build: add libkoru-srclib.a static library of compiler internals
+755,2026-05-20T21:44:37,28.7,2,75,46,da1de746ddef,refactor: split CompilerEnv into compiler_env.zig module
+756,2026-05-20T22:59:17,74.7,10,22255,79,09f14ef830ca,refactor: split backend_output_emitted into separate compilation unit
+757,2026-05-21T19:49:30,1250.2,9,7530,1314,e427b59c70c9,chore: drop stale planning docs  add MULTI_HOST_PLAN
+758,2026-05-21T20:42:56,53.4,563,1321,1321,70905a38f611,chore: tag all bare ~proc declarations with |zig (Phase 1 prep)
+759,2026-05-21T21:19:10,36.2,9,139,0,6511e5afb59f,feat(flow_checker): enforce variant-mandatory resolution rule (KORU110)
+760,2026-05-21T22:29:05,69.9,22,27,25,5083e05ae972,fix(variants): tag annotated/synthesized procs with |zig (Phase 1 followup)
+761,2026-05-21T22:45:59,16.9,2,17,6,00e2243fccce,fix(test): refresh 020_012 expected.txt + update suite guidance
+762,2026-05-21T22:59:55,13.9,2,2,2,ca0bba25c0c7,fix(test): restore 020_012_reject_pub_proc to test the form it names
+763,2026-05-21T23:37:08,37.2,1,63,23,84b309245353,docs(plan): mark Phase 1 landed  tighten Phase 2 design specifics
+764,2026-05-22T00:54:36,77.5,35,501,248,eabf86a56d1b,feat(file-discovery): MULTI_HOST_PLAN Phase 2 — multi-extension file resolution
+765,2026-05-22T01:25:19,30.7,1,44,12,1b7320019368,docs(plan): refine Phase 3 with pub/private contract rule + precondition
+766,2026-05-22T02:58:23,93.1,1,15,5,8969160e6c5e,docs(plan): add companion-file loading as second Phase 3 precondition
+767,2026-05-22T13:32:37,634.2,8,83,13,6adc714a69c7,test(140_005) + docs(plan): capture companion-file loading bug as Phase 2.1
+768,2026-05-22T13:39:39,7.0,5,30,28,5551a370f562,refactor(plan): rename multi-host → multi-variant across plan  errors  tests
+769,2026-05-22T14:30:28,50.8,1,14,4,a4f302f31eb3,docs(plan): sharpen Phase 2.1 handoff notes — injection point + baseline
+770,2026-05-22T15:06:20,35.9,16,73896,54,6635aea6404e,feat: add companion file loading for .k + .kz sibling pairs (Phase 2.1)
+771,2026-05-22T15:57:01,50.7,25,7660,3,2131d8b31198,feat: add KORU111 contract/implementation file split validation
+772,2026-05-22T23:58:50,481.8,5,7516,18,47cab42a7ca6,feat(variants): --lang=<name> selects default variant (Move 1 of JS-emitter exploration)
+773,2026-05-23T01:01:32,62.7,3,7465,8,192168bfa271,fix(variants): isolate --lang from comptime emission (Move 2)
+774,2026-05-23T01:50:12,48.7,2,7443,1,b863995aba9b,chore: snapshot regression results at 6af33428
+775,2026-05-23T21:07:00,1156.8,27,8713,1,35c9d2535d68,docs(effect-branches): add design workdoc and 8 parser tests
+776,2026-05-23T22:07:15,60.3,23,15295,30,d1144c3ef3ed,feat(parser): add yielding `!` branches with ordering rule (KORU023)
+777,2026-05-23T22:30:47,23.5,12,7634,17,4ae7ec431dfb,feat(parser): reject redundant outer parens in `when` (KORU024)
+778,2026-05-23T23:01:03,30.3,10,7651,1,c2a71659ce44,feat(shape-checker): reject branch kind mismatch (KORU025)
+779,2026-05-24T00:05:15,64.2,12,15293,16,225c6f79bc31,feat(emitter): lower yielding `!` branches as comptime handler ops
+780,2026-05-24T00:44:58,39.7,4,7737,15,a2c8f709e2a7,feat(emitter): synthesize Handlers struct for yielding `!` branches
+781,2026-05-24T01:38:54,53.9,37,7694,120,1b8c7a4387e1,refactor: rename `yielding` to `effect` for `!` branches
+782,2026-05-24T02:31:52,53.0,13,7711,4,093995dbb96d,test: add effect branch multifire regression tests
+783,2026-05-24T04:33:43,121.8,23,7942,19,74d7a58ba98a,feat(emitter): support struct & phantom payloads on effect branches
+784,2026-05-24T07:50:10,196.4,37,47309,56,ea304e5e0949,feat(emitter): support Zig expressions at effect-branch body position
+785,2026-05-24T08:18:15,28.1,14,7891,29,0687d0017312,feat(emitter): support composed-expression resume values on effect branches
+786,2026-05-24T09:39:36,81.3,17,8017,8,fc48b11160ce,feat(compiler): add template processor pass for `|template|` procs
+787,2026-05-24T12:31:13,171.6,9,15724,117,bc2ddf07f8a3,test: gate inline-flow-in-proc-body unit tests behind feature work
+788,2026-05-24T16:17:53,226.7,44,8585,155,0dfe7d254464,``` feat(compiler): tighten effect-branch catch-all + when-guard handling
+789,2026-05-24T18:03:30,105.6,15,8154,21,1e9dd227dae7,feat(compiler): add per-call template variant mode
+790,2026-05-24T20:07:39,124.2,5,8052,18,b899944b7a5c,``` fix(emitter): avoid shadowing fn name in handlers struct + diagnostics summary
+791,2026-05-24T22:04:59,117.3,5,111,76,0f89df0bc958,refactor(compiler): centralize koru module-wrapper prefix through one switch
+792,2026-05-24T22:10:36,5.6,1,7,6,529d471ab580,feat(compiler): enable phase 2 and prefix every segment of module wrappers
+793,2026-05-24T22:10:59,0.4,1,92,0,19361e62d329,feat(compiler): synthesize sibling aliases in modules to resolve sibling references
+794,2026-05-24T22:11:18,0.3,1,22,6,3a84e0ea8445,feat(compiler): resolve hardcoded wrapper paths dynamically in main.zig
+795,2026-05-24T22:11:43,0.4,1,3,1,9186b80a9832,feat(compiler): resolve hardcoded wrapper path dynamically in visitor_emitter.zig
+796,2026-05-24T22:27:38,15.9,2,6,99,c747f64c5071,revert: drop phase 2 flip + broken alias synthesis
+797,2026-05-24T22:36:45,9.1,1,9,10,a8a4e733abe6,enable phase 2 module wrapper paths
+798,2026-05-24T22:50:48,14.1,1,46,2,9fbed032fa06,feat(emitter): synthesize child-name aliases inside module wrappers
+799,2026-05-24T23:05:36,14.8,1,2,46,58419eb37856,Revert "feat(emitter): synthesize child-name aliases inside module wrappers"
+800,2026-05-24T23:09:22,3.8,4,44,44,4e140be3f24c,refactor(stdlib): use prefixed wrapper names for cross-module refs under phase 2
+801,2026-05-24T23:34:31,25.1,1,5,5,c01eecc9db19,fix(stdlib): bring shadow buildModulePath in runtime.kz to phase 2
+802,2026-05-24T23:34:39,0.1,3,5,5,1a1c5e0d8b35,test: update direct koru_std.X refs in test inputs to phase 2 convention
+803,2026-05-24T23:51:05,16.4,3,4,4,bee4afe881f8,test: update expected error messages + cross-session-discharge input to phase 2
+804,2026-05-24T23:53:35,2.5,1,1,1,5a415d52eda7,test: phase 2 convention for 440_001_bridge_basic host-line ref
+805,2026-05-24T23:56:59,3.4,6,31682,2,a69c199d539d,test: snapshot regression results from 2026-05-24 runs
+806,2026-05-25T05:09:25,312.4,11,8042,36,e755b1aafadd,fix(emitter): emit no-arg handlers for void-payload effect branches
+807,2026-05-26T13:49:41,1960.3,73,1461,2,b7dcaea515e6,feat(benchmarks): add cross-language effect-branch benchmark suite
+808,2026-05-26T14:45:14,55.5,6,7993,2,06881deb5270,test: add 8214 subflow variant picks no regression + snapshot
+809,2026-05-27T18:43:59,1678.8,3,58,0,912b520efeca,test: pin 8215 subflow variant with continuations
+810,2026-05-28T01:32:34,408.6,44,36744,417,a3c808a20542,feat: add koru-by-example corpus + tutorial generators
+811,2026-05-28T03:42:06,129.5,129,16861,546,5569026c551e,feat: switch phantom-state syntax from `[state]` to `<state>`
+812,2026-05-28T04:11:11,29.1,18,8250,76,055a5c54b25f,feat(parser): switch phantom-state syntax from `[state]` to `<state>`
+813,2026-05-28T05:21:13,70.0,35,25822,55,76e1cf58f0a7,feat(parser): reject redundant punning  add phantom literal suffix
+814,2026-05-28T06:05:25,44.2,144,16931,340,e23079ef6343,refactor: drop redundant explicit labels across test corpus
+815,2026-05-28T07:43:08,97.7,15,16566,31,7ac02be1560d,feat: switch phantom-state error messages from `[state]` to `<state>`
+816,2026-05-28T09:52:58,129.8,9,24781,9,e043a8de27fa,feat: enforce phantom args on flow head  walk subflows for purity
+817,2026-05-28T10:41:08,48.2,6,8266,25,cfb763efe5c7,refactor: consolidate [!] default-discharge event validation
+818,2026-05-28T12:00:17,79.2,9,8378,8,fc262af0b3a9,``` feat: support author-asserted phantom labels on literals
+819,2026-05-28T16:40:55,280.6,18,8354,31,a738f68234d0,refactor: rename "disposed" to "discharged" in phantom error messages
+820,2026-05-28T23:38:46,417.9,23,8481,20,22d80bef7694,feat: reject square-bracket phantom syntax  preserve wildcard payload
+821,2026-05-29T02:16:54,158.1,48,25349,3,701ab4c9c78c,feat: capture phantom/obligation on effect-branch resume types
+822,2026-05-29T03:53:19,96.4,15,16898,17,36a383e3259d,feat: reject incoherent obligation markers on effect branches (KORU027)
+823,2026-05-29T05:17:27,84.1,7,16812,22,5d4157bee918,feat: reject incoherent terminal `each` in for-loop comptime transform
+824,2026-05-29T11:11:56,354.5,6,8472,12,3e693eed31d5,The change is the emitter logic in `emitter_helpers.zig`; the test-results JSON and the 400_101 test edits are supporting. The substantive work is the effect-branch template bridging.
+825,2026-05-29T16:36:18,324.4,21,8670,12,b9092ccb1f0e,feat: liquid template if/else  for-scoping  and comp error
+826,2026-05-29T18:46:12,129.9,12,17054,466,089e0683e277,refactor: reimplement `~for` as a template over the effect-branch engine
+827,2026-05-29T20:12:12,86.0,10,8838,222,2930ce552fef,feat: splice `~for` handler bodies in-scope via inline marker
+828,2026-05-29T21:37:22,85.2,16,16956,28,a83247ad7f75,Based on the diff  this is the template handler-bridge work for `~for` scoping — the `@scope` propagation from annotation to effect continuations  plus the frontend deferred-binding check.
+829,2026-05-30T02:15:30,278.1,15,8811,388,9d35c58134b9,feat: reimplement for/if as userland templates over the continuation-return mechanism
+830,2026-05-30T03:14:24,58.9,3,190,5,83221501a77f,feat(js-target): thinnest --lang=js plumbing slice (stub emission)
+831,2026-05-30T03:18:14,3.8,3,31,0,8a5b03b9893b,test(400_109): pin plain-event-call-from-handler-flow emitter bug (RED)
+832,2026-05-30T03:49:19,31.1,1,17,3,d5d2796e4c45,fix(emitter): only thread Handlers struct to events with effect branches
+833,2026-05-30T03:58:33,9.2,4,392,15,cce7688eecc2,feat(js-target): real AST→JS emitter — pump.kz emits runnable JS (sum = 45)
+834,2026-05-30T04:10:32,12.0,4,193,55,755207593812,feat(js-target): emit nested/void effect chains (depth-N static dispatch)
+835,2026-05-30T04:31:26,20.9,6,262,0,1f4bcd946ada,feat(js-target): host-line passthrough + chain benchmark (8x vs EventEmitter)
+836,2026-05-30T04:42:37,11.2,8,522,2,fd29550390f0,bench(js-target): depth sweep on real emitted JS — dynamic dispatch is a flat floor
+837,2026-05-30T04:44:10,1.6,1,168,0,b7bdc512f681,docs: speculative blog draft — "WebAssembly Solved the Wrong Problem"
+838,2026-05-30T04:55:56,11.8,1,267,1,0ad453f39d95,feat(js-target): inline-splice void effect chains — lift the V8 depth ceiling
+839,2026-05-30T04:57:16,1.3,1,31,22,fd02171ba0b4,docs: update draft — inline-splice landed  honest "ties flat" framing
+840,2026-05-30T05:08:33,11.3,1,32,0,9a2f349a24a5,docs: add the two-taxes memory/GC table to the draft
+841,2026-05-30T14:46:24,577.9,3,92,13,1d62e5c0d051,refactor(js-target): host-line routing by host language  not a .kjs string
+842,2026-05-30T15:28:30,42.1,8,126,1,e8412679b668,feat(compiler): the stem is the compilation unit — entry merges companion facets
+843,2026-05-30T16:01:19,32.8,4,86,0,753fd1258644,test(harness): cross-target equivalence — LANGUAGES marker runs a test on each target
+844,2026-05-30T16:34:11,32.9,7,160,18,039939ad3e15,feat(js-target): module-qualified resolution → idiomatic std.io hello-world on JS
+845,2026-05-30T17:11:42,37.5,1,0,209,dc7b4d1b5e20,docs: move speculative blog draft to korulang_org
+846,2026-05-30T17:26:41,15.0,10,122,5,ffc815a804c6,feat: honor ~[strict] convention — opt out of auto-discharge guessing
+847,2026-05-30T20:15:13,168.5,6,34,0,a0ddfd3555a6,test(140_010): pin Zig host-line routing leak (RED) — vaxis-bench seed
+848,2026-05-30T20:47:14,32.0,3,30,1,f0ea0f1758fd,fix(emit): route host lines by host language on Zig target
+849,2026-05-30T21:19:15,32.0,13,168,0,a9a1508f96e0,fix(js-emitter): skip self-referential `const x = x;` in dispatch splice
+850,2026-05-30T21:24:12,5.0,1,186,0,d350ee67bc5d,bench(js-target): koru-EMITTED vs idiomatic Node dispatch — 2.14x today
+851,2026-05-30T21:59:18,35.1,15,43115,6,d1dc3be5c30c,The diff confirms it. Here's the commit message:
+852,2026-05-30T22:23:00,23.7,2,120,25,172a07216732,perf(js-emitter): inline plain-event handler bodies at dispatch site
+853,2026-05-31T00:42:18,139.3,6,289,6,7057e9e2fa11,feat(js-target): comptime|transform variants — print.blk|js + hello world cross-target
+854,2026-05-31T00:59:33,17.3,7,42787,2,46af3e2d2871,feat(test-results): snapshot suite runs at 90.2% (573/635)
+855,2026-05-31T03:14:24,134.8,3,10,11,7cd41445b762,feat(test): hello world example uses pure Koru `.k` frontpage form
+856,2026-05-31T05:42:27,148.1,7,8613,34,ae8a31e3a13f,feat(corpus): merge input.k + input.kz into single example block
+857,2026-05-31T14:21:43,519.3,2,16,9,1e1c18b83d18,docs(corpus): reframe subflows as primary  procs as host escape hatch
+858,2026-05-31T15:03:53,42.2,5,77,20,e9191b88003a,docs(corpus): exclude negative tests  add ~if rule  fix punning
+859,2026-05-31T15:04:02,0.1,3,240,0,7e9f781b92a4,feat(cli): koruc skills install — write bundled agent skills locally
+860,2026-05-31T16:38:52,94.8,5,68,1,b5a4d4dedeac,test(pin)+skill: ~if-as-subflow-RHS gap  from the first ADD contest
+861,2026-05-31T18:47:08,128.3,4,55,20,2e986a275d41,fix(parser)+test(pin): strip leading ~ on subflow-RHS; re-pin 320_047 at emitter boundary
+862,2026-05-31T19:55:12,68.1,5,8572,4,c7ab791cf006,feat(corpus): regenerate corpus/tutorial + add test snapshot at 2e986a27
+863,2026-05-31T20:19:25,24.2,4,35,52,b26b8d1b9f2f,revert(parser)+fix(test): reject illegal `~` inside flow; 320_047 is a negative test
+864,2026-05-31T20:19:43,0.3,1,1,1,473ff7940f21,feat(test): refresh unit-test snapshot at 2026-05-31T20:12
+865,2026-05-31T23:36:17,196.6,31,26017,33,89818b83ae7c,fix(checker): kind-aware branch cardinality — KORU028 for duplicate unguarded terminal handlers
+866,2026-06-01T00:54:53,78.6,6,8620,4,1903ec3f6b7f,fix(emitter): uniquify result_N and for-capture in spliced effect bodies
+867,2026-06-01T01:14:21,19.5,6,41,0,5e379a633896,test(cross-target): Bridge — minimal single-void-effect dispatch on zig+js
+868,2026-06-01T01:17:11,2.8,6,68,0,f7ebaa78d7bf,test(cross-target): Bridge — multi-kind multi-fire effect dispatch on zig+js
+869,2026-06-01T01:18:09,1.0,6,57,0,b77058e5b1ee,test(cross-target): Frontier pin — JS dispatch arg resolved by name  aborts on mismatch
+870,2026-06-01T01:57:58,39.8,10,8678,32,f7131c35cc5b,fix(checker): orisha router rejects terminal handlers
+871,2026-06-01T02:41:33,43.6,5,8627,4,ac232b2514bb,This is a generated docs/test-results snapshot refresh — corpus/tutorial timestamps bumped and a new test-results JSON added.
+872,2026-06-02T00:41:43,1320.2,20,17355,21,f19d604876bd,wip: regression harness  test pins  and trailing-|> rejection test
+873,2026-06-02T01:20:01,38.3,7,8651,93,2232475b0a7d,feat(parser): enforce inline `|>` — reject trailing pipe-forward (body on next line)
+874,2026-06-02T02:08:30,48.5,56,8740,223,fc5f1a42d99d,test(migrate): inline trailing-`|>` layout across the suite (post-enforcement)
+875,2026-06-02T02:41:03,32.5,2,5,5,98eab8002991,test(flow): bind-and-discard payload branches in 227  210_006 (KORU030)
+876,2026-06-02T03:40:19,59.3,63,15,15019,d13442e68107,test(227): make namespace-nested-flow an honest positive test + drop dead crud
+877,2026-06-02T03:55:30,15.2,3,8636,2,40567f7c5325,feat(test-results): snapshot suite run at d13442e6 (581/642  90.5%)
+878,2026-06-02T05:05:08,69.6,26,92,50,73ae695b18b3,test(227-playbook): flip 5 masked tests to honest MUST_RUN positives
+879,2026-06-02T05:58:15,53.1,6,17272,4,de8b956b33eb,fix: regenerate corpus/tutorial docs and snapshot suite at 91.3%
+880,2026-06-02T08:14:51,136.6,6,224,3,7bce9f39b595,feat(test): add ARGS argv passthrough to regression harness
+881,2026-06-02T08:55:05,40.2,15,8817,54,5fdc663699fa,feat(js): cross-target $std/args + JS multi-branch terminal dispatch
+882,2026-06-02T09:52:56,57.9,12,8812,3,f056c43126b4,The first line is under 72 chars  conventional format  with bullets for detail.
+883,2026-06-03T00:28:24,875.5,28,31126,310,25f3c5a92cdc,``` feat(template): liquid tree-walker + JSON parser; range path lands 140_014
+884,2026-06-03T05:03:16,274.9,38,26862,1123,20f70961fff8,feat(capture): dissolve into effect-cell + struct-literal walker
+885,2026-06-03T07:40:15,157.0,628,1218,1174,cd2deefa4325,update test 405 and align expectation files for dollar-less imports
+886,2026-06-03T07:58:41,18.4,93,9265,236,6525a87f6f22,feat(parser): `=>` construct glyph decides branch ctor vs invocation
+887,2026-06-03T09:12:01,73.3,27,8804,63,5dd878f2fcac,feat(tests): clear the `=>` flip migration tail + improve KORU010 hint
+888,2026-06-03T09:38:43,26.7,11,16,16,e1fb792254a2,fix(post-merge): heal dollar-import merge fallout
+889,2026-06-03T10:34:24,55.7,1,33,0,86c40acee34a,test(210_024): park source-scope-capture as dubious TODO
+890,2026-06-03T10:58:21,23.9,9,26261,35,5d56cf0e208e,feat(docs): regen corpus for `=>` ctor glyph + dollar-import removal
+891,2026-06-03T17:44:42,406.4,15,94,50,9d83920a5d2a,feat(parser): `.k` files are pure Koru — no `~`  no host lines
+892,2026-06-03T19:15:33,90.8,8,132,27,33e66e74faf3,wip(const): module-decl `const {}` lowering + harness `.k`-entry support
+893,2026-06-03T22:01:15,165.7,34,43841,70,b04dbfbf669c,feat(ast): make ProcDecl.body a typed Source  not a raw string
+894,2026-06-03T22:27:23,26.1,16,436,81,3bb760294f06,feat(kebab): emit-mangle `-`→`_` for Koru names + pin the redesign
+895,2026-06-03T22:48:19,20.9,2,10,10,bbe6885e38c1,feat(kebab): looksLikeInvocation accepts `-`; first corpus test migrated
+896,2026-06-03T22:50:27,2.1,1,126,0,27cc7cb202a0,tooling(kebab): region-aware codemod  pass 1 = event/proc names
+897,2026-06-03T23:20:45,30.3,2,31,20,f693f956b50b,fix(kebab): mangle `-` in runtime dispatcher refs + codemod proc-decl bug
+898,2026-06-04T00:02:21,41.6,13,17794,161,e8e5a917d0f5,feat(const): lower `const {}` as a per-target template over `parse_fields`
+899,2026-06-04T00:54:34,52.2,5,8813,8,8f8989448bf8,feat(docs): regen corpus/tutorial for kebab + slash-namespace syntax
+900,2026-06-04T02:07:47,73.2,1,1,1,4f403f6be22e,feat(test): refresh unit-test snapshot timestamp (223 pass  0 fail)
+901,2026-06-04T02:25:01,17.2,4,22,2,6ce4cf56a5f5,feat(import): first-class bare import parsing — no ~  no synthesis
+902,2026-06-04T03:26:12,61.2,579,827,814,c13b92f29b63,feat(import): enforce bare imports — reject `~import` & quoted; migrate corpus
+903,2026-06-04T04:16:28,50.3,4,231,85,860cb948f795,feat(kebab): accept '-' in names (lexer + parser-local isValidIdentifier); host-aware codemods
+904,2026-06-04T05:08:37,52.1,9,296,16,38c3db127c3a,feat(kebab): parse-time kebab→snake name normalization (cascade-proof)
+905,2026-06-04T05:30:18,21.7,2,34,10,1486cfde6995,fix(kebab): mangle only INFIX dashes (protect `->` and patterns)
+906,2026-06-04T06:37:53,67.6,29,292,256,1a8d5b118afe,feat(kebab): migrate koru_std to kebab-case + close registry/branch/host gaps
+907,2026-06-04T07:27:38,49.8,256,1544,1500,93a4fa6b4a31,feat(kebab): migrate test corpus to kebab + tap-pattern kebab support
+908,2026-06-04T08:45:35,78.0,65,268,216,e3d3a8646154,feat(kebab): reject `_` in Koru names (KORU034) + complete corpus migration
+909,2026-06-04T08:55:00,9.4,3,8,5,6b033114147c,fix(kebab): runtime-eval tests use internal (snake) names in eval blocks
+910,2026-06-04T09:28:11,33.2,73,366,226,bdf64fd02fb4,feat(io): remove `println` — `print.ln` is the print primitive (#3)
+911,2026-06-04T09:53:32,25.4,72,227,215,1fee5c2d7f98,revert(io): restore `println` — #3 blocked on std/compiler:print.ln facet
+912,2026-06-04T10:12:01,18.5,2,10,8,14e7728c3a19,test(010_054): honest deferred pin for println removal (#3)
+913,2026-06-04T11:37:29,85.5,5,26,2,9e3f6fd15887,feat(slash): resolve `/` namespace qualifiers (#4  layer 1)
+914,2026-06-04T13:03:15,85.8,423,1481,1434,5f41236fc160,feat(slash): `/` is the sole namespace separator; reject `.`-namespace (#4)
+915,2026-06-04T14:14:21,71.1,79,249,238,2af6a6cc54a6,feat(io): remove `println` (#3) — print.ln (interp) + print (runtime) cover it
+916,2026-06-04T15:23:47,69.4,31,238441,2,2874bc66e556,feat(test-results): snapshot kebab-conformance suite runs (~3% green)
+917,2026-06-04T23:25:06,481.3,79,26863,204,89dd4abab735,refactor(kebab): revert field/arg KEYS to snake; keep NAMES kebab
+918,2026-06-05T03:41:32,256.4,9,8909,2,0d388cfcfe79,fix(js): hoist `[declaration]` flows (const) to module scope
+919,2026-06-05T06:50:06,188.6,4,8947,98,f29ec1fc78b9,docs(corpus+snapshot): regen for JS const hoist; refresh 612/34 snapshot
+920,2026-06-05T07:15:27,25.4,3,8851,2,a9a518847aa6,chore(test-results): merge-gate snapshot (clean no-cache  612/34)
+921,2026-06-05T07:55:17,39.8,10,8997,7,85cf0219ba0f,fix(parser): `|>` stays inline on a source-block close (`} |> next()`)
+922,2026-06-05T08:15:31,20.2,4,8874,3,e9a643384d21,docs(corpus+snapshot): regen for parser void-chain fix; snapshot 614/34
+923,2026-06-05T09:31:44,76.2,4,19,37,89727ebba6bb,fix(parser): string-literal escapes (`\n` `\t`) are valid in flow args
+924,2026-06-05T09:38:21,6.6,4,14,0,e9ebcf1f155b,test(010_008): pin print.ln-in-if-branch JS-compile crash (RED)
+925,2026-06-05T19:58:25,620.1,5,8886,4,fd782d10f557,chore(snapshot+docs): refresh to e9ebcf1f (playground bug-hunt landings)
+926,2026-06-05T21:29:19,90.9,5,52,0,d87beceb62c9,fix(parser): reject unbalanced ']'/')' in payload shapes (PARSE004)
+927,2026-06-05T21:58:44,29.4,1,28,3,b203f6cb8b84,fix(codegen): unbalanced closer in opaque expr no longer underflow-panics
+928,2026-06-06T02:23:23,264.6,6,69,8,6b7a4f3c2cff,fix(parser): reject unbalanced ')'/']' in call args with a source-located error
+929,2026-06-06T02:58:45,35.4,7,35574,2,81d9519c6b08,docs(test-results): add snapshot runs through 2026-06-06
+930,2026-06-07T11:58:00,1979.3,5,233,1,55acedc1674d,registry-coherence watcher: diagnostic-code drift fires loudly in CI
+931,2026-06-07T12:20:37,22.6,2,6,2,996315db0798,registry watcher: fix two defects a cold-room probe caught
+932,2026-06-07T12:24:59,4.4,1,166,84,8c06e2be1296,registry watcher: enrich DEAD output with diagnosis (backlog #1 from the cold-room probe)
+933,2026-06-07T12:42:04,17.1,1,3,1,c33f4a149df0,registry watcher: soften the LONE-GAP heuristic (re-probe showed it anchored a wrong verdict)
+934,2026-06-07T12:49:16,7.2,1,145,5,27812e0a99a2,wm: add 'confirm <CODE>' verification battery (the ritual both probes reinvented)
+935,2026-06-07T12:59:23,10.1,2,75,1,94fbd86a66a7,registry: add the registry-drain skill (the playbook three probes earned)
+936,2026-06-07T19:40:30,401.1,1,124,0,7b1ea587b859,challenges: parser/frontend hardening flywheel (challenge 001)
+937,2026-06-07T20:06:15,25.8,4,8934,11,6f3e3dfb4fc6,fix(challenges): reframe parser hardening stance to qualified guess
+938,2026-06-07T20:06:44,0.5,1,8,3,515013b4b379,challenge 001: qualified guess instead of 50/50 shrug (round-1 friction fix)
+939,2026-06-07T20:28:42,22.0,1,0,18,8af4670a9146,kill prose: delete the ~-in-flow rule from CLAUDE.md (the test is the law)
+940,2026-06-07T20:39:04,10.4,83,568,11542,01824c288086,kill the prose: purge language instructions from the by-example pipeline
+941,2026-06-07T20:43:19,4.3,1,13,0,fb123f30d7e1,CLAUDE.md: point at the tests as ground truth (the surviving pointer-prose)
+942,2026-06-07T21:02:55,19.6,2,166,0,c10a5c340b08,challenges 002 + 003: toolchain hardening + documentation without prose
+943,2026-06-07T21:25:48,22.9,9,80,8,ab09835de3a2,enforcement E: prose_check.sh no-prose pipeline watcher + deterministic generators
+944,2026-06-07T21:26:32,0.7,1,9,0,52ec3d061248,run_regression: wire prose-check (enforcement E) blocking into the suite
+945,2026-06-07T21:35:45,9.2,1,15,25,249f7a1c1c80,drain #1: kill dead [bracket] phantom syntax in CLAUDE.md  point at the tests
+946,2026-06-07T21:59:31,23.8,1,0,267,020964b40e82,CLAUDE.md: remove ALL language definition — it belongs in the tests  not here
+947,2026-06-07T22:02:08,2.6,1,2,5,efc25239e14d,drain #5: AGENTS.md — fix two verified-false claims + strip language rules
+948,2026-06-07T22:04:49,2.7,1,0,83,485d90f4d7ed,drain #5b: delete tests/ORGANIZATION.md — a 100% drifted structure fossil
+949,2026-06-07T22:06:24,1.6,1,16,3,72443a9b674d,drain #3: --status surfaces snapshot commit + behind-HEAD staleness warning
+950,2026-06-07T22:10:28,4.1,1,1,2,014e4700707c,drain #2: fix koruc-init scaffold so it compiles AND runs
+951,2026-06-07T22:51:59,41.5,3,8906,2,2b3a3a867ec5,Test snapshot from the regression run.
+952,2026-06-07T23:15:35,23.6,33,621,0,8c3d8203efbe,add open/tx phantom explorer regression tests (2104_14–2104_21)
+953,2026-06-07T23:27:09,11.6,215,33,25,2eea55f3fb6f,enforce kebab branch names and fix phantom explorer fixtures
+954,2026-06-07T23:32:15,5.1,3,9,6,686990aa3fd3,update front-page hello world to modern const-block syntax
+955,2026-06-07T23:32:32,0.3,1,1,1,5217a2cbd835,pin hello world count as 42[i32] in front-page fixture
+956,2026-06-08T01:22:54,110.4,594,19078,979,0ee0fc25d807,enforce ~import in .kz and fix abandoned-tx auto-discharge
+957,2026-06-08T11:21:49,598.9,10,8996,11,46e9bc243805,fix: update import error expected outputs and refresh test results
+958,2026-06-08T11:41:40,19.9,12,65,34,a66fee3f5b3b,drain #4: dedup test IDs — finish renames  fix expected-output paths  flip watcher C to blocking
+959,2026-06-08T12:03:32,21.9,2,3,3,5243a6135032,test(110_016): make flows valid Koru  refresh stale expected output
+960,2026-06-08T13:18:35,75.0,1,1,1,bb39162dff9a,feat(tests): refresh unit-test results timestamp
+961,2026-06-09T04:43:57,925.4,2,63,15,d94f3b45db8b,fix(kernel): drop consumed kernel continuation after fusion (no dead duplicate)
+962,2026-06-09T23:18:07,1114.2,9,1528,0,b9a8e5abde1e,wm/: koru's world-model experiment corner — artifacts + producer move home
+963,2026-06-09T23:50:18,32.2,10,105,0,79d171c6be97,test(position-duality): pin the top-level-vs-nested transform bug family
+964,2026-06-09T23:53:10,2.9,16,19,19,410ab3ead764,docs(koru_std): migrate stale quoted-import comment examples to bare imports
+965,2026-06-10T00:42:22,49.2,3,140,0,835e46255e02,test(position-duality): pin std/if nested — TransformDidNotReplace (320_094)
+966,2026-06-10T00:00:17,-42.1,2,449,0,b46569202d73,feat(oracle): differential position-agnosticism oracle for the regression suite
+967,2026-06-10T00:44:26,44.1,1,6,2,f0e15e08ec0c,fix(oracle): generate twins at real-test depth — shallower twins broke import resolution
+968,2026-06-10T01:57:01,72.6,11,885,575,a24afd06696c,feat(transforms): position-agnostic transform sites — lift/graft in the runner  all is_top_level forks collapsed
+969,2026-06-10T02:37:44,40.7,1,13,6,511f7c6c3c12,test(310_052): migrate transform write-back to the position-agnostic contract
+970,2026-06-10T02:48:51,11.1,6,41,26,e347b26dc1c9,test(390_023): flip to MUST-FAIL twin of 390_054 — computed required at any depth
+971,2026-06-10T04:30:04,101.2,84,28015,996,36815480abce,collapse the dual invoke+branches AST encoding — Flow wraps ONE recursive Continuation core
+972,2026-06-10T05:05:51,35.8,6,36074,2,b0330b8236f8,test: add regression snapshots 2026-06-09 → 2026-06-10
+973,2026-06-10T07:21:34,135.7,27,523,901,227f6feb1695,feat(transforms): site-local write-back ABI — handlers return SiteResult  runner owns placement
+974,2026-06-10T07:28:12,6.6,3,11,11424,772f2b965566,chore(transforms): delete dead call_transform codegen twin; retire vestigial backend.zig snapshot
+975,2026-06-10T07:44:23,16.2,5,27089,2,8eb6425b49de,test: add regression snapshots 2026-06-10 (3 runs  617/674 pass)
+976,2026-06-10T08:39:17,54.9,3,57,0,45f8061196df,test(010_058): pin kebab→snake-at-lex as a bug — kebab must be canonical through the pipeline
+977,2026-06-10T08:59:50,20.6,5,80,6,dfe03204f81d,feat(parser): backtick raw-pattern-branch glyph — `…` branches carry data verbatim
+978,2026-06-10T09:17:19,17.5,2,288,0,ddbc81df522b,feat(regex): std/regex engine frontend — pattern → AST parser (cut 1  in-house)
+979,2026-06-10T09:21:41,4.4,1,217,0,cbf32afa5fa8,feat(regex): Thompson NFA + epsilon-closure matcher — working  ReDoS-safe (cut 1)
+980,2026-06-10T09:33:21,11.7,1,176,0,9e055c1e18ce,feat(regex): DFA via subset construction — straight-line table matcher (cut 1)
+981,2026-06-10T09:38:29,5.1,1,66,0,a79c86001c69,feat(regex): emit DFA as specialized native Zig matcher (cut 1)
+982,2026-06-10T09:42:59,4.5,1,9,0,ededc295ceae,build(regex): wire regex_engine into the backend module graph
+983,2026-06-10T09:54:29,11.5,4,130,0,718643bbc576,wip(regex): match transform — engine integration works  dispatch mechanism RED-pinned (630_001)
+984,2026-06-10T10:28:05,33.6,5,20,25,9e5a4473a2ca,fix(regex): match dispatch via statement path — 640_001 e2e GREEN
+985,2026-06-10T10:48:36,20.5,4,54,0,c6ea1b74a3f3,fix(shape-checker): honor @pass_ran on nested invocations — 640_002 GREEN
+986,2026-06-10T10:53:32,4.9,24,515,6,41dfbe78c353,feat(bench): regex_match + regex_redos workloads — Koru/Go/Rust/JS/Python
+987,2026-06-11T01:34:21,880.8,4,19,18,f08b78fcd5a2,census(shape-checker): @pass_ran no longer exempts from checking — @shape_valid split
+988,2026-06-11T02:11:19,37.0,1,5,5,6564ac4d5c21,census(phantom-checker): @pass_ran no longer exempts — @shape_valid split  second lair
+989,2026-06-11T02:30:49,19.5,5,32,0,980b3fc0db3d,feat(shape-checker): KORU101 — binding on a payload-less branch is illegal
+990,2026-06-11T03:20:04,49.3,3,37,23,43b2969f9ddd,feat(names): kebab-canonical through the pipeline — 010_058 GREEN
+991,2026-06-11T03:28:18,8.2,13,22,29,0ae9f4c32a31,fix(kebab): walk the laundering map — source spellings + 3 emitter formation sites
+992,2026-06-11T03:52:49,24.5,18,64,69,fef548fc7246,fix(kebab): wave 2 — tap-matcher mangle replica  JS alias site  AST goldens  remaining spellings
+993,2026-06-11T04:12:15,19.4,1,22,5,95404635a5a7,fix(kebab): js_emitter inline path — host text spells the lowered identifier
+994,2026-06-11T04:28:24,16.1,1,2,2,51378e1eff5d,fix(kebab): bless 220_001 AST golden — the seventh pure kebab-vs-snake drift
+995,2026-06-11T04:54:52,26.5,18,118217,14,b01c1fcc0622,chore: test-result snapshots  Go bench binaries  kebab doc fix
+996,2026-06-11T05:05:57,11.1,3,1,0,20040ab2d151,chore: untrack Go bench binaries  gitignore them
+997,2026-06-11T05:26:54,20.9,10,186,18,a8187d775a1a,feat(parser): quote-decode — `…` and […] are equivalent source encodings of a branch name
+998,2026-06-11T05:51:06,24.2,5,18245,3,3b5cb10bb77d,chore: test-result snapshots + kebab fix in templates doc
+999,2026-06-11T08:43:14,172.1,15,129,135,b0f2adb521ea,feat(io): print is comptime — no-newline sibling of print.ln  ONE shared engine
+1000,2026-06-11T09:14:21,31.1,8,36525,4,f3a588b9f52d,chore: test snapshots  wm/run.sh  drop `text:` label in print examples
+1001,2026-06-11T10:29:33,75.2,19,549,131,4b87c64585fc,feat(transforms): match pilot — transforms-as-procs  user-surface contract  qualified-only dispatch
+1002,2026-06-11T10:29:42,0.1,3,9132,11,0979cf53efcf,chore: test snapshots — match pilot census (623/47)
+1003,2026-06-11T10:51:27,21.8,3,9123,2,47c955b50994,chore: test snapshot 2026-06-11T10-50-22 (623/47)
+1004,2026-06-11T11:18:57,27.5,7,9153,3,bf4ef89954cc,feat(regex): matched-text binding — pattern branches deliver the match
+1005,2026-06-11T11:27:25,8.5,2,46,0,dd5bb37034c0,bench(regex): fresh data on the final match surface — numbers hold
+1006,2026-06-11T22:07:42,640.3,16,9192,25,829bd3f7e1fc,feat(leaks): every produced Koru binary leak-checks itself at exit
+1007,2026-06-11T22:11:52,4.2,3,9134,2,e711425e299f,chore: test snapshot 2026-06-11T22-11-09 (621/50)
+1008,2026-06-11T09:58:22,-733.5,5,259,0,0d62c805bcad,feat(census): AoC 2015 first light + capability-census skill + 820_PROOFS challenge
+1009,2026-06-11T10:35:33,37.2,6,76,54,d8f842fd5168,feat(capture): block-form surface — capture { } / captured { } via source: Source
+1010,2026-06-11T11:20:24,44.9,8,147,71,f0cd3ed8d371,feat(capture): second [transform]proc migrant — day 1 AoC pristine green
+1011,2026-06-11T21:22:09,601.8,1,16,13,3992d36e1002,test(const): 320_043 GREEN — the const/capture pair composes
+1012,2026-06-11T21:25:31,3.4,2,16,17,91a8ba492c5b,feat(aoc): day 1 part 1 goes PURE .k — zero host lines
+1013,2026-06-11T21:40:39,15.1,6,54,27,d7093aac4cd4,feat(capture): typed seeds via 0[i32] — same annotation  same parser as const
+1014,2026-06-11T21:50:22,9.7,3,31,0,241c2777d125,feat(aoc): day 2 part 1 green — and it names the regex-groups frontier
+1015,2026-06-11T21:54:41,4.3,1,4,1,02871687e043,style(aoc): day 2 captured block split over multiple lines — and it just works
+1016,2026-06-11T22:21:43,27.0,1,2,2,7d15ba777b46,docs(test): 320_042 header — frontier pin is BUILT  stop calling it RED
+1017,2026-06-11T22:21:48,0.1,15,50,0,63d1a392dec6,test(string): pin the ownership model — 4 enforcement pins green  dangling-slice gap red
+1018,2026-06-11T23:07:05,45.3,2,53,0,2458c047046a,bench(regex): bound-path A/B — binding and using the match costs ~1ms per 3M
+1019,2026-06-11T23:11:43,4.6,6,49,82,cecef907c4ed,test(capture): family migrated to block form — 028+033 GREEN  store trio honest-red
+1020,2026-06-11T23:21:03,9.3,1,6,3,f7d0f3c5488e,test(regex): 640_003 becomes pure Koru — input.k  no host markers
+1021,2026-06-11T23:26:45,5.7,7,113,1,afadfcddc5be,feat(aoc): day 2 COMPLETE + day 3 part 1 — first allocating day  meter-clean
+1022,2026-06-11T23:39:08,12.4,6,9227,11,3b1c1868c17b,test(regex): 640_001/002 join 640_003 in pure Koru — all .k  no host markers
+1023,2026-06-11T23:41:04,1.9,7,104,88,a7077473e6a7,feat(census): THE .k COVENANT — days 1-3 in pure-.k + frontier-ledger form
+1024,2026-06-11T23:50:52,9.8,1,79,0,82c80d9d96f5,docs(census): FRONTIERS.md — the central gap map for gap-closing sessions
+1025,2026-06-12T01:45:58,115.1,32,9778,134,c28777f6fa2d,feat(lang): shape-destructure at the binding position — by name  all the way down
+1026,2026-06-12T01:49:19,3.4,1,7,0,94d4a554e789,docs(frontiers): gap 1 — strict 1:1 destructure↔named-groups  ratified
+1027,2026-06-12T01:54:01,4.7,5,9372,3,81f492ecee47,docs(corpus): add runtime-features examples — autodispose + effect branch
+1028,2026-06-12T02:14:30,20.5,7,50,8,3fee29e1ede5,feat(aoc): day 5 — pure .k  EMPTY LEDGER  the regex showcase
+1029,2026-06-12T02:40:18,25.8,65,9360,112,2cdae67cae0c,chore(corpus): $std form swept — std/ everywhere; days drop import std/control
+1030,2026-06-12T03:14:34,34.3,25,9394,67,58b92ad40aea,feat(io): the INPUT VERTICAL — gap 5 closed  read-lines as effect scopes
+1031,2026-06-12T03:42:09,27.6,9,70,0,0d92ba11ccb2,test(compose): the burn-test Lars asked for — match composes  capture×handler doesn't
+1032,2026-06-12T04:24:48,42.6,8,64,15,025000ba7932,docs(frontiers): effect lowering is THE gap — inversion named  spine reverted
+1033,2026-06-12T05:33:17,68.5,15,19045,83,85fbe85e6f35,feat(emitter): EFFECT INLINING — effectful events compile to one flat frame
+1034,2026-06-12T05:35:42,2.4,10,54,40,a7606877d83e,feat(aoc): all days read from disk — the canonical real-solver shape
+1035,2026-06-12T06:07:12,31.5,6,9267,3,5a450c4df543,test(args): add ARGS fixtures for 240_021/022 + snapshot refresh
+1036,2026-06-12T06:24:38,17.4,30,294,0,e7d42c7dffb0,feat(aoc): MILESTONE 1 — days 1-5 ALL PARTS GREEN (+2 toolchain pins)
+1037,2026-06-12T06:30:09,5.5,23,356,0,78a0d49dfb91,feat(aoc): days 6-8 green (8 incl. both parts PURE .k state machines)
+1038,2026-06-12T06:32:29,2.3,15,222,0,1347e8e7d6f5,feat(aoc): days 9-10 green (TSP both parts; look-and-say with meter-enforced ownership)
+1039,2026-06-12T06:40:24,7.9,12,142,0,c493496b2873,feat(aoc): days 11-12p1 (+ the <-in-if-cond pin  epistemics labeled)
+1040,2026-06-12T06:46:27,6.0,25,438,0,b5fb69667628,feat(aoc): days 12p2-14 green (14p1's distance formula is pure Koru expressions)
+1041,2026-06-12T06:48:09,1.7,30,379,0,09d258324071,feat(aoc): days 15-17 green both parts  six-for-six first run
+1042,2026-06-12T06:52:17,4.1,30,408,0,6601e12939ae,feat(aoc): days 18-20 green both parts (20's hunt loop hit 210_123 again — host  ledgered)
+1043,2026-06-12T06:57:39,5.4,36,463,0,4beb966d3118,feat(aoc): days 21-25 — ALL 25 DAYS OF AoC 2015 COVERED
+1044,2026-06-12T07:03:13,5.6,1,17,0,873e5e2564c5,docs(frontiers): section 7 — the three toolchain pins from the calendar climb
+1045,2026-06-12T07:15:52,12.7,3,9669,2,f9f4aa121ecd,test(results): snapshot 2026-06-12 — 676 pass / 44 red (92.5%)
+1046,2026-06-12T08:37:37,81.8,26,369,202,186207bfc7b8,fix(toolchain): close all three FRONTIERS §7 pins; loops come home to Koru
+1047,2026-06-12T12:15:56,218.3,113,38983,1772,e0097c965421,feat(regex): named-group captures land; AoC cluster flips to honest red
+1048,2026-06-12T14:25:49,129.9,3,53,16,e78621ea3261,fix(emitter): mock × effect branches — FRONTIERS §5 closed
+1049,2026-06-12T14:59:53,34.1,17,169,9,b83fcb99164b,feat(string): safe query/transform ops — parse-int  contains  index-of (FRONTIERS gap 4)
+1050,2026-06-12T15:35:11,35.3,5,29991,2,e2eb395d6b40,feat(test-results): snapshot 2026-06-12 PM — 671 pass / 76 red (88.5%)
+1051,2026-06-12T16:19:06,43.9,4,92,85,540b837c8f5a,fix(auto-discharge): resolve positional disposal args by position  not name
+1052,2026-06-12T17:01:14,42.1,4,20068,2,f4aca958d469,feat(test-results): snapshot 2026-06-12 PM — 676 pass / 76 red (88.6%)
+1053,2026-06-13T02:54:54,593.7,4,29,0,3e5faf9952ff,feat(string): from-int — int→string mirror of parse-int (FRONTIERS gap 4)
+1054,2026-06-13T03:16:03,21.1,4,20090,2,66fb40a96126,feat(test-results): snapshot 2026-06-13 — 677 pass / 76 red (88.6%)
+1055,2026-06-13T04:28:39,72.6,1,165,0,cbd8df254ac1,docs(switch): spec for std/switch value-dispatch transform
+1056,2026-06-13T05:56:51,88.2,17,280,11,c6cac6f78c81,feat(switch): std/switch:char — value dispatch as a transform
+1057,2026-06-13T14:36:17,519.4,37,51453,13,98dc27736630,feat(regex): one-pass tagged DFA for capture extraction
+1058,2026-06-14T03:37:22,781.1,10,79,28,a1777d3f63a0,feat(discharge): void-only auto-discharge + self-loop-free disposer suggestions
+1059,2026-06-14T03:37:45,0.4,77,32230,2,5cae8fd5d9b1,test(obligation): obligation-stress battery + chaining aspiration pin
+1060,2026-06-14T05:11:54,94.2,27,21189,2,172d11826613,feat(obligation-matrix): the permutation matrix — generated  can't-drift spec
+1061,2026-06-14T06:31:04,79.2,7,100,1,06b48d8538e2,feat(recursion): value-returning events can call themselves
+1062,2026-06-14T06:55:48,24.7,3,38,0,7655b2988ea0,test(effect): pin that an effect handler cannot recurse its producer
+1063,2026-06-14T07:03:57,8.2,4,20971,2,6cb50ff72cc2,chore(snapshot): refresh test snapshot — recursion work landed
+1064,2026-06-14T07:51:25,47.5,4,45,8,1c124bc18923,feat(emitter): if/for templates work in value-return subflow position
+1065,2026-06-14T07:58:29,7.1,4,20982,2,0a201196c325,chore(snapshot): refresh — if/for value-return fix landed (700/802)
+1066,2026-06-14T17:24:00,565.5,12,14,69,e792a327c4c3,test(obligation): asymmetric manual/auto if-discharge is valid  not a leak
+1067,2026-06-14T17:24:18,0.3,67,0,67,ac30b5b577d0,chore(tests): strip vestigial empty `pub fn main` from .kz fixtures
+1068,2026-06-14T17:29:37,5.3,10,63051,5,e158727635c8,feat(templates): if/for value-return + recursion green (320_095/096)
+1069,2026-06-14T17:47:12,17.6,28,38,43,ebd14044513e,style(tests): use bare `if`/`for` keywords  drop the `std/control:` qualifier
+1070,2026-06-14T19:58:07,130.9,5,94,21,596a656f4920,feat(collections): 2-D indexed capture write proven; AoC2015 day18 green via grid-in-capture
+1071,2026-06-14T20:02:49,4.7,4,20971,2,312b6c3275e0,feat(tests): record 2026-06-14 regression snapshots (702/801  87.6%)
+1072,2026-06-14T20:18:39,15.8,3,51,77,d18f8eb85db4,fix(aoc): enforce pure-Koru invariant; revert day18 green-via-Zig fraud to RED
+1073,2026-06-14T20:24:26,5.8,3,10492,2,a008c637f3c8,feat(tests): record 2026-06-14 regression snapshot (703/802  87.7%)
+1074,2026-06-14T20:31:12,6.8,1,1,1,7e716f93344a,fix(aoc): broaden purity gate to the full host-import family
+1075,2026-06-14T21:28:01,56.8,12,60,14,bf8cb02b333a,fix(parser): enforce slash separator in cross-module type references
+1076,2026-06-15T04:08:08,400.1,10,0,115,2c47ee50a0ab,test: remove superseded obligation-leak pins 335_041 + 518
+1077,2026-06-15T06:53:51,165.7,7,111,0,f80d8a8e4850,feat(list): first pure-Koru collection — i64 list (new/push/len/free)
+1078,2026-06-15T09:00:56,127.1,4,68,3,23cf0c7b4439,feat(list): new(i64) generic constructor as a [transform]
+1079,2026-06-15T10:51:10,110.2,2,12,16,c74ad1235cb7,test(list): green 660_001/003 via the list:len read surface
+1080,2026-06-15T11:36:06,44.9,7,37,0,8f328549b7c6,feat(list): pop (LIFO) with item/empty branches
+1081,2026-06-15T11:45:09,9.1,7,33,0,ee131be69895,feat(list): get(i) random access with item/out-of-bounds
+1082,2026-06-15T11:48:46,3.6,3,17,0,01f016ccf5aa,test(list): for-each over a list composes from len + for + get
+1083,2026-06-15T12:16:29,27.7,6,34,0,06f87573b398,test(list): auto-discharge works on simple drop; pin the for-loop gap
+1084,2026-06-15T12:43:41,27.2,4,21092,2,3976769f1ef0,feat(test-results): snapshot suite runs at 704/88 (87.7%)
+1085,2026-06-15T12:48:37,4.9,3,12,0,dc02dbffca7b,test(list): push inside a for-loop (660_014)
+1086,2026-06-15T12:53:40,5.0,3,57,0,5b8bf2012bd2,bench(list_push): std/list vs hand-written Zig ArrayList
+1087,2026-06-15T13:06:36,12.9,3,26,0,6220cbf4454a,test(list): RED PIN — streaming into a list via read-lines is blocked
+1088,2026-06-15T13:29:13,22.6,4,34,15,21cf278867aa,test: pin ROOT — nested effect loses output under an obligation branch
+1089,2026-06-15T14:21:52,52.6,13,71,7,45d704f16f3f,fix(obligations): effect branches are repeating scopes (stop spurious in-loop disposal)
+1090,2026-06-15T14:45:22,23.5,4,21312,2,b6b44e2c4a31,fix(tests): record regression snapshots (718/817  87.9%)
+1091,2026-06-15T14:52:31,7.2,4,34,14,fa0d06f777d2,test: pin capture-at-nested-site gap (smoked out by AoC day17)
+1092,2026-06-15T14:58:59,6.5,1,11,5,999e0906c68b,docs(320_098): record capture-at-nested-site as multi-layer  not a patch
+1093,2026-06-15T15:24:11,25.2,91,388,0,60f6de254ebd,test(sweep): 670_NESTING_SWEEP — empirical construct×continuation composition matrix
+1094,2026-06-15T16:38:52,74.7,3,11005,2,6335f686fb56,fix(tests): record regression snapshot 745/92 (87.9%)
+1095,2026-06-15T18:13:20,94.5,1,130,0,609b6140a253,docs: capture outstanding design decisions from the 2026-06-15 regression diagnosis
+1096,2026-06-16T12:31:35,1098.3,17,25,3103,71fb161b6b03,docs: kill 15 dead/stale prose docs  gut 2 phantom-reference files (Challenge 003 Tier 1)
+1097,2026-06-16T12:45:14,13.7,13,117,117,e260b692c4c7,docs: mechanical syntax sweep across live docs (Challenge 003 Tier 2a)
+1098,2026-06-16T12:54:49,9.6,3,49,50,753ca75d83b1,docs: surgical fixes — SEMANTIC  COMPILER_ANNOTATIONS  EFFECT_BRANCHES (Challenge 003 Tier 2b)
+1099,2026-06-16T14:08:21,73.5,8,0,2988,11e999530353,docs: kill aspirational/captured design-fiction docs (Challenge 003  kill-first)
+1100,2026-06-16T14:23:01,14.7,3,26,343,5551546fdf43,docs: kill QUICK_REFERENCE  trim INTER + STYLE_GUIDE to vision/taste (Challenge 003 Tier 2b)
+1101,2026-06-16T14:54:06,31.1,1,30,14,6d083edffa54,docs(D1): RULE nested capture — stays; no-shadow field-routing (codegen fix)
+1102,2026-06-16T14:58:07,4.0,1,7,5,11cb9e47ae05,docs(D1): correct no-shadow to convention (rejection deferred to Zig  not enforced)
+1103,2026-06-16T15:15:25,17.3,1,34,10,36145a05610c,docs(D1): record capture codegen attempt — runner-side graft is the path
+1104,2026-06-16T16:10:45,55.3,5,11084,46,2e91a879e480,fix(D1): nested capture graft — preamble as void inline_code node (step 1)
+1105,2026-06-16T16:28:34,17.8,2,11004,1,ebda907336d9,The commit is the test snapshot from the regression run at 16:28:02.
+1106,2026-06-16T17:02:53,34.3,3,0,24,1ccb01dcd19c,chore(tests): delete 320_038 — stale intent (binding-qualified shadowing)
+1107,2026-06-16T18:09:07,66.2,1,7,10,4bcda9118afd,docs(D1): record 320_038 resolution — deleted as stale intent
+1108,2026-06-16T18:55:23,46.3,2,37,64,8fe744b15472,fix(D2): multi-terminal obligation discharge — remove @auto_discharge_ran skip
+1109,2026-06-16T19:18:53,23.5,4,21986,2,6086a0dda2c7,fix(D2): record test snapshots after multi-terminal discharge fix
+1110,2026-06-17T00:29:37,310.7,2,17,5,13a9e5539318,fix(emitter): nest effect-splice result prefix — nested-for shadowing (330_016)
+1111,2026-06-17T00:58:16,28.6,4,21986,2,af6c4093372a,fix(tests): record regression snapshots — 751/847 (88.7%)
+1112,2026-06-17T01:08:23,10.1,2,11,2,5aa16e4ce494,fix(tests): repair 330_012 — restore write's success branch (migration over-strip)
+1113,2026-06-17T01:14:49,6.4,3,10994,2,c7b149b164cf,fix(tests): record regression snapshot — 752/847 (88.8%)
+1114,2026-06-17T01:35:36,20.8,1,39,6,3b9c029e1ab6,docs(D1): map the capture-under-non-capture checker cascade (next-session entry)
+1115,2026-06-17T03:44:06,128.5,10,10787,310,17003e25959a,feat(checkers): propagate transform exemption to nested capture grafts
+1116,2026-06-17T08:08:29,264.4,2,13,8,22f6a2bab061,fix(std/fs std/io): remove arbitrary 10MB read cap — read whole file/stdin
+1117,2026-06-17T08:23:58,15.5,3,48,2,19e20532041a,docs(std): mark read-lines [aspirational] — streaming surface over a slurp
+1118,2026-06-17T10:16:36,112.6,25,36,36,26af5f82ee84,docs(aoc): retire "store" → "collections" in the AoC ledgers
+1119,2026-06-17T13:16:18,179.7,7,351,1490,5d8b4a08df00,feat(benchmarks): add list_push zig baselines  delete build.zig
+1120,2026-06-17T13:26:29,10.2,1,1484,0,0eb3c81d0587,fix(build): restore build.zig (accidentally deleted in 5d8b4a08)
+1121,2026-06-17T13:50:28,24.0,3,3,3,6ac4f43c9dff,docs: fix stale quoted-import comments (~import "std/compiler")
+1122,2026-06-17T13:50:29,0.0,22,546,4,a27e2063b0b2,feat(parser): parse panic branches | ?!oom (step 1)
+1123,2026-06-17T14:24:04,33.6,8,91,6,4f744e64c2b8,feat(checkers): synthesize @panic for unhandled panic branches (step 3)
+1124,2026-06-17T14:53:19,29.3,3,11027,2,0f93611bcd6c,fix(checkers): synthesize @panic for unhandled panic branches (step 3)
+1125,2026-06-17T15:20:56,27.6,15,97,6,0de4013f980d,feat(panic-branches): reject-boundary tests + --panic-branches=strict flag (steps 2 & 4)
+1126,2026-06-17T15:48:34,27.6,3,11060,2,04c02f23b467,feat(test-results): snapshot suite run at 89.4% (763/853)
+1127,2026-06-17T16:12:08,23.6,4,115,0,7fba0d1ffc0f,feat(std/grid): dense 2D i64 grid collection — new/set/get/count/free
+1128,2026-06-17T16:24:04,11.9,1,34,19,54e32567980a,feat(aoc): day06 part1 GREEN on std/grid — first collections AoC shot
+1129,2026-06-17T16:26:12,2.1,2,46,19,66464e48b43e,feat(aoc): day06 part2 GREEN on std/grid (+ grid:sum)
+1130,2026-06-17T16:48:02,21.8,3,11071,2,02d24cafd89e,feat(test-results): snapshot suite run at 89.7% (766/854)
+1131,2026-06-17T17:00:10,12.1,3,50,19,6a4d936eb3e9,feat(aoc): day04 part1+part2 GREEN — std/crypto:md5-check leaf + Koru search
+1132,2026-06-17T17:26:56,26.8,3,11071,2,940380efb056,feat(test-results): snapshot suite run at 89.9% (768/854)
+1133,2026-06-17T17:46:30,19.6,7,127,0,966d538589d3,feat(std/set): hash-set collection (i64 keys) + pin a composition bug
+1134,2026-06-17T19:07:06,80.6,5,96,15,329a55f2d58d,fix(auto-discharge): capture-under-obligation no longer double-discharges
+1135,2026-06-18T03:22:10,495.1,4,22206,2,3e2e3a5ff299,test-results: snapshot suite run at 90.0% (771/857)
+1136,2026-06-18T03:27:44,5.6,1,0,11102,02c026a1f605,chore(test-results): drop duplicate 771 snapshot (mislabeled gitCommit 966d5385; superseded by the 329a55f2 restamp)
+1137,2026-06-18T04:33:01,65.3,10,155,0,5b565e94f93b,feat(std/map): hash-map collection (i64→i64) — set-with-values over set's substrate
+1138,2026-06-18T04:58:48,25.8,3,11137,2,bc880e58480d,feat(test-results): snapshot suite run at 90.0% (774/860)
+1139,2026-06-18T05:45:23,46.6,10,175,0,760b9125cb6d,feat(std/string-map): String-keyed map (naive per-type module) + pin the dispatch gap
+1140,2026-06-18T06:22:51,37.5,7,70,0,96b7b8211fda,feat(std/string): split — effect-stream parsing primitive; pin scan (engine search)
+1141,2026-06-18T06:33:14,10.4,5,58,19,45119bc27a41,feat(aoc): day16 part1 GREEN in pure Koru + fix nested-match destructure shadowing
+1142,2026-06-18T07:04:36,31.4,2,81,32,dc0b99669470,feat(aoc): day14 part2 GREEN — per-second points race over a collection table
+1143,2026-06-18T07:42:57,38.4,5,33572,2,7cc6bd44e127,feat(test-results): snapshot suite runs at 89.9% (776/863)
+1144,2026-06-18T07:49:01,6.1,1,15,33,515cf0945185,feat(aoc): day03 part1 GREEN — std/set walk  closing the baton arc-B loop
+1145,2026-06-18T07:50:32,1.5,1,15,42,3695876fc4d1,feat(aoc): day03 part2 GREEN — two alternating santas via arithmetic parity
+1146,2026-06-18T13:26:04,335.5,2,32,4,a6850fa6b386,feat(aoc): day20 p1+p2 GREEN — pure-Koru divisor-sum fold + if-value-return
+1147,2026-06-18T13:30:59,4.9,2,47,21,54b29b148b30,feat(aoc): day17 p1+p2 GREEN — bitmask subset sweep  capture-under-capture
+1148,2026-06-18T13:34:51,3.9,2,19,28,9979062fd8ef,feat(aoc): day15 p1+p2 GREEN — flat-capture ingredient store + amount sweep
+1149,2026-06-18T14:23:35,48.7,2,77,25,69f470eaaa55,feat(aoc): day24 p1+p2 GREEN — twin bitmask sweep over the weight list
+1150,2026-06-18T14:40:04,16.5,3,21,0,d8dc5c1d6ff9,test(pin): KORU051 on sequential for-phases chained by | done under a capture
+1151,2026-06-18T16:08:48,88.7,3,23,0,e3f14e98aa62,test(pin): KORU100 false-positive on loop var in complex capture-array write
+1152,2026-06-18T16:51:53,43.1,3,51,23,5eb05689e664,fix(flow-checker): validate loop-var bindings in exactly one mode (KORU100)
+1153,2026-06-18T17:30:04,38.2,3,76,28,46feca82bb6e,feat(aoc): day18 p1+p2 GREEN — Conway via threaded [8][8] capture-array
+1154,2026-06-18T17:31:57,1.9,3,18,0,577e49237939,test(pin): unclosed paren in capture-write value silently accepted
+1155,2026-06-18T18:30:35,58.6,6,22497,5,a4b03a59389e,fix(toolchain): pin 320_101 loopvar+complex-capture-array write; regen koru-templates shard
+1156,2026-06-18T19:06:57,36.4,1,31,17,1c822cae5e4c,feat(aoc): day23 GREEN — register machine via threaded arrays + recursion
+1157,2026-06-18T21:13:31,126.6,6,160,0,112ce6a6cb3c,bench(register_machine): day23 array-threading idiom vs naive Rust
+1158,2026-06-18T22:42:31,89.0,2,251,4,c733776187e9,feat(emitter): lower tail self-continuations to a while-loop
+1159,2026-06-18T22:50:36,8.1,5,33704,2,f38e937d6f0b,fix(test-results): snapshot regression runs from 2026-06-18
+1160,2026-06-19T05:39:58,409.4,4,454,0,f7325c8196ba,wm: koru world-model spearhead — generator/renderer  pass-floor probe  gap-hunt float
+1161,2026-06-19T06:06:18,26.3,1,53,0,8782e36e039d,wm: perf-promise probe — watch the within-10%-of-host claim vs benchmark results
+1162,2026-06-19T08:23:38,137.3,1,290,0,d11652249381,wm: charter — instrument koru with WMFX (hard faucet/model lock)
+1163,2026-06-19T10:24:32,120.9,11,519,112,1dadfa351f66,feat(aoc-2015): +8 days green in pure .k — 30→38/44
+1164,2026-06-19T11:08:20,43.8,9,11722,11,49a900e05341,feat(wm): world-model float on boundaries; snapshot 803/869 (92.4%)
+1165,2026-06-19T11:49:46,41.4,6,944,0,d62b9b5a3aed,models/breath: koru's first real WMFX instrument — the inhale/exhale watcher
+1166,2026-06-19T11:54:40,4.9,2,0,83,7144bcece773,models: delete the bash probes — the masquerade breath replaces
+1167,2026-06-19T14:12:03,137.4,39,684,14,01892586f226,fix(phantom): verify obligation conservation across loop back-edges
+1168,2026-06-19T14:20:29,8.4,10,163,0,838c10ea67c0,test(phantom): nested-loop obligation probes — L1 unreachable  codegen bug found
+1169,2026-06-19T14:23:42,3.2,5,11370,136,0a7dcbaf793f,feat(docs): drop 201_multiple_branches from corpus; snapshot 813/879
+1170,2026-06-19T15:51:09,87.5,3,35,7,d3fb997acfad,fix(emitter): init label_contexts on the subflow path — nested label-folds compile
+1171,2026-06-19T15:52:28,1.3,11,11543,2498,905bfa0794b2,The commit message:
+1172,2026-06-19T16:45:38,53.2,4,37,21,29595b5a0dab,fix(obligation): credit label-fold seed as consumed — kills the carry double-free
+1173,2026-06-19T18:10:11,84.5,2,63,16,3e2cdaa8394d,fix(emit/parse): lower capture-fold bodies under continuation branches; parse positional args with pre-dot operators
+1174,2026-06-19T18:24:04,13.9,1,82,0,29ea05f25b6e,docs(design): phantom state cross-module resolution — ratified design note
+1175,2026-06-19T18:44:06,20.0,17,203,0,60a80f4d6a93,test(phantom): failing tests pinning the cross-module resolution design
+1176,2026-06-19T19:31:26,47.3,10,25327,10,106e33e625b8,``` docs(by-example): regenerate skill shards + snapshots from green run
+1177,2026-06-19T22:28:12,176.8,31,22884,645,91b82c7471bb,fix(parser/emit): import EOL comments  bare-.kz Koru calls  kebab JS idents + feedback test triage
+1178,2026-06-20T09:09:24,641.2,10,486,28,c9ca6bd36e93,revert(parser): bare module-qualified line in .kz is a HOST LINE  not a frontend reject
+1179,2026-06-20T11:49:03,159.7,14,37,119,8545254d4f47,test: feedback-queue triage — trim/fix/remove (queue to zero)
+1180,2026-06-20T18:59:43,430.7,5,5593,20,50813227e7eb,wm: breath emits real signals + per-tick curve; manifest sourced from the engine
+1181,2026-06-21T11:59:37,1019.9,2,73,3,592c8b0cc990,tests(phantom): resolve conserved-move design for 330_072 / 330_082
+1182,2026-06-21T12:55:09,55.5,9,25,147,54fb88d4ca2a,tests(phantom): pin the obligations-and-scopes rule; retract bad design notes
+1183,2026-06-21T20:21:19,446.2,14,11447,64,eaa3a801236a,fix: split const out of control.kz into its own declarations module
+1184,2026-06-21T21:19:47,58.5,11,11449,7,4d183784a58d,fix: count category-level TODO/BENCHMARK tests in regression runners
+1185,2026-06-22T06:53:11,573.4,21,11888,52,01070ff87f17,feat: add unanchored `scan` to std/regex — streaming multi-match lexer
+1186,2026-06-22T14:44:11,471.0,4,223,16,8c08157b331e,fix(compiler): remove the 16-transform-handler cap (unbounded ArrayList)
+1187,2026-06-22T14:44:39,0.5,3,11434,2,4b215b4dab43,fix(tests): snapshot regression run at 824/890 (92.6%)
+1188,2026-06-23T12:27:12,1302.5,18,515,24,feadd1d7be07,feat(lang): bare-return events `-> T` + `:` call-site bind
+1189,2026-06-23T12:30:09,3.0,4,16,2,927cebea7295,feat(lang): bare-return `-> T` for proc-backed events (non-inlined call binding)
+1190,2026-06-23T17:44:26,314.3,1,13,5,37036436de7b,feat(emit): `:` bind works mid-pipe (the 3rd call context)
+1191,2026-06-23T18:18:19,33.9,20,43,81,8b2603ca9e0d,migrate(stdlib): collection `count` family + env to `-> T` bare return
+1192,2026-06-23T23:19:09,300.8,6,22967,5,a1b17dbdd144,feat(by-example): add `020_022_proc_arrow_return` to koru shard
+1193,2026-06-24T04:21:14,302.1,17,91,56,f132fa252fbc,migrate(stdlib): string single-payload events -> `-> T`; thread return-phantom through obligation checker
+1194,2026-06-24T04:52:58,31.7,15,17,33,9310d3ae1c73,migrate(stdlib): list `len` -> `-> usize` bare return
+1195,2026-06-24T05:27:19,34.4,3,9,16,1e3f40acea6b,migrate(stdlib): grid `get`/`sum` -> `-> i64` bare return
+1196,2026-06-24T12:26:49,419.5,68,291,502,46c5799ee56b,migrate(corpus): single-payload proc-backed events -> `-> T` (simple clusters)
+1197,2026-06-24T16:18:40,231.8,2,26,7,e4d2d9dc038c,fix(phantom): thread flow-HEAD bare-return bind's obligation into continuations
+1198,2026-06-24T16:51:27,32.8,2,15,5,50cbbed549d0,fix(emit): bare-return bind at a subflow head — alias result to the binding
+1199,2026-06-24T17:54:37,63.2,13,91876,115,708315416bce,The commit message:
+1200,2026-06-24T18:05:54,11.3,3,11,0,1524a14019cb,test(by-example): pure-Koru `.k` twin of 020_022 — `-> T` via subflow impl
+1201,2026-06-24T20:00:57,115.0,8,92,25,0a1fda2b9c2a,feat(parser): `->` is the resume-value producer glyph for effect arms
+1202,2026-06-24T21:39:46,98.8,5,51,2,4cf7ebaa6e79,feat(parser emit): produce-is-the-call — `-> mix(x: p)` resume value
+1203,2026-06-24T21:39:46,0.0,6,167,0,c45fc850fcaf,bench(bare_return): `-> T` single-payload dispatch at Rust/Zig parity
+1204,2026-06-24T22:29:54,50.1,1,39,7,3dccd83ce597,docs(bench): correct bare_return result — parity is noise-limited  proven in asm
+1205,2026-06-24T23:06:03,36.1,3,49,37,220ec6009339,fix(build): default the OUTPUT binary to ReleaseFast  not ReleaseSmall
+1206,2026-06-24T23:19:20,13.3,8,89,42,08985d1adb95,bench: migrate 5 stale numeric workloads to current syntax + re-baseline vs Rust
+1207,2026-06-24T23:32:29,13.2,2,27,0,21c7e852fa6e,test: mark the interpreter aspirational (430_RUNTIME + 410_BUDGETED_INTERPRETER)
+1208,2026-06-25T00:04:35,32.1,23,236,93,185f9c133691,bench(worldmodel): compute-bound perf metric + capture workloads in the suite
+1209,2026-06-25T00:06:23,1.8,11,57607,247,b7b9965f3935,docs(skills): regen by-example shards + capture test-result snapshots
+1210,2026-06-25T00:52:08,45.8,7,49,31,ac1c871aa1dc,feat(checker): KORU102 — `=>` is illegal on a `-> T` effect (use `->`)
+1211,2026-06-25T01:24:31,32.4,9,51,53,83a0d20fedf6,feat(parser): KORU103 — `|>` cannot introduce a bare value (produce with `->`)
+1212,2026-06-25T07:52:40,388.1,12,35144,14,607107c10de8,feat(skills): regen koru-metaprogramming shard (5 tests) + feedback cron
+1213,2026-06-25T10:06:16,133.6,1,6,7,5c1c85d9aecf,Update README.md
+1214,2026-06-25T09:13:32,-52.7,6,73,7,10cfeeb12955,feat(emit): `[mutable]` on a bare-return bind — `: r[mutable]` binds `var`  not `const`
+1215,2026-06-25T09:43:01,29.5,2,26,5,20432d260544,fix(emit): suppress unused bare-return head bind (`~e(...): name |> ...`)
+1216,2026-06-25T09:44:11,1.2,2,5,7,6f2e8c84b2e8,test(020_013): migrate `greet` to `-> []const u8`; PARSE003 line 31→29
+1217,2026-06-25T11:03:36,79.4,5,77,1,d5944183c80d,feat(taps): observe bare-return `-> T` events via `~tap(e -> *): v |> ...`
+1218,2026-06-25T12:09:39,66.0,4,41,2,177204a94488,fix(emit): bind a bare-return mid-chain subflow continuation (`a() |> b(): v |> c(v)`)
+1219,2026-06-25T13:18:13,68.6,6,94,11,45b86bca9b37,feat(parser): bind-then-construct after a bare-return head (`~run = head(): v => ok v`)
+1220,2026-06-25T16:21:58,183.8,3,11613,2,cdf1974e864f,feat(taps): observe bare-return events via tap; refresh test snapshot
+1221,2026-06-25T17:29:18,67.3,5,27,18,4e10abe8e5a3,fix(checker): validate the bare-return (`-> T<phantom>`) output phantom
+1222,2026-06-25T17:46:07,16.8,4,14,24,29f8e450aa37,test: migrate single-payload events unblocked by this session's fixes
+1223,2026-06-25T18:22:24,36.3,7,11616,19,89e965c99e92,feat: migrate single-payload events to bare-return in by-example
+1224,2026-06-25T19:48:50,86.4,7,90,4,6e23c235b186,feat(harness): per-test watchdog — no infinite-loop test can wedge the suite
+1225,2026-06-25T20:29:59,41.1,3,11631,2,8fe7c8485a6b,fix(harness): refresh test snapshot — board 800/867  0 regressions
+1226,2026-06-25T23:42:03,192.1,14,143,65,e67c69697039,feat(bare-return): #loop + for obligation family — emit  phantom  auto-discharge
+1227,2026-06-26T08:53:16,551.2,5,23269,17,d8a6947b18bb,fix(by-example): migrate single-payload events to bare-return + refresh snapshots
+1228,2026-06-26T11:21:38,148.4,37,4,130,cf926e7e300d,refactor(labels): delete vestigial post_label — dead  unwired  unsound
+1229,2026-06-26T12:21:53,60.3,22,23303,40,e6156c75e198,fix(feedback): strip redundant [!] on close + regen worldmodel manifest
+1230,2026-06-26T12:45:35,23.7,3,25,0,8fbbac160566,feat(showcase): Sieve of Eratosthenes — primes <= 1 000 000 = 78498
+1231,2026-06-26T14:27:40,102.1,7,405,18,c6d5a8509aa9,feat(field): std/field bitset primitive + grid lifecycle ops + prime-sieve showcases + vision
+1232,2026-06-26T15:51:42,84.0,7,109,0,99213b93732c,docs(field): encode comptime findings + pin pure-Koru-comptime aspirations (RED)
+1233,2026-06-26T17:12:12,80.5,2,11,0,08753ab2d3e0,test(comptime): mark the two pure-Koru-comptime aspiration pins as category-TODO
+1234,2026-06-26T20:12:36,180.4,20,367,0,58668ad20e66,feat(table): std/table comprehension sub-language — from/keep/sum/gaps  comptime-baked tables
+1235,2026-06-26T20:50:16,37.7,1,129,0,9defb526825b,docs(comptime): vision — a compile-time Koru interpreter is a pass that WALKS the serialized AST
+1236,2026-06-26T20:57:23,7.1,4,49,0,12a1af0b1328,feat(field): wheel-strided strike + mod-30030 wheel sieve showcase — beats hand-rolled champion
+1237,2026-06-26T21:38:11,40.8,1,10,0,abbb40695714,feat(field): clear — zero a field for alloc-once reuse
+1238,2026-06-26T22:32:54,54.7,1,12,3,851e1d9fa052,perf(field): word-wise strike — one OR per 64-bit word  not one set per bit
+1239,2026-06-26T22:49:02,16.1,1,69,11,8fd1ca4922c1,perf(field): stepMask word-wise strike — ~7x marking  odds-only sieve 3.7k->5.7k passes/sec
+1240,2026-06-26T22:54:09,5.1,1,31,2,bf927987e0c6,perf(field): 8-way-unrolled byte scatter for large strides — odds sieve 5.7k->10.5k passes/sec
+1241,2026-06-26T23:01:10,7.0,1,15,5,d997f8ae1a0a,perf(field): doubled-cycle stepMask — no scalar tail  odds sieve 10.5k->12.7k passes/sec
+1242,2026-06-26T23:08:02,6.9,3,18,0,21f1b381ec51,showcase(2108): fast odds-only + stepMask prime sieve — ~12.7k passes/sec  end-to-end test for the strike primitives
+1243,2026-06-26T23:24:05,16.1,1,18,15,7c95539b4b18,perf(field): quadrupled-cycle @Vector(4 u64) strike — odds sieve ~12.7k->~13.2k passes/sec
+1244,2026-06-27T02:35:59,191.9,4,138,0,2c748da24d0f,feat(field): std/field:mark-multiples — compiler-GENERATED strided SIMD marker
+1245,2026-06-27T08:52:38,376.6,1,16,11,1205d37570d6,perf(field): mark-multiples dispatches via fn-ptr LUT  not switch — matches/beats Zig champion
+1246,2026-06-27T09:30:19,37.7,3,21,0,fd2912e9401e,test(field): 2110 Bloom filter on std/field — proves the bitset is a general primitive
+1247,2026-06-27T10:44:09,73.8,1,32,0,9abdf821d23f,docs(CLAUDE): results/benchmark claims require status (SHOWN/measured/unverified)  no cross-protocol comparisons
+1248,2026-06-27T19:35:22,531.2,1,46,0,4a09029c0e59,scene: plant Koru's SCENE.md — the seed we never planted
+1249,2026-06-27T20:09:41,34.3,1,12,1,46458d9d4320,fix(compiler): heap-clone PROGRAM_AST before passes — fixes Linux rodata SIGSEGV
+1250,2026-06-27T22:39:19,149.6,4,75,2,24f311b076f5,fix(emit): bail return-switch fast-path when a step carries a template inline_body
+1251,2026-06-27T23:25:43,46.4,3,52,0,342661a39cbc,test(showcase): pin 2111 — pure-Koru drag-race harness shape (#L/@L loop drives allocating sieve pass)
+1252,2026-06-27T23:35:21,9.6,3,6,8,05029fb13abd,test(showcase): strip comparative speed claims from sieve pin comments
+1253,2026-06-28T01:14:23,99.0,5,140,12,384fd31d3eef,fix(phantom+emit): thread a foreign module's borrow resource through a user flow
+1254,2026-06-28T01:16:26,2.0,4,240,0,9088533bffa3,bench(drag-race): commit runnable Koru sieve entries + perf brief
+1255,2026-06-28T11:07:02,590.6,1,61,25,6fadd80e1e63,scene: grow the spine — no compromise / dissolve the tradeoff
+1256,2026-06-28T13:26:17,139.3,6,228,18,76e88d31ebb5,feat(field): escape-driven stack allocation — field:new.on-stack
+1257,2026-06-28T13:47:58,21.7,1,156,21,1884151c85a6,feat(field): brick 2 — automatic escape-driven stack placement for field:new
+1258,2026-06-28T14:47:49,59.9,5,426,41,ff5ccb08b0f5,feat(compiler): read program AST from program.ast.json at runtime — stop baking it into the backend
+1259,2026-06-28T15:47:20,59.5,2,94,2,5ff6120e95d2,perf(harness): backend-binary cache — reuse one built backend across tests with the same handler set
+1260,2026-06-28T20:52:21,305.0,3,91,11,d0ec76e6cdd6,fix(backend): two x86_64-Linux build bugs surfaced by the drag-race container build
+1261,2026-06-28T21:33:27,41.1,1,134,0,66badc8b5891,docs: GLM 5.2 handoff brief — pin the last ~17% on the drag-race sieve
+1262,2026-06-29T01:05:27,212.0,1,48,11,a7894c21037e,perf(std/field): residue-specialize the sparse marker — kill the register spill
+1263,2026-06-29T01:08:53,3.4,3,18,10,3f95a82043c4,chore(data): refresh test snapshot + worldmodel manifest (ceremony)
+1264,2026-06-29T02:29:56,81.0,1,12,1,1780e17eade4,fix(modules): own submodule file path for the lifetime of the AST
+1265,2026-06-29T02:30:07,0.2,3,13,0,c04f0dbede46,test(parser): pin rejection of single continuation branch with payload
+1266,2026-06-29T02:43:52,13.8,3,7,7,f987cc17446c,chore(status): refresh board snapshot + worldmodel (816/883) after dir-import fix
+1267,2026-06-29T08:28:55,345.1,2,61,10,f6cc32bccbd2,feat(io): print family -> stdout  add eprint -> stderr
+1268,2026-06-29T08:29:11,0.3,6,631,1,e03e92a815ed,feat(drag-race): PrimeKoru submission package + faithful.k stdout/stderr
+1269,2026-06-29T08:48:12,19.0,9,209,11,105392b24776,fix(drag-race): apply Composer (round-2) review findings
+1270,2026-06-29T09:43:27,55.3,15,83,0,e5b6559efca4,test(bare-return): pin the `->` grammar surface as the parser-first spec
+1271,2026-06-29T11:49:01,125.6,3,74,18,592c69074f15,feat(bare-return): complete the `-> T` grammar surface (scalar + record)
+1272,2026-06-29T11:51:16,2.3,6,11795,312,fbb81a600718,chore(status): refresh snapshot + corpus/worldmodel after bare-return grammar
+1273,2026-06-29T11:58:36,7.3,1,303,6,4449c455717a,chore(status): refresh unit-test manifest (260/272  12 skipped)
+1274,2026-06-29T12:56:14,57.6,5,44,11,2ee70ac23469,feat(bare-return): extend `-> T` produce to `#L` loop-exit arms + modernize drag-race entry
+1275,2026-06-29T16:00:01,183.8,5,11948,7,56ccbfab80a9,chore(status): refresh snapshot + corpus/worldmodel (822/889) after #L loop bare-return
+1276,2026-06-29T19:25:20,205.3,8,134,33,fbb05e861c58,fix(bare-return): make the `call(): bind -> produce` subflow arm work
+1277,2026-06-29T19:38:10,12.8,1,0,37,a5df4ae42b05,fix(compiler): remove dead [BUFFER DEBUG] blocks that read uninitialized memory
+1278,2026-06-29T19:57:22,19.2,1,39,3,925959ceb770,fix(bare-return): produce arm at the tail of a CHAINED subflow body
+1279,2026-06-29T20:03:43,6.3,3,27,0,4bf8d15b1ef5,test(bare-return): pin mid-chain bare-return `:` bind in a handler (RED)
+1280,2026-06-29T21:03:10,59.5,5,12036,7,50a523a1d474,chore(status): refresh snapshot + corpus/worldmodel (825/892) after bare-return subflow merge
+1281,2026-06-29T22:07:36,64.4,2,33,0,ede28ab1639d,test(expand): park a documented TODO pin for the handleExpandIfMatches overflow
+1282,2026-06-30T08:05:10,597.6,1,17,4,8194e76302bd,fix(import): dupe canonical_path onto the parse arena for location.file (0xAA family)
+1283,2026-06-30T16:55:29,530.3,3,99,3,06357aa9a2e0,chore(diag): land KORU_POISON allocator + document cloneArg shallow-copy footgun
+1284,2026-06-30T17:37:03,41.6,1,4,1,004f98853523,docs(drag-race): point the submission README at korulang.org (the presentation)
+1285,2026-06-30T17:54:59,17.9,1,3,0,4232d004eafe,docs(drag-race): add a gentle "young  pre-release language" maturity note
+1286,2026-06-30T18:18:19,23.3,1,9,5,cf7f76b8b7d2,fix(drag-race): runtime stage ships only the final a.out  not program.ast.json
+1287,2026-06-30T20:52:54,154.6,5,41,4,f6c813e410e4,fix(drag-race): force std/field:new through the real heap allocator
+1288,2026-07-01T01:28:36,275.7,4,64,17,586473084e6d,fix(runtime): koru_allocator() backs onto c_allocator  not GeneralPurposeAllocator
+1289,2026-07-01T01:28:54,0.3,1,19,9,00eeadadcb55,perf(field): widen mark-multiples dense-marker cutoff from primes<64 to <128
+1290,2026-07-01T01:38:44,9.8,1,220,0,5c5c41c2ea68,docs(drag-race): repro notes for Koru vs Rust sol1 (perf  size  compile time)
+1291,2026-07-01T02:02:36,23.9,1,28,0,8f406a71ec09,docs(drag-race): re-verify Zig sol3 comparison after DENSE_LIMIT widening
+1292,2026-07-01T02:13:36,11.0,1,28,0,da2ed6aa1e30,docs(drag-race): add peak RSS comparison vs Rust sol1
+1293,2026-07-01T02:21:20,7.7,2,27,29,6c2bf55a1c6f,docs(drag-race): sync dev-sandbox entry  fix stale faithfulness wrinkle in README
+1294,2026-07-02T00:44:27,1343.1,45,1790,27,35a3138f445d,feat(effects): multi-arm resume sums — the full return for effect branches
+1295,2026-07-02T00:47:37,3.2,7,12234,9,7c57990cfdb9,chore(status): refresh snapshot + corpus/worldmodel (839/905) after multi-arm resume
+1296,2026-07-02T02:26:13,98.6,24,196,0,3a6ccf254164,test(effects): pin subflow-implemented effect firing as pure-.k red pins (400_130-400_137)
+1297,2026-07-02T09:23:16,417.1,1,1,1,1539da91dd11,fix(scene): correct stale bracket-phantom syntax to angle form (*Connection<opened!>)
+1298,2026-07-02T10:55:45,92.5,11,452,32,896bb8b11db4,scene: grow the medium bed — the AST is the program
+1299,2026-07-02T11:26:53,31.1,114,320299,188,bdbcf6c7bf92,chore(status): refresh snapshot + docs (849/914) after subflow-implemented effects
+1300,2026-07-02T12:52:20,85.5,11,12321,5,904e01ac7891,feat(effects): record-payload arm fires take NAMED fields (400_139/140) + payload walls
+1301,2026-07-02T14:57:19,125.0,1,23,0,3a79494cf9df,docs(claude): AoC and every application cluster is an instrument  never a goal
+1302,2026-07-02T14:57:47,0.5,11,221,1,1149de4c1373,feat(checker): KORU047 — invoked event with no implementation is a compile error  never a silent stub
+1303,2026-07-02T14:59:03,1.3,5,24447,7,292d961ef481,chore(status): refresh snapshot + docs (853/917) after KORU047 wall
+1304,2026-07-02T20:16:37,317.6,14,206,59,c6dffadd5890,feat(phantom): linear transfer — obligations cross module boundaries and enter pure impls; back-edge linearity actually enforced
+1305,2026-07-02T21:00:18,43.7,5,1053,14,ac8560ee013f,feat(printer): canonical printer + corpus roundtrip harness — rung one of the medium bed
+1306,2026-07-02T21:20:09,19.9,10,71,24,8c17331d595c,feat(parser): KORU ruling — empty constructor braces are illegal (=> done {} → => done)
+1307,2026-07-02T21:32:06,11.9,2,49,5,e13af3c9cc37,feat(emitter): captured { } snapshot semantics — field order can no longer change the answer; disposal sites keyed by AST node
+1308,2026-07-02T21:32:44,0.6,60,36258,819,fb9571ec428e,chore(status): refresh snapshot + docs (854/919) after linear transfer + captured snapshot semantics
+1309,2026-07-02T21:33:04,0.3,49,0,11749,43ebcb3f4577,chore: remove committed gap-probe scratch dirs
+1310,2026-07-02T21:58:18,25.2,6,65,0,fdbecbcc1481,tests: pin two runtime/codegen defects surfaced by koru-libs lift passes
+1311,2026-07-02T22:08:28,10.2,6,119,69,bb7cd33a0be7,fix(parser): brace-aware block gathering + one Source trim convention (asymmetries #2 and #3)
+1312,2026-07-02T22:37:17,28.8,2,64,7,490f3fffac6a,fix(auto-discharge): credit back-edge jump args — 330_076 green  param-obligation-into-fold complete
+1313,2026-07-02T22:45:41,8.4,1,7,4,b1c0eeb67b88,fix(cli): --ast-canon/--print refuse trees with embedded parse_error items
+1314,2026-07-02T23:23:41,38.0,3,51,0,37318132e066,pin: effect-branch borrow can escape its firing (400_143  honest-red)
+1315,2026-07-02T23:29:32,5.8,3,10,10,eb0b47c08739,tests(ast-pins): 210_009/018/022 expected.json follow the Source trim ruling
+1316,2026-07-03T12:58:56,809.4,8,127,0,eb50035ff1d8,pin(trellis): std/trellis aspirational pins — AST-shape sessions as regex-over-paths (680_001-003)
+1317,2026-07-03T13:06:45,7.8,9,343,6,22712e3ff678,fix(emitter): tail-self-loop reentry uses simultaneous (snapshot) assignment
+1318,2026-07-03T13:13:04,6.3,4,425,9,c2fe977637c4,feat(trellis): std/trellis — AST-shape sessions as regex-over-paths; 680_001-003 GREEN
+1319,2026-07-03T14:10:41,57.6,19,866,414,6a632cd8d6d7,fix(harness+tests): retire program_ast.zig fossils — re-point 10 post-validations at program.ast.json; clean-list gap; 3 aspirational pins
+1320,2026-07-03T14:16:36,5.9,13,37890,20,88499ccf45fe,chore(ceremony): publish trellis-validated snapshot — synced markers + regenerated corpus/tutorial/worldmodel
+1321,2026-07-03T14:42:57,26.4,2,423,22,75ac913ab6f1,feat(emitter): flatten MUTUAL tail recursion to a combined dispatch loop
+1322,2026-07-03T16:11:37,88.7,3,23,0,d3d1c3e55a39,pin(red): naive `%` on signed i64 must compile + be C-fast — expression-layer gap
+1323,2026-07-03T16:59:02,47.4,1,1,0,f17521163bcd,wip(parser): accept bare-return produce (`-> expr`) in if-conditional branches
+1324,2026-07-03T17:57:06,58.1,8,114,2,87fe3e88f46f,feat(single-return-form): if + bare-return produce lowers to scalar return — part 1 complete
+1325,2026-07-03T18:27:47,30.7,1,22,4,57bef3dacbd0,feat(emitter): tail-flatten recognizes the bare-return forwarder (`f(...): v -> v`)
+1326,2026-07-03T18:34:44,7.0,10,1090,5,62450e07cfe3,feat(comptime): the comptime Koru interpreter lands — expression core + fold pass  310_098 green
+1327,2026-07-03T18:35:54,1.2,4,12451,15,6968f5ffdb09,chore(ceremony): publish comptime-interpreter snapshot — 865/935 board + regenerated corpus/tutorial/worldmodel
+1328,2026-07-03T18:55:32,19.6,1,1,1,e7fbbdbd0cc9,fix(test): visitor_emitter_test imports the wired module  not the file path
+1329,2026-07-03T19:22:09,26.6,2,40,46,20479c55fb8a,perf(emitter): mutual dispatch loop becomes a labeled switch — direct threaded jumps
+1330,2026-07-03T20:16:43,54.6,2,443,5,c103fbec5d11,feat(comptime): the flow walker — branch dispatch  when-guards  labeled #loop recursion  thunk-table resolution
+1331,2026-07-03T20:18:19,1.6,3,24,0,7c6aba15308f,test(pin): for(a..b) loop var usize/i64 mix leaks a raw Zig error — red pin 010_064
+1332,2026-07-03T21:48:47,90.5,8,355,29,c75080f462c2,feat(comptime): the thunk bridge lands — 310_091 green  the countdown runs inside the compiler
+1333,2026-07-03T22:16:57,28.2,21,169,0,7c37406afd35,test(pin): optional effect arms — presence expressions designed  7 pins (2 green  5 red)
+1334,2026-07-04T06:02:51,465.9,1,7,1,79d1e9c90d44,fix(harness): watchdog sleep held the output pipe → --parallel ran serially
+1335,2026-07-04T06:51:03,48.2,1,26,1,4480242375cb,feat(wm): suite runtime as a measured world-signal — the adapter's missing machine half
+1336,2026-07-04T15:07:37,496.6,2,2,0,abcb780d83f0,chore(harness): track expected_comptime.txt — the comptime-output contract file joins the allowlist
+1337,2026-07-04T15:08:54,1.3,9,25199,22,b15624179c75,chore(ceremony): publish flow-walker snapshot — 870/946 board  310_091 green  regenerated corpus/tutorial/worldmodel
+1338,2026-07-04T20:44:53,336.0,2,9,9,69dded24b3c9,fix(tests): phantom-checker fixtures follow the language — markDisposed site arg  kebab-case event names
+1339,2026-07-04T20:45:06,0.2,8,69,0,e478834a33c0,test(pin): |koru template facet + PGO route-order — 2 aspirational reds (310_099  310_100)
+1340,2026-07-04T21:44:45,59.6,36,1295,0,24d782f1a98a,test(pin): std/store design cluster — 690_STORE born (8 aspirational pins + DESIGN.md)  2 green substrate pins
+1341,2026-07-04T21:49:45,5.0,7,73,0,095cb43f1f3d,test(pin): multi-bind produce + nested-if-arm produce — the tree-recursion shapes (320_124/125)
+1342,2026-07-04T22:14:43,25.0,4,45,0,1ab16a7d89b7,test(pin): data→Liquid bridge — the |koru loop's input side (310_101  aspirational red)
+1343,2026-07-04T22:25:29,10.8,1,32,0,7108aa225891,docs(store): ecs_bench_suite mapping — the perf north star  AoC-pattern instrument
+1344,2026-07-04T22:29:39,4.2,2,8,2,1d68ff1aabd3,signals: refine the two additive belief-class orphans — extension + new-belief
+1345,2026-07-04T22:34:54,5.3,3,20,0,d30d0625d61f,test(pin): `! as _` capture discard breaks Zig emission — honest red (320_126)
+1346,2026-07-04T22:37:59,3.1,7,37,0,032b0e69ecc9,test(pin): nested-call-as-argument mis-lowering + read.ln leak — 2 honest reds (320_127  650_007)
+1347,2026-07-04T22:50:07,12.1,6,51,12,d5ae078bfcd4,test(pin): nested call in argument position is ILLEGAL — 320_127 flips to MUST_FAIL (Lars-ruled)
+1348,2026-07-04T22:59:46,9.7,25,71,0,222d6de5fb8d,feat(signals): route: lines on every declaration + regression telemetry families
+1349,2026-07-04T23:08:49,9.1,13,156,12,8ec7bc42ce8d,test(pin): calls-are-not-expressions surface map — 4 more open surfaces pinned (320_128-131)
+1350,2026-07-05T00:28:09,79.3,22,398,161,34063870c4e2,feat(checker): KORU104 — the expression-admission wall; calls are not expressions  anywhere

@@ -1,0 +1,8 @@
+A call inside an if CONDITION expression is illegal — calls are not
+expressions; the idiom is bind-first (`g(a: 4): x |> if(x > 3)`).
+
+Guarded by the KORU104 expression-admission wall (flow_checker, Stage A) —
+if-conditions parse as invocation arguments, so the argument walk covers
+them. One of the five surfaces mapped open 2026-07-05 and closed by the
+wall the same session; previously the call's Koru syntax leaked verbatim
+into emitted Zig (raw Stage-D error).

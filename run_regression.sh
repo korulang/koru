@@ -83,11 +83,14 @@ CLEAN_CACHE=false
 # Use --parallel N to run N tests concurrently
 PARALLEL_JOBS=1
 
-# Backend-binary cache (default: off). With --backend-cache, the built backend
-# compiler binary is reused across tests that share a handler set — sound because
-# the program AST is now a runtime input (program.ast.json), not baked into the
-# binary. Keyed on the backend's build inputs + a compiler-source salt.
-BACKEND_CACHE_MODE=off
+# Backend-binary cache (default: ON). The built backend compiler binary is
+# reused across tests that share a handler set — sound because the program AST
+# is now a runtime input (program.ast.json), not baked into the binary. Keyed
+# on the backend's build inputs + a compiler-source salt, so any compiler/stdlib
+# edit invalidates every cached binary. Measured across the suite: 779 test
+# backends collapse to ~121 distinct binaries (top two keys cover 57% of tests).
+# Disable with --no-backend-cache when investigating cache-correctness.
+BACKEND_CACHE_MODE=on
 
 echo "════════════════════════════════════════"
 echo "    KORU REGRESSION TEST SUITE"
@@ -128,6 +131,7 @@ if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
     echo "  --cache                                Enable per-test result cache (skip unchanged tests)"
     echo "  --no-cache                             Disable result cache (default)"
     echo "  --verify-cache                         Run each test twice (cached + uncached), assert parity"
+    echo "  --no-backend-cache                     Disable backend-binary reuse across tests (default: on)"
     echo "  --keep-artifacts                        Keep per-test artifacts even on success (uses lots of disk)"
     echo "  --parallel N                           Run N tests concurrently (default: 1 = sequential)"
     echo ""
@@ -422,7 +426,12 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --backend-cache)
+            # Default since 2026-07: kept as an accepted no-op for muscle memory.
             BACKEND_CACHE_MODE=on
+            shift
+            ;;
+        --no-backend-cache)
+            BACKEND_CACHE_MODE=off
             shift
             ;;
         --parallel)
@@ -486,6 +495,25 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# One suite run per CHECKOUT: per-test artifacts (backend.zig, SUCCESS/FAILURE
+# markers) live in the test dirs themselves, so two concurrent runs in the same
+# checkout silently corrupt each other's results. Separate worktrees are fine —
+# each has its own tests/ tree. mkdir is the portable atomic lock (no flock on
+# macOS); a stale lock from a dead run is taken over, not fought.
+KORU_RUN_LOCK="$SCRIPT_DIR/.regression-run.lock"
+if ! mkdir "$KORU_RUN_LOCK" 2>/dev/null; then
+    LOCK_PID=$(cat "$KORU_RUN_LOCK/pid" 2>/dev/null || echo "")
+    if [ -n "$LOCK_PID" ] && kill -0 "$LOCK_PID" 2>/dev/null; then
+        echo -e "${RED}❌ A regression run (pid $LOCK_PID) is already active in this checkout.${NC}"
+        echo "   Two runs in one checkout corrupt each other's test artifacts."
+        echo "   Wait for it, or run from a separate worktree."
+        exit 1
+    fi
+    echo "Stale suite lock (pid ${LOCK_PID:-unknown} gone) — taking over."
+fi
+echo $$ > "$KORU_RUN_LOCK/pid"
+trap 'rm -rf "$KORU_RUN_LOCK"' EXIT
 
 # Display what we're running
 if [ "$SMOKE_MODE" = true ]; then
@@ -697,9 +725,10 @@ PY
         done < "$FILTERED_LIST"
     fi
 
-    # Run in parallel, capture output for debugging only
-    PARALLEL_OUTPUT="/tmp/koru-parallel-output.txt"
-    : > "$PARALLEL_OUTPUT"
+    # Run in parallel, capture output for debugging only. Per-run temp path
+    # (like LIST_FILE above): a fixed name let two concurrent runs — e.g. in
+    # different worktrees — truncate and interleave each other's output.
+    PARALLEL_OUTPUT=$(mktemp /tmp/koru-parallel-output.XXXXXX)
     env REGRESSION_QUIET=true CHECK_LEAKS="$CHECK_LEAKS" VERBOSE="$VERBOSE" ZIG_GLOBAL_CACHE="$ZIG_GLOBAL_CACHE" \
         xargs -0 -P "$PARALLEL_JOBS" -I{} ./run_single_test.sh {} < "$FILTERED_LIST" 2>&1 | \
         tee "$PARALLEL_OUTPUT"

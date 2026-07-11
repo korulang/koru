@@ -1,0 +1,35 @@
+// ============================================================================
+// Test 210_096: MUST_FAIL — a BARE path argument whose last segment puns to a
+//   name that is NOT a parameter must be REJECTED at the koru frontend.
+//   Bare-side twin of 210_091's legal `echo(v: box.other)`.
+//
+//   `echo(box.other)` puns to 'other' (last segment), but the only parameter
+//   is 'v'. The legal spelling is `echo(v: box.other)`.
+//
+// CURRENT BEHAVIOR (the bug this pins, worse than 210_094/095): the koru
+//   frontend ACCEPTS it and codegen emits MALFORMED Zig referencing an
+//   undeclared `v`. The frontend never complains — the harness even reports
+//   "compilation SUCCEEDED" — and the only thing that catches it is the Zig
+//   compiler at the final executable build:
+//     output_emitted.zig: error: use of undeclared identifier 'v'
+//   That raw host-level leak is itself a defect (the koru-level wall isn't
+//   built here). This test pins BOTH: the missing rejection AND that it must
+//   surface as a clean FRONTEND koru error, never as broken emitted Zig.
+//   Diagnostic wording is a design call (TBD with the fix).
+// ============================================================================
+
+~import std/io
+
+~event echo { v: i32 }
+| out i32
+
+~echo => out v
+
+~event get-box {}
+| got { v: i32, other: i32 }
+
+~proc get-box|zig { return .{ .got = .{ .v = 7, .other = 11 } }; }
+
+~get-box()
+| got box |> echo(box.other)
+    | out r |> std/io:print.ln("{{ r:d }}")

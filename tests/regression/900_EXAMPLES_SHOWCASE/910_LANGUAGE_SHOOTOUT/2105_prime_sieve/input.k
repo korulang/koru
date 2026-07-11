@@ -10,8 +10,8 @@ import std/grid
 
 std/grid:new(rows: 1, cols: 1000001)
 | grid g |> for(2..1001)
-    ! each p |> std/grid:get(g, p, 0): pv |> if(pv == 0)
+    ! each p |> std/grid:get(g, x: p, y: 0): pv |> if(pv == 0)
         | then |> for(0..(1000000 - p * p) / p + 1)
-            ! each k |> std/grid:set(g, p * p + k * p, 0, 1)
-    | done |> std/grid:count-zeros(g, 2, 1000001): c |> std/io:print.ln("{{ c:d }}") |> std/grid:free(g)
+            ! each k |> std/grid:set(g, x: p * p + k * p, y: 0, v: 1)
+    | done |> std/grid:count-zeros(g, lo: 2, hi: 1000001): c |> std/io:print.ln("{{ c:d }}") |> std/grid:free(g)
 | err e |> std/io:print.ln("ERR {{ e:s }}")

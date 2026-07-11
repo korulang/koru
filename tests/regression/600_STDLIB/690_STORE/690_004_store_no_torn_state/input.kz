@@ -1,0 +1,28 @@
+// ASPIRATIONAL (RED by design until std/store rung 1 lands — see DESIGN.md).
+// NO TORN STATE — the headline guarantee ((h) lean, Lars-ruled direction):
+// the atomicity unit is a write PLUS its full interceptor cascade; writes
+// interleave, never overlap; no watch ever observes mid-cascade state.
+//
+// Here the interceptor derives shield from hp (same-store other-field
+// write: an ACYCLIC field-level edge hp→shield — legal under the
+// field-granular cycle graph, DESIGN.md queue (d)). The interceptor
+// discards its payload (`! hp _` — corpus discard-token shape; a bare
+// unbound arm is only legal for void payloads, 400_096). ASSUMES the
+// creation seed does NOT fire watches (birth-is-not-a-write — DESIGN.md
+// O9, lean pending ratification). The watch on hp reads
+// game.shield in its body (comptime-known store name — transplant-pure).
+// The pin: by the time ANY watch fires, the cascade has settled, so hp
+// and shield are always observed consistent (shield == hp * 2). A torn
+// implementation would print "hp 5 shield 0".
+
+~import std/io
+~import std/store
+
+~std/store:create(game) { hp: 0[i64], shield: 0[i64] }
+! hp _ |> std/store:stored { game.shield: game.hp * 2 }
+
+~std/store:watch(game)
+! hp h |> std/io:print.ln("hp {{ h:d }} shield {{ game.shield:d }}")
+
+~std/store:stored { game.hp: 5 }
+~std/store:stored { game.hp: 9 }

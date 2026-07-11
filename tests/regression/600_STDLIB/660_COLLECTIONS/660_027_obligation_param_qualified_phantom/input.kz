@@ -24,5 +24,5 @@
 
 ~std/list:new(i64)
 | list xs |> roundtrip(cur: xs)
-    | out r |> std/list:len(r): n |> std/io:print.ln("len={{ n:d }}") |> std/list:free(r)
+    | out xs |> std/list:len(xs): n |> std/io:print.ln("len={{ n:d }}") |> std/list:free(xs)
 | err e |> std/io:print.ln("ERR seed {{ e:s }}")

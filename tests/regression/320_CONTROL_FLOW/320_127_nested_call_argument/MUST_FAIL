@@ -1,0 +1,8 @@
+A call nested directly in argument position — r1(x: r1(x: 5)) — is ILLEGAL
+(Lars-ruled 2026-07-05). The idiom is bind-first: `r1(x: 5): a |> r1(x: a)`.
+
+Guarded by the KORU104 expression-admission wall (flow_checker, Stage A):
+the compiler rejects with "nested call in argument 'x' — calls are not
+expressions; use event chaining: bind the result first". This pin holds
+that wall up; before it landed, the compiler accepted the shape and leaked
+the inner call's Koru syntax verbatim into emitted Zig (raw Stage-D error).

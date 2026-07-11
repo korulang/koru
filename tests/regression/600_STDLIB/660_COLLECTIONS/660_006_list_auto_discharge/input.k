@@ -8,5 +8,5 @@ import std/io
 import std/list
 
 std/list:new(i64)
-| list xs |> std/list:push(xs, 1) |> std/io:print.ln("done")
+| list xs |> std/list:push(xs, v: 1) |> std/io:print.ln("done")
 | err e |> std/io:print.ln("ERR {{ e:s }}")

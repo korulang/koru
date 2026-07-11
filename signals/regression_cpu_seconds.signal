@@ -1,0 +1,7 @@
+name: regression_cpu_seconds
+kind: measured
+shape: scalar
+face: in
+membrane: false
+route: surface, wmfx=regression_shape
+note: full-suite cpu seconds, user+sys (raw; efficiency is the engine's to derive)

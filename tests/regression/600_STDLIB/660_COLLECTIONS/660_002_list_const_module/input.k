@@ -11,4 +11,4 @@ const {
   xs: std/list[i64]
 }
 
-std/list:push(xs, 3) |> std/io:print.ln("{{ xs.len:d }}")
+std/list:push(xs, v: 3) |> std/io:print.ln("{{ xs.len:d }}")
