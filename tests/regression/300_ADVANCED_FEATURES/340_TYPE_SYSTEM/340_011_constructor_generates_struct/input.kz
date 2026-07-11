@@ -1,0 +1,25 @@
+// PINS: the constructor's TYPE terminal via the field-vocabulary. `field` collects
+// field specs produced by a LINQ range, and the flow declares a base struct type
+// through the dumb `const`-shaped type primitive (parse rows -> lower per target).
+// GENERATION only: no existing type is READ, so NO registry is required — the
+// lowered type lives in Zig's own scope, which is registry enough for construction.
+// This is the Vec-N goal of 340_008 expressed through the constructor instead of
+// the `over`-DSL; `{i}` is the projection splice (LINQ `Select` building a name).
+// Surface PROVISIONAL — only the `std/constructor:*` verbs are unbuilt.
+
+~import std/constructor
+
+const std = @import("std");
+
+~std/constructor:struct(Vec3)
+! construct |> for(0..3)
+    ! each i |> std/constructor:field(name: "v{i}", type: f64)
+
+~event main {}
+
+~proc main|zig {
+    const p = Vec3{ .v0 = 1.0, .v1 = 2.0, .v2 = 3.0 };
+    std.debug.print("({d:.1}, {d:.1}, {d:.1})\n", .{ p.v0, p.v1, p.v2 });
+}
+
+~main()
