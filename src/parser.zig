@@ -210,6 +210,37 @@ fn hasTopLevelArrow(s: []const u8) bool {
     return indexOfTopLevelArrow(s) != null;
 }
 
+/// Index of the first top-level construct/produce arrow — `=>` (construct) or
+/// `->` (produce) — outside parens, braces, and string literals. An invocation
+/// HEAD ends here: everything after the arrow is a bare-return continuation that
+/// the caller re-parses from the original line. Used to isolate the head so the
+/// source-block pre-checks never mistake a braced constructor payload
+/// (`... => final { r }`) for a source block on the branch name (pinned 100_085).
+fn indexOfTopLevelHeadArrow(s: []const u8) ?usize {
+    var paren_depth: i32 = 0;
+    var brace_depth: i32 = 0;
+    var in_string = false;
+    var i: usize = 0;
+    while (i < s.len) : (i += 1) {
+        const c = s[i];
+        if (c == '"' and (i == 0 or s[i - 1] != '\\')) {
+            in_string = !in_string;
+            continue;
+        }
+        if (in_string) continue;
+        if (c == '(') paren_depth += 1;
+        if (c == ')') paren_depth -= 1;
+        if (c == '{') brace_depth += 1;
+        if (c == '}') brace_depth -= 1;
+        if (paren_depth == 0 and brace_depth == 0 and
+            (c == '=' or c == '-') and i + 1 < s.len and s[i + 1] == '>')
+        {
+            return i;
+        }
+    }
+    return null;
+}
+
 /// Return `s` with a trailing `// ...` line comment removed (the `//` must be
 /// outside a string literal). Used so body-glyph detection never trips on a
 /// `->`/`|>`/`=>` that lives inside a trailing comment.
@@ -3812,10 +3843,23 @@ pub const Parser = struct {
             }
         }
 
-        const invocation_part = if (pipe_idx) |idx|
+        const invocation_part_full = if (pipe_idx) |idx|
             clean[0..idx]
         else
             clean;
+
+        // The invocation HEAD ends at the first top-level construct/produce arrow
+        // (`=> ctor` / `-> expr`). A bare-return bind (`head(): r => final { r }`)
+        // leaves the arrow tail glued onto `clean` after the `: r` strip; the
+        // caller re-parses that tail into a continuation, so the head parse must
+        // stop at the arrow. Without this, the braced constructor payload's `{`
+        // trips the source-block detection below and hijacks the parse — freeing
+        // the head's args into an undefined AST (SIGSEGV in the serializer;
+        // pinned by 100_085). The braceless twin has no `{` and never hit it.
+        const invocation_part = if (indexOfTopLevelHeadArrow(invocation_part_full)) |he|
+            lexer.trim(invocation_part_full[0..he])
+        else
+            invocation_part_full;
 
         // Check for Source block syntax: eventName <Type>{ ... }
         const source_block_marker = std.mem.indexOf(u8, invocation_part, ">{");
