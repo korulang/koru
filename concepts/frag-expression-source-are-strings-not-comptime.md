@@ -1,3 +1,10 @@
+---
+type: belief
+id: frag-expression-source-are-strings-not-comptime
+provenance: introduced by d7d027b5 — feat(lang): decouple Expression/Source from comptime — representation != timing
+ts: 2026-07-07
+---
+
 # Expression/Source are captured strings — NOT a comptime signal (belief)
 
 A declared `Expression` or `Source` param is a *representation* choice: the

@@ -1,3 +1,10 @@
+---
+type: belief
+id: frag-single-return-recursion-surface
+provenance: introduced by 095cb43f — test(pin): multi-bind produce + nested-if-arm produce — the tree-recursion shapes (320_124/125)
+ts: 2026-07-04
+---
+
 # Single-return recursion surface — tree recursion is already expressible (belief)
 
 The single-return form (`-> T` bare-return events with `:` call-site binds)

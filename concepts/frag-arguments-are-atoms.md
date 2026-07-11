@@ -1,3 +1,10 @@
+---
+type: belief
+id: frag-arguments-are-atoms
+provenance: introduced by d5ae078b — test(pin): nested call in argument position is ILLEGAL — 320_127 flips to MUST_FAIL (Lars-ruled)
+ts: 2026-07-05
+---
+
 # Calls are not expressions — anywhere (belief)
 
 Expressions are pure value computations over atoms: literals, bound names,

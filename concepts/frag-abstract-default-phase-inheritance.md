@@ -1,3 +1,10 @@
+---
+type: belief
+id: frag-abstract-default-phase-inheritance
+provenance: introduced by be07a826 — fix(abstract): preserve phase annotation on synthesized .default decls
+ts: 2026-07-10
+---
+
 # A synthesized `.default` decl must inherit its abstract's phase annotation (belief)
 
 When an `[abstract]` event has a cross-module override that delegates to the

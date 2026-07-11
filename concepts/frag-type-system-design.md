@@ -1,3 +1,10 @@
+---
+type: belief
+id: frag-type-system-design
+provenance: introduced by 997f0ae8 — test(types): un-park the type corpus — 24 tests, honest-red board for the registry design
+ts: 2026-07-07
+---
+
 # The type system — registry, stamped names, comprehensions (design belief)
 
 Koru's type system is grown, not decreed: a **dumb, metadata-loaded

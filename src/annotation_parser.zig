@@ -240,8 +240,155 @@ pub fn getCall(
 }
 
 // ============================================================================
+// Block tokenizer — nesting- and string-aware entry delimiting
+// ============================================================================
+// An annotation block is a LIST OF ENTRIES: pipe-separated inline, bullet-
+// separated vertical. The pipe is a list delimiter and semantically silent —
+// it never delimits inside nested ()/[]/{} pairs or "..." strings, so entries
+// like `custom(foo(bar: 1))`, `other[x, y]`, and `doc("a|b")` stay whole.
+// These two functions are the ONLY place that knowledge lives; the parser and
+// every downstream consumer delimit through them, never with indexOf/split.
+
+/// Scan `text` for the `]` that CLOSES an annotation block whose opening `[`
+/// has already been consumed — the first `]` at nesting depth 0. Nested
+/// `[...]`/`(...)`/`{...}` pairs and `"..."` strings (with `\` escapes) are
+/// skipped over. Returns null when the closer is not in `text` (the vertical
+/// form, where the block closes on a later line).
+pub fn findBlockClose(text: []const u8) ?usize {
+    var depth: usize = 0;
+    var in_string = false;
+    var i: usize = 0;
+    while (i < text.len) : (i += 1) {
+        const c = text[i];
+        if (in_string) {
+            if (c == '\\') {
+                i += 1;
+                continue;
+            }
+            if (c == '"') in_string = false;
+            continue;
+        }
+        switch (c) {
+            '"' => in_string = true,
+            '[', '(', '{' => depth += 1,
+            ')', '}' => {
+                if (depth > 0) depth -= 1;
+            },
+            ']' => {
+                if (depth == 0) return i;
+                depth -= 1;
+            },
+            else => {},
+        }
+    }
+    return null;
+}
+
+/// Split annotation-block content (the text between the block's brackets)
+/// into top-level entries: pipes at depth 0 delimit; pipes inside nested
+/// pairs or strings belong to their entry. Entries are trimmed and empty
+/// entries dropped. The returned entries are slices into `content` (no
+/// copies); the caller owns (and frees) only the outer slice.
+pub fn splitEntries(allocator: std.mem.Allocator, content: []const u8) ![][]const u8 {
+    var entries = try std.ArrayList([]const u8).initCapacity(allocator, 4);
+    errdefer entries.deinit(allocator);
+    var depth: usize = 0;
+    var in_string = false;
+    var start: usize = 0;
+    var i: usize = 0;
+    while (i < content.len) : (i += 1) {
+        const c = content[i];
+        if (in_string) {
+            if (c == '\\') {
+                i += 1;
+                continue;
+            }
+            if (c == '"') in_string = false;
+            continue;
+        }
+        switch (c) {
+            '"' => in_string = true,
+            '[', '(', '{' => depth += 1,
+            ']', ')', '}' => {
+                if (depth > 0) depth -= 1;
+            },
+            '|' => {
+                if (depth == 0) {
+                    const entry = std.mem.trim(u8, content[start..i], " \t");
+                    if (entry.len > 0) try entries.append(allocator, entry);
+                    start = i + 1;
+                }
+            },
+            else => {},
+        }
+    }
+    const last = std.mem.trim(u8, content[start..], " \t");
+    if (last.len > 0) try entries.append(allocator, last);
+    return entries.toOwnedSlice(allocator);
+}
+
+// ============================================================================
 // Tests
 // ============================================================================
+
+test "findBlockClose - flat block" {
+    try std.testing.expectEqual(@as(?usize, 4), findBlockClose("pure]event x"));
+}
+
+test "findBlockClose - skips nested pairs" {
+    // custom(foo[1])]rest → the closer is after the balanced nesting
+    const text = "custom(foo[1])]rest";
+    try std.testing.expectEqual(@as(?usize, 14), findBlockClose(text));
+}
+
+test "findBlockClose - skips strings with escapes and brackets" {
+    const text = "doc(\"a ] b \\\" ]\")]x";
+    try std.testing.expectEqual(@as(?usize, 17), findBlockClose(text));
+}
+
+test "findBlockClose - vertical form returns null" {
+    try std.testing.expectEqual(@as(?usize, null), findBlockClose(""));
+    try std.testing.expectEqual(@as(?usize, null), findBlockClose("- comptime"));
+    try std.testing.expectEqual(@as(?usize, null), findBlockClose("balanced [x] only"));
+}
+
+test "splitEntries - flat pipes with and without spaces" {
+    const allocator = std.testing.allocator;
+    const entries = try splitEntries(allocator, "comptime|transform | fuseable");
+    defer allocator.free(entries);
+    try std.testing.expectEqual(@as(usize, 3), entries.len);
+    try std.testing.expectEqualStrings("comptime", entries[0]);
+    try std.testing.expectEqualStrings("transform", entries[1]);
+    try std.testing.expectEqualStrings("fuseable", entries[2]);
+}
+
+test "splitEntries - pipes inside nesting and strings stay put" {
+    const allocator = std.testing.allocator;
+    const entries = try splitEntries(allocator, "custom(a|b) | other[x|y] | doc(\"p|q\")");
+    defer allocator.free(entries);
+    try std.testing.expectEqual(@as(usize, 3), entries.len);
+    try std.testing.expectEqualStrings("custom(a|b)", entries[0]);
+    try std.testing.expectEqualStrings("other[x|y]", entries[1]);
+    try std.testing.expectEqualStrings("doc(\"p|q\")", entries[2]);
+}
+
+test "splitEntries - expression-shaped entries survive whole" {
+    const allocator = std.testing.allocator;
+    const entries = try splitEntries(allocator, "build == \"release\" | version >= 15");
+    defer allocator.free(entries);
+    try std.testing.expectEqual(@as(usize, 2), entries.len);
+    try std.testing.expectEqualStrings("build == \"release\"", entries[0]);
+    try std.testing.expectEqualStrings("version >= 15", entries[1]);
+}
+
+test "splitEntries - empty entries dropped" {
+    const allocator = std.testing.allocator;
+    const entries = try splitEntries(allocator, " | a || b | ");
+    defer allocator.free(entries);
+    try std.testing.expectEqual(@as(usize, 2), entries.len);
+    try std.testing.expectEqualStrings("a", entries[0]);
+    try std.testing.expectEqualStrings("b", entries[1]);
+}
 
 test "parseCall - simple annotation returns null" {
     const allocator = std.testing.allocator;

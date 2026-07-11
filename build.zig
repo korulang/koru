@@ -374,6 +374,8 @@ pub fn build(b: *std.Build) void {
 
     // Add annotation_parser to flow_checker (defined earlier, but needs this dep)
     flow_checker_module.addImport("annotation_parser", annotation_parser_module);
+    // parser (defined earlier) delimits annotation-block entries through it
+    parser_module.addImport("annotation_parser", annotation_parser_module);
     flow_checker_module.addImport("log", log_module);
     // emitter_helpers (defined earlier) detects `~[transform]proc` implementations
     emitter_helpers_module.addImport("annotation_parser", annotation_parser_module);
@@ -1370,7 +1372,16 @@ pub fn build(b: *std.Build) void {
     const regex_test_step = b.step("test-regex", "Run regex engine tests");
     regex_test_step.dependOn(&run_regex_engine_tests.step);
 
+    const annotation_parser_tests = b.addTest(.{
+        .name = "annotation_parser_tests",
+        .root_module = annotation_parser_module,
+    });
+    const run_annotation_parser_tests = b.addRunArtifact(annotation_parser_tests);
+    const annotation_parser_test_step = b.step("test-annotation-parser", "Run annotation parser tests");
+    annotation_parser_test_step.dependOn(&run_annotation_parser_tests.step);
+
     const test_step = b.step("test", "Run all tests");
+    test_step.dependOn(&run_annotation_parser_tests.step);
     test_step.dependOn(&run_regex_engine_tests.step);
     test_step.dependOn(&run_flow_parser_tests.step);
     test_step.dependOn(&run_lexer_tests.step);

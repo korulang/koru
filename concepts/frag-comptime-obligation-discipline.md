@@ -1,3 +1,10 @@
+---
+type: belief
+id: frag-comptime-obligation-discipline
+provenance: introduced by e9025dba — test(comptime): pin 310_102 RED — comptime obligations checked-but-too-late
+ts: 2026-07-06
+---
+
 # Comptime obligation discipline — checked-but-too-late (pipeline belief)
 
 Koru's obligation checking covers **two executions** of Koru code: the
