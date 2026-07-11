@@ -55,9 +55,9 @@ two resolution layers, dictated by where each condition's text is born.
   POISONS `@hasDecl` for the omitted case: presence on a void arm reads
   "installed" even when the consumer omitted the handler. Observationally
   silent for guards (the no-op does nothing), but an `if(<void arm>)`
-  choosing between observably different terminals would take the wrong
-  branch when omitted. Unpinned; candidate fix is moving the no-op from
-  the consumer's struct to a defaulted alias on the declaring side so
+  choosing between observably different terminals takes the wrong branch
+  when omitted — pinned red at 400_154. Candidate fix is moving the no-op
+  from the consumer's struct to a defaulted alias on the declaring side so
   `__H` stays clean. Needs a ruling — the no-op contract is Lars's.
 - JS target: presence should be native truthiness on the handlers object —
   unverified, designed for the Zig target first.
