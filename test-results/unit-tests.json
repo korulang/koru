@@ -1,16 +1,24 @@
 {
-  "timestamp": "2026-07-11T14:51:03.364Z",
+  "timestamp": "2026-07-11T15:22:56.104Z",
   "summary": {
-    "passed": 263,
+    "passed": 282,
     "failed": 0,
     "skipped": 12,
     "leaked": 0,
     "compileErrors": 0,
-    "total": 275,
-    "suiteCount": 38,
+    "total": 294,
+    "suiteCount": 39,
     "status": "success"
   },
   "suites": [
+    {
+      "name": "annotation_parser_tests",
+      "passed": 19,
+      "failed": 0,
+      "skipped": 0,
+      "total": 19,
+      "status": "success"
+    },
     {
       "name": "ast_functional_tests",
       "passed": 2,
