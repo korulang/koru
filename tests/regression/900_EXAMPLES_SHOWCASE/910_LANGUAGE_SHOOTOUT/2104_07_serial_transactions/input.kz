@@ -1,6 +1,6 @@
 // TEST: Serial transactions on the same connection
 //
-// After commit, we get Connection[active!] back.
+// After commit, we get Connection<active!> back.
 // begin() accepts [!connected|!active], so we can start another transaction!
 // This enables connection reuse for multiple transactions.
 //

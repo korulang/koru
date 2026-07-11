@@ -23,8 +23,9 @@ node scripts/pull-feedback.js --json
 Each item has: `_id` (full Convex id — its first 8 chars are the CLI id),
 `category`, `content`, `pageUrl`, `priority`, `status`.
 
-If there are **zero** open items: post `☕ No new Koru feedback this morning.`
-to Discord (see Step 5) and stop.
+If there are **zero** open items: post **nothing** to Discord and stop. An empty
+digest is an empty signal — worse than silence. Only post when there is actual
+feedback to report.
 
 ## Step 2 — Understand each item
 

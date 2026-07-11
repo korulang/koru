@@ -1,0 +1,14 @@
+// 690_020 TIER 1 spelling pin: scalar column widening — a singleton store
+// with f64 columns (kernel:shape's green f64 precedent, 390_001, applied
+// to the store cell). Uniform-type stores only this slice; mixed types
+// are walled loudly. Promoted from residue pin 690_020.
+
+~import std/io
+~import std/store
+
+~std/store:create(temps) { celsius: 21.5[f64] }
+
+~std/store:watch(temps)
+! celsius c |> std/io:print.ln("{{ c:f }} C")
+
+~std/store:stored { temps.celsius: temps.celsius + 1.5 }

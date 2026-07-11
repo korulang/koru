@@ -3,5 +3,5 @@
 
 ~event foo { x: i32 }
 
-~foo => done {}
-~foo => done {}
+~foo => done
+~foo => done

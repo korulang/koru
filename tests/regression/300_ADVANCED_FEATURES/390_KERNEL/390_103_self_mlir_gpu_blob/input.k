@@ -1,0 +1,37 @@
+// Test 390_103: self|mlir[gpu] — the kernel RUNS on the GPU (GPU rung C).
+//
+// The [gpu] parameter routes the SAME generated kernel through the GPU
+// lowering: the transform emits a gpu.module (block-per-element indexing,
+// StorageBuffer memref, entry-point ABI), Stage D lowers it via
+// convert-gpu-to-spirv and serializes a .spv blob, and spirv-val gates the
+// build — an invalid blob is a loud compile failure, never a shipped one.
+//
+// Then it EXECUTES: the host binary @imports the emitted koru_gpu_dispatch
+// runtime, which uploads the buffer, dispatches the SPIR-V blob on the local
+// Vulkan device (Apple M2 Pro via MoltenVK), and reads the result back — so
+// the numbers below are computed ON THE GPU OF THE MACHINE THAT COMPILED THE
+// KERNEL. The buffer is mutated in place, same contract as the CPU |mlir path.
+//
+// f32 on purpose: Apple GPUs have no Float64 — f64 shapes under [gpu] are a
+// loud KORU123 wall, the first concrete instance of the capability lattice.
+//
+// RESIDUAL: the call-site `[gpu]` parameter is scaffolding — target selection
+// belongs to the (separate) per-event selection-language endeavor; this knob
+// dies the day that lands.
+
+import std/kernel
+import std/io
+
+std/kernel:shape(Body) {
+    mass: f32,
+}
+
+std/kernel:init(Body) {
+    { mass: 1.0 },
+    { mass: 2.0 },
+    { mass: 3.0 },
+}
+| kernel k |> std/kernel:self|mlir[gpu] { k.mass *= 2.0 }
+| computed c |> std/io:print.blk {
+        mass[0]={{ c[0].mass:f }} mass[1]={{ c[1].mass:f }} mass[2]={{ c[2].mass:f }}
+    }

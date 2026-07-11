@@ -1,8 +1,8 @@
 // Database module with cascading phantom obligations
 //
-// connect() → Connection[connected!]
-// begin()   → Transaction[in_transaction!] (consumes connected)
-// commit()  → Connection[connected!]       (consumes in_transaction, CREATES connected!)
+// connect() → Connection<connected!>
+// begin()   → Transaction<in_transaction!> (consumes connected)
+// commit()  → Connection<connected!>       (consumes in_transaction, CREATES connected!)
 // close()   → void                         (consumes connected)
 
 const std = @import("std");

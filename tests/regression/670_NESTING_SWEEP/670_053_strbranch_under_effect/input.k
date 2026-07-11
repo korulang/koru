@@ -7,7 +7,7 @@ import std/fs
 import std/string
 
 std/fs:read-lines(path: "tests/regression/810_AOC_2015/810_171_day17_part1/input.txt")
-! line _ |> std/string:from-page("x")
+! line _ |> std/string:from-page(text: "x")
     | ok s |> std/io:print.ln("ok") |> std/string:free(s)
     | err _ |> std/io:print.ln("err")
 | done _ |> _

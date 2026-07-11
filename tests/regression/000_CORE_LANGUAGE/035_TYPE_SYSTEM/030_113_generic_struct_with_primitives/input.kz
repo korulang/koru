@@ -1,23 +1,27 @@
-// TEST: Generic struct instantiated with nominal primitive types
-//
-// Combines ~string nominal types with generic structs.
-// ~struct(MaybeEmail = Box<EmailAddress>) uses a Koru-defined type.
-//
-// Expected: Compiles and runs with nominal type inside generic
+// RED PIN (type-system design walk, 2026-07-06/07). REWRITTEN from the
+// dead `Box<EmailAddress>` generation. A stamped name whose parameter
+// is a KORU-MINTED nominal type (not a host primitive): `~string`
+// declares the nominal EmailAddress; the stamp references it by its
+// registry name. This is the pin that requires field types to
+// REFERENCE REGISTRY ENTRIES rather than bottom out in host strings —
+// `box#EmailAddress` cannot be resolved by passing text to Zig.
+// Spelling PROVISIONAL.
 
 ~import std/types
 
 const std = @import("std");
 
 ~string(EmailAddress)
-~struct(Box<T>) { value: T }
-~type(EmailBox = Box<EmailAddress>)
+
+~std/types:struct(box#EmailAddress) {
+    value: EmailAddress,
+}
 
 ~event test-email {}
 
 ~proc test-email|zig {
     const email: EmailAddress = "test@example.com";
-    const box = EmailBox{ .value = email };
+    const box = @"box#EmailAddress"{ .value = email };
     std.debug.print("Email: {s}\n", .{box.value});
 }
 

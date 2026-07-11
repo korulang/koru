@@ -43,36 +43,6 @@ pub fn tryParseArgExpression(allocator: std.mem.Allocator, arg: *ast.Arg) void {
     } else |_| {}
 }
 
-/// Check if a raw expression string contains a non-builtin function call.
-/// Scans for '(' preceded by an identifier character (not '@'), skipping strings.
-/// Used as a fallback when the expression parser can't fully parse the value.
-fn containsNonBuiltinCall(s: []const u8) bool {
-    var in_string = false;
-    for (s, 0..) |c, i| {
-        if (c == '"' and (i == 0 or s[i - 1] != '\\')) {
-            in_string = !in_string;
-            continue;
-        }
-        if (in_string) continue;
-        if (c == '(' and i > 0) {
-            const prev = s[i - 1];
-            // Builtins: @name(...) — prev would be alphanumeric from the builtin name
-            // but the char before that would be '@'. Scan back to check.
-            if (std.ascii.isAlphanumeric(prev) or prev == '_') {
-                // Walk back to find the start of the identifier
-                var j: usize = i - 1;
-                while (j > 0 and (std.ascii.isAlphanumeric(s[j - 1]) or s[j - 1] == '_' or s[j - 1] == '.')) {
-                    j -= 1;
-                }
-                // If preceded by '@', it's a builtin — skip
-                if (j > 0 and s[j - 1] == '@') continue;
-                return true;
-            }
-        }
-    }
-    return false;
-}
-
 /// Check if line has a source block pattern: `eventName { ... }` or `eventName(args) { ... }`
 /// Source blocks are opaque - their content should not affect parsing decisions.
 /// Returns true if there's a `{` that's NOT inside parentheses AND no `=` before it.
@@ -99,6 +69,36 @@ fn netParens(s: []const u8) i32 {
             '"', '\'' => quote = c,
             '(' => depth += 1,
             ')' => depth -= 1,
+            else => {},
+        }
+    }
+    return depth;
+}
+
+/// Net brace depth of a line, quote-aware (braces inside string/char
+/// literals are text, not structure — the paren twin of `netParens`).
+/// The multi-line source-block gatherer uses this to know WHEN a block
+/// actually closes: an indent-only heuristic swallowed a following branch
+/// line whenever an inline block closed mid-line (`} |> self { … }`),
+/// silently discarding that branch's header (pinned by 210_139).
+fn netBraces(s: []const u8) i32 {
+    var depth: i32 = 0;
+    var quote: u8 = 0;
+    var i: usize = 0;
+    while (i < s.len) : (i += 1) {
+        const c = s[i];
+        if (quote != 0) {
+            if (c == '\\') {
+                i += 1;
+            } else if (c == quote) {
+                quote = 0;
+            }
+            continue;
+        }
+        switch (c) {
+            '"', '\'' => quote = c,
+            '{' => depth += 1,
+            '}' => depth -= 1,
             else => {},
         }
     }
@@ -1263,10 +1263,10 @@ pub const Parser = struct {
         } else if (findTopLevelEquals(remaining) != null) {
             // Event implementation via subflow: ~event.name = ...
             // NOTE: This only matches = outside of source blocks (checked above)
-            return try self.parseSubflowImpl();
+            return try self.parseSubflowImpl(annotations.items);
         } else if (isBareReturnImpl(remaining)) {
             // `~event -> expr` : bare-return impl (the `->` twin of `=>`).
-            return try self.parseSubflowImpl();
+            return try self.parseSubflowImpl(annotations.items);
         } else if (std.mem.indexOfScalar(u8, remaining, '(') != null) {
             // It's an invocation with args
             return .{ .flow = try self.parseFlow(annotations.items) };
@@ -1842,15 +1842,14 @@ pub const Parser = struct {
         // Check if this is an implicit flow event
         const is_implicit_flow = self.checkImplicitFlowEvent(&input);
 
-        // Check if any field has is_expression or is_source - auto-add comptime annotation
-        var needs_comptime = false;
-        for (input.fields) |field| {
-            if (field.is_expression or field.is_source) {
-                needs_comptime = true;
-                break;
-            }
-        }
-
+        // `Expression`/`Source` params do NOT imply `[comptime]`. Representation
+        // (a captured source string) and timing (when the event runs) are
+        // orthogonal axes: an `Expression` is just another way to pass a string,
+        // and it can survive to runtime the same way it survives comptime. The
+        // old auto-stamp coupled them, which wrongly flipped runtime-emitting
+        // keyword templates (`~if`/`~for`) to pure-comptime and filtered their
+        // lowered code out of the runtime module. Comptime is now EXPLICIT: an
+        // event is comptime-only iff it carries `[comptime]` in its annotations.
         // Combined annotations (passed-in + trailing)
         var all_annotations = try std.ArrayList([]const u8).initCapacity(self.allocator, 0);
         defer all_annotations.deinit(self.allocator);
@@ -1860,15 +1859,6 @@ pub const Parser = struct {
         }
         for (trailing_annotations.items) |ann| {
             try all_annotations.append(self.allocator, ann);
-        }
-
-        // Check if comptime is already in annotations
-        var has_comptime = false;
-        for (all_annotations.items) |ann| {
-            if (std.mem.eql(u8, ann, "comptime")) {
-                has_comptime = true;
-                break;
-            }
         }
 
         // Validate: [keyword] requires pub
@@ -1901,14 +1891,10 @@ pub const Parser = struct {
             return error.ParseError;
         }
 
-        // Copy annotations, adding comptime if needed
-        const extra_annotations: usize = if (needs_comptime and !has_comptime) 1 else 0;
-        var annotations_copy = try self.allocator.alloc([]const u8, all_annotations.items.len + extra_annotations);
+        // Copy annotations verbatim — comptime is explicit, never synthesized.
+        var annotations_copy = try self.allocator.alloc([]const u8, all_annotations.items.len);
         for (all_annotations.items, 0..) |ann, i| {
             annotations_copy[i] = try self.allocator.dupe(u8, ann);
-        }
-        if (needs_comptime and !has_comptime) {
-            annotations_copy[all_annotations.items.len] = try self.allocator.dupe(u8, "comptime");
         }
 
         var event_decl = ast.EventDecl{
@@ -2836,8 +2822,12 @@ pub const Parser = struct {
     fn createImplicitFlowInvocation(self: *Parser, original: ast.Invocation, continuations: []ast.Continuation, event_type: type_registry.EventType) !ast.Invocation {
         _ = continuations; // No longer needed
 
-        // Determine which field is the implicit flow field
-        var flow_field_name: []const u8 = undefined;
+        // Determine which field is the implicit flow field. No Source field
+        // means there is nothing to inject — return the invocation unchanged.
+        // (This was `undefined` + conditional assignment: an event WITHOUT a
+        // Source input reaching here read garbage memory and overflowed in
+        // the allocator. Latent until 2026-07-02.)
+        var flow_field_name: ?[]const u8 = null;
 
         // EventType has input shape info
         const input_shape = event_type.input_shape orelse return original;
@@ -2847,11 +2837,12 @@ pub const Parser = struct {
                 break;
             }
         }
+        const source_field_name = flow_field_name orelse return original;
 
         // Check if source arg already exists - don't add duplicate
         var has_source_arg = false;
         for (original.args) |arg| {
-            if (std.mem.eql(u8, arg.name, flow_field_name)) {
+            if (std.mem.eql(u8, arg.name, source_field_name)) {
                 has_source_arg = true;
                 break;
             }
@@ -2873,7 +2864,7 @@ pub const Parser = struct {
 
         // Create synthetic Source argument
         const source_arg = ast.Arg{
-            .name = try self.allocator.dupe(u8, flow_field_name),
+            .name = try self.allocator.dupe(u8, source_field_name),
             .value = try self.allocator.dupe(u8, "<implicit_source>"),
         };
 
@@ -2982,6 +2973,7 @@ pub const Parser = struct {
         return ast.Invocation{
             .path = original.path,
             .args = try new_args.toOwnedSlice(self.allocator),
+            .variant = original.variant,
         };
     }
 
@@ -3047,6 +3039,7 @@ pub const Parser = struct {
         return ast.Invocation{
             .path = original.path,
             .args = try new_args.toOwnedSlice(self.allocator),
+            .variant = original.variant,
         };
     }
 
@@ -4098,6 +4091,7 @@ pub const Parser = struct {
                         .name = arg.name,
                         .value = arg.value,
                         .phantom_type = arg.phantom_type,
+                        .had_explicit_label = arg.had_explicit_label,
                     };
                     tryParseArgExpression(self.allocator, &ast_arg);
                     try args.append(self.allocator, ast_arg);
@@ -4211,7 +4205,16 @@ pub const Parser = struct {
     // Parses ~event = ... syntax. Returns either:
     //   Item{ .immediate_impl = ... } for branch constructor bodies
     //   Item{ .flow = Flow{ .impl_of = event_path, ... } } for flow bodies
-    fn parseSubflowImpl(self: *Parser) !ast.Item {
+    /// Duplicate caller-owned annotations for attachment to a produced item
+    /// (the caller frees its originals after the parse call returns).
+    fn dupeAnnotations(self: *Parser, annotations: [][]const u8) ![]const []const u8 {
+        if (annotations.len == 0) return &.{};
+        const out = try self.allocator.alloc([]const u8, annotations.len);
+        for (annotations, 0..) |ann, i| out[i] = try self.allocator.dupe(u8, ann);
+        return out;
+    }
+
+    fn parseSubflowImpl(self: *Parser, annotations: [][]const u8) !ast.Item {
         if (self.current >= self.lines.len) {
             try self.reporter.addError(
                 .PARSE001,
@@ -4227,7 +4230,18 @@ pub const Parser = struct {
         self.current += 1;
 
         // Parse: ~event.name = ... or ~module:event = ...
-        const after_tilde = lexer.trim(line[1..]);
+        var after_tilde = lexer.trim(line[1..]);
+
+        // Skip past a leading annotation block — the caller (parseKoruConstruct)
+        // already parsed it and hands it in via `annotations`. Without this skip
+        // the bracket text leaks INTO the impl path segment (`~[comptime]
+        // countdown = ...` registered the subflow as "[comptime] countdown"),
+        // mangling the name every later resolution looks up.
+        if (std.mem.startsWith(u8, after_tilde, "[")) {
+            if (std.mem.indexOf(u8, after_tilde, "]")) |close_pos| {
+                after_tilde = lexer.trim(after_tilde[close_pos + 1 ..]);
+            }
+        }
 
         // `~event -> expr` : bare-return impl (the `->` twin of `=>`). Returns the
         // event's single unnamed `-> T` value directly — no branch name, no tag.
@@ -4256,6 +4270,7 @@ pub const Parser = struct {
                         .has_expressions = true,
                         .is_bare_return = true,
                     },
+                    .annotations = try self.dupeAnnotations(annotations),
                     .location = self.getCurrentLocation(),
                     .module = try self.allocator.dupe(u8, self.module_name),
                     .is_impl = ep.module_qualifier != null,
@@ -4571,6 +4586,7 @@ pub const Parser = struct {
                 .pre_label = sub_pre_label,
                 .impl_of = event_path,
                 .impl_variant = impl_variant,
+                .annotations = try self.dupeAnnotations(annotations),
                 .is_impl = event_path.module_qualifier != null,
                 .location = self.getCurrentLocation(),
                 .module = try self.allocator.dupe(u8, self.module_name),
@@ -4716,6 +4732,7 @@ pub const Parser = struct {
                 .body = ast.rootSite(invocation, continuations, self.getCurrentLocation()),
                 .impl_of = event_path,
                 .impl_variant = impl_variant,
+                .annotations = try self.dupeAnnotations(annotations),
                 .is_impl = event_path.module_qualifier != null,
                 .location = self.getCurrentLocation(),
                 .module = try self.allocator.dupe(u8, self.module_name),
@@ -4750,6 +4767,7 @@ pub const Parser = struct {
             .pre_label = sub_pre_label,
             .impl_of = event_path,
             .impl_variant = impl_variant,
+            .annotations = try self.dupeAnnotations(annotations),
             .is_impl = event_path.module_qualifier != null,
             .location = self.getCurrentLocation(),
             .module = try self.allocator.dupe(u8, self.module_name),
@@ -4937,7 +4955,18 @@ pub const Parser = struct {
             pos += 1;
         }
 
-        const source = source_buf[0..pos];
+        // ONE trailing-edge convention for stored Source text: trimmed. The
+        // continuation-position path (parseEventInvocation) has always
+        // trimmed; this root-position path kept a trailing newline, so the
+        // same block spelled at different positions stored different bytes
+        // (canon signal from the printer round-trip harness, 2026-07-02).
+        // The trailing newline is layout, not content — consumers that emit
+        // newlines normalize themselves (320_093: both conventions printed
+        // identical output). Dupe rather than sub-slice: callers free the
+        // returned text by its own ptr/len.
+        const trimmed_source = std.mem.trimRight(u8, source_buf[0..pos], " \t\r\n");
+        const source = try self.allocator.dupe(u8, trimmed_source);
+        self.allocator.free(source_buf);
 
         // Now parse any output continuations after the }
         // In strict mode (pipeline context), only collect continuations MORE indented than base_indent
@@ -5528,12 +5557,12 @@ pub const Parser = struct {
                 }
             }
 
-            if (!std.mem.eql(u8, name, "_") and !isValidIdentifier(name)) {
+            if (!std.mem.eql(u8, name, "_") and !isValidIdentifier(name) and !isValidDottedName(name)) {
                 try self.reporter.addError(
                     .PARSE001,
                     self.current,
                     indent + 2,
-                    "Invalid destructure field name '{s}' - must be a valid identifier or '_'.",
+                    "Invalid destructure field name '{s}' - must be a valid identifier, dotted path, or '_'.",
                     .{name},
                 );
                 return error.InvalidBinding;
@@ -5834,6 +5863,7 @@ pub const Parser = struct {
         if (destructure.len == 0) {
             if (parts.peek()) |next| {
             if (!std.mem.startsWith(u8, next, "|>") and !std.mem.startsWith(u8, next, "=>") and
+                !std.mem.startsWith(u8, next, "->") and
                 !std.mem.startsWith(u8, next, "@") and !std.mem.eql(u8, next, "when"))
             {
                 // Check if binding has annotations: identifier[ann1|ann2|...]
@@ -6027,44 +6057,39 @@ pub const Parser = struct {
             var allocated_rest: ?[]u8 = null;
             defer if (allocated_rest) |ar| self.allocator.free(ar);
 
-            // If we have an opening brace without closing, collect multi-line content
+            // If the line leaves brace depth open, collect multi-line content.
+            // BRACE-AWARE: the gatherer tracks net depth (quote-aware) and
+            // stops the moment the block actually closes — whether on a bare
+            // `}` line or mid-line (`} |> self { … }`). The old indent-only
+            // heuristic ("stop only on a standalone `}`; swallow shallower
+            // lines that contain any `}`") silently consumed a FOLLOWING
+            // branch line whenever an inline block closed mid-line, dropping
+            // that branch's header and binding (pinned by 210_139).
             var is_multiline_source_block = false;
-            if (std.mem.indexOf(u8, rest, "{") != null and std.mem.indexOf(u8, rest, "}") == null) {
+            if (std.mem.indexOf(u8, rest, "{") != null and netBraces(rest) > 0) {
                 is_multiline_source_block = true;
                 var rest_buf = try std.ArrayList(u8).initCapacity(self.allocator, 256);
                 defer rest_buf.deinit(self.allocator);
                 try rest_buf.appendSlice(self.allocator, rest);
 
-                // Keep reading lines until we find the closing brace
-                _ = self.current; // Track that we're modifying current
-                while (self.current < self.lines.len) {
+                var brace_depth: i32 = netBraces(rest);
+                while (self.current < self.lines.len and brace_depth > 0) {
                     const next_line = self.lines[self.current];
                     const next_indent = lexer.getIndent(next_line);
                     const next_trimmed = lexer.trim(next_line);
 
-                    // Stop if we hit a line with less indentation (unless it contains a closing brace)
-                    if (next_indent < indent) {
-                        // Check if this line contains a closing brace
-                        if (std.mem.indexOf(u8, next_trimmed, "}") == null) {
-                            break;
-                        }
-                    } else if (next_indent == indent) {
-                        // At same indentation - only continue if this is just a closing brace
-                        if (!std.mem.eql(u8, next_trimmed, "}") and !std.mem.startsWith(u8, next_trimmed, "} ")) {
-                            // This is something else at the same level, not part of our constructor
-                            break;
-                        }
+                    // A shallower line with no closing brace can't be part of
+                    // this block — malformed input; stop and let downstream
+                    // parsing report it.
+                    if (next_indent < indent and std.mem.indexOf(u8, next_trimmed, "}") == null) {
+                        break;
                     }
 
                     // Add this line to our content (preserve newlines for Source blocks!)
                     try rest_buf.appendSlice(self.allocator, "\n");
                     try rest_buf.appendSlice(self.allocator, next_trimmed);
+                    brace_depth += netBraces(next_trimmed);
                     self.current += 1;
-
-                    // Check if we found the closing brace (must be standalone, not inside content like {{ }})
-                    if (std.mem.eql(u8, next_trimmed, "}")) {
-                        break;
-                    }
                 }
 
                 allocated_rest = try rest_buf.toOwnedSlice(self.allocator);
@@ -6242,18 +6267,81 @@ pub const Parser = struct {
                 full_rest = allocated_rest.?;
             }
 
+            // A trailing top-level `-> produce` on the LAST step of the arm's
+            // chain (`| else |> f(x): v -> g(v)`) is the bare-return produce
+            // arm — same chain-tail grammar parseInlineContinuation strips for
+            // flow-level chains (020_030). `->` is not a chain delimiter, so it
+            // rides on the final segment; without this strip the invocation
+            // parser's arg scan silently swallowed it (return_binding kept,
+            // produce dropped). Detect on a comment-stripped view.
+            var produce_tail: ?[]const u8 = null;
+            {
+                const full_nc = stripTrailingLineComment(full_rest);
+                if (indexOfTopLevelArrow(full_nc)) |aidx| {
+                    const pt = lexer.trim(full_nc[aidx + 2 ..]);
+                    if (pt.len > 0) {
+                        produce_tail = pt;
+                        full_rest = lexer.trim(full_nc[0..aidx]);
+                    }
+                }
+            }
+
             // Branch handler body — `_` allowed as sole step.
             const steps = try self.parsePipelineSteps(full_rest, true, location);
             defer self.allocator.free(steps);
+
+            // The stripped produce becomes the innermost continuation of the
+            // chain: a bare-return branch_constructor (the same node the
+            // subflow-head `head(): v -> expr` produce uses).
+            const produce_conts: []const ast.Continuation = if (produce_tail) |pt| blk: {
+                const conts = try self.allocator.alloc(ast.Continuation, 1);
+                conts[0] = ast.Continuation{
+                    .branch = try self.allocator.dupe(u8, ""),
+                    .binding = null,
+                    .binding_annotations = &[_][]const u8{},
+                    .binding_type = .branch_payload,
+                    .condition = null,
+                    .condition_expr = null,
+                    .node = .{ .branch_constructor = .{
+                        .branch_name = try self.allocator.dupe(u8, ""),
+                        .fields = &.{},
+                        .plain_value = try self.allocator.dupe(u8, pt),
+                        .has_expressions = true,
+                        .is_bare_return = true,
+                    } },
+                    .indent = indent,
+                    .continuations = &.{},
+                    .location = location,
+                };
+                break :blk conts;
+            } else &[_]ast.Continuation{};
+
             if (steps.len > 0) {
                 step = steps[0];
+
+                if (steps.len == 1 and produce_tail != null) {
+                    return ast.Continuation{
+                        .branch = owned_branch,
+                        .binding = binding,
+                        .destructure = destructure,
+                        .binding_annotations = binding_annotations,
+                        .binding_type = .branch_payload,
+                        .condition = condition,
+                        .condition_expr = condition_expr,
+                        .node = step,
+                        .indent = indent,
+                        .continuations = produce_conts,
+                        .location = location,
+                    };
+                }
 
                 // FIX: Chain additional steps as nested continuations
                 // | done |> step1 |> step2 |> step3 should create:
                 //   Continuation(step1) -> Continuation(step2) -> Continuation(step3)
                 if (steps.len > 1) {
-                    // Build chain from back to front
-                    var current_nested: []const ast.Continuation = &[_]ast.Continuation{};
+                    // Build chain from back to front; a stripped `-> produce`
+                    // sits innermost, attached to the final step.
+                    var current_nested: []const ast.Continuation = produce_conts;
 
                     var step_idx: usize = steps.len;
                     while (step_idx > 1) { // Skip steps[0], it's already in 'step'
@@ -6866,6 +6954,7 @@ pub const Parser = struct {
                         .name = arg.name,
                         .value = arg.value,
                         .phantom_type = arg.phantom_type,
+                        .had_explicit_label = arg.had_explicit_label,
                     };
                     tryParseArgExpression(self.allocator, &ast_arg);
                     try arg_list.append(self.allocator, ast_arg);
@@ -6965,6 +7054,19 @@ pub const Parser = struct {
             const c = content[i];
             if (std.ascii.isAlphanumeric(c) or c == '_' or c == '-' or c == '.' or c == ':' or c == '/' or c == '[' or c == ']') continue;
             break;
+        }
+        // Optional `|variant` suffix (e.g. `std/kernel:self|mlir { ... }`).
+        // The `|` must be immediately followed by an identifier start, so this
+        // can never swallow a `|>` chain glyph (its next char is `>`).
+        if (i + 1 < content.len and content[i] == '|' and
+            (std.ascii.isAlphabetic(content[i + 1]) or content[i + 1] == '_'))
+        {
+            i += 1;
+            while (i < content.len) : (i += 1) {
+                const c = content[i];
+                if (std.ascii.isAlphanumeric(c) or c == '_' or c == '-' or c == '[' or c == ']') continue;
+                break;
+            }
         }
         // After the path, skip whitespace
         while (i < content.len and (content[i] == ' ' or content[i] == '\t')) : (i += 1) {}
@@ -7073,6 +7175,23 @@ pub const Parser = struct {
 
         var branch_name = lexer.trim(content[0..brace_idx]);
         var fields_content: []const u8 = content[brace_idx + 1 .. closing_idx];
+
+        // Empty constructor braces are a relic: `=> done {}` and `=> done`
+        // used to parse to DIFFERENT trees (the braces flipped
+        // has_expressions), a two-spellings-one-meaning wart. Ruled illegal
+        // 2026-07-02: a payloadless construct has exactly one spelling.
+        if (!std.mem.eql(u8, branch_name, ".") and lexer.trim(fields_content).len == 0) {
+            try self.reporter.addErrorWithHint(
+                .PARSE003,
+                self.current + 1,
+                @intCast(brace_idx + 1),
+                "empty constructor braces on '{s}' — a payloadless branch constructs with its name alone",
+                .{branch_name},
+                "drop the braces: write '=> {s}' instead of '=> {s} {{}}'",
+                .{ branch_name, branch_name },
+            );
+            return error.ParseError;
+        }
 
         // A regular `name { ... }` construction requires a valid single-identifier
         // branch name (`.` is the `.{ ... }` immediate shorthand, handled below).
@@ -7281,36 +7400,17 @@ pub const Parser = struct {
                 // Branch constructors must be pure — no side effects, no function calls.
                 // Builtins (@as, @intCast), arithmetic, array indexing, and conditionals
                 // are allowed. If you need to compute a value, use event chaining.
-                {
-                    var expr_parser = expression_parser.ExpressionParser.init(self.allocator, field_value);
-                    defer expr_parser.deinit();
-                    if (expr_parser.parse()) |expr| {
-                        defer expr.deinit(self.allocator);
-                        if (expression_parser.containsFunctionCall(expr)) {
-                            try self.reporter.addError(
-                                .PARSE003,
-                                self.current + 1,
-                                1,
-                                "branch constructor field '{s}' contains a function call — branch constructors must be pure. Use event chaining instead.",
-                                .{field_name},
-                            );
-                            return error.ParseError;
-                        }
-                    } else |_| {
-                        // Expression didn't parse — still check for function calls
-                        // via raw string scan. A '(' not preceded by '@' strongly
-                        // indicates a function call (builtins use @name()).
-                        if (containsNonBuiltinCall(field_value)) {
-                            try self.reporter.addError(
-                                .PARSE003,
-                                self.current + 1,
-                                1,
-                                "branch constructor field '{s}' contains a function call — branch constructors must be pure. Use event chaining instead.",
-                                .{field_name},
-                            );
-                            return error.ParseError;
-                        }
-                    }
+                // (Shares the one expression-admission predicate with the KORU104
+                // wall in flow_checker — never a second implementation.)
+                if (expression_parser.textContainsCall(self.allocator, field_value)) {
+                    try self.reporter.addError(
+                        .PARSE003,
+                        self.current + 1,
+                        1,
+                        "branch constructor field '{s}' contains a function call — branch constructors must be pure. Use event chaining instead.",
+                        .{field_name},
+                    );
+                    return error.ParseError;
                 }
 
                 // Always store expression string for code generation
@@ -8413,6 +8513,21 @@ pub const Parser = struct {
     /// Split fields on commas, but respect bracket boundaries
     /// e.g., "a: Type[x,y], b: Other" -> ["a: Type[x,y]", "b: Other"]
     /// Check if a string is a valid identifier (letters, numbers, underscores, no leading digit)
+    /// A dotted path of valid identifiers (`entity.hp`). Projection-style
+    /// destructures (std/store query blocks, ruling 6) carry these; the
+    /// parser accepts the shape and consumers judge the semantics
+    /// (maximalist-parser tenet — a dotted name that reaches a consumer
+    /// with no path semantics is that consumer's diagnostic to raise).
+    fn isValidDottedName(name: []const u8) bool {
+        var it = std.mem.splitScalar(u8, name, '.');
+        var segments: usize = 0;
+        while (it.next()) |seg| {
+            if (!isValidIdentifier(seg)) return false;
+            segments += 1;
+        }
+        return segments >= 2;
+    }
+
     fn isValidIdentifier(name: []const u8) bool {
         if (name.len == 0) return false;
 

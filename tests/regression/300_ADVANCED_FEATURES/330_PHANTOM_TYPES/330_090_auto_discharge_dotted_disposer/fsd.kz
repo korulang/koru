@@ -1,0 +1,36 @@
+// Mock lift module reproducing a DOTTED disposer event name.
+//
+// Real-world source: @korulang/ai declares its obligation disposer as the
+// dotted event `free.request` (obligation `<built!>`). Single-name disposers
+// auto-discharge fine — see 330_025_auto_discharge_disabled's `close`. A
+// DOTTED disposer name is truncated at the dot by the auto-discharge pass,
+// which emits a broken host reference `koru_<module>.dispose` (dropping the
+// `.file`) instead of resolving the real `dispose.file`. A raw Zig error
+// leaks to the user:
+//   error: struct 'koru_app.koru_fsd' has no member named 'dispose'
+//
+// The obligation TRACKING is fine (with --auto-discharge=disable the leak is
+// correctly rejected with KORU030). The defect is auto-discharge's disposer
+// name resolution for dotted names.
+
+const std = @import("std");
+const File = struct { handle: i32 };
+
+// Open a file — mints the <opened!> obligation.
+~pub event open { path: []const u8 }
+| opened *File<opened!>
+
+~proc open|zig {
+    std.debug.print("Opening file\n", .{});
+    const f = std.heap.page_allocator.create(File) catch unreachable;
+    f.* = File{ .handle = 42 };
+    return .{ .opened = f };
+}
+
+// The ONLY consumer of <!opened> — but with a DOTTED event name.
+~pub event dispose.file { file: *File<!opened> }
+
+~proc dispose.file|zig {
+    _ = file;
+    std.debug.print("Disposed file (auto-discharged)\n", .{});
+}

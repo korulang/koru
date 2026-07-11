@@ -9,5 +9,5 @@ description: The core Koru language: events with named outcome branches, flows t
 
 ## Worked examples
 
-81 passing tests, verbatim, in [`../../docs/by-example/koru.md`](../../docs/by-example/koru.md). The tests are the spec — read them as the authority on what is actually legal. This skill is the map; the shard is the territory.
+90 passing tests, verbatim, in [`../../docs/by-example/koru.md`](../../docs/by-example/koru.md). The tests are the spec — read them as the authority on what is actually legal. This skill is the map; the shard is the territory.
 

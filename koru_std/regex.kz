@@ -3,7 +3,7 @@
 // Koru Standard Library: Regex — compile-time, DFA-based pattern matching as
 // CONTROL FLOW. Generalizes the Orisha-router idiom from routes to regex:
 //
-//   ~std/regex:match(input)
+//   ~std/regex:match(subject)          // bare implicit-expression arg
 //   | `[a-z]+@[a-z]+` _ |> handle-email()
 //   | `[0-9]+`        _ |> handle-number()
 //   | no-match          |> reject()
@@ -55,7 +55,7 @@ const std = @import("std");
 // convention, not part of the event. The event keeps `[transform]` too —
 // downstream passes read it as "implemented by a transform" (deferred
 // bindings, comptime-flow skipping, variant emission).
-~[comptime|transform]pub event match { input: []const u8 }
+~[comptime|transform]pub event match { expr: Expression }
 | `*` *
 | ?no-match
 

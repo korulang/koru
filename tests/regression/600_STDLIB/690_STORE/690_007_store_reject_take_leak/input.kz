@@ -1,0 +1,24 @@
+// NEGATIVE TEST (designed rejection — move semantics, DESIGN.md O2 ruling
+// 2026-07-04: one lvalue path grammar, four addressing heads). `insert`
+// returns the row HANDLE (`| row r`) — the primary identity; positional
+// index is NOT identity (demoted to query ordering). `take` through the
+// handle head extracts the row WITH ownership: it compiles as the
+// `removed` lifecycle event with a synthesized obligation attached
+// (`<game:item!>`-shaped — name-synthesized from the store declaration,
+// the shipped qualified-phantom collections pattern, 660_027; NO generics
+// exposed). A taken row that is never discharged is a RESOURCE LEAK and
+// must be rejected by the phantom checker like any abandoned obligation.
+//
+// The disposal verb is still undesigned (give-back? destructure-consume?)
+// — this pin deliberately captures only the guarantee: you CANNOT leak a
+// taken row. Handle addressing `game[r]` mirrors the indexed-lvalue
+// precedent (`captured { g[a][b]: v }`, 320_057).
+
+~import std/io
+~import std/store
+
+~std/store:create(game) { hp: i64, kind: i64 }
+
+~std/store:insert(game) { hp: 50, kind: 1 }
+| row r |> std/store:take(game[r])
+    | item i |> std/io:print.ln("took hp {{ i.hp:d }}")

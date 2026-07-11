@@ -1,7 +1,7 @@
 // Mock PQ library - simplified connect/disconnect with phantom obligations
 //
 // Mirrors the real @korulang/postgres pattern:
-//   connect() → *Conn[connected!]  (creates obligation)
+//   connect() → *Conn<connected!>  (creates obligation)
 //   disconnect() → void            (consumes obligation)
 
 const std = @import("std");

@@ -5,8 +5,8 @@
 // you must actually DO something with the resource.
 //
 // State machine:
-//   connect()  → Connection[open!]           -- creates obligation to use connection
-//   begin()    → Transaction[active!]        -- consumes connection, creates tx obligation  
+//   connect()  → Connection<open!>           -- creates obligation to use connection
+//   begin()    → Transaction<active!>        -- consumes connection, creates tx obligation  
 //   execute()  → Transaction[active]         -- uses tx without consuming (can execute many)
 //   commit()   → void                        -- consumes tx obligation (meaningful end)
 //   rollback() → void                        -- consumes tx obligation (meaningful end)
@@ -51,7 +51,7 @@ const QueryResult = struct { rows: i32 };
 }
 
 // commit: consumes transaction obligation - this is a MEANINGFUL END
-// [!] marks this as the default discharge for Transaction[active!]
+// [!] marks this as the default discharge for Transaction<active!>
 // Void event (no branches) so [!] works correctly
 ~[!]pub event commit { tx: *Transaction<!active> }
 

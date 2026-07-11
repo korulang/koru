@@ -1,0 +1,8 @@
+ASPIRATIONAL: the |koru template facet — rendered output is Koru source,
+parsed by the real parser, evaluated by the comptime interpreter in
+[comptime] contexts. Also pins `~[template] proc name|koru` (annotation
+carries the consumption mode; pipe path is name|target only).
+
+Blocked: no facet selection by consumer context, no [template] annotation
+parsing, no fragment-level parse entry. Green when the producers-rung
+lowering work lands. Reds here are the to-do list.

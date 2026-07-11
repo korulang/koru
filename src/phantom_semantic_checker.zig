@@ -181,7 +181,7 @@ pub const PhantomSemanticChecker = struct {
             base_state = base_state[0 .. base_state.len - 1];
         }
 
-        // Search all events for [!state] parameters
+        // Search all events for <!state> parameters
         var iter = self.disposal_event_map.iterator();
         while (iter.next()) |entry| {
             const event_decl = entry.value_ptr.decl;
@@ -524,7 +524,7 @@ pub const PhantomSemanticChecker = struct {
 
         bindings: std.StringHashMap(BindingInfo), // variable name → full type info
         cleanup_obligations: std.StringHashMap(void), // track bindings with ! states that need cleanup
-        disposed_bindings: std.StringHashMap(void), // track bindings that have been disposed (poisoned)
+        disposed_bindings: std.StringHashMap([]const u8), // binding name -> the SITE that disposed it (event#arg=value), so re-validation of the same consuming site passes while a second consume from a DIFFERENT site is use-after-discharge
         outer_scope_obligations: std.StringHashMap(void), // track obligations from outside @scope boundary
         allocator: std.mem.Allocator,
 
@@ -532,7 +532,7 @@ pub const PhantomSemanticChecker = struct {
             return BindingContext{
                 .bindings = std.StringHashMap(BindingInfo).init(allocator),
                 .cleanup_obligations = std.StringHashMap(void).init(allocator),
-                .disposed_bindings = std.StringHashMap(void).init(allocator),
+                .disposed_bindings = std.StringHashMap([]const u8).init(allocator),
                 .outer_scope_obligations = std.StringHashMap(void).init(allocator),
                 .allocator = allocator,
             };
@@ -554,10 +554,11 @@ pub const PhantomSemanticChecker = struct {
             }
             self.cleanup_obligations.deinit();
 
-            // Free disposed binding keys
-            var disposed_iter = self.disposed_bindings.keyIterator();
-            while (disposed_iter.next()) |key| {
-                self.allocator.free(key.*);
+            // Free disposed binding keys and site values
+            var disposed_iter = self.disposed_bindings.iterator();
+            while (disposed_iter.next()) |entry| {
+                self.allocator.free(entry.key_ptr.*);
+                self.allocator.free(entry.value_ptr.*);
             }
             self.disposed_bindings.deinit();
 
@@ -659,11 +660,12 @@ pub const PhantomSemanticChecker = struct {
                 try child.cleanup_obligations.put(key_copy, {});
             }
 
-            // Inherit disposed bindings
-            var disposed_iter = parent.disposed_bindings.keyIterator();
-            while (disposed_iter.next()) |key| {
-                const key_copy = try allocator.dupe(u8, key.*);
-                try child.disposed_bindings.put(key_copy, {});
+            // Inherit disposed bindings (with their disposing sites)
+            var disposed_iter = parent.disposed_bindings.iterator();
+            while (disposed_iter.next()) |entry| {
+                const key_copy = try allocator.dupe(u8, entry.key_ptr.*);
+                const site_copy = try allocator.dupe(u8, entry.value_ptr.*);
+                try child.disposed_bindings.put(key_copy, site_copy);
             }
 
             // Inherit outer scope obligations (already marked as outer)
@@ -703,11 +705,12 @@ pub const PhantomSemanticChecker = struct {
                 try child.outer_scope_obligations.put(outer_key, {});
             }
 
-            // Inherit disposed bindings
-            var disposed_iter = parent.disposed_bindings.keyIterator();
-            while (disposed_iter.next()) |key| {
-                const key_copy = try allocator.dupe(u8, key.*);
-                try child.disposed_bindings.put(key_copy, {});
+            // Inherit disposed bindings (with their disposing sites)
+            var disposed_iter = parent.disposed_bindings.iterator();
+            while (disposed_iter.next()) |entry| {
+                const key_copy = try allocator.dupe(u8, entry.key_ptr.*);
+                const site_copy = try allocator.dupe(u8, entry.value_ptr.*);
+                try child.disposed_bindings.put(key_copy, site_copy);
             }
 
             // Also inherit any already-marked outer scope obligations from parent
@@ -730,16 +733,24 @@ pub const PhantomSemanticChecker = struct {
             }
         }
 
-        /// Mark a binding as disposed (poisoned - cannot be used anymore)
-        fn markDisposed(self: *BindingContext, name: []const u8) !void {
+        /// Mark a binding as disposed (poisoned), recording WHICH site consumed
+        /// it so re-validation of that same site is not misread as double-use.
+        fn markDisposed(self: *BindingContext, name: []const u8, site: []const u8) !void {
+            if (self.disposed_bindings.contains(name)) return; // keep the FIRST disposing site
             const disposed_key = try self.allocator.dupe(u8, name);
-            try self.disposed_bindings.put(disposed_key, {});
-            log.debug("[CLEANUP] Marked '{s}' as discharged (poisoned)\n", .{name});
+            const site_copy = try self.allocator.dupe(u8, site);
+            try self.disposed_bindings.put(disposed_key, site_copy);
+            log.debug("[CLEANUP] Marked '{s}' as discharged (poisoned) at site '{s}'\n", .{ name, site });
         }
 
         /// Check if a binding has been disposed
         fn isDisposed(self: *BindingContext, name: []const u8) bool {
             return self.disposed_bindings.contains(name);
+        }
+
+        /// The site that disposed a binding (null if not disposed)
+        fn disposalSite(self: *BindingContext, name: []const u8) ?[]const u8 {
+            return self.disposed_bindings.get(name);
         }
 
         /// Check if there are any uncleaned resources
@@ -962,6 +973,16 @@ pub const PhantomSemanticChecker = struct {
 
         log.debug("[PHANTOM-FLOW]   Found event '{s}', validating continuations\n", .{qualified_name});
 
+        // A pre-label fold head (`~spin = #loop step(h)`) declares the label on
+        // the flow itself (Flow.pre_label) — the flow's own invocation is the
+        // fold's round event. Register it so back-edge `@label` jumps validate
+        // their args (use-after-discharge, obligation routing) instead of
+        // silently skipping on a label_map miss. The mid-chain form
+        // (`... |> #loop step(...)`) registers in validateContinuation.
+        if (flow.pre_label) |pre_label| {
+            try self.label_map.put(pre_label, event_info.decl);
+        }
+
         // Validate root invocation args (e.g. bare literals at phantom-required params).
         // Continuation validation only covers args on nested steps, not the flow head.
         var root_context = BindingContext.init(self.allocator);
@@ -979,26 +1000,48 @@ pub const PhantomSemanticChecker = struct {
         if (implementing_event) |impl_ev| {
             for (impl_ev.input.fields) |field| {
                 if (field.phantom) |phantom_str| {
-                    // Seed BORROW params only (a plain `<state>`). An obligation
-                    // marker (`!`) — consume `<!state>` or issue `<state!>` — is
-                    // governed by the directionality rule (validatePhantom is_input):
-                    // an input parameter cannot OWN an obligation, so seeding one
-                    // would defeat the rejection of "obligation-through-a-consuming-
-                    // param" (330_076/079/080). A borrow carries no obligation, so
-                    // seeding it is safe and is exactly what foreign-resource
-                    // threading needs (e.g. `*Field<std/field:field>`).
-                    if (std.mem.indexOfScalar(u8, phantom_str, '!') != null) continue;
+                    // Seed BORROW params (`<state>`) and CONSUME params
+                    // (`<!state>` / `<mod:!state>`). LINEAR TRANSFER, ruled
+                    // 2026-07-02: the event decl is the contract — a host proc
+                    // is TRUSTED to perform the discharge it promises (the
+                    // escape hatch), while a pure subflow impl is CHECKED: the
+                    // consumed obligation enters the body live (`state!`) and
+                    // the checker proves it is discharged exactly once (onward
+                    // consume, issuing output branch) — a drop leaks loudly,
+                    // a double-consume is use-after-discharge. Supersedes the
+                    // old at-the-door reading that made consuming events
+                    // host-only (330_076 flips to a positive pin; 330_079/080
+                    // remain the true linearity walls).
+                    //
+                    // An ISSUE marker on an input (`<state!>`) stays unseeded —
+                    // rejected by directionality (validatePhantom is_input).
                     const canonical_phantom = try self.canonicalizePhantomState(phantom_str, impl_ev.module);
                     defer self.allocator.free(canonical_phantom);
+                    var parsed = try phantom_parser.PhantomState.parse(self.allocator, canonical_phantom);
+                    defer parsed.deinit(self.allocator);
+                    const concrete = switch (parsed) {
+                        .concrete => |c| c,
+                        else => continue,
+                    };
+                    if (concrete.requires_cleanup) continue; // issue-on-input: directionality rejects
                     const canonical_base_type = try self.canonicalizeBaseType(field.type, field.module_path, impl_ev.module);
                     defer self.allocator.free(canonical_base_type);
-                    try root_context.setWithType(field.name, canonical_phantom, canonical_base_type);
+                    if (concrete.consumes_obligation) {
+                        const held = if (concrete.module_path) |mp|
+                            try std.fmt.allocPrint(self.allocator, "{s}:{s}!", .{ mp, concrete.name })
+                        else
+                            try std.fmt.allocPrint(self.allocator, "{s}!", .{concrete.name});
+                        defer self.allocator.free(held);
+                        try root_context.setWithType(field.name, held, canonical_base_type);
+                    } else {
+                        try root_context.setWithType(field.name, canonical_phantom, canonical_base_type);
+                    }
                 }
             }
         }
 
-        for (flow.inv().args) |arg| {
-            const arg_valid = try self.validateArgument(arg, event_info.decl, module_name, &root_context, flow.location);
+        for (flow.inv().args, 0..) |arg, arg_idx| {
+            const arg_valid = try self.validateArgument(arg, arg_idx, event_info.decl, module_name, &root_context, flow.location, null);
             if (!arg_valid) {
                 has_errors = true;
             }
@@ -1051,6 +1094,13 @@ pub const PhantomSemanticChecker = struct {
         implementing_event: ?*const ast.EventDecl, // Event this flow implements (for branch_constructor escape)
     ) anyerror!bool {
         var has_errors = false;
+
+        // Transform-grafted subtrees are synthesized, not user-authored — and a
+        // fused/flattened loop body cannot be linearity-judged (one straight-line
+        // pass re-uses iteration bindings, reading as false use-after-discharge).
+        // Same short-circuit flow_checker and shape_checker apply; mistakes
+        // inside the graft are caught downstream by the Zig backend.
+        if (cont.is_transformed_subtree) return true;
 
         log.debug("[PHANTOM-FLOW]   Continuation branch: '{s}'\n", .{cont.branch});
 
@@ -1374,6 +1424,17 @@ pub const PhantomSemanticChecker = struct {
         if (cont.node) |step| {
             if (step == .terminal or step == .branch_constructor) {
                 is_terminator = true;
+            } else if (step == .invocation and cont.continuations.len == 0) {
+                // Implicit exit: a pipeline ending on an invocation with no
+                // nested continuations leaves the flow here. The insertion
+                // side has always treated this as an implicit terminator
+                // (auto_discharge_inserter, "treat as implicit terminator");
+                // without the same rule on the ENFORCEMENT side, an
+                // obligation born in an effect-handler pipeline
+                // (`! each i |> std/field:new | field f |> print.ln(...)`)
+                // was never balance-checked, so --auto-discharge=disable and
+                // ~[strict] silently accepted the leak (400_137).
+                is_terminator = true;
             }
         }
         if (is_terminator) {
@@ -1662,7 +1723,7 @@ pub const PhantomSemanticChecker = struct {
                         }
 
                         if (disposal_events.items.len == 0) {
-                            // Strip ! suffix from display_state for the [!state] suggestion
+                            // Strip ! suffix from display_state for the <!state> suggestion
                             const state_without_bang = if (std.mem.endsWith(u8, display_state, "!"))
                                 display_state[0 .. display_state.len - 1]
                             else
@@ -1671,7 +1732,7 @@ pub const PhantomSemanticChecker = struct {
                                 .KORU030,
                                 location.line,
                                 location.column,
-                                "Resource '{s}' <{s}> was not discharged. No event accepts <!{s}>.",
+                                "Resource '{s}' carries obligation <{s}> was not discharged. No event accepts <!{s}>.",
                                 .{ display_name, display_state, state_without_bang },
                             );
                         } else if (disposal_events.items.len == 1) {
@@ -1679,7 +1740,7 @@ pub const PhantomSemanticChecker = struct {
                                 .KORU030,
                                 location.line,
                                 location.column,
-                                "Resource '{s}' <{s}> was not discharged. Call: {s}",
+                                "Resource '{s}' carries obligation <{s}> was not discharged. Call: {s}",
                                 .{ display_name, display_state, disposal_events.items[0] },
                             );
                         } else {
@@ -1694,7 +1755,7 @@ pub const PhantomSemanticChecker = struct {
                                 .KORU030,
                                 location.line,
                                 location.column,
-                                "Resource '{s}' <{s}> was not discharged. Call one of: {s}",
+                                "Resource '{s}' carries obligation <{s}> was not discharged. Call one of: {s}",
                                 .{ display_name, display_state, fbs.getWritten() },
                             );
                         }
@@ -1936,8 +1997,8 @@ pub const PhantomSemanticChecker = struct {
                 const target_decl = self.label_map.get(lj.label);
                 if (target_decl) |decl| {
                     // Validate jump arguments against target event's signature
-                    for (lj.args) |arg| {
-                        const arg_valid = try self.validateArgument(arg, decl, decl.module, context, location);
+                    for (lj.args, 0..) |arg, arg_idx| {
+                        const arg_valid = try self.validateArgument(arg, arg_idx, decl, decl.module, context, location, lj.label);
                         if (!arg_valid) {
                             has_errors = true;
                         }
@@ -2221,8 +2282,8 @@ pub const PhantomSemanticChecker = struct {
         };
 
         // Validate each argument against event signature
-        for (inv.args) |arg| {
-            const arg_valid = try self.validateArgument(arg, event_info.decl, module_name, context, location);
+        for (inv.args, 0..) |arg, arg_idx| {
+            const arg_valid = try self.validateArgument(arg, arg_idx, event_info.decl, module_name, context, location, null);
             if (!arg_valid) {
                 has_errors = true;
             }
@@ -2283,16 +2344,33 @@ pub const PhantomSemanticChecker = struct {
     fn validateArgument(
         self: *PhantomSemanticChecker,
         arg: ast.Arg,
+        arg_idx: usize,
         event_decl: *const ast.EventDecl,
         event_module: ?[]const u8, // Qualified module name from event lookup
         context: *BindingContext,
         location: errors.SourceLocation,
+        site_tag: ?[]const u8, // discriminates call KINDS at one event (back-edge jump vs seed) so positional args don't alias their site keys
     ) !bool {
-        // Find the field in event input - get both phantom AND base type
+        // Find the field in event input - get both phantom AND base type.
+        // A NAMED arg (`free(s: owned)`) carries the param name in arg.name; a
+        // POSITIONAL arg (`free(s1)`) carries the VALUE in both arg.name and
+        // arg.value, so it resolves by POSITION. Matching positional args by
+        // name silently missed the param — and its <!state> consumption —
+        // whenever the binding name differed from the param name (610_012's
+        // trap, fixed in auto_discharge_inserter 2026-06-12; this is the same
+        // fix on the enforcement side).
         var expected_phantom: ?[]const u8 = null;
         var expected_base_type_raw: ?[]const u8 = null;
         var expected_module_path: ?[]const u8 = null;
-        for (event_decl.input.fields) |field| {
+        const is_positional = std.mem.eql(u8, arg.name, arg.value);
+        if (is_positional) {
+            if (arg_idx < event_decl.input.fields.len) {
+                const field = event_decl.input.fields[arg_idx];
+                expected_phantom = field.phantom;
+                expected_base_type_raw = field.type;
+                expected_module_path = field.module_path;
+            }
+        } else for (event_decl.input.fields) |field| {
             if (std.mem.eql(u8, field.name, arg.name)) {
                 expected_phantom = field.phantom;
                 expected_base_type_raw = field.type;
@@ -2342,8 +2420,28 @@ pub const PhantomSemanticChecker = struct {
             return true;
         }
 
+        // The identity of THIS consuming site: which event param is eating which
+        // binding. Fold bodies get validated by more than one walk (branch
+        // continuation + void-chain), so the same syntactic consume can be
+        // re-checked — that is not a double-use. A consume of an already-
+        // disposed binding from a DIFFERENT site is (330_079/080).
+        const event_path_str = try self.pathToString(event_decl.path);
+        defer self.allocator.free(event_path_str);
+        // The arg's VALUE POINTER identifies the syntactic site: each parsed
+        // node owns its arg strings, so two textual `free(s)` steps get
+        // distinct keys (610_006 double-free stays caught) while a re-walk of
+        // the SAME node reuses the same allocation and dedupes.
+        const site_key = try std.fmt.allocPrint(self.allocator, "{s}@{s}#{s}={s}/{x}", .{ site_tag orelse "call", event_path_str, arg.name, arg.value, @intFromPtr(arg.value.ptr) });
+        defer self.allocator.free(site_key);
+
         // Check if the binding has been disposed
         if (context.isDisposed(arg.value)) {
+            if (context.disposalSite(arg.value)) |site| {
+                if (std.mem.eql(u8, site, site_key)) {
+                    // Re-validation of the very site that disposed it — sound.
+                    return true;
+                }
+            }
             log.debug("[CLEANUP] ❌ USE AFTER DISPOSAL DETECTED!\n", .{});
             try self.reporter.addError(
                 .KORU030,
@@ -2408,7 +2506,7 @@ pub const PhantomSemanticChecker = struct {
                                 if (concrete.consumes_obligation) {
                                     // Find and clear the matched binding's obligation
                                     context.clearCleanupObligation(entry.key_ptr.*);
-                                    try context.markDisposed(entry.key_ptr.*);
+                                    try context.markDisposed(entry.key_ptr.*, "field-suffix");
                                 }
                             },
                             .variable => {},
@@ -2420,7 +2518,7 @@ pub const PhantomSemanticChecker = struct {
                                 };
                                 if (any_consumes) {
                                     context.clearCleanupObligation(entry.key_ptr.*);
-                                    try context.markDisposed(entry.key_ptr.*);
+                                    try context.markDisposed(entry.key_ptr.*, "field-suffix");
                                 }
                             },
                         }
@@ -2432,7 +2530,7 @@ pub const PhantomSemanticChecker = struct {
             // No matching binding found - this is an error if phantom state is required
             // Parse expected_phantom to check what kind of requirement it is:
             // - [state] (no !) = requirement - the value MUST be in this state
-            // - [!state] (prefix !) = consumption - consumes an existing obligation
+            // - <!state> (prefix !) = consumption - consumes an existing obligation
             // Both cases require the binding to be tracked with the correct state.
             var expected_parsed = try phantom_parser.PhantomState.parse(self.allocator, expected_phantom.?);
             defer expected_parsed.deinit(self.allocator);
@@ -2443,7 +2541,7 @@ pub const PhantomSemanticChecker = struct {
                     // Hints use the user-facing state spelling (e.g. `<owned!>`), never the
                     // internal canonicalized form (`input:owned`), which is not writable syntax.
                     if (concrete.consumes_obligation) {
-                        // [!state] - consumption - argument must carry the obligation to consume
+                        // <!state> - consumption - argument must carry the obligation to consume
                         try self.reporter.addError(
                             .KORU030,
                             location.line,
@@ -2558,7 +2656,7 @@ pub const PhantomSemanticChecker = struct {
                     // This event disposes the resource - clear the cleanup obligation
                     context.clearCleanupObligation(arg.value);
                     // Mark the binding as disposed (poisoned - cannot be used anymore)
-                    try context.markDisposed(arg.value);
+                    try context.markDisposed(arg.value, site_key);
                 }
             },
             .variable => {},
@@ -2571,7 +2669,7 @@ pub const PhantomSemanticChecker = struct {
                 if (any_consumes) {
                     log.debug("[CLEANUP] Event parameter has union member with [!] - consumes obligation\n", .{});
                     context.clearCleanupObligation(arg.value);
-                    try context.markDisposed(arg.value);
+                    try context.markDisposed(arg.value, site_key);
                 }
             },
         }
@@ -2741,7 +2839,7 @@ test "BindingContext - disposal poisoning" {
     try std.testing.expect(!ctx.isDisposed("file"));
 
     // Mark as disposed
-    try ctx.markDisposed("file");
+    try ctx.markDisposed("file", "close()");
 
     // Now it's poisoned
     try std.testing.expect(ctx.isDisposed("file"));
@@ -2806,7 +2904,7 @@ test "BindingContext - inherit disposed state" {
     defer parent.deinit();
 
     try parent.set("file", "opened!");
-    try parent.markDisposed("file");
+    try parent.markDisposed("file", "close()");
 
     var child = try TestBindingContext.inherit(&parent, allocator);
     defer child.deinit();

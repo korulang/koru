@@ -2,9 +2,9 @@
 //
 // This is the core thesis: acquiring a resource creates an OBLIGATION
 // to use it meaningfully. We connect but never start a transaction -
-// the [open!] obligation isn't satisfied.
+// the <open!> obligation isn't satisfied.
 //
-// EXPECTED: Compiler error - Connection[open!] obligation not satisfied
+// EXPECTED: Compiler error - Connection<open!> obligation not satisfied
 //
 // Compare to Rust:
 //   let conn = Connection::open_in_memory().unwrap();

@@ -5,14 +5,14 @@
 // you must actually DO something with the resource.
 //
 // State machine:
-//   connect()  → Connection[open!]           -- creates obligation to use connection
-//   begin()    → Transaction[active!]        -- consumes connection, creates tx obligation  
+//   connect()  → Connection<open!>           -- creates obligation to use connection
+//   begin()    → Transaction<active!>        -- consumes connection, creates tx obligation  
 //   execute()  → Transaction[active]         -- uses tx without consuming (can execute many)
 //   commit()   → void                        -- consumes tx obligation (meaningful end)
 //   rollback() → void                        -- consumes tx obligation (meaningful end)
 //
 // The [!] marker on commit/rollback means they are the DEFAULT discharge for
-// Transaction[active!] obligations - but auto-discharge still requires the
+// Transaction<active!> obligations - but auto-discharge still requires the
 // programmer to have USED the transaction for something.
 
 const std = @import("std");

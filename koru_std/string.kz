@@ -1,8 +1,8 @@
 // std/string - String library with view/instance ownership model
 //
 // Ownership states:
-//   [view!]     - read-only access, can be promoted to instance
-//   [instance!] - full control, can read/write/free
+//   <view!>     - read-only access, can be promoted to instance
+//   <instance!> - full control, can read/write/free
 //
 // The String struct carries its allocator, so it can be freed anywhere.
 

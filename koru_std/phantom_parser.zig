@@ -52,6 +52,16 @@ pub const PhantomState = union(enum) {
             const module_path = remaining[0..colon_idx];
             var state_name = remaining[colon_idx + 1..];
 
+            // Consume marker may also sit AFTER the qualifier — the slash-canon
+            // qualified spelling puts the module first (`std/list:!list`, ruled
+            // 2026-07-02 as the obligation extension of the 2112 borrow canon).
+            // Symmetric with the pre-qualifier form (`!fs:opened`).
+            var consumes = consumes_obligation;
+            if (state_name.len > 0 and state_name[0] == '!') {
+                state_name = state_name[1..];
+                consumes = true;
+            }
+
             // Check for cleanup marker (! suffix)
             const requires_cleanup = if (state_name.len > 0 and state_name[state_name.len - 1] == '!') blk: {
                 state_name = state_name[0..state_name.len - 1];  // Strip the !
@@ -59,7 +69,7 @@ pub const PhantomState = union(enum) {
             } else false;
 
             // Both markers is invalid - consumption is for inputs, production is for outputs
-            if (consumes_obligation and requires_cleanup) {
+            if (consumes and requires_cleanup) {
                 return error.InvalidPhantomState;
             }
 
@@ -67,7 +77,7 @@ pub const PhantomState = union(enum) {
                 .module_path = try allocator.dupe(u8, module_path),
                 .name = try allocator.dupe(u8, state_name),
                 .requires_cleanup = requires_cleanup,
-                .consumes_obligation = consumes_obligation,
+                .consumes_obligation = consumes,
             }};
         }
 
@@ -229,19 +239,26 @@ fn parseUnionMember(allocator: std.mem.Allocator, str: []const u8) !ConcreteStat
         const module_path = state_str[0..colon_idx];
         var state_name = state_str[colon_idx + 1 ..];
 
+        // Post-qualifier consume marker (`std/list:!list`) — see parse().
+        var consumes = consumes_obligation;
+        if (state_name.len > 0 and state_name[0] == '!') {
+            state_name = state_name[1..];
+            consumes = true;
+        }
+
         // Check for ! suffix (will be rejected by caller, but we need to detect it)
         const requires_cleanup = if (state_name.len > 0 and state_name[state_name.len - 1] == '!') blk: {
             state_name = state_name[0 .. state_name.len - 1];
             break :blk true;
         } else false;
 
-        if (consumes_obligation and requires_cleanup) return error.InvalidPhantomState;
+        if (consumes and requires_cleanup) return error.InvalidPhantomState;
 
         return .{
             .module_path = try allocator.dupe(u8, module_path),
             .name = try allocator.dupe(u8, state_name),
             .requires_cleanup = requires_cleanup,
-            .consumes_obligation = consumes_obligation,
+            .consumes_obligation = consumes,
         };
     }
 

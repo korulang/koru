@@ -1,0 +1,19 @@
+// ASPIRATION — TODO idea pin. T8 statically-resolved DI: `! ?persist` is
+// an optional resume arm on the store's contract (optional arms ruled
+// 2026-07-03 @7c37406a). Installed => the write-subflow calls it per
+// write (sole-write-path boundary keeps deltas coherent); not installed
+// => `if(persist) | else` resolves at comptime and the arm costs nothing.
+// Void side-effecting arm per the ORM-showcase grounding; the install
+// SURFACE (arms on watch? on link?) is PROVISIONAL.
+
+~import std/io
+~import std/store
+
+~std/store:create(game) { hp: 0[i64] }
+! ?persist i64
+
+~std/store:watch(game)
+! persist v |> std/io:print.ln("persist {{ v:d }}")
+
+~std/store:stored { game.hp: 4 }
+~std/store:stored { game.hp: 6 }

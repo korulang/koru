@@ -1,9 +1,9 @@
 // TEST: Commit but forget to close the connection
 //
-// After commit, we get Connection[active!] back.
+// After commit, we get Connection<active!> back.
 // If we don't close it, that's a resource leak!
 //
-// EXPECTED: Compiler error - Connection[active!] obligation not discharged
+// EXPECTED: Compiler error - Connection<active!> obligation not discharged
 
 ~import app/db
 

@@ -1,0 +1,416 @@
+~[comptime]
+
+// Koru Standard Library: Trellis — AST-shape sessions as regex-over-paths.
+// =========================================================================
+//
+// A trellis DESCRIBES VALID SHAPES OF THE AST. Its arms are regex patterns
+// (the branch name IS the pattern, byte-for-byte — the std/regex:match
+// surface) over SERIALIZED ANCESTRY PATHS of the program's flow trees, with
+// branch-constructor verdicts:
+//
+//   ~std/trellis:define("kernel-shape")
+//   | `std/kernel:init/kernel/.*` => ok
+//   | `.*std/kernel:pairwise` => error "std/kernel:pairwise found outside std/kernel:init"
+//   | `.*std/kernel:self` => error "std/kernel:self found outside std/kernel:init"
+//
+// PATH ALPHABET: every invocation in every flow yields one path — event
+// names (module qualifier slash-rendered, segments dot-joined) and branch
+// labels as `/`-separated segments, root-to-node. Bindings and args are
+// excluded: patterns describe SHAPE, not data. Example:
+//
+//   std/kernel:init/kernel/std/kernel:self
+//
+// Each path is matched against the arms IN ORDER, first match wins (regex
+// dispatch semantics, FULL match — the whole path must match). An `ok` arm
+// accepts the path; an `error` arm rejects it, and its payload is the user
+// message. Paths matching no arm are unconstrained (placement-constraint
+// semantics; closedness is spelled with a catch-all error arm).
+//
+//   ~std/trellis:enforce("kernel-shape")   — program-wide LAW: a violation
+//     halts compilation at Stage C with a located koru-level diagnostic:
+//     Check "kernel-shape" failed: <message> at file:line:col
+//     (Immediate halt, not @compileError injection: a later transform must
+//     never get the chance to trip over the malformed tree and bury the
+//     real message under a panic.)
+//
+//   ~std/trellis:check("kernel-shape")     — CATEGORIZATION: the verdict
+//   | ok |> ...                              arrives as ordinary branch
+//   | error msg |> ...                       dispatch, resolved at comptime;
+//                                            the losing branch is dead code.
+//
+// The check dissolves at Stage C — zero runtime cost. Matching runs the
+// regex engine (src/regex_engine.zig) directly on path strings inside the
+// transform: linear-time, no backtracking, ReDoS-immune.
+//
+// This generalizes kernel.kz's hand-rolled validateKernelSubtree denylist
+// into declarative allowlists, and is the categorization substrate for
+// variant capability-float (gpu-legal, simd-fusable, ...).
+//
+// Pinned: 680_001 (enforce, conforming), 680_002 (violation message shape),
+// 680_003 (check-as-dispatch).
+
+const std = @import("std");
+
+// ============================================================================
+// DEFINE - declare a named trellis (metadata only, never runs)
+// ============================================================================
+// The arms sit in the AST for enforce/check to look up — exactly the
+// kernel:shape pattern. Any raw-name branch is a pattern arm; the verdict
+// is the arm's branch constructor (=> ok / => error "msg").
+
+~[norun]pub event define { expr: Expression }
+| `*` *
+
+// ============================================================================
+// ENFORCE - program-wide law
+// ============================================================================
+
+~[comptime|transform]pub event enforce { expr: Expression }
+
+~[transform]proc enforce|zig {
+    const ast = @import("ast");
+    const regex = @import("regex_engine");
+
+    if (item.* != .flow) @panic("trellis enforce: containing item is not a flow - walker dispatch contract broken");
+    const flow = &item.flow;
+
+    if (invocation.args.len == 0) {
+        const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"std/trellis:enforce requires a trellis name: enforce(\\\"<name>\\\")\"); }}", .{}) catch unreachable;
+        return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+    }
+
+    var name = invocation.args[0].value;
+    if (name.len >= 2 and name[0] == '"') name = name[1 .. name.len - 1];
+
+    const Arm = struct { pattern: []const u8, ok: bool, message: []const u8 };
+    const Violation = struct { message: []const u8, file: []const u8, line: usize, column: usize };
+
+    const collectArms = struct {
+        fn call(alloc: std.mem.Allocator, prog: *const ast.Program, target: []const u8) ?[]Arm {
+            for (prog.items) |*it| {
+                if (it.* != .flow) continue;
+                const f = &it.flow;
+                const inv = f.inv();
+                if (inv.path.segments.len != 1) continue;
+                if (!std.mem.eql(u8, inv.path.segments[0], "define")) continue;
+                const q = inv.path.module_qualifier orelse continue;
+                if (!std.mem.eql(u8, q, "std.trellis")) continue;
+                if (inv.args.len == 0) continue;
+                var dn = inv.args[0].value;
+                if (dn.len >= 2 and dn[0] == '"') dn = dn[1 .. dn.len - 1];
+                if (!std.mem.eql(u8, dn, target)) continue;
+
+                var arms = std.ArrayList(Arm){};
+                for (f.body.continuations) |*cont| {
+                    const nd = cont.node orelse continue;
+                    if (nd != .branch_constructor) continue;
+                    const bc = nd.branch_constructor;
+                    const is_ok = std.mem.eql(u8, bc.branch_name, "ok");
+                    var message: []const u8 = "";
+                    if (!is_ok) {
+                        if (bc.plain_value) |pv| {
+                            var m = pv;
+                            if (m.len >= 2 and m[0] == '"') m = m[1 .. m.len - 1];
+                            message = m;
+                        }
+                    }
+                    arms.append(alloc, .{ .pattern = cont.branch, .ok = is_ok, .message = message }) catch unreachable;
+                }
+                return arms.toOwnedSlice(alloc) catch unreachable;
+            }
+            return null;
+        }
+    }.call;
+
+    const Walker = struct {
+        alloc: std.mem.Allocator,
+        arms: []const Arm,
+        violation: ?Violation = null,
+
+        fn renderInv(self: *@This(), inv: *const ast.Invocation) []const u8 {
+            var buf = std.ArrayList(u8){};
+            if (inv.path.module_qualifier) |q| {
+                for (q) |ch| buf.append(self.alloc, if (ch == '.') '/' else ch) catch unreachable;
+                buf.append(self.alloc, ':') catch unreachable;
+            }
+            for (inv.path.segments, 0..) |seg, i| {
+                if (i > 0) buf.append(self.alloc, '.') catch unreachable;
+                buf.appendSlice(self.alloc, seg) catch unreachable;
+            }
+            return buf.items;
+        }
+
+        fn checkPath(self: *@This(), path: []const u8, file: []const u8, line: usize, column: usize) void {
+            if (self.violation != null) return;
+            for (self.arms) |arm| {
+                var parser = regex.Parser.init(self.alloc, arm.pattern);
+                const pattern_ast = parser.parse() catch {
+                    std.debug.print("error: trellis: cannot compile pattern `{s}`\n", .{arm.pattern});
+                    std.process.exit(1);
+                };
+                var nfa = regex.buildNfa(self.alloc, pattern_ast) catch {
+                    std.debug.print("error: trellis: cannot compile pattern `{s}`\n", .{arm.pattern});
+                    std.process.exit(1);
+                };
+                if (nfa.matches(path)) {
+                    if (!arm.ok) {
+                        self.violation = .{ .message = arm.message, .file = file, .line = line, .column = column };
+                    }
+                    return; // first match wins
+                }
+            }
+        }
+
+        fn walkConts(self: *@This(), base: []const u8, cont_list: []const ast.Continuation) void {
+            for (cont_list) |*cont| {
+                var prefix = base;
+                if (cont.branch.len > 0) {
+                    prefix = std.fmt.allocPrint(self.alloc, "{s}/{s}", .{ base, cont.branch }) catch unreachable;
+                }
+                var next_base = prefix;
+                if (cont.node) |nd| {
+                    if (nd == .invocation) {
+                        const p = std.fmt.allocPrint(self.alloc, "{s}/{s}", .{ prefix, self.renderInv(&nd.invocation) }) catch unreachable;
+                        self.checkPath(p, cont.location.file, cont.location.line, cont.location.column);
+                        next_base = p;
+                    }
+                }
+                self.walkConts(next_base, cont.continuations);
+            }
+        }
+
+        fn walkItems(self: *@This(), items: []const ast.Item) void {
+            for (items) |*it| {
+                switch (it.*) {
+                    .flow => |*f| {
+                        const inv = f.inv();
+                        if (inv.path.module_qualifier) |q| {
+                            if (std.mem.eql(u8, q, "std.trellis")) continue; // never check trellis's own flows
+                        }
+                        const root = self.renderInv(inv);
+                        self.checkPath(root, f.location.file, f.location.line, f.location.column);
+                        self.walkConts(root, f.body.continuations);
+                    },
+                    .module_decl => |*mod| self.walkItems(mod.items),
+                    else => {},
+                }
+            }
+        }
+    };
+
+    const arms = collectArms(allocator, program, name) orelse {
+        const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"trellis \\\"{s}\\\" is not defined - expected ~std/trellis:define(\\\"{s}\\\") with pattern arms\"); }}", .{ name, name }) catch unreachable;
+        return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+    };
+
+    var walker = Walker{ .alloc = allocator, .arms = arms };
+    walker.walkItems(program.items);
+
+    if (walker.violation) |v| {
+        // A trellis law is loud and immediate: report the located, koru-level
+        // diagnostic and stop Stage C NOW.
+        std.debug.print(
+            "error: Check \"{s}\" failed: {s} at {s}:{d}:{d}\n",
+            .{ name, v.message, v.file, v.line, v.column },
+        );
+        std.process.exit(1);
+    }
+
+    // Conforming: the law dissolves.
+    return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = "", .location = flow.location, .module = flow.module } } } };
+}
+
+// ============================================================================
+// CHECK - categorization as dispatch
+// ============================================================================
+
+~[comptime|transform]pub event check { expr: Expression }
+| ok
+| ?error []const u8
+
+~[transform]proc check|zig {
+    const ast = @import("ast");
+    const regex = @import("regex_engine");
+
+    if (item.* != .flow) @panic("trellis check: containing item is not a flow - walker dispatch contract broken");
+    const flow = &item.flow;
+    const conts = flow.body.continuations;
+
+    if (invocation.args.len == 0) {
+        const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"std/trellis:check requires a trellis name: check(\\\"<name>\\\")\"); }}", .{}) catch unreachable;
+        return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+    }
+
+    var name = invocation.args[0].value;
+    if (name.len >= 2 and name[0] == '"') name = name[1 .. name.len - 1];
+
+    const Arm = struct { pattern: []const u8, ok: bool, message: []const u8 };
+    const Violation = struct { message: []const u8, file: []const u8, line: usize, column: usize };
+
+    const collectArms = struct {
+        fn call(alloc: std.mem.Allocator, prog: *const ast.Program, target: []const u8) ?[]Arm {
+            for (prog.items) |*it| {
+                if (it.* != .flow) continue;
+                const f = &it.flow;
+                const inv = f.inv();
+                if (inv.path.segments.len != 1) continue;
+                if (!std.mem.eql(u8, inv.path.segments[0], "define")) continue;
+                const q = inv.path.module_qualifier orelse continue;
+                if (!std.mem.eql(u8, q, "std.trellis")) continue;
+                if (inv.args.len == 0) continue;
+                var dn = inv.args[0].value;
+                if (dn.len >= 2 and dn[0] == '"') dn = dn[1 .. dn.len - 1];
+                if (!std.mem.eql(u8, dn, target)) continue;
+
+                var arms = std.ArrayList(Arm){};
+                for (f.body.continuations) |*cont| {
+                    const nd = cont.node orelse continue;
+                    if (nd != .branch_constructor) continue;
+                    const bc = nd.branch_constructor;
+                    const is_ok = std.mem.eql(u8, bc.branch_name, "ok");
+                    var message: []const u8 = "";
+                    if (!is_ok) {
+                        if (bc.plain_value) |pv| {
+                            var m = pv;
+                            if (m.len >= 2 and m[0] == '"') m = m[1 .. m.len - 1];
+                            message = m;
+                        }
+                    }
+                    arms.append(alloc, .{ .pattern = cont.branch, .ok = is_ok, .message = message }) catch unreachable;
+                }
+                return arms.toOwnedSlice(alloc) catch unreachable;
+            }
+            return null;
+        }
+    }.call;
+
+    const Walker = struct {
+        alloc: std.mem.Allocator,
+        arms: []const Arm,
+        violation: ?Violation = null,
+
+        fn renderInv(self: *@This(), inv: *const ast.Invocation) []const u8 {
+            var buf = std.ArrayList(u8){};
+            if (inv.path.module_qualifier) |q| {
+                for (q) |ch| buf.append(self.alloc, if (ch == '.') '/' else ch) catch unreachable;
+                buf.append(self.alloc, ':') catch unreachable;
+            }
+            for (inv.path.segments, 0..) |seg, i| {
+                if (i > 0) buf.append(self.alloc, '.') catch unreachable;
+                buf.appendSlice(self.alloc, seg) catch unreachable;
+            }
+            return buf.items;
+        }
+
+        fn checkPath(self: *@This(), path: []const u8, file: []const u8, line: usize, column: usize) void {
+            if (self.violation != null) return;
+            for (self.arms) |arm| {
+                var parser = regex.Parser.init(self.alloc, arm.pattern);
+                const pattern_ast = parser.parse() catch {
+                    std.debug.print("error: trellis: cannot compile pattern `{s}`\n", .{arm.pattern});
+                    std.process.exit(1);
+                };
+                var nfa = regex.buildNfa(self.alloc, pattern_ast) catch {
+                    std.debug.print("error: trellis: cannot compile pattern `{s}`\n", .{arm.pattern});
+                    std.process.exit(1);
+                };
+                if (nfa.matches(path)) {
+                    if (!arm.ok) {
+                        self.violation = .{ .message = arm.message, .file = file, .line = line, .column = column };
+                    }
+                    return; // first match wins
+                }
+            }
+        }
+
+        fn walkConts(self: *@This(), base: []const u8, cont_list: []const ast.Continuation) void {
+            for (cont_list) |*cont| {
+                var prefix = base;
+                if (cont.branch.len > 0) {
+                    prefix = std.fmt.allocPrint(self.alloc, "{s}/{s}", .{ base, cont.branch }) catch unreachable;
+                }
+                var next_base = prefix;
+                if (cont.node) |nd| {
+                    if (nd == .invocation) {
+                        const p = std.fmt.allocPrint(self.alloc, "{s}/{s}", .{ prefix, self.renderInv(&nd.invocation) }) catch unreachable;
+                        self.checkPath(p, cont.location.file, cont.location.line, cont.location.column);
+                        next_base = p;
+                    }
+                }
+                self.walkConts(next_base, cont.continuations);
+            }
+        }
+
+        fn walkItems(self: *@This(), items: []const ast.Item) void {
+            for (items) |*it| {
+                switch (it.*) {
+                    .flow => |*f| {
+                        const inv = f.inv();
+                        if (inv.path.module_qualifier) |q| {
+                            if (std.mem.eql(u8, q, "std.trellis")) continue;
+                        }
+                        const root = self.renderInv(inv);
+                        self.checkPath(root, f.location.file, f.location.line, f.location.column);
+                        self.walkConts(root, f.body.continuations);
+                    },
+                    .module_decl => |*mod| self.walkItems(mod.items),
+                    else => {},
+                }
+            }
+        }
+    };
+
+    const arms = collectArms(allocator, program, name) orelse {
+        const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"trellis \\\"{s}\\\" is not defined - expected ~std/trellis:define(\\\"{s}\\\") with pattern arms\"); }}", .{ name, name }) catch unreachable;
+        return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+    };
+
+    var walker = Walker{ .alloc = allocator, .arms = arms };
+    walker.walkItems(program.items);
+
+    // Locate the dispatch branches on THIS flow.
+    var ok_idx: ?usize = null;
+    var err_idx: ?usize = null;
+    for (conts, 0..) |c, i| {
+        if (std.mem.eql(u8, c.branch, "ok")) ok_idx = i;
+        if (std.mem.eql(u8, c.branch, "error")) err_idx = i;
+    }
+
+    // The verdict is known at comptime: splice ONLY the winning branch —
+    // the regex:match dispatch convention (inline_stmt + continue/inline
+    // markers), degenerate to a single arm.
+    var dispatch = std.ArrayList(u8){};
+    dispatch.appendSlice(allocator, "//@koru:inline_stmt\n{ ") catch unreachable;
+    if (walker.violation) |v| {
+        if (err_idx) |ei| {
+            const fire = std.fmt.allocPrint(allocator, "__koru_inline_{d}(\"{s}\")", .{ ei, v.message }) catch unreachable;
+            dispatch.appendSlice(allocator, fire) catch unreachable;
+        }
+    } else {
+        if (ok_idx) |oi| {
+            const fire = std.fmt.allocPrint(allocator, "__koru_continue_{d}", .{oi}) catch unreachable;
+            dispatch.appendSlice(allocator, fire) catch unreachable;
+        }
+    }
+    dispatch.appendSlice(allocator, " }") catch unreachable;
+
+    // Finalize: mark @pass_ran, inline_body = the dispatch, continuations
+    // kept (the markers resolve against them) — the regex:match convention.
+    const new_anns = allocator.alloc([]const u8, flow.inv().annotations.len + 1) catch unreachable;
+    for (flow.inv().annotations, 0..) |an, k| new_anns[k] = an;
+    new_anns[flow.inv().annotations.len] = allocator.dupe(u8, "@pass_ran(\"transform\")") catch unreachable;
+
+    const new_inv = ast.Invocation{
+        .path = flow.inv().path,
+        .args = flow.inv().args,
+        .annotations = new_anns,
+        .inserted_by_tap = flow.inv().inserted_by_tap,
+        .from_opaque_tap = flow.inv().from_opaque_tap,
+    };
+
+    var new_flow = flow.*;
+    new_flow.body = ast.rootSite(new_inv, flow.body.continuations, flow.location);
+    new_flow.inline_body = dispatch.toOwnedSlice(allocator) catch unreachable;
+
+    return .{ .transformed = .{ .replacement = ast.Item{ .flow = new_flow } } };
+}

@@ -12,7 +12,7 @@ const File = struct { handle: i32 };
     return .{ .opened = f };
 }
 
-~pub event close { file: *File<!opened> }  // [!opened] means CONSUMES obligation
+~pub event close { file: *File<!opened> }  // <!opened> means CONSUMES obligation
 
 ~proc close|zig {
     std.debug.print("Closing file\n", .{});

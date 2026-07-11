@@ -6,8 +6,8 @@
 import std/io
 import std/string
 
-std/string:from-page("x")
-| ok s |> std/string:from-page("y")
-    | ok s2 |> std/io:print.ln("ok") |> std/string:free(s2) |> std/string:free(s)
+std/string:from-page(text: "x")
+| ok s |> std/string:from-page(text: "y")
+    | ok s2 |> std/io:print.ln("ok") |> std/string:free(s: s2) |> std/string:free(s)
     | err _ |> std/io:print.ln("err") |> std/string:free(s)
 | err _ |> _

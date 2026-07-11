@@ -28,12 +28,12 @@ const std = @import("std");
 // - Zero-overhead: the consumer's `then` / `else` body is spliced into the
 //   matching arm in the enclosing scope. An omitted optional branch mints no
 //   marker, so its arm renders empty.
-~[keyword]pub event if { cond: []const u8 }
+~[keyword]pub event if { expr: Expression }
 | ?then
 | ?else
 
 ~proc if|template|zig {
-    if ({{ cond }}) {
+    if ({{ expr }}) {
         {{ continuations["then"].continue }}
     } else {
         {{ continuations["else"].continue }}
@@ -48,7 +48,7 @@ const std = @import("std");
 // `__koru_continue_N` markers it mints are resolved by js_emitter's
 // emitInlineBodyResolvingContinuations.
 ~proc if|template|js {
-    if ({{ cond }}) {
+    if ({{ expr }}) {
         {{ continuations["then"].continue }}
     } else {
         {{ continuations["else"].continue }}
@@ -75,12 +75,12 @@ const std = @import("std");
 //   continuation-return); `for` and `if` are one mechanism.
 // - Zero-overhead: comptime-known handlers inline into the loop.
 
-~[keyword]pub event for { iterable: []const u8 }
+~[keyword]pub event for { expr: Expression }
 ! each *
 | ?done
 
 ~proc for|template|zig {
-    for ({{ iterable }}) |__koru_item| {
+    for ({{ expr }}) |__koru_item| {
         {% for h in effects["each"] %}{{ h.inlined_link[scope] }}(__koru_item);
         {% endfor %}
     }
@@ -107,7 +107,7 @@ const std = @import("std");
 // (docs/PARSER_PALETTE.md §8.4); for now JS `~for` supports ranges + JS-shaped
 // iterables.
 ~proc for|template|js {
-    {% const __koru_range = parse_range(iterable) %}{% if __koru_range.is_range %}for (let __koru_item = {{ __koru_range.lo }}; __koru_item < {{ __koru_range.hi }}; __koru_item++) {% else %}for (const __koru_item of {{ iterable }}) {% endif %}{
+    {% const __koru_range = parse_range(expr) %}{% if __koru_range.is_range %}for (let __koru_item = {{ __koru_range.lo }}; __koru_item < {{ __koru_range.hi }}; __koru_item++) {% else %}for (const __koru_item of {{ expr }}) {% endif %}{
         {% for h in effects["each"] %}{{ h.inlined_link[scope] }}(__koru_item);
         {% endfor %}
     }

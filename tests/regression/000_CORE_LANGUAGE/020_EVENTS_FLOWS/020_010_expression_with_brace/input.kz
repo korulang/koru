@@ -1,7 +1,10 @@
 // Test: Expression parameter starting with brace
-// Verifies parser captures { ... } as Expression argument
+// Verifies parser captures { ... } as Expression argument.
+// `Expression` no longer implies comptime (that coupling was removed —
+// representation and timing are orthogonal), so an event that splices its
+// captured expression at compile time declares `[comptime]` explicitly.
 
-~event test-expr { val: Expression }
+~[comptime]event test-expr { val: Expression }
 
 ~proc test-expr|zig {
     const std = @import("std");

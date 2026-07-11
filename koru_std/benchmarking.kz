@@ -1,0 +1,24 @@
+// std/benchmarking — in-process timed benchmark harness. Drives a body through
+// the effect-branch engine for a wall-clock duration, then reports the iteration
+// count and the measured nanoseconds. Like hyperfine's timed runs, but in-process
+// and zero-overhead: the `! pass` effect fires once per iteration until `seconds`
+// elapse; `| done` carries the pass count and elapsed time. The drag-race protocol
+// is `run(seconds: 5)` with the sieve in the `! pass` body, then emit the result.
+const std = @import("std");
+
+~pub event run { seconds: i64 }
+! pass
+| done { passes: i64, seconds: f64 }
+
+~proc run|zig {
+    const start = std.time.nanoTimestamp();
+    const deadline = start + @as(i128, seconds) * 1_000_000_000;
+    var passes: i64 = 0;
+    while (std.time.nanoTimestamp() < deadline) {
+        pass();
+        passes += 1;
+    }
+    const elapsed_ns = std.time.nanoTimestamp() - start;
+    const elapsed_f: f64 = @floatFromInt(elapsed_ns);
+    return .{ .done = .{ .passes = passes, .seconds = elapsed_f / 1_000_000_000.0 } };
+}

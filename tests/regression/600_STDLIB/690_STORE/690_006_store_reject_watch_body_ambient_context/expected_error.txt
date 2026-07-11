@@ -1,0 +1,1 @@
+watch body references 'ctx', runtime state of the enclosing flow — a watch body executes at 'game's write sites, not here; bind it through a store or react at a write site

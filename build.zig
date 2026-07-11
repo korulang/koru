@@ -106,6 +106,15 @@ pub fn build(b: *std.Build) void {
     expression_parser_module.addImport("lexer", lexer_module);
     expression_parser_module.addImport("ast", ast_module);
 
+    // Comptime evaluator module — the comptime Koru interpreter core
+    const comptime_eval_module = b.createModule(.{
+        .root_source_file = b.path("src/comptime_eval.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    comptime_eval_module.addImport("ast", ast_module);
+    comptime_eval_module.addImport("expression_parser", expression_parser_module);
+
     // Expression code generator module
     const expression_codegen_module = b.createModule(.{
         .root_source_file = b.path("src/expression_codegen.zig"),
@@ -179,6 +188,7 @@ pub fn build(b: *std.Build) void {
     flow_checker_module.addImport("ast", ast_module);
     flow_checker_module.addImport("errors", errors_module);
     flow_checker_module.addImport("branch_checker", branch_checker_module);
+    flow_checker_module.addImport("expression_parser", expression_parser_module);
 
     // Phantom semantic checker module
     const phantom_semantic_checker_module = b.createModule(.{
@@ -323,6 +333,16 @@ pub fn build(b: *std.Build) void {
     ast_json_module.addImport("ast", ast_module);
     ast_json_module.addImport("parser", parser_module);
 
+    // Canonical printer: post-parse AST → canonical Koru source (`koruc --print`).
+    const ast_printer_module = b.createModule(.{
+        .root_source_file = b.path("src/ast_printer.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    ast_printer_module.addImport("ast", ast_module);
+    ast_printer_module.addImport("parser", parser_module);
+    ast_printer_module.addImport("ast_json", ast_json_module);
+
     // Compiler Config module - feature flags and configuration
     const compiler_config_module = b.createModule(.{
         .root_source_file = b.path("src/compiler_config.zig"),
@@ -372,6 +392,7 @@ pub fn build(b: *std.Build) void {
     visitor_emitter_module.addImport("codegen_utils", codegen_utils_module);
     visitor_emitter_module.addImport("log", log_module);
     visitor_emitter_module.addImport("file_types", file_types_module);
+    visitor_emitter_module.addImport("comptime_eval", comptime_eval_module);
 
     // Tap Pattern Matcher module - pattern matching for tap registration
     const glob_pattern_matcher_module = b.createModule(.{
@@ -513,6 +534,7 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("keyword_registry", keyword_registry_module);
     exe.root_module.addImport("ast_serializer", ast_serializer_module);
     exe.root_module.addImport("ast_json", ast_json_module);
+    exe.root_module.addImport("ast_printer", ast_printer_module);
     exe.root_module.addImport("ast_transform", ast_transform_module);
     exe.root_module.addImport("transforms/inline_small_events", inline_transform_module);
 
@@ -1257,6 +1279,14 @@ pub fn build(b: *std.Build) void {
     const ast_json_test_step = b.step("test-ast-json", "Run ast_json round-trip tests");
     ast_json_test_step.dependOn(&run_ast_json_tests.step);
 
+    const ast_printer_tests = b.addTest(.{
+        .name = "ast_printer_tests",
+        .root_module = ast_printer_module,
+    });
+    const run_ast_printer_tests = b.addRunArtifact(ast_printer_tests);
+    const ast_printer_test_step = b.step("test-ast-printer", "Run canonical printer round-trip tests");
+    ast_printer_test_step.dependOn(&run_ast_printer_tests.step);
+
     // Phantom semantic checker tests - obligation tracking and @scope boundaries
     const phantom_semantic_checker_tests = b.addTest(.{
         .name = "phantom_semantic_checker_tests",
@@ -1288,6 +1318,22 @@ pub fn build(b: *std.Build) void {
     const run_auto_discharge_inserter_tests = b.addRunArtifact(auto_discharge_inserter_tests);
     const auto_discharge_test_step = b.step("test-auto-discharge", "Run auto-discharge inserter tests");
     auto_discharge_test_step.dependOn(&run_auto_discharge_inserter_tests.step);
+
+    // Comptime evaluator tests — expression core of the comptime interpreter
+    const comptime_eval_tests = b.addTest(.{
+        .name = "comptime_eval_tests",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/comptime_eval_test.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    comptime_eval_tests.root_module.addImport("ast", ast_module);
+    comptime_eval_tests.root_module.addImport("expression_parser", expression_parser_module);
+    comptime_eval_tests.root_module.addImport("comptime_eval", comptime_eval_module);
+    const run_comptime_eval_tests = b.addRunArtifact(comptime_eval_tests);
+    const comptime_eval_test_step = b.step("test-comptime-eval", "Run comptime evaluator tests");
+    comptime_eval_test_step.dependOn(&run_comptime_eval_tests.step);
 
     // Phantom semantic checker integration tests - validates full type checking (base type + phantom state)
     const phantom_checker_integration_tests = b.addTest(.{
@@ -1331,6 +1377,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_parser_tests.step);
     test_step.dependOn(&run_ast_serializer_tests.step);
     test_step.dependOn(&run_ast_json_tests.step);
+    test_step.dependOn(&run_ast_printer_tests.step);
     test_step.dependOn(&run_shape_checker_tests.step);
     test_step.dependOn(&run_tap_collector_tests.step);
     test_step.dependOn(&run_purity_checker_tests.step);

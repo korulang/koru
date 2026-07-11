@@ -1,0 +1,38 @@
+// Test 8209: MLIR CPU variant — the root of the MLIR AOT backend.
+//
+// A `|mlir` proc variant carries an opaque MLIR text body (balanced braces,
+// like 8205's GLSL body). The compiler routes it through the MLIR toolchain
+// ahead of time — mlir-opt -> mlir-translate -> clang -c, pinned to LLVM/MLIR
+// 19 — and links the object into the output binary. The emitter declares the
+// extern symbol (`koru_mlir_<event-path>`) and a thin wrapper that calls it;
+// no runtime machinery. Mirrors 8205's zig+gpu variant coexistence, for a
+// target that actually runs.
+//
+// Scalar calling convention on purpose (one i32 in, one i32 out): the smallest
+// thing that proves Koru -> emitted MLIR -> lowered -> linked -> ran. The loop
+// shape is 8210; compiler-GENERATED kernels and the buffer ABI are
+// 390_100/101/102.
+
+~import std/io
+
+~pub event compute { value: i32 }
+| done i32
+
+// Zig fallback — always works, and defines the answer the MLIR variant must match.
+~proc compute|zig {
+    return .{ .done = value * 2 };
+}
+
+// MLIR implementation — opaque MLIR text body (balanced braces, like the GLSL
+// body in 8205). The compiler must route this through the MLIR toolchain.
+~proc compute|mlir {
+    func.func @koru_mlir_compute(%arg0: i32) -> i32 {
+        %two = arith.constant 2 : i32
+        %r = arith.muli %arg0, %two : i32
+        return %r : i32
+    }
+}
+
+// Explicitly select the MLIR variant (the |variant suffix, resolved at compile time).
+~compute|mlir(value: 21)
+| done d |> std/io:print.ln("result: {{ d:d }}")

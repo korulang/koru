@@ -33,7 +33,7 @@ Auto-Disposing Monadic Event Continuation Language"* — a pile of everything. T
 north star is what gives that pile a spine: it isn't "look how much we crammed
 in," it's "we refused to give any of it up."
 
-## The beds — one garden, two halves of "no compromise"
+## The beds — one garden, three stretches of "no compromise"
 
 ### Worthy — great on every axis at once
 
@@ -54,8 +54,39 @@ both. The messaging follows from the move: *don't rewrite, assimilate.*
 
 **`koru-libs` is this bed's worked ground** — where "assimilate" gets proven,
 package by package, showcase by showcase. (sqlite3 already wraps C SQLite behind
-phantom obligations: `conn[opened!]` — the compiler will not let you forget to
+phantom obligations: `*Connection<opened!>` — the compiler will not let you forget to
 close it.)
+
+### The medium — the AST is the program
+
+Koru is so strictly shaped that source text is just one *projection* of the
+tree: parse → print → parse round-trips exactly, and the inline-`|>` rule was
+always the magic trick that forced the corpus into machine-shape so a printer
+could one day reshape it. Once the tree is the program, one substrate serves
+every consumer:
+
+- **Project it** — a Scratch-like editing surface where phantom obligations
+  *are* the connector shapes: what snaps together compiles, resource leaks are
+  unbuildable, and the palette is computed from the type system, not drawn by
+  hand. The vertical canonical form and the block-stack are the same geometry.
+- **Identify it** — semi-stable node identity (the call-site geohashing relic,
+  revived: hierarchical structural hashes + selector-like description +
+  source-location witness) so diagnostics, taps, and tools address *nodes*,
+  and identity survives edits via reconciliation instead of shattering.
+- **Execute it at comptime** — a fully functional comptime interpreter that
+  generates new AST and re-runs the pipeline over it: Jai-class
+  metaprogramming, except the generated code goes back through the phantom
+  checker. Metaprogramming *or* safety was never a real tradeoff.
+- **Ship it** — continuations over the wire, budget-metered, running against a
+  **resource bridge** whose handle pool persists across runs: not
+  request/response but a *conversation*, where the remote holds resources on
+  your behalf under obligations your compiler will not let you abandon, and
+  the session itself is `*Bridge<session!>` — you cannot forget to hang up.
+  Session types and linear capabilities, arrived at by already having
+  obligations. Map/reduce and GraphQL are the flat shadows of this.
+
+One tree — printed, proven, projected, executed, shipped. Every other bed
+walks *on* this one eventually; it is the substrate half of the dream.
 
 ## What it says no to
 
@@ -80,3 +111,11 @@ modes:
   worked ground = `koru-libs`); two refusals encoded. Beds floated from the
   ambition float (winners vs worthy-losers, blind pair) crossed with the
   koru-libs assimilation insight. — walk (Muse)
+- 2026-07-02 — grew the medium bed ("the AST is the program"). Co-derived on a
+  Muse walk that started from the Scratch spark and climbed: full source⇄AST
+  round-tripping (the inline-`|>` trick's intended payoff), geohash node
+  identity (revived from the sole surviving comment in `tap_transformer.zig`),
+  comptime AST-generating interpreter (`docs/comptime_interpreter_vision.md`),
+  and the wire: budgeted interpreter + resource bridge (`koru_std/bridge.kz`)
+  = conversations over the wire under obligations. Same walk: bracket-phantom
+  context-poison eradicated repo-wide (the scene itself was a source). — walk (Muse)

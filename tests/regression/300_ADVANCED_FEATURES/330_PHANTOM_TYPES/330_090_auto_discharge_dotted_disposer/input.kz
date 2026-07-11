@@ -1,0 +1,11 @@
+// Auto-discharge (default ON) must insert the sole disposer of <!opened>.
+// For a single-name disposer it does (cf. 330_025). For this DOTTED disposer
+// (`dispose.file`) it currently emits a raw Zig host error instead:
+//   error: struct 'koru_app.koru_fsd' has no member named 'dispose'
+//
+// This MUST_RUN pins the DESIRED behavior: a dotted disposer auto-discharges
+// exactly like a single-name one, so the program builds and runs. Currently
+// RED — the pin stays red until auto-discharge resolves dotted disposer names.
+~import app/fsd
+~app/fsd:open(path: "x")
+| opened _ |> _

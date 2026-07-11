@@ -13,11 +13,11 @@ import std/io
 import std/list
 
 std/list:new(i64)
-| list a |> std/list:push(a, 10) |> std/list:push(a, 20) |> std/list:push(a, 30) |> std/list:new(i64)
-    | list b |> std/list:len(a): n |> for(0..n)
-            ! each _ |> std/list:pop(a)
-                | item v |> std/list:push(b, v)
+| list xs |> std/list:push(xs, v: 10) |> std/list:push(xs, v: 20) |> std/list:push(xs, v: 30) |> std/list:new(i64)
+    | list b |> std/list:len(xs): n |> for(0..n)
+            ! each _ |> std/list:pop(xs)
+                | item v |> std/list:push(xs: b, v)
                 | empty  |> _
-            | done |> std/list:len(b): m |> std/io:print.ln("moved into b: {{ m:d }}") |> std/list:free(a) |> std/list:free(b)
+            | done |> std/list:len(xs: b): m |> std/io:print.ln("moved into b: {{ m:d }}") |> std/list:free(xs) |> std/list:free(xs: b)
     | err e |> std/io:print.ln("ERR b {{ e:s }}")
 | err e |> std/io:print.ln("ERR a {{ e:s }}")

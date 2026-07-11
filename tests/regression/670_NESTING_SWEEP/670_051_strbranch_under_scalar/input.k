@@ -6,6 +6,6 @@ import std/string
 import std/args
 
 std/args:count()
-| count _ |> std/string:from-page("x")
+| count _ |> std/string:from-page(text: "x")
     | ok s |> std/io:print.ln("ok") |> std/string:free(s)
     | err _ |> std/io:print.ln("err")

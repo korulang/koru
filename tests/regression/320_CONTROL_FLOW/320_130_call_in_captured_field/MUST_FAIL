@@ -1,0 +1,9 @@
+A call inside a CAPTURED field expression is illegal — calls are not
+expressions; the idiom is bind-first, exactly how every green benchmark
+kernel folds (`g(a: i): x |> captured { acc: s.acc + x }`).
+
+Guarded by the KORU104 expression-admission wall (flow_checker, Stage A).
+capture/captured carry their brace payload as a Source-typed arg; the wall
+parses that source as a field-expression list and judges each field (the
+general "transform declares its Source is expression-shaped" contract is
+an open design item). Previously the call leaked verbatim into emitted Zig.

@@ -1,0 +1,35 @@
+// RED PIN (type-system design walk, 2026-07-06/07). A TYPE
+// COMPREHENSION over the registry: a struct block row may be a
+// comprehension clause whose DOMAIN is another registered type's
+// fields — deriving a type by ranging over an entry. This is the
+// registry acting as a comprehension domain (`f over Player`), the
+// core unification of the walk: table comprehensions range over
+// values, type comprehensions range over registry entries, one closed
+// grammar. GUARD WORD deliberately absent — keep-vs-when is an open
+// Lars ruling (O4 leans `when`); this pin uses no guard so it doesn't
+// pre-empt it. Row spelling PROVISIONAL.
+
+~import std/types
+~import std/io
+
+const std = @import("std");
+
+~std/types:struct(Player) {
+    name: []const u8,
+    health: i64,
+}
+
+// Derive: every field of Player, plus one literal row.
+~std/types:struct(PlayerSnapshot) {
+    f over Player -> f
+    tick: i64,
+}
+
+~event main {}
+
+~proc main|zig {
+    const s = PlayerSnapshot{ .name = "Alice", .health = 100, .tick = 7 };
+    std.debug.print("{s} {d} @{d}\n", .{ s.name, s.health, s.tick });
+}
+
+~main()

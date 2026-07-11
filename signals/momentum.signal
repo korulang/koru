@@ -1,0 +1,7 @@
+name: momentum
+kind: inferred
+shape: categorical
+face: out
+membrane: false
+note: flow | grinding | stalled | derailed — synthesized from cadence, churn, correction-rate
+route: surface, wake

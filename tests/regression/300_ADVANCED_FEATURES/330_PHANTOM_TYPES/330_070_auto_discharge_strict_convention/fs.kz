@@ -17,7 +17,7 @@ const File = struct { handle: i32 };
     return .{ .opened = f };
 }
 
-// Close - the ONLY consumer of [!opened]
+// Close - the ONLY consumer of <!opened>
 ~pub event close { file: *File<!opened> }
 
 ~proc close|zig {

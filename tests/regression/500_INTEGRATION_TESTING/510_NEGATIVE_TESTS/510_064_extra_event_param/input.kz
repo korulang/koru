@@ -1,6 +1,8 @@
-// Test: Event call with parameter not in event shape
-// ACCEPTABLE: Backend Zig error "no field named 'y'"
-// (We don't re-implement Zig's type system)
+// Test: an explicit label naming a parameter the callee does NOT have is
+// rejected at the koru FRONTEND (PARSE006 "unknown parameter"), not deferred to
+// a raw Zig "no field named 'y'" leak. Named-parameter rule: every argument
+// must name a real parameter, and an unknown one is caught at our own boundary
+// with a koru-level diagnostic. `foo` has field `x` only; `y: 2` is rejected.
 
 ~event foo { x: i32 }
 

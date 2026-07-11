@@ -4,7 +4,7 @@ import std/io
 import std/string
 
 capture { k: 0[i64] }
-! as acc |> std/string:from-page("x")
+! as acc |> std/string:from-page(text: "x")
     | ok s |> std/string:free(s) |> captured { k: acc.k + 1 }
     | err _ |> captured { k: acc.k + 1 }
 | captured _ |> std/io:print.ln("ok")

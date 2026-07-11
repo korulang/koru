@@ -6,7 +6,7 @@ import std/io
 import std/string
 
 for(0..3)
-! each _ |> std/string:from-page("x")
+! each _ |> std/string:from-page(text: "x")
     | ok s |> std/io:print.ln("ok") |> std/string:free(s)
     | err _ |> std/io:print.ln("err")
 | done |> _

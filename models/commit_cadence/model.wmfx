@@ -1,0 +1,27 @@
+desc:Commit-cadence watchdog — fire when this repo's git commits go quieter than its in-sample cadence (the dev loop stalled)
+author:WMFX
+tags:world-model watchdog dev-harness commit-cadence absence-as-signal membrane
+
+// The WORK faucet of a repo is its `git log`: every commit is a unit of dev value
+// executing. Commits arrive on an EVENT clock — irregular — so the silence that
+// preceded each commit rides WITH the event as `gap_min` (minutes since the prior
+// commit). One @block tick = one commit. This computes the MEASURED signal
+// `commit-silence`; the engine runs it, the agent does not declare it.
+//
+// Threshold = a DESIGN CONSTANT (1.5x the longest in-sample inter-commit gap),
+// fixed before replay — so the per-tick rule is stateless (no carried accumulator
+// to compound), and the "state" is the durable git series itself.
+
+@unit gap_min 1
+@unit threshold 1
+@unit alarm 1
+
+slider1:90<5,1440,5>silence threshold (minutes)
+
+@init
+threshold = slider1;
+
+@block
+// The whole claim, one expression over the port: did the gap the dev loop just
+// sat through exceed what an active in-sample session ever shows? If so, stalled.
+alarm = gap_min >= threshold ? 1 : 0;

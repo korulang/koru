@@ -1,0 +1,259 @@
+{
+    "module_annotations": [
+
+    ],
+    "items": [
+        {
+            "type": "import_decl",
+            "path": "std/compiler",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_140_variant_selector_on_transform_swallowed/input.kz",
+                "line": 2,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_140_variant_selector_on_transform_swallowed/input.kz",
+                "line": 2,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_140_variant_selector_on_transform_swallowed/input.kz",
+                "line": 3,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_140_variant_selector_on_transform_swallowed/input.kz",
+                "line": 4,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_140_variant_selector_on_transform_swallowed/input.kz",
+                "line": 5,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_140_variant_selector_on_transform_swallowed/input.kz",
+                "line": 6,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_140_variant_selector_on_transform_swallowed/input.kz",
+                "line": 7,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_140_variant_selector_on_transform_swallowed/input.kz",
+                "line": 8,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_140_variant_selector_on_transform_swallowed/input.kz",
+                "line": 9,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_140_variant_selector_on_transform_swallowed/input.kz",
+                "line": 10,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_140_variant_selector_on_transform_swallowed/input.kz",
+                "line": 11,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_140_variant_selector_on_transform_swallowed/input.kz",
+                "line": 12,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_140_variant_selector_on_transform_swallowed/input.kz",
+                "line": 13,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_140_variant_selector_on_transform_swallowed/input.kz",
+                "line": 14,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_140_variant_selector_on_transform_swallowed/input.kz",
+                "line": 15,
+                "col": 0
+            }
+        },
+        {
+            "type": "import_decl",
+            "path": "std/kernel",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_140_variant_selector_on_transform_swallowed/input.kz",
+                "line": 18,
+                "col": 0
+            }
+        },
+        {
+            "type": "flow",
+            "invocation": {
+                "event": ["shape"],
+                "args": [
+                    {
+                        "name": "expr",
+                        "value": "Body",
+                        "expression_value": {
+                            "text": "Body",
+                            "location": {
+                                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_140_variant_selector_on_transform_swallowed/input.kz",
+                                "line": 20,
+                                "col": 0
+                            },
+                            "scope": {
+                                "bindings": [
+
+                                ]
+                            }
+                        }
+                    },
+                    {
+                        "name": "source",
+                        "value": "mass: f64,",
+                        "source_value": {
+                            "text": "mass: f64,",
+                            "location": {
+                                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_140_variant_selector_on_transform_swallowed/input.kz",
+                                "line": 22,
+                                "col": 0
+                            },
+                            "scope": {
+                                "bindings": [
+
+                                ]
+                            },
+                            "phantom_type": null
+                        }
+                    }
+                ],
+                "variant": null
+            },
+            "continuations": [
+
+            ],
+            "pre_label": null,
+            "impl_of": null,
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_140_variant_selector_on_transform_swallowed/input.kz",
+                "line": 19,
+                "col": 0
+            }
+        },
+        {
+            "type": "flow",
+            "invocation": {
+                "event": ["init"],
+                "args": [
+                    {
+                        "name": "expr",
+                        "value": "Body",
+                        "expression_value": {
+                            "text": "Body",
+                            "location": {
+                                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_140_variant_selector_on_transform_swallowed/input.kz",
+                                "line": 24,
+                                "col": 0
+                            },
+                            "scope": {
+                                "bindings": [
+
+                                ]
+                            }
+                        }
+                    },
+                    {
+                        "name": "source",
+                        "value": "{ mass: 1.0 },",
+                        "source_value": {
+                            "text": "{ mass: 1.0 },",
+                            "location": {
+                                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_140_variant_selector_on_transform_swallowed/input.kz",
+                                "line": 26,
+                                "col": 0
+                            },
+                            "scope": {
+                                "bindings": [
+
+                                ]
+                            },
+                            "phantom_type": null
+                        }
+                    }
+                ],
+                "variant": "gpu"
+            },
+            "continuations": [
+
+            ],
+            "pre_label": null,
+            "impl_of": null,
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_140_variant_selector_on_transform_swallowed/input.kz",
+                "line": 23,
+                "col": 0
+            }
+        }
+    ]
+}

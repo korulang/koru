@@ -190,6 +190,45 @@ pub const LabelContext = struct {
     handlers_name: ?[]const u8 = null,
 };
 
+/// One member of a mutual-tail-recursion group: the event's canonical name and
+/// the Zig enum tag (mangled event path) used as the combined labeled switch's
+/// case for this member.
+pub const MutualMember = struct {
+    canonical: []const u8,
+    tag: []const u8,
+    event: *const ast.EventDecl,
+    flow: *const ast.Flow,
+};
+
+/// A cycle of events that tail-forward to each other (`is-even`↔`is-odd`). The
+/// whole cycle lowers into ONE labeled switch per member handler
+/// (`__koru_self_loop: switch (…entry…) {…}`, arms jumping via
+/// `continue :label .<G>`) — the mutual generalization of the self-tail-loop
+/// lowering (see `detectMutualGroup` / `emitMutualTailReentry`). Owns its
+/// member strings; call `deinit` after the handler is emitted.
+pub const MutualGroup = struct {
+    members: []MutualMember,
+
+    pub fn tagFor(self: *const MutualGroup, canonical: []const u8) ?[]const u8 {
+        for (self.members) |m| {
+            if (std.mem.eql(u8, m.canonical, canonical)) return m.tag;
+        }
+        return null;
+    }
+
+    pub fn contains(self: *const MutualGroup, canonical: []const u8) bool {
+        return self.tagFor(canonical) != null;
+    }
+
+    pub fn deinit(self: *MutualGroup, allocator: std.mem.Allocator) void {
+        for (self.members) |m| {
+            allocator.free(m.canonical);
+            allocator.free(m.tag);
+        }
+        allocator.free(self.members);
+    }
+};
+
 pub const EmissionContext = struct {
     allocator: std.mem.Allocator,
     indent_level: usize = 0,
@@ -238,6 +277,16 @@ pub const EmissionContext = struct {
     self_loop_active: bool = false,
     self_loop_label: []const u8 = "__koru_self_loop",
     self_loop_event_canonical: ?[]const u8 = null,
+    // ── Mutual-tail-recursion group lowering ─────────────────────────────────
+    // When set, the handler body is being emitted inside a combined LABELED
+    // SWITCH (`__koru_self_loop: switch (…entry…) {...}`) that covers a whole
+    // cycle of events tail-forwarding to each other. A tail continuation that
+    // forwards to any member G lowers to `<reassign args>;
+    // continue :__koru_self_loop .<G>;` — a direct jump to G's arm — instead
+    // of a cross-handler call. See `detectMutualGroup` / `emitMutualTailReentry`.
+    // The degenerate 1-cycle (an event forwarding to itself) stays on the
+    // `self_loop_*` path.
+    mutual_group: ?*const MutualGroup = null,
     // Set when emitting the body of a handler whose event has a bare `-> T`
     // return. A `.expression` produce step (`| big b -> b * 100`) in this
     // context IS the event's return value, so it lowers to `return EXPR;`
@@ -245,6 +294,20 @@ pub const EmissionContext = struct {
     // impls already emit `return` via their own paths; this covers the
     // continuation-HANDLER produce — see 020_025.)
     bare_return_active: bool = false,
+    // ── Subflow-implemented effects (400_130-137) ────────────────────────────
+    // Set while emitting the body of an impl subflow of an effect-bearing
+    // event. Calls to that event's own effect arms — `ping = pong(x)` at the
+    // head, `|> each(i)` in a chain — lower to `__H.<arm>(...)`, the
+    // consumer's handler-struct fn (the same comptime dispatch a `|zig` proc
+    // body reaches through the `const each = __H.each;` aliases). Qualified
+    // through `__H` so a Handlers struct synthesized INSIDE this handler
+    // (e.g. for a nested `for(..)`) can never shadow the arm name.
+    impl_event_decl: ?*const ast.EventDecl = null,
+    // Resume arms of the arm-fire whose sum is being consumed as `|` branches
+    // (`request = ask(payload) | halved v => ... | timeout => ...`). The
+    // continuation-switch machinery answers payload questions from this when
+    // the branch set isn't an event's (the head is an arm, not an event).
+    current_resume_arms: ?[]const ast.ResumeArm = null,
 };
 
 /// CodeEmitter - manages buffer and formatting
@@ -385,10 +448,58 @@ pub const CodeEmitter = struct {
         return codegen_utils.needsEscaping(word);
     }
 
-    /// Write a line of text with Zig keyword escaping for field access (.keyword -> .@"keyword")
+    /// Write a line of text with Zig keyword escaping for field access (.keyword -> .@"keyword").
+    ///
+    /// String-literal content is OPAQUE to escaping: a multiline-string line
+    /// (leading `\\`) is written verbatim, and `"..."` / `'...'` spans on
+    /// ordinary lines are never rewritten. Proc bodies carry foreign text in
+    /// string literals — MLIR (`scf.for`), GLSL, user-facing messages — and
+    /// escaping inside them corrupts that text byte-for-byte (the 390_100
+    /// `scf.@"for"` corruption that pinned this).
     fn writeLineWithKeywordEscaping(self: *CodeEmitter, line: []const u8) !void {
+        // Zig multiline string literal line: everything after `\\` is string
+        // content, and `\\` can only be preceded by whitespace on its line.
+        const stripped = std.mem.trimLeft(u8, line, " \t");
+        if (std.mem.startsWith(u8, stripped, "\\\\")) {
+            try self.write(line);
+            return;
+        }
+
         var pos: usize = 0;
+        var in_string = false; // inside "..."
+        var in_char = false; // inside '...'
+        var backslash_escaped = false; // previous char was '\' inside a literal
         while (pos < line.len) {
+            const c = line[pos];
+
+            // Inside a string/char literal: copy verbatim, only track the exit.
+            if (in_string or in_char) {
+                try self.write(line[pos .. pos + 1]);
+                if (backslash_escaped) {
+                    backslash_escaped = false;
+                } else if (c == '\\') {
+                    backslash_escaped = true;
+                } else if (in_string and c == '"') {
+                    in_string = false;
+                } else if (in_char and c == '\'') {
+                    in_char = false;
+                }
+                pos += 1;
+                continue;
+            }
+            if (c == '"') {
+                in_string = true;
+                try self.write(line[pos .. pos + 1]);
+                pos += 1;
+                continue;
+            }
+            if (c == '\'') {
+                in_char = true;
+                try self.write(line[pos .. pos + 1]);
+                pos += 1;
+                continue;
+            }
+
             // Look for field access pattern: .identifier
             if (line[pos] == '.' and pos + 1 < line.len) {
                 const after_dot = pos + 1;
@@ -2825,7 +2936,10 @@ fn emitSubflowContinuationsWithDepth(
                             }
                             try emitter.write(" }");
                         },
-                        else => {},
+                        // A terminal (or any node this expression path can't
+                        // lower) must still be a Zig expression — an empty
+                        // block, never NOTHING (`.mode => ,` is a parse error).
+                        else => try emitter.write("{}"),
                     }
                 } else {
                     try emitter.write("{}");
@@ -3777,7 +3891,7 @@ fn writeInlineCodeWithLabel(
 /// identically at every depth — there is no "only top-level" path. Covers:
 ///   - statement / void-continuation inline emission (incl. the `! each`
 ///     effect-branch Handlers bridge), and
-///   - the `[expand]` `switch (__expand_result)` form.
+///   - the `[expand]` `switch (__expand_result_N)` form.
 /// `continuations` are the node's branch continuations; `path` is the invoked
 /// event's path (for effect-branch lookup).
 pub fn emitInlineBodyNode(
@@ -3975,19 +4089,35 @@ pub fn emitInlineBodyNode(
     // [expand] events with branches: template provides the expression,
     // continuations provide the switch arms.
     if (continuations.len > 0) {
-        // Emit: const __expand_result = <inline_code>;
+        // The expand result constant is minted from the shared counter, NOT a
+        // fixed name: two chained [expand] splices (fmt:ln |> fmt:ln) nest
+        // their switches in the same Zig function, and a fixed `__expand_result`
+        // shadows across them. Pinned by 620_004_fmt_ln_chained_expand_collision.
+        const expand_var = try std.fmt.allocPrint(ctx.allocator, "__expand_result_{d}", .{result_counter.*});
+        defer ctx.allocator.free(expand_var);
+        result_counter.* += 1;
+
+        // Emit: const __expand_result_N = <inline_code>;
         try emitter.writeIndent();
-        try emitter.write("const __expand_result = ");
+        try emitter.write("const ");
+        try emitter.write(expand_var);
+        try emitter.write(" = ");
         try writeInlineCodeWithLabel(emitter, ctx, inline_code);
         try emitter.write(";\n");
 
-        // Emit: switch (__expand_result) { ... }
+        // Emit: switch (__expand_result_N) { ... }
         try emitter.writeIndent();
-        try emitter.write("switch (__expand_result) {\n");
+        try emitter.write("switch (");
+        try emitter.write(expand_var);
+        try emitter.write(") {\n");
         emitter.indent();
 
-        // Emit each continuation as a switch arm
-        var step_idx: usize = 0;
+        // Emit each continuation as a switch arm. The arms share the CALLER's
+        // result counter: an [expand] splice (e.g. std/fmt:ln mid-chain) emits
+        // its arms in the same Zig function scope as the enclosing flow, so a
+        // fresh 0-based counter here re-issues result_N names that shadow the
+        // enclosing scope's (`local constant 'result_0' shadows local constant
+        // from outer scope`). Pinned by 620_003_fmt_ln_mid_chain_result_collision.
         for (continuations) |*cont| {
             try emitter.writeIndent();
             try emitter.write(".");
@@ -4010,7 +4140,7 @@ pub fn emitInlineBodyNode(
             emitter.indent();
 
             // Emit the continuation body
-            try emitContinuationBody(emitter, ctx, cont, &step_idx);
+            try emitContinuationBody(emitter, ctx, cont, result_counter);
 
             emitter.dedent();
             try emitter.writeIndent();
@@ -4180,6 +4310,19 @@ pub fn emitFlow(
         findEventDeclByPath(items, &flow.inv().path)
     else
         null;
+
+    // Subflow-implemented effects: when the head fires one of the implemented
+    // event's own arms, its multi-arm resume sum is consumed as `|` branches
+    // right here at the firing site (`request = ask(payload) | halved v => …`).
+    // Expose the declared arms so the continuation switch can answer payload
+    // questions from the resume sum (the head is an arm, not an event).
+    const head_arm: ?*const ast.Branch = if (ctx.impl_event_decl) |impl_ev|
+        findEffectArm(impl_ev, &flow.inv().path)
+    else
+        null;
+    const saved_resume_arms = ctx.current_resume_arms;
+    if (head_arm) |arm| ctx.current_resume_arms = arm.resume_arms;
+    defer ctx.current_resume_arms = saved_resume_arms;
 
     var event_has_effect_branch = false;
     if (event_decl_for_partition) |ed| {
@@ -5370,6 +5513,58 @@ fn emitHandlersStruct(
     try emitter.write("};\n");
 }
 
+/// Subflow-implemented effects: if `path` names an effect arm of `event`
+/// (single segment, module qualifier absent or matching the event's own),
+/// return that arm. Used with EmissionContext.impl_event_decl so arm names
+/// only ever resolve inside the declaring event's own implementation.
+pub fn findEffectArm(event: *const ast.EventDecl, path: *const ast.DottedPath) ?*const ast.Branch {
+    if (path.segments.len != 1) return null;
+    if (path.module_qualifier) |mq| {
+        if (event.path.module_qualifier) |emq| {
+            if (!std.mem.eql(u8, mq, emq)) return null;
+        }
+    }
+    for (event.branches) |*b| {
+        if (b.kind == .effect and std.mem.eql(u8, b.name, path.segments[0])) return b;
+    }
+    return null;
+}
+
+/// Write the call expression for an arm-fire: `__H.<arm>(<payload>)`.
+/// The consumer-side handler fn takes the payload POSITIONALLY (identity
+/// payload → the bare value, multi-field → one anon struct, void → no args)
+/// — see emitHandlersStruct's signature emission, which this must mirror.
+fn writeArmFireCallExpr(
+    emitter: *CodeEmitter,
+    ctx: *EmissionContext,
+    invocation: *const ast.Invocation,
+    arm: *const ast.Branch,
+) !void {
+    try emitter.write("__H.");
+    try writeBranchName(emitter, arm.name);
+    try emitter.write("(");
+    const is_identity = arm.payload.fields.len == 1 and
+        std.mem.eql(u8, arm.payload.fields[0].name, "__type_ref");
+    if (arm.payload.fields.len == 0 and !arm.payload.is_wildcard) {
+        // Payloadless arm — bare `ask()`.
+    } else if (is_identity or arm.payload.is_wildcard) {
+        if (invocation.args.len > 0) {
+            try emitValue(emitter, ctx, invocation.args[0].value);
+        }
+    } else {
+        try emitter.write(".{ ");
+        for (invocation.args, 0..) |arg, i| {
+            if (i > 0) try emitter.write(", ");
+            try emitter.write(".");
+            try writeBranchName(emitter, arg.name);
+            try emitter.write(" = ");
+            try emitValue(emitter, ctx, arg.value);
+        }
+        try emitter.write(" }");
+    }
+    try emitter.write(")");
+}
+
 /// Emit an invocation (const result = event.handler(...))
 /// If an ImmediateImpl exists for this path, inline the value instead
 fn emitInvocation(
@@ -5378,6 +5573,31 @@ fn emitInvocation(
     invocation: *const ast.Invocation,
     result_var: []const u8,
 ) !void {
+    // Subflow-implemented effects: inside the declaring event's impl, a call
+    // to one of its own effect arms IS the firing — lower it to the
+    // consumer's handler-struct fn via the comptime `__H` param, never to an
+    // event handler call. A resuming arm binds its value to the call-site
+    // `:` name (or the pipeline's result var); a void arm is a bare call.
+    if (ctx.impl_event_decl) |impl_ev| {
+        if (findEffectArm(impl_ev, &invocation.path)) |arm| {
+            const has_resume = arm.resume_type != null or arm.resume_arms != null;
+            try emitter.writeIndent();
+            if (has_resume) {
+                const bound_var = invocation.return_binding orelse result_var;
+                if (std.mem.eql(u8, bound_var, "_")) {
+                    try emitter.write("_ = ");
+                } else {
+                    try emitter.write("const ");
+                    try emitter.write(bound_var);
+                    try emitter.write(" = ");
+                }
+            }
+            try writeArmFireCallExpr(emitter, ctx, invocation, arm);
+            try emitter.write(";\n");
+            return;
+        }
+    }
+
     // Handle special test assertions that should be inlined
     if (invocation.path.segments.len == 2) {
         const first = invocation.path.segments[0];
@@ -7074,10 +7294,24 @@ fn emitContinuationCase(
     const needs_mutable_capture = bindingHasMutableAnnotation(cont);
 
     // Check if branch has payload fields - empty payloads shouldn't be captured
-    const has_payload_fields = if (ctx.current_source_event) |event_name|
+    var has_payload_fields = if (ctx.current_source_event) |event_name|
         branchHasPayloadFields(ctx, event_name, cont.branch)
     else
         false; // Can't verify — omit capture to avoid shadowing
+
+    // Resume-arm switch at an arm-fire site (subflow-implemented effects):
+    // the cases are arms of the fired effect's resume sum, not branches of
+    // an event, so payload presence comes from the arm declaration.
+    if (!has_payload_fields) {
+        if (ctx.current_resume_arms) |arms| {
+            for (arms) |*ra| {
+                if (std.mem.eql(u8, ra.name, cont.branch)) {
+                    has_payload_fields = ra.type != null;
+                    break;
+                }
+            }
+        }
+    }
 
     // Only emit capture syntax if the branch has payload fields
     if (has_payload_fields) {
@@ -7772,6 +8006,22 @@ pub fn emitContinuationBody(
                 if (continuationIsSelfTailForwarder(cont, canonical, ctx)) {
                     try emitSelfTailReentry(emitter, ctx, cont);
                     return;
+                }
+            }
+        }
+
+        // Mutual-group reentry: a tail-forward to any group member G lowers to
+        // `__koru_fn = .<G>; <reassign>; continue` inside the combined dispatch
+        // loop (see `detectMutualGroup` / `emitMutualTailReentry`).
+        if (ctx.mutual_group) |group| {
+            if (isTailForwarder(cont)) {
+                const inv = cont.node.?.invocation;
+                if (buildCanonicalEventName(&inv.path, ctx.allocator, ctx.main_module_name) catch null) |target| {
+                    defer ctx.allocator.free(target);
+                    if (group.tagFor(target)) |tag| {
+                        try emitMutualTailReentry(emitter, ctx, cont, tag);
+                        return;
+                    }
                 }
             }
         }
@@ -8607,10 +8857,50 @@ fn emitStep(
             try emitter.write("}\n");
         },
         .assignment => |asgn| {
-            // Emit direct field assignments: target.field = expr;
-            // This handles both scalar fields (target.sum = expr) and
-            // indexed fields (target.arr[i] = expr) - Zig parses arr[i] correctly
-            for (asgn.fields) |field| {
+            // SNAPSHOT SEMANTICS (ruled 2026-07-02, pinned 320_102): every
+            // field expression reads the INCOMING accumulator state, then all
+            // stores land — simultaneous assignment, so the meaning of a
+            // `captured { }` literal cannot depend on its field order. All RHS
+            // hoist into block-scoped temps before any store: the same loads
+            // and stores as the sequential form, reordered; LLVM register-
+            // allocates the temps — no copies, no extra work. Temps are
+            // index-named (field names can be `arr[i]`) and the block scope
+            // keeps repeated assignment nodes from colliding.
+            // (continuation_codegen's whole-struct-literal form is snapshot
+            // by construction; this partial-update form must match it.)
+            if (asgn.fields.len > 1) {
+                try emitter.writeIndent();
+                try emitter.write("{\n");
+                emitter.indent_level += 1;
+                for (asgn.fields, 0..) |field, i| {
+                    var name_buf: [32]u8 = undefined;
+                    const tmp = try std.fmt.bufPrint(&name_buf, "__koru_asgn_{d}", .{i});
+                    try emitter.writeIndent();
+                    try emitter.write("const ");
+                    try emitter.write(tmp);
+                    try emitter.write(" = ");
+                    if (field.expression_str) |expr| {
+                        try emitter.write(expr);
+                    } else {
+                        try emitter.write(field.type);
+                    }
+                    try emitter.write(";\n");
+                }
+                for (asgn.fields, 0..) |field, i| {
+                    var name_buf: [32]u8 = undefined;
+                    const tmp = try std.fmt.bufPrint(&name_buf, "__koru_asgn_{d}", .{i});
+                    try emitter.writeIndent();
+                    try emitter.write(asgn.target);
+                    try emitter.write(".");
+                    try emitter.write(field.name); // Can be "sum" or "arr[i]"
+                    try emitter.write(" = ");
+                    try emitter.write(tmp);
+                    try emitter.write(";\n");
+                }
+                emitter.indent_level -= 1;
+                try emitter.writeIndent();
+                try emitter.write("}\n");
+            } else for (asgn.fields) |field| {
                 try emitter.writeIndent();
                 try emitter.write(asgn.target);
                 try emitter.write(".");
@@ -9601,26 +9891,52 @@ fn identityForwardsResult(cont: *const ast.Continuation) bool {
     return true;
 }
 
-/// True if `cont` is a tail self-continuation of `event_canonical`: its node is
-/// an invocation of that event, and every child continuation forwards the
-/// result branch unchanged (so the self-call's result IS this invocation's
-/// result — the precondition for a sound loop rewrite).
+/// True if a child continuation bare-return-produces the parent invocation's
+/// `: bind` unchanged — `f(...): v -> v` — the single-return-form twin of the
+/// `| B v => B v` passthrough. The binding lives on the INVOCATION
+/// (return_binding), not on the child, so this can't ride on
+/// `identityForwardsResult`'s cont.binding check.
+fn bareReturnForwardsBinding(cont: *const ast.Continuation, return_binding: ?[]const u8) bool {
+    const rb = return_binding orelse return false;
+    if (cont.node == null) return false;
+    if (cont.node.? != .branch_constructor) return false;
+    const bc = cont.node.?.branch_constructor;
+    if (!bc.is_bare_return) return false;
+    const pv = bc.plain_value orelse return false;
+    return std.mem.eql(u8, std.mem.trim(u8, pv, " \t"), rb);
+}
+
+/// True if `cont` is a tail-forwarder: its node is an event invocation and every
+/// child continuation forwards the result branch unchanged (so the call's result
+/// IS this invocation's result) — either the tagged `| B v => B v` passthrough
+/// or the bare-return `: v -> v` produce. The invocation TARGET is not
+/// constrained here — this is the shared shape check behind both the self-loop
+/// (target == the event itself) and the mutual-group (target == any group
+/// member) lowerings.
+fn isTailForwarder(cont: *const ast.Continuation) bool {
+    if (cont.node == null) return false;
+    if (cont.node.? != .invocation) return false;
+    if (cont.continuations.len == 0) return false;
+    const rb = cont.node.?.invocation.return_binding;
+    for (cont.continuations) |*child| {
+        if (!identityForwardsResult(child) and !bareReturnForwardsBinding(child, rb)) return false;
+    }
+    return true;
+}
+
+/// True if `cont` is a tail self-continuation of `event_canonical`: a
+/// tail-forwarder whose invocation targets that same event (the precondition for
+/// a sound self-loop rewrite).
 fn continuationIsSelfTailForwarder(
     cont: *const ast.Continuation,
     event_canonical: []const u8,
     ctx: *EmissionContext,
 ) bool {
-    if (cont.node == null) return false;
-    if (cont.node.? != .invocation) return false;
+    if (!isTailForwarder(cont)) return false;
     const inv = cont.node.?.invocation;
     const inv_canonical = buildCanonicalEventName(&inv.path, ctx.allocator, ctx.main_module_name) catch return false;
     defer ctx.allocator.free(inv_canonical);
-    if (!std.mem.eql(u8, inv_canonical, event_canonical)) return false;
-    if (cont.continuations.len == 0) return false;
-    for (cont.continuations) |*child| {
-        if (!identityForwardsResult(child)) return false;
-    }
-    return true;
+    return std.mem.eql(u8, inv_canonical, event_canonical);
 }
 
 /// Recursive walker: does any tail position in this continuation tree contain a
@@ -9640,32 +9956,284 @@ pub fn flowContainsSelfTailForward(
     return false;
 }
 
-/// Emit the reassign+continue that replaces a tail self-call site. Each input
-/// field is reassigned from the corresponding invocation arg (pass-through args
-/// where `value == name` are skipped — they're already correct and emitting
-/// `x = x` would just copy the array for nothing). Then `continue :label`
-/// re-enters the loop top.
+/// Emit the input-field reassignments for a tail-call reentry. Each input field
+/// is reassigned from the corresponding invocation arg (pass-through args where
+/// `value == name` are skipped — they're already correct and emitting `x = x`
+/// would just copy the array for nothing). Shared by the self-loop and
+/// mutual-group reentries; the caller emits the `continue` (and, for mutual, the
+/// `__koru_fn = .<target>;` dispatch-state update) around it.
+fn emitTailReargs(
+    emitter: *CodeEmitter,
+    ctx: *EmissionContext,
+    inv: *const ast.Invocation,
+) !void {
+    // SNAPSHOT / SIMULTANEOUS ASSIGNMENT (same defect + fix as captured{},
+    // ruled 2026-07-02, pinned 320_102 & 320_121): a tail reentry reassigns the
+    // loop's `var` bindings. Emitted sequentially, a later arg's RHS reads an
+    // EARLIER binding that was already stored — e.g. gcd's `a = b; b = @mod(a, b);`
+    // reads the new `a`, and nestedloop's `k = k - 1; acc = ... k` reads the
+    // decremented `k`. Silent wrong answers. Stage every reassigned RHS into a
+    // block-scoped temp against the INCOMING state, then store — LLVM register-
+    // allocates the temps (no copies). No-op pass-throughs (`x: x`) need neither
+    // store nor staging. SHARED by the self-loop AND mutual-group reentries, so
+    // the simultaneous fix covers the mutual multi-arg path too.
+    var n_reassign: usize = 0;
+    for (inv.args) |arg| {
+        const trimmed = std.mem.trim(u8, arg.value, " \t");
+        if (std.mem.eql(u8, trimmed, arg.name)) continue;
+        n_reassign += 1;
+    }
+    if (n_reassign > 1) {
+        try emitter.writeIndent();
+        try emitter.write("{\n");
+        emitter.indent_level += 1;
+        var i: usize = 0;
+        for (inv.args) |arg| {
+            const trimmed = std.mem.trim(u8, arg.value, " \t");
+            if (std.mem.eql(u8, trimmed, arg.name)) continue;
+            var name_buf: [40]u8 = undefined;
+            const tmp = try std.fmt.bufPrint(&name_buf, "__koru_reentry_{d}", .{i});
+            try emitter.writeIndent();
+            try emitter.write("const ");
+            try emitter.write(tmp);
+            try emitter.write(" = ");
+            try emitValue(emitter, ctx, arg.value);
+            try emitter.write(";\n");
+            i += 1;
+        }
+        i = 0;
+        for (inv.args) |arg| {
+            const trimmed = std.mem.trim(u8, arg.value, " \t");
+            if (std.mem.eql(u8, trimmed, arg.name)) continue;
+            var name_buf: [40]u8 = undefined;
+            const tmp = try std.fmt.bufPrint(&name_buf, "__koru_reentry_{d}", .{i});
+            try emitter.writeIndent();
+            try writeBranchName(emitter, arg.name);
+            try emitter.write(" = ");
+            try emitter.write(tmp);
+            try emitter.write(";\n");
+            i += 1;
+        }
+        emitter.indent_level -= 1;
+        try emitter.writeIndent();
+        try emitter.write("}\n");
+    } else {
+        for (inv.args) |arg| {
+            const trimmed = std.mem.trim(u8, arg.value, " \t");
+            // Skip no-op pass-throughs (`ops: ops` → `ops = ops`). Avoids a
+            // pointless array copy and keeps the emitted loop clean.
+            if (std.mem.eql(u8, trimmed, arg.name)) continue;
+            try emitter.writeIndent();
+            try writeBranchName(emitter, arg.name);
+            try emitter.write(" = ");
+            try emitValue(emitter, ctx, arg.value);
+            try emitter.write(";\n");
+        }
+    }
+}
+
+/// Emit the reassign+continue that replaces a tail self-call site, then
+/// `continue :label` re-enters the loop top.
 fn emitSelfTailReentry(
     emitter: *CodeEmitter,
     ctx: *EmissionContext,
     cont: *const ast.Continuation,
 ) !void {
-    const inv = cont.node.?.invocation;
-    for (inv.args) |arg| {
-        const trimmed = std.mem.trim(u8, arg.value, " \t");
-        // Skip no-op pass-throughs (`ops: ops` → `ops = ops`). Avoids a
-        // pointless array copy and keeps the emitted loop clean.
-        if (std.mem.eql(u8, trimmed, arg.name)) continue;
-        try emitter.writeIndent();
-        try writeBranchName(emitter, arg.name);
-        try emitter.write(" = ");
-        try emitValue(emitter, ctx, arg.value);
-        try emitter.write(";\n");
-    }
+    try emitTailReargs(emitter, ctx, &cont.node.?.invocation);
     try emitter.writeIndent();
     try emitter.write("continue :");
     try emitter.write(ctx.self_loop_label);
     try emitter.write(";\n");
+}
+
+/// Emit the reassign + continue that replaces a mutual tail-forward to another
+/// group member G: `<reassign args>; continue :label .<G>;`. The combined loop
+/// is a LABELED SWITCH, so the continue operand jumps directly to G's arm —
+/// no dispatch-state variable, no per-step re-dispatch (that state-var form
+/// benched 1.38x slower on the mutual kernel).
+fn emitMutualTailReentry(
+    emitter: *CodeEmitter,
+    ctx: *EmissionContext,
+    cont: *const ast.Continuation,
+    tag: []const u8,
+) !void {
+    try emitTailReargs(emitter, ctx, &cont.node.?.invocation);
+    try emitter.writeIndent();
+    try emitter.write("continue :");
+    try emitter.write(ctx.self_loop_label);
+    try emitter.write(" .");
+    try emitter.write(tag);
+    try emitter.write(";\n");
+}
+
+/// True if all of `a`'s and `b`'s input fields match by name and type (order
+/// included). The mutual-group loop declares ONE set of `var` input bindings
+/// shared by every member arm, so members must have identical input shape.
+fn inputShapesMatch(a: *const ast.EventDecl, b: *const ast.EventDecl) bool {
+    if (a.input.fields.len != b.input.fields.len) return false;
+    for (a.input.fields, b.input.fields) |fa, fb| {
+        if (!std.mem.eql(u8, fa.name, fb.name)) return false;
+        if (!std.mem.eql(u8, fa.type, fb.type)) return false;
+    }
+    return true;
+}
+
+/// Build the Zig enum tag for an event: its path segments joined by `_`, kebab
+/// `-` mangled to `_` (matching the event struct's `<name>_event` prefix). Owned
+/// by the caller.
+fn mangledEventTag(event: *const ast.EventDecl, allocator: std.mem.Allocator) ![]u8 {
+    var buf: std.ArrayList(u8) = .empty;
+    errdefer buf.deinit(allocator);
+    for (event.path.segments, 0..) |seg, i| {
+        if (i > 0) try buf.append(allocator, '_');
+        for (seg) |c| try buf.append(allocator, if (c == '-') '_' else c);
+    }
+    return try buf.toOwnedSlice(allocator);
+}
+
+/// True if `flow` is a mutual-group-lowerable subflow impl: a plain `if`-style
+/// inline-statement body with named value-return continuations (the shape
+/// `emitMutualGroupHandler` re-emits per arm). Preamble/label/effect-arm/
+/// non-inline shapes are rejected — the group falls back to call-based emission.
+fn isLowerableMutualMember(event: *const ast.EventDecl, flow: *const ast.Flow) bool {
+    if (flow.preamble_code != null) return false;
+    if (flow.pre_label != null) return false;
+    if (findEffectArm(event, &flow.inv().path) != null) return false;
+    const inline_code = flow.inline_body orelse return false;
+    if (std.mem.indexOf(u8, inline_code, "//@koru:inline_stmt\n") == null) return false;
+    for (flow.body.continuations) |c| {
+        if (c.branch.len > 0) return true;
+    }
+    return false;
+}
+
+/// Walk a continuation tree, appending the invocation path of every
+/// tail-forwarder found (a forwarder's identity children are not recursed into —
+/// they carry no further calls).
+fn collectTailForwardPaths(
+    conts: []const ast.Continuation,
+    out: *std.ArrayList(*const ast.DottedPath),
+    allocator: std.mem.Allocator,
+) !void {
+    for (conts) |*cont| {
+        if (isTailForwarder(cont)) {
+            try out.append(allocator, &cont.node.?.invocation.path);
+            continue;
+        }
+        if (cont.continuations.len > 0) {
+            try collectTailForwardPaths(cont.continuations, out, allocator);
+        }
+    }
+}
+
+/// Detect the mutual-tail-recursion group containing `start_event`: the closure
+/// of events reachable from it via tail-forwards, provided that closure is a
+/// clean cycle back to `start_event`, every member shares its input shape, and
+/// every member's impl is a lowerable inline subflow. Returns null (→ fall back
+/// to ordinary call-based emission) on any deviation — a miss is slow, never
+/// wrong. The degenerate 1-cycle (pure self-recursion) is intentionally rejected
+/// here so it stays on the existing `flowContainsSelfTailForward` path.
+pub fn detectMutualGroup(
+    start_event: *const ast.EventDecl,
+    all_items: []const ast.Item,
+    allocator: std.mem.Allocator,
+    main_module_name: ?[]const u8,
+) !?MutualGroup {
+    const MemberRec = struct {
+        canon: []const u8,
+        event: *const ast.EventDecl,
+        flow: *const ast.Flow,
+    };
+    var members: std.ArrayList(MemberRec) = .empty;
+    var success = false;
+    defer {
+        if (!success) {
+            for (members.items) |m| allocator.free(m.canon);
+        }
+        members.deinit(allocator);
+    }
+
+    // addMember: append (canon, event, flow) if the event isn't already present
+    // and its impl is a lowerable subflow. Returns false to abort the whole
+    // group (non-flow impl, missing impl, or unlowerable shape).
+    const addMember = struct {
+        fn call(
+            list: *std.ArrayList(MemberRec),
+            alloc: std.mem.Allocator,
+            mmn: ?[]const u8,
+            items: []const ast.Item,
+            evt: *const ast.EventDecl,
+        ) !bool {
+            const canon = try buildCanonicalEventName(&evt.path, alloc, mmn);
+            for (list.items) |m| {
+                if (std.mem.eql(u8, m.canon, canon)) {
+                    alloc.free(canon);
+                    return true; // already a member
+                }
+            }
+            const impl = findImplByPath(items, &evt.path) orelse {
+                alloc.free(canon);
+                return false;
+            };
+            if (impl != .flow or !isLowerableMutualMember(evt, impl.flow)) {
+                alloc.free(canon);
+                return false;
+            }
+            try list.append(alloc, .{ .canon = canon, .event = evt, .flow = impl.flow });
+            return true;
+        }
+    }.call;
+
+    if (!try addMember(&members, allocator, main_module_name, all_items, start_event)) return null;
+    const start_canon = members.items[0].canon;
+    var forwards_to_start = false;
+
+    var qi: usize = 0;
+    while (qi < members.items.len) : (qi += 1) {
+        const flow = members.items[qi].flow;
+        var targets: std.ArrayList(*const ast.DottedPath) = .empty;
+        defer targets.deinit(allocator);
+        try collectTailForwardPaths(flow.body.continuations, &targets, allocator);
+        for (targets.items) |tpath| {
+            const target_canon = try buildCanonicalEventName(tpath, allocator, main_module_name);
+            defer allocator.free(target_canon);
+            if (std.mem.eql(u8, target_canon, start_canon)) forwards_to_start = true;
+            const target_event = findEventDeclByPath(all_items, tpath) orelse return null;
+            if (!try addMember(&members, allocator, main_module_name, all_items, target_event)) return null;
+        }
+    }
+
+    // Validity gates: a genuine multi-member cycle back to the start, uniform
+    // input shape across members.
+    if (members.items.len < 2) return null;
+    if (!forwards_to_start) return null;
+    for (members.items[1..]) |m| {
+        if (!inputShapesMatch(start_event, m.event)) return null;
+    }
+
+    // Build the tags first (the only remaining fallible allocations). Kept in a
+    // separate array with its own errdefer so it never overlaps the outer defer
+    // that owns the member canons — assembling `out_members` below is then
+    // allocation-free, so canon ownership transfers without a double-free window.
+    const tags = try allocator.alloc([]u8, members.items.len);
+    var tag_built: usize = 0;
+    errdefer {
+        for (tags[0..tag_built]) |t| allocator.free(t);
+        allocator.free(tags);
+    }
+    for (members.items, 0..) |rec, i| {
+        tags[i] = try mangledEventTag(rec.event, allocator);
+        tag_built += 1;
+    }
+
+    const out_members = try allocator.alloc(MutualMember, members.items.len);
+    // Past this point nothing can fail: transfer canon + tag ownership.
+    for (members.items, 0..) |rec, i| {
+        out_members[i] = .{ .canonical = rec.canon, .tag = tags[i], .event = rec.event, .flow = rec.flow };
+    }
+    allocator.free(tags); // slice only; the strings are now owned by out_members
+    success = true; // canon + tag ownership now held by out_members
+    return MutualGroup{ .members = out_members };
 }
 
 /// Emit a single event declaration for a module subset
@@ -9848,6 +10416,12 @@ fn emitEventDeclForModule(
                 // The loop only exits via the terminal branch's `return`; the
                 // `unreachable` after it tells Zig the function can't fall off
                 // the end, matching how `#label` loops terminate.
+                // Subflow-implemented effects: inside this impl body, the
+                // event's own effect arms are callable — expose the event so
+                // arm-calls lower to `__H.<arm>(...)`.
+                const saved_impl_event = ctx.impl_event_decl;
+                if (has_effect) ctx.impl_event_decl = event;
+                defer ctx.impl_event_decl = saved_impl_event;
                 if (is_self_loop) {
                     if (self_loop_canonical) |canonical| {
                         try code_emitter.writeIndent();

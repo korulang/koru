@@ -22,4 +22,4 @@
 // Use it in a flow
 const p = Player{ .name = "Alice", .health = 100 };
 
-~greet(player: p): msg |> print.ln("Hello, {{ msg:s }}!")
+~greet(player: p): msg |> std/io:print.ln("Hello, {{ msg:s }}!")

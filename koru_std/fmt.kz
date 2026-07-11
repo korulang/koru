@@ -22,7 +22,7 @@ pub const FormattedText = struct {
 };
 
 // ============================================================================
-// FMT.DEALLOC - Discharge the [allocated!] obligation
+// FMT.DEALLOC - Discharge the <allocated!> obligation
 // ============================================================================
 
 ~pub event fmt.dealloc { formatted: *FormattedText<!allocated> }

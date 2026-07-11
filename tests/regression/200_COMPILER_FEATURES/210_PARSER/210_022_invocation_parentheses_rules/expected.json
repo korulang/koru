@@ -113,9 +113,9 @@
                 "args": [
                     {
                         "name": "source",
-                        "value": "<h1>Hello!</h1>\n",
+                        "value": "<h1>Hello!</h1>",
                         "source_value": {
-                            "text": "<h1>Hello!</h1>\n",
+                            "text": "<h1>Hello!</h1>",
                             "location": {
                                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_022_invocation_parentheses_rules/input.kz",
                                 "line": 13,
@@ -201,9 +201,9 @@
                     },
                     {
                         "name": "source",
-                        "value": "<p>${name}</p>\n",
+                        "value": "<p>${name}</p>",
                         "source_value": {
-                            "text": "<p>${name}</p>\n",
+                            "text": "<p>${name}</p>",
                             "location": {
                                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_022_invocation_parentheses_rules/input.kz",
                                 "line": 19,

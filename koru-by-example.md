@@ -273,7 +273,7 @@ Void events work correctly
 
 ~greet => greeting "Hello, " ++ name ++ "!"
 
-~greet ("World")
+~greet (name: "World")
 | greeting msg |> std/io:print.ln(msg)
 ```
 
@@ -800,7 +800,7 @@ Closing file
 ```koru
 // Test: Simple phantom obligations
 //
-// Tests that [allocated!] obligation can be discharged with [!allocated]
+// Tests that <allocated!> obligation can be discharged with <!allocated>
 
 ~import std/io
 

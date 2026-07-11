@@ -77,9 +77,12 @@ build + index + filter + accumulate (see `2101f_nbody_arrayed_capture`:
   + loop vars, including array index read/write,
 - emit the final cell as a literal `const`.
 
-⚖️ **The one hard restriction: the fold must be PURE** — comptime-known bounds, no
-runtime-event calls in the body (arithmetic / `gcd` / index ops are fine;
-`pair-force` is not). Table generation is exactly the pure case.
+⚖️ **The restriction (SUPERSEDED 2026-07-03 — see
+docs/comptime_core_ast_inventory.md §6a):** purity is NOT the boundary. The
+thunk law: anything thunked into the backend at Stage A is comptime-callable
+(IO included); the only hard wall is calls to procs *born during* comptime
+evaluation. Bounds must still be comptime-known for a fold to terminate
+usefully; `pair-force` works iff thunked.
 
 **Executable pins (currently RED, the to-do list):**
 - `tests/regression/.../310_090_aspire_comptime_pure_koru_fold` — comptime

@@ -36,6 +36,7 @@ pub const ErrorCode = enum(u16) {
     KORU044, // Private event access from another module
     KORU045, // Label requires parameters (pre-invocation label)
     KORU046, // Label does not accept parameters (post-invocation label)
+    KORU047, // Event invoked but has no implementation (emitter would silently stub zero-defaults/undefined)
     
     // Proc errors
     KORU050, // Proc without matching event
@@ -65,7 +66,8 @@ pub const ErrorCode = enum(u16) {
     PARSE003, // Malformed construct
     PARSE004, // Unbalanced braces
     PARSE005, // Redundant explicit label where punning would produce the same name
-    
+    PARSE006, // Bare argument does not name a parameter — explicit `name: value` label required
+
     // Type inference errors
     TYPE001, // Branch not found in expected union
     TYPE002, // Branch constructor where union not expected
@@ -78,6 +80,7 @@ pub const ErrorCode = enum(u16) {
     KORU101, // Binding on a payload-less branch (nothing to bind or discard)
     KORU102, // `=>` (branch construction) used where the event produces a single payload (`-> T`) — use `->`
     KORU103, // `|>` (chain) used to introduce a bare value — `|>` chains steps; produce a value with `->`
+    KORU104, // Call inside an expression — calls are not expressions; use event chaining (bind the result first)
 
     // Variant errors
     KORU110, // Event call site has only bare ~proc declarations (no variant tag)
@@ -86,6 +89,8 @@ pub const ErrorCode = enum(u16) {
     // Template / metaprogramming errors
     KORU120, // Template-asserted contract violation (`{% comp error %}` reached)
     KORU121, // Per-call template construct has no variant for the build target
+    KORU122, // Transform invocation requests a |variant the transform doesn't declare — never silently falls back
+    KORU123, // Kernel |mlir generation restriction — the walking skeleton rejects shapes it can't generate yet
 
     // Module structure errors
     KORU200, // Ambiguous module structure (both foo.kz and foo/ exist)

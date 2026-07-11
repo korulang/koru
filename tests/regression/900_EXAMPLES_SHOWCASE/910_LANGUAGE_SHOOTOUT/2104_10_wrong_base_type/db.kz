@@ -19,8 +19,8 @@ const Transaction = struct { handle: i32 };  // Same layout as Connection!
     return .{ .ok = c };
 }
 
-// begin: consumes *Connection<!active>, produces *Transaction[active!]
-// NOTE: Transaction also has [active!] - same state name as Connection!
+// begin: consumes *Connection<!active>, produces *Transaction<active!>
+// NOTE: Transaction also has <active!> - same state name as Connection!
 ~pub event begin { conn: *Connection<!active> }
 | ok *Transaction<active!>
 | err []const u8

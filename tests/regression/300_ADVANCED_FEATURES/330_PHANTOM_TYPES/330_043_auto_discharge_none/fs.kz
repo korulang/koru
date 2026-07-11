@@ -15,5 +15,5 @@ const File = struct { handle: i32 };
     return .{ .opened = f };
 }
 
-// Oops! No close() or any event with [!opened] defined!
+// Oops! No close() or any event with <!opened> defined!
 // This is a library bug - no way to satisfy the obligation

@@ -1,16 +1,21 @@
-// BOUNDARY (negative): an owned obligation CANNOT be seeded into a label-fold by
-// entering through a CONSUMING parameter. Consume-on-input discharges the
-// obligation at the door, so by the time the handle reaches the loop body it
-// carries nothing — the seed is empty and the consuming `step` is fed a
-// non-owning value. The checker must reject it (KORU030).
+// POSITIVE (flipped from negative 2026-07-02, Lars's linear-transfer ruling):
+// an owned obligation CAN enter a pure impl through a CONSUMING parameter.
+// The decl is the contract — a host proc is TRUSTED to honor it (the escape
+// hatch); a pure impl is CHECKED: the obligation enters the body live, threads
+// the fold's consume/reissue cycle (330_074's crediting), escapes via the
+// issuing output branch, and the caller discharges. One in, threaded, one out.
 //
-// This isolates the structural lesson from the 330_072 probe: the seed must come
-// from an ISSUING leaf inside the flow (see GREEN 330_074), never from a
-// parameter. Directionality (phantom_semantic_checker.zig validatePhantom,
-// is_input branch) makes "an input parameter owns the obligation" inexpressible.
+// The OLD reading ("consume discharges at the door, so the body holds
+// nothing") made consuming events host-only by construction — repudiated: it
+// pinned the checker's missing seeding, not the language. The true linearity
+// walls stay red next door: 330_079 (double-consume) / 330_080 (re-feed of a
+// consumed binding).
 //
-// EXPECTED: KORU030 — "argument 'h' carries no obligation here, but this event
-// consumes '<!owned>'." (the same rejection the 330_072 probe hit).
+// GREEN since the auto-discharge inserter learned to credit back-edge jump
+// args (what first read as a "fused walk" was the inserter planting a
+// spurious double-free disposal under the @loop jump because it never
+// credited jump args against the round event's consuming params — the
+// phantom checker was correctly rejecting the bad insertion).
 const std = @import("std");
 const Handle = struct { n: i32 };
 

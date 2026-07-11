@@ -12,13 +12,13 @@ from(wheel) { x: usize over 0..30030 | keep gcd(x, 30030) == 1 }
 std/field:new(bits: 1000001)
 | field f |> for(wheel)
     ! each r |> if(r > 1 and r <= 1000)
-        | then |> std/field:test(f, r): pv |> if(pv == 0)
-            | then |> std/field:strike-wheel(f, r, wheel[0..], 30030, 1000000)
+        | then |> std/field:test(f, i: r): pv |> if(pv == 0)
+            | then |> std/field:strike-wheel(f, p: r, wheel: wheel[0..], period: 30030, limit: 1000000)
     | done |> capture { n: 6[i64] }
         ! as a |> for(0..34)
             ! each k |> for(wheel)
                 ! each r |> if(30030 * k + r > 1 and 30030 * k + r <= 1000000)
-                    | then |> std/field:test(f, 30030 * k + r): pv |> if(pv == 0)
+                    | then |> std/field:test(f, i: 30030 * k + r): pv |> if(pv == 0)
                         | then |> captured { n: a.n + 1 }
         | captured result |> std/io:print.ln("{{ result.n:d }}") |> std/field:free(f)
 | err e |> std/io:print.ln("ERR {{ e:s }}")

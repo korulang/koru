@@ -1,71 +1,56 @@
 #!/bin/bash
-# The AST is a runtime artifact now: program.ast.json (dynamic-AST, ff5ccb08).
-# The old Zig-source literal (program_ast.zig) is no longer emitted — checking
-# it validated a stale fossil from whatever run last produced one (found
-# 2026-07-02: main was green against a four-day-old file). This script reads
-# the JSON the compiler actually wrote THIS run.
+# Verify: subflow calling an impure proc is locally pure but transitively impure.
+#
+# Re-pointed 2026-07-03: the serialized-AST Zig literal (backend.zig /
+# program_ast.zig) is RETIRED — the backend loads program.ast.json at
+# runtime, so that JSON is the serialized AST and the artifact to assert
+# against. The old grep-the-Zig-literal form passed on stale artifacts
+# only (the harness never cleaned program_ast.zig).
 
 if [ ! -f "program.ast.json" ]; then
-    echo "✗ program.ast.json not found — backend did not run"
+    echo "✗ program.ast.json not found"
     exit 1
 fi
 
-python3 - <<'PYEOF'
-
+python3 - <<'EOF'
 import json, sys
+d = json.load(open('program.ast.json'))
 
-def load():
-    return json.load(open("program.ast.json"))
-
-def walk(o, kind):
-    """Yield every node of the given decl kind (event_decl / proc_decl / flow)."""
-    if isinstance(o, dict):
-        if kind in o and isinstance(o[kind], dict):
-            yield o[kind]
-        for v in o.values():
-            yield from walk(v, kind)
-    elif isinstance(o, list):
-        for v in o:
-            yield from walk(v, kind)
-
-def find_decl(d, kind, module, name):
-    for n in walk(d, kind):
-        p = n.get("path", {})
-        if p.get("module_qualifier") == module and p.get("segments") == [name]:
-            return n
+def find(kind, name):
+    for it in d['items']:
+        if kind in it:
+            v = it[kind]
+            segs = (v.get('path') or {}).get('segments') or []
+            if segs and segs[-1] == name:
+                return v
     return None
 
-def check(node, what, expect_pure, expect_trans):
-    if node is None:
-        print(f"✗ Could not find {what} in program.ast.json"); sys.exit(1)
-    if node.get("is_pure") is not expect_pure:
-        print(f"✗ FAIL: {what} should be is_pure = {str(expect_pure).lower()}"); sys.exit(1)
-    print(f"✓ {what}: is_pure = {str(expect_pure).lower()}")
-    if node.get("is_transitively_pure") is not expect_trans:
-        print(f"✗ FAIL: {what} should be is_transitively_pure = {str(expect_trans).lower()}"); sys.exit(1)
-    print(f"✓ {what}: is_transitively_pure = {str(expect_trans).lower()}")
+def first_flow():
+    for it in d['items']:
+        if 'flow' in it:
+            return it['flow']
+    return None
 
+def check(entity, label, field, want):
+    if entity is None:
+        print(f"✗ Could not find {label}")
+        sys.exit(1)
+    got = entity.get(field)
+    if got is not want:
+        print(f"✗ FAIL: {label} should have {field} = {str(want).lower()}, got {str(got).lower()}")
+        sys.exit(1)
 
-# Subflow calling an impure proc is transitively IMPURE (locally pure, though —
-# flows are always locally pure).
-d = load()
-check(find_decl(d, "proc_decl", "input", "log"), "log proc", False, False)
-target = None
-for f in walk(d, "flow"):
-    if "\"log\"" in json.dumps(f.get("body", [])) or "log" in json.dumps(f.get("body", []))[:4000]:
-        if f.get("module") in (None, "", "input") or True:
-            pass
-    if "log" in json.dumps(f.get("body", [])):
-        target = f
-        break
-if target is None:
-    print("✗ Could not find the subflow calling log"); import sys; sys.exit(1)
-if target.get("is_pure") is not True:
-    print("✗ FAIL: subflow should be is_pure = true (flows are always locally pure)"); import sys; sys.exit(1)
+p = find('proc_decl', 'log')
+check(p, 'log proc', 'is_pure', False)
+print("✓ log proc: is_pure = false (unmarked, defaults to impure)")
+check(p, 'log proc', 'is_transitively_pure', False)
+print("✓ log proc: is_transitively_pure = false")
+f = first_flow()
+check(f, 'subflow', 'is_pure', True)
 print("✓ subflow: is_pure = true (flows are always locally pure)")
-if target.get("is_transitively_pure") is not False:
-    print("✗ FAIL: subflow should be is_transitively_pure = FALSE (calls impure log)"); import sys; sys.exit(1)
+check(f, 'subflow', 'is_transitively_pure', False)
 print("✓ subflow: is_transitively_pure = false (calls impure log)")
 print()
 print("✓ Subflow correctly marked transitively impure when calling impure proc")
-PYEOF
+EOF
+exit $?

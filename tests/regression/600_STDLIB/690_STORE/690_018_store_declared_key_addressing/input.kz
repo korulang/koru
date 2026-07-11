@@ -1,0 +1,14 @@
+// ASPIRATION — TODO idea pin. O2 (RULED 2026-07-04): one lvalue path
+// grammar, four addressing heads — (3) declared keys: a field marked key
+// at create is addressable as `pool[id: 7].hp`, and the index it needs is
+// a DECLARED cost. `key:` marking spelling PROVISIONAL (candidate: an
+// invocation-arg directive per ruling 8).
+
+~import std/io
+~import std/store
+
+~std/store:create(pool, key: id) { id: i64, hp: i64 }
+
+~std/store:insert(pool) { id: 7, hp: 50 }
+| row _ |> std/store:stored { pool[id: 7].hp: pool[id: 7].hp - 10 }
+    |> std/io:print.ln("hp {{ pool[id: 7].hp:d }}")

@@ -1,0 +1,7 @@
+name: alignment
+kind: inferred
+shape: scalar
+face: out
+membrane: false
+note: degree the pair shares the same model of the current task; low alignment predicts costly rework
+route: surface, wake

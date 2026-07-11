@@ -1,0 +1,3 @@
+firing 0
+firing 1
+firing 2

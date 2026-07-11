@@ -1,0 +1,37 @@
+// PINNED BUG (2026-07-02, surfaced by koru-libs docker lift): a koru-compiled
+// proc that runs std.process.Child.run and reads result.term.Exited PANICS
+// ("access of union field 'Exited' while field 'Signal' is active") when the
+// child exits NONZERO with STDERR CONTENT. The identical Zig compiled directly
+// with `zig run` (same Zig 0.15.2) returns term = .{ .Exited = 3 } correctly.
+// Nonzero-exit-with-empty-output and zero-exit-with-content both work through
+// koru; only the nonzero+stderr combination corrupts the Term union tag.
+// Expected (correct) behavior: the failed branch fires and prints the stderr
+// text. Today: runtime panic — this test is an honest red pinning the defect.
+
+~import std/io
+const std = @import("std");
+
+~event run-cmd { argv0: []const u8 }
+| ok i32
+| failed { code: i32, msg: []const u8 }
+
+~proc run-cmd|zig {
+    const allocator = std.heap.page_allocator;
+    const result = std.process.Child.run(.{
+        .allocator = allocator,
+        .argv = &[_][]const u8{ argv0, "-c", "printf 'error message to stderr' 1>&2; exit 3" },
+    }) catch |err| {
+        return .{ .failed = .{ .code = -1, .msg = @errorName(err) } };
+    };
+    defer allocator.free(result.stdout);
+    defer allocator.free(result.stderr);
+
+    if (result.term.Exited != 0) {
+        return .{ .failed = .{ .code = @intCast(result.term.Exited), .msg = result.stderr } };
+    }
+    return .{ .ok = 0 };
+}
+
+~run-cmd(argv0: "sh")
+| ok _ |> std/io:print.ln("ok")
+| failed e |> std/io:print.ln(e.msg)

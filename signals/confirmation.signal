@@ -2,5 +2,6 @@ name: confirmation
 kind: inferred
 shape: categorical
 face: in
-membrane: true
-note: a previously-held belief was confirmed by new evidence — the mirror of contradiction; the belief graduates from hopeful to measured
+membrane: false
+note: a held belief was tested against fresh evidence and HELD — no flip, no scope-growth, confidence strengthened. The null-energy sibling of contradiction/extension; fires when a check lands where the model already stood. No membrane verb — nothing to garden, lineage unchanged.
+route: surface

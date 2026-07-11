@@ -1,0 +1,10 @@
+ASPIRATIONAL: the data→Liquid bridge — a comptime-evaluated Koru value
+(here 6 * 7) crosses into a template's Liquid context as data, so
+comptime computation can FEED template rendering. Scalars first; the same
+bridge carries arrays/cells for {% for %} iteration (dissolves 310_100's
+invented order_by_hits filter).
+
+Blocked: phase order (templates render in frontend BEFORE comptime
+evaluation) and marshalling (Liquid context is compiler-built from the
+invocation only; no interpreter-Value channel). Plus everything 310_099
+pins (|koru facet, [template] head). Reds here are the to-do list.

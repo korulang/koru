@@ -2,7 +2,7 @@ const std = @import("std");
 const testing = std.testing;
 const ast = @import("ast");
 const emitter_helpers = @import("emitter_helpers");
-const VisitorEmitter = @import("visitor_emitter.zig").VisitorEmitter;
+const VisitorEmitter = @import("visitor_emitter").VisitorEmitter;
 const tap_registry_module = @import("tap_registry");
 const type_registry_module = @import("type_registry");
 
