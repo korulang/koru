@@ -1923,9 +1923,14 @@ pub const Parser = struct {
             }
         }
 
-        // Reject single void-returning branch: | branch with no payload is redundant.
-        // Use a void event (0 branches) instead.
-        if (branches.items.len == 1 and branches.items[0].payload.fields.len == 0 and !branches.items[0].payload.is_wildcard) {
+        // Reject single void-returning TERMINAL branch: a lone `| branch` with no
+        // payload carries nothing and is redundant — use a void event (0 branches).
+        // This is a CONTINUATION (`|`) rule only. An EFFECT (`!`) arm is a yield
+        // point that MULTIFIRES (the "heartbeat" — `! beat` fires 0..N per proc
+        // run), so a lone payloadless effect arm is NOT redundant and is allowed
+        // (ruled 2026-06-27; pinned by 400_152). Effect branches allow
+        // {0, one payloadless arm, many}; terminal branches do not.
+        if (branches.items.len == 1 and branches.items[0].kind == .terminal and branches.items[0].payload.fields.len == 0 and !branches.items[0].payload.is_wildcard) {
             try self.reporter.addError(
                 .PARSE003,
                 event_line_index + 1,
