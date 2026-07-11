@@ -48,16 +48,19 @@ two resolution layers, dictated by where each condition's text is born.
   guarantees a handler, the test is a meaningless always-true; reject and
   say why rather than folding to true silently.
 
+## The handlers struct carries only what the consumer wrote
+
+Resolved (Lars-ruled 2026-07-12, pinned 400_154): the consumer's comptime
+handlers struct contains ONLY handlers the consumer actually installed —
+no synthesized stand-ins — so `@hasDecl(__H, ...)` IS the presence truth
+for every arm kind. The 210_076 contract ("unhandled optional void fires
+are no-ops") moved to the FIRE site: a void optional fire emits under a
+comptime `@hasDecl` guard that folds to nothing when the handler is
+absent — the same zero cost the inlined stand-in had, without the lie. A
+synthesized no-op in `__H` was indistinguishable from a real install and
+sent `if(<void arm>)` down the wrong branch for every omitting consumer.
+
 ## Open questions
 
-- VOID optional arms keep the 210_076 no-op contract (a synthesized
-  `fn arm(_) void {}` in the consumer's handlers struct), and that no-op
-  POISONS `@hasDecl` for the omitted case: presence on a void arm reads
-  "installed" even when the consumer omitted the handler. Observationally
-  silent for guards (the no-op does nothing), but an `if(<void arm>)`
-  choosing between observably different terminals takes the wrong branch
-  when omitted — pinned red at 400_154. Candidate fix is moving the no-op
-  from the consumer's struct to a defaulted alias on the declaring side so
-  `__H` stays clean. Needs a ruling — the no-op contract is Lars's.
 - JS target: presence should be native truthiness on the handlers object —
   unverified, designed for the Zig target first.

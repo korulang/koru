@@ -1,10 +1,12 @@
 // OPTIONAL EFFECT ARMS from subflow impls, omitted case — 400_131's generator
-// with `! ?each`; the consumer handles ONLY `| done`. Ruled 2026-07-03: the
-// no-op contract STAYS for void arms — an unhandled optional fire lowers to a
-// synthesized no-op in the consumer's comptime handler struct (210_076:
-// "unhandled calls become no-ops"), which monomorphizes away to nothing.
-// Void arms are the one case where a no-op is an honest implementation;
-// value-resuming arms instead require a presence test (400_146/149).
+// with `! ?each`; the consumer handles ONLY `| done`. Ruled 2026-07-03: an
+// unhandled optional VOID fire is a silent no-op (210_076: "unhandled calls
+// become no-ops") that costs nothing. The no-op lives at the FIRE site — a
+// comptime presence guard that folds the call away when the consumer omitted
+// the handler — never as a synthesized stand-in in the consumer's handler
+// struct, which would make presence (`if(each)`, 400_154) read "installed"
+// for a handler nobody wrote. Value-resuming arms instead require an
+// explicit presence test (400_146/149).
 import std/io
 import std/control
 

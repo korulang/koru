@@ -5217,13 +5217,6 @@ fn emitHandlersStruct(
     try emitter.write(" = struct {\n");
     emitter.indent();
 
-    // Track which effect branches the consumer explicitly handled (by name)
-    // so we can synthesize no-op fns for unhandled OPTIONAL effect branches.
-    // The proc body references `__H.NAME` for every declared effect branch;
-    // without a no-op fallback for unhandled optionals, Zig errors at compile.
-    var handled = std.StringHashMap(void).init(ctx.allocator);
-    defer handled.deinit();
-
     // Group continuations by branch name. Two sibling handlers for the same
     // `!` branch name (e.g., `! tick i when i > 0 |> a` + `! tick _ |> b`)
     // must collapse into ONE synthesized fn whose body chains the guards:
@@ -5281,8 +5274,6 @@ fn emitHandlersStruct(
             }
             unreachable;
         };
-
-        try handled.put(branch.name, {});
 
         // Pick a parameter name. If all conts in the group share a binding
         // (common case) and that binding isn't `_`, use it directly so the
@@ -5541,50 +5532,17 @@ fn emitHandlersStruct(
         try emitter.write("}\n");
     }
 
-    // Synthesize no-op fns for unhandled OPTIONAL effect branches. The proc
-    // body references `__H.NAME` unconditionally for every declared effect
-    // branch; optional ones the consumer omits lower to no-op calls per the
-    // doc spec ("handler simply isn't installed in the comptime struct, call
-    // lowers to nothing" — we install a no-op so the comptime alias resolves).
-    for (event_decl.branches) |branch| {
-        if (branch.kind != .effect) continue;
-        if (!branch.is_optional) continue;
-        if (handled.contains(branch.name)) continue;
-        // Value-RESUMING optional arms get NO synthesized no-op: `fn ask(_) i64 {}`
-        // is invalid Zig (a non-void return with an empty body). Such arms are
-        // reached only under a presence guard (`if(ask)`), whose false case is
-        // comptime-pruned, so no `__H.ask` reference survives to need a stand-in.
-        // An UNGUARDED resume fire is the 400_149 wall, not a no-op. Void arms
-        // keep the no-op — the 210_076 contract (optimizes away). (400_146/148/149)
-        if (branch.resume_type != null) continue;
-
-        // Void-payload effects emit a no-arg no-op so the producer's `name()`
-        // call resolves; a `void` param would require `name({})` at the producer.
-        const is_void_payload = branch.payload.fields.len == 0;
-
-        try emitter.writeIndent();
-        try emitter.write("fn ");
-        try writeBranchName(emitter, branch.name);
-        try emitter.write("(");
-        if (!is_void_payload) {
-            try emitter.write("_: ");
-            if (branch.payload.fields.len == 1 and std.mem.eql(u8, branch.payload.fields[0].name, "__type_ref")) {
-                try writeFieldType(emitter, branch.payload.fields[0], ctx.main_module_name);
-            } else {
-                try emitter.write("struct { ");
-                for (branch.payload.fields, 0..) |field, fi| {
-                    if (fi > 0) try emitter.write(", ");
-                    try writeBranchName(emitter, field.name);
-                    try emitter.write(": ");
-                    try writeFieldType(emitter, field, ctx.main_module_name);
-                }
-                try emitter.write(" }");
-            }
-        }
-        try emitter.write(") ");
-        try writeEffectResumeType(emitter, &branch);
-        try emitter.write(" {}\n");
-    }
+    // NO synthesized no-ops for unhandled OPTIONAL effect branches — the
+    // handlers struct carries ONLY what the consumer actually installed, so
+    // `@hasDecl(__H, ...)` IS the presence truth (400_146/147/154 — a
+    // synthesized stand-in is indistinguishable from a real install and made
+    // presence lie for omitting consumers). The 210_076 contract ("unhandled
+    // optional fires are no-ops") is honored at the FIRE site instead: a void
+    // optional fire emits under a comptime `@hasDecl` guard that folds to
+    // nothing when the handler is absent — same zero cost the inlined no-op
+    // had. Value-resuming optional fires need no stand-in either: they are
+    // only reachable under a presence guard (unguarded = the KORU130 wall),
+    // whose false case is comptime-pruned.
 
     emitter.dedent();
     try emitter.writeIndent();
@@ -5703,6 +5661,14 @@ fn emitInvocation(
                     try emitter.write(bound_var);
                     try emitter.write(" = ");
                 }
+            } else if (arm.is_optional) {
+                // Void OPTIONAL fire: no handler may be installed, and the
+                // handlers struct carries no synthesized stand-in (presence
+                // truth, 400_154). The 210_076 no-op contract lives HERE — a
+                // comptime guard that folds the call away when absent.
+                try emitter.write("if (@hasDecl(__H, \"");
+                try emitter.write(arm.name);
+                try emitter.write("\")) ");
             }
             try writeArmFireCallExpr(emitter, ctx, invocation, arm);
             try emitter.write(";\n");
