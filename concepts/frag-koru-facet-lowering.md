@@ -1,3 +1,10 @@
+---
+type: belief
+id: frag-koru-facet-lowering
+provenance: introduced by 69704130 — create(frag-koru-facet-lowering): the |koru facet ruling joins the in-repo corpus
+ts: 2026-07-05
+---
+
 # Template lowering targets are languages, and Koru is one of them (belief)
 
 A Koru template proc's facet tag names the **language of its rendered text**.

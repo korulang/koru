@@ -1,3 +1,10 @@
+---
+type: belief
+id: frag-signal-routing-regime
+provenance: introduced by 222d6de5 — feat(signals): route: lines on every declaration + regression telemetry families
+ts: 2026-07-05
+---
+
 # Signal routing is registry-driven — koru's signals name their sinks (belief)
 
 Every signal family koru raises onto the Cordial bus carries a committed

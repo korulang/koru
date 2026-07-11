@@ -1,3 +1,10 @@
+---
+type: belief
+id: frag-std-store-design
+provenance: introduced by 24d782f1 — test(pin): std/store design cluster — 690_STORE born (8 aspirational pins + DESIGN.md), 2 green substrate pins
+ts: 2026-07-04
+---
+
 # std/store — compiled-reactivity application state (design belief)
 
 Application state in Koru is a **store**: a comptime-named, second-class,
