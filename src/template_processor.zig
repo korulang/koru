@@ -518,6 +518,7 @@ fn renderTemplateInvocation(
     continuations: []const ast.Continuation,
     location: errors.SourceLocation,
     build_lang: []const u8,
+    impl_event: ?*const ast.EventDecl,
     allocator: std.mem.Allocator,
 ) !?[]const u8 {
     // The per-call inline render happens UPSTREAM of the emitter's variant pick
@@ -539,7 +540,17 @@ fn renderTemplateInvocation(
     const event_decl = findEventDeclByLastSegment(all_items, &invocation.path);
 
     for (invocation.args, 0..) |arg, i| {
-        const text = if (arg.expression_value) |expr_val| expr_val.text else arg.value;
+        const raw_text = if (arg.expression_value) |expr_val| expr_val.text else arg.value;
+        // PRESENCE (400_146, ruled 2026-07-03): inside the declaring event's
+        // impl, an optional arm's bare name as `if`'s condition is a COMPTIME
+        // presence test. The `~if` template bakes its condition right here
+        // ({{ expr }}), upstream of every emitter rewrite site, so the
+        // substitution must happen BEFORE the render. Optional arm →
+        // `@hasDecl(__H, "arm")` (a real comptime bool — Zig analyzes only
+        // the taken branch, so the absent case never sees `__H.arm`).
+        // A required arm is left verbatim: the shape checker walls it
+        // (KORU131) before emission is reached.
+        const text = try presenceRewriteTemplateArg(allocator, invocation, impl_event, raw_text);
         const is_positional = std.mem.eql(u8, arg.name, arg.value);
         const key = if (!is_positional)
             arg.name
@@ -671,8 +682,14 @@ fn maybeRenderPerCall(
     build_lang: []const u8,
     allocator: std.mem.Allocator,
 ) !void {
+    // The event this flow implements (`gen = for(...)`, `query = if(...)`),
+    // if any — presence expressions resolve against ITS optional arms.
+    const impl_event: ?*const ast.EventDecl = blk: {
+        const impl_path = flow.impl_of orelse break :blk null;
+        break :blk findEventDeclByLastSegment(all_items, &impl_path);
+    };
     if (flow.inline_body == null) {
-        if (try renderTemplateInvocation(all_items, flow.inv(), flow.body.continuations, flow.location, build_lang, allocator)) |rendered| {
+        if (try renderTemplateInvocation(all_items, flow.inv(), flow.body.continuations, flow.location, build_lang, impl_event, allocator)) |rendered| {
             flow.inline_body = rendered;
             log.debug("[TEMPLATE/per-call] rendered '{s}' at top-level call site\n", .{
                 if (flow.inv().path.segments.len > 0) flow.inv().path.segments[0] else "<?>",
@@ -691,7 +708,7 @@ fn maybeRenderPerCall(
     // get the same per-call rendering, depth-first. The inline_body lands on
     // the continuation's invocation node; emitContinuationBody honors it via the
     // shared emitInlineBodyNode — the SAME path as a top-level flow.
-    try renderNestedTemplates(all_items, @constCast(flow.body.continuations), build_lang, allocator);
+    try renderNestedTemplates(all_items, @constCast(flow.body.continuations), build_lang, impl_event, allocator);
 }
 
 /// Scope is declared at the SPLICE SITE, not the event. When a template splices
@@ -746,13 +763,14 @@ fn renderNestedTemplates(
     all_items: []ast.Item,
     continuations: []ast.Continuation,
     build_lang: []const u8,
+    impl_event: ?*const ast.EventDecl,
     allocator: std.mem.Allocator,
 ) !void {
     for (continuations) |*cont| {
         if (cont.node) |*node| {
             if (node.* == .invocation) {
                 if (node.invocation.inline_body == null) {
-                    if (try renderTemplateInvocation(all_items, &node.invocation, cont.continuations, .{ .file = "generated", .line = 0, .column = 0 }, build_lang, allocator)) |rendered| {
+                    if (try renderTemplateInvocation(all_items, &node.invocation, cont.continuations, .{ .file = "generated", .line = 0, .column = 0 }, build_lang, impl_event, allocator)) |rendered| {
                         node.invocation.inline_body = rendered;
                         log.debug("[TEMPLATE/per-call] rendered nested '{s}'\n", .{
                             if (node.invocation.path.segments.len > 0) node.invocation.path.segments[0] else "<?>",
@@ -765,8 +783,33 @@ fn renderNestedTemplates(
                 }
             }
         }
-        try renderNestedTemplates(all_items, @constCast(cont.continuations), build_lang, allocator);
+        try renderNestedTemplates(all_items, @constCast(cont.continuations), build_lang, impl_event, allocator);
     }
+}
+
+/// PRESENCE substitution for a template-invocation arg: `if(<optional arm>)`
+/// inside the arm's declaring event's impl becomes `@hasDecl(__H, "<arm>")`.
+/// Only the `if` keyword event's condition is a presence home (ruled
+/// 2026-07-03 — the other home, `when` guards, is emitter-resolved because
+/// guards are not baked by templates). Anything that isn't a bare optional-arm
+/// name of the enclosing impl event passes through verbatim.
+fn presenceRewriteTemplateArg(
+    allocator: std.mem.Allocator,
+    invocation: *const ast.Invocation,
+    impl_event: ?*const ast.EventDecl,
+    text: []const u8,
+) ![]const u8 {
+    const ev = impl_event orelse return text;
+    if (invocation.path.segments.len == 0) return text;
+    if (!std.mem.eql(u8, invocation.path.segments[invocation.path.segments.len - 1], "if")) return text;
+    const trimmed = std.mem.trim(u8, text, " \t");
+    for (ev.branches) |*b| {
+        if (b.kind != .effect) continue;
+        if (!b.is_optional) continue;
+        if (!std.mem.eql(u8, b.name, trimmed)) continue;
+        return try std.fmt.allocPrint(allocator, "@hasDecl(__H, \"{s}\")", .{b.name});
+    }
+    return text;
 }
 
 /// Find the event declaration whose path's last segment matches the

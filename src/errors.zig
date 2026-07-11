@@ -92,6 +92,10 @@ pub const ErrorCode = enum(u16) {
     KORU122, // Transform invocation requests a |variant the transform doesn't declare — never silently falls back
     KORU123, // Kernel |mlir generation restriction — the walking skeleton rejects shapes it can't generate yet
 
+    // Presence errors (optional effect arms — `if(arm)` / `when arm`)
+    KORU130, // Value-resuming optional arm fired without a dominating presence test
+    KORU131, // Presence test on a required arm (always installed — the test is meaningless)
+
     // Module structure errors
     KORU200, // Ambiguous module structure (both foo.kz and foo/ exist)
 };

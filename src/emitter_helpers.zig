@@ -3705,8 +3705,17 @@ fn emitInlineCodeResolvingSplices(
                 try emitter.write("{ ");
                 const guarded = cont.condition != null;
                 if (guarded) {
+                    // Presence rewrite (400_147): a bare optional-arm name as a
+                    // `when` guard is a comptime `@hasDecl(__H, ...)` presence
+                    // test — the guard text is written HERE (not baked by the
+                    // template), so this is the guard's rewrite site.
+                    const cond_out: []const u8 = blk: {
+                        const alloc = emitter.allocator orelse break :blk cont.condition.?;
+                        const ev = ctx.impl_event_decl orelse break :blk cont.condition.?;
+                        break :blk (try presenceConditionRewrite(alloc, cont.condition.?, ev)) orelse cont.condition.?;
+                    };
                     try emitter.write("if (");
-                    try emitter.write(cont.condition.?);
+                    try emitter.write(cond_out);
                     try emitter.write(") { ");
                 }
                 // Give the spliced body a unique `result_N` namespace, so a
@@ -3822,8 +3831,16 @@ fn emitInlineCodeResolvingSplices(
             }
             const guarded = cont.condition != null;
             if (guarded) {
+                // Presence rewrite (400_147): `! each i when <optional arm>`
+                // — the guard is written here at splice time, so a bare
+                // optional-arm name becomes the comptime @hasDecl test.
+                const cond_out: []const u8 = blk: {
+                    const alloc = emitter.allocator orelse break :blk cont.condition.?;
+                    const ev = ctx.impl_event_decl orelse break :blk cont.condition.?;
+                    break :blk (try presenceConditionRewrite(alloc, cont.condition.?, ev)) orelse cont.condition.?;
+                };
                 try emitter.write("if (");
-                try emitter.write(cont.condition.?);
+                try emitter.write(cond_out);
                 try emitter.write(") { ");
             }
             // Give the spliced effect body a unique `result_N` namespace, so a
