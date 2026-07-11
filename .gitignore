@@ -197,7 +197,10 @@ tests/benchmarks/**/actual.txt
 
 .env
 .env.*
-.claude/
+# .claude: private by default (settings, worktrees, prose) — but the project
+# skills are part of the toolchain and ship with the repo (`!` re-includes).
+.claude/*
+!.claude/skills/
 package.json
 zig-out/
 .agent/
