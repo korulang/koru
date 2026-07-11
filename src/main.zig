@@ -1489,6 +1489,7 @@ const TransformEvent = struct {
     event_name: []const u8, // e.g., "if" - original event name for handler struct lookup
     module_path: ?[]const u8, // e.g., "koru_std.control" for stdlib, null for main_module
     claims_descendants: bool = false, // Transform should run before walking lexical descendants
+    stage: []const u8 = "main", // Ordered transform stage: "pre" | "main" | "post" ([transform|pre]/[transform|post])
     has_source: bool, // Event accepts source: Source[T] parameter
     has_expression: bool, // Event accepts expr: Expression parameter
     has_optional_expression: bool = false, // Event accepts expr: ?Expression parameter (optional, may be null)
@@ -1745,6 +1746,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                 }
 
                 const claims_descendants = annotation_parser.hasPart(event_decl.annotations, "claims_descendants");
+                const stage_name: []const u8 = if (annotation_parser.hasPart(event_decl.annotations, "pre")) "pre" else if (annotation_parser.hasPart(event_decl.annotations, "post")) "post" else "main";
 
                 // Collect variant targets across the whole program (top-level event, so
                 // variants may live in any module that implements it).
@@ -1756,6 +1758,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                     .event_name = stub_name, // For top-level, stub_name = event_name
                     .module_path = null, // Top-level events are in main_module
                     .claims_descendants = claims_descendants,
+                    .stage = stage_name,
                     .has_source = has_source_param,
                     .has_expression = has_expression_param,
                     .has_optional_expression = has_optional_expression_param,
@@ -1927,6 +1930,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                         }
 
                         const claims_descendants = annotation_parser.hasPart(event_decl.annotations, "claims_descendants");
+                        const stage_name: []const u8 = if (annotation_parser.hasPart(event_decl.annotations, "pre")) "pre" else if (annotation_parser.hasPart(event_decl.annotations, "post")) "post" else "main";
 
                         // Collect variant targets from the same module (variants live alongside the event).
                         const variant_targets_mod = try collectVariantTargetsForEventPath(allocator, module.items, event_decl.path.segments, comptime_default_lang);
@@ -1945,6 +1949,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                             .event_name = event_name, // Original event name for handler lookup
                             .module_path = module_path,
                             .claims_descendants = claims_descendants,
+                            .stage = stage_name,
                             .has_source = has_source_param,
                             .has_expression = has_expression_param,
                             .has_optional_expression = has_optional_expression_param,
@@ -2394,17 +2399,19 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
         var stub_ident_buf: [256]u8 = undefined;
         const stub_ident = lowerKebabIdent(&stub_ident_buf, event.stub_name);
         const entry_line = if (event.qualifier) |qualifier|
-            try std.fmt.bufPrint(&buf, "        .{{ .name = \"{s}\", .qualifier = \"{s}\", .claims_descendants = {s}, .handler_fn = call_handler_{s} }},\n", .{
+            try std.fmt.bufPrint(&buf, "        .{{ .name = \"{s}\", .qualifier = \"{s}\", .claims_descendants = {s}, .stage = .{s}, .handler_fn = call_handler_{s} }},\n", .{
                 event.match_name,
                 qualifier,
                 if (event.claims_descendants) "true" else "false",
+                event.stage,
                 stub_ident,
             })
         else
-            try std.fmt.bufPrint(&buf, "        .{{ .name = \"{s}\", .from_module = {s}, .claims_descendants = {s}, .handler_fn = call_handler_{s} }},\n", .{
+            try std.fmt.bufPrint(&buf, "        .{{ .name = \"{s}\", .from_module = {s}, .claims_descendants = {s}, .stage = .{s}, .handler_fn = call_handler_{s} }},\n", .{
                 event.match_name,
                 if (event.module_path != null) "true" else "false",
                 if (event.claims_descendants) "true" else "false",
+                event.stage,
                 stub_ident,
             });
         try code_emitter.write(entry_line);
