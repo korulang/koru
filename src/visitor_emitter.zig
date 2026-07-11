@@ -2206,8 +2206,15 @@ pub const VisitorEmitter = struct {
 
         // Yielding-branch comptime aliases — must come before any user body code.
         if (has_effect) {
-            for (event.branches) |b| {
+            for (event.branches) |*b| {
                 if (b.kind != .effect) continue;
+                // Optional arms → nullable-fn-ptr alias (comptime-known present/
+                // absent) so presence guards fold and the omitted case never
+                // forces `__H.X`. (400_146/147/148)
+                if (b.is_optional) {
+                    try emitter.emitOptionalArmNullableAlias(self.code_emitter, b, self.main_module_name);
+                    continue;
+                }
                 try self.code_emitter.writeIndent();
                 try self.code_emitter.write("const ");
                 try emitter.writeBranchName(self.code_emitter, b.name);
