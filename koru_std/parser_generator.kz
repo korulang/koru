@@ -29,8 +29,7 @@ const std = @import("std");
     event_decl: *const EventDecl,
     program: *const Program,
     allocator: std.mem.Allocator
-}
-| transformed SiteResult
+} -> SiteResult
 
 ~proc parser|zig {
     const ast = @import("ast");
@@ -218,10 +217,10 @@ const std = @import("std");
     appended[0] = ast.Item{ .event_decl = parse_event.* };
     appended[1] = ast.Item{ .proc_decl = parse_proc.* };
 
-    return .{ .transformed = .{
+    return .{
         .replacement = ast.Item{ .event_decl = modified_event_decl },
         .appended = appended,
-    } };
+    };
 }
 
 // Helper: Generate Zig matching code for a pattern

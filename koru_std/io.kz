@@ -24,8 +24,7 @@ const std = @import("std");
     item: *const Item,
     program: *const Program,
     allocator: std.mem.Allocator
-}
-| transformed SiteResult
+} -> SiteResult
 
 // `println` REMOVED — subsumed by `print.ln` (the interpolating print). Calling
 // `std/io:println` is now an unknown-event error by design (greenfield: the old
@@ -229,8 +228,7 @@ const std = @import("std");
     item: *const Item,
     program: *const Program,
     allocator: std.mem.Allocator
-}
-| transformed SiteResult
+} -> SiteResult
 
 ~[norun]pub event print.impl {
     expr: []const u8,
@@ -245,8 +243,7 @@ const std = @import("std");
     item: *const Item,
     program: *const Program,
     allocator: std.mem.Allocator
-}
-| transformed SiteResult
+} -> SiteResult
 
 ~[keyword|comptime|transform]pub event eprint {
     expr: Expression,
@@ -254,8 +251,7 @@ const std = @import("std");
     item: *const Item,
     program: *const Program,
     allocator: std.mem.Allocator
-}
-| transformed SiteResult
+} -> SiteResult
 
 // ============================================================================
 // Shared interpolation engine for the comptime print family. `print` IS
@@ -580,13 +576,13 @@ fn __printInterpolate(
 ~proc print.ln|zig {
     _ = invocation;
     _ = program;
-    return .{ .transformed = __printInterpolate(expr, item, allocator, true, "print.ln", 1) };
+    return __printInterpolate(expr, item, allocator, true, "print.ln", 1);
 }
 
 ~proc print|zig {
     _ = invocation;
     _ = program;
-    return .{ .transformed = __printInterpolate(expr, item, allocator, false, "print", 1) };
+    return __printInterpolate(expr, item, allocator, false, "print", 1);
 }
 
 // eprint family — same interpolation engine, routed to stderr (fd 2). The
@@ -594,13 +590,13 @@ fn __printInterpolate(
 ~proc eprint.ln|zig {
     _ = invocation;
     _ = program;
-    return .{ .transformed = __printInterpolate(expr, item, allocator, true, "eprint.ln", 2) };
+    return __printInterpolate(expr, item, allocator, true, "eprint.ln", 2);
 }
 
 ~proc eprint|zig {
     _ = invocation;
     _ = program;
-    return .{ .transformed = __printInterpolate(expr, item, allocator, false, "eprint", 2) };
+    return __printInterpolate(expr, item, allocator, false, "eprint", 2);
 }
 
 // ============================================================================
@@ -625,8 +621,7 @@ fn __printInterpolate(
     item: *const Item,
     program: *const Program,
     allocator: std.mem.Allocator
-}
-| transformed SiteResult
+} -> SiteResult
 
 ~[norun]pub event print.blk.impl {
     text: []const u8,
@@ -691,7 +686,7 @@ fn __printInterpolate(
     const flow = if (item.* == .flow)
         &item.flow
     else
-        return .{ .transformed = .{} };
+        return .{};
 
     const isSameInvocation = struct {
         fn check(a: *const ast.Invocation, b: *const ast.Invocation) bool {
@@ -990,7 +985,7 @@ fn __printInterpolate(
 
     const new_item = ast.Item{ .flow = transformed_flow };
 
-    return .{ .transformed = .{ .replacement = new_item } };
+    return .{ .replacement = new_item };
 }
 
 // ============================================================================
@@ -1056,7 +1051,7 @@ fn __printInterpolate(
     const flow = if (item.* == .flow)
         &item.flow
     else
-        return .{ .transformed = .{} };
+        return .{};
 
     // Position-agnostic: the runner lifts nested sites into a synthetic
     // top-level flow, so `invocation` IS the flow's own invocation at every depth.
@@ -1374,7 +1369,7 @@ fn __printInterpolate(
 
     const new_item = ast.Item{ .flow = transformed_flow };
 
-    return .{ .transformed = .{ .replacement = new_item } };
+    return .{ .replacement = new_item };
 }
 
 // ============================================================================
@@ -1399,7 +1394,7 @@ fn __printInterpolate(
     const flow = if (item.* == .flow)
         &item.flow
     else
-        return .{ .transformed = .{} };
+        return .{};
 
     // Position-agnostic: the runner lifts nested sites into a synthetic
     // top-level flow, so `invocation` IS the flow's own invocation at every depth.
@@ -1585,7 +1580,7 @@ fn __printInterpolate(
     transformed_flow.inline_body = inline_code;
 
     const new_item = ast.Item{ .flow = transformed_flow };
-    return .{ .transformed = .{ .replacement = new_item } };
+    return .{ .replacement = new_item };
 }
 
 // ============================================================================

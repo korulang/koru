@@ -84,8 +84,7 @@ const std = @import("std");
     item: *const Item,
     program: *const Program,
     allocator: std.mem.Allocator
-}
-| transformed SiteResult
+} -> SiteResult
 
 ~proc init|zig {
     const ast = @import("ast");
@@ -457,7 +456,7 @@ const std = @import("std");
                 },
             };
 
-            return .{ .transformed = .{ .replacement = compile_error_item } };
+            return .{ .replacement = compile_error_item };
         }
     }
 
@@ -487,7 +486,7 @@ const std = @import("std");
             },
         };
 
-        return .{ .transformed = .{ .replacement = computed_error_item } };
+        return .{ .replacement = computed_error_item };
     }
 
     // Collect kernel ops for fusion
@@ -1356,7 +1355,7 @@ const std = @import("std");
         ai += 1;
         appended[ai] = local_init_proc;
         ai += 1;
-        return .{ .transformed = .{ .replacement = new_item, .appended = appended } };
+        return .{ .replacement = new_item, .appended = appended };
     }
 }
 
@@ -1393,8 +1392,7 @@ const std = @import("std");
     item: *const Item,
     program: *const Program,
     allocator: std.mem.Allocator
-}
-| transformed SiteResult
+} -> SiteResult
 
 ~proc pairwise|zig {
     const ast = @import("ast");
@@ -1644,7 +1642,7 @@ const std = @import("std");
         // STANDARD CASE: replace pairwise with inline i/j loops only
         // ====================================================================
         const new_node = ast.Node{ .inline_code = code };
-        return .{ .transformed = .{ .replacement_node = .{ .node = new_node } } };
+        return .{ .replacement_node = .{ .node = new_node } };
     }
 
     // ========================================================================
@@ -1686,7 +1684,7 @@ const std = @import("std");
     }};
 
     const empty_conts = allocator.alloc(ast.Continuation, 0) catch unreachable;
-    return .{ .transformed = .{ .replacement_node = .{ .node = foreach_node, .children = empty_conts } } };
+    return .{ .replacement_node = .{ .node = foreach_node, .children = empty_conts } };
 }
 
 // ============================================================================
@@ -1712,8 +1710,7 @@ const std = @import("std");
     item: *const Item,
     program: *const Program,
     allocator: std.mem.Allocator
-}
-| transformed SiteResult
+} -> SiteResult
 
 ~proc self|zig {
     const ast = @import("ast");
@@ -1929,7 +1926,7 @@ const std = @import("std");
 
     // Replace invocation with inline code
     const new_node = ast.Node{ .inline_code = loop_code };
-    return .{ .transformed = .{ .replacement_node = .{ .node = new_node } } };
+    return .{ .replacement_node = .{ .node = new_node } };
 }
 
 // Kernel:step - wraps kernel ops in an outer iteration loop
@@ -1942,15 +1939,14 @@ const std = @import("std");
     item: *const Item,
     program: *const Program,
     allocator: std.mem.Allocator,
-}
-| transformed SiteResult
+} -> SiteResult
 
 ~proc step|zig {
     _ = expr;
     const ast = @import("ast");
 
     // Find the continuation containing this step invocation to check for | step |>
-    const flow = if (item.* == .flow) &item.flow else return .{ .transformed = .{} };
+    const flow = if (item.* == .flow) &item.flow else return .{};
     
     const findStepCont = struct {
         fn search(conts: []const ast.Continuation, target: *const ast.Invocation) ?*const ast.Continuation {
@@ -1988,7 +1984,7 @@ const std = @import("std");
     }
     
     const empty_node = ast.Node{ .inline_code = "" };
-    return .{ .transformed = .{ .replacement_node = .{ .node = empty_node, .children = new_conts } } };
+    return .{ .replacement_node = .{ .node = empty_node, .children = new_conts } };
 }
 
 // ============================================================================

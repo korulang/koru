@@ -437,6 +437,13 @@ pub const Parser = struct {
     // Events can be implemented by procs or subflows
     registry: type_registry.TypeRegistry, // Type registry for all declarations
 
+    // Content after the closing `}` of a MULTI-LINE event input shape (the
+    // `-> SiteResult` of a `}\n`-closing decl). parseEventInputShapeFromLine
+    // stashes it here because its return value is the Shape alone; the event
+    // decl parser consumes it as the bare-return suffix. Single-line decls
+    // never set this — their post-shape text is handled on the decl line.
+    multiline_shape_tail: ?[]const u8 = null,
+
     // Flag to indicate if we're parsing the compiler bootstrap library
     // When true, procs in this file cannot use inline flows (metacircular requirement)
     is_compiler_library: bool,
@@ -1412,6 +1419,14 @@ pub const Parser = struct {
                 if (final_content.len > 0) {
                     try shape_content.appendSlice(self.allocator, final_content);
                 }
+                // Text AFTER the closing `}` (a bare-return `-> T` suffix on
+                // the close line) is the DECL's business, not the shape's —
+                // stash it for parseEventDeclWithAnnotations. Dropping it
+                // here silently ate `} -> SiteResult` return types.
+                if (end_idx + 1 < trimmed.len) {
+                    const tail = lexer.trim(trimmed[end_idx + 1 ..]);
+                    if (tail.len > 0) self.multiline_shape_tail = tail;
+                }
             } else if (brace_depth > 0) {
                 try shape_content.appendSlice(self.allocator, trimmed);
                 try shape_content.append(self.allocator, ',');
@@ -1627,6 +1642,28 @@ pub const Parser = struct {
             "";
         var input = try self.parseEventInputShape(shape_source, event_line_index);
         errdefer input.deinit(self.allocator);
+
+        // A MULTI-LINE shape's closing line may carry the bare-return suffix
+        // (`} -> SiteResult`); the shape parser stashes it. Anything else
+        // after the close is a loud error — the pre-fix behavior silently
+        // dropped it, which ate return types without a trace.
+        if (self.multiline_shape_tail) |tail| {
+            self.multiline_shape_tail = null;
+            if (return_type == null and std.mem.startsWith(u8, tail, "->")) {
+                const tail_split = try splitTrailingReturnArrow(self, tail);
+                return_type = tail_split.return_type;
+                return_phantom = tail_split.return_phantom;
+            } else {
+                try self.reporter.addError(
+                    .PARSE003,
+                    event_line_index + 1,
+                    1,
+                    "unexpected content after the closing '}}' of a multi-line event shape: '{s}' (only a bare return `-> T` may follow)",
+                    .{tail},
+                );
+                return error.ParseError;
+            }
+        }
 
         // Parse branches (both same-line and continuation lines)
         var branches = try std.ArrayList(ast.Branch).initCapacity(self.allocator, 8);

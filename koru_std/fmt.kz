@@ -303,8 +303,7 @@ pub const FormattedText = struct {
     item: *const Item,
     program: *const Program,
     allocator: std.mem.Allocator
-}
-| transformed SiteResult
+} -> SiteResult
 
 ~[norun]pub event ln.impl {
     expr: []const u8,
@@ -370,7 +369,7 @@ pub const FormattedText = struct {
     const flow = if (item.* == .flow)
         &item.flow
     else
-        return .{ .transformed = .{} };
+        return .{};
 
     // Extract the expression string from the first invocation arg
     const expr = if (invocation.args.len > 0) invocation.args[0].value else "";
@@ -466,7 +465,7 @@ pub const FormattedText = struct {
 
     // Already transformed — don't re-run
     if (invocation.inline_body != null) {
-        return .{ .transformed = .{} };
+        return .{};
     }
 
     // Build the replacement invocation: reroute to ln.impl, carry inline_body.
@@ -510,5 +509,5 @@ pub const FormattedText = struct {
     };
 
     const new_item = ast.Item{ .flow = transformed_flow };
-    return .{ .transformed = .{ .replacement = new_item } };
+    return .{ .replacement = new_item };
 }

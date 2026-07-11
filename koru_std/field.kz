@@ -54,8 +54,7 @@ var __field_noop_fba = std.heap.FixedBufferAllocator.init(&__field_noop_buf);
     invocation: *const Invocation,
     item: *const Item,
     allocator: std.mem.Allocator
-}
-| transformed SiteResult
+} -> SiteResult
 
 ~proc new|zig {
     const ast = @import("ast");
@@ -208,7 +207,7 @@ var __field_noop_fba = std.heap.FixedBufferAllocator.init(&__field_noop_buf);
         stack_flow.body = ast.rootSite(inv2, kept.toOwnedSlice(allocator) catch unreachable, flow.location);
         stack_flow.preamble_code = preamble;
         stack_flow.inline_body = null;
-        return .{ .transformed = .{ .replacement = ast.Item{ .flow = stack_flow } } };
+        return .{ .replacement = ast.Item{ .flow = stack_flow } };
     }
 
     // HEAP path — route to the concrete heap constructor, preserving | field / | err.
@@ -225,7 +224,7 @@ var __field_noop_fba = std.heap.FixedBufferAllocator.init(&__field_noop_buf);
     heap_flow.body = ast.rootSite(new_inv, flow.body.continuations, flow.location);
     heap_flow.preamble_code = null;
     heap_flow.inline_body = null;
-    return .{ .transformed = .{ .replacement = ast.Item{ .flow = heap_flow } } };
+    return .{ .replacement = ast.Item{ .flow = heap_flow } };
 }
 
 // Heap constructor — the concrete runtime allocation. `new` routes here unless

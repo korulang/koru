@@ -46,8 +46,7 @@ var metatype_global_counter: usize = 0;
     item: *const Item,
     program: *const Program,
     allocator: std.mem.Allocator
-}
-| transformed SiteResult
+} -> SiteResult
 
 ~proc tap|zig {
     const ast = @import("ast");
@@ -76,10 +75,10 @@ var metatype_global_counter: usize = 0;
     // the event registered as `add-five`. No normalization on either side.
 
     const tap_flow = if (item.* == .flow) &item.flow
-        else return .{ .transformed = .{} };
+        else return .{};
 
     if (tap_flow.body.continuations.len == 0) {
-        return .{ .transformed = .{} };
+        return .{};
     }
 
     // All tap branches - we support multiple handlers for same branch (fan-out)
@@ -1374,5 +1373,5 @@ var metatype_global_counter: usize = 0;
         .allocator = allocator,
     };
 
-    return .{ .transformed = .{ .whole_program = new_program } };
+    return .{ .whole_program = new_program };
 }

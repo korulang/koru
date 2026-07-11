@@ -25,8 +25,7 @@ const koru_parser = @import("koru_parser");
     item: *const Item,
     program: *const Program,
     allocator: std.mem.Allocator
-}
-| transformed SiteResult
+} -> SiteResult
 
 ~proc register|zig {
     const ast_reg = @import("ast");
@@ -182,7 +181,7 @@ const koru_parser = @import("koru_parser");
     };
 
     // Get the flow from the item
-    const flow = if (item.* == .flow) &item.flow else return .{ .transformed = .{} };
+    const flow = if (item.* == .flow) &item.flow else return .{};
 
     // Extract scope name from args or registry annotations
     const scope_name = Helpers.extractScopeName(invocation, flow.annotations);
@@ -1104,7 +1103,7 @@ const koru_parser = @import("koru_parser");
         },
     };
 
-    return .{ .transformed = .{ .replacement = new_item } };
+    return .{ .replacement = new_item };
 }
 
 // ============================================================================

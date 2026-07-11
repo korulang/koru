@@ -229,8 +229,7 @@ const validateMocks = struct {
     item: *const Item,
     program: *const Program,
     allocator: std.mem.Allocator
-}
-| transformed SiteResult
+} -> SiteResult
 
 ~[comptime|retain] pub event validate-mocks {
     program: *const Program,
@@ -261,7 +260,7 @@ const validateMocks = struct {
     const flow = if (item.* == .flow)
         &item.flow
     else
-        return .{ .transformed = .{} };
+        return .{};
 
     // Position-agnostic: the runner lifts nested sites into a synthetic
     // top-level flow, so `invocation` IS the flow's own invocation at every depth.
@@ -332,7 +331,7 @@ const validateMocks = struct {
 
     // Clone program AST
     const cloned_program = ast_functional.cloneSourceFile(allocator, program) catch {
-        return .{ .transformed = .{} };
+        return .{};
     };
 
     // Build test module items: program items with mocks substituted
@@ -591,7 +590,7 @@ const validateMocks = struct {
         .module = allocator.dupe(u8, flow.module) catch unreachable,
     } };
 
-    return .{ .transformed = .{ .replacement = new_item } };
+    return .{ .replacement = new_item };
 }
 
 // Helper: Walk flow checking purity
@@ -810,8 +809,7 @@ const emitFlowWithMocks = struct {
     item: *const Item,
     program: *const Program,
     allocator: std.mem.Allocator
-}
-| transformed SiteResult
+} -> SiteResult
 
 ~proc assert|zig {
     const std_import = @import("std");
@@ -821,7 +819,7 @@ const emitFlowWithMocks = struct {
     const flow = if (item.* == .flow)
         &item.flow
     else
-        return .{ .transformed = .{} };
+        return .{};
 
     // Position-agnostic: the runner lifts nested sites into a synthetic
     // top-level flow, so `invocation` IS the flow's own invocation at every depth.
@@ -869,7 +867,7 @@ const emitFlowWithMocks = struct {
 
     const new_item = ast.Item{ .flow = transformed_flow };
 
-    return .{ .transformed = .{ .replacement = new_item } };
+    return .{ .replacement = new_item };
 }
 
 // Simple pass - marks a test branch as passing (noop)

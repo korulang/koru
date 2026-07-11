@@ -1500,6 +1500,11 @@ const TransformEvent = struct {
     has_allocator: bool, // Event accepts allocator: std.mem.Allocator parameter
     has_event_name_field: bool, // Event accepts event_name: []const u8 parameter (for glob patterns)
     returns_program: bool, // Event returns transformed{ program: *const Program }
+    // Single-return form (210_131): the decl is `-> SiteResult` and the impl is
+    // a PLAIN proc, so the generated handler's Output IS SiteResult — the stub
+    // returns it directly, no `.transformed` union unwrap. Machine-convention
+    // `[transform]proc` events keep the hardcoded union regardless of decl.
+    bare_return: bool = false,
     has_failed: bool, // Event has failed{ error: []const u8 } branch
     failed_is_identity: bool, // failed branch is identity (just []const u8, not struct)
     has_compile_error: bool, // Event has compile_error{ message: []const u8 } branch
@@ -1744,6 +1749,17 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                     }
                 }
 
+                // Single-return form (210_131): a bare-return transformer
+                // declares `-> SiteResult` / `-> Program` — the return lives
+                // on the decl head, never as a lone `| transformed` branch.
+                if (event_decl.return_type) |rt| {
+                    if (std.mem.indexOf(u8, rt, "Program") != null or
+                        std.mem.indexOf(u8, rt, "SiteResult") != null)
+                    {
+                        returns_program = true;
+                    }
+                }
+
                 const claims_descendants = annotation_parser.hasPart(event_decl.annotations, "claims_descendants");
 
                 // Collect variant targets across the whole program (top-level event, so
@@ -1768,6 +1784,8 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                     .has_event_name_field = has_event_name_field,
                     .has_compile_error = has_compile_error,
                     .returns_program = returns_program,
+                    .bare_return = event_decl.return_type != null and
+                        emitter_helpers.findTransformProc(source_file.items, event_decl.path.segments) == null,
                     .has_failed = has_failed,
                     .failed_is_identity = failed_is_identity,
                     .variant_targets = variant_targets_top,
@@ -1926,6 +1944,18 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                             returns_program = true;
                         }
 
+                        // Single-return form (210_131): a bare-return
+                        // transformer declares `-> SiteResult` / `-> Program`
+                        // on the decl head, never as a lone `| transformed`
+                        // branch.
+                        if (event_decl.return_type) |rt| {
+                            if (std.mem.indexOf(u8, rt, "Program") != null or
+                                std.mem.indexOf(u8, rt, "SiteResult") != null)
+                            {
+                                returns_program = true;
+                            }
+                        }
+
                         const claims_descendants = annotation_parser.hasPart(event_decl.annotations, "claims_descendants");
 
                         // Collect variant targets from the same module (variants live alongside the event).
@@ -1957,6 +1987,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                             .has_event_name_field = has_event_name_field,
                             .has_compile_error = has_compile_error,
                             .returns_program = returns_program,
+                            .bare_return = event_decl.return_type != null and !has_transform_proc,
                             .has_failed = has_failed,
                             .failed_is_identity = failed_is_identity,
                             .qualifier = qualifier_val,
@@ -2123,7 +2154,11 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
             try code_emitter.write("    };\n");
 
             // Call handler and return result
-            if (event.returns_program) {
+            if (event.returns_program and event.bare_return) {
+                // Bare-return decl (`-> SiteResult`): the handler's Output IS
+                // SiteResult — no union to unwrap.
+                try code_emitter.write("    return handler.handler(input);\n");
+            } else if (event.returns_program) {
                 try code_emitter.write("    const result = handler.handler(input);\n");
                 try code_emitter.write("    return switch (result) {\n");
                 try code_emitter.write("        .transformed => |t| t,\n");
@@ -2318,27 +2353,33 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                     try code_emitter.write("        }\n");
                     try code_emitter.write("        const result = handler.handler(input);\n");
                 }
-                try code_emitter.write("        return switch (result) {\n");
-                try code_emitter.write("            .transformed => |t| t,\n");
-                if (event.has_failed) {
-                    try code_emitter.write("            .failed => |f| {\n");
-                    if (event.failed_is_identity) {
-                        // Identity branch: f IS the error message directly
-                        try code_emitter.write("                log.debug(\"Transform failed: {s}\\n\", .{f});\n");
-                    } else {
-                        // Struct branch: f.error contains the message
-                        try code_emitter.write("                log.debug(\"Transform failed: {s}\\n\", .{f.@\"error\"});\n");
+                if (event.bare_return) {
+                    // Bare-return decl (`-> SiteResult`): the handler's Output
+                    // IS SiteResult — no union to unwrap.
+                    try code_emitter.write("        return result;\n");
+                } else {
+                    try code_emitter.write("        return switch (result) {\n");
+                    try code_emitter.write("            .transformed => |t| t,\n");
+                    if (event.has_failed) {
+                        try code_emitter.write("            .failed => |f| {\n");
+                        if (event.failed_is_identity) {
+                            // Identity branch: f IS the error message directly
+                            try code_emitter.write("                log.debug(\"Transform failed: {s}\\n\", .{f});\n");
+                        } else {
+                            // Struct branch: f.error contains the message
+                            try code_emitter.write("                log.debug(\"Transform failed: {s}\\n\", .{f.@\"error\"});\n");
+                        }
+                        try code_emitter.write("                return error.TransformFailed;\n");
+                        try code_emitter.write("            },\n");
                     }
-                    try code_emitter.write("                return error.TransformFailed;\n");
-                    try code_emitter.write("            },\n");
+                    if (event.has_compile_error) {
+                        try code_emitter.write("            .compile_error => |ce| {\n");
+                        try code_emitter.write("                log.debug(\"Compile error: {s}\\n\", .{ce.message});\n");
+                        try code_emitter.write("                return error.CompileError;\n");
+                        try code_emitter.write("            },\n");
+                    }
+                    try code_emitter.write("        };\n");
                 }
-                if (event.has_compile_error) {
-                    try code_emitter.write("            .compile_error => |ce| {\n");
-                    try code_emitter.write("                log.debug(\"Compile error: {s}\\n\", .{ce.message});\n");
-                    try code_emitter.write("                return error.CompileError;\n");
-                    try code_emitter.write("            },\n");
-                }
-                try code_emitter.write("        };\n");
             } else {
                 try code_emitter.write("        _ = handler.handler(input);\n");
                 try code_emitter.write("        return .{};  // Source-capture events don't modify the program\n");

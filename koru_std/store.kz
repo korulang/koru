@@ -84,8 +84,7 @@ const std = @import("std");
     item: *const Item,
     program: *const Program,
     allocator: std.mem.Allocator
-}
-| transformed SiteResult
+} -> SiteResult
 
 ~[transform]proc create|zig {
     const ast = @import("ast");
@@ -2082,8 +2081,7 @@ const std = @import("std");
     item: *const Item,
     program: *const Program,
     allocator: std.mem.Allocator
-}
-| transformed SiteResult
+} -> SiteResult
 
 ~[transform]proc stored|zig {
     const ast = @import("ast");
@@ -2386,8 +2384,7 @@ const std = @import("std");
     item: *const Item,
     program: *const Program,
     allocator: std.mem.Allocator
-}
-| transformed SiteResult
+} -> SiteResult
 
 ~[transform]proc watch|zig {
     const ast = @import("ast");
@@ -2651,8 +2648,7 @@ const std = @import("std");
     item: *const Item,
     program: *const Program,
     allocator: std.mem.Allocator
-}
-| transformed SiteResult
+} -> SiteResult
 
 ~[transform]proc insert|zig {
     const ast = @import("ast");
@@ -2825,8 +2821,7 @@ const std = @import("std");
     item: *const Item,
     program: *const Program,
     allocator: std.mem.Allocator
-}
-| transformed SiteResult
+} -> SiteResult
 
 ~[transform]proc query|zig {
     const ast = @import("ast");
@@ -2924,8 +2919,7 @@ const std = @import("std");
     item: *const Item,
     program: *const Program,
     allocator: std.mem.Allocator
-}
-| transformed SiteResult
+} -> SiteResult
 
 ~[transform]proc take|zig {
     const ast = @import("ast");
@@ -3047,8 +3041,7 @@ const std = @import("std");
     item: *const Item,
     program: *const Program,
     allocator: std.mem.Allocator
-}
-| transformed SiteResult
+} -> SiteResult
 
 ~[transform]proc stripe|zig {
     const ast = @import("ast");
