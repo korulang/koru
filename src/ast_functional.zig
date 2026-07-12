@@ -1494,6 +1494,7 @@ pub fn cloneInvocation(allocator: std.mem.Allocator, invocation: *const ast.Invo
         else
             null,
         .return_binding_annotations = return_binding_annotations,
+        .return_destructure = try ast.copyDestructure(allocator, invocation.return_destructure),
         .inline_body = if (invocation.inline_body) |ib|
             try allocator.dupe(u8, ib)
         else

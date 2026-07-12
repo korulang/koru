@@ -878,6 +878,13 @@ pub const AstSerializer = struct {
         try self.writeIndent();
         try self.write("},\n");
 
+        // `: { pos: { x }, label }` bind-position shape-destructure (call site of
+        // a `-> { record }` event) — must survive the Stage-A→C AST round-trip.
+        try self.writeIndent();
+        try self.write(".return_destructure = ");
+        try self.serializeDestructure(invoc.return_destructure);
+        try self.write(",\n");
+
         self.dedent();
         try self.writeIndent();
         try self.write("}");

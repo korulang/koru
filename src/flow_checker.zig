@@ -129,6 +129,19 @@ pub const FlowChecker = struct {
             try self.validateWhenClauseExhaustiveness(flow.body.continuations, location);
         }
 
+        // The flow HEAD's bind-position destructure (`~f(): { name, age } |> ...`)
+        // is on flow.body itself, not one of its continuations, so the loop below
+        // never sees it. Check its field usage here (usage lives in the head's
+        // downstream continuations, which validateDestructureUsage searches).
+        if (flow.body.node) |hn| {
+            if (hn == .invocation and hn.invocation.return_destructure.len > 0) {
+                const skip_check = self.mode == .frontend and self.isDeferredBindingInvocation(&flow.body);
+                if (!skip_check) {
+                    try self.validateReturnDestructureUsage(&flow.body, hn.invocation.return_destructure);
+                }
+            }
+        }
+
         // Recursively validate nested continuations and bindings
         // KORU100 runs even for transformed flows - checks inside ForeachNode etc.
         for (flow.body.continuations) |*cont| {
@@ -499,6 +512,19 @@ pub const FlowChecker = struct {
             }
         }
 
+        // Bind-position destructure (`~f(): { name, age } |> ...`) is the same
+        // rule: each NAMED return-destructure field must be used downstream (or
+        // spelled `_`). It lives on the invocation, not cont.destructure — the
+        // bind-site twin of the branch-payload check above.
+        if (cont.node) |bn| {
+            if (bn == .invocation and bn.invocation.return_destructure.len > 0) {
+                const skip_check = self.mode == .frontend and self.isDeferredBindingInvocation(cont);
+                if (!skip_check) {
+                    try self.validateReturnDestructureUsage(cont, bn.invocation.return_destructure);
+                }
+            }
+        }
+
         // Recursively check nested continuations
         for (cont.continuations) |*nested| {
             try self.validateBindingUsage(nested);
@@ -595,6 +621,40 @@ pub const FlowChecker = struct {
     /// KORU100 for destructured fields: every named leaf must be used in
     /// the continuation's body. Nested sub-shapes recurse; only LEAF names
     /// are bindings (an intermediate field with a sub-shape binds nothing).
+    /// Bind-position destructure usage check (`~f(): { name, age } |> ...`).
+    /// Unlike a branch payload, the destructure DECLARATION lives on the same
+    /// node whose result flows downstream, so usage must be searched in the
+    /// continuations ONLY — searching the declaring node would count the
+    /// declaration itself as a use (a self-reference false positive that let an
+    /// unused field slip through).
+    fn validateReturnDestructureUsage(self: *FlowChecker, cont: *const ast.Continuation, fields: []const ast.DestructureField) anyerror!void {
+        for (fields) |f| {
+            if (f.sub.len > 0) {
+                try self.validateReturnDestructureUsage(cont, f.sub);
+                continue;
+            }
+            if (std.mem.startsWith(u8, f.name, "_")) continue;
+            var used = false;
+            for (cont.continuations) |*c| {
+                if (self.continuationUsesBindingRecursive(c, f.name)) {
+                    used = true;
+                    break;
+                }
+            }
+            if (!used) {
+                try self.reporter.addErrorWithHint(
+                    .KORU100,
+                    cont.location.line,
+                    cont.location.column,
+                    "unused binding '{s}'",
+                    .{f.name},
+                    "discard the destructured field using `_` if not needed",
+                    .{},
+                );
+            }
+        }
+    }
+
     fn validateDestructureUsage(self: *FlowChecker, cont: *const ast.Continuation, fields: []const ast.DestructureField) anyerror!void {
         for (fields) |f| {
             if (f.sub.len > 0) {

@@ -10,5 +10,4 @@ const Pos = struct { x: i64, y: i64 };
 
 ~proc locate|zig { return .{ .pos = .{ .x = 3, .y = 7 }, .label = "home" }; }
 
-~locate()
-| at { pos: { x, y }, label } |> std/io:print.ln("{{ label:s }} at {{ x:d }},{{ y:d }}")
+~locate(): { pos: { x, y }, label } |> std/io:print.ln("{{ label:s }} at {{ x:d }},{{ y:d }}")

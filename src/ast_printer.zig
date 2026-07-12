@@ -615,7 +615,12 @@ const Printer = struct {
         }
         if (source_arg) |sv| try self.printSourceBlock(sv, close_depth);
 
-        if (inv.return_binding) |rb| {
+        if (inv.return_destructure.len > 0) {
+            // Bind-position destructure prints as `: { ... }`, not the synthetic
+            // temp the parser bound it to (return_binding is `__ret_destr_N`).
+            try self.write(": ");
+            try self.printDestructure(inv.return_destructure);
+        } else if (inv.return_binding) |rb| {
             try self.print(": {s}", .{rb});
             for (inv.return_binding_annotations) |ann| try self.print("[{s}]", .{ann});
         } else if (inv.return_binding_annotations.len > 0) {

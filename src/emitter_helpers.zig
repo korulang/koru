@@ -6116,6 +6116,15 @@ fn emitInvocation(
     try emitter.write(");");
     try writeVariantComment(emitter, effective_variant);
     try emitter.write("\n");
+    // Bind-position shape-destructure: `~f(): { pos: { x }, label } |> ...` binds
+    // the return to the temp above (bound_var), then emits per-field consts so the
+    // following pipeline references x/label directly. The bind-site twin of the
+    // branch-payload destructure lowering.
+    if (invocation.return_destructure.len > 0) {
+        try emitter.writeIndent();
+        try emitDestructureConsts(emitter, invocation.return_destructure, bound_var);
+        try emitter.write("\n");
+    }
 }
 
 /// Emit the target of an invocation (e.g., "koru_std.io.print_event" or "main_module.hello_event")

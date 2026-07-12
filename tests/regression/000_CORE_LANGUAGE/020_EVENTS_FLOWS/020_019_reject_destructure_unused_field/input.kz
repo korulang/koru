@@ -7,5 +7,4 @@
 
 ~proc fetch|zig { return .{ .name = "lars", .age = 44 }; }
 
-~fetch()
-| found { name, age } |> std/io:print.ln("only {{ name:s }}")
+~fetch(): { name, age } |> std/io:print.ln("only {{ name:s }}")

@@ -14,5 +14,4 @@ const std = @import("std");
 ~event add-four { value: i32 } -> i32
 ~add-four -> value + 4
 
-~add-one(value: 10): a |> add-two(value: a): b |> add-three(value: b): c |> add-four(value: c)
-            | done d |> std/io:print.ln("{{d:d}}")
+~add-one(value: 10): a |> add-two(value: a): b |> add-three(value: b): c |> add-four(value: c): d |> std/io:print.ln("{{d:d}}")

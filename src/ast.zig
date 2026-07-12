@@ -970,6 +970,7 @@ pub const Invocation = struct {
     variant: ?[]const u8 = null,  // Variant selector: "gpu", "naive", etc. for ~event|variant() calls
     return_binding: ?[]const u8 = null,  // `~double(a:21) -> d |> ...`: binds the event's single unnamed `-> T` return value to `d` for the following pipeline. Call-site twin of EventDecl.return_type.
     return_binding_annotations: []const []const u8 = &[_][]const u8{},  // `~get-data(): r[mutable] |> ...`: annotations on the bare-return bind. Call-site twin of Branch.annotations; `[mutable]` makes the emitter bind `var` not `const`.
+    return_destructure: []const DestructureField = &.{},  // `~locate(): { pos: { x }, label } |> ...`: shape-destructure at the bind position. Bind-site twin of the branch-payload `Continuation.destructure`; the emitter binds the return to a temp and emits per-field consts (emitDestructureConsts). Mutually exclusive with a plain return_binding name.
 
     // Transform replacement: if set, emitter outputs this code instead of calling the handler.
     // The path is kept for shape validation (the shape checker uses it to verify branch coverage).
@@ -1009,6 +1010,7 @@ pub const Invocation = struct {
             allocator.free(@constCast(annotation));
         }
         allocator.free(@constCast(self.return_binding_annotations));
+        freeDestructure(allocator, self.return_destructure);
         if (self.inline_body) |ib| {
             allocator.free(ib);
         }

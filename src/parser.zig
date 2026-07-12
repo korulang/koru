@@ -459,6 +459,9 @@ pub const Parser = struct {
 
     // Global inline flow counter - must match emitter's global numbering
     inline_flow_counter: u32,
+    // Monotonic counter for the synthetic temp a bind-position destructure
+    // (`~f(): { x } |>`) binds the return to before emitting per-field consts.
+    destructure_ret_counter: u32 = 0,
 
     // Parse mode: false = lenient (continue past errors), true = fail-fast (stop at first error)
     fail_fast: bool,
@@ -3777,9 +3780,10 @@ pub const Parser = struct {
         // sees a plain `event(args) |> ...`, and stash the binding.
         var return_binding: ?[]const u8 = null;
         var return_binding_annotations: []const []const u8 = &[_][]const u8{};
+        var return_destructure: []const ast.DestructureField = &.{};
         var stitched_clean: ?[]const u8 = null;
         defer if (stitched_clean) |s| self.allocator.free(s);
-        {
+        bind_colon: {
             var depth: i32 = 0;
             var idx: usize = 0;
             var in_str = false;
@@ -3809,6 +3813,45 @@ pub const Parser = struct {
                 if (j < clean.len and clean[j] == ':') {
                     var k = j + 1;
                     while (k < clean.len and (clean[k] == ' ' or clean[k] == '\t')) : (k += 1) {}
+                    // Bind-position shape-destructure: `~f(): { pos: { x }, label } |> ...`
+                    // Brace-balance from `{`, parse the field list (same machinery as
+                    // the branch-payload destructure), bind the return to a synthetic
+                    // temp, and stitch out `: { ... }` so the rest sees a plain call.
+                    if (k < clean.len and clean[k] == '{') {
+                        var bdepth: i32 = 0;
+                        var b = k;
+                        var brace_end: ?usize = null;
+                        while (b < clean.len) : (b += 1) {
+                            if (clean[b] == '{') bdepth += 1;
+                            if (clean[b] == '}') {
+                                bdepth -= 1;
+                                if (bdepth == 0) {
+                                    brace_end = b;
+                                    break;
+                                }
+                            }
+                        }
+                        const be = brace_end orelse {
+                            try self.reporter.addError(
+                                .PARSE001,
+                                self.current,
+                                0,
+                                "unclosed '{{' in bind-position destructure (e.g. `~f(): {{ x, y }} |> ...`)",
+                                .{},
+                            );
+                            return error.ParseError;
+                        };
+                        return_destructure = try self.parseDestructureFields(lexer.trim(clean[k + 1 .. be]), 0);
+                        const temp_name = try std.fmt.allocPrint(self.allocator, "__ret_destr_{d}", .{self.destructure_ret_counter});
+                        self.destructure_ret_counter += 1;
+                        return_binding = temp_name;
+                        const before_colon = lexer.trim(clean[0..j]);
+                        const after = lexer.trim(clean[be + 1 ..]); // "|> ..." or ""
+                        const stitched = try std.fmt.allocPrint(self.allocator, "{s} {s}", .{ before_colon, after });
+                        stitched_clean = stitched;
+                        clean = stitched;
+                        break :bind_colon;
+                    }
                     var name_end = k;
                     while (name_end < clean.len and
                         (std.ascii.isAlphanumeric(clean[name_end]) or
@@ -4318,9 +4361,11 @@ pub const Parser = struct {
             .variant = variant,
             .return_binding = return_binding,
             .return_binding_annotations = return_binding_annotations,
+            .return_destructure = return_destructure,
         };
         return_binding = null; // ownership transferred; disarm the errdefer
         return_binding_annotations = &[_][]const u8{}; // ownership transferred; disarm the errdefer
+        return_destructure = &.{}; // ownership transferred
         return result_invocation;
     }
 
