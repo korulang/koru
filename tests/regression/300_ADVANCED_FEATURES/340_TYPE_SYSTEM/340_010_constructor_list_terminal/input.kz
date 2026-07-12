@@ -1,0 +1,18 @@
+// PINS: the constructor sandwich as `capture`'s structural twin. Where `capture`
+// folds ONE scalar cell (`! as` / `captured` / `| captured`), the constructor
+// COLLECTS a comptime list (`! construct` / `push` / `| constructed`). The cell is
+// pulsed by an inner for/! each — the LINQ traversal — and `push` is the core
+// collect verb; `| constructed` is the after-read, mirroring `| captured`. This is
+// the VALUE terminal: no type is built, no registry is touched, and the whole thing
+// dissolves at comptime. Surface PROVISIONAL — `std/constructor` is the design
+// target of this walk, not a built module; only the `std/constructor:*` verbs are
+// unbuilt, every other form (for / ! each / | / std/io:print.ln / {{ }}) is grounded.
+
+~import std/io
+~import std/constructor
+
+~std/constructor(nums)
+! construct |> for(1..4)
+    ! each x |> std/constructor:push(x)
+| constructed built |> for(built)
+    ! each n |> std/io:print.ln("n={{ n:d }}")

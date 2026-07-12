@@ -534,7 +534,20 @@ fn matchGlob(pattern: []const u8, value: []const u8) bool {
 }
 
 /// Transform handler entry in the dispatch table
+/// Ordered transform stages. `walkAndTransform` runs the fixed-point once per
+/// stage in THIS declared order (pre → main → post), so a `.pre` transform is
+/// guaranteed to reach fixed point before any `.main`/`.post` transform runs —
+/// the producer-before-consumer ordering that source order alone cannot
+/// promise (a type-EMITTING transform must complete before a transform that
+/// CONSUMES the type). Set via `[transform|pre]` / `[transform|post]`;
+/// untagged transforms are `.main`, so an all-`.main` program is byte-identical
+/// to the legacy single-set fixed point.
+pub const Stage = enum { pre, main, post };
+
 pub const TransformEntry = struct {
+    /// Which ordered stage this transform runs in (see `Stage`).
+    stage: Stage = .main,
+
     /// Name of the transform event (e.g., "std.control.if", "renderHTML")
     name: []const u8,
 
@@ -601,26 +614,60 @@ pub fn walkAndTransform(
     transforms: []const TransformEntry,
     allocator: std.mem.Allocator,
 ) !*Program {
+    return walkAndTransformStages(program, transforms, allocator, null);
+}
+
+/// As `walkAndTransform`, but runs ONLY the given stage's fixed-point when
+/// `only_stage` is non-null (null = all stages, pre → main → post). This is
+/// what lets the PIPELINE sprinkle a single named stage where it belongs —
+/// e.g. run `.pre` before the frontend's template pass so a transform that
+/// GRAFTS a `~for` (over a variable it defines) dissolves first, and the
+/// template pass then processes the graft normally. `.pre` transforms carry
+/// `@pass_ran`, so a later all-stages run re-visits them as no-ops.
+pub fn walkAndTransformStages(
+    program: *const Program,
+    transforms: []const TransformEntry,
+    allocator: std.mem.Allocator,
+    only_stage: ?Stage,
+) !*Program {
     var current_program = program;
-    var iteration: usize = 0;
     const MAX_ITERATIONS: usize = 1000; // Circuit breaker to prevent infinite loops
 
-    // Fixed-point iteration: keep transforming until no more transforms found
-    while (true) {
-        iteration += 1;
-
-        // Circuit breaker: prevent infinite loops
-        if (iteration > MAX_ITERATIONS) {
-            log.debug("ERROR: Transform infinite loop after {d} iterations\n", .{MAX_ITERATIONS});
-            return error.TransformInfiniteLoop;
+    // STAGED fixed-point: run the fixed-point iteration once per stage, in the
+    // declared order (pre → main → post). A `.pre` transform reaches fixed
+    // point before any `.main` runs, and `.main` before `.post` — the
+    // producer-before-consumer guarantee source order cannot give. WITHIN a
+    // stage this is exactly the legacy single-set fixed point, so an
+    // all-`.main` program (every untagged transform) behaves identically.
+    for ([_]Stage{ .pre, .main, .post }) |stage| {
+        if (only_stage) |os| {
+            if (stage != os) continue;
         }
+        // Filter the transform set to this stage (the set is tiny).
+        var staged: std.ArrayList(TransformEntry) = .empty;
+        defer staged.deinit(allocator);
+        for (transforms) |t| {
+            if (t.stage == stage) try staged.append(allocator, t);
+        }
+        if (staged.items.len == 0) continue;
 
-        const result = try walkOnce(current_program, transforms, allocator);
+        var iteration: usize = 0;
+        while (true) {
+            iteration += 1;
 
-        if (result.found) {
-            current_program = result.program;
-        } else {
-            break;
+            // Circuit breaker: prevent infinite loops
+            if (iteration > MAX_ITERATIONS) {
+                log.debug("ERROR: Transform infinite loop after {d} iterations\n", .{MAX_ITERATIONS});
+                return error.TransformInfiniteLoop;
+            }
+
+            const result = try walkOnce(current_program, staged.items, allocator);
+
+            if (result.found) {
+                current_program = result.program;
+            } else {
+                break;
+            }
         }
     }
 

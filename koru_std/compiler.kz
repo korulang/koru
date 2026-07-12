@@ -781,6 +781,31 @@ pub const CompilerContext = struct {
     return updated_ctx;
 }
 
+// Pre-stage transforms: run the transform runner's `.pre` stage BEFORE the
+// template pass. A transform that GRAFTS templated code — e.g. std/constructor
+// dissolving into a comptime list plus a `~for` over the var it just defined —
+// must dissolve FIRST, so the template pass then processes the graft as ordinary
+// code. Only `.pre`-tagged transforms fire here; `.main`/`.post` still run at
+// Phase 2.4 (evaluate-comptime). `.pre` transforms carry @pass_ran, so that later
+// all-stages run re-visits them as no-ops. This is the named-stage design: the
+// pipeline sprinkles transform stages where they belong, deliberately.
+~pub event run-pre-transforms { ctx: CompilerContext } -> CompilerContext
+
+~proc run-pre-transforms|zig {
+    const backend_output = @import("backend_output_emitted.zig");
+    var updated_ctx = ctx;
+    if (@hasDecl(backend_output, "run_pass")) {
+        const pre_ast = backend_output.run_pass("pre", ctx.ast, ctx.allocator) catch |err| {
+            log.err("FATAL: pre-stage transform pass failed ({s}). The pipeline cannot continue with a partially-transformed AST.\n", .{@errorName(err)});
+            @panic("pre-stage transform pass failed — see error above");
+        };
+        updated_ctx.ast = pre_ast;
+    }
+    updated_ctx.passes_completed += 1;
+    updated_ctx.current_pass = "run_pre_transforms";
+    return updated_ctx;
+}
+
 // Comptime interpreter fold: partial evaluation of [comptime] flows whose
 // head event has a pure-Koru bare-return impl. The interpreter (comptime_eval)
 // evaluates the head at Stage C and rewrites the flow to its runtime residue
@@ -815,7 +840,7 @@ pub const CompilerContext = struct {
 // Frontend segment: Early AST processing (abstract, can be overridden)
 ~[comptime|abstract] pub event frontend { ctx: CompilerContext } -> CompilerContext
 
-~frontend = process-ccp-commands(ctx): c1 |> process-template-procs(ctx: c1): c2 |> fold-comptime(ctx: c2): c3 |> evaluate-comptime(ctx: c3): c4 -> c4
+~frontend = process-ccp-commands(ctx): c1 |> run-pre-transforms(ctx: c1): cp |> process-template-procs(ctx: cp): c2 |> fold-comptime(ctx: c2): c3 |> evaluate-comptime(ctx: c3): c4 -> c4
 
 // Analysis segment: Validation passes (abstract, can be overridden)
 ~[comptime|abstract] pub event analysis { ctx: CompilerContext }
