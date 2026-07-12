@@ -18,12 +18,25 @@ parser stack"). Repetition dissolves into terminals or rule recursion. The
 library invents vocabulary (events), never grammar shape — the same resolution
 as the constructor's Redis walk: verbs are events, not a DSL.
 
-**The one structural novelty a parser forces: named rules with branch bodies.**
-Recursion requires rules referenced by name; alternatives must both parse and
-deliver. Today those halves live apart — event declarations have named branches
-but no bodies; flows have bodies but are anonymous. The fusion (spelling open:
-`! rule <name>` region-arm vs decl-side vs subflow) is the single new construct
-to design. Everything else is reuse.
+**The one structural novelty a parser forces: named rules with branch bodies —
+and the frontend already parses it (settled by building, 2026-07-12).** The
+`! rule <name>` region form needs ZERO new syntax: `! rule value` parses as an
+effect arm whose binding is the rule name, and its nested arms are the
+alternatives (verified via --ast-canon). **Sequencing settled as NESTED arms**
+(each level = "then consume") — this supersedes the sketch's `|>`-chain lean:
+nesting is corpus-parseable today and dodges the bare-`value()` resolution
+problem entirely; the chain form remains a possible later sugar, unruled.
+Cut-1 semantics: pure PEG (sibling backtracking, whole-input consumption),
+furthest-failure line/col errors, left recursion rejected at comptime by name.
+Green: 641_001 (recursive flagship, v=42), 641_002 (error contract),
+641_003 (left-recursion wall).
+
+**Two toolchain gaps the arc surfaced and closed (the instrument working):**
+1. The regex engine had NO escape support — no metachar was matchable
+   literally in any pattern; std/parser's first terminal (`\[`) found it.
+2. KORU100's transform-deferral only covered bindings whose own node invokes
+   a transform — data-arms of a transform-ROOT flow (rule names) were flagged
+   unused; no corpus flow had that shape until the grammar region.
 
 Rulings from the walk (Lars, 2026-07-12):
 - **`std/parser` lives in koru_std**, not koru-libs — transforms must import

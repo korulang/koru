@@ -1,13 +1,12 @@
-// DESIGN PIN — std/parser cut-1 flagship (docs/STD_PARSER_SKETCH.md, concept
+// std/parser cut-1 flagship (docs/STD_PARSER_SKETCH.md, concept
 // frag-parser-library-peg-on-two-glyphs). Pins the surface thesis: PEG on the
-// two glyphs — ordered choice = branch dispatch (first-match-wins, the
-// regex-match semantics of 640_001), sequence = the chain (`|>` consumes,
-// `->` produces). Terminals are std/regex pattern branches unchanged
-// (640_001/003 forms). The ONE new construct this library forces: NAMED rules
-// with branch bodies (`! rule <name>`) — required by recursion, exercised
-// below as value → array → value. `parse-error` carries line/col from day one.
-// Surface PROVISIONAL: the std/parser vocabulary (grammar/rule/expect/parse)
-// is the design target; every terminal, chain, and branch form is corpus.
+// two glyphs — ordered choice = SIBLING arms (first-match-wins, the
+// regex-match semantics of 640_001), sequence = NESTED arms (each level =
+// "then consume"). Terminals are std/regex pattern branches unchanged
+// (640_001/003 forms); rule references are bare names; recursion is exercised
+// as value → array → value. The parse must consume the whole input;
+// `parse-error` carries line/col + expected/found. Values are text slices in
+// cut 1 (typed conversion is the regex-groups story).
 import std/parser
 import std/io
 
@@ -16,7 +15,9 @@ std/parser:grammar(nums)
     | `-?[0-9]+` n -> n
     | array a -> a
 ! rule array
-    | `\[` |> value(): v |> expect(`\]`) -> v
+    | `\[` _
+        | value v
+            | `\]` _ -> v
 
 std/parser:parse("[42]", grammar: nums)
 | value v |> std/io:print.ln("v={{ v:s }}")

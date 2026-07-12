@@ -78,6 +78,7 @@ pub const ParseError = error{
     TooManyGroups, // hard cap so emitted tag vectors stay fixed-size
     GroupUnderQuantifier, // a repeated group has no single span — rejected
     GroupUnderAlternation, // a group on an untaken branch has no span — rejected
+    UnsupportedEscape, // `\q` etc. — unknown alphanumeric escapes never silently mean the letter
 };
 
 /// Hard cap on named groups per pattern (tag vectors are 2× this).
@@ -189,6 +190,13 @@ pub const Parser = struct {
                 return inner;
             },
             '[' => return self.parseClass(),
+            '\\' => {
+                self.pos += 1;
+                switch (try self.parseEscape()) {
+                    .byte => |b| return self.mk(.{ .literal = b }),
+                    .class => |cl| return self.mk(.{ .class = cl }),
+                }
+            },
             '.' => {
                 self.pos += 1;
                 return self.mk(.any);
@@ -243,6 +251,22 @@ pub const Parser = struct {
             }
             self.pos += 1;
             saw_item = true;
+            // Escapes inside a class: a byte escape is a single member (it
+            // does not open a range — `[\]-x]` means `]`, `-`, `x`); a
+            // shorthand (\d \s \w) unions its set in. Negated shorthands
+            // (\D…) have no single-set meaning inside a class — rejected.
+            if (c == '\\') {
+                switch (try self.parseEscape()) {
+                    .byte => |b| class.set[b] = true,
+                    .class => |cl| {
+                        if (cl.negated) return error.UnsupportedEscape;
+                        for (cl.set, 0..) |on, i| {
+                            if (on) class.set[i] = true;
+                        }
+                    },
+                }
+                continue;
+            }
             // Range `a-z`: a '-' that isn't the last char before ']'.
             if (self.peek() == '-' and self.pos + 1 < self.src.len and self.src[self.pos + 1] != ']') {
                 self.pos += 1; // consume '-'
@@ -255,6 +279,55 @@ pub const Parser = struct {
             }
         }
         return error.UnterminatedClass;
+    }
+
+    const Escaped = union(enum) { byte: u8, class: Class };
+
+    /// Resolve the char after a consumed '\'. Control escapes and shorthand
+    /// classes are the usual ones; any PUNCTUATION escapes to itself (that is
+    /// how metachars are matched literally: `\[` `\.` `\\` …); an UNKNOWN
+    /// alphanumeric escape is a loud error — `\q` never silently means `q`.
+    fn parseEscape(self: *Parser) ParseError!Escaped {
+        const c = self.peek() orelse return error.UnexpectedEnd;
+        self.pos += 1;
+        switch (c) {
+            'n' => return .{ .byte = '\n' },
+            't' => return .{ .byte = '\t' },
+            'r' => return .{ .byte = '\r' },
+            'd', 'D', 's', 'S', 'w', 'W' => {
+                var cl = Class{};
+                switch (c | 0x20) { // lowercase
+                    'd' => {
+                        var x: u16 = '0';
+                        while (x <= '9') : (x += 1) cl.set[@intCast(x)] = true;
+                    },
+                    's' => {
+                        cl.set[' '] = true;
+                        cl.set['\t'] = true;
+                        cl.set['\n'] = true;
+                        cl.set['\r'] = true;
+                        cl.set[0x0B] = true; // \v
+                        cl.set[0x0C] = true; // \f
+                    },
+                    'w' => {
+                        var x: u16 = 'a';
+                        while (x <= 'z') : (x += 1) cl.set[@intCast(x)] = true;
+                        x = 'A';
+                        while (x <= 'Z') : (x += 1) cl.set[@intCast(x)] = true;
+                        x = '0';
+                        while (x <= '9') : (x += 1) cl.set[@intCast(x)] = true;
+                        cl.set['_'] = true;
+                    },
+                    else => unreachable,
+                }
+                if (c >= 'A' and c <= 'Z') cl.negated = true;
+                return .{ .class = cl };
+            },
+            else => {
+                if ((c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or (c >= '0' and c <= '9')) return error.UnsupportedEscape;
+                return .{ .byte = c };
+            },
+        }
     }
 };
 
@@ -365,6 +438,50 @@ test "the email-ish flagship pattern: [a-z]+@[a-z]+" {
     try testing.expect(n.concat[0].* == .plus and n.concat[0].plus.* == .class);
     try testing.expect(n.concat[1].* == .literal and n.concat[1].literal == '@');
     try testing.expect(n.concat[2].* == .plus and n.concat[2].plus.* == .class);
+}
+
+test "escapes: metachars match literally, atom and class" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    // `\[` — the parser-library bracket terminal that surfaced the gap
+    const br = try parseWith(a, "\\[");
+    try testing.expect(br.* == .literal and br.literal == '[');
+    // `\\` `\.` `\*`
+    const bs = try parseWith(a, "\\\\");
+    try testing.expect(bs.* == .literal and bs.literal == '\\');
+    const dot = try parseWith(a, "a\\.b");
+    try testing.expect(dot.* == .concat and dot.concat[1].literal == '.');
+    // class member escape: `[\]x]` contains ']' and 'x', no range opened
+    const cl = try parseWith(a, "[\\]x]");
+    try testing.expect(cl.* == .class);
+    try testing.expect(cl.class.contains(']') and cl.class.contains('x'));
+    try testing.expect(!cl.class.contains('-'));
+}
+
+test "escapes: shorthand classes and control chars" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const d = try parseWith(a, "\\d");
+    try testing.expect(d.* == .class and d.class.contains('7') and !d.class.contains('a'));
+    const nd = try parseWith(a, "\\D");
+    try testing.expect(nd.* == .class and nd.class.negated);
+    const w = try parseWith(a, "[\\w-]");
+    try testing.expect(w.* == .class and w.class.contains('_') and w.class.contains('-') and !w.class.contains('%'));
+    const nl = try parseWith(a, "\\n");
+    try testing.expect(nl.* == .literal and nl.literal == '\n');
+    // and the whole thing runs: `\d+\.\d+` matches "3.14"
+    const nfa = try nfaFor(a, "\\d+\\.\\d+");
+    try testing.expect(nfa.matches("3.14"));
+    try testing.expect(!nfa.matches("314"));
+}
+
+test "escapes: unknown alphanumeric escape is a loud error" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    try testing.expectError(error.UnsupportedEscape, parseWith(arena.allocator(), "\\q"));
+    try testing.expectError(error.UnsupportedEscape, parseWith(arena.allocator(), "[\\D]"));
 }
 
 test "named groups: parse + analyze collects names in open order" {

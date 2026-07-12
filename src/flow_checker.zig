@@ -144,6 +144,12 @@ pub const FlowChecker = struct {
 
         // Recursively validate nested continuations and bindings
         // KORU100 runs even for transformed flows - checks inside ForeachNode etc.
+        // A flow whose ROOT invocation is a [transform] event consumes its arm
+        // bindings as transform DATA (std/parser's `! rule <name>` arms: the
+        // binding IS the rule name) — usage is invisible until the transform
+        // runs, so frontend defers them, same doctrine as the per-continuation
+        // isDeferredBindingInvocation.
+        const root_is_transform = self.flowRootIsTransform(flow);
         for (flow.body.continuations) |*cont| {
             if (!is_transformed) {
                 try self.validateContinuationWhenClauses(cont, location);
@@ -151,7 +157,7 @@ pub const FlowChecker = struct {
             // KORU100: Unused binding check
             // In frontend mode, skip for [transform] invocations (binding usage not visible until after transform)
             // In backend mode (all), check everything (transforms have run)
-            try self.validateBindingUsage(cont);
+            try self.validateBindingUsage(cont, root_is_transform);
         }
 
         // === BACKEND CHECKS (semantic, require event lookups and transforms) ===
@@ -449,7 +455,13 @@ pub const FlowChecker = struct {
         }
     }
 
-    fn validateBindingUsage(self: *FlowChecker, cont: *const ast.Continuation) !void {
+    fn validateBindingUsage(self: *FlowChecker, cont: *const ast.Continuation, root_transform: bool) !void {
+        // A transform-grafted/consumed subtree carries synthesized structure,
+        // not user syntax — its bindings were the transform's data and were
+        // validated by the transform itself. Same short-circuit the other
+        // structural checks apply to the flag.
+        if (cont.is_transformed_subtree) return;
+
         // If this continuation has a binding (other than _ or _auto_*), check if it's used
         // Bindings starting with _ are explicit discards or synthetic bindings from auto-discharge
         if (cont.binding) |binding| {
@@ -481,7 +493,7 @@ pub const FlowChecker = struct {
                     (n == .invocation and self.invocationResolvesToTemplateProc(&n.invocation.path))
                 else
                     false;
-                const deferred = self.isDeferredBindingInvocation(cont);
+                const deferred = root_transform or self.isDeferredBindingInvocation(cont);
                 const skip_check = is_template_proc or switch (self.mode) {
                     .frontend => deferred,
                     .all => !deferred,
@@ -506,7 +518,7 @@ pub const FlowChecker = struct {
         // used (or spelled `_` to discard the slot). Same deferred-binding
         // skip as above — transform/scope constructs consume bindings later.
         if (cont.destructure.len > 0) {
-            const skip_check = self.mode == .frontend and self.isDeferredBindingInvocation(cont);
+            const skip_check = self.mode == .frontend and (root_transform or self.isDeferredBindingInvocation(cont));
             if (!skip_check) {
                 try self.validateDestructureUsage(cont, cont.destructure);
             }
@@ -527,7 +539,7 @@ pub const FlowChecker = struct {
 
         // Recursively check nested continuations
         for (cont.continuations) |*nested| {
-            try self.validateBindingUsage(nested);
+            try self.validateBindingUsage(nested, root_transform);
         }
 
         // Also check inside ForeachNode and ConditionalNode branches
@@ -535,17 +547,30 @@ pub const FlowChecker = struct {
             if (node == .foreach) {
                 for (node.foreach.branches) |*branch| {
                     for (branch.body) |*body_cont| {
-                        try self.validateBindingUsage(body_cont);
+                        try self.validateBindingUsage(body_cont, root_transform);
                     }
                 }
             } else if (node == .conditional) {
                 for (node.conditional.branches) |*branch| {
                     for (branch.body) |*body_cont| {
-                        try self.validateBindingUsage(body_cont);
+                        try self.validateBindingUsage(body_cont, root_transform);
                     }
                 }
             }
         }
+    }
+
+    /// True when the flow's ROOT invocation is a [transform] event — the arms
+    /// of such a flow are the transform's INPUT DATA (pattern branches, rule
+    /// declarations), and their bindings are consumed by the rewrite, not by
+    /// user code the frontend can see.
+    fn flowRootIsTransform(self: *FlowChecker, flow: *const ast.Flow) bool {
+        const hn = flow.body.node orelse return false;
+        if (hn != .invocation) return false;
+        if (self.findEventDecl(&hn.invocation.path)) |event_decl| {
+            if (annotation_parser.hasPart(event_decl.annotations, "transform")) return true;
+        }
+        return false;
     }
 
     /// Check if a continuation's node is an invocation whose binding usage isn't
