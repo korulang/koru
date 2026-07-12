@@ -1,11 +1,11 @@
 // Negative test: cross-module type references use the slash separator.
 //
-// Imports (`~import std/parser`) and call sites (`std/parser:parse`) were
+// Imports (`~import std/koru`) and call sites (`std/koru:parse`) were
 // migrated from dots to slashes long ago; cross-module *type* references were
 // the one site left on the stale dotted form. The compiler accepted both, which
 // is the debt this test kills: the dotted form `std.parser:ParseResult` must be
-// rejected at the frontend — write `std/parser:ParseResult`.
-~import std/parser
+// rejected at the frontend — write `std/koru:ParseResult`.
+~import std/koru
 
 ~pub event inspect { result: std.parser:ParseResult }
 | ok bool

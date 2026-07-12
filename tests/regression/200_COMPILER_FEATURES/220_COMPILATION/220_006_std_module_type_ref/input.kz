@@ -4,18 +4,18 @@
 // we should be able to reference those types in event signatures
 // using the same module:Type syntax as local imports.
 //
-// Example: std/parser:ParseResult should resolve to parser_impl.ParseResult
+// Example: std/koru:ParseResult should resolve to parser_impl.ParseResult
 //
 // This enables type-safe integration with runtime libraries without
 // needing a redundant Zig @import.
 
-~import std/parser
+~import std/koru
 
 const std = @import("std");
 
 // Event that processes a parse result - uses TYPE from std import
 ~event process-ast {
-    result: std/parser:ParseResult,
+    result: std/koru:ParseResult,
 } -> usize
 
 ~proc process-ast|zig {
@@ -36,6 +36,6 @@ const SAMPLE =
 ;
 
 // Flow: parse → process → report
-~std/parser:parse.source(source: SAMPLE, file_name: "test.kz", allocator: std.heap.page_allocator)
+~std/koru:parse.source(source: SAMPLE, file_name: "test.kz", allocator: std.heap.page_allocator)
 | parsed p |> process-ast(result: p): r |> report(count: r)
 | parse-error _ |> report(count: 0)

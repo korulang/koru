@@ -3,8 +3,8 @@
 // Makes the Zig parser available as Koru events at RUNTIME.
 //
 // Usage:
-//   ~import std/parser
-//   ~std/parser:parse.source(source: code, file-name: "test.kz", allocator: allocator)
+//   ~import std/koru
+//   ~std/koru:parse.source(source: code, file-name: "test.kz", allocator: allocator)
 //   | parsed p |> use(p.ast)
 //   | parse-error e |> handle(e.message)
 //
@@ -21,13 +21,13 @@ const parser_impl = @import("parser");
 const ast_serializer = @import("ast_serializer");
 
 // Re-export types for use with module:Type syntax
-// Usage: ~event my_event { result: std/parser:ParseResult }
+// Usage: ~event my_event { result: std/koru:ParseResult }
 pub const ParseResult = parser_impl.ParseResult;
 
 // =============================================================================
 // BUILD REQUIREMENTS - Include parser module in output binary
 // =============================================================================
-// When user code imports std/parser, these requirements are collected
+// When user code imports std/koru, these requirements are collected
 // and the parser module (with all its dependencies) is included in the
 // final executable's build.zig.
 
