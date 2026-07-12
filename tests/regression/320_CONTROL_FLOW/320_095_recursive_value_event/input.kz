@@ -41,8 +41,7 @@ const std = @import("std");
 // adds n to the returned subtotal. `=>` is the branch-construct glyph.
 ~sum-to = leq-zero(expr: n)
 | yes -> 0
-| no |> sum-to(n: n - 1)
-    | total t -> t + n
+| no |> sum-to(n: n - 1): t -> t + n
 
 ~event print-result { value: i64 }
 ~proc print-result|zig { std.debug.print("{d}\n", .{value}); }
