@@ -1,11 +1,7 @@
 // Ground truth for korulang.org phantom explorer — exec but no commit or rollback
 //
 // EXPECTED: Compiler error — active! transaction must be finished explicitly
-
 ~import app/db
-
 ~app/db:open(connstr: "postgres://localhost/test")
-| connected c |> app/db:tx.begin(conn: c)
-    | tx t |> app/db:tx.exec(tx: t, sql: "INSERT INTO users VALUES (1, 'alice')")
-        | ok _ |> _
+| connected c |> app/db:tx.begin(conn: c): t |> app/db:tx.exec(tx: t, sql: "INSERT INTO users VALUES (1, 'alice')"): _
 | connection-failed |> _

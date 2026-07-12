@@ -1,11 +1,7 @@
 // Ground truth for korulang.org phantom explorer — commit without exec
 //
 // EXPECTED: Compiler error — started! cannot commit
-
 ~import app/db
-
 ~app/db:open(connstr: "postgres://localhost/test")
-| connected c |> app/db:tx.begin(conn: c)
-    | tx t |> app/db:tx.commit(tx: t)
-        | committed conn |> app/db:close(conn)
+| connected c |> app/db:tx.begin(conn: c): t |> app/db:tx.commit(tx: t): conn |> app/db:close(conn)
 | connection-failed |> _

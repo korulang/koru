@@ -1,10 +1,7 @@
 // Ground truth for korulang.org phantom explorer — abandoned transaction
 //
 // EXPECTED: Compiler error — transaction obligation not discharged
-
 ~import app/db
-
 ~app/db:open(connstr: "postgres://localhost/test")
-| connected c |> app/db:tx.begin(conn: c)
-    | tx _ |> _
+| connected c |> app/db:tx.begin(conn: c): _
 | connection-failed |> _

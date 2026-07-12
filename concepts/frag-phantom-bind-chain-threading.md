@@ -73,3 +73,17 @@ a synthetic, append an explicit `|> _`) and re-runs — the obligation then
 discharges through the one existing disposal path, no bespoke head-disposal.
 Fired only when `context.hasObligations()` (a real cleanup obligation), so a
 non-issuing phantom return discarded at the head is untouched.
+
+## The recurring shape: branch-only logic must learn the bare return
+
+Every fix in this concept is the same shape — a piece of the phantom machinery
+knew the single-continuation-branch form but not its bare-return twin, because
+the migration is mechanical and the code predates it. Threading
+(validateContinuation head/nested), discard rename (cont.binding vs
+return_binding), flow-head discharge (terminal vs continuation-less head), and
+now discharge-suggestion re-issuer detection: `eventReIssuesObligation` only
+scanned `event_decl.branches`, so a transition like `tx.exec` (consumes
+`<!active>`, re-issues `<active!>` via `-> *Transaction<active!>`) was wrongly
+offered as a discharge option ("Call one of: tx.exec, …", 2104_22 pins the
+NOT_CONTAINS). Extended to the bare-return form. When touching any phantom pass,
+assume it may still be branch-only and check the `-> T<phantom>` path too.

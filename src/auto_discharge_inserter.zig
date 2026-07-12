@@ -2146,6 +2146,30 @@ pub const AutoDischargeInserter = struct {
             base_state[idx + 1 ..]
         else
             base_state;
+        // Bare-return re-issue: after the single-return migration a transition
+        // like tx.exec (`consumes <!active>` → `-> *Transaction<active!>`) hands
+        // back its obligation through the bare return, not a branch. It never
+        // discharges, so exclude it here the same way branch re-issuers are.
+        if (event_decl.return_type) |rt| {
+            if (std.mem.eql(u8, rt, base_type)) {
+                if (event_decl.return_phantom) |rp| {
+                    if (phantom_parser.PhantomState.parse(self.allocator, rp)) |*parsed_ret| {
+                        defer @constCast(parsed_ret).deinit(self.allocator);
+                        switch (parsed_ret.*) {
+                            .concrete => |concrete| {
+                                if (concrete.requires_cleanup and std.mem.eql(u8, concrete.name, base_state_name)) return true;
+                            },
+                            .state_union => |u| {
+                                for (u.members) |member| {
+                                    if (member.requires_cleanup and std.mem.eql(u8, member.name, base_state_name)) return true;
+                                }
+                            },
+                            .variable => {},
+                        }
+                    } else |_| {}
+                }
+            }
+        }
         for (event_decl.branches) |branch| {
             for (branch.payload.fields) |field| {
                 if (!std.mem.eql(u8, field.type, base_type)) continue;
