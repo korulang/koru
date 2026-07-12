@@ -400,6 +400,11 @@ fn createDefaultEventDecl(event: *const ast.EventDecl, allocator: std.mem.Alloca
         },
         .input = event.input,
         .branches = event.branches,
+        // Bare-return abstracts (`-> CompilerContext`) carry their output on
+        // return_type, not branches — the `.default` child must inherit it or
+        // its Output degrades to void and every delegating override breaks.
+        .return_type = event.return_type,
+        .return_phantom = event.return_phantom,
         .annotations = new_annotations,
         .is_public = false, // .default is internal
         .location = event.location,

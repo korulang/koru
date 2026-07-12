@@ -14,7 +14,6 @@
 import std/io
 import std/args
 
-std/args:count()
-| count _ |> capture { n: 0[i64] }
+std/args:count(): _ |> capture { n: 0[i64] }
     ! as acc |> captured { n: acc.n + 1 }
     | captured r |> std/io:print.ln("n={{ r.n:d }}")

@@ -2,7 +2,6 @@
 import std/io
 import std/args
 
-std/args:count()
-| count _ |> if(1 == 1)
+std/args:count(): _ |> if(1 == 1)
     | then |> std/io:print.ln("then")
     | else |> std/io:print.ln("else")

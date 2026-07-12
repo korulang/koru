@@ -16,8 +16,7 @@
 // DUMP AST AFTER FRONTEND
 // ============================================================================
 
-~std/compiler:frontend = std/compiler:frontend.default(ctx)
-| ctx c |> std/compiler:ast-dump(ctx: c, flag: "post-frontend") => ctx c
+~std/compiler:frontend = std/compiler:frontend.default(ctx): c |> std/compiler:ast-dump(ctx: c, flag: "post-frontend") -> c
 
 // ============================================================================
 // DUMP AST AFTER ANALYSIS

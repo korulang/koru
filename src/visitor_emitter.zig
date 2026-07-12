@@ -21,6 +21,17 @@ const ZIG_TARGET = "zig";
 /// - `null` (synthesized `location.file == "generated"`, or pure `.k`
 ///   contract) → true: host-agnostic compiler infrastructure must still emit.
 /// - `"zig"` → true.
+/// The const name for a default-handler flow's ROOT invocation result: the
+/// call-site `: bind` when present (bare-return chain heads reference it),
+/// `result` otherwise (the branch-switch convention). A `_` bind is a
+/// discard — `const _` is not legal Zig, so it keeps `result` and rides the
+/// no-continuations discard guard.
+fn defaultHandlerRootBind(inv: *const ast.Invocation) []const u8 {
+    const rb = inv.return_binding orelse return "result";
+    if (std.mem.eql(u8, rb, "_")) return "result";
+    return rb;
+}
+
 fn hostLineRoutesToZig(file: []const u8) bool {
     const host = file_types.hostLangOfFile(file) orelse return true;
     return std.mem.eql(u8, host, ZIG_TARGET);
@@ -2134,7 +2145,16 @@ pub const VisitorEmitter = struct {
                                         }
                                     } else {
                                         try self.code_emitter.writeIndent();
-                                        try self.code_emitter.write("const result = ");
+                                        // The root invocation may carry a call-site
+                                        // `: bind` (a bare-return chain head, e.g.
+                                        // coordinate's default `context-create(...):
+                                        // c0 |> frontend(ctx: c0)`) — the chain
+                                        // steps reference the BIND name, so it must
+                                        // be the const's name. Unbound roots keep
+                                        // `result` (the branch-switch convention).
+                                        try self.code_emitter.write("const ");
+                                        try self.code_emitter.write(defaultHandlerRootBind(flow.inv()));
+                                        try self.code_emitter.write(" = ");
 
                                         // Emit the event call
                                         if (flow.inv().path.module_qualifier) |mq| {
@@ -2158,11 +2178,14 @@ pub const VisitorEmitter = struct {
                                     }
 
                                     // A head with no continuations has no switch to
-                                    // consume `result` — discard-guard it (same
-                                    // hygiene as nested_result_N in arm emission).
+                                    // consume the root const — discard-guard it
+                                    // (same hygiene as nested_result_N in arm
+                                    // emission).
                                     if (flow.body.continuations.len == 0) {
                                         try self.code_emitter.writeIndent();
-                                        try self.code_emitter.write("_ = &result;\n");
+                                        try self.code_emitter.write("_ = &");
+                                        try self.code_emitter.write(defaultHandlerRootBind(flow.inv()));
+                                        try self.code_emitter.write(";\n");
                                     }
 
                                     // Emit continuations
@@ -2178,7 +2201,7 @@ pub const VisitorEmitter = struct {
                                     const source_event_name = try emitter.buildCanonicalEventName(&flow.inv().path, self.allocator, self.main_module_name);
                                     const compiler_module_name = try codegen_utils.buildKoruModulePath(self.allocator, "std.compiler");
                                     defer self.allocator.free(compiler_module_name);
-                                    try emitter.emitSubflowContinuations(self.code_emitter, flow.body.continuations, 0, indent_str, items_to_search, self.tap_registry, self.type_registry, self.main_module_name, source_event_name, compiler_module_name, event.return_type != null);
+                                    try emitter.emitSubflowContinuationsRooted(self.code_emitter, flow.body.continuations, 0, indent_str, items_to_search, self.tap_registry, self.type_registry, self.main_module_name, source_event_name, compiler_module_name, event.return_type != null, defaultHandlerRootBind(flow.inv()));
 
                                     self.code_emitter.indent_level -= 1;
                                     try self.code_emitter.writeIndent();
@@ -2442,7 +2465,11 @@ pub const VisitorEmitter = struct {
                                                     }
                                                 } else {
                                                     try self.code_emitter.writeIndent();
-                                                    try self.code_emitter.write("const result = ");
+                                                    // Root `: bind` names the const (bare-return
+                                                    // chain head) — see defaultHandlerRootBind.
+                                                    try self.code_emitter.write("const ");
+                                                    try self.code_emitter.write(defaultHandlerRootBind(flow.inv()));
+                                                    try self.code_emitter.write(" = ");
 
                                                     // Check if this is a self-call (delegating to default)
                                                     const is_self_call = blk: {
@@ -2490,10 +2517,12 @@ pub const VisitorEmitter = struct {
                                                 }
 
                                                 // A head with no continuations has no switch to
-                                                // consume `result` — discard-guard it.
+                                                // consume the root const — discard-guard it.
                                                 if (flow.body.continuations.len == 0) {
                                                     try self.code_emitter.writeIndent();
-                                                    try self.code_emitter.write("_ = &result;\n");
+                                                    try self.code_emitter.write("_ = &");
+                                                    try self.code_emitter.write(defaultHandlerRootBind(flow.inv()));
+                                                    try self.code_emitter.write(";\n");
                                                 }
 
                                                 // Generate switch on result with continuations
@@ -2519,7 +2548,7 @@ pub const VisitorEmitter = struct {
                                                 }
 
                                                 const source_event_name = try emitter.buildCanonicalEventName(&flow.inv().path, self.allocator, self.main_module_name);
-                                                try emitter.emitSubflowContinuations(self.code_emitter, flow.body.continuations, 0, indent_str, self.all_items, self.tap_registry, self.type_registry, self.main_module_name, source_event_name, "main_module", event.return_type != null);
+                                                try emitter.emitSubflowContinuationsRooted(self.code_emitter, flow.body.continuations, 0, indent_str, self.all_items, self.tap_registry, self.type_registry, self.main_module_name, source_event_name, "main_module", event.return_type != null, defaultHandlerRootBind(flow.inv()));
 
                                                 found_impl = true;
                                             }
@@ -3112,6 +3141,10 @@ pub const VisitorEmitter = struct {
                                     if (needs_mutable) {
                                         try self.code_emitter.write("var result = ");
                                     } else {
+                                        // NB: this path handles a root `: bind` by
+                                        // ALIASING below (`const <bind> = result;`),
+                                        // unlike the default-handler paths which name
+                                        // the const directly — keep `result` here.
                                         try self.code_emitter.write("const result = ");
                                     }
 

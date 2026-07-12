@@ -1717,6 +1717,28 @@ pub fn emitSubflowContinuations(
     try emitSubflowContinuationsWithDepth(emitter, continuations, start_idx, indent, all_items, 0, tap_registry, type_registry, main_module_name, source_event_name, module_prefix, enclosing_bare_return, null);
 }
 
+/// Same as emitSubflowContinuations, but names the ROOT result const the
+/// caller emitted. A chain head with a call-site `: bind` names its const
+/// after the bind (coordinate's default `context-create(...): c0 |> ...`),
+/// so the depth-0 discard hygiene must reference that name — the bare
+/// `result` convention would reference a const that no longer exists.
+pub fn emitSubflowContinuationsRooted(
+    emitter: *CodeEmitter,
+    continuations: []const ast.Continuation,
+    start_idx: usize,
+    indent: []const u8,
+    all_items: []const ast.Item,
+    tap_registry: ?*tap_registry_module.TapRegistry,
+    type_registry: *type_registry_module.TypeRegistry,
+    main_module_name: ?[]const u8,
+    source_event_name: ?[]const u8,
+    module_prefix: []const u8,
+    enclosing_bare_return: bool,
+    root_result_name: ?[]const u8,
+) !void {
+    try emitSubflowContinuationsWithDepth(emitter, continuations, start_idx, indent, all_items, 0, tap_registry, type_registry, main_module_name, source_event_name, module_prefix, enclosing_bare_return, root_result_name);
+}
+
 /// Helper to check if any continuation in a list has a label
 fn continuationsHaveLabels(continuations: []const ast.Continuation) bool {
     for (continuations) |cont| {
@@ -9556,11 +9578,26 @@ pub fn writeBareReturnType(emitter: *CodeEmitter, rt: []const u8, main_module_na
         }
     }
     if (std.mem.indexOfScalar(u8, remaining, ':')) |colon| {
-        try emitter.write(prefix);
-        try writeModulePath(emitter, remaining[0..colon], main_module_name);
-        try emitter.write(".");
-        try emitter.write(remaining[colon + 1 ..]);
-        return;
+        // Only an identifier-shaped segment before the `:` is a module
+        // qualifier. A sentinel slice (`[][:0]u8` → remaining `[:0]u8`) also
+        // carries a colon — that is Zig type syntax, not a qualifier, and
+        // must pass through verbatim.
+        const qual = remaining[0..colon];
+        const is_module_qual = qual.len > 0 and blk: {
+            for (qual) |ch| {
+                const ok = (ch >= 'a' and ch <= 'z') or (ch >= 'A' and ch <= 'Z') or
+                    (ch >= '0' and ch <= '9') or ch == '/' or ch == '-' or ch == '_' or ch == '.';
+                if (!ok) break :blk false;
+            }
+            break :blk true;
+        };
+        if (is_module_qual) {
+            try emitter.write(prefix);
+            try writeModulePath(emitter, qual, main_module_name);
+            try emitter.write(".");
+            try emitter.write(remaining[colon + 1 ..]);
+            return;
+        }
     }
     try emitter.write(rt);
 }

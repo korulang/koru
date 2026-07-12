@@ -4,7 +4,6 @@
 import std/io
 import std/args
 
-std/args:count()
-| count _ |> for(0..3)
+std/args:count(): _ |> for(0..3)
     ! each _ |> _
     | done |> std/io:print.ln("done")
