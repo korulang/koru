@@ -62,11 +62,14 @@ inserted discharge has something to reference), but only checked
 genuine discard) materialize `_` → `_auto_N`. Pinned 330_094 (nested discard,
 green).
 
-OPEN (pinned red 330_095, ruling pending): a flow-head obligation in a
-CONTINUATION-LESS flow is never discharged — `~make(): _` leaks silently,
-`~make(): h` leaks as a Zig unused-const. The head path records the obligation
-(inserter ~679) but the flow-exit discharge never fires when
-`flow.body.continuations` is empty. Mechanical equivalence says it should
-auto-discharge at flow exit like the nested case — OR be a clean KORU030
-"not discharged", never a silent leak or raw Zig error. Distinct, deeper
-change than the discard rename.
+Flow-head continuation-less discharge (CLOSED, 330_095 green): a flow-head
+obligation with nothing after it (`~make(): _` / `~make(): h`) is a flow exit
+and auto-discharges at the head, exactly like the nested case — Lars ruled the
+migration completely mechanical, so a continuation-less head must not leak
+(silently for `: _`, as a Zig unused-const for a named bind). The head has no
+terminal for the terminator-disposal machinery to fire on, so the inserter
+synthesizes one (`giveContinuationlessHeadTerminal`: rename a `_` head bind to
+a synthetic, append an explicit `|> _`) and re-runs — the obligation then
+discharges through the one existing disposal path, no bespoke head-disposal.
+Fired only when `context.hasObligations()` (a real cleanup obligation), so a
+non-issuing phantom return discarded at the head is untouched.

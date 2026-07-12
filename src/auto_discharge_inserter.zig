@@ -801,6 +801,28 @@ pub const AutoDischargeInserter = struct {
             }
         }
 
+        // Continuation-less flow head with an undischarged obligation: the head
+        // IS the flow exit (`~make(): _` / `~make(): h` with nothing after).
+        // There is no terminal for the terminator-disposal machinery to fire on,
+        // so synthesize one (renaming a `_` head bind first) and re-run — the
+        // obligation then discharges through the normal path instead of leaking
+        // (silently for `: _`, as a Zig unused-const for a named bind). Guarded
+        // on hasObligations() so it fires only for a real cleanup obligation.
+        if (mode == .full and flow.body.continuations.len == 0 and
+            flow.inv().return_binding != null and context.hasObligations())
+        {
+            const rebuilt = try self.giveContinuationlessHeadTerminal(flow);
+            const new_program = try ast_functional.replaceFlowRecursive(
+                self.allocator,
+                program,
+                flow,
+                .{ .flow = rebuilt },
+            ) orelse return .{ .transformed = false, .program = program };
+            const result_ptr = try self.allocator.create(ast.Program);
+            result_ptr.* = new_program;
+            return .{ .transformed = true, .program = result_ptr };
+        }
+
         return .{ .transformed = false, .program = program };
     }
 
@@ -2735,6 +2757,48 @@ pub const AutoDischargeInserter = struct {
 
         return .{
             .body = ast.rootSite(try ast_functional.cloneInvocation(self.allocator, flow.inv()), new_continuations, flow.location),
+            .annotations = new_annotations,
+            .pre_label = if (flow.pre_label) |l| try self.allocator.dupe(u8, l) else null,
+            .super_shape = flow.super_shape,
+            .inline_body = if (flow.inline_body) |b| try self.allocator.dupe(u8, b) else null,
+            .preamble_code = if (flow.preamble_code) |p| try self.allocator.dupe(u8, p) else null,
+            .is_pure = flow.is_pure,
+            .is_transitively_pure = flow.is_transitively_pure,
+            .location = flow.location,
+            .module = try self.allocator.dupe(u8, flow.module),
+            .impl_of = if (flow.impl_of) |io| try ast_functional.cloneDottedPath(self.allocator, &io) else null,
+            .impl_variant = if (flow.impl_variant) |v| try self.allocator.dupe(u8, v) else null,
+            .is_impl = flow.is_impl,
+        };
+    }
+
+    /// Rebuild a continuation-less flow head as an explicit flow exit: rename a
+    /// `_` head bind to a synthetic (so a disposal can reference the value) and
+    /// give the head an explicit terminal `|> _`. The existing terminator-
+    /// disposal machinery then discharges the obligation on that terminal — the
+    /// flow-head twin of the nested discard, reusing one disposal path rather
+    /// than a bespoke head-disposal. Caller guarantees `flow.inv().return_binding`.
+    fn giveContinuationlessHeadTerminal(self: *AutoDischargeInserter, flow: *const ast.Flow) !ast.Flow {
+        var new_head_inv = try ast_functional.cloneInvocation(self.allocator, flow.inv());
+        if (std.mem.eql(u8, flow.inv().return_binding.?, "_")) {
+            new_head_inv.return_binding = try self.generateSyntheticBinding();
+        }
+        var term = try self.allocator.alloc(ast.Continuation, 1);
+        term[0] = .{
+            .branch = "",
+            .binding = null,
+            .condition = null,
+            .node = .{ .terminal = {} },
+            .indent = flow.body.indent + 1,
+            .continuations = &[_]ast.Continuation{},
+            .location = flow.location,
+        };
+        const new_body = ast.rootSite(new_head_inv, term, flow.location);
+
+        var new_annotations = try self.allocator.alloc([]const u8, flow.annotations.len);
+        for (flow.annotations, 0..) |ann, i| new_annotations[i] = try self.allocator.dupe(u8, ann);
+        return .{
+            .body = new_body,
             .annotations = new_annotations,
             .pre_label = if (flow.pre_label) |l| try self.allocator.dupe(u8, l) else null,
             .super_shape = flow.super_shape,
