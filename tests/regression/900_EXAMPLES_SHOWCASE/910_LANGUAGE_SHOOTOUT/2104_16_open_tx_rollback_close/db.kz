@@ -48,7 +48,7 @@ const Transaction = struct { conn_handle: i32 };
     const c = std.heap.page_allocator.create(Connection) catch unreachable;
     c.* = Connection{ .handle = tx.conn_handle };
     std.heap.page_allocator.destroy(tx);
-    return .{ .rolled_back = c };
+    return c;
 }
 
 ~pub event close { conn: *Connection<!active> }

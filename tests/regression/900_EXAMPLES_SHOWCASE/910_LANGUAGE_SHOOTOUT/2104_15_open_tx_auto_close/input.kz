@@ -1,12 +1,11 @@
-// Ground truth for korulang.org phantom explorer — auto-discharge inserts close
+// Ground truth for korulang.org phantom explorer — commit then auto-close
+// the connection: the committed <active!> connection is bound and dropped,
+// auto-discharge inserts close().
 //
 // EXPECTED: Compiles and runs successfully
 
 ~import app/db
 
 ~app/db:open(connstr: "postgres://localhost/test")
-| connected c |> app/db:tx.begin(conn: c)
-    | tx t |> app/db:tx.exec(tx: t, sql: "INSERT INTO users VALUES (1, 'alice')")
-        | ok r |> app/db:tx.commit(tx: r)
-            | committed _ |> _
+| connected c |> app/db:tx.begin(conn: c): t |> app/db:tx.exec(tx: t, sql: "INSERT INTO users VALUES (1, 'alice')"): r |> app/db:tx.commit(tx: r): conn
 | connection-failed |> _
