@@ -1,11 +1,11 @@
-// PINS: the constructor's REGISTRY trigger. Ranging over an EXISTING type's fields
-// (`fields-of Player`) to DERIVE a new type forces a Koru type registry: the
-// constructor must enumerate Player's fields at Stage C, BEFORE Zig sees them.
-// Generation (340_011) needs no registry; CONSUMPTION does — this is the exact,
-// demand-driven trigger that makes the registry non-optional, and the boundary at
-// which Koru starts reasoning about type SHAPE itself instead of deferring to Zig.
-// `f.name` / `f.type` are the reflected field spec. This is the `over Player` goal
-// of 340_007 through the constructor. Surface PROVISIONAL.
+// PINS: the constructor's CONSUMPTION path — deriving a NEW struct type from an
+// EXISTING type's fields. `for(fields-of(Player))` reflects Player's fields and
+// `field(name: f.name, type: f.type)` rebuilds each into PlayerSnapshot. Round one
+// reads the fields via Zig `@typeInfo` in the lowered code — NO registry (generation
+// AND consumption both lower to `@Type`; Zig is the registry for a lowered type). A
+// Koru-level type registry — reasoning about type SHAPE at Stage C, before Zig — is
+// the north star this consumption path gestures at, NOT what this pin requires.
+// `f.name` / `f.type` are the reflected field spec. Surface PROVISIONAL.
 
 ~import std/constructor
 ~import std/types
@@ -19,7 +19,7 @@ const std = @import("std");
 
 ~std/constructor:struct(PlayerSnapshot)
 ! construct |> for(fields-of(Player))
-    ! each f |> std/constructor:field(name: f.name, type: f.type)
+    ! each f |> std/constructor:field(f.name, f.type)
 
 ~event main {}
 

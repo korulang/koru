@@ -1,0 +1,277 @@
+~[comptime]
+
+// Koru Standard Library: Constructor — the comptime assembly sandwich.
+//
+// The constructor is `capture` generalized from a scalar cell to a GROWING
+// structure. Where `capture` folds one cell (`! as` / `captured` / `| captured`),
+// the constructor COLLECTS (`! construct` / `push` / `| constructed`). The whole
+// thing is comptime and DISSOLVES — allocations happen at comptime and never
+// reach the binary. Runtime collection is not the constructor; it's the store.
+//
+// SURFACE: `std/constructor(nums)` invokes the module's `default` event (the
+// default-event rule: `~std/M(args)` ≡ `~std/M:default(args)`). The header arg is
+// the cell NAME; the `! construct` half drives a LINQ traversal whose `push`
+// calls collect into the cell; `| constructed <r>` is the one-shot after-read.
+//
+// This file currently builds the VALUE terminal (a comptime list). The struct /
+// type terminals (the `field` vocabulary + `std/types:emit`) follow.
+
+~import std/template
+
+const std = @import("std");
+
+// The module's DEFAULT event — reached bare as `std/constructor(nums)`. Not a
+// keyword (keyword elides the module path; default IS the module path). `expr` is
+// the first-parameter implicit slot: `std/constructor(nums)` lands `expr = "nums"`.
+//
+// `pre` stage: the constructor must DISSOLVE before the frontend template pass
+// runs, so its grafted `~for(built)` (over the comptime list it defines) is
+// template-processed as ordinary code. The pipeline runs `.pre` transforms via
+// `run-pre-transforms`, ahead of `process-template-procs` (see compiler.kz).
+~[comptime|transform|pre]pub event default { expr: Expression }
+! construct *
+| ?constructed *
+
+// The core collect verb, consumed by the transform (never emitted). `expr` is the
+// implicit first slot so `push(x)` needs no label.
+~pub event push { expr: Expression }
+
+// STRUCT KIND terminal — `std/constructor:struct(Vec3)` GENERATES a struct type
+// from field specs collected over a LINQ range. GENERATION only: no existing type
+// is read, so no registry — the lowered `@Type` lives in Zig's own scope. `.pre`
+// keeps it consistent with the value terminal (dissolves before the main passes).
+~[comptime|transform|pre]pub event struct { expr: Expression }
+! construct *
+
+// The field vocabulary verb (consumed by the struct transform). `name` is a
+// projection template (`"v{i}"` splices the loop var); `type` is the field type.
+~pub event field { name: Expression, type: Expression }
+
+// VALUE TERMINAL transform. Dissolves the `! construct` half into a comptime
+// list-accumulator preamble and keeps the `| constructed` after-body as a void
+// chain so the REAL ~for runs over the built list (no degradation) — capture's
+// exact structure, cell = growing `[]const E` instead of a scalar.
+~[transform]proc default|zig {
+    const ast = @import("ast");
+
+    if (item.* != .flow) @panic("constructor default transform: containing item is not a flow - walker dispatch contract broken");
+    const flow = &item.flow;
+
+    // Idempotency: a prior run already set preamble_code.
+    if (flow.preamble_code != null) return .{ .transformed = .{} };
+
+    // The cell name is the header arg (the implicit `expr` slot).
+    if (invocation.args.len == 0) {
+        const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"std/constructor requires a name: std/constructor(nums)\"); }}", .{}) catch unreachable;
+        return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+    }
+    const cell_name = invocation.args[0].value;
+
+    // --- Find `! construct` (the traversal) and `| constructed <r>` (after-read). ---
+    var construct_cont: ?*const ast.Continuation = null;
+    var constructed_cont: ?*const ast.Continuation = null;
+    var result_name: []const u8 = "constructed";
+    for (flow.body.continuations) |*cont| {
+        if (std.mem.eql(u8, cont.branch, "construct")) {
+            construct_cont = cont;
+        } else if (std.mem.eql(u8, cont.branch, "constructed")) {
+            constructed_cont = cont;
+            if (cont.binding) |b| result_name = b;
+        }
+    }
+    if (construct_cont == null) {
+        const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"std/constructor requires a `! construct` traversal branch\"); }}", .{}) catch unreachable;
+        return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+    }
+
+    // The construct branch node is a `for` invocation; read its range. Its nested
+    // `! each <v>` binds the loop var and its `push(<e>)` node carries the element
+    // expression collected each pulse.
+    const cc = construct_cont.?;
+    var range: []const u8 = "";
+    if (cc.node) |n| {
+        if (n == .invocation and n.invocation.args.len > 0) range = n.invocation.args[0].value;
+    }
+    var loop_var: []const u8 = "__it";
+    var push_expr: []const u8 = "";
+    for (cc.continuations) |*ec| {
+        if (std.mem.eql(u8, ec.branch, "each")) {
+            if (ec.binding) |b| loop_var = b;
+            if (ec.node) |pn| {
+                if (pn == .invocation and pn.invocation.args.len > 0) push_expr = pn.invocation.args[0].value;
+            }
+        }
+    }
+
+    // --- The comptime list-accumulator preamble. `__E` is inferred from the push
+    //     expression via a typing-only probe (loop var is `usize` for a range), so
+    //     any push over a range types itself. `++` grows the comptime slice. ---
+    var p = std.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
+    p.appendSlice(allocator, "const ") catch unreachable;
+    p.appendSlice(allocator, cell_name) catch unreachable;
+    p.appendSlice(allocator, " = comptime __cblk: {\n") catch unreachable;
+    p.appendSlice(allocator, "    const __E = @TypeOf(__p: { const ") catch unreachable;
+    p.appendSlice(allocator, loop_var) catch unreachable;
+    p.appendSlice(allocator, ": usize = undefined; break :__p (") catch unreachable;
+    p.appendSlice(allocator, push_expr) catch unreachable;
+    p.appendSlice(allocator, "); });\n") catch unreachable;
+    p.appendSlice(allocator, "    var __acc: []const __E = &.{};\n") catch unreachable;
+    p.appendSlice(allocator, "    for (") catch unreachable;
+    p.appendSlice(allocator, range) catch unreachable;
+    p.appendSlice(allocator, ") |") catch unreachable;
+    p.appendSlice(allocator, loop_var) catch unreachable;
+    p.appendSlice(allocator, "| {\n") catch unreachable;
+    p.appendSlice(allocator, "        __acc = __acc ++ .{") catch unreachable;
+    p.appendSlice(allocator, push_expr) catch unreachable;
+    p.appendSlice(allocator, "};\n") catch unreachable;
+    p.appendSlice(allocator, "    }\n") catch unreachable;
+    p.appendSlice(allocator, "    break :__cblk __acc;\n") catch unreachable;
+    p.appendSlice(allocator, "};") catch unreachable;
+    const preamble = p.toOwnedSlice(allocator) catch unreachable;
+
+    // --- New continuations: `| constructed r` → `const r = cell;` (after-read) then
+    //     the after-body reusing the REAL ~for over the built list. The `! construct`
+    //     branch is CONSUMED into the preamble and never re-emitted. ---
+    var new_conts = std.ArrayList(ast.Continuation).initCapacity(allocator, 1) catch unreachable;
+    if (constructed_cont) |dc| {
+        const bind_code = if (std.mem.startsWith(u8, result_name, "_"))
+            allocator.dupe(u8, "") catch unreachable
+        else
+            std.fmt.allocPrint(allocator, "const {s} = {s};", .{ result_name, cell_name }) catch unreachable;
+        const body_inner = allocator.alloc(ast.Continuation, 1) catch unreachable;
+        body_inner[0] = .{
+            .branch = "",
+            .binding = null,
+            .condition = null,
+            .node = dc.node,
+            .indent = 0,
+            .continuations = dc.continuations,
+        };
+        new_conts.append(allocator, .{
+            .branch = "",
+            .binding = null,
+            .condition = null,
+            .node = .{ .inline_code = bind_code },
+            .indent = 0,
+            .continuations = body_inner,
+        }) catch unreachable;
+    }
+
+    // @pass_ran (circuit breaker) + @shape_valid (the dissolution consumes the user
+    // branches, so the replacement no longer matches the event's declared contract;
+    // the user surface was validated by parse, not the shape checker).
+    const new_annotations = allocator.alloc([]const u8, flow.inv().annotations.len + 2) catch unreachable;
+    for (flow.inv().annotations, 0..) |ann, i| new_annotations[i] = ann;
+    new_annotations[flow.inv().annotations.len] = allocator.dupe(u8, "@pass_ran(\"transform\")") catch unreachable;
+    new_annotations[flow.inv().annotations.len + 1] = allocator.dupe(u8, "@shape_valid(\"constructor dissolves ! construct / | constructed into a comptime list preamble\")") catch unreachable;
+
+    const new_invocation = ast.Invocation{
+        .path = flow.inv().path,
+        .args = flow.inv().args,
+        .annotations = new_annotations,
+        .inserted_by_tap = flow.inv().inserted_by_tap,
+        .from_opaque_tap = flow.inv().from_opaque_tap,
+    };
+
+    const transformed_flow = ast.Flow{
+        .body = ast.rootSite(new_invocation, new_conts.toOwnedSlice(allocator) catch unreachable, flow.location),
+        .annotations = flow.annotations,
+        .pre_label = flow.pre_label,
+        .super_shape = flow.super_shape,
+        .inline_body = null,
+        .preamble_code = preamble,
+        .is_pure = flow.is_pure,
+        .is_transitively_pure = flow.is_transitively_pure,
+        .impl_of = flow.impl_of,
+        .location = flow.location,
+        .module = flow.module,
+    };
+
+    return .{ .transformed = .{ .replacement = ast.Item{ .flow = transformed_flow } } };
+}
+
+// STRUCT TERMINAL transform. Reads the field specs collected over the `! construct`
+// range and lowers to a TOP-LEVEL `const <Name> = @Type(...)` — a struct type built
+// at comptime from the (name, type) pairs. The whole flow DISSOLVES into that one
+// declaration (no runtime residue). This is the `field`-vocabulary counterpart of
+// the value terminal's `push`; the `@Type` build is capture's proof anchor driven
+// by data instead of a seed's typeInfo.
+~[transform]proc struct|zig {
+    const ast = @import("ast");
+
+    if (item.* != .flow) @panic("constructor struct transform: containing item is not a flow - walker dispatch contract broken");
+    const flow = &item.flow;
+
+    const type_name = if (invocation.args.len > 0) invocation.args[0].value else "AnonStruct";
+
+    // --- Find `! construct` and read the range, loop var, and the `field(name:, type:)`
+    //     spec from its nested `! each`. ---
+    var construct_cont: ?*const ast.Continuation = null;
+    for (flow.body.continuations) |*cont| {
+        if (std.mem.eql(u8, cont.branch, "construct")) construct_cont = cont;
+    }
+    if (construct_cont == null) {
+        const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"std/constructor:struct requires a `! construct` branch\"); }}", .{}) catch unreachable;
+        return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+    }
+    const cc = construct_cont.?;
+    var range: []const u8 = "";
+    if (cc.node) |n| {
+        if (n == .invocation and n.invocation.args.len > 0) range = n.invocation.args[0].value;
+    }
+    var loop_var: []const u8 = "__it";
+    var name_tmpl: []const u8 = "";
+    var field_type: []const u8 = "";
+    for (cc.continuations) |*ec| {
+        if (std.mem.eql(u8, ec.branch, "each")) {
+            if (ec.binding) |b| loop_var = b;
+            if (ec.node) |pn| {
+                if (pn == .invocation) {
+                    for (pn.invocation.args) |arg| {
+                        if (std.mem.eql(u8, arg.name, "name")) name_tmpl = arg.value;
+                        if (std.mem.eql(u8, arg.name, "type")) field_type = arg.value;
+                    }
+                }
+            }
+        }
+    }
+
+    // The name arg arrives as a quoted string literal (`"v{i}"`); strip the quotes to
+    // the interior template, then translate the `{<loop_var>}` placeholder into a
+    // `comptimePrint` `{d}` slot fed by the loop var. A template with no placeholder
+    // becomes a static comptimePrint.
+    var tmpl = name_tmpl;
+    if (tmpl.len >= 2 and tmpl[0] == '"' and tmpl[tmpl.len - 1] == '"') tmpl = tmpl[1 .. tmpl.len - 1];
+    const placeholder = std.fmt.allocPrint(allocator, "{{{s}}}", .{loop_var}) catch unreachable; // "{i}"
+    const fmt_buf = std.mem.replaceOwned(u8, allocator, tmpl, placeholder, "{d}") catch unreachable;
+
+    // --- Build the top-level type declaration: a comptime block that grows a
+    //     StructField array over the range and @Type-builds the struct. ---
+    var p = std.ArrayList(u8).initCapacity(allocator, 512) catch unreachable;
+    p.appendSlice(allocator, "const ") catch unreachable;
+    p.appendSlice(allocator, type_name) catch unreachable;
+    p.appendSlice(allocator, " = __sblk: {\n") catch unreachable;
+    p.appendSlice(allocator, "    var __fields: []const @import(\"std\").builtin.Type.StructField = &.{};\n") catch unreachable;
+    p.appendSlice(allocator, "    for (") catch unreachable;
+    p.appendSlice(allocator, range) catch unreachable;
+    p.appendSlice(allocator, ") |") catch unreachable;
+    p.appendSlice(allocator, loop_var) catch unreachable;
+    p.appendSlice(allocator, "| {\n") catch unreachable;
+    p.appendSlice(allocator, "        const __nm = @import(\"std\").fmt.comptimePrint(\"") catch unreachable;
+    p.appendSlice(allocator, fmt_buf) catch unreachable;
+    p.appendSlice(allocator, "\", .{") catch unreachable;
+    p.appendSlice(allocator, loop_var) catch unreachable;
+    p.appendSlice(allocator, "});\n") catch unreachable;
+    p.appendSlice(allocator, "        __fields = __fields ++ .{@import(\"std\").builtin.Type.StructField{ .name = __nm, .type = ") catch unreachable;
+    p.appendSlice(allocator, field_type) catch unreachable;
+    p.appendSlice(allocator, ", .default_value_ptr = null, .is_comptime = false, .alignment = @alignOf(") catch unreachable;
+    p.appendSlice(allocator, field_type) catch unreachable;
+    p.appendSlice(allocator, ") }};\n") catch unreachable;
+    p.appendSlice(allocator, "    }\n") catch unreachable;
+    p.appendSlice(allocator, "    break :__sblk @Type(.{ .@\"struct\" = .{ .layout = .auto, .fields = __fields, .decls = &.{}, .is_tuple = false } });\n") catch unreachable;
+    p.appendSlice(allocator, "};") catch unreachable;
+    const decl = p.toOwnedSlice(allocator) catch unreachable;
+
+    // The flow dissolves entirely into the top-level type declaration.
+    return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = decl, .location = flow.location, .module = flow.module } } } };
+}

@@ -614,6 +614,22 @@ pub fn walkAndTransform(
     transforms: []const TransformEntry,
     allocator: std.mem.Allocator,
 ) !*Program {
+    return walkAndTransformStages(program, transforms, allocator, null);
+}
+
+/// As `walkAndTransform`, but runs ONLY the given stage's fixed-point when
+/// `only_stage` is non-null (null = all stages, pre → main → post). This is
+/// what lets the PIPELINE sprinkle a single named stage where it belongs —
+/// e.g. run `.pre` before the frontend's template pass so a transform that
+/// GRAFTS a `~for` (over a variable it defines) dissolves first, and the
+/// template pass then processes the graft normally. `.pre` transforms carry
+/// `@pass_ran`, so a later all-stages run re-visits them as no-ops.
+pub fn walkAndTransformStages(
+    program: *const Program,
+    transforms: []const TransformEntry,
+    allocator: std.mem.Allocator,
+    only_stage: ?Stage,
+) !*Program {
     var current_program = program;
     const MAX_ITERATIONS: usize = 1000; // Circuit breaker to prevent infinite loops
 
@@ -624,6 +640,9 @@ pub fn walkAndTransform(
     // stage this is exactly the legacy single-set fixed point, so an
     // all-`.main` program (every untagged transform) behaves identically.
     for ([_]Stage{ .pre, .main, .post }) |stage| {
+        if (only_stage) |os| {
+            if (stage != os) continue;
+        }
         // Filter the transform set to this stage (the set is tiny).
         var staged: std.ArrayList(TransformEntry) = .empty;
         defer staged.deinit(allocator);

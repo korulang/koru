@@ -2384,7 +2384,14 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
     try code_emitter.write("// This is why binding.type is \"unknown\" at parse time - type resolution happens\n");
     try code_emitter.write("// at transform time via ast_functional.resolveBindingType().\n");
     try code_emitter.write("pub fn run_pass(annotation: []const u8, program: *const __koru_ast.Program, allocator: transform_std.mem.Allocator) !*__koru_ast.Program {\n");
-    try code_emitter.write("    _ = annotation;  // For now, we only support \"transform\" annotation\n");
+    try code_emitter.write("    // The `annotation` names WHICH transform stage to run, so the pipeline can\n");
+    try code_emitter.write("    // sprinkle named stages where they belong: \"pre\" / \"main\" / \"post\" run just\n");
+    try code_emitter.write("    // that stage; anything else (e.g. \"transform\") runs all stages in order.\n");
+    try code_emitter.write("    const __only_stage: ?@import(\"transform_pass_runner\").Stage =\n");
+    try code_emitter.write("        if (transform_std.mem.eql(u8, annotation, \"pre\")) .pre\n");
+    try code_emitter.write("        else if (transform_std.mem.eql(u8, annotation, \"main\")) .main\n");
+    try code_emitter.write("        else if (transform_std.mem.eql(u8, annotation, \"post\")) .post\n");
+    try code_emitter.write("        else null;\n");
     try code_emitter.write("    \n");
     try code_emitter.write("    // DUMP POINT 6: AST at run_pass() entry\n");
     try code_emitter.write("    dumpAST(program, \"6-run-pass-start\", allocator);\n");
@@ -2420,7 +2427,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
     try code_emitter.write("    };\n");
     try code_emitter.write("    \n");
     try code_emitter.write("    // Use transform_pass_runner for proper recursive AST walking\n");
-    try code_emitter.write("    const result = try transform_pass_runner.walkAndTransform(program, transforms, allocator);\n");
+    try code_emitter.write("    const result = try transform_pass_runner.walkAndTransformStages(program, transforms, allocator, __only_stage);\n");
     try code_emitter.write("    \n");
     try code_emitter.write("    // DUMP POINT 7: AST at run_pass() exit (after all transforms)\n");
     try code_emitter.write("    dumpAST(result, \"7-run-pass-end\", allocator);\n");
@@ -5744,6 +5751,40 @@ fn checkBareArgPunning(
     }
 }
 
+/// Default-event rule: `~std/M(args)` ≡ `~std/M:default(args)`. A bare, single-
+/// segment invocation path whose text names an IMPORTED MODULE (it carries a `/`
+/// and matches an `~import` path) is sugar for that module's `default` event.
+/// Rewrite it here — before combination, checkers, and the backend — into an
+/// ordinary `<module>:default` invocation, so nothing downstream needs to know
+/// the sugar exists. Fires ONLY on a slash-bearing single segment that names an
+/// imported module; `for`, `push`, and every normal call have no slash and are
+/// untouched. If the module has no `default` event, the usual unknown-event error
+/// fires on the rewritten path — a plain error, exactly as for any other module.
+fn rewriteDefaultEventCalls(allocator: std.mem.Allocator, items: []const ast.Item) void {
+    for (items) |*item_const| {
+        if (item_const.* != .flow) continue;
+        const item = @constCast(item_const);
+        const node_ptr = if (item.flow.body.node) |*n| n else continue;
+        if (node_ptr.* != .invocation) continue;
+        const path = &node_ptr.invocation.path;
+        if (path.module_qualifier != null or path.segments.len != 1) continue;
+        const seg = path.segments[0];
+        if (std.mem.indexOfScalar(u8, seg, '/') == null) continue;
+        var local_name: ?[]const u8 = null;
+        for (items) |*it2| {
+            if (it2.* == .import_decl and std.mem.eql(u8, it2.import_decl.path, seg)) {
+                local_name = it2.import_decl.local_name;
+                break;
+            }
+        }
+        const lname = local_name orelse continue;
+        path.module_qualifier = lname;
+        const new_segs = allocator.alloc([]const u8, 1) catch continue;
+        new_segs[0] = "default";
+        path.segments = new_segs;
+    }
+}
+
 fn checkInvocationVisibility(
     invocation: *const ast.Invocation,
     all_items: []const ast.Item,
@@ -7010,6 +7051,11 @@ pub fn main() !void {
             }
         }
     }.add;
+
+    // Default-event sugar: `~std/M(args)` → `~std/M:default(args)`. Runs while the
+    // user file's items still carry their `~import` decls (combination strips them),
+    // so a bare slash-path invocation can be matched against the imports it names.
+    rewriteDefaultEventCalls(parse_allocator, source_file.items);
 
     // Add imported modules as ModuleDecl items
     for (imported_modules.items) |*module| {
