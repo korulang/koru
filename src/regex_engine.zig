@@ -858,6 +858,18 @@ test "searchLongestFrom: agrees with anchored matches at the boundaries" {
     try testing.expectEqual(@as(?usize, null), dfa.searchLongestFrom("foo@bar", 3));
 }
 
+test "prefix-at-offset: the parser terminal shape (searchLongestFrom is the reference)" {
+    // A grammar terminal asks "does this token start HERE, how far?" — the
+    // 641_001 flagship's own input: `[0-9]+` against "[42]".
+    var dfa = try dfaFor(testing.allocator, "-?[0-9]+");
+    defer dfa.deinit();
+    try testing.expectEqual(@as(?usize, 3), dfa.searchLongestFrom("[42]", 1)); // "42", longest not "4"
+    try testing.expectEqual(@as(?usize, null), dfa.searchLongestFrom("[42]", 0)); // '[' can't start
+    try testing.expectEqual(@as(?usize, null), dfa.searchLongestFrom("[42]", 3)); // ']' can't start
+    try testing.expectEqual(@as(?usize, null), dfa.searchLongestFrom("[42]", 4)); // at end-of-input:
+    // `-?[0-9]+` needs at least one digit, start state non-accepting → not even the empty prefix
+}
+
 test "scan: leftmost-longest, non-overlapping spans" {
     var dfa = try dfaFor(testing.allocator, "[0-9]+");
     defer dfa.deinit();
@@ -1425,6 +1437,77 @@ pub fn compileSearchToZig(out: std.mem.Allocator, pattern: []const u8, name: []c
     return buf.toOwnedSlice(out);
 }
 
+/// Emit `fn <name>(input: []const u8, from: usize) ?usize { … }` — the ANCHORED
+/// longest-prefix matcher at a fixed offset: returns the END of the longest
+/// prefix of input[from..] the DFA accepts (span is [from, end)), or null if
+/// nothing — not even the empty match — accepts. This is `Dfa.searchLongestFrom`
+/// baked self-contained: `emitSearchMatcher`'s inner loop without the
+/// try-each-start outer loop. It is the PARSER TERMINAL primitive — a grammar
+/// terminal asks "does this token start HERE, and how far does it reach?",
+/// never "where is it?" (search) or "is it everything?" (match).
+///
+/// Unlike the search emitter (where early-exit is a deferred speed cut), the
+/// dead-state exit is emitted HERE AND NOW: a terminal typically matches a few
+/// bytes near `from`, and without the exit every failed terminal walks to
+/// end-of-input — an O(n²) parser on large inputs. The dead state is detected
+/// at emit time (non-accepting, all 256 transitions self-looping); patterns
+/// whose DFA has none simply omit the check.
+pub fn emitPrefixMatcher(w: anytype, dfa: *const Dfa, name: []const u8) !void {
+    // Detect the dead sink: non-accepting, every byte loops back to itself.
+    var dead: ?usize = null;
+    var st: usize = 0;
+    outer: while (st < dfa.n_states) : (st += 1) {
+        if (dfa.accept[st]) continue;
+        var b: usize = 0;
+        while (b < 256) : (b += 1) {
+            if (dfa.trans[st * 256 + b] != st) continue :outer;
+        }
+        dead = st;
+        break;
+    }
+
+    try w.print("fn {s}(input: []const u8, from: usize) ?usize {{\n", .{name});
+    try w.writeAll("    const T = [_]u32{ ");
+    for (dfa.trans, 0..) |t, i| {
+        if (i != 0) try w.writeAll(", ");
+        try w.print("{d}", .{t});
+    }
+    try w.writeAll(" };\n");
+    try w.writeAll("    const A = [_]bool{ ");
+    for (dfa.accept, 0..) |acc, i| {
+        if (i != 0) try w.writeAll(", ");
+        try w.writeAll(if (acc) "true" else "false");
+    }
+    try w.writeAll(" };\n");
+    try w.print("    var s: u32 = {d};\n", .{dfa.start});
+    try w.writeAll("    var last_end: ?usize = if (A[s]) from else null;\n");
+    try w.writeAll("    var i: usize = from;\n");
+    try w.writeAll("    while (i < input.len) : (i += 1) {\n");
+    try w.writeAll("        s = T[@as(usize, s) * 256 + @as(usize, input[i])];\n");
+    if (dead) |d| try w.print("        if (s == {d}) break;\n", .{d});
+    try w.writeAll("        if (A[s]) last_end = i + 1;\n");
+    try w.writeAll("    }\n");
+    try w.writeAll("    return last_end;\n");
+    try w.writeAll("}\n");
+}
+
+/// Compile a pattern to a self-contained anchored longest-prefix-at-offset
+/// function (the parser terminal primitive; see `emitPrefixMatcher`). Captures,
+/// if any, are extracted from the matched span by the matcher from
+/// `compileCapturesToZig` — exactly the search/captures split `scan` uses.
+pub fn compilePrefixToZig(out: std.mem.Allocator, pattern: []const u8, name: []const u8) ![]const u8 {
+    var arena = std.heap.ArenaAllocator.init(out);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var p = Parser.init(a, pattern);
+    const ast = try p.parse();
+    var nfa = try buildNfa(a, ast);
+    var dfa = try buildDfa(a, &nfa);
+    var buf = std.ArrayList(u8){};
+    try emitPrefixMatcher(buf.writer(out), &dfa, name);
+    return buf.toOwnedSlice(out);
+}
+
 /// Compile a pattern WITH named groups straight to an emitted Zig captures
 /// matcher: `fn <name>(input: []const u8) ?[<2N>]u32` — null on no match,
 /// else the tag vector (2 byte-offsets per group, group-open order). The
@@ -1650,4 +1733,16 @@ test "emit search: well-formed unanchored finder fn" {
     try testing.expect(std.mem.indexOf(u8, src, "const T = [_]u32{") != null);
     try testing.expect(std.mem.indexOf(u8, src, "while (start <= input.len)") != null);
     try testing.expect(std.mem.indexOf(u8, src, "if (last_end) |e| return .{ start, e };") != null);
+}
+
+test "emit prefix: well-formed anchored longest-prefix fn with dead-state exit" {
+    const src = try compilePrefixToZig(testing.allocator, "[0-9]+", "p0");
+    defer testing.allocator.free(src);
+    try testing.expect(std.mem.indexOf(u8, src, "fn p0(input: []const u8, from: usize) ?usize") != null);
+    try testing.expect(std.mem.indexOf(u8, src, "const T = [_]u32{") != null);
+    try testing.expect(std.mem.indexOf(u8, src, "return last_end;") != null);
+    // anchored: no try-each-start outer loop
+    try testing.expect(std.mem.indexOf(u8, src, "while (start <= input.len)") == null);
+    // `[0-9]+` has a dead sink (any non-digit) — the early-exit must be emitted
+    try testing.expect(std.mem.indexOf(u8, src, "break;") != null);
 }
