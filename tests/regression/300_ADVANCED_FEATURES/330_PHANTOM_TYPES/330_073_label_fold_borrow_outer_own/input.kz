@@ -50,5 +50,4 @@ const Handle = struct { n: i32 };
 | next v |> @loop(c: v)
 | done r -> r
 
-~make(): h0 |> spin(h: h0)
-    | finished _ |> done(h: h0)
+~make(): h0 |> spin(h: h0): _ |> done(h: h0)

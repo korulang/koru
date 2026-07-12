@@ -32,5 +32,4 @@
 ~echo(v: 1 + 2): r2 |> std/io:print.ln("expr: {{ r2:d }}")
 
 // Path mismatch — `box.other` puns to 'other', not 'v', so label required.
-~get-box(): box |> echo(v: box.other)
-    | out r3 |> std/io:print.ln("path mismatch: {{ r3:d }}")
+~get-box(): box |> echo(v: box.other): r3 |> std/io:print.ln("path mismatch: {{ r3:d }}")

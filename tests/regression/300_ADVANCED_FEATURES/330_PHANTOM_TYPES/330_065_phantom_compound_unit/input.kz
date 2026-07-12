@@ -21,6 +21,5 @@
 
 ~compute-velocity -> d / t
 
-~read-distance(trip_id: 1): m |> read-time(trip_id: 1)
-    | elapsed s |> compute-velocity(d: m, t: s)
+~read-distance(trip_id: 1): m |> read-time(trip_id: 1): s |> compute-velocity(d: m, t: s)
         | result v |> std/io:print.ln("{{ v:d }} m/s")

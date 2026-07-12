@@ -19,5 +19,4 @@ pub const Point = struct { x: i32, y: i32 };
 ~use-point -> { p.x, p.y }
 
 // Test it
-~make-point(x: 10, y: 20): pt |> use-point(p: pt)
-    | result r |> std/io:print.ln("punning works: x={{ r.x:d }}, y={{ r.y:d }}")
+~make-point(x: 10, y: 20): pt |> use-point(p: pt): r |> std/io:print.ln("punning works: x={{ r.x:d }}, y={{ r.y:d }}")

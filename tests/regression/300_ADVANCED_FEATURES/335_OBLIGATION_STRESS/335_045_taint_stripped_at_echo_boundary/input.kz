@@ -42,5 +42,4 @@
 // Pass tainted value through the echo boundary.
 // After the call, `result` has type []const u8 — taint should still be tracked
 // as an undischarged obligation, but is the checker smart enough to notice?
-~get-input(): s |> echo(data: s)
-    | out result |> std/io:print.ln("{{ result:s }}")
+~get-input(): s |> echo(data: s): result |> std/io:print.ln("{{ result:s }}")

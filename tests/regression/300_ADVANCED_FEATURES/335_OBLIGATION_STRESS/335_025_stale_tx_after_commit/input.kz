@@ -9,5 +9,4 @@
 //   - use-after pattern:      330_007/input.kz:3 (close then use-file with same binding)
 ~import app/db
 
-~app/db:connect(url: "postgres://localhost/test"): c |> app/db:query(conn: c, sql: "SELECT * FROM users")
-    | started tx |> app/db:commit(tx) |> app/db:rollback(tx) |> app/db:disconnect(conn: c)
+~app/db:connect(url: "postgres://localhost/test"): c |> app/db:query(conn: c, sql: "SELECT * FROM users"): tx |> app/db:commit(tx) |> app/db:rollback(tx) |> app/db:disconnect(conn: c)

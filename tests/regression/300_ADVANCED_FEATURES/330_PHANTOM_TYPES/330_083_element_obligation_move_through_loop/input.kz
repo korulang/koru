@@ -76,5 +76,4 @@ var bin_b: Bin = .{ .items = .{ null, null, null, null }, .n = 0 };
 | moved v |> push-b(h: v) |> @loop()
 | drained c -> c
 
-~seed(): _ |> shuttle()
-    | finished _ |> free-b()
+~seed(): _ |> shuttle(): _ |> free-b()

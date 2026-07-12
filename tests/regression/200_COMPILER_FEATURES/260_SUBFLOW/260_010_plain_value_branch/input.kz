@@ -22,5 +22,4 @@ const std = @import("std");
 }
 
 // Main flow - chain subflows
-~double(n: 5): a |> square(n: 4)
-    | result b |> print-results(a, b)
+~double(n: 5): a |> square(n: 4): b |> print-results(a, b)

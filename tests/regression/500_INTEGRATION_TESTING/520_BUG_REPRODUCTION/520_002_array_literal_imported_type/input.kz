@@ -35,5 +35,4 @@ const std = @import("std");
 }
 
 // Try to use array literal with imported type
-~makeHandle(id: 1): h1 |> makeHandle(id: 2)
-    | made h2 |> joinHandles(handles: &[_]threading:WorkerHandle{ h1, h2 })
+~makeHandle(id: 1): h1 |> makeHandle(id: 2): h2 |> joinHandles(handles: &[_]threading:WorkerHandle{ h1, h2 })

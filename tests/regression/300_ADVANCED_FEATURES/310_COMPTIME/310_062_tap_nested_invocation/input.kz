@@ -38,5 +38,4 @@ const std = @import("std");
 | said _ |> observer()
 
 // hello is top-level, goodbye is NESTED in hello's continuation
-~hello(): _ |> goodbye()
-    | said _ |> _
+~hello(): _ |> goodbye(): _ |> _

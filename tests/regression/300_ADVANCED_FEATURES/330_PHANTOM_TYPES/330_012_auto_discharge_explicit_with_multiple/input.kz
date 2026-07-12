@@ -5,7 +5,6 @@
 // branch picks which disposer runs.
 ~import app/fs
 
-~app/fs:open(path: "test.txt"): f |> app/fs:lock(file: f)
-    | locked l |> app/fs:write(file: l, data: "test")
+~app/fs:open(path: "test.txt"): f |> app/fs:lock(file: f): l |> app/fs:write(file: l, data: "test")
         | written |> app/fs:unlock(file: l)
         | err _ |> app/fs:force-close(file: l)

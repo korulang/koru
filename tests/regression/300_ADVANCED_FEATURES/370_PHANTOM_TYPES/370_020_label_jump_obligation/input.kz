@@ -42,8 +42,7 @@ const Resource = struct { id: i32 };
 
 // THE BUG: This flow should NOT compile!
 // The `| failed |> @loop` branch has an open obligation that is never discharged.
-~#loop create(): c |> use(c.res)
-    | ok o |> close(o.res)
+~#loop create(): c |> use(c.res): o |> close(o.res)
     | failed _f |> @loop()  // BUG! c.res has <open!> obligation, not discharged!
 
 pub fn main() void {

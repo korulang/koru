@@ -31,8 +31,7 @@ const Handle = struct { n: i32 };
 
 ~event spin {} -> *Handle<owned!>
 
-~spin = make(): h0 |> #loop icount(c: 0)
-    | more v |> @loop(c: v)
+~spin = make(): h0 |> #loop icount(c: 0): v |> @loop(c: v)
     | fin _ -> h0
 
 ~spin(): hf |> dispose(h: hf)

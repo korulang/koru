@@ -37,5 +37,4 @@ const Handle = struct { n: i32 };
 | again v |> drop(h: v) |> @loop(h: v)   // consumes v twice -> double consume
 | stop r -> r
 
-~make(): h0 |> spin(h: h0)
-    | finished hf |> drop(h: hf)
+~make(): h0 |> spin(h: h0): hf |> drop(h: hf)

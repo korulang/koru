@@ -11,13 +11,11 @@
 
 ~test(This test passes) {
     ~do-thing -> 1
-    ~do-thing()
-    | done _ |> assert(true)
+    ~do-thing(): _ |> assert(true)
 }
 
 ~test(This test should fail) {
     ~do-thing -> 1
-    ~do-thing()
-    | done _ |> assert(false)
+    ~do-thing(): _ |> assert(false)
 }
 

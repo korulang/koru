@@ -1,7 +1,6 @@
 ~import std/control
 ~import app/db
 const query_succeeded = true;
-~app/db:connect(url: "postgres://localhost/test"): c |> app/db:query(conn: c, sql: "SELECT * FROM users")
-    | started tx |> if(query_succeeded)
+~app/db:connect(url: "postgres://localhost/test"): c |> app/db:query(conn: c, sql: "SELECT * FROM users"): tx |> if(query_succeeded)
         | then |> app/db:commit(tx) |> app/db:disconnect(conn: c)
         | else |> app/db:rollback(tx) |> app/db:disconnect(conn: c)

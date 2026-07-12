@@ -16,5 +16,4 @@
     return "World";
 }
 
-~get-name(): n |> std/fmt:ln("Hello, {{ n:s }}!")
-    | line l |> std/io:print.ln(l.text)
+~get-name(): n |> std/fmt:ln("Hello, {{ n:s }}!"): l |> std/io:print.ln(l.text)

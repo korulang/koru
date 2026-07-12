@@ -1,5 +1,4 @@
 ~import app/data
-~app/data:alloc(): a |> app/data:validate(d: a)
-    | validated v |> app/data:process(d: v)
+~app/data:alloc(): a |> app/data:validate(d: a): v |> app/data:process(d: v)
         | processed p |> app/data:finalize(d: p)
             | done _ |> _

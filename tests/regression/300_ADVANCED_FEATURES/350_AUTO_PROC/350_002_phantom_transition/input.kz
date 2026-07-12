@@ -30,5 +30,4 @@ const Resource = struct { value: i32 };
 }
 
 // Test it
-~create(value: 99): c |> transition(r: c)
-    | transitioned t |> cleanup(r: t)
+~create(value: 99): c |> transition(r: c): t |> cleanup(r: t)

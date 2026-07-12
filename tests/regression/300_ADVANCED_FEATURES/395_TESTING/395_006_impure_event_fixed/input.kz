@@ -16,7 +16,6 @@
 ~test(Impure event with override works) {
     ~fetch-user -> "TestUser"
 
-    ~fetch-user(id: 1)
-    | found u |> assert(u.len == 8)
+    ~fetch-user(id: 1): u |> assert(u.len == 8)
 }
 

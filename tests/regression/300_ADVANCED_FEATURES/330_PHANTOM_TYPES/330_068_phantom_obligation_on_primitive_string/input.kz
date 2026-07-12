@@ -19,5 +19,4 @@
 
 ~sanitize -> input
 
-~get-input(): s |> sanitize(input: s)
-    | clean c |> std/io:print.ln(c)
+~get-input(): s |> sanitize(input: s): c |> std/io:print.ln(c)

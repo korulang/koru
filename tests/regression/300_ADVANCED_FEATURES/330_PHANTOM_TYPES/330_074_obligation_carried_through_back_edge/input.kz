@@ -51,8 +51,7 @@ const Handle = struct { n: i32 };
 ~event spin {} -> *Handle<owned!>
 
 // Seed the fold from an ISSUING leaf, then consume-in/issue-out across @loop.
-~spin = make(): h0 |> #loop step(h: h0)
-    | again v |> @loop(h: v)
+~spin = make(): h0 |> #loop step(h: h0): v |> @loop(h: v)
     | stop r -> r
 
 ~spin(): hf |> done(h: hf)

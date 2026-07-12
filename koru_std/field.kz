@@ -200,11 +200,24 @@ var __field_noop_fba = std.heap.FixedBufferAllocator.init(&__field_noop_buf);
             .annotations = anns2,
         };
         var kept = std.ArrayList(ast.Continuation){};
+        var inv2_bound = inv2;
         for (flow.body.continuations) |c| {
-            if (!std.mem.eql(u8, c.branch, "err")) kept.append(allocator, c) catch unreachable;
+            if (std.mem.eql(u8, c.branch, "err")) continue;
+            if (std.mem.eql(u8, c.branch, "field")) {
+                // new-instack is bare-return (-> *Field<field!>): the user's
+                // `| field f |> <chain>` becomes a call-site `: f` bind and
+                // the handler body rides as a void-chain continuation.
+                inv2_bound.return_binding = c.binding;
+                var chain = c;
+                chain.branch = "";
+                chain.binding = null;
+                kept.append(allocator, chain) catch unreachable;
+                continue;
+            }
+            kept.append(allocator, c) catch unreachable;
         }
         var stack_flow = flow.*;
-        stack_flow.body = ast.rootSite(inv2, kept.toOwnedSlice(allocator) catch unreachable, flow.location);
+        stack_flow.body = ast.rootSite(inv2_bound, kept.toOwnedSlice(allocator) catch unreachable, flow.location);
         stack_flow.preamble_code = preamble;
         stack_flow.inline_body = null;
         return .{ .replacement = ast.Item{ .flow = stack_flow } };
@@ -256,8 +269,7 @@ var __field_noop_fba = std.heap.FixedBufferAllocator.init(&__field_noop_buf);
 // is inlined at the call site. `bits` must be comptime (Zig errors otherwise —
 // the array size is comptime). `free` rides the no-op allocator, unchanged.
 // Brick 2 will route a provably-local `new` here automatically.
-~[comptime|transform]pub event new.on-stack { bits: usize }
-| field *Field<field!>
+~[comptime|transform]pub event new.on-stack { bits: usize } -> *Field<field!>
 
 ~[transform]proc new.on-stack|zig {
     const ast = @import("ast");
@@ -306,8 +318,23 @@ var __field_noop_fba = std.heap.FixedBufferAllocator.init(&__field_noop_buf);
         .annotations = anns,
     };
 
+    var kept = std.ArrayList(ast.Continuation){};
+    var new_inv_bound = new_inv;
+    for (flow.body.continuations) |c| {
+        if (std.mem.eql(u8, c.branch, "field")) {
+            // Same bind rewrite as new|zig's stack path: bare-return
+            // new-instack takes the user's `| field f` as a `: f` bind.
+            new_inv_bound.return_binding = c.binding;
+            var chain = c;
+            chain.branch = "";
+            chain.binding = null;
+            kept.append(allocator, chain) catch unreachable;
+            continue;
+        }
+        kept.append(allocator, c) catch unreachable;
+    }
     var new_flow = flow.*;
-    new_flow.body = ast.rootSite(new_inv, flow.body.continuations, flow.location);
+    new_flow.body = ast.rootSite(new_inv_bound, kept.toOwnedSlice(allocator) catch unreachable, flow.location);
     new_flow.preamble_code = preamble;
     new_flow.inline_body = null;
 
@@ -319,13 +346,12 @@ var __field_noop_fba = std.heap.FixedBufferAllocator.init(&__field_noop_buf);
 // zeroes the buffer and wires the Field with the no-op allocator (so `free` is a
 // safe no-op — no free-site rewrite). Carries <field!> so the obligation survives
 // the transform. Not meant to be called directly.
-~pub event new-instack { buf: []u64, slot: *Field, bits: usize }
-| field *Field<field!>
+~pub event new-instack { buf: []u64, slot: *Field, bits: usize } -> *Field<field!>
 
 ~proc new-instack|zig {
     @memset(buf, 0);
     slot.* = .{ .data = buf, .bits = bits, .allocator = __field_noop_fba.allocator() };
-    return .{ .field = slot };
+    return slot;
 }
 
 // ============================================

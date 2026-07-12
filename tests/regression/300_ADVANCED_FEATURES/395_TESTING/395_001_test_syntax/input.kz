@@ -13,7 +13,6 @@
 // Test: Mock value is inlined, binding extracted, value verified
 ~test(Mock value inlined with binding) {
     ~get-balance -> 100
-    ~get-balance()
-    | amount a |> assert(a == 100)
+    ~get-balance(): a |> assert(a == 100)
 }
 

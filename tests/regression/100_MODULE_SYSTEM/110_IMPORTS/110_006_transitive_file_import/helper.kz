@@ -10,6 +10,5 @@ const std = @import("std");
 ~pub event quadruple { x: i32 } -> i32
 
 ~quadruple =
-    app/base:double(x)
-    | doubled d1 |> app/base:double(x: d1)
+    app/base:double(x): d1 |> app/base:double(x: d1)
         | doubled d2 -> d2

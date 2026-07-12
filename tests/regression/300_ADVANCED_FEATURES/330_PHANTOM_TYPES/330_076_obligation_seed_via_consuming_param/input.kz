@@ -50,5 +50,4 @@ const Handle = struct { n: i32 };
     return h;
 }
 
-~make(): h0 |> spin(h: h0)
-    | finished hf |> done(h: hf)
+~make(): h0 |> spin(h: h0): hf |> done(h: hf)
