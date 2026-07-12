@@ -1,7 +1,13 @@
 # std/parser — grammar-surface sketch (design-walk artifact)
 
-**Status:** PROPOSAL, 2026-07-12 walk. Nothing here is built; nothing here is
-corpus unless explicitly cited. Anchors: `koru_std/regex.kz` (the shape to
+**Status:** cut-1 BUILT (2026-07-12, same-day): see
+`concepts/frag-parser-library-peg-on-two-glyphs.md` for what the build
+settled. The biggest delta from this sketch: **sequencing landed as NESTED
+arms, not `|>` chains** — probing showed the frontend already parses the whole
+region form (rules, alternatives, nesting, produce) with zero new syntax, and
+nested arms avoid the bare-`value()` resolution problem. §3's chain spelling
+remains a possible future sugar, unruled. 641_001/002/003 pin the built
+surface. The rest of this document is the original walk artifact, kept intact. Anchors: `koru_std/regex.kz` (the shape to
 echo), `340_014_constructor_named_targets_and_value` (the delivery arc),
 the 2026-07-11 Redis-verbs walk (small vocabulary, no DSL), `docs/PARSER_PALETTE.md`
 (different layer: compiler-internal callable parsers for template lowering —
