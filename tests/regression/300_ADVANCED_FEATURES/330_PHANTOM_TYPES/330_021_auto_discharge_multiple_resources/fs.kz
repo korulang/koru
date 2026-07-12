@@ -1,14 +1,13 @@
 const std = @import("std");
 const File = struct { handle: i32 };
 
-~pub event open { path: []const u8 }
-| opened *File<opened!>
+~pub event open { path: []const u8 } -> *File<opened!>
 
 ~proc open|zig {
     std.debug.print("Opening: {s}\n", .{path});
     const f = std.heap.page_allocator.create(File) catch unreachable;
     f.* = File{ .handle = 42 };
-    return .{ .opened = f };
+    return f;
 }
 
 ~pub event close { file: *File<!opened> }

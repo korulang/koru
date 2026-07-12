@@ -1,8 +1,7 @@
 ~import std/control
 ~import app/fs
 const condition = true;
-~app/fs:open(path: "test.txt")
-| opened f |> for(0..3)
+~app/fs:open(path: "test.txt"): f |> for(0..3)
     ! each _ |> if(condition)
         | then |> _  // Fine - just ends this iteration
         | else |> _  // Fine - just ends this iteration

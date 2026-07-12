@@ -5,5 +5,4 @@
 ~import std/io
 ~import app/helper
 
-~app/helper:greet(name: "World")
-| greeted g |> std/io:print.ln("{{ g:s }}")
+~app/helper:greet(name: "World"): g |> std/io:print.ln("{{ g:s }}")

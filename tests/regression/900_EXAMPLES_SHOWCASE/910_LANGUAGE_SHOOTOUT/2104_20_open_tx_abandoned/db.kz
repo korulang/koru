@@ -16,36 +16,32 @@ const Transaction = struct { conn_handle: i32 };
     return .{ .connected = c };
 }
 
-~pub event tx.begin { conn: *Connection<!connected|!active> }
-| tx *Transaction<started!>
+~pub event tx.begin { conn: *Connection<!connected|!active> } -> *Transaction<started!>
 
 ~proc tx.begin|zig {
     const t = std.heap.page_allocator.create(Transaction) catch unreachable;
     t.* = Transaction{ .conn_handle = conn.handle };
-    return .{ .tx = t };
+    return t;
 }
 
-~pub event tx.exec { tx: *Transaction<!started|!active>, sql: []const u8 }
-| ok *Transaction<active!>
+~pub event tx.exec { tx: *Transaction<!started|!active>, sql: []const u8 } -> *Transaction<active!>
 
 ~proc tx.exec|zig {
     std.debug.print("Executing: {s}\n", .{sql});
-    return .{ .ok = tx };
+    return tx;
 }
 
-~pub event tx.commit { tx: *Transaction<!active> }
-| committed *Connection<active!>
+~pub event tx.commit { tx: *Transaction<!active> } -> *Connection<active!>
 
 ~proc tx.commit|zig {
     std.debug.print("COMMIT\n", .{});
     const c = std.heap.page_allocator.create(Connection) catch unreachable;
     c.* = Connection{ .handle = tx.conn_handle };
     std.heap.page_allocator.destroy(tx);
-    return .{ .committed = c };
+    return c;
 }
 
-~pub event tx.rollback { tx: *Transaction<!active> }
-| rolled-back *Connection<active!>
+~pub event tx.rollback { tx: *Transaction<!active> } -> *Connection<active!>
 
 ~proc tx.rollback|zig {
     std.debug.print("ROLLBACK\n", .{});

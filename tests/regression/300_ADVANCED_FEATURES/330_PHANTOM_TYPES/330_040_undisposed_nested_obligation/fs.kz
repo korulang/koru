@@ -7,23 +7,21 @@ const File = struct { handle: i32 };
 const Data = struct { content: []const u8 };
 
 // Open a file - returns opened! state
-~pub event open { path: []const u8 }
-| opened *File<opened!>
+~pub event open { path: []const u8 } -> *File<opened!>
 
 ~proc open|zig {
     const f = std.heap.page_allocator.create(File) catch unreachable;
     f.* = File{ .handle = 42 };
-    return .{ .opened = f };
+    return f;
 }
 
 // Read - returns data! state (nested obligation)
-~pub event read { file: *File<opened!> }
-| data { file: *File<opened!>, content: *Data<data!> }
+~pub event read { file: *File<opened!> } -> { file: *File<opened!>, content: *Data<data!> }
 
 ~proc read|zig {
     const d = std.heap.page_allocator.create(Data) catch unreachable;
     d.* = Data{ .content = "test content" };
-    return .{ .data = .{ .file = file, .content = d } };
+    return .{ .file = file, .content = d };
 }
 
 // Close file - consumes opened!

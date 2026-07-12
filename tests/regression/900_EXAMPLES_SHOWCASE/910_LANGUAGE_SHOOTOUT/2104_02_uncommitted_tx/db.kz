@@ -75,8 +75,7 @@ const Transaction = struct { conn_handle: i32 };
 }
 
 // close: ONLY accepts <!active> - forces meaningful use before close
-~pub event close { conn: *Connection<!active> }
-| err []const u8
+~pub event close { conn: *Connection<!active> } -> []const u8
 
 ~proc close|zig {
     std.debug.print("Connection closed\n", .{});

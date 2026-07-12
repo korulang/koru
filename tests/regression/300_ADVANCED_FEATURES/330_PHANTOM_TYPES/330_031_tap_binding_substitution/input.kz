@@ -2,5 +2,4 @@
 ~import app/fs
 ~tap(app/fs:open -> *)
 | opened f |> app/fs:log-open(f.handle)
-~app/fs:open(path: "test.txt")
-| opened _ |> _
+~app/fs:open(path: "test.txt"): _ |> _

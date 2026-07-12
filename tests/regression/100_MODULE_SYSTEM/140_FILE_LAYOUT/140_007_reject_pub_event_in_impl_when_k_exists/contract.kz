@@ -4,9 +4,8 @@
 
 const std = @import("std");
 
-~pub event compute { x: u32 }
-| done u32
+~pub event compute { x: u32 } -> u32
 
 ~proc compute|zig {
-    return .{ .done = x + 100 };
+    return x + 100;
 }

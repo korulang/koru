@@ -7,5 +7,4 @@ const File = struct {
 ~event needs-fs-file { file: *File<app/lib/fs:open> }
 ~proc needs-fs-file|zig {
 }
-~app/lib/mipmap:load(path: "texture.png")
-| loaded m |> needs-fs-file(file: m)
+~app/lib/mipmap:load(path: "texture.png"): m |> needs-fs-file(file: m)

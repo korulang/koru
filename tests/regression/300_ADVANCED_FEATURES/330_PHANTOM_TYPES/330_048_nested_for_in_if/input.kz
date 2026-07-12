@@ -1,8 +1,7 @@
 ~import std/control
 ~import app/fs
 const should_loop = true;
-~app/fs:open(path: "test.txt")
-| opened f |> if(should_loop)
+~app/fs:open(path: "test.txt"): f |> if(should_loop)
     | then |> for(0..3)
         ! each _ |> _
         | done |> app/fs:close(file: f)

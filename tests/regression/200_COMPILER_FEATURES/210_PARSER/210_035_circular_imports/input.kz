@@ -19,5 +19,4 @@ const std = @import("std");
     return msg;
 }
 
-~app/module_b:from-b(msg: "hello from input")
-| relayed _ |> _
+~app/module_b:from-b(msg: "hello from input"): _ |> _

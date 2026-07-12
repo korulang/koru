@@ -7,10 +7,9 @@ const std = @import("std");
 ~import app/base
 
 // Define quadruple by calling base's double twice
-~pub event quadruple { x: i32 }
-| done i32
+~pub event quadruple { x: i32 } -> i32
 
 ~quadruple =
     app/base:double(x)
     | doubled d1 |> app/base:double(x: d1)
-        | doubled d2 => done d2
+        | doubled d2 -> d2

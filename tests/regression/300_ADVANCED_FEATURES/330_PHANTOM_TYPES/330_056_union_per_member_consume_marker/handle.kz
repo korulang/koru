@@ -10,24 +10,22 @@ const Handle = struct {
 };
 
 // Open a handle - produces obligation (must be finalized)
-~pub event open {}
-| opened *Handle<opened!>
+~pub event open {} -> *Handle<opened!>
 
 ~proc open|zig {
     std.debug.print("Opening handle\n", .{});
     const allocator = std.heap.page_allocator;
     const h = allocator.create(Handle) catch unreachable;
     h.* = Handle{ .id = 42 };
-    return .{ .opened = h };
+    return h;
 }
 
 // Start closing - explicitly discharges opened! and produces closing! obligation
-~pub event start-close { h: *Handle<!opened> }
-| closing *Handle<closing!>
+~pub event start-close { h: *Handle<!opened> } -> *Handle<closing!>
 
 ~proc start-close|zig {
     std.debug.print("Starting close: {d}\n", .{h.id});
-    return .{ .closing = h };
+    return h;
 }
 
 // Finalize - per-member consume markers: !opened discharges opened!, !closing discharges closing!

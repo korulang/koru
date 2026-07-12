@@ -6,8 +6,7 @@ const std = @import("std");
 | request { method: []const u8, path: []const u8 }
 | invalid []const u8
 
-~pub event response.build { status: i32, body: []const u8 }
-| response []const u8
+~pub event response.build { status: i32, body: []const u8 } -> []const u8
 
 ~proc request.parse|zig {
     std.debug.print("parsed request ({} bytes)\n", .{bytes.len});

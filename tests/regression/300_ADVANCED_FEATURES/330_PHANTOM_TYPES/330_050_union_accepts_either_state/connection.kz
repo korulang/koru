@@ -9,43 +9,39 @@ const Connection = struct {
 };
 
 // Create a new connection - starts in 'idle' state
-~pub event create {}
-| created *Connection<idle>
+~pub event create {} -> *Connection<idle>
 
 ~proc create|zig {
     std.debug.print("Creating connection\n", .{});
     const allocator = std.heap.page_allocator;
     const c = allocator.create(Connection) catch unreachable;
     c.* = Connection{ .id = 1 };
-    return .{ .created = c };
+    return c;
 }
 
 // Connect - transitions from idle to active
-~pub event connect { conn: *Connection<idle> }
-| connected *Connection<active>
+~pub event connect { conn: *Connection<idle> } -> *Connection<active>
 
 ~proc connect|zig {
     std.debug.print("Connecting: {d}\n", .{conn.id});
-    return .{ .connected = conn };
+    return conn;
 }
 
 // Pause - transitions from active to paused
-~pub event pause { conn: *Connection<active> }
-| paused *Connection<paused>
+~pub event pause { conn: *Connection<active> } -> *Connection<paused>
 
 ~proc pause|zig {
     std.debug.print("Pausing: {d}\n", .{conn.id});
-    return .{ .paused = conn };
+    return conn;
 }
 
 // Resume - accepts EITHER paused OR active (union!) - always returns active
 // This demonstrates the core union feature: flexible input acceptance
-~pub event resume { conn: *Connection<paused|active> }
-| resumed *Connection<active>
+~pub event resume { conn: *Connection<paused|active> } -> *Connection<active>
 
 ~proc resume|zig {
     std.debug.print("Resuming/continuing: {d}\n", .{conn.id});
-    return .{ .resumed = conn };
+    return conn;
 }
 
 // Close - accepts active OR paused (union!) - cleans up connection

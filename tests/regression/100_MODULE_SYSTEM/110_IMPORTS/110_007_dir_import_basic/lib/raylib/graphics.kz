@@ -2,8 +2,7 @@
 
 const std = @import("std");
 
-~pub event render { width: i32, height: i32 }
-| drawn i32
+~pub event render { width: i32, height: i32 } -> i32
 
 ~pub event clear { color: i32 }
 

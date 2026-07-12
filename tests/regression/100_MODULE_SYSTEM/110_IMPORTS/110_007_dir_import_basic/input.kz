@@ -14,5 +14,4 @@ const std = @import("std");
 ~import app/lib/raylib
 
 // Test using directory imports with full canonical paths
-~app/lib/raylib/graphics:render(width: 1920, height: 1080)
-| drawn _ |> app/lib/raylib/graphics:clear(color: 0xFF0000) |> app/lib/raylib/audio:play(sound_id: 42) |> app/lib/raylib/audio:stop()
+~app/lib/raylib/graphics:render(width: 1920, height: 1080): _ |> app/lib/raylib/graphics:clear(color: 0xFF0000) |> app/lib/raylib/audio:play(sound_id: 42) |> app/lib/raylib/audio:stop()

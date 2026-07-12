@@ -35,5 +35,4 @@
 
 const std = @import("std");
 
-~app/fs:open(path: "data.txt")
-| opened f |> process-file(file: f)
+~app/fs:open(path: "data.txt"): f |> process-file(file: f)

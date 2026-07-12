@@ -3,9 +3,8 @@
 
 const std = @import("std");
 
-~pub event greet { name: []const u8 }
-| greeted []const u8
+~pub event greet { name: []const u8 } -> []const u8
 
 ~proc greet|zig {
-    return .{ .greeted = "hello from index.kjs" };
+    return "hello from index.kjs";
 }

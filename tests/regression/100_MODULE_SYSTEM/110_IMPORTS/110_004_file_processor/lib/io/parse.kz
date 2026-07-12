@@ -2,8 +2,7 @@
 
 const std = @import("std");
 
-~pub event lines { text: []const u8 }
-| parsed [][]const u8
+~pub event lines { text: []const u8 } -> [][]const u8
 
 ~proc lines|zig {
     std.debug.print("parse lines ({} chars)\n", .{text.len});

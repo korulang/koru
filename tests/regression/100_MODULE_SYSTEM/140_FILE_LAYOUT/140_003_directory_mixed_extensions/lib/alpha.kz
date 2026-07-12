@@ -2,9 +2,8 @@
 
 const std = @import("std");
 
-~pub event greet-alpha {}
-| spoken []const u8
+~pub event greet-alpha {} -> []const u8
 
 ~proc greet-alpha|zig {
-    return .{ .spoken = "alpha (kz)" };
+    return "alpha (kz)";
 }

@@ -1,3 +1,2 @@
 ~import app/fs
-~app/fs:open(path: "test.txt")
-| opened _ |> _
+~app/fs:open(path: "test.txt"): _ |> _

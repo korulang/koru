@@ -31,6 +31,5 @@ const std = @import("std");
 }
 
 // Create a user using the imported event
-~app/test_lib/user:create(name: "Alice", age: 30)
-| created c |> register-user(user_data: c)
+~app/test_lib/user:create(name: "Alice", age: 30): c |> register-user(user_data: c)
     | registered _ |> _

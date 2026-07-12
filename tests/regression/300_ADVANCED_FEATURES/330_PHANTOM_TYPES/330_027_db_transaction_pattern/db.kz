@@ -17,29 +17,27 @@ const Transaction = struct {
 };
 
 // Connect to database - creates connected! obligation
-~pub event connect { url: []const u8 }
-| connected *Connection<connected!>
+~pub event connect { url: []const u8 } -> *Connection<connected!>
 
 ~proc connect|zig {
     std.debug.print("Connecting to: {s}\n", .{url});
     const allocator = std.heap.page_allocator;
     const c = allocator.create(Connection) catch unreachable;
     c.* = Connection{ .id = 1 };
-    return .{ .connected = c };
+    return c;
 }
 
 // Start a query/transaction - creates transaction! obligation
 // The connection must be in [connected] state (required, but not consumed)
 // The connected! obligation is tracked separately and discharged by disconnect()
-~pub event query { conn: *Connection<connected>, sql: []const u8 }
-| started *Transaction<transaction!>
+~pub event query { conn: *Connection<connected>, sql: []const u8 } -> *Transaction<transaction!>
 
 ~proc query|zig {
     std.debug.print("Query: {s}\n", .{sql});
     const allocator = std.heap.page_allocator;
     const t = allocator.create(Transaction) catch unreachable;
     t.* = Transaction{ .conn = conn };
-    return .{ .started = t };
+    return t;
 }
 
 // Commit - CONSUMES transaction! obligation

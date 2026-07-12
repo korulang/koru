@@ -6,12 +6,11 @@ const File = struct {
 };
 
 // Opens a file, returns with fs:open phantom state
-~pub event open { path: []const u8 }
-| opened *File<open>
+~pub event open { path: []const u8 } -> *File<open>
 
 ~proc open|zig {
     const allocator = std.heap.page_allocator;
     const f = allocator.create(File) catch unreachable;
     f.* = File{ .handle = 42 };
-    return .{ .opened = f };
+    return f;
 }

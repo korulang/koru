@@ -9,15 +9,14 @@ const File = struct {
 };
 
 // Open a file - returns opened! state (requires cleanup)
-~pub event open { path: []const u8 }
-| opened *File<opened!>
+~pub event open { path: []const u8 } -> *File<opened!>
 
 ~proc open|zig {
     std.debug.print("Opening file: {s}\n", .{path});
     const allocator = std.heap.page_allocator;
     const f = allocator.create(File) catch unreachable;
     f.* = File{ .handle = 42 };
-    return .{ .opened = f };
+    return f;
 }
 
 // Close a file - CONSUMES opened! state (disposes the resource)

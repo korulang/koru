@@ -6,21 +6,19 @@ const std = @import("std");
 const File = struct { handle: i32 };
 
 // Open a file - returns opened! state
-~pub event open { path: []const u8 }
-| opened *File<opened!>
+~pub event open { path: []const u8 } -> *File<opened!>
 
 ~proc open|zig {
     const f = std.heap.page_allocator.create(File) catch unreachable;
     f.* = File{ .handle = 42 };
-    return .{ .opened = f };
+    return f;
 }
 
 // Lock - transition opened! -> locked!
-~pub event lock { file: *File<!opened> }
-| locked *File<locked!>
+~pub event lock { file: *File<!opened> } -> *File<locked!>
 
 ~proc lock|zig {
-    return .{ .locked = file };
+    return file;
 }
 
 // Write - requires locked state (doesn't consume)

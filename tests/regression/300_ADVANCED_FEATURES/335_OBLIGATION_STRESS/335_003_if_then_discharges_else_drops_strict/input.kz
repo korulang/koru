@@ -10,8 +10,7 @@
 ~import app/fs
 const outer_condition = true;
 const inner_condition = false;
-~app/fs:open(path: "test.txt")
-| opened f |> if(outer_condition)
+~app/fs:open(path: "test.txt"): f |> if(outer_condition)
     | then |> if(inner_condition)
         | then |> app/fs:close(file: f)
         | else |> app/fs:close(file: f)
