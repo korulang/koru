@@ -1,12 +1,12 @@
 {
-  "timestamp": "2026-07-11T23:06:42.966Z",
+  "timestamp": "2026-07-12T01:29:32.779Z",
   "summary": {
-    "passed": 282,
+    "passed": 283,
     "failed": 1,
     "skipped": 12,
     "leaked": 0,
     "compileErrors": 0,
-    "total": 295,
+    "total": 296,
     "suiteCount": 40,
     "status": "failure"
   },
@@ -285,10 +285,10 @@
     },
     {
       "name": "transform_pass_runner_tests",
-      "passed": 2,
+      "passed": 3,
       "failed": 0,
       "skipped": 0,
-      "total": 2,
+      "total": 3,
       "status": "success"
     },
     {
