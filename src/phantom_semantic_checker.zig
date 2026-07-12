@@ -1082,6 +1082,35 @@ pub const PhantomSemanticChecker = struct {
         return !has_errors;
     }
 
+    /// Register a bare-return bind (`call(...): name`) into `context`, tracking
+    /// `name` with the invoked event's `-> T<phantom>` return obligation. This is
+    /// the same recording done at the flow head (line ~1056) and for a named
+    /// branch's nested continuations (line ~1806) — factored out so an
+    /// INTERMEDIATE step in a bare-return chain (`make(): h |> t1(h): a |> ...`)
+    /// records `a` too. Without it only the flow head's bind survives, so the
+    /// second link onward reaches its consumer with no tracked obligation
+    /// (spurious KORU030). `step_module` is the call-site qualifier the step's
+    /// required-state canonicalization also uses.
+    fn recordBareReturnBind(
+        self: *PhantomSemanticChecker,
+        inv: *const ast.Invocation,
+        step_decl: *const ast.EventDecl,
+        step_module: []const u8,
+        context: *BindingContext,
+    ) anyerror!void {
+        const rb = inv.return_binding orelse return;
+        const rp = step_decl.return_phantom orelse return;
+        const canonical_phantom = try self.canonicalizePhantomState(rp, step_module);
+        defer self.allocator.free(canonical_phantom);
+        if (step_decl.return_type) |rt| {
+            const canonical_base_type = try self.canonicalizeBaseType(rt, null, step_module);
+            defer self.allocator.free(canonical_base_type);
+            try context.setWithType(rb, canonical_phantom, canonical_base_type);
+        } else {
+            try context.set(rb, canonical_phantom);
+        }
+    }
+
     fn validateContinuation(
         self: *PhantomSemanticChecker,
         cont: *const ast.Continuation,
@@ -1155,6 +1184,10 @@ pub const PhantomSemanticChecker = struct {
                     defer self.allocator.free(step_qualified);
 
                     if (event_map.get(step_qualified)) |step_event_info| {
+                        // Record this step's bare-return bind so a chained
+                        // consumer (`make(): h |> t1(h): a |> fin(h: a)`) sees `a`'s
+                        // obligation — the intermediate-step twin of the flow-head bind.
+                        try self.recordBareReturnBind(inv, step_event_info.decl, step_module, &void_context);
                         // Validate nested continuations against the step's event
                         for (cont.continuations) |*nested| {
                             const nested_valid = try self.validateContinuation(nested, step_event_info.decl, step_module, flow_module, event_map, location, &void_context, implementing_event);
@@ -1219,6 +1252,10 @@ pub const PhantomSemanticChecker = struct {
                         defer self.allocator.free(step_qualified);
 
                         if (event_map.get(step_qualified)) |step_event_info| {
+                            // Record this step's bare-return bind so a chained
+                            // consumer sees its obligation (intermediate-step twin
+                            // of the flow-head bind).
+                            try self.recordBareReturnBind(inv, step_event_info.decl, step_module, &void_chain_context);
                             // Validate nested continuations against the step's event
                             for (cont.continuations) |*nested| {
                                 const nested_valid = try self.validateContinuation(nested, step_event_info.decl, step_module, flow_module, event_map, location, &void_chain_context, implementing_event);
