@@ -162,3 +162,32 @@ test "claimed transform checks self before descendants and sees raw child invoca
     try testing.expect(outer_saw_raw_inner_invocation);
     _ = transformed;
 }
+
+test "staged transforms run pre before post, inverting deepest-first tree order" {
+    resetObservations();
+
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+    const original = try makeProgramWithNestedInvocation(allocator);
+
+    // Default (both .main) deepest-first order runs the NESTED `inner` before
+    // the root `outer` (test 1). Here we invert it purely via STAGE: `outer`
+    // is `.pre`, `inner` is `.post`. If staging works, the pre stage reaches
+    // fixed point first, so `outer` runs before `inner` — the opposite of the
+    // tree order — and `outer` observes the RAW (un-lowered) child, proving
+    // the ordering is causal, not just recorded.
+    const transforms = [_]transform_pass_runner.TransformEntry{
+        .{ .name = "inner", .stage = .post, .handler_fn = innerTransform },
+        .{ .name = "outer", .stage = .pre, .handler_fn = outerTransform },
+    };
+
+    const transformed = try transform_pass_runner.walkAndTransform(original, &transforms, allocator);
+
+    try testing.expectEqual(@as(usize, 2), observed_count);
+    try testing.expectEqualStrings("outer", observed_order[0]);
+    try testing.expectEqualStrings("inner", observed_order[1]);
+    // outer (.pre) ran before inner (.post) lowered, so it saw the raw invocation.
+    try testing.expect(!outer_saw_inner_inline);
+    _ = transformed;
+}
