@@ -52,4 +52,4 @@ const std = @import("std");
         | done c -> c
 
 // Main flow
-~test-multiline-call(): _ |> _
+~test-multiline-call()

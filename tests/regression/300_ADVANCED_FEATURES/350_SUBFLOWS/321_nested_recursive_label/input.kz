@@ -44,4 +44,4 @@
         | done-outer done_o -> done_o
 | done-outer done_o -> done_o
 
-~nested-loop(start: 0): _ |> _
+~nested-loop(start: 0)

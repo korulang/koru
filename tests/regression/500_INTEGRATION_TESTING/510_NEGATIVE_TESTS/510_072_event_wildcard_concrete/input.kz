@@ -21,4 +21,4 @@ const std = @import("std");
 ~tap(*:compute -> *)
 | Profile p |> app/test_lib/logger:log(msg: p.source)
 
-~compute(x: 42): _ |> _
+~compute(x: 42)

@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-07-12T03:12:46.013Z",
+  "timestamp": "2026-07-12T03:27:59.430Z",
   "summary": {
     "passed": 279,
     "failed": 5,
@@ -334,15 +334,15 @@
   ],
   "crashedTests": [
     {
-      "name": "parser.test.parser handles Source in event field",
-      "reason": "access of union field 'event_decl' while field 'parse_error' is active"
-    },
-    {
       "name": "purity_checker_test.test.pure proc calling no events is transitively pure",
       "reason": "access of union field 'event_decl' while field 'parse_error' is active"
     },
     {
-      "name": "full_pipeline_test.test.end-to-end with deferred events",
+      "name": "shape_checker_test.test.void event with branch constructor in inline flow should fail",
+      "reason": "access of union field 'event_decl' while field 'parse_error' is active"
+    },
+    {
+      "name": "parser.test.parser handles Source in event field",
       "reason": "access of union field 'event_decl' while field 'parse_error' is active"
     },
     {
@@ -350,7 +350,7 @@
       "reason": "access of union field 'event_decl' while field 'parse_error' is active"
     },
     {
-      "name": "shape_checker_test.test.void event with branch constructor in inline flow should fail",
+      "name": "full_pipeline_test.test.end-to-end with deferred events",
       "reason": "access of union field 'event_decl' while field 'parse_error' is active"
     }
   ]

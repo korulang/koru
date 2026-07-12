@@ -307,8 +307,7 @@ pub const FormattedText = struct {
 
 ~[norun]pub event ln.impl {
     expr: []const u8,
-}
-| line []const u8
+} -> []const u8
 
 ~proc ln|zig {
     const ast = @import("ast");

@@ -15,4 +15,4 @@
 
 ~import app/comptime_lib
 
-~[comptime] app/comptime_lib:setup(config: "test-config"): _ |> _
+~[comptime] app/comptime_lib:setup(config: "test-config")

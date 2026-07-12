@@ -25,5 +25,4 @@ const std = @import("std");
 // Chain: 10 → add-one → add-two → add-three → print result
 // Depth 3: Three nested continuations
 // Test: 10 + 1 + 2 + 3 = 16
-~add-one(value: 10): a |> add-two(value: a): b |> add-three(value: b)
-        | result c |> std/io:print.ln("{{c:d}}")
+~add-one(value: 10): a |> add-two(value: a): b |> add-three(value: b): c |> std/io:print.ln("{{c:d}}")

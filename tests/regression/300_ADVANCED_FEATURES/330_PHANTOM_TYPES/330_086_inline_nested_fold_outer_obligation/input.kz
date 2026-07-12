@@ -38,8 +38,7 @@ const Handle = struct { n: i32 };
 
 ~event spin {} -> *Handle<owned!>
 
-~spin = make(): h0 |> #oloop step(h: h0): v |> #iloop icount(c: 0)
-        | more k |> @iloop(c: k)
+~spin = make(): h0 |> #oloop step(h: h0): v |> #iloop icount(c: 0): k |> @iloop(c: k)
         | fin _ |> @oloop(h: v)
     | stop r -> r
 

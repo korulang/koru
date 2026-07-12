@@ -26,4 +26,4 @@ const std = @import("std");
 | greeted _ |> observer()
 
 // Execute hello - tap should fire on the greeted branch
-~hello(): _ |> _
+~hello()

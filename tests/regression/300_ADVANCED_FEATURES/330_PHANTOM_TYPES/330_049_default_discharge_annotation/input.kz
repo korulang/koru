@@ -17,4 +17,4 @@ const File = struct { handle: i32, dirty: bool };
     std.debug.print("flushing...\n", .{});
     std.heap.page_allocator.destroy(file);
 }
-~open(path: "test.txt"): _ |> _
+~open(path: "test.txt")

@@ -12,4 +12,4 @@ const std = @import("std");
     return "Hello!";
 }
 
-~greet(name: "Koru"): _ |> _
+~greet(name: "Koru")

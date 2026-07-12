@@ -15,4 +15,4 @@ const File = struct { handle: i32 };
 ~proc flush-close|zig {
     std.heap.page_allocator.destroy(file);
 }
-~open(path: "test.txt"): _ |> _
+~open(path: "test.txt")

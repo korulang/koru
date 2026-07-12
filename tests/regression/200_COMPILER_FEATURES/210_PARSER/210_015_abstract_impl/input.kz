@@ -39,6 +39,6 @@ const std = @import("std");
     | result r -> r
 
 // Use the implemented events
-~coordinate(ctx: 10): _ |> _
+~coordinate(ctx: 10)
 
-~process(data: 5): _ |> _
+~process(data: 5)

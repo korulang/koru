@@ -311,11 +311,10 @@ pub const Value = struct {
 // VALUE SERIALIZATION - Convert interpreter Value to JSON
 // ============================================================================
 
-~[retain]pub event value.stringify { value: Value }
-| json []const u8
+~[retain]pub event value.stringify { value: Value } -> []const u8
 
 ~proc value.stringify|zig {
-    return .{ .json = value.toJsonBuf() };
+    return value.toJsonBuf();
 }
 
 // ============================================================================

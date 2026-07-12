@@ -24,4 +24,4 @@
 ~to-fahrenheit -> c * 9.0 / 5.0 + 32.0
 
 // ERROR: `22.5` is bare — no phantom state. f32 can't satisfy f32<celsius>.
-~to-fahrenheit(c: 22.5): _ |> _
+~to-fahrenheit(c: 22.5)

@@ -25,4 +25,4 @@ const std = @import("std");
 | greeted _ |> tap-action()
 
 // Main flow that triggers the tap
-~hello(): _ |> _
+~hello()

@@ -1,4 +1,4 @@
 ~[strict]
 
 ~import app/fs
-~app/fs:open(path: "test.txt"): _ |> _
+~app/fs:open(path: "test.txt")

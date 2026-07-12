@@ -35,4 +35,4 @@ const std = @import("std");
 | greeted _ |> tap2()
 
 // Execute hello - should trigger both taps
-~hello(): _ |> _
+~hello()

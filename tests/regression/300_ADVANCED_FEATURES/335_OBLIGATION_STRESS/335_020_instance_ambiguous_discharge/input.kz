@@ -15,6 +15,6 @@
 
 ~std/string:from-page(text: "hello")
 | ok s |> std/string:take(s): owned |> std/string:append(s: owned, text: " world")
-        | ok |> std/string:read(s: owned): _ |> _
+        | ok |> std/string:read(s: owned)
         | err _ |> _
 | err _ |> _

@@ -13,4 +13,4 @@ const std = @import("std");
 
 ~event main {}
 
-~compute(x: 21): _ |> _
+~compute(x: 21)

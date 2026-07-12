@@ -13,4 +13,4 @@ const File = struct { handle: i32 };
 }
 ~event get-file { path: []const u8 } -> *File<opened!>
 ~get-file = open(path): f -> f
-~get-file(path: "test.txt"): _ |> _
+~get-file(path: "test.txt")

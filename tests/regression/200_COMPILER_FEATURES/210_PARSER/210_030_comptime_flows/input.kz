@@ -43,7 +43,7 @@ const std = @import("std");
 // Top-level comptime flows (execute during backend compilation!)
 ~[comptime] validateConventions()
 
-~[comptime] bundleAssets(dir: "assets/textures"): _ |> _
+~[comptime] bundleAssets(dir: "assets/textures")
 
 ~[comptime] preprocessMipmaps(inputDir: "assets/images")
 | ok _ |> _

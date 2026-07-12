@@ -17,7 +17,6 @@ const std = @import("std");
 ~event add-five { value: i32 } -> i32
 ~add-five -> value + 5
 
-~add-one(value: 10): a |> add-two(value: a): b |> add-three(value: b)
-        | done c |> add-four(value: c)
+~add-one(value: 10): a |> add-two(value: a): b |> add-three(value: b): c |> add-four(value: c)
             | done d |> add-five(value: d)
                 | done e |> std/io:print.ln("{{e:d}}")

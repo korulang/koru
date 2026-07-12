@@ -19,4 +19,4 @@ const std = @import("std");
 }
 
 // Use the event
-~greet(name: "hello from proc override"): _ |> _
+~greet(name: "hello from proc override")

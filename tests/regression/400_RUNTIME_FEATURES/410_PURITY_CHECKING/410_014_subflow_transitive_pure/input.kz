@@ -16,4 +16,4 @@ const std = @import("std");
 ~event main {}
 
 // Subflow dispatching pure event — should be transitively PURE
-~compute(x: 21): _ |> _
+~compute(x: 21)

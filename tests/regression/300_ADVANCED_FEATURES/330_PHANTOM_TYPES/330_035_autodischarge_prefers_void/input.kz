@@ -18,4 +18,4 @@ pub const Handle = struct {
     std.heap.page_allocator.destroy(h);
 }
 const std = @import("std");
-~open(): _ |> _
+~open()
