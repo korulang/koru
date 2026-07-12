@@ -6,3 +6,238 @@
 >
 > **Koru is greenfield.** There are no legacy users, no deprecated forms to support, no migration windows that constitute a contract. When the language changes, the change lands and tests/docs get rewritten in the same motion. If the parser temporarily accepts an older form while migration is in progress, that's internal scaffolding — not a feature. Write code in the current canonical form. Don't hedge for legacy.
 
+## Examples
+
+### 010_001_hello_world
+
+```koru
+// ============================================================================
+// VERIFIED REGRESSION TEST - DO NOT MODIFY WITHOUT DISCUSSION
+// ============================================================================
+// Test: Pure Zig code in a .kz file
+// ============================================================================
+const std = @import("std");
+
+pub fn main() void {
+    std.debug.print("Hello World\n", .{});
+}
+```
+
+**Output:**
+
+```
+Hello World
+```
+
+### 010_000_hello_world_koru
+
+```koru
+const name = "World";
+const debug = true;
+const count: i32 = 42;
+
+// Hello World in pure Koru.
+// This is the frontpage example from korulang.org.
+
+import std/io
+
+std/io:print.blk {
+    {% if debug %}[DEBUG] {% endif %}Hello, {{ name:s }}!
+    The answer is {{ count:d }}.
+}
+```
+
+**Output:**
+
+```
+[DEBUG] Hello, World!
+The answer is 42.
+```
+
+### 020_014_pure_subflow_impl
+
+```koru
+// Test: Pure subflow implementation (no proc needed)
+// From the README example - this is idiomatic Koru
+// This is the default authoring model for ordinary event behavior.
+~import std/io
+
+~event greet { name: []const u8 } -> []const u8
+
+~greet -> "Hello, " ++ name ++ "!"
+
+~greet (name: "World"): msg |> std/io:print.ln(msg)
+```
+
+**Output:**
+
+```
+Hello, World!
+```
+
+### 201_multiple_branches
+
+```koru
+// ============================================================================
+// VERIFIED REGRESSION TEST - DO NOT MODIFY WITHOUT DISCUSSION
+// ============================================================================
+// Test 007: Multiple branches in events
+// Tests that events can have multiple branches and procs can return different ones
+const std = @import("std");
+
+~event check { value: i32 }
+| positive i32
+| zero
+| negative i32
+
+~proc check|zig {
+    if (value > 0) return .{ .positive = value };
+    if (value < 0) return .{ .negative = value };
+    return .{ .zero = .{} };
+}
+
+~event handle-positive { n: i32 }
+
+~proc handle-positive|zig {
+    std.debug.print("Positive branch works: {}\n", .{n});
+}
+
+~event handle-zero {}
+
+~proc handle-zero|zig {
+    std.debug.print("Zero branch works\n", .{});
+}
+
+~event handle-negative { n: i32 }
+
+~proc handle-negative|zig {
+    std.debug.print("Negative branch works: {}\n", .{n});
+}
+
+// Test 1: Positive value (42)
+~check(value: 42)
+| positive p |> handle-positive(n: p)
+| zero |> handle-zero()
+| negative n |> handle-negative(n)
+
+// Test 2: Zero value (0)
+~check(value: 0)
+| positive p |> handle-positive(n: p)
+| zero |> handle-zero()
+| negative n |> handle-negative(n)
+
+// Test 3: Negative value (-7)
+~check(value: -7)
+| positive p |> handle-positive(n: p)
+| zero |> handle-zero()
+| negative n |> handle-negative(n)
+```
+
+**Output:**
+
+```
+Positive branch works: 42
+Zero branch works
+Negative branch works: -7
+```
+
+### 240_subflow_defines_semantics
+
+```koru
+// Test 240: subflows define branch semantics
+//
+// Branch names in Koru are inert identifiers. Their meaning — what
+// "return", "break", "continue", "ok", "north", or any other name
+// signifies — is defined by the SUBFLOWS that resolve them, not by
+// the compiler. This is the structural advantage over languages that
+// bake fixed semantics for certain names into their grammar.
+//
+// This test deliberately uses names that ARE keywords in other
+// languages (return, break, continue), to verify that the parser
+// carries no value judgment about them. If a "common mistakes from
+// other languages" trap is re-introduced at parser.zig parseStep,
+// this test fails. That is the point.
+
+~import std/io
+
+// Lower-level event: arbitrary outcome names
+~pub event step {}
+| return
+| break
+| continue
+
+~step => continue
+
+// Outer event: its own outcome vocabulary
+~pub event run {}
+| stopped
+| iterated
+
+// Subflow: `run` is satisfied by `step`, with `step`'s outcomes
+// mapped to `run`'s. The meaning of `return`, `break`, `continue`
+// lives HERE — in user code, not in the compiler.
+~run = step()
+| return => stopped
+| break => stopped
+| continue => iterated
+
+~std/io:print.ln("Testing subflow-defined semantics:")
+~run()
+| stopped |> std/io:print.ln("  stopped")
+| iterated |> std/io:print.ln("  iterated")
+```
+
+**Output:**
+
+```
+Testing subflow-defined semantics:
+  iterated
+```
+
+### 330_038_cleanup_obligation_satisfied
+
+```koru
+~import app/fs
+~app/fs:open(path: "test.txt"): f |> app/fs:close(file: f)
+```
+
+**Output:**
+
+```
+Opening file: test.txt
+Closing file
+```
+
+### 400_070_effect_branch_minimal
+
+```koru
+// Test: minimum effect-branch program — proc yields, consumer handles.
+//
+// `! pong []const u8` is an effect branch; the proc body calls `pong(msg)`
+// which transfers control to the consumer's `! pong reply |> ...` handler,
+// runs it, then returns. No terminal `|` branches — this is a void event
+// with one effect operation.
+
+~import std/io
+
+const std = @import("std");
+
+~pub event ping { msg: []const u8 }
+! pong []const u8
+
+~proc ping|zig {
+    pong(msg);
+}
+
+~ping(msg: "hello effect branches")
+! pong reply |> std/io:print.blk {
+    {{ reply:s }}
+}
+```
+
+**Output:**
+
+```
+hello effect branches
+```
+
