@@ -9,12 +9,11 @@ import std/io
 import std/fs
 import std/crypto
 
-pub event mine { key: []const u8, zeros: i64 }
-| found i64
+pub event mine { key: []const u8, zeros: i64 } -> i64
 
 mine = #search std/crypto:md5-check(key, n: 1, zeros)
 | miss v |> @search(key, n: v, zeros)
-| found r => found r
+| found r -> r
 
 std/fs:read-lines(path: "tests/regression/810_AOC_2015/810_041_day04_part1/input.txt")
 ! line k |> mine(key: k, zeros: 5)

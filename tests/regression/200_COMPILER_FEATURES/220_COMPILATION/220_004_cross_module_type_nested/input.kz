@@ -19,13 +19,12 @@ const std = @import("std");
 // This event uses a type from an explicitly imported nested module
 ~pub event grant-access {
     user_data: domain/user:DomainUser,
-}
-| granted bool
+} -> bool
 
 ~proc grant-access|zig {
     std.debug.print("Granting access: {s} as {s} (perms: {d})\n",
         .{user_data.email, user_data.role, user_data.permissions});
-    return .{ .granted = true };
+    return true;
 }
 
 // Create a domain user and grant access

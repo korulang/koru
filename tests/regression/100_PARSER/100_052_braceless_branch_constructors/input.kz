@@ -5,13 +5,11 @@
 ~import std/io
 
 // Event with value branch
-~pub event value-result {}
-| success i32
+~pub event value-result {} -> i32
 
 // Subflow impl using braceless syntax with value
-~value-result => success 42
+~value-result -> 42
 
 // Main entry point
 ~std/io:print.ln("Testing value braceless:")
-~value-result()
-| success n |> std/io:print.ln("  Got success: {{ n:d }}")
+~value-result(): n |> std/io:print.ln("  Got success: {{ n:d }}")

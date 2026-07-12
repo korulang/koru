@@ -16,8 +16,7 @@ import std/io
 import std/fs
 import std/regex
 
-pub event shop { bh: i64, bd: i64, ba: i64, want-loss: i64 }
-| gold i64
+pub event shop { bh: i64, bd: i64, ba: i64, want-loss: i64 } -> i64
 
 shop = capture { best: 9999999[i64] }
 ! as acc |> for(0..5)
@@ -29,7 +28,7 @@ shop = capture { best: 9999999[i64] }
         | done |> _
     | done |> _
 | done |> _
-| captured r => gold r.best
+| captured r -> r.best
 
 std/fs:read-lines(path: "tests/regression/810_AOC_2015/810_211_day21_part1/input.txt")
 ! line l |> std/regex:match(l)

@@ -70,12 +70,11 @@ var bin_b: Bin = .{ .items = .{ null, null, null, null }, .n = 0 };
 // The shuttle: pop one off A, push into B, loop until A drained. The obligation
 // on the popped handle is carried from `pop-a`'s issue to `push-b`'s consume each
 // iteration; the back-edge re-enters `pop-a` for the next handle.
-~event shuttle {}
-| finished i64
+~event shuttle {} -> i64
 
 ~shuttle = #loop pop-a()
 | moved v |> push-b(h: v) |> @loop()
-| drained c => finished c
+| drained c -> c
 
 ~seed(): _ |> shuttle()
     | finished _ |> free-b()

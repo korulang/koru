@@ -17,11 +17,10 @@
 const std = @import("std");
 
 // Event that returns data we reference in the loop
-~event get-params {}
-| result { count: u32, items: [5]i32 }
+~event get-params {} -> { count: u32, items: [5]i32 }
 
 ~proc get-params|zig {
-    return .{ .result = .{ .count = 3, .items = .{ 10, 20, 30, 40, 50 } } };
+    return .{ .count = 3, .items = .{ 10, 20, 30, 40, 50 } };
 }
 
 // Event to process items (void - no branches, for use inside for loop)
@@ -32,7 +31,6 @@ const std = @import("std");
 }
 
 // The critical pattern: ~for in pipeline with outer scope reference
-~get-params()
-| result p |> for(0..p.count)
+~get-params(): p |> for(0..p.count)
     ! each i |> process-item(value: p.items[i])
     | done |> std/io:print.ln("All items processed")

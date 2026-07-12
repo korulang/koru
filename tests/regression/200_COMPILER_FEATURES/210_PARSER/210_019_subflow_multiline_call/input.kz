@@ -22,40 +22,34 @@
 
 const std = @import("std");
 
-~event step-a { x: i32 }
-| done i32
+~event step-a { x: i32 } -> i32
 
 ~proc step-a|zig {
-    return .{ .done = x + 1 };
+    return x + 1;
 }
 
-~event step-b { a: i32, b: i32, c: i32 }
-| done i32
+~event step-b { a: i32, b: i32, c: i32 } -> i32
 
 ~proc step-b|zig {
-    return .{ .done = a + b + c };
+    return a + b + c;
 }
 
-~event step-c { x: i32 }
-| done i32
+~event step-c { x: i32 } -> i32
 
 ~proc step-c|zig {
-    return .{ .done = x * 2 };
+    return x * 2;
 }
 
 // This subflow should work but currently fails
-~event test-multiline-call {}
-| final i32
+~event test-multiline-call {} -> i32
 
-~test-multiline-call = step-a(x: 10)
-| done a |> step-b(
+~test-multiline-call = step-a(x: 10): a |> step-b(
     a,
     b: 20,
     c: 30
 )
     | done b |> step-c(x: b)
-        | done c => final c
+        | done c -> c
 
 // Main flow
-~test-multiline-call()
-| final _ |> _
+~test-multiline-call(): _ |> _

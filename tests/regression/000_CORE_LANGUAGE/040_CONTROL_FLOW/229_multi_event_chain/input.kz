@@ -34,8 +34,7 @@ const std = @import("std");
 }
 
 // Stage 3: Transform
-~event transform { value: i32 }
-| transformed i32
+~event transform { value: i32 } -> i32
 
 ~proc transform|zig {
     return .{ .@"transformed" = value * 2 };

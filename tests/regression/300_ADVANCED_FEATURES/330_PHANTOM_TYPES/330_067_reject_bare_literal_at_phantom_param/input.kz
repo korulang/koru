@@ -19,11 +19,9 @@
 // event whose payload is a bare-typed `f32` (no phantom). This test covers
 // the literal-at-call-site variant.
 
-~event to-fahrenheit { c: f32<celsius> }
-| result f32<fahrenheit>
+~event to-fahrenheit { c: f32<celsius> } -> f32<fahrenheit>
 
-~to-fahrenheit => result c * 9.0 / 5.0 + 32.0
+~to-fahrenheit -> c * 9.0 / 5.0 + 32.0
 
 // ERROR: `22.5` is bare — no phantom state. f32 can't satisfy f32<celsius>.
-~to-fahrenheit(c: 22.5)
-| result _ |> _
+~to-fahrenheit(c: 22.5): _ |> _

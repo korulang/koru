@@ -16,15 +16,14 @@ const std = @import("std");
     invocation: *const Invocation,
     item: *const Item,
     program: *const Program,
-}
-| transformed SiteResult
+} -> SiteResult
 
 ~proc scan-two|zig {
     const ast = @import("ast");
     const allocator = std.heap.page_allocator;
 
-    const flow = if (item.* == .flow) &item.flow else return .{ .transformed = .{} };
-    if (flow.body.continuations.len < 2) return .{ .transformed = .{} };
+    const flow = if (item.* == .flow) &item.flow else return .{};
+    if (flow.body.continuations.len < 2) return .{};
 
     const a = flow.body.continuations[0].branch;
     const b = flow.body.continuations[1].branch;
@@ -41,7 +40,7 @@ const std = @import("std");
         .module = allocator.dupe(u8, flow.module) catch unreachable,
     } };
 
-    return .{ .transformed = .{ .replacement = replacement } };
+    return .{ .replacement = replacement };
 }
 
 ~scan-two()

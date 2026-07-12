@@ -5,8 +5,7 @@ import std/io
 import std/fs
 import std/switch
 
-pub event measure { line: []const u8 }
-| counted { c: i64, m: i64 }
+pub event measure { line: []const u8 } -> { c: i64, m: i64 }
 
 measure = capture { c: 0[i64], m: 0[i64], st: 0[i64] }
 ! as a |> for(line)
@@ -24,7 +23,7 @@ measure = capture { c: 0[i64], m: 0[i64], st: 0[i64] }
                         | `\` _ |> captured { st: 2 }
                         | `"` _ |> captured { st: 5 }
                         | no-match |> captured { m: a.m + 1 }
-| captured r => counted { r.c, r.m }
+| captured r -> { r.c, r.m }
 
 capture { diff: 0[i64] }
 ! as acc |> std/fs:read-lines(path: "tests/regression/600_STDLIB/645_SWITCH/645_004_day08_switch/input.txt")

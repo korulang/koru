@@ -7,11 +7,10 @@
 ~import std/testing
 
 // Event with constant implementation (immediate branch constructor)
-~event get-config {}
-| config { timeout: u32, retries: u32 }
+~event get-config {} -> { timeout: u32, retries: u32 }
 
 // Constant implementation - always returns the same value
-~get-config => config { timeout: 30, retries: 3 }
+~get-config -> { timeout: 30, retries: 3 }
 
 // Test: NO MOCK NEEDED - constant is auto-detected and inlined!
 // Verify the constant values are correct

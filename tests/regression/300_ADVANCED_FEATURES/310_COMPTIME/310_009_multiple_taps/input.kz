@@ -6,8 +6,7 @@ const std = @import("std");
 ~import std/taps
 
 // Event with an identity branch for the taps to observe
-~event hello {}
-| greeted []const u8
+~event hello {} -> []const u8
 
 // Void observer events
 ~event tap1 {}
@@ -16,7 +15,7 @@ const std = @import("std");
 
 ~proc hello|zig {
     std.debug.print("Main flow executed\n", .{});
-    return .{ .greeted = "go" };
+    return "go";
 }
 
 ~proc tap1|zig {
@@ -36,5 +35,4 @@ const std = @import("std");
 | greeted _ |> tap2()
 
 // Execute hello - should trigger both taps
-~hello()
-| greeted _ |> _
+~hello(): _ |> _

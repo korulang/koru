@@ -9,11 +9,10 @@
 ~import std/taps
 
 // Simple event with one branch we care about
-~event ping {}
-| pong []const u8
+~event ping {} -> []const u8
 
 ~proc ping|zig {
-    return .{ .pong = "Pong!" };
+    return "Pong!";
 }
 
 // SHORTHAND: ~tap(ping) instead of ~tap(ping -> *)
@@ -21,5 +20,4 @@
 | pong _ |> std/io:print.ln("Tap observed pong")
 
 // Main flow
-~ping()
-| pong p |> std/io:print.ln(p)
+~ping(): p |> std/io:print.ln(p)

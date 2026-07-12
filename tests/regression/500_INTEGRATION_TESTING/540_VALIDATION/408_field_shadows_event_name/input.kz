@@ -6,14 +6,12 @@
 
 const std = @import("std");
 
-~event window { window: i32 }
-| success i32
+~event window { window: i32 } -> i32
 
 ~proc window|zig {
     std.debug.print("Window size: {d}\n", .{window});
-    return .{ .success = window * 2 };
+    return window * 2;
 }
 
 // Invoke the event
-~window(window: 42)
-| success _ |> _
+~window(window: 42): _ |> _

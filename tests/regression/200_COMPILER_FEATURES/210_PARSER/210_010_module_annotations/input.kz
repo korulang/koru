@@ -1,5 +1,4 @@
 ~[comptime]
 
 // Test that module annotations are captured in the AST
-~pub event test.event { value: u32 }
-| result u32
+~pub event test.event { value: u32 } -> u32

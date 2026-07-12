@@ -22,12 +22,10 @@
     return .{ .done = n };
 }
 
-~event spin {}
-| finished i64
+~event spin {} -> i64
 
 ~spin = #loop step(n: 0)
 | next v |> @loop(n: v)
-| done r => finished r
+| done r -> r
 
-~spin()
-| finished f |> std/io:print.ln("ok {{ f:d }}")
+~spin(): f |> std/io:print.ln("ok {{ f:d }}")

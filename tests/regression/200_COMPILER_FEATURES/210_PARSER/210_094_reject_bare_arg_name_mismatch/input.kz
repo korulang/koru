@@ -19,16 +19,13 @@
 
 ~import std/io
 
-~event echo { v: i32 }
-| out i32
+~event echo { v: i32 } -> i32
 
-~echo => out v
+~echo -> v
 
-~event src {}
-| got i32
+~event src {} -> i32
 
-~proc src|zig { return .{ .got = 5 }; }
+~proc src|zig { return 5; }
 
-~src()
-| got other |> echo(other)
+~src(): other |> echo(other)
     | out r |> std/io:print.ln("{{ r:d }}")

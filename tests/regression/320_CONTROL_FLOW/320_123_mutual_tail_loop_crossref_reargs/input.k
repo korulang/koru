@@ -7,21 +7,18 @@
 // (1,2) return `a` to 1; a sequential rearg would corrupt the swap and yield 2.
 import std/io
 
-pub event ping { a: i64, b: i64, n: i64 }
-| value i64
+pub event ping { a: i64, b: i64, n: i64 } -> i64
 
-pub event pong { a: i64, b: i64, n: i64 }
-| value i64
+pub event pong { a: i64, b: i64, n: i64 } -> i64
 
 ping = if(n == 0)
-| then => value a
+| then -> a
 | else |> pong(a: b, b: a, n: n - 1)
-    | value v => value v
+    | value v -> v
 
 pong = if(n == 0)
-| then => value b
+| then -> b
 | else |> ping(a: b, b: a, n: n - 1)
-    | value v => value v
+    | value v -> v
 
-ping(a: 1, b: 2, n: 2)
-| value r |> std/io:print.ln("{{ r:d }}")
+ping(a: 1, b: 2, n: 2): r |> std/io:print.ln("{{ r:d }}")

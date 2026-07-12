@@ -9,10 +9,9 @@ const HandlePool = @import("root").koru_std.koru_interpreter.HandlePool;
 var test_pool = HandlePool.init(std.heap.page_allocator);
 
 // Events with obligations
-~pub event open { path: []const u8 }
-| opened []const u8<opened!>
+~pub event open { path: []const u8 } -> []const u8<opened!>
 
-~open => opened "file_1"
+~open -> "file_1"
 
 ~pub event close { handle: []const u8<!opened> }
 

@@ -29,14 +29,13 @@ const std = @import("std");
     event_name: []const u8,
     item: *const Item,
     program: *const Program,
-}
-| transformed SiteResult
+} -> SiteResult
 
 ~proc report-status|zig {
     const ast = @import("ast");
     const allocator = std.heap.page_allocator;
 
-    const flow = if (item.* == .flow) &item.flow else return .{ .transformed = .{} };
+    const flow = if (item.* == .flow) &item.flow else return .{};
 
     const code = std.fmt.allocPrint(
         allocator,
@@ -50,7 +49,7 @@ const std = @import("std");
         .module = allocator.dupe(u8, flow.module) catch unreachable,
     } };
 
-    return .{ .transformed = .{ .replacement = replacement } };
+    return .{ .replacement = replacement };
 }
 
 ~report-status()

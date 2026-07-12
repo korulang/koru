@@ -24,11 +24,10 @@ const Entity = struct {
     id: u32,
 };
 
-~pub event test-event { e: Entity }
-| result Entity
+~pub event test-event { e: Entity } -> Entity
 
 // Identity branch syntax - result IS the Entity
-~test-event => result e
+~test-event -> e
 
 ~event print-result { e: Entity }
 ~proc print-result|zig {
@@ -37,5 +36,4 @@ const Entity = struct {
 
 const entity = Entity{ .id = 42 };
 
-~test-event(e: entity)
-| result r |> print-result(e: r)
+~test-event(e: entity): r |> print-result(e: r)

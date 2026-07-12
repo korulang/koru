@@ -16,8 +16,7 @@
 }
 
 // Result event with identity branches
-~pub event result {}
-| ok i32
+~pub event result {} -> i32
 
 // Wrapper that uses braceless constructors in continuations
 ~pub event run-test {}
@@ -27,12 +26,10 @@
 }
 
 // Subflow using braceless identity in continuation
-~event process { input: i32 }
-| result i32
+~event process { input: i32 } -> i32
 
-~process = compute(x: input): v => result v
+~process = compute(x: input): v -> v
 
 // Main test
 ~std/io:print.ln("Testing braceless in continuation:")
-~process(input: 21)
-| result r |> std/io:print.ln("  Got result: {{ r:d }}")
+~process(input: 21): r |> std/io:print.ln("  Got result: {{ r:d }}")

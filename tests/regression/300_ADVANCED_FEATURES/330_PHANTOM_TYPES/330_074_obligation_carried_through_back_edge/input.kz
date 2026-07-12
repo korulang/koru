@@ -13,7 +13,7 @@
 //   ~spin = make()              make ISSUES <owned!>  (h0)
 //   | made h0 |> #loop step(h: h0)   seed the fold with the owned handle
 //   | again v |> @loop(h: v)    back-edge carries the re-issued handle
-//   | stop  r => finished r     escapes the obligation to the outside disposer
+//   | stop  r -> r     escapes the obligation to the outside disposer
 // step CONSUMES <!owned> on input, RE-ISSUES <owned!> on each output branch.
 // `done` is the single outside disposer.
 //
@@ -48,13 +48,11 @@ const Handle = struct { n: i32 };
     std.heap.page_allocator.destroy(h);
 }
 
-~event spin {}
-| finished *Handle<owned!>
+~event spin {} -> *Handle<owned!>
 
 // Seed the fold from an ISSUING leaf, then consume-in/issue-out across @loop.
 ~spin = make(): h0 |> #loop step(h: h0)
     | again v |> @loop(h: v)
-    | stop r => finished r
+    | stop r -> r
 
-~spin()
-| finished hf |> done(h: hf)
+~spin(): hf |> done(h: hf)

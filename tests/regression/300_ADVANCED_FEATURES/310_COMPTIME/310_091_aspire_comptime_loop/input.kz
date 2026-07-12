@@ -1,10 +1,9 @@
 const std = @import("std");
 
-~[comptime] event tick { n: i64 }
-| go i64
+~[comptime] event tick { n: i64 } -> i64
 
 ~proc tick|zig {
-    return .{ .go = n };
+    return n;
 }
 
 ~[comptime] event report { v: i64 }

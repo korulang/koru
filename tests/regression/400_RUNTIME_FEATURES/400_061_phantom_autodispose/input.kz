@@ -12,15 +12,14 @@ pub const Resource = struct {
     allocator: std.mem.Allocator,
 };
 
-~pub event create-resource { name: []const u8 }
-| created *Resource<allocated!>
+~pub event create-resource { name: []const u8 } -> *Resource<allocated!>
 
 ~proc create-resource|zig {
     const alloc = std.heap.page_allocator;
     const data = std.fmt.allocPrint(alloc, "Resource: {s}", .{name}) catch unreachable;
     const res = alloc.create(Resource) catch unreachable;
     res.* = .{ .data = data, .allocator = alloc };
-    return .{ .created = res };
+    return res;
 }
 
 ~pub event destroy-resource { res: *Resource<!allocated> }
@@ -41,8 +40,7 @@ pub const Resource = struct {
 // Test: Create resource, use it, but DON'T manually destroy
 // Auto-discharge should insert destroy-resource
 ~std/io:print.ln("Test start")
-~create-resource(name: "AutoDisposed")
-| created r |> use-resource(res: r)
+~create-resource(name: "AutoDisposed"): r |> use-resource(res: r)
     // Obligation <allocated!> should trigger auto-discharge here
 
 ~std/io:print.ln("Test done")

@@ -6,12 +6,11 @@ const std = @import("std");
 
 // Event with an identity branch — taps work by observing TRANSITIONS,
 // so the event needs a real branch to fire on.
-~event hello {}
-| greeted []const u8
+~event hello {} -> []const u8
 
 ~proc hello|zig {
     std.debug.print("Main flow executed\n", .{});
-    return .{ .greeted = "go" };
+    return "go";
 }
 
 // Void observer event
@@ -26,5 +25,4 @@ const std = @import("std");
 | greeted _ |> tap-action()
 
 // Main flow that triggers the tap
-~hello()
-| greeted _ |> _
+~hello(): _ |> _

@@ -12,15 +12,14 @@
 import std/io
 import std/fs
 
-pub event count-file { path: []const u8 }
-| counted i64
+pub event count-file { path: []const u8 } -> i64
 
 count-file = capture { n: 0[i64] }
 ! as inner |> std/fs:read-lines(path)
     ! line _ |> captured { n: inner.n + 1 }
     | done _ |> _
     | failed _ |> _
-| captured r => counted r.n
+| captured r -> r.n
 
 capture { total: 0[i64], files: 0[i64] }
 ! as acc |> std/fs:read-lines(path: "tests/regression/600_STDLIB/650_FS/650_005_cell_ctx_deep_nesting/input.txt")

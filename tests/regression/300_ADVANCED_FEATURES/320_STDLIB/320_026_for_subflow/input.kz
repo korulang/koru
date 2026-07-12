@@ -7,14 +7,12 @@
 const std = @import("std");
 
 // Event that uses ~for in its implementation
-~event count-to-three {}
-| result i32
+~event count-to-three {} -> i32
 
 // Subflow implementation using ~for as the starting construct
 ~count-to-three = for(0..3)
 ! each _ |> std/io:print.ln("counting")
-| done => result 3
+| done -> 3
 
 // Main flow calls the subflow
-~count-to-three()
-| result _ |> std/io:print.ln("done")
+~count-to-three(): _ |> std/io:print.ln("done")

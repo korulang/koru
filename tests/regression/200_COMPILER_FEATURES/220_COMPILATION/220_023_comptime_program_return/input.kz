@@ -15,8 +15,7 @@ const ast_functional = @import("ast_functional");
 ~[comptime] event augment-program {
     program: *const ast.Program,
     allocator: std.mem.Allocator
-}
-| done *const ast.Program
+} -> *const ast.Program
 
 ~[comptime] proc augment-program|zig {
     // Use ast_functional to add a new item to the program
@@ -25,9 +24,9 @@ const ast_functional = @import("ast_functional");
 
     // TODO: Actually modify the program using ast_functional
     // const new_program = ast_functional.addItem(allocator, program, new_item);
-    // return .{ .done = new_program };
+    // return new_program;
 
-    return .{ .done = program };
+    return program;
 }
 
 // Invoke the augmentation — no continuations needed

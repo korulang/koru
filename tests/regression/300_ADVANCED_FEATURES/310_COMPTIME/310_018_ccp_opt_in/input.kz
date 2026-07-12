@@ -5,13 +5,11 @@
 
 const std = @import("std");
 
-~event greet { name: []const u8 }
-| greeting []const u8
+~event greet { name: []const u8 } -> []const u8
 
 ~proc greet|zig {
     std.debug.print("Hello, {s}!\n", .{name});
-    return .{ .greeting = "Hello!" };
+    return "Hello!";
 }
 
-~greet(name: "Koru")
-| greeting _ |> _
+~greet(name: "Koru"): _ |> _

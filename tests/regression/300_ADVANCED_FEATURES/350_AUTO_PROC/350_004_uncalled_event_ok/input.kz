@@ -6,8 +6,7 @@
 ~import std/io
 
 // Event with no proc and mismatched input/output - but never called
-~pub event unused-event { x: i32 }
-| result []const u8
+~pub event unused-event { x: i32 } -> []const u8
 
 // A real event that IS called
 ~pub event greet {}

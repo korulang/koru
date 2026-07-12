@@ -13,22 +13,20 @@
 const std = @import("std");
 ~import std/taps
 
-~event hello {}
-| said []const u8
+~event hello {} -> []const u8
 
-~event goodbye {}
-| said []const u8
+~event goodbye {} -> []const u8
 
 ~event observer {}
 
 ~proc hello|zig {
     std.debug.print("hello\n", .{});
-    return .{ .said = "go" };
+    return "go";
 }
 
 ~proc goodbye|zig {
     std.debug.print("goodbye\n", .{});
-    return .{ .said = "go" };
+    return "go";
 }
 
 ~proc observer|zig {
@@ -40,6 +38,5 @@ const std = @import("std");
 | said _ |> observer()
 
 // hello is top-level, goodbye is NESTED in hello's continuation
-~hello()
-| said _ |> goodbye()
+~hello(): _ |> goodbye()
     | said _ |> _

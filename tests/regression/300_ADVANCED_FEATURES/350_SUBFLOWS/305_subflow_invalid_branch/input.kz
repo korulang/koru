@@ -8,19 +8,17 @@
 const std = @import("std");
 
 // Event with only ONE branch
-~event double { value: i32 }
-| doubled i32
+~event double { value: i32 } -> i32
 
 ~proc double|zig {
-    return .{ .doubled = value * 2 };
+    return value * 2;
 }
 
 // Event to test
-~event process { input: i32 }
-| final i32
+~event process { input: i32 } -> i32
 
 // INVALID subflow: references 'tripled' branch but double event has no such branch!
 // This should fail shape checking with "Event 'double' has no branch 'tripled'"
 ~process = double(value: input)
-| doubled d => final { output: d.value }
-| tripled t => final { output: t.value }  // ERROR: 'tripled' doesn't exist!
+| doubled d -> { output: d.value }
+| tripled t -> { output: t.value }  // ERROR: 'tripled' doesn't exist!

@@ -9,22 +9,20 @@
 ~import std/io
 
 // Event that provides user data
-~event getUserData { }
-| data { name: []const u8, age: i32 }
+~event getUserData { } -> { name: []const u8, age: i32 }
 
 ~proc getUserData|zig {
-    return .{ .data = .{ .name = "Alice", .age = 42 } };
+    return .{ .name = "Alice", .age = 42 };
 }
 
 // Event that takes Source parameter for HTML rendering
-~event renderHTML { source: Source<HTML> }
-| rendered []const u8
+~event renderHTML { source: Source<HTML> } -> []const u8
 
 // Comptime proc that receives Source with captured scope
 ~proc renderHTML|zig {
     // For now, just verify syntax works and return hardcoded HTML
     // In the future, source.scope.bindings will contain the captured 'u' binding
-    return .{ .rendered = "<div>Captured binding in scope!</div>" };
+    return "<div>Captured binding in scope!</div>";
 }
 
 // Test: Source block syntax
@@ -33,5 +31,4 @@
         <h1>Module-level test</h1>
         <p>Syntax validated</p>
     </div>
-}
-| rendered h |> std/io:print.ln(h.html)
+} -> h |> std/io:print.ln(h.html)

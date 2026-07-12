@@ -8,13 +8,12 @@
 ~[comptime|transform]event capture.source {
     source: Source,
     item: *const Item
-}
-| transformed Item
+} -> Item
 
 ~proc capture.source|zig {
     // For MVP: Just return the item unchanged to prove transform machinery works
     // TODO: Actually transform the source into inline code
-    return .{ .transformed = item.* };
+    return item.*;
 }
 
 // Use explicit source parameter
@@ -22,5 +21,4 @@
 ~capture.source {
     const x = 42;
     const y = x + 1;
-}
-| transformed _ |> _
+} -> _ |> _

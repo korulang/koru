@@ -9,16 +9,14 @@
 const std = @import("std");
 
 // Abstract event WITHOUT default implementation
-~[abstract] event greet { name: []const u8 }
-| greeted []const u8
+~[abstract] event greet { name: []const u8 } -> []const u8
 
 // Provide proc implementation using module-qualified syntax
 // This should be equivalent to ~input:greet = greeted { message: name }
 ~proc input:greet {
     std.debug.print("{s}\n", .{name});
-    return .{ .greeted = name };
+    return name;
 }
 
 // Use the event
-~greet(name: "hello from proc override")
-| greeted _ |> _
+~greet(name: "hello from proc override"): _ |> _

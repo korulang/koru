@@ -11,25 +11,21 @@
 
 const std = @import("std");
 
-~[comptime|transform]event make-kiss { expr: Expression, program: *const Program, allocator: std.mem.Allocator }
-| transformed *const Program
+~[comptime|transform]event make-kiss { expr: Expression, program: *const Program, allocator: std.mem.Allocator } -> *const Program
 
 ~proc make-kiss|zig {
     std.debug.print("Captured: '{s}'\n", .{expr});
-    return .{ .transformed = program };
+    return program;
 }
 
 // Case 1: single positional Expression containing a semicolon.
 // No top-level comma => one arg => entire text captured verbatim.
-~make-kiss(Claude -> Codex; because why not)
-| transformed _ |> _
+~make-kiss(Claude -> Codex; because why not): _ |> _
 
 // Case 2: multi-part DSL using ';' as the in-Expression separator.
-~make-kiss(a -> b; c -> d; e -> f)
-| transformed _ |> _
+~make-kiss(a -> b; c -> d; e -> f): _ |> _
 
 // Case 3: nested parens with commas inside, semicolons at the top of the
 // Expression. Inner commas must be ignored (brace-counting); outer semicolons
 // are captured verbatim.
-~make-kiss(foo(x, y); bar(p, q))
-| transformed _ |> _
+~make-kiss(foo(x, y); bar(p, q)): _ |> _

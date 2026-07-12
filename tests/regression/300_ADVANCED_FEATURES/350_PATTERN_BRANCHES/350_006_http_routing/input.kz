@@ -12,13 +12,11 @@ pub const Request = struct {
     path: []const u8,
 };
 
-~pub event handle { req: Request }
-| response { status: u16, body: []const u8 }
+~pub event handle { req: Request } -> { status: u16, body: []const u8 }
 
 ~proc handle|zig {
-    return .{ .response = .{ .status = 200, .body = "ok" } };
+    return .{ .status = 200, .body = "ok" };
 }
 
 // WRONG: Zig-style struct literal in parameter value
-~handle(req: .{ .method = "GET", .path = "/health" })
-| response r |> std/io:print.ln("{{ r.body:s }}")
+~handle(req: .{ .method = "GET", .path = "/health" }): r |> std/io:print.ln("{{ r.body:s }}")

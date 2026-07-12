@@ -11,16 +11,14 @@ const std = @import("std");
 
 ~import app/test_lib/logger
 
-~event compute { x: i32 }
-| result i32
+~event compute { x: i32 } -> i32
 
 ~proc compute|zig {
-    return .{ .result = x * 2 };
+    return x * 2;
 }
 
 // Event wildcard tap observes all compute events with metatype
 ~tap(*:compute -> *)
 | Profile p |> app/test_lib/logger:log(msg: p.source)
 
-~compute(x: 42)
-| result _ |> _
+~compute(x: 42): _ |> _

@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-07-12T02:41:59.426Z",
+  "timestamp": "2026-07-12T02:45:54.233Z",
   "summary": {
     "passed": 279,
     "failed": 5,
@@ -338,10 +338,6 @@
       "reason": "access of union field 'flow' while field 'parse_error' is active"
     },
     {
-      "name": "parser.test.parser handles Source in event field",
-      "reason": "access of union field 'flow' while field 'parse_error' is active"
-    },
-    {
       "name": "purity_checker_test.test.pure proc calling no events is transitively pure",
       "reason": "access of union field 'flow' while field 'parse_error' is active"
     },
@@ -351,6 +347,10 @@
     },
     {
       "name": "shape_checker_test.test.void event with branch constructor in inline flow should fail",
+      "reason": "access of union field 'flow' while field 'parse_error' is active"
+    },
+    {
+      "name": "parser.test.parser handles Source in event field",
       "reason": "access of union field 'flow' while field 'parse_error' is active"
     }
   ]

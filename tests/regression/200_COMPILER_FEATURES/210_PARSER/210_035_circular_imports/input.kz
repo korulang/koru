@@ -12,12 +12,11 @@
 
 const std = @import("std");
 
-~pub event from-a { msg: []const u8 }
-| received []const u8
+~pub event from-a { msg: []const u8 } -> []const u8
 
 ~proc from-a|zig {
     std.debug.print("input.kz received: {s}\n", .{msg});
-    return .{ .received = msg };
+    return msg;
 }
 
 ~app/module_b:from-b(msg: "hello from input")

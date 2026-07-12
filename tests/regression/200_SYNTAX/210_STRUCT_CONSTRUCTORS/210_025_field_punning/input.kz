@@ -6,12 +6,10 @@
 
 ~import std/io
 
-~event data { x: i32, y: i32 }
-| result { x: i32, y: i32 }
+~event data { x: i32, y: i32 } -> { x: i32, y: i32 }
 
 // Explicit field names (always works)
-~data => result { x, y }
+~data -> { x, y }
 
 // Test it
-~data(x: 10, y: 20)
-| result _ |> std/io:print.ln("explicit works")
+~data(x: 10, y: 20): _ |> std/io:print.ln("explicit works")

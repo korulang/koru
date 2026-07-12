@@ -39,20 +39,17 @@ const Handle = struct { n: i32 };
     return .{ .idone = k };
 }
 
-~event inner {}
-| ifin i64
+~event inner {} -> i64
 
 ~inner = #iloop icount(k: 2)
 | imore k2 |> @iloop(k: k2)
-| idone r => ifin r
+| idone r -> r
 
-~event spin {}
-| finished *Handle<owned!>
+~event spin {} -> *Handle<owned!>
 
 ~spin = make(): h0 |> #oloop step(h: h0)
     | again v |> inner()
         | ifin _ |> @oloop(h: v)
-    | stop r => finished r
+    | stop r -> r
 
-~spin()
-| finished hf |> done(h: hf)
+~spin(): hf |> done(h: hf)

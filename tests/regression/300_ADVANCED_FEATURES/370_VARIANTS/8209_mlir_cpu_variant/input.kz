@@ -15,12 +15,11 @@
 
 ~import std/io
 
-~pub event compute { value: i32 }
-| done i32
+~pub event compute { value: i32 } -> i32
 
 // Zig fallback — always works, and defines the answer the MLIR variant must match.
 ~proc compute|zig {
-    return .{ .done = value * 2 };
+    return value * 2;
 }
 
 // MLIR implementation — opaque MLIR text body (balanced braces, like the GLSL

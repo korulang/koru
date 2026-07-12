@@ -2,11 +2,9 @@
 ~import std/fmt
 ~import std/io
 
-~event greet { name: []const u8 }
-| greeted []const u8
+~event greet { name: []const u8 } -> []const u8
 
 ~greet = std/fmt:ln("Hello, {{ name:s }}!")
-| line l => greeted l.text
+| line l -> l.text
 
-~greet(name: "World")
-| greeted g |> std/io:print.ln(g)
+~greet(name: "World"): g |> std/io:print.ln(g)

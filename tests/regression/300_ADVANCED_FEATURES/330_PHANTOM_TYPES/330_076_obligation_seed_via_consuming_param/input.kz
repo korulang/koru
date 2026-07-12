@@ -37,12 +37,11 @@ const Handle = struct { n: i32 };
 // `spin` tries to take the owned handle as a CONSUMING parameter and feed it to
 // the loop seed. The consume discharges `h` at spin's door, so `#loop step(h: h)`
 // is handed a value that carries no obligation -> KORU030.
-~event spin { h: *Handle<!owned> }
-| finished *Handle<owned!>
+~event spin { h: *Handle<!owned> } -> *Handle<owned!>
 
 ~spin = #loop step(h)
 | again v |> @loop(h: v)
-| stop r => finished r
+| stop r -> r
 
 ~event make {} -> *Handle<owned!>
 ~proc make|zig {

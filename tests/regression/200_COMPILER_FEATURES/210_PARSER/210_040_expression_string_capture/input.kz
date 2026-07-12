@@ -3,22 +3,18 @@
 
 const std = @import("std");
 
-~[comptime|transform]event test.expr { expr: Expression, program: *const Program, allocator: std.mem.Allocator }
-| transformed *const Program
+~[comptime|transform]event test.expr { expr: Expression, program: *const Program, allocator: std.mem.Allocator } -> *const Program
 
 ~proc test.expr|zig {
     std.debug.print("Captured expression: '{s}'\n", .{expr});
-    return .{ .transformed = program };
+    return program;
 }
 
 // Test 1: Simple string with comma inside
-~test.expr("Hello, world")
-| transformed _ |> _
+~test.expr("Hello, world"): _ |> _
 
 // Test 2: String with multiple commas
-~test.expr("one, two, three")
-| transformed _ |> _
+~test.expr("one, two, three"): _ |> _
 
 // Test 3: Escaped quotes - works!
-~test.expr("Hello \"world\"")
-| transformed _ |> _
+~test.expr("Hello \"world\""): _ |> _

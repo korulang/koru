@@ -3,10 +3,9 @@
 // This is the default authoring model for ordinary event behavior.
 ~import std/io
 
-~event greet { name: []const u8 }
-| greeting []const u8
+~event greet { name: []const u8 } -> []const u8
 
-~greet => greeting "Hello, " ++ name ++ "!"
+~greet -> "Hello, " ++ name ++ "!"
 
 ~greet (name: "World")
 | greeting msg |> std/io:print.ln(msg)

@@ -2,8 +2,8 @@
 //
 // A subflow whose head is a bare-return (`-> T`) event binds the produced
 // value with `:` and immediately constructs the outer event's branch from it:
-//   ~proc1 = mk(x: n): v => ok v
-// The `=> ok v` construct must survive parsing as a void-branch continuation
+//   ~proc1 = mk(x: n): v -> v
+// The `-> v` construct must survive parsing as a void-branch continuation
 // (it has no `| branch binding` wrapper — the `: v` bind moved to the head).
 // Previously the orphaned `=>` was dropped and the handler never returned.
 
@@ -13,10 +13,8 @@ const std = @import("std");
 ~event mk { x: i32 } -> i32
 ~proc mk|zig { return x * 2; }
 
-~event proc1 { n: i32 }
-| ok i32
+~event proc1 { n: i32 } -> i32
 
-~proc1 = mk(x: n): v => ok v
+~proc1 = mk(x: n): v -> v
 
-~proc1(n: 21)
-| ok r |> std/io:print.ln("result: {{ r:d }}")
+~proc1(n: 21): r |> std/io:print.ln("result: {{ r:d }}")

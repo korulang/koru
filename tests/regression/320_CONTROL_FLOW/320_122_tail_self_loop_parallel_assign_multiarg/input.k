@@ -8,13 +8,11 @@
 // Surfaced by the koru-benchmarks `nestedloop` kernel (challenge 004).
 import std/io
 
-pub event loop-k { i: i64, j: i64, k: i64, acc: i64 }
-| value i64
+pub event loop-k { i: i64, j: i64, k: i64, acc: i64 } -> i64
 
 loop-k = if(k == 0)
-| then => value acc
+| then -> acc
 | else |> loop-k(i, j, k: k - 1, acc: acc + i * j * k)
-    | value v => value v
+    | value v -> v
 
-loop-k(i: 2, j: 3, k: 4, acc: 0)
-| value r |> std/io:print.ln("{{ r:d }}")
+loop-k(i: 2, j: 3, k: 4, acc: 0): r |> std/io:print.ln("{{ r:d }}")

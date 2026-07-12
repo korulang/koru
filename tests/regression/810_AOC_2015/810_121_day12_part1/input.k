@@ -7,8 +7,7 @@
 import std/io
 import std/fs
 
-pub event sum-numbers { s: []const u8 }
-| total i64
+pub event sum-numbers { s: []const u8 } -> i64
 
 sum-numbers = capture { sum: 0[i64], num: 0[i64], sign: 1[i64], in: 0[i64] }
 ! as a |> for(s)
@@ -21,7 +20,7 @@ sum-numbers = capture { sum: 0[i64], num: 0[i64], sign: 1[i64], in: 0[i64] }
             | else |> if(ch == '-')
                 | then |> captured { sign: -1 }
                 | else |> captured { sign: 1 }
-| captured r => total (r.sum + r.sign * r.num)
+| captured r -> (r.sum + r.sign * r.num)
 
 std/fs:read-lines(path: "tests/regression/810_AOC_2015/810_121_day12_part1/input.txt")
 ! line l |> sum-numbers(s: l)

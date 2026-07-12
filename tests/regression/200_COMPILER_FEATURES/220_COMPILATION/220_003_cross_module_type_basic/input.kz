@@ -22,13 +22,12 @@ const std = @import("std");
 // KEY TEST: app/test_lib/user:User should resolve to the User struct in test_lib/user.kz
 ~pub event register-user {
     user_data: app/test_lib/user:User,
-}
-| registered bool
+} -> bool
 
 ~proc register-user|zig {
     // Print the user's information
     std.debug.print("Registering user: {s}, age {d}\n", .{user_data.name, user_data.age});
-    return .{ .registered = true };
+    return true;
 }
 
 // Create a user using the imported event

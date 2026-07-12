@@ -44,12 +44,11 @@ const Handle = struct { n: i32 };
 }
 
 // spin BORROWS the handle (untouched), runs the label-fold over a counter.
-~event spin { h: *Handle<owned> }
-| finished i32
+~event spin { h: *Handle<owned> } -> i32
 
 ~spin = #loop step(c: 0)
 | next v |> @loop(c: v)
-| done r => finished r
+| done r -> r
 
 ~make(): h0 |> spin(h: h0)
     | finished _ |> done(h: h0)

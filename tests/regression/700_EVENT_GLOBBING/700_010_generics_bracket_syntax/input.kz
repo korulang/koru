@@ -20,8 +20,7 @@
     event_name: []const u8,
     item: *const Item,
     program: *const Program,
-}
-| transformed SiteResult
+} -> SiteResult
 
 ~proc ring.*|zig {
     const std = @import("std");
@@ -37,7 +36,7 @@
 
     if (bracket_start == null or bracket_end == null) {
         // No generic params - this is fine for some ring operations
-        return .{ .transformed = .{} };
+        return .{};
     }
 
     const command = event_name[5..bracket_start.?]; // Skip "ring."
@@ -51,7 +50,7 @@
         .{ command, params_str }
     ) catch unreachable;
 
-    const flow = if (item.* == .flow) &item.flow else return .{ .transformed = .{} };
+    const flow = if (item.* == .flow) &item.flow else return .{};
 
     const inline_code_item = ast.Item{
         .inline_code = ast.InlineCode{
@@ -61,7 +60,7 @@
         },
     };
 
-    return .{ .transformed = .{ .replacement = inline_code_item } };
+    return .{ .replacement = inline_code_item };
 }
 
 // This invocation has generic params in brackets

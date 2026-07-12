@@ -16,11 +16,10 @@ const std = @import("std");
 // Event that processes a parse result - uses TYPE from std import
 ~event process-ast {
     result: std/parser:ParseResult,
-}
-| processed usize
+} -> usize
 
 ~proc process-ast|zig {
-    return .{ .processed = result.source_file.items.len };
+    return result.source_file.items.len;
 }
 
 // Event to report count

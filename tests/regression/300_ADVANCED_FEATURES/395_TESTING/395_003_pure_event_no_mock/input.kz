@@ -6,11 +6,10 @@
 ~import std/testing
 
 // Pure computation - no side effects
-~event add-numbers { a: u32, b: u32 }
-| result u32
+~event add-numbers { a: u32, b: u32 } -> u32
 
 ~[pure] proc add-numbers|zig {
-    return .{ .result = a + b };
+    return a + b;
 }
 
 // Test: Pure event called directly, no mock needed

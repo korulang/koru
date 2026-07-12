@@ -11,10 +11,9 @@
 ~import std/io
 const std = @import("std");
 
-~pub event start {}
-| created i64
+~pub event start {} -> i64
 
-~proc start|zig { return .{ .created = 5 }; }
+~proc start|zig { return 5; }
 
 ~pub event mk { x: i64 } -> i64
 ~mk -> x + 1
@@ -22,5 +21,4 @@ const std = @import("std");
 ~pub event use-it { x: i64 }
 ~proc use-it|zig { std.debug.print("got {d}\n", .{x}); }
 
-~start()
-| created c0 |> mk(x: c0): c1 |> use-it(x: c1)
+~start(): c0 |> mk(x: c0): c1 |> use-it(x: c1)

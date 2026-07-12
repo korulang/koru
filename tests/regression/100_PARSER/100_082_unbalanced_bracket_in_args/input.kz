@@ -16,8 +16,6 @@
 
 ~import std/io
 
-~pub event sum { xs: []const u8 }
-| ok i32
+~pub event sum { xs: []const u8 } -> i32
 
-~sum(xs: ]1, 2[)
-| ok n |> std/io:print.ln("got")
+~sum(xs: ]1, 2[): n |> std/io:print.ln("got")

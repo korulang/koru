@@ -7,14 +7,12 @@
 import std/io
 import std/fs
 
-pub event shout { s: []const u8 }
-| shouted []const u8
+pub event shout { s: []const u8 } -> []const u8
 
 shout = upper-stub(s)
-| upped u => shouted u
+| upped u -> u
 
-pub event upper-stub { s: []const u8 }
-| upped []const u8
+pub event upper-stub { s: []const u8 } -> []const u8
 
 capture { seen: 0[i64] }
 ! as acc |> std/fs:read-lines(path: "tests/regression/600_STDLIB/650_FS/650_006_subflow_in_effect_branch/input.txt")

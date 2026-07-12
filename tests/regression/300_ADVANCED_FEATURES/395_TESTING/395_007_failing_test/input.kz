@@ -7,17 +7,16 @@
 
 ~import std/testing
 
-~event do-thing {}
-| done u32
+~event do-thing {} -> u32
 
 ~test(This test passes) {
-    ~do-thing => done 1
+    ~do-thing -> 1
     ~do-thing()
     | done _ |> assert(true)
 }
 
 ~test(This test should fail) {
-    ~do-thing => done 1
+    ~do-thing -> 1
     ~do-thing()
     | done _ |> assert(false)
 }

@@ -6,5 +6,4 @@
 ~event process-user {
     user_data: test_lib/user:User,
     value: i32,
-}
-| done bool
+} -> bool

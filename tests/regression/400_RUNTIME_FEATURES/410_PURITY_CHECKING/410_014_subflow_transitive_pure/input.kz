@@ -7,15 +7,13 @@
 const std = @import("std");
 
 // Pure operation
-~event compute { x: i32 }
-| result i32
+~event compute { x: i32 } -> i32
 
 ~[pure] proc compute|zig {
-    return .{ .result = x * 2 };
+    return x * 2;
 }
 
 ~event main {}
 
 // Subflow dispatching pure event — should be transitively PURE
-~compute(x: 21)
-| result _ |> _
+~compute(x: 21): _ |> _

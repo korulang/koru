@@ -25,11 +25,10 @@ const std = @import("std");
 }
 
 // Event to test
-~event process { input: i32 }
-| final i32
+~event process { input: i32 } -> i32
 
 // Multi-continuation subflow: chains triple -> double -> final
-~process = triple(value: input): t |> double(value: t): d => final d
+~process = triple(value: input): t |> double(value: t): d -> d
 
 // Helper to verify and print the result
 ~event verify-and-print { value: i32 }
@@ -43,5 +42,4 @@ const std = @import("std");
 }
 
 // Test: 5 * 3 * 2 = 30
-~process(input: 5)
-| final f |> verify-and-print(value: f)
+~process(input: 5): f |> verify-and-print(value: f)

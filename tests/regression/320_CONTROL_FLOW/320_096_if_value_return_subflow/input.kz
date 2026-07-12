@@ -15,7 +15,7 @@
 // `if` is a |template| proc that emits
 // `{{ continuations["then"].continue }}` / `["else"].continue`. For the common
 // EFFECT-dispatch case (250_007) those resolve to effect calls. But when the
-// continuation is a `=>` value-return (`=> total 0`), the template mints a
+// continuation is a `=>` value-return (`-> 0`), the template mints a
 // `__koru_continue_N` marker that the Zig emitter's
 // emitInlineCodeResolvingSplices does NOT substitute in subflow-body position,
 // so the generated Zig is malformed:
@@ -41,13 +41,11 @@
 
 ~import std/io
 
-~event sum-to { n: i64 }
-| total i64
+~event sum-to { n: i64 } -> i64
 
 ~sum-to = if(n <= 0)
-| then => total 0
+| then -> 0
 | else |> sum-to(n: n - 1)
-    | total t => total t + n
+    | total t -> t + n
 
-~sum-to(n: 5)
-| total r |> std/io:print.ln("{{ r:d }}")
+~sum-to(n: 5): r |> std/io:print.ln("{{ r:d }}")

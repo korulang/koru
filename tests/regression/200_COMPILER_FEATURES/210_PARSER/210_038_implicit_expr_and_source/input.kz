@@ -13,8 +13,7 @@ const std = @import("std");
     invocation: *const Invocation,
     program: *const Program,
     allocator: std.mem.Allocator
-}
-| transformed SiteResult
+} -> SiteResult
 
 ~proc conditional.render|zig {
     // For this test, just prove we received both parameters
@@ -27,7 +26,7 @@ const std = @import("std");
     std.debug.print("Source bindings: {d}\n", .{source.scope.bindings.len});
 
     // Return program unchanged for now
-    return .{ .transformed = .{} };
+    return .{};
 }
 
 // Test: Use both implicit expression AND implicit source block
@@ -37,8 +36,7 @@ const show_greeting = true;
 ~conditional.render(show_greeting) {
     <h1>Hello World</h1>
     <p>This is conditional content</p>
-}
-| transformed _ |> _
+} -> _ |> _
 
 // Test 2: Braces inside content should NOT close the block
 // The closing } must be at base_indent or less
@@ -48,5 +46,4 @@ const show_greeting = true;
         .content { padding: 10px; }
     </style>
     <div class="header">Styled!</div>
-}
-| transformed _ |> _
+} -> _ |> _

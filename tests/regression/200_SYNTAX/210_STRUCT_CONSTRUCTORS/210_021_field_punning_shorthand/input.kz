@@ -13,11 +13,10 @@ pub const Point = struct { x: i32, y: i32 };
     return Point{ .x = x, .y = y };
 }
 
-~event use-point { p: Point }
-| result { x: i32, y: i32 }
+~event use-point { p: Point } -> { x: i32, y: i32 }
 
 // Shorthand: { p.x, p.y } should become { x: p.x, y: p.y }
-~use-point => result { p.x, p.y }
+~use-point -> { p.x, p.y }
 
 // Test it
 ~make-point(x: 10, y: 20): pt |> use-point(p: pt)

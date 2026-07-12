@@ -64,11 +64,10 @@ const allocator = std.heap.c_allocator;
 }
 
 // Factory with DIFFERENT field name than create
-~event make-resource { id: usize }
-| ready *Resource<active!>  // "resource" not "r"
+~event make-resource { id: usize } -> *Resource<active!>  // "resource" not "r"
 
 // BUG #3: f.r -> resource field name mismatch
-~make-resource = create(id): f => ready f
+~make-resource = create(id): f -> f
 
 // ============================================================
 // COMBINED TEST: Bugs #2 and #3 (void chaining is parser issue)

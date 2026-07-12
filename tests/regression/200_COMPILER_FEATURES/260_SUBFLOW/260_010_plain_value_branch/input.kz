@@ -4,17 +4,15 @@
 const std = @import("std");
 
 // Event with plain value branch (not a struct)
-~event double { n: i32 }
-| result i32
+~event double { n: i32 } -> i32
 
 // Subflow with plain value return - no field name needed!
-~double => result { n * 2 }
+~double -> { n * 2 }
 
 // Another example with expressions
-~event square { n: i32 }
-| result i32
+~event square { n: i32 } -> i32
 
-~square => result { n * n }
+~square -> { n * n }
 
 // Printer event
 ~event print-results { a: i32, b: i32 }
@@ -24,6 +22,5 @@ const std = @import("std");
 }
 
 // Main flow - chain subflows
-~double(n: 5)
-| result a |> square(n: 4)
+~double(n: 5): a |> square(n: 4)
     | result b |> print-results(a, b)

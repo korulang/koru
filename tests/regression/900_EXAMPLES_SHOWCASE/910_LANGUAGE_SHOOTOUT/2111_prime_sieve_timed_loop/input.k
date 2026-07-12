@@ -25,8 +25,7 @@ pub event tick { limit: i64, passes: i64 }
 | live { limit: i64, passes: i64 }
 | expired i64
 
-pub event run { limit: i64 }
-| total i64
+pub event run { limit: i64 } -> i64
 
 tick = if(passes < limit)
 | then => live { limit, passes }
@@ -39,10 +38,9 @@ run = #L tick(limit, passes: 0)
             | then |> std/field:mark-multiples(f, from: 2 * i * (i + 1), stride: 2 * i + 1, limit: 499999)
         | done |> std/field:free(f) |> @L(l.limit, passes: l.passes + 1)
     | err _ |> _
-| expired e => total e
+| expired e -> e
 
-run(limit: 5)
-| total n |> std/field:new(bits: 500000)
+run(limit: 5): n |> std/field:new(bits: 500000)
     | field f |> for(1..500)
         ! each i |> std/field:test(f, i): pv |> if(pv == 0)
             | then |> std/field:mark-multiples(f, from: 2 * i * (i + 1), stride: 2 * i + 1, limit: 499999)

@@ -6,10 +6,9 @@
 
 const Pos = struct { x: i64, y: i64 };
 
-~pub event locate {}
-| at { pos: Pos, label: []const u8 }
+~pub event locate {} -> { pos: Pos, label: []const u8 }
 
-~proc locate|zig { return .{ .at = .{ .pos = .{ .x = 3, .y = 7 }, .label = "home" } }; }
+~proc locate|zig { return .{ .pos = .{ .x = 3, .y = 7 }, .label = "home" }; }
 
 ~locate()
 | at { pos: { x, y }, label } |> std/io:print.ln("{{ label:s }} at {{ x:d }},{{ y:d }}")

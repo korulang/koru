@@ -29,21 +29,18 @@
 
 ~import std/io
 
-~pub event get-input {}
-| line []const u8<unsanitized!>
+~pub event get-input {} -> []const u8<unsanitized!>
 
-~get-input => line "untrusted user input"
+~get-input -> "untrusted user input"
 
 // Plain-typed echo: takes []const u8 (no phantom), returns []const u8 (no phantom).
 // No knowledge of taint — acts as an opaque non-phantom-aware gateway.
-~event echo { data: []const u8 }
-| out []const u8
+~event echo { data: []const u8 } -> []const u8
 
-~echo => out data
+~echo -> data
 
 // Pass tainted value through the echo boundary.
 // After the call, `result` has type []const u8 — taint should still be tracked
 // as an undischarged obligation, but is the checker smart enough to notice?
-~get-input()
-| line s |> echo(data: s)
+~get-input(): s |> echo(data: s)
     | out result |> std/io:print.ln("{{ result:s }}")

@@ -14,13 +14,12 @@ const std = @import("std");
 
 const Resource = struct { id: i32 };
 
-~event create {}
-| created *Resource<open!>
+~event create {} -> *Resource<open!>
 
 ~proc create|zig {
     const r = std.heap.page_allocator.create(Resource) catch unreachable;
     r.* = .{ .id = 42 };
-    return .{ .created = r };
+    return r;
 }
 
 ~event use { res: *Resource<open> }
@@ -43,8 +42,7 @@ const Resource = struct { id: i32 };
 
 // THE BUG: This flow should NOT compile!
 // The `| failed |> @loop` branch has an open obligation that is never discharged.
-~#loop create()
-| created c |> use(c.res)
+~#loop create(): c |> use(c.res)
     | ok o |> close(o.res)
     | failed _f |> @loop()  // BUG! c.res has <open!> obligation, not discharged!
 

@@ -1,6 +1,5 @@
-~event match { path: []const u8, pattern: []const u8 }
-| ok []const u8
+~event match { path: []const u8, pattern: []const u8 } -> []const u8
 
 ~test(Should fail clearly) {
-    ~match => ok { path: "/", pattern: "/" }
+    ~match -> { path: "/", pattern: "/" }
 }

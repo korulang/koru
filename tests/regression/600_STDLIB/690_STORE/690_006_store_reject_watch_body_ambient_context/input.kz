@@ -24,13 +24,11 @@
 
 ~std/store:create(game) { entities: 0[i64] }
 
-~pub event setup {}
-| ready []const u8
+~pub event setup {} -> []const u8
 
 ~proc setup|zig {
-    return .{ .ready = "local" };
+    return "local";
 }
 
-~setup()
-| ready ctx |> std/store:watch(game)
+~setup(): ctx |> std/store:watch(game)
     ! entities e |> std/io:print.ln("{{ ctx:s }}: {{ e:d }}")

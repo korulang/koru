@@ -7,8 +7,7 @@
 import std/io
 import std/fs
 
-pub event measure { line: []const u8 }
-| counted { c: i64, m: i64 }
+pub event measure { line: []const u8 } -> { c: i64, m: i64 }
 
 measure = capture { c: 0[i64], m: 0[i64], st: 0[i64] }
 ! as a |> for(line)
@@ -27,7 +26,7 @@ measure = capture { c: 0[i64], m: 0[i64], st: 0[i64] }
                         | else |> if(ch == '"')
                             | then |> captured { st: 5 }
                             | else |> captured { m: a.m + 1 }
-| captured r => counted { r.c, r.m }
+| captured r -> { r.c, r.m }
 
 capture { diff: 0[i64] }
 ! as acc |> std/fs:read-lines(path: "tests/regression/810_AOC_2015/810_081_day08_part1/input.txt")

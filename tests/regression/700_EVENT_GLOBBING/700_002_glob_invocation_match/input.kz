@@ -11,8 +11,7 @@
     expr: Expression,
     item: *const Item,
     program: *const Program,
-}
-| transformed SiteResult
+} -> SiteResult
 
 // Transform proc - replaces invocation with inline comment
 ~proc log.*|zig {
@@ -20,7 +19,7 @@
     const allocator = @import("std").heap.page_allocator;
 
     // Get the flow from the item
-    const flow = if (item.* == .flow) &item.flow else return .{ .transformed = .{} };
+    const flow = if (item.* == .flow) &item.flow else return .{};
 
     // Create inline code to replace the flow (simple comment, no keywords)
     const inline_code_item = ast.Item{
@@ -31,7 +30,7 @@
         },
     };
 
-    return .{ .transformed = .{ .replacement = inline_code_item } };
+    return .{ .replacement = inline_code_item };
 }
 
 // This invocation should match log.* glob pattern

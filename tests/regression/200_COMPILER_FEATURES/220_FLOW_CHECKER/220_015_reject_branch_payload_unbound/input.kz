@@ -8,11 +8,10 @@
 // Legal:   | ok _ |> _          — explicit discard
 // Illegal: | ok |> _            — neither bound nor discarded
 
-~event compute {}
-| ok i32
+~event compute {} -> i32
 
 ~proc compute|zig {
-    return .{ .ok = 42 };
+    return 42;
 }
 
 ~compute()

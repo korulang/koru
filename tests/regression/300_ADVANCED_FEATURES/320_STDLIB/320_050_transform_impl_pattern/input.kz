@@ -7,8 +7,7 @@ const Item = ast.Item;
     item: *const Item,
     program: *const Program,
     allocator: std.mem.Allocator
-}
-| transformed SiteResult
+} -> SiteResult
 
 ~[norun]pub event sample-impl {}
 
@@ -17,7 +16,7 @@ const Item = ast.Item;
     const flow = if (item.* == .flow)
         &item.flow
     else
-        return .{ .transformed = .{} };
+        return .{};
 
     const segments = allocator.alloc([]const u8, 1) catch unreachable;
     segments[0] = "sample-impl";
@@ -35,7 +34,7 @@ const Item = ast.Item;
         .location = flow.location,
         .module = flow.module,
     };
-    return .{ .transformed = .{ .replacement = .{ .flow = transformed_flow } } };
+    return .{ .replacement = .{ .flow = transformed_flow } };
 }
 
 ~sample-transform()

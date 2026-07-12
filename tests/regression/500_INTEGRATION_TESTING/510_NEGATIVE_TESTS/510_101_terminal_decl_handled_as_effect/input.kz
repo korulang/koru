@@ -5,8 +5,7 @@
 // dispatches with `! done`. The shape checker rejects.
 // ============================================================================
 
-~pub event compute { x: i32 }
-| done i32
+~pub event compute { x: i32 } -> i32
 
 ~compute(x: 1)
 ! done _ |> _

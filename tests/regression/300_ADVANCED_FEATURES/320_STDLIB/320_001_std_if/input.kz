@@ -33,8 +33,7 @@ const std = @import("std");
     item: *const Item,
     program: *const Program,
     allocator: std.mem.Allocator
-}
-| transformed SiteResult
+} -> SiteResult
 
 ~proc my-if|zig {
     const ast = @import("ast");
@@ -43,7 +42,7 @@ const std = @import("std");
 
     if (item.* != .flow) {
         std.debug.print("my_if transform: item is not a flow, returning unchanged\n", .{});
-        return .{ .transformed = .{} };
+        return .{};
     }
 
     const flow = &item.flow;
@@ -86,7 +85,7 @@ const std = @import("std");
     const transformed_item = ast.Item{ .flow = transformed_flow };
 
     // Site-local: hand back the replacement; the runner places it.
-    return .{ .transformed = .{ .replacement = transformed_item } };
+    return .{ .replacement = transformed_item };
 }
 
 // ============================================================================

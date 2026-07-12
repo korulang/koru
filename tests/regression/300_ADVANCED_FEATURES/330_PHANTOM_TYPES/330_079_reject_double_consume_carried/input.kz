@@ -31,12 +31,11 @@ const Handle = struct { n: i32 };
     std.heap.page_allocator.destroy(h);
 }
 
-~event spin { h: *Handle<!owned> }
-| finished *Handle<owned!>
+~event spin { h: *Handle<!owned> } -> *Handle<owned!>
 
 ~spin = #loop step(h)
 | again v |> drop(h: v) |> @loop(h: v)   // consumes v twice -> double consume
-| stop r => finished r
+| stop r -> r
 
 ~make(): h0 |> spin(h: h0)
     | finished hf |> drop(h: hf)

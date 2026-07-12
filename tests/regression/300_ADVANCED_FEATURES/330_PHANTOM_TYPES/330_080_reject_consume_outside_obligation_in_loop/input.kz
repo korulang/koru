@@ -34,12 +34,11 @@ const Handle = struct { n: i32 };
     std.debug.print("n={}\n", .{n});
 }
 
-~event spin { h: *Handle<!owned> }
-| finished i32
+~event spin { h: *Handle<!owned> } -> i32
 
 ~spin = #loop step(h)
 | again _ |> @loop(h)   // re-feeds already-consumed h -> use-after-discharge, no reissue
-| stop r => finished r
+| stop r -> r
 
 ~make(): h0 |> spin(h: h0)
     | finished f |> report(n: f)

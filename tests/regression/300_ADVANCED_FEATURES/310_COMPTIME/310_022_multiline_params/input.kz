@@ -8,12 +8,11 @@ const std = @import("std");
     first: []const u8,
     last: []const u8,
     age: u32
-}
-| greeting []const u8
+} -> []const u8
 
 ~proc greet|zig {
     std.debug.print("Hello, {s} {s} ({d})!\n", .{e.first, e.last, e.age});
-    return .{ .greeting = "Hi!" };
+    return "Hi!";
 }
 
 ~greet(

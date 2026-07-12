@@ -9,12 +9,10 @@
 ~import std/io
 
 // Event: takes a name, produces a greeting message
-~event greet { name: []const u8 }
-| greeting []const u8
+~event greet { name: []const u8 } -> []const u8
 
 // Subflow implementation: maps input directly to output
-~greet => greeting name
+~greet -> name
 
 // Test: call greet with "World" and print the resulting message
-~greet(name: "World")
-| greeting g |> std/io:print(g)
+~greet(name: "World"): g |> std/io:print(g)

@@ -33,29 +33,25 @@
 // A single-branch value-producing head — mirrors `std/time:now() -> | t`, the
 // clock read at the top of the self-timed loop. Deterministic stand-in: echoes
 // the running pass count as branch `t`.
-~pub event clock { passes: i64 }
-| t i64
+~pub event clock { passes: i64 } -> i64
 
 ~proc clock|zig {
-    return .{ .t = passes };
+    return passes;
 }
 
 ~pub event tick { limit: i64, passes: i64 }
 | live { limit: i64, passes: i64 }
 | expired i64
 
-~pub event run { limit: i64 }
-| total i64
+~pub event run { limit: i64 } -> i64
 
 // Head = value-producing `clock`; nested STEP = `~if` deciding live/expired.
-~tick = clock(passes)
-| t n |> if(n < limit)
+~tick = clock(passes): n |> if(n < limit)
     | then => live { limit, passes: n + 1 }
     | else => expired n
 
 ~run = #L tick(limit, passes: 0)
 | live l |> @L(l.limit, l.passes)
-| expired e => total e
+| expired e -> e
 
-~run(limit: 1000000)
-| total n |> std/io:print.ln("iterations: {{ n:d }}")
+~run(limit: 1000000): n |> std/io:print.ln("iterations: {{ n:d }}")

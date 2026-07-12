@@ -47,8 +47,7 @@ const Handle = struct { n: i32 };
     std.heap.page_allocator.destroy(h);
 }
 
-~event spin {}
-| finished *Handle<owned!>
+~event spin {} -> *Handle<owned!>
 
 // BUG: `| again _ |> @loop()` discards the re-issued <owned!> handle from the
 // `again` branch and re-enters the fold without carrying it across the back-edge,
@@ -56,7 +55,6 @@ const Handle = struct { n: i32 };
 // unused-binding does not fire first; this exercises the phantom-drop path.)
 ~spin = make(): h0 |> #loop step(h: h0)
     | again _ |> @loop()
-    | stop r => finished r
+    | stop r -> r
 
-~spin()
-| finished hf |> done(h: hf)
+~spin(): hf |> done(h: hf)

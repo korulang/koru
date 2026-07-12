@@ -7,15 +7,14 @@
 
 ~import std/io
 
-~pub event sum-upto { n: i64 }
-| total i64
+~pub event sum-upto { n: i64 } -> i64
 
 // Zig fallback — defines the answer.
 ~proc sum-upto|zig {
     var acc: i64 = 0;
     var i: i64 = 0;
     while (i < n) : (i += 1) acc += i;
-    return .{ .total = acc };
+    return acc;
 }
 
 // MLIR implementation — a real loop (scf.for + iter_args accumulator).

@@ -11,11 +11,10 @@
 
 const std = @import("std");
 
-~event compute { x: i32 }
-| result i32
+~event compute { x: i32 } -> i32
 
 ~proc compute|zig {
-    return .{ .result = x * 2 };
+    return x * 2;
 }
 
 // BUG: This should be a compile error!

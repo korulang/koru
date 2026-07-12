@@ -9,20 +9,18 @@
 const std = @import("std");
 
 // Base event: adds 5 to a number
-~event add-five { value: i32 }
-| result i32
+~event add-five { value: i32 } -> i32
 
 ~proc add-five|zig {
     std.debug.print("add_five: {} + 5 = {}\n", .{value, value + 5});
-    return .{ .result = value + 5 };
+    return value + 5;
 }
 
 // Subflow that calls add-five
-~event double { value: i32 }
-| result i32
+~event double { value: i32 } -> i32
 
 ~double = add-five(value)
-| result r => result r
+| result r -> r
 
 // Observer that should be called by the tap
 ~event observer {}
@@ -44,5 +42,4 @@ const std = @import("std");
 | result |> observer()
 
 // Execute the subflow - tap should fire
-~double(value: 10)
-| result r |> print-final(value: r)
+~double(value: 10): r |> print-final(value: r)

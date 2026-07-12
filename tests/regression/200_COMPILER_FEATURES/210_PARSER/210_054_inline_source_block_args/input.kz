@@ -9,11 +9,10 @@ const std = @import("std");
     invocation: *const Invocation,
     program: *const Program,
     allocator: std.mem.Allocator
-}
-| transformed *const Program
+} -> *const Program
 
 ~proc inline.source|zig {
-    return .{ .transformed = program };
+    return program;
 }
 
 ~event setup {}

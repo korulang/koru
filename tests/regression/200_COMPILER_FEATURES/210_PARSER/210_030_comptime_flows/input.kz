@@ -17,14 +17,13 @@ const std = @import("std");
 // Test 2: Comptime event with literal string parameter
 ~[comptime] event bundleAssets {
     dir: []const u8
-}
-| bundled i32
+} -> i32
 
 ~proc bundleAssets|zig {
     // Comptime asset bundling - executes during compilation
     const asset_count = dir.len; // Can operate on comptime strings
     _ = asset_count;
-    return .{ .bundled = 42 };
+    return 42;
 }
 
 // Test 3: Comptime event with error branch
@@ -44,8 +43,7 @@ const std = @import("std");
 // Top-level comptime flows (execute during backend compilation!)
 ~[comptime] validateConventions()
 
-~[comptime] bundleAssets(dir: "assets/textures")
-| bundled _ |> _
+~[comptime] bundleAssets(dir: "assets/textures"): _ |> _
 
 ~[comptime] preprocessMipmaps(inputDir: "assets/images")
 | ok _ |> _

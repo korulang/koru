@@ -11,8 +11,6 @@ const File = struct { handle: i32 };
 ~proc close|zig {
     std.debug.print("Closing file (auto-discharged)\n", .{});
 }
-~event get-file { path: []const u8 }
-| got-file *File<opened!>
-~get-file = open(path): f => got-file f
-~get-file(path: "test.txt")
-| got-file _ |> _
+~event get-file { path: []const u8 } -> *File<opened!>
+~get-file = open(path): f -> f
+~get-file(path: "test.txt"): _ |> _

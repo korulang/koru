@@ -14,8 +14,7 @@ const std = @import("std");
     item: *const Item,
     program: *const Program,
     allocator: std.mem.Allocator
-}
-| transformed SiteResult
+} -> SiteResult
 
 ~proc labeled|zig {
     const ast = @import("ast");
@@ -36,7 +35,7 @@ const std = @import("std");
         .location = flow.location,
         .module = allocator.dupe(u8, flow.module) catch unreachable,
     } };
-    return .{ .transformed = .{ .replacement = new_item } };
+    return .{ .replacement = new_item };
 }
 
 // The invocations sit nested under a noop chain on purpose: they exercise the

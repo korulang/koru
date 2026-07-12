@@ -11,28 +11,25 @@ const std = @import("std");
 ~import std/io
 
 // Base proc: adds 5 to a number
-~event add-five { value: i32 }
-| result i32
+~event add-five { value: i32 } -> i32
 
 ~proc add-five|zig {
-    return .{ .result = value + 5 };
+    return value + 5;
 }
 
 // Event that will be implemented as a subflow
-~event double { value: i32 }
-| result i32
+~event double { value: i32 } -> i32
 
 // Subflow 1: double calls add-five and passes through the result
 ~double = add-five(value)
-| result r => result r
+| result r -> r
 
 // Event that will call the subflow
-~event process { input: i32 }
-| final i32
+~event process { input: i32 } -> i32
 
 // Subflow 2: process calls double (which is itself a subflow)
 ~process = double(value: input)
-| result r => final r
+| result r -> r
 
 // Helper to print i32
 ~event print-result { value: i32 }
@@ -44,5 +41,4 @@ const std = @import("std");
 // Test: 21 + 5 = 26
 // Chain: process (subflow) → double (subflow) → add-five (proc)
 // This tests that a subflow can call another subflow successfully
-~process(input: 21)
-| final f |> print-result(value: f)
+~process(input: 21): f |> print-result(value: f)

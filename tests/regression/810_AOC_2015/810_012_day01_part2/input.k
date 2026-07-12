@@ -7,8 +7,7 @@
 import std/io
 import std/fs
 
-pub event basement-pos { moves: []const u8 }
-| at i64
+pub event basement-pos { moves: []const u8 } -> i64
 
 basement-pos = capture { floor: 0[i64], idx: 0[i64], pos: 0[i64] }
 ! as acc |> for(moves)
@@ -17,7 +16,7 @@ basement-pos = capture { floor: 0[i64], idx: 0[i64], pos: 0[i64] }
         | else |> captured { floor: acc.floor - 1 } |> if(acc.floor == -1 and acc.pos == 0)
             | then |> captured { pos: acc.idx }
             | else |> _
-| captured r => at r.pos
+| captured r -> r.pos
 
 std/fs:read-lines(path: "tests/regression/810_AOC_2015/810_012_day01_part2/input.txt")
 ! line l |> basement-pos(moves: l)

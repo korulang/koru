@@ -11,10 +11,8 @@
 
 ~import std/io
 
-~pub event get-input {}
-| line []const u8<unsanitized!>
+~pub event get-input {} -> []const u8<unsanitized!>
 
-~get-input => line "user input data"
+~get-input -> "user input data"
 
-~get-input()
-| line s |> std/io:print.ln(s)
+~get-input(): s |> std/io:print.ln(s)

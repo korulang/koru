@@ -14,12 +14,10 @@ const Context = struct {
 };
 
 // Abstract event with multiple contexts
-~[comptime|abstract] event process { allocator: std.mem.Allocator }
-| done u32
+~[comptime|abstract] event process { allocator: std.mem.Allocator } -> u32
 
 // Step 1: Create contexts
-~[comptime] event setup {}
-| ready { c0: Context, c1: Context, c2: Context }
+~[comptime] event setup {} -> { c0: Context, c1: Context, c2: Context }
 
 ~proc setup|zig {
     return .{ .ready = .{
@@ -30,24 +28,21 @@ const Context = struct {
 }
 
 // Step 2: Process array of contexts
-~[comptime] event consume { contexts: []const Context }
-| consumed u32
+~[comptime] event consume { contexts: []const Context } -> u32
 
 ~proc consume|zig {
     std.debug.print("[COMPTIME] Processing {} contexts\n", .{contexts.len});
-    return .{ .consumed = @intCast(contexts.len) };
+    return @intCast(contexts.len);
 }
 
 // THE KEY TEST: Subflow implementation with array literal
 // This syntax (`~process = ...`) creates a subflow_impl
 // Array literals inside subflow_impl flows emit incorrectly
-~process = setup()
-| ready r |> consume(contexts: [r.c0, r.c1, r.c2])
-    | consumed c => done c
+~process = setup(): r |> consume(contexts: [r.c0, r.c1, r.c2])
+    | consumed c -> c
 
 // Trigger the flow
-~process(allocator: std.heap.page_allocator)
-| done d |> report(count: d)
+~process(allocator: std.heap.page_allocator): d |> report(count: d)
 
 ~[comptime] event report { count: u32 }
 

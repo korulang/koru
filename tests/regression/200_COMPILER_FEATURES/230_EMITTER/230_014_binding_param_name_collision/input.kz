@@ -11,11 +11,9 @@
 
 ~import std/io
 
-~event echo { v: i32 }
-| out i32
+~event echo { v: i32 } -> i32
 
-~echo => out v
+~echo -> v
 
-~echo(v: 5)
-| out v |> echo(v)
+~echo(v: 5): v |> echo(v)
     | out r |> std/io:print.ln("{{ r:d }}")
