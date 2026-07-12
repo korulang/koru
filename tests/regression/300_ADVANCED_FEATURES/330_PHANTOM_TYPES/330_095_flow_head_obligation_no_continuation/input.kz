@@ -1,0 +1,17 @@
+// Pins (RED): a flow-head bare-return obligation in a continuation-less flow
+// must not silently leak. `~make(): _` (or `: h`) issues <owned!> and nothing
+// discharges it — auto-discharge should insert dispose() at flow exit, exactly
+// as it does for a nested bind (330_094). Today the head path (auto_discharge
+// _inserter.zig ~679) records the obligation but the flow-exit discharge never
+// fires when flow.body.continuations is empty: `: _` compiles and leaks
+// silently, `: h` leaks as a Zig unused-const. Either the head auto-discharges
+// (this expected output) or it is a clean KORU030 — never a silent leak or a
+// raw Zig error. Ruling pending.
+const std = @import("std");
+const Handle = struct { n: i32 };
+~event make {} -> *Handle<owned!>
+~proc make|zig { const h = std.heap.page_allocator.create(Handle) catch unreachable; h.* = .{ .n = 5 }; return h; }
+~event dispose { h: *Handle<!owned> }
+~proc dispose|zig { std.debug.print("disposed n={}\n", .{h.n}); std.heap.page_allocator.destroy(h); }
+
+~make(): _

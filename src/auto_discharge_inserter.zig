@@ -852,6 +852,50 @@ pub const AutoDischargeInserter = struct {
             }
         }
 
+        // Handle discard on a bare-return bind (`call(...): _`) — the flat-form
+        // twin of the `| tag _ |>` branch discard above. A bind that carries an
+        // obligation is never a true discard: the obligation must be discharged,
+        // and the inserted discharge needs a referenceable name — otherwise
+        // `close(conn: _)` leaks an unusable `_` into generated Zig. Synthesize a
+        // real name exactly like the branch case. Only fires when the invoked
+        // event's return carries a phantom obligation; a plain `: _` with no
+        // obligation stays a genuine discard (`_ = handler(...)`).
+        if (mode == .full) {
+            if (cont.node) |node| {
+                if (node == .invocation) {
+                    if (node.invocation.return_binding) |rb| {
+                        if (std.mem.eql(u8, rb, "_")) {
+                            const inv_name = try self.pathToString(node.invocation.path);
+                            defer self.allocator.free(inv_name);
+                            const inv_mod = node.invocation.path.module_qualifier orelse module_name;
+                            const inv_qual = try std.fmt.allocPrint(self.allocator, "{s}:{s}", .{ inv_mod, inv_name });
+                            defer self.allocator.free(inv_qual);
+                            const carries_obligation = if (self.event_map.get(inv_qual)) |info|
+                                info.decl.return_phantom != null
+                            else
+                                false;
+                            if (carries_obligation) {
+                                const synthetic_name = try self.generateSyntheticBinding();
+                                const new_cont = try self.cloneContinuationWithReturnBinding(cont, synthetic_name);
+                                const new_flow = try self.replaceContinuationAnywhere(flow, cont, new_cont.*);
+                                const new_program = try ast_functional.replaceFlowRecursive(
+                                    self.allocator,
+                                    program,
+                                    flow,
+                                    .{ .flow = new_flow },
+                                ) orelse {
+                                    return .{ .transformed = false, .program = program };
+                                };
+                                const result_ptr = try self.allocator.create(ast.Program);
+                                result_ptr.* = new_program;
+                                return .{ .transformed = true, .program = result_ptr };
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // Add bindings from this branch
         if (cont.binding) |binding_name| {
             // Find the branch in the event declaration
@@ -2914,6 +2958,28 @@ pub const AutoDischargeInserter = struct {
         new_cont.* = cont.*;
         // Override just the binding
         new_cont.binding = try self.allocator.dupe(u8, new_binding);
+        return new_cont;
+    }
+
+    /// Clone a continuation, overriding the bare-return bind on its invocation
+    /// node (`call(...): _` → `call(...): _auto_N`). The bare-return twin of
+    /// cloneContinuationWithBinding: the discard lives in the node's
+    /// return_binding, not cont.binding, so a `: _` on an obligation-carrying
+    /// return needs a referenceable name for the inserted discharge.
+    fn cloneContinuationWithReturnBinding(
+        self: *AutoDischargeInserter,
+        cont: *const ast.Continuation,
+        new_binding: []const u8,
+    ) !*const ast.Continuation {
+        const new_cont = try self.allocator.create(ast.Continuation);
+        new_cont.* = cont.*;
+        if (cont.node) |node| {
+            if (node == .invocation) {
+                var new_inv = node.invocation;
+                new_inv.return_binding = try self.allocator.dupe(u8, new_binding);
+                new_cont.node = ast.Node{ .invocation = new_inv };
+            }
+        }
         return new_cont;
     }
 

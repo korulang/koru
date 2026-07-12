@@ -40,3 +40,33 @@ transaction cluster and the wider KORU030 burn-down class, whose consumers
 convert branch-form → bind-form once the compiler threads the obligation.
 Relates to [[frag-comptime-obligation-discipline]] and the escape-driven
 stack-allocation reasoning (obligation = lifetime proof).
+
+## Discard is mechanical too: `: _` == `| _ |>`
+
+Lars sharpened the rule 2026-07-12: the migration is *completely mechanical* —
+"different syntax and different code generation for the exact same concept."
+So a DISCARDED obligation-carrying return behaves identically in both
+spellings. The old `| committed _ |> _` branch discard auto-discharged the
+dropped payload; therefore `tx.commit(...): _` must auto-discharge the dropped
+`<active!>` connection the same way. There is no design fork — a `: _` that
+leaks or errors is a codegen bug, not a question.
+
+Root cause + fix (auto_discharge_inserter.zig): the inserter already
+synthesized a real name for a `cont.binding == "_"` branch discard (so the
+inserted discharge has something to reference), but only checked
+`cont.binding` — the bare-return discard lives in the node's
+`return_binding`, so `: _` was left as a literal `_`, and the synthesized
+`close(conn: _)` leaked an unusable `_` into Zig.
+`cloneContinuationWithReturnBinding` + a trigger mirroring the branch case
+(fires only when the return carries an obligation; a plain `: _` stays a
+genuine discard) materialize `_` → `_auto_N`. Pinned 330_094 (nested discard,
+green).
+
+OPEN (pinned red 330_095, ruling pending): a flow-head obligation in a
+CONTINUATION-LESS flow is never discharged — `~make(): _` leaks silently,
+`~make(): h` leaks as a Zig unused-const. The head path records the obligation
+(inserter ~679) but the flow-exit discharge never fires when
+`flow.body.continuations` is empty. Mechanical equivalence says it should
+auto-discharge at flow exit like the nested case — OR be a clean KORU030
+"not discharged", never a silent leak or raw Zig error. Distinct, deeper
+change than the discard rename.
