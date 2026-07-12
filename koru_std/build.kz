@@ -377,8 +377,7 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
 //           | failed e |> std/io:println("Tests failed: " ++ e)
 //       | failed e |> std/io:println("Lint failed: " ++ e)
 
-~[comptime|norun]pub event command { name: []const u8, description: []const u8 }
-| execute [][]const u8
+~[comptime|norun]pub event command { name: []const u8, description: []const u8 } -> [][]const u8
 
 // ============================================================================
 // BUILD STEPS - Declarative Build Pipeline with Dependencies
@@ -460,8 +459,7 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
 ~[comptime]pub event collect {
     ctx: koru_compiler_types.CompilerContext,
     output_path: []const u8
-}
-| collected koru_compiler_types.CompilerContext
+} -> koru_compiler_types.CompilerContext
 
 ~proc collect|zig {
     // Extract nested fields from ctx (auto-destructuring only works for top-level event params)
@@ -565,5 +563,5 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
     var updated_ctx = ctx;
     updated_ctx.passes_completed += 1;
 
-    return .{ .collected = updated_ctx };
+    return updated_ctx;
 }

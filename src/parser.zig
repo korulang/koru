@@ -1978,6 +1978,28 @@ pub const Parser = struct {
             return error.ParseError;
         }
 
+        // Reject single PAYLOAD-carrying TERMINAL branch (210_131, the
+        // single-return form — fork ruled 2026-07-11, no exemptions): a lone
+        // `| value T` lowers to a one-variant tag union — a tag plus double
+        // data movement for a value with exactly ONE shape. One branch is
+        // never the right shape: zero outputs => void event, one output =>
+        // a bare return `-> T`, two-or-more => a real tagged union. Panic
+        // (`| ?!`) and deferred (`| &`) lone branches are not value returns
+        // and stay legal.
+        if (branches.items.len == 1 and branches.items[0].kind == .terminal and
+            !branches.items[0].is_panic and !branches.items[0].is_deferred and
+            (branches.items[0].payload.fields.len > 0 or branches.items[0].payload.is_wildcard))
+        {
+            try self.reporter.addError(
+                .PARSE003,
+                event_line_index + 1,
+                1,
+                "single continuation branch '{s}' carrying a payload is a one-variant tag union — declare the single output as a bare return instead: `-> <type>`",
+                .{branches.items[0].name},
+            );
+            return error.ParseError;
+        }
+
         // Copy annotations verbatim — comptime is explicit, never synthesized.
         var annotations_copy = try self.allocator.alloc([]const u8, all_annotations.items.len);
         for (all_annotations.items, 0..) |ann, i| {
