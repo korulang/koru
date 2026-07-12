@@ -18,25 +18,51 @@ parser stack"). Repetition dissolves into terminals or rule recursion. The
 library invents vocabulary (events), never grammar shape — the same resolution
 as the constructor's Redis walk: verbs are events, not a DSL.
 
-**The one structural novelty a parser forces: named rules with branch bodies —
-and the frontend already parses it (settled by building, 2026-07-12).** The
-`! rule <name>` region form needs ZERO new syntax: `! rule value` parses as an
-effect arm whose binding is the rule name, and its nested arms are the
-alternatives (verified via --ast-canon). **Sequencing settled as NESTED arms**
-(each level = "then consume") — this supersedes the sketch's `|>`-chain lean:
-nesting is corpus-parseable today and dodges the bare-`value()` resolution
-problem entirely; the chain form remains a possible later sugar, unruled.
-Cut-1 semantics: pure PEG (sibling backtracking, whole-input consumption),
-furthest-failure line/col errors, left recursion rejected at comptime by name.
-Green: 641_001 (recursive flagship, v=42), 641_002 (error contract),
-641_003 (left-recursion wall).
+**The surface RATIFIED on the 2026-07-12 walk (supersedes this frag's earlier
+nested-arm claim, which Lars ruled an invalid AST shape — see the doctrine
+below): a grammar is a PROTOCOL, not a DSL.** Rules are effect arms binding a
+CURSOR (`! value v`); each rule's body is ORDINARY CODE whose common picker
+is the EXPLICIT `std/parser:match(v)` — branches must hang off a thing that
+PICKS, never off a binding. The `->` arms of a match are **PATTERNED RETURNS**
+(Lars's coinage): the input selects which value the rule produces — the
+patterned-branch twin of the effect-resume arm, where the "SOMETHING that
+brings the flow to an arm" is the match testing the input instead of a callee
+choosing a resume. Sequence is the chain: `sub(<rule>): v` demands a
+sub-rule, `lit("...")` consumes a literal (plain text, not regex). Because
+the picker is explicit code it is NOT privileged — a rule body may be ANY
+code (table dispatch, comptime-loaded data); the comptime codegen is a
+PARTIAL EVALUATION of the static match-shape, and a non-static picker is a
+loud wall, never a silent misparse. Cut-1 semantics: pure PEG backtracking,
+whole-input consumption, furthest-failure line/col errors, comptime
+left-recursion rejection. Green: 641_001/002/003.
 
-**Two toolchain gaps the arc surfaced and closed (the instrument working):**
+**Doctrine earned the hard way (the nested-arm mistake): a transform may only
+consume shapes the language has RULED, never shapes the parser merely
+tolerates.** Cut-1's first sequencing spelling nested bodiless `|` arms under
+`|` arms — parseable (flow_parser nests purely by indentation) but senseless:
+a `|` continuation off NOTHING. Ruled invalid; the wall + MUST_FAIL pin make
+the parser reject it. Effect arms keep exactly one aligned resume level
+(210_134 pins flat, 400_133 pins the flow-site use).
+
+**`[with]` RULED (Lars, same walk): scoped vocabulary resolution.** A
+`[with]` annotation on a region invocation lets the resolver check the
+invoked module for otherwise-UNRESOLVED events in the flow's immediate
+lexical subtree — `match(v)`, `sub(value)`, `lit("]")` bare. Unresolved-only
+(never shadows), multiple `[with]`s allowed, ambiguity forces an explicit
+pick (the keyword-implementation precedent). Boundary doctrine: full
+qualification stays the default everywhere; scoped resolution is the region
+privilege (dense vocabulary + greppable region head + canon printer renders
+qualified). Roadmap-red pin until the resolver feature lands.
+
+**Toolchain gaps the arc surfaced and closed (the instrument working):**
 1. The regex engine had NO escape support — no metachar was matchable
    literally in any pattern; std/parser's first terminal (`\[`) found it.
 2. KORU100's transform-deferral only covered bindings whose own node invokes
    a transform — data-arms of a transform-ROOT flow (rule names) were flagged
    unused; no corpus flow had that shape until the grammar region.
+3. The emitter's inline-body effect bridge synthesized Handlers structs from
+   transform-consumed arms and tried to alias wildcard decl branches
+   (`const * = Handlers_0.*` — a pattern is not a name).
 
 Rulings from the walk (Lars, 2026-07-12):
 - **`std/parser` lives in koru_std**, not koru-libs — transforms must import
