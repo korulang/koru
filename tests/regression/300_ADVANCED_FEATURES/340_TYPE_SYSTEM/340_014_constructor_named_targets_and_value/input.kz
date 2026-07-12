@@ -1,0 +1,38 @@
+// DESIGN PIN (red roadmap marker) — the constructor's NEXT arc, from the
+// 2026-07-12 design walk. Today's constructor (340_010-013) is a one-cell proof
+// of concept: `push(x)` appends to a single ANONYMOUS collection. That is LESS
+// expressive than `capture`, which already names its accumulators
+// (`captured { total, count }`). This pin encodes the two moves that generalize it.
+//
+// (1) NAMED PUSH TARGETS — `push(nodes: x)` accumulates into a NAMED collection, so a
+//     constructor's cell is a RECORD of named collections. The unification: `capture`
+//     and the constructor are the SAME construct — a record of named accumulators —
+//     capture's FOLD to scalars, the constructor's COLLECT into lists. A record of
+//     named collections is already enough for arbitrary structure (graph = nodes +
+//     edges, tree, adjacency). `push(x)` is just the degenerate one-field case.
+//
+// (2) CONSTRUCTOR AS A VALUE — `| constructor c` hands back the RECIPE, unmaterialized;
+//     `std/constructor:construct(c): built` materializes it explicitly. Separating
+//     "describe how to build" from "build it" makes constructors first-class comptime
+//     values you can pass, NEST (push a constructor as an element -> trees), and
+//     COMPOSE before cooking. `| constructed built` becomes sugar for this. The KIND
+//     moves from the header to the construct call — construct(c) -> a list,
+//     construct:struct(c) -> a type, construct(c) -> std/types:emit -> emitted code.
+//     ONE recipe, MANY materializations.
+//
+// WHY THIS IS THE RIGHT DIRECTION: a constructor-as-a-value needs a REIFIED comptime
+// representation of the recipe — which is exactly the Koru-level type registry the
+// baton parked as the north star. This arc drags the registry from "someday" into
+// the critical path; "dissolve immediately to Zig @Type" stops being enough the
+// moment a recipe is a value you can hold before constructing.
+//
+// Surface PROVISIONAL — a design sketch, honest-red until the language can express it.
+
+~import std/constructor
+~import std/io
+
+~std/constructor(graph)
+! construct |> for(1..4)
+    ! each x |> std/constructor:push(nodes: x)
+| constructor c |> std/constructor:construct(c): built |> for(built.nodes)
+    ! each n |> std/io:print.ln("node={{ n:d }}")

@@ -54,29 +54,6 @@ std/io:print.blk {
 The answer is 42.
 ```
 
-### 020_014_pure_subflow_impl
-
-```koru
-// Test: Pure subflow implementation (no proc needed)
-// From the README example - this is idiomatic Koru
-// This is the default authoring model for ordinary event behavior.
-~import std/io
-
-~event greet { name: []const u8 }
-| greeting []const u8
-
-~greet => greeting "Hello, " ++ name ++ "!"
-
-~greet (name: "World")
-| greeting msg |> std/io:print.ln(msg)
-```
-
-**Output:**
-
-```
-Hello, World!
-```
-
 ### 201_multiple_branches
 
 ```koru
@@ -194,21 +171,6 @@ Negative branch works: -7
 ```
 Testing subflow-defined semantics:
   iterated
-```
-
-### 330_038_cleanup_obligation_satisfied
-
-```koru
-~import app/fs
-~app/fs:open(path: "test.txt")
-| opened f |> app/fs:close(file: f)
-```
-
-**Output:**
-
-```
-Opening file: test.txt
-Closing file
 ```
 
 ### 400_070_effect_branch_minimal
