@@ -215,12 +215,33 @@ const std = @import("std");
         return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
     }
     const cc = construct_cont.?;
-    var range: []const u8 = "";
+
+    // The `! construct` SOURCE is a traversal event — iteration is emergent, not an
+    // iterator fed to a loop. Two sources today: `for(range)` (GENERATION over a
+    // range) and `fields-of(Type)` (CONSUMPTION — reflection over an existing type's
+    // fields). Read which, and its argument.
+    var source_seg: []const u8 = "for";
+    var source_arg: []const u8 = "";
     if (cc.node) |n| {
-        if (n == .invocation and n.invocation.args.len > 0) range = n.invocation.args[0].value;
+        if (n == .invocation) {
+            const segs = n.invocation.path.segments;
+            if (segs.len > 0) source_seg = segs[segs.len - 1];
+            if (n.invocation.args.len > 0) source_arg = n.invocation.args[0].value;
+        }
     }
+    const is_reflect = std.mem.eql(u8, source_seg, "fields-of");
+
+    // The Zig iterable. A `for` yields its range verbatim; `fields-of(T)` yields T's
+    // fields via `@typeInfo` — Zig is the registry for a lowered type (round one; the
+    // Koru-level type registry is the north star, not this pin).
+    const iterable = if (is_reflect)
+        std.fmt.allocPrint(allocator, "@typeInfo({s}).@\"struct\".fields", .{source_arg}) catch unreachable
+    else
+        source_arg;
+
+    // Read the loop var and the `field(name, type)` spec from the nested `! each`.
     var loop_var: []const u8 = "__it";
-    var name_tmpl: []const u8 = "";
+    var name_val: []const u8 = "";
     var field_type: []const u8 = "";
     for (cc.continuations) |*ec| {
         if (std.mem.eql(u8, ec.branch, "each")) {
@@ -228,7 +249,7 @@ const std = @import("std");
             if (ec.node) |pn| {
                 if (pn == .invocation) {
                     for (pn.invocation.args) |arg| {
-                        if (std.mem.eql(u8, arg.name, "name")) name_tmpl = arg.value;
+                        if (std.mem.eql(u8, arg.name, "name")) name_val = arg.value;
                         if (std.mem.eql(u8, arg.name, "type")) field_type = arg.value;
                     }
                 }
@@ -236,33 +257,43 @@ const std = @import("std");
         }
     }
 
-    // The name arg arrives as a quoted string literal (`"v{i}"`); strip the quotes to
-    // the interior template, then translate the `{<loop_var>}` placeholder into a
-    // `comptimePrint` `{d}` slot fed by the loop var. A template with no placeholder
-    // becomes a static comptimePrint.
-    var tmpl = name_tmpl;
-    if (tmpl.len >= 2 and tmpl[0] == '"' and tmpl[tmpl.len - 1] == '"') tmpl = tmpl[1 .. tmpl.len - 1];
-    const placeholder = std.fmt.allocPrint(allocator, "{{{s}}}", .{loop_var}) catch unreachable; // "{i}"
-    const fmt_buf = std.mem.replaceOwned(u8, allocator, tmpl, placeholder, "{d}") catch unreachable;
+    // The field NAME is either a quoted projection TEMPLATE (`"v{i}"` → comptimePrint
+    // over the loop var, translating the `{<loop_var>}` placeholder to a `{d}` slot)
+    // or a bare EXPRESSION (`f.name` from a reflected field), used verbatim.
+    const name_is_template = name_val.len >= 2 and name_val[0] == '"' and name_val[name_val.len - 1] == '"';
+    var fmt_buf: []const u8 = "";
+    if (name_is_template) {
+        const tmpl = name_val[1 .. name_val.len - 1];
+        const placeholder = std.fmt.allocPrint(allocator, "{{{s}}}", .{loop_var}) catch unreachable; // "{i}"
+        fmt_buf = std.mem.replaceOwned(u8, allocator, tmpl, placeholder, "{d}") catch unreachable;
+    }
 
     // --- Build the top-level type declaration: a comptime block that grows a
-    //     StructField array over the range and @Type-builds the struct. ---
+    //     StructField array over the source and @Type-builds the struct. ---
     var p = std.ArrayList(u8).initCapacity(allocator, 512) catch unreachable;
     p.appendSlice(allocator, "const ") catch unreachable;
     p.appendSlice(allocator, type_name) catch unreachable;
     p.appendSlice(allocator, " = __sblk: {\n") catch unreachable;
     p.appendSlice(allocator, "    var __fields: []const @import(\"std\").builtin.Type.StructField = &.{};\n") catch unreachable;
     p.appendSlice(allocator, "    for (") catch unreachable;
-    p.appendSlice(allocator, range) catch unreachable;
+    p.appendSlice(allocator, iterable) catch unreachable;
     p.appendSlice(allocator, ") |") catch unreachable;
     p.appendSlice(allocator, loop_var) catch unreachable;
     p.appendSlice(allocator, "| {\n") catch unreachable;
-    p.appendSlice(allocator, "        const __nm = @import(\"std\").fmt.comptimePrint(\"") catch unreachable;
-    p.appendSlice(allocator, fmt_buf) catch unreachable;
-    p.appendSlice(allocator, "\", .{") catch unreachable;
-    p.appendSlice(allocator, loop_var) catch unreachable;
-    p.appendSlice(allocator, "});\n") catch unreachable;
-    p.appendSlice(allocator, "        __fields = __fields ++ .{@import(\"std\").builtin.Type.StructField{ .name = __nm, .type = ") catch unreachable;
+    // The name reference: a template lowers to a comptimePrint local; an expression
+    // is spliced directly.
+    var name_ref: []const u8 = name_val;
+    if (name_is_template) {
+        p.appendSlice(allocator, "        const __nm = @import(\"std\").fmt.comptimePrint(\"") catch unreachable;
+        p.appendSlice(allocator, fmt_buf) catch unreachable;
+        p.appendSlice(allocator, "\", .{") catch unreachable;
+        p.appendSlice(allocator, loop_var) catch unreachable;
+        p.appendSlice(allocator, "});\n") catch unreachable;
+        name_ref = "__nm";
+    }
+    p.appendSlice(allocator, "        __fields = __fields ++ .{@import(\"std\").builtin.Type.StructField{ .name = ") catch unreachable;
+    p.appendSlice(allocator, name_ref) catch unreachable;
+    p.appendSlice(allocator, ", .type = ") catch unreachable;
     p.appendSlice(allocator, field_type) catch unreachable;
     p.appendSlice(allocator, ", .default_value_ptr = null, .is_comptime = false, .alignment = @alignOf(") catch unreachable;
     p.appendSlice(allocator, field_type) catch unreachable;

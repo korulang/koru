@@ -40,6 +40,15 @@ const std = @import("std");
 // [pub] - emits `pub const Name = struct { ... }`
 // [soa] - (future) emits struct-of-arrays layout
 // [packed] - (future) emits packed struct
+// `fields-of(T)` — a comptime traversal SOURCE over an existing type's fields.
+// Iteration is EMERGENT: like `~for`, it pulses `! each f` (each `f` a reflected
+// field, `.name` / `.type`) rather than handing an iterator to a loop. Round one is
+// consumed by std/constructor's struct terminal (lowered to Zig `@typeInfo`); a
+// standalone lowering — `fields-of` traversing outside a constructor — is the later
+// generalization, and the surface where Koru-level type reflection eventually lands.
+~[comptime]pub event fields-of { expr: Expression }
+! each *
+
 ~[keyword|comptime|transform]pub event struct {
     expr: Expression,
     source: Source,

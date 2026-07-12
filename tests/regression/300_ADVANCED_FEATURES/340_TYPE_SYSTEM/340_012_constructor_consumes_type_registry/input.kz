@@ -1,6 +1,8 @@
 // PINS: the constructor's CONSUMPTION path — deriving a NEW struct type from an
-// EXISTING type's fields. `for(fields-of(Player))` reflects Player's fields and
-// `field(name: f.name, type: f.type)` rebuilds each into PlayerSnapshot. Round one
+// EXISTING type's fields. `std/types:fields-of(Player)` is a comptime traversal
+// SOURCE (emergent iteration, like ~for — it pulses `! each f` over Player's fields,
+// not an iterator fed to a loop); `field(f.name, f.type)` rebuilds each into
+// PlayerSnapshot. Round
 // reads the fields via Zig `@typeInfo` in the lowered code — NO registry (generation
 // AND consumption both lower to `@Type`; Zig is the registry for a lowered type). A
 // Koru-level type registry — reasoning about type SHAPE at Stage C, before Zig — is
@@ -18,7 +20,7 @@ const std = @import("std");
 }
 
 ~std/constructor:struct(PlayerSnapshot)
-! construct |> for(fields-of(Player))
+! construct |> std/types:fields-of(Player)
     ! each f |> std/constructor:field(f.name, f.type)
 
 ~event main {}
