@@ -1,0 +1,211 @@
+// Parser Wrapper - Koru Events for Parser Zig Library
+// ====================================================
+// Makes the Zig parser available as Koru events at RUNTIME.
+//
+// Usage:
+//   ~import std/koru
+//   ~std/koru:parse.source(source: code, file-name: "test.kz", allocator: allocator)
+//   | parsed p |> use(p.ast)
+//   | parse-error e |> handle(e.message)
+//
+// This enables:
+//   - REPLs that parse and execute Koru at runtime
+//   - Wire protocols that accept Koru as input
+//   - Dynamic code loading and evaluation
+//   - AI agents that can parse and understand Koru
+
+~import std/build
+
+const std = @import("std");
+const parser_impl = @import("parser");
+const ast_serializer = @import("ast_serializer");
+
+// Re-export types for use with module:Type syntax
+// Usage: ~event my_event { result: std/koru:ParseResult }
+pub const ParseResult = parser_impl.ParseResult;
+
+// =============================================================================
+// BUILD REQUIREMENTS - Include parser module in output binary
+// =============================================================================
+// When user code imports std/koru, these requirements are collected
+// and the parser module (with all its dependencies) is included in the
+// final executable's build.zig.
+
+~std/build:requires {
+    const REL_TO_ROOT = "${REL_TO_ROOT}";
+
+    // Errors module - error reporting
+    const errors_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/errors.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+
+    // Log module - compiler logging (controlled by --debug/--verbose)
+    const log_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/log.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+
+    // AST module - core AST data structures
+    const ast_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/ast.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    ast_module.addImport("errors", errors_module);
+
+    // Lexer module - tokenization
+    const lexer_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/lexer.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+
+    // Type registry - type metadata tracking
+    const type_registry_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/type_registry.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    type_registry_module.addImport("ast", ast_module);
+    type_registry_module.addImport("log", log_module);
+
+    // Expression parser
+    const expression_parser_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/expression_parser.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    expression_parser_module.addImport("lexer", lexer_module);
+    expression_parser_module.addImport("ast", ast_module);
+
+    // Union collector
+    const union_collector_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/union_collector.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    union_collector_module.addImport("ast", ast_module);
+
+    // Config module - project configuration
+    const config_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/config.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    config_module.addImport("log", log_module);
+
+    // File types module - canonical Koru extension list + helpers
+    const file_types_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/file_types.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+
+    // Module resolver - resolves import paths
+    const module_resolver_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/module_resolver.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    module_resolver_module.addImport("config", config_module);
+    module_resolver_module.addImport("log", log_module);
+    module_resolver_module.addImport("file_types", file_types_module);
+
+    // Parse-time name normalizer (kebab -> snake). Shares ast_module for type identity.
+    const ast_mangle_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/ast_mangle.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    ast_mangle_module.addImport("ast", ast_module);
+
+    // Annotation parser - block-entry delimiting + parametrized annotation queries
+    const annotation_parser_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/annotation_parser.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+
+    // Parser module - the main parser with all its dependencies
+    const parser_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/parser.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    parser_module.addImport("ast", ast_module);
+    parser_module.addImport("ast_mangle", ast_mangle_module);
+    parser_module.addImport("lexer", lexer_module);
+    parser_module.addImport("errors", errors_module);
+    parser_module.addImport("type_registry", type_registry_module);
+    parser_module.addImport("expression_parser", expression_parser_module);
+    parser_module.addImport("annotation_parser", annotation_parser_module);
+    parser_module.addImport("union_collector", union_collector_module);
+    parser_module.addImport("module_resolver", module_resolver_module);
+    parser_module.addImport("file_types", file_types_module);
+
+    // AST Serializer module - JSON serialization of AST
+    const ast_serializer_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/ast_serializer.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    ast_serializer_module.addImport("ast", ast_module);
+    ast_serializer_module.addImport("parser", parser_module);
+    ast_serializer_module.addImport("log", log_module);
+
+    // Add modules to the executable
+    exe.root_module.addImport("parser", parser_module);
+    exe.root_module.addImport("ast_serializer", ast_serializer_module);
+}
+
+// =============================================================================
+// PARSER EVENTS
+// =============================================================================
+
+// Parse Koru source code into AST
+~pub event parse.source {
+    source: []const u8,
+    file_name: []const u8,
+    allocator: std.mem.Allocator
+}
+| parsed parser_impl.ParseResult
+| parse-error []const u8
+
+~proc parse.source|zig {
+    // Initialize parser (empty compiler flags, no resolver for standalone parsing)
+    var p = parser_impl.Parser.init(allocator, source, file_name, &[_][]const u8{}, null) catch |err| {
+        return .{ .parse_error = @errorName(err) };
+    };
+    defer p.deinit();
+
+    // Parse the source
+    const result = p.parse() catch |err| {
+        return .{ .parse_error = @errorName(err) };
+    };
+
+    return .{ .parsed = result };
+}
+
+// Serialize AST to JSON string
+~pub event dump.ast {
+    ast: parser_impl.ParseResult,
+    allocator: std.mem.Allocator
+}
+| dumped []const u8
+| dump-error []const u8
+
+~proc dump.ast|zig {
+    var serializer = ast_serializer.AstSerializer.init(allocator) catch |err| {
+        return .{ .dump_error = @errorName(err) };
+    };
+    defer serializer.deinit();
+
+    const json = serializer.serializeToJson(&ast.source_file) catch |err| {
+        return .{ .dump_error = @errorName(err) };
+    };
+
+    return .{ .dumped = json };
+}

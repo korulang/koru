@@ -5,7 +5,7 @@
 //
 // Pure Koru - no Zig procs needed!
 
-~import std/parser
+~import std/koru
 ~import std/io
 
 const std = @import("std");
@@ -16,8 +16,8 @@ const SAMPLE =
 ;
 
 // Flow: parse → dump → print (pure Koru!)
-~std/parser:parse.source(source: SAMPLE, file_name: "test.kz", allocator: std.heap.page_allocator)
-| parsed p |> std/parser:dump.ast(ast: p, allocator: std.heap.page_allocator)
+~std/koru:parse.source(source: SAMPLE, file_name: "test.kz", allocator: std.heap.page_allocator)
+| parsed p |> std/koru:dump.ast(ast: p, allocator: std.heap.page_allocator)
     | dumped d |> std/io:print.ln("{{d:s}}")
     | dump-error e |> std/io:print.ln("Dump error: {{e:s}}")
 | parse-error e |> std/io:print.ln("Parse error: {{e:s}}")

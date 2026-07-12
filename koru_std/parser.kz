@@ -1,211 +1,430 @@
-// Parser Wrapper - Koru Events for Parser Zig Library
-// ====================================================
-// Makes the Zig parser available as Koru events at RUNTIME.
-//
-// Usage:
-//   ~import std/parser
-//   ~std/parser:parse.source(source: code, file-name: "test.kz", allocator: allocator)
-//   | parsed p |> use(p.ast)
-//   | parse-error e |> handle(e.message)
-//
-// This enables:
-//   - REPLs that parse and execute Koru at runtime
-//   - Wire protocols that accept Koru as input
-//   - Dynamic code loading and evaluation
-//   - AI agents that can parse and understand Koru
+~[comptime]
 
-~import std/build
+// Koru Standard Library: Parser — compile-time PEG parsing as CONTROL FLOW.
+// The regex idiom (std/regex) lifted one level: where a regex pattern is a
+// branch, a GRAMMAR is a region of named rules whose alternatives are branches.
+// PEG's two combinators are the two glyphs — ordered choice = sibling arms
+// (first match wins, the regex-match semantics), sequence = NESTED arms (each
+// level = "then consume"). Terminals are regex patterns, compiled at COMPILE
+// TIME to anchored longest-prefix DFA matchers (src/regex_engine.zig) —
+// linear-time, zero backtracking inside a terminal, ReDoS-immune.
+//
+//   ~std/parser:grammar(nums)
+//   ! rule value
+//       | `-?[0-9]+` n -> n            // terminal alternative: pattern, bind, produce
+//       | array a -> a                 // rule-reference alternative
+//   ! rule array
+//       | `\[` _                       // sequence: consume `[`,
+//           | value v                  //   then rule value,
+//               | `\]` _ -> v          //   then `]`; produce v
+//
+//   ~std/parser:parse(input, grammar: nums)
+//   | value v |> use(v)                // the top rule's produce
+//   | parse-error { line, col, expected, found } |> report(...)
+//
+// Semantics (cut 1): pure PEG — ordered choice with backtracking between
+// sibling alternatives; the parse must consume the WHOLE input. Errors carry
+// the FURTHEST failure position (line/col computed by newline count at the
+// splice) plus what was expected there. Left recursion is rejected loudly at
+// compile time with the right-recursive rewrite named. Rule alternatives
+// produce `-> <expr>` (any expression over the path's bindings, as text
+// slices) or default to the alternative's consumed span. Values are text
+// slices ([]const u8) in cut 1 — typed conversion is the regex groups story
+// and lands with it. Scannerless: terminals match at the current offset;
+// compose std/regex:scan in front when a token stream is wanted.
+//
+// A grammar declaration emits NOTHING — the `grammar` transform neutralizes
+// its flow (rules stay readable in the AST for `parse` sites, exempted from
+// structural checks via is_transformed_subtree). Each `parse` site generates
+// its own specialized parser: prefix matchers per distinct terminal + one
+// recursive-descent fn per rule + a dispatch splice. Dispatch mirrors regex
+// `match`: `//@koru:inline_stmt` routes the emitter's statement path, and
+// `__koru_inline_<idx>` markers hand off to the branch bodies.
 
 const std = @import("std");
-const parser_impl = @import("parser");
-const ast_serializer = @import("ast_serializer");
 
-// Re-export types for use with module:Type syntax
-// Usage: ~event my_event { result: std/parser:ParseResult }
-pub const ParseResult = parser_impl.ParseResult;
+// The grammar declaration: a region of `! rule <name>` arms. Rules are data,
+// not behavior — the event exists so the region parses as an ordinary flow
+// and so the shape checker has a contract for the arms.
+~[comptime|transform]pub event grammar { expr: Expression }
+! rule *
 
-// =============================================================================
-// BUILD REQUIREMENTS - Include parser module in output binary
-// =============================================================================
-// When user code imports std/parser, these requirements are collected
-// and the parser module (with all its dependencies) is included in the
-// final executable's build.zig.
+// The parse site: dispatches on the named top rule's success, or parse-error.
+~[comptime|transform]pub event parse { expr: Expression, grammar: Expression }
+| `*` *
+| ?parse-error { line: usize, col: usize, expected: []const u8, found: []const u8 }
 
-~std/build:requires {
-    const REL_TO_ROOT = "${REL_TO_ROOT}";
+~[transform]proc grammar|zig {
+    const ast = @import("ast");
 
-    // Errors module - error reporting
-    const errors_module = b.createModule(.{
-        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/errors.zig" },
-        .target = target,
-        .optimize = optimize,
-    });
+    if (item.* != .flow) @panic("std/parser grammar transform: containing item is not a flow - walker dispatch contract broken");
+    const flow = &item.flow;
 
-    // Log module - compiler logging (controlled by --debug/--verbose)
-    const log_module = b.createModule(.{
-        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/log.zig" },
-        .target = target,
-        .optimize = optimize,
-    });
+    if (invocation.args.len == 0) {
+        const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"std/parser:grammar requires a name: grammar(<name>)\"); }}", .{}) catch unreachable;
+        return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+    }
 
-    // AST module - core AST data structures
-    const ast_module = b.createModule(.{
-        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/ast.zig" },
-        .target = target,
-        .optimize = optimize,
-    });
-    ast_module.addImport("errors", errors_module);
+    // Validate the region: every arm is `! rule <name>`.
+    for (flow.body.continuations) |c| {
+        if (!std.mem.eql(u8, c.branch, "rule")) {
+            const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"std/parser:grammar region takes only `! rule <name>` arms, found `{s}`\"); }}", .{c.branch}) catch unreachable;
+            return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+        }
+        if (c.kind != .effect) {
+            const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"std/parser:grammar rules are effect arms: spell it `! rule <name>`\"); }}", .{}) catch unreachable;
+            return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+        }
+        if (c.binding == null) {
+            const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"std/parser:grammar rule needs a name: `! rule <name>`\"); }}", .{}) catch unreachable;
+            return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+        }
+    }
 
-    // Lexer module - tokenization
-    const lexer_module = b.createModule(.{
-        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/lexer.zig" },
-        .target = target,
-        .optimize = optimize,
-    });
+    // Neutralize: the region declares rules, it does not run. Keep the
+    // continuations (parse sites read them from the program AST) but flag the
+    // subtree transformed so structural checkers skip the rule arms, and make
+    // the emitted statement an empty block.
+    const new_anns = allocator.alloc([]const u8, flow.inv().annotations.len + 1) catch unreachable;
+    for (flow.inv().annotations, 0..) |an, k| new_anns[k] = an;
+    new_anns[flow.inv().annotations.len] = allocator.dupe(u8, "@pass_ran(\"transform\")") catch unreachable;
 
-    // Type registry - type metadata tracking
-    const type_registry_module = b.createModule(.{
-        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/type_registry.zig" },
-        .target = target,
-        .optimize = optimize,
-    });
-    type_registry_module.addImport("ast", ast_module);
-    type_registry_module.addImport("log", log_module);
-
-    // Expression parser
-    const expression_parser_module = b.createModule(.{
-        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/expression_parser.zig" },
-        .target = target,
-        .optimize = optimize,
-    });
-    expression_parser_module.addImport("lexer", lexer_module);
-    expression_parser_module.addImport("ast", ast_module);
-
-    // Union collector
-    const union_collector_module = b.createModule(.{
-        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/union_collector.zig" },
-        .target = target,
-        .optimize = optimize,
-    });
-    union_collector_module.addImport("ast", ast_module);
-
-    // Config module - project configuration
-    const config_module = b.createModule(.{
-        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/config.zig" },
-        .target = target,
-        .optimize = optimize,
-    });
-    config_module.addImport("log", log_module);
-
-    // File types module - canonical Koru extension list + helpers
-    const file_types_module = b.createModule(.{
-        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/file_types.zig" },
-        .target = target,
-        .optimize = optimize,
-    });
-
-    // Module resolver - resolves import paths
-    const module_resolver_module = b.createModule(.{
-        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/module_resolver.zig" },
-        .target = target,
-        .optimize = optimize,
-    });
-    module_resolver_module.addImport("config", config_module);
-    module_resolver_module.addImport("log", log_module);
-    module_resolver_module.addImport("file_types", file_types_module);
-
-    // Parse-time name normalizer (kebab -> snake). Shares ast_module for type identity.
-    const ast_mangle_module = b.createModule(.{
-        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/ast_mangle.zig" },
-        .target = target,
-        .optimize = optimize,
-    });
-    ast_mangle_module.addImport("ast", ast_module);
-
-    // Annotation parser - block-entry delimiting + parametrized annotation queries
-    const annotation_parser_module = b.createModule(.{
-        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/annotation_parser.zig" },
-        .target = target,
-        .optimize = optimize,
-    });
-
-    // Parser module - the main parser with all its dependencies
-    const parser_module = b.createModule(.{
-        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/parser.zig" },
-        .target = target,
-        .optimize = optimize,
-    });
-    parser_module.addImport("ast", ast_module);
-    parser_module.addImport("ast_mangle", ast_mangle_module);
-    parser_module.addImport("lexer", lexer_module);
-    parser_module.addImport("errors", errors_module);
-    parser_module.addImport("type_registry", type_registry_module);
-    parser_module.addImport("expression_parser", expression_parser_module);
-    parser_module.addImport("annotation_parser", annotation_parser_module);
-    parser_module.addImport("union_collector", union_collector_module);
-    parser_module.addImport("module_resolver", module_resolver_module);
-    parser_module.addImport("file_types", file_types_module);
-
-    // AST Serializer module - JSON serialization of AST
-    const ast_serializer_module = b.createModule(.{
-        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/ast_serializer.zig" },
-        .target = target,
-        .optimize = optimize,
-    });
-    ast_serializer_module.addImport("ast", ast_module);
-    ast_serializer_module.addImport("parser", parser_module);
-    ast_serializer_module.addImport("log", log_module);
-
-    // Add modules to the executable
-    exe.root_module.addImport("parser", parser_module);
-    exe.root_module.addImport("ast_serializer", ast_serializer_module);
-}
-
-// =============================================================================
-// PARSER EVENTS
-// =============================================================================
-
-// Parse Koru source code into AST
-~pub event parse.source {
-    source: []const u8,
-    file_name: []const u8,
-    allocator: std.mem.Allocator
-}
-| parsed parser_impl.ParseResult
-| parse-error []const u8
-
-~proc parse.source|zig {
-    // Initialize parser (empty compiler flags, no resolver for standalone parsing)
-    var p = parser_impl.Parser.init(allocator, source, file_name, &[_][]const u8{}, null) catch |err| {
-        return .{ .parse_error = @errorName(err) };
-    };
-    defer p.deinit();
-
-    // Parse the source
-    const result = p.parse() catch |err| {
-        return .{ .parse_error = @errorName(err) };
+    const new_inv = ast.Invocation{
+        .path = flow.inv().path,
+        .args = flow.inv().args,
+        .annotations = new_anns,
+        .inserted_by_tap = flow.inv().inserted_by_tap,
+        .from_opaque_tap = flow.inv().from_opaque_tap,
     };
 
-    return .{ .parsed = result };
+    const kept = allocator.alloc(ast.Continuation, flow.body.continuations.len) catch unreachable;
+    for (flow.body.continuations, 0..) |c, k| {
+        kept[k] = c;
+        kept[k].is_transformed_subtree = true;
+    }
+
+    var new_flow = flow.*;
+    new_flow.body = ast.rootSite(new_inv, kept, flow.location);
+    new_flow.inline_body = allocator.dupe(u8, "//@koru:inline_stmt\n{}") catch unreachable;
+
+    return .{ .transformed = .{ .replacement = ast.Item{ .flow = new_flow } } };
 }
 
-// Serialize AST to JSON string
-~pub event dump.ast {
-    ast: parser_impl.ParseResult,
-    allocator: std.mem.Allocator
-}
-| dumped []const u8
-| dump-error []const u8
+~[transform]proc parse|zig {
+    const ast = @import("ast");
 
-~proc dump.ast|zig {
-    var serializer = ast_serializer.AstSerializer.init(allocator) catch |err| {
-        return .{ .dump_error = @errorName(err) };
+    // All pure helpers live in a container so they can recurse; it re-imports
+    // what it needs (fn-scope containers cannot reach fn-scope consts).
+    const H = struct {
+        const std2 = @import("std");
+        const ast2 = @import("ast");
+        const regex = @import("regex_engine");
+
+        const Ctx = struct {
+            a: std2.mem.Allocator,
+            sfx: []const u8, // site-unique suffix
+            rules: []const ast2.Continuation, // the `! rule` arms
+            matchers: *std2.ArrayList(u8), // emitted top-level fns
+            pats: *std2.ArrayList([]const u8), // distinct terminal patterns (index = matcher id)
+            label_n: *usize, // unique Zig block labels
+            fail: *?[]const u8, // first validation failure, as a @compileError body
+        };
+
+        fn zigEscape(a: std2.mem.Allocator, s: []const u8) []const u8 {
+            var out = std2.ArrayList(u8){};
+            for (s) |ch| {
+                switch (ch) {
+                    '"' => out.appendSlice(a, "\\\"") catch unreachable,
+                    '\\' => out.appendSlice(a, "\\\\") catch unreachable,
+                    '\n' => out.appendSlice(a, "\\n") catch unreachable,
+                    '\r' => out.appendSlice(a, "\\r") catch unreachable,
+                    '\t' => out.appendSlice(a, "\\t") catch unreachable,
+                    else => out.append(a, ch) catch unreachable,
+                }
+            }
+            return out.toOwnedSlice(a) catch unreachable;
+        }
+
+        fn sanitize(a: std2.mem.Allocator, s: []const u8) []const u8 {
+            const out = a.dupe(u8, s) catch unreachable;
+            for (out) |*ch| {
+                if (!((ch.* >= 'a' and ch.* <= 'z') or (ch.* >= 'A' and ch.* <= 'Z') or (ch.* >= '0' and ch.* <= '9'))) ch.* = '_';
+            }
+            return out;
+        }
+
+        fn findRule(rules: []const ast2.Continuation, name: []const u8) ?*const ast2.Continuation {
+            for (rules) |*r| {
+                if (r.binding) |b| {
+                    if (std2.mem.eql(u8, b, name)) return r;
+                }
+            }
+            return null;
+        }
+
+        fn setFail(ctx: *const Ctx, msg: []const u8) void {
+            if (ctx.fail.* == null) ctx.fail.* = msg;
+        }
+
+        /// Matcher id for a terminal pattern, compiling it on first sight.
+        fn matcherFor(ctx: *const Ctx, pattern: []const u8) usize {
+            for (ctx.pats.items, 0..) |p, i| {
+                if (std2.mem.eql(u8, p, pattern)) return i;
+            }
+            const id = ctx.pats.items.len;
+            ctx.pats.append(ctx.a, pattern) catch unreachable;
+            const fn_name = std2.fmt.allocPrint(ctx.a, "__koru_pt_{s}_{d}", .{ ctx.sfx, id }) catch unreachable;
+            const src = regex.compilePrefixToZig(ctx.a, pattern, fn_name) catch |err| {
+                setFail(ctx, std2.fmt.allocPrint(ctx.a, "std/parser: cannot compile terminal `{s}`: {s}", .{ zigEscape(ctx.a, pattern), @errorName(err) }) catch unreachable);
+                return id;
+            };
+            ctx.matchers.appendSlice(ctx.a, src) catch unreachable;
+            ctx.matchers.appendSlice(ctx.a, "\n") catch unreachable;
+            return id;
+        }
+
+        /// Leftmost-cycle check: can `name` recurse into itself without
+        /// consuming input? Walks first elements of every alternative.
+        fn leftRecurses(rules: []const ast2.Continuation, cont: *const ast2.Continuation, target: []const u8, visited: *std2.ArrayList([]const u8), a: std2.mem.Allocator) bool {
+            for (cont.continuations) |alt| {
+                if (findRule(rules, alt.branch)) |sub| {
+                    const sub_name = sub.binding.?;
+                    if (std2.mem.eql(u8, sub_name, target)) return true;
+                    var seen = false;
+                    for (visited.items) |v| {
+                        if (std2.mem.eql(u8, v, sub_name)) seen = true;
+                    }
+                    if (!seen) {
+                        visited.append(a, sub_name) catch unreachable;
+                        if (leftRecurses(rules, sub, target, visited, a)) return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        /// Emit the ordered-choice attempt over sibling arms at one level.
+        /// Every success path RETURNS, so falling out the bottom = all failed.
+        fn genChoice(ctx: *const Ctx, buf: *std2.ArrayList(u8), arms: []const ast2.Continuation) void {
+            const cp = ctx.label_n.*;
+            ctx.label_n.* += 1;
+            const w = std2.fmt.allocPrint(ctx.a, "const __cp{d} = __p;\n", .{cp}) catch unreachable;
+            buf.appendSlice(ctx.a, w) catch unreachable;
+            for (arms) |*arm| {
+                const rst = std2.fmt.allocPrint(ctx.a, "__p = __cp{d};\n", .{cp}) catch unreachable;
+                buf.appendSlice(ctx.a, rst) catch unreachable;
+                genElement(ctx, buf, arm);
+            }
+        }
+
+        /// Emit one element: match it at __p, bind, then descend (children
+        /// choice) or produce (leaf). Failure records the furthest-failure
+        /// slot and falls through to the next sibling.
+        fn genElement(ctx: *const Ctx, buf: *std2.ArrayList(u8), arm: *const ast2.Continuation) void {
+            if (arm.kind != .terminal) {
+                setFail(ctx, std2.fmt.allocPrint(ctx.a, "std/parser: rule alternatives are `|` arms (`!` has no meaning inside a rule)", .{}) catch unreachable);
+                return;
+            }
+            if (arm.destructure.len > 0) {
+                setFail(ctx, std2.fmt.allocPrint(ctx.a, "std/parser: destructure inside a rule waits on typed captures (cut 2) — bind the span", .{}) catch unreachable);
+                return;
+            }
+            const k = ctx.label_n.*;
+            ctx.label_n.* += 1;
+
+            const is_rule = findRule(ctx.rules, arm.branch) != null;
+            if (is_rule) {
+                const rn = sanitize(ctx.a, arm.branch);
+                const head = std2.fmt.allocPrint(ctx.a, "if (__koru_pr_{s}_{s}(input, __p, __err)) |__r{d}| {{\n", .{ ctx.sfx, rn, k }) catch unreachable;
+                buf.appendSlice(ctx.a, head) catch unreachable;
+                bindAndDescend(ctx, buf, arm, std2.fmt.allocPrint(ctx.a, "__r{d}.val", .{k}) catch unreachable, std2.fmt.allocPrint(ctx.a, "__r{d}.end", .{k}) catch unreachable);
+                const tail = std2.fmt.allocPrint(ctx.a, "}} else {{ if (__err.expected.len == 0 or __p > __err.pos) {{ __err.pos = __p; __err.expected = \"{s}\"; }} }}\n", .{zigEscape(ctx.a, arm.branch)}) catch unreachable;
+                buf.appendSlice(ctx.a, tail) catch unreachable;
+            } else {
+                const id = matcherFor(ctx, arm.branch);
+                const head = std2.fmt.allocPrint(ctx.a, "if (__koru_pt_{s}_{d}(input, __p)) |__e{d}| {{\n", .{ ctx.sfx, id, k }) catch unreachable;
+                buf.appendSlice(ctx.a, head) catch unreachable;
+                bindAndDescend(ctx, buf, arm, std2.fmt.allocPrint(ctx.a, "input[__p..__e{d}]", .{k}) catch unreachable, std2.fmt.allocPrint(ctx.a, "__e{d}", .{k}) catch unreachable);
+                const tail = std2.fmt.allocPrint(ctx.a, "}} else {{ if (__err.expected.len == 0 or __p > __err.pos) {{ __err.pos = __p; __err.expected = \"{s}\"; }} }}\n", .{zigEscape(ctx.a, arm.branch)}) catch unreachable;
+                buf.appendSlice(ctx.a, tail) catch unreachable;
+            }
+        }
+
+        fn bindAndDescend(ctx: *const Ctx, buf: *std2.ArrayList(u8), arm: *const ast2.Continuation, val_expr: []const u8, end_expr: []const u8) void {
+            if (arm.binding) |b| {
+                if (!std2.mem.eql(u8, b, "_")) {
+                    const bind = std2.fmt.allocPrint(ctx.a, "const {s} = {s}; _ = &{s};\n", .{ b, val_expr, b }) catch unreachable;
+                    buf.appendSlice(ctx.a, bind) catch unreachable;
+                }
+            }
+            const adv = std2.fmt.allocPrint(ctx.a, "__p = {s};\n", .{end_expr}) catch unreachable;
+            buf.appendSlice(ctx.a, adv) catch unreachable;
+
+            // Leaf (produce) or descend (sequence continues).
+            if (arm.node) |n| {
+                if (arm.continuations.len > 0) {
+                    setFail(ctx, std2.fmt.allocPrint(ctx.a, "std/parser: an alternative either produces (`-> expr`) or continues (nested arms), not both", .{}) catch unreachable);
+                    return;
+                }
+                switch (n) {
+                    .expression => |e| {
+                        const ret = std2.fmt.allocPrint(ctx.a, "return .{{ .end = __p, .val = ({s}) }};\n", .{e}) catch unreachable;
+                        buf.appendSlice(ctx.a, ret) catch unreachable;
+                    },
+                    else => setFail(ctx, std2.fmt.allocPrint(ctx.a, "std/parser: a rule alternative produces a value with `-> expr` (action bodies are cut 2)", .{}) catch unreachable),
+                }
+            } else if (arm.continuations.len > 0) {
+                genChoice(ctx, buf, arm.continuations);
+            } else {
+                // No produce, no children: the alternative's value is its span.
+                buf.appendSlice(ctx.a, "return .{ .end = __p, .val = input[__start..__p] };\n") catch unreachable;
+            }
+        }
+
+        fn genRuleFn(ctx: *const Ctx, cont: *const ast2.Continuation) void {
+            const rn = sanitize(ctx.a, cont.binding.?);
+            var buf = std2.ArrayList(u8){};
+            const head = std2.fmt.allocPrint(ctx.a, "fn __koru_pr_{s}_{s}(input: []const u8, pos: usize, __err: *__koru_perr_{s}) ?__koru_pres_{s} {{\nconst __start = pos; _ = &__start;\nvar __p: usize = pos;\n", .{ ctx.sfx, rn, ctx.sfx, ctx.sfx }) catch unreachable;
+            buf.appendSlice(ctx.a, head) catch unreachable;
+            genChoice(ctx, &buf, cont.continuations);
+            buf.appendSlice(ctx.a, "return null;\n}\n") catch unreachable;
+            ctx.matchers.appendSlice(ctx.a, buf.items) catch unreachable;
+        }
     };
-    defer serializer.deinit();
 
-    const json = serializer.serializeToJson(&ast.source_file) catch |err| {
-        return .{ .dump_error = @errorName(err) };
+    if (item.* != .flow) @panic("std/parser parse transform: containing item is not a flow - walker dispatch contract broken");
+    const flow = &item.flow;
+    const conts = flow.body.continuations;
+
+    // --- Arguments: parse(<input expr>, grammar: <name>) ---
+    if (invocation.args.len == 0) {
+        const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"std/parser:parse requires an input: parse(<expression>, grammar: <name>)\"); }}", .{}) catch unreachable;
+        return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+    }
+    const input_expr: []const u8 = invocation.args[0].value;
+    var grammar_name: ?[]const u8 = null;
+    for (invocation.args) |arg| {
+        if (std.mem.eql(u8, arg.name, "grammar")) grammar_name = std.mem.trim(u8, arg.value, " \t");
+    }
+    if (grammar_name == null) {
+        const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"std/parser:parse needs its grammar named: parse(<input>, grammar: <name>)\"); }}", .{}) catch unreachable;
+        return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+    }
+
+    // --- Locate the grammar region in the program ---
+    var rules: ?[]const ast.Continuation = null;
+    for (program.items) |*it| {
+        if (it.* != .flow) continue;
+        const g = &it.flow;
+        const p = g.inv().path;
+        if (p.segments.len != 1 or !std.mem.eql(u8, p.segments[0], "grammar")) continue;
+        const q = p.module_qualifier orelse continue;
+        if (!std.mem.endsWith(u8, q, "parser")) continue;
+        if (g.inv().args.len == 0) continue;
+        if (!std.mem.eql(u8, std.mem.trim(u8, g.inv().args[0].value, " \t"), grammar_name.?)) continue;
+        rules = g.body.continuations;
+        break;
+    }
+    if (rules == null) {
+        const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"std/parser:parse: no grammar named `{s}` in this program — declare it: std/parser:grammar({s}) with `! rule` arms\"); }}", .{ grammar_name.?, grammar_name.? }) catch unreachable;
+        return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+    }
+
+    // --- Parse-site branches: exactly one top rule + optional parse-error ---
+    var top_idx: ?usize = null;
+    var err_idx: ?usize = null;
+    for (conts, 0..) |c, i| {
+        if (std.mem.eql(u8, c.branch, "parse-error")) {
+            err_idx = i;
+            continue;
+        }
+        if (top_idx != null) {
+            const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"std/parser:parse dispatches ONE top rule (plus optional parse-error); found a second branch `{s}`\"); }}", .{c.branch}) catch unreachable;
+            return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+        }
+        top_idx = i;
+    }
+    if (top_idx == null) {
+        const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"std/parser:parse needs a top-rule branch: `| <rule> <binding> |> ...`\"); }}", .{}) catch unreachable;
+        return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+    }
+    const top = conts[top_idx.?];
+    if (H.findRule(rules.?, top.branch) == null) {
+        const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"std/parser:parse: `{s}` is not a rule of grammar `{s}`\"); }}", .{ top.branch, grammar_name.? }) catch unreachable;
+        return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+    }
+
+    // --- Left recursion: reject loudly, name the fix ---
+    for (rules.?) |*r| {
+        var visited = std.ArrayList([]const u8){};
+        if (H.leftRecurses(rules.?, r, r.binding.?, &visited, allocator)) {
+            const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"std/parser: rule `{s}` is left-recursive (it can call itself before consuming input) — rewrite right-recursively: put a consuming element (a terminal) first\"); }}", .{r.binding.?}) catch unreachable;
+            return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+        }
+    }
+
+    // --- Generate: error/result structs, terminal matchers, rule fns ---
+    const sfx = std.fmt.allocPrint(allocator, "{d}_{d}", .{ flow.location.line, flow.location.column }) catch unreachable;
+    var matchers = std.ArrayList(u8){};
+    var pats = std.ArrayList([]const u8){};
+    var label_n: usize = 0;
+    var fail: ?[]const u8 = null;
+    const ctx = H.Ctx{ .a = allocator, .sfx = sfx, .rules = rules.?, .matchers = &matchers, .pats = &pats, .label_n = &label_n, .fail = &fail };
+
+    const structs = std.fmt.allocPrint(allocator, "const __koru_perr_{s} = struct {{ pos: usize = 0, expected: []const u8 = \"\" }};\nconst __koru_pres_{s} = struct {{ end: usize, val: []const u8 }};\n", .{ sfx, sfx }) catch unreachable;
+    matchers.appendSlice(allocator, structs) catch unreachable;
+
+    for (rules.?) |*r| H.genRuleFn(&ctx, r);
+
+    if (fail) |f| {
+        const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"{s}\"); }}", .{f}) catch unreachable;
+        return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+    }
+
+    // --- Dispatch splice ---
+    var dispatch = std.ArrayList(u8){};
+    const head = std.fmt.allocPrint(allocator, "//@koru:inline_stmt\n{{ const __koru_pin: []const u8 = {s};\nvar __koru_pe: __koru_perr_{s} = .{{}};\n", .{ input_expr, sfx }) catch unreachable;
+    dispatch.appendSlice(allocator, head) catch unreachable;
+
+    // parse-error splice: line/col by newline count at the furthest failure.
+    var errsplice: []const u8 = "@panic(\"std/parser: parse error (no parse-error branch to deliver it)\");";
+    if (err_idx) |ei| {
+        errsplice = std.fmt.allocPrint(allocator,
+            \\{{ var __l: usize = 1; var __c: usize = 1;
+            \\const __ep = @min(__koru_pe.pos, __koru_pin.len);
+            \\for (__koru_pin[0..__ep]) |__ch| {{ if (__ch == '\n') {{ __l += 1; __c = 1; }} else {{ __c += 1; }} }}
+            \\const __found: []const u8 = if (__koru_pe.pos < __koru_pin.len) __koru_pin[__koru_pe.pos .. __koru_pe.pos + 1] else "end of input";
+            \\_ = &__found; __koru_inline_{d}(.{{ .line = __l, .col = __c, .expected = __koru_pe.expected, .found = __found }}); }}
+        , .{ei}) catch unreachable;
+    }
+
+    const rn = H.sanitize(allocator, top.branch);
+    const body = std.fmt.allocPrint(allocator, "if (__koru_pr_{s}_{s}(__koru_pin, 0, &__koru_pe)) |__koru_pres| {{\nif (__koru_pres.end == __koru_pin.len) {{ __koru_inline_{d}(__koru_pres.val); }}\nelse {{ if (__koru_pe.expected.len == 0 or __koru_pres.end > __koru_pe.pos) {{ __koru_pe.pos = __koru_pres.end; __koru_pe.expected = \"end of input\"; }}\n{s} }}\n}} else {{\n{s} }}\n}}", .{ sfx, rn, top_idx.?, errsplice, errsplice }) catch unreachable;
+    dispatch.appendSlice(allocator, body) catch unreachable;
+
+    // --- Rebuild the flow: @pass_ran, dispatch inline_body, continuations kept ---
+    const new_anns = allocator.alloc([]const u8, flow.inv().annotations.len + 1) catch unreachable;
+    for (flow.inv().annotations, 0..) |an, k| new_anns[k] = an;
+    new_anns[flow.inv().annotations.len] = allocator.dupe(u8, "@pass_ran(\"transform\")") catch unreachable;
+
+    const new_inv = ast.Invocation{
+        .path = flow.inv().path,
+        .args = flow.inv().args,
+        .annotations = new_anns,
+        .inserted_by_tap = flow.inv().inserted_by_tap,
+        .from_opaque_tap = flow.inv().from_opaque_tap,
     };
 
-    return .{ .dumped = json };
+    var new_flow = flow.*;
+    new_flow.body = ast.rootSite(new_inv, flow.body.continuations, flow.location);
+    new_flow.inline_body = dispatch.toOwnedSlice(allocator) catch unreachable;
+
+    const appended = allocator.alloc(ast.Item, 1) catch unreachable;
+    appended[0] = ast.Item{ .inline_code = ast.InlineCode{
+        .code = matchers.toOwnedSlice(allocator) catch unreachable,
+        .location = flow.location,
+        .module = flow.module,
+    } };
+
+    return .{ .transformed = .{ .replacement = ast.Item{ .flow = new_flow }, .appended = appended } };
 }

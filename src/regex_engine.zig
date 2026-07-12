@@ -78,6 +78,7 @@ pub const ParseError = error{
     TooManyGroups, // hard cap so emitted tag vectors stay fixed-size
     GroupUnderQuantifier, // a repeated group has no single span — rejected
     GroupUnderAlternation, // a group on an untaken branch has no span — rejected
+    UnsupportedEscape, // `\q` etc. — unknown alphanumeric escapes never silently mean the letter
 };
 
 /// Hard cap on named groups per pattern (tag vectors are 2× this).
@@ -189,6 +190,13 @@ pub const Parser = struct {
                 return inner;
             },
             '[' => return self.parseClass(),
+            '\\' => {
+                self.pos += 1;
+                switch (try self.parseEscape()) {
+                    .byte => |b| return self.mk(.{ .literal = b }),
+                    .class => |cl| return self.mk(.{ .class = cl }),
+                }
+            },
             '.' => {
                 self.pos += 1;
                 return self.mk(.any);
@@ -243,6 +251,22 @@ pub const Parser = struct {
             }
             self.pos += 1;
             saw_item = true;
+            // Escapes inside a class: a byte escape is a single member (it
+            // does not open a range — `[\]-x]` means `]`, `-`, `x`); a
+            // shorthand (\d \s \w) unions its set in. Negated shorthands
+            // (\D…) have no single-set meaning inside a class — rejected.
+            if (c == '\\') {
+                switch (try self.parseEscape()) {
+                    .byte => |b| class.set[b] = true,
+                    .class => |cl| {
+                        if (cl.negated) return error.UnsupportedEscape;
+                        for (cl.set, 0..) |on, i| {
+                            if (on) class.set[i] = true;
+                        }
+                    },
+                }
+                continue;
+            }
             // Range `a-z`: a '-' that isn't the last char before ']'.
             if (self.peek() == '-' and self.pos + 1 < self.src.len and self.src[self.pos + 1] != ']') {
                 self.pos += 1; // consume '-'
@@ -255,6 +279,55 @@ pub const Parser = struct {
             }
         }
         return error.UnterminatedClass;
+    }
+
+    const Escaped = union(enum) { byte: u8, class: Class };
+
+    /// Resolve the char after a consumed '\'. Control escapes and shorthand
+    /// classes are the usual ones; any PUNCTUATION escapes to itself (that is
+    /// how metachars are matched literally: `\[` `\.` `\\` …); an UNKNOWN
+    /// alphanumeric escape is a loud error — `\q` never silently means `q`.
+    fn parseEscape(self: *Parser) ParseError!Escaped {
+        const c = self.peek() orelse return error.UnexpectedEnd;
+        self.pos += 1;
+        switch (c) {
+            'n' => return .{ .byte = '\n' },
+            't' => return .{ .byte = '\t' },
+            'r' => return .{ .byte = '\r' },
+            'd', 'D', 's', 'S', 'w', 'W' => {
+                var cl = Class{};
+                switch (c | 0x20) { // lowercase
+                    'd' => {
+                        var x: u16 = '0';
+                        while (x <= '9') : (x += 1) cl.set[@intCast(x)] = true;
+                    },
+                    's' => {
+                        cl.set[' '] = true;
+                        cl.set['\t'] = true;
+                        cl.set['\n'] = true;
+                        cl.set['\r'] = true;
+                        cl.set[0x0B] = true; // \v
+                        cl.set[0x0C] = true; // \f
+                    },
+                    'w' => {
+                        var x: u16 = 'a';
+                        while (x <= 'z') : (x += 1) cl.set[@intCast(x)] = true;
+                        x = 'A';
+                        while (x <= 'Z') : (x += 1) cl.set[@intCast(x)] = true;
+                        x = '0';
+                        while (x <= '9') : (x += 1) cl.set[@intCast(x)] = true;
+                        cl.set['_'] = true;
+                    },
+                    else => unreachable,
+                }
+                if (c >= 'A' and c <= 'Z') cl.negated = true;
+                return .{ .class = cl };
+            },
+            else => {
+                if ((c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or (c >= '0' and c <= '9')) return error.UnsupportedEscape;
+                return .{ .byte = c };
+            },
+        }
     }
 };
 
@@ -365,6 +438,50 @@ test "the email-ish flagship pattern: [a-z]+@[a-z]+" {
     try testing.expect(n.concat[0].* == .plus and n.concat[0].plus.* == .class);
     try testing.expect(n.concat[1].* == .literal and n.concat[1].literal == '@');
     try testing.expect(n.concat[2].* == .plus and n.concat[2].plus.* == .class);
+}
+
+test "escapes: metachars match literally, atom and class" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    // `\[` — the parser-library bracket terminal that surfaced the gap
+    const br = try parseWith(a, "\\[");
+    try testing.expect(br.* == .literal and br.literal == '[');
+    // `\\` `\.` `\*`
+    const bs = try parseWith(a, "\\\\");
+    try testing.expect(bs.* == .literal and bs.literal == '\\');
+    const dot = try parseWith(a, "a\\.b");
+    try testing.expect(dot.* == .concat and dot.concat[1].literal == '.');
+    // class member escape: `[\]x]` contains ']' and 'x', no range opened
+    const cl = try parseWith(a, "[\\]x]");
+    try testing.expect(cl.* == .class);
+    try testing.expect(cl.class.contains(']') and cl.class.contains('x'));
+    try testing.expect(!cl.class.contains('-'));
+}
+
+test "escapes: shorthand classes and control chars" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const d = try parseWith(a, "\\d");
+    try testing.expect(d.* == .class and d.class.contains('7') and !d.class.contains('a'));
+    const nd = try parseWith(a, "\\D");
+    try testing.expect(nd.* == .class and nd.class.negated);
+    const w = try parseWith(a, "[\\w-]");
+    try testing.expect(w.* == .class and w.class.contains('_') and w.class.contains('-') and !w.class.contains('%'));
+    const nl = try parseWith(a, "\\n");
+    try testing.expect(nl.* == .literal and nl.literal == '\n');
+    // and the whole thing runs: `\d+\.\d+` matches "3.14"
+    const nfa = try nfaFor(a, "\\d+\\.\\d+");
+    try testing.expect(nfa.matches("3.14"));
+    try testing.expect(!nfa.matches("314"));
+}
+
+test "escapes: unknown alphanumeric escape is a loud error" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    try testing.expectError(error.UnsupportedEscape, parseWith(arena.allocator(), "\\q"));
+    try testing.expectError(error.UnsupportedEscape, parseWith(arena.allocator(), "[\\D]"));
 }
 
 test "named groups: parse + analyze collects names in open order" {
@@ -856,6 +973,18 @@ test "searchLongestFrom: agrees with anchored matches at the boundaries" {
     try testing.expectEqual(@as(?usize, 9), dfa.searchLongestFrom("xxfoo@bar?", 2));
     // a position that cannot start a match → null (not even empty: start state non-accepting)
     try testing.expectEqual(@as(?usize, null), dfa.searchLongestFrom("foo@bar", 3));
+}
+
+test "prefix-at-offset: the parser terminal shape (searchLongestFrom is the reference)" {
+    // A grammar terminal asks "does this token start HERE, how far?" — the
+    // 641_001 flagship's own input: `[0-9]+` against "[42]".
+    var dfa = try dfaFor(testing.allocator, "-?[0-9]+");
+    defer dfa.deinit();
+    try testing.expectEqual(@as(?usize, 3), dfa.searchLongestFrom("[42]", 1)); // "42", longest not "4"
+    try testing.expectEqual(@as(?usize, null), dfa.searchLongestFrom("[42]", 0)); // '[' can't start
+    try testing.expectEqual(@as(?usize, null), dfa.searchLongestFrom("[42]", 3)); // ']' can't start
+    try testing.expectEqual(@as(?usize, null), dfa.searchLongestFrom("[42]", 4)); // at end-of-input:
+    // `-?[0-9]+` needs at least one digit, start state non-accepting → not even the empty prefix
 }
 
 test "scan: leftmost-longest, non-overlapping spans" {
@@ -1425,6 +1554,77 @@ pub fn compileSearchToZig(out: std.mem.Allocator, pattern: []const u8, name: []c
     return buf.toOwnedSlice(out);
 }
 
+/// Emit `fn <name>(input: []const u8, from: usize) ?usize { … }` — the ANCHORED
+/// longest-prefix matcher at a fixed offset: returns the END of the longest
+/// prefix of input[from..] the DFA accepts (span is [from, end)), or null if
+/// nothing — not even the empty match — accepts. This is `Dfa.searchLongestFrom`
+/// baked self-contained: `emitSearchMatcher`'s inner loop without the
+/// try-each-start outer loop. It is the PARSER TERMINAL primitive — a grammar
+/// terminal asks "does this token start HERE, and how far does it reach?",
+/// never "where is it?" (search) or "is it everything?" (match).
+///
+/// Unlike the search emitter (where early-exit is a deferred speed cut), the
+/// dead-state exit is emitted HERE AND NOW: a terminal typically matches a few
+/// bytes near `from`, and without the exit every failed terminal walks to
+/// end-of-input — an O(n²) parser on large inputs. The dead state is detected
+/// at emit time (non-accepting, all 256 transitions self-looping); patterns
+/// whose DFA has none simply omit the check.
+pub fn emitPrefixMatcher(w: anytype, dfa: *const Dfa, name: []const u8) !void {
+    // Detect the dead sink: non-accepting, every byte loops back to itself.
+    var dead: ?usize = null;
+    var st: usize = 0;
+    outer: while (st < dfa.n_states) : (st += 1) {
+        if (dfa.accept[st]) continue;
+        var b: usize = 0;
+        while (b < 256) : (b += 1) {
+            if (dfa.trans[st * 256 + b] != st) continue :outer;
+        }
+        dead = st;
+        break;
+    }
+
+    try w.print("fn {s}(input: []const u8, from: usize) ?usize {{\n", .{name});
+    try w.writeAll("    const T = [_]u32{ ");
+    for (dfa.trans, 0..) |t, i| {
+        if (i != 0) try w.writeAll(", ");
+        try w.print("{d}", .{t});
+    }
+    try w.writeAll(" };\n");
+    try w.writeAll("    const A = [_]bool{ ");
+    for (dfa.accept, 0..) |acc, i| {
+        if (i != 0) try w.writeAll(", ");
+        try w.writeAll(if (acc) "true" else "false");
+    }
+    try w.writeAll(" };\n");
+    try w.print("    var s: u32 = {d};\n", .{dfa.start});
+    try w.writeAll("    var last_end: ?usize = if (A[s]) from else null;\n");
+    try w.writeAll("    var i: usize = from;\n");
+    try w.writeAll("    while (i < input.len) : (i += 1) {\n");
+    try w.writeAll("        s = T[@as(usize, s) * 256 + @as(usize, input[i])];\n");
+    if (dead) |d| try w.print("        if (s == {d}) break;\n", .{d});
+    try w.writeAll("        if (A[s]) last_end = i + 1;\n");
+    try w.writeAll("    }\n");
+    try w.writeAll("    return last_end;\n");
+    try w.writeAll("}\n");
+}
+
+/// Compile a pattern to a self-contained anchored longest-prefix-at-offset
+/// function (the parser terminal primitive; see `emitPrefixMatcher`). Captures,
+/// if any, are extracted from the matched span by the matcher from
+/// `compileCapturesToZig` — exactly the search/captures split `scan` uses.
+pub fn compilePrefixToZig(out: std.mem.Allocator, pattern: []const u8, name: []const u8) ![]const u8 {
+    var arena = std.heap.ArenaAllocator.init(out);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var p = Parser.init(a, pattern);
+    const ast = try p.parse();
+    var nfa = try buildNfa(a, ast);
+    var dfa = try buildDfa(a, &nfa);
+    var buf = std.ArrayList(u8){};
+    try emitPrefixMatcher(buf.writer(out), &dfa, name);
+    return buf.toOwnedSlice(out);
+}
+
 /// Compile a pattern WITH named groups straight to an emitted Zig captures
 /// matcher: `fn <name>(input: []const u8) ?[<2N>]u32` — null on no match,
 /// else the tag vector (2 byte-offsets per group, group-open order). The
@@ -1650,4 +1850,16 @@ test "emit search: well-formed unanchored finder fn" {
     try testing.expect(std.mem.indexOf(u8, src, "const T = [_]u32{") != null);
     try testing.expect(std.mem.indexOf(u8, src, "while (start <= input.len)") != null);
     try testing.expect(std.mem.indexOf(u8, src, "if (last_end) |e| return .{ start, e };") != null);
+}
+
+test "emit prefix: well-formed anchored longest-prefix fn with dead-state exit" {
+    const src = try compilePrefixToZig(testing.allocator, "[0-9]+", "p0");
+    defer testing.allocator.free(src);
+    try testing.expect(std.mem.indexOf(u8, src, "fn p0(input: []const u8, from: usize) ?usize") != null);
+    try testing.expect(std.mem.indexOf(u8, src, "const T = [_]u32{") != null);
+    try testing.expect(std.mem.indexOf(u8, src, "return last_end;") != null);
+    // anchored: no try-each-start outer loop
+    try testing.expect(std.mem.indexOf(u8, src, "while (start <= input.len)") == null);
+    // `[0-9]+` has a dead sink (any non-digit) — the early-exit must be emitted
+    try testing.expect(std.mem.indexOf(u8, src, "break;") != null);
 }

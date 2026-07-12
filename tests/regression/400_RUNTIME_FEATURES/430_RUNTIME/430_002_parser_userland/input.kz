@@ -1,7 +1,7 @@
 // Test: User-land parser access
-// Verify that std/parser is available at runtime for dynamic parsing
+// Verify that std/koru is available at runtime for dynamic parsing
 
-~import std/parser
+~import std/koru
 ~import std/io
 
 const std = @import("std");
@@ -14,6 +14,6 @@ const allocator = gpa.allocator();
 const test_source = "~greet()";
 
 // Main flow - parse and report
-~std/parser:parse.source(source: test_source, file_name: "test.kz", allocator)
+~std/koru:parse.source(source: test_source, file_name: "test.kz", allocator)
 | parsed p |> std/io:print.ln("Parser works! Got AST with {{ p.source_file.items.len:d }} items")
 | parse-error e |> std/io:print.ln("Parse failed: {{ e:s }}")
