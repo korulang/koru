@@ -1,17 +1,8 @@
-// TEST: Try to close a connection without using it
-//
-// connect() produces Connection<connected!>
-// close() requires Connection<!active>
-// These states don't match! You can't close a fresh connection.
-//
-// This is THE KEY INSIGHT: you MUST use the connection meaningfully
-// before you can close it. Rust's Drop can't express this.
-//
-// EXPECTED: Compiler error - type mismatch (connected vs active)
-
+// TEST: Try to close a connection without using it in a transaction.
+// close() requires Connection<!active>, but connect yields <connected!>.
+// These states don't match — you can't close a fresh (never-active) connection.
 ~import app/db
 
 ~app/db:connect(host: "localhost")
 | ok c |> app/db:close(conn: c)
-    | err _ |> _
 | err _ |> _

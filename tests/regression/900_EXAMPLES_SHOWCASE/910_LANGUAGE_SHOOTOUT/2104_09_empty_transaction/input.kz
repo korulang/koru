@@ -1,21 +1,12 @@
-// TEST: Try to commit a transaction without executing anything
-//
-// begin() produces Transaction<started!>
-// commit() requires Transaction<!active>
-// These states don't match! You can't commit an empty transaction.
-//
-// This prevents wasteful "BEGIN; COMMIT;" patterns.
-// If you start a transaction, you MUST do something with it.
-//
-// EXPECTED: Compiler error - type mismatch (started vs active)
-
+// TEST: begin then commit WITHOUT exec — committing an empty (started, never
+// active) transaction. commit requires Transaction<!active>, but begin yields
+// <started!>. The states don't match — an untouched transaction can't commit.
 ~import app/db
 
 ~app/db:connect(host: "localhost")
 | ok c |> app/db:begin(conn: c)
     | ok t |> app/db:commit(tx: t)
         | ok conn |> app/db:close(conn)
-            | err _ |> _
         | err _ |> _
     | err _ |> _
 | err _ |> _
