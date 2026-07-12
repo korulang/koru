@@ -8,8 +8,8 @@ import std/parser
 import std/io
 
 std/parser:grammar(math)
-! rule expr
-    | expr e -> e
+! expr e |> std/parser:match(e)
+    | expr x -> x
     | `[0-9]+` n -> n
 
 std/parser:parse("1", grammar: math)

@@ -4109,6 +4109,10 @@ pub fn emitInlineBodyNode(
             var inline_terminal_conts: std.ArrayList(ast.Continuation) = .empty;
             defer inline_terminal_conts.deinit(ctx.allocator);
             for (continuations) |cont| {
+                // A transform-consumed subtree's arms are the transform's DATA
+                // (std/parser grammar rules), not live handlers — synthesizing
+                // Handlers fns or loose bodies from them emits orphaned code.
+                if (cont.is_transformed_subtree) continue;
                 if (cont.kind == .effect) {
                     try inline_effect_conts.append(ctx.allocator, cont);
                 } else {
@@ -4165,14 +4169,31 @@ pub fn emitInlineBodyNode(
             }
 
             // (1) Synthesize the Handlers struct from effect continuations.
+            //     Skip entirely when nothing will reference it: no live effect
+            //     conts (all transform-consumed data) and no aliasable decl
+            //     branches (wildcard-only decl) — else it lands as an unused
+            //     local in the neutralized flow.
+            var has_aliasable = false;
+            for (ed.branches) |b| {
+                if (b.kind == .effect and !std.mem.eql(u8, b.name, "*")) has_aliasable = true;
+            }
+            if (inline_effect_conts.items.len == 0 and !has_aliasable) {
+                try emitter.writeIndent();
+                try emitter.write(inline_code);
+                try emitter.write("\n");
+                return;
+            }
             const hname = "Handlers_0";
             try emitHandlersStruct(emitter, ctx, hname, inline_effect_conts.items, ed);
 
             // (2) Alias every declared effect branch into local scope so the
             //     template body's bare `NAME(...)` calls resolve. Mirrors the
             //     handler-side aliasing (`const NAME = __H.NAME;`).
+            //     A wildcard decl branch (`! \`*\` *` — regex scan, std/parser
+            //     grammar) is a PATTERN, not a name: nothing can alias it.
             for (ed.branches) |b| {
                 if (b.kind != .effect) continue;
+                if (std.mem.eql(u8, b.name, "*")) continue;
                 try emitter.writeIndent();
                 try emitter.write("const ");
                 try writeBranchName(emitter, b.name);

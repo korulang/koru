@@ -81,6 +81,7 @@ pub const ErrorCode = enum(u16) {
     KORU102, // `=>` (branch construction) used where the event produces a single payload (`-> T`) — use `->`
     KORU103, // `|>` (chain) used to introduce a bare value — `|>` chains steps; produce a value with `->`
     KORU104, // Call inside an expression — calls are not expressions; use event chaining (bind the result first)
+    KORU105, // Nested branches under a bodiless `|` branch — nothing picks a branch there; branches continue from an invocation
 
     // Variant errors
     KORU110, // Event call site has only bare ~proc declarations (no variant tag)
