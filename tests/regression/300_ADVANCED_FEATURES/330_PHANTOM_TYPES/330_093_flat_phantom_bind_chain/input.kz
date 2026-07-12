@@ -1,0 +1,24 @@
+// Pins: a flat top-level chain of phantom bare-return binds should thread the
+// obligation across EVERY link. `make(): h` yields <owned!>; each transform
+// consumes <!owned> and re-issues <owned!> via its own bare return, so the
+// obligation must ride the `: a` / `: b` bindings the same way it rides a
+// subflow back-edge (330_074/082/085, which only ever thread through a loop).
+// Single flat bind (make(): h |> fin(h)) already works; the second bind onward
+// is where the obligation is currently dropped (KORU030 on every link).
+const std = @import("std");
+const Handle = struct { n: i32 };
+
+~event make {} -> *Handle<owned!>
+~proc make|zig {
+    const h = std.heap.page_allocator.create(Handle) catch unreachable;
+    h.* = .{ .n = 0 };
+    return h;
+}
+~event t1 { h: *Handle<!owned> } -> *Handle<owned!>
+~proc t1|zig { h.n += 1; return h; }
+~event t2 { h: *Handle<!owned> } -> *Handle<owned!>
+~proc t2|zig { h.n += 1; return h; }
+~event fin { h: *Handle<!owned> }
+~proc fin|zig { std.debug.print("n={}\n", .{h.n}); std.heap.page_allocator.destroy(h); }
+
+~make(): h |> t1(h): a |> t2(h: a): b |> fin(h: b)
