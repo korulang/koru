@@ -7,5 +7,4 @@
 
 ~greet -> "Hello, " ++ name ++ "!"
 
-~greet (name: "World")
-| greeting msg |> std/io:print.ln(msg)
+~greet (name: "World"): msg |> std/io:print.ln(msg)

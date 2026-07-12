@@ -6,5 +6,4 @@ const std = @import("std");
 ~proc compute|zig { return .{ .done = x + 100 }; }
 ~proc show|zig { std.debug.print("{d}\n", .{v}); }
 
-~compute(x: 42)
-| done r |> show(v: r)
+~compute(x: 42): r |> show(v: r)

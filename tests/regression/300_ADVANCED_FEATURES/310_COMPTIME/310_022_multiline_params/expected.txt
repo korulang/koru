@@ -1,6 +1,6 @@
 error[PARSE003]: unbalanced parentheses in invocation arguments
-  --> tests/regression/300_ADVANCED_FEATURES/310_COMPTIME/310_022_multiline_params/input.kz:19:1
+  --> tests/regression/300_ADVANCED_FEATURES/310_COMPTIME/310_022_multiline_params/input.kz:18:1
     |
- 19 | ~greet(
+ 18 | ~greet(
     | ^
 
