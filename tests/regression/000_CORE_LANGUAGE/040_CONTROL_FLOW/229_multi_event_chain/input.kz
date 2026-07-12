@@ -37,7 +37,7 @@ const std = @import("std");
 ~event transform { value: i32 } -> i32
 
 ~proc transform|zig {
-    return .{ .@"transformed" = value * 2 };
+    return value * 2;
 }
 
 // Stage 4: Format
@@ -62,7 +62,6 @@ const std = @import("std");
 // With error handling at each stage
 ~parse(input: "42")
 | parsed p |> validate(value: p)
-    | valid v |> transform(value: v)
-        | transformed t |> format(value: t): f |> display(text: f)
+    | valid v |> transform(value: v): t |> format(value: t): f |> display(text: f)
     | invalid i |> display(text: i)
 | invalid i |> display(text: i)
