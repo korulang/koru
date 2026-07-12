@@ -21,15 +21,13 @@ const std = @import("std");
 ~event double { value: i32 } -> i32
 
 // Subflow 1: double calls add-five and passes through the result
-~double = add-five(value)
-| result r -> r
+~double = add-five(value): r -> r
 
 // Event that will call the subflow
 ~event process { input: i32 } -> i32
 
 // Subflow 2: process calls double (which is itself a subflow)
-~process = double(value: input)
-| result r -> r
+~process = double(value: input): r -> r
 
 // Helper to print i32
 ~event print-result { value: i32 }

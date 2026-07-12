@@ -28,5 +28,4 @@ const std = @import("std");
 }
 
 // Create a domain user and grant access
-~domain/user:create(email: "admin@example.com", role: "administrator", permissions: 999): c |> grant-access(user_data: c)
-    | granted _ |> _
+~domain/user:create(email: "admin@example.com", role: "administrator", permissions: 999): c |> grant-access(user_data: c): _

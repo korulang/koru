@@ -45,7 +45,6 @@
 
 ~sum-to = if(n <= 0)
 | then -> 0
-| else |> sum-to(n: n - 1)
-    | total t -> t + n
+| else |> sum-to(n: n - 1): t -> t + n
 
 ~sum-to(n: 5): r |> std/io:print.ln("{{ r:d }}")
