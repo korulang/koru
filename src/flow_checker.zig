@@ -153,6 +153,7 @@ pub const FlowChecker = struct {
         for (flow.body.continuations) |*cont| {
             if (!is_transformed) {
                 try self.validateContinuationWhenClauses(cont, location);
+                try self.validateBranchesHangOffPickers(cont);
             }
             // KORU100: Unused binding check
             // In frontend mode, skip for [transform] invocations (binding usage not visible until after transform)
@@ -557,6 +558,37 @@ pub const FlowChecker = struct {
                     }
                 }
             }
+        }
+    }
+
+    /// KORU105 — the arm-from-nothing wall (ruled 2026-07-12, std/parser
+    /// walk). A terminal `|` branch with no body cannot carry nested
+    /// branches: branches hang off a thing that PICKS — an invocation
+    /// dispatching, an effect being resumed — and a bodiless arm picks
+    /// nothing. The parser nests continuations purely by indentation, so
+    /// without this wall the shape parses and drifts through the passes
+    /// ungoverned (transforms comptiming over parser-tolerated-but-unruled
+    /// AST is the failure this guards). Effect `!` arms are exempt: their
+    /// nested `|` arms are the resume sum (400_133 pins the flow-site use;
+    /// 210_134 pins decl flatness — and the recursion below still walks
+    /// resume arms, so a bodiless resume arm nesting deeper is caught).
+    /// Transform-grafted subtrees carry the usual exemption.
+    fn validateBranchesHangOffPickers(self: *FlowChecker, cont: *const ast.Continuation) anyerror!void {
+        if (cont.is_transformed_subtree) return;
+        if (cont.kind == .terminal and cont.node == null and cont.continuations.len > 0) {
+            try self.reporter.addErrorWithHint(
+                .KORU105,
+                cont.location.line,
+                cont.location.column,
+                "nested branches under bodiless branch '{s}' — nothing picks a branch here",
+                .{cont.branch},
+                "branches continue from something that picks: give this branch a body (`|> event(...)`) and nest the branches under that invocation",
+                .{},
+            );
+            return;
+        }
+        for (cont.continuations) |*nested| {
+            try self.validateBranchesHangOffPickers(nested);
         }
     }
 
