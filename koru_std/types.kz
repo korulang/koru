@@ -48,6 +48,20 @@ const std = @import("std");
 // generalization, and the surface where Koru-level type reflection eventually lands.
 ~[comptime]pub event fields-of { expr: Expression }
 ! each *
+| ?done
+
+// STANDALONE lowering — `fields-of(T)` used OUTSIDE a constructor. Mirrors ~for's
+// template, but the iterable is `@typeInfo(T).@"struct".fields` and the loop is
+// `inline for` (reflected fields are heterogeneous — each `.type` differs — so it
+// must comptime-unroll). INSIDE a constructor the `.pre` struct terminal consumes
+// `fields-of` before this template ever runs, so the two paths never collide.
+~proc fields-of|template|zig {
+    inline for (@typeInfo({{ expr }}).@"struct".fields) |__koru_item| {
+        {% for h in effects["each"] %}{{ h.inlined_link[scope] }}(__koru_item);
+        {% endfor %}
+    }
+    {{ continuations["done"].continue }}
+}
 
 ~[keyword|comptime|transform]pub event struct {
     expr: Expression,
