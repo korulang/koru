@@ -593,6 +593,7 @@ pub const ShapeChecker = struct {
                     flow.body.continuations,
                     location,
                     flow.inv(),
+                    event.decl.return_type != null,
                 );
 
                 if (!covered) {
@@ -632,6 +633,7 @@ pub const ShapeChecker = struct {
             flow.body.continuations,
             location,
             flow.inv(),
+            final_event_info.decl.return_type != null,
         );
 
         if (!covered) {
@@ -1205,7 +1207,12 @@ pub const ShapeChecker = struct {
         // Presence resolution needs it: `if(<arm>)` establishes the arm for
         // the `| then` subtree, and `if(<required arm>)` is the KORU131 wall.
         parent_inv: ?*const ast.Invocation,
+        bare_return: bool,
     ) !bool {
+        // Bare-return events (`-> T`) have no branch tags — continuations use
+        // produce syntax (`| _ v -> expr`); the label is binding sugar only.
+        if (bare_return) return true;
+
         // Track if we found any errors (but continue checking to find all of them)
         var has_errors = false;
 
@@ -1609,6 +1616,7 @@ pub const ShapeChecker = struct {
                         cont.continuations,
                         location,
                         &step.invocation,
+                        nested_event_info.decl.return_type != null,
                     );
                     if (!nested_covered) {
                         return false;
@@ -1705,6 +1713,7 @@ pub const ShapeChecker = struct {
                                 cont.continuations,
                                 location,
                                 &step.invocation,
+                                nested_event_info.decl.return_type != null,
                             );
                             if (!covered) {
                                 all_valid = false;
@@ -1843,6 +1852,7 @@ pub const ShapeChecker = struct {
             flow.body.continuations,
             flow.location,
             flow.inv(),
+            event_info.decl.return_type != null,
         );
         if (!covered) {
             // Error already reported by checkBranchCoverageWithTerminals
@@ -2376,7 +2386,7 @@ test "for shape: two unguarded done handlers - KORU028" {
         .{ .branch = "done", .binding = null, .kind = .terminal, .condition = null, .node = null, .indent = 0, .continuations = &[_]ast.Continuation{}, .location = loc },
     };
 
-    const covered = try checker.checkBranchCoverageWithTerminals("for", &branches, &continuations, loc, null);
+    const covered = try checker.checkBranchCoverageWithTerminals("for", &branches, &continuations, loc, null, false);
     try std.testing.expect(!covered);
 
     var saw_koru028 = false;
@@ -2405,7 +2415,7 @@ test "for shape: each plus single done - valid" {
         .{ .branch = "done", .binding = null, .kind = .terminal, .condition = null, .node = null, .indent = 0, .continuations = &[_]ast.Continuation{}, .location = loc },
     };
 
-    const covered = try checker.checkBranchCoverageWithTerminals("for", &branches, &continuations, loc, null);
+    const covered = try checker.checkBranchCoverageWithTerminals("for", &branches, &continuations, loc, null, false);
     try std.testing.expect(covered);
 }
 

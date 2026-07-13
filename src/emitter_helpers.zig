@@ -1449,6 +1449,91 @@ fn isKoruStructLiteral(value: []const u8) bool {
     return found_field_pattern;
 }
 
+/// `{ p.x, p.y }` field-punning shorthand — no `field:` labels, dot paths only.
+fn isFieldPunningLiteral(value: []const u8) bool {
+    if (value.len < 2) return false;
+    if (value[0] != '{' or value[value.len - 1] != '}') return false;
+    if (isKoruStructLiteral(value)) return false;
+
+    const inner = value[1 .. value.len - 1];
+    var depth: i32 = 0;
+    var has_dot_at_depth_0 = false;
+    var has_comma_at_depth_0 = false;
+    var has_operator_at_depth_0 = false;
+    for (inner) |c| {
+        switch (c) {
+            '{', '(', '[' => depth += 1,
+            '}', ')', ']' => depth -= 1,
+            ':', '=' => if (depth == 0) return false,
+            '.' => {
+                if (depth == 0) has_dot_at_depth_0 = true;
+            },
+            ',' => {
+                if (depth == 0) has_comma_at_depth_0 = true;
+            },
+            '+', '-', '*', '/' => {
+                if (depth == 0) has_operator_at_depth_0 = true;
+            },
+            else => {},
+        }
+    }
+    if (has_dot_at_depth_0 and !has_operator_at_depth_0) return true;
+    if (has_comma_at_depth_0) return true;
+    return false;
+}
+
+/// `{ expr }` plain-value braces from branch/bare-return constructors — not a Zig block.
+fn isBracedPlainExpression(value: []const u8) bool {
+    if (value.len < 2) return false;
+    if (value[0] != '{' or value[value.len - 1] != '}') return false;
+    if (isKoruStructLiteral(value)) return false;
+    if (isFieldPunningLiteral(value)) return false;
+    return true;
+}
+
+/// Emit `{ p.x, p.y }` as `.{ .x = p.x, .y = p.y }`.
+fn emitFieldPunningLiteral(emitter: *CodeEmitter, ctx: *EmissionContext, value: []const u8) EmitError!void {
+    const inner = value[1 .. value.len - 1];
+    try emitter.write(".{");
+
+    var i: usize = 0;
+    var first_field = true;
+    while (i < inner.len) {
+        while (i < inner.len and (inner[i] == ' ' or inner[i] == '\t' or inner[i] == ',')) {
+            i += 1;
+        }
+        if (i >= inner.len) break;
+
+        const field_start = i;
+        var depth: i32 = 0;
+        while (i < inner.len) : (i += 1) {
+            const c = inner[i];
+            switch (c) {
+                '{', '(', '[' => depth += 1,
+                '}', ')', ']' => depth -= 1,
+                ',' => if (depth == 0) break,
+                else => {},
+            }
+        }
+        const field_expr = std.mem.trim(u8, inner[field_start..i], " \t");
+        if (field_expr.len == 0) continue;
+
+        const field_name = if (std.mem.lastIndexOf(u8, field_expr, ".")) |dot_idx|
+            field_expr[dot_idx + 1 ..]
+        else
+            field_expr;
+
+        if (!first_field) try emitter.write(", ");
+        try emitter.write(" .");
+        try emitter.write(field_name);
+        try emitter.write(" = ");
+        try emitValue(emitter, ctx, field_expr);
+        first_field = false;
+    }
+
+    try emitter.write(" }");
+}
+
 /// Emit a Koru struct literal as Zig: { field: value } -> .{ .field = value }
 fn emitStructLiteral(emitter: *CodeEmitter, ctx: *EmissionContext, value: []const u8) EmitError!void {
     const inner = value[1 .. value.len - 1]; // Strip { and }
@@ -4679,7 +4764,7 @@ pub fn emitFlow(
                 ctx.label_result_var = null;
 
                 // Emit all continuations as a regular switch (no loop)
-                try emitContinuationList(emitter, ctx, conts, first_result, &result_counter, false);
+                try emitContinuationList(emitter, ctx, conts, first_result, &result_counter, false, null);
             } else {
                 // ONLY emit looping branches inside the while loop
                 // Build list of looping continuations
@@ -4699,7 +4784,7 @@ pub fn emitFlow(
                 // Emit switch with only looping branches
                 // Looping switches don't need else (they're inside the while condition)
                 if (looping_conts.items.len > 0) {
-                    try emitContinuationList(emitter, ctx, looping_conts.items, first_result, &result_counter, false);
+                    try emitContinuationList(emitter, ctx, looping_conts.items, first_result, &result_counter, false, null);
                 }
 
                 // Clear label context after looping continuations
@@ -4737,13 +4822,13 @@ pub fn emitFlow(
                     // Zig 0.15+ knows this and considers the switch exhaustive, so we must NOT
                     // emit else => unreachable (it would be "unreachable else prong; all cases handled")
                     if (non_looping_conts.items.len > 0) {
-                        try emitContinuationList(emitter, ctx, non_looping_conts.items, first_result, &result_counter, false);
+                        try emitContinuationList(emitter, ctx, non_looping_conts.items, first_result, &result_counter, false, null);
                     }
                 }
             }
         } else {
             // No pre_label - emit all continuations normally
-            try emitContinuationList(emitter, ctx, conts, first_result, &result_counter, false);
+            try emitContinuationList(emitter, ctx, conts, first_result, &result_counter, false, null);
         }
     } else {
         // Zero continuations — use comptime_result_binding if set (for program return)
@@ -6723,6 +6808,19 @@ pub fn emitValue(emitter: *CodeEmitter, ctx: *EmissionContext, value: []const u8
         return;
     }
 
+    // Field punning: { p.x, p.y } -> .{ .x = p.x, .y = p.y }
+    if (isFieldPunningLiteral(trimmed)) {
+        try emitFieldPunningLiteral(emitter, ctx, trimmed);
+        return;
+    }
+
+    // Plain-value braces: { a + b } -> a + b
+    if (isBracedPlainExpression(trimmed)) {
+        const inner = std.mem.trim(u8, trimmed[1 .. trimmed.len - 1], " \t");
+        try emitValue(emitter, ctx, inner);
+        return;
+    }
+
     // If we have an input_var and input_fields, replace input field references
     if (ctx.input_var) |input_var| {
         if (ctx.input_fields) |fields| {
@@ -7028,7 +7126,18 @@ fn emitContinuationList(
     prev_result: []const u8,
     result_counter: *usize,
     is_partial_switch: bool,
+    callee_path: ?*const ast.DottedPath,
 ) anyerror!void {
+    const callee_bare_return = blk: {
+        if (callee_path) |path| {
+            if (ctx.ast_items) |items| {
+                if (findEventDeclByPath(items, path)) |decl| {
+                    break :blk decl.return_type != null;
+                }
+            }
+        }
+        break :blk false;
+    };
     // Effect (`!`) continuations are handler CALLS that fire DURING a proc run;
     // they are NOT terminals and have no tag in the event's Output union (which
     // holds terminals only). The inline path partitions them out before emitting
@@ -7124,8 +7233,10 @@ fn emitContinuationList(
         try writeBranchName(emitter, binding_name);
         try emitter.write(" = ");
         try emitter.write(prev_result);
-        try emitter.write(".");
-        try writeBranchName(emitter, cont.branch);
+        if (!callee_bare_return) {
+            try emitter.write(".");
+            try writeBranchName(emitter, cont.branch);
+        }
         try emitter.write(";\n");
 
         // Suppress unused variable warning if binding is not referenced
@@ -8429,10 +8540,10 @@ pub fn emitContinuationBody(
                         ctx.current_source_event = saved_source;
                     }
 
-                    try emitContinuationList(emitter, ctx, effective_continuations, last_result, result_counter, false);
+                    try emitContinuationList(emitter, ctx, effective_continuations, last_result, result_counter, false, &inv.path);
                 } else {
                     // No invocation in step, keep current source
-                    try emitContinuationList(emitter, ctx, effective_continuations, last_result, result_counter, false);
+                    try emitContinuationList(emitter, ctx, effective_continuations, last_result, result_counter, false, null);
                 }
             }
         }
@@ -8904,7 +9015,7 @@ fn emitStep(
 
                         // Handle nested continuations (e.g., | result r |> ...)
                         if (cont.continuations.len > 0) {
-                            try emitContinuationList(emitter, ctx, cont.continuations, inner_result, &step_idx, false);
+                            try emitContinuationList(emitter, ctx, cont.continuations, inner_result, &step_idx, false, &node.invocation.path);
                         }
                     }
                 }
@@ -8940,7 +9051,7 @@ fn emitStep(
                         step_idx += 1;
 
                         if (cont.continuations.len > 0) {
-                            try emitContinuationList(emitter, ctx, cont.continuations, inner_result, &step_idx, false);
+                            try emitContinuationList(emitter, ctx, cont.continuations, inner_result, &step_idx, false, &node.invocation.path);
                         }
                     }
                 }
@@ -8988,7 +9099,7 @@ fn emitStep(
                     step_idx += 1;
 
                     if (cont.continuations.len > 0) {
-                        try emitContinuationList(emitter, ctx, cont.continuations, inner_result, &step_idx, false);
+                        try emitContinuationList(emitter, ctx, cont.continuations, inner_result, &step_idx, false, if (node == .invocation) &node.invocation.path else null);
                     }
                 }
             }
@@ -9018,7 +9129,7 @@ fn emitStep(
                         step_idx += 1;
 
                         if (cont.continuations.len > 0) {
-                            try emitContinuationList(emitter, ctx, cont.continuations, inner_result, &step_idx, false);
+                            try emitContinuationList(emitter, ctx, cont.continuations, inner_result, &step_idx, false, &node.invocation.path);
                         }
                     }
                 }
@@ -9081,7 +9192,7 @@ fn emitStep(
                         step_idx += 1;
 
                         if (cont.continuations.len > 0) {
-                            try emitContinuationList(emitter, ctx, cont.continuations, inner_result, &step_idx, false);
+                            try emitContinuationList(emitter, ctx, cont.continuations, inner_result, &step_idx, false, &node.invocation.path);
                         }
                     }
                 }

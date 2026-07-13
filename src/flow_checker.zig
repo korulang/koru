@@ -946,6 +946,12 @@ pub const FlowChecker = struct {
             return;
         };
 
+        // Bare-return events (`-> T`) carry no branch tags — only a single unnamed
+        // output. Continuations on such callees use produce syntax (`| _ v -> expr`);
+        // the `| label` is binding sugar, not a shape-contract tag. Tag-based
+        // KORU021/022 coverage does not apply.
+        if (event_decl.return_type != null) return;
+
         // Convert AST branches to BranchChecker format
         var declared = try std.ArrayList(branch_checker.BranchChecker.DeclaredBranch).initCapacity(
             self.allocator,

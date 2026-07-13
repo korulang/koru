@@ -2329,6 +2329,18 @@ pub const VisitorEmitter = struct {
                                                 .allocator = self.allocator,
                                                 .main_module_name = self.main_module_name,
                                             };
+                                            if (bc.is_bare_return) {
+                                                try self.code_emitter.writeIndent();
+                                                try self.code_emitter.write("return ");
+                                                if (bc.plain_value) |pv| {
+                                                    try emitter.emitValue(self.code_emitter, &value_ctx, pv);
+                                                } else {
+                                                    try self.code_emitter.write("undefined");
+                                                }
+                                                try self.code_emitter.write(";\n");
+                                                found_impl = true;
+                                                break;
+                                            }
                                             try self.code_emitter.writeIndent();
                                             try self.code_emitter.write("return .{ .");
                                             try emitter.writeBranchName(self.code_emitter, bc.branch_name);
