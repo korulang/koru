@@ -7047,6 +7047,41 @@ pub const Parser = struct {
             clean_content = content[0..comment_idx];
         }
 
+        // In-flow compiler annotations: a chain step may carry a leading `[...]`
+        // annotation (e.g. `[with]std/parser:grammar(...)`), exactly as a flow
+        // head can. `looksLikeInvocation` requires an identifier start, so a
+        // leading `[` never begins a valid bare step otherwise — there is no
+        // ambiguity to resolve. Peel every leading annotation group (reusing the
+        // flow-head `parseAnnotationBlock` path), classify the remainder as the
+        // step, and hang the annotations on its invocation.
+        {
+            var rest = lexer.trim(clean_content);
+            if (rest.len > 0 and rest[0] == '[') {
+                var anns = try std.ArrayList([]const u8).initCapacity(self.allocator, 2);
+                errdefer {
+                    for (anns.items) |a| self.allocator.free(a);
+                    anns.deinit(self.allocator);
+                }
+                while (rest.len > 0 and rest[0] == '[') {
+                    const block = try self.parseAnnotationBlock(rest, self.current);
+                    for (block.annotations) |a| try anns.append(self.allocator, a);
+                    self.allocator.free(block.annotations); // strings moved into `anns`; free the slice
+                    rest = lexer.trim(block.remaining);
+                }
+                var inner = try self.parseStepKind(rest, force_ctor);
+                const owned = try anns.toOwnedSlice(self.allocator);
+                switch (inner) {
+                    .invocation => |*inv| inv.annotations = owned,
+                    .label_with_invocation => |*lwi| lwi.invocation.annotations = owned,
+                    else => {
+                        for (owned) |a| self.allocator.free(a);
+                        self.allocator.free(owned);
+                    },
+                }
+                return inner;
+            }
+        }
+
         // Check for terminal marker (_)
         if (std.mem.eql(u8, lexer.trim(clean_content), "_")) {
             return ast.Step{ .terminal = {} };
