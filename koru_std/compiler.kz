@@ -806,6 +806,122 @@ pub const CompilerContext = struct {
     return updated_ctx;
 }
 
+// [with] scoped-vocabulary resolution (641_010; concept
+// frag-parser-library-peg-on-two-glyphs). Stage-A canonicalize stamps the MAIN
+// module onto every bare name with no import lookup, so a bare `match` inside a
+// grammar region arrives here as `<main>:match` and would die as an unknown
+// event. A flow annotated `[with]` opens the annotated invocation's OWN module
+// for otherwise-unresolved names in its lexical subtree: a name stamped to the
+// main module that is NOT a real main-module event but IS a real event of that
+// module is re-qualified to it. Unresolved-only — a name that genuinely resolves
+// in the main module is never shadowed. Runs BEFORE run-pre-transforms so the
+// grammar transform (parser.kz `isVerb` keys off the qualifier being present)
+// sees the resolved `std.parser:match`. Mirrors canonicalize_names' own
+// flow/continuation/node recursion, so it visits exactly the paths it does.
+~pub event resolve-with-scopes { ctx: CompilerContext } -> CompilerContext
+
+~proc resolve-with-scopes|zig {
+    const ast_mod = @import("ast");
+    const main_mod = ctx.ast.main_module_name;
+    const alloc = ctx.allocator;
+
+    const S = struct {
+        // Build a set of "module\x00event" keys from every event_decl (recursing
+        // module_decls). Collected from original_ast — the unfiltered AST — so the
+        // membership check is complete regardless of emit-mode filtering.
+        fn collect(items: []const ast_mod.Item, set: *std.StringHashMap(void), a: std.mem.Allocator) void {
+            for (items) |*item| {
+                switch (item.*) {
+                    .event_decl => |*e| {
+                        if (e.path.segments.len == 0) continue;
+                        const mq = e.path.module_qualifier orelse continue;
+                        const seg = e.path.segments[e.path.segments.len - 1];
+                        const key = std.fmt.allocPrint(a, "{s}\x00{s}", .{ mq, seg }) catch continue;
+                        set.put(key, {}) catch {};
+                    },
+                    .module_decl => |*m| collect(m.items, set, a),
+                    else => {},
+                }
+            }
+        }
+
+        fn has(set: *std.StringHashMap(void), mod: []const u8, seg: []const u8, a: std.mem.Allocator) bool {
+            const key = std.fmt.allocPrint(a, "{s}\x00{s}", .{ mod, seg }) catch return false;
+            defer a.free(key);
+            return set.contains(key);
+        }
+
+        fn restamp(inv: *ast_mod.Invocation, target: []const u8, main: []const u8, set: *std.StringHashMap(void), a: std.mem.Allocator) void {
+            if (inv.path.segments.len == 0) return;
+            const mq = inv.path.module_qualifier orelse return;
+            if (!std.mem.eql(u8, mq, main)) return;
+            const seg = inv.path.segments[inv.path.segments.len - 1];
+            if (has(set, main, seg, a)) return; // resolves locally — never shadow
+            if (!has(set, target, seg, a)) return; // unknown in target too — leave for the downstream KORU040
+            inv.path.module_qualifier = a.dupe(u8, target) catch return;
+        }
+
+        fn walkNode(node: *ast_mod.Node, target: []const u8, main: []const u8, set: *std.StringHashMap(void), a: std.mem.Allocator) void {
+            switch (node.*) {
+                .invocation => |*inv| restamp(@constCast(inv), target, main, set, a),
+                .label_with_invocation => |*lwi| restamp(@constCast(&lwi.invocation), target, main, set, a),
+                .conditional_block => |*cb| {
+                    for (cb.nodes) |*n| walkNode(@constCast(n), target, main, set, a);
+                },
+                .foreach => |*fe| {
+                    for (fe.branches) |*b| {
+                        for (b.body) |*c| walkCont(@constCast(c), target, main, set, a);
+                    }
+                },
+                .conditional => |*cond| {
+                    for (cond.branches) |*b| {
+                        for (b.body) |*c| walkCont(@constCast(c), target, main, set, a);
+                    }
+                },
+                .switch_result => |*sr| {
+                    for (sr.branches) |*b| {
+                        for (b.body) |*c| walkCont(@constCast(c), target, main, set, a);
+                    }
+                },
+                else => {},
+            }
+        }
+
+        fn walkCont(cont: *ast_mod.Continuation, target: []const u8, main: []const u8, set: *std.StringHashMap(void), a: std.mem.Allocator) void {
+            if (cont.node) |*n| walkNode(@constCast(n), target, main, set, a);
+            for (cont.continuations) |*nested| walkCont(@constCast(nested), target, main, set, a);
+        }
+
+        // A flow's `[with]` target is the annotated invocation's OWN module.
+        fn withTarget(flow: *const ast_mod.Flow) ?[]const u8 {
+            var found = false;
+            for (flow.annotations) |ann| {
+                if (std.mem.eql(u8, ann, "with")) found = true;
+            }
+            for (flow.inv().annotations) |ann| {
+                if (std.mem.eql(u8, ann, "with")) found = true;
+            }
+            if (!found) return null;
+            return flow.inv().path.module_qualifier;
+        }
+    };
+
+    var set = std.StringHashMap(void).init(alloc);
+    S.collect(ctx.original_ast.items, &set, alloc);
+
+    for (ctx.ast.items) |*item| {
+        if (item.* != .flow) continue;
+        const flow: *const ast_mod.Flow = &item.flow;
+        const target = S.withTarget(flow) orelse continue;
+        S.walkCont(@constCast(&flow.body), target, main_mod, &set, alloc);
+    }
+
+    var updated_ctx = ctx;
+    updated_ctx.passes_completed += 1;
+    updated_ctx.current_pass = "resolve_with_scopes";
+    return updated_ctx;
+}
+
 // Comptime interpreter fold: partial evaluation of [comptime] flows whose
 // head event has a pure-Koru bare-return impl. The interpreter (comptime_eval)
 // evaluates the head at Stage C and rewrites the flow to its runtime residue
@@ -840,7 +956,7 @@ pub const CompilerContext = struct {
 // Frontend segment: Early AST processing (abstract, can be overridden)
 ~[comptime|abstract] pub event frontend { ctx: CompilerContext } -> CompilerContext
 
-~frontend = process-ccp-commands(ctx): c1 |> run-pre-transforms(ctx: c1): cp |> process-template-procs(ctx: cp): c2 |> fold-comptime(ctx: c2): c3 |> evaluate-comptime(ctx: c3): c4 -> c4
+~frontend = process-ccp-commands(ctx): c1 |> resolve-with-scopes(ctx: c1): cw |> run-pre-transforms(ctx: cw): cp |> process-template-procs(ctx: cp): c2 |> fold-comptime(ctx: c2): c3 |> evaluate-comptime(ctx: c3): c4 -> c4
 
 // Analysis segment: Validation passes (abstract, can be overridden)
 ~[comptime|abstract] pub event analysis { ctx: CompilerContext }
