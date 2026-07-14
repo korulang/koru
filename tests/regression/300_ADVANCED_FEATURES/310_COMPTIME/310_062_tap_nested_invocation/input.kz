@@ -34,8 +34,7 @@ const std = @import("std");
 }
 
 // Tap on goodbye - should fire even when goodbye is nested
-~tap(goodbye -> *)
-| said _ |> observer()
+~tap(goodbye -> *): v |> observer()
 
 // hello is top-level, goodbye is NESTED in hello's continuation
 ~hello(): _ |> goodbye()

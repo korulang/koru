@@ -22,8 +22,7 @@ const std = @import("std");
 
 // TAP: Observe hello -> * | greeted
 // Using the library syntax instead of a special form
-~tap(hello -> *)
-| greeted _ |> observer()
+~tap(hello -> *): v |> observer()
 
 // Execute hello - tap should fire on the greeted branch
 ~hello()

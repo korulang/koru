@@ -21,8 +21,7 @@ const std = @import("std");
 }
 
 // Tap that observes hello's `greeted` branch and logs via tap-action
-~tap(hello -> *)
-| greeted _ |> tap-action()
+~tap(hello -> *): v |> tap-action()
 
 // Main flow that triggers the tap
 ~hello()

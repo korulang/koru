@@ -27,12 +27,10 @@ const std = @import("std");
 }
 
 // First tap on hello
-~tap(hello -> *)
-| greeted _ |> tap1()
+~tap(hello -> *): v |> tap1()
 
 // Second tap on hello (should also fire!)
-~tap(hello -> *)
-| greeted _ |> tap2()
+~tap(hello -> *): v |> tap2()
 
 // Execute hello - should trigger both taps
 ~hello()

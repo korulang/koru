@@ -11,14 +11,11 @@ const std = @import("std");
     std.debug.print("[TAP] Intercepted event: {s}\n", .{event_name});
 }
 
-// Tap: Intercept transitions from compute (any destination)
-// When main.kz calls compute(), this tap fires automatically!
-// Note: 'input:' is the canonical namespace for entry module events
-~tap(input:compute -> input:format)
-| result r |> log(event_name: "compute") => result { result: r }
+// Tap: Intercept transitions from compute (any destination). compute/format are
+// bare-return `-> T` events, so the tap binds the produced value with `: v` (the
+// call-site bind rule) — a branch tap (`| result |>`) has no named branch to match
+// on a bare-return event. Lars-ruled 2026-06-25; see 508_tap_on_bare_return.
+~tap(input:compute -> input:format): r |> log(event_name: "compute")
 
-// Tap: Intercept transitions from format (any destination)
-// When main.kz calls format(), this tap fires automatically!
-// Note: 'input:' is the canonical namespace for entry module events
-~tap(input:format -> input:display)
-| formatted f |> log(event_name: "format") => formatted { formatted: f }
+// Tap: Intercept transitions from format (any destination).
+~tap(input:format -> input:display): f |> log(event_name: "format")
