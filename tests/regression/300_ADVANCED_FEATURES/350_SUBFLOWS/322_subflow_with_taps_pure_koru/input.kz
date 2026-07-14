@@ -32,14 +32,11 @@
 // (cf. 350_SUBFLOWS/303_subflow_chained)
 ~event double { value: i32 } -> i32
 
-~double = add-five(value)
-| result r -> r
+~double = add-five(value): r -> r
 
-// TAP: observe add-five -> result transitions and print purely.
-// (cf. 330_PHANTOM_TYPES/.../330_030_taps_with_auto_discharge: a tap whose
-//  continuation is a plain module-event invocation)
-~tap(add-five -> *)
-| result |> std/io:print.ln("TAP FIRED: add-five -> result observed!")
+// TAP: observe add-five's bare-return transition and print purely. `: v` binds
+// the produced value (unused here), mirroring the ruled form in 508/505.
+~tap(add-five -> *): v |> std/io:print.ln("TAP FIRED: add-five -> result observed!")
 
 // Execute the subflow — the tap fires during it, then print the final value.
 ~double(value: 10): r |> std/io:print.ln("Final: {{ r:d }}")
