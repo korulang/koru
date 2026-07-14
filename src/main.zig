@@ -1288,22 +1288,81 @@ fn generateComptimeBackendEmitted(allocator: std.mem.Allocator, source_file: *as
 
     // Add dumpAST helper for observability (backend_output_emitted.zig version)
     try code_emitter.write(
-        \\// AST Dump Helper - observability for compiler pipeline debugging
+        \\// AST Dump Helper - observability for compiler pipeline debugging.
+        \\// Structural continuation-tree walk gated by KORU_DUMP_AST. Self-contained
+        \\// on __koru_ast types (no serializer needed at Stage-C), so it renders the
+        \\// POST-TRANSFORM tree the emitter actually consumes — taps, comprehensions,
+        \\// [with], auto-discharge. Each `| branch bind => NODE` line names the node
+        \\// kind and its identity; [TAP] marks tap-inserted invocations.
+        \\fn koruDumpPath(path: __koru_ast.DottedPath) void {
+        \\    if (path.module_qualifier) |mq| __koru_std.debug.print("{s}:", .{mq});
+        \\    for (path.segments, 0..) |seg, i| {
+        \\        if (i > 0) __koru_std.debug.print(".", .{});
+        \\        __koru_std.debug.print("{s}", .{seg});
+        \\    }
+        \\}
+        \\fn koruDumpCont(cont: *const __koru_ast.Continuation, depth: usize) void {
+        \\    var i: usize = 0;
+        \\    while (i < depth) : (i += 1) __koru_std.debug.print("  ", .{});
+        \\    __koru_std.debug.print("| {s}", .{cont.branch});
+        \\    if (cont.binding) |b| __koru_std.debug.print(" {s}", .{b});
+        \\    if (cont.node) |n| {
+        \\        switch (n) {
+        \\            .invocation => |inv| {
+        \\                __koru_std.debug.print(" => INVOKE ", .{});
+        \\                koruDumpPath(inv.path);
+        \\                if (inv.return_binding) |rb| __koru_std.debug.print(": {s}", .{rb});
+        \\                if (inv.inserted_by_tap) __koru_std.debug.print("  [TAP]", .{});
+        \\            },
+        \\            .branch_constructor => |bc| {
+        \\                if (bc.is_bare_return) {
+        \\                    __koru_std.debug.print(" => RETURN", .{});
+        \\                } else {
+        \\                    __koru_std.debug.print(" => CTOR .{s}", .{bc.branch_name});
+        \\                }
+        \\            },
+        \\            .terminal => __koru_std.debug.print(" => _", .{}),
+        \\            .label_with_invocation => |lwi| {
+        \\                __koru_std.debug.print(" => LABEL {s} ", .{lwi.label});
+        \\                koruDumpPath(lwi.invocation.path);
+        \\                if (lwi.invocation.inserted_by_tap) __koru_std.debug.print("  [TAP]", .{});
+        \\            },
+        \\            .metatype_binding => |mb| {
+        \\                __koru_std.debug.print(" => METATYPE {s}", .{mb.metatype});
+        \\                if (mb.inserted_by_tap) __koru_std.debug.print("  [TAP]", .{});
+        \\            },
+        \\            else => __koru_std.debug.print(" => <node>", .{}),
+        \\        }
+        \\    } else {
+        \\        __koru_std.debug.print(" => (empty)", .{});
+        \\    }
+        \\    __koru_std.debug.print("\n", .{});
+        \\    for (cont.continuations) |*child| koruDumpCont(child, depth + 1);
+        \\}
         \\fn dumpAST(program_ast: *const __koru_ast.Program, stage: []const u8, allocator: __koru_std.mem.Allocator) void {
-        \\    // Check if AST dumping is enabled via environment variable
         \\    const dump_enabled: ?[]const u8 = __koru_std.process.getEnvVarOwned(allocator, "KORU_DUMP_AST") catch |err| blk: {
         \\        if (err == error.EnvironmentVariableNotFound) break :blk null;
         \\        break :blk null;
         \\    };
         \\    defer if (dump_enabled) |val| allocator.free(val);
-        \\
         \\    if (dump_enabled == null) return;  // Not enabled
         \\
         \\    __koru_std.debug.print("\n============================================================\n", .{});
-        \\    __koru_std.debug.print("AST DUMP: {s}\n", .{stage});
+        \\    __koru_std.debug.print("AST DUMP: {s}  (items={d}, module={s})\n", .{ stage, program_ast.items.len, program_ast.main_module_name });
         \\    __koru_std.debug.print("============================================================\n", .{});
-        \\    __koru_std.debug.print("Items: {d}\n", .{program_ast.items.len});
-        \\    __koru_std.debug.print("Module: {s}\n", .{program_ast.main_module_name});
+        \\    for (program_ast.items) |*item| {
+        \\        switch (item.*) {
+        \\            .flow => |*f| {
+        \\                __koru_std.debug.print("FLOW ", .{});
+        \\                if (f.body.node) |n| {
+        \\                    if (n == .invocation) koruDumpPath(n.invocation.path);
+        \\                }
+        \\                __koru_std.debug.print("\n", .{});
+        \\                koruDumpCont(&f.body, 1);
+        \\            },
+        \\            else => {},
+        \\        }
+        \\    }
         \\    __koru_std.debug.print("============================================================\n\n", .{});
         \\}
         \\
