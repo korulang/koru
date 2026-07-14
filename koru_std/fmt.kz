@@ -46,14 +46,18 @@ pub const FormattedText = struct {
 // The FormattedText carries its allocator, so fmt.dealloc knows how to free.
 // Auto-discharge inserts fmt.dealloc automatically.
 
+// The transform event returns SiteResult (the rewritten site) — the single-return
+// form every `[transform]` decl lands as (frag-single-return-form-is-universal;
+// `ln` is the twin). The RUNTIME value is the `.formatted` union the inline_body
+// breaks with, which the caller branches on as `| formatted f`; the `<allocated!>`
+// obligation rides that runtime value, not the transform event's own return.
 ~[comptime|transform]pub event fmt.blk {
     source: Source,
     invocation: *const Invocation,
     item: *const Item,
     program: *const Program,
     allocator: std.mem.Allocator
-}
-| formatted *FormattedText<allocated!>
+} -> SiteResult
 
 ~[norun]pub event fmt.blk.impl {
     text: []const u8,
@@ -61,7 +65,6 @@ pub const FormattedText = struct {
 
 ~proc fmt.blk|zig {
     const ast = @import("ast");
-    const ast_functional = @import("ast_functional");
 
     // Helper: Check if identifier is a Zig keyword
     const isZigKeyword = struct {
@@ -115,15 +118,20 @@ pub const FormattedText = struct {
         }
     }.append;
 
+    // Already transformed — don't re-run (mirrors ln's guard)
+    if (invocation.inline_body != null) {
+        return .{};
+    }
+
     // Get the flow from the item
     const flow = if (item.* == .flow)
         &item.flow
     else
-        return .{ .formatted = undefined };
+        return .{};
 
     // Position-agnostic: the runner lifts nested sites, so `invocation` IS
     // the flow's own invocation at every depth. No position fork.
-    _ = invocation;
+    _ = program;
 
     // Parse the Source content for {{ ... }} placeholders
     var format_buf = std.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
@@ -244,6 +252,7 @@ pub const FormattedText = struct {
         .annotations = new_inv_annotations,
         .inserted_by_tap = flow.inv().inserted_by_tap,
         .from_opaque_tap = flow.inv().from_opaque_tap,
+        .inline_body = allocator.dupe(u8, inline_code) catch unreachable,
     };
 
     const transformed_flow = ast.Flow{
@@ -261,13 +270,9 @@ pub const FormattedText = struct {
 
     const new_item = ast.Item{ .flow = transformed_flow };
 
-    const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
-    if (maybe_new_program) |new_program| {
-        const result = allocator.create(ast.Program) catch unreachable;
-        result.* = new_program;
-        return .{ .formatted = undefined };
-    }
-    return .{ .formatted = undefined };
+    // Position-agnostic: hand the rewritten site back as a replacement; the pass
+    // runner grafts it (top-level or lifted-nested), same as ln.
+    return .{ .replacement = new_item };
 }
 
 // ============================================================================
