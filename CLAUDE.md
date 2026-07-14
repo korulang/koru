@@ -16,6 +16,18 @@ When this guide and the compiler disagree, **the compiler wins and the doc is th
 bug** — flag the drift, never reconcile reality to the prose. Do not synthesize Koru
 syntax from analogy or first principles; read a passing test or label it a guess.
 
+## On startup — READ the belief garden (the whys the tests can't hold)
+
+The tests are ground truth for what Koru *is*. The **belief garden** —
+`concepts/frag-*.md`, this repo's developed doctrine (the `membrane` skill) — holds the
+things the code structurally *cannot*: the irreducible whys, the repudiations ("we
+believed X; X was wrong"), the regime changes. On startup, READ it before you improvise
+anything it governs — a belief that settles the surface you're about to touch usually
+already exists, and skipping the garden makes each session re-derive a thinner, wronger
+version. Consult a fragment, quote it, then act. And keep the corpus honest the koru way:
+a belief that *could* live as a passing test or a `MUST_FAIL` wall belongs there, not in
+prose — prefer **evolving it OUT into the suite** and leaving only a pointer.
+
 ## Greenfield: there are ZERO users. Breaking things IS the job.
 
 Koru has no users. None. There is no production, no shipped contract, no one
