@@ -279,6 +279,15 @@ pub const CompilerContext = struct {
     flow_checker_module.addImport("annotation_parser", annotation_parser_module);
     flow_checker_module.addImport("expression_parser", expression_parser_module);
 
+    // Release gate - rejects ~[prototype] modules under --release (the production gate)
+    const release_gate_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/release_gate.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    release_gate_module.addImport("ast", ast_module);
+    release_gate_module.addImport("errors", errors_module);
+
     // Phantom semantic checker - validates phantom type states
     const phantom_semantic_checker_module = b.createModule(.{
         .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/phantom_semantic_checker.zig" },
@@ -539,6 +548,7 @@ pub const CompilerContext = struct {
     backend_output_module.addImport("ast_functional", ast_functional_module);
     backend_output_module.addImport("flow_checker", flow_checker_module);
     backend_output_module.addImport("shape_checker", shape_checker_module);
+    backend_output_module.addImport("release_gate", release_gate_module);
     backend_output_module.addImport("phantom_semantic_checker", phantom_semantic_checker_module);
     backend_output_module.addImport("auto_discharge_inserter", auto_discharge_inserter_module);
     backend_output_module.addImport("dead_strip", dead_strip_module);
@@ -585,6 +595,7 @@ pub const CompilerContext = struct {
     exe.root_module.addImport("emit_build_zig", emit_build_zig_module);
     exe.root_module.addImport("shape_checker", shape_checker_module);
     exe.root_module.addImport("flow_checker", flow_checker_module);
+    exe.root_module.addImport("release_gate", release_gate_module);
     exe.root_module.addImport("phantom_semantic_checker", phantom_semantic_checker_module);
     exe.root_module.addImport("auto_discharge_inserter", auto_discharge_inserter_module);
     exe.root_module.addImport("dead_strip", dead_strip_module);
@@ -963,12 +974,14 @@ pub const CompilerContext = struct {
 | ctx CompilerContext
 | failed { ctx: CompilerContext, message: []const u8 }
 
-~analysis = check-structure(ctx)
-| ctx c1 |> pass-auto-discharge(ctx: c1)
-  | ctx c2 |> check-flow(ctx: c2)
-    | ctx c3 |> check-phantom-semantic(ctx: c3)
-      | ctx c4 |> check-purity(ctx: c4)
-        | ctx c5 => ctx c5
+~analysis = check-release-gate(ctx)
+| ctx cg |> check-structure(ctx: cg)
+  | ctx c1 |> pass-auto-discharge(ctx: c1)
+    | ctx c2 |> check-flow(ctx: c2)
+      | ctx c3 |> check-phantom-semantic(ctx: c3)
+        | ctx c4 |> check-purity(ctx: c4)
+          | ctx c5 => ctx c5
+          | failed f => failed { f.ctx, f.message }
         | failed f => failed { f.ctx, f.message }
       | failed f => failed { f.ctx, f.message }
     | failed f => failed { f.ctx, f.message }
@@ -1508,6 +1521,11 @@ const emitFlowWithMocks = struct {
 ~pub event evaluate-comptime { ctx: CompilerContext } -> CompilerContext
 
 // Structural shape checking - validates events/branches exist, base types match
+// Release gate - rejects ~[prototype] modules under --release (runs first in analysis)
+~pub event check-release-gate { ctx: CompilerContext }
+| ctx CompilerContext
+| failed { ctx: CompilerContext, message: []const u8 }
+
 ~pub event check-structure { ctx: CompilerContext }
 | ctx CompilerContext
 | failed { ctx: CompilerContext, message: []const u8 }
@@ -2075,6 +2093,69 @@ const joinPathAlloc = struct {
 }
 
 // Structural shape checker implementation
+// Release gate: reject a ~[prototype] module built with --release (the production
+// gate). Runs FIRST in analysis and only under --release, so prototype code is
+// dismissed up front rather than leniently compiled. Dev builds (no --release)
+// skip it entirely and keep the prototype affordance. See release_gate.zig +
+// concepts/frag-prototype-mode-panic-holes.md.
+~proc check-release-gate|zig {
+    var mutable_ctx = ctx;
+    mutable_ctx.current_pass = "check_release_gate";
+
+    // Only release builds gate. Dev builds allow ~[prototype].
+    if (!CompilerEnv.hasFlag("release")) {
+        return .{ .ctx = mutable_ctx };
+    }
+
+    const release_gate = @import("release_gate");
+    const errors_mod = @import("errors");
+
+    var reporter = errors_mod.ErrorReporter.init(
+        std.heap.page_allocator,
+        "release_gate",
+        ""
+    ) catch {
+        mutable_ctx.errors.append(mutable_ctx.allocator, .{
+            .message = "Failed to initialize error reporter",
+            .location = .{ .file = "compiler", .line = 0, .column = 0 },
+        }) catch {};
+        return .{ .ctx = mutable_ctx };
+    };
+    defer reporter.deinit();
+
+    var gate = release_gate.ReleaseGate.init(&reporter);
+    gate.check(mutable_ctx.ast) catch |err| {
+        for (reporter.errors.items) |reporter_err| {
+            std.debug.print("error[{s}]: {s}\n  --> {s}:{}:{}\n\n", .{
+                @tagName(reporter_err.code),
+                reporter_err.message,
+                reporter_err.location.file,
+                reporter_err.location.line,
+                reporter_err.location.column,
+            });
+
+            mutable_ctx.errors.append(mutable_ctx.allocator, .{
+                .message = mutable_ctx.allocator.dupe(u8, reporter_err.message) catch reporter_err.message,
+                .location = .{
+                    .file = mutable_ctx.allocator.dupe(u8, reporter_err.location.file) catch reporter_err.location.file,
+                    .line = @intCast(reporter_err.location.line),
+                    .column = @intCast(reporter_err.location.column),
+                },
+            }) catch {};
+        }
+
+        const err_msg = switch (err) {
+            error.ReleaseRejectsPrototype => "prototype module rejected in release build",
+            else => "release gate error",
+        };
+
+        return .{ .failed = .{ .ctx = mutable_ctx, .message = err_msg } };
+    };
+
+    mutable_ctx.passes_completed += 1;
+    return .{ .ctx = mutable_ctx };
+}
+
 ~proc check-structure|zig {
     // Need mutable ctx to append errors
     var mutable_ctx = ctx;

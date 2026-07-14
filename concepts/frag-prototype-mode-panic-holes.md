@@ -24,10 +24,37 @@ way to work, not a hack.
 
 The guarantee is unchanged where it matters. Without the annotation the same
 source is rejected KORU022 (400_161). The opt-in lives in the SOURCE, per-file
-and greppable — there is deliberately no CLI flag a caller can pass to grant it,
-so prototype leniency cannot leak into a production build by someone else's
-invocation. "The language always demands totality" is now scoped to the
+and greppable — there is deliberately no CLI flag a caller can pass to grant
+leniency. "The language always demands totality" is now scoped to the
 production altitude, not the language as a whole.
+
+## The release gate makes "cannot reach production" real (KORU029)
+
+Leniency alone would be a rotting fallback: a `~[prototype]` module compiles
+forever, so nothing forces the marker's removal ([[frag-no-fallbacks]] — every
+fallback becomes the default). The release gate is the other half of the
+bargain, and the thing that makes the whole feature legitimate: a `--release`
+build **rejects outright** any module in the import graph bearing `~[prototype]`
+(KORU029, `src/release_gate.zig`, the `check-release-gate` pass that runs FIRST
+in analysis). Not "the holes error in release" — the *annotation itself* is
+refused, before any lenient synthesis.
+
+So the marker is greppable for humans AND build-breaking for CI: prototype code
+physically cannot ship, because the release build refuses the file (400_162
+entry, 400_164 transitive — an imported prototype dependency is rejected too;
+400_163 confirms release leaves ordinary complete code alone). The dev workflow
+of "run incomplete now" therefore always terminates in "handle every branch and
+DELETE `~[prototype]`" before a release build can succeed — the gate is what
+forces the deletion. `--release` is a *semantic* production signal (reject
+dev-only constructs), orthogonal to optimize level (the final binary already
+defaults to ReleaseFast with `--debug` as the opt-out).
+
+The two halves are mechanically orthogonal: leniency lives inside the
+checkers/auto-discharge; the gate is a separate top-level pass that only reads
+module annotations and only fires under `--release`. Kept granular
+(hardcoded `prototype`) rather than a general "release-forbidden annotations"
+registry — one instance does not justify the framework; generalize when a
+second forbidden annotation appears.
 
 ## Why the hole beats the stub — this is not a concession, it is the doctrine
 
