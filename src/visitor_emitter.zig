@@ -1697,6 +1697,7 @@ pub const VisitorEmitter = struct {
                 m.flow.body.continuations,
                 &m.flow.inv().path,
                 &arm_counter,
+                m.flow.inv().return_binding,
             );
 
             self.code_emitter.indent_level -= 1;
@@ -3009,7 +3010,7 @@ pub const VisitorEmitter = struct {
                                             .bare_return_active = event.return_type != null,
                                         };
                                         var inline_result_counter: usize = 0;
-                                        try emitter.emitInlineBodyNode(self.code_emitter, &inline_ctx, inline_code, flow.body.continuations, &flow.inv().path, &inline_result_counter);
+                                        try emitter.emitInlineBodyNode(self.code_emitter, &inline_ctx, inline_code, flow.body.continuations, &flow.inv().path, &inline_result_counter, flow.inv().return_binding);
                                       } else {
                                         // Branching continuations -- emit: const result = <inline>; switch(result) { ... }
                                         try self.code_emitter.writeIndent();

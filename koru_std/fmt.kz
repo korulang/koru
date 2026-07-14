@@ -253,6 +253,9 @@ pub const FormattedText = struct {
         .inserted_by_tap = flow.inv().inserted_by_tap,
         .from_opaque_tap = flow.inv().from_opaque_tap,
         .inline_body = allocator.dupe(u8, inline_code) catch unreachable,
+        // Preserve the site's `: f` bind so a bare-bound fmt.blk site binds its
+        // inline result for the following continuations (same path as ln, 620_002).
+        .return_binding = flow.inv().return_binding,
     };
 
     const transformed_flow = ast.Flow{
@@ -447,25 +450,37 @@ pub const FormattedText = struct {
         }
     }
 
-    // Generate inline code that formats into a thread-local buffer and
-    // breaks out with a tagged union value.
-    // Uses __KORU_INLINE__ as label placeholder — visitor_emitter replaces
-    // it with a unique label when wrapping in a labeled block.
+    // Generate inline code that formats into a thread-local buffer and breaks
+    // out with the line value. Uses __KORU_INLINE__ as label placeholder — the
+    // emitter replaces it with a unique label when wrapping in a labeled block.
     //
-    // We define a local union type so the break value can be switched on
-    // by the continuation handler. This is self-contained — no external
-    // module path references needed.
-    const inline_code = std.fmt.allocPrint(
-        allocator,
-        \\{{
-        \\    const __S = struct {{ threadlocal var __buf: [4096]u8 = undefined; }};
-        \\    const __text = @import("std").fmt.bufPrint(&__S.__buf, "{s}", .{{{s}}}) catch "";
-        \\    const __LnResult = union(enum) {{ line: struct {{ text: []const u8 }} }};
-        \\    break :__KORU_INLINE__ @as(__LnResult, .{{ .line = .{{ .text = __text }} }});
-        \\}}
-        ,
-        .{ format_buf.items, args_buf.items }
-    ) catch unreachable;
+    // Result SHAPE follows the consumption form: a `| line l` BRANCH needs the
+    // `__LnResult` tagged union to switch on; a `: l` bare-return BIND needs the
+    // payload `struct { text }` directly, so `l.text` resolves (620_002). Both
+    // are self-contained — no external module path references needed.
+    const inline_code = if (invocation.return_binding != null)
+        std.fmt.allocPrint(
+            allocator,
+            \\{{
+            \\    const __S = struct {{ threadlocal var __buf: [4096]u8 = undefined; }};
+            \\    const __text = @import("std").fmt.bufPrint(&__S.__buf, "{s}", .{{{s}}}) catch "";
+            \\    break :__KORU_INLINE__ .{{ .text = __text }};
+            \\}}
+            ,
+            .{ format_buf.items, args_buf.items }
+        ) catch unreachable
+    else
+        std.fmt.allocPrint(
+            allocator,
+            \\{{
+            \\    const __S = struct {{ threadlocal var __buf: [4096]u8 = undefined; }};
+            \\    const __text = @import("std").fmt.bufPrint(&__S.__buf, "{s}", .{{{s}}}) catch "";
+            \\    const __LnResult = union(enum) {{ line: struct {{ text: []const u8 }} }};
+            \\    break :__KORU_INLINE__ @as(__LnResult, .{{ .line = .{{ .text = __text }} }});
+            \\}}
+            ,
+            .{ format_buf.items, args_buf.items }
+        ) catch unreachable;
 
     // Already transformed — don't re-run
     if (invocation.inline_body != null) {
@@ -494,6 +509,9 @@ pub const FormattedText = struct {
         .inserted_by_tap = invocation.inserted_by_tap,
         .from_opaque_tap = invocation.from_opaque_tap,
         .inline_body = allocator.dupe(u8, inline_code) catch unreachable,
+        // Preserve the site's `: l` bind so the emitter binds the inline result
+        // (const l = …) for the following void continuations to reference (620_002).
+        .return_binding = invocation.return_binding,
     };
 
     // Position-agnostic: the runner lifts nested sites into a synthetic

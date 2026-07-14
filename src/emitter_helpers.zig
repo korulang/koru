@@ -4128,6 +4128,13 @@ pub fn emitInlineBodyNode(
     continuations: []const ast.Continuation,
     path: *const ast.DottedPath,
     result_counter: *usize,
+    // The site's `: bind` name, if any. An inline-transform site consumed by a
+    // bare-return bind (`std/fmt:ln(...): l |> use l`) must materialise the
+    // break value as `const l = <labeled block>;` so the VOID continuations that
+    // follow can reference it — without a binding the block dumps as a bare
+    // statement and the break/label leak (620_002). Null for branch consumption
+    // (`| line l`), which the switch path below handles.
+    return_binding: ?[]const u8,
 ) anyerror!void {
     const inline_stmt_marker = "//@koru:inline_stmt\n";
     var inline_code = inline_code_raw;
@@ -4311,6 +4318,26 @@ pub fn emitInlineBodyNode(
             return;
         }
 
+        // Bare-return bind of an inline-transform site (`ln(...): l |> use l`):
+        // materialise the break value as `const l = <labeled block>;` so the
+        // void continuations that follow can reference it. Without this the block
+        // dumps as a bare statement and both the `break :__KORU_INLINE__` label
+        // and the bind name leak (620_002). Branch consumption (`| line l`) never
+        // reaches here — it takes the switch path below.
+        if (return_binding) |rb| {
+            try emitter.writeIndent();
+            try emitter.write("const ");
+            try writeBranchName(emitter, rb);
+            try emitter.write(" = ");
+            try writeInlineCodeWithLabel(emitter, ctx, inline_code);
+            try emitter.write(";\n");
+            for (continuations) |*cont| {
+                if (cont.branch.len != 0) continue; // terminal — returned, not appended
+                try emitContinuationBody(emitter, ctx, cont, result_counter);
+            }
+            return;
+        }
+
         // No-effect inline template (e.g. `~if`): route through the marker
         // resolver so the template's `{{ continuations["X"].return }}` markers
         // (`__koru_return_<idx>`) lower into the matching arm. Only VOID-chain
@@ -4453,7 +4480,7 @@ pub fn emitFlow(
     // nested inline node takes, so this works at every depth, not just top-level.
     if (flow.inline_body) |inline_code_raw| {
         var inline_result_counter: usize = 0;
-        try emitInlineBodyNode(emitter, ctx, inline_code_raw, flow.body.continuations, &flow.inv().path, &inline_result_counter);
+        try emitInlineBodyNode(emitter, ctx, inline_code_raw, flow.body.continuations, &flow.inv().path, &inline_result_counter, flow.inv().return_binding);
         return;
     }
 
@@ -8027,7 +8054,7 @@ pub fn emitContinuationBody(
     if (cont.node) |node| {
         if (node == .invocation) {
             if (node.invocation.inline_body) |inline_code_raw| {
-                try emitInlineBodyNode(emitter, ctx, inline_code_raw, cont.continuations, &cont.node.?.invocation.path, result_counter);
+                try emitInlineBodyNode(emitter, ctx, inline_code_raw, cont.continuations, &cont.node.?.invocation.path, result_counter, cont.node.?.invocation.return_binding);
                 return;
             }
         }
