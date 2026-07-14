@@ -21,7 +21,6 @@ const File = struct { handle: i32 };
 // The obligation escapes via the return signature - caller must handle it
 ~pub event my-subflow {} -> *File<opened!>
 
-// SUBFLOW: Delegates to open, maps opened → file-opened
-// The <opened!> obligation passes through to the caller
-~my-subflow = open(path: "data.txt")
-| opened f -> f
+// SUBFLOW: opens a file and bare-returns it, threading the <opened!>
+// obligation through the return signature to the caller.
+~my-subflow = open(path: "data.txt"): f -> f
