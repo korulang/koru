@@ -1,0 +1,23 @@
+// The production guarantee behind prototype mode: WITHOUT `~[prototype]`, an
+// unhandled non-optional terminal branch is rejected KORU022 — exactly as
+// today (400_097). This is the SAME source as 400_160 with the annotation
+// removed; the annotation is the only thing that lets the hole compile.
+//
+// This pins that prototype mode cannot leak into a production build: a hole is
+// a hard compile error unless the file explicitly opts in with `~[prototype]`.
+// There is no flag a caller can pass to silence it — the opt-in lives in the
+// source, per-file, greppable.
+
+~import std/io
+
+~pub event run {}
+| done
+| err []const u8
+
+~proc run|zig {
+    return .{ .err = "built path ran; done is still a hole" };
+}
+
+~run()
+| err msg |> std/io:print.ln(msg)
+// `| done` unhandled and NO `~[prototype]` — must fail KORU022.

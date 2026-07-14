@@ -2113,6 +2113,14 @@ const joinPathAlloc = struct {
     };
     defer checker.deinit();
 
+    // ~[prototype]: relax required terminal-branch exhaustiveness so unhandled
+    // `|` branches become synthesized @panic holes (see ShapeChecker.prototype_mode).
+    for (mutable_ctx.ast.module_annotations) |ann| {
+        if (std.mem.eql(u8, ann, "prototype")) {
+            checker.prototype_mode = true;
+        }
+    }
+
     // Run structural validation
     checker.checkSourceFile(mutable_ctx.ast) catch |err| {
         // Print all errors from the reporter for visibility
@@ -2202,6 +2210,15 @@ const joinPathAlloc = struct {
     };
     defer checker.deinit();
 
+    // ~[prototype]: relax required terminal-branch exhaustiveness (see
+    // FlowChecker.prototype_mode). Consistent with check-structure; by this pass
+    // the auto-discharge synthesis has usually already filled the hole arm.
+    for (mutable_ctx.ast.module_annotations) |ann| {
+        if (std.mem.eql(u8, ann, "prototype")) {
+            checker.prototype_mode = true;
+        }
+    }
+
     // Run flow validation
     checker.checkSourceFile(mutable_ctx.ast) catch |err| {
         // Print all errors from the reporter for visibility
@@ -2287,6 +2304,21 @@ const joinPathAlloc = struct {
     // muted (`| <name> _ |> ...`). Same source, flag flips it.
     const strict_panic_branches = CompilerEnv.hasFlag("panic-branches=strict");
 
+    // `~[prototype]`: module opt-in to compile-and-run INCOMPLETE. An unhandled
+    // required TERMINAL branch becomes a synthesized @panic hole (same body as
+    // an unhandled `| ?!`) instead of a KORU022 exhaustiveness error — so a
+    // half-shaped program runs its built paths now and crashes loudly at a hole.
+    // Read like `strict` (an opaque module-annotation word), but it does NOT
+    // early-return: the pass runs WITH the flag so synthesis fills the holes.
+    // Never leaks to production — without the annotation this stays false and
+    // exhaustiveness is enforced.
+    var prototype_mode = false;
+    for (ctx.ast.module_annotations) |ann| {
+        if (std.mem.eql(u8, ann, "prototype")) {
+            prototype_mode = true;
+        }
+    }
+
     var mutable_ctx = ctx;
     mutable_ctx.current_pass = "auto_discharge";
 
@@ -2313,6 +2345,7 @@ const joinPathAlloc = struct {
         &reporter,
         warn_mode,
         strict_panic_branches,
+        prototype_mode,
     ) catch {
         mutable_ctx.errors.append(mutable_ctx.allocator, .{
             .message = "Failed to initialize auto-discharge inserter",

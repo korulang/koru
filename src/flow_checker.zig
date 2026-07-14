@@ -34,6 +34,13 @@ pub const FlowChecker = struct {
     ast_items: ?[]const ast.Item,  // Full AST for event lookups
     mode: CheckMode,
 
+    /// `~[prototype]` module opt-in — see ShapeChecker.prototype_mode. Set by
+    /// the check-flow pass from module_annotations; relaxes terminal-branch
+    /// coverage the same way (unhandled `|` => synthesized @panic hole). Note:
+    /// flow-check runs AFTER auto-discharge synthesis, so the hole arm usually
+    /// already exists by here; this keeps the two checkers consistent.
+    prototype_mode: bool = false,
+
     pub fn init(allocator: std.mem.Allocator, reporter: *errors.ErrorReporter) !FlowChecker {
         return initWithMode(allocator, reporter, .all);
     }
@@ -986,11 +993,13 @@ pub const FlowChecker = struct {
             });
         }
 
-        // Validate using pure BranchChecker
-        var result = try branch_checker.BranchChecker.validate(
+        // Validate using pure BranchChecker (prototype mode relaxes terminal
+        // exhaustiveness — the missing arm is a synthesized @panic hole).
+        var result = try branch_checker.BranchChecker.validateWithMode(
             self.allocator,
             declared.items,
             handled.items,
+            self.prototype_mode,
         );
         defer branch_checker.BranchChecker.freeResult(self.allocator, &result);
 

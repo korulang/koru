@@ -85,6 +85,23 @@ pub const BranchChecker = struct {
         declared: []const DeclaredBranch,
         handled: []const HandledBranch,
     ) !ValidationResult {
+        return validateWithMode(allocator, declared, handled, false);
+    }
+
+    /// Like `validate`, but `prototype_mode` relaxes TERMINAL-branch
+    /// exhaustiveness. Under `~[prototype]`, an unhandled required terminal
+    /// (`|`) branch is NOT reported missing — the auto-discharge pass
+    /// synthesizes a loud `@panic` arm for it (an honest hole), exactly the way
+    /// an unhandled `| ?!` panic branch is treated. Effect (`!`) branches keep
+    /// full exhaustiveness even in prototype mode: they lower to Handlers-struct
+    /// fns, not switch arms, and the presence-truth doctrine forbids synthesized
+    /// stand-ins for them (400_146/147/154).
+    pub fn validateWithMode(
+        allocator: std.mem.Allocator,
+        declared: []const DeclaredBranch,
+        handled: []const HandledBranch,
+        prototype_mode: bool,
+    ) !ValidationResult {
         var missing = try std.ArrayList([]const u8).initCapacity(allocator, 0);
         errdefer missing.deinit(allocator);
         var unknown = try std.ArrayList([]const u8).initCapacity(allocator, 0);
@@ -106,6 +123,7 @@ pub const BranchChecker = struct {
         for (declared, 0..) |decl, di| {
             if (decl.is_optional) continue; // Optional branches don't need handling
             if (decl.is_panic) continue; // Panic branches are ignorable (unhandled => synthesized @panic)
+            if (prototype_mode and decl.kind == .terminal) continue; // ~[prototype]: unhandled terminal => synthesized @panic hole (400_160)
 
             if (has_catchall) continue; // Catchall covers everything
 

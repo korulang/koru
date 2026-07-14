@@ -34,6 +34,7 @@ pub const AutoDischargeInserter = struct {
     synthetic_binding_counter: u32,
     warn_mode: bool, // When true, emit warnings about auto-inserted disposals
     strict_panic_branches: bool, // When true (--panic-branches=strict), unhandled panic branches are compile errors (the crash-surface map, loud)
+    prototype_mode: bool = false, // When true (~[prototype]), an unhandled required TERMINAL branch is synthesized as a @panic hole instead of a KORU022 error — same body as an unhandled | ?! panic branch (400_160)
 
     /// Error set for recursive functions that need explicit error types
     pub const RecursiveError = std.mem.Allocator.Error || error{ ValidationFailed, NoSpaceLeft };
@@ -309,7 +310,7 @@ pub const AutoDischargeInserter = struct {
         }
     };
 
-    pub fn init(allocator: std.mem.Allocator, reporter: *errors.ErrorReporter, warn_mode: bool, strict_panic_branches: bool) !AutoDischargeInserter {
+    pub fn init(allocator: std.mem.Allocator, reporter: *errors.ErrorReporter, warn_mode: bool, strict_panic_branches: bool, prototype_mode: bool) !AutoDischargeInserter {
         return .{
             .allocator = allocator,
             .reporter = reporter,
@@ -318,6 +319,7 @@ pub const AutoDischargeInserter = struct {
             .synthetic_binding_counter = 0,
             .warn_mode = warn_mode,
             .strict_panic_branches = strict_panic_branches,
+            .prototype_mode = prototype_mode,
         };
     }
 
@@ -3103,6 +3105,13 @@ pub const AutoDischargeInserter = struct {
         defer missing_optional.deinit(self.allocator);
         var missing_panic = try std.ArrayList([]const u8).initCapacity(self.allocator, 0);
         defer missing_panic.deinit(self.allocator);
+        // ~[prototype] holes: required terminal branches left unhandled. Same
+        // @panic body as missing_panic, but a distinct list so the crash-surface
+        // strict gate (--panic-branches=strict) below only governs real `| ?!`
+        // panic branches, never prototype holes (different feature, different
+        // opt-in).
+        var missing_prototype = try std.ArrayList([]const u8).initCapacity(self.allocator, 0);
+        defer missing_prototype.deinit(self.allocator);
 
         for (event_decl.branches) |branch| {
             // Effect (`!`) branches are NOT switch arms — they lower to fns in
@@ -3115,10 +3124,19 @@ pub const AutoDischargeInserter = struct {
                 try missing_panic.append(self.allocator, branch.name);
             } else if (branch.is_optional) {
                 try missing_optional.append(self.allocator, branch.name);
+            } else if (self.prototype_mode) {
+                // A plain REQUIRED terminal left unhandled under ~[prototype] is
+                // a HOLE: synthesize a loud @panic arm (same as | ?!) so the
+                // incomplete program compiles and runs its built paths, and
+                // crashes loudly if the hole is ever reached. Without ~[prototype]
+                // this is a KORU022 exhaustiveness error (400_161).
+                try missing_prototype.append(self.allocator, branch.name);
             }
         }
 
-        if (missing_optional.items.len == 0 and missing_panic.items.len == 0) {
+        if (missing_optional.items.len == 0 and missing_panic.items.len == 0 and
+            missing_prototype.items.len == 0)
+        {
             return null; // Nothing to synthesize
         }
 
@@ -3141,7 +3159,8 @@ pub const AutoDischargeInserter = struct {
         }
 
         // Create new continuations array with synthesized branches
-        const new_len = flow.body.continuations.len + missing_optional.items.len + missing_panic.items.len;
+        const new_len = flow.body.continuations.len + missing_optional.items.len +
+            missing_panic.items.len + missing_prototype.items.len;
         var new_continuations = try self.allocator.alloc(ast.Continuation, new_len);
         errdefer self.allocator.free(new_continuations);
 
@@ -3192,6 +3211,34 @@ pub const AutoDischargeInserter = struct {
                 .condition = null,
                 .condition_expr = null,
                 .node = .{ .inline_code = panic_msg }, // @panic(...) — loud, not a no-op
+                .indent = 0,
+                .continuations = &[_]ast.Continuation{},
+                .location = flow.location,
+            };
+        }
+
+        // Add synthesized continuations for ~[prototype] HOLES (required
+        // terminal branches left unhandled). Identical shape and body to the
+        // panic-branch arm above — a loud @panic — but a distinct, guiding
+        // message: this path was never built, not a rare-failure escape hatch.
+        for (missing_prototype.items, 0..) |branch_name, i| {
+            const idx = flow.body.continuations.len + missing_optional.items.len +
+                missing_panic.items.len + i;
+            const panic_msg = try std.fmt.allocPrint(
+                self.allocator,
+                "@panic(\"unhandled branch '{s}' reached — prototype hole (~[prototype]); this path is not built yet\");",
+                .{branch_name},
+            );
+            new_continuations[idx] = ast.Continuation{
+                .branch = try self.allocator.dupe(u8, branch_name),
+                .binding = try self.allocator.dupe(u8, "_"),
+                .binding_annotations = &[_][]const u8{},
+                .binding_type = .branch_payload,
+                .is_catchall = false,
+                .catchall_metatype = null,
+                .condition = null,
+                .condition_expr = null,
+                .node = .{ .inline_code = panic_msg }, // @panic(...) — loud hole, not a no-op
                 .indent = 0,
                 .continuations = &[_]ast.Continuation{},
                 .location = flow.location,

@@ -50,7 +50,7 @@ test "findDisposalEvents filters by base type - same phantom state, different ty
     var reporter = try errors.ErrorReporter.init(test_alloc, "test.kz", source);
     defer reporter.deinit();
 
-    var inserter = try AutoDischargeInserter.init(test_alloc, &reporter, false, false);
+    var inserter = try AutoDischargeInserter.init(test_alloc, &reporter, false, false, false);
     defer inserter.deinit();
 
     // Build event map from parsed AST
@@ -129,7 +129,7 @@ test "findDisposalEvents handles multiple disposal options for same type" {
     var reporter = try errors.ErrorReporter.init(test_alloc, "test.kz", source);
     defer reporter.deinit();
 
-    var inserter = try AutoDischargeInserter.init(test_alloc, &reporter, false, false);
+    var inserter = try AutoDischargeInserter.init(test_alloc, &reporter, false, false, false);
     defer inserter.deinit();
 
     try inserter.buildEventMap(&parse_result.source_file);
@@ -187,7 +187,7 @@ test "findDisposalEvents with different types same phantom state" {
     var reporter = try errors.ErrorReporter.init(test_alloc, "test.kz", source);
     defer reporter.deinit();
 
-    var inserter = try AutoDischargeInserter.init(test_alloc, &reporter, false, false);
+    var inserter = try AutoDischargeInserter.init(test_alloc, &reporter, false, false, false);
     defer inserter.deinit();
 
     try inserter.buildEventMap(&parse_result.source_file);
@@ -249,7 +249,7 @@ test "findDisposalEvents excludes events with user-required extra inputs" {
     var reporter = try errors.ErrorReporter.init(test_alloc, "test.kz", source);
     defer reporter.deinit();
 
-    var inserter = try AutoDischargeInserter.init(test_alloc, &reporter, false, false);
+    var inserter = try AutoDischargeInserter.init(test_alloc, &reporter, false, false, false);
     defer inserter.deinit();
 
     try inserter.buildEventMap(&parse_result.source_file);
