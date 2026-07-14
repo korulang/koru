@@ -1,0 +1,35 @@
+// Prototype mode: an incomplete program COMPILES and RUNS the path that is
+// built, leaving unhandled terminal branches as synthesized @panic holes.
+//
+// Normally every non-optional terminal of an event MUST be handled or the
+// compiler errors KORU022 (see 400_097). The knee-jerk workaround is to write
+// a discarding stub `| done _ |> _` just to satisfy exhaustiveness — a handler
+// that lies "handled" and silently drains the branch forever. That is a silent
+// fallback, exactly what the language repudiates.
+//
+// `~[prototype]` gives an HONEST escape hatch instead: leave the branch out,
+// and the compiler synthesizes a @panic arm for it — the same body an
+// unhandled `| ?!` panic branch gets. The built path runs now; the unbuilt
+// path is a loud latent panic, not a silent drain. "Get started right now."
+//
+// The production guarantee is untouched: remove `~[prototype]` and the same
+// source is rejected KORU022 (see 400_161). The annotation flips it.
+//
+// Here `run|zig` returns `.err` (the handled path), so the `| done` hole never
+// fires — the program runs to completion and prints.
+~[prototype]
+
+~import std/io
+
+~pub event run {}
+| done
+| err []const u8
+
+~proc run|zig {
+    return .{ .err = "built path ran; done is still a hole" };
+}
+
+~run()
+| err msg |> std/io:print.ln(msg)
+// `| done` left unhandled — a prototype hole. Compiles (synthesized @panic),
+// never fires on this run.

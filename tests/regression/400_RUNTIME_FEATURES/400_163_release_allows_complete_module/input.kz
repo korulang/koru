@@ -1,0 +1,18 @@
+// The other half of the gate: a complete, non-prototype module builds fine
+// under `--release`. The release gate rejects ONLY `~[prototype]` modules — it
+// must never touch ordinary code. Every terminal branch is handled here and
+// there is no `~[prototype]` annotation, so `--release` compiles and runs it.
+
+~import std/io
+
+~pub event run {}
+| done []const u8
+| err []const u8
+
+~proc run|zig {
+    return .{ .done = "release build, all branches handled" };
+}
+
+~run()
+| done msg |> std/io:print.ln(msg)
+| err msg |> std/io:print.ln(msg)

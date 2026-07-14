@@ -17,6 +17,7 @@ pub const ErrorCode = enum(u16) {
     KORU026, // Pay-for-nothing catch-all (`|? |> _` or `|? Metatype _ |> _`)
     KORU027, // Incoherent obligation marker on an effect branch (0-to-N firing): payload discharge or resume issue
     KORU028, // Duplicate unguarded handler for a terminal `|` branch (runs at most once)
+    KORU029, // Prototype module (~[prototype]) rejected in a --release build (the production gate)
 
     // Shape errors
     KORU030, // Shape mismatch

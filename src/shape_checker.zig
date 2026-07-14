@@ -28,6 +28,13 @@ pub const ShapeChecker = struct {
     /// Used to resolve unqualified event/proc references.
     main_module_name: []const u8 = "",
 
+    /// `~[prototype]` module opt-in: relaxes required TERMINAL-branch coverage
+    /// so an unhandled `|` branch is a synthesized `@panic` hole instead of a
+    /// KORU022 error. Set by the check-structure pass from module_annotations.
+    /// Never leaks to production: without the annotation this stays false and
+    /// exhaustiveness is enforced as usual (400_160/400_161).
+    prototype_mode: bool = false,
+
     /// Subflow-implemented effects: when validating a flow that implements an
     /// event (`impl_of` set), this holds the implemented event's declaration so
     /// calls to its own effect arms — `ping = pong(x)`, `! each i |> each(i)` —
@@ -1327,11 +1334,13 @@ pub const ShapeChecker = struct {
             }
         }
 
-        // Validate using pure BranchChecker
-        var result = try branch_checker.BranchChecker.validate(
+        // Validate using pure BranchChecker (prototype mode relaxes terminal
+        // exhaustiveness — the missing arm becomes a synthesized @panic hole).
+        var result = try branch_checker.BranchChecker.validateWithMode(
             self.allocator,
             declared.items,
             handled.items,
+            self.prototype_mode,
         );
         defer branch_checker.BranchChecker.freeResult(self.allocator, &result);
 
