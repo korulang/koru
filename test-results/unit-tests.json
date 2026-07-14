@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-07-13T01:59:19.830Z",
+  "timestamp": "2026-07-14T02:23:52.238Z",
   "summary": {
     "passed": 284,
     "failed": 5,
@@ -346,11 +346,11 @@
       "reason": "access of union field 'flow' while field 'parse_error' is active"
     },
     {
-      "name": "purity_checker_test.test.pure proc calling no events is transitively pure",
+      "name": "parser.test.parser handles Source in event field",
       "reason": "access of union field 'flow' while field 'parse_error' is active"
     },
     {
-      "name": "parser.test.parser handles Source in event field",
+      "name": "purity_checker_test.test.pure proc calling no events is transitively pure",
       "reason": "access of union field 'flow' while field 'parse_error' is active"
     }
   ]

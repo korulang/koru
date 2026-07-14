@@ -1,12 +1,12 @@
-// Pins the AMBIGUITY-FORCES-PICK wall: when a bare name resolves against TWO
-// active `[with]` regions that both own it, the resolver must REJECT and demand
-// explicit qualification — never silently pick one. Both app/alpha and app/beta
-// export `ping`; both are opened; a bare `ping` follows. Today the single-source
-// resolver reads only the flow-head `[with]` (app/alpha) and SILENTLY resolves
-// `ping` to alpha — the exact misparse the wall must replace. This pin flips to
-// green when multi-source collection lands together with the collision
-// diagnostic. (KORU140 is provisional — the code is assigned when the wall is
-// built.)
+// Pins the AMBIGUITY-FORCES-PICK wall (KORU140): when a bare name resolves
+// against TWO active `[with]` regions that both own it, resolve-with-scopes must
+// REJECT and demand explicit qualification — never silently pick one. Both
+// app/alpha and app/beta export `ping`; both are opened; a bare `ping` follows,
+// so it is owned by two vocabularies at once. The wall replaces the silent
+// flow-head pick. `[with]` resolution is a metacircular pass (koru_std/
+// compiler.kz), so its diagnostic surfaces at backend-exec — hence
+// BACKEND_RUNTIME_ERROR, the same stage every other metacircular-analysis
+// rejection reports at.
 import std/io
 import app/alpha
 import app/beta

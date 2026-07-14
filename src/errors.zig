@@ -97,6 +97,9 @@ pub const ErrorCode = enum(u16) {
     KORU130, // Value-resuming optional arm fired without a dominating presence test
     KORU131, // Presence test on a required arm (always installed — the test is meaningless)
 
+    // Scoped vocabulary (`[with]`) errors
+    KORU140, // Bare name resolves against more than one opened `[with]` vocabulary — ambiguous, qualify the call explicitly to pick one. Emitted by the metacircular resolve-with-scopes pass (koru_std/compiler.kz), so the .zig-only registry emit-scan can't see it — reserved in scripts/registry_reserved.txt.
+
     // Module structure errors
     KORU200, // Ambiguous module structure (both foo.kz and foo/ exist)
 };

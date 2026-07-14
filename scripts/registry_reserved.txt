@@ -24,3 +24,4 @@
 #   PARSE002 Invalid indentation                   -> bug or reserved?
 #
 # --- reserved codes below this line (uncommented = suppressed) ---
+KORU140

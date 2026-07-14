@@ -825,6 +825,8 @@ pub const CompilerContext = struct {
     const main_mod = ctx.ast.main_module_name;
     const alloc = ctx.allocator;
 
+    var updated_ctx = ctx;
+
     const S = struct {
         // Build a set of "module\x00event" keys from every event_decl (recursing
         // module_decls). Collected from original_ast — the unfiltered AST — so the
@@ -851,72 +853,151 @@ pub const CompilerContext = struct {
             return set.contains(key);
         }
 
-        fn restamp(inv: *ast_mod.Invocation, target: []const u8, main: []const u8, set: *std.StringHashMap(void), a: std.mem.Allocator) void {
-            if (inv.path.segments.len == 0) return;
-            const mq = inv.path.module_qualifier orelse return;
-            if (!std.mem.eql(u8, mq, main)) return;
-            const seg = inv.path.segments[inv.path.segments.len - 1];
-            if (has(set, main, seg, a)) return; // resolves locally — never shadow
-            if (!has(set, target, seg, a)) return; // unknown in target too — leave for the downstream KORU040
-            inv.path.module_qualifier = a.dupe(u8, target) catch return;
+        // Does this invocation open a vocabulary — carry a `[with]` annotation?
+        fn opensWith(inv: *const ast_mod.Invocation) bool {
+            for (inv.annotations) |ann| {
+                if (std.mem.eql(u8, ann, "with")) return true;
+            }
+            return false;
         }
 
-        fn walkNode(node: *ast_mod.Node, target: []const u8, main: []const u8, set: *std.StringHashMap(void), a: std.mem.Allocator) void {
+        fn addTarget(mq: ?[]const u8, targets: *std.ArrayList([]const u8), seen: *std.StringHashMap(void), a: std.mem.Allocator) void {
+            const m = mq orelse return;
+            if (seen.contains(m)) return;
+            seen.put(m, {}) catch {};
+            targets.append(a, m) catch {};
+        }
+
+        // Gather every `[with]` target opened anywhere in a flow subtree — the head
+        // AND every mid-chain step, now that the parser hangs the annotation on the
+        // step's Invocation. Distinct by module.
+        fn gatherNode(node: *const ast_mod.Node, targets: *std.ArrayList([]const u8), seen: *std.StringHashMap(void), a: std.mem.Allocator) void {
             switch (node.*) {
-                .invocation => |*inv| restamp(@constCast(inv), target, main, set, a),
-                .label_with_invocation => |*lwi| restamp(@constCast(&lwi.invocation), target, main, set, a),
+                .invocation => |*inv| {
+                    if (opensWith(inv)) addTarget(inv.path.module_qualifier, targets, seen, a);
+                },
+                .label_with_invocation => |*lwi| {
+                    if (opensWith(&lwi.invocation)) addTarget(lwi.invocation.path.module_qualifier, targets, seen, a);
+                },
+                .conditional_block => |*cb| for (cb.nodes) |*n| gatherNode(n, targets, seen, a),
+                .foreach => |*fe| for (fe.branches) |*b| for (b.body) |*c| gatherCont(c, targets, seen, a),
+                .conditional => |*cond| for (cond.branches) |*b| for (b.body) |*c| gatherCont(c, targets, seen, a),
+                .switch_result => |*sr| for (sr.branches) |*b| for (b.body) |*c| gatherCont(c, targets, seen, a),
+                else => {},
+            }
+        }
+
+        fn gatherCont(cont: *const ast_mod.Continuation, targets: *std.ArrayList([]const u8), seen: *std.StringHashMap(void), a: std.mem.Allocator) void {
+            if (cont.node) |*n| gatherNode(n, targets, seen, a);
+            for (cont.continuations) |*nested| gatherCont(nested, targets, seen, a);
+        }
+
+        // Resolve one bare name against the active `[with]` targets.
+        //   .local     — resolves in the main module; never shadowed
+        //   .unknown   — no active target owns it; leave for the downstream KORU040
+        //   .resolved  — exactly one target owns it; restamped in place here
+        //   .ambiguous — two or more own it; caller raises the KORU140 pick-wall
+        const Outcome = union(enum) {
+            local,
+            unknown,
+            resolved,
+            ambiguous: struct { a: []const u8, b: []const u8 },
+        };
+
+        fn restamp(inv: *ast_mod.Invocation, targets: []const []const u8, main: []const u8, set: *std.StringHashMap(void), a: std.mem.Allocator) Outcome {
+            if (inv.path.segments.len == 0) return .unknown;
+            const mq = inv.path.module_qualifier orelse return .unknown;
+            if (!std.mem.eql(u8, mq, main)) return .unknown; // already qualified — not ours
+            const seg = inv.path.segments[inv.path.segments.len - 1];
+            if (has(set, main, seg, a)) return .local; // resolves locally — never shadow
+            var first: ?[]const u8 = null;
+            var second: ?[]const u8 = null;
+            for (targets) |t| {
+                if (has(set, t, seg, a)) {
+                    if (first == null) {
+                        first = t;
+                    } else if (second == null) {
+                        second = t;
+                    }
+                }
+            }
+            if (first == null) return .unknown; // unknown in every target too
+            if (second) |b| return .{ .ambiguous = .{ .a = first.?, .b = b } };
+            inv.path.module_qualifier = a.dupe(u8, first.?) catch return .unknown;
+            return .resolved;
+        }
+
+        // Restamp one invocation and, on ambiguity, record the KORU140 pick-wall
+        // into ctx.errors — surfaced (and halted on) at the analysis boundary.
+        fn resolveInv(inv: *ast_mod.Invocation, targets: []const []const u8, main: []const u8, set: *std.StringHashMap(void), a: std.mem.Allocator, errs: anytype, loc: anytype) void {
+            switch (restamp(inv, targets, main, set, a)) {
+                .ambiguous => |amb| {
+                    const seg = inv.path.segments[inv.path.segments.len - 1];
+                    const msg = std.fmt.allocPrint(a, "error[KORU140]: bare name '{s}' resolves against more than one opened vocabulary ('{s}' and '{s}') — qualify the call explicitly to pick one", .{ seg, amb.a, amb.b }) catch return;
+                    errs.append(a, .{ .message = msg, .location = .{
+                        .file = loc.file,
+                        .line = @intCast(loc.line),
+                        .column = @intCast(loc.column),
+                    } }) catch {};
+                },
+                else => {},
+            }
+        }
+
+        fn walkNode(node: *ast_mod.Node, targets: []const []const u8, main: []const u8, set: *std.StringHashMap(void), a: std.mem.Allocator, errs: anytype, loc: anytype) void {
+            switch (node.*) {
+                .invocation => |*inv| resolveInv(@constCast(inv), targets, main, set, a, errs, loc),
+                .label_with_invocation => |*lwi| resolveInv(@constCast(&lwi.invocation), targets, main, set, a, errs, loc),
                 .conditional_block => |*cb| {
-                    for (cb.nodes) |*n| walkNode(@constCast(n), target, main, set, a);
+                    for (cb.nodes) |*n| walkNode(@constCast(n), targets, main, set, a, errs, loc);
                 },
                 .foreach => |*fe| {
                     for (fe.branches) |*b| {
-                        for (b.body) |*c| walkCont(@constCast(c), target, main, set, a);
+                        for (b.body) |*c| walkCont(@constCast(c), targets, main, set, a, errs, loc);
                     }
                 },
                 .conditional => |*cond| {
                     for (cond.branches) |*b| {
-                        for (b.body) |*c| walkCont(@constCast(c), target, main, set, a);
+                        for (b.body) |*c| walkCont(@constCast(c), targets, main, set, a, errs, loc);
                     }
                 },
                 .switch_result => |*sr| {
                     for (sr.branches) |*b| {
-                        for (b.body) |*c| walkCont(@constCast(c), target, main, set, a);
+                        for (b.body) |*c| walkCont(@constCast(c), targets, main, set, a, errs, loc);
                     }
                 },
                 else => {},
             }
         }
 
-        fn walkCont(cont: *ast_mod.Continuation, target: []const u8, main: []const u8, set: *std.StringHashMap(void), a: std.mem.Allocator) void {
-            if (cont.node) |*n| walkNode(@constCast(n), target, main, set, a);
-            for (cont.continuations) |*nested| walkCont(@constCast(nested), target, main, set, a);
-        }
-
-        // A flow's `[with]` target is the annotated invocation's OWN module.
-        fn withTarget(flow: *const ast_mod.Flow) ?[]const u8 {
-            var found = false;
-            for (flow.annotations) |ann| {
-                if (std.mem.eql(u8, ann, "with")) found = true;
-            }
-            for (flow.inv().annotations) |ann| {
-                if (std.mem.eql(u8, ann, "with")) found = true;
-            }
-            if (!found) return null;
-            return flow.inv().path.module_qualifier;
+        fn walkCont(cont: *ast_mod.Continuation, targets: []const []const u8, main: []const u8, set: *std.StringHashMap(void), a: std.mem.Allocator, errs: anytype, loc: anytype) void {
+            if (cont.node) |*n| walkNode(@constCast(n), targets, main, set, a, errs, loc);
+            for (cont.continuations) |*nested| walkCont(@constCast(nested), targets, main, set, a, errs, loc);
         }
     };
 
     var set = std.StringHashMap(void).init(alloc);
     S.collect(ctx.original_ast.items, &set, alloc);
 
-    for (ctx.ast.items) |*item| {
+    for (updated_ctx.ast.items) |*item| {
         if (item.* != .flow) continue;
         const flow: *const ast_mod.Flow = &item.flow;
-        const target = S.withTarget(flow) orelse continue;
-        S.walkCont(@constCast(&flow.body), target, main_mod, &set, alloc);
+
+        // Collect the vocabularies this flow opens: a flow-head `[with]` (the
+        // annotation may live on the flow itself) plus every mid-chain opener.
+        var targets = std.ArrayList([]const u8){};
+        var seen = std.StringHashMap(void).init(alloc);
+        for (flow.annotations) |ann| {
+            if (std.mem.eql(u8, ann, "with")) {
+                S.addTarget(flow.inv().path.module_qualifier, &targets, &seen, alloc);
+            }
+        }
+        S.gatherCont(&flow.body, &targets, &seen, alloc);
+        if (targets.items.len == 0) continue;
+
+        S.walkCont(@constCast(&flow.body), targets.items, main_mod, &set, alloc, &updated_ctx.errors, flow.location);
     }
 
-    var updated_ctx = ctx;
     updated_ctx.passes_completed += 1;
     updated_ctx.current_pass = "resolve_with_scopes";
     return updated_ctx;
@@ -2079,6 +2160,24 @@ const joinPathAlloc = struct {
     // Need mutable ctx to append errors
     var mutable_ctx = ctx;
     mutable_ctx.current_pass = "check_structure";
+
+    // Surface any diagnostics a FRONTEND pass already recorded (name resolution
+    // has no `.failed` arm of its own — `resolve-with-scopes` reports the KORU140
+    // `[with]` pick-wall into ctx.errors, and analysis is the first boundary that
+    // can halt cleanly). Print and fail BEFORE structural checking, so the real
+    // diagnostic wins instead of a downstream "unknown event" for the name the
+    // frontend deliberately left unresolved.
+    if (mutable_ctx.errors.items.len > 0) {
+        for (mutable_ctx.errors.items) |e| {
+            std.debug.print("{s}\n  --> {s}:{}:{}\n\n", .{
+                e.message,
+                e.location.file,
+                e.location.line,
+                e.location.column,
+            });
+        }
+        return .{ .failed = .{ .ctx = mutable_ctx, .message = mutable_ctx.errors.items[0].message } };
+    }
 
     // Use the Zig shape_checker library for structural validation
     const shape_checker = @import("shape_checker");
