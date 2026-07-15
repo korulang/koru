@@ -749,10 +749,9 @@ test "round-trip: event + proc + flow with branches" {
 
 test "round-trip: subflow impl, immediate impl, bare-return" {
     try expectRoundTrip(
-        \\~event greet { name: []const u8 }
-        \\| greeting []const u8
+        \\~event greet { name: []const u8 } -> []const u8
         \\
-        \\~greet => greeting "Hello, " ++ name ++ "!"
+        \\~greet -> "Hello, " ++ name ++ "!"
         \\
         \\~pub event double { a: i32 } -> i32
         \\

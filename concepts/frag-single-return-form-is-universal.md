@@ -42,3 +42,26 @@ multiline migrations sat arrow-less and undetected).
 Open: field:new-instack's continuation-grafting migration and the
 `[norun]` oddballs are case-by-case; the corpus burn-down (lone `| value
 T` tests going red under the reject) is the ruled to-do list, not damage.
+
+## The reject is uniform across ALL single-branch shapes, at the parser
+
+Lars sharpened it 2026-07-15 ("identity branches with single payloads should
+be handled the same as other continuation branches — a great find"): the
+single-branch collapse is not a compound-only rule. Every lone `| ok …`
+declaration collapses, and all three land as PARSE003 at parse time — the same
+place compound single-branches were already enforced, which is why the parser
+is the right home (an identity branch is no more special than a compound one):
+
+- `| ok` (empty)        → "redundant — remove it to make a void event"
+- `| ok i32` (identity) → "one-variant tag union — declare as bare return `-> i32`"
+- `| ok { .. }` (compound) → "use identity `| ok i32` instead"
+
+Surfaced by a stale unit test that *asserted* identity branches parse without
+error (they never should have — the corpus had quietly exempted the identity
+shape). Inverted to assert PARSE003.
+
+Open (pit-of-success wrinkle): the compound single-field message routes the
+user to `| ok i32`, which is ITSELF rejected — a two-hop path to the fix
+instead of pointing straight at `-> i32`. A bad error message per the
+fantastic-errors doctrine; the collapse guidance should land the user on the
+bare return in one step.

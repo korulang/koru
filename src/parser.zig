@@ -9404,9 +9404,12 @@ pub const Parser = struct {
 test "parser produces AST from simple event" {
     const allocator = std.testing.allocator;
 
+    // Single unnamed output is the bare-return form `-> i32`; a lone
+    // payload-carrying branch (`| done i32`) is the retired single-variant
+    // spelling PARSE003 now rejects. branches[] is empty; the output lives on
+    // return_type.
     const source =
-        \\~event compute { x: i32 }
-        \\| done i32
+        \\~event compute { x: i32 } -> i32
     ;
 
     var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
@@ -9425,8 +9428,8 @@ test "parser produces AST from simple event" {
     try std.testing.expectEqualStrings(event.path.segments[0], "compute");
     try std.testing.expect(event.input.fields.len == 1);
     try std.testing.expectEqualStrings(event.input.fields[0].name, "x");
-    try std.testing.expect(event.branches.len == 1);
-    try std.testing.expectEqualStrings(event.branches[0].name, "done");
+    try std.testing.expect(event.branches.len == 0);
+    try std.testing.expectEqualStrings(event.return_type.?, "i32");
 }
 
 test "parser handles flow with continuation" {
@@ -9576,8 +9579,7 @@ test "parser handles Source in event field" {
     const allocator = std.testing.allocator;
 
     const source =
-        \\~event macro { code: Source }
-        \\| done Source
+        \\~event macro { code: Source } -> Source
     ;
 
     var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
@@ -9929,29 +9931,31 @@ test "parser allows void event with zero branches" {
     try std.testing.expect(event.branches.len == 0);
 }
 
-test "parser allows single identity branch with type payload" {
+test "parser rejects single identity branch — collapse to bare return" {
     const allocator = std.testing.allocator;
 
+    // An identity branch carrying a single type payload (`| ok i32`) is a
+    // one-variant tag union — no different from a compound single branch
+    // (`| ok { .. }`). Both collapse to the bare-return form `-> i32`; the
+    // parser enforces it identically (Lars-ruled 2026-07-15: identity single
+    // payloads are handled the same as any other single continuation branch).
     const source =
         \\~event result {}
         \\| ok i32
     ;
 
     var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
+    parser.fail_fast = true;
     defer parser.deinit();
 
-    var parse_result = try parser.parse();
-    defer parse_result.deinit();
+    const result = parser.parse();
+    try std.testing.expectError(error.ParseError, result);
 
-    try std.testing.expect(!parser.reporter.hasErrors());
-    try std.testing.expect(parse_result.source_file.items.len == 1);
-    try std.testing.expect(parse_result.source_file.items[0] == .event_decl);
-    const event = parse_result.source_file.items[0].event_decl;
-    try std.testing.expect(event.branches.len == 1);
-    try std.testing.expectEqualStrings("ok", event.branches[0].name);
-    try std.testing.expect(event.branches[0].payload.fields.len == 1);
-    try std.testing.expectEqualStrings("__type_ref", event.branches[0].payload.fields[0].name);
-    try std.testing.expectEqualStrings("i32", event.branches[0].payload.fields[0].type);
+    try std.testing.expect(parser.reporter.hasErrors());
+    const first_error = parser.reporter.errors.items[0];
+    try std.testing.expectEqual(errors.ErrorCode.PARSE003, first_error.code);
+    try std.testing.expect(std.mem.indexOf(u8, first_error.message, "one-variant tag union") != null);
+    try std.testing.expect(std.mem.indexOf(u8, first_error.message, "bare return") != null);
 }
 
 test "parser allows two empty branches" {

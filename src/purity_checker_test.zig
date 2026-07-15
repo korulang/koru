@@ -95,11 +95,10 @@ test "pure proc calling no events is transitively pure" {
     const allocator = std.testing.allocator;
 
     const source =
-        \\~event compute { x: i32 }
-        \\| result i32
+        \\~event compute { x: i32 } -> i32
         \\
         \\~[pure]proc compute {
-        \\    return .{ .result = x * 2 };
+        \\    return x * 2;
         \\}
     ;
 
