@@ -2612,6 +2612,16 @@ const joinPathAlloc = struct {
     };
     defer checker.deinit();
 
+    // ~[prototype]: relax the "handled a branch the event doesn't produce" wall
+    // (KORU030) for terminal continuations — the doodle where handler arms lead
+    // the declaration (see PhantomSemanticChecker.prototype_mode, 400_165).
+    // Consistent with check-structure / check-flow.
+    for (mutable_ctx.ast.module_annotations) |ann| {
+        if (std.mem.eql(u8, ann, "prototype")) {
+            checker.prototype_mode = true;
+        }
+    }
+
     // Run phantom semantic validation
     checker.check(mutable_ctx.ast) catch |err| {
         // Collect errors from reporter into context

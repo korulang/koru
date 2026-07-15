@@ -1298,6 +1298,7 @@ pub const ShapeChecker = struct {
                     .name = cont.branch,
                     .has_when_guard = cont.condition != null and presence_guard == null,
                     .is_catchall = is_catchall,
+                    .kind = if (cont.kind == .effect) .effect else .terminal,
                 });
             } else if (is_catchall) {
                 // Transition is a metatype but also a catchall - add it as catchall only

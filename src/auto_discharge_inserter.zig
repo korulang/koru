@@ -3134,10 +3134,35 @@ pub const AutoDischargeInserter = struct {
             }
         }
 
+        // ~[prototype] DUAL of hole-synthesis: an arm handling a branch the event
+        // does NOT declare (400_165) can never fire, and lowering it would emit an
+        // invalid switch case (`.soon =>` on a union with no `soon`). The checkers
+        // already let it slide (KORU021 / KORU030); here we DROP it from the
+        // lowered switch. Terminal-only (an undeclared effect arm already errored
+        // at KORU030), never a catchall or metatype (Transition/Profile/Audit are
+        // valid), and never when the event declares a raw-name class branch (`*`),
+        // which makes every name declared.
+        var prune_flags = try self.allocator.alloc(bool, flow.body.continuations.len);
+        defer self.allocator.free(prune_flags);
+        var prune_count: usize = 0;
+        if (self.prototype_mode) {
+            for (flow.body.continuations, 0..) |*cont, i| {
+                prune_flags[i] = false;
+                if (cont.is_catchall) continue;
+                if (cont.kind == .effect) continue;
+                if (isMetatypeBranchName(cont.branch)) continue;
+                if (branchNameIsDeclared(event_decl, cont.branch)) continue;
+                prune_flags[i] = true;
+                prune_count += 1;
+            }
+        } else {
+            for (prune_flags) |*f| f.* = false;
+        }
+
         if (missing_optional.items.len == 0 and missing_panic.items.len == 0 and
-            missing_prototype.items.len == 0)
+            missing_prototype.items.len == 0 and prune_count == 0)
         {
-            return null; // Nothing to synthesize
+            return null; // Nothing to synthesize or prune
         }
 
         // Crash-surface map (strict mode): when --panic-branches=strict is set,
@@ -3158,20 +3183,28 @@ pub const AutoDischargeInserter = struct {
             return error.ValidationFailed;
         }
 
-        // Create new continuations array with synthesized branches
-        const new_len = flow.body.continuations.len + missing_optional.items.len +
+        // Create new continuations array with synthesized branches. Pruned
+        // undeclared arms (prototype dual) are dropped, so kept_count is the base
+        // offset the synthesized arms append after.
+        const kept_count = flow.body.continuations.len - prune_count;
+        const new_len = kept_count + missing_optional.items.len +
             missing_panic.items.len + missing_prototype.items.len;
         var new_continuations = try self.allocator.alloc(ast.Continuation, new_len);
         errdefer self.allocator.free(new_continuations);
 
-        // Copy existing continuations
-        for (flow.body.continuations, 0..) |*cont, i| {
-            new_continuations[i] = try ast_functional.cloneContinuation(self.allocator, cont);
+        // Copy existing continuations, skipping pruned undeclared arms.
+        {
+            var write_idx: usize = 0;
+            for (flow.body.continuations, 0..) |*cont, i| {
+                if (prune_flags[i]) continue;
+                new_continuations[write_idx] = try ast_functional.cloneContinuation(self.allocator, cont);
+                write_idx += 1;
+            }
         }
 
         // Add synthesized continuations for missing optional branches (NO-OP body).
         for (missing_optional.items, 0..) |branch_name, i| {
-            const idx = flow.body.continuations.len + i;
+            const idx = kept_count + i;
             new_continuations[idx] = ast.Continuation{
                 .branch = try self.allocator.dupe(u8, branch_name),
                 .binding = try self.allocator.dupe(u8, "_"), // Discard binding - auto-discharge will synthesize _auto_N
@@ -3195,7 +3228,7 @@ pub const AutoDischargeInserter = struct {
         // leaves it alone (no no-op discharge). The switch arm is exhaustive
         // (so Zig accepts it) AND loud (panics if the branch ever fires).
         for (missing_panic.items, 0..) |branch_name, i| {
-            const idx = flow.body.continuations.len + missing_optional.items.len + i;
+            const idx = kept_count + missing_optional.items.len + i;
             const panic_msg = try std.fmt.allocPrint(
                 self.allocator,
                 "@panic(\"unhandled panic branch '{s}' fired at runtime\");",
@@ -3222,7 +3255,7 @@ pub const AutoDischargeInserter = struct {
         // panic-branch arm above — a loud @panic — but a distinct, guiding
         // message: this path was never built, not a rare-failure escape hatch.
         for (missing_prototype.items, 0..) |branch_name, i| {
-            const idx = flow.body.continuations.len + missing_optional.items.len +
+            const idx = kept_count + missing_optional.items.len +
                 missing_panic.items.len + i;
             const panic_msg = try std.fmt.allocPrint(
                 self.allocator,
@@ -3253,6 +3286,28 @@ pub const AutoDischargeInserter = struct {
         return new_flow;
     }
 };
+
+/// Transition/Profile/Audit are compiler metatypes available on any event, so a
+/// continuation naming one is NOT an undeclared branch — never prune it.
+fn isMetatypeBranchName(name: []const u8) bool {
+    return std.mem.eql(u8, name, "Transition") or
+        std.mem.eql(u8, name, "Profile") or
+        std.mem.eql(u8, name, "Audit");
+}
+
+/// True if `name` resolves against the event's declared branches — an exact
+/// match, or any name when the event declares a raw-name class branch (`*`).
+/// Mirrors branch_checker.resolveDeclared. Under ~[prototype], a continuation
+/// whose branch does NOT resolve is the undeclared-arm doodle to prune.
+fn branchNameIsDeclared(event_decl: *const ast.EventDecl, name: []const u8) bool {
+    for (event_decl.branches) |branch| {
+        if (std.mem.eql(u8, branch.name, name)) return true;
+    }
+    for (event_decl.branches) |branch| {
+        if (std.mem.eql(u8, branch.name, "*")) return true;
+    }
+    return false;
+}
 
 /// Standalone recursive helper for finding continuation by binding (outside struct for recursive calls)
 fn findContinuationByBindingRecursive(conts: []const ast.Continuation, binding_name: []const u8) ?*const ast.Continuation {

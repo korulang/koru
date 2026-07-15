@@ -990,6 +990,7 @@ pub const FlowChecker = struct {
                 .name = cont.branch,
                 .has_when_guard = cont.condition != null,
                 .is_catchall = cont.is_catchall,
+                .kind = if (cont.kind == .effect) .effect else .terminal,
             });
         }
 

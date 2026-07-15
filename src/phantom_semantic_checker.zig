@@ -22,6 +22,11 @@ pub const PhantomSemanticChecker = struct {
     module_map: std.StringHashMap([]const u8),
     label_map: std.StringHashMap(*const ast.EventDecl),
     disposal_event_map: std.StringHashMap(DisposalEventInfo),
+    /// `~[prototype]` module opt-in (see ShapeChecker.prototype_mode). Relaxes
+    /// the "handled a branch the event doesn't produce" wall (KORU030) for
+    /// TERMINAL continuations — the doodle where handler arms lead the event's
+    /// declaration (400_165). Set from module_annotations in check_phantom.
+    prototype_mode: bool = false,
 
     /// Information about an event for disposal suggestions
     const DisposalEventInfo = struct {
@@ -1320,6 +1325,13 @@ pub const PhantomSemanticChecker = struct {
         }
 
         if (branch_payload == null) {
+            // ~[prototype]: an undeclared TERMINAL arm is the "handle a branch the
+            // event doesn't produce yet" doodle (400_165). It can never fire (the
+            // event never produces it), so there are no phantom/obligation
+            // semantics to validate — let it slide instead of KORU030. Undeclared
+            // EFFECT arms stay errors (parity with the terminal-only relaxation).
+            if (self.prototype_mode and cont.kind != .effect) return true;
+
             // Unknown branch - this is an error!
 
             // Build list of available branches for error message

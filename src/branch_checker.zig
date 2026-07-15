@@ -32,6 +32,11 @@ pub const BranchChecker = struct {
         name: []const u8,
         has_when_guard: bool = false,
         is_catchall: bool = false,
+        /// `|` continuation (terminal) vs `!` continuation (effect). Only used
+        /// by prototype mode, which relaxes undeclared TERMINAL arms but keeps
+        /// undeclared EFFECT arms as errors (parity with the terminal-only
+        /// missing-branch relaxation; effect arms lower to Handlers-struct fns).
+        kind: Kind = .terminal,
     };
 
     /// Result of branch validation
@@ -42,6 +47,11 @@ pub const BranchChecker = struct {
         /// Terminal branches handled by more than one UNGUARDED handler —
         /// ambiguous, since a terminal continuation runs at most once.
         duplicate_terminal_branches: []const []const u8,
+        /// Undeclared TERMINAL arms tolerated under `~[prototype]` — the "handled
+        /// a branch the event doesn't declare yet" doodle (400_165). Kept OUT of
+        /// `unknown_branches` (so they raise no KORU021) but recorded here so a
+        /// lift-the-tag / readout step can list "thought about, not built yet."
+        prototype_undeclared_branches: []const []const u8 = &.{},
     };
 
     /// Resolve a handled branch name to its declared branch (by index).
@@ -106,6 +116,8 @@ pub const BranchChecker = struct {
         errdefer missing.deinit(allocator);
         var unknown = try std.ArrayList([]const u8).initCapacity(allocator, 0);
         errdefer unknown.deinit(allocator);
+        var proto_undeclared = try std.ArrayList([]const u8).initCapacity(allocator, 0);
+        errdefer proto_undeclared.deinit(allocator);
 
         // Check for catchall - if present, all required branches are covered
         var has_catchall = false;
@@ -147,7 +159,16 @@ pub const BranchChecker = struct {
             if (h.is_catchall) continue; // Catchall is always valid
 
             if (resolveDeclared(declared, h.name) == null) {
-                try unknown.append(allocator, h.name);
+                // ~[prototype]: an undeclared TERMINAL arm is the "handle a branch
+                // the event doesn't declare yet" doodle (400_165) — let it slide
+                // (no KORU021), but record it for the readout. Undeclared EFFECT
+                // arms stay errors (parity with the terminal-only missing-branch
+                // relaxation at line ~126).
+                if (prototype_mode and h.kind == .terminal) {
+                    try proto_undeclared.append(allocator, h.name);
+                } else {
+                    try unknown.append(allocator, h.name);
+                }
             }
         }
 
@@ -203,6 +224,7 @@ pub const BranchChecker = struct {
             .missing_branches = try missing.toOwnedSlice(allocator),
             .unknown_branches = try unknown.toOwnedSlice(allocator),
             .duplicate_terminal_branches = try duplicate_terminals.toOwnedSlice(allocator),
+            .prototype_undeclared_branches = try proto_undeclared.toOwnedSlice(allocator),
         };
     }
 
@@ -211,6 +233,7 @@ pub const BranchChecker = struct {
         allocator.free(result.missing_branches);
         allocator.free(result.unknown_branches);
         allocator.free(result.duplicate_terminal_branches);
+        allocator.free(result.prototype_undeclared_branches);
     }
 };
 
