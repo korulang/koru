@@ -1,6 +1,0 @@
-~import app/db
-~import std/io
-
-~app/db:open(connstr: "postgres://localhost/test")
-| connected c |> app/db:tx.begin(conn: c): t |> app/db:tx.exec(tx: t, sql: "INSERT INTO users VALUES (1)"): t2 |> app/db:tx.commit(tx: t2): conn |> std/io:print.ln("committed")
-| connection-failed |> _

@@ -1,0 +1,23 @@
+// TEST: kernel.shape and kernel.init basic usage
+//
+// Minimal test - just verify the transform emits valid code
+
+import std/kernel
+import std/io
+
+// Declare the shape
+std/kernel:shape(Body) {
+    x: f64,
+    y: f64,
+    mass: f64,
+}
+
+// Initialize - generates Body struct and kernel_k variable
+std/kernel:init(Body) {
+    x: 42.0,
+    y: 0,
+    mass: 1.5,
+}
+
+// Simple output to verify we got here
+std/io:print.ln("kernel initialized")

@@ -1,0 +1,4 @@
+import std/control
+import app/fs
+for(0..3)
+! each _ |> app/fs:open(path: "test.txt"): _  // Should auto-insert close() here, per iteration

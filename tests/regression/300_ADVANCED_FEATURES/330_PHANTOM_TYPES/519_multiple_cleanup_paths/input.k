@@ -1,0 +1,2 @@
+import app/fs
+app/fs:open(path: "test.txt"): f |> app/fs:flush-close(file: f)

@@ -1,0 +1,20 @@
+// Test: the const/capture PAIR — the two sibling source-block forms composed.
+// `~const { ... }` declares the immutable config (flat per-target declaration,
+// names used directly); `~capture { ... }` declares the mutable cell. Same
+// argument shape (one source block), opposite mutability. Migrated 2026-06-11
+// from three generations of dead surface (`~const({...})` parens + `| as cfg`
+// + `=>` branch bodies); the old form pinned the nested-capture-in-const gap,
+// which dissolved when both forms went flat.
+// sum = (6 + 8 + 10) * 2 = 48 over threshold 5.
+
+import std/io
+import std/control
+
+const { threshold: @as(i32, 5), multiplier: @as(i32, 2) }
+
+capture { sum: @as(i64, 0), count: @as(i32, 0) }
+! as acc |> for(&[_]i32{1, 3, 6, 8, 10})
+    ! each item |> if(item > threshold)
+        | then |> captured { sum: acc.sum + @as(i64, item) * multiplier, count: acc.count + 1 }
+        | else |> captured { acc.sum, acc.count }
+| captured result |> std/io:print.ln("{{ result.sum:d }}")

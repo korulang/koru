@@ -1,0 +1,25 @@
+// TEST: kernel.pairwise basic iteration
+//
+// Verifies:
+// 1. kernel:init creates proper view with kernel branch
+// 2. kernel:pairwise transforms into nested loops accessing k.ptr[i]/k.ptr[j]
+// 3. The view flows through continuations properly
+
+import std/kernel
+import std/io
+
+// Declare shape
+std/kernel:shape(Body) {
+    mass: f64,
+}
+
+// Initialize with 3 bodies and run pairwise
+std/kernel:init(Body) {
+    { mass: 1.0 },
+    { mass: 2.0 },
+    { mass: 3.0 },
+}
+| kernel k |> std/kernel:pairwise { k.mass += k.other.mass }
+| computed c |> std/io:print.blk {
+        pairwise complete, mass[0]={{ c[0].mass:f }}
+    }

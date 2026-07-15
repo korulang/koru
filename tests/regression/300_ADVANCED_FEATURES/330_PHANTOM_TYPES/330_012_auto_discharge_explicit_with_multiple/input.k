@@ -1,0 +1,10 @@
+// auto-discharge with MULTIPLE disposers for the same state: `locked!` can be
+// discharged by EITHER `unlock` (happy path) or `force-close` (error path).
+// `write` is fallible (`| written` / `| err`); its err arm force-closes the
+// lock, its success arm unlocks. Both arms discharge `locked!` — the explicit
+// branch picks which disposer runs.
+import app/fs
+
+app/fs:open(path: "test.txt"): f |> app/fs:lock(file: f): l |> app/fs:write(file: l, data: "test")
+        | written |> app/fs:unlock(file: l)
+        | err _ |> app/fs:force-close(file: l)

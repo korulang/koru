@@ -1,7 +1,0 @@
-~import std/control
-~import app/fs
-~app/fs:open(path: "outermost.txt"): outermost_f |> for(0..2)
-    ! each _ |> for(0..2)
-        ! each _ |> app/fs:open(path: "inner.txt"): _  // inner_f auto-closed here (innermost @scope)
-        | done |> _
-    | done |> app/fs:close(file: outermost_f)

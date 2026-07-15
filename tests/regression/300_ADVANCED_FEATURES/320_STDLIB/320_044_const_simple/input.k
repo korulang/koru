@@ -1,0 +1,11 @@
+// Test: module-level `const` declares immutable values that the following flow
+// uses directly (Zig container-scope lookup). Migrated 2026-06-04 from the old
+// `~const(…) | as cfg` config-capture form: `const` is now a flat per-target
+// declaration template (parse_fields filter), and `| as` is the (unwired)
+// explicit-shadow-scope branch. Same result — 10 + 20 = 30.
+
+import std/io
+
+const { x: 10, y: 20 }
+
+std/io:print.ln("{{ x + y:d }}")

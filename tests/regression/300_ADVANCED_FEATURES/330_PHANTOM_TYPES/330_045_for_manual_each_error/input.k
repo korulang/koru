@@ -1,0 +1,5 @@
+import std/control
+import app/fs
+app/fs:open(path: "outer.txt"): f |> for(0..3)
+    ! each _ |> app/fs:close(file: f)  // ERROR! Would run 3 times
+    | done |> _

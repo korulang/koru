@@ -1,0 +1,18 @@
+// Test (negative): a `[]const u8<unsanitized!>` value passed into any event
+// that doesn't accept `<!unsanitized>` is rejected by the phantom checker.
+//
+// This is the taint-tracking shape: a tainted string flowing into a sink
+// (like `std/io:print.ln`) without going through a sanitizer is a
+// compile-time error. The phantom checker treats the obligation on the
+// primitive payload exactly as it treats `*File<opened!>` — undischarged
+// at scope exit is a rejection.
+//
+// Positive twin: 330_068.
+
+import std/io
+
+pub event get-input {} -> []const u8<unsanitized!>
+
+get-input -> "user input data"
+
+get-input(): s |> std/io:print.ln(s)

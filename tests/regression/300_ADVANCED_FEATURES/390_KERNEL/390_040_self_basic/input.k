@@ -1,0 +1,23 @@
+// TEST: kernel:self basic per-element operation
+//
+// Verifies:
+// 1. kernel:self transforms into a single loop over all elements
+// 2. k.X → ptr[i].X (no k.other)
+// 3. The view flows through continuations properly
+
+import std/kernel
+import std/io
+
+std/kernel:shape(Body) {
+    mass: f64,
+}
+
+std/kernel:init(Body) {
+    { mass: 1.0 },
+    { mass: 2.0 },
+    { mass: 3.0 },
+}
+| kernel k |> std/kernel:self { k.mass *= 2.0 }
+| computed c |> std/io:print.blk {
+        mass[0]={{ c[0].mass:f }} mass[1]={{ c[1].mass:f }} mass[2]={{ c[2].mass:f }}
+    }

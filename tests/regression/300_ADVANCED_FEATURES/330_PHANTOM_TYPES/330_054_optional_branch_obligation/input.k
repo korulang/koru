@@ -1,0 +1,3 @@
+import app/resource
+app/resource:risky()
+| success _ |> _

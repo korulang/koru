@@ -1,2 +1,0 @@
-~import app/fs
-~app/fs:open(path: "test.txt"): f |> app/fs:close(file: f) |> app/fs:use-file(file: f)  // ERROR: f was disposed!

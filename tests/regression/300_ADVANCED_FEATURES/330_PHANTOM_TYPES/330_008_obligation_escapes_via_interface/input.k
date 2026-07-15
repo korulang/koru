@@ -1,0 +1,2 @@
+import app/fs
+app/fs:my-subflow(): f |> app/fs:close(file: f)
