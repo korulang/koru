@@ -303,6 +303,14 @@ pub const EmissionContext = struct {
     // through `__H` so a Handlers struct synthesized INSIDE this handler
     // (e.g. for a nested `for(..)`) can never shadow the arm name.
     impl_event_decl: ?*const ast.EventDecl = null,
+    // Set while emitting a flow-bodied effect event's impl INLINE-spliced into
+    // a consumer (renderEffectfulFlowBody) — mirrors `impl_event_decl`'s
+    // subflow-implemented-effects role, but for the inline-splice lowering
+    // (`emitInlineEffectfulCall`/`InlineEligibility.flow`) rather than the
+    // standalone-Handlers-struct-fn path. When set, `emitInvocation`'s
+    // impl-fire branch (own-arm calls) emits `__koru_inline_<idx>(payload)`
+    // splice markers against THIS slice instead of `__H.<arm>(payload)` calls.
+    inline_fire_conts: ?[]const ast.Continuation = null,
     // Resume arms of the arm-fire whose sum is being consumed as `|` branches
     // (`request = ask(payload) | halved v => ... | timeout => ...`). The
     // continuation-switch machinery answers payload questions from this when
@@ -4928,7 +4936,8 @@ fn procIsZig(proc: *const ast.ProcDecl) bool {
 
 const InlineEligibility = struct {
     event_decl: *const ast.EventDecl,
-    proc: *const ast.ProcDecl,
+    proc: ?*const ast.ProcDecl,
+    flow: ?*const ast.Flow,
 };
 
 /// Decide whether this flow's invocation takes the inline lowering.
@@ -4963,15 +4972,41 @@ fn inlineEffectfulEligibility(ctx: *EmissionContext, inv: *const ast.Invocation,
         if (n > 1) return null;
     }
 
-    const proc = findDefaultZigProc(items, &event_decl.path) orelse return null;
+    if (findDefaultZigProc(items, &event_decl.path)) |proc| {
+        // A nested fn makes token rewriting unsound; a terminal-bearing event
+        // whose proc never `return`s relies on the legacy glue's synthesized
+        // tail. Both keep the call path.
+        if (containsToken(proc.body.text, "fn")) return null;
+        if (has_terminal_branch and !containsToken(proc.body.text, "return")) return null;
 
-    // A nested fn makes token rewriting unsound; a terminal-bearing event
-    // whose proc never `return`s relies on the legacy glue's synthesized
-    // tail. Both keep the call path.
-    if (containsToken(proc.body.text, "fn")) return null;
-    if (has_terminal_branch and !containsToken(proc.body.text, "return")) return null;
+        return .{ .event_decl = event_decl, .proc = proc, .flow = null };
+    }
 
-    return .{ .event_decl = event_decl, .proc = proc };
+    // No `~proc|zig` impl — a pure-Koru flow-bodied (subflow-implemented)
+    // event is eligible too: same in-flow-scope splice, just rendered from
+    // the flow's continuations instead of a raw Zig proc body.
+    //
+    // An OPTIONAL effect branch keeps the legacy call path here: presence
+    // guards inside the flow's own body (a bare optional-arm name in `when`/
+    // `if` position, or an unhandled-optional fire) lower via
+    // `presenceConditionRewrite` to `@hasDecl(__H, "<arm>")` — sound only
+    // inside the standalone Handlers-struct-fn the legacy path compiles this
+    // flow into, where `__H` is a real comptime param. The inline splice has
+    // no `__H` in scope (that's the whole point — no namespace boundary), so
+    // that rewrite would leak an undefined-identifier error. Presence in the
+    // inline-splice world would need to resolve from `ctx.inline_fire_conts`
+    // (codegen-time knowledge of what the CALLER installed) instead of a
+    // runtime/comptime `__H` lookup — real design work, not mechanical; bail
+    // to the call path, which already handles this correctly (400_145/147/154).
+    for (event_decl.branches) |b| {
+        if (b.kind == .effect and b.is_optional) return null;
+    }
+
+    const found = findImplByPath(items, &event_decl.path) orelse return null;
+    switch (found) {
+        .flow => |flow| return .{ .event_decl = event_decl, .proc = null, .flow = flow },
+        else => return null,
+    }
 }
 
 /// Word-boundary token scan, quote- and comment-aware.
@@ -5148,6 +5183,114 @@ fn rewriteEffectfulProcBody(
     return .{ .text = try out.toOwnedSlice(allocator), .has_break = has_break };
 }
 
+/// Depth-any `return` → labeled break, `std.` → `@import("std").` — the
+/// tail half of `rewriteEffectfulProcBody`'s scan (effect-call splicing
+/// stripped out), factored out so `renderEffectfulFlowBody` can apply the
+/// identical rewrite to AST-emitted Zig text instead of raw proc source.
+/// Quote- and comment-aware; leaves `__koru_inline_*` splice markers alone
+/// (they contain no `return`/`std.` tokens).
+fn rewriteReturnsAndStd(
+    allocator: std.mem.Allocator,
+    body: []const u8,
+    break_label: []const u8,
+) !RewrittenProcBody {
+    var out = try std.ArrayList(u8).initCapacity(allocator, body.len + 256);
+    errdefer out.deinit(allocator);
+
+    var has_break = false;
+    var i: usize = 0;
+    var q: u8 = 0;
+    while (i < body.len) {
+        const c = body[i];
+        if (q != 0) {
+            try out.append(allocator, c);
+            if (c == '\\') {
+                if (i + 1 < body.len) try out.append(allocator, body[i + 1]);
+                i += 2;
+                continue;
+            }
+            if (c == q) q = 0;
+            i += 1;
+            continue;
+        }
+        if (c == '"' or c == '\'') {
+            q = c;
+            try out.append(allocator, c);
+            i += 1;
+            continue;
+        }
+        if (c == '/' and i + 1 < body.len and body[i + 1] == '/') {
+            while (i < body.len and body[i] != '\n') : (i += 1) try out.append(allocator, body[i]);
+            continue;
+        }
+
+        const boundary_before = i == 0 or !(std.ascii.isAlphanumeric(body[i - 1]) or body[i - 1] == '_' or body[i - 1] == '.');
+        if (boundary_before) {
+            // `return` → labeled break (any depth: every return is an exit).
+            if (std.mem.startsWith(u8, body[i..], "return")) {
+                const after = i + "return".len;
+                if (after >= body.len or !(std.ascii.isAlphanumeric(body[after]) or body[after] == '_')) {
+                    try out.appendSlice(allocator, "break :");
+                    try out.appendSlice(allocator, break_label);
+                    has_break = true;
+                    i = after;
+                    continue;
+                }
+            }
+            // `std.` → `@import("std").` (module scope does not travel).
+            if (std.mem.startsWith(u8, body[i..], "std.")) {
+                try out.appendSlice(allocator, "@import(\"std\").");
+                i += "std.".len;
+                continue;
+            }
+        }
+
+        try out.append(allocator, c);
+        i += 1;
+    }
+
+    return .{ .text = try out.toOwnedSlice(allocator), .has_break = has_break };
+}
+
+/// Render a flow-bodied (subflow-implemented) effect event's impl body,
+/// splice-ready — the flow-backed counterpart to `rewriteEffectfulProcBody`
+/// for events with no `~proc|zig` impl (a pure-Koru generator body). Emits
+/// the flow through the ordinary AST-driven `emitFlow`, with
+/// `ctx.impl_event_decl`/`ctx.inline_fire_conts` armed so the flow's own
+/// arm-fires (`emitInvocation`'s impl-fire branch) resolve to
+/// `__koru_inline_<idx>(...)` splice markers against the CALLER's `conts`
+/// instead of `__H.<arm>(...)` calls. `emitFlow` does not emit the event's
+/// input-field binds or `__H` arm aliases — those are the caller's job in
+/// the legacy standalone-function path (`emitEventDeclForModule`) — so this
+/// text is exactly the body, matching what `rewriteEffectfulProcBody`
+/// produces for a raw `~proc|zig` body. The resulting text still carries
+/// ordinary `return`s wherever the flow's own terminal branch completes
+/// (identical to how a proc body would `return`), so it gets the same
+/// `return` → `break :<break_label>` / `std.` → `@import("std").` rewrite.
+fn renderEffectfulFlowBody(
+    ctx: *EmissionContext,
+    event_decl: *const ast.EventDecl,
+    flow: *const ast.Flow,
+    conts: []const ast.Continuation,
+    break_label: []const u8,
+) !RewrittenProcBody {
+    var sub = try CodeEmitter.initGrowable(ctx.allocator, 2048);
+    defer if (sub.allocator) |a| a.free(sub.buffer);
+
+    const saved_impl_event = ctx.impl_event_decl;
+    const saved_inline_fire_conts = ctx.inline_fire_conts;
+    ctx.impl_event_decl = event_decl;
+    ctx.inline_fire_conts = conts;
+    defer {
+        ctx.impl_event_decl = saved_impl_event;
+        ctx.inline_fire_conts = saved_inline_fire_conts;
+    }
+
+    try emitFlow(&sub, ctx, flow);
+
+    return try rewriteReturnsAndStd(ctx.allocator, sub.buffer[0..sub.pos], break_label);
+}
+
 /// Emit the inline lowering at the invocation site. `result_name` is null
 /// for the zero-terminal (statement) shape.
 fn emitInlineEffectfulCall(
@@ -5162,7 +5305,10 @@ fn emitInlineEffectfulCall(
     var label_buf: [64]u8 = undefined;
     const label = std.fmt.bufPrint(&label_buf, "__koru_proc_{d}", .{uniq}) catch "__koru_proc";
 
-    const rewritten = try rewriteEffectfulProcBody(ctx.allocator, elig.proc.body.text, elig.event_decl, conts, label);
+    const rewritten = if (elig.proc) |p|
+        try rewriteEffectfulProcBody(ctx.allocator, p.body.text, elig.event_decl, conts, label)
+    else
+        try renderEffectfulFlowBody(ctx, elig.event_decl, elig.flow.?, conts, label);
     defer ctx.allocator.free(rewritten.text);
 
     // A label is only legal if something breaks to it; a statement block
@@ -5849,19 +5995,17 @@ fn presenceConditionRewrite(allocator: std.mem.Allocator, cond: []const u8, even
     return null;
 }
 
-/// Write the call expression for an arm-fire: `__H.<arm>(<payload>)`.
-/// The consumer-side handler fn takes the payload POSITIONALLY (identity
-/// payload → the bare value, multi-field → one anon struct, void → no args)
-/// — see emitHandlersStruct's signature emission, which this must mirror.
-fn writeArmFireCallExpr(
+/// Write an arm-fire's payload argument list — the POSITIONAL shape shared
+/// by both the `__H.<arm>(<payload>)` handler call and the
+/// `__koru_inline_<idx>(<payload>)` splice marker: identity payload → the
+/// bare value, multi-field → one anon struct literal, void → no args. Must
+/// mirror `emitHandlersStruct`'s signature emission.
+fn writeArmFirePayload(
     emitter: *CodeEmitter,
     ctx: *EmissionContext,
     invocation: *const ast.Invocation,
     arm: *const ast.Branch,
 ) !void {
-    try emitter.write("__H.");
-    try writeBranchName(emitter, arm.name);
-    try emitter.write("(");
     const is_identity = arm.payload.fields.len == 1 and
         std.mem.eql(u8, arm.payload.fields[0].name, "__type_ref");
     if (arm.payload.fields.len == 0 and !arm.payload.is_wildcard) {
@@ -5881,6 +6025,19 @@ fn writeArmFireCallExpr(
         }
         try emitter.write(" }");
     }
+}
+
+/// Write the call expression for an arm-fire: `__H.<arm>(<payload>)`.
+fn writeArmFireCallExpr(
+    emitter: *CodeEmitter,
+    ctx: *EmissionContext,
+    invocation: *const ast.Invocation,
+    arm: *const ast.Branch,
+) !void {
+    try emitter.write("__H.");
+    try writeBranchName(emitter, arm.name);
+    try emitter.write("(");
+    try writeArmFirePayload(emitter, ctx, invocation, arm);
     try emitter.write(")");
 }
 
@@ -5899,6 +6056,50 @@ fn emitInvocation(
     // `:` name (or the pipeline's result var); a void arm is a bare call.
     if (ctx.impl_event_decl) |impl_ev| {
         if (findEffectArm(impl_ev, &invocation.path)) |arm| {
+            // Inline-splice lowering (renderEffectfulFlowBody): this fire is
+            // being rendered INSIDE the flow-bodied impl's own inline splice,
+            // so it must resolve to a `__koru_inline_<idx>(payload)` marker
+            // against the CALLER's continuations (`ctx.inline_fire_conts`),
+            // exactly like the marker `rewriteEffectfulProcBody` writes for a
+            // raw `~proc|zig` body's effect calls — never the standalone
+            // `__H.<arm>(...)` handler call the legacy path below takes.
+            // Eligibility (`inlineEffectfulEligibility`) already excludes
+            // resuming arms, so there's no resume-binding shape to preserve
+            // here; an optional arm's presence guard is applied generically
+            // by the marker resolver (`emitInlineCodeResolvingSplices`) from
+            // the continuation's own `condition`, not re-derived here.
+            if (ctx.inline_fire_conts) |fire_conts| {
+                var cont_idx: ?usize = null;
+                for (fire_conts, 0..) |*c, ci| {
+                    if (c.kind == .effect and std.mem.eql(u8, c.branch, arm.name)) {
+                        cont_idx = ci;
+                        break;
+                    }
+                }
+                const is_payloadless = arm.payload.fields.len == 0 and !arm.payload.is_wildcard;
+                if (cont_idx == null and is_payloadless) {
+                    // Unhandled optional payloadless effect: nothing to fire,
+                    // nothing to evaluate-and-discard — pure no-op.
+                    return;
+                }
+                try emitter.writeIndent();
+                if (cont_idx) |ci| {
+                    try emitter.write(INLINE_SPLICE_PREFIX);
+                    var nb: [16]u8 = undefined;
+                    try emitter.write(std.fmt.bufPrint(&nb, "{d}", .{ci}) catch unreachable);
+                    try emitter.write("(");
+                    try writeArmFirePayload(emitter, ctx, invocation, arm);
+                    try emitter.write(")");
+                } else {
+                    // Unhandled optional effect with a payload: evaluate,
+                    // drop the result (mirrors rewriteEffectfulProcBody).
+                    try emitter.write("_ = ");
+                    try writeArmFirePayload(emitter, ctx, invocation, arm);
+                }
+                try emitter.write(";\n");
+                return;
+            }
+
             const has_resume = arm.resume_type != null or arm.resume_arms != null;
             try emitter.writeIndent();
             if (has_resume) {
