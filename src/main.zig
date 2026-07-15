@@ -6255,6 +6255,7 @@ pub fn main() !void {
     var ast_canon_mode = false; // Output COMPLETE post-parse AST as JSON, trivia-stripped (roundtrip tree-equality surface)
     var print_mode = false; // Print canonical Koru source from the post-parse AST
     var list_imports_mode = false; // Output transitive imports as JSON list (for harness caching)
+    var check_k_convertible_mode = false; // Report whether a `.kz` file could become a pure-Koru `.k` (no host bytes)
     var registry_json_mode = false; // Output TypeRegistry as JSON
     var ccp_mode = false; // CCP daemon mode for Studio integration
     var fail_fast = false; // Stop at first parse error (default: lenient mode)
@@ -6291,6 +6292,9 @@ pub fn main() !void {
             build_executable = false;
         } else if (std.mem.eql(u8, arg, "--list-imports")) {
             list_imports_mode = true;
+            build_executable = false;
+        } else if (std.mem.eql(u8, arg, "--check-k-convertible")) {
+            check_k_convertible_mode = true;
             build_executable = false;
         } else if (std.mem.eql(u8, arg, "--registry-json")) {
             registry_json_mode = true;
@@ -6548,7 +6552,7 @@ pub fn main() !void {
     // against each other regardless of which facet declared them. Single-file
     // programs (no siblings) are untouched — the merge is a no-op. This is the
     // entry-side mirror of `loadFileWithCompanions` (used for imports).
-    if (!ast_json_mode and !ast_canon_mode and !print_mode) {
+    if (!ast_json_mode and !ast_canon_mode and !print_mode and !check_k_convertible_mode) {
         source_file = try mergeEntryCompanions(allocator, parse_allocator, input, source_file);
     }
 
@@ -6605,6 +6609,46 @@ pub fn main() !void {
         const ast_printer = @import("ast_printer");
         const printed = try ast_printer.printProgram(compile_allocator, &source_file);
         try printStdout(allocator, "{s}", .{printed});
+        return;
+    }
+
+    // --check-k-convertible: could this `.kz` file be rewritten as a pure-Koru
+    // `.k` file (no host bytes)? A `.k` file carries ZERO host content — the
+    // parser's own classification is the authority, not a text heuristic. A file
+    // is convertible iff its top-level AST holds no `host_line` (raw Zig passed
+    // through), no `host_type_decl` (a host type defined outside a Koru
+    // construct), and no `proc_decl` (a `~proc` is the host escape hatch — its
+    // body is opaque host code; pure-Koru event impls are `immediate_impl`/`flow`,
+    // never procs). Output is a stable first-token status for corpus tallying:
+    //   CONVERTIBLE / NOT_CONVERTIBLE / UNPARSEABLE, then the path, then reasons.
+    if (check_k_convertible_mode) {
+        if (parser.reporter.hasErrors() or source_file.hasParseErrors()) {
+            try printStdout(allocator, "UNPARSEABLE\t{s}\n", .{input});
+            return;
+        }
+        var host_lines: usize = 0;
+        var host_types: usize = 0;
+        var procs: usize = 0;
+        for (source_file.items) |item| {
+            switch (item) {
+                .host_line => |line| {
+                    // Comments are NOT host content: in a `.kz` they forward to the
+                    // host backend as `host_line`s, but a `.k` file's Koru parser
+                    // handles `//` itself. A comment never blocks conversion.
+                    const trimmed = std.mem.trim(u8, line.content, " \t\r\n");
+                    if (trimmed.len == 0 or std.mem.startsWith(u8, trimmed, "//")) continue;
+                    host_lines += 1;
+                },
+                .host_type_decl => host_types += 1,
+                .proc_decl => procs += 1,
+                else => {},
+            }
+        }
+        if (host_lines == 0 and host_types == 0 and procs == 0) {
+            try printStdout(allocator, "CONVERTIBLE\t{s}\n", .{input});
+        } else {
+            try printStdout(allocator, "NOT_CONVERTIBLE\t{s}\thost_line={d} host_type_decl={d} proc_decl={d}\n", .{ input, host_lines, host_types, procs });
+        }
         return;
     }
 
