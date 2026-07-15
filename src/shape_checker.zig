@@ -1406,6 +1406,41 @@ pub const ShapeChecker = struct {
                         .{ cont.branch, cont.binding orelse "{...}" });
                     has_errors = true;
                 }
+                // A binding-position destructure (`| ok { a, b }`) unpacks the
+                // payload by field NAME — validate each name against the payload
+                // shape at the koru level. Otherwise an unknown field
+                // (`| ok { nonexistent }`) reaches codegen and leaks as a raw host
+                // `no field named` Zig error (210_147). Destructuring happens at
+                // BINDING, never in the declaration; only record payloads have
+                // named fields (wildcard/identity have none to destructure).
+                if (!branch.payload.is_wildcard) {
+                    const is_identity = branch.payload.fields.len == 1 and
+                        std.mem.eql(u8, branch.payload.fields[0].name, "__type_ref");
+                    if (!is_identity) {
+                        for (cont.destructure) |df| {
+                            if (std.mem.eql(u8, df.name, "_")) continue;
+                            var field_exists = false;
+                            for (branch.payload.fields) |pf| {
+                                if (std.mem.eql(u8, pf.name, df.name)) {
+                                    field_exists = true;
+                                    break;
+                                }
+                            }
+                            if (!field_exists) {
+                                var fnames = try std.ArrayList(u8).initCapacity(self.allocator, 64);
+                                defer fnames.deinit(self.allocator);
+                                for (branch.payload.fields, 0..) |pf, fi| {
+                                    if (fi > 0) try fnames.appendSlice(self.allocator, ", ");
+                                    try fnames.appendSlice(self.allocator, pf.name);
+                                }
+                                try self.reporter.addErrorAtLocation(.KORU036, cont.location,
+                                    "destructure field '{s}' is not a field of branch '{s}' (payload fields: {s})",
+                                    .{ df.name, branch.name, fnames.items });
+                                has_errors = true;
+                            }
+                        }
+                    }
+                }
             }
         }
 

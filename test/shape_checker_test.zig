@@ -270,3 +270,67 @@ test "void event with branch constructor in inline flow should fail" {
     const result = checker.checkSourceFile(&parse_result.source_file);
     try testing.expectError(error.BranchDoesNotExist, result);
 }
+
+// A binding-position destructure (`| ok { a, b }`) unpacks the branch payload by
+// field NAME. These pin the koru-level wall: names are validated against the
+// payload shape at shape-check time (KORU036), never leaked to generated Zig.
+// Destructuring happens at BINDING, never in the event declaration.
+test "binding destructure of an unknown payload field is a koru error (KORU036)" {
+    const source =
+        \\~event A { x: i32 }
+        \\| ok { a: i32, b: u8 }
+        \\| err []const u8
+        \\
+        \\~A => ok { a: 1, b: 2 }
+        \\
+        \\~A(x: 1)
+        \\| ok { nonexistent } |> _
+        \\| err _ |> _
+    ;
+
+    var parser = try Parser.init(testing.allocator, source, "test.kz", &[_][]const u8{}, null);
+    defer parser.deinit();
+
+    var parse_result = try parser.parse();
+    defer parse_result.deinit();
+
+    var checker = try shape_checker.ShapeChecker.init(testing.allocator, &parser.reporter);
+    defer checker.deinit();
+
+    checker.checkSourceFile(&parse_result.source_file) catch {};
+
+    var found_koru036 = false;
+    for (parser.reporter.errors.items) |e| {
+        if (e.code == .KORU036) found_koru036 = true;
+    }
+    try testing.expect(found_koru036);
+}
+
+test "binding destructure of real payload fields raises no KORU036" {
+    const source =
+        \\~event A { x: i32 }
+        \\| ok { a: i32, b: u8 }
+        \\| err []const u8
+        \\
+        \\~A => ok { a: 1, b: 2 }
+        \\
+        \\~A(x: 1)
+        \\| ok { a, b } |> _
+        \\| err _ |> _
+    ;
+
+    var parser = try Parser.init(testing.allocator, source, "test.kz", &[_][]const u8{}, null);
+    defer parser.deinit();
+
+    var parse_result = try parser.parse();
+    defer parse_result.deinit();
+
+    var checker = try shape_checker.ShapeChecker.init(testing.allocator, &parser.reporter);
+    defer checker.deinit();
+
+    checker.checkSourceFile(&parse_result.source_file) catch {};
+
+    for (parser.reporter.errors.items) |e| {
+        try testing.expect(e.code != .KORU036);
+    }
+}

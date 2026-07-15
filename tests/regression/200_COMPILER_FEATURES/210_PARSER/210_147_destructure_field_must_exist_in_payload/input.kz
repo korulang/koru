@@ -1,0 +1,17 @@
+// Pins that a binding-position destructure (`| ok { <name> }`) validates its
+// field names against the branch's payload shape at the KORU level. Here `ok`
+// carries `{ a: i32, b: u8 }`, so `{ nonexistent }` names no field — it must be
+// a koru diagnostic, NOT a raw host-level Zig `no field named` leak from
+// generated code. Position is what makes `{ ... }` a destructure: a destructure
+// happens at BINDING, never in the event declaration.
+~import std/io
+
+~event read { path: []const u8 }
+| ok { a: i32, b: u8 }
+| err []const u8
+
+~read => ok { a: 1, b: 2 }
+
+~read(path: "x")
+| ok { nonexistent } |> std/io:print.ln("{{ nonexistent:d }}")
+| err _ |> _

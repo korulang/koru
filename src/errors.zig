@@ -26,6 +26,7 @@ pub const ErrorCode = enum(u16) {
     KORU033, // Invalid phantom annotation (e.g., obligation issuance on input)
     KORU034, // '_' in a Koru name — use '-' (kebab); '_' is reserved for digit separators
     KORU035, // '.' used as a namespace separator — use '/' ('.' is member access after ':')
+    KORU036, // Binding-position destructure names a field the branch payload does not have
     SHAPE001, // Inconsistent branch shapes in subflow
     SHAPE002, // Duplicate branch handler at same level (indentation error)
     
