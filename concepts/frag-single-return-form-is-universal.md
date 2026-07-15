@@ -54,14 +54,20 @@ is the right home (an identity branch is no more special than a compound one):
 
 - `| ok` (empty)        → "redundant — remove it to make a void event"
 - `| ok i32` (identity) → "one-variant tag union — declare as bare return `-> i32`"
-- `| ok { .. }` (compound) → "use identity `| ok i32` instead"
+- `| ok { c: i32 }` (single-field brace), the advice is now **count-aware**:
+  - SOLE branch → "one-variant tag union — declare as bare return `-> i32`"
+  - one of ≥2 branches → "use identity `| ok i32`"
 
 Surfaced by a stale unit test that *asserted* identity branches parse without
 error (they never should have — the corpus had quietly exempted the identity
 shape). Inverted to assert PARSE003.
 
-Open (pit-of-success wrinkle): the compound single-field message routes the
-user to `| ok i32`, which is ITSELF rejected — a two-hop path to the fix
-instead of pointing straight at `-> i32`. A bad error message per the
-fantastic-errors doctrine; the collapse guidance should land the user on the
-bare return in one step.
+The pit-of-success wrinkle is CLOSED (2026-07-16): the single-field-brace check
+used to fire per-branch during parse, before the branch count was known, so a
+SOLE `| ok { c: i32 }` was routed to `| ok i32` — itself illegal for a lone
+branch, a two-hop path. It moved to post-parse (event-decl validation), where
+count is known: a sole braced-single-field falls through to the one-variant
+bare-return check; a multi-branch one gets the identity advice. The two forms
+are told apart post-parse by the field name — identity carries the `__type_ref`
+sentinel; a braced single field keeps its real name. Pinned 210_063 (sole →
+bare return) and 210_144 (multi → identity).

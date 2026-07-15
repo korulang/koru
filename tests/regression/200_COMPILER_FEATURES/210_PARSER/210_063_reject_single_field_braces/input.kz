@@ -1,9 +1,11 @@
-// Test: Parser should reject single-field braces in branch payloads
-// Single field in braces should use identity syntax instead
+// Test: a SOLE single-field-brace branch is guided to the bare-return form.
+// `| ok { value: i32 }` is a one-variant tag union AND a redundant single-field
+// brace. For a lone branch the collapse target is `-> i32` (bare return), NOT
+// the identity `| ok i32` (which is itself illegal for a single branch) — so
+// the diagnostic must land the user on `-> i32` in one hop, not two. The
+// multi-branch single-field case (→ identity) is pinned by 210_144.
 
 const std = @import("std");
 
-// WRONG: Single field in braces
-// Should be: | ok i32 (identity syntax)
 ~event compute {}
 | ok { value: i32 }

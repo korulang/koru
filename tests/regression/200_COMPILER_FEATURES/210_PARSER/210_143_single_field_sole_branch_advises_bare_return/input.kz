@@ -1,6 +1,0 @@
-// Pins the ADVICE for a SOLE single-field-struct branch. A single output is the
-// bare-return form `-> T`; the identity form `| ok T` a naive message might
-// suggest is itself illegal for a lone branch, so pointing there is a two-hop
-// path. Intent: this diagnostic lands the user on `-> i32` in ONE hop.
-~event compute {}
-| ok { value: i32 }

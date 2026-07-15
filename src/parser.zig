@@ -2009,6 +2009,27 @@ pub const Parser = struct {
             return error.ParseError;
         }
 
+        // Braced single-field payload (`| ok { c: i32 }`) → collapse the redundant
+        // braces to identity (`| ok i32`). This is the multi-branch case — a SOLE
+        // such branch was caught above as a one-variant tag union (bare return),
+        // so by here identity is the correct one-hop advice. Identity payloads
+        // carry the __type_ref sentinel; a real field name means the user wrote
+        // explicit braces around a single field. (Moved from per-branch parse so
+        // the advice can be count-aware — see parseBranch.)
+        for (branches.items) |*br| {
+            if (br.payload.is_wildcard) continue;
+            if (br.payload.fields.len != 1) continue;
+            if (std.mem.eql(u8, br.payload.fields[0].name, "__type_ref")) continue;
+            try self.reporter.addError(
+                .PARSE003,
+                event_line_index + 1,
+                1,
+                "single field in braces - use identity syntax '| {s} {s}' instead of '| {s} {{ {s}: {s} }}'",
+                .{ br.name, br.payload.fields[0].type, br.name, br.payload.fields[0].name, br.payload.fields[0].type },
+            );
+            return error.ParseError;
+        }
+
         // Copy annotations verbatim — comptime is explicit, never synthesized.
         var annotations_copy = try self.allocator.alloc([]const u8, all_annotations.items.len);
         for (all_annotations.items, 0..) |ann, i| {
@@ -8592,16 +8613,14 @@ pub const Parser = struct {
             );
             return error.ParseError;
         }
-        if (payload.fields.len == 1 and !payload.is_wildcard) {
-            try self.reporter.addError(
-                .PARSE003,
-                self.current,
-                @intCast(brace_idx.? + 1),
-                "single field in braces - use identity syntax '| {s} {s}' instead of '| {s} {{ {s}: {s} }}'",
-                .{ branch_name, payload.fields[0].type, branch_name, payload.fields[0].name, payload.fields[0].type },
-            );
-            return error.ParseError;
-        }
+        // A single-field brace payload (`| ok { c: i32 }`) collapses to identity
+        // (`| ok i32`) — but the RIGHT advice depends on branch count, which isn't
+        // known here (per-branch parse). A SOLE such branch is a one-variant tag
+        // union and should be a bare return `-> i32`, not identity; only with a
+        // sibling branch is identity the target. So the check moved to post-parse
+        // (the event-decl validation) where the count is known and can point the
+        // user at the right form in one hop. Braced-single-field is distinguished
+        // from identity there by the field name (identity carries __type_ref).
 
         // Find the closing brace position
         const close_brace_idx = blk: {
