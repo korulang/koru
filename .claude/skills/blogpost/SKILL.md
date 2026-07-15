@@ -20,6 +20,27 @@ Repo: `/Users/larsde/src/korulang_org` (adjacent to koru). Posts live at
 `/blog/drafts` route. When he's happy he flips `draft: false` himself and the
 next ceremony publishes it. You do not push, and you do not flip that flag.
 
+## The title — say what the post is about, not a riddle
+
+The title is the one line most readers ever see (the `/blog` index, social cards,
+the browser tab). It must let a reader **know what the post covers from the title
+alone.** Lead with the concrete subject — the feature or concept, by name.
+
+- **Every past title has failed this, and it is the house's worst habit:**
+  *"Doodle the Flow, Let the Events Catch Up"*, *"Open a Vocabulary, Shadow
+  Nothing"*, *"A Grammar Is Two Glyphs"* — all evocative, none tell you the post is
+  about **prototyping**, the **`[with]` vocabulary** feature, or **grammar**. Copy
+  the past posts' prose *voice* (step 2) — never their *titles*.
+- **The test:** could someone scanning `/blog` tell this post is about *<the
+  feature>* from the title alone? If not, rewrite it.
+- A clever hook is allowed **only** when the subject still leads. Put the feature
+  name first and let the hook ride behind it — `Prototype Mode: <hook>` — or park
+  the color in the `excerpt`, never the title. The subject drives; wit is a
+  passenger.
+- **Prefer plain-and-clear over clever-and-vague, every time.** "Prototype Mode:
+  Running Incomplete Programs" beats "Doodle the Flow." When in doubt, name the
+  feature and stop.
+
 ## Steps
 
 1. **Ground the feature in real passing tests.** This is a post about the
