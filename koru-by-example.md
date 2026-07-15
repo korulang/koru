@@ -760,8 +760,8 @@ const std = @import("std");
 ### 330_038_cleanup_obligation_satisfied
 
 ```koru
-~import app/fs
-~app/fs:open(path: "test.txt"): f |> app/fs:close(file: f)
+import app/fs
+app/fs:open(path: "test.txt"): f |> app/fs:close(file: f)
 ```
 
 **Output:**
@@ -774,8 +774,8 @@ Closing file
 ### 330_006_cleanup_consumed_by_disposal
 
 ```koru
-~import app/fs
-~app/fs:open(path: "test.txt"): f |> app/fs:close(file: f)
+import app/fs
+app/fs:open(path: "test.txt"): f |> app/fs:close(file: f)
 ```
 
 **Output:**

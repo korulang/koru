@@ -1,14 +1,14 @@
 {
-  "timestamp": "2026-07-14T20:37:17.194Z",
+  "timestamp": "2026-07-15T15:41:20.057Z",
   "summary": {
-    "passed": 284,
-    "failed": 5,
+    "passed": 287,
+    "failed": 0,
     "skipped": 12,
     "leaked": 0,
     "compileErrors": 0,
-    "total": 301,
+    "total": 299,
     "suiteCount": 40,
-    "status": "failure"
+    "status": "success"
   },
   "suites": [
     {
@@ -37,11 +37,11 @@
     },
     {
       "name": "ast_printer_tests",
-      "passed": 2,
-      "failed": 1,
+      "passed": 3,
+      "failed": 0,
       "skipped": 0,
       "total": 3,
-      "status": "failure"
+      "status": "success"
     },
     {
       "name": "ast_serializer_tests",
@@ -142,10 +142,10 @@
     {
       "name": "full_pipeline_tests",
       "passed": 0,
-      "failed": 1,
-      "skipped": 0,
+      "failed": 0,
+      "skipped": 1,
       "total": 1,
-      "status": "crashed"
+      "status": "success"
     },
     {
       "name": "immediate_return_tests",
@@ -189,11 +189,11 @@
     },
     {
       "name": "parser_tests",
-      "passed": 18,
-      "failed": 1,
+      "passed": 19,
+      "failed": 0,
       "skipped": 0,
       "total": 19,
-      "status": "failure"
+      "status": "success"
     },
     {
       "name": "phantom_semantic_checker_tests",
@@ -213,11 +213,11 @@
     },
     {
       "name": "purity_checker_tests",
-      "passed": 2,
-      "failed": 1,
+      "passed": 3,
+      "failed": 0,
       "skipped": 0,
       "total": 3,
-      "status": "failure"
+      "status": "success"
     },
     {
       "name": "regex_engine_tests",
@@ -229,11 +229,11 @@
     },
     {
       "name": "shape_checker_integration_tests",
-      "passed": 3,
-      "failed": 1,
+      "passed": 4,
+      "failed": 0,
       "skipped": 7,
       "total": 11,
-      "status": "failure"
+      "status": "success"
     },
     {
       "name": "shape_checker_tests",
@@ -330,28 +330,6 @@
       "skipped": 1,
       "total": 5,
       "status": "success"
-    }
-  ],
-  "crashedTests": [
-    {
-      "name": "full_pipeline_test.test.end-to-end with deferred events",
-      "reason": "access of union field 'flow' while field 'parse_error' is active"
-    },
-    {
-      "name": "ast_printer.test.round-trip: effect branches, labels, nesting",
-      "reason": "access of union field 'flow' while field 'parse_error' is active"
-    },
-    {
-      "name": "purity_checker_test.test.pure proc calling no events is transitively pure",
-      "reason": "access of union field 'flow' while field 'parse_error' is active"
-    },
-    {
-      "name": "parser.test.parser handles Source in event field",
-      "reason": "access of union field 'flow' while field 'parse_error' is active"
-    },
-    {
-      "name": "shape_checker_test.test.void event with branch constructor in inline flow should fail",
-      "reason": "access of union field 'flow' while field 'parse_error' is active"
     }
   ]
 }

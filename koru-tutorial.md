@@ -197,8 +197,8 @@ Testing subflow-defined semantics:
 ### 330_038_cleanup_obligation_satisfied
 
 ```koru
-~import app/fs
-~app/fs:open(path: "test.txt"): f |> app/fs:close(file: f)
+import app/fs
+app/fs:open(path: "test.txt"): f |> app/fs:close(file: f)
 ```
 
 **Output:**
