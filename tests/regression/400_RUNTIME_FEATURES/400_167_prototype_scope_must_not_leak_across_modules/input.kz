@@ -1,0 +1,19 @@
+// PINS: ~[prototype] must be scoped to the module that bears the annotation.
+// It is a per-file opt-in (concepts/frag-prototype-mode-panic-holes.md) — a
+// module that does NOT carry the annotation must keep full exhaustiveness even
+// when some OTHER module in the program is a prototype.
+//
+// This main module IS ~[prototype], and imports app/helper — a plain,
+// non-prototype module. helper.kz contains an incomplete flow (a declared
+// terminal left unhandled). Because helper is not a prototype, that hole must
+// be rejected KORU022, exactly as it is when no module in the program is a
+// prototype at all.
+//
+// The annotation lives on a single program-level field (ast.Program
+// .module_annotations), so today the leniency it grants is program-WIDE: the
+// prototype flag flips exhaustiveness for helper's flow too, and the hole is
+// silently tolerated instead of rejected. This test pins that leak — it stays
+// MUST_FAIL-passed (no KORU022) until prototype scope is made per-module.
+
+~[prototype]
+~import app/helper

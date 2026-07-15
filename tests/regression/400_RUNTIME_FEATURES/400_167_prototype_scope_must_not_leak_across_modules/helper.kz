@@ -1,0 +1,18 @@
+// A plain, non-prototype module (app/helper). Its own flow leaves the declared
+// terminal `| err` unhandled — a hole. Since this module carries no ~[prototype]
+// annotation, that hole must be rejected KORU022 regardless of what any other
+// module in the program is annotated with. See input.kz for what this pins.
+
+~import std/io
+
+~pub event greet { name: []const u8 }
+| ok []const u8
+| err []const u8
+
+~proc greet|zig {
+    _ = name;
+    return .{ .ok = "hi from helper" };
+}
+
+~greet(name: "internal")
+| ok msg |> std/io:print.ln(msg)

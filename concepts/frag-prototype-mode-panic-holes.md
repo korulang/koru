@@ -7,8 +7,10 @@ ts: 2026-07-14
 
 # Prototype mode: run the incomplete program, panic loudly at the holes (belief)
 
-`~[prototype]` is a per-file module opt-in that relaxes terminal-branch
-exhaustiveness in BOTH directions (see "The dual" below): an unhandled required
+`~[prototype]` is a per-file module opt-in (authored per-file, though its
+leniency scope is currently program-wide — a known defect, see Open questions)
+that relaxes terminal-branch exhaustiveness in BOTH directions (see "The dual"
+below): an unhandled required
 `|` branch is no longer a KORU022 error, it becomes a synthesized `@panic` arm —
 the SAME body an unhandled `| ?!` panic branch already gets — AND a handled arm
 for a branch the event does not declare yet is no longer a KORU021/KORU030
@@ -145,3 +147,11 @@ they are different features with different opt-ins.
   nested branching step is not yet covered.
 - JS target: the panic-hole lowering is designed against the Zig target; the JS
   equivalent (a `throw`) is unverified.
+- SCOPE IS PROGRAM-WIDE, not per-file (known defect, pinned red 400_167). The
+  annotation is authored per-file, but it lives on the single program-level
+  `ast.Program.module_annotations`, and every checker reads that one flag — so a
+  `~[prototype]` anywhere relaxes exhaustiveness for EVERY module in the program,
+  including imported non-prototype modules (and even the compiler's own pipeline
+  flows). The "per-file opt-in" framing above is the design intent, not yet the
+  behavior. Fix = scope leniency to the module bearing the annotation (per
+  `ModuleDecl.annotations`, ast.zig:228), which flips 400_167 green.
