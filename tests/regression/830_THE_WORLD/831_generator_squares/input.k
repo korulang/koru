@@ -5,7 +5,6 @@
 // consumer drives it lazily, one yielded value at a time. Terminal is void
 // `| done` — a pure yielding generator hands back no summary.
 import std/io
-import std/control
 
 pub event squares { n: usize }
 ! each usize

@@ -16,7 +16,6 @@
 // Design note: that threading should lower through a Koru subflow, not a
 // template.
 import std/io
-import std/control
 
 pub event nats { n: usize }
 ! each usize
