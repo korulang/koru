@@ -46,11 +46,18 @@ lowered switch.
 The two directions are asymmetric in their failure shape, and that asymmetry is
 the point. The missing-branch hole is a LATENT RUNTIME PANIC (a synthesized
 `@panic` fires if reached). The undeclared arm is a PURE COMPILE-TIME GAP: it
-never reaches runtime, so it costs nothing and simply records a to-do. Both are
-recorded so a lift-the-tag / readout step can list "thought about, not built
-yet" — the machine-readable frontier for closing the gaps (the
-`prototype_undeclared_branches` list carries the undeclared arms; the synthesized
-holes carry the unhandled terminals).
+never reaches runtime, so it costs nothing and simply records a to-do.
+
+Both directions feed the GAP READOUT — a per-event report printed to stderr at
+compile time for any prototype flow with gaps (`📋 prototype gaps — event 'X'`),
+listing each `hole` (declared terminal unhandled → will `@panic`) and each
+`undeclared` arm (handled, not declared → pruned). This makes the whole gap
+surface visible WITHOUT exercising every path — the crucial gain over the
+latent-panic-only regime, where a hole you never hit at runtime stayed invisible.
+It is the machine-/human-readable frontier of "thought about, not built yet": the
+surface for agentic gap-closing and for describing the events from exploratory
+code. It is emitted where both sets are already in hand (auto-discharge synthesis)
+— a first-cut home to lift into its own pass in a later tightening.
 
 "The check" that must relax is not one place. The undeclared-branch wall stands
 at four layers, each surfacing only once the prior clears — the post-comptime

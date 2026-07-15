@@ -3148,6 +3148,7 @@ pub const AutoDischargeInserter = struct {
         if (self.prototype_mode) {
             for (flow.body.continuations, 0..) |*cont, i| {
                 prune_flags[i] = false;
+                if (cont.branch.len == 0) continue; // void event chain (|> event()), not a named branch
                 if (cont.is_catchall) continue;
                 if (cont.kind == .effect) continue;
                 if (isMetatypeBranchName(cont.branch)) continue;
@@ -3163,6 +3164,30 @@ pub const AutoDischargeInserter = struct {
             missing_prototype.items.len == 0 and prune_count == 0)
         {
             return null; // Nothing to synthesize or prune
+        }
+
+        // ~[prototype] GAP READOUT: the "thought about, not built yet" frontier,
+        // printed to stderr during compilation for any prototype flow with gaps.
+        // The two directions read as one report per event:
+        //   • hole       — a DECLARED terminal left unhandled (→ @panic if reached)
+        //   • undeclared — a HANDLED arm the event does not declare (pruned dead code)
+        // This is the machine-/human-readable surface for closing the gaps and for
+        // describing the events from exploratory code. (First-cut home: this pass is
+        // the one place holding BOTH sets; lift to its own pass in a later tightening.)
+        if (self.prototype_mode and (missing_prototype.items.len > 0 or prune_count > 0)) {
+            const ev_name = try self.pathToString(event_decl.path);
+            defer self.allocator.free(ev_name);
+            std.debug.print("📋 prototype gaps — event '{s}' ({s}:{d}):\n", .{
+                ev_name, flow.location.file, flow.location.line,
+            });
+            for (missing_prototype.items) |name| {
+                std.debug.print("     hole       — '{s}' unhandled → @panic if reached\n", .{name});
+            }
+            for (flow.body.continuations, 0..) |*cont, i| {
+                if (prune_flags[i]) {
+                    std.debug.print("     undeclared — '{s}' handled but not declared → pruned (declare it on '{s}' to build it)\n", .{ cont.branch, ev_name });
+                }
+            }
         }
 
         // Crash-surface map (strict mode): when --panic-branches=strict is set,
