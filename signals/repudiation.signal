@@ -1,0 +1,7 @@
+name: repudiation
+kind: inferred
+shape: categorical
+face: in
+membrane: true
+note: a belief or feature was declared a MISTAKE and killed outright — not flipped to a new value (that is contradiction), but repudiated as wrong-from-the-start. "We believed X; X was bad design." Membrane verb: correct, or a delete when the surface it produced is torn out.
+route: surface, wake
