@@ -74,6 +74,18 @@ discharges through the one existing disposal path, no bespoke head-disposal.
 Fired only when `context.hasObligations()` (a real cleanup obligation), so a
 non-issuing phantom return discarded at the head is untouched.
 
+Flow-head discharge WITH continuations (CLOSED, 330_021/023/046 green): the
+continuation-less path above only fired when the head IS the flow exit. But a
+`_` head that carries an obligation AND has a chain after it
+(`open(): _ |> open(): f2 |> …`, an `if`, a `for`) seeds its obligation under
+the literal name `_` (the head-bind seeding block) and never renamed it — the
+downstream terminator-disposal then referenced `_` (`.file = _`, unusable in
+Zig). `renameHeadDiscardBinding` is the has-continuations twin: rename the `_`
+head bind to a synthetic but — unlike the continuation-less twin — do NOT
+append a `|> _`, because the existing continuations already provide the flow
+exit where disposal fires. Fires when the head event returns a phantom
+obligation.
+
 ## The recurring shape: branch-only logic must learn the bare return
 
 Every fix in this concept is the same shape — a piece of the phantom machinery
@@ -87,3 +99,21 @@ scanned `event_decl.branches`, so a transition like `tx.exec` (consumes
 offered as a discharge option ("Call one of: tx.exec, …", 2104_22 pins the
 NOT_CONTAINS). Extended to the bare-return form. When touching any phantom pass,
 assume it may still be branch-only and check the `-> T<phantom>` path too.
+
+## The deeper invariant: `_` discards the NAME, never the VALUE
+
+The unifying belief under every instance above: a `_` binding says "I will not
+*name* this," NOT "this value is unreferenced." Whenever the compiler still has
+to reach the value — auto-discharge must dispose an obligation, a capture cell
+is read and written by the accumulation machinery — the `_` must be renamed to
+a real synthetic identifier before emission. A bare `_` is not a declarable or
+readable Zig identifier, so leaking one is always a codegen bug, never a design
+question. This is why the rename machinery recurs in so many places.
+
+It reaches BEYOND the phantom passes: `capture {..} ! as _` (320_126) used `_`
+as the accumulator cell name in `control.kz` lowering, emitting an
+undeclarable `var _: __KoruCaptureT__`. `cell_name` is the single source for
+the cell's var decl, type name, write target, and after-read, so synthesizing
+`__koru_cap_{line}` when it is `_` covers them all at once — the same
+"referenced ⇒ needs a real name" move, in a non-phantom site. The invariant is
+about `_` semantics generally, not any one pass.

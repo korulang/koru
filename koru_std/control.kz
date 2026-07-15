@@ -193,6 +193,19 @@ const std = @import("std");
         return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
     }
 
+    // `! as _` discards the cell NAME, but the cell IS the accumulator the
+    // capture machinery declares, writes (via `captured {...}`), and reads (the
+    // `| captured` after-read) — it needs a real, referenceable Zig identifier.
+    // A bare `_` cannot be declared (`var _: T` is a Zig error) nor read. So a
+    // `_` cell is never a genuine discard: synthesize a real name, keyed on
+    // source line for uniqueness across sibling captures. cell_name is the
+    // single source for every downstream reference (preamble var/type, rewrite
+    // target, done read), so renaming here covers them all. Mirrors the
+    // auto-discharge `_`→synthetic rename for obligation-carrying binds.
+    if (std.mem.eql(u8, cell_name, "_")) {
+        cell_name = std.fmt.allocPrint(allocator, "__koru_cap_{d}", .{flow.location.line}) catch unreachable;
+    }
+
     // The cell's fields, in declaration order, parsed ONCE via the struct-literal
     // projector (the walker foundation). Used for the `var` seed below and to map
     // positional `captured { a, b }` values onto field names by index. The

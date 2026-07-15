@@ -663,6 +663,31 @@ pub const AutoDischargeInserter = struct {
             }
         }
 
+        // Flow-head `_` bind that carries a return obligation AND has
+        // continuations: rename `_` to a synthetic so the eventual auto-inserted
+        // disposal can reference the value (a bare `_` leaks into generated Zig
+        // as `.field = _`). The has-continuations twin of the continuation-less
+        // giveContinuationlessHeadTerminal path below and of the flat-form
+        // continuation discard (`call(): _ |> ...`) handled in checkContinuation.
+        // Fires only when the head event returns a phantom obligation; a plain
+        // `_` head with no obligation stays a genuine discard.
+        if (mode == .full and flow.body.continuations.len > 0) {
+            if (flow.inv().return_binding) |rb| {
+                if (std.mem.eql(u8, rb, "_") and event_info.decl.return_phantom != null) {
+                    const rebuilt = try self.renameHeadDiscardBinding(flow);
+                    const new_program = try ast_functional.replaceFlowRecursive(
+                        self.allocator,
+                        program,
+                        flow,
+                        .{ .flow = rebuilt },
+                    ) orelse return .{ .transformed = false, .program = program };
+                    const result_ptr = try self.allocator.create(ast.Program);
+                    result_ptr.* = new_program;
+                    return .{ .transformed = true, .program = result_ptr };
+                }
+            }
+        }
+
         // Walk continuations looking for terminators with obligations
         var context = BindingContext.init(self.allocator);
         defer context.deinit();
@@ -2820,6 +2845,46 @@ pub const AutoDischargeInserter = struct {
             .location = flow.location,
         };
         const new_body = ast.rootSite(new_head_inv, term, flow.location);
+
+        var new_annotations = try self.allocator.alloc([]const u8, flow.annotations.len);
+        for (flow.annotations, 0..) |ann, i| new_annotations[i] = try self.allocator.dupe(u8, ann);
+        return .{
+            .body = new_body,
+            .annotations = new_annotations,
+            .pre_label = if (flow.pre_label) |l| try self.allocator.dupe(u8, l) else null,
+            .super_shape = flow.super_shape,
+            .inline_body = if (flow.inline_body) |b| try self.allocator.dupe(u8, b) else null,
+            .preamble_code = if (flow.preamble_code) |p| try self.allocator.dupe(u8, p) else null,
+            .is_pure = flow.is_pure,
+            .is_transitively_pure = flow.is_transitively_pure,
+            .location = flow.location,
+            .module = try self.allocator.dupe(u8, flow.module),
+            .impl_of = if (flow.impl_of) |io| try ast_functional.cloneDottedPath(self.allocator, &io) else null,
+            .impl_variant = if (flow.impl_variant) |v| try self.allocator.dupe(u8, v) else null,
+            .is_impl = flow.is_impl,
+        };
+    }
+
+    /// Rename a `_` flow-head bind to a synthetic while KEEPING the head's
+    /// continuations — the has-continuations twin of
+    /// giveContinuationlessHeadTerminal. A `_` head that carries a phantom
+    /// return obligation seeds that obligation under the name `_` (see the
+    /// seeding block in the main transform); the eventual disposal, inserted
+    /// on a downstream terminal, then references `_` and leaks `.field = _`
+    /// into generated Zig (unusable — bare `_` is not a readable identifier).
+    /// Renaming the head bind gives the disposal a real value to reference.
+    /// Unlike the continuation-less twin we do NOT append a `|> _` terminal:
+    /// the existing continuations already provide the flow exit where the
+    /// terminator-disposal machinery fires.
+    fn renameHeadDiscardBinding(self: *AutoDischargeInserter, flow: *const ast.Flow) !ast.Flow {
+        var new_head_inv = try ast_functional.cloneInvocation(self.allocator, flow.inv());
+        new_head_inv.return_binding = try self.generateSyntheticBinding();
+
+        var new_conts = try self.allocator.alloc(ast.Continuation, flow.body.continuations.len);
+        for (flow.body.continuations, 0..) |*c, i| {
+            new_conts[i] = try ast_functional.cloneContinuation(self.allocator, c);
+        }
+        const new_body = ast.rootSite(new_head_inv, new_conts, flow.location);
 
         var new_annotations = try self.allocator.alloc([]const u8, flow.annotations.len);
         for (flow.annotations, 0..) |ann, i| new_annotations[i] = try self.allocator.dupe(u8, ann);
