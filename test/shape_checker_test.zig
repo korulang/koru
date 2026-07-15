@@ -5,14 +5,23 @@ const Parser = parser_mod.Parser;
 const shape_checker = @import("shape_checker");
 
 test "validate complete flow" {
+    // A genuine multi-branch event: two branches make it a real tag union, so
+    // it escapes the single-branch collapse (a lone `| ok i32` is now the
+    // retired one-variant form → bare return `-> i32`, PARSE003). Payloads are
+    // identity form (`| ok i32`) — a single-field struct `| ok { v: i32 }` is
+    // itself illegal (must be identity). Handling BOTH branches is the
+    // complete-coverage case this test pins; the sibling `validate incomplete
+    // flow` handles only `ok` and expects IncompleteBranchCoverage.
     const source =
         \\~event A { x: i32 }
         \\| ok i32
+        \\| err []const u8
         \\
         \\~A => ok x
         \\
         \\~A(x: 1)
         \\| ok _ |> _
+        \\| err _ |> _
     ;
 
     var parser = try Parser.init(testing.allocator, source, "test.kz", &[_][]const u8{}, null);
