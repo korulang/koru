@@ -1754,10 +1754,8 @@ pub const Parser = struct {
 
                     // Deferred branch decl (`| &<branch>`) — REMOVED (retired
                     // 2026-07-15, frag-deferred-deref-repudiated). Rejected loudly
-                    // so the old form fails at compile time instead of parsing
-                    // into dead AST. `is_deferred` stays as a permanently-false
-                    // field until the AST-variant cleanup lands.
-                    const is_deferred = false;
+                    // so the old form fails at compile time; the AST variant and
+                    // `is_deferred` flag are gone.
                     if (lexer.startsWith(branch_content, "&")) {
                         try self.reporter.addError(
                             .PARSE003,
@@ -1835,7 +1833,6 @@ pub const Parser = struct {
                     const branch = ast.Branch{
                         .name = try self.allocator.dupe(u8, branch_name),
                         .payload = payload,
-                        .is_deferred = is_deferred,
                         .is_optional = is_optional,
                         .is_panic = is_panic,
                     };
@@ -1997,10 +1994,9 @@ pub const Parser = struct {
         // data movement for a value with exactly ONE shape. One branch is
         // never the right shape: zero outputs => void event, one output =>
         // a bare return `-> T`, two-or-more => a real tagged union. Panic
-        // (`| ?!`) and deferred (`| &`) lone branches are not value returns
-        // and stay legal.
+        // (`| ?!`) lone branches are not value returns and stay legal.
         if (branches.items.len == 1 and branches.items[0].kind == .terminal and
-            !branches.items[0].is_panic and !branches.items[0].is_deferred and
+            !branches.items[0].is_panic and
             (branches.items[0].payload.fields.len > 0 or branches.items[0].payload.is_wildcard))
         {
             try self.reporter.addError(
@@ -5642,69 +5638,6 @@ pub const Parser = struct {
         return cont;
     }
 
-    fn parseDerefContinuationBase(self: *Parser, content: []const u8, indent: usize, location: errors.SourceLocation) !ast.Continuation {
-
-        // Parse: *target [(args)]
-        // Note: Additional pipeline steps after deref (|> ...) are not supported in new AST model
-        // Each continuation has a single step; chaining should use nested continuations
-        const trimmed = lexer.trim(content);
-
-        // Find optional args - look for opening paren
-        const paren_idx = std.mem.indexOf(u8, trimmed, "(");
-
-        // Target ends at paren (if present) or at end of identifier
-        var target_end = trimmed.len;
-        if (paren_idx) |p| {
-            target_end = p;
-        }
-
-        const target = lexer.trim(trimmed[0..target_end]);
-
-        // Parse optional arguments
-        var args: ?[]ast.Arg = null;
-
-        if (paren_idx) |p| {
-            const args_end = std.mem.indexOf(u8, trimmed[p..], ")") orelse trimmed.len - p;
-            const args_str = trimmed[p .. p + args_end + 1];
-            const parsed_args = try self.parseArgsReported(args_str);
-            defer self.allocator.free(parsed_args);
-
-            try self.checkRedundantPunning(parsed_args, self.current);
-
-            // Transfer ownership of the strings to the AST
-            var args_list = try std.ArrayList(ast.Arg).initCapacity(self.allocator, parsed_args.len);
-            for (parsed_args) |arg| {
-                var ast_arg = ast.Arg{
-                    .name = arg.name,
-                    .value = arg.value,
-                    .phantom_type = arg.phantom_type,
-                };
-                tryParseArgExpression(self.allocator, &ast_arg);
-                try args_list.append(self.allocator, ast_arg);
-            }
-            args = try args_list.toOwnedSlice(self.allocator);
-        }
-
-        // Create the deref step
-        const deref_step = ast.Step{
-            .deref = .{
-                .target = try self.allocator.dupe(u8, target),
-                .args = args,
-            },
-        };
-
-        return ast.Continuation{
-            .branch = try self.allocator.dupe(u8, "*deref"), // Special marker
-            .binding = null,
-            .condition = null,
-            .condition_expr = null,
-            .node = deref_step,
-            .indent = indent,
-            .continuations = &[_]ast.Continuation{}, // Will be filled by caller
-            .location = location,
-        };
-    }
-
     /// Parse the comma-separated field list of a shape-destructure binding
     /// (inner text, outer braces already stripped). Grammar per field:
     ///   name                  — bind payload.name
@@ -6653,12 +6586,6 @@ pub const Parser = struct {
         }
 
         return continuations.toOwnedSlice(self.allocator);
-    }
-
-    fn parseDerefContinuation(self: *Parser, content: []const u8, indent: usize, location: errors.SourceLocation) !ast.Continuation {
-        var cont = try self.parseDerefContinuationBase(content, indent, location);
-        cont.continuations = try self.parseNestedContinuationsForLevel(indent);
-        return cont;
     }
 
     fn parseBranchContinuation(self: *Parser, content: []const u8, indent: usize, location: errors.SourceLocation) !ast.Continuation {
@@ -8216,7 +8143,6 @@ pub const Parser = struct {
 
         // Deferred branch decl (`| &<branch>`) — REMOVED (retired 2026-07-15,
         // frag-deferred-deref-repudiated). Rejected loudly instead of parsed.
-        const is_deferred = false;
         var branch_start = after_bar;
         if (lexer.startsWith(after_bar, "&")) {
             try self.reporter.addError(
@@ -8490,7 +8416,6 @@ pub const Parser = struct {
                 return ast.Branch{
                     .name = try self.allocator.dupe(u8, branch_name),
                     .payload = ast.Shape{ .fields = &.{} },
-                    .is_deferred = is_deferred,
                     .is_optional = is_optional,
                     .is_panic = is_panic,
                     .kind = branch_kind,
@@ -8511,7 +8436,6 @@ pub const Parser = struct {
                         .fields = &.{},
                         .is_wildcard = true,
                     },
-                    .is_deferred = is_deferred,
                     .is_optional = is_optional,
                     .is_panic = is_panic,
                     .kind = branch_kind,
@@ -8618,7 +8542,6 @@ pub const Parser = struct {
             return ast.Branch{
                 .name = try self.allocator.dupe(u8, branch_name),
                 .payload = ast.Shape{ .fields = fields },
-                .is_deferred = is_deferred,
                 .is_optional = is_optional,
                 .is_panic = is_panic,
                 .kind = branch_kind,
@@ -8742,7 +8665,6 @@ pub const Parser = struct {
         return ast.Branch{
             .name = try self.allocator.dupe(u8, branch_name),
             .payload = payload,
-            .is_deferred = is_deferred,
             .is_optional = is_optional,
             .is_panic = is_panic,
             .kind = branch_kind,

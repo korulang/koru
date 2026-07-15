@@ -8788,22 +8788,6 @@ fn emitStep(
             try emitter.write(mb.binding);
             try emitter.write(";\n");
         },
-        .deref => |*deref| {
-            try emitter.writeIndent();
-            try emitter.write("var ");
-            try emitter.write(result_var);
-            try emitter.write(" = ");
-            try emitter.write(deref.target);
-            if (deref.args) |args| {
-                try emitter.write("(.{ ");
-                // For deref, we don't have a static path to look up the event
-                // Create a dummy empty path - emitArgs will skip is_source check if event_decl is null
-                const empty_path = ast.DottedPath{ .module_qualifier = null, .segments = &[_][]const u8{} };
-                try emitArgs(emitter, ctx, args, &empty_path);
-                try emitter.write(" })");
-            }
-            try emitter.write(";\n");
-        },
         .label_with_invocation => |*lwi| {
             // Emit label and invocation
             try emitter.writeIndent();
@@ -9391,28 +9375,6 @@ fn emitStepWithBindingSubstitution(
             try emitter.writeIndent();
             try emitter.write("}\n");
         },
-        .deref => |*deref| {
-            try emitter.writeIndent();
-            try emitter.write("var ");
-            try emitter.write(result_var);
-            try emitter.write(" = ");
-            // Note: deref.target could potentially reference the binding
-            try emitValueWithBindingSubstitution(emitter, deref.target, substitution);
-            if (deref.args) |args| {
-                try emitter.write("(.{ ");
-                for (args, 0..) |arg, idx| {
-                    if (idx > 0) {
-                        try emitter.write(", ");
-                    }
-                    try emitter.write(".");
-                    try writeBranchName(emitter, arg.name);
-                    try emitter.write(" = ");
-                    try emitValueWithBindingSubstitution(emitter, arg.value, substitution);
-                }
-                try emitter.write(" })");
-            }
-            try emitter.write(";\n");
-        },
         .label_with_invocation => |*lwi| {
             // Emit label and invocation with binding substitution
             try emitter.writeIndent();
@@ -9960,18 +9922,6 @@ fn continuationUsesBinding(cont: *const ast.Continuation, binding: []const u8) b
                     const value = if (field.expression_str) |expr| expr else field.type;
                     if (containsIdentifier(value, binding)) {
                         return true;
-                    }
-                }
-            },
-            .deref => |deref| {
-                if (containsIdentifier(deref.target, binding)) {
-                    return true;
-                }
-                if (deref.args) |args| {
-                    for (args) |arg| {
-                        if (containsIdentifier(arg.value, binding)) {
-                            return true;
-                        }
                     }
                 }
             },

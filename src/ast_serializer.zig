@@ -1249,24 +1249,6 @@ pub const AstSerializer = struct {
                 try self.write(if (cb.from_opaque_tap) "true" else "false");
                 try self.write(" } }");
             },
-            .deref => |d| {
-                try self.write(".{ .deref = .{ .target = ");
-                try self.writeString(d.target);
-                if (d.args) |args| {
-                    try self.write(", .args = &[_]Arg{\n");
-                    self.indent();
-                    for (args) |arg| {
-                        try self.serializeArg(&arg);
-                        try self.write(",\n");
-                    }
-                    self.dedent();
-                    try self.writeIndent();
-                    try self.write("}");
-                } else {
-                    try self.write(", .args = null");
-                }
-                try self.write(" } }");
-            },
             .branch_constructor => |bc| {
                 try self.write(".{ .branch_constructor = ");
                 try self.serializeBranchConstructor(&bc);
@@ -1477,11 +1459,6 @@ pub const AstSerializer = struct {
         try self.writeIndent();
         try self.write(".payload = ");
         try self.serializeShape(&branch.payload);
-        try self.write(",\n");
-
-        try self.writeIndent();
-        try self.write(".is_deferred = ");
-        try self.write(if (branch.is_deferred) "true" else "false");
         try self.write(",\n");
 
         try self.writeIndent();
@@ -2329,13 +2306,6 @@ pub const AstSerializer = struct {
                 self.dedent();
                 try self.writeIndent();
                 try self.write("]");
-            },
-            .deref => |*d| {
-                try self.writeString("deref");
-                try self.write(",\n");
-                try self.writeIndent();
-                try self.write("\"target\": ");
-                try self.writeString(d.target);
             },
             .metatype_binding => |*mb| {
                 try self.writeString("metatype_binding");

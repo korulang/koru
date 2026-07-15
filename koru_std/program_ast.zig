@@ -1003,7 +1003,6 @@ pub const PROGRAM_AST = Program{
                             Field{ .name = "code", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                             Field{ .name = "metrics", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         }, .is_wildcard = false },
-                        .is_deferred = false,
                         .is_optional = false,
                         .is_panic = false,
                         .kind = .terminal,
@@ -1016,7 +1015,6 @@ pub const PROGRAM_AST = Program{
                         .payload = Shape{ .fields = &[_]Field{
                             Field{ .name = "__type_ref", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         }, .is_wildcard = false },
-                        .is_deferred = false,
                         .is_optional = false,
                         .is_panic = false,
                         .kind = .terminal,
@@ -1377,7 +1375,6 @@ pub const PROGRAM_AST = Program{
                         .payload = Shape{ .fields = &[_]Field{
                             Field{ .name = "__type_ref", .type = "CompilerContext", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         }, .is_wildcard = false },
-                        .is_deferred = false,
                         .is_optional = false,
                         .is_panic = false,
                         .kind = .terminal,
@@ -1455,7 +1452,6 @@ pub const PROGRAM_AST = Program{
                         .payload = Shape{ .fields = &[_]Field{
                             Field{ .name = "__type_ref", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         }, .is_wildcard = false },
-                        .is_deferred = false,
                         .is_optional = false,
                         .is_panic = false,
                         .kind = .terminal,
@@ -1574,7 +1570,6 @@ pub const PROGRAM_AST = Program{
                         .payload = Shape{ .fields = &[_]Field{
                             Field{ .name = "__type_ref", .type = "CompilerContext", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         }, .is_wildcard = false },
-                        .is_deferred = false,
                         .is_optional = false,
                         .is_panic = false,
                         .kind = .terminal,
@@ -1640,7 +1635,6 @@ pub const PROGRAM_AST = Program{
                         .payload = Shape{ .fields = &[_]Field{
                             Field{ .name = "__type_ref", .type = "CompilerContext", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         }, .is_wildcard = false },
-                        .is_deferred = false,
                         .is_optional = false,
                         .is_panic = false,
                         .kind = .terminal,
@@ -1798,7 +1792,6 @@ pub const PROGRAM_AST = Program{
                         .payload = Shape{ .fields = &[_]Field{
                             Field{ .name = "__type_ref", .type = "CompilerContext", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         }, .is_wildcard = false },
-                        .is_deferred = false,
                         .is_optional = false,
                         .is_panic = false,
                         .kind = .terminal,
@@ -1812,7 +1805,6 @@ pub const PROGRAM_AST = Program{
                             Field{ .name = "ctx", .type = "CompilerContext", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                             Field{ .name = "message", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         }, .is_wildcard = false },
-                        .is_deferred = false,
                         .is_optional = false,
                         .is_panic = false,
                         .kind = .terminal,
@@ -2156,7 +2148,6 @@ pub const PROGRAM_AST = Program{
                         .payload = Shape{ .fields = &[_]Field{
                             Field{ .name = "__type_ref", .type = "CompilerContext", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         }, .is_wildcard = false },
-                        .is_deferred = false,
                         .is_optional = false,
                         .is_panic = false,
                         .kind = .terminal,
@@ -2241,7 +2232,6 @@ pub const PROGRAM_AST = Program{
                         .payload = Shape{ .fields = &[_]Field{
                             Field{ .name = "__type_ref", .type = "CompilerContext", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         }, .is_wildcard = false },
-                        .is_deferred = false,
                         .is_optional = false,
                         .is_panic = false,
                         .kind = .terminal,
@@ -2735,7 +2725,6 @@ pub const PROGRAM_AST = Program{
                             Field{ .name = "ctx", .type = "CompilerContext", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                             Field{ .name = "code", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         }, .is_wildcard = false },
-                        .is_deferred = false,
                         .is_optional = false,
                         .is_panic = false,
                         .kind = .terminal,
@@ -2897,7 +2886,6 @@ pub const PROGRAM_AST = Program{
                         .payload = Shape{ .fields = &[_]Field{
                             Field{ .name = "__type_ref", .type = "[]Item", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         }, .is_wildcard = false },
-                        .is_deferred = false,
                         .is_optional = false,
                         .is_panic = false,
                         .kind = .terminal,
@@ -2910,7 +2898,6 @@ pub const PROGRAM_AST = Program{
                         .payload = Shape{ .fields = &[_]Field{
                             Field{ .name = "__type_ref", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         }, .is_wildcard = false },
-                        .is_deferred = false,
                         .is_optional = false,
                         .is_panic = false,
                         .kind = .terminal,
@@ -2943,7 +2930,6 @@ pub const PROGRAM_AST = Program{
                             Field{ .name = "ctx", .type = "CompilerContext", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                             Field{ .name = "code", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         }, .is_wildcard = false },
-                        .is_deferred = false,
                         .is_optional = false,
                         .is_panic = false,
                         .kind = .terminal,
@@ -2975,7 +2961,6 @@ pub const PROGRAM_AST = Program{
                         .payload = Shape{ .fields = &[_]Field{
                             Field{ .name = "__type_ref", .type = "CompilerContext", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         }, .is_wildcard = false },
-                        .is_deferred = false,
                         .is_optional = false,
                         .is_panic = false,
                         .kind = .terminal,
@@ -3007,7 +2992,6 @@ pub const PROGRAM_AST = Program{
                         .payload = Shape{ .fields = &[_]Field{
                             Field{ .name = "__type_ref", .type = "CompilerContext", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         }, .is_wildcard = false },
-                        .is_deferred = false,
                         .is_optional = false,
                         .is_panic = false,
                         .kind = .terminal,
@@ -3021,7 +3005,6 @@ pub const PROGRAM_AST = Program{
                             Field{ .name = "ctx", .type = "CompilerContext", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                             Field{ .name = "message", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         }, .is_wildcard = false },
-                        .is_deferred = false,
                         .is_optional = false,
                         .is_panic = false,
                         .kind = .terminal,
@@ -3053,7 +3036,6 @@ pub const PROGRAM_AST = Program{
                         .payload = Shape{ .fields = &[_]Field{
                             Field{ .name = "__type_ref", .type = "CompilerContext", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         }, .is_wildcard = false },
-                        .is_deferred = false,
                         .is_optional = false,
                         .is_panic = false,
                         .kind = .terminal,
@@ -3067,7 +3049,6 @@ pub const PROGRAM_AST = Program{
                             Field{ .name = "ctx", .type = "CompilerContext", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                             Field{ .name = "message", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         }, .is_wildcard = false },
-                        .is_deferred = false,
                         .is_optional = false,
                         .is_panic = false,
                         .kind = .terminal,
@@ -3100,7 +3081,6 @@ pub const PROGRAM_AST = Program{
                         .payload = Shape{ .fields = &[_]Field{
                             Field{ .name = "__type_ref", .type = "CompilerContext", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         }, .is_wildcard = false },
-                        .is_deferred = false,
                         .is_optional = false,
                         .is_panic = false,
                         .kind = .terminal,
@@ -3114,7 +3094,6 @@ pub const PROGRAM_AST = Program{
                             Field{ .name = "ctx", .type = "CompilerContext", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                             Field{ .name = "message", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         }, .is_wildcard = false },
-                        .is_deferred = false,
                         .is_optional = false,
                         .is_panic = false,
                         .kind = .terminal,
@@ -3147,7 +3126,6 @@ pub const PROGRAM_AST = Program{
                         .payload = Shape{ .fields = &[_]Field{
                             Field{ .name = "__type_ref", .type = "CompilerContext", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         }, .is_wildcard = false },
-                        .is_deferred = false,
                         .is_optional = false,
                         .is_panic = false,
                         .kind = .terminal,
@@ -3161,7 +3139,6 @@ pub const PROGRAM_AST = Program{
                             Field{ .name = "ctx", .type = "CompilerContext", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                             Field{ .name = "message", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         }, .is_wildcard = false },
-                        .is_deferred = false,
                         .is_optional = false,
                         .is_panic = false,
                         .kind = .terminal,
@@ -3193,7 +3170,6 @@ pub const PROGRAM_AST = Program{
                         .payload = Shape{ .fields = &[_]Field{
                             Field{ .name = "__type_ref", .type = "CompilerContext", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         }, .is_wildcard = false },
-                        .is_deferred = false,
                         .is_optional = false,
                         .is_panic = false,
                         .kind = .terminal,
@@ -3207,7 +3183,6 @@ pub const PROGRAM_AST = Program{
                             Field{ .name = "ctx", .type = "CompilerContext", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                             Field{ .name = "message", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         }, .is_wildcard = false },
-                        .is_deferred = false,
                         .is_optional = false,
                         .is_panic = false,
                         .kind = .terminal,
@@ -3240,7 +3215,6 @@ pub const PROGRAM_AST = Program{
                         .payload = Shape{ .fields = &[_]Field{
                             Field{ .name = "__type_ref", .type = "CompilerContext", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         }, .is_wildcard = false },
-                        .is_deferred = false,
                         .is_optional = false,
                         .is_panic = false,
                         .kind = .terminal,
@@ -3275,7 +3249,6 @@ pub const PROGRAM_AST = Program{
                         .payload = Shape{ .fields = &[_]Field{
                             Field{ .name = "__type_ref", .type = "CompilerContext", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         }, .is_wildcard = false },
-                        .is_deferred = false,
                         .is_optional = false,
                         .is_panic = false,
                         .kind = .terminal,
@@ -4575,7 +4548,6 @@ pub const PROGRAM_AST = Program{
                         .payload = Shape{ .fields = &[_]Field{
                             Field{ .name = "__type_ref", .type = "CompilerContext", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         }, .is_wildcard = false },
-                        .is_deferred = false,
                         .is_optional = false,
                         .is_panic = false,
                         .kind = .terminal,
@@ -4871,7 +4843,6 @@ pub const PROGRAM_AST = Program{
                         .payload = Shape{ .fields = &[_]Field{
                             Field{ .name = "__type_ref", .type = "SiteResult", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         }, .is_wildcard = false },
-                        .is_deferred = false,
                         .is_optional = false,
                         .is_panic = false,
                         .kind = .terminal,
@@ -4907,7 +4878,6 @@ pub const PROGRAM_AST = Program{
                         .name = "ok",
                         .payload = Shape{ .fields = &[_]Field{
                         }, .is_wildcard = false },
-                        .is_deferred = false,
                         .is_optional = false,
                         .is_panic = false,
                         .kind = .terminal,
@@ -4920,7 +4890,6 @@ pub const PROGRAM_AST = Program{
                         .payload = Shape{ .fields = &[_]Field{
                             Field{ .name = "__type_ref", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         }, .is_wildcard = false },
-                        .is_deferred = false,
                         .is_optional = false,
                         .is_panic = false,
                         .kind = .terminal,
@@ -5575,7 +5544,6 @@ pub const PROGRAM_AST = Program{
                         .payload = Shape{ .fields = &[_]Field{
                             Field{ .name = "__type_ref", .type = "SiteResult", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         }, .is_wildcard = false },
-                        .is_deferred = false,
                         .is_optional = false,
                         .is_panic = false,
                         .kind = .terminal,
@@ -5780,7 +5748,6 @@ pub const PROGRAM_AST = Program{
                         .name = "ok",
                         .payload = Shape{ .fields = &[_]Field{
                         }, .is_wildcard = false },
-                        .is_deferred = false,
                         .is_optional = false,
                         .is_panic = false,
                         .kind = .terminal,
@@ -5794,7 +5761,6 @@ pub const PROGRAM_AST = Program{
                             Field{ .name = "expected", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                             Field{ .name = "actual", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         }, .is_wildcard = false },
-                        .is_deferred = false,
                         .is_optional = false,
                         .is_panic = false,
                         .kind = .terminal,
@@ -5829,7 +5795,6 @@ pub const PROGRAM_AST = Program{
                         .name = "ok",
                         .payload = Shape{ .fields = &[_]Field{
                         }, .is_wildcard = false },
-                        .is_deferred = false,
                         .is_optional = false,
                         .is_panic = false,
                         .kind = .terminal,
@@ -5841,7 +5806,6 @@ pub const PROGRAM_AST = Program{
                         .name = "failed",
                         .payload = Shape{ .fields = &[_]Field{
                         }, .is_wildcard = false },
-                        .is_deferred = false,
                         .is_optional = false,
                         .is_panic = false,
                         .kind = .terminal,
@@ -5996,7 +5960,6 @@ pub const PROGRAM_AST = Program{
                         .name = "launched",
                         .payload = Shape{ .fields = &[_]Field{
                         }, .is_wildcard = false },
-                        .is_deferred = false,
                         .is_optional = false,
                         .is_panic = false,
                         .kind = .terminal,
@@ -6008,7 +5971,6 @@ pub const PROGRAM_AST = Program{
                         .name = "skipped",
                         .payload = Shape{ .fields = &[_]Field{
                         }, .is_wildcard = false },
-                        .is_deferred = false,
                         .is_optional = false,
                         .is_panic = false,
                         .kind = .terminal,
@@ -6935,7 +6897,6 @@ pub const PROGRAM_AST = Program{
                         .payload = Shape{ .fields = &[_]Field{
                             Field{ .name = "__type_ref", .type = "CompilerContext", .module_path = "std/compiler", .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         }, .is_wildcard = false },
-                        .is_deferred = false,
                         .is_optional = false,
                         .is_panic = false,
                         .kind = .terminal,
@@ -7095,7 +7056,6 @@ pub const PROGRAM_AST = Program{
                         .name = "then",
                         .payload = Shape{ .fields = &[_]Field{
                         }, .is_wildcard = false },
-                        .is_deferred = false,
                         .is_optional = true,
                         .is_panic = false,
                         .kind = .terminal,
@@ -7107,7 +7067,6 @@ pub const PROGRAM_AST = Program{
                         .name = "else",
                         .payload = Shape{ .fields = &[_]Field{
                         }, .is_wildcard = false },
-                        .is_deferred = false,
                         .is_optional = true,
                         .is_panic = false,
                         .kind = .terminal,
@@ -7218,7 +7177,6 @@ pub const PROGRAM_AST = Program{
                         .name = "each",
                         .payload = Shape{ .fields = &[_]Field{
                         }, .is_wildcard = true },
-                        .is_deferred = false,
                         .is_optional = false,
                         .is_panic = false,
                         .kind = .effect,
@@ -7230,7 +7188,6 @@ pub const PROGRAM_AST = Program{
                         .name = "done",
                         .payload = Shape{ .fields = &[_]Field{
                         }, .is_wildcard = false },
-                        .is_deferred = false,
                         .is_optional = true,
                         .is_panic = false,
                         .kind = .terminal,
@@ -7364,7 +7321,6 @@ pub const PROGRAM_AST = Program{
                         .name = "as",
                         .payload = Shape{ .fields = &[_]Field{
                         }, .is_wildcard = true },
-                        .is_deferred = false,
                         .is_optional = false,
                         .is_panic = false,
                         .kind = .effect,
@@ -7376,7 +7332,6 @@ pub const PROGRAM_AST = Program{
                         .name = "captured",
                         .payload = Shape{ .fields = &[_]Field{
                         }, .is_wildcard = true },
-                        .is_deferred = false,
                         .is_optional = true,
                         .is_panic = false,
                         .kind = .terminal,
@@ -7894,7 +7849,6 @@ pub const PROGRAM_AST = Program{
                         .name = "added",
                         .payload = Shape{ .fields = &[_]Field{
                         }, .is_wildcard = false },
-                        .is_deferred = false,
                         .is_optional = true,
                         .is_panic = false,
                         .kind = .terminal,
@@ -7907,7 +7861,6 @@ pub const PROGRAM_AST = Program{
                         .payload = Shape{ .fields = &[_]Field{
                             Field{ .name = "__type_ref", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         }, .is_wildcard = false },
-                        .is_deferred = false,
                         .is_optional = true,
                         .is_panic = false,
                         .kind = .terminal,
@@ -7987,7 +7940,6 @@ pub const PROGRAM_AST = Program{
                         .payload = Shape{ .fields = &[_]Field{
                             Field{ .name = "__type_ref", .type = "usize", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         }, .is_wildcard = false },
-                        .is_deferred = false,
                         .is_optional = false,
                         .is_panic = false,
                         .kind = .terminal,
@@ -8000,7 +7952,6 @@ pub const PROGRAM_AST = Program{
                         .payload = Shape{ .fields = &[_]Field{
                             Field{ .name = "__type_ref", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         }, .is_wildcard = false },
-                        .is_deferred = false,
                         .is_optional = false,
                         .is_panic = false,
                         .kind = .terminal,
@@ -8013,7 +7964,6 @@ pub const PROGRAM_AST = Program{
                         .payload = Shape{ .fields = &[_]Field{
                             Field{ .name = "__type_ref", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         }, .is_wildcard = false },
-                        .is_deferred = false,
                         .is_optional = false,
                         .is_panic = false,
                         .kind = .terminal,
@@ -8149,7 +8099,6 @@ pub const PROGRAM_AST = Program{
                         .payload = Shape{ .fields = &[_]Field{
                             Field{ .name = "__type_ref", .type = "usize", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         }, .is_wildcard = false },
-                        .is_deferred = false,
                         .is_optional = false,
                         .is_panic = false,
                         .kind = .terminal,
@@ -8162,7 +8111,6 @@ pub const PROGRAM_AST = Program{
                         .payload = Shape{ .fields = &[_]Field{
                             Field{ .name = "__type_ref", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         }, .is_wildcard = false },
-                        .is_deferred = false,
                         .is_optional = false,
                         .is_panic = false,
                         .kind = .terminal,
@@ -8407,7 +8355,6 @@ pub const PROGRAM_AST = Program{
                         .payload = Shape{ .fields = &[_]Field{
                             Field{ .name = "__type_ref", .type = "[][]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         }, .is_wildcard = false },
-                        .is_deferred = false,
                         .is_optional = false,
                         .is_panic = false,
                         .kind = .terminal,
@@ -8690,7 +8637,6 @@ pub const PROGRAM_AST = Program{
                         .payload = Shape{ .fields = &[_]Field{
                             Field{ .name = "__type_ref", .type = "koru_compiler_types.CompilerContext", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         }, .is_wildcard = false },
-                        .is_deferred = false,
                         .is_optional = false,
                         .is_panic = false,
                         .kind = .terminal,
@@ -8863,7 +8809,6 @@ pub const PROGRAM_AST = Program{
                         .payload = Shape{ .fields = &[_]Field{
                             Field{ .name = "__type_ref", .type = "CompilerContext", .module_path = "std/compiler", .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         }, .is_wildcard = false },
-                        .is_deferred = false,
                         .is_optional = false,
                         .is_panic = false,
                         .kind = .terminal,
@@ -8981,7 +8926,6 @@ pub const PROGRAM_AST = Program{
                         .payload = Shape{ .fields = &[_]Field{
                             Field{ .name = "__type_ref", .type = "CompilerContext", .module_path = "std/compiler", .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         }, .is_wildcard = false },
-                        .is_deferred = false,
                         .is_optional = false,
                         .is_panic = false,
                         .kind = .terminal,
@@ -9415,7 +9359,6 @@ pub const PROGRAM_AST = Program{
                     .name = "pass",
                     .payload = Shape{ .fields = &[_]Field{
                     }, .is_wildcard = false },
-                    .is_deferred = false,
                     .is_optional = false,
                     .is_panic = false,
                     .kind = .effect,
@@ -9429,7 +9372,6 @@ pub const PROGRAM_AST = Program{
                         Field{ .name = "passes", .type = "i64", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         Field{ .name = "seconds", .type = "f64", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                     }, .is_wildcard = false },
-                    .is_deferred = false,
                     .is_optional = false,
                     .is_panic = false,
                     .kind = .terminal,
@@ -9491,7 +9433,6 @@ pub const PROGRAM_AST = Program{
                         .name = "done",
                         .payload = Shape{ .fields = &[_]Field{
                         }, .is_wildcard = false },
-                        .is_deferred = false,
                         .is_optional = false,
                         .is_panic = false,
                         .kind = .terminal,
@@ -9520,7 +9461,6 @@ pub const PROGRAM_AST = Program{
                         .name = "done",
                         .payload = Shape{ .fields = &[_]Field{
                         }, .is_wildcard = false },
-                        .is_deferred = false,
                         .is_optional = false,
                         .is_panic = false,
                         .kind = .terminal,

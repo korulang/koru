@@ -42,13 +42,13 @@ a deref continuation (`| *<binding>`) at both continuation-parse sites. Pinned
 210_145 (deferred) and 210_146 (deref). The old form no longer parses into dead
 AST; it hits the wall at the language boundary.
 
-What REMAINS dead-but-present (the deeper excision, still a follow-up): the
-`deref` AST Node variant and the `is_deferred` Branch flag still thread ~10
-passes (ast, flow_checker's transform-mode gating, serializer, printer — the
-printer already marks both spellings "not grounded"). The parser now never
-constructs a `deref` node nor sets `is_deferred` true (both are hardcoded false
-locals), so those are unreachable code and the single-branch `!is_deferred`
-exemption is a permanently-true no-op. Removing the Node variant + flag across
-the passes is a Node-variant removal on the scale of a five-layer AST threading
-— worth doing, but not blocking. The pipeline test that pinned the parsed shape
-(`end-to-end with deferred events`) is deleted; a dead feature keeps no coverage.
+The AST gutting is DONE too (2026-07-15): the `deref` Node variant and the
+`is_deferred` Branch flag are removed from `ast.zig` and every pass that walked
+them — ast_functional/ast_transform (clone), ast_mangle, ast_serializer,
+ast_printer, canonicalize_names, dead_strip, flow_checker, emitter_helpers — plus
+the now-dead `parseDerefContinuation`/`parseDerefContinuationBase` functions and
+the single-branch `!is_deferred` exemption (a lone `| &` was the only reason it
+existed). No `deref`/`is_deferred` reference survives in `src/`. The concept is
+gone from the AST entirely, so no pass can lie about the language still having it.
+The pipeline test that pinned the parsed shape (`end-to-end with deferred
+events`) is deleted; a dead feature keeps no coverage.

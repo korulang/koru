@@ -168,10 +168,6 @@ fn normalizeNode(n: *ast.Node) void {
             for (@constCast(lj.args)) |*a| normalizeArg(a);
         },
         .terminal => {},
-        .deref => |*d| {
-            mangle(d.target); // binding / branch name to deref
-            if (d.args) |args| for (@constCast(args)) |*a| normalizeArg(a);
-        },
         .branch_constructor => |*bc| normalizeBranchConstructor(bc),
         .conditional_block => |*cb| {
             // condition is a host expression — verbatim.

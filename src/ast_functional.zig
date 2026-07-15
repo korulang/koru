@@ -1442,7 +1442,6 @@ fn cloneBranch(allocator: std.mem.Allocator, branch: *const ast.Branch) !ast.Bra
     return .{
         .name = try allocator.dupe(u8, branch.name),
         .payload = try cloneShape(allocator, &branch.payload),
-        .is_deferred = branch.is_deferred,
         .is_optional = branch.is_optional,
         // is_panic must survive the clone — a dropped flag silently demotes a
         // panic branch to a required one downstream.
@@ -1590,20 +1589,6 @@ fn cloneStep(allocator: std.mem.Allocator, step: *const ast.Step) CloneError!ast
         },
         .terminal => {
             return .terminal;
-        },
-        .deref => |d| {
-            const args = if (d.args) |a| blk: {
-                var cloned_args = try allocator.alloc(ast.Arg, a.len);
-                for (a, 0..) |*arg, i| {
-                    cloned_args[i] = try cloneArg(allocator, arg);
-                }
-                break :blk cloned_args;
-            } else null;
-
-            return .{ .deref = .{
-                .target = try allocator.dupe(u8, d.target),
-                .args = args,
-            } };
         },
         .branch_constructor => |bc| {
             return .{ .branch_constructor = try cloneBranchConstructor(allocator, &bc) };
@@ -2867,7 +2852,6 @@ pub fn inferContinuationOutputBranches(
         branches[i] = ast.Branch{
             .name = try allocator.dupe(u8, name),
             .payload = .{ .fields = &[_]ast.Field{} }, // Empty payload - shape-checker will infer
-            .is_deferred = false,
             .is_optional = false,
             .kind = .terminal,
             .resume_type = null,

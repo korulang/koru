@@ -248,7 +248,6 @@ const std = @import("std");
                             .label_apply => return self.fail(info.continuation, "label_apply"),
                             .label_with_invocation => return self.fail(info.continuation, "label_with_invocation"),
                             .label_jump => return self.fail(info.continuation, "label_jump"),
-                            .deref => return self.fail(info.continuation, "deref"),
                             .conditional_block => return self.fail(info.continuation, "conditional_block"),
                             .metatype_binding => return self.fail(info.continuation, "metatype_binding"),
                             .assignment => return self.fail(info.continuation, "assignment"),

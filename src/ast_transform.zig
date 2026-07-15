@@ -297,7 +297,6 @@ fn cloneBranch(allocator: std.mem.Allocator, branch: ast.Branch) !ast.Branch {
     return .{
         .name = try allocator.dupe(u8, branch.name),
         .payload = try cloneShape(allocator, branch.payload),
-        .is_deferred = branch.is_deferred,
         // Preserve resume type + its phantom/obligation across clones (lossy before).
         .resume_type = if (branch.resume_type) |rt| try allocator.dupe(u8, rt) else null,
         .resume_phantom = if (branch.resume_phantom) |rp| try allocator.dupe(u8, rp) else null,
@@ -367,10 +366,6 @@ fn cloneStep(allocator: std.mem.Allocator, step: ast.Step) !ast.Step {
             .args = try cloneArgs(allocator, lj.args),
         }},
         .terminal => return .terminal,
-        .deref => |d| return .{ .deref = .{
-            .target = try allocator.dupe(u8, d.target),
-            .args = if (d.args) |args| try cloneArgs(allocator, args) else null,
-        }},
         .branch_constructor => |bc| return .{ .branch_constructor = .{
             .branch_name = try allocator.dupe(u8, bc.branch_name),
             .fields = try cloneFields(allocator, bc.fields),

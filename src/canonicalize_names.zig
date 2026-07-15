@@ -159,14 +159,6 @@ fn canonicalizeStep(ctx: *Context, step: *ast.Step) CanonicalizeError!void {
                 try canonicalizeStep(ctx, @constCast(inner_step));
             }
         },
-        .deref => |*d| {
-            // Deref might have args with nested invocations
-            if (d.args) |args| {
-                for (args) |*arg| {
-                    try canonicalizeArg(ctx, @constCast(arg));
-                }
-            }
-        },
         .label_apply, .label_jump, .terminal, .metatype_binding, .inline_code, .expression => {
             // No paths to canonicalize
             // metatype_binding contains canonical event names as strings, not DottedPaths

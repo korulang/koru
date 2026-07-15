@@ -173,7 +173,6 @@ const std = @import("std");
                         .owns_expression = false,
                     },
                 } },
-                .is_deferred = false,
                 .is_optional = false,
             },
         },
@@ -332,7 +331,6 @@ const std = @import("std");
                         new_branches[branch_idx] = ast.Branch{
                             .name = branch.name,
                             .payload = ast.Shape{ .fields = type_ref_field },
-                            .is_deferred = branch.is_deferred,
                             .is_optional = branch.is_optional,
                             .annotations = branch.annotations,
                         };

@@ -18,7 +18,7 @@ test "emit simple event with one branch" {
     const input_shape = ast.Shape{ .fields = &fields };
     const done_shape = ast.Shape{ .fields = &done_fields };
     var branches = [_]ast.Branch{
-        .{ .name = "done", .payload = done_shape, .is_deferred = false, .is_optional = false },
+        .{ .name = "done", .payload = done_shape, .is_optional = false },
     };
 
     const event = ast.EventDecl{
@@ -60,7 +60,7 @@ test "emit event with fields" {
     const input_shape = ast.Shape{ .fields = &input_fields };
     const output_shape = ast.Shape{ .fields = &output_fields };
     var branches = [_]ast.Branch{
-        .{ .name = "sum", .payload = output_shape, .is_deferred = false, .is_optional = false },
+        .{ .name = "sum", .payload = output_shape, .is_optional = false },
     };
 
     const event = ast.EventDecl{
@@ -99,7 +99,7 @@ test "skip events with [compiler] annotation" {
     const input_shape = ast.Shape{ .fields = &input_fields };
     const output_shape = ast.Shape{ .fields = &output_fields };
     var branches = [_]ast.Branch{
-        .{ .name = "emitted", .payload = output_shape, .is_deferred = false, .is_optional = false },
+        .{ .name = "emitted", .payload = output_shape, .is_optional = false },
     };
 
     const event = ast.EventDecl{
@@ -133,7 +133,7 @@ test "user event named 'compiler.foo' WITHOUT annotation is emitted" {
     const input_shape = ast.Shape{ .fields = &input_fields };
     const output_shape = ast.Shape{ .fields = &output_fields };
     var branches = [_]ast.Branch{
-        .{ .name = "done", .payload = output_shape, .is_deferred = false, .is_optional = false },
+        .{ .name = "done", .payload = output_shape, .is_optional = false },
     };
 
     const event = ast.EventDecl{
@@ -168,7 +168,7 @@ test "emit keyword escaping" {
     const input_shape = ast.Shape{ .fields = &input_fields };
     const output_shape = ast.Shape{ .fields = &output_fields };
     var branches = [_]ast.Branch{
-        .{ .name = "error", .payload = output_shape, .is_deferred = false, .is_optional = false },
+        .{ .name = "error", .payload = output_shape, .is_optional = false },
     };
 
     const event = ast.EventDecl{
@@ -245,8 +245,8 @@ test "emit multiple branches" {
     const ok_shape = ast.Shape{ .fields = &ok_fields };
     const error_shape = ast.Shape{ .fields = &error_fields };
     var branches = [_]ast.Branch{
-        .{ .name = "ok", .payload = ok_shape, .is_deferred = false, .is_optional = false },
-        .{ .name = "error", .payload = error_shape, .is_deferred = false, .is_optional = false },
+        .{ .name = "ok", .payload = ok_shape, .is_optional = false },
+        .{ .name = "error", .payload = error_shape, .is_optional = false },
     };
 
     const event = ast.EventDecl{
@@ -287,7 +287,7 @@ test "skip events with Source parameters (comptime-only)" {
     const input_shape = ast.Shape{ .fields = &input_fields };
     const output_shape = ast.Shape{ .fields = &output_fields };
     var branches = [_]ast.Branch{
-        .{ .name = "done", .payload = output_shape, .is_deferred = false, .is_optional = false },
+        .{ .name = "done", .payload = output_shape, .is_optional = false },
     };
 
     const event = ast.EventDecl{
@@ -321,7 +321,7 @@ test "skip events with ProgramAST parameters" {
     const input_shape = ast.Shape{ .fields = &input_fields };
     const output_shape = ast.Shape{ .fields = &output_fields };
     var branches = [_]ast.Branch{
-        .{ .name = "done", .payload = output_shape, .is_deferred = false, .is_optional = false },
+        .{ .name = "done", .payload = output_shape, .is_optional = false },
     };
 
     const event = ast.EventDecl{
@@ -355,7 +355,7 @@ test "skip events with Program parameters" {
     const input_shape = ast.Shape{ .fields = &input_fields };
     const output_shape = ast.Shape{ .fields = &output_fields };
     var branches = [_]ast.Branch{
-        .{ .name = "done", .payload = output_shape, .is_deferred = false, .is_optional = false },
+        .{ .name = "done", .payload = output_shape, .is_optional = false },
     };
 
     const event = ast.EventDecl{
@@ -387,7 +387,7 @@ test "event name becomes snake_case with _event suffix" {
     const input_shape = ast.Shape{ .fields = &input_fields };
     const output_shape = ast.Shape{ .fields = &output_fields };
     var branches = [_]ast.Branch{
-        .{ .name = "done", .payload = output_shape, .is_deferred = false, .is_optional = false },
+        .{ .name = "done", .payload = output_shape, .is_optional = false },
     };
 
     const event = ast.EventDecl{
@@ -419,7 +419,7 @@ test "dotted event path becomes underscore-separated" {
     const input_shape = ast.Shape{ .fields = &input_fields };
     const output_shape = ast.Shape{ .fields = &output_fields };
     var branches = [_]ast.Branch{
-        .{ .name = "done", .payload = output_shape, .is_deferred = false, .is_optional = false },
+        .{ .name = "done", .payload = output_shape, .is_optional = false },
     };
 
     const event = ast.EventDecl{
@@ -451,7 +451,7 @@ test "empty branch payload generates empty struct" {
     const input_shape = ast.Shape{ .fields = &input_fields };
     const output_shape = ast.Shape{ .fields = &output_fields };
     var branches = [_]ast.Branch{
-        .{ .name = "done", .payload = output_shape, .is_deferred = false, .is_optional = false },
+        .{ .name = "done", .payload = output_shape, .is_optional = false },
     };
 
     const event = ast.EventDecl{
@@ -484,7 +484,7 @@ test "handler always takes __koru_event_input parameter" {
     const input_shape = ast.Shape{ .fields = &input_fields };
     const output_shape = ast.Shape{ .fields = &output_fields };
     var branches = [_]ast.Branch{
-        .{ .name = "done", .payload = output_shape, .is_deferred = false, .is_optional = false },
+        .{ .name = "done", .payload = output_shape, .is_optional = false },
     };
 
     const event = ast.EventDecl{
@@ -519,7 +519,7 @@ test "keyword escaping in field names" {
     const input_shape = ast.Shape{ .fields = &input_fields };
     const output_shape = ast.Shape{ .fields = &output_fields };
     var branches = [_]ast.Branch{
-        .{ .name = "done", .payload = output_shape, .is_deferred = false, .is_optional = false },
+        .{ .name = "done", .payload = output_shape, .is_optional = false },
     };
 
     const event = ast.EventDecl{
@@ -575,7 +575,7 @@ test "all 36 Zig keywords are recognized for escaping" {
         const input_shape = ast.Shape{ .fields = &input_fields };
         const output_shape = ast.Shape{ .fields = &output_fields };
         var branches = [_]ast.Branch{
-            .{ .name = keyword, .payload = output_shape, .is_deferred = false, .is_optional = false },
+            .{ .name = keyword, .payload = output_shape, .is_optional = false },
         };
 
         const event = ast.EventDecl{
@@ -610,8 +610,8 @@ test "non-keywords are not escaped" {
     const input_shape = ast.Shape{ .fields = &input_fields };
     const output_shape = ast.Shape{ .fields = &output_fields };
     var branches = [_]ast.Branch{
-        .{ .name = "success", .payload = output_shape, .is_deferred = false, .is_optional = false },
-        .{ .name = "failure", .payload = output_shape, .is_deferred = false, .is_optional = false },
+        .{ .name = "success", .payload = output_shape, .is_optional = false },
+        .{ .name = "failure", .payload = output_shape, .is_optional = false },
     };
 
     const event = ast.EventDecl{

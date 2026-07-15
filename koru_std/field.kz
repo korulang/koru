@@ -126,9 +126,6 @@ var __field_noop_fba = std.heap.FixedBufferAllocator.init(&__field_noop_buf);
                         }
                     }
                 },
-                .deref => |*d| {
-                    if (self.usesIdent(d.target)) self.escapes = true;
-                },
                 .conditional_block => |*cb| {
                     for (cb.nodes) |*n| self.scanNode(n);
                 },

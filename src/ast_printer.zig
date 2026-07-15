@@ -239,7 +239,6 @@ const Printer = struct {
         } else if (br.is_optional) {
             try self.write("?");
         }
-        if (br.is_deferred) return self.unprintable("deferred (&) branch decl (spelling not grounded)");
         try self.write(br.name);
 
         if (br.payload.is_wildcard) {
@@ -558,7 +557,6 @@ const Printer = struct {
             },
             .label_apply => |label| try self.print(" |> @{s}", .{label}),
             .terminal => try self.write(" |> _"),
-            .deref => return self.unprintable("deref (spelling not grounded)"),
             .branch_constructor => |*ctor| try self.printCtor(ctor),
             // Bare expressions PRODUCE a value; the glyph is `->` (KORU103
             // guides exactly this: "`|>` chains a step; it cannot introduce

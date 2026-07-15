@@ -103,7 +103,6 @@ const std = @import("std");
                         .is_file = false,
                     },
                 } },
-                .is_deferred = false,
                 .is_optional = false,
             },
         },

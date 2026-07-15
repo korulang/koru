@@ -31,7 +31,7 @@ test "visitor emits only user code, not compiler infrastructure" {
         .{ .name = "code", .type = "[]const u8", .is_file = false, .is_embed_file = false, .is_source = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
     };
     var compiler_branches = [_]ast.Branch{
-        .{ .name = "emitted", .payload = .{ .fields = &compiler_output_fields }, .is_deferred = false, .is_optional = false },
+        .{ .name = "emitted", .payload = .{ .fields = &compiler_output_fields }, .is_optional = false },
     };
     const compiler_event = ast.EventDecl{
         .path = .{ .module_qualifier = null, .segments = @constCast(&[_][]const u8{ "compiler", "emit", "zig" }) },
@@ -48,7 +48,7 @@ test "visitor emits only user code, not compiler infrastructure" {
     var user_fields = [_]ast.Field{};
     var user_output_fields = [_]ast.Field{};
     var user_branches = [_]ast.Branch{
-        .{ .name = "done", .payload = .{ .fields = &user_output_fields }, .is_deferred = false, .is_optional = false },
+        .{ .name = "done", .payload = .{ .fields = &user_output_fields }, .is_optional = false },
     };
     const user_event = ast.EventDecl{
         .path = .{ .module_qualifier = null, .segments = @constCast(&[_][]const u8{"hello"}) },
@@ -194,7 +194,7 @@ test "visitor emits events in correct order" {
     // Create three events in specific order
     var empty_fields = [_]ast.Field{};
     var empty_branches = [_]ast.Branch{
-        .{ .name = "done", .payload = .{ .fields = &empty_fields }, .is_deferred = false, .is_optional = false },
+        .{ .name = "done", .payload = .{ .fields = &empty_fields }, .is_optional = false },
     };
 
     const event1 = ast.EventDecl{
@@ -294,7 +294,7 @@ test "visitor emits complete valid program" {
 
     var empty_fields = [_]ast.Field{};
     var branches = [_]ast.Branch{
-        .{ .name = "done", .payload = .{ .fields = &empty_fields }, .is_deferred = false, .is_optional = false },
+        .{ .name = "done", .payload = .{ .fields = &empty_fields }, .is_optional = false },
     };
     const simple_event = ast.EventDecl{
         .path = .{ .module_qualifier = null, .segments = @constCast(&[_][]const u8{"hello"}) },

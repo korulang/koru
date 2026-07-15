@@ -244,9 +244,6 @@ pub const FlowChecker = struct {
             .label_jump => |*lj| {
                 for (lj.args) |*arg| try self.checkArgPurity(arg, location);
             },
-            .deref => |*d| {
-                if (d.args) |args| for (args) |*arg| try self.checkArgPurity(arg, location);
-            },
             .branch_constructor => |*bc| try self.checkBranchConstructorPurity(bc, location),
             .conditional => |*c| {
                 if (self.exprTextHasCall(c.condition)) {
@@ -806,14 +803,6 @@ pub const FlowChecker = struct {
                 // (effect-branch resume context). Count as use either way.
                 if (bc.fields.len == 0 and std.mem.eql(u8, bc.branch_name, binding)) {
                     return true;
-                }
-            },
-            .deref => |deref| {
-                if (containsIdentifier(deref.target, binding)) return true;
-                if (deref.args) |args| {
-                    for (args) |arg| {
-                        if (containsIdentifier(arg.value, binding)) return true;
-                    }
                 }
             },
             .label_with_invocation => |lwi| {

@@ -75,7 +75,6 @@ pub const PROGRAM_AST = Program{
                         Field{ .name = "code", .type = "[]const u8", .module_path = null, .is_flow_ast = false, .is_source = false, .is_file = false, .is_embed_file = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         Field{ .name = "metrics", .type = "[]const u8", .module_path = null, .is_flow_ast = false, .is_source = false, .is_file = false, .is_embed_file = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                     } },
-                    .is_deferred = false,
                     .is_optional = false,
                 },
             },
@@ -101,7 +100,6 @@ pub const PROGRAM_AST = Program{
                         Field{ .name = "code", .type = "[]const u8", .module_path = null, .is_flow_ast = false, .is_source = false, .is_file = false, .is_embed_file = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         Field{ .name = "metrics", .type = "[]const u8", .module_path = null, .is_flow_ast = false, .is_source = false, .is_file = false, .is_embed_file = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                     } },
-                    .is_deferred = false,
                     .is_optional = false,
                 },
             },
@@ -259,7 +257,6 @@ pub const PROGRAM_AST = Program{
                     .payload = Shape{ .fields = &[_]Field{
                         Field{ .name = "items", .type = "[]Item", .module_path = null, .is_flow_ast = false, .is_source = false, .is_file = false, .is_embed_file = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                     } },
-                    .is_deferred = false,
                     .is_optional = false,
                 },
                 Branch{
@@ -267,7 +264,6 @@ pub const PROGRAM_AST = Program{
                     .payload = Shape{ .fields = &[_]Field{
                         Field{ .name = "message", .type = "[]const u8", .module_path = null, .is_flow_ast = false, .is_source = false, .is_file = false, .is_embed_file = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                     } },
-                    .is_deferred = false,
                     .is_optional = false,
                 },
             },
@@ -291,7 +287,6 @@ pub const PROGRAM_AST = Program{
                     .payload = Shape{ .fields = &[_]Field{
                         Field{ .name = "code", .type = "[]const u8", .module_path = null, .is_flow_ast = false, .is_source = false, .is_file = false, .is_embed_file = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                     } },
-                    .is_deferred = false,
                     .is_optional = false,
                 },
             },
@@ -316,7 +311,6 @@ pub const PROGRAM_AST = Program{
                         Field{ .name = "ast", .type = "ProgramAST", .module_path = null, .is_flow_ast = false, .is_source = false, .is_file = false, .is_embed_file = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         Field{ .name = "events_executed", .type = "usize", .module_path = null, .is_flow_ast = false, .is_source = false, .is_file = false, .is_embed_file = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                     } },
-                    .is_deferred = false,
                     .is_optional = false,
                 },
             },
@@ -339,7 +333,6 @@ pub const PROGRAM_AST = Program{
                     .payload = Shape{ .fields = &[_]Field{
                         Field{ .name = "ast", .type = "ProgramAST", .module_path = null, .is_flow_ast = false, .is_source = false, .is_file = false, .is_embed_file = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                     } },
-                    .is_deferred = false,
                     .is_optional = false,
                 },
                 Branch{
@@ -347,7 +340,6 @@ pub const PROGRAM_AST = Program{
                     .payload = Shape{ .fields = &[_]Field{
                         Field{ .name = "errors", .type = "[]const u8", .module_path = null, .is_flow_ast = false, .is_source = false, .is_file = false, .is_embed_file = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                     } },
-                    .is_deferred = false,
                     .is_optional = false,
                 },
             },
@@ -371,7 +363,6 @@ pub const PROGRAM_AST = Program{
                     .payload = Shape{ .fields = &[_]Field{
                         Field{ .name = "ast", .type = "ProgramAST", .module_path = null, .is_flow_ast = false, .is_source = false, .is_file = false, .is_embed_file = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                     } },
-                    .is_deferred = false,
                     .is_optional = false,
                 },
                 Branch{
@@ -379,7 +370,6 @@ pub const PROGRAM_AST = Program{
                     .payload = Shape{ .fields = &[_]Field{
                         Field{ .name = "errors", .type = "[]const u8", .module_path = null, .is_flow_ast = false, .is_source = false, .is_file = false, .is_embed_file = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                     } },
-                    .is_deferred = false,
                     .is_optional = false,
                 },
             },
@@ -402,7 +392,6 @@ pub const PROGRAM_AST = Program{
                     .payload = Shape{ .fields = &[_]Field{
                         Field{ .name = "ast", .type = "ProgramAST", .module_path = null, .is_flow_ast = false, .is_source = false, .is_file = false, .is_embed_file = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                     } },
-                    .is_deferred = false,
                     .is_optional = false,
                 },
             },
@@ -429,7 +418,6 @@ pub const PROGRAM_AST = Program{
                     .payload = Shape{ .fields = &[_]Field{
                         Field{ .name = "ast", .type = "ProgramAST", .module_path = null, .is_flow_ast = false, .is_source = false, .is_file = false, .is_embed_file = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                     } },
-                    .is_deferred = false,
                     .is_optional = false,
                 },
             },
@@ -454,7 +442,6 @@ pub const PROGRAM_AST = Program{
                         Field{ .name = "ast", .type = "ProgramAST", .module_path = null, .is_flow_ast = false, .is_source = false, .is_file = false, .is_embed_file = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         Field{ .name = "requires", .type = "[]BuildRequirement", .module_path = null, .is_flow_ast = false, .is_source = false, .is_file = false, .is_embed_file = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                     } },
-                    .is_deferred = false,
                     .is_optional = false,
                 },
             },
@@ -544,7 +531,6 @@ pub const PROGRAM_AST = Program{
                     .payload = Shape{ .fields = &[_]Field{
                         Field{ .name = "path", .type = "[]const u8", .module_path = null, .is_flow_ast = false, .is_source = false, .is_file = false, .is_embed_file = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                     } },
-                    .is_deferred = false,
                     .is_optional = false,
                 },
             },
@@ -1491,7 +1477,6 @@ pub const PROGRAM_AST = Program{
                     .payload = Shape{ .fields = &[_]Field{
                         Field{ .name = "ast", .type = "ProgramAST", .module_path = null, .is_flow_ast = false, .is_source = false, .is_file = false, .is_embed_file = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                     } },
-                    .is_deferred = false,
                     .is_optional = false,
                 },
             },
@@ -1572,7 +1557,6 @@ pub const PROGRAM_AST = Program{
                         Field{ .name = "code", .type = "[]const u8", .module_path = null, .is_flow_ast = false, .is_source = false, .is_file = false, .is_embed_file = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         Field{ .name = "metrics", .type = "[]const u8", .module_path = null, .is_flow_ast = false, .is_source = false, .is_file = false, .is_embed_file = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                     } },
-                    .is_deferred = false,
                     .is_optional = false,
                 },
             },
@@ -1598,7 +1582,6 @@ pub const PROGRAM_AST = Program{
                         Field{ .name = "code", .type = "[]const u8", .module_path = null, .is_flow_ast = false, .is_source = false, .is_file = false, .is_embed_file = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         Field{ .name = "metrics", .type = "[]const u8", .module_path = null, .is_flow_ast = false, .is_source = false, .is_file = false, .is_embed_file = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                     } },
-                    .is_deferred = false,
                     .is_optional = false,
                 },
             },
@@ -1759,7 +1742,6 @@ pub const PROGRAM_AST = Program{
                     .payload = Shape{ .fields = &[_]Field{
                         Field{ .name = "items", .type = "[]Item", .module_path = null, .is_flow_ast = false, .is_source = false, .is_file = false, .is_embed_file = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                     } },
-                    .is_deferred = false,
                     .is_optional = false,
                 },
                 Branch{
@@ -1767,7 +1749,6 @@ pub const PROGRAM_AST = Program{
                     .payload = Shape{ .fields = &[_]Field{
                         Field{ .name = "message", .type = "[]const u8", .module_path = null, .is_flow_ast = false, .is_source = false, .is_file = false, .is_embed_file = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                     } },
-                    .is_deferred = false,
                     .is_optional = false,
                 },
             },
@@ -1791,7 +1772,6 @@ pub const PROGRAM_AST = Program{
                     .payload = Shape{ .fields = &[_]Field{
                         Field{ .name = "code", .type = "[]const u8", .module_path = null, .is_flow_ast = false, .is_source = false, .is_file = false, .is_embed_file = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                     } },
-                    .is_deferred = false,
                     .is_optional = false,
                 },
             },
@@ -1816,7 +1796,6 @@ pub const PROGRAM_AST = Program{
                         Field{ .name = "ast", .type = "ProgramAST", .module_path = null, .is_flow_ast = false, .is_source = false, .is_file = false, .is_embed_file = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         Field{ .name = "events_executed", .type = "usize", .module_path = null, .is_flow_ast = false, .is_source = false, .is_file = false, .is_embed_file = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                     } },
-                    .is_deferred = false,
                     .is_optional = false,
                 },
             },
@@ -1839,7 +1818,6 @@ pub const PROGRAM_AST = Program{
                     .payload = Shape{ .fields = &[_]Field{
                         Field{ .name = "ast", .type = "ProgramAST", .module_path = null, .is_flow_ast = false, .is_source = false, .is_file = false, .is_embed_file = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                     } },
-                    .is_deferred = false,
                     .is_optional = false,
                 },
                 Branch{
@@ -1847,7 +1825,6 @@ pub const PROGRAM_AST = Program{
                     .payload = Shape{ .fields = &[_]Field{
                         Field{ .name = "errors", .type = "[]const u8", .module_path = null, .is_flow_ast = false, .is_source = false, .is_file = false, .is_embed_file = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                     } },
-                    .is_deferred = false,
                     .is_optional = false,
                 },
             },
@@ -1871,7 +1848,6 @@ pub const PROGRAM_AST = Program{
                     .payload = Shape{ .fields = &[_]Field{
                         Field{ .name = "ast", .type = "ProgramAST", .module_path = null, .is_flow_ast = false, .is_source = false, .is_file = false, .is_embed_file = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                     } },
-                    .is_deferred = false,
                     .is_optional = false,
                 },
                 Branch{
@@ -1879,7 +1855,6 @@ pub const PROGRAM_AST = Program{
                     .payload = Shape{ .fields = &[_]Field{
                         Field{ .name = "errors", .type = "[]const u8", .module_path = null, .is_flow_ast = false, .is_source = false, .is_file = false, .is_embed_file = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                     } },
-                    .is_deferred = false,
                     .is_optional = false,
                 },
             },
@@ -1902,7 +1877,6 @@ pub const PROGRAM_AST = Program{
                     .payload = Shape{ .fields = &[_]Field{
                         Field{ .name = "ast", .type = "ProgramAST", .module_path = null, .is_flow_ast = false, .is_source = false, .is_file = false, .is_embed_file = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                     } },
-                    .is_deferred = false,
                     .is_optional = false,
                 },
             },
@@ -1929,7 +1903,6 @@ pub const PROGRAM_AST = Program{
                     .payload = Shape{ .fields = &[_]Field{
                         Field{ .name = "ast", .type = "ProgramAST", .module_path = null, .is_flow_ast = false, .is_source = false, .is_file = false, .is_embed_file = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                     } },
-                    .is_deferred = false,
                     .is_optional = false,
                 },
             },
@@ -1954,7 +1927,6 @@ pub const PROGRAM_AST = Program{
                         Field{ .name = "ast", .type = "ProgramAST", .module_path = null, .is_flow_ast = false, .is_source = false, .is_file = false, .is_embed_file = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         Field{ .name = "requires", .type = "[]BuildRequirement", .module_path = null, .is_flow_ast = false, .is_source = false, .is_file = false, .is_embed_file = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                     } },
-                    .is_deferred = false,
                     .is_optional = false,
                 },
             },
@@ -2044,7 +2016,6 @@ pub const PROGRAM_AST = Program{
                     .payload = Shape{ .fields = &[_]Field{
                         Field{ .name = "path", .type = "[]const u8", .module_path = null, .is_flow_ast = false, .is_source = false, .is_file = false, .is_embed_file = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                     } },
-                    .is_deferred = false,
                     .is_optional = false,
                 },
             },
@@ -2991,7 +2962,6 @@ pub const PROGRAM_AST = Program{
                     .payload = Shape{ .fields = &[_]Field{
                         Field{ .name = "ast", .type = "ProgramAST", .module_path = null, .is_flow_ast = false, .is_source = false, .is_file = false, .is_embed_file = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                     } },
-                    .is_deferred = false,
                     .is_optional = false,
                 },
             },

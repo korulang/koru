@@ -867,7 +867,6 @@ pub const ResumeArm = struct {
 pub const Branch = struct {
     name: []const u8,
     payload: Shape,
-    is_deferred: bool = false,  // Marks &-branches that return event refs
     is_optional: bool = false,  // Marks ?-branches that don't need to be handled
     is_panic: bool = false,  // Marks ?!-branches: unhandled => synthesized @panic(...) (UNSAFE to ignore)
     kind: BranchKind = .terminal,  // `|` = terminal (fires once, returns); `!` = effect (fires 0..N during proc run)
@@ -1142,10 +1141,6 @@ pub const Node = union(enum) {
         args: []const Arg,
     },
     terminal,  // The _ marker - flow terminates here
-    deref: struct {
-        target: []const u8,  // Variable name or branch name to dereference
-        args: ?[]const Arg,        // Optional override arguments
-    },
     branch_constructor: BranchConstructor,  // Inline branch construction
     conditional_block: struct {  // Conditional execution (for tap when clauses) - LEGACY
         condition: ?[]const u8,  // Condition string (e.g., "d.result > 50")
@@ -1233,16 +1228,6 @@ pub const Node = union(enum) {
                 allocator.free(@constCast(lj.args));
             },
             .terminal => {},  // Nothing to free
-            .deref => |*d| {
-                allocator.free(d.target);
-                if (d.args) |args| {
-                    for (args) |*arg| {
-                        var mutable_arg = arg.*;
-                        mutable_arg.deinit(allocator);
-                    }
-                    allocator.free(@constCast(args));
-                }
-            },
             .branch_constructor => |*bc| bc.deinit(allocator),
             .conditional_block => |*cb| {
                 if (cb.condition) |c| allocator.free(c);
@@ -1757,7 +1742,7 @@ pub const ASTNode = union(enum) {
                     },
                     // Leaf step types
                     .label_apply, .label_with_invocation, .label_jump,
-                    .terminal, .deref, .branch_constructor, .metatype_binding, .inline_code,
+                    .terminal, .branch_constructor, .metatype_binding, .inline_code,
                     .expression => {
                         break :blk try allocator.alloc(ASTNode, 0);
                     },

@@ -3122,7 +3122,7 @@ test "PhantomSemanticChecker - state mismatch rejected" {
         .{ .name = "file", .type = "*File", .phantom = "open" },
     };
     var event_a_branches = [_]ast.Branch{
-        .{ .name = "opened", .payload = .{ .fields = &event_a_output_fields }, .is_deferred = false, .is_optional = false },
+        .{ .name = "opened", .payload = .{ .fields = &event_a_output_fields }, .is_optional = false },
     };
 
     // Event B: ~event read_file { file: *File[closed] } | done {}
@@ -3131,7 +3131,7 @@ test "PhantomSemanticChecker - state mismatch rejected" {
     };
     var event_b_done_fields = [_]ast.Field{};
     var event_b_branches = [_]ast.Branch{
-        .{ .name = "done", .payload = .{ .fields = &event_b_done_fields }, .is_deferred = false, .is_optional = false },
+        .{ .name = "done", .payload = .{ .fields = &event_b_done_fields }, .is_optional = false },
     };
 
     // Flow: ~open_file() | opened o |> read_file(file: o.file) | done |> _
@@ -3220,7 +3220,7 @@ test "PhantomSemanticChecker - matching states accepted" {
         .{ .name = "file", .type = "*File", .phantom = "open" },
     };
     var event_a_branches = [_]ast.Branch{
-        .{ .name = "opened", .payload = .{ .fields = &event_a_output_fields }, .is_deferred = false, .is_optional = false },
+        .{ .name = "opened", .payload = .{ .fields = &event_a_output_fields }, .is_optional = false },
     };
 
     // Event B: ~event read_file { file: *File[open] } | done {} — MATCHES [open]
@@ -3229,7 +3229,7 @@ test "PhantomSemanticChecker - matching states accepted" {
     };
     var event_b_done_fields = [_]ast.Field{};
     var event_b_branches = [_]ast.Branch{
-        .{ .name = "done", .payload = .{ .fields = &event_b_done_fields }, .is_deferred = false, .is_optional = false },
+        .{ .name = "done", .payload = .{ .fields = &event_b_done_fields }, .is_optional = false },
     };
 
     // Flow: ~open_file() | opened o |> read_file(file: o.file) | done |> _
@@ -3313,7 +3313,7 @@ test "PhantomSemanticChecker - cross-module state mismatch rejected" {
         .{ .name = "file", .type = "*File", .phantom = "fs:open" },
     };
     var event_a_branches = [_]ast.Branch{
-        .{ .name = "opened", .payload = .{ .fields = &event_a_output_fields }, .is_deferred = false, .is_optional = false },
+        .{ .name = "opened", .payload = .{ .fields = &event_a_output_fields }, .is_optional = false },
     };
 
     // Event B: ~event read_file { file: *File[mipmap:open] } | done {} — DIFFERENT MODULE
@@ -3322,7 +3322,7 @@ test "PhantomSemanticChecker - cross-module state mismatch rejected" {
     };
     var event_b_done_fields = [_]ast.Field{};
     var event_b_branches = [_]ast.Branch{
-        .{ .name = "done", .payload = .{ .fields = &event_b_done_fields }, .is_deferred = false, .is_optional = false },
+        .{ .name = "done", .payload = .{ .fields = &event_b_done_fields }, .is_optional = false },
     };
 
     // Flow: ~open_file() | opened o |> read_file(file: o.file) | done |> _

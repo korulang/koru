@@ -128,14 +128,6 @@ pub const DeadStripPass = struct {
                     try self.collectFromContinuations(branch.body);
                 }
             },
-            .deref => |d| {
-                // A deref might reference an event indirectly — mark the target
-                // as used to be safe
-                const key = try self.allocator.dupe(u8, d.target);
-                self.used.put(key, {}) catch {
-                    self.allocator.free(key);
-                };
-            },
             // terminal, label_apply, label_jump, branch_constructor, assignment — no event references
             else => {},
         }
