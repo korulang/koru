@@ -1752,11 +1752,21 @@ pub const Parser = struct {
                     branch_content = lexer.trim(branch_content[1..]);
                     if (branch_content.len == 0) break;
 
-                    // Check for & prefix (deferred)
-                    var is_deferred = false;
+                    // Deferred branch decl (`| &<branch>`) — REMOVED (retired
+                    // 2026-07-15, frag-deferred-deref-repudiated). Rejected loudly
+                    // so the old form fails at compile time instead of parsing
+                    // into dead AST. `is_deferred` stays as a permanently-false
+                    // field until the AST-variant cleanup lands.
+                    const is_deferred = false;
                     if (lexer.startsWith(branch_content, "&")) {
-                        is_deferred = true;
-                        branch_content = lexer.trim(branch_content[1..]);
+                        try self.reporter.addError(
+                            .PARSE003,
+                            event_line_index + 1,
+                            1,
+                            "deferred branch `| &<branch>` was removed — the deferred/deref mechanism is retired. Declare the call site with a required effect-branch instead.",
+                            .{},
+                        );
+                        return error.ParseError;
                     }
 
                     // Check for ?! prefix (panic branch) before ? (optional).
@@ -5472,8 +5482,20 @@ pub const Parser = struct {
             );
             return error.ParseError;
         } else if (lexer.startsWith(after_bar, "*")) {
-            // Deref continuation
-            cont = try self.parseDerefContinuationBase(after_bar[1..], indent, location);
+            // Deref continuation (`| *<binding>`) — REMOVED. The deferred/deref
+            // mechanism for first-class events is retired (repudiated 2026-07-15):
+            // an event cannot travel as a runtime pointer. A required
+            // effect-branch expresses "I need something to call here",
+            // monomorphized and with no indirection. See
+            // frag-deferred-deref-repudiated.
+            try self.reporter.addError(
+                .PARSE003,
+                location.line,
+                1,
+                "deref continuation `| *<binding>` was removed — the deferred/deref mechanism is retired. Declare the call site with a required effect-branch instead.",
+                .{},
+            );
+            return error.ParseError;
         } else {
             // Branch continuation
             cont = try self.parseBranchContinuationBase(after_bar, indent, location);
@@ -5511,8 +5533,20 @@ pub const Parser = struct {
             );
             return error.ParseError;
         } else if (lexer.startsWith(after_bar, "*")) {
-            // Deref continuation
-            cont = try self.parseDerefContinuationBase(after_bar[1..], indent, location);
+            // Deref continuation (`| *<binding>`) — REMOVED. The deferred/deref
+            // mechanism for first-class events is retired (repudiated 2026-07-15):
+            // an event cannot travel as a runtime pointer. A required
+            // effect-branch expresses "I need something to call here",
+            // monomorphized and with no indirection. See
+            // frag-deferred-deref-repudiated.
+            try self.reporter.addError(
+                .PARSE003,
+                location.line,
+                1,
+                "deref continuation `| *<binding>` was removed — the deferred/deref mechanism is retired. Declare the call site with a required effect-branch instead.",
+                .{},
+            );
+            return error.ParseError;
         } else {
             // Branch continuation
             cont = try self.parseBranchContinuationBase(after_bar, indent, location);
@@ -8180,12 +8214,19 @@ pub const Parser = struct {
         const branch_kind: ast.BranchKind = if (trimmed.len > 0 and trimmed[0] == '!') .effect else .terminal;
         const after_bar = lexer.trim(trimmed[1..]);
 
-        // Check for & prefix (deferred branch)
-        var is_deferred = false;
+        // Deferred branch decl (`| &<branch>`) — REMOVED (retired 2026-07-15,
+        // frag-deferred-deref-repudiated). Rejected loudly instead of parsed.
+        const is_deferred = false;
         var branch_start = after_bar;
         if (lexer.startsWith(after_bar, "&")) {
-            is_deferred = true;
-            branch_start = lexer.trim(after_bar[1..]);
+            try self.reporter.addError(
+                .PARSE003,
+                self.current,
+                1,
+                "deferred branch `| &<branch>` was removed — the deferred/deref mechanism is retired. Declare the call site with a required effect-branch instead.",
+                .{},
+            );
+            return error.ParseError;
         }
 
         // Check for ?! prefix (panic branch) before ? (optional).

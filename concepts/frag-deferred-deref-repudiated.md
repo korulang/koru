@@ -34,11 +34,21 @@ as a runtime pointer.** Any "first-class event" surface must resolve to inline,
 monomorphized expansion — the same instinct as the language's other collapses
 toward concrete, one-variant forms ([[frag-single-return-form-is-universal]]).
 
-Status: the surface is dead but not yet excised. The `deref` AST Node variant
-and the `is_deferred` Branch flag still thread ~10 passes (ast, parser,
-flow_checker's transform-mode gating, serializer, printer — the printer already
-marks both spellings "not grounded"). Ripping them out (and making `&`/`*`
-fail loudly at parse) is a Node-variant removal on the scale of a five-layer AST
-threading — a real follow-up endeavor, not a one-liner. The pipeline test that
-pinned the parsed shape (`end-to-end with deferred events`) is deleted; a dead
-feature keeps no coverage.
+Status: the PARSER surface is excised (2026-07-15). Both spellings now fail
+loudly at parse with PARSE003 "…the deferred/deref mechanism is retired.
+Declare the call site with a required effect-branch instead" — a deferred decl
+(`| &<branch>`) at both the event-decl and flow-continuation branch sites, and
+a deref continuation (`| *<binding>`) at both continuation-parse sites. Pinned
+210_145 (deferred) and 210_146 (deref). The old form no longer parses into dead
+AST; it hits the wall at the language boundary.
+
+What REMAINS dead-but-present (the deeper excision, still a follow-up): the
+`deref` AST Node variant and the `is_deferred` Branch flag still thread ~10
+passes (ast, flow_checker's transform-mode gating, serializer, printer — the
+printer already marks both spellings "not grounded"). The parser now never
+constructs a `deref` node nor sets `is_deferred` true (both are hardcoded false
+locals), so those are unreachable code and the single-branch `!is_deferred`
+exemption is a permanently-true no-op. Removing the Node variant + flag across
+the passes is a Node-variant removal on the scale of a five-layer AST threading
+— worth doing, but not blocking. The pipeline test that pinned the parsed shape
+(`end-to-end with deferred events`) is deleted; a dead feature keeps no coverage.

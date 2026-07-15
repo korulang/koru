@@ -1,0 +1,7 @@
+// Pins that a deferred branch decl (`| &<branch>`) is rejected. The
+// deferred/deref mechanism for first-class events is retired (repudiated
+// 2026-07-15) — an event cannot travel as a runtime pointer; required
+// effect-branches serve the "I need something to call here" need instead.
+~event auth { user: []const u8 }
+| &selected []const u8
+| denied
