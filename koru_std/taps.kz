@@ -1018,27 +1018,41 @@ var metatype_global_counter: usize = 0;
                      else if (s == .label_with_invocation) s.label_with_invocation.invocation.return_binding
                      else null)
                 else null;
-                const nested = try transformContinuations(
-                    alloc,
-                    this_cont.continuations,
-                    tap_branches,
-                    is_meta,
-                    source_pattern,
-                    source_wildcard,
-                    dest_pattern,
-                    dest_wildcard,
-                    false,
-                    tap_salt,
-                    metatype_counter,
-                    tap_is_opaque,
-                    next_source_path,
-                    containing_module,
-                    next_source_is_opaque,
-                    opaque_events,
-                    next_source_produced,
-                );
-                this_cont.continuations = nested.conts;
-                if (nested.modified) any_modified = true;
+                // A bare-return (`-> r`) is a TERMINUS: no downstream. The wrap below
+                // observes it correctly — the tap fires on the continuation LEADING to
+                // the return. But recursing into its (always empty) tail trips the
+                // "no continuations => terminal position" void-completion wrap at the
+                // top of this fn, synthesizing a SECOND observer AFTER the return —
+                // unreachable code. Don't recurse past a terminus.
+                // Belief: concepts/frag-tap-observes-a-transition.md
+                const node_is_bare_return = if (this_cont.node) |s|
+                    (s == .branch_constructor and s.branch_constructor.is_bare_return)
+                else false;
+                // A terminus has no tail to transform, so skip the recursion for it
+                // entirely (recursing would trip the void-completion wrap — see above).
+                if (!node_is_bare_return) {
+                    const nested = try transformContinuations(
+                        alloc,
+                        this_cont.continuations,
+                        tap_branches,
+                        is_meta,
+                        source_pattern,
+                        source_wildcard,
+                        dest_pattern,
+                        dest_wildcard,
+                        false,
+                        tap_salt,
+                        metatype_counter,
+                        tap_is_opaque,
+                        next_source_path,
+                        containing_module,
+                        next_source_is_opaque,
+                        opaque_events,
+                        next_source_produced,
+                    );
+                    this_cont.continuations = nested.conts;
+                    if (nested.modified) any_modified = true;
+                }
 
                 const should_wrap = allow_wrap_for_source and (force_dest_match or dest_matches) and !dest_is_opaque and !skip_wrap_for_tap;
                 if (!should_wrap) {
