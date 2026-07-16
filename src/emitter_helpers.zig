@@ -3276,7 +3276,10 @@ fn emitSubflowContinuationsWithDepth(
                         const alloc = emitter.allocator orelse break :blk condition;
                         const sen = source_event_name orelse break :blk condition;
                         const ev = findEventByName(all_items, sen, alloc, main_module_name) orelse break :blk condition;
-                        break :blk (try presenceConditionRewrite(alloc, condition, ev)) orelse condition;
+                        // Consumer-side when-guards: still on the Handlers-fn
+                        // path (`__H` in scope). Inline-splice presence resolves
+                        // at the impl-body sites that pass `ctx.inline_fire_conts`.
+                        break :blk (try presenceConditionRewrite(alloc, condition, ev, null)) orelse condition;
                     };
                     try emitter.write(cond_out);
                     try emitter.write(") ");
@@ -3952,7 +3955,7 @@ fn emitInlineCodeResolvingSplices(
                     const cond_out: []const u8 = blk: {
                         const alloc = emitter.allocator orelse break :blk cont.condition.?;
                         const ev = ctx.impl_event_decl orelse break :blk cont.condition.?;
-                        break :blk (try presenceConditionRewrite(alloc, cont.condition.?, ev)) orelse cont.condition.?;
+                        break :blk (try presenceConditionRewrite(alloc, cont.condition.?, ev, ctx.inline_fire_conts)) orelse cont.condition.?;
                     };
                     try emitter.write("if (");
                     try emitter.write(cond_out);
@@ -4077,7 +4080,7 @@ fn emitInlineCodeResolvingSplices(
                 const cond_out: []const u8 = blk: {
                     const alloc = emitter.allocator orelse break :blk cont.condition.?;
                     const ev = ctx.impl_event_decl orelse break :blk cont.condition.?;
-                    break :blk (try presenceConditionRewrite(alloc, cont.condition.?, ev)) orelse cont.condition.?;
+                    break :blk (try presenceConditionRewrite(alloc, cont.condition.?, ev, ctx.inline_fire_conts)) orelse cont.condition.?;
                 };
                 try emitter.write("if (");
                 try emitter.write(cond_out);
@@ -5017,21 +5020,12 @@ fn inlineEffectfulEligibility(ctx: *EmissionContext, inv: *const ast.Invocation,
     // event is eligible too: same in-flow-scope splice, just rendered from
     // the flow's continuations instead of a raw Zig proc body.
     //
-    // An OPTIONAL effect branch keeps the legacy call path here: presence
-    // guards inside the flow's own body (a bare optional-arm name in `when`/
-    // `if` position, or an unhandled-optional fire) lower via
-    // `presenceConditionRewrite` to `@hasDecl(__H, "<arm>")` — sound only
-    // inside the standalone Handlers-struct-fn the legacy path compiles this
-    // flow into, where `__H` is a real comptime param. The inline splice has
-    // no `__H` in scope (that's the whole point — no namespace boundary), so
-    // that rewrite would leak an undefined-identifier error. Presence in the
-    // inline-splice world would need to resolve from `ctx.inline_fire_conts`
-    // (codegen-time knowledge of what the CALLER installed) instead of a
-    // runtime/comptime `__H` lookup — real design work, not mechanical; bail
-    // to the call path, which already handles this correctly (400_145/147/154).
-    for (event_decl.branches) |b| {
-        if (b.kind == .effect and b.is_optional) return null;
-    }
+    // Optional effect arms are fine here: `renderEffectfulFlowBody` arms
+    // `ctx.inline_fire_conts`, so presence guards rewrite to comptime
+    // `true`/`false` from the caller's installed continuations (not
+    // `@hasDecl(__H, ...)`), template-baked `@hasDecl` is rewritten the
+    // same way, and unhandled optional fires no-op at the impl-fire site.
+    // Pins: 833 (fold × optional arm), 400_145/154 (omitted optional).
 
     const found = findImplByPath(items, &event_decl.path) orelse return null;
     switch (found) {
@@ -5319,7 +5313,61 @@ fn renderEffectfulFlowBody(
 
     try emitFlow(&sub, ctx, flow);
 
-    return try rewriteReturnsAndStd(ctx.allocator, sub.buffer[0..sub.pos], break_label);
+    // Template-baked presence (`~if(arm)` → `@hasDecl(__H, "arm")` in
+    // template_processor) still names `__H`, which the inline splice has
+    // no. Rewrite those to comptime true/false from the caller's conts —
+    // same resolution as `presenceConditionRewrite` for AST `if`/`when`.
+    const with_presence = try rewriteInlineHasDeclPresence(
+        ctx.allocator,
+        sub.buffer[0..sub.pos],
+        conts,
+    );
+    defer ctx.allocator.free(with_presence);
+
+    return try rewriteReturnsAndStd(ctx.allocator, with_presence, break_label);
+}
+
+/// Replace template-baked `@hasDecl(__H, "<arm>")` with `true`/`false` from
+/// the caller's installed effect continuations. The `~if` template resolves
+/// presence at render time (upstream of every emitter site) into a `__H`
+/// lookup that is only sound on the Handlers-fn path; the inline splice
+/// rewrites those lookups per call site (400_154 × 833).
+fn rewriteInlineHasDeclPresence(
+    allocator: std.mem.Allocator,
+    body: []const u8,
+    fire_conts: []const ast.Continuation,
+) ![]u8 {
+    const needle = "@hasDecl(__H, \"";
+    var out = try std.ArrayList(u8).initCapacity(allocator, body.len);
+    errdefer out.deinit(allocator);
+    var pos: usize = 0;
+    while (pos < body.len) {
+        if (std.mem.indexOfPos(u8, body, pos, needle)) |at| {
+            try out.appendSlice(allocator, body[pos..at]);
+            var i = at + needle.len;
+            const name_start = i;
+            while (i < body.len and body[i] != '"') : (i += 1) {}
+            if (i >= body.len or i + 1 >= body.len or body[i + 1] != ')') {
+                // Malformed — emit verbatim from the match and stop scanning.
+                try out.appendSlice(allocator, body[at..]);
+                break;
+            }
+            const arm_name = body[name_start..i];
+            var present = false;
+            for (fire_conts) |*c| {
+                if (c.kind == .effect and std.mem.eql(u8, c.branch, arm_name)) {
+                    present = true;
+                    break;
+                }
+            }
+            try out.appendSlice(allocator, if (present) "true" else "false");
+            pos = i + 2; // past `" )`
+            continue;
+        }
+        try out.appendSlice(allocator, body[pos..]);
+        break;
+    }
+    return try out.toOwnedSlice(allocator);
 }
 
 /// Emit the inline lowering at the invocation site. `result_name` is null
@@ -5995,26 +6043,40 @@ pub fn findEffectArm(event: *const ast.EventDecl, path: *const ast.DottedPath) ?
 /// Presence-expression rewrite for an `if`/`when` CONDITION string. A bare
 /// effect-arm name in guard position is a presence test — "did the consumer
 /// install this arm" (ruled 2026-07-03):
-///   - optional arm → returns null (emit verbatim). The bare name already
-///     aliases to a comptime-known nullable fn ptr (emitOptionalArmNullableAlias),
-///     so `if (ask)` / `when ask` fold and Zig analyzes only the taken branch.
-///     (400_146/147)
+///   - optional arm, legacy Handlers-fn path → `@hasDecl(__H, "<arm>")`
+///     (400_146/147). `__H` is the comptime handlers param.
+///   - optional arm, inline-splice path → `true` / `false` from the CALLER's
+///     continuations (`inline_fire_conts`). The inline splice has no `__H` in
+///     scope; presence is codegen-time knowledge of what was installed (833).
 ///   - required arm → `@compileError(...)` wall: a required arm is always
-///     installed, so testing for it is a meaningless always-true. Its plain
-///     `const pong = __H.pong` alias is a fn, not a bool, so without this wall
-///     it would leak a raw Zig type error instead of a koru diagnostic. (400_150)
-/// Returns null when `cond` is not a REQUIRED bare arm name — emit it verbatim.
+///     installed, so testing for it is a meaningless always-true. (400_150)
+/// Returns null when `cond` is not a bare arm name — emit it verbatim.
 /// A non-null result is owned by `allocator`.
-fn presenceConditionRewrite(allocator: std.mem.Allocator, cond: []const u8, event: *const ast.EventDecl) !?[]const u8 {
+fn presenceConditionRewrite(
+    allocator: std.mem.Allocator,
+    cond: []const u8,
+    event: *const ast.EventDecl,
+    inline_fire_conts: ?[]const ast.Continuation,
+) !?[]const u8 {
     const trimmed = std.mem.trim(u8, cond, " \t");
     for (event.branches) |*b| {
         if (b.kind != .effect) continue;
         if (!std.mem.eql(u8, trimmed, b.name)) continue;
         if (b.is_optional) {
-            // Comptime presence test. `if (opt)` is NOT a bool in Zig (it needs a
-            // capture), so the condition becomes `@hasDecl(__H, "ask")` — a real
-            // bool, comptime-known → Zig analyzes only the taken branch. (The
-            // nullable-ptr alias serves the proc side's `if (ask) |f|` and fires.)
+            // Inline splice: resolve presence from the caller's installed
+            // continuations — no `__H` exists in that scope.
+            if (inline_fire_conts) |fire_conts| {
+                for (fire_conts) |*c| {
+                    if (c.kind == .effect and std.mem.eql(u8, c.branch, b.name)) {
+                        return try allocator.dupe(u8, "true");
+                    }
+                }
+                return try allocator.dupe(u8, "false");
+            }
+            // Legacy Handlers-fn path: comptime `@hasDecl` against `__H`.
+            // `if (opt)` is NOT a bool in Zig (it needs a capture), so the
+            // condition becomes a real comptime bool → Zig analyzes only the
+            // taken branch. (Nullable-ptr alias serves the proc side.)
             return try std.fmt.allocPrint(allocator, "@hasDecl(__H, \"{s}\")", .{b.name});
         }
         return try std.fmt.allocPrint(
@@ -6094,11 +6156,11 @@ fn emitInvocation(
             // exactly like the marker `rewriteEffectfulProcBody` writes for a
             // raw `~proc|zig` body's effect calls — never the standalone
             // `__H.<arm>(...)` handler call the legacy path below takes.
-            // Eligibility (`inlineEffectfulEligibility`) already excludes
-            // resuming arms, so there's no resume-binding shape to preserve
-            // here; an optional arm's presence guard is applied generically
-            // by the marker resolver (`emitInlineCodeResolvingSplices`) from
-            // the continuation's own `condition`, not re-derived here.
+            // Eligibility already excludes resuming arms (no resume-binding
+            // shape here). Optional arms: absent → no-op / evaluate-and-drop;
+            // presence guards in the impl body resolve via
+            // `presenceConditionRewrite(..., inline_fire_conts)` to
+            // comptime true/false (833).
             if (ctx.inline_fire_conts) |fire_conts| {
                 var cont_idx: ?usize = null;
                 for (fire_conts, 0..) |*c, ci| {
@@ -6107,26 +6169,21 @@ fn emitInvocation(
                         break;
                     }
                 }
-                const is_payloadless = arm.payload.fields.len == 0 and !arm.payload.is_wildcard;
-                if (cont_idx == null and is_payloadless) {
-                    // Unhandled optional payloadless effect: nothing to fire,
-                    // nothing to evaluate-and-discard — pure no-op.
+                if (cont_idx == null) {
+                    // Unhandled optional: comptime-absent — pure no-op.
+                    // Mirrors `if (@hasDecl(__H, ...))` folding the fire away
+                    // on the legacy path (payload not evaluated either).
+                    // Evaluate-and-drop would re-discard for-loop bindings
+                    // (`_ = &i; _ = i`) and leak a Zig error (400_145).
                     return;
                 }
                 try emitter.writeIndent();
-                if (cont_idx) |ci| {
-                    try emitter.write(INLINE_SPLICE_PREFIX);
-                    var nb: [16]u8 = undefined;
-                    try emitter.write(std.fmt.bufPrint(&nb, "{d}", .{ci}) catch unreachable);
-                    try emitter.write("(");
-                    try writeArmFirePayload(emitter, ctx, invocation, arm);
-                    try emitter.write(")");
-                } else {
-                    // Unhandled optional effect with a payload: evaluate,
-                    // drop the result (mirrors rewriteEffectfulProcBody).
-                    try emitter.write("_ = ");
-                    try writeArmFirePayload(emitter, ctx, invocation, arm);
-                }
+                try emitter.write(INLINE_SPLICE_PREFIX);
+                var nb: [16]u8 = undefined;
+                try emitter.write(std.fmt.bufPrint(&nb, "{d}", .{cont_idx.?}) catch unreachable);
+                try emitter.write("(");
+                try writeArmFirePayload(emitter, ctx, invocation, arm);
+                try emitter.write(")");
                 try emitter.write(";\n");
                 return;
             }
@@ -8881,7 +8938,7 @@ fn emitStep(
                 const cond_out: []const u8 = blk: {
                     const alloc = emitter.allocator orelse break :blk cond;
                     const ev = ctx.impl_event_decl orelse break :blk cond;
-                    break :blk (try presenceConditionRewrite(alloc, cond, ev)) orelse cond;
+                    break :blk (try presenceConditionRewrite(alloc, cond, ev, ctx.inline_fire_conts)) orelse cond;
                 };
                 try emitter.write(cond_out);
             }
@@ -9314,7 +9371,7 @@ fn emitStep(
                 const cond_out: []const u8 = blk: {
                     const alloc = emitter.allocator orelse break :blk cond.condition;
                     const ev = ctx.impl_event_decl orelse break :blk cond.condition;
-                    break :blk (try presenceConditionRewrite(alloc, cond.condition, ev)) orelse cond.condition;
+                    break :blk (try presenceConditionRewrite(alloc, cond.condition, ev, ctx.inline_fire_conts)) orelse cond.condition;
                 };
                 try emitter.write(cond_out);
             }

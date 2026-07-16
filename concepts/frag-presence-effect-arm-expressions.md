@@ -26,6 +26,21 @@ analyzes only the taken branch and the absent case never sees `__H.arm`.
 The proc side gets the same information as a comptime-known nullable
 fn-pointer alias (`if (ask) |f|`, 400_148).
 
+## Presence has TWO lowerings, one per emission path (833)
+
+`@hasDecl(__H, "arm")` is the lowering only on the LEGACY Handlers-struct-fn
+path, where `__H` is a real comptime param. When a flow-bodied event is folded
+via the in-flow-scope INLINE SPLICE (832 — so the caller's mutable accumulator
+stays in scope), there is no `__H` — that boundary is exactly what the splice
+dissolves. There, presence resolves from the CALLER's installed continuations
+(`ctx.inline_fire_conts`, codegen-time knowledge of what was installed) to a
+comptime `true`/`false`. Same presence truth, two backends: a `__H` lookup
+where a handlers struct exists, a caller-conts lookup where it doesn't. Both AST
+`if`/`when` guards (`presenceConditionRewrite`) and template-baked `~if` →
+`@hasDecl(__H, ...)` (`rewriteInlineHasDeclPresence`) take the conts backend on
+the inline path. An event declaring an optional arm therefore no longer bails
+out of inline-splice eligibility (833: fold × optional arm).
+
 ## Why the two homes resolve at DIFFERENT layers
 
 The `~if` template bakes its condition at render time (`{{ expr }}`),
