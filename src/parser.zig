@@ -6088,11 +6088,21 @@ pub const Parser = struct {
             if (std.mem.eql(u8, next, "when")) {
                 _ = parts.next(); // consume "when"
 
-                // Find when the condition ends (before |> or end of line)
+                // Find where the condition ends: at the earliest arm-body
+                // delimiter — a `|>` continuation chain OR a `->` bare-return
+                // produce. A `when` guard can precede either (`when g |> body`
+                // or `when g -> value`); neither `|>` nor `->` is a legal
+                // expression operator, so the earliest occurrence unambiguously
+                // terminates the guard expression.
                 const remaining = parts.rest();
                 const pipe_idx = std.mem.indexOf(u8, remaining, "|>");
+                const arrow_idx = std.mem.indexOf(u8, remaining, "->");
+                const end_idx: ?usize = if (pipe_idx) |p|
+                    (if (arrow_idx) |a| @min(p, a) else p)
+                else
+                    arrow_idx;
 
-                const condition_str = if (pipe_idx) |idx|
+                const condition_str = if (end_idx) |idx|
                     lexer.trim(remaining[0..idx])
                 else
                     lexer.trim(remaining);
@@ -6142,8 +6152,9 @@ pub const Parser = struct {
 
                 condition = try self.allocator.dupe(u8, condition_str);
 
-                // Update rest to skip past the condition
-                if (pipe_idx) |idx| {
+                // Update rest to skip past the condition — preserving the
+                // delimiter (`|>` or `->`) so the arm body parses downstream.
+                if (end_idx) |idx| {
                     rest = remaining[idx..];
                 } else {
                     rest = "";
