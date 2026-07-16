@@ -1989,15 +1989,21 @@ pub const Parser = struct {
         }
 
         // Reject single PAYLOAD-carrying TERMINAL branch (210_131, the
-        // single-return form — fork ruled 2026-07-11, no exemptions): a lone
-        // `| value T` lowers to a one-variant tag union — a tag plus double
-        // data movement for a value with exactly ONE shape. One branch is
-        // never the right shape: zero outputs => void event, one output =>
-        // a bare return `-> T`, two-or-more => a real tagged union. Panic
-        // (`| ?!`) lone branches are not value returns and stay legal.
+        // single-return form): a lone `| value T` lowers to a one-variant tag
+        // union — a tag plus double data movement for a value with exactly ONE
+        // shape. One branch is never the right shape: zero outputs => void
+        // event, one output => a bare return `-> T`, two-or-more => a real
+        // tagged union. Panic (`| ?!`) lone branches are not value returns and
+        // stay legal.
+        //
+        // WILDCARD EXEMPTION: a lone `| c *` is NOT a one-variant union. The `*`
+        // is a declaration-time signal that this branch is filled by N guarded
+        // dispatch arms at the use site (the `~cond` shape — `cond(x) | c b when
+        // g -> v …`), inherently multi-way, never a single shape. This mirrors
+        // the payloadless sibling above, which already exempts `!is_wildcard`.
         if (branches.items.len == 1 and branches.items[0].kind == .terminal and
             !branches.items[0].is_panic and
-            (branches.items[0].payload.fields.len > 0 or branches.items[0].payload.is_wildcard))
+            branches.items[0].payload.fields.len > 0)
         {
             try self.reporter.addError(
                 .PARSE003,

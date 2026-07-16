@@ -62,6 +62,24 @@ Surfaced by a stale unit test that *asserted* identity branches parse without
 error (they never should have — the corpus had quietly exempted the identity
 shape). Inverted to assert PARSE003.
 
+## The ONE exemption: a wildcard `| c *` single branch — it is not a single shape (2026-07-16)
+
+Building `cond` (flat multi-way dispatch — `cond(x) | c b when g -> v … | c _ -> d`,
+`koru_std/control.kz`) surfaced the one shape "uniform reject" over-caught: a lone
+`| c *`. A wildcard branch is NOT a one-variant union — the `*` is a declaration-time
+signal that this single branch is FILLED BY N guarded arms at the use site (the same
+`! each *` multifire idea, moved onto a terminal branch). `when`-guards turn one branch
+name into N runtime paths — 355_007 already does exactly this for a `warning` branch
+that happens to have siblings; `cond` is that pattern as the SOLE branch. So the
+payload single-branch reject now exempts `is_wildcard`, mirroring the payloadless
+sibling that already carried `!is_wildcard`. A FIXED lone `| ok i32` stays rejected —
+it really is one shape; only the `*` (inherently multi-arm) form is exempt. The rule
+conflated "one branch DECLARATION" with "one runtime VARIANT"; `when`-guards + `*`
+break that equivalence. Pinned by 320_133 (cond green) and the parser exemption at the
+210_131 site. cond is Lisp-`cond` (first-true predicate clauses), deliberately NOT
+`switch` (value-case) nor `match` (structural patterns — reserved for a future
+ADT/value-match construct; `match` is also already taken by std/parser).
+
 The pit-of-success wrinkle is CLOSED (2026-07-16): the single-field-brace check
 used to fire per-branch during parse, before the branch count was known, so a
 SOLE `| ok { c: i32 }` was routed to `| ok i32` — itself illegal for a lone
