@@ -123,24 +123,36 @@ provisional-spelling tier: TODO + residue.md, no input.kz, for ideas
 whose surface is honestly uninvented (690_019 batch+fusion, 690_020
 compound columns).
 
-**The disposal verb give-back is BUILT (2026-07-16, 690_015 GREEN).**
-`take` hands out `| item` carrying the store-named `<store-item!>`;
-`give-back(i)` is its discharge — a keyword transform rewriting to a
-per-store `__store_giveback_<s>` disposal event that consumes
-`<!store-item>` (the std/list:free idiom, generated at create time beside
-the take unit). Two design facts settled and worth keeping: (1) the
-store-take obligation is **EXPLICIT-discharge-required** — a taken row
-never given back LEAKS LOUDLY (690_007), *unlike* std/list:free whose
-scope-exit auto-free is a deliberate feature. The enforcement isn't a new
-flag: the generated disposer carries a synthesized `| given` output, and
-ANY output opts a disposer out of auto-insertion (KORU083) while still
-crediting an explicit call — so the leak survives as a compile error. (2)
-A NESTED keyword site sees only a synthetic flow rooted at itself
-(transform_pass_runner), with no ancestors — so give-back can't read
-upward to the take; it resolves its store by searching the whole PROGRAM
-for the take that bound the argument. And the leak diagnostic across every
-discharge path now names the user verb (`Call: give-back`) and says
-"obligation", never the internal `__store_giveback_*` (pit-of-success).
+**REPUDIATED (2026-07-17): the store never provides a disposal verb.** A
+brief detour built a store-provided `give-back` and declared the take
+obligation "explicit-discharge-required." That was wrong, and the reason is
+the load-bearing insight: **on a static scalar store there is no resource.**
+`take` copies the row's values out and swap-removes the slot — no `malloc`,
+no `free`, ever. So an obligation that guards nothing is theater, and a
+store-provided disposer is the store *presuming* how to dispose a row it
+cannot know the meaning of. The corrected model:
+
+- **A bare store's `take` carries NO obligation — frictionless** (remove +
+  return values). Rung 0 (2026-07-17) retired the `give-back` unit and
+  transform; a bare `take | item i |> …` needs no discharge.
+- **Disposal is a PER-STORE opt-in, and the discharger is USER-authored.**
+  A store declaring `[entity(<name>)]` mints `<std/store:taken!>` on a named
+  synthesized row type (`Enemy`), and the USER writes the discharger — the
+  *despawn handler* consuming `<!std/store:taken>` (660_027's qualified-
+  phantom pattern). The compiler names the obligation until one exists; the
+  store never presumes the disposal. `destroy`/`delete`/re-insert are all
+  just what the user's handler chooses to do.
+- **Stability from the type/state split.** The obligation *state* (`taken`)
+  is stable and shared across all stores; the per-store *type* (`Enemy`)
+  carries identity, disambiguated by base-type filtering (as `close(*Conn
+  <!active>)` only matches `*Conn`). So the obligation vocabulary never
+  multiplies with store count — the generics property in the ergonomics.
+
+The obligation earns its keep only where a row is an entity with despawn
+semantics or owned-resource cells — a per-store author's call, not a
+language-wide rule. This is the disposal edge of the wider vision: the store
+as a per-store-specialized, statically-allocated, compile-time-reactive data
+substrate (reactions fused into the one write path, like taps).
 
 The full residue (rulings, stamped theses, gauntlet verdicts, open
 queue) lives in `tests/regression/600_STDLIB/690_STORE/DESIGN.md`, which
