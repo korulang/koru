@@ -1989,15 +1989,21 @@ pub const Parser = struct {
         }
 
         // Reject single PAYLOAD-carrying TERMINAL branch (210_131, the
-        // single-return form — fork ruled 2026-07-11, no exemptions): a lone
-        // `| value T` lowers to a one-variant tag union — a tag plus double
-        // data movement for a value with exactly ONE shape. One branch is
-        // never the right shape: zero outputs => void event, one output =>
-        // a bare return `-> T`, two-or-more => a real tagged union. Panic
-        // (`| ?!`) lone branches are not value returns and stay legal.
+        // single-return form): a lone `| value T` lowers to a one-variant tag
+        // union — a tag plus double data movement for a value with exactly ONE
+        // shape. One branch is never the right shape: zero outputs => void
+        // event, one output => a bare return `-> T`, two-or-more => a real
+        // tagged union. Panic (`| ?!`) lone branches are not value returns and
+        // stay legal.
+        //
+        // WILDCARD EXEMPTION: a lone `| c *` is NOT a one-variant union. The `*`
+        // is a declaration-time signal that this branch is filled by N guarded
+        // dispatch arms at the use site (the `~cond` shape — `cond(x) | c b when
+        // g -> v …`), inherently multi-way, never a single shape. This mirrors
+        // the payloadless sibling above, which already exempts `!is_wildcard`.
         if (branches.items.len == 1 and branches.items[0].kind == .terminal and
             !branches.items[0].is_panic and
-            (branches.items[0].payload.fields.len > 0 or branches.items[0].payload.is_wildcard))
+            branches.items[0].payload.fields.len > 0)
         {
             try self.reporter.addError(
                 .PARSE003,
@@ -6088,11 +6094,21 @@ pub const Parser = struct {
             if (std.mem.eql(u8, next, "when")) {
                 _ = parts.next(); // consume "when"
 
-                // Find when the condition ends (before |> or end of line)
+                // Find where the condition ends: at the earliest arm-body
+                // delimiter — a `|>` continuation chain OR a `->` bare-return
+                // produce. A `when` guard can precede either (`when g |> body`
+                // or `when g -> value`); neither `|>` nor `->` is a legal
+                // expression operator, so the earliest occurrence unambiguously
+                // terminates the guard expression.
                 const remaining = parts.rest();
                 const pipe_idx = std.mem.indexOf(u8, remaining, "|>");
+                const arrow_idx = std.mem.indexOf(u8, remaining, "->");
+                const end_idx: ?usize = if (pipe_idx) |p|
+                    (if (arrow_idx) |a| @min(p, a) else p)
+                else
+                    arrow_idx;
 
-                const condition_str = if (pipe_idx) |idx|
+                const condition_str = if (end_idx) |idx|
                     lexer.trim(remaining[0..idx])
                 else
                     lexer.trim(remaining);
@@ -6142,8 +6158,9 @@ pub const Parser = struct {
 
                 condition = try self.allocator.dupe(u8, condition_str);
 
-                // Update rest to skip past the condition
-                if (pipe_idx) |idx| {
+                // Update rest to skip past the condition — preserving the
+                // delimiter (`|>` or `->`) so the arm body parses downstream.
+                if (end_idx) |idx| {
                     rest = remaining[idx..];
                 } else {
                     rest = "";

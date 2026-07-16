@@ -56,6 +56,40 @@ const std = @import("std");
 }
 
 // ============================================================================
+// COND - Flat multi-way dispatch (ZERO OVERHEAD)
+// ============================================================================
+//
+// Syntax: cond(scrutinee)
+//         | c b when <guard> -> <value>   // N guarded arms, first match wins
+//         | c _ -> <default>              // guardless catch-all (the else)
+//
+// ARCHITECTURE:
+// - ~cond is a |template|zig proc, like ~if. `| c *` is a single VARIADIC
+//   terminal branch — the wildcard `*` legalizes the lone declaration (parser
+//   single-branch exemption) and marks it as filled by N guarded arms at the
+//   use site. The template iterates continuations["c"] into a first-match
+//   sequence of guard clauses: `if (<guard>) { <produce> }` per guarded arm,
+//   then the guardless `| c _` arm as an unconditional final `{ <produce> }`.
+//   Each arm's `when` guard is exposed as `arm.guard`, its produce body via
+//   `arm.continue`; the arm binding is wired to the scrutinee by the emitter.
+//   Every arm PRODUCES (returns), so the guard clauses dispatch first-match and
+//   the guardless arm is the fallthrough default — no `else` chaining needed,
+//   and the returns let the optimizer collapse it to a cascade. Same
+//   continuation-return machine as ~if; ~if's two fixed arms become N
+//   guard-selected ones. KORU050/051 exhaustiveness requires the guardless arm.
+~[keyword]pub event cond { expr: Expression }
+| c *
+
+~proc cond|template|zig {
+    {% for arm in continuations["c"] %}{% if arm.guard != "" %}if ({{ arm.guard }}) {
+        {{ arm.continue }}
+    }
+    {% else %}{
+        {{ arm.continue }}
+    }{% endif %}{% endfor %}
+}
+
+// ============================================================================
 // FOR - Iteration as a template over the effect-branch engine (ZERO OVERHEAD)
 // ============================================================================
 //
