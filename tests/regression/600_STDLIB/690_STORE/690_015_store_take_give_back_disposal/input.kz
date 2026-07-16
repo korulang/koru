@@ -1,9 +1,9 @@
-// ASPIRATION — TODO idea pin. Queue (k) disposal verb: `take` extracts
-// the row WITH ownership (a synthesized <pool:item!>-shaped obligation,
-// O2) — and `give-back` is the discharge, the void call in consume
-// position (std/list:free / Connection:close idiom). This program is the
-// LEGAL flow 690_007's rejection implies: take, use, give back, clean
-// compile. `give-back` SPELLING PROVISIONAL; `insert | row r` per the
+// The (k) disposal verb. `take` extracts the row WITH ownership (a
+// synthesized <pool-item!> obligation, O2); `give-back` is the discharge —
+// the void call in consume position (std/list:free / Connection:close
+// idiom). This is the LEGAL flow 690_007's rejection implies: take, use,
+// give back, clean compile. Pins that a taken row can be legally disposed,
+// and that the discharge is the store's own verb. `insert | row r` per the
 // four-heads ruling.
 
 ~import std/io
@@ -12,6 +12,5 @@
 ~std/store:create(pool) { hp: i64 }
 
 ~std/store:insert(pool) { hp: 9 }
-| row r |> std/store:take(pool[r]): item
-    |> std/io:print.ln("took hp {{ item.hp:d }}")
-    |> std/store:give-back(item)
+| row r |> std/store:take(pool[r])
+    | item i |> std/io:print.ln("took hp {{ i.hp:d }}") |> std/store:give-back(i)

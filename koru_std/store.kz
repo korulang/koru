@@ -1184,7 +1184,54 @@ const std = @import("std");
             } }) catch unreachable;
         }
 
-        const pconsumed = std.fmt.allocPrint(allocator, "// std/store: plural store '{s}' created (SoA cell + insert/query/write/take units)", .{store_name}) catch unreachable;
+        // ---- unit 6: give-back — the disposal verb that DISCHARGES the ----
+        // take obligation. `take` swap-removes the row and hands out
+        // `| item` carrying `<store-item!>`; give-back is the void call in
+        // consume position (std/list:free idiom) whose param CONSUMES
+        // `<!store-item>`, so auto_discharge credits the discharge. Runtime
+        // is a no-op: the row's storage already left the store on take.
+        {
+            const gb_name = std.fmt.allocPrint(allocator, "__store_giveback_{s}", .{store_name}) catch unreachable;
+            const gb_in = allocator.alloc(ast.Field, 1) catch unreachable;
+            gb_in[0] = ast.Field{
+                .name = allocator.dupe(u8, "item") catch unreachable,
+                .type = std.fmt.allocPrint(allocator, "__KoruStoreRow_{s}", .{store_name}) catch unreachable,
+                .phantom = std.fmt.allocPrint(allocator, "!{s}-item", .{store_name}) catch unreachable,
+            };
+            // A terminal `| given` output disqualifies give-back from
+            // AUTO-insertion at scope exit (findDisposalEventsEx: any output
+            // opts out, KORU083) while still crediting an EXPLICIT call. So a
+            // taken row that's never given back LEAKS LOUDLY (690_007's KORU030
+            // "Call: give-back") instead of being silently auto-disposed —
+            // unlike std/list:free, whose scope-exit auto-free is a feature.
+            const gb_branches = allocator.alloc(ast.Branch, 1) catch unreachable;
+            gb_branches[0] = ast.Branch{
+                .name = allocator.dupe(u8, "given") catch unreachable,
+                .payload = ast.Shape{ .fields = &[_]ast.Field{} },
+                .kind = .terminal,
+                .annotations = &[_][]const u8{},
+            };
+            appended_items.append(allocator, ast.Item{ .event_decl = ast.EventDecl{
+                .path = H.mkPathH(allocator, flow.module, gb_name),
+                .input = ast.Shape{ .fields = gb_in },
+                .branches = gb_branches,
+                .is_public = false,
+                .is_implicit_flow = false,
+                .annotations = &[_][]const u8{},
+                .location = flow.location,
+                .module = allocator.dupe(u8, flow.module) catch unreachable,
+            } }) catch unreachable;
+            appended_items.append(allocator, ast.Item{ .proc_decl = ast.ProcDecl{
+                .path = H.mkPathH(allocator, flow.module, gb_name),
+                .body = ast.Source{ .text = allocator.dupe(u8, "_ = item;\nreturn .{ .given = .{} };") catch unreachable, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
+                .annotations = &[_][]const u8{},
+                .target = allocator.dupe(u8, "zig") catch unreachable,
+                .location = flow.location,
+                .module = allocator.dupe(u8, flow.module) catch unreachable,
+            } }) catch unreachable;
+        }
+
+        const pconsumed = std.fmt.allocPrint(allocator, "// std/store: plural store '{s}' created (SoA cell + insert/query/write/take/giveback units)", .{store_name}) catch unreachable;
         return .{ .transformed = .{
             .replacement = ast.Item{ .host_line = ast.HostLine{
                 .content = pconsumed,
@@ -3015,6 +3062,173 @@ const std = @import("std");
         .body = ast.rootSite(call_inv, conts, flow.location),
         .pre_label = null,
         .impl_of = flow.impl_of, // preserved: the site may BE an impl flow's head (e.g. a query body)
+        .super_shape = null,
+        .inline_body = null,
+        .preamble_code = null,
+        .is_pure = false,
+        .is_transitively_pure = false,
+        .location = flow.location,
+        .module = allocator.dupe(u8, flow.module) catch unreachable,
+    } } } };
+}
+
+// ============================================================================
+// STORE.GIVE-BACK — discharge the take obligation (the disposal verb, (k))
+// ============================================================================
+//
+//   std/store:take(pool[r]) | item i |> … |> std/store:give-back(i)
+//
+// `take` swap-removes the row and hands out `| item` carrying <store-item!>;
+// give-back is the void call in consume position (std/list:free idiom) that
+// DISCHARGES it. It rewrites to `__store_giveback_<s>(item: <binding>)`,
+// whose param consumes <!store-item> so auto_discharge credits the
+// discharge. The store is resolved from the take that BOUND the argument
+// (the enclosing `| item <binding>`). Runtime is a no-op — the row's storage
+// already left the store on take. This is 690_007's legal sibling.
+
+~[keyword|comptime|transform]pub event give-back {
+    expr: Expression,
+    invocation: *const Invocation,
+    item: *const Item,
+    program: *const Program,
+    allocator: std.mem.Allocator
+} -> SiteResult
+
+~[transform]proc give-back|zig {
+    const ast = @import("ast");
+    const ast_functional = @import("ast_functional");
+
+    if (item.* != .flow) @panic("store:give-back transform: containing item is not a flow - walker dispatch contract broken");
+    const flow = &item.flow;
+
+    const H = struct {
+        fn stripQuotes(n: []const u8) []const u8 {
+            if (n.len >= 2 and n[0] == '"') return n[1 .. n.len - 1];
+            return n;
+        }
+        fn errItem(alloc: std.mem.Allocator, loc: anytype, module: []const u8, comptime fmt: []const u8, args: anytype) ast.Item {
+            const inner = std.fmt.allocPrint(alloc, fmt, args) catch unreachable;
+            const msg = std.fmt.allocPrint(alloc, "comptime {{ @compileError(\"{s}\"); }}", .{inner}) catch unreachable;
+            return ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = loc, .module = module } };
+        }
+        fn mkPathH(alloc: std.mem.Allocator, module: []const u8, name: []const u8) ast.DottedPath {
+            const segs = alloc.alloc([]const u8, 1) catch unreachable;
+            segs[0] = alloc.dupe(u8, name) catch unreachable;
+            return ast.DottedPath{ .module_qualifier = alloc.dupe(u8, module) catch unreachable, .segments = segs };
+        }
+        // Is this node a take call? Return the store it addresses. Handles
+        // both spellings — the raw `std.store:take(store[..])` and the
+        // already-rewritten `__store_take_<s>` — since transform order
+        // between sibling store keywords isn't guaranteed.
+        fn takeStoreOf(node: *const ast.Node) ?[]const u8 {
+            if (node.* != .invocation) return null;
+            const inv = &node.invocation;
+            if (inv.path.segments.len != 1) return null;
+            const seg = inv.path.segments[0];
+            if (std.mem.startsWith(u8, seg, "__store_take_")) return seg["__store_take_".len..];
+            if (std.mem.eql(u8, seg, "take")) {
+                const mq = inv.path.module_qualifier orelse return null;
+                if (!std.mem.eql(u8, mq, "std.store")) return null;
+                for (inv.args) |a| {
+                    if (std.mem.eql(u8, a.name, "expr")) {
+                        const txt = @This().stripQuotes(a.value);
+                        const lb = std.mem.indexOfScalar(u8, txt, '[') orelse return null;
+                        return std.mem.trim(u8, txt[0..lb], " ");
+                    }
+                }
+            }
+            return null;
+        }
+        // Resolve the store from the take that bound `argname` via `| item argname`.
+        // A NESTED keyword site only sees a synthetic flow rooted at its own
+        // invocation (transform_pass_runner ~L169) — the ancestor take is NOT
+        // in `flow.body`. So we search the WHOLE program's flows, which hold
+        // the real ancestor structure (whichever spelling take is currently in).
+        fn resolveStore(cont: *const ast.Continuation, argname: []const u8) ?[]const u8 {
+            if (cont.node) |*n| {
+                if (@This().takeStoreOf(n)) |s| {
+                    for (cont.continuations) |*c| {
+                        if (!std.mem.eql(u8, c.branch, "item")) continue;
+                        const b = c.binding orelse continue;
+                        if (std.mem.eql(u8, b, argname)) return s;
+                    }
+                }
+            }
+            for (cont.continuations) |*c| {
+                if (@This().resolveStore(c, argname)) |s| return s;
+            }
+            return null;
+        }
+        fn resolveStoreInProgram(prog: *const ast.Program, argname: []const u8) ?[]const u8 {
+            for (prog.items) |*pi| {
+                if (pi.* != .flow) continue;
+                if (@This().resolveStore(&pi.flow.body, argname)) |s| return s;
+            }
+            return null;
+        }
+    };
+
+    var argname: []const u8 = "";
+    for (invocation.args) |arg| {
+        if (std.mem.eql(u8, arg.name, "expr")) argname = H.stripQuotes(arg.value);
+    }
+    if (argname.len == 0) {
+        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:give-back(item): give-back discharges a taken row - name the `| item` binding", .{}) } };
+    }
+
+    const store_name = H.resolveStoreInProgram(program, argname) orelse {
+        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:give-back({s}): '{s}' is not a taken row - give-back consumes the `| item` binding from a take(store[...]) in the same flow", .{ argname, argname }) } };
+    };
+
+    const gb_name = std.fmt.allocPrint(allocator, "__store_giveback_{s}", .{store_name}) catch unreachable;
+    const call_args = allocator.alloc(ast.Arg, 1) catch unreachable;
+    call_args[0] = ast.Arg{
+        .name = allocator.dupe(u8, "item") catch unreachable,
+        .value = allocator.dupe(u8, argname) catch unreachable,
+    };
+    const call_inv = ast.Invocation{
+        .path = H.mkPathH(allocator, flow.module, gb_name),
+        .args = call_args,
+    };
+
+    // __store_giveback_<s> outputs a terminal `| given` (that output is what
+    // opts it out of AUTO-insertion). The user's surface is a bare
+    // `give-back(i)`, so synthesize the `| given |> _` handler here. Any steps
+    // the user chained AFTER give-back ride under `| given`. flow.body is the
+    // (nested) site rooted at give-back itself, so its continuations are those
+    // trailing steps.
+    const trailing = flow.body.continuations;
+    const given_cont = blk: {
+        if (trailing.len == 0) {
+            break :blk ast.Continuation{
+                .branch = allocator.dupe(u8, "given") catch unreachable,
+                .binding = null,
+                .condition = null,
+                .node = ast.Node.terminal,
+                .indent = 0,
+                .continuations = &[_]ast.Continuation{},
+            };
+        }
+        const cloned = allocator.alloc(ast.Continuation, trailing.len) catch unreachable;
+        for (trailing, 0..) |*c, i| {
+            cloned[i] = ast_functional.cloneContinuation(allocator, c) catch unreachable;
+        }
+        break :blk ast.Continuation{
+            .branch = allocator.dupe(u8, "given") catch unreachable,
+            .binding = null,
+            .condition = null,
+            .node = cloned[0].node,
+            .indent = 0,
+            .continuations = cloned[1..],
+        };
+    };
+    const conts = allocator.alloc(ast.Continuation, 1) catch unreachable;
+    conts[0] = given_cont;
+
+    return .{ .transformed = .{ .replacement = ast.Item{ .flow = ast.Flow{
+        .body = ast.rootSite(call_inv, conts, flow.location),
+        .pre_label = null,
+        .impl_of = flow.impl_of,
         .super_shape = null,
         .inline_body = null,
         .preamble_code = null,

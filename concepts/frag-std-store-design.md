@@ -123,6 +123,25 @@ provisional-spelling tier: TODO + residue.md, no input.kz, for ideas
 whose surface is honestly uninvented (690_019 batch+fusion, 690_020
 compound columns).
 
+**The disposal verb give-back is BUILT (2026-07-16, 690_015 GREEN).**
+`take` hands out `| item` carrying the store-named `<store-item!>`;
+`give-back(i)` is its discharge — a keyword transform rewriting to a
+per-store `__store_giveback_<s>` disposal event that consumes
+`<!store-item>` (the std/list:free idiom, generated at create time beside
+the take unit). Two design facts settled and worth keeping: (1) the
+store-take obligation is **EXPLICIT-discharge-required** — a taken row
+never given back LEAKS LOUDLY (690_007), *unlike* std/list:free whose
+scope-exit auto-free is a deliberate feature. The enforcement isn't a new
+flag: the generated disposer carries a synthesized `| given` output, and
+ANY output opts a disposer out of auto-insertion (KORU083) while still
+crediting an explicit call — so the leak survives as a compile error. (2)
+A NESTED keyword site sees only a synthetic flow rooted at itself
+(transform_pass_runner), with no ancestors — so give-back can't read
+upward to the take; it resolves its store by searching the whole PROGRAM
+for the take that bound the argument. And the leak diagnostic across every
+discharge path now names the user verb (`Call: give-back`) and says
+"obligation", never the internal `__store_giveback_*` (pit-of-success).
+
 The full residue (rulings, stamped theses, gauntlet verdicts, open
 queue) lives in `tests/regression/600_STDLIB/690_STORE/DESIGN.md`, which
 deletes as pins absorb it. ECT/BLOOM (entity-component-taps) is

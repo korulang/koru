@@ -750,18 +750,14 @@ pub const AutoDischargeInserter = struct {
                                         var fbs = std.io.fixedBufferStream(&options_buf);
                                         for (all_disposals, 0..) |d, i| {
                                             if (i > 0) fbs.writer().writeAll(", ") catch {};
-                                            const disp_name = if (std.mem.lastIndexOf(u8, d.qualified_name, ":")) |idx|
-                                                d.qualified_name[idx + 1 ..]
-                                            else
-                                                d.qualified_name;
-                                            fbs.writer().writeAll(disp_name) catch {};
+                                            fbs.writer().writeAll(displayDischargerName(d.qualified_name)) catch {};
                                         }
                                         if (all_disposals.len == 1) {
                                             try self.reporter.addError(
                                                 .KORU030,
                                                 flow.location.line,
                                                 flow.location.column,
-                                                "Resource '{s}' <{s}> was not discharged. Call: {s}",
+                                                "Resource '{s}' obligation <{s}> was not discharged. Call: {s}",
                                                 .{ display_name, display_state, fbs.getWritten() },
                                             );
                                         } else {
@@ -769,7 +765,7 @@ pub const AutoDischargeInserter = struct {
                                                 .KORU030,
                                                 flow.location.line,
                                                 flow.location.column,
-                                                "Resource '{s}' <{s}> was not discharged. Call one of: {s}",
+                                                "Resource '{s}' obligation <{s}> was not discharged. Call one of: {s}",
                                                 .{ display_name, display_state, fbs.getWritten() },
                                             );
                                         }
@@ -789,10 +785,7 @@ pub const AutoDischargeInserter = struct {
                                     for (disposals, 0..) |d, i| {
                                         if (i > 0) fbs.writer().writeAll(", ") catch {};
                                         // Extract just event name from qualified name
-                                        const disp_name = if (std.mem.lastIndexOf(u8, d.qualified_name, ":")) |idx|
-                                            d.qualified_name[idx + 1 ..]
-                                        else
-                                            d.qualified_name;
+                                        const disp_name = displayDischargerName(d.qualified_name);
                                         fbs.writer().writeAll(disp_name) catch {};
                                     }
                                     try self.reporter.addError(
@@ -1294,18 +1287,14 @@ pub const AutoDischargeInserter = struct {
                                         var fbs = std.io.fixedBufferStream(&options_buf);
                                         for (all_disposals, 0..) |d, i| {
                                             if (i > 0) fbs.writer().writeAll(", ") catch {};
-                                            const disp_name = if (std.mem.lastIndexOf(u8, d.qualified_name, ":")) |idx|
-                                                d.qualified_name[idx + 1 ..]
-                                            else
-                                                d.qualified_name;
-                                            fbs.writer().writeAll(disp_name) catch {};
+                                            fbs.writer().writeAll(displayDischargerName(d.qualified_name)) catch {};
                                         }
                                         if (all_disposals.len == 1) {
                                             try self.reporter.addError(
                                                 .KORU030,
                                                 flow.location.line,
                                                 flow.location.column,
-                                                "Resource '{s}' <{s}> was not discharged. Call: {s}",
+                                                "Resource '{s}' obligation <{s}> was not discharged. Call: {s}",
                                                 .{ display_name, display_state, fbs.getWritten() },
                                             );
                                         } else {
@@ -1313,7 +1302,7 @@ pub const AutoDischargeInserter = struct {
                                                 .KORU030,
                                                 flow.location.line,
                                                 flow.location.column,
-                                                "Resource '{s}' <{s}> was not discharged. Call one of: {s}",
+                                                "Resource '{s}' obligation <{s}> was not discharged. Call one of: {s}",
                                                 .{ display_name, display_state, fbs.getWritten() },
                                             );
                                         }
@@ -1331,10 +1320,7 @@ pub const AutoDischargeInserter = struct {
                                     var fbs = std.io.fixedBufferStream(&options_buf);
                                     for (disposals, 0..) |d, i| {
                                         if (i > 0) fbs.writer().writeAll(", ") catch {};
-                                        const disp_name = if (std.mem.lastIndexOf(u8, d.qualified_name, ":")) |idx|
-                                            d.qualified_name[idx + 1 ..]
-                                        else
-                                            d.qualified_name;
+                                        const disp_name = displayDischargerName(d.qualified_name);
                                         fbs.writer().writeAll(disp_name) catch {};
                                     }
                                     try self.reporter.addError(
@@ -1655,10 +1641,7 @@ pub const AutoDischargeInserter = struct {
                             var fbs = std.io.fixedBufferStream(&options_buf);
                             for (all_disposals, 0..) |d, i| {
                                 if (i > 0) fbs.writer().writeAll(", ") catch {};
-                                const disp_name = if (std.mem.lastIndexOf(u8, d.qualified_name, ":")) |idx|
-                                    d.qualified_name[idx + 1 ..]
-                                else
-                                    d.qualified_name;
+                                const disp_name = displayDischargerName(d.qualified_name);
                                 fbs.writer().writeAll(disp_name) catch {};
                             }
                             if (all_disposals.len == 1) {
@@ -1666,7 +1649,7 @@ pub const AutoDischargeInserter = struct {
                                     .KORU030,
                                     flow.location.line,
                                     flow.location.column,
-                                    "Resource '{s}' <{s}> was not discharged. Call: {s}",
+                                    "Resource '{s}' obligation <{s}> was not discharged. Call: {s}",
                                     .{ display_name, display_state, fbs.getWritten() },
                                 );
                             } else {
@@ -1674,7 +1657,7 @@ pub const AutoDischargeInserter = struct {
                                     .KORU030,
                                     flow.location.line,
                                     flow.location.column,
-                                    "Resource '{s}' <{s}> was not discharged. Call one of: {s}",
+                                    "Resource '{s}' obligation <{s}> was not discharged. Call one of: {s}",
                                     .{ display_name, display_state, fbs.getWritten() },
                                 );
                             }
@@ -1692,10 +1675,7 @@ pub const AutoDischargeInserter = struct {
                         var fbs = std.io.fixedBufferStream(&options_buf);
                         for (disposals, 0..) |d, i| {
                             if (i > 0) fbs.writer().writeAll(", ") catch {};
-                            const disp_name = if (std.mem.lastIndexOf(u8, d.qualified_name, ":")) |idx|
-                                d.qualified_name[idx + 1 ..]
-                            else
-                                d.qualified_name;
+                            const disp_name = displayDischargerName(d.qualified_name);
                             fbs.writer().writeAll(disp_name) catch {};
                         }
                         try self.reporter.addError(
@@ -1903,10 +1883,7 @@ pub const AutoDischargeInserter = struct {
                         var fbs = std.io.fixedBufferStream(&options_buf);
                         for (all_disposals, 0..) |d, i| {
                             if (i > 0) fbs.writer().writeAll(", ") catch {};
-                            const disp_name = if (std.mem.lastIndexOf(u8, d.qualified_name, ":")) |idx|
-                                d.qualified_name[idx + 1 ..]
-                            else
-                                d.qualified_name;
+                            const disp_name = displayDischargerName(d.qualified_name);
                             fbs.writer().writeAll(disp_name) catch {};
                         }
                         if (all_disposals.len == 1) {
@@ -1914,7 +1891,7 @@ pub const AutoDischargeInserter = struct {
                                 .KORU030,
                                 flow.location.line,
                                 flow.location.column,
-                                "Resource '{s}' <{s}> was not discharged. Call: {s}",
+                                "Resource '{s}' obligation <{s}> was not discharged. Call: {s}",
                                 .{ display_name, display_state, fbs.getWritten() },
                             );
                         } else {
@@ -1922,7 +1899,7 @@ pub const AutoDischargeInserter = struct {
                                 .KORU030,
                                 flow.location.line,
                                 flow.location.column,
-                                "Resource '{s}' <{s}> was not discharged. Call one of: {s}",
+                                "Resource '{s}' obligation <{s}> was not discharged. Call one of: {s}",
                                 .{ display_name, display_state, fbs.getWritten() },
                             );
                         }
@@ -1946,10 +1923,7 @@ pub const AutoDischargeInserter = struct {
                     var fbs = std.io.fixedBufferStream(&options_buf);
                     for (disposals, 0..) |d, i| {
                         if (i > 0) fbs.writer().writeAll(", ") catch {};
-                        const disp_name = if (std.mem.lastIndexOf(u8, d.qualified_name, ":")) |idx|
-                            d.qualified_name[idx + 1 ..]
-                        else
-                            d.qualified_name;
+                        const disp_name = displayDischargerName(d.qualified_name);
                         fbs.writer().writeAll(disp_name) catch {};
                     }
                     try self.reporter.addError(
@@ -3099,6 +3073,20 @@ pub const AutoDischargeInserter = struct {
             return phantom_state[colon_idx + 1 ..];
         }
         return phantom_state;
+    }
+
+    /// The verb the user actually calls to discharge, from a disposer's qualified
+    /// name. Generated store disposers (`__store_giveback_<s>`) are internal —
+    /// the user's surface verb is `give-back`. Show that, never the mangled name,
+    /// so the "Call:" hint points at real code (pit-of-success). Any other
+    /// disposer shows its plain event name.
+    fn displayDischargerName(qualified_name: []const u8) []const u8 {
+        const tail = if (std.mem.lastIndexOf(u8, qualified_name, ":")) |idx|
+            qualified_name[idx + 1 ..]
+        else
+            qualified_name;
+        if (std.mem.startsWith(u8, tail, "__store_giveback_")) return "give-back";
+        return tail;
     }
 
     /// Clone a continuation with a new binding name
