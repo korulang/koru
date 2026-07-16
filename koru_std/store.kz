@@ -2414,6 +2414,73 @@ const std = @import("std");
 }
 
 // ============================================================================
+// STORE.DEFAULT — the bare reference form as a program-wide reactive attach
+// ============================================================================
+//
+//   std/store(enemies)
+//   ! hp h |> …                     // a standing rule, from anywhere
+//
+// `std/store(name)` is the store's reference; `std/store(name) ! arms` attaches
+// those arms as standing reactive rules — a program-wide `watch`. This is a
+// `[pre]`-phase rewrite: it renames the bare `default` invocation to `watch`
+// BEFORE `create` scans for watch arms, so the entire (already-green) watch
+// machinery — create-time splice into the write-subflow, transplant-purity,
+// self-erase — handles it with no duplication. Reactive rules are top-level
+// only; they are standing rules, not mid-flow steps.
+
+~[keyword|comptime|transform|pre]pub event default {
+    expr: Expression,
+    invocation: *const Invocation,
+    item: *const Item,
+    program: *const Program,
+    allocator: std.mem.Allocator
+} -> SiteResult
+
+~[transform]proc default|zig {
+    const ast = @import("ast");
+    const ast_functional = @import("ast_functional");
+    if (item.* != .flow) @panic("store:default transform: containing item is not a flow - walker dispatch contract broken");
+    const flow = &item.flow;
+
+    // The bare `std/store(name)` form names its positional arg by the store
+    // name itself (`{name:"game", value:"game"}`), not under `expr` like the
+    // `:verb(arg)` forms — so pull the store name and hand watch a proper
+    // `expr` arg.
+    if (invocation.args.len == 0) {
+        const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"std/store(name): the reference form needs a store name\"); }}", .{}) catch unreachable;
+        return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+    }
+    const store_name = invocation.args[0].value;
+
+    // Rename the invocation default → watch, carrying the store name as `expr`
+    // and the same `!` arm continuations. From here the watch path runs.
+    const segs = allocator.alloc([]const u8, 1) catch unreachable;
+    segs[0] = allocator.dupe(u8, "watch") catch unreachable;
+    const watch_args = allocator.alloc(ast.Arg, 1) catch unreachable;
+    watch_args[0] = ast.Arg{ .name = allocator.dupe(u8, "expr") catch unreachable, .value = allocator.dupe(u8, store_name) catch unreachable };
+    const watch_inv = ast.Invocation{
+        .path = ast.DottedPath{ .module_qualifier = allocator.dupe(u8, "std.store") catch unreachable, .segments = segs },
+        .args = watch_args,
+    };
+    const conts = allocator.alloc(ast.Continuation, flow.body.continuations.len) catch unreachable;
+    for (flow.body.continuations, 0..) |*c, i| {
+        conts[i] = ast_functional.cloneContinuation(allocator, c) catch unreachable;
+    }
+    return .{ .transformed = .{ .replacement = ast.Item{ .flow = ast.Flow{
+        .body = ast.rootSite(watch_inv, conts, flow.location),
+        .pre_label = null,
+        .impl_of = flow.impl_of,
+        .super_shape = null,
+        .inline_body = null,
+        .preamble_code = null,
+        .is_pure = false,
+        .is_transitively_pure = false,
+        .location = flow.location,
+        .module = allocator.dupe(u8, flow.module) catch unreachable,
+    } } } };
+}
+
+// ============================================================================
 // STORE.WATCH — subscriptions; bodies are transplanted by the coordinator
 // ============================================================================
 //
