@@ -10916,9 +10916,35 @@ fn emitEventDeclForModule(
     }
 
     // Handler function — takes `comptime __H: type` when the event yields.
+    // Pure-scalar value events lower as an `inline` shim over a scalar-param
+    // impl (register ABI; see isScalarValueFields / emitEventDecl).
+    const use_scalar_shim = !has_effect and isScalarValueFields(event.input.fields);
     try code_emitter.writeIndent();
     if (has_effect) {
         try code_emitter.write("pub fn handler(__koru_event_input: Input, comptime __H: type) Output {\n");
+    } else if (use_scalar_shim) {
+        try code_emitter.write("pub inline fn handler(__koru_event_input: Input) Output {\n");
+        code_emitter.indent_level += 1;
+        try code_emitter.writeIndent();
+        try code_emitter.write("return __koru_handler_impl(");
+        for (event.input.fields, 0..) |field, i| {
+            if (i > 0) try code_emitter.write(", ");
+            try code_emitter.write("__koru_event_input.");
+            try writeBranchName(code_emitter, field.name);
+        }
+        try code_emitter.write(");\n");
+        code_emitter.indent_level -= 1;
+        try code_emitter.writeIndent();
+        try code_emitter.write("}\n");
+        try code_emitter.writeIndent();
+        try code_emitter.write("fn __koru_handler_impl(");
+        for (event.input.fields, 0..) |field, i| {
+            if (i > 0) try code_emitter.write(", ");
+            var pbuf: [24]u8 = undefined;
+            try code_emitter.write(try std.fmt.bufPrint(&pbuf, "__koru_p_{d}: ", .{i}));
+            try code_emitter.write(field.type);
+        }
+        try code_emitter.write(") Output {\n");
     } else {
         try code_emitter.write("pub fn handler(__koru_event_input: Input) Output {\n");
     }
@@ -10943,6 +10969,22 @@ fn emitEventDeclForModule(
                 else => {},
             }
         }
+    }
+
+    // Scalar-shim impl reconstructs Input from the scalar params so the field
+    // bindings below (and any body reference to __koru_event_input) read
+    // identically; SROA elides the local aggregate.
+    if (use_scalar_shim) {
+        try code_emitter.writeIndent();
+        try code_emitter.write("const __koru_event_input: Input = .{ ");
+        for (event.input.fields, 0..) |field, i| {
+            if (i > 0) try code_emitter.write(", ");
+            try code_emitter.write(".");
+            try writeBranchName(code_emitter, field.name);
+            var pbuf: [24]u8 = undefined;
+            try code_emitter.write(try std.fmt.bufPrint(&pbuf, " = __koru_p_{d}", .{i}));
+        }
+        try code_emitter.write(" };\n");
     }
 
     // Emit input field bindings
