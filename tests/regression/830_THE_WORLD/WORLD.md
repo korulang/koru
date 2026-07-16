@@ -5,9 +5,12 @@
 > idiom is worth showing before you build it. Do not request clarification
 > on things this brief leaves to your judgment — they are left to you on
 > purpose. Pick a beloved construct from another language, name its
-> doorway, write the Koru that answers it, run it. If you catch yourself
-> drafting "which of these should I port?" — stop, delete it, choose one
-> yourself. **Your choice IS the contribution.**
+> doorway, write the Koru that answers it, run it, and write it up as a
+> draft blog post. If you catch yourself drafting "which of these should I
+> port?" — stop, delete it, choose one yourself. **Your choice IS the
+> contribution.** And if the doorway walls out on a compiler hole you
+> can't get past — **that is a fine, honest outcome** (see "Getting stuck
+> is honest" below); you pin the wall and write up how far Koru got.
 
 Take one construct that people *love* in another language — the thing a
 Rubyist reaches for, the reason a Haskeller smiles, the Go idiom on every
@@ -125,26 +128,80 @@ crashes:
   with a precise description of expected vs. actual.
 - Note it in your writeup. The human + Claude fix it together afterward.
 
+## Getting stuck is honest
+
+A doorway can wall out on a compiler hole you cannot get past in this
+session. **That is a legitimate, valuable outcome — not a failure, and not
+something to hide.** The whole point of a faithful port is to press on a
+corner of the language; sometimes the corner isn't built yet, and the honest
+answer is "here's how far Koru gets, and here's the wall."
+
+So when you get stuck:
+
+- **Stop pushing the port. Do NOT fake a finish** — no proc-body escape
+  hatch to force a green, no quietly-different idiom that dodges the wall, no
+  trimming the doorway down to whatever compiles. A forced finish mistranslates
+  the idiom *and* buries the find.
+- **Pin the wall as a Frontier** (`MUST_FAIL` + `EXPECT` + `expected_error.txt`)
+  — the smallest input that reproduces where Koru can't yet say the idiom.
+- **Write the draft post anyway, describing what is actually DONE** — the
+  doorway, the Koru shape that works up to the wall, and exactly where and why
+  it stops. A "here's the wall" post is a real entry in the series; it's how
+  the reader learns where the frontier is, and it's the honest map the next
+  contestant (and the human + Claude fixing it) reads.
+
+A stuck contestant that pins a precise wall and writes it up honestly has
+done **more** for the toolchain than a clean port that surfaced nothing. Say
+"I got stuck here, and here is exactly where" — plainly. It happens; it's the
+job working.
+
 ## Where your submission goes
 
 `tests/regression/830_THE_WORLD/83N_<name>/` — the regression harness only
 treats a directory as a test if its basename starts with a numeric prefix
 (`^[0-9]+_`). A dir named just `defer` is **silently skipped** — no error, no
 run. The seed catalog occupies `831`–`833`; use the next free `83N_<name>`
-slot (short, lowercase `<name>`, like `834_result_short_circuit`).
-Self-contained:
+slot (short, lowercase `<name>`, like `834_result_short_circuit`). The test
+dir is the runnable proof; the writeup is a **draft blog post** (next
+section).
 
 | File | Purpose |
 |---|---|
-| `input.k` | Your Koru program — **prefer `.k`** (pure Koru, no host `~`-forms). Use `.kz` only if the port genuinely needs a host escape hatch. |
+| `input.k` | Your Koru program — **prefer `.k`** (pure Koru, no host `~`-forms). Use `.kz` only if the port genuinely needs a host escape hatch. Lead with the `// Doorway:` comment. |
 | `MUST_RUN` | Marker: this test compiles + runs (empty file) |
 | `expected.txt` | The deterministic output trace (the oracle) |
-| `README.md` | The writeup (template below) — part of "done" |
 
 A passing submission is auto-run by the regression suite forever and swept
-into the corpus. For a Frontier, use `MUST_FAIL` + `EXPECT` + an
-`expected_error.txt` pinning the diagnostic instead (see the regression
-conventions in the repo's `CLAUDE.md`).
+into the corpus. If the doorway walled out, pin a Frontier instead: `MUST_FAIL`
++ `EXPECT` + an `expected_error.txt` pinning the diagnostic (see the regression
+conventions in the repo's `CLAUDE.md`). The `// Doorway:` comment in `input.k`
+is the in-repo catalog signal — it's how the next contestant greps which
+doorways are already taken.
+
+## Ship = a draft blog post
+
+**"Ship" is not a README — it is a draft post in the public series *The World
+According to Koru*.** The port teaches by translation, and the teaching *is*
+the deliverable, so the writeup goes where readers are: a `.svx` post on
+korulang.org, written `draft: true` and left for the human to read at the
+gated `/blog/drafts` route. You never publish, never push, never flip the
+flag — the human reads the draft, then flips `draft: false` himself when he's
+happy.
+
+- **Use the `blogpost` skill** — it is the exact model: repo
+  `/Users/larsde/src/korulang_org`, post at
+  `src/routes/blog/<kebab-slug>/+page.svx`, the frontmatter shape, the house
+  voice (read the two or three most recent posts first), and the one hard rule
+  (`draft: true` and stop).
+- **The post describes what is actually DONE** — present-tense about what
+  works, honest about what's stuck. If the doorway walled out, the post says
+  so and shows exactly where (see "Getting stuck is honest").
+- **Ground it in the test** via the site's `RegressionTestLink` component,
+  pointing at your `830_THE_WORLD/83N_<name>/` entry (or the pinned Frontier).
+  The claims are backed by the runnable proof, never prose alone.
+- **Title says the doorway, not a riddle** (the blogpost skill's house rule):
+  name the idiom and the Koru answer — e.g. "Rust's `?`, as a Koru Effect
+  Branch" — not an evocative fog.
 
 ## "Done" looks like
 
@@ -153,51 +210,61 @@ conventions in the repo's `CLAUDE.md`).
    words (not their language's shape in Koru punctuation).
 2. Koru does the work — phantom states / flows / obligations carry the
    structure, not a proc body. (An adversarial reviewer will check this.)
-3. Output is deterministic and captured in `expected.txt`.
-4. Verified live: corrupt `expected.txt` → fail, restore → pass.
-5. Writeup filed at `<name>/README.md`, including the Doorway.
+3. Output is deterministic and captured in `expected.txt` (or, if stuck, a
+   Frontier is pinned with `MUST_FAIL` + `EXPECT` + `expected_error.txt`).
+4. If it runs: verified live — corrupt `expected.txt` → fail, restore → pass.
+5. A **draft blog post** (`draft: true`) is filed on korulang.org, in the
+   series voice, naming the Doorway and grounded in the test via
+   `RegressionTestLink`. Left for the human to read — never published.
 6. You picked a real gap on *both* axes and said which.
-7. If the honest translation broke something, you **pinned a Frontier**
-   rather than dodging — or, if it held, you can name the idiom↔feature
-   mapping you stressed and honestly say it composed.
+7. Either the honest translation held (you can name the idiom↔feature mapping
+   and say it composed), OR it broke and you **pinned a Frontier** rather than
+   dodging, OR you got stuck and wrote up exactly where. All three are done.
 
 Then stop. Don't ask if you should do another. If the human wants another
 doorway, they spin up another contestant.
 
-## Submission writeup template
+## The draft post — frontmatter and shape
 
-```markdown
-# <name>
+Follow the `blogpost` skill for the full house voice; the frontmatter shape
+(strings, hand-parsed — not YAML):
 
-**One-line pitch**: <the idiom, ported, in ≤20 words>
-
-**Doorway**: <source language> — `<the exact construct, verbatim>`
-
-## What it is
-<3–6 sentences: the idiom over there, and what Koru says for it over here.>
-
-## Koru's native word for it
-<The concept under the source syntax, and the Koru construct that answers
-it. Name the events, flows, phantom states, obligations that carry it. This
-is the section the reviewer — and the reader — reads first.>
-
-## Gaps I filled
-- **Source/idiom**: <what doorway wasn't in the catalog before this>
-- **Language corner**: <which Koru feature this port exercises>
-
-## Frontiers hit (toolchain bugs)
-<Each: smallest repro, expected vs. actual, where it's pinned. Or "none —
-held; the mapping I stressed was <idiom> ↔ <feature>".>
-
-## Output
-<One-line description of the trace in expected.txt.>
 ```
+---
+title: "<Doorway named>, as <the Koru answer>"   # subject leads, no riddle
+date: <YYYY-MM-DD>
+excerpt: "One or two sentences stating the idiom and what Koru says for it."
+readTime: <N> min read
+tags: [The World According to Koru, <feature area>]
+ai_authored: mostly
+draft: true
+---
+```
+
+The body, in order:
+
+- **The doorway** — the idiom over there, in the source language's own words,
+  for a reader fluent there and new to Koru.
+- **Koru's native word for it** — the concept under the source syntax, and the
+  Koru construct that answers it. Name the events, flows, phantom states,
+  obligations that carry it. This is the section the reader — and the
+  adversarial reviewer — reads first.
+- **The port, running** — the program (or the part that works), with a
+  `RegressionTestLink` to `830_THE_WORLD/83N_<name>/`, and its deterministic
+  output.
+- **The gaps you filled** — source/idiom (which doorway was unopened) and
+  language-corner (which Koru feature this exercises).
+- **Frontiers / where it stuck** — if the translation broke or walled out:
+  smallest repro, expected vs. actual, where it's pinned, and — honestly —
+  how far Koru got. Or "none — it held."
 
 ## First, read these
 
 - The seed catalog: `831_generator_squares`, `832_generator_fold_named`,
   `833_generator_fold_optional_arm` — read their `input.k` Doorways to see
-  the voice and the shape.
+  the voice and the shape, and to grep which doorways are taken.
+- The `blogpost` skill — binding for the draft-post half of the deliverable
+  (repo, path, frontmatter, house voice, `draft: true` and stop).
 - Its sibling brief: `../800_CHALLENGES/CHALLENGE.md` — the toolchain-hardening
   axis, shared discipline.
 - Repo standards: `CLAUDE.md` + `AGENTS.md` at the repo root — binding.
@@ -210,8 +277,8 @@ held; the mapping I stressed was <idiom> ↔ <feature>".>
 
 ---
 
-**Catalog upkeep**: when you ship, the submission dir + its README *is* the
-catalog entry — the next contestant reads it to find an unopened doorway.
-The catalog of doorways is the long-running artifact; each port is one slice
-through it. **The catalog is the world according to Koru, one language at a
-time.**
+**Catalog upkeep**: when you ship, the test dir's `// Doorway:` comment + the
+draft post together *are* the catalog entry — the next contestant greps the
+Doorways and reads the series to find an unopened one. The catalog of doorways
+is the long-running artifact; each port is one slice through it. **The catalog
+is the world according to Koru, one language at a time.**
