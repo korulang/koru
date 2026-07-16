@@ -32,6 +32,10 @@ pub const AutoDischargeInserter = struct {
     /// free) disposal gets inserted under the back edge (330_076).
     label_seed_map: std.StringHashMap(*const ast.Invocation),
     synthetic_binding_counter: u32,
+    /// Monotonic acquisition sequence for LIFO auto-discharge unwind order.
+    /// Stamped onto each new obligation; preserved across BindingContext.clone
+    /// so nested-scope copies keep their original acquisition order.
+    acq_seq_counter: u32,
     warn_mode: bool, // When true, emit warnings about auto-inserted disposals
     strict_panic_branches: bool, // When true (--panic-branches=strict), unhandled panic branches are compile errors (the crash-surface map, loud)
     prototype_mode: bool = false, // When true (~[prototype]), an unhandled required TERMINAL branch is synthesized as a @panic hole instead of a KORU022 error — same body as an unhandled | ?! panic branch (400_160)
@@ -146,6 +150,7 @@ pub const AutoDischargeInserter = struct {
             field_name: []const u8, // e.g., "file" for f.file
             base_type: []const u8, // e.g., "*Connection" - used to filter disposal events by type
             scope_depth: u32, // Scope where obligation was created
+            acq_seq: u32, // Monotonic acquisition order (LIFO unwind uses descending)
         };
 
         fn init(allocator: std.mem.Allocator) BindingContext {
@@ -178,8 +183,10 @@ pub const AutoDischargeInserter = struct {
             self.cleanup_obligations.deinit();
         }
 
-        /// Add a binding with its phantom state and base type
-        fn addBinding(self: *BindingContext, name: []const u8, phantom_state: []const u8, field_name: []const u8, base_type: []const u8) !void {
+        /// Add a binding with its phantom state and base type.
+        /// `acq_seq` is the caller's stamped acquisition order (from the inserter
+        /// counter) — only used when the phantom carries a cleanup obligation.
+        fn addBinding(self: *BindingContext, name: []const u8, phantom_state: []const u8, field_name: []const u8, base_type: []const u8, acq_seq: u32) !void {
             const name_copy = try self.allocator.dupe(u8, name);
             const phantom_copy = try self.allocator.dupe(u8, phantom_state);
 
@@ -195,6 +202,7 @@ pub const AutoDischargeInserter = struct {
                     .field_name = field_copy,
                     .base_type = type_copy,
                     .scope_depth = self.scope_depth, // Record which scope created this obligation
+                    .acq_seq = acq_seq,
                 });
             }
         }
@@ -242,6 +250,8 @@ pub const AutoDischargeInserter = struct {
                     .field_name = try allocator.dupe(u8, entry.value_ptr.field_name),
                     .base_type = try allocator.dupe(u8, entry.value_ptr.base_type),
                     .scope_depth = entry.value_ptr.scope_depth,
+                    // Preserve original acquisition order — do not re-stamp.
+                    .acq_seq = entry.value_ptr.acq_seq,
                 });
             }
 
@@ -317,10 +327,42 @@ pub const AutoDischargeInserter = struct {
             .event_map = std.StringHashMap(EventInfo).init(allocator),
             .label_seed_map = std.StringHashMap(*const ast.Invocation).init(allocator),
             .synthetic_binding_counter = 0,
+            .acq_seq_counter = 0,
             .warn_mode = warn_mode,
             .strict_panic_branches = strict_panic_branches,
             .prototype_mode = prototype_mode,
         };
+    }
+
+    /// Stamp the next acquisition sequence number for a newly created obligation.
+    fn nextAcqSeq(self: *AutoDischargeInserter) u32 {
+        const seq = self.acq_seq_counter;
+        self.acq_seq_counter += 1;
+        return seq;
+    }
+
+    /// Obligation entry for LIFO-ordered disposal emission.
+    const OrderedObligation = struct {
+        binding_path: []const u8,
+        info: BindingContext.BindingInfo,
+    };
+
+    /// Collect cleanup obligations sorted by acq_seq descending (last-acquired first).
+    fn obligationsInLifoOrder(self: *AutoDischargeInserter, context: *BindingContext) ![]OrderedObligation {
+        var list = try std.ArrayList(OrderedObligation).initCapacity(self.allocator, context.cleanup_obligations.count());
+        var obl_iter = context.obligations();
+        while (obl_iter.next()) |entry| {
+            try list.append(self.allocator, .{
+                .binding_path = entry.key_ptr.*,
+                .info = entry.value_ptr.*,
+            });
+        }
+        std.sort.block(OrderedObligation, list.items, {}, struct {
+            fn lessThan(_: void, a: OrderedObligation, b: OrderedObligation) bool {
+                return a.info.acq_seq > b.info.acq_seq;
+            }
+        }.lessThan);
+        return try list.toOwnedSlice(self.allocator);
     }
 
     pub fn deinit(self: *AutoDischargeInserter) void {
@@ -707,7 +749,7 @@ pub const AutoDischargeInserter = struct {
             if (event_info.decl.return_phantom) |rp| {
                 const canonical = try self.canonicalizePhantom(rp, module_name);
                 defer self.allocator.free(canonical);
-                try context.addBinding(rb, canonical, "__type_ref", event_info.decl.return_type orelse "");
+                try context.addBinding(rb, canonical, "__type_ref", event_info.decl.return_type orelse "", self.nextAcqSeq());
             }
         }
 
@@ -730,10 +772,11 @@ pub const AutoDischargeInserter = struct {
                 if (mode == .scope_exit_only) {
                     // SCOPE EXIT: Check for remaining obligations in this scoped continuation
                     if (scoped_context.hasObligations()) {
-                        var obl_iter = scoped_context.obligations();
-                        while (obl_iter.next()) |entry| {
-                            const binding_name = entry.key_ptr.*;
-                            const info = entry.value_ptr.*;
+                        const ordered = try self.obligationsInLifoOrder(&scoped_context);
+                        defer self.allocator.free(ordered);
+                        for (ordered) |entry| {
+                            const binding_name = entry.binding_path;
+                            const info = entry.info;
 
                             const disposals = try self.findDisposalEvents(info.phantom_state, info.base_type);
                             defer self.allocator.free(disposals);
@@ -964,7 +1007,7 @@ pub const AutoDischargeInserter = struct {
                             const canonical = try self.canonicalizePhantom(phantom_str, module_name);
                             defer self.allocator.free(canonical);
 
-                            try context.addBinding(field_path, canonical, field.name, field.type);
+                            try context.addBinding(field_path, canonical, field.name, field.type, self.nextAcqSeq());
                         }
                     }
                     break;
@@ -1113,7 +1156,7 @@ pub const AutoDischargeInserter = struct {
                             // module — not the bare decl module.
                             const canonical = try self.canonicalizePhantom(rp, rb_module);
                             defer self.allocator.free(canonical);
-                            try context.addBinding(rb, canonical, "__type_ref", info.decl.return_type orelse "");
+                            try context.addBinding(rb, canonical, "__type_ref", info.decl.return_type orelse "", self.nextAcqSeq());
                         }
                     }
                 }
@@ -1266,10 +1309,11 @@ pub const AutoDischargeInserter = struct {
                     // SCOPE EXIT: Check for remaining obligations that need disposal
                     // These are obligations created in this scope that weren't discharged by an explicit terminal
                     if (branch_context.hasObligations()) {
-                        var obl_iter = branch_context.obligations();
-                        while (obl_iter.next()) |entry| {
-                            const binding_name = entry.key_ptr.*;
-                            const info = entry.value_ptr.*;
+                        const ordered = try self.obligationsInLifoOrder(&branch_context);
+                        defer self.allocator.free(ordered);
+                        for (ordered) |entry| {
+                            const binding_name = entry.binding_path;
+                            const info = entry.info;
 
                             // Find disposal event for this obligation
                             const disposals = try self.findDisposalEvents(info.phantom_state, info.base_type);
@@ -1517,7 +1561,7 @@ pub const AutoDischargeInserter = struct {
                                             const canonical = try self.canonicalizePhantom(phantom_str, info.module_name);
                                             defer self.allocator.free(canonical);
 
-                                            try context.addBinding(field_path, canonical, field.name, field.type);
+                                            try context.addBinding(field_path, canonical, field.name, field.type, self.nextAcqSeq());
                                         }
                                     }
                                     break;
@@ -1610,19 +1654,20 @@ pub const AutoDischargeInserter = struct {
         flow: *const ast.Flow,
     ) RecursiveError!TransformResult {
 
-        // Find obligations to dispose based on scope rules
-        var obl_iter = context.obligations();
-        while (obl_iter.next()) |entry| {
+        // Find obligations to dispose based on scope rules, last-acquired first (LIFO).
+        const ordered = try self.obligationsInLifoOrder(context);
+        defer self.allocator.free(ordered);
+        for (ordered) |entry| {
             // In repeating context: only dispose current-scope obligations
             // In non-repeating context: dispose all obligations
             const should_dispose = if (context.is_repeating)
-                entry.value_ptr.scope_depth == context.scope_depth
+                entry.info.scope_depth == context.scope_depth
             else
                 true; // Dispose all in non-repeating context
 
             if (should_dispose) {
-                const binding_path = entry.key_ptr.*;
-                const info = entry.value_ptr.*;
+                const binding_path = entry.binding_path;
+                const info = entry.info;
 
                 const disposals = try self.findDisposalEvents(info.phantom_state, info.base_type);
                 defer self.allocator.free(disposals);
@@ -1854,12 +1899,14 @@ pub const AutoDischargeInserter = struct {
         _ = event_decl;
         _ = module_name;
 
-        // For each obligation, find disposal events
-        // In repeating context, only dispose current-scope obligations
-        var obl_iter = context.obligations();
-        while (obl_iter.next()) |entry| {
-            const binding_path = entry.key_ptr.*;
-            const info = entry.value_ptr.*;
+        // For each obligation (last-acquired first — LIFO / reverse-acquisition),
+        // find disposal events. In repeating context, only dispose current-scope
+        // obligations.
+        const ordered = try self.obligationsInLifoOrder(context);
+        defer self.allocator.free(ordered);
+        for (ordered) |entry| {
+            const binding_path = entry.binding_path;
+            const info = entry.info;
 
             // Skip outer-scope obligations in repeating context
             if (context.is_repeating and info.scope_depth < context.scope_depth) {
