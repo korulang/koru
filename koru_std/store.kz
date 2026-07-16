@@ -1122,13 +1122,16 @@ const std = @import("std");
             const take_name = std.fmt.allocPrint(allocator, "__store_take_{s}", .{store_name}) catch unreachable;
             const take_in = allocator.alloc(ast.Field, 1) catch unreachable;
             take_in[0] = ast.Field{ .name = allocator.dupe(u8, "row") catch unreachable, .type = allocator.dupe(u8, "i64") catch unreachable };
-            // Identity payload: the row VALUE carrying the store-named
-            // obligation (<store-item!> — 660_027's pattern, no generics).
+            // Identity payload: the row VALUE. PROTOTYPE (per-store disposal
+            // contract): a BARE store (no `[entity(...)]` annotation) mints NO
+            // obligation — `take` is just remove-with-value, frictionless. The
+            // `<std/store:taken!>` obligation + a named entity type are minted
+            // only when the store declares `[entity(<name>)]` (added next slice).
             const item_pf = allocator.alloc(ast.Field, 1) catch unreachable;
             item_pf[0] = ast.Field{
                 .name = allocator.dupe(u8, "__type_ref") catch unreachable,
                 .type = std.fmt.allocPrint(allocator, "__KoruStoreRow_{s}", .{store_name}) catch unreachable,
-                .phantom = std.fmt.allocPrint(allocator, "{s}-item!", .{store_name}) catch unreachable,
+                .phantom = null,
             };
             const take_branches = allocator.alloc(ast.Branch, 1) catch unreachable;
             take_branches[0] = ast.Branch{
