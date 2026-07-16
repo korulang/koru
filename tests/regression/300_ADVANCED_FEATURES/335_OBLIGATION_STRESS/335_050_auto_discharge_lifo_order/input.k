@@ -6,11 +6,6 @@
 // `parent` first is a use-after / invalid-state hazard. Reverse-acquisition
 // order is the RAII / defer / drop guarantee, and the only safe order for
 // nested dependent resources. The correct trace releases `child`, then `parent`.
-//
-// RESIDUAL: today auto-discharge emits releases in the obligation map's
-// (StringHashMap, keyed by binding-variable name) iteration order, which is not
-// acquisition order — so this releases `parent` before `child` and is RED until
-// the inserter unwinds in reverse-acquisition order.
 import std/io
 
 pub event acquire { name: []const u8 } -> []const u8<held!>
