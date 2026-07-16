@@ -154,6 +154,21 @@ language-wide rule. This is the disposal edge of the wider vision: the store
 as a per-store-specialized, statically-allocated, compile-time-reactive data
 substrate (reactions fused into the one write path, like taps).
 
+**Rung 2 landed (2026-07-17, 690_023 green / 690_024 the MUST_FAIL wall):**
+`[entity(<name>)]` on the create annotation synthesizes a user-nameable type
+alias (`enemy` → `const Enemy = __KoruStoreRow_enemies`) and makes `take` mint
+`<taken!>` on `Enemy`. The user's `event discharge-enemy { enemy: Enemy<!taken> }`
+consumes it — 660_027's base-type-filtered discharge, reused whole. Crucial
+spelling fact: **`taken` is an UNQUALIFIED (local) state**, not `std/store:taken`.
+Both mint (take unit) and consume (discharger) live in the user's module, so a
+local state is correct — and it sidesteps a real emitter limitation: `writeFieldType`
+(emitter_helpers ~848) falls back to a *phantom's* module to qualify the base
+*type* (right for `*Field<std/field:field>`, where type co-locates with state;
+wrong when base-type and phantom-state are in different modules, as the store's
+`Enemy`/`taken` are). PARKED: lifting that so a module-qualified store obligation
+resolves its base type independently — the base-type≠phantom-state orthogonality
+made an emitter rule.
+
 The full residue (rulings, stamped theses, gauntlet verdicts, open
 queue) lives in `tests/regression/600_STDLIB/690_STORE/DESIGN.md`, which
 deletes as pins absorb it. ECT/BLOOM (entity-component-taps) is

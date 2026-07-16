@@ -201,6 +201,25 @@ const std = @import("std");
         return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:create requires a name and a seed block: create(name) {{ field: value[type] }}", .{}) } };
     }
 
+    // Per-store disposal contract: `[entity(<name>)]` opts this store into the
+    // taken-obligation discipline. Its rows are named ENTITIES — `take` mints
+    // `<std/store:taken!>` on a synthesized type (the arg capitalized, `enemy`
+    // → `Enemy`, aliasing the row struct), and the USER authors the discharger
+    // (the despawn handler consuming `<std/store:!taken>`). Absent → a bare
+    // value table, `take` frictionless, no obligation.
+    var entity_type: ?[]const u8 = null;
+    for (flow.annotations) |ann| {
+        if (std.mem.startsWith(u8, ann, "entity(") and ann.len > "entity(".len + 1 and ann[ann.len - 1] == ')') {
+            const raw = ann["entity(".len .. ann.len - 1];
+            if (raw.len > 0) {
+                const cap = allocator.alloc(u8, raw.len) catch unreachable;
+                @memcpy(cap, raw);
+                cap[0] = std.ascii.toUpper(cap[0]);
+                entity_type = cap;
+            }
+        }
+    }
+
     // Seed fields via the projector (capture's path exactly).
     const expr_braced = std.fmt.allocPrint(allocator, "{{{s}}}", .{seed_text.?}) catch unreachable;
     const cell_fields = struct_literal.parseFields(allocator, expr_braced) catch &[_]struct_literal.StructField{};
@@ -739,6 +758,16 @@ const std = @import("std");
             pc.appendSlice(allocator, ": i64") catch unreachable;
         }
         pc.appendSlice(allocator, " };") catch unreachable;
+        // `[entity(<name>)]` → a user-nameable alias for the row type, so a
+        // discharger can spell `Enemy<std/store:!taken>` without touching the
+        // internal `__KoruStoreRow_` name.
+        if (entity_type) |et| {
+            pc.appendSlice(allocator, "\nconst ") catch unreachable;
+            pc.appendSlice(allocator, et) catch unreachable;
+            pc.appendSlice(allocator, " = __KoruStoreRow_") catch unreachable;
+            pc.appendSlice(allocator, store_name) catch unreachable;
+            pc.appendSlice(allocator, ";") catch unreachable;
+        }
         const pcell_decl = pc.toOwnedSlice(allocator) catch unreachable;
 
         var appended_items = std.ArrayList(ast.Item).initCapacity(allocator, 8 + qsites.items.len * 3) catch unreachable;
@@ -1122,16 +1151,22 @@ const std = @import("std");
             const take_name = std.fmt.allocPrint(allocator, "__store_take_{s}", .{store_name}) catch unreachable;
             const take_in = allocator.alloc(ast.Field, 1) catch unreachable;
             take_in[0] = ast.Field{ .name = allocator.dupe(u8, "row") catch unreachable, .type = allocator.dupe(u8, "i64") catch unreachable };
-            // Identity payload: the row VALUE. PROTOTYPE (per-store disposal
-            // contract): a BARE store (no `[entity(...)]` annotation) mints NO
-            // obligation — `take` is just remove-with-value, frictionless. The
-            // `<std/store:taken!>` obligation + a named entity type are minted
-            // only when the store declares `[entity(<name>)]` (added next slice).
+            // Identity payload: the row VALUE. A BARE store mints NO obligation
+            // (frictionless remove-with-value). An `[entity(<name>)]` store mints
+            // the stable `<std/store:taken!>` obligation on the NAMED entity type
+            // — the per-store disposal contract. The user then authors the
+            // discharger consuming `<std/store:!taken>`; the store presumes nothing.
             const item_pf = allocator.alloc(ast.Field, 1) catch unreachable;
             item_pf[0] = ast.Field{
                 .name = allocator.dupe(u8, "__type_ref") catch unreachable,
-                .type = std.fmt.allocPrint(allocator, "__KoruStoreRow_{s}", .{store_name}) catch unreachable,
-                .phantom = null,
+                .type = if (entity_type) |et| allocator.dupe(u8, et) catch unreachable else std.fmt.allocPrint(allocator, "__KoruStoreRow_{s}", .{store_name}) catch unreachable,
+                // The obligation is minted (take unit) AND consumed (user
+                // discharger) in the SAME module, so `taken` is a LOCAL state —
+                // unqualified, no `:`. That keeps base type (`Enemy`, user-local)
+                // orthogonal to the state (`taken`) and sidesteps the emitter's
+                // phantom-module→type fallback (which only fires on qualified
+                // phantoms). Base-type filtering gives the per-store distinctness.
+                .phantom = if (entity_type != null) allocator.dupe(u8, "taken!") catch unreachable else null,
             };
             const take_branches = allocator.alloc(ast.Branch, 1) catch unreachable;
             take_branches[0] = ast.Branch{

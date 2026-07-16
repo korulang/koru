@@ -1,0 +1,12 @@
+// An [entity] store's `take` mints the taken-obligation; a taken entity with no
+// discharger is rejected — the "you can't despawn without saying what despawning
+// means" wall. The disposal discipline's teeth, scoped to entity stores (a bare
+// store's take is frictionless — see 690_022).
+~import std/io
+~import std/store
+
+~[entity(enemy)]std/store:create(enemies) { hp: i64 }
+
+~std/store:insert(enemies) { hp: 9 }
+| row r |> std/store:take(enemies[r])
+    | item i |> std/io:print.ln("took hp {{ i.hp:d }}")
