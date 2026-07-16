@@ -8,8 +8,8 @@
 ~import std/io
 ~import std/store
 
-~std/store:create(game) { hp: 0[i64] }
-~std/store:create(ui) { mode: 0[i64] }
+~std/store:new(game) { hp: 0[i64] }
+~std/store:new(ui) { mode: 0[i64] }
 
 ~std/store:watch(game)
 ! hp h when ui.mode == 1 |> std/io:print.ln("shown: {{ h:d }}")

@@ -9,9 +9,9 @@
 ~import std/io
 ~import std/store
 
-~std/store:create(stats) { count: 0[i64] }
+~std/store:new(stats) { count: 0[i64] }
 
-~std/store:create(pool) { hp: i64 }
+~std/store:new(pool) { hp: i64 }
 ! inserted { hp } |> std/store:stored { stats.count: stats.count + 1 }
 ! removed { hp } |> std/store:stored { stats.count: stats.count - 1 }
 

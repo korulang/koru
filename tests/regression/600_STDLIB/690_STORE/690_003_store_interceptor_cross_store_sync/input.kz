@@ -20,9 +20,9 @@
 ~import std/io
 ~import std/store
 
-~std/store:create(global) { total: 0[i64] }
+~std/store:new(global) { total: 0[i64] }
 
-~std/store:create(game) { hp: 0[i64] }
+~std/store:new(game) { hp: 0[i64] }
 ! updated { old, new } |> std/store:stored { global.total: global.total + new - old }
 
 ~std/store:watch(global)

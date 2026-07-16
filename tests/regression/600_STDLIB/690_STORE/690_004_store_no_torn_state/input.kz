@@ -18,7 +18,7 @@
 ~import std/io
 ~import std/store
 
-~std/store:create(game) { hp: 0[i64], shield: 0[i64] }
+~std/store:new(game) { hp: 0[i64], shield: 0[i64] }
 ! hp _ |> std/store:stored { game.shield: game.hp * 2 }
 
 ~std/store:watch(game)

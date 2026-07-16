@@ -8,7 +8,7 @@
 ~import std/io
 ~import std/store
 
-~std/store:create(pool, capacity: 2) { hp: i64 }
+~std/store:new(pool, capacity: 2) { hp: i64 }
 
 ~std/store:insert(pool) { hp: 1 }
 | row _ |> std/io:print.ln("ok")

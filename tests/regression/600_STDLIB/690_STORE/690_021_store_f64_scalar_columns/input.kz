@@ -6,7 +6,7 @@
 ~import std/io
 ~import std/store
 
-~std/store:create(temps) { celsius: 21.5[f64] }
+~std/store:new(temps) { celsius: 21.5[f64] }
 
 ~std/store:watch(temps)
 ! celsius c |> std/io:print.ln("{{ c:f }} C")

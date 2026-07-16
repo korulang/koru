@@ -8,10 +8,10 @@
 ~import std/io
 ~import std/store
 
-~std/store:create(alpha) { x: 0[i64] }
+~std/store:new(alpha) { x: 0[i64] }
 ! updated { old, new } |> std/store:stored { beta.y: new }
 
-~std/store:create(beta) { y: 0[i64] }
+~std/store:new(beta) { y: 0[i64] }
 ! updated { old, new } |> std/store:stored { alpha.x: new }
 
 ~std/store:stored { alpha.x: 1 }

@@ -14,7 +14,7 @@
 ~import std/io
 ~import std/store
 
-~std/store:create(game) { entities: 0[i64] }
+~std/store:new(game) { entities: 0[i64] }
 
 ~std/store:watch(game)
 ! entities e when e > 1 |> std/io:print.ln("big: {{ e:d }}")

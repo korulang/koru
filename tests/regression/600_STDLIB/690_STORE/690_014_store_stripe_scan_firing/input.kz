@@ -8,7 +8,7 @@
 ~import std/io
 ~import std/store
 
-~std/store:create(game) { hp: 0[i64] }
+~std/store:new(game) { hp: 0[i64] }
 
 ~std/store:watch(game)
 ! hp h |> std/io:print.ln("hp {{ h:d }}")

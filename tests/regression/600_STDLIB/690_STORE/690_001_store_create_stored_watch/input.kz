@@ -1,7 +1,7 @@
 // ASPIRATIONAL (RED by design until std/store rung 1 lands — see DESIGN.md).
 // The hello-store: create / stored / watch, the singleton (one-row) case.
 //
-// - `~std/store:create(game) { entities: 0[i64] }` — comptime declaration
+// - `~std/store:new(game) { entities: 0[i64] }` — comptime declaration
 //   (name + shape) and program-long instantiation in one top-level form,
 //   modeled on `~std/kernel:shape(Body) { ... }` (name arg + source block)
 //   and capture's seed block `{ oval: 0[i32] }` (320_036). A top-level
@@ -25,7 +25,7 @@
 ~import std/io
 ~import std/store
 
-~std/store:create(game) { entities: 0[i64] }
+~std/store:new(game) { entities: 0[i64] }
 
 ~std/store:watch(game)
 ! entities e |> std/io:print.ln("entities: {{ e:d }}")

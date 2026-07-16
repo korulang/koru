@@ -12,8 +12,8 @@
 ~import std/io
 ~import std/store
 
-~std/store:create(pool) { hp: i64 }
-~std/store:create(bank) { gold: i64 }
+~std/store:new(pool) { hp: i64 }
+~std/store:new(bank) { gold: i64 }
 
 ~std/store:insert(pool) { hp: 9 }
 | row r |> std/store:take(pool[r])
