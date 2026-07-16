@@ -82,10 +82,10 @@ const std = @import("std");
 
 ~proc cond|template|zig {
     {% for arm in continuations["c"] %}{% if arm.guard != "" %}if ({{ arm.guard }}) {
-        {{ arm.continue }}
+        {{ arm.bind }}{{ arm.continue }}
     }
     {% else %}{
-        {{ arm.continue }}
+        {{ arm.bind }}{{ arm.continue }}
     }{% endif %}{% endfor %}
 }
 

@@ -508,6 +508,102 @@ fn processPerCallInvocations(
     }
 }
 
+/// Lower a Koru scrutinee expression to a Zig value. A struct literal
+/// (`{ value: n }`) becomes a Zig anonymous struct (`.{ .value = n, }`) via the
+/// single struct-literal parser; anything else (a bare identifier `k`, an
+/// arithmetic expr) is already Zig-shaped and passes through verbatim. Used to
+/// materialize a `cond` scrutinee before an arm destructures/binds it.
+fn lowerScrutineeToZig(allocator: std.mem.Allocator, text: []const u8) ![]const u8 {
+    const trimmed = std.mem.trim(u8, text, " \t\n\r");
+    if (trimmed.len < 2 or trimmed[0] != '{' or trimmed[trimmed.len - 1] != '}') return text;
+    const fields = struct_literal.parseFields(allocator, trimmed) catch return text;
+    var buf: std.ArrayList(u8) = .empty;
+    try buf.appendSlice(allocator, ".{ ");
+    for (fields) |f| {
+        try buf.appendSlice(allocator, ".");
+        try buf.appendSlice(allocator, f.name);
+        try buf.appendSlice(allocator, " = ");
+        try buf.appendSlice(allocator, f.value);
+        try buf.appendSlice(allocator, ", ");
+    }
+    try buf.appendSlice(allocator, "}");
+    return buf.toOwnedSlice(allocator);
+}
+
+/// Append `const <name>[: <type>] = <prefix>.<name>; _ = &<name>; ` per named
+/// destructure leaf (recursing into nested sub-shapes), skipping `_` slots.
+/// String-building twin of emitter_helpers.emitDestructureConsts.
+fn appendDestructureConsts(
+    allocator: std.mem.Allocator,
+    buf: *std.ArrayList(u8),
+    fields: []const ast.DestructureField,
+    prefix: []const u8,
+) !void {
+    for (fields) |f| {
+        if (std.mem.eql(u8, f.name, "_")) continue;
+        if (f.sub.len > 0) {
+            const sub_prefix = try std.fmt.allocPrint(allocator, "{s}.{s}", .{ prefix, f.name });
+            try appendDestructureConsts(allocator, buf, f.sub, sub_prefix);
+            continue;
+        }
+        try buf.appendSlice(allocator, "const ");
+        try buf.appendSlice(allocator, f.name);
+        if (f.type_text) |t| {
+            try buf.appendSlice(allocator, ": ");
+            try buf.appendSlice(allocator, t);
+        }
+        try buf.appendSlice(allocator, " = ");
+        try buf.appendSlice(allocator, prefix);
+        try buf.appendSlice(allocator, ".");
+        try buf.appendSlice(allocator, f.name);
+        try buf.appendSlice(allocator, "; _ = &");
+        try buf.appendSlice(allocator, f.name);
+        try buf.appendSlice(allocator, "; ");
+    }
+}
+
+/// Build the Zig binder preamble for a `cond` arm: bind the scrutinee to the
+/// arm's `c <name>` (scalar) or `c { field }` (destructure) binder, so the arm's
+/// `when` guard and produce can reference it. Returns "" for a `_` catch-all or
+/// an unbound continuation (`~if`/`~for` terminals carry no scrutinee to bind).
+/// Cond arms reuse the payload-less terminal marker, so — unlike an effect
+/// splice, whose call arg the emitter binds — the scrutinee is threaded in here.
+fn buildCondArmBinder(
+    allocator: std.mem.Allocator,
+    cont: ast.Continuation,
+    scrutinee: []const u8,
+) ![]const u8 {
+    if (scrutinee.len == 0) return "";
+    // Destructure binder (`c { field, ... }`): materialize the scrutinee once to
+    // a site-unique temp, then one `const <field> = <tmp>.<field>;` per leaf.
+    if (cont.destructure.len > 0) {
+        const s_zig = try lowerScrutineeToZig(allocator, scrutinee);
+        const tmp = try std.fmt.allocPrint(allocator, "__koru_cond_s_{d}_{d}", .{ cont.location.line, cont.location.column });
+        var buf: std.ArrayList(u8) = .empty;
+        try buf.appendSlice(allocator, "const ");
+        try buf.appendSlice(allocator, tmp);
+        try buf.appendSlice(allocator, " = ");
+        try buf.appendSlice(allocator, s_zig);
+        try buf.appendSlice(allocator, "; _ = &");
+        try buf.appendSlice(allocator, tmp);
+        try buf.appendSlice(allocator, "; ");
+        try appendDestructureConsts(allocator, &buf, cont.destructure, tmp);
+        return buf.toOwnedSlice(allocator);
+    }
+    // Scalar binder (`c v`): bind the whole scrutinee. `_`/empty = no binder.
+    if (cont.binding) |b| {
+        if (b.len == 0 or std.mem.eql(u8, b, "_")) return "";
+        // The scrutinee expression IS the binder name (`cond(k) | c k …`): the
+        // name is already in scope, so `const k = k;` would self-shadow (Zig
+        // rejects it). Use it as-is — the binder is a no-op. Mirrors the effect
+        // splice's same guard in emitter_helpers.
+        if (std.mem.eql(u8, std.mem.trim(u8, scrutinee, " \t\n\r"), b)) return "";
+        const s_zig = try lowerScrutineeToZig(allocator, scrutinee);
+        return std.fmt.allocPrint(allocator, "const {s} = {s}; _ = &{s}; ", .{ b, s_zig, b });
+    }
+    return "";
+}
+
 /// Render a bare `|template|` proc for one invocation, returning the rendered
 /// inline_body (with the inline_stmt marker), or null if the invocation doesn't
 /// resolve to a per-call template proc. Shared by top-level flows and nested
@@ -539,6 +635,12 @@ fn renderTemplateInvocation(
 
     const event_decl = findEventDeclByLastSegment(all_items, &invocation.path);
 
+    // The scrutinee of a `cond` (`~cond(expr)`) — the first arg's text. Threaded
+    // to each arm's binder below: a cond arm reuses the payload-less terminal
+    // marker, so the scrutinee it binds must be captured HERE, not by the
+    // emitter's continue-marker resolver (which has no payload to bind).
+    var scrutinee_text: []const u8 = "";
+
     for (invocation.args, 0..) |arg, i| {
         const raw_text = if (arg.expression_value) |expr_val| expr_val.text else arg.value;
         // PRESENCE (400_146, ruled 2026-07-03): inside the declaring event's
@@ -551,6 +653,7 @@ fn renderTemplateInvocation(
         // A required arm is left verbatim: the shape checker walls it
         // (KORU131) before emission is reached.
         const text = try presenceRewriteTemplateArg(allocator, invocation, impl_event, raw_text);
+        if (i == 0) scrutinee_text = text;
         const is_positional = std.mem.eql(u8, arg.name, arg.value);
         const key = if (!is_positional)
             arg.name
@@ -579,6 +682,13 @@ fn renderTemplateInvocation(
             try sub.put("link", .{ .string = cont.branch });
             try sub.put("binding", .{ .string = cont.binding orelse "" });
             try sub.put("guard", .{ .string = cont.condition orelse "" });
+            // `bind`: the Zig binder preamble that binds the scrutinee to this
+            // arm's `c <name>` / `c { field }` binder, so the arm's `when` guard
+            // and produce can reference it. Empty for a `_` catch-all or an
+            // unbound continuation (`~if`/`~for` terminals). Spliced by the
+            // cond template BEFORE the continue marker, so the guard the emitter
+            // writes at marker-resolution sees the binding in scope.
+            try sub.put("bind", .{ .string = try buildCondArmBinder(allocator, cont, scrutinee_text) });
             try sub.put("kind", .{ .string = if (cont.kind == .effect) "effect" else "terminal" });
             // `inlined_link` is a marker the emitter resolves to the handler's
             // body spliced INLINE (in the enclosing scope), vs `link` which is a
