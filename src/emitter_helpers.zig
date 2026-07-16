@@ -805,6 +805,37 @@ pub fn writeVariantComment(emitter: *CodeEmitter, variant: ?[]const u8) !void {
     }
 }
 
+/// True when a Zig type string names a pass-by-value scalar (ints/floats/bool).
+/// Pointers, slices, optionals and named aggregates are not scalars.
+fn isScalarZigType(t: []const u8) bool {
+    if (std.mem.eql(u8, t, "bool") or std.mem.eql(u8, t, "isize") or std.mem.eql(u8, t, "usize")) return true;
+    if (std.mem.eql(u8, t, "f16") or std.mem.eql(u8, t, "f32") or std.mem.eql(u8, t, "f64") or std.mem.eql(u8, t, "f128")) return true;
+    if (t.len >= 2 and (t[0] == 'i' or t[0] == 'u')) {
+        for (t[1..]) |c| if (c < '0' or c > '9') return false;
+        return true; // iN / uN
+    }
+    return false;
+}
+
+/// A "scalar value event" has an Input made purely of pass-by-value scalar
+/// fields — no Source/Expression/File/InvocationMeta, no phantom, no
+/// cross-module type. Its handler can take scalar params (register ABI) through
+/// an `inline` forwarding shim instead of a by-pointer Input struct, so
+/// multi-field (>16-byte Input) recursive events stop marshalling args through
+/// memory on every call. See emitEventDecl's shim emission. Effect-bearing
+/// events (`comptime __H`) are excluded by the caller.
+pub fn isScalarValueFields(fields: []const ast.Field) bool {
+    if (fields.len == 0) return false;
+    for (fields) |field| {
+        if (field.is_source or field.is_file or field.is_embed_file or
+            field.is_expression or field.is_invocation_meta) return false;
+        if (field.phantom != null) return false;
+        if (field.module_path != null) return false;
+        if (!isScalarZigType(field.type)) return false;
+    }
+    return true;
+}
+
 /// Helper: Write field type with proper module path handling
 pub fn writeFieldType(emitter: *CodeEmitter, field: ast.Field, main_module_name: ?[]const u8) !void {
     // A bare foreign type carrying a module-qualified phantom (e.g.

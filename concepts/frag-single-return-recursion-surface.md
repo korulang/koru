@@ -29,8 +29,19 @@ first grounded attempt:
 The prior belief — carried on the koru-benchmarks baton as the "port
 frontier" open question, "can pure Koru inline/combine recursive
 value-event calls?" — projected fib/hanoi/tak as probable feature gaps.
-They are not. **Expressiveness of naive recursion is closed; what remains
-open is performance** (the non-flattening tree-recursion paths go through
-real event dispatch; parity there is a separate, measured question) and the
-genuinely absent surfaces the remaining 10 kernels name (recursive ADTs,
-persistent lists, string-map folds, string builtins).
+They are not. **Expressiveness of naive recursion is closed.** Performance
+parity is a separate, per-kernel, measured question — and its first concrete
+resolution landed here: the non-flattening paths (tak's inner tree-recursion,
+any value event reached through real `.handler(.{…})` dispatch) were slow not
+from dispatch cost per se but from an **argument-ABI hole**. A value event
+whose Input exceeds the AArch64 16-byte register threshold (tak's 3×i64) was
+lowered as `handler(Input)` and passed BY POINTER, so every call marshalled
+args through the stack where C passes them in registers; the gap scaled with
+field count (2-field ack/coins already register-passed, already at parity).
+Register-passing via an `inline` handler shim over a scalar-param impl closes
+it (tak → C parity on a quiet box; see koru-benchmarks `tak` and the emitter's
+`isScalarValueFields` shim). Still open: parity on kernels whose Inputs aren't
+all-scalar (they keep the struct ABI), the ackermann/coins anomaly where GHC
+beats even `-O2` C (unexplained, possibly not faithful), and the genuinely
+absent surfaces the remaining kernels name (recursive ADTs, persistent lists,
+string-map folds, string builtins).

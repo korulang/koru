@@ -2220,13 +2220,58 @@ pub const VisitorEmitter = struct {
         // Handler function — `comptime __H: type` when the event has any
         // effect `!` branches. Inside the body we'll alias each `H.NAME`
         // back to the bare identifier so the proc body reads naturally.
+        // A pure-scalar value event lowers to an `inline` public shim over a
+        // scalar-param private impl: Zig `inline` + SROA collapse every
+        // `.handler(.{…})` call site (emitter, store-text, user `|zig`, dynamic
+        // dispatch) to a direct register-passing call, so a >16-byte Input stops
+        // round-tripping through memory on every recursive call. The impl
+        // reconstructs Input locally, leaving the body emission below unchanged.
+        const use_scalar_shim = !has_effect and emitter.isScalarValueFields(event.input.fields);
         try self.code_emitter.writeIndent();
         if (has_effect) {
             try self.code_emitter.write("pub fn handler(__koru_event_input: Input, comptime __H: type) Output {\n");
+        } else if (use_scalar_shim) {
+            try self.code_emitter.write("pub inline fn handler(__koru_event_input: Input) Output {\n");
+            self.code_emitter.indent_level += 1;
+            try self.code_emitter.writeIndent();
+            try self.code_emitter.write("return __koru_handler_impl(");
+            for (event.input.fields, 0..) |field, i| {
+                if (i > 0) try self.code_emitter.write(", ");
+                try self.code_emitter.write("__koru_event_input.");
+                try emitter.writeBranchName(self.code_emitter, field.name);
+            }
+            try self.code_emitter.write(");\n");
+            self.code_emitter.indent_level -= 1;
+            try self.code_emitter.writeIndent();
+            try self.code_emitter.write("}\n");
+            try self.code_emitter.writeIndent();
+            try self.code_emitter.write("fn __koru_handler_impl(");
+            for (event.input.fields, 0..) |field, i| {
+                if (i > 0) try self.code_emitter.write(", ");
+                var pbuf: [24]u8 = undefined;
+                try self.code_emitter.write(try std.fmt.bufPrint(&pbuf, "__koru_p_{d}: ", .{i}));
+                try self.code_emitter.write(field.type);
+            }
+            try self.code_emitter.write(") Output {\n");
         } else {
             try self.code_emitter.write("pub fn handler(__koru_event_input: Input) Output {\n");
         }
         self.code_emitter.indent_level += 1;
+
+        // Scalar-shim impl reconstructs Input from the scalar params so the body
+        // below reads identically (SROA elides the local aggregate).
+        if (use_scalar_shim) {
+            try self.code_emitter.writeIndent();
+            try self.code_emitter.write("const __koru_event_input: Input = .{ ");
+            for (event.input.fields, 0..) |field, i| {
+                if (i > 0) try self.code_emitter.write(", ");
+                try self.code_emitter.write(".");
+                try emitter.writeBranchName(self.code_emitter, field.name);
+                var pbuf: [24]u8 = undefined;
+                try self.code_emitter.write(try std.fmt.bufPrint(&pbuf, " = __koru_p_{d}", .{i}));
+            }
+            try self.code_emitter.write(" };\n");
+        }
 
         // Yielding-branch comptime aliases — must come before any user body code.
         if (has_effect) {
