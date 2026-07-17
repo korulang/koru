@@ -1,0 +1,20 @@
+// `string` is the canonical surface type for text in an event payload.
+// This is 020_016_destructure_basic with ONE word changed — `[]const u8`
+// became `string` on the `name` field — and nothing else. Same behavior:
+// `string` lowers to `[]const u8` for Zig, so destructure, `when`-guard,
+// and `{{ name:s }}` formatting all work identically.
+~import std/io
+
+~pub event fetch { id: i64 }
+| found { name: string, age: i64 }
+| missing
+
+~proc fetch|zig {
+    if (id == 1) return .{ .found = .{ .name = "lars", .age = 44 } };
+    return .{ .missing = .{} };
+}
+
+~fetch(id: 1)
+| found { name, age: i64 } when age > 40 |> std/io:print.ln("elder {{ name:s }} {{ age:d }}")
+| found { name } |> std/io:print.ln("younger {{ name:s }}")
+| missing |> std/io:print.ln("nope")
