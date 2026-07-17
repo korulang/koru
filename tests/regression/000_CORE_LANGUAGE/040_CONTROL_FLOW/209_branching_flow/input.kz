@@ -10,7 +10,7 @@ const std = @import("std");
 // Validation events
 ~event validate { value: i32 }
 | valid i32
-| invalid []const u8
+| invalid string
 
 ~proc validate|zig {
     if (value > 0) {
@@ -37,7 +37,7 @@ const std = @import("std");
     std.debug.print("Success: {}\n", .{result});
 }
 
-~event failure { msg: []const u8 }
+~event failure { msg: string }
 
 ~proc failure|zig {
     std.debug.print("Failure: {s}\n", .{msg});

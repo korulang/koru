@@ -6,8 +6,8 @@
 // the kinds must match between decl and handler.
 // ============================================================================
 
-~pub event tokenize { source: []const u8 }
-! each []const u8
+~pub event tokenize { source: string }
+! each string
 | done usize
 
 ~tokenize(source: "x")

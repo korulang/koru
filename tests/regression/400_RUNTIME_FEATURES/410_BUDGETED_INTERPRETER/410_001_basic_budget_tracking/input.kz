@@ -8,8 +8,8 @@
 const std = @import("std");
 
 // Simple event with no resources
-~pub event greet { name: []const u8 }
-| greeted []const u8
+~pub event greet { name: string }
+| greeted string
 
 ~proc greet|zig {
     var buf: [256]u8 = undefined;

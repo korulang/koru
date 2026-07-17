@@ -7,7 +7,7 @@ import std/io
 import std/fs
 import std/crypto
 
-pub event mine { key: []const u8, zeros: i64 } -> i64
+pub event mine { key: string, zeros: i64 } -> i64
 
 mine = #search std/crypto:md5-check(key, n: 1, zeros)
 | miss v |> @search(key, n: v, zeros)

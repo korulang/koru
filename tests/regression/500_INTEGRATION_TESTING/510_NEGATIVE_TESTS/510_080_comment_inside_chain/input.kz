@@ -7,7 +7,7 @@
 
 ~event work {}
 | ok i32
-| err []const u8
+| err string
 
 ~proc work|zig { return .{ .ok = 1 }; }
 

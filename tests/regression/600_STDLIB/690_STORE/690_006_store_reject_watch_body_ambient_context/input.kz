@@ -24,7 +24,7 @@
 
 ~std/store:new(game) { entities: 0[i64] }
 
-~pub event setup {} -> []const u8
+~pub event setup {} -> string
 
 ~proc setup|zig {
     return "local";

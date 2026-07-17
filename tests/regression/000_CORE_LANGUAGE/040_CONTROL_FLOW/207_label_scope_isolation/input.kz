@@ -9,7 +9,7 @@
 const std = @import("std");
 
 // Counter event that can go in both directions
-~event count { n: i32, direction: []const u8 }
+~event count { n: i32, direction: string }
 | next i32
 | done i32
 

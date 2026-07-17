@@ -29,13 +29,13 @@
 
 ~import std/io
 
-~pub event get-input {} -> []const u8<unsanitized!>
+~pub event get-input {} -> string<unsanitized!>
 
 ~get-input -> "untrusted user input"
 
 // Plain-typed echo: takes []const u8 (no phantom), returns []const u8 (no phantom).
 // No knowledge of taint — acts as an opaque non-phantom-aware gateway.
-~event echo { data: []const u8 } -> []const u8
+~event echo { data: string } -> string
 
 ~echo -> data
 

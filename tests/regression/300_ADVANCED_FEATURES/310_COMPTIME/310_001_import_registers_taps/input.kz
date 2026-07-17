@@ -22,9 +22,9 @@ const std = @import("std");
 // Define some events to test with
 ~event compute { x: i32 } -> i32
 
-~event format { value: i32 } -> []const u8
+~event format { value: i32 } -> string
 
-~event display { text: []const u8 }
+~event display { text: string }
 
 ~proc compute|zig {
     std.debug.print("compute({d})\n", .{x});

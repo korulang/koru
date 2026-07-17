@@ -3,8 +3,8 @@
 
 const std = @import("std");
 
-~[abstract] event fetch { url: []const u8 }
-| success []const u8
+~[abstract] event fetch { url: string }
+| success string
 | error i32
 
 // WRONG: This is Zig syntax, not Koru

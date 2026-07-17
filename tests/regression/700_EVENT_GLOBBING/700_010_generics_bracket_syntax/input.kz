@@ -17,7 +17,7 @@
 // Transform parses brackets, extracts T=u32, N=1024, synthesizes typed code.
 
 ~[comptime|transform]pub event ring.* {
-    event_name: []const u8,
+    event_name: string,
     item: *const Item,
     program: *const Program,
 } -> SiteResult

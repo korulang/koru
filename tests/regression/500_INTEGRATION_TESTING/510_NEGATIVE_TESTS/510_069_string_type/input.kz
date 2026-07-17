@@ -1,4 +1,0 @@
-// Test: Using 'string' type (habit from other languages)
-// Parser catches 'string' and suggests '[]const u8'
-
-~event greet { name: string }

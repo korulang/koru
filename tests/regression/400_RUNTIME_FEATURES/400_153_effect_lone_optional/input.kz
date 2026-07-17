@@ -15,7 +15,7 @@
 ~import std/io
 
 ~pub event maybe { n: usize }
-! ?warn []const u8
+! ?warn string
 
 ~proc maybe|zig {
     var i: usize = 0;

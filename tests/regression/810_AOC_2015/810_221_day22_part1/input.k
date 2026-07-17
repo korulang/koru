@@ -50,8 +50,8 @@
 import std/io
 import std/fs
 
-pub event fight { line: []const u8 }
-| outcome []const u8
+pub event fight { line: string }
+| outcome string
 
 std/fs:read-lines(path: "tests/regression/810_AOC_2015/810_221_day22_part1/input.txt")
 ! line l |> fight(line: l)

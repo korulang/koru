@@ -35,7 +35,7 @@ capture { goal: 0[i64] }
 | captured r |> hunt(target: r.goal)
     | house h |> std/io:print.ln("{{ h:d }}")
 
-pub event to-int { s: []const u8 } -> i64
+pub event to-int { s: string } -> i64
 
 to-int = capture { n: 0[i64] }
 ! as a |> for(s)

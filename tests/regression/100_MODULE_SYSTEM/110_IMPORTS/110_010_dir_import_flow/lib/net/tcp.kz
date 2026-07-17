@@ -4,19 +4,19 @@ const std = @import("std");
 
 ~pub event server.listen { port: i32 }
 | listening i32
-| failed []const u8
+| failed string
 
 ~pub event server.accept { server_id: i32 }
 | connection i32
-| failed []const u8
+| failed string
 
 ~pub event connection.read { conn_id: i32 }
-| data []const u8
-| failed []const u8
+| data string
+| failed string
 
-~pub event connection.write { conn_id: i32, data: []const u8 }
+~pub event connection.write { conn_id: i32, data: string }
 | sent i32
-| failed []const u8
+| failed string
 
 ~proc server.listen|zig {
     std.debug.print("listening on port {}\n", .{port});

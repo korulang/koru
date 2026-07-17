@@ -17,11 +17,11 @@ const std = @import("std");
 // ================================================================
 
 ~pub event compile.target {
-    target_name: []const u8,
-    body: []const u8,
+    target_name: string,
+    body: string,
 }
-| compiled []const u8
-| unsupported []const u8
+| compiled string
+| unsupported string
 
 ~proc compile.target|zig {
     const allocator = std.heap.page_allocator;

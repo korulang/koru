@@ -49,7 +49,7 @@ pub const Map_string_i64 = struct {
   follow-up.
 ]pub event new {}
 | map *Map_string_i64<map!>
-| err []const u8
+| err string
 
 ~proc new|zig {
     const allocator = koru_allocator();
@@ -66,7 +66,7 @@ pub const Map_string_i64 = struct {
 
 // Insert or overwrite key → value. Dupes the key on first insert; an overwrite
 // reuses the already-stored key (no re-dupe, no leak). Void, chains with `|>`.
-~pub event set { m: *Map_string_i64<map>, k: []const u8, v: i64 }
+~pub event set { m: *Map_string_i64<map>, k: string, v: i64 }
 
 ~proc set|zig {
     const gop = m.map.getOrPut(m.allocator, k) catch {
@@ -85,7 +85,7 @@ pub const Map_string_i64 = struct {
 // ============================================
 
 // Lookup by key. `value` on hit, `missing` when absent.
-~pub event get { m: *Map_string_i64<map>, k: []const u8 }
+~pub event get { m: *Map_string_i64<map>, k: string }
 | value i64
 | missing
 
@@ -97,7 +97,7 @@ pub const Map_string_i64 = struct {
 }
 
 // Membership test.
-~pub event contains { m: *Map_string_i64<map>, k: []const u8 }
+~pub event contains { m: *Map_string_i64<map>, k: string }
 | yes
 | no
 

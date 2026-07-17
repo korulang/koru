@@ -11,7 +11,7 @@
 const std = @import("std");
 
 // Void event: Dump AST to stderr with stage label
-~pub event dump-ast { ctx: CompilerContext, stage: []const u8 }
+~pub event dump-ast { ctx: CompilerContext, stage: string }
 
 ~proc dump-ast|zig {
     // TODO: Use ast_serializer to generate JSON

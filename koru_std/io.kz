@@ -32,7 +32,7 @@ const std = @import("std");
 
 // Print formatted text
 // NOTE: printf with varargs would require runtime support - skipping for now
-// ~pub event io.printf { format: []const u8, args: anytype }
+// ~pub event io.printf { format: string, args: anytype }
 // | printed {}
 //
 // ~proc io.printf {
@@ -42,9 +42,9 @@ const std = @import("std");
 
 // Read line from stdin (for future interactive programs)
 ~pub event readln {}
-| line []const u8
+| line string
 | eof
-| failed []const u8
+| failed string
 
 ~proc readln|zig {
     // TODO: Implement actual stdin reading
@@ -54,7 +54,7 @@ const std = @import("std");
 
 // Simple line reader - returns the line, or empty string on EOF/error
 // No error handling, just returns what it gets
-~pub event read.ln {} -> []const u8
+~pub event read.ln {} -> string
 
 ~proc read.ln|zig {
     const stdin = std.fs.File.stdin();
@@ -70,7 +70,7 @@ const std = @import("std");
 
 // Debug print for development
 // NOTE: debug with anytype would require runtime support - skipping for now
-// ~pub event io.debug { label: []const u8, value: anytype }
+// ~pub event io.debug { label: string, value: anytype }
 // | printed {}
 //
 // ~proc io.debug {
@@ -80,7 +80,7 @@ const std = @import("std");
 // }
 
 // Print error to stderr
-~pub event eprintln { message: []const u8 }
+~pub event eprintln { message: string }
 
 ~proc eprintln|zig {
     const stderr = std.fs.File.stderr().writer();
@@ -91,14 +91,14 @@ const std = @import("std");
 }
 
 // Success message with green color (if terminal supports it)
-~pub event success { message: []const u8 }
+~pub event success { message: string }
 
 ~proc success|zig {
     std.debug.print("✅ {s}\n", .{message});
 }
 
 // Warning message
-~pub event warn { message: []const u8 }
+~pub event warn { message: string }
 
 ~proc warn|zig {
     std.debug.print("⚠️  {s}\n", .{message});
@@ -116,9 +116,9 @@ const std = @import("std");
   whole-stream slurp (readToEndAlloc), bounded by RAM. True streaming is the
   deferred honest fix; marked so the gap is explicit and greppable.
 ]pub event read-lines {}
-! line []const u8
+! line string
 | done usize
-| failed []const u8
+| failed string
 
 ~proc read-lines|zig {
     // HYGIENE: this body INLINES into the consumer's frame (effect
@@ -147,9 +147,9 @@ const std = @import("std");
 
 // Read entire stdin as text
 ~pub event read-stdin {}
-| ok []const u8
+| ok string
 | eof
-| failed []const u8
+| failed string
 
 ~proc read-stdin|zig {
     const stdin = std.fs.File.stdin();
@@ -169,10 +169,10 @@ const std = @import("std");
 }
 
 // Read entire file as text
-~pub event read-file { path: []const u8 }
-| ok []const u8
+~pub event read-file { path: string }
+| ok string
 | not-found
-| failed []const u8
+| failed string
 
 ~proc read-file|zig {
     const file = std.fs.cwd().openFile(path, .{}) catch |err| {
@@ -231,7 +231,7 @@ const std = @import("std");
 } -> SiteResult
 
 ~[norun]pub event print.impl {
-    expr: []const u8,
+    expr: string,
 }
 
 // eprint / eprint.ln — the stderr siblings of print / print.ln. Same engine
@@ -624,7 +624,7 @@ fn __printInterpolate(
 } -> SiteResult
 
 ~[norun]pub event print.blk.impl {
-    text: []const u8,
+    text: string,
 }
 
 ~proc print.blk|zig {

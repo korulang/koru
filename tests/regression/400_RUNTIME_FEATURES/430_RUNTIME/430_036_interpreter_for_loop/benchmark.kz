@@ -13,8 +13,8 @@ const std = @import("std");
 // Events for computation
 // ============================================================================
 
-~pub event add { a: []const u8, b: []const u8 }
-| sum []const u8
+~pub event add { a: string, b: string }
+| sum string
 
 ~proc add|zig {
     const a_int = std.fmt.parseInt(i64, a, 10) catch 0;
@@ -26,7 +26,7 @@ const std = @import("std");
 }
 
 ~pub event init-sum {}
-| value []const u8
+| value string
 
 ~proc init-sum|zig {
     return .{ .value = "0" };

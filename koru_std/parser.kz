@@ -64,7 +64,7 @@ const std = @import("std");
 | ?no-match
 
 // Demand a sub-rule at the current position; binds the rule's produced value.
-~pub event sub { expr: Expression } -> []const u8
+~pub event sub { expr: Expression } -> string
 
 // Consume a literal token (plain text, NOT a regex — no escaping needed).
 ~pub event lit { expr: Expression }
@@ -72,7 +72,7 @@ const std = @import("std");
 // The parse site: dispatches on the named top rule's success, or parse-error.
 ~[comptime|transform]pub event parse { expr: Expression, grammar: Expression }
 | `*` *
-| ?parse-error { line: usize, col: usize, expected: []const u8, found: []const u8 }
+| ?parse-error { line: usize, col: usize, expected: string, found: string }
 
 ~[transform]proc grammar|zig {
     const ast = @import("ast");

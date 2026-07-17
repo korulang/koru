@@ -44,7 +44,7 @@ pub const Map_i64_i64 = struct {
   customers), not a map-only fork.
 ]pub event new {}
 | map *Map_i64_i64<map!>
-| err []const u8
+| err string
 
 ~proc new|zig {
     const allocator = koru_allocator();

@@ -28,7 +28,7 @@ const std = @import("std");
 
 ~[comptime] get-input => line "comptime input"
 
-~[comptime] pub event sink { s: []const u8 }
+~[comptime] pub event sink { s: string }
 ~proc sink|zig {
     std.debug.print("{s}\n", .{s});
 }

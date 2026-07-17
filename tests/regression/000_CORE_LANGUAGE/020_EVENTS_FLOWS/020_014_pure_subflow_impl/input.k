@@ -3,7 +3,7 @@
 // This is the default authoring model for ordinary event behavior.
 import std/io
 
-event greet { name: []const u8 } -> []const u8
+event greet { name: string } -> string
 
 greet -> "Hello, " ++ name ++ "!"
 

@@ -9,7 +9,7 @@ pub const User = struct {
 
 // Event that creates a user
 ~pub event create {
-    name: []const u8,
+    name: string,
     age: u32,
 } -> User
 

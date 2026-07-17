@@ -6,8 +6,8 @@
 ~import std/io
 
 ~pub event run {}
-| done []const u8
-| err []const u8
+| done string
+| err string
 
 ~proc run|zig {
     return .{ .done = "release build, all branches handled" };

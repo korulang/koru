@@ -11,11 +11,11 @@
 
 import std/io
 
-pub event get-input {} -> []const u8<unsanitized!>
+pub event get-input {} -> string<unsanitized!>
 
 get-input -> "user input data"
 
-event sanitize { input: []const u8<!unsanitized> } -> []const u8
+event sanitize { input: string<!unsanitized> } -> string
 
 sanitize -> input
 

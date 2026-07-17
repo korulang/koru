@@ -330,7 +330,7 @@ fn floatOp(l: f64, r: f64, op: ArithOp) EvalError!Value {
 }
 | then
 | else
-| error []const u8
+| error string
 
 ~proc if|zig {
     const result = evaluate(expression, bindings) catch |err| {

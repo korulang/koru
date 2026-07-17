@@ -8,7 +8,7 @@ const std = @import("std");
 
 // Sample Koru code to parse
 const SAMPLE_CODE =
-    \\~event greet { name: []const u8 }
+    \\~event greet { name: string }
     \\| greeted
     \\
     \\~proc greet {
@@ -44,7 +44,7 @@ const SAMPLE_CODE =
 }
 
 // Event to report error - returns done when complete
-~event report-error { message: []const u8 }
+~event report-error { message: string }
 
 ~proc report-error|zig {
     std.debug.print("Parse error: {s}\n", .{message});

@@ -1,6 +1,6 @@
 // Test 210_074: effect branch with explicit `->` resume type.
 // `! ask T -> U`: yield a T, resume with a U.
 
-~pub event prompt-user { question: []const u8 }
-! ask []const u8 -> []const u8
+~pub event prompt-user { question: string }
+! ask string -> string
 | done

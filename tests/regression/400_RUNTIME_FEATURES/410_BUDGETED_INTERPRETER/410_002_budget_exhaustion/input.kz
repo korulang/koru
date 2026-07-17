@@ -6,8 +6,8 @@
 
 const std = @import("std");
 
-~pub event expensive { data: []const u8 }
-| processed []const u8
+~pub event expensive { data: string }
+| processed string
 
 ~proc expensive|zig {
     return .{ .processed = data };

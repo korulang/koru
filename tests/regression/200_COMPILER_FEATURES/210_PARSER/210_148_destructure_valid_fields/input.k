@@ -4,9 +4,9 @@
 // field-existence wall from over-rejecting valid destructures.
 import std/io
 
-event read { path: []const u8 }
+event read { path: string }
 | ok { a: i32, b: u8 }
-| err []const u8
+| err string
 
 read => ok { a: 7, b: 2 }
 

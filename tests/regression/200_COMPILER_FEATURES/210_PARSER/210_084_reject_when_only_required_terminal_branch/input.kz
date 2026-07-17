@@ -23,7 +23,7 @@
 
 ~event compute { x: i32 }
 | ok i32
-| err []const u8
+| err string
 
 ~proc compute|zig {
     if (x < 0) {

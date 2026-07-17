@@ -8,8 +8,8 @@
 ~import std/io
 
 // Define abstract event with NO default implementation
-~[abstract] event greet { name: []const u8 }
-| greeted []const u8
+~[abstract] event greet { name: string }
+| greeted string
 
 // Provide the ONLY implementation (this becomes the handler)
 ~greet => greeted { message: name }

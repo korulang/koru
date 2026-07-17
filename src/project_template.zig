@@ -294,7 +294,7 @@ fn writeMainFile(
             \\~import std/io
             \\
             \\// Example public event - void events just do their work
-            \\~pub event greet {{ name: []const u8 }}
+            \\~pub event greet {{ name: string }}
             \\
             \\~proc greet =
             \\    std.io:print.ln("Hello, ${{name}}")

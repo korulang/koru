@@ -10,8 +10,8 @@
 // Event with required + optional branches
 ~event process { value: u32 }
 | success u32
-| ?warning []const u8
-| ?debug []const u8
+| ?warning string
+| ?debug string
 
 ~proc process|zig {
     if (value > 100) {
@@ -24,7 +24,7 @@
 }
 
 // Helper: print a string (void event - no branches)
-~event print-str { text: []const u8 }
+~event print-str { text: string }
 
 ~proc print-str|zig {
     _ = @import("std").posix.write(1, text) catch {};

@@ -23,12 +23,12 @@ run = if(pc >= n or pc < 0)
 capture { op: [8]i64{ 0, 0, 0, 0, 0, 0, 0, 0 }, reg: [8]i64{ 0, 0, 0, 0, 0, 0, 0, 0 }, off: [8]i64{ 0, 0, 0, 0, 0, 0, 0, 0 }, idx: 0[i64] }
 ! as acc |> std/fs:read-lines(path: "tests/regression/810_AOC_2015/810_231_day23_part1/input.txt")
     ! line l |> std/regex:match(l)
-        | `hlf (?<r>a|b)` { r: []const u8 } |> captured { op[@as(usize, @intCast(acc.idx))]: 0, reg[@as(usize, @intCast(acc.idx))]: @as(i64, r[0]) - 97, off[@as(usize, @intCast(acc.idx))]: 0, idx: acc.idx + 1 }
-        | `tpl (?<r>a|b)` { r: []const u8 } |> captured { op[@as(usize, @intCast(acc.idx))]: 1, reg[@as(usize, @intCast(acc.idx))]: @as(i64, r[0]) - 97, off[@as(usize, @intCast(acc.idx))]: 0, idx: acc.idx + 1 }
-        | `inc (?<r>a|b)` { r: []const u8 } |> captured { op[@as(usize, @intCast(acc.idx))]: 2, reg[@as(usize, @intCast(acc.idx))]: @as(i64, r[0]) - 97, off[@as(usize, @intCast(acc.idx))]: 0, idx: acc.idx + 1 }
+        | `hlf (?<r>a|b)` { r: string } |> captured { op[@as(usize, @intCast(acc.idx))]: 0, reg[@as(usize, @intCast(acc.idx))]: @as(i64, r[0]) - 97, off[@as(usize, @intCast(acc.idx))]: 0, idx: acc.idx + 1 }
+        | `tpl (?<r>a|b)` { r: string } |> captured { op[@as(usize, @intCast(acc.idx))]: 1, reg[@as(usize, @intCast(acc.idx))]: @as(i64, r[0]) - 97, off[@as(usize, @intCast(acc.idx))]: 0, idx: acc.idx + 1 }
+        | `inc (?<r>a|b)` { r: string } |> captured { op[@as(usize, @intCast(acc.idx))]: 2, reg[@as(usize, @intCast(acc.idx))]: @as(i64, r[0]) - 97, off[@as(usize, @intCast(acc.idx))]: 0, idx: acc.idx + 1 }
         | `jmp (?<o>[+-][0-9]+)` { o: i64 } |> captured { op[@as(usize, @intCast(acc.idx))]: 3, reg[@as(usize, @intCast(acc.idx))]: 0, off[@as(usize, @intCast(acc.idx))]: o, idx: acc.idx + 1 }
-        | `jie (?<r>a|b), (?<o>[+-][0-9]+)` { r: []const u8, o: i64 } |> captured { op[@as(usize, @intCast(acc.idx))]: 4, reg[@as(usize, @intCast(acc.idx))]: @as(i64, r[0]) - 97, off[@as(usize, @intCast(acc.idx))]: o, idx: acc.idx + 1 }
-        | `jio (?<r>a|b), (?<o>[+-][0-9]+)` { r: []const u8, o: i64 } |> captured { op[@as(usize, @intCast(acc.idx))]: 5, reg[@as(usize, @intCast(acc.idx))]: @as(i64, r[0]) - 97, off[@as(usize, @intCast(acc.idx))]: o, idx: acc.idx + 1 }
+        | `jie (?<r>a|b), (?<o>[+-][0-9]+)` { r: string, o: i64 } |> captured { op[@as(usize, @intCast(acc.idx))]: 4, reg[@as(usize, @intCast(acc.idx))]: @as(i64, r[0]) - 97, off[@as(usize, @intCast(acc.idx))]: o, idx: acc.idx + 1 }
+        | `jio (?<r>a|b), (?<o>[+-][0-9]+)` { r: string, o: i64 } |> captured { op[@as(usize, @intCast(acc.idx))]: 5, reg[@as(usize, @intCast(acc.idx))]: @as(i64, r[0]) - 97, off[@as(usize, @intCast(acc.idx))]: o, idx: acc.idx + 1 }
         | no-match |> _
     | done _ |> run(pc: 0, a: 0, b: 0, ops: acc.op, regs: acc.reg, offs: acc.off, n: acc.idx)
         | done res |> std/io:print.ln("a={{ res.a:d }} b={{ res.b:d }}")

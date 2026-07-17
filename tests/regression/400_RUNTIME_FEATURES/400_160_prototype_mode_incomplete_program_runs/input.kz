@@ -23,7 +23,7 @@
 
 ~pub event run {}
 | done
-| err []const u8
+| err string
 
 ~proc run|zig {
     return .{ .err = "built path ran; done is still a hole" };

@@ -8,8 +8,8 @@
 ~import std/io
 
 ~event pick { n: i32 }
-| even []const u8
-| odd []const u8
+| even string
+| odd string
 
 ~proc pick|zig {
     if (@mod(n, 2) == 0) {

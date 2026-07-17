@@ -4,8 +4,8 @@
 const std = @import("std");
 
 ~event process {
-    source: []const u8,
-    branch: []const u8,
+    source: string,
+    branch: string,
     destination: ?[]const u8,
 }
 

@@ -14,7 +14,7 @@ const std = @import("std");
     std.debug.print("Local print\n", .{});
 }
 
-~event logger { source: []const u8 }
+~event logger { source: string }
 
 ~proc logger|zig {
     std.debug.print("Observed: {s}\n", .{source});

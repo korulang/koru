@@ -11,9 +11,9 @@
 ~import std/io
 const std = @import("std");
 
-~event run-cmd { argv0: []const u8 }
+~event run-cmd { argv0: string }
 | ok i32
-| failed { code: i32, msg: []const u8 }
+| failed { code: i32, msg: string }
 
 ~proc run-cmd|zig {
     const allocator = std.heap.page_allocator;

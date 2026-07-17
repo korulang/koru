@@ -1,0 +1,6 @@
+// The raw Zig slice `[]const u8` is NOT a Koru event-payload type. Text in an
+// event declaration is spelled `string` (the canonical surface type); the slice
+// is only the internal lowering, never a surface spelling. This wall holds in
+// BOTH .k and .kz — a .kz file is still Koru surface at the event declaration,
+// so being host-adjacent does not license the ziggy spelling here.
+~event greet { name: []const u8 }

@@ -226,7 +226,7 @@ const std = @import("std");
 
 ~[comptime|transform]pub event check { expr: Expression }
 | ok
-| ?error []const u8
+| ?error string
 
 ~[transform]proc check|zig {
     const ast = @import("ast");

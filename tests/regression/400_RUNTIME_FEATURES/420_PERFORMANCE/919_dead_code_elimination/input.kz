@@ -6,10 +6,10 @@
 const std = @import("std");
 
 // Event with optional branches that have complex logic
-~event analyze { data: []const u8 }
+~event analyze { data: string }
 | success u32           // REQUIRED
-| ?warning { code: u32, msg: []const u8 }  // OPTIONAL - expensive validation
-| ?debug []const u8      // OPTIONAL - detailed logging
+| ?warning { code: u32, msg: string }  // OPTIONAL - expensive validation
+| ?debug string      // OPTIONAL - detailed logging
 
 ~proc analyze|zig {
     const len = data.len;

@@ -7,7 +7,7 @@ pub const Handle = struct {
     h.* = .{ .id = 42 };
     return h;
 }
-~[!]event close { h: *Handle<!open> } -> []const u8
+~[!]event close { h: *Handle<!open> } -> string
 ~proc close|zig {
     std.heap.page_allocator.destroy(h);
 }

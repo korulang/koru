@@ -215,7 +215,7 @@ test "custom visitor implementation" {
         \\
         \\~event[pure] calc.divide { x: f64, y: f64 }
         \\| quotient { result: f64 }
-        \\| error { msg: []const u8 }
+        \\| error { msg: string }
         \\
         \\~proc[effects(io|network)] uploader {
         \\    const data = readFile("input.txt");

@@ -7,7 +7,7 @@
 import std/io
 import std/fs
 
-pub event sum-numbers { s: []const u8 } -> i64
+pub event sum-numbers { s: string } -> i64
 
 sum-numbers = capture { sum: 0[i64], num: 0[i64], sign: 1[i64], in: 0[i64] }
 ! as a |> for(s)

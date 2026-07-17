@@ -54,7 +54,7 @@ pub const Ctx = struct {
 | then => yes ctx
 | else => no ctx
 
-~pub event report { text: []const u8 }
+~pub event report { text: string }
 
 ~proc report|zig {
     std.io.getStdOut().writer().print("{s}\n", .{text}) catch {};

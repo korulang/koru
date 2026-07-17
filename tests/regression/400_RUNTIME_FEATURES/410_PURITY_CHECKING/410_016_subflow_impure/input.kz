@@ -4,7 +4,7 @@
 const std = @import("std");
 
 // Impure operation (unmarked, so defaults to impure)
-~event log { message: []const u8 }
+~event log { message: string }
 
 ~proc log|zig {
     std.debug.print("LOG: {s}\n", .{message});

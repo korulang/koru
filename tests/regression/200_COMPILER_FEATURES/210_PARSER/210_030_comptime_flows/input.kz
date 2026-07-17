@@ -16,7 +16,7 @@ const std = @import("std");
 
 // Test 2: Comptime event with literal string parameter
 ~[comptime] event bundleAssets {
-    dir: []const u8
+    dir: string
 } -> i32
 
 ~proc bundleAssets|zig {
@@ -28,10 +28,10 @@ const std = @import("std");
 
 // Test 3: Comptime event with error branch
 ~[comptime] event preprocessMipmaps {
-    inputDir: []const u8
+    inputDir: string
 }
 | ok i32
-| err []const u8
+| err string
 
 ~proc preprocessMipmaps|zig {
     // Comptime mipmap preprocessing

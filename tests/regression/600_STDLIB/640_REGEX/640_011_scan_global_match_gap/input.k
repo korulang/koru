@@ -11,5 +11,5 @@ import std/io
 import std/regex
 
 std/regex:scan(input: "a: 1, bb: 22, c: 3")
-! `(?<k>[a-z]+): (?<n>[0-9]+)` { k: []const u8, n: i64 } |> std/io:print.ln("{{ k:s }}={{ n:d }}")
+! `(?<k>[a-z]+): (?<n>[0-9]+)` { k: string, n: i64 } |> std/io:print.ln("{{ k:s }}={{ n:d }}")
 | done |> std/io:print.ln("done")

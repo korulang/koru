@@ -13,17 +13,17 @@ const SAMPLE =
     \\// User authentication module
     \\const std = @import("std");
     \\
-    \\~event authenticate { username: []const u8, password: []const u8 }
+    \\~event authenticate { username: string, password: string }
     \\| authenticated { user_id: u64, token: []const u8 }
     \\| invalid_credentials []const u8
     \\| account-locked u64
     \\
-    \\~event validate_token { token: []const u8 }
+    \\~event validate_token { token: string }
     \\| valid { user_id: u64, expires: u64 }
     \\| expired u64
     \\| invalid
     \\
-    \\~event refresh_token { token: []const u8 }
+    \\~event refresh_token { token: string }
     \\| refreshed { new_token: []const u8, expires: u64 }
     \\| denied []const u8
     \\
@@ -31,11 +31,11 @@ const SAMPLE =
     \\| found { name: []const u8, email: []const u8, role: []const u8 }
     \\| not-found
     \\
-    \\~event check_permission { user_id: u64, resource: []const u8, action: []const u8 }
+    \\~event check_permission { user_id: u64, resource: string, action: string }
     \\| allowed
     \\| denied []const u8
     \\
-    \\~event log_access { user_id: u64, resource: []const u8, action: []const u8, allowed: bool }
+    \\~event log_access { user_id: u64, resource: string, action: string, allowed: bool }
     \\| logged
     \\
     \\// Main authentication flow

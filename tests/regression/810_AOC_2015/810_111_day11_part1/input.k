@@ -20,7 +20,7 @@ import std/fs
 import std/string
 
 // Parse 8 letters into a base-26 number.
-pub event to-n { s: []const u8 } -> i64
+pub event to-n { s: string } -> i64
 
 to-n = capture { n: 0[i64] }
 ! as a |> for(s)

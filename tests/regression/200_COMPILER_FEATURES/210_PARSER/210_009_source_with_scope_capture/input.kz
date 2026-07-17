@@ -16,7 +16,7 @@
 }
 
 // Event that takes Source parameter for HTML rendering
-~event renderHTML { source: Source<HTML> } -> []const u8
+~event renderHTML { source: Source<HTML> } -> string
 
 // Comptime proc that receives Source with captured scope
 ~proc renderHTML|zig {

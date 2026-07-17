@@ -9,9 +9,9 @@ const Connection = struct { handle: i32 };
 const Transaction = struct { handle: i32 };  // Same layout as Connection!
 
 // connect: produces *Connection<active!>
-~pub event connect { host: []const u8 }
+~pub event connect { host: string }
 | ok *Connection<active!>
-| err []const u8
+| err string
 
 ~proc connect|zig {
     const c = std.heap.page_allocator.create(Connection) catch unreachable;
@@ -23,7 +23,7 @@ const Transaction = struct { handle: i32 };  // Same layout as Connection!
 // NOTE: Transaction also has <active!> - same state name as Connection!
 ~pub event begin { conn: *Connection<!active> }
 | ok *Transaction<active!>
-| err []const u8
+| err string
 
 ~proc begin|zig {
     const tx = std.heap.page_allocator.create(Transaction) catch unreachable;

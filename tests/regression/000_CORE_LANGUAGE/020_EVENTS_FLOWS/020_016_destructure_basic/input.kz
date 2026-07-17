@@ -6,7 +6,7 @@
 ~import std/io
 
 ~pub event fetch { id: i64 }
-| found { name: []const u8, age: i64 }
+| found { name: string, age: i64 }
 | missing
 
 ~proc fetch|zig {

@@ -11,8 +11,8 @@ const std = @import("std");
 // warning, debug: OPTIONAL - can be ignored!
 ~event process { value: u32 }
 | success u32
-| ?warning []const u8
-| ?debug []const u8
+| ?warning string
+| ?debug string
 
 // Proc that can return any branch
 ~proc process|zig {

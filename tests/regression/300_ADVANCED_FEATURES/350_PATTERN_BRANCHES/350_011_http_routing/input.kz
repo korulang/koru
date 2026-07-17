@@ -7,7 +7,7 @@
 
 const std = @import("std");
 
-~pub event handle { method: []const u8, path: []const u8 } -> { status: u16, body: []const u8 }
+~pub event handle { method: string, path: string } -> { status: u16, body: []const u8 }
 
 ~proc handle|zig {
     if (std.mem.eql(u8, method, "GET")) {

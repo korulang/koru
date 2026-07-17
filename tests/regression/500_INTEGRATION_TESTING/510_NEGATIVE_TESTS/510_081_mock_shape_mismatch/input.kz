@@ -1,4 +1,4 @@
-~event match { path: []const u8, pattern: []const u8 } -> []const u8
+~event match { path: string, pattern: string } -> string
 
 ~test(Should fail clearly) {
     ~match -> { path: "/", pattern: "/" }

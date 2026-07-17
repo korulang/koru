@@ -6,9 +6,9 @@
 
 ~event process { value: i32 }
 | ok i32
-| error []const u8
+| error string
 
-~event logger { msg: []const u8 }
+~event logger { msg: string }
 
 ~[pure]proc process|zig {
     if (value > 0) {

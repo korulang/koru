@@ -85,7 +85,7 @@ pub const List_i64 = struct {
 // <list!> ownership obligation.
 ~pub event new-i64 {}
 | list *List_i64<list!>
-| err []const u8
+| err string
 
 ~proc new-i64|zig {
     const allocator = koru_allocator();

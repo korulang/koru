@@ -33,7 +33,7 @@ var stashed: ?*Config = null;
     stashed = cfg;                      // <-- escape: pointer outlives the firing
 }
 
-~pub event fetch { url: []const u8 }
+~pub event fetch { url: string }
 ! ?configure *Config<ready>
 | done usize
 

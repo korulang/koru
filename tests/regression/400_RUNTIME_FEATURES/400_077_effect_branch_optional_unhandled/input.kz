@@ -10,7 +10,7 @@
 ~import std/io
 
 ~pub event maybe { count: usize }
-! ?warn []const u8
+! ?warn string
 | done usize
 
 ~proc maybe|zig {

@@ -16,14 +16,14 @@ const std = @import("std");
 // Event with required and optional branches
 ~event process { value: u32 }
 | success u32        // Required
-| ?warning []const u8   // Optional
-| ?debug []const u8 // Optional
+| ?warning string   // Optional
+| ?debug string // Optional
 
 ~proc process|zig {
     return .{ .success = value };
 }
 
-~pub event observe { name: []const u8 }
+~pub event observe { name: string }
 ~proc observe|zig {
     _ = name;
 }

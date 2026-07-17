@@ -8,7 +8,7 @@ const std = @import("std");
 
 ~event db.query {}
 
-~event logger { source: []const u8 }
+~event logger { source: string }
 
 ~proc http.request|zig {
     std.debug.print("HTTP request\n", .{});

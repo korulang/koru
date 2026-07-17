@@ -6,7 +6,7 @@
 
 ~event hello { }
 
-~event logger { msg: []const u8 }
+~event logger { msg: string }
 
 ~[pure]proc hello|zig {
 }

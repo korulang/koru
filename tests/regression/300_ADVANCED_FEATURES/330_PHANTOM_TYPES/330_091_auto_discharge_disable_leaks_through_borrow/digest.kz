@@ -29,7 +29,7 @@ const Digest = struct { n: i64 };
 
 // Discharge the obligation. Two options, neither a `[!]` default — same as evp.
 ~pub event final.hex { d: *Digest<!hashing> }
-| digest []const u8
+| digest string
 
 ~proc final.hex|zig {
     std.heap.page_allocator.destroy(d);
@@ -37,7 +37,7 @@ const Digest = struct { n: i64 };
 }
 
 ~pub event final.bytes { d: *Digest<!hashing> }
-| digest []const u8
+| digest string
 
 ~proc final.bytes|zig {
     std.heap.page_allocator.destroy(d);

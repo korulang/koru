@@ -11,7 +11,7 @@
 ~create => handle "resource_1"
 
 // Discharge event
-~pub event destroy { h: []const u8<!active> }
+~pub event destroy { h: string<!active> }
 
 ~proc destroy|zig {
     std.debug.print("destroyed: {s}\n", .{h});

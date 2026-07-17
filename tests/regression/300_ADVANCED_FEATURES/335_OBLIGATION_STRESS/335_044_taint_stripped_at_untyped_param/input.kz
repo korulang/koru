@@ -35,7 +35,7 @@
 
 // Sink that takes a PLAIN []const u8 — no phantom annotation.
 // It does NOT declare <!unsanitized>, so it cannot discharge the obligation.
-~event log-raw { data: []const u8 }
+~event log-raw { data: string }
 | logged
 
 ~log-raw => logged

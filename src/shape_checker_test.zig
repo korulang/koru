@@ -14,7 +14,7 @@ test "shape checker stores correct event pointers - regression" {
         \\~event A { x: i32 }
         \\| ok { y: i32 }
         \\
-        \\~event B { msg: []const u8 }
+        \\~event B { msg: string }
         \\| done {}
         \\
         \\~A (x: 1)

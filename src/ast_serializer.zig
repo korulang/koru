@@ -3037,7 +3037,7 @@ test "serialize simple Koru program" {
         \\
         \\~event hello {}
         \\| done
-        \\| err []const u8
+        \\| err string
         \\
         \\const x = 42;
         \\
@@ -3147,9 +3147,9 @@ test "serialize complete mixed program" {
         \\
         \\~import std/math
         \\
-        \\~event process { input: []const u8 }
-        \\| success []const u8
-        \\| failure []const u8
+        \\~event process { input: string }
+        \\| success string
+        \\| failure string
         \\
         \\const config = struct {
         \\    debug: bool = true,

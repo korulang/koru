@@ -10,7 +10,7 @@
 // Event with two possible outcomes
 ~event divide { a: i32, b: i32 }
 | ok i32
-| err []const u8
+| err string
 
 ~proc divide|zig {
     if (b == 0) {

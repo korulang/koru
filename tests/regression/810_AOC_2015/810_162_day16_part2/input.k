@@ -15,10 +15,10 @@ import std/string-map
 std/string-map:new()
 | map m |> std/string-map:set(m, k: "children", v: 3) |> std/string-map:set(m, k: "cats", v: 7) |> std/string-map:set(m, k: "samoyeds", v: 2) |> std/string-map:set(m, k: "pomeranians", v: 3) |> std/string-map:set(m, k: "akitas", v: 0) |> std/string-map:set(m, k: "vizslas", v: 0) |> std/string-map:set(m, k: "goldfish", v: 5) |> std/string-map:set(m, k: "trees", v: 3) |> std/string-map:set(m, k: "cars", v: 2) |> std/string-map:set(m, k: "perfumes", v: 1) |> std/fs:read-lines(path: "tests/regression/810_AOC_2015/810_162_day16_part2/input.txt")
     ! line l |> std/regex:match(l)
-        | `Sue (?<n>[0-9]+): (?<rest>.+)` { n: i64, rest: []const u8 } |> capture { ok: 1[i64], num: n }
+        | `Sue (?<n>[0-9]+): (?<rest>.+)` { n: i64, rest: string } |> capture { ok: 1[i64], num: n }
             ! as acc |> std/string:split(s: rest, sep: ", ")
                 ! piece pc |> std/regex:match(pc)
-                    | `(?<p>[a-z]+): (?<v>[0-9]+)` { p: []const u8, v: i64 } |> std/string-map:get(m, k: p)
+                    | `(?<p>[a-z]+): (?<v>[0-9]+)` { p: string, v: i64 } |> std/string-map:get(m, k: p)
                         | value rv |> std/regex:match(p)
                             | `cats|trees` _ |> captured { ok: acc.ok * @intFromBool(v > rv) }
                             | `pomeranians|goldfish` _ |> captured { ok: acc.ok * @intFromBool(v < rv) }

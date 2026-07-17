@@ -8,15 +8,15 @@
 const std = @import("std");
 
 // Define some application events
-~pub event greet { name: []const u8 }
-| greeted []const u8
+~pub event greet { name: string }
+| greeted string
 
 ~proc greet|zig {
     const msg = std.fmt.allocPrint(std.heap.page_allocator, "Hello, {s}!", .{name}) catch "Hello!";
     return .{ .greeted = msg };
 }
 
-~pub event farewell { name: []const u8 }
+~pub event farewell { name: string }
 
 ~proc farewell|zig {
     std.debug.print("Goodbye, {s}!\n", .{name});

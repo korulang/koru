@@ -25,7 +25,7 @@
 // Define a named template with source code pattern
 // [norun] means it doesn't execute - just stores data in AST for later lookup
 ~[comptime|norun]pub event define {
-    name: []const u8,
+    name: string,
     source: Source
 }
 

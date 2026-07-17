@@ -16,7 +16,7 @@ const my_items = [_]i32{ 1, 2, 3 };
 
 ~event get-items {}
 | items *const [3]i32
-| failed []const u8
+| failed string
 
 ~proc get-items|zig {
     return .{ .items = &my_items };

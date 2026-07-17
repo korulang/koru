@@ -692,8 +692,8 @@ pub const CompilerContext = struct {
 // The compiler coordinator (user-overridable)
 // Abstract: Users can override with ~std/compiler:coordinate = ...
 ~[comptime|abstract] pub event coordinate { program_ast: *const Program, allocator: std.mem.Allocator }
-| coordinated { ast: *const Program, code: []const u8, metrics: []const u8 }
-| error []const u8
+| coordinated { ast: *const Program, code: string, metrics: string }
+| error string
 
 // Default implementation of the compiler coordinator
 // Users who don't override get this standard pipeline
@@ -738,7 +738,7 @@ pub const CompilerContext = struct {
 }
 
 // Helper: Format metrics string
-~pub event metrics-format { passes_completed: u32, allocator: std.mem.Allocator } -> []const u8
+~pub event metrics-format { passes_completed: u32, allocator: std.mem.Allocator } -> string
 
 ~proc metrics-format|zig {
     const metrics = std.fmt.allocPrint(
@@ -755,7 +755,7 @@ pub const CompilerContext = struct {
 // Example: ~ast-dump(ctx: c, flag: "frontend") |> ...
 ~[comptime]pub event ast-dump {
     ctx: CompilerContext,
-    flag: []const u8
+    flag: string
 }
 
 ~proc ast-dump|zig {
@@ -1053,7 +1053,7 @@ pub const CompilerContext = struct {
 // Analysis segment: Validation passes (abstract, can be overridden)
 ~[comptime|abstract] pub event analysis { ctx: CompilerContext }
 | ctx CompilerContext
-| failed { ctx: CompilerContext, message: []const u8 }
+| failed { ctx: CompilerContext, message: string }
 
 ~analysis = check-release-gate(ctx)
 | ctx cg |> check-structure(ctx: cg)
@@ -1591,9 +1591,9 @@ const emitFlowWithMocks = struct {
 
 // Parser service - makes the Koru parser available at backend comptime
 // This enables dynamic module loading during compilation passes
-~pub event parse { source: []const u8, module_name: []const u8 }
+~pub event parse { source: string, module_name: string }
 | parsed []Item
-| failed []const u8
+| failed string
 
 // Zig code emission event - the final step of compilation!
 ~pub event emit-zig { ctx: CompilerContext } -> { ctx: CompilerContext, code: []const u8 }
@@ -1605,33 +1605,33 @@ const emitFlowWithMocks = struct {
 // Release gate - rejects ~[prototype] modules under --release (runs first in analysis)
 ~pub event check-release-gate { ctx: CompilerContext }
 | ctx CompilerContext
-| failed { ctx: CompilerContext, message: []const u8 }
+| failed { ctx: CompilerContext, message: string }
 
 ~pub event check-structure { ctx: CompilerContext }
 | ctx CompilerContext
-| failed { ctx: CompilerContext, message: []const u8 }
+| failed { ctx: CompilerContext, message: string }
 
 // Flow checking - validates control flow properties (when-clause exhaustiveness, etc.)
 ~pub event check-flow { ctx: CompilerContext }
 | ctx CompilerContext
-| failed { ctx: CompilerContext, message: []const u8 }
+| failed { ctx: CompilerContext, message: string }
 
 // Auto-discharge insertion - inserts disposal calls before terminators
 // Runs BEFORE check-phantom-semantic so checker validates the inserted calls
 ~pub event pass-auto-discharge { ctx: CompilerContext }
 | ctx CompilerContext
-| failed { ctx: CompilerContext, message: []const u8 }
+| failed { ctx: CompilerContext, message: string }
 
 // Semantic phantom type checking - validates type-state compatibility using
 // the default Koru semantic checker (module-qualified phantom states)
 ~pub event check-phantom-semantic { ctx: CompilerContext }
 | ctx CompilerContext
-| failed { ctx: CompilerContext, message: []const u8 }
+| failed { ctx: CompilerContext, message: string }
 
 // Purity checking - trusts [pure] annotations as developer assertions
 ~pub event check-purity { ctx: CompilerContext }
 | ctx CompilerContext
-| failed { ctx: CompilerContext, message: []const u8 }
+| failed { ctx: CompilerContext, message: string }
 
 // Dead strip pass - removes unreachable events/flows from the AST
 // Walks from entry points, marks reachable events, prunes the rest

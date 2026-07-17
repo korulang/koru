@@ -238,7 +238,7 @@ const validateMocks = struct {
     allocator: std.mem.Allocator
 }
 | ok
-| failed []const u8
+| failed string
 
 ~proc validate-mocks|zig {
     if (validateMocks(allocator, program, mocks, source)) {
@@ -786,7 +786,7 @@ const emitFlowWithMocks = struct {
 // Test with shared harness (mocks can be unused per-test)
 ~[keyword|comptime|transform] pub event test.with-harness {
     expr: Expression,
-    harness: []const u8,
+    harness: string,
     source: Source
 }
 
@@ -889,7 +889,7 @@ const emitFlowWithMocks = struct {
 // Equality assertion
 ~[keyword] pub event assert.eq { expected: Expression, actual: Expression }
 | ok
-| failed { expected: []const u8, actual: []const u8 }
+| failed { expected: string, actual: string }
 
 // TODO: Transform to generate Zig equality check
 

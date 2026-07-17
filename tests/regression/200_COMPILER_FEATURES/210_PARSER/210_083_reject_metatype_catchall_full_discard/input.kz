@@ -20,8 +20,8 @@
 
 ~event process { value: u32 }
 | success u32
-| ?warning []const u8
-| ?debug []const u8
+| ?warning string
+| ?debug string
 
 ~proc process|zig {
     return .{ .success = value * 2 };

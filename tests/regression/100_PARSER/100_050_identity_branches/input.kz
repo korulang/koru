@@ -8,7 +8,7 @@
     return 42;
 }
 
-~pub event get-message {} -> []const u8
+~pub event get-message {} -> string
 
 ~proc get-message|zig {
     return "Hello from identity branch!";

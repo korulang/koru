@@ -11,7 +11,7 @@ const std = @import("std");
 
 const File = struct { handle: i32 };
 
-~event open { path: []const u8 }
+~event open { path: string }
 | opened *File<opened!>
 
 ~proc open|zig {
@@ -20,7 +20,7 @@ const File = struct { handle: i32 };
     return .{ .opened = f };
 }
 
-~event write { file: *File<opened>, data: []const u8 }
+~event write { file: *File<opened>, data: string }
 
 ~proc write|zig {
 }

@@ -72,7 +72,7 @@ pub const CompilerContext = struct {
 }
 
 // Begin a compilation pass (increments metrics, emits CCP events)
-~pub event begin-pass { ctx: CompilerContext, name: []const u8 } -> CompilerContext
+~pub event begin-pass { ctx: CompilerContext, name: string } -> CompilerContext
 
 ~proc begin-pass|zig {
     var ctx = ctx;
@@ -111,7 +111,7 @@ pub const CompilerContext = struct {
 // Report a compilation error
 ~pub event report-error {
     ctx: CompilerContext,
-    message: []const u8,
+    message: string,
     location: SourceLocation
 } -> CompilerContext
 
@@ -148,7 +148,7 @@ pub const CompilerContext = struct {
 // Report a compilation warning
 ~pub event report-warning {
     ctx: CompilerContext,
-    message: []const u8,
+    message: string,
     location: SourceLocation
 } -> CompilerContext
 
@@ -183,7 +183,7 @@ pub const CompilerContext = struct {
 }
 
 // Report an informational message
-~pub event info { ctx: CompilerContext, message: []const u8 } -> CompilerContext
+~pub event info { ctx: CompilerContext, message: string } -> CompilerContext
 
 ~proc info|zig {
     // TODO: Check if --verbose flag is set before printing

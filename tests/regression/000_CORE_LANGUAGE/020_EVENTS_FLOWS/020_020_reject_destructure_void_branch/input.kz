@@ -3,7 +3,7 @@
 ~import std/io
 
 ~pub event check {}
-| ok { code: i64, note: []const u8 }
+| ok { code: i64, note: string }
 | empty
 
 ~proc check|zig { return .{ .empty = .{} }; }

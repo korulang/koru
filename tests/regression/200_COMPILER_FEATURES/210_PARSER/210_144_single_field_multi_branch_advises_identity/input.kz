@@ -4,4 +4,4 @@
 // union. Guards that the sole-branch advice fix does not regress this case.
 ~event compute {}
 | ok { value: i32 }
-| err []const u8
+| err string

@@ -17,8 +17,8 @@ const ast = @import("ast");
     source_ast: *const ast.Program,
     allocator: std.mem.Allocator
 }
-| emitted []const u8
-| failed []const u8
+| emitted string
+| failed string
 
 ~proc emit.program|zig {
     // Growable emitter: generated code has no natural size ceiling.

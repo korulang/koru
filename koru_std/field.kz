@@ -242,7 +242,7 @@ var __field_noop_fba = std.heap.FixedBufferAllocator.init(&__field_noop_buf);
 // site). The Field carries its allocator, so `free` is allocator-agnostic.
 ~pub event new-heap { bits: usize }
 | field *Field<field!>
-| err []const u8
+| err string
 
 ~proc new-heap|zig {
     const allocator = koru_allocator();

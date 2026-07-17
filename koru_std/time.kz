@@ -45,7 +45,7 @@ const std = @import("std");
 }
 
 // Print elapsed time to stderr (for use inside comptime event overrides)
-~pub event report { start: i128, label: []const u8 }
+~pub event report { start: i128, label: string }
 
 ~proc report|zig {
     const end = std.time.nanoTimestamp();

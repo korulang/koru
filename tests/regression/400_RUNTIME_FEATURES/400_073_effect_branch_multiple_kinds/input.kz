@@ -11,9 +11,9 @@
 
 ~import std/io
 
-~pub event tokenize { source: []const u8 }
-! token []const u8
-! warning []const u8
+~pub event tokenize { source: string }
+! token string
+! warning string
 
 ~proc tokenize|zig {
     _ = source;

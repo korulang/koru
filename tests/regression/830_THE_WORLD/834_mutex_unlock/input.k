@@ -16,10 +16,10 @@
 // So `lock`/`unlock` is the honest model — no invented middle state.
 import std/io
 
-pub event lock { name: []const u8 } -> []const u8<held!>
+pub event lock { name: string } -> string<held!>
 lock -> name
 
-pub event unlock { name: []const u8<!held> }
+pub event unlock { name: string<!held> }
 unlock = std/io:print.ln("unlock {{ name:s }}")
 
 // Two locks held; NO explicit unlock written. Auto-discharge inserts both at

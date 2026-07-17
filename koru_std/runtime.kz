@@ -1236,7 +1236,7 @@ fn buildScopeTable() []const ScopeRuntime {
     return table[0..];
 }
 
-~[retain]pub event get-scope { name: []const u8 }
+~[retain]pub event get-scope { name: string }
 | scope {
     dispatcher: DispatchFn,
     cost_fn: ?CostFn,
@@ -1284,13 +1284,13 @@ fn lookupEventBranches(scope_name: []const u8, event_name: []const u8) []const B
 // ============================================================================
 
 ~pub event parse.source {
-    source: []const u8,
-    file_name: []const u8,
+    source: string,
+    file_name: string,
     allocator: std.mem.Allocator,
     fail_fast: bool = true
 }
 | parsed koru_parser.ParseResult
-| parse-error []const u8
+| parse-error string
 
 ~proc parse.source|zig {
     var parser = koru_parser.Parser.init(allocator, source, file_name, &[_][]const u8{}, null) catch |err| {
@@ -1312,17 +1312,17 @@ fn lookupEventBranches(scope_name: []const u8, event_name: []const u8) []const B
 
 ~pub event eval {
     ast: koru_parser.ParseResult,
-    scope: []const u8,
+    scope: string,
     budget: ?u64,
     handle_pool: ?*@import("root").koru_std.koru_interpreter.HandlePool,
     auto_discharge: bool = true
 }
 | result { value: @import("root").koru_std.koru_interpreter.Value, used: u64, handles: u32 }
-| exhausted { used: u64, last_event: []const u8, handles: u32 }
-| validation-error []const u8
-| event-denied []const u8
-| dispatch-error { event_name: []const u8, message: []const u8 }
-| scope-not-found []const u8
+| exhausted { used: u64, last_event: string, handles: u32 }
+| validation-error string
+| event-denied string
+| dispatch-error { event_name: string, message: string }
+| scope-not-found string
 
 ~proc eval|zig {
     const interpreter_mod = @import("root").koru_std.koru_interpreter;
@@ -1391,8 +1391,8 @@ fn lookupEventBranches(scope_name: []const u8, event_name: []const u8) []const B
 // @retain: run_event is referenced from generated Zig code in user pipelines
 // (std/runtime:run invocations in continuations compile to run_event.handler(...))
 ~[retain]pub event run {
-    source: []const u8,
-    scope: []const u8,
+    source: string,
+    scope: string,
     budget: ?u64 = null,
     handle_pool: ?*@import("root").koru_std.koru_interpreter.HandlePool = null,
     fail_fast: bool = true,
@@ -1400,13 +1400,13 @@ fn lookupEventBranches(scope_name: []const u8, event_name: []const u8) []const B
     shape: ?[]const u8 = null
 }
 | result { value: @import("root").koru_std.koru_interpreter.Value, used: u64, handles: u32 }
-| exhausted { used: u64, last_event: []const u8, handles: u32 }
-| parse-error { message: []const u8, line: u32, column: u32 }
-| validation-error []const u8
-| shape-error { branch: []const u8, field: ?[]const u8, message: []const u8 }
-| event-denied []const u8
-| dispatch-error { event_name: []const u8, message: []const u8 }
-| scope-not-found []const u8
+| exhausted { used: u64, last_event: string, handles: u32 }
+| parse-error { message: string, line: u32, column: u32 }
+| validation-error string
+| shape-error { branch: string, field: ?[]const u8, message: string }
+| event-denied string
+| dispatch-error { event_name: string, message: string }
+| scope-not-found string
 
 ~proc run|zig {
     const interpreter_mod = @import("root").koru_std.koru_interpreter;
@@ -1512,8 +1512,8 @@ fn lookupEventBranches(scope_name: []const u8, event_name: []const u8) []const B
 
 // RUN_CACHED - Parse and execute Koru source against a named scope with cached parsing
 ~pub event run-cached {
-    source: []const u8,
-    scope: []const u8,
+    source: string,
+    scope: string,
     budget: ?u64 = null,
     handle_pool: ?*@import("root").koru_std.koru_interpreter.HandlePool = null,
     fail_fast: bool = true,
@@ -1521,13 +1521,13 @@ fn lookupEventBranches(scope_name: []const u8, event_name: []const u8) []const B
     shape: ?[]const u8 = null
 }
 | result { value: @import("root").koru_std.koru_interpreter.Value, used: u64, handles: u32 }
-| exhausted { used: u64, last_event: []const u8, handles: u32 }
-| parse-error { message: []const u8, line: u32, column: u32 }
-| validation-error []const u8
-| shape-error { branch: []const u8, field: ?[]const u8, message: []const u8 }
-| event-denied []const u8
-| dispatch-error { event_name: []const u8, message: []const u8 }
-| scope-not-found []const u8
+| exhausted { used: u64, last_event: string, handles: u32 }
+| parse-error { message: string, line: u32, column: u32 }
+| validation-error string
+| shape-error { branch: string, field: ?[]const u8, message: string }
+| event-denied string
+| dispatch-error { event_name: string, message: string }
+| scope-not-found string
 
 ~proc run-cached|zig {
     const interpreter_mod = @import("root").koru_std.koru_interpreter;

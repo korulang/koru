@@ -5,8 +5,8 @@
 // `=>` rejection (KORU102, 400_122).
 ~import std/io
 
-~pub event query { q: []const u8 }
-! ask []const u8 -> i32
+~pub event query { q: string }
+! ask string -> i32
 | done i32
 
 ~proc query|zig {

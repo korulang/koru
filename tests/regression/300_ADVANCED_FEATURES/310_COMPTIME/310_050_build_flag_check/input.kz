@@ -8,8 +8,8 @@ const Root = @import("root");
 
 // A comptime event that checks build configuration (no Source, just meta)
 ~[comptime]pub event check-build { meta: InvocationMeta }
-| activated []const u8
-| skipped []const u8
+| activated string
+| skipped string
 
 ~proc check-build|zig {
     // If no annotations, skip

@@ -5,7 +5,7 @@
 const std = @import("std");
 
 // Issue a tainted obligation: the value is untrusted and must be sanitized.
-~pub event tag-tainted { payload: []const u8 }
+~pub event tag-tainted { payload: string }
 | tainted []const u8<tainted!>
 
 ~proc tag-tainted|zig {
@@ -13,7 +13,7 @@ const std = @import("std");
 }
 
 // Consume <!tainted>, issue <sanitized!>: the value is now safe.
-~pub event sanitize { s: []const u8<!tainted> }
+~pub event sanitize { s: string<!tainted> }
 | clean []const u8<sanitized!>
 
 ~proc sanitize|zig {

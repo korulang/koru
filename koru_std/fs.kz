@@ -24,10 +24,10 @@ const std = @import("std");
   Marked aspirational so the gap is explicit and greppable, never hidden behind
   a clean API. Discipline to close it: a future --allow-aspirational gate flag
   plus koruc --list-aspirational. See the no-silent-degradation doctrine.
-]pub event read-lines { path: []const u8 }
-! line []const u8
+]pub event read-lines { path: string }
+! line string
 | done usize
-| failed []const u8
+| failed string
 
 ~proc read-lines|zig {
     const __koru_rl_file = std.fs.cwd().openFile(path, .{}) catch |err| {
@@ -74,7 +74,7 @@ const std = @import("std");
 // LOW-LEVEL API (phantom types, full control) - FUTURE
 // ============================================================================
 
-// ~pub event open { path: []const u8 }
+// ~pub event open { path: string }
 // | opened { handle: FileHandle }
 // | failed { error: []const u8 }
 

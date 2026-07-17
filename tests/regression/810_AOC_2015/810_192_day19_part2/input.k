@@ -6,9 +6,9 @@ import std/io
 import std/fs
 import std/regex
 
-pub event add-rule { line: []const u8 }
+pub event add-rule { line: string }
 
-pub event fabricate { molecule: []const u8 }
+pub event fabricate { molecule: string }
 | steps i64
 
 std/fs:read-lines(path: "tests/regression/810_AOC_2015/810_192_day19_part2/input.txt")

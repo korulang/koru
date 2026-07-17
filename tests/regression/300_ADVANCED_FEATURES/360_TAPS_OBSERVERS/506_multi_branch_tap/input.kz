@@ -11,7 +11,7 @@ const std = @import("std");
 
 ~event process { value: i32 }
 | success i32
-| error []const u8
+| error string
 
 ~proc process|zig {
     if (value > 0) {
@@ -32,7 +32,7 @@ const std = @import("std");
 }
 
 // Single handler for error branch
-~event log-error { msg: []const u8 }
+~event log-error { msg: string }
 ~proc log-error|zig {
     std.debug.print("LOG: error - {s}\n", .{msg});
 }

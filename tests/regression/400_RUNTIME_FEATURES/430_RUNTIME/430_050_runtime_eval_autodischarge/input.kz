@@ -14,7 +14,7 @@ const std = @import("std");
     return .{ .opened = "h1" };
 }
 
-~pub event close-handle { handle: []const u8<!opened> }
+~pub event close-handle { handle: string<!opened> }
 
 ~proc close-handle|zig {
     std.debug.print("CLOSE\n", .{});

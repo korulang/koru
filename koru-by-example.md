@@ -268,7 +268,7 @@ Void events work correctly
 // This is the default authoring model for ordinary event behavior.
 import std/io
 
-event greet { name: []const u8 } -> []const u8
+event greet { name: string } -> string
 
 greet -> "Hello, " ++ name ++ "!"
 
@@ -440,7 +440,7 @@ const std = @import("std");
 // Validation events
 ~event validate { value: i32 }
 | valid i32
-| invalid []const u8
+| invalid string
 
 ~proc validate|zig {
     if (value > 0) {
@@ -467,7 +467,7 @@ const std = @import("std");
     std.debug.print("Success: {}\n", .{result});
 }
 
-~event failure { msg: []const u8 }
+~event failure { msg: string }
 
 ~proc failure|zig {
     std.debug.print("Failure: {s}\n", .{msg});
@@ -592,7 +592,7 @@ const std = @import("std");
 // Server events
 ~event listen { port: u16 }
 | ready u32
-| failed []const u8
+| failed string
 
 ~proc listen|zig {
     std.debug.print("Listening on port {}\n", .{port});
@@ -617,7 +617,7 @@ const std = @import("std");
 ~event process { conn: u32 }
 | done u32
 | retry u32
-| error { conn: u32, msg: []const u8 }
+| error { conn: u32, msg: string }
 
 ~proc process|zig {
     std.debug.print("Processing connection {}\n", .{conn});
@@ -636,7 +636,7 @@ const std = @import("std");
     std.debug.print("Closed connection {}\n", .{conn});
 }
 
-~event log-error { conn: u32, msg: []const u8 } -> u32
+~event log-error { conn: u32, msg: string } -> u32
 
 ~proc log-error|zig {
     std.debug.print("Error on connection {}: {s}\n", .{conn, msg});
@@ -691,9 +691,9 @@ const std = @import("std");
 // Define some events to test with
 ~event compute { x: i32 } -> i32
 
-~event format { value: i32 } -> []const u8
+~event format { value: i32 } -> string
 
-~event display { text: []const u8 }
+~event display { text: string }
 
 ~proc compute|zig {
     std.debug.print("compute({d})\n", .{x});
@@ -803,7 +803,7 @@ pub const Resource = struct {
     allocator: std.mem.Allocator,
 };
 
-~pub event create-resource { name: []const u8 } -> *Resource<allocated!>
+~pub event create-resource { name: string } -> *Resource<allocated!>
 
 ~proc create-resource|zig {
     const alloc = std.heap.page_allocator;
@@ -846,8 +846,8 @@ Test done
 
 const std = @import("std");
 
-~pub event ping { msg: []const u8 }
-! pong []const u8
+~pub event ping { msg: string }
+! pong string
 
 ~proc ping|zig {
     pong(msg);
@@ -896,7 +896,7 @@ hello
 import std/fmt
 import std/io
 
-event greet { name: []const u8 } -> []const u8
+event greet { name: string } -> string
 
 greet = std/fmt:ln("Hello, {{ name:s }}!")
 | line l -> l.text

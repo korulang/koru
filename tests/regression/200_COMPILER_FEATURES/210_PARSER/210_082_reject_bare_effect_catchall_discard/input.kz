@@ -15,13 +15,13 @@
 // catch-all line and explaining the no-engagement rule.
 // ============================================================================
 
-~pub event tokenize { source: []const u8 }
-! token []const u8
-! ?warning []const u8
-! ?debug []const u8
+~pub event tokenize { source: string }
+! token string
+! ?warning string
+! ?debug string
 | done usize
 
-~pub event consume-token { t: []const u8 }
+~pub event consume-token { t: string }
 ~pub event end-run { n: usize }
 
 ~tokenize(source: "x")

@@ -111,7 +111,7 @@ test "findDisposalEvents handles multiple disposal options for same type" {
 
     // One type with multiple ways to discharge the same state
     const source =
-        \\~event open { path: []const u8 }
+        \\~event open { path: string }
         \\| ok: *File<open!>
         \\
         \\~event close[!] { file: *File<!open> }
@@ -232,7 +232,7 @@ test "findDisposalEvents excludes events with user-required extra inputs" {
     const test_alloc = std.testing.allocator;
 
     const source =
-        \\~event tx.exec { tx: *Transaction<!started>, sql: []const u8 }
+        \\~event tx.exec { tx: *Transaction<!started>, sql: string }
         \\| ok *Transaction<active!>
         \\
         \\~event tx.rollback { tx: *Transaction<!active> }

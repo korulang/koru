@@ -4,7 +4,7 @@ const std = @import("std");
 
 const File = struct { handle: i32 };
 
-~event open { path: []const u8 }
+~event open { path: string }
 | opened *File<opened!>
 
 ~proc open|zig {
@@ -20,7 +20,7 @@ const File = struct { handle: i32 };
 }
 
 // Factory that escapes obligation
-~event create { path: []const u8 }
+~event create { path: string }
 | created *File<opened!>
 
 ~create = open(path)
