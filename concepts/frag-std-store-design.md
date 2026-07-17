@@ -185,6 +185,18 @@ writes — the reactive-substrate belief now covers CRUD, not just mutation.
 `updated` and field interceptors on plural rows, and guarded interceptors,
 stay walled as later slices.
 
+**Guarded reactive rules on plural stores now work (690_030).** The reactive
+surface — `std/store(name) ! field h when <guard> |> …` — carried a `when`
+guard on a singleton (690_026) but was walled on a plural store. The wall was
+pure deferral: the guard already rides as an arm condition into the apply
+switch (producer owns the `if`; cross-store guard reads rewrite to the cells),
+so all that was missing was the guard-FALSE completeness. A guarded arm covers
+only the true case, so — exactly as the singleton path does — the plural
+warms now append an unguarded no-op sibling for that field, completing the
+switch. So a plural store can hang a filtered standing rule ("fire only when
+an enemy drops to ≤ 0 hp") off its reference face, guard fused into the write
+path, not a runtime filter.
+
 This slice earned its priority the honest way: writing a real program (a
 wave-combat arena) made hand-bumping the scoreboard at every insert/take
 site the loudest friction. That same program surfaced two further walls,

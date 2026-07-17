@@ -1,0 +1,2 @@
+an enemy has fallen (hp -5)
+an enemy has fallen (hp -2)

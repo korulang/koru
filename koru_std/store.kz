@@ -585,9 +585,11 @@ const std = @import("std");
                         return .{ .transformed = .{ .replacement = H.errItem(allocator, wf.location, wf.module, "std/store:watch({s}): field '{s}' is watched more than once - multi-watch sequencing is pinned at 690_010", .{ store_name, wc.branch }) } };
                     }
                 }
-                if (wc.condition != null) {
-                    return .{ .transformed = .{ .replacement = H.errItem(allocator, wf.location, wf.module, "std/store:watch({s}): guarded watches on plural stores are a later slice", .{store_name}) } };
-                }
+                // A `when` guard fuses into the write path as an arm condition
+                // (producer owns the `if`) — the cloned continuation carries it
+                // through to the apply/write flow's arm, and storeRefsContH
+                // rewrites any cross-store guard reads to the cells (690_030,
+                // the plural mirror of the singleton guarded reactive 690_026).
                 const cloned = ast_functional.cloneContinuation(allocator, wc) catch unreachable;
                 pwatch_arms.append(allocator, .{ .field_idx = fidx, .cont = cloned }) catch unreachable;
             }
@@ -1064,19 +1066,26 @@ const std = @import("std");
                         arm_body = a;
                     }
                 }
+                // The unguarded fallthrough for this field: the write always
+                // lands, and an absent — or guard-FALSE — watch is a no-op. A
+                // guarded watch arm covers only the guard-TRUE case, so it needs
+                // this sibling to complete the apply switch (mirrors the
+                // singleton guarded-watch path).
+                const noop_arm = ast.Continuation{
+                    .branch = allocator.dupe(u8, fname) catch unreachable,
+                    .binding = allocator.dupe(u8, "_") catch unreachable,
+                    .kind = .terminal,
+                    .condition = null,
+                    .node = .terminal,
+                    .indent = 1,
+                    .continuations = &[_]ast.Continuation{},
+                    .location = flow.location,
+                };
                 if (arm_body) |a| {
                     warms.append(allocator, a) catch unreachable;
+                    if (a.condition != null) warms.append(allocator, noop_arm) catch unreachable;
                 } else {
-                    warms.append(allocator, ast.Continuation{
-                        .branch = allocator.dupe(u8, fname) catch unreachable,
-                        .binding = allocator.dupe(u8, "_") catch unreachable,
-                        .kind = .terminal,
-                        .condition = null,
-                        .node = .terminal,
-                        .indent = 1,
-                        .continuations = &[_]ast.Continuation{},
-                        .location = flow.location,
-                    }) catch unreachable;
+                    warms.append(allocator, noop_arm) catch unreachable;
                 }
             }
             appended_items.append(allocator, ast.Item{ .flow = ast.Flow{
