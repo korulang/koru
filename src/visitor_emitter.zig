@@ -1591,7 +1591,11 @@ pub const VisitorEmitter = struct {
             try self.code_emitter.write("]");
         }
         try self.code_emitter.write("\n");
-        try self.code_emitter.write(tproc.body.text);
+        // `$mod.` strips to bare here: the body is emitted inside its own
+        // module namespace, where module decls are in lexical scope.
+        const tproc_body = try emitter.rewriteModToBare(self.allocator, tproc.body.text);
+        defer self.allocator.free(tproc_body);
+        try self.code_emitter.write(tproc_body);
         try self.code_emitter.write("\n");
 
         self.code_emitter.indent_level -= 1;
@@ -2738,6 +2742,10 @@ pub const VisitorEmitter = struct {
                                     proc_body = try replaceIdentifier(self.allocator, proc_body, discard_old, discard_new);
                                 }
                             }
+
+                            // `$mod.` strips to bare here: the body is emitted
+                            // inside its own module namespace (lexical scope).
+                            proc_body = try emitter.rewriteModToBare(self.allocator, proc_body);
 
                             // Emit proc body with proper indentation
                             // Calculate indent string based on current indent_level

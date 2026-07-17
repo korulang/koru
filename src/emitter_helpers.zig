@@ -5103,7 +5103,10 @@ fn containsToken(body: []const u8, token: []const u8) bool {
 /// Rewrite a proc body for inline splicing: effect calls → splice markers
 /// (or evaluate-and-discard for unhandled optional effects), depth-any
 /// `return` → labeled break, `std.` → `@import("std").` (inlined bodies
-/// lose their module scope). Quote- and comment-aware throughout.
+/// lose their module scope), `$mod.` → the declaring module's emitted
+/// namespace (`mod_prefix`, e.g. `koru_libs.koru_raylib.`) — the sanctioned
+/// spelling for a proc body reaching its OWN module scope, valid under every
+/// lowering. Quote- and comment-aware throughout.
 const RewrittenProcBody = struct { text: []u8, has_break: bool };
 
 fn rewriteEffectfulProcBody(
@@ -5112,6 +5115,7 @@ fn rewriteEffectfulProcBody(
     event_decl: *const ast.EventDecl,
     conts: []const ast.Continuation,
     break_label: []const u8,
+    mod_prefix: []const u8,
 ) !RewrittenProcBody {
     var out = try std.ArrayList(u8).initCapacity(allocator, body.len + 256);
     errdefer out.deinit(allocator);
@@ -5213,6 +5217,12 @@ fn rewriteEffectfulProcBody(
                 i += "std.".len;
                 continue;
             }
+            // `$mod.` → declaring module's namespace (module scope, spelled).
+            if (std.mem.startsWith(u8, clean_body[i..], "$mod.")) {
+                try out.appendSlice(allocator, mod_prefix);
+                i += "$mod.".len;
+                continue;
+            }
             // Effect calls → splice markers / evaluate-and-discard.
             var matched = false;
             for (sites) |site| {
@@ -5252,6 +5262,7 @@ fn rewriteReturnsAndStd(
     allocator: std.mem.Allocator,
     body: []const u8,
     break_label: []const u8,
+    mod_prefix: []const u8,
 ) !RewrittenProcBody {
     var out = try std.ArrayList(u8).initCapacity(allocator, body.len + 256);
     errdefer out.deinit(allocator);
@@ -5302,6 +5313,12 @@ fn rewriteReturnsAndStd(
                 i += "std.".len;
                 continue;
             }
+            // `$mod.` → declaring module's namespace (module scope, spelled).
+            if (std.mem.startsWith(u8, body[i..], "$mod.")) {
+                try out.appendSlice(allocator, mod_prefix);
+                i += "$mod.".len;
+                continue;
+            }
         }
 
         try out.append(allocator, c);
@@ -5332,6 +5349,7 @@ fn renderEffectfulFlowBody(
     flow: *const ast.Flow,
     conts: []const ast.Continuation,
     break_label: []const u8,
+    mod_prefix: []const u8,
 ) !RewrittenProcBody {
     var sub = try CodeEmitter.initGrowable(ctx.allocator, 2048);
     defer if (sub.allocator) |a| a.free(sub.buffer);
@@ -5358,7 +5376,51 @@ fn renderEffectfulFlowBody(
     );
     defer ctx.allocator.free(with_presence);
 
-    return try rewriteReturnsAndStd(ctx.allocator, with_presence, break_label);
+    return try rewriteReturnsAndStd(ctx.allocator, with_presence, break_label, mod_prefix);
+}
+
+/// `$mod.` → bare, for proc bodies emitted INSIDE their module namespace
+/// (the standalone Handlers-fn path): there the module's decls are in lexical
+/// scope, so the sanctioned `$mod.` spelling strips to nothing. Keeps the one
+/// spelling valid under both lowerings. Quote- and comment-aware, boundary-
+/// checked like the splice-path rewrites.
+pub fn rewriteModToBare(allocator: std.mem.Allocator, body: []const u8) ![]u8 {
+    var out = try std.ArrayList(u8).initCapacity(allocator, body.len);
+    errdefer out.deinit(allocator);
+    var i: usize = 0;
+    var q: u8 = 0;
+    while (i < body.len) {
+        const c = body[i];
+        if (q != 0) {
+            try out.append(allocator, c);
+            if (c == '\\') {
+                if (i + 1 < body.len) try out.append(allocator, body[i + 1]);
+                i += 2;
+                continue;
+            }
+            if (c == q) q = 0;
+            i += 1;
+            continue;
+        }
+        if (c == '"' or c == '\'') {
+            q = c;
+            try out.append(allocator, c);
+            i += 1;
+            continue;
+        }
+        if (c == '/' and i + 1 < body.len and body[i + 1] == '/') {
+            while (i < body.len and body[i] != '\n') : (i += 1) try out.append(allocator, body[i]);
+            continue;
+        }
+        const boundary_before = i == 0 or !(std.ascii.isAlphanumeric(body[i - 1]) or body[i - 1] == '_' or body[i - 1] == '.');
+        if (boundary_before and std.mem.startsWith(u8, body[i..], "$mod.")) {
+            i += "$mod.".len;
+            continue;
+        }
+        try out.append(allocator, c);
+        i += 1;
+    }
+    return try out.toOwnedSlice(allocator);
 }
 
 /// Replace template-baked `@hasDecl(__H, "<arm>")` with `true`/`false` from
@@ -5418,10 +5480,15 @@ fn emitInlineEffectfulCall(
     var label_buf: [64]u8 = undefined;
     const label = std.fmt.bufPrint(&label_buf, "__koru_proc_{d}", .{uniq}) catch "__koru_proc";
 
+    // The `$mod.` rewrite target: the declaring module's emitted namespace,
+    // resolved from the invocation path exactly as the call target would be.
+    const mod_prefix = try renderSelfPrefix(ctx, &inv.path);
+    defer ctx.allocator.free(mod_prefix);
+
     const rewritten = if (elig.proc) |p|
-        try rewriteEffectfulProcBody(ctx.allocator, p.body.text, elig.event_decl, conts, label)
+        try rewriteEffectfulProcBody(ctx.allocator, p.body.text, elig.event_decl, conts, label, mod_prefix)
     else
-        try renderEffectfulFlowBody(ctx, elig.event_decl, elig.flow.?, conts, label);
+        try renderEffectfulFlowBody(ctx, elig.event_decl, elig.flow.?, conts, label, mod_prefix);
     defer ctx.allocator.free(rewritten.text);
 
     // A label is only legal if something breaks to it; a statement block
@@ -6584,7 +6651,10 @@ fn emitInvocation(
 }
 
 /// Emit the target of an invocation (e.g., "koru_std.io.print_event" or "main_module.hello_event")
-fn emitInvocationTarget(emitter: *CodeEmitter, ctx: *EmissionContext, path: *const ast.DottedPath) !void {
+/// Write ONLY the module-namespace prefix (with trailing `.`) an invocation
+/// target resolves to — factored from `emitInvocationTarget` so the inline
+/// splice can render the same prefix as a string for the `$mod.` rewrite.
+fn emitInvocationModulePrefix(emitter: *CodeEmitter, ctx: *EmissionContext, path: *const ast.DottedPath) !void {
     // CRITICAL: Check if we're at module level (not in a handler)
     // This happens when emitting meta-event taps from main()
     const at_module_level = !ctx.in_handler and ctx.input_var == null;
@@ -6647,6 +6717,19 @@ fn emitInvocationTarget(emitter: *CodeEmitter, ctx: *EmissionContext, path: *con
             try emitter.write(".");
         }
     }
+}
+
+/// Render the module-namespace prefix for `path` (e.g. `koru_libs.koru_raylib.`)
+/// into an allocated string — the `$mod.` rewrite target for spliced bodies.
+fn renderSelfPrefix(ctx: *EmissionContext, path: *const ast.DottedPath) ![]u8 {
+    var sub = try CodeEmitter.initGrowable(ctx.allocator, 64);
+    defer if (sub.allocator) |a| a.free(sub.buffer);
+    try emitInvocationModulePrefix(&sub, ctx, path);
+    return try ctx.allocator.dupe(u8, sub.buffer[0..sub.pos]);
+}
+
+fn emitInvocationTarget(emitter: *CodeEmitter, ctx: *EmissionContext, path: *const ast.DottedPath) !void {
+    try emitInvocationModulePrefix(emitter, ctx, path);
 
     if (path.segments.len == 0) return;
 
@@ -11194,8 +11277,10 @@ fn emitEventDeclForModule(
     if (!found_impl) {
         if (findProcDeclByPath(all_items, &event.path)) |proc| {
             if (proc.body.text.len > 0) {
+                const body = try rewriteModToBare(ctx.allocator, proc.body.text);
+                defer ctx.allocator.free(body);
                 try code_emitter.writeIndent();
-                try code_emitter.write(proc.body.text);
+                try code_emitter.write(body);
                 try code_emitter.write("\n");
             }
             found_impl = true;
@@ -11281,8 +11366,10 @@ fn emitEventDeclForModule(
         try code_emitter.write("_ = &__koru_event_input;\n");
 
         if (variant_proc.body.text.len > 0) {
+            const vbody = try rewriteModToBare(ctx.allocator, variant_proc.body.text);
+            defer ctx.allocator.free(vbody);
             try code_emitter.writeIndent();
-            try code_emitter.write(variant_proc.body.text);
+            try code_emitter.write(vbody);
             try code_emitter.write("\n");
         }
 

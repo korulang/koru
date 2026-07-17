@@ -1,0 +1,5 @@
+calc 20
+tick 10
+tick 12
+tick 14
+total 36
