@@ -1,0 +1,13 @@
+// Pins the runtime profiler end-to-end: ~[profile]import + --profile produces
+// a valid Chrome Tracing file capturing the program's real transitions, while
+// the profiler's own write-* events stay invisible (opaque taps).
+~import std/io
+~[profile]import std/profiler
+
+~pub event get-number {} -> i32
+
+~proc get-number|zig {
+    return 42;
+}
+
+~get-number(): n |> std/io:print.ln("Got number: {{ n:d }}")

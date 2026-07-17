@@ -1,0 +1,14 @@
+// A ~[comptime|runtime] module carrying a tap — the shape the wall rejects.
+~[comptime|runtime]
+
+const std = @import("std");
+~import std/taps
+
+~[opaque] event observe { msg: []const u8 }
+
+~proc observe|zig {
+    std.debug.print("[obs] {s}\n", .{msg});
+}
+
+~tap(* -> *)
+| Profile p |> observe(msg: p.source)
