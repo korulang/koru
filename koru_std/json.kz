@@ -50,7 +50,7 @@ pub const JsonValue = union(enum) {
     return obj;
 }
 
-~pub event object.set { obj: *JsonObject<building!>, key: []const u8, value: JsonValue } -> *JsonObject<building!>
+~pub event object.set { obj: *JsonObject<building>, key: []const u8, value: JsonValue } -> *JsonObject<building>
 
 ~proc object.set|zig {
     const writer = obj.buffer.writer();
@@ -124,7 +124,7 @@ pub const JsonValue = union(enum) {
     return obj;
 }
 
-~pub event array.push { arr: *JsonObject<building!>, value: JsonValue } -> *JsonObject<building!>
+~pub event array.push { arr: *JsonObject<building>, value: JsonValue } -> *JsonObject<building>
 
 ~proc array.push|zig {
     const writer = arr.buffer.writer();
