@@ -1,0 +1,24 @@
+// Pins the union-parameter call-site gap: an event whose parameter is a host
+// union type has no Koru-level way to receive a value. Zig union-literal
+// syntax in an arg is PARSE003-walled (correctly — host syntax stays out of
+// Koru), but no Koru construction form exists in its place, so any API built
+// on union parameters (std/json's builder is the live instance) is
+// unreachable from pure Koru call sites.
+const std = @import("std");
+~import std/io
+
+const Value = union(enum) {
+    text: []const u8,
+    number: i64,
+};
+
+~pub event describe { v: Value } -> []const u8
+
+~proc describe|zig {
+    return switch (v) {
+        .text => "got text",
+        .number => "got number",
+    };
+}
+
+~describe(v: .{ .text = "hello" }): d |> std/io:print.ln("{{ d:s }}")

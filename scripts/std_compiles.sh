@@ -42,6 +42,21 @@ modules() {
     done | sort -u
 }
 
+# --- classified skips ------------------------------------------------------
+# Modules where "compiles under a standalone import probe" is the wrong
+# question. Each carries a one-line rationale, printed in the report so the
+# classification stays visible and contestable.
+skip_rationale() {
+    case "$1" in
+        ccp_aspirational)  echo "aspirational by name — a design sketch, not a shipping module" ;;
+        build_defaults)    echo "imported by build.kz (its own header) — every compile loads it; a direct import double-registers the default steps (MultipleDefaults)" ;;
+        compiler_context)  echo "metacircular pipeline internal — compiled by every koruc invocation (stage B); standalone import is not a supported surface" ;;
+        compiler_types)    echo "metacircular pipeline internal — compiled by every koruc invocation (stage B); standalone import is not a supported surface" ;;
+        compiler_visitor)  echo "metacircular pipeline internal — compiled by every koruc invocation (stage B); standalone import is not a supported surface" ;;
+        *) return 1 ;;
+    esac
+}
+
 # --- probe one module ------------------------------------------------------
 # Probe shape grounded in green tests: 310_059 (const std + ~import +
 # event/proc|zig + std.debug.print) and 507_meta_event_taps (top-level
@@ -76,9 +91,20 @@ export KORUC RESULTS_DIR
 
 echo "std-compiles — koru_std full-pipeline rot lint"
 echo "  compiler: $KORUC"
-MODS="$(modules)"
+ALL_MODS="$(modules)"
+MODS=""
+SKIPPED=0
+for mod in $ALL_MODS; do
+    if r="$(skip_rationale "$mod")"; then
+        echo "  ⏭  std/$mod — $r"
+        SKIPPED=$((SKIPPED + 1))
+    else
+        MODS="$MODS$mod"$'\n'
+    fi
+done
+MODS="$(printf '%s' "$MODS")"
 COUNT="$(echo "$MODS" | wc -l | tr -d ' ')"
-echo "  probing $COUNT modules, $JOBS at a time..."
+echo "  probing $COUNT modules ($SKIPPED classified skips), $JOBS at a time..."
 echo
 
 echo "$MODS" | xargs -P "$JOBS" -I {} bash -c 'probe_one "$@"' _ {}
@@ -112,7 +138,7 @@ done
 [ "$FAIL" -gt 0 ] && echo
 
 echo "════════════════════════════════════════"
-echo "std-compiles: $PASS/$COUNT modules compile, $FAIL failing"
+echo "std-compiles: $PASS/$COUNT modules compile, $FAIL failing ($SKIPPED classified skips)"
 echo "════════════════════════════════════════"
 
 rm -rf "$RESULTS_DIR"
