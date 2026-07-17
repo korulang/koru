@@ -21,17 +21,10 @@
 // at auto_discharge:33:0). Double-evaluation is a separate observation
 // to investigate.
 
-const std = @import("std");
+~import std/io
 
-~[comptime] pub event get-input {}
-| line []const u8<unsanitized!>
+~[comptime] pub event get-input {} -> []const u8<unsanitized!>
 
-~[comptime] get-input => line "comptime input"
+~[comptime] get-input -> "comptime input"
 
-~[comptime] pub event sink { s: []const u8 }
-~proc sink|zig {
-    std.debug.print("{s}\n", .{s});
-}
-
-~[comptime] get-input()
-| line s |> sink(s)
+~[comptime] get-input(): s |> std/io:print.ln(s)
