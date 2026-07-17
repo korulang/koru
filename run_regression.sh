@@ -179,6 +179,12 @@ if [ "$1" = "--status" ]; then
     exit 0
 fi
 
+if [ "$1" = "--kz-convertible" ]; then
+    # The .kz -> .k migration-backlog lint. Fast preview by default; add
+    # --verify to compile-gate candidates in an isolated worktree (read-only).
+    exec bash scripts/kz_convertible.sh "${2:-}"
+fi
+
 if [ "$1" = "--priority" ]; then
     # List all tests marked with PRIORITY
     echo -e "${RED}🔥 PRIORITY ITEMS${NC}"
