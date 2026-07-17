@@ -1361,7 +1361,7 @@ pub const ShapeChecker = struct {
             }
             if (guarded_only) {
                 try self.reporter.addErrorAtLocation(.KORU050, location,
-                    "branch '{s}' has multiple when-clauses but no else case - add one continuation without 'when'", .{branch_name});
+                    "branch '{s}' has when-guarded handlers but no else case - a fire where every guard is false silently does nothing; add one continuation without 'when'", .{branch_name});
                 has_errors = true;
                 continue;
             }

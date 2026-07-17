@@ -1,1 +1,1 @@
-branch 'tick' must be handled
+branch 'tick' has when-guarded handlers but no else case

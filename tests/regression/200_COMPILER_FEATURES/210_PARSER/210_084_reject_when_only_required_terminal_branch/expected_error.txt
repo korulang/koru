@@ -1,1 +1,1 @@
-branch 'ok' must be handled
+branch 'ok' has when-guarded handlers but no else case
