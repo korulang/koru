@@ -10,9 +10,9 @@
 // instead of the user-local `Store`.
 //
 // This is same-file — no cross-module involved. Entity naming alone must never
-// affect resolution, so this SHOULD run and print "despawned a thing". RED until
-// the heuristic is replaced by a real type->module registry. Contrast 690_034
-// (entity `enemy` → `Enemy`, no collision, green).
+// affect resolution, so this SHOULD run and print "despawned a thing"; the
+// heuristic's replacement is a real type->module registry. Contrast 690_034
+// (entity `enemy` → `Enemy`, no name collision).
 import std/io
 import std/store
 
