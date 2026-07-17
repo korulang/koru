@@ -1,7 +1,7 @@
 ---
 type: belief
 id: frag-k-file-is-a-full-program
-provenance: introduced with the KORU111 Rule 1 removal + 140_010 pin, during the .kz→.k corpus migration; contradicts the "contract file" model that 140_006 encoded
+provenance: introduced with the KORU111 Rule 1 removal + 140_016 pin, during the .kz→.k corpus migration; contradicts the "contract file" model that 140_006 encoded
 ts: 2026-07-17
 ---
 
@@ -27,7 +27,7 @@ removed. The "contract file" category dissolves — a `.k` is simply pure Koru;
 the contract/implementation *split* remains an available pattern, not the
 definition of the extension. Rule 2 (a `~pub` event must not be re-declared in a
 `.kz` when a `.k` companion exists — single source of truth for the public
-surface) is untouched and still fires. Pinned by `140_010`.
+surface) is untouched and still fires. Pinned by `140_016`.
 
 Open question — the thing Rule 1 was quietly standing in for: **cross-module
 private-event visibility.** A private event should not be *callable across a
