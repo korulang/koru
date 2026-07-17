@@ -631,6 +631,19 @@ pub const VisitorEmitter = struct {
         // Store main_module_name for use in tap canonical event naming
         self.main_module_name = source_file.main_module_name;
 
+        // Build the type→module registry over this program's host declarations
+        // and publish it for writeFieldType's base-type home resolution. Built
+        // from all_items (the final, post-transform item list) so synthesized
+        // declarations like std/store's entity alias are visible.
+        const homes_ptr = try self.allocator.create(type_registry_module.HostTypeHomes);
+        homes_ptr.* = try type_registry_module.buildHostTypeHomes(self.allocator, self.all_items);
+        emitter.host_type_homes = homes_ptr;
+        defer {
+            emitter.host_type_homes = null;
+            homes_ptr.deinit();
+            self.allocator.destroy(homes_ptr);
+        }
+
         // PRE-SCAN: Determine if we're emitting ANY items from main module
         // This determines whether main module host_lines should be emitted
         self.emitting_from_main = self.scanEmittingFromMain(source_file);

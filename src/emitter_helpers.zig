@@ -93,6 +93,15 @@ pub const BuildConfigEntry = struct {
 pub var build_configs: [64]BuildConfigEntry = undefined;
 pub var build_config_count: usize = 0;
 
+/// The type→module registry over THIS program's host declarations
+/// (type_registry.buildHostTypeHomes) — attached by VisitorEmitter.emit before
+/// emission starts. writeFieldType consults it to resolve a bare
+/// phantom-carrying base type's home from actual declarations. File-scope like
+/// the registries above so every emission path — sub-emitters, test-module
+/// subsets — resolves against the same program-wide truth. One program per
+/// compiler process.
+pub var host_type_homes: ?*const type_registry_module.HostTypeHomes = null;
+
 /// Register a build config value (called by build:config)
 pub fn registerBuildConfig(key: []const u8, value: []const u8) bool {
     if (build_config_count >= build_configs.len) {
@@ -836,12 +845,16 @@ pub fn isScalarValueFields(fields: []const ast.Field) bool {
     return true;
 }
 
-/// True when a bare type and a phantom-module qualifier look co-located —
-/// the type lives IN that module (`*Field` ↔ `std/field`, `*List_i64` ↔
-/// `std/list`). False when they diverge (`Enemy` ↔ `std/store`): the state
-/// is foreign, the type is local, and falling back would mis-qualify the
-/// base type. Orthogonality parked at frag-std-store-design.md rung 2.
-fn phantomModuleLooksLikeTypeHome(type_name: []const u8, phantom_module: []const u8) bool {
+/// Resolve whether a bare base type (pointer/slice prefixes stripped) lives in
+/// the phantom's module, by looking its declaration up in the host_type_homes
+/// registry. Three outcomes:
+///   - declared in the phantom's module (`Field` under module_decl std.field,
+///     phantom `std/field:...`) → qualify to that module.
+///   - declared anywhere else the registry can see — the program's own top
+///     level (`[entity(store)]`'s `pub const Store` alias, 690_037) or another
+///     module → the type is NOT the phantom module's; leave unqualified.
+///   - not visible at all → the phantom names the only candidate home; qualify.
+fn phantomModuleIsTypeHome(type_name: []const u8, phantom_mod: []const u8) bool {
     var base = type_name;
     const prefixes = [_][]const u8{ "[]const ", "?*const ", "*const ", "[]", "?*", "?", "*" };
     for (prefixes) |prefix| {
@@ -850,34 +863,27 @@ fn phantomModuleLooksLikeTypeHome(type_name: []const u8, phantom_module: []const
             break;
         }
     }
-    const seg = if (std.mem.lastIndexOfScalar(u8, phantom_module, '/')) |idx|
-        phantom_module[idx + 1 ..]
-    else if (std.mem.lastIndexOfScalar(u8, phantom_module, '.')) |idx|
-        phantom_module[idx + 1 ..]
-    else
-        phantom_module;
-    if (seg.len == 0 or base.len < seg.len) return false;
-    // Exact match ignoring case: Field ↔ field
-    if (base.len == seg.len and std.ascii.eqlIgnoreCase(base, seg)) return true;
-    // Prefixed generated forms: List_i64 ↔ list
-    if (base.len > seg.len and base[seg.len] == '_' and std.ascii.eqlIgnoreCase(base[0..seg.len], seg)) return true;
-    return false;
+    const homes = host_type_homes orelse return true;
+    const home = homes.get(base) orelse return true;
+    return type_registry_module.moduleNamesMatch(home, phantom_mod);
 }
 
 /// Helper: Write field type with proper module path handling
 pub fn writeFieldType(emitter: *CodeEmitter, field: ast.Field, main_module_name: ?[]const u8) !void {
     // A bare foreign type carrying a module-qualified phantom (e.g.
-    // `*Field<std/field:field>`) has no module_path on the TYPE itself, but the
-    // phantom names the module the type lives in — when type and state
-    // co-locate. Fall back to the phantom's module ONLY in that case so the
-    // type emits qualified (`*koru_std.koru_field.Field`). When they diverge
-    // (`Enemy<std/store:!taken>`), the type stays unqualified / uses its own
-    // module_path — base-type ≠ phantom-state orthogonality.
+    // `*Field<std/field:field>`) has no module_path on the TYPE itself. Its
+    // home is resolved from actual declarations via the host_type_homes
+    // registry: qualify to the phantom's module only when that module really
+    // declares the base type (`*koru_std.koru_field.Field`). A type declared
+    // elsewhere — the program's own top level (entity aliases like `Store`,
+    // 690_037) or another module — stays unqualified / uses its own
+    // module_path: base-type ≠ phantom-state orthogonality.
     const effective_module_path: ?[]const u8 = field.module_path orelse blk: {
         const ph = field.phantom orelse break :blk null;
         const colon = std.mem.indexOfScalar(u8, ph, ':') orelse break :blk null;
         const phantom_mod = ph[0..colon];
-        if (!phantomModuleLooksLikeTypeHome(field.type, phantom_mod)) break :blk null;
+        if (phantom_mod.len == 0) break :blk null;
+        if (!phantomModuleIsTypeHome(field.type, phantom_mod)) break :blk null;
         break :blk phantom_mod;
     };
     if (effective_module_path) |module_path| {
