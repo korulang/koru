@@ -4,7 +4,7 @@ const std = @import("std");
 
 const File = struct { handle: i32 };
 
-~event open { path: []const u8 } -> *File<opened!>
+~event open { path: string } -> *File<opened!>
 
 ~proc open|zig {
     std.debug.print("Opening\n", .{});
@@ -26,7 +26,7 @@ const File = struct { handle: i32 };
     std.heap.page_allocator.destroy(file);
 }
 
-~event create { path: []const u8 }
+~event create { path: string }
 | created *File<opened!>
 
 ~create = open(path): f => created { f.file }

@@ -13,7 +13,7 @@
 //   2. the collision invariant: `?!` is one marker (a single panic branch),
 //      not "optional effect" — i.e. it does NOT parse as `?` + `!`.
 
-~pub event tokenize { source: []const u8 }
-! token []const u8
+~pub event tokenize { source: string }
+! token string
 ! ?!oom usize
 | done usize

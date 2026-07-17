@@ -2,7 +2,7 @@
 // Used by 220_003 to trigger the for-loop binding-use bug.
 
 ~pub event maybe-str {}
-| some []const u8
+| some string
 
 ~proc maybe-str|zig {
     return .{ .some = "hello" };

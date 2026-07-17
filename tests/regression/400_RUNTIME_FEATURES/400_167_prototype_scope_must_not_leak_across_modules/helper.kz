@@ -5,9 +5,9 @@
 
 ~import std/io
 
-~pub event greet { name: []const u8 }
-| ok []const u8
-| err []const u8
+~pub event greet { name: string }
+| ok string
+| err string
 
 ~proc greet|zig {
     _ = name;

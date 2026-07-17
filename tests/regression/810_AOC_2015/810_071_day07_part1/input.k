@@ -38,9 +38,9 @@ import std/io
 import std/fs
 import std/regex
 
-pub event collect { line: []const u8 }
+pub event collect { line: string }
 
-pub event query { w: []const u8 }
+pub event query { w: string }
 | signal i64
 
 std/fs:read-lines(path: "tests/regression/810_AOC_2015/810_071_day07_part1/input.txt")

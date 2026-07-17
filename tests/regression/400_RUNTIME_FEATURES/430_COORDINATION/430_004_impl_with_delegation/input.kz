@@ -9,8 +9,8 @@
 ~import std/io
 
 // Define abstract event
-~[abstract] event process { name: []const u8 }
-| result []const u8
+~[abstract] event process { name: string }
+| result string
 
 // Default implementation: just returns the name
 ~process => result { message: name }

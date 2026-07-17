@@ -42,7 +42,7 @@ pub const Grid_i64 = struct {
   immediate follow-up (panic-branches' first real collection customer).
 ]pub event new { rows: usize, cols: usize }
 | grid *Grid_i64<grid!>
-| err []const u8
+| err string
 
 ~proc new|zig {
     const allocator = koru_allocator();

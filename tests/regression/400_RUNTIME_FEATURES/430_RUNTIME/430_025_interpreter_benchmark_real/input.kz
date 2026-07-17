@@ -11,9 +11,9 @@ const std = @import("std");
 // Events that the flow will dispatch to
 // ============================================================================
 
-~pub event compute { a: []const u8, b: []const u8, op: []const u8 }
-| result []const u8
-| error []const u8
+~pub event compute { a: string, b: string, op: string }
+| result string
+| error string
 
 ~proc compute|zig {
     const a_val = std.fmt.parseInt(i64, a, 10) catch 0;
@@ -33,7 +33,7 @@ const std = @import("std");
     return .{ .result = result_str };
 }
 
-~pub event print-result { value: []const u8 }
+~pub event print-result { value: string }
 
 ~proc print-result|zig {
     std.debug.print("Result: {s}\n", .{value});

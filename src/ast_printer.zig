@@ -747,7 +747,7 @@ test "round-trip: event + proc + flow with branches" {
 
 test "round-trip: subflow impl, immediate impl, bare-return" {
     try expectRoundTrip(
-        \\~event greet { name: []const u8 } -> []const u8
+        \\~event greet { name: string } -> string
         \\
         \\~greet -> "Hello, " ++ name ++ "!"
         \\
@@ -775,8 +775,8 @@ test "round-trip: effect branches, labels, nesting" {
     try expectRoundTrip(
         \\const std = @import("std");
         \\
-        \\~pub event ping { msg: []const u8 }
-        \\! pong []const u8
+        \\~pub event ping { msg: string }
+        \\! pong string
         \\
         \\~proc ping|zig {
         \\    pong(msg);

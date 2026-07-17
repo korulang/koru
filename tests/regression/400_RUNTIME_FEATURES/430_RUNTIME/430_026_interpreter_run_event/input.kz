@@ -5,8 +5,8 @@
 ~import std/interpreter
 ~import std/io
 
-~pub event greet { name: []const u8 }
-| greeted []const u8
+~pub event greet { name: string }
+| greeted string
 
 ~proc greet|zig {
     const std = @import("std");

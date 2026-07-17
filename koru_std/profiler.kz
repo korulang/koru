@@ -61,7 +61,7 @@ var profiler_finished: bool = false;  // Prevents write-event from creating new 
 
 // Event: Write a profile event
 ~event write-event {
-    source: []const u8,
+    source: string,
     timestamp_ns: i128,
 }
 

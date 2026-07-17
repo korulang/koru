@@ -6,7 +6,7 @@ const std = @import("std");
 
 // Event with branch name "error" (Zig keyword)
 ~event check { value: i32 }
-| error []const u8
+| error string
 | ok i32
 
 ~proc check|zig {

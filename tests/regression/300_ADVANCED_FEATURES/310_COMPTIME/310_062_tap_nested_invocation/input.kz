@@ -13,9 +13,9 @@
 const std = @import("std");
 ~import std/taps
 
-~event hello {} -> []const u8
+~event hello {} -> string
 
-~event goodbye {} -> []const u8
+~event goodbye {} -> string
 
 ~event observer {}
 

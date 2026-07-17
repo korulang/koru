@@ -53,7 +53,7 @@
 // === USE CASE 2: Target-Specific Implementations ===
 
 ~[transform]pub event image.transform.* {
-    event_name: []const u8,
+    event_name: string,
     pixels: []u8,
     width: u32,
     height: u32,

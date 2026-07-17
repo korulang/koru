@@ -13,7 +13,7 @@ pub const Handle = struct {
     std.debug.print("closed quietly\n", .{});
     std.heap.page_allocator.destroy(h);
 }
-~event close-checked { h: *Handle<!open> } -> []const u8
+~event close-checked { h: *Handle<!open> } -> string
 ~proc close-checked|zig {
     std.heap.page_allocator.destroy(h);
 }

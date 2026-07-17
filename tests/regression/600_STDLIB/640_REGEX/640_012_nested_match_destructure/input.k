@@ -8,7 +8,7 @@ import std/io
 import std/regex
 
 std/regex:match("a1b2")
-| `(?<x>[a-z])(?<rest>.+)` { x: []const u8, rest: []const u8 } |> std/regex:match(rest)
-    | `(?<y>[0-9])(?<tail>.+)` { y: i64, tail: []const u8 } |> std/io:print.ln("{{ x:s }} {{ y:d }} {{ tail:s }}")
+| `(?<x>[a-z])(?<rest>.+)` { x: string, rest: string } |> std/regex:match(rest)
+    | `(?<y>[0-9])(?<tail>.+)` { y: i64, tail: string } |> std/io:print.ln("{{ x:s }} {{ y:d }} {{ tail:s }}")
     | no-match |> std/io:print.ln("inner-no")
 | no-match |> std/io:print.ln("outer-no")

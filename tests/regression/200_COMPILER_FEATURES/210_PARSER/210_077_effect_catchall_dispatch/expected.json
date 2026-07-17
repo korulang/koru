@@ -84,7 +84,7 @@
                 "fields": [
                     {
                         "name": "source",
-                        "type": "[]const u8",
+                        "type": "string",
                         "is_source": false,
                         "is_file": false,
                         "is_embed_file": false,
@@ -106,7 +106,7 @@
                         "fields": [
                             {
                                 "name": "__type_ref",
-                                "type": "[]const u8",
+                                "type": "string",
                                 "is_source": false,
                                 "is_file": false,
                                 "is_embed_file": false,
@@ -128,7 +128,7 @@
                         "fields": [
                             {
                                 "name": "__type_ref",
-                                "type": "[]const u8",
+                                "type": "string",
                                 "is_source": false,
                                 "is_file": false,
                                 "is_embed_file": false,
@@ -177,7 +177,7 @@
                 "fields": [
                     {
                         "name": "t",
-                        "type": "[]const u8",
+                        "type": "string",
                         "is_source": false,
                         "is_file": false,
                         "is_embed_file": false,
@@ -233,7 +233,7 @@
                 "fields": [
                     {
                         "name": "name",
-                        "type": "[]const u8",
+                        "type": "string",
                         "is_source": false,
                         "is_file": false,
                         "is_embed_file": false,

@@ -11,8 +11,8 @@
 // success is REQUIRED, warning and debug are OPTIONAL (ignored)
 ~event analyze { value: u32 }
 | success u32
-| ?warning []const u8
-| ?debug []const u8
+| ?warning string
+| ?debug string
 
 ~proc analyze|zig {
     if (value > 100) {

@@ -20,8 +20,8 @@ test "full vertical: parse -> check -> emit" {
 
     // A complete Koru program
     const source =
-        \\~event file.read { path: []const u8 }
-        \\| success []const u8
+        \\~event file.read { path: string }
+        \\| success string
         \\| failure u32
         \\
         \\~proc file.read {
@@ -35,9 +35,9 @@ test "full vertical: parse -> check -> emit" {
         \\    return .{ .success = contents };
         \\}
         \\
-        \\~event log.message { msg: []const u8 }
+        \\~event log.message { msg: string }
         \\| logged
-        \\| err []const u8
+        \\| err string
         \\
         \\~proc log.message {
         \\    std.debug.print("Log: {s}\n", .{e.msg});
@@ -46,7 +46,7 @@ test "full vertical: parse -> check -> emit" {
         \\
         \\~event proc.exit { code: u32 }
         \\| exited
-        \\| err []const u8
+        \\| err string
         \\
         \\~proc proc.exit {
         \\    std.process.exit(e.code);

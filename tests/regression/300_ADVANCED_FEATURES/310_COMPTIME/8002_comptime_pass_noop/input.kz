@@ -5,7 +5,7 @@
 const std = @import("std");
 
 // Simple event with no comptime parameters
-~event greet { name: []const u8 } -> []const u8
+~event greet { name: string } -> string
 
 ~proc greet|zig {
     const msg = "Hello, World!";

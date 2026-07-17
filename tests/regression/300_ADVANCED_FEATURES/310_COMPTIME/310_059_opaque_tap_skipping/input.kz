@@ -15,7 +15,7 @@ const std = @import("std");
 ~event hello {}
 
 // Internal event - marked opaque to prevent tapping
-~[opaque] event internal-log { msg: []const u8 }
+~[opaque] event internal-log { msg: string }
 
 ~proc hello|zig {
     std.debug.print("Hello\n", .{});

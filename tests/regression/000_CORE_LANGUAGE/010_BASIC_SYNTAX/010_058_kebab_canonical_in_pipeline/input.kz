@@ -26,7 +26,7 @@
 const std = @import("std");
 
 ~[comptime|transform]pub event report-status {
-    event_name: []const u8,
+    event_name: string,
     item: *const Item,
     program: *const Program,
 } -> SiteResult

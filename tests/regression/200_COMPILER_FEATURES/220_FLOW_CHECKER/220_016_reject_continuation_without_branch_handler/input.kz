@@ -11,7 +11,7 @@
 
 ~event ping {}
 | ok
-| err []const u8
+| err string
 
 ~proc ping|zig {
     return .{ .ok = .{} };

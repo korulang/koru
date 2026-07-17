@@ -13,7 +13,7 @@ const Transaction = struct {
     id: i32,
 };
 
-~pub event connect { url: []const u8 }
+~pub event connect { url: string }
 | connected *Connection<connected!>
 
 ~proc connect|zig {

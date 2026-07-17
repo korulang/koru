@@ -866,6 +866,20 @@ fn phantomModuleLooksLikeTypeHome(type_name: []const u8, phantom_module: []const
 
 /// Helper: Write field type with proper module path handling
 pub fn writeFieldType(emitter: *CodeEmitter, field: ast.Field, main_module_name: ?[]const u8) !void {
+    // `string` is the canonical surface text type. The AST carries it verbatim
+    // so the printer / round-trip stay surface-faithful; it is lowered to the
+    // Zig slice `[]const u8` HERE, at the emission boundary, and nowhere
+    // earlier. (A JS backend lowers the same surface type to `String`.)
+    if (std.mem.eql(u8, field.type, "string")) {
+        try emitter.write("[]const u8");
+        return;
+    } else if (std.mem.startsWith(u8, field.type, "string ") or std.mem.startsWith(u8, field.type, "string=")) {
+        // `string = "default"` (field default) -> `[]const u8 = "default"`
+        try emitter.write("[]const u8");
+        try emitter.write(field.type[6..]);
+        return;
+    }
+
     // A bare foreign type carrying a module-qualified phantom (e.g.
     // `*Field<std/field:field>`) has no module_path on the TYPE itself, but the
     // phantom names the module the type lives in — when type and state
@@ -3926,7 +3940,8 @@ pub fn emitDestructureConsts(
         try writeBranchName(emitter, f.name);
         if (f.type_text) |t| {
             try emitter.write(": ");
-            try emitter.write(t);
+            // Lower the canonical `string` to its Zig slice at emission.
+            try emitter.write(if (std.mem.eql(u8, t, "string")) "[]const u8" else t);
         }
         try emitter.write(" = ");
         try emitter.write(prefix);
@@ -5638,6 +5653,14 @@ fn branchHasPayloadFieldsSearchAll(
 /// The union is emitted inline in the handler fn signature — the proc binds
 /// the result (`const r = ask(payload)`) and switches on it, so the single
 /// definition site is the only spelling the program needs.
+/// Lower the canonical surface text type `string` to its Zig slice `[]const u8`.
+/// The AST carries `string` verbatim (printer/round-trip stay faithful); every
+/// site that writes a bare payload/return/resume/arm type to Zig routes through
+/// here so `string` never leaks into generated code. Other types pass through.
+pub fn lowerZigType(t: []const u8) []const u8 {
+    return if (std.mem.eql(u8, t, "string")) "[]const u8" else t;
+}
+
 fn writeEffectResumeType(emitter: *CodeEmitter, branch: *const ast.Branch) !void {
     if (branch.resume_arms) |arms| {
         try emitter.write("union(enum) { ");
@@ -5649,11 +5672,11 @@ fn writeEffectResumeType(emitter: *CodeEmitter, branch: *const ast.Branch) !void
             // A record arm (`| result { halved: i32, ... }`) carries its shape
             // as a brace string; Zig spells that type `struct { ... }`.
             if (arm_type.len > 0 and arm_type[0] == '{') try emitter.write("struct ");
-            try emitter.write(arm_type);
+            try emitter.write(lowerZigType(arm_type));
         }
         try emitter.write(" }");
     } else if (branch.resume_type) |rt| {
-        try emitter.write(rt);
+        try emitter.write(lowerZigType(rt));
     } else {
         try emitter.write("void");
     }
@@ -10014,6 +10037,11 @@ pub fn writeBareReturnType(emitter: *CodeEmitter, rt: []const u8, main_module_na
     if (trimmed.len > 0 and trimmed[0] == '{') {
         try emitter.write("struct ");
         try emitter.write(rt);
+        return;
+    }
+    // `string` is the canonical surface text type; lower it to the Zig slice.
+    if (std.mem.eql(u8, trimmed, "string")) {
+        try emitter.write("[]const u8");
         return;
     }
     // Module-qualified scalar `mod/path:Type` must lower to the mangled Zig

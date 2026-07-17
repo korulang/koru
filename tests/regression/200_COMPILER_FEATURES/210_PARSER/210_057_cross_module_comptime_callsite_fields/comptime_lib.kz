@@ -6,8 +6,8 @@
 
 const std = @import("std");
 
-~[comptime|norun] pub event greet { name: []const u8 }
-| ok []const u8
+~[comptime|norun] pub event greet { name: string }
+| ok string
 
 ~proc greet|zig {
     _ = name;

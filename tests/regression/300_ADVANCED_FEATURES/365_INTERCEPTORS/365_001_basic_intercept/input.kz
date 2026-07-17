@@ -7,7 +7,7 @@ const std = @import("std");
 ~import std/interceptors
 
 // Target event that will be intercepted
-~event log.write { logline: []const u8 }
+~event log.write { logline: string }
 
 ~proc log.write|zig {
     std.debug.print("{s}\n", .{logline});

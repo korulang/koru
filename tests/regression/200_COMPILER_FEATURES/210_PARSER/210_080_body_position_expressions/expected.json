@@ -111,7 +111,7 @@
                 "line": 12,
                 "col": 1
             },
-            "raw_text": "~pub event sample\n! one []const u8 -> []const u8\n! two []const u8 -> usize\n! three []const u8 -> []const u8\n! four []const u8 -> i32\n| done\n\n"
+            "raw_text": "~pub event sample\n! one string -> string\n! two string -> usize\n! three string -> string\n! four string -> i32\n| done\n\n"
         },
         {
             "type": "flow",

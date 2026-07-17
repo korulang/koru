@@ -8,8 +8,8 @@
 
 ~import std/io
 
-~pub event tokenize { source: []const u8 }
-! token { kind: u32, lexeme: []const u8 }
+~pub event tokenize { source: string }
+! token { kind: u32, lexeme: string }
 
 ~proc tokenize|zig {
     _ = source;

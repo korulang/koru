@@ -2,7 +2,7 @@
 
 const std = @import("std");
 
-~pub event greet-alpha {} -> []const u8
+~pub event greet-alpha {} -> string
 
 ~proc greet-alpha|zig {
     return "alpha (kz)";

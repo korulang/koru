@@ -21,7 +21,7 @@ const std = @import("std");
 ~proc network.fetch|zig {
 }
 
-~event logger { caller: []const u8 }
+~event logger { caller: string }
 
 ~proc logger|zig {
     std.debug.print("write called from: {s}\n", .{caller});

@@ -8,9 +8,9 @@ const std = @import("std");
 
 ~pub event sprite.draw { x: i32, y: i32 }
 
-~pub event texture.load { path: []const u8 }
+~pub event texture.load { path: string }
 | loaded i32
-| failed []const u8
+| failed string
 
 ~proc z-buffer.render|zig {
     std.debug.print("render {}x{}\n", .{ width, height });

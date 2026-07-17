@@ -3417,7 +3417,7 @@ pub const VisitorEmitter = struct {
                         eql(u8, field_type, "u32") or eql(u8, field_type, "u64") or
                         eql(u8, field_type, "usize") or eql(u8, field_type, "isize")) {
                         try self.code_emitter.write("0");
-                    } else if (eql(u8, field_type, "[]const u8")) {
+                    } else if (eql(u8, field_type, "[]const u8") or eql(u8, field_type, "string")) {
                         try self.code_emitter.write("\"\"");
                     } else if (eql(u8, field_type, "bool")) {
                         try self.code_emitter.write("false");
@@ -3441,7 +3441,7 @@ pub const VisitorEmitter = struct {
                             try emitter.writeBranchName(self.code_emitter, field.name);
                         } else if (eql(u8, field.type, "i32")) {
                             try self.code_emitter.write("0");
-                        } else if (eql(u8, field.type, "[]const u8")) {
+                        } else if (eql(u8, field.type, "[]const u8") or eql(u8, field.type, "string")) {
                             try self.code_emitter.write("\"\"");
                         } else if (eql(u8, field.type, "bool")) {
                             try self.code_emitter.write("false");
@@ -3974,7 +3974,7 @@ pub const VisitorEmitter = struct {
         const t = std.mem.trim(u8, type_text, " ");
         if (std.mem.eql(u8, t, "bool")) return .boolean;
         if (std.mem.eql(u8, t, "f64") or std.mem.eql(u8, t, "f32")) return .float;
-        if (std.mem.eql(u8, t, "[]const u8")) return .string;
+        if (std.mem.eql(u8, t, "[]const u8") or std.mem.eql(u8, t, "string")) return .string;
         const ints = [_][]const u8{ "i64", "i32", "i16", "i8", "u64", "u32", "u16", "u8", "usize", "isize" };
         for (ints) |it| {
             if (std.mem.eql(u8, t, it)) return .int;

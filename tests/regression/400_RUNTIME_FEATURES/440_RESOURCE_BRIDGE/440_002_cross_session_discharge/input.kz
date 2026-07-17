@@ -14,11 +14,11 @@ const HandlePool = @import("root").koru_std.koru_interpreter.HandlePool;
 var bridge_pool = HandlePool.init(std.heap.page_allocator);
 
 // Events with obligations
-~pub event open { path: []const u8 } -> []const u8<opened!>
+~pub event open { path: string } -> string<opened!>
 
 ~open -> "file_1"
 
-~pub event close { handle: []const u8<!opened> }
+~pub event close { handle: string<!opened> }
 
 ~proc close|zig {
     std.debug.print("close() called for handle\n", .{});
@@ -51,7 +51,7 @@ const SESSION_2 = "~close(handle: \"file_1\")\n| closed |> result {}";
 // Helper event to run session 2 and report both counts
 ~event run-session-2 { handles_after_open: u32 }
 | done { after_open: u32, after_close: u32 }
-| fail []const u8
+| fail string
 
 ~proc run-session-2|zig {
     std.debug.print("Session 1 left {} handle(s) on bridge\n", .{handles_after_open});

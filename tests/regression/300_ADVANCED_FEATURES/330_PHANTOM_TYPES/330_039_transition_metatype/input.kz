@@ -1,7 +1,7 @@
 const std = @import("std");
 ~event hello {}
 ~event goodbye {}
-~[comptime|runtime] event logger { source: []const u8, branch: []const u8, destination: ?[]const u8 }
+~[comptime|runtime] event logger { source: string, branch: string, destination: ?[]const u8 }
 ~proc hello|zig {
     std.debug.print("Hello executed\n", .{});
 }

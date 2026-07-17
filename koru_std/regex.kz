@@ -280,7 +280,7 @@ const std = @import("std");
 // therefore runs per match, which is exactly effect-branch semantics. Single
 // pattern for now (multi-pattern scan is pinned as a follow-up); pattern
 // branches MUST be effect `!` (dispatch-into-each-match), mirroring the router.
-~[comptime|transform]pub event scan { input: []const u8 }
+~[comptime|transform]pub event scan { input: string }
 ! `*` *
 | ?done
 

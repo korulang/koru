@@ -9,7 +9,7 @@
 const std = @import("std");
 
 // Events that do simple math
-~pub event add { a: []const u8, b: []const u8 }
+~pub event add { a: string, b: string }
 | sum i64
 
 ~proc add|zig {
@@ -18,7 +18,7 @@ const std = @import("std");
     return .{ .sum = a_val + b_val };
 }
 
-~pub event multiply { value: []const u8, by: []const u8 }
+~pub event multiply { value: string, by: string }
 | product i64
 
 ~proc multiply|zig {
@@ -27,7 +27,7 @@ const std = @import("std");
     return .{ .product = val * by_val };
 }
 
-~pub event subtract { value: []const u8, by: []const u8 }
+~pub event subtract { value: string, by: string }
 | difference i64
 
 ~proc subtract|zig {

@@ -11,9 +11,9 @@
 // success is REQUIRED, warning is handled explicitly, debug/trace caught by |?
 ~event process { value: u32 }
 | success u32
-| ?warning []const u8
-| ?debug []const u8
-| ?trace []const u8
+| ?warning string
+| ?debug string
+| ?trace string
 
 ~proc process|zig {
     if (value > 100) {

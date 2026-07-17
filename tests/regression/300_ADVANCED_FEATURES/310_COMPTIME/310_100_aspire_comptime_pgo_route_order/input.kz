@@ -16,7 +16,7 @@
 // UNRULED and this pin does not invent it. When ruled, this pin upgrades.
 ~import std/io
 
-~pub event routes { profile: []const u8 }
+~pub event routes { profile: string }
 
 ~[template] proc routes|koru {
     {% const ordered = order_by_hits(profile) %}

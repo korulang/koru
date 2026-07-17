@@ -10,8 +10,8 @@
 // Event with ONLY optional branches
 ~event process { value: u32 }
 | ?success u32
-| ?warning []const u8
-| ?err []const u8
+| ?warning string
+| ?err string
 
 ~proc process|zig {
     if (value == 0) {

@@ -5,18 +5,18 @@
 
 const std = @import("std");
 
-~pub event connect { host: []const u8 }
+~pub event connect { host: string }
 | ok i32
-| err []const u8
+| err string
 
 ~proc connect|zig {
     _ = host;
     return .{ .ok = 7 };
 }
 
-~pub event write { conn: i32, data: []const u8 }
+~pub event write { conn: i32, data: string }
 | ok i32
-| err []const u8
+| err string
 
 ~proc write|zig {
     std.debug.print("write: {s}\n", .{data});
@@ -25,7 +25,7 @@ const std = @import("std");
 
 ~pub event read { conn: i32 }
 | ok { conn: i32, n: i32 }
-| err []const u8
+| err string
 
 ~proc read|zig {
     std.debug.print("read from conn {d}\n", .{conn});
@@ -34,7 +34,7 @@ const std = @import("std");
 
 ~pub event shutdown { conn: i32 }
 | ok
-| err []const u8
+| err string
 
 ~proc shutdown|zig {
     std.debug.print("shutdown conn {d}\n", .{conn});

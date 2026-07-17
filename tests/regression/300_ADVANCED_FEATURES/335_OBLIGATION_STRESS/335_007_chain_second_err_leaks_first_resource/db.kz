@@ -17,7 +17,7 @@ const Transaction = struct {
 };
 
 // Connect to database - creates connected! obligation
-~pub event connect { url: []const u8 }
+~pub event connect { url: string }
 | connected *Connection<connected!>
 
 ~proc connect|zig {
@@ -31,7 +31,7 @@ const Transaction = struct {
 // Start a query/transaction - creates transaction! obligation
 // The connection must be in [connected] state (required, but not consumed)
 // The connected! obligation is tracked separately and discharged by disconnect()
-~pub event query { conn: *Connection<connected>, sql: []const u8 }
+~pub event query { conn: *Connection<connected>, sql: string }
 | started *Transaction<transaction!>
 
 ~proc query|zig {

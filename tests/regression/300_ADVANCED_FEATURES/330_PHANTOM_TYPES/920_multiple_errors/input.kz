@@ -1,7 +1,7 @@
 pub const File = struct {
     handle: usize,
 };
-~event open-file { path: []const u8 } -> *File<open>
+~event open-file { path: string } -> *File<open>
 ~event close-file { file: *File<closed> }
 ~event read-file { file: *File<open> }
 ~event write-file { file: *File<open> }

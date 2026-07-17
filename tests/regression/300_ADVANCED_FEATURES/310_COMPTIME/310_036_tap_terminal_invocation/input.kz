@@ -13,7 +13,7 @@ const std = @import("std");
 ~import std/taps
 
 // Logger to observe taps
-~event log { msg: []const u8 }
+~event log { msg: string }
 
 ~proc log|zig {
     std.debug.print("TAP: {s}\n", .{msg});

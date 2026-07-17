@@ -14,7 +14,7 @@
 
 // Event that provides user data
 ~event getUserData { }
-| data { name: []const u8, age: i32 }
+| data { name: string, age: i32 }
 
 ~proc getUserData|zig {
     return .{ .data = .{ .name = "Alice", .age = 42 } };
@@ -27,7 +27,7 @@ const std = @import("std");
 // Transform events receive: source (user args), invocation (for type resolution), program (AST), allocator (memory)
 ~[comptime|transform]event renderHTML { source: Source<HTML>, invocation: *const Invocation, program: *const Program, allocator: std.mem.Allocator }
 | transformed *const Program
-| failed []const u8
+| failed string
 
 ~proc renderHTML|zig {
     // THE BREAKTHROUGH: Access captured bindings at comptime!

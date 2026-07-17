@@ -17,9 +17,9 @@ const Connection = struct { handle: i32 };
 const Transaction = struct { conn_handle: i32 };
 
 // connect: creates connection with <connected!> obligation
-~pub event connect { host: []const u8 }
+~pub event connect { host: string }
 | ok *Connection<connected!>
-| err []const u8
+| err string
 
 ~proc connect|zig {
     const c = std.heap.page_allocator.create(Connection) catch unreachable;
@@ -30,7 +30,7 @@ const Transaction = struct { conn_handle: i32 };
 // begin: consumes <!connected> OR <!active>, produces Transaction<started!>
 ~pub event begin { conn: *Connection<!connected|!active> }
 | ok *Transaction<started!>
-| err []const u8
+| err string
 
 ~proc begin|zig {
     const tx = std.heap.page_allocator.create(Transaction) catch unreachable;
@@ -39,9 +39,9 @@ const Transaction = struct { conn_handle: i32 };
 }
 
 // exec: consumes <!started> OR <!active>, produces Transaction<active!>
-~pub event exec { tx: *Transaction<!started|!active>, sql: []const u8 }
+~pub event exec { tx: *Transaction<!started|!active>, sql: string }
 | ok *Transaction<active!>
-| err []const u8
+| err string
 
 ~proc exec|zig {
     std.debug.print("Executing: {s}\n", .{sql});
@@ -51,7 +51,7 @@ const Transaction = struct { conn_handle: i32 };
 // commit: consumes <!active>, returns Connection<active!>
 ~pub event commit { tx: *Transaction<!active> }
 | ok *Connection<active!>
-| err []const u8
+| err string
 
 ~proc commit|zig {
     std.debug.print("COMMIT\n", .{});
@@ -64,7 +64,7 @@ const Transaction = struct { conn_handle: i32 };
 // rollback: consumes <!active>, returns Connection<active!>
 ~pub event rollback { tx: *Transaction<!active> }
 | ok *Connection<active!>
-| err []const u8
+| err string
 
 ~proc rollback|zig {
     std.debug.print("ROLLBACK\n", .{});
@@ -77,7 +77,7 @@ const Transaction = struct { conn_handle: i32 };
 // close: ONLY accepts <!active> - forces meaningful use before close
 ~pub event close { conn: *Connection<!active> }
 | ok
-| err []const u8
+| err string
 
 ~proc close|zig {
     std.debug.print("Connection closed\n", .{});

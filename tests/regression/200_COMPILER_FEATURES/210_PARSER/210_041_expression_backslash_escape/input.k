@@ -3,4 +3,4 @@
 // "path\\to\\file" should NOT be flagged as Zig code (\\t ≠ \t).
 
 
-event process-path { path: []const u8 }
+event process-path { path: string }

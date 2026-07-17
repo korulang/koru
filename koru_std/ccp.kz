@@ -25,8 +25,8 @@ const std = @import("std");
 // Event: Emit a transition event as JSONL to stdout
 // Marked [opaque] to prevent infinite recursion from universal tap
 ~[opaque] event emit-transition {
-    source: []const u8,
-    branch: []const u8,
+    source: string,
+    branch: string,
     destination: ?[]const u8,
     timestamp_ns: i128,
 }

@@ -11,7 +11,7 @@
 import std/io
 import std/fs
 
-pub event nice2 { s: []const u8 }
+pub event nice2 { s: string }
 | yes
 | no
 

@@ -6,7 +6,7 @@ const std = @import("std");
 
 // An event with an identity branch that can be tapped.
 // Taps work by observing TRANSITIONS (branches), not void events!
-~event hello {} -> []const u8
+~event hello {} -> string
 
 ~proc hello|zig {
     std.debug.print("Hello executed\n", .{});

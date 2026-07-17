@@ -1,3 +1,3 @@
 // Local vocabulary A — defines `ping`.
-pub event ping { msg: []const u8 } -> []const u8
+pub event ping { msg: string } -> string
 ping -> msg

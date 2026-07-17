@@ -5,7 +5,7 @@
 const std = @import("std");
 ~import std/taps
 
-~pub event log { event_name: []const u8 }
+~pub event log { event_name: string }
 
 ~proc log|zig {
     std.debug.print("[TAP] {s}\n", .{event_name});

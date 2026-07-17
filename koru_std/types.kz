@@ -71,7 +71,7 @@ const std = @import("std");
     allocator: std.mem.Allocator
 } -> SiteResult
 
-~[norun]pub event struct.impl { name: []const u8 }
+~[norun]pub event struct.impl { name: string }
 
 ~proc struct|zig {
     const ast = @import("ast");

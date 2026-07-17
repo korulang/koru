@@ -10,10 +10,10 @@
 //  - arithmetic:          1 + 2
 
 ~pub event sample
-! one []const u8 -> []const u8
-! two []const u8 -> usize
-! three []const u8 -> []const u8
-! four []const u8 -> i32
+! one string -> string
+! two string -> usize
+! three string -> string
+! four string -> i32
 | done
 
 ~sample()

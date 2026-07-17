@@ -6,7 +6,7 @@ const std = @import("std");
 ~import std/taps
 
 // Event with an identity branch for the taps to observe
-~event hello {} -> []const u8
+~event hello {} -> string
 
 // Void observer events
 ~event tap1 {}

@@ -7,7 +7,7 @@ const std = @import("std");
 
 // A comptime event that receives metadata about its invocation
 ~[comptime]pub event check-config { meta: InvocationMeta }
-| matched []const u8
+| matched string
 
 ~proc check-config|zig {
     // meta.annotations contains the flow annotations like ["release"], ["debug"]

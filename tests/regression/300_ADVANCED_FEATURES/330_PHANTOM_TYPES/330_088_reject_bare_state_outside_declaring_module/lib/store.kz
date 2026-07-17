@@ -9,7 +9,7 @@
 // must name its own module rather than being implied by the type.
 const std = @import("std");
 
-~pub event make-secret { payload: []const u8 }
+~pub event make-secret { payload: string }
 | secret []const u8<secret!>
 
 ~proc make-secret|zig {
@@ -17,8 +17,8 @@ const std = @import("std");
 }
 
 // Consume the secret obligation: discharges <secret!> -> a plain value.
-~pub event reveal { s: []const u8<!secret> }
-| plain []const u8
+~pub event reveal { s: string<!secret> }
+| plain string
 
 ~proc reveal|zig {
     return .{ .plain = s };

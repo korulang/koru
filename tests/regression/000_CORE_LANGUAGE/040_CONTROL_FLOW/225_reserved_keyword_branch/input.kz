@@ -13,9 +13,9 @@ const std = @import("std");
 
 ~import std/io
 
-~pub event process-file { path: []const u8 }
-| success []const u8
-| error []const u8  // "error" is a Zig reserved keyword!
+~pub event process-file { path: string }
+| success string
+| error string  // "error" is a Zig reserved keyword!
 
 ~proc process-file|zig {
     const file = std.fs.cwd().openFile(path, .{}) catch |err| {

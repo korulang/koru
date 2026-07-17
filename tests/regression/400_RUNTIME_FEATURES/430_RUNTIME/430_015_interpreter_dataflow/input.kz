@@ -10,9 +10,9 @@ const std = @import("std");
 // Events that produce data
 // ============================================================================
 
-~pub event validate { data: []const u8 }
-| valid []const u8
-| invalid []const u8
+~pub event validate { data: string }
+| valid string
+| invalid string
 
 ~proc validate|zig {
     // Simple validation - non-empty = valid
@@ -22,8 +22,8 @@ const std = @import("std");
     return .{ .invalid = "empty input" };
 }
 
-~pub event transform { input: []const u8 }
-| transformed []const u8
+~pub event transform { input: string }
+| transformed string
 
 ~proc transform|zig {
     // Simple transform - uppercase first char (just return as-is for test)

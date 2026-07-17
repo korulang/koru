@@ -22,7 +22,7 @@
 // GROUNDED idiom for "turn a required `| err` branch into a loud crash"
 // (mirrors 400_143's `~event stash {...} ~proc stash|zig {...}` shape: a
 // tiny custom event+proc pair, not a language builtin).
-~pub event fatal { msg: []const u8 }
+~pub event fatal { msg: string }
 ~proc fatal|zig { @panic(msg); }
 
 // ---------------------------------------------------------------------------

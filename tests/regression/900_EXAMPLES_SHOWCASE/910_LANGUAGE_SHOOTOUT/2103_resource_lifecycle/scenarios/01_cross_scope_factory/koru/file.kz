@@ -14,9 +14,9 @@ pub const File = struct {
 };
 
 // Open a file - returns with cleanup obligation
-~pub event open { path: []const u8 }
+~pub event open { path: string }
 | opened *File<opened!>
-| error []const u8
+| error string
 
 ~proc open|zig {
     const f = std.fs.cwd().createFile(path, .{}) catch |e| {
@@ -38,9 +38,9 @@ pub const File = struct {
 }
 
 // Write to a file - requires open state but doesn't consume obligation
-~pub event write { file: *File<opened>, data: []const u8 }
+~pub event write { file: *File<opened>, data: string }
 | written usize
-| error []const u8
+| error string
 
 ~proc write|zig {
     const bytes = file.handle.write(data) catch |e| {

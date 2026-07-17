@@ -38,7 +38,7 @@ pub const Set_i64 = struct {
   shared escape-allocation model (list / grid / set / string together).
 ]pub event new {}
 | set *Set_i64<set!>
-| err []const u8
+| err string
 
 ~proc new|zig {
     const allocator = koru_allocator();

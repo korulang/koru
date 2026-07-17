@@ -6,7 +6,7 @@ const std = @import("std");
 const File = struct { handle: i32 };
 
 // Open a file - returns opened! state (requires cleanup)
-~pub event open { path: []const u8 } -> *File<opened!>
+~pub event open { path: string } -> *File<opened!>
 
 ~proc open|zig {
     std.debug.print("Opening file: {s}\n", .{path});

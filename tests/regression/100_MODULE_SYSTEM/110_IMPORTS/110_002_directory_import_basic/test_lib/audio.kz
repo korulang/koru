@@ -4,7 +4,7 @@ const std = @import("std");
 
 ~event init {}
 
-~event play { sound: []const u8 }
+~event play { sound: string }
 
 ~proc init|zig {
     std.debug.print("Audio initialized\n", .{});

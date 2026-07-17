@@ -60,7 +60,7 @@ pub const FormattedText = struct {
 } -> SiteResult
 
 ~[norun]pub event fmt.blk.impl {
-    text: []const u8,
+    text: string,
 }
 
 ~proc fmt.blk|zig {
@@ -314,8 +314,8 @@ pub const FormattedText = struct {
 } -> SiteResult
 
 ~[norun]pub event ln.impl {
-    expr: []const u8,
-} -> []const u8
+    expr: string,
+} -> string
 
 ~proc ln|zig {
     const ast = @import("ast");

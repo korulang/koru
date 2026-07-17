@@ -12,8 +12,8 @@
 // success is REQUIRED, warning/debug are OPTIONAL
 ~event process { value: u32 }
 | success u32
-| ?warning []const u8
-| ?debug []const u8
+| ?warning string
+| ?debug string
 
 ~proc process|zig {
     if (value < 5) {

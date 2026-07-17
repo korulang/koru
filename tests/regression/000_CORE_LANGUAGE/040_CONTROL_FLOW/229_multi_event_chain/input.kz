@@ -10,9 +10,9 @@
 const std = @import("std");
 
 // Stage 1: Parse input
-~event parse { input: []const u8 }
+~event parse { input: string }
 | parsed i32
-| invalid []const u8
+| invalid string
 
 ~proc parse|zig {
     const value = std.fmt.parseInt(i32, input, 10) catch {
@@ -24,7 +24,7 @@ const std = @import("std");
 // Stage 2: Validate
 ~event validate { value: i32 }
 | valid i32
-| invalid []const u8
+| invalid string
 
 ~proc validate|zig {
     if (value < 0 or value > 100) {
@@ -41,7 +41,7 @@ const std = @import("std");
 }
 
 // Stage 4: Format
-~event format { value: i32 } -> []const u8
+~event format { value: i32 } -> string
 
 ~proc format|zig {
     const allocator = std.heap.page_allocator;
@@ -52,7 +52,7 @@ const std = @import("std");
 }
 
 // Stage 5: Display
-~event display { text: []const u8 }
+~event display { text: string }
 
 ~proc display|zig {
     std.debug.print("{s}\n", .{text});

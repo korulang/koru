@@ -97,7 +97,7 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
     source: Source
 }
 | ?added
-| ?parse-error []const u8
+| ?parse-error string
 
 ~proc requires|zig {
     // Validate Source syntax
@@ -128,8 +128,8 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
 
 ~[comptime]pub event variants { meta: InvocationMeta, source: Source, program: Program }
 | configured usize
-| skipped []const u8
-| invalid-event []const u8
+| skipped string
+| invalid-event string
 
 ~proc variants|zig {
     // Check if this config's annotation matches the --build flag
@@ -218,7 +218,7 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
 
 ~[comptime]pub event config { meta: InvocationMeta, source: Source }
 | configured usize
-| skipped []const u8
+| skipped string
 
 ~proc config|zig {
     if (!matchesFlags(meta.annotations)) {
@@ -299,7 +299,7 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
 // The shell command receives all remaining argv as arguments.
 // Use `koruc main.kz help` to list all available commands.
 
-~[comptime|norun]pub event command.sh { name: []const u8, description: []const u8, source: Source }
+~[comptime|norun]pub event command.sh { name: string, description: string, source: Source }
 
 // ============================================================================
 // BUILD COMMANDS - Zig Functions (Frontend Compilation + Execution)
@@ -343,7 +343,7 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
 //   koruc main.kz clean           # Custom cleanup command
 //   koruc main.kz deploy prod     # Deployment orchestration
 
-~[comptime|norun]pub event command.zig { name: []const u8, source: Source }
+~[comptime|norun]pub event command.zig { name: string, source: Source }
 
 // ============================================================================
 // BUILD COMMANDS - Native Koru Flows (Zero Context Switch)
@@ -377,7 +377,7 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
 //           | failed e |> std/io:println("Tests failed: " ++ e)
 //       | failed e |> std/io:println("Lint failed: " ++ e)
 
-~[comptime|norun]pub event command { name: []const u8, description: []const u8 } -> [][]const u8
+~[comptime|norun]pub event command { name: string, description: string } -> [][]const u8
 
 // ============================================================================
 // BUILD STEPS - Declarative Build Pipeline with Dependencies
@@ -408,7 +408,7 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
 // - ~[depends_on("step1", "step2", ...)] - Variadic dependency list
 // - Future: ~[parallel], ~[optional], ~[timeout(30)], etc.
 
-~[comptime|norun]pub event step { name: []const u8, source: Source }
+~[comptime|norun]pub event step { name: string, source: Source }
 
 // ============================================================================
 // DEFAULT BUILD STEPS - Standard 2-Phase Metaprogramming Compilation
@@ -458,7 +458,7 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
 
 ~[comptime]pub event collect {
     ctx: koru_compiler_types.CompilerContext,
-    output_path: []const u8
+    output_path: string
 } -> koru_compiler_types.CompilerContext
 
 ~proc collect|zig {

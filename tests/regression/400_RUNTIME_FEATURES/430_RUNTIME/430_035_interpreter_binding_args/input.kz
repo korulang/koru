@@ -13,15 +13,15 @@
 const std = @import("std");
 
 // Event that produces a value
-~pub event produce {} -> []const u8
+~pub event produce {} -> string
 
 ~proc produce|zig {
     return "42";
 }
 
 // Event that consumes a value and echoes it
-~pub event consume { n: []const u8 }
-| echoed []const u8
+~pub event consume { n: string }
+| echoed string
 
 ~consume = std/io:print.ln("[consume] received n = '{{n:s}}'") => echoed n
 

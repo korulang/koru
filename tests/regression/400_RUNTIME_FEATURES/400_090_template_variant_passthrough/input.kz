@@ -8,7 +8,7 @@
 
 const std = @import("std");
 
-~pub event greet { who: []const u8 }
+~pub event greet { who: string }
 
 ~proc greet|template(once)|zig {
     std.debug.print("Hello, ", .{});

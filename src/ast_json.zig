@@ -329,7 +329,7 @@ test "round-trip: parsed program (event + branches + proc + host lines)" {
         \\
         \\~event hello {}
         \\| done
-        \\| err []const u8
+        \\| err string
         \\
         \\const x = 42;
         \\

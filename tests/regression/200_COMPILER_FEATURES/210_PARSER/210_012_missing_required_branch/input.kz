@@ -6,7 +6,7 @@
 // Event with both required and optional branches
 ~event process { value: u32 }
 | success u32        // REQUIRED
-| ?warning []const u8   // OPTIONAL
+| ?warning string   // OPTIONAL
 
 // Proc implementation that can return both branches
 ~proc process|zig {

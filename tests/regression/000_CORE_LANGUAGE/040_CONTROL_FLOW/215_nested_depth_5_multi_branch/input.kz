@@ -12,7 +12,7 @@
 
 ~event validate { value: i32 }
 | ok i32
-| failure []const u8
+| failure string
 
 ~proc validate|zig {
     if (value > 0) {
@@ -24,7 +24,7 @@
 
 ~event double { value: i32 }
 | ok i32
-| failure []const u8
+| failure string
 
 ~proc double|zig {
     if (value < 100) {
@@ -37,7 +37,7 @@
 // Chain with failure handling at each level
 ~event process { input: i32 }
 | success i32
-| failed []const u8
+| failed string
 
 ~process = validate(value: input)
 | ok a |> double(value: a)

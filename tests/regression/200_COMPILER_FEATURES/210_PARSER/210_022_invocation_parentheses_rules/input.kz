@@ -11,7 +11,7 @@
 }
 
 // VALID: With params, source block → requires () for params
-~event renderWithData { name: []const u8, source: Source<HTML> }
+~event renderWithData { name: string, source: Source<HTML> }
 ~renderWithData(name: "Alice") {
     <p>${name}</p>
 }

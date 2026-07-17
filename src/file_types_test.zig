@@ -9,10 +9,10 @@ test "parse File and EmbedFile types" {
         \\~event test-files {
         \\    compile_only: File,
         \\    runtime_data: EmbedFile,
-        \\    normal_field: []const u8
+        \\    normal_field: string
         \\}
         \\| processed
-        \\| err []const u8
+        \\| err string
     ;
 
     var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
@@ -49,7 +49,10 @@ test "parse File and EmbedFile types" {
     // Check third field (normal type)
     const normal_field = event.input.fields[2];
     try std.testing.expectEqualStrings("normal_field", normal_field.name);
-    try std.testing.expectEqualStrings("[]const u8", normal_field.type);
+    // `string` is now the canonical surface text type and is PRESERVED in the
+    // AST (lowered to []const u8 only at emission) — so the parsed field type
+    // reads back as `string`, not the Zig slice.
+    try std.testing.expectEqualStrings("string", normal_field.type);
     try std.testing.expect(normal_field.is_file == false);
     try std.testing.expect(normal_field.is_embed_file == false);
     try std.testing.expect(normal_field.is_source == false);
@@ -64,7 +67,7 @@ test "serialize File and EmbedFile types" {
         \\    asset: EmbedFile
         \\}
         \\| loaded
-        \\| err []const u8
+        \\| err string
         \\
         \\~proc loader {
         \\    return .{ .loaded = {} };
@@ -102,7 +105,7 @@ test "File and EmbedFile with other special types" {
         \\    normal: i32
         \\}
         \\| done
-        \\| err []const u8
+        \\| err string
     ;
 
     var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);

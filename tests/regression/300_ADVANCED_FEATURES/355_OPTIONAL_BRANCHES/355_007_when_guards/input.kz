@@ -15,8 +15,8 @@
 // success is REQUIRED, warning/debug are OPTIONAL
 ~event process { value: u32 }
 | success u32
-| ?warning { msg: []const u8, level: u32 }
-| ?debug []const u8
+| ?warning { msg: string, level: u32 }
+| ?debug string
 
 ~proc process|zig {
     // Return warning with different levels based on value

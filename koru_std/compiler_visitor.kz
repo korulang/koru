@@ -112,10 +112,21 @@ const CodeEmitter = struct {
     }
     
     pub fn emitField(self: *CodeEmitter, name: []const u8, typ: []const u8) !void {
+        // `string` is the canonical surface text type; the AST carries it
+        // verbatim (printer/round-trip stay faithful) and it is lowered to the
+        // Zig slice `[]const u8` HERE, at the emission boundary. Handle a
+        // trailing default too (`string = "x"` -> `[]const u8 = "x"`).
         try self.writeIndent();
         try self.write(name);
         try self.write(": ");
-        try self.write(typ);
+        if (std.mem.eql(u8, typ, "string")) {
+            try self.write("[]const u8");
+        } else if (std.mem.startsWith(u8, typ, "string ") or std.mem.startsWith(u8, typ, "string=")) {
+            try self.write("[]const u8");
+            try self.write(typ[6..]);
+        } else {
+            try self.write(typ);
+        }
         try self.write(",\n");
     }
     
@@ -469,7 +480,7 @@ const VisitorContext = struct {
 // NEW COMPILER.EMIT.ZIG - Simple coordinator
 // ============================================================
 
-~event compiler.emit.zig.visitor {} -> []const u8
+~event compiler.emit.zig.visitor {} -> string
 
 ~proc compiler.emit.zig.visitor|zig {
     // Get a buffer

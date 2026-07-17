@@ -49,14 +49,14 @@ const CompileFlag = struct {
 // ================================================================
 
 ~pub event compile.proc-target {
-    target_name: []const u8,
-    body: []const u8,
+    target_name: string,
+    body: string,
 }
 | compiled {
-    code: []const u8,
+    code: string,
     build_steps: []const BuildStep,
 }
-| unsupported []const u8
+| unsupported string
 
 // ================================================================
 // Example GPU Compiler Pass

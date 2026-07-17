@@ -8,9 +8,9 @@ const std = @import("std");
 ~import std/interceptors
 
 // Opaque event - cannot be intercepted
-~[opaque] event auth.verify { token: []const u8 }
+~[opaque] event auth.verify { token: string }
 | valid u32
-| invalid []const u8
+| invalid string
 
 ~proc auth.verify|zig {
     if (std.mem.eql(u8, token, "secret")) {

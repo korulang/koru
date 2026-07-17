@@ -15,7 +15,7 @@ test "validate complete flow" {
     const source =
         \\~event A { x: i32 }
         \\| ok i32
-        \\| err []const u8
+        \\| err string
         \\
         \\~A => ok x
         \\
@@ -38,9 +38,9 @@ test "validate complete flow" {
 
 test "validate incomplete flow" {
     const source =
-        \\~event read { path: []const u8 }
-        \\| ok { contents: []const u8, errno: u8 }
-        \\| err { errno: u8, message: []const u8 }
+        \\~event read { path: string }
+        \\| ok { contents: string, errno: u8 }
+        \\| err { errno: u8, message: string }
         \\
         \\~read(path: "test.txt")
         \\| ok _ |> _
@@ -102,11 +102,11 @@ test "validate event tap with known events" {
     // ~tap() is lowered by the tap transform; raw parse sees it as ~tap(...) flow.
     if (true) return error.SkipZigTest;
     const source =
-        \\~event read { path: []const u8 }
-        \\| ok { contents: []const u8, size: u32 }
-        \\| err { errno: u8, message: []const u8 }
+        \\~event read { path: string }
+        \\| ok { contents: string, size: u32 }
+        \\| err { errno: u8, message: string }
         \\
-        \\~event audit-log { message: []const u8, path: []const u8 }
+        \\~event audit-log { message: string, path: string }
         \\| ok {}
         \\
         \\~tap(read -> audit-log)
@@ -128,9 +128,9 @@ test "validate event tap with known events" {
 test "validate event tap with wildcard destination" {
     if (true) return error.SkipZigTest;
     const source =
-        \\~event read { path: []const u8 }
-        \\| ok { contents: []const u8, size: u32 }
-        \\| err { errno: u8, message: []const u8 }
+        \\~event read { path: string }
+        \\| ok { contents: string, size: u32 }
+        \\| err { errno: u8, message: string }
         \\
         \\~tap(read -> *)
         \\| err _ |> _
@@ -151,7 +151,7 @@ test "validate event tap with wildcard destination" {
 test "validate event tap with unknown source" {
     if (true) return error.SkipZigTest;
     const source =
-        \\~event audit-log { message: []const u8, path: []const u8 }
+        \\~event audit-log { message: string, path: string }
         \\| ok {}
         \\
         \\~tap(missing -> audit-log)
@@ -174,9 +174,9 @@ test "validate event tap with unknown source" {
 test "validate event tap with invalid branch" {
     if (true) return error.SkipZigTest;
     const source =
-        \\~event read { path: []const u8 }
-        \\| ok { contents: []const u8, size: u32 }
-        \\| err { errno: u8, message: []const u8 }
+        \\~event read { path: string }
+        \\| ok { contents: string, size: u32 }
+        \\| err { errno: u8, message: string }
         \\
         \\~tap(read -> *)
         \\| bogus _ |> _
@@ -198,9 +198,9 @@ test "validate event tap with invalid branch" {
 test "validate event tap non-exhaustive is OK" {
     if (true) return error.SkipZigTest;
     const source =
-        \\~event read { path: []const u8 }
-        \\| ok { contents: []const u8, size: u32 }
-        \\| err { errno: u8, message: []const u8 }
+        \\~event read { path: string }
+        \\| ok { contents: string, size: u32 }
+        \\| err { errno: u8, message: string }
         \\| timeout {}
         \\
         \\~tap(read -> *)
@@ -279,7 +279,7 @@ test "binding destructure of an unknown payload field is a koru error (KORU036)"
     const source =
         \\~event A { x: i32 }
         \\| ok { a: i32, b: u8 }
-        \\| err []const u8
+        \\| err string
         \\
         \\~A => ok { a: 1, b: 2 }
         \\
@@ -310,7 +310,7 @@ test "binding destructure of real payload fields raises no KORU036" {
     const source =
         \\~event A { x: i32 }
         \\| ok { a: i32, b: u8 }
-        \\| err []const u8
+        \\| err string
         \\
         \\~A => ok { a: 1, b: 2 }
         \\

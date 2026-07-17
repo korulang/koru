@@ -360,6 +360,19 @@ fn splitTrailingReturnArrow(self: *Parser, s: []const u8) !ReturnArrowSplit {
             }
         }
     }
+    // `[]const u8` is not a Koru surface type in a return position either — the
+    // same wall as payloads, on the phantom-stripped base. `string` is the
+    // canonical text type; the slice is only the Zig lowering.
+    if (std.mem.eql(u8, rt, "[]const u8")) {
+        try self.reporter.addError(
+            .PARSE003,
+            self.current + 1,
+            1,
+            "'[]const u8' is not a Koru return type. Use 'string' for text — it lowers to []const u8 for Zig",
+            .{},
+        );
+        return error.ParseError;
+    }
     const return_type: ?[]const u8 = if (rt.len > 0) try self.allocator.dupe(u8, rt) else null;
     return .{ .head = head, .return_type = return_type, .return_phantom = return_phantom };
 }
@@ -8527,6 +8540,21 @@ pub const Parser = struct {
             // Reject the square-bracket phantom form `Type[state]` (must be `Type<state>`).
             try self.rejectSquareBracketPhantom(type_str);
 
+            // Canonical text type — same rule as a braced payload field
+            // (parseShape), on the phantom-stripped BASE. Reject the raw Zig
+            // slice; `string` is KEPT in the AST as the surface type and
+            // lowered to []const u8 only at the Zig emission boundary.
+            if (std.mem.eql(u8, type_str, "[]const u8")) {
+                try self.reporter.addError(
+                    .PARSE003,
+                    self.current,
+                    1,
+                    "'[]const u8' is not a Koru event-payload type. Use 'string' for text — it lowers to []const u8 for Zig",
+                    .{},
+                );
+                return error.ParseError;
+            }
+
             // Parse cross-module type reference: module.path:TypeName
             // Handle type prefixes like ?*, *, [], []const that come before the module path
             var module_path: ?[]const u8 = null;
@@ -8921,16 +8949,6 @@ pub const Parser = struct {
                 is_embed_file = true;
             } else if (std.mem.eql(u8, field_type, "InvocationMeta")) {
                 is_invocation_meta = true;
-            } else if (std.mem.eql(u8, field_type, "string") or std.mem.eql(u8, field_type, "String")) {
-                // Common mistake from other languages
-                try self.reporter.addError(
-                    .PARSE003,
-                    self.current + 1,
-                    1,
-                    "Unknown type '{s}'. In Zig/Koru, use '[]const u8' for strings",
-                    .{field_type},
-                );
-                return error.ParseError;
             }
 
             // Phantom labels: Type<tag>. Angle brackets have no Zig
@@ -8967,6 +8985,24 @@ pub const Parser = struct {
 
                 // Reject the square-bracket phantom form `Type[state]` (must be `Type<state>`).
                 try self.rejectSquareBracketPhantom(field_type);
+            }
+
+            // Canonical text type, checked on the phantom-stripped BASE so
+            // `[]const u8` and `[]const u8<!tag>` are both caught: the raw Zig
+            // slice is not a Koru surface spelling in a payload position. Steer
+            // to `string`. `string` itself is KEPT in the AST as the surface
+            // type — it survives the whole pipeline (printer/round-trip stay
+            // faithful) and is lowered to []const u8 only at the Zig emission
+            // boundary. Holds in .k AND .kz.
+            if (std.mem.eql(u8, field_type, "[]const u8")) {
+                try self.reporter.addError(
+                    .PARSE003,
+                    self.current + 1,
+                    1,
+                    "'[]const u8' is not a Koru event-payload type. Use 'string' for text — it lowers to []const u8 for Zig",
+                    .{},
+                );
+                return error.ParseError;
             }
 
             // Check for cross-module type reference: module.path:TypeName
@@ -9600,7 +9636,7 @@ test "parser validates branch names" {
         const source =
             \\~event test {}
             \\| valid-branch i32
-            \\| another-one []const u8
+            \\| another-one string
         ;
 
         var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
@@ -9644,7 +9680,7 @@ test "parser validates branch constructors" {
     {
         const source =
             \\~event test {}
-            \\| ok []const u8
+            \\| ok string
             \\
             \\~test()
             \\| ok => ok { msg: "success" }
@@ -9663,7 +9699,7 @@ test "parser validates branch constructors" {
     {
         const source =
             \\~event test {}
-            \\| ok []const u8
+            \\| ok string
             \\
             \\~test()
             \\| ok => invalid name { msg: "fail" }

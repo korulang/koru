@@ -2,14 +2,14 @@
 
 const std = @import("std");
 
-~pub event read { path: []const u8 }
-| success []const u8
-| notfound []const u8
-| ioerror []const u8
+~pub event read { path: string }
+| success string
+| notfound string
+| ioerror string
 
-~pub event write { path: []const u8, data: []const u8 }
+~pub event write { path: string, data: string }
 | written i32
-| ioerror []const u8
+| ioerror string
 
 ~proc read|zig {
     std.debug.print("read {s}\n", .{path});

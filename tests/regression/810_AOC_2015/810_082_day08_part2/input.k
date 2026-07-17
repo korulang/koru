@@ -6,7 +6,7 @@
 import std/io
 import std/fs
 
-pub event measure { line: []const u8 } -> { c: i64, e: i64 }
+pub event measure { line: string } -> { c: i64, e: i64 }
 
 measure = capture { c: 0[i64], e: 2[i64] }
 ! as a |> for(line)

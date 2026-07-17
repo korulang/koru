@@ -167,12 +167,12 @@ pub const ParseResult = parser_impl.ParseResult;
 
 // Parse Koru source code into AST
 ~pub event parse.source {
-    source: []const u8,
-    file_name: []const u8,
+    source: string,
+    file_name: string,
     allocator: std.mem.Allocator
 }
 | parsed parser_impl.ParseResult
-| parse-error []const u8
+| parse-error string
 
 ~proc parse.source|zig {
     // Initialize parser (empty compiler flags, no resolver for standalone parsing)
@@ -194,8 +194,8 @@ pub const ParseResult = parser_impl.ParseResult;
     ast: parser_impl.ParseResult,
     allocator: std.mem.Allocator
 }
-| dumped []const u8
-| dump-error []const u8
+| dumped string
+| dump-error string
 
 ~proc dump.ast|zig {
     var serializer = ast_serializer.AstSerializer.init(allocator) catch |err| {

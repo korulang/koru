@@ -28,9 +28,9 @@ pub const String = struct {
 // ============================================
 
 // Create with explicit allocator
-~pub event new { allocator: std.mem.Allocator, text: []const u8 }
+~pub event new { allocator: std.mem.Allocator, text: string }
 | ok *String<view!>
-| err []const u8
+| err string
 
 ~proc new|zig {
     const data = allocator.alloc(u8, text.len) catch {
@@ -47,9 +47,9 @@ pub const String = struct {
 }
 
 // Create with page allocator (simple, for demos)
-~pub event from-page { text: []const u8 }
+~pub event from-page { text: string }
 | ok *String<view!>
-| err []const u8
+| err string
 
 ~proc from-page|zig {
     const allocator = koru_allocator();
@@ -103,7 +103,7 @@ pub const String = struct {
 // Read operations - work on view or instance
 // ============================================
 
-~pub event read { s: *String<view|instance> } -> []const u8
+~pub event read { s: *String<view|instance> } -> string
 
 ~proc read|zig {
     return s.data;
@@ -128,7 +128,7 @@ pub const String = struct {
 // Parse the string's text as a base-10 integer.
 ~pub event parse-int { s: *String<view|instance> }
 | ok i64
-| err []const u8
+| err string
 
 ~proc parse-int|zig {
     const n = std.fmt.parseInt(i64, s.data, 10) catch {
@@ -141,7 +141,7 @@ pub const String = struct {
 // parse-int). Owned return, so it carries its own ownership obligation.
 ~pub event from-int { n: i64 }
 | ok *String<view!>
-| err []const u8
+| err string
 
 ~proc from-int|zig {
     const allocator = koru_allocator();
@@ -157,7 +157,7 @@ pub const String = struct {
 }
 
 // Does the string contain `needle`?
-~pub event contains { s: *String<view|instance>, needle: []const u8 }
+~pub event contains { s: *String<view|instance>, needle: string }
 | yes
 | no
 
@@ -169,7 +169,7 @@ pub const String = struct {
 }
 
 // First index of `needle`, or not-found.
-~pub event index-of { s: *String<view|instance>, needle: []const u8 }
+~pub event index-of { s: *String<view|instance>, needle: string }
 | found usize
 | not-found
 
@@ -184,7 +184,7 @@ pub const String = struct {
 // borrow into `s`). The result carries its own ownership obligation.
 ~pub event substring { s: *String<view|instance>, start: usize, end: usize }
 | ok *String<view!>
-| err []const u8
+| err string
 
 ~proc substring|zig {
     if (start > end or end > s.data.len) {
@@ -219,8 +219,8 @@ pub const String = struct {
 // alternative — a global/streaming regex (`scan`) that finds repeated matches
 // in place — is pinned (640_011) and waits on the engine's unanchored-search
 // "later cut"; split needs no engine work.
-~pub event split { s: []const u8, sep: []const u8 }
-! piece []const u8
+~pub event split { s: string, sep: string }
+! piece string
 | done usize
 
 ~proc split|zig {
@@ -243,9 +243,9 @@ pub const String = struct {
 // Write operations - require instance
 // ============================================
 
-~pub event append { s: *String<instance>, text: []const u8 }
+~pub event append { s: *String<instance>, text: string }
 | ok
-| err []const u8
+| err string
 
 ~proc append|zig {
     const new_len = s.data.len + text.len;

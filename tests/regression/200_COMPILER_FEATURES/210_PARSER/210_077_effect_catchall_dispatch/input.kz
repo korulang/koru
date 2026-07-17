@@ -6,14 +6,14 @@
 // the reflective-observer shape, where the consumer pays the runtime
 // cost in exchange for tier-1 reflection on which branch fired.
 
-~pub event tokenize { source: []const u8 }
-! token []const u8
-! ?warning []const u8
+~pub event tokenize { source: string }
+! token string
+! ?warning string
 | done usize
 
-~pub event consume-token { t: []const u8 }
+~pub event consume-token { t: string }
 ~pub event end-run { n: usize }
-~pub event log-unhandled { name: []const u8 }
+~pub event log-unhandled { name: string }
 
 ~tokenize(source: "x")
 ! token t |> consume-token(t)

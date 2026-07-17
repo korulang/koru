@@ -12,7 +12,7 @@ const std = @import("std");
 
 ~event hello {}
 
-~event logger { msg: []const u8 }
+~event logger { msg: string }
 
 ~proc hello|zig {
     std.debug.print("Hello\n", .{});

@@ -7,7 +7,7 @@
 
 const std = @import("std");
 
-~pub event open { path: []const u8 }
+~pub event open { path: string }
 | opened []const u8<opened!>
 
 ~proc open|zig {
@@ -15,14 +15,14 @@ const std = @import("std");
     return .{ .opened = "file_1" };
 }
 
-~pub event close { handle: []const u8<!opened> }
+~pub event close { handle: string<!opened> }
 
 ~proc close|zig {
     std.debug.print("auto-closing file\n", .{});
 }
 
-~pub event expensive-read { handle: []const u8<opened> }
-| read []const u8
+~pub event expensive-read { handle: string<opened> }
+| read string
 
 ~proc expensive-read|zig {
     return .{ .read = "file contents" };

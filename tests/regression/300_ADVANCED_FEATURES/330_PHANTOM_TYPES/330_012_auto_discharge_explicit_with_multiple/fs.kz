@@ -6,7 +6,7 @@ const std = @import("std");
 const File = struct { handle: i32 };
 
 // Open a file - returns opened! state
-~pub event open { path: []const u8 } -> *File<opened!>
+~pub event open { path: string } -> *File<opened!>
 
 ~proc open|zig {
     const f = std.heap.page_allocator.create(File) catch unreachable;
@@ -22,9 +22,9 @@ const File = struct { handle: i32 };
 }
 
 // Write - requires locked state (doesn't consume)
-~pub event write { file: *File<locked>, data: []const u8 }
+~pub event write { file: *File<locked>, data: string }
 | written
-| err []const u8
+| err string
 
 ~proc write|zig {
     std.debug.print("Writing: {s}\n", .{data});

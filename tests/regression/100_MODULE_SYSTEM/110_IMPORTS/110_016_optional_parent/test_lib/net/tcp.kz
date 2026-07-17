@@ -3,7 +3,7 @@
 
 const std = @import("std");
 
-~pub event connect { host: []const u8, port: u16 }
+~pub event connect { host: string, port: u16 }
 
 ~proc connect|zig {
     std.debug.print("Attempting TCP connection to {s}:{d}\n", .{host, port});

@@ -12,7 +12,7 @@
 import std/io
 import std/fs
 
-pub event count-file { path: []const u8 } -> i64
+pub event count-file { path: string } -> i64
 
 count-file = capture { n: 0[i64] }
 ! as inner |> std/fs:read-lines(path)

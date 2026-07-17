@@ -8,7 +8,7 @@ test "parse immediate return syntax" {
     
     const source =
         \\~event test.mock { input: i32 }
-        \\| success { value: i32, label: []const u8 }
+        \\| success { value: i32, label: string }
         \\| failure
         \\
         \\// Immediate return - just return success
@@ -46,7 +46,7 @@ test "parse immediate return with multiple fields" {
     
     const source =
         \\~event user.get { id: i32 }
-        \\| found { name: []const u8, email: []const u8 }
+        \\| found { name: string, email: string }
         \\
         \\~user.get => found { name: "Alice", email: "alice@test.com" }
     ;

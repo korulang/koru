@@ -15,7 +15,7 @@ const std = @import("std");
 // Transform events receive: source (user args), invocation (for context), program (AST), allocator (memory)
 ~[comptime|transform]event renderHTML { source: Source<HTML>, invocation: *const Invocation, program: *const Program, allocator: std.mem.Allocator }
 | transformed SiteResult
-| failed []const u8
+| failed string
 
 ~proc renderHTML|zig {
     const ast = @import("ast");

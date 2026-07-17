@@ -18,13 +18,13 @@ const std = @import("std");
 // ================================================================
 
 ~pub event gpu-shader {
-    glsl_code: []const u8,
+    glsl_code: string,
 }
 | compiled {
-    spv_path: []const u8,
+    spv_path: string,
     success: bool,
 }
-| failed []const u8
+| failed string
 
 ~proc gpu-shader|zig {
     const allocator = std.heap.page_allocator;
@@ -78,7 +78,7 @@ const std = @import("std");
 // ================================================================
 
 ~pub event test-shader-compilation { }
-| result { success: bool, spv_path: []const u8 }
+| result { success: bool, spv_path: string }
 
 ~proc test-shader-compilation|zig {
     const glsl =
@@ -105,7 +105,7 @@ const std = @import("std");
 }
 
 // Validation event - verify compilation succeeded
-~pub event validate-compilation { success: bool, spv_path: []const u8 }
+~pub event validate-compilation { success: bool, spv_path: string }
 
 ~proc validate-compilation|zig {
     if (success) {

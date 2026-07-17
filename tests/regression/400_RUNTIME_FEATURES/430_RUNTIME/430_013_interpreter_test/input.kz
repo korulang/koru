@@ -11,16 +11,16 @@ const std = @import("std");
 // Events to dispatch to
 // ============================================================================
 
-~pub event greet { name: []const u8 }
-| greeted []const u8
+~pub event greet { name: string }
+| greeted string
 
 ~proc greet|zig {
     std.debug.print("GREET handler: Hello, {s}!\n", .{name});
     return .{ .greeted = "Hello!" };
 }
 
-~pub event farewell { name: []const u8 }
-| departed []const u8
+~pub event farewell { name: string }
+| departed string
 
 ~proc farewell|zig {
     std.debug.print("FAREWELL handler: Goodbye, {s}!\n", .{name});

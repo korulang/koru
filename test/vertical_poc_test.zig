@@ -123,9 +123,9 @@ test "vertical POC - parse, generate, and verify" {
         \\// Simple vertical test - mix of Zig and Koru
         \\const std = @import("std");
         \\
-        \\~event greet { name: []const u8 }
+        \\~event greet { name: string }
         \\| done
-        \\| err []const u8
+        \\| err string
         \\
         \\~proc greet {
         \\    std.debug.print("Hello, {s}!\n", .{e.name});
@@ -200,7 +200,7 @@ test "vertical POC - complex example" {
         \\
         \\~event calculate { x: i32, y: i32 }
         \\| result i32
-        \\| err []const u8
+        \\| err string
         \\
         \\~proc calculate {
         \\    if (e.y == 0) {

@@ -4,7 +4,7 @@
 // Single-line flows like `~event() | branch |> _` are NOT valid Koru.
 // ============================================================================
 
-~event greet { name: []const u8 } -> []const u8
+~event greet { name: string } -> string
 
 ~proc greet|zig {
     return "Hello!";

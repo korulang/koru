@@ -3,7 +3,7 @@
 event example.write
 {
     value: i32,
-    note: []const u8,
+    note: string,
 }
 | success usize
-| failure []const u8
+| failure string

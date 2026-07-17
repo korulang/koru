@@ -6,7 +6,7 @@ const std = @import("std");
 // TCP Server (simplified for demo)
 ~pub event tcp.listen { port: u16 }
 | listening u16
-| error []const u8
+| error string
 
 ~proc tcp.listen|zig {
     std.debug.print("[NET] Server would listen on port {}\n", .{port});
@@ -17,7 +17,7 @@ const std = @import("std");
 // Accept connection (stub)
 ~pub event tcp.accept { port: u16 }
 | connection u32
-| error []const u8
+| error string
 
 ~proc tcp.accept|zig {
     std.debug.print("[NET] Would accept connection\n", .{});
@@ -26,9 +26,9 @@ const std = @import("std");
 
 // Read from connection (stub)
 ~pub event tcp.read { id: u32, max_bytes: usize }
-| data []const u8
+| data string
 | closed
-| error []const u8
+| error string
 
 ~proc tcp.read|zig {
     // Return sample HTTP request
@@ -37,9 +37,9 @@ const std = @import("std");
 }
 
 // Write to connection (stub)
-~pub event tcp.write { id: u32, data: []const u8 }
+~pub event tcp.write { id: u32, data: string }
 | sent usize
-| error []const u8
+| error string
 
 ~proc tcp.write|zig {
     std.debug.print("[NET] Would write {} bytes\n", .{data.len});

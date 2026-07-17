@@ -12,8 +12,8 @@
 // warning and debug are OPTIONAL - can be caught by |?
 ~event process { value: u32 }
 | success u32
-| ?warning []const u8
-| ?debug []const u8
+| ?warning string
+| ?debug string
 
 ~proc process|zig {
     // When value > 100, return optional warning branch

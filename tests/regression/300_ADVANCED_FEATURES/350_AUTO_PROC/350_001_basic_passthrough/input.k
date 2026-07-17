@@ -10,4 +10,4 @@
 import std/io
 
 // Event with matching input/output - NO PROC DEFINED
-pub event passthrough { msg: []const u8 } -> d |> verify(msg: d)
+pub event passthrough { msg: string } -> d |> verify(msg: d)

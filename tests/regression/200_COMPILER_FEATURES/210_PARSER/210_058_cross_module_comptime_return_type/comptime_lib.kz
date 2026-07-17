@@ -6,9 +6,9 @@
 
 const std = @import("std");
 
-~[comptime|norun] pub event sql { query: []const u8 }
+~[comptime|norun] pub event sql { query: string }
 | ok
-| err []const u8
+| err string
 
 ~proc sql|zig {
     _ = query;

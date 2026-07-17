@@ -27,9 +27,9 @@ import std/testing
 import std/fs
 
 // A flow that depends on an external module event
-event process-config { path: []const u8 }
+event process-config { path: string }
 | ok usize
-| failed []const u8
+| failed string
 
 process-config = std/fs:read-lines(path)
 ! line _ |> _

@@ -11,7 +11,7 @@
 
 import std/io
 
-pub event get-input {} -> []const u8<unsanitized!>
+pub event get-input {} -> string<unsanitized!>
 
 get-input -> "user input data"
 

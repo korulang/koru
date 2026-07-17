@@ -50,7 +50,7 @@ pub const JsonValue = union(enum) {
     return obj;
 }
 
-~pub event object.set { obj: *JsonObject<building>, key: []const u8, value: JsonValue } -> *JsonObject<building>
+~pub event object.set { obj: *JsonObject<building>, key: string, value: JsonValue } -> *JsonObject<building>
 
 ~proc object.set|zig {
     const writer = obj.buffer.writer();
@@ -93,7 +93,7 @@ pub const JsonValue = union(enum) {
     return obj;
 }
 
-~pub event object.finish { obj: *JsonObject<!building> } -> []const u8
+~pub event object.finish { obj: *JsonObject<!building> } -> string
 
 ~proc object.finish|zig {
     obj.buffer.append('}') catch {};
@@ -160,7 +160,7 @@ pub const JsonValue = union(enum) {
     return arr;
 }
 
-~pub event array.finish { arr: *JsonObject<!building> } -> []const u8
+~pub event array.finish { arr: *JsonObject<!building> } -> string
 
 ~proc array.finish|zig {
     arr.buffer.append(']') catch {};
@@ -172,8 +172,8 @@ pub const JsonValue = union(enum) {
 // Decoding - Extract values from JSON strings
 // ============================================================================
 
-~pub event get.string { json: []const u8, key: []const u8 }
-| ok []const u8
+~pub event get.string { json: string, key: string }
+| ok string
 | not-found
 
 ~proc get.string|zig {
@@ -209,7 +209,7 @@ pub const JsonValue = union(enum) {
     return .{ .ok = json[value_start..value_end] };
 }
 
-~pub event get.int { json: []const u8, key: []const u8 }
+~pub event get.int { json: string, key: string }
 | ok i64
 | not-found
 

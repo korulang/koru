@@ -62,7 +62,7 @@ The answer is 42.
 // This is the default authoring model for ordinary event behavior.
 import std/io
 
-event greet { name: []const u8 } -> []const u8
+event greet { name: string } -> string
 
 greet -> "Hello, " ++ name ++ "!"
 
@@ -222,8 +222,8 @@ Closing file
 
 const std = @import("std");
 
-~pub event ping { msg: []const u8 }
-! pong []const u8
+~pub event ping { msg: string }
+! pong string
 
 ~proc ping|zig {
     pong(msg);

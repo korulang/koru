@@ -10,7 +10,7 @@
 // Event with required + optional branch
 ~event process { value: u32 }
 | success u32        // REQUIRED
-| ?warning []const u8   // OPTIONAL
+| ?warning string   // OPTIONAL
 
 ~proc process|zig {
     if (value > 100) {

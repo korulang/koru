@@ -10,7 +10,7 @@ const std = @import("std");
 // Server events
 ~event listen { port: u16 }
 | ready u32
-| failed []const u8
+| failed string
 
 ~proc listen|zig {
     std.debug.print("Listening on port {}\n", .{port});
@@ -35,7 +35,7 @@ const std = @import("std");
 ~event process { conn: u32 }
 | done u32
 | retry u32
-| error { conn: u32, msg: []const u8 }
+| error { conn: u32, msg: string }
 
 ~proc process|zig {
     std.debug.print("Processing connection {}\n", .{conn});
@@ -54,7 +54,7 @@ const std = @import("std");
     std.debug.print("Closed connection {}\n", .{conn});
 }
 
-~event log-error { conn: u32, msg: []const u8 } -> u32
+~event log-error { conn: u32, msg: string } -> u32
 
 ~proc log-error|zig {
     std.debug.print("Error on connection {}: {s}\n", .{conn, msg});

@@ -10,8 +10,8 @@ pub const DomainUser = struct {
 
 // Event that creates a domain user
 ~pub event create {
-    email: []const u8,
-    role: []const u8,
+    email: string,
+    role: string,
     permissions: u32,
 } -> DomainUser
 

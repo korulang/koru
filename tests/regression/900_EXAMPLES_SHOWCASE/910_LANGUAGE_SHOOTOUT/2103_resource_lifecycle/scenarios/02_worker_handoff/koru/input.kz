@@ -14,7 +14,7 @@ const std = @import("std");
 
 const Conn = struct { id: i32 };
 
-~event connect { name: []const u8 } -> *Conn<active!>
+~event connect { name: string } -> *Conn<active!>
 
 ~proc connect|zig {
     std.debug.print("Connect: {s}\n", .{name});

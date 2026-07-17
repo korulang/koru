@@ -41,12 +41,12 @@ const std = @import("std");
 // ================================================================
 
 ~pub event compile.target {
-    target_name: []const u8,
-    body: []const u8,
+    target_name: string,
+    body: string,
     path: []const []const u8,
 }
-| compiled []const u8
-| unsupported []const u8
+| compiled string
+| unsupported string
 
 // ================================================================
 // Mock Compiler Passes (simplified for testing)

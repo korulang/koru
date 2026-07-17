@@ -9,7 +9,7 @@ const File = struct {
 };
 
 // Open a file - returns opened state
-~pub event open { path: []const u8 } -> *File<open>
+~pub event open { path: string } -> *File<open>
 
 ~proc open|zig {
     std.debug.print("Opening file: {s}\n", .{path});

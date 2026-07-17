@@ -5,7 +5,7 @@ const std = @import("std");
 const Connection = struct { handle: i32 };
 const Transaction = struct { conn_handle: i32 };
 
-~pub event open { connstr: []const u8 }
+~pub event open { connstr: string }
 | connected *Connection<connected!>
 | connection-failed
 
@@ -24,7 +24,7 @@ const Transaction = struct { conn_handle: i32 };
     return t;
 }
 
-~pub event tx.exec { tx: *Transaction<!started|!active>, sql: []const u8 } -> *Transaction<active!>
+~pub event tx.exec { tx: *Transaction<!started|!active>, sql: string } -> *Transaction<active!>
 
 ~proc tx.exec|zig {
     std.debug.print("Executing: {s}\n", .{sql});

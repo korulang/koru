@@ -15,7 +15,7 @@ test "compiler passes pipeline" {
         \\// Event with effects
         \\~event[effects(io|network)] fetch.data { url: []const u8 }
         \\| fetched { data: []u8 }
-        \\| error { msg: []const u8 }
+        \\| error { msg: string }
         \\
         \\// Pure proc (syntactically)
         \\~proc pure_transform {

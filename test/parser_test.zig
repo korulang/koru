@@ -414,13 +414,13 @@ test "multi-line annotation syntax for event definitions" {
     const source =
         \\~[comptime|norun]
         \\pub event build.step {
-        \\    name: []const u8,
+        \\    name: string,
         \\    source: Source
         \\}
         \\
         \\~[runtime]
         \\event notify.user {
-        \\    message: []const u8
+        \\    message: string
         \\}
     ;
 

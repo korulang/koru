@@ -66,7 +66,7 @@ test "proc without pure annotation is not pure" {
     const allocator = std.testing.allocator;
 
     const source =
-        \\~event log { msg: []const u8 }
+        \\~event log { msg: string }
         \\| done {}
         \\
         \\~proc log {

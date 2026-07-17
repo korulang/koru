@@ -5,8 +5,8 @@
 
 ~import std/io
 
-~pub event query { question: []const u8 }
-! ask []const u8 -> i32
+~pub event query { question: string }
+! ask string -> i32
 | done i32
 
 ~proc query|zig {
