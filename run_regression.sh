@@ -185,6 +185,12 @@ if [ "$1" = "--kz-convertible" ]; then
     exec bash scripts/kz_convertible.sh "${2:-}"
 fi
 
+if [ "$1" = "--std-compiles" ]; then
+    # The koru_std rot lint: full-pipeline compile of a probe importing each
+    # stdlib module. Catches modules no green test compiles end-to-end.
+    exec bash scripts/std_compiles.sh
+fi
+
 if [ "$1" = "--priority" ]; then
     # List all tests marked with PRIORITY
     echo -e "${RED}🔥 PRIORITY ITEMS${NC}"
