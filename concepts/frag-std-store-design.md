@@ -200,16 +200,21 @@ now DISENTANGLED (a bisection matters here — one was misdiagnosed at first):
   iterator: a tail that is itself a `stored` re-lowers on the next pass. The
   "watch drops chained writes" framing was a red herring — the splice was
   innocent; the `stored` verb was eating its own continuation.
-- **A value-returning impl-flow head with a void `|>` tail leaks an unused
-  result (OPEN, emitter).** Unmasked by the tail fix: before it, no impl
-  flow ever had a value-producing head followed by a void chain, because the
-  tail was dropped. A generated event body (the inserted/removed interceptor
-  impl flow) whose head is a value-returning `__store_write` followed by a
-  second write emits `const result = …` with no discard — `unused local
-  constant`. Top-level chains and watch-arm chains dodge it (their steps emit
-  as discarded statements, not a flow head). So a **two-write interceptor**
-  (e.g. `removed` doing `alive-1 |> kills+1`) still fails to compile; a
-  single-write interceptor is green. This is an emitter gap, not a store one.
+- **A value-returning impl-flow head with a void `|>` tail leaked an unused
+  result (FIXED, 690_029, emitter).** Unmasked by the tail fix: before it, no
+  impl flow ever had a value-producing head followed by a void chain, because
+  the tail was dropped. A generated event body (the inserted/removed
+  interceptor impl flow) whose head is a value-returning `__store_write`
+  followed by a second write emitted `const result = …` with no discard —
+  `unused local constant`. The gap lived in `emitSubflowContinuationsWithDepth`
+  (emitter_helpers.zig): the parent-result discard fired only when the next
+  step switched or bind-renamed, never for a plain terminal void step. The fix
+  makes that discard unconditional — `_ = &<parent>;` is idempotent, and every
+  path here has an in-scope parent const (top-level chains take a different
+  emitter, `emitFlow`, and never reach it). So a **two-write interceptor**
+  (`removed` doing `alive-1 |> kills+1`) now compiles and both writes land
+  (690_029, and the arena scoreboard tracks kills). This was an emitter gap,
+  not a store one — it just took a store program to surface it.
 
 The full residue (rulings, stamped theses, gauntlet verdicts, open
 queue) lives in `tests/regression/600_STDLIB/690_STORE/DESIGN.md`, which

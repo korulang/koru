@@ -1,0 +1,3 @@
+alive 1
+alive 0
+kills 1

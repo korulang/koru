@@ -2247,18 +2247,22 @@ fn emitSubflowContinuationsWithDepth(
         const next_needs_switch = cont.continuations.len > 0 and
             !std.mem.eql(u8, cont.continuations[0].branch, "");
 
-        // A bare-return mid-chain bind (`mk(): v |>`) binds THIS step's result to
-        // `v`; the parent's result is then unused (the step is a fresh call), so it
-        // needs the same discard as the switch case below.
-        const step_has_return_binding = if (cont.node) |s|
-            (s == .invocation and s.invocation.return_binding != null)
-        else
-            false;
-
-        // When we override the parent's result variable, discard it so Zig
-        // doesn't flag it as an unused local constant. Parent variable is
-        // `result` at depth 0, `nested_result_{depth-1}` otherwise.
-        if (next_needs_switch or step_has_return_binding) {
+        // Discard the parent step's result const before emitting THIS step. The
+        // parent is `result` at depth 0, `nested_result_{depth-1}` otherwise (or
+        // `parent_result_name` when the parent was a `: bind`). A void `|>` step
+        // is a fresh call that never consumes the parent's value, so the parent
+        // const is left dangling unless discarded here — a terminal void tail
+        // (neither switch-assigned nor bind-named) hit exactly this gap and left
+        // the head's `const result` unused (690_029: a two-write `removed`
+        // interceptor `alive - 1 |> kills + 1` → Zig "unused local constant").
+        // Fire in all three sub-cases below (switch-assign / bind-rename / plain
+        // void): the name selection always targets an in-scope const — both
+        // depth-0 callers of emitSubflowContinuations emit `const result` first
+        // (top-level chains use emitFlow and never reach here), and depth only
+        // increments via `next_needs_switch`, which emits `const nested_result_
+        // {depth}` — so it can never name a nonexistent variable. `_ = &x;` is
+        // idempotent, so re-discarding a parent a later step also uses is safe.
+        {
             try emitter.write(indent);
             if (parent_result_name) |prn| {
                 try emitter.write("_ = &");

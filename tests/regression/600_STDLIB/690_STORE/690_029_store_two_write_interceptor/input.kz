@@ -1,0 +1,23 @@
+// A lifecycle interceptor can carry a MULTI-WRITE body: `removed` here keeps
+// two scoreboard fields coherent in one branch (`alive - 1 |> kills + 1`).
+// This pins the interceptor impl flow past the emitter gap where a value-
+// returning flow head (the first `__store_write`) followed by a void `|>`
+// tail leaves an undiscarded `const result`. Single-write interceptors
+// (690_016) already work; this is the two-write generalization.
+
+~import std/io
+~import std/store
+
+~std/store:new(board) { alive: 0[i64], kills: 0[i64] }
+
+~std/store:new(pool) { hp: i64 }
+! inserted { hp } |> std/store:stored { board.alive: board.alive + 1 }
+! removed { hp } |> std/store:stored { board.alive: board.alive - 1 } |> std/store:stored { board.kills: board.kills + 1 }
+
+~std/store:watch(board)
+! alive a |> std/io:print.ln("alive {{ a:d }}")
+! kills k |> std/io:print.ln("kills {{ k:d }}")
+
+~std/store:insert(pool) { hp: 1 }
+| row b |> std/store:take(pool[b])
+    | item _ |> _
