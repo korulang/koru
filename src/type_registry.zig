@@ -556,6 +556,79 @@ pub const ShapeUnion = struct {
     }
 };
 
+/// The type→module registry: which host types does this program declare, and
+/// in which module? Built from the program's final (post-transform) items —
+/// imported modules ride along as module_decl items, and synthesized
+/// declarations (e.g. std/store's `pub const <Entity> = ...` entity alias,
+/// appended as a host_line during flow expansion) are visible. This is the
+/// emission-time ground truth writeFieldType consults to resolve a bare
+/// phantom-carrying base type's home from actual declarations. There is no
+/// name-shape guessing.
+///
+/// Maps declared name → declaring module's logical name ("" for the program's
+/// own top level). Position in the item tree is the truth: a decl registers
+/// under its enclosing module_decl, whatever any per-item module tag says.
+/// A top-level ("") declaration always wins a name collision — the user's own
+/// type shadows a module's; between modules, first declaration wins.
+///
+/// Keys and values are slices into the item ASTs — the map must not outlive
+/// the program's allocation.
+pub const HostTypeHomes = std.StringHashMap([]const u8);
+
+pub fn buildHostTypeHomes(allocator: std.mem.Allocator, items: []const ast.Item) !HostTypeHomes {
+    var homes = HostTypeHomes.init(allocator);
+    errdefer homes.deinit();
+    try collectHostTypeHomes(&homes, items, "");
+    return homes;
+}
+
+fn collectHostTypeHomes(homes: *HostTypeHomes, items: []const ast.Item, enclosing_module: []const u8) !void {
+    for (items) |item| {
+        switch (item) {
+            .host_line => |hl| try scanHostDecls(homes, hl.content, enclosing_module),
+            .host_type_decl => |ht| try registerHome(homes, ht.name, enclosing_module),
+            .module_decl => |m| try collectHostTypeHomes(homes, m.items, m.logical_name),
+            else => {},
+        }
+    }
+}
+
+fn registerHome(homes: *HostTypeHomes, name: []const u8, module: []const u8) !void {
+    const gop = try homes.getOrPut(name);
+    if (!gop.found_existing or module.len == 0) gop.value_ptr.* = module;
+}
+
+/// Register every top-level `const NAME` / `pub const NAME` in a host-code blob.
+/// Top-level means column 0 — nested decls (struct fields, fn locals) are
+/// indented and deliberately excluded: only module-scope names are addressable
+/// as field types.
+fn scanHostDecls(homes: *HostTypeHomes, content: []const u8, module: []const u8) !void {
+    var lines = std.mem.splitScalar(u8, content, '\n');
+    while (lines.next()) |line| {
+        var rest = line;
+        if (std.mem.startsWith(u8, rest, "pub ")) rest = rest[4..];
+        if (!std.mem.startsWith(u8, rest, "const ")) continue;
+        rest = rest[6..];
+        var end: usize = 0;
+        while (end < rest.len and (std.ascii.isAlphanumeric(rest[end]) or rest[end] == '_')) end += 1;
+        if (end == 0) continue;
+        try registerHome(homes, rest[0..end], module);
+    }
+}
+
+/// Module-name equality across spelling conventions: the phantom qualifier
+/// spells `std/field` (slash canon), a module_decl's logical name spells
+/// `std.field` (dotted namespace). Separators unify; everything else is exact.
+pub fn moduleNamesMatch(a: []const u8, b: []const u8) bool {
+    if (a.len != b.len) return false;
+    for (a, b) |ca, cb| {
+        const na = if (ca == '/') '.' else ca;
+        const nb = if (cb == '/') '.' else cb;
+        if (na != nb) return false;
+    }
+    return true;
+}
+
 // Tests
 test "register and lookup event" {
     const allocator = std.testing.allocator;

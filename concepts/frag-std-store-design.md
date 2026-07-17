@@ -163,10 +163,14 @@ The obligation *state* is shared and module-qualified; the per-store *type*
 carries identity. An early rung-2 spelling kept `taken` local to dodge an
 emitter coupling (`writeFieldType` fell back to the phantom's module for the
 base type — right for `*Field<std/field:field>`, wrong for `Enemy`/`taken`);
-that is REPUDIATED. `writeFieldType` now falls back only when type and
-phantom-module look co-located; the take payload carries `module_path` for
-the user type; cross-module dischargers name `input:Enemy<std/store:!taken>`
-(690_036).
+that is REPUDIATED. A second spelling guessed co-location from NAME shape
+(`Store` ≈ `store`), which mis-resolved any entity named like a module
+(690_037); that is REPUDIATED too. `writeFieldType` now resolves the base
+type's home from actual declarations — the host_type_homes registry built
+over the program's final items, imported modules included — and qualifies to
+the phantom's module only when that module really declares the type. The
+take payload carries `module_path` for the user type; cross-module
+dischargers name `input:Enemy<std/store:!taken>` (690_036).
 
 **Rung 4 opened — plural lifecycle interceptors are BUILT (2026-07-17,
 690_016 green):** `! inserted { f } |> …` and `! removed { f } |> …` on a
