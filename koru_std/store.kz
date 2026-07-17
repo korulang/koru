@@ -2452,6 +2452,17 @@ const std = @import("std");
     }
     const store_name = invocation.args[0].value;
 
+    // Dispatch on branch kind. `!` reactive arms (`.effect`) → watch, below.
+    // Any other branch — a `| store s` operation binding (`.terminal`) — is the
+    // OPERATION form of the reference, which isn't built yet. Say so at the koru
+    // level rather than mis-rewriting to watch (which reads the branch name as a
+    // field: the misleading "'store' is not a field" leak).
+    if (flow.body.continuations.len > 0 and flow.body.continuations[0].kind != .effect) {
+        const inner = std.fmt.allocPrint(allocator, "std/store({s}): only the reactive-attach form of the reference is built — `std/store({s}) ! <field> <bind> |> ...`. The operation form (`| store s |> ...`) is a later rung; for now operate by name (std/store:insert({s}), std/store:stored).", .{ store_name, store_name, store_name }) catch unreachable;
+        const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"{s}\"); }}", .{inner}) catch unreachable;
+        return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+    }
+
     // Rename the invocation default → watch, carrying the store name as `expr`
     // and the same `!` arm continuations. From here the watch path runs.
     const segs = allocator.alloc([]const u8, 1) catch unreachable;
