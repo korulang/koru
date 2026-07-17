@@ -65,13 +65,10 @@
     "title": "Koru in a Page",
     "disclaimer": "This tutorial is prose synthesis on top of the test suite. It may contain errors or drift. The compiler's actual behavior — verified by tests in `tests/regression/` and source in `src/` — is the source of truth. When you find this document saying one thing and the compiler doing another, the conflict itself is the finding: flag it, don't paper over it.\n\n**Koru is greenfield.** There are no legacy users, no deprecated forms to support, no migration windows that constitute a contract. When the language changes, the change lands and tests/docs get rewritten in the same motion. If the parser temporarily accepts an older form while migration is in progress, that's internal scaffolding — not a feature. Write code in the current canonical form. Don't hedge for legacy.",
     "tests": [
-      "010_001_hello_world",
       "010_000_hello_world_koru",
       "020_014_pure_subflow_impl",
-      "201_multiple_branches",
       "240_subflow_defines_semantics",
-      "330_038_cleanup_obligation_satisfied",
-      "400_070_effect_branch_minimal"
+      "330_038_cleanup_obligation_satisfied"
     ]
   }
 }
