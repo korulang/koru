@@ -1,55 +1,39 @@
 #!/bin/bash
-# Post-execution validation for profiler loop test
-# Verifies that Chrome Tracing JSON was created with multiple loop events
-
+# Validates the Chrome trace under nested label loops: the program's loop
+# transitions are captured, the JSON is closed, and the profiler is invisible
+# to itself.
 PROFILE_FILE="/tmp/koru_profile.json"
 
-# Verify profile file was created
 if [ ! -f "$PROFILE_FILE" ]; then
-    echo "ERROR: Profile file not created at $PROFILE_FILE"
+    echo "ERROR: no trace at $PROFILE_FILE"
     exit 1
 fi
 
-# Verify JSON structure
 if ! grep -q '"traceEvents"' "$PROFILE_FILE"; then
-    echo "ERROR: Invalid profile format - missing traceEvents"
+    echo "ERROR: missing traceEvents"
     cat "$PROFILE_FILE"
     exit 1
 fi
 
-# Verify koru:start event exists
-if ! grep -q '"koru:start"' "$PROFILE_FILE"; then
-    echo "ERROR: koru:start event missing"
-    cat "$PROFILE_FILE"
-    exit 1
-fi
-
-# Verify koru:end event exists
-if ! grep -q '"koru:end"' "$PROFILE_FILE"; then
-    echo "ERROR: koru:end event missing"
-    cat "$PROFILE_FILE"
-    exit 1
-fi
-
-# Verify start event exists (with module qualification)
 if ! grep -q '"input:start"' "$PROFILE_FILE"; then
-    echo "ERROR: input:start event missing"
+    echo "ERROR: input:start transition missing"
     cat "$PROFILE_FILE"
     exit 1
 fi
 
-# Verify outer event exists (loop events with module qualification)
 if ! grep -q '"input:outer"' "$PROFILE_FILE"; then
-    echo "ERROR: input:outer event missing"
+    echo "ERROR: input:outer transition missing"
     cat "$PROFILE_FILE"
     exit 1
 fi
 
-# NOTE: Nested inner loop events are not yet captured by the profiler
-# TODO: Fix tap transform to wrap nested label_with_invocation continuations
-# For now, skip the inner event check
+if ! grep -q '"input:inner"' "$PROFILE_FILE"; then
+    echo "ERROR: input:inner transition missing"
+    cat "$PROFILE_FILE"
+    exit 1
+fi
 
-# Count total events (should have multiple outer iterations at minimum)
+# Loop iterations: 3 outer x 2 inner should produce well over 5 transitions
 EVENT_COUNT=$(grep -c '"name":' "$PROFILE_FILE")
 if [ "$EVENT_COUNT" -lt 5 ]; then
     echo "ERROR: Expected at least 5 events, found $EVENT_COUNT"
@@ -57,14 +41,17 @@ if [ "$EVENT_COUNT" -lt 5 ]; then
     exit 1
 fi
 
-# Verify JSON is well-formed (has both opening and closing)
 if ! grep -q '^]}$' "$PROFILE_FILE"; then
-    echo "ERROR: JSON not properly closed"
+    echo "ERROR: JSON not closed"
+    cat "$PROFILE_FILE"
+    exit 1
+fi
+
+if grep -qE 'write-event|write-header|write-footer' "$PROFILE_FILE"; then
+    echo "ERROR: profiler observed itself"
     cat "$PROFILE_FILE"
     exit 1
 fi
 
 echo "✓ Profile generated at $PROFILE_FILE with $EVENT_COUNT events"
-echo "  Open chrome://tracing and load this file to view the execution trace!"
-
 exit 0

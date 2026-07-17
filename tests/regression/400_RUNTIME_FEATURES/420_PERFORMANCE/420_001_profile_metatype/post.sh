@@ -10,9 +10,9 @@ fi
 
 # Expected output pattern (timestamps will vary):
 # Hello executed
-# Profile: input:hello.done -> input:goodbye @ <non-zero timestamp>
+# Profile: input:hello.__void -> input:goodbye @ <non-zero timestamp>
 # Goodbye executed
-# Profile: input:goodbye.done -> terminal @ <non-zero timestamp>
+# Profile: input:goodbye.__void -> terminal @ <non-zero timestamp>
 
 # Check for event execution messages
 if ! grep -q "Hello executed" actual.txt; then
@@ -26,19 +26,19 @@ if ! grep -q "Goodbye executed" actual.txt; then
 fi
 
 # Check for Profile messages with correct transitions (with module qualifiers)
-if ! grep -q "Profile: input:hello\.done -> input:goodbye @" actual.txt; then
-    echo "ERROR: Missing 'Profile: input:hello.done -> input:goodbye' transition"
+if ! grep -q "Profile: input:hello\.__void -> input:goodbye @" actual.txt; then
+    echo "ERROR: Missing 'Profile: input:hello.__void -> input:goodbye' transition"
     exit 1
 fi
 
-if ! grep -q "Profile: input:goodbye\.done -> terminal @" actual.txt; then
-    echo "ERROR: Missing 'Profile: input:goodbye.done -> terminal' transition"
+if ! grep -q "Profile: input:goodbye\.__void -> terminal @" actual.txt; then
+    echo "ERROR: Missing 'Profile: input:goodbye.__void -> terminal' transition"
     exit 1
 fi
 
 # Extract timestamps and verify they're non-zero (proving runtime capture)
-TIMESTAMP1=$(grep "Profile: input:hello\.done -> input:goodbye @" actual.txt | sed 's/.*@ //')
-TIMESTAMP2=$(grep "Profile: input:goodbye\.done -> terminal @" actual.txt | sed 's/.*@ //')
+TIMESTAMP1=$(grep "Profile: input:hello\.__void -> input:goodbye @" actual.txt | sed 's/.*@ //')
+TIMESTAMP2=$(grep "Profile: input:goodbye\.__void -> terminal @" actual.txt | sed 's/.*@ //')
 
 if [ -z "$TIMESTAMP1" ] || [ "$TIMESTAMP1" = "0" ]; then
     echo "ERROR: First timestamp is zero or missing (expected runtime capture)"
