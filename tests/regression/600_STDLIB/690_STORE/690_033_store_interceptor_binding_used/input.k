@@ -5,17 +5,17 @@
 // pins that the KORU100 usage check for interceptor payloads does not
 // over-reject a genuinely-consumed binding.
 
-~import std/io
-~import std/store
+import std/io
+import std/store
 
-~std/store:new(stats) { total: 0[i64] }
+std/store:new(stats) { total: 0[i64] }
 
-~std/store:new(pool) { hp: i64 }
+std/store:new(pool) { hp: i64 }
 ! removed { hp } |> std/store:stored { stats.total: stats.total - hp }
 
-~std/store:watch(stats)
+std/store:watch(stats)
 ! total t |> std/io:print.ln("total {{ t:d }}")
 
-~std/store:insert(pool) { hp: 7 }
+std/store:insert(pool) { hp: 7 }
 | row b |> std/store:take(pool[b])
     | item _ |> _

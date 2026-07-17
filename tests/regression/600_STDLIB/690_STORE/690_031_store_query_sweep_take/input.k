@@ -9,21 +9,21 @@
 //      case — taking row 0 (hp 5) swaps hp 8 into slot 0, already passed; the
 //      sweep must revisit it. Both 5 and 8 are taken; 50 survives the guard.
 
-~import std/io
-~import std/store
+import std/io
+import std/store
 
-~std/store:new(arena) { hp: i64 }
+std/store:new(arena) { hp: i64 }
 
-~std/store:insert(arena) { hp: 5 }
+std/store:insert(arena) { hp: 5 }
 | row _ |> _
 | full |> _
-~std/store:insert(arena) { hp: 50 }
+std/store:insert(arena) { hp: 50 }
 | row _ |> _
 | full |> _
-~std/store:insert(arena) { hp: 8 }
+std/store:insert(arena) { hp: 8 }
 | row _ |> _
 | full |> _
 
-~std/store:query(arena)
+std/store:query(arena)
 ! query { entity.hp } when hp <= 10 |> std/store:take(arena[entity])
     | item i |> std/io:print.ln("took {{ i.hp:d }}")

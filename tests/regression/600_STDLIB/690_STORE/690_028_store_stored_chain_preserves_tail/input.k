@@ -8,13 +8,13 @@
 // everywhere, top-level and in spliced watch/interceptor bodies; this pins
 // that `stored` joins them rather than swallowing its continuation.)
 
-~import std/io
-~import std/store
+import std/io
+import std/store
 
-~std/store:new(a) { x: 0[i64], y: 0[i64] }
+std/store:new(a) { x: 0[i64], y: 0[i64] }
 
-~std/store:watch(a)
+std/store:watch(a)
 ! x v |> std/io:print.ln("x {{ v:d }}")
 ! y v |> std/io:print.ln("y {{ v:d }}")
 
-~std/store:stored { a.x: 1 } |> std/store:stored { a.y: 2 }
+std/store:stored { a.x: 1 } |> std/store:stored { a.y: 2 }

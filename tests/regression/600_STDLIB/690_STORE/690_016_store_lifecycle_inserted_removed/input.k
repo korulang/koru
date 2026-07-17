@@ -10,19 +10,19 @@
 //
 // Bare take (no `[entity]`) is frictionless: swap-remove, no obligation.
 
-~import std/io
-~import std/store
+import std/io
+import std/store
 
-~std/store:new(stats) { count: 0[i64] }
+std/store:new(stats) { count: 0[i64] }
 
-~std/store:new(pool) { hp: i64 }
+std/store:new(pool) { hp: i64 }
 ! inserted _ |> std/store:stored { stats.count: stats.count + 1 }
 ! removed _ |> std/store:stored { stats.count: stats.count - 1 }
 
-~std/store:watch(stats)
+std/store:watch(stats)
 ! count c |> std/io:print.ln("count {{ c:d }}")
 
-~std/store:insert(pool) { hp: 1 }
+std/store:insert(pool) { hp: 1 }
 | row a |> std/store:insert(pool) { hp: 2 }
     | row b |> std/store:take(pool[b])
         | item _ |> _

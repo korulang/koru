@@ -8,19 +8,19 @@
 // The bodies maintain counts only — they don't read the row — so the payload
 // is discarded (`_`); binding a field you never use is rejected (690_032).
 
-~import std/io
-~import std/store
+import std/io
+import std/store
 
-~std/store:new(board) { alive: 0[i64], kills: 0[i64] }
+std/store:new(board) { alive: 0[i64], kills: 0[i64] }
 
-~std/store:new(pool) { hp: i64 }
+std/store:new(pool) { hp: i64 }
 ! inserted _ |> std/store:stored { board.alive: board.alive + 1 }
 ! removed _ |> std/store:stored { board.alive: board.alive - 1 } |> std/store:stored { board.kills: board.kills + 1 }
 
-~std/store:watch(board)
+std/store:watch(board)
 ! alive a |> std/io:print.ln("alive {{ a:d }}")
 ! kills k |> std/io:print.ln("kills {{ k:d }}")
 
-~std/store:insert(pool) { hp: 1 }
+std/store:insert(pool) { hp: 1 }
 | row b |> std/store:take(pool[b])
     | item _ |> _
