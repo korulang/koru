@@ -187,15 +187,29 @@ stay walled as later slices.
 
 This slice earned its priority the honest way: writing a real program (a
 wave-combat arena) made hand-bumping the scoreboard at every insert/take
-site the loudest friction. That same program surfaced the NEXT wall, which
-this slice does NOT close and must not be mistaken for closed: **a chained
-`stored |> stored` body drops all but the first write when spliced — in an
-interceptor AND in a watch.** It is pre-existing (not introduced here) and
-independent of lifecycle wiring; it is the executable edge of the chain-
-envelope lean (line 29-30 / (i), 690_009 NEED-RULED). Until multi-write
-grouping is built, an interceptor can carry exactly one write, so an
-aggregate needing two fields updated on one lifecycle event cannot yet be
-expressed in one branch.
+site the loudest friction. That same program surfaced two further walls,
+now DISENTANGLED (a bisection matters here — one was misdiagnosed at first):
+
+- **`stored` dropped its `|>` tail (FIXED, 690_028).** The `stored` transform
+  replaced its site with an EMPTY continuation list, discarding whatever was
+  chained after the write — everywhere, not just in spliced bodies. The
+  bisection was decisive: `print |> print` chained fine everywhere, only
+  `stored |> anything` swallowed the tail. So a `stored` had to be the
+  terminal step of any chain. The fix threads the original tail through
+  un-marked, and it is CORRECT because the transform runner is a fixed-point
+  iterator: a tail that is itself a `stored` re-lowers on the next pass. The
+  "watch drops chained writes" framing was a red herring — the splice was
+  innocent; the `stored` verb was eating its own continuation.
+- **A value-returning impl-flow head with a void `|>` tail leaks an unused
+  result (OPEN, emitter).** Unmasked by the tail fix: before it, no impl
+  flow ever had a value-producing head followed by a void chain, because the
+  tail was dropped. A generated event body (the inserted/removed interceptor
+  impl flow) whose head is a value-returning `__store_write` followed by a
+  second write emits `const result = …` with no discard — `unused local
+  constant`. Top-level chains and watch-arm chains dodge it (their steps emit
+  as discarded statements, not a flow head). So a **two-write interceptor**
+  (e.g. `removed` doing `alive-1 |> kills+1`) still fails to compile; a
+  single-write interceptor is green. This is an emitter gap, not a store one.
 
 The full residue (rulings, stamped theses, gauntlet verdicts, open
 queue) lives in `tests/regression/600_STDLIB/690_STORE/DESIGN.md`, which

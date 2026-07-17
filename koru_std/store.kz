@@ -2427,8 +2427,13 @@ const std = @import("std");
                 .args = a2,
             };
         }
-        // Nested void chain, last step innermost.
-        var chain: []ast.Continuation = &[_]ast.Continuation{};
+        // Nested void chain, last step innermost. The chain BOTTOMS OUT in the
+        // containing flow's original continuations (the `stored{…} |> next`
+        // tail) — un-marked, so the runner's fixed-point pass re-lowers a tail
+        // `stored`. The synthesized envwrite/announce nodes stay
+        // `is_transformed_subtree` (they must not re-fire); only the user tail
+        // beneath them is walked again. Empty here dropped the tail (690_028).
+        var chain: []const ast.Continuation = flow.body.continuations;
         var k: usize = total;
         while (k > 1) {
             k -= 1;
@@ -2545,7 +2550,12 @@ const std = @import("std");
     };
 
     return .{ .transformed = .{ .replacement = ast.Item{ .flow = ast.Flow{
-        .body = ast.rootSite(write_inv, &[_]ast.Continuation{}, flow.location),
+        // `stored` is an ordinary void step: whatever was chained after it
+        // (`stored{…} |> next`) is the containing flow's continuations, and it
+        // must survive the rewrite. Threading `flow.body.continuations` through
+        // — UN-marked — lets the transform runner's fixed-point pass re-lower a
+        // tail that is itself a `stored` (690_028). Empty here dropped the tail.
+        .body = ast.rootSite(write_inv, flow.body.continuations, flow.location),
         .pre_label = null,
         .impl_of = flow.impl_of, // preserved: the site may BE an impl flow's head (e.g. a query body)
         .super_shape = null,
