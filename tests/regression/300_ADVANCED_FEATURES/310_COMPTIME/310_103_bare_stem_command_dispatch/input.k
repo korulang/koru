@@ -4,12 +4,12 @@
 // command dispatch must key off the raw arg the user typed, not the
 // extension-resolved path.
 
-~import std/build
+import std/build
 
-~std/build:command.sh(name: "hello") {
+std/build:command.sh(name: "hello") {
   echo "Hello from Koru!"
 }
 
-~std/build:command.sh(name: "args") {
+std/build:command.sh(name: "args") {
   echo "Args: $@"
 }

@@ -3,24 +3,24 @@
 // This test validates that Flow invocations can have parametrized annotations
 // and that they are correctly parsed and available in the AST.
 
-~import std/build
+import std/build
 
 // Flow with simple annotation
-~[pure]std/build:step(name: "simple") {
+[pure]std/build:step(name: "simple") {
   echo "Simple step"
 }
 
 // Flow with parametrized annotation (single arg)
-~[depends_on("simple")]std/build:step(name: "single_dep") {
+[depends_on("simple")]std/build:step(name: "single_dep") {
   echo "Single dependency"
 }
 
 // Flow with parametrized annotation (multiple args - variadic)
-~[depends_on("simple", "single_dep")]std/build:step(name: "multi_dep") {
+[depends_on("simple", "single_dep")]std/build:step(name: "multi_dep") {
   echo "Multiple dependencies"
 }
 
 // Flow with multiple annotations
-~[pure|depends_on("simple")]std/build:step(name: "combined") {
+[pure|depends_on("simple")]std/build:step(name: "combined") {
   echo "Combined annotations"
 }

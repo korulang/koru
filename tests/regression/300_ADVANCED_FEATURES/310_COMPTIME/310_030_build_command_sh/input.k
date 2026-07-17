@@ -3,12 +3,12 @@
 // This test validates that shell commands can be declared and executed
 // instantly from the frontend without backend compilation overhead.
 
-~import std/build
+import std/build
 
-~std/build:command.sh(name: "hello") {
+std/build:command.sh(name: "hello") {
   echo "Hello from Koru!"
 }
 
-~std/build:command.sh(name: "args") {
+std/build:command.sh(name: "args") {
   echo "Args: $@"
 }
