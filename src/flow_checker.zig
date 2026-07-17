@@ -80,10 +80,28 @@ pub const FlowChecker = struct {
                     }
                 },
                 .module_decl => |*module| {
+                    // KORU141 wall: a comptime-mode module cannot declare taps.
+                    // The comptime pipeline does not expand transforms (no
+                    // unbounded recompiles by design), so an unexpanded tap-flow
+                    // would leak into generated backend code as a bare invocation
+                    // carrying raw pattern syntax. Walled here — the earliest
+                    // point that sees both the module mode and the tap shape.
+                    const comptime_module = annotation_parser.hasPart(module.annotations, "comptime");
                     // Validate flows in imported modules
                     for (module.items) |*module_item| {
                         switch (module_item.*) {
                             .flow => |*flow| {
+                                if (self.mode == .frontend and comptime_module and flowIsTapDecl(flow)) {
+                                    try self.reporter.addErrorAtLocationWithHint(
+                                        .KORU141,
+                                        flow.location,
+                                        "taps are not supported in a ~[comptime] module — the comptime pipeline does not expand transforms (module '{s}')",
+                                        .{module.logical_name},
+                                        "drop the tap, or remove the module's comptime mode so the tap runs at runtime (see std/profiler)",
+                                        .{},
+                                    );
+                                    continue;
+                                }
                                 try self.validateFlow(flow, flow.location);
                             },
                             .proc_decl => {},
@@ -687,6 +705,17 @@ pub const FlowChecker = struct {
 
     /// Check if a flow's top-level invocation is a transform event (like ~tap)
     /// Transform flows use fan-out semantics: multiple handlers for the same branch all fire
+    /// A tap declaration parses as a plain flow invoking the library event
+    /// `tap` (parser.zig: taps are a library feature); this is how the wall
+    /// recognizes one before the transform system has claimed it. The path may
+    /// already carry the declaring module as qualifier (source-module
+    /// population runs before this check), so only the segments decide.
+    fn flowIsTapDecl(flow: *const ast.Flow) bool {
+        const path = &flow.inv().path;
+        return path.segments.len == 1 and
+            std.mem.eql(u8, path.segments[0], "tap");
+    }
+
     fn isTransformFlow(self: *FlowChecker, flow: *const ast.Flow) bool {
         // Look up the event declaration for the flow's invocation
         if (self.findEventDecl(&flow.inv().path)) |event_decl| {

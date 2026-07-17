@@ -101,6 +101,7 @@ pub const ErrorCode = enum(u16) {
 
     // Scoped vocabulary (`[with]`) errors
     KORU140, // Bare name resolves against more than one opened `[with]` vocabulary — ambiguous, qualify the call explicitly to pick one. Emitted by the metacircular resolve-with-scopes pass (koru_std/compiler.kz), so the .zig-only registry emit-scan can't see it — reserved in scripts/registry_reserved.txt.
+    KORU141, // Tap declared in a ~[comptime] module — the comptime pipeline does not expand transforms, so the tap-flow would leak into generated backend code as a bare invocation
 
     // Module structure errors
     KORU200, // Ambiguous module structure (both foo.kz and foo/ exist)
@@ -288,6 +289,30 @@ pub const ErrorReporter = struct {
             .message = message,
             .location = loc,
             .hint = null,
+            .is_bootstrap = is_bootstrap,
+            .bootstrap_line = bootstrap_line,
+        });
+    }
+
+    /// Like addErrorAtLocation, but with a teaching hint. Use when errors can
+    /// originate from multiple files AND the fix deserves guidance.
+    pub fn addErrorAtLocationWithHint(self: *ErrorReporter, code: ErrorCode, location: SourceLocation, comptime fmt: []const u8, args: anytype, comptime hint_fmt: []const u8, hint_args: anytype) !void {
+        const message = try std.fmt.allocPrint(self.allocator, fmt, args);
+        const hint = try std.fmt.allocPrint(self.allocator, hint_fmt, hint_args);
+        var loc = location;
+        var is_bootstrap = false;
+        var bootstrap_line: usize = 0;
+        if (std.mem.eql(u8, loc.file, self.file_name)) {
+            const cls = self.classifyLine(loc.line);
+            loc.line = cls.line;
+            is_bootstrap = cls.is_bootstrap;
+            bootstrap_line = cls.bootstrap_line;
+        }
+        try self.errors.append(self.allocator, .{
+            .code = code,
+            .message = message,
+            .location = loc,
+            .hint = hint,
             .is_bootstrap = is_bootstrap,
             .bootstrap_line = bootstrap_line,
         });
