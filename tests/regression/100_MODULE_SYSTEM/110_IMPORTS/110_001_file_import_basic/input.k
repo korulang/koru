@@ -1,0 +1,8 @@
+// Test 150: Basic single-file import
+//
+// Tests importing a sibling .kz file and verifying the result actually runs.
+
+import std/io
+import app/helper
+
+app/helper:greet(name: "World"): g |> std/io:print.ln("{{ g:s }}")

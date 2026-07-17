@@ -87,7 +87,7 @@ const std = @import("std");
 ```koru
 // Event input shape braces may open on the line after the event name.
 
-~event example.write
+event example.write
 {
     value: i32,
     note: []const u8,
@@ -196,9 +196,9 @@ The answer is 42.
 // flow". Regression for looksLikeZigCode flagging positional string args with
 // escape sequences (`print.ln("a\nb")`) — koruc rejected this with PARSE001
 // while `print(text: "a\nb")` (keyed) slipped past. Found via the playground.
-~import std/io
+import std/io
 
-~std/io:print.ln("a\nb")
+std/io:print.ln("a\nb")
 ```
 
 **Output:**
@@ -283,9 +283,9 @@ field ok
 // corpus codemod (`.`→`/`) + eventually tightening `.` out of namespace position.
 // (Written as .kz — the harness discovers tests by input.kz; pure-`.k` entry
 // support was dropped with the const commit in the D5 rebase.)
-~import std/io
+import std/io
 
-~std/io:print.ln("slash namespace ok")
+std/io:print.ln("slash namespace ok")
 ```
 
 **Output:**
@@ -313,9 +313,9 @@ slash namespace ok
 
 ```koru
 // PIN: Koru import in `.kz` must use `~` — same host->Koru switch as flows.
-~import std/io
+import std/io
 
-~std/io:print.ln("bare import ok")
+std/io:print.ln("bare import ok")
 ```
 
 **Output:**
@@ -669,13 +669,13 @@ Value: 43
 // This test verifies the PARSER accepts the syntax.
 // The event is marked [norun] so no emission happens.
 
-~import std/io
+import std/io
 
 // Event with wildcard payload - parser should accept this
-~[norun]event iterator-pattern {} -> *
+[norun]event iterator-pattern {} -> *
 
 // Use stdlib to print
-~std/io:print.ln("done")
+std/io:print.ln("done")
 ```
 
 **Output:**
@@ -737,13 +737,13 @@ error[PARSE001]: Nested flows (~) are not allowed inside continuations. Use a ba
 // Test: Pure subflow implementation (no proc needed)
 // From the README example - this is idiomatic Koru
 // This is the default authoring model for ordinary event behavior.
-~import std/io
+import std/io
 
-~event greet { name: []const u8 } -> []const u8
+event greet { name: []const u8 } -> []const u8
 
-~greet -> "Hello, " ++ name ++ "!"
+greet -> "Hello, " ++ name ++ "!"
 
-~greet (name: "World"): msg |> std/io:print.ln(msg)
+greet (name: "World"): msg |> std/io:print.ln(msg)
 ```
 
 **Output:**
@@ -857,12 +857,12 @@ done
 // call-site `: d` BIND. The produce/consume duality: `->` produces a bare return
 // (the twin of `=>`); `:` binds it at the call site (the twin of `|`/`!`). `:`
 // is Koru's existing bind glyph (`a: 2`, `{ a: i32 }`) — no new symbol.
-~import std/io
+import std/io
 
-~pub event double { a: i32 } -> i32
-~double -> a * 2
+pub event double { a: i32 } -> i32
+double -> a * 2
 
-~double(a: 21): d |> std/io:print.ln("{{ d:d }}")
+double(a: 21): d |> std/io:print.ln("{{ d:d }}")
 ```
 
 **Output:**
@@ -930,12 +930,12 @@ double(a: 21): d |> std/io:print.ln("{{ d:d }}")
 //
 // PINNED FAILING (2026-06-29): the record bare-return is not yet emitted. This
 // captures the gap — when the feature lands, this goes green.
-~import std/io
+import std/io
 
-~pub event run { x: i64 } -> { total: i64 }
-~run -> { total: x * 2 }
+pub event run { x: i64 } -> { total: i64 }
+run -> { total: x * 2 }
 
-~run(x: 21): r |> std/io:print.ln("{{ r.total:d }}")
+run(x: 21): r |> std/io:print.ln("{{ r.total:d }}")
 ```
 
 **Output:**
@@ -958,22 +958,22 @@ double(a: 21): d |> std/io:print.ln("{{ d:d }}")
 // branch.
 //
 // PINNED (2026-06-29): no corpus coverage for handler-produced bare returns yet.
-~import std/io
+import std/io
 
-~event check { n: i64 }
+event check { n: i64 }
 | big i64
 | small i64
 
-~check = if(n > 10)
+check = if(n > 10)
 | then => big n
 | else => small n
 
-~event classify { n: i64 } -> i64
-~classify = check(n)
+event classify { n: i64 } -> i64
+classify = check(n)
 | big b -> b * 100
 | small s -> s
 
-~classify(n: 21): r |> std/io:print.ln("{{ r:d }}")
+classify(n: 21): r |> std/io:print.ln("{{ r:d }}")
 ```
 
 **Output:**
@@ -989,12 +989,12 @@ double(a: 21): d |> std/io:print.ln("{{ d:d }}")
 // {scalar (020_021), slice (here), record (020_024)} — `->` means "the single
 // output is exactly this type", with no restriction on which type. Flat-produce
 // form (`~echo -> s`), the same as the scalar 020_021.
-~import std/io
+import std/io
 
-~pub event echo { s: []const u8 } -> []const u8
-~echo -> s
+pub event echo { s: []const u8 } -> []const u8
+echo -> s
 
-~echo(s: "hello"): r |> std/io:print.ln("{{ r:s }}")
+echo(s: "hello"): r |> std/io:print.ln("{{ r:s }}")
 ```
 
 **Output:**
@@ -1043,23 +1043,23 @@ hello
 // `const e = result.done; _ = e;` (a discard) instead of `return e;`, so the
 // i64-returning handler falls off its end. Sibling gap to 020_025 on the loop
 // path — the bare-return signal never reaches emitFlow's loop-exit emission.
-~import std/io
+import std/io
 
-~event step { n: i64, acc: i64 }
+event step { n: i64, acc: i64 }
 | more { n: i64, acc: i64 }
 | done i64
 
-~event run { start: i64 } -> i64
+event run { start: i64 } -> i64
 
-~step = if(n > 0)
+step = if(n > 0)
 | then => more { n: n - 1, acc: acc + n }
 | else => done acc
 
-~run = #L step(n: start, acc: 0)
+run = #L step(n: start, acc: 0)
 | more s |> @L(s.n, s.acc)
 | done e -> e
 
-~run(start: 5): r |> std/io:print.ln("{{ r:d }}")
+run(start: 5): r |> std/io:print.ln("{{ r:d }}")
 ```
 
 **Output:**
@@ -1078,15 +1078,15 @@ hello
 //
 // Pins a parser bug: an over-broad PARSE001 guard in parseEventInvocation
 // rejected ALL top-level `->` in an invocation line, killing the produce arm.
-~import std/io
+import std/io
 
-~pub event a { x: i64 } -> i64
-~a -> x + 1
+pub event a { x: i64 } -> i64
+a -> x + 1
 
-~pub event combo { x: i64 } -> i64
-~combo = a(x): r -> r
+pub event combo { x: i64 } -> i64
+combo = a(x): r -> r
 
-~combo(x: 5): out |> std/io:print.ln("{{ out:d }}")
+combo(x: 5): out |> std/io:print.ln("{{ out:d }}")
 ```
 
 **Output:**
@@ -1106,18 +1106,18 @@ hello
 // chained form currently drops the trailing `-> r2` produce (the inline-
 // continuation path doesn't capture it), so the handler falls off its end.
 // PIN: must produce r2 (= a then b: (5+1)+10 = 16).
-~import std/io
+import std/io
 
-~pub event a { x: i64 } -> i64
-~a -> x + 1
+pub event a { x: i64 } -> i64
+a -> x + 1
 
-~pub event b { x: i64 } -> i64
-~b -> x + 10
+pub event b { x: i64 } -> i64
+b -> x + 10
 
-~pub event combo { x: i64 } -> i64
-~combo = a(x): r1 |> b(x: r1): r2 -> r2
+pub event combo { x: i64 } -> i64
+combo = a(x): r1 |> b(x: r1): r2 -> r2
 
-~combo(x: 5): out |> std/io:print.ln("{{ out:d }}")
+combo(x: 5): out |> std/io:print.ln("{{ out:d }}")
 ```
 
 **Output:**
@@ -1172,15 +1172,15 @@ got 6
 // scalar `-> T` form, never a one-branch tag union (210_131 pins the reject).
 // The handler must lower to a plain scalar `Output = T` with `return` in both
 // arms — no union, no tag, no data movement beyond the value itself.
-~import std/io
+import std/io
 
-~event pick { n: i64 } -> i64
-~pick = if(n < 10)
+event pick { n: i64 } -> i64
+pick = if(n < 10)
 | then -> n
 | else -> n - 10
 
-~pick(n: 21): a |> std/io:print.ln("{{ a:d }}")
-~pick(n: 3): b |> std/io:print.ln("{{ b:d }}")
+pick(n: 21): a |> std/io:print.ln("{{ a:d }}")
+pick(n: 3): b |> std/io:print.ln("{{ b:d }}")
 ```
 
 **Output:**
@@ -1203,15 +1203,15 @@ got 6
 // produce dropped, handler fell off its end).
 // This is THE digitsum recursion: scalar `Output = i64`, no tag union — the
 // single-variant union carried the ~2.9x-behind-C recursion gap.
-~import std/io
+import std/io
 
-~event digitsum { n: i64 } -> i64
-~digitsum = if(n < 10)
+event digitsum { n: i64 } -> i64
+digitsum = if(n < 10)
 | then -> n
 | else |> digitsum(n: @divTrunc(n, 10)): rest -> rest + @mod(n, 10)
 
-~digitsum(n: 9875): d |> std/io:print.ln("{{ d:d }}")
-~digitsum(n: 7): e |> std/io:print.ln("{{ e:d }}")
+digitsum(n: 9875): d |> std/io:print.ln("{{ d:d }}")
+digitsum(n: 7): e |> std/io:print.ln("{{ e:d }}")
 ```
 
 **Output:**
@@ -1316,18 +1316,18 @@ done
 // the close), so a multi-line `-> SiteResult` transformer decl lost its return
 // type without a trace — surfaced by the single-return std migration (210_131).
 // The single-line twin is 020_033; this pins the split-line form.
-~import std/io
+import std/io
 
-~event pick {
+event pick {
     n: i64
 } -> i64
 
-~pick = if(n < 10)
+pick = if(n < 10)
 | then -> n
 | else -> n - 10
 
-~pick(n: 21): a |> std/io:print.ln("{{ a:d }}")
-~pick(n: 3): b |> std/io:print.ln("{{ b:d }}")
+pick(n: 21): a |> std/io:print.ln("{{ a:d }}")
+pick(n: 3): b |> std/io:print.ln("{{ b:d }}")
 ```
 
 **Output:**
@@ -1656,17 +1656,17 @@ const std = @import("std");
 // comment carries the registration intent until a query surface
 // exists to assert it directly (see 340_007).
 
-~import std/types
-~import std/io
+import std/types
+import std/io
 
-~std/types:struct(Config) {
+std/types:struct(Config) {
     value: i64,
     enabled: bool,
 }
 
-~const { threshold: 42 }
+const { threshold: 42 }
 
-~std/io:print.ln("Value: {{ threshold:d }}")
+std/io:print.ln("Value: {{ threshold:d }}")
 ```
 
 ### 030_141_type_with_capture
@@ -1680,16 +1680,16 @@ const std = @import("std");
 // type's identity, not a pasted Zig string. (The stamped-name variant
 // of this pin is 030_121.)
 
-~import std/types
-~import std/io
-~import std/control
+import std/types
+import std/io
+import std/control
 
-~std/types:struct(Acc) {
+std/types:struct(Acc) {
     total: i64,
     count: i64,
 }
 
-~capture { a: Acc{ .total = 0, .count = 0 } }
+capture { a: Acc{ .total = 0, .count = 0 } }
 ! as state |> for(&[_]i64{ 10, 20, 30, 40 })
     ! each n |> captured { a: Acc{ .total = state.a.total + n, .count = state.a.count + 1 } }
 | captured final |> std/io:print.ln("Total: {{ final.a.total:d }}, Count: {{ final.a.count:d }}")
@@ -2394,22 +2394,21 @@ const std = @import("std");
 // Depth: start |> level1 |> level2 → result
 // ============================================================================
 
-const std = @import("std");
-~import std/io
+import std/io
 
 // Simple events that add values
-~event add-one { value: i32 } -> i32
+event add-one { value: i32 } -> i32
 
-~add-one -> value + 1
+add-one -> value + 1
 
-~event add-two { value: i32 } -> i32
+event add-two { value: i32 } -> i32
 
-~add-two -> value + 2
+add-two -> value + 2
 
 // Chain: 10 → add-one → add-two → print result
 // Depth 2: Two nested continuations
 // Test: 10 + 1 + 2 = 13
-~add-one(value: 10): a |> add-two(value: a): b |> std/io:print.ln("{{b:d}}")
+add-one(value: 10): a |> add-two(value: a): b |> std/io:print.ln("{{b:d}}")
 ```
 
 ### 212_nested_depth_3
@@ -2424,72 +2423,69 @@ const std = @import("std");
 // Depth: start |> level1 |> level2 |> level3 → result
 // ============================================================================
 
-const std = @import("std");
-~import std/io
+import std/io
 
-~event add-one { value: i32 } -> i32
+event add-one { value: i32 } -> i32
 
-~add-one -> value + 1
+add-one -> value + 1
 
-~event add-two { value: i32 } -> i32
+event add-two { value: i32 } -> i32
 
-~add-two -> value + 2
+add-two -> value + 2
 
-~event add-three { value: i32 } -> i32
+event add-three { value: i32 } -> i32
 
-~add-three -> value + 3
+add-three -> value + 3
 
 // Chain: 10 → add-one → add-two → add-three → print result
 // Depth 3: Three nested continuations
 // Test: 10 + 1 + 2 + 3 = 16
-~add-one(value: 10): a |> add-two(value: a): b |> add-three(value: b): c |> std/io:print.ln("{{c:d}}")
+add-one(value: 10): a |> add-two(value: a): b |> add-three(value: b): c |> std/io:print.ln("{{c:d}}")
 ```
 
 ### 213_nested_depth_4
 
 ```koru
 // Depth 4 test: start |> +1 |> +2 |> +3 |> +4 → result (10+1+2+3+4 = 20)
-const std = @import("std");
-~import std/io
+import std/io
 
-~event add-one { value: i32 } -> i32
-~add-one -> value + 1
+event add-one { value: i32 } -> i32
+add-one -> value + 1
 
-~event add-two { value: i32 } -> i32
-~add-two -> value + 2
+event add-two { value: i32 } -> i32
+add-two -> value + 2
 
-~event add-three { value: i32 } -> i32
-~add-three -> value + 3
+event add-three { value: i32 } -> i32
+add-three -> value + 3
 
-~event add-four { value: i32 } -> i32
-~add-four -> value + 4
+event add-four { value: i32 } -> i32
+add-four -> value + 4
 
-~add-one(value: 10): a |> add-two(value: a): b |> add-three(value: b): c |> add-four(value: c): d |> std/io:print.ln("{{d:d}}")
+add-one(value: 10): a |> add-two(value: a): b |> add-three(value: b): c |> add-four(value: c): d |> std/io:print.ln("{{d:d}}")
 ```
 
 ### 214_nested_depth_5
 
 ```koru
 // Depth 5 test: Maximum stress test (10+1+2+3+4+5 = 25)
-const std = @import("std");
-~import std/io
+import std/io
 
-~event add-one { value: i32 } -> i32
-~add-one -> value + 1
+event add-one { value: i32 } -> i32
+add-one -> value + 1
 
-~event add-two { value: i32 } -> i32
-~add-two -> value + 2
+event add-two { value: i32 } -> i32
+add-two -> value + 2
 
-~event add-three { value: i32 } -> i32
-~add-three -> value + 3
+event add-three { value: i32 } -> i32
+add-three -> value + 3
 
-~event add-four { value: i32 } -> i32
-~add-four -> value + 4
+event add-four { value: i32 } -> i32
+add-four -> value + 4
 
-~event add-five { value: i32 } -> i32
-~add-five -> value + 5
+event add-five { value: i32 } -> i32
+add-five -> value + 5
 
-~add-one(value: 10): a |> add-two(value: a): b |> add-three(value: b): c |> add-four(value: c): d |> add-five(value: d): e |> std/io:print.ln("{{e:d}}")
+add-one(value: 10): a |> add-two(value: a): b |> add-three(value: b): c |> add-four(value: c): d |> add-five(value: d): e |> std/io:print.ln("{{e:d}}")
 ```
 
 ### 215_nested_depth_5_multi_branch
@@ -2962,10 +2958,10 @@ const std = @import("std");
 //
 // This is a regression test to track when the bug is fixed.
 
-~import app/mylib
+import app/mylib
 
 // The loop uses an event from the imported module
-~#loop app/mylib:tick()
+#loop app/mylib:tick()
 | next _ |> @loop()
 | done |> _
 ```
@@ -3017,31 +3013,31 @@ tick 5
 // other languages" trap is re-introduced at parser.zig parseStep,
 // this test fails. That is the point.
 
-~import std/io
+import std/io
 
 // Lower-level event: arbitrary outcome names
-~pub event step {}
+pub event step {}
 | return
 | break
 | continue
 
-~step => continue
+step => continue
 
 // Outer event: its own outcome vocabulary
-~pub event run {}
+pub event run {}
 | stopped
 | iterated
 
 // Subflow: `run` is satisfied by `step`, with `step`'s outcomes
 // mapped to `run`'s. The meaning of `return`, `break`, `continue`
 // lives HERE — in user code, not in the compiler.
-~run = step()
+run = step()
 | return => stopped
 | break => stopped
 | continue => iterated
 
-~std/io:print.ln("Testing subflow-defined semantics:")
-~run()
+std/io:print.ln("Testing subflow-defined semantics:")
+run()
 | stopped |> std/io:print.ln("  stopped")
 | iterated |> std/io:print.ln("  iterated")
 ```
@@ -3094,17 +3090,17 @@ Hello from identity branch!
 //
 // Syntax: ok expr (branch with single value)
 
-~import std/io
+import std/io
 
 // Event with value branch
-~pub event value-result {} -> i32
+pub event value-result {} -> i32
 
 // Subflow impl using braceless syntax with value
-~value-result -> 42
+value-result -> 42
 
 // Main entry point
-~std/io:print.ln("Testing value braceless:")
-~value-result(): n |> std/io:print.ln("  Got success: {{ n:d }}")
+std/io:print.ln("Testing value braceless:")
+value-result(): n |> std/io:print.ln("  Got success: {{ n:d }}")
 ```
 
 **Output:**

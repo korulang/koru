@@ -1,9 +1,0 @@
-// Ground truth for korulang.org phantom explorer — exec then rollback & close
-//
-// EXPECTED: Compiles and runs successfully
-
-~import app/db
-
-~app/db:open(connstr: "postgres://localhost/test")
-| connected c |> app/db:tx.begin(conn: c): t |> app/db:tx.exec(tx: t, sql: "UPDATE inventory SET qty = 0"): r |> app/db:tx.rollback(tx: r): conn |> app/db:close(conn)
-| connection-failed |> _

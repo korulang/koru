@@ -1,0 +1,24 @@
+// TEST: Pass a Transaction where Connection is expected
+//
+// CRITICAL: Both types have IDENTICAL struct layout (just i32 handle)
+// AND both have the SAME phantom state name <active!>
+//
+// close() expects: *Connection<!active>
+// We're passing: *Transaction<active!>
+//
+// If Koru's phantom checker only looks at state names,
+// this will COMPILE AND RUN - which is WRONG!
+//
+// The phantom type system MUST check base types.
+
+import app/db
+
+// BUG: the `| ok t |> app/db:close(conn: t)` handler below passes t
+// (*Transaction) to close() which expects *Connection. Both have [active]
+// state and the same struct layout — only the type name differs. Koru MUST
+// catch this.
+app/db:connect(host: "localhost")
+| ok c |> app/db:begin(conn: c)
+    | ok t |> app/db:close(conn: t)
+    | err _ |> _
+| err _ |> _

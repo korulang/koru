@@ -1,0 +1,32 @@
+// ASPIRATIONAL (RED by design until std/store rung 1 lands — see DESIGN.md).
+// INTERCEPTORS: effect branches on `create` are the store's CONTRACT —
+// schema-level, unconditional, fire for every write from anywhere
+// (DESIGN.md ruling 4). Here an interceptor keeps a second store coherent:
+// cross-store synchronization, the canonical interceptor use (Lars, on the
+// walk: "interceptors keep the store state coherent").
+//
+// The `updated { old, new }` payload is the (c)-lean write contract:
+// old/new images are USAGE-SYNTHESIZED — the transform sees this
+// destructure binds both, so the write path materializes the pre-image
+// (read-modify-write), inside the write's atomic step. A program with no
+// old-binding anywhere pays no read. Destructure grammar grounded:
+// `! pair { a, b } |>` (020_018).
+//
+// hp goes 0→5 (delta +5), 5→12 (delta +7); total accumulates the deltas.
+// ASSUMES the creation seed does NOT fire watches or interceptors
+// (birth-is-not-a-write — DESIGN.md O9, lean pending ratification):
+// no "total: 0" line.
+
+import std/io
+import std/store
+
+std/store:new(global) { total: 0[i64] }
+
+std/store:new(game) { hp: 0[i64] }
+! updated { old, new } |> std/store:stored { global.total: global.total + new - old }
+
+std/store:watch(global)
+! total t |> std/io:print.ln("total: {{ t:d }}")
+
+std/store:stored { game.hp: 5 }
+std/store:stored { game.hp: 12 }

@@ -1,0 +1,12 @@
+// Test: ARGS passthrough — the harness feeds argv from the ARGS file.
+// ARGS = "hello\nworld" → argv = [program, hello, world].
+import std/args
+import std/io
+
+std/args:count(): n |> std/io:print.ln("count: {{ n:d }}")
+
+std/args:get(index: 1)
+| arg a |> std/io:print.ln("argv1: {{ a:s }}")
+| out-of-bounds |> std/io:print.ln("argv1: <none>")
+
+std/args:rest(): r |> std/io:print.ln("rest: {{ r.len:d }}")

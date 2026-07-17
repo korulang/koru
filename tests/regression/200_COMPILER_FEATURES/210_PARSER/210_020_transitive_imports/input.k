@@ -1,0 +1,12 @@
+// Test: Transitive File Import
+//
+// Tests that A -> B -> C import chain works at the PARSER/AST level:
+// - input.kz imports helper.kz
+// - helper.kz imports base.kz
+// - ALL THREE modules should appear in the AST JSON output
+//
+// This test verifies the parser correctly handles transitive imports
+
+
+// Import helper (which itself imports base)
+import app/helper

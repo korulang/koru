@@ -1,0 +1,6 @@
+// This tests CODEX_REVIEW_FINDINGS MEDIUM #1
+// std.log is a valid event name, should not trigger "Zig code not allowed"
+
+event std.log { msg: []const u8 }
+
+std.log(msg: "hello")

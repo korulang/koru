@@ -1,0 +1,20 @@
+// Bare return of a RECORD type: `-> { field: T }`.
+//
+// `->` means "this event's single output is exactly this type". The type may be
+// a scalar (`-> i32`, 020_021), a slice (`-> []const u8`), OR a record literal
+// type `-> { total: i64 }`. Restricting the bare return to scalars would be the
+// arbitrary special case; the record form mirrors the event INPUT payload
+// grammar (`{ field: T }`), so input and output share one shape.
+//
+// Grammar reused from 020_021: `->` produces the value (here a record literal
+// `{ total: ... }`, the same constructor used by `live { ... }` / `captured
+// { ... }`), and the call site binds it with `: r`, then reads fields `r.total`.
+//
+// PINNED FAILING (2026-06-29): the record bare-return is not yet emitted. This
+// captures the gap — when the feature lands, this goes green.
+import std/io
+
+pub event run { x: i64 } -> { total: i64 }
+run -> { total: x * 2 }
+
+run(x: 21): r |> std/io:print.ln("{{ r.total:d }}")

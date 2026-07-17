@@ -1,0 +1,9 @@
+// Phase 2: a directory's source file lives at `index.kjs` instead of
+// `index.kz`. The directory-import path should probe all Koru extensions
+// for the index file, not just `.kz`.
+
+
+import std/io
+import app/mylib
+
+app/mylib:greet(name: "kjs index"): g |> std/io:print.ln("{{ g:s }}")

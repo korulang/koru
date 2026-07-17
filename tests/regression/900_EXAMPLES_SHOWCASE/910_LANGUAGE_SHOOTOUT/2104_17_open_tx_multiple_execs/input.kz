@@ -1,9 +1,0 @@
-// Ground truth for korulang.org phantom explorer — several execs then commit & close
-//
-// EXPECTED: Compiles and runs successfully
-
-~import app/db
-
-~app/db:open(connstr: "postgres://localhost/test")
-| connected c |> app/db:tx.begin(conn: c): t |> app/db:tx.exec(tx: t, sql: "INSERT INTO users VALUES (1, 'alice')"): r1 |> app/db:tx.exec(tx: r1, sql: "INSERT INTO users VALUES (2, 'bob')"): r2 |> app/db:tx.exec(tx: r2, sql: "INSERT INTO users VALUES (3, 'charlie')"): r3 |> app/db:tx.commit(tx: r3): conn |> app/db:close(conn)
-| connection-failed |> _

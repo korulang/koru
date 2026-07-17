@@ -1,0 +1,9 @@
+// Ground truth for korulang.org phantom explorer — happy commit & close
+//
+// EXPECTED: Compiles and runs successfully
+
+import app/db
+
+app/db:open(connstr: "postgres://localhost/test")
+| connected c |> app/db:tx.begin(conn: c): t |> app/db:tx.exec(tx: t, sql: "INSERT INTO users VALUES (1, 'alice')"): r |> app/db:tx.commit(tx: r): conn |> app/db:close(conn)
+| connection-failed |> _

@@ -130,20 +130,20 @@ var test_value: ?i32 = 42;
 // This tests the simplest case: an event with [expand] that uses a template
 // to generate inline Zig code without needing a proc.
 
-~import std/template
+import std/template
 
 // Define template in user-land using the imported define event
-~std/template:define(name: "debug-print") {
+std/template:define(name: "debug-print") {
     @import("std").debug.print("value: {d}\n", .{ {{ value }} });
 }
 
 // Event with [norun|expand] - implementation comes from template
 // [norun] = not emitted anywhere
 // [expand] = processed by transform_pass_runner via template lookup
-~[norun|expand]pub event debug-print { value: Expression }
+[norun|expand]pub event debug-print { value: Expression }
 
 // Use it - note the ~ prefix to make it a Koru flow!
-~debug-print(value: 42)
+debug-print(value: 42)
 ```
 
 **Output:**
@@ -256,15 +256,15 @@ const std = @import("std");
 // continuation-return" architecture. Fixing this lets `if` replace the [expand]
 // template in 320_095. sum-to(5) = 15.
 
-~import std/io
+import std/io
 
-~event sum-to { n: i64 } -> i64
+event sum-to { n: i64 } -> i64
 
-~sum-to = if(n <= 0)
+sum-to = if(n <= 0)
 | then -> 0
 | else |> sum-to(n: n - 1): t -> t + n
 
-~sum-to(n: 5): r |> std/io:print.ln("{{ r:d }}")
+sum-to(n: 5): r |> std/io:print.ln("{{ r:d }}")
 ```
 
 **Output:**

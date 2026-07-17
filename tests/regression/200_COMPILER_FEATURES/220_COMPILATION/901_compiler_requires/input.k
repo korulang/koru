@@ -1,0 +1,15 @@
+// Test file for compiler:requires metacircular build generation
+// NOTE: Use COLON not DOT for imported events!
+// NOTE: Use fully qualified namespace: std/compiler:requires
+
+std/compiler:requires {
+    exe.linkSystemLibrary("sqlite3");
+}
+
+std/compiler:requires {
+    exe.linkSystemLibrary("c");
+}
+
+event hello {}
+
+hello()

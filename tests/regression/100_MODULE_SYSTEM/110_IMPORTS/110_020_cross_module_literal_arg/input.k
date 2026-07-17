@@ -1,0 +1,7 @@
+// Test: Cross-module event invocation with literal argument
+// The literal 3000 should be emitted as 3000, not as a variable reference
+
+import app/lib/server
+import std/io
+
+app/lib/server:start(port: 3000): _ |> std/io:print.ln("Started!")

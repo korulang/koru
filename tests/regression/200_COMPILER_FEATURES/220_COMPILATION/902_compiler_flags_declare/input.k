@@ -1,0 +1,12 @@
+// Test if compiler.flag.declare can be invoked from user code
+// NOTE: Use fully qualified namespace with colon syntax
+
+std/compiler:flag.declare {
+  "name": "test",
+  "description": "Test flag",
+  "type": "boolean"
+}
+
+event hello {}
+
+hello()

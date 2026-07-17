@@ -1,0 +1,21 @@
+// Test: Wildcard branch payload syntax `*` - PARSER TEST
+//
+// SYNTAX DEFINITION:
+//   *      = "this branch has a bindable payload, shape unspecified"
+//   (none) = "this branch has no payload to bind"
+//
+// NOTE: bare `*` is for transform events where:
+// - The event exists for shape validation only
+// - inline_body replaces actual handler calls
+// - The emitter never generates code for `*` payloads
+//
+// This test verifies the PARSER accepts the syntax.
+// The event is marked [norun] so no emission happens.
+
+import std/io
+
+// Event with wildcard payload - parser should accept this
+[norun]event iterator-pattern {} -> *
+
+// Use stdlib to print
+std/io:print.ln("done")
