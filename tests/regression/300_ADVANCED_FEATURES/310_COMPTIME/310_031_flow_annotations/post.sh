@@ -3,8 +3,8 @@
 
 set -e
 
-echo "=== Compiling input.kz with Flow annotations ==="
-koruc input.kz
+echo "=== Compiling $KORU_INPUT with Flow annotations ==="
+koruc "$KORU_INPUT"
 
 echo ""
 echo "✅ Flow annotations parsed successfully!"
