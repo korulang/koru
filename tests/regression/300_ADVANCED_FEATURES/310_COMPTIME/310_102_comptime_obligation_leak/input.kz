@@ -23,7 +23,7 @@
 
 ~import std/io
 
-~[comptime] pub event get-input {} -> []const u8<unsanitized!>
+~[comptime] pub event get-input {} -> string<unsanitized!>
 
 ~[comptime] get-input -> "comptime input"
 
