@@ -1,0 +1,24 @@
+// Test 818: Parsing |variant syntax
+//
+// Tests that the parser recognizes and accepts |variant syntax.
+// This is the FIRST test using |variant (previous tests used :target).
+//
+// What this tests:
+// ✅ Parser accepts blur|naive syntax
+// ✅ Parser accepts blur|gpu syntax
+// ✅ Both procs emit correctly
+//
+// What this does NOT test:
+// ❌ Actual variant compilation (not implemented yet)
+// ❌ Variant selection logic (future work)
+// ❌ GPU code generation (future work)
+
+pub event blur { }
+
+proc blur|naive {
+    return .done;
+}
+
+proc blur|gpu {
+    return .done;
+}

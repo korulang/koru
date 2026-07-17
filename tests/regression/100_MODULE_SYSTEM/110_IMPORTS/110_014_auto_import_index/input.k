@@ -1,0 +1,20 @@
+// Test: Auto-import index.kz when importing any $alias/* module
+//
+// When we import $testlib/sub, we should automatically also get $testlib/index.kz
+// This allows stdlib root utilities to be available without explicit import.
+//
+// Structure:
+//   testlib/
+//     index.kz    -> root-hello event (namespace: testlib)
+//     sub.kz      -> sub-hello event (namespace: testlib.sub)
+//
+// Expected: Both testlib:root-hello and testlib/sub:sub-hello are available
+
+// Only import the submodule - index.kz should be auto-imported
+import testlib/sub
+
+// Use event from auto-imported index.kz (namespace: testlib)
+testlib:root-hello()
+
+// Use event from explicitly imported submodule (namespace: testlib.sub)
+testlib/sub:sub-hello()

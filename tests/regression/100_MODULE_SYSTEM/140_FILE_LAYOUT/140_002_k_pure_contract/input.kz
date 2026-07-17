@@ -1,8 +1,0 @@
-// Phase 2: a `.k` file (pure Koru, no host code) is discovered and parsed
-// as a sibling import. The .k file holds only an event declaration — the
-// partial-program tenet means it compiles fine as long as no call site
-// reaches the unimplemented event.
-
-~import app/contract
-
-// No call site for contract.compute — partial program is valid.

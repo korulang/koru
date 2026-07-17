@@ -1,0 +1,25 @@
+// Test 8214: Subflow variant dispatch picks the |no arm.
+//
+// Parallel to 8213 (which exercises |en). Same two-variant declaration,
+// but build:variants registers "no" — verifies that variant selection
+// actually changes the runtime output rather than 8213 having "passed"
+// by accident.
+
+import std/io
+import std/build
+
+
+pub event greet {}
+
+greet|en = std/io:print("hello")
+
+greet|no = std/io:print("hei")
+
+std/build:variants {
+    "input:greet": "no"
+}
+| configured _ |> _
+| skipped _ |> _
+| invalid-event _ |> _
+
+greet()

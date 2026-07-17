@@ -1,0 +1,63 @@
+// Cross-module mocking × EFFECT BRANCHES (FRONTIERS gap 5 — CLOSED 2026-06-12).
+// The consumer below handles `! line` from std/fs:read-lines (effect shape).
+// The REAL path streams effects as handler CALLS during the proc (650_001 is
+// green end-to-end); the MOCK path substitutes a plain terminal Output value,
+// so the effect branch never fires. Both now emit correctly: a result-dispatch
+// switch is over TERMINALS only, and emitContinuationList drops effect (`!`)
+// continuations before building it (mirrors the inline path's effect/terminal
+// partition). Before the fix the mock path leaked `.line =>` against an Output
+// union with no such tag and Zig rejected it.
+//
+// Test: Cross-module mocking
+//
+// This test verifies mocking events from IMPORTED modules.
+//
+// The syntax `~std/fs:read-lines = failed "mock error"` means:
+// "For this test, provide this implementation for the std/fs:read-lines event"
+//
+// This is NOT just for testing - Source blocks with impl declarations enable:
+// - Compile-time code synthesis
+// - AI-generated implementations
+// - Remote code fetching
+// - Interactive compilation
+//
+// The compiler becomes a development partner, not just a batch processor.
+
+import std/testing
+import std/fs
+
+// A flow that depends on an external module event
+event process-config { path: []const u8 }
+| ok usize
+| failed []const u8
+
+process-config = std/fs:read-lines(path)
+! line _ |> _
+| done n => ok n
+| failed msg => failed msg
+
+// ============================================
+// THE TEST - Cross-module mock
+// ============================================
+
+test(Cross-module mock with failed branch) {
+    // Mock the external module's event with the 'failed' branch
+    // This returns a simple string ([]const u8), which works without array literals
+    std/fs:read-lines => failed "mocked file read error"
+
+    process-config(path: "/this/file/does/not/exist.txt")
+    | ok _ |> assert.fail()
+    | failed result |> assert(result.len > 0)
+}
+
+// ============================================
+// Terminal mock against the effect contract
+// ============================================
+
+test(Cross-module mock should return 3 lines) {
+    std/fs:read-lines => done 3
+
+    process-config(path: "/fake/path")
+    | ok result |> assert(result == 3)
+    | failed |> assert.fail()
+}

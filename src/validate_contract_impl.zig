@@ -7,14 +7,14 @@ const ErrorReporter = errors.ErrorReporter;
 
 /// Phase 3: enforce the contract/implementation file split.
 ///
-/// Two rules, both opt-in per module — they fire only when the merged module
-/// contains at least one `.k` contract companion file. Modules without a
-/// `.k` file (the status-quo single-`.kz` pattern) are completely unaffected.
+/// Opt-in per module — fires only when the merged module contains at least one
+/// `.k` companion file. Modules without a `.k` file (the status-quo single-`.kz`
+/// pattern) are completely unaffected.
 ///
-/// Rule 1: events declared in a `.k` file MUST be `~pub`. A private event in
-///         a contract file is dead syntax — no procs live in `.k`, so nothing
-///         inside the file can call a private event, and nothing outside can
-///         see it.
+/// Rule 1 (REMOVED 2026-07-17): previously rejected private events in a `.k`.
+///         Repudiated — a `.k` is a full program, not a contract-only surface,
+///         so private events are legal there (implemented as pure Koru in-file,
+///         called by local flows). Only Rule 2 remains.
 ///
 /// Rule 2: when `.k` exists in the module, events declared in non-`.k`
 ///         companion files (`.kz`, `.kjs`, `.kc`, `.kgpu`) MUST NOT be
@@ -39,17 +39,13 @@ pub fn validate(items: []const ast.Item, reporter: *ErrorReporter) !void {
         switch (item) {
             .event_decl => |event| {
                 const in_contract = isContractFile(event.location.file);
-                if (in_contract and !event.is_public) {
-                    try reporter.addErrorWithHint(
-                        .KORU111,
-                        event.location.line,
-                        event.location.column,
-                        "private event in contract file '{s}'",
-                        .{event.location.file},
-                        "events declared in a .k contract file must be ~pub; either add ~pub or move this declaration to a non-.k implementation file",
-                        .{},
-                    );
-                }
+                // Rule 1 removed (2026-07-17): a `.k` is a full program, not a
+                // contract-only surface. Private events are legal in `.k` —
+                // they implement as pure Koru in-file and local flows call
+                // them; forcing them to a `.kz`/`.kjs` companion "just because"
+                // is backwards. See 140_010 (positive pin) and 140_006 (the old
+                // Rule-1 negative, marked TODO for rework into a cross-module
+                // visibility test).
                 if (!in_contract and event.is_public and module_has_k) {
                     try reporter.addErrorWithHint(
                         .KORU111,

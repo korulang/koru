@@ -1,0 +1,25 @@
+// Test (ASPIRATIONAL, MUST_RUN, currently failing): parser accepts phantom
+// literal-suffix syntax `<label>` on a literal in arg-value position.
+//
+// Parser must:
+//   1. Recognize `32<celsius>` as `literal=32, phantom=celsius` at the
+//      arg-value position
+//   2. Strip the `<celsius>` for Zig emission (per "no phantoms in Zig-code")
+//   3. Forward `celsius` as the value's phantom for the phantom checker
+//
+// The `<>` syntax was chosen precisely because `>` at end of expression
+// without a RHS doesn't fit Zig grammar — koru's parser can claim the
+// suffix unambiguously.
+//
+// MINIMAL parser-focused pin: just accept the syntax, no conversion math.
+//
+// See `docs/UNITS_OF_MEASURE.md` "Implementation sketch" — literal-suffix
+// parsing is item (6) in the implementation plan.
+
+import std/io
+
+event accept-celsius { c: f32<celsius> } -> f32<celsius>
+
+accept-celsius -> c
+
+accept-celsius(c: 32<celsius>): v |> std/io:print.ln("{{ v:f }}")

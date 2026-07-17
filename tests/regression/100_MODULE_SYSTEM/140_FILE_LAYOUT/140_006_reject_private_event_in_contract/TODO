@@ -1,0 +1,1 @@
+Rework as a cross-module private-event VISIBILITY test. KORU111 Rule 1 (private event in .k rejected) was removed 2026-07-17 — private events are legal in a .k full program. The surviving intent here is that a PRIVATE event must not be callable across a module boundary; that needs cross-module visibility enforcement (see 110_002 TODO) before this can be re-pinned.

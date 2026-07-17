@@ -266,13 +266,13 @@ Void events work correctly
 // Test: Pure subflow implementation (no proc needed)
 // From the README example - this is idiomatic Koru
 // This is the default authoring model for ordinary event behavior.
-~import std/io
+import std/io
 
-~event greet { name: []const u8 } -> []const u8
+event greet { name: []const u8 } -> []const u8
 
-~greet -> "Hello, " ++ name ++ "!"
+greet -> "Hello, " ++ name ++ "!"
 
-~greet (name: "World"): msg |> std/io:print.ln(msg)
+greet (name: "World"): msg |> std/io:print.ln(msg)
 ```
 
 **Output:**
@@ -541,31 +541,31 @@ const std = @import("std");
 // other languages" trap is re-introduced at parser.zig parseStep,
 // this test fails. That is the point.
 
-~import std/io
+import std/io
 
 // Lower-level event: arbitrary outcome names
-~pub event step {}
+pub event step {}
 | return
 | break
 | continue
 
-~step => continue
+step => continue
 
 // Outer event: its own outcome vocabulary
-~pub event run {}
+pub event run {}
 | stopped
 | iterated
 
 // Subflow: `run` is satisfied by `step`, with `step`'s outcomes
 // mapped to `run`'s. The meaning of `return`, `break`, `continue`
 // lives HERE — in user code, not in the compiler.
-~run = step()
+run = step()
 | return => stopped
 | break => stopped
 | continue => iterated
 
-~std/io:print.ln("Testing subflow-defined semantics:")
-~run()
+std/io:print.ln("Testing subflow-defined semantics:")
+run()
 | stopped |> std/io:print.ln("  stopped")
 | iterated |> std/io:print.ln("  iterated")
 ```
@@ -873,10 +873,10 @@ hello effect branches
 
 ```koru
 // Test: Basic string creation and read
-~import std/string
-~import std/io
+import std/string
+import std/io
 
-~std/string:from-page(text: "hello")
+std/string:from-page(text: "hello")
 | ok s |> std/string:read(s): text |> std/io:print.ln("{{ text:s }}") |> std/string:free(s)
 | err _ |> _
 ```
@@ -893,15 +893,15 @@ hello
 
 ```koru
 // TEST: fmt:ln basic - format a string and get it back via | line continuation
-~import std/fmt
-~import std/io
+import std/fmt
+import std/io
 
-~event greet { name: []const u8 } -> []const u8
+event greet { name: []const u8 } -> []const u8
 
-~greet = std/fmt:ln("Hello, {{ name:s }}!")
+greet = std/fmt:ln("Hello, {{ name:s }}!")
 | line l -> l.text
 
-~greet(name: "World"): g |> std/io:print.ln(g)
+greet(name: "World"): g |> std/io:print.ln(g)
 ```
 
 **Output:**

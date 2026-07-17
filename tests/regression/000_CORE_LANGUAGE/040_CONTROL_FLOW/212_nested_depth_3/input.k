@@ -1,0 +1,27 @@
+// ============================================================================
+// VERIFIED REGRESSION TEST - DO NOT MODIFY WITHOUT DISCUSSION
+// ============================================================================
+// Test: Nested Continuation Depth 3
+// Feature: Flow with 3 levels of nested continuations
+// Verifies: Deeper nesting works
+// Depth: start |> level1 |> level2 |> level3 → result
+// ============================================================================
+
+import std/io
+
+event add-one { value: i32 } -> i32
+
+add-one -> value + 1
+
+event add-two { value: i32 } -> i32
+
+add-two -> value + 2
+
+event add-three { value: i32 } -> i32
+
+add-three -> value + 3
+
+// Chain: 10 → add-one → add-two → add-three → print result
+// Depth 3: Three nested continuations
+// Test: 10 + 1 + 2 + 3 = 16
+add-one(value: 10): a |> add-two(value: a): b |> add-three(value: b): c |> std/io:print.ln("{{c:d}}")

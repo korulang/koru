@@ -1,0 +1,20 @@
+// TEST: Valid usage - connection → transaction → execute → commit → close
+//
+// This is the happy path: open a connection, start a transaction,
+// do some work, commit, and close. All obligations are satisfied.
+//
+// EXPECTED: Compiles and runs successfully
+
+import app/db
+
+app/db:connect(host: "localhost")
+| ok c |> app/db:begin(conn: c)
+    | ok t |> app/db:exec(tx: t, sql: "INSERT INTO users VALUES (1, 'alice')")
+        | ok r |> app/db:commit(tx: r)
+            | ok conn |> app/db:close(conn)
+                | ok |> _
+                | err _ |> _
+            | err _ |> _
+        | err _ |> _
+    | err _ |> _
+| err _ |> _

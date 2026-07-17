@@ -1,0 +1,8 @@
+// Phase 3 defender: ~pub event in a .kz with no .k companion is the
+// status-quo pattern. Compiles and runs as today; prints 142.
+
+
+import std/io
+import app/contract
+
+app/contract:compute(x: 42): v |> std/io:print.ln("{{ v:d }}")

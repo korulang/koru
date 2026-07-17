@@ -1,0 +1,24 @@
+// Test: ~for compiles to literal for loop with ZERO event overhead
+//
+// VISION: The ~for transform should use the template system to emit
+// a literal Zig for loop, NOT a synthetic event with captured body.
+//
+// BEFORE (current broken implementation):
+//   const result = __for_synthetic_event.handler(.{ ... });
+//   // loop body captured inside synthetic proc
+//
+// AFTER (zero overhead implementation):
+//   for (0..5) |i| {
+//       // each branch inlined directly here
+//   }
+//   // done branch inlined after loop
+//
+// This test uses post.sh to verify the generated code pattern.
+
+import std/io
+import std/control
+
+
+for(0..5)
+! each _ |> std/io:print.ln("iteration")
+| done |> std/io:print.ln("done")

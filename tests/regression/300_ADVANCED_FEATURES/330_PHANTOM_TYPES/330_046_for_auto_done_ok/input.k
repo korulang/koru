@@ -1,0 +1,5 @@
+import std/control
+import app/fs
+app/fs:open(path: "outer.txt"): _ |> for(0..3)
+    ! each _ |> _  // Loop body, obligation flows through
+    | done |> _    // Auto-discharge inserts close here (runs once)
