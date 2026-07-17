@@ -1,0 +1,3 @@
+ok {"a":[1,2.5e3,true],"b":{"c":null},"d":"x y","e":[]}
+ok {"a": [1, 2], "b": null}
+err 1:9 expected "([^"\\]|\\.)*" found }

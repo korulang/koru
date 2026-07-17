@@ -1,1 +1,3 @@
-FRONTEND_COMPILE_ERROR
+BACKEND_RUNTIME_ERROR
+CONTAINS error[KORU050]
+CONTAINS branch 'high' has multiple when-clauses but no else case

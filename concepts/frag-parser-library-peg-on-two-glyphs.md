@@ -54,6 +54,26 @@ qualification stays the default everywhere; scoped resolution is the region
 privilege (dense vocabulary + greppable region head + canon printer renders
 qualified). Roadmap-red pin until the resolver feature lands.
 
+**Duplicate-head ordered choice RATIFIED (Lars, 2026-07-17 — the JSON press):
+same-named branches with different subtrees are a COMPTIME EXPRESSION TOOL.**
+The PEG list idiom (`item "," rest | item`) and the long/short container forms
+(`"{" members "}" | "{" "}"`) put two alternatives on one head, and cut-1 has
+no epsilon rule to left-factor them away — duplicate heads are essential, not
+convenient. The ruling generalizes past the parser: a transform may CONSUME
+same-named branches as data, so branch ambiguity is a POST-NORMALIZATION
+property. The frontend never judges when-clause exhaustiveness (KORU050/051);
+judging happens after transforms, on what they left behind — and the shape
+coverage walk stays out of transform-owned (`is_transformed_subtree`) arms
+entirely, the same contract as the SHAPE002 skip. Consequence, per
+[[frag-diagnostic-stage-follows-pass-home]]: the non-exhaustiveness wall
+migrated stages (210_007), and the post-transform first responder learned to
+say KORU050's teaching message for handled-only-behind-`when` instead of the
+misleading "no continuation found". JSON-full is the instrument that forced
+all of this out (641_004 flagship, 641_005 minimal pin) — and it made two
+open designs concrete: threading `sub(ws)` between tokens is the loud
+verbosity that argues for a trivia/skip declaration, and right-recursive
+lists are the shape repetition sugar (`many`/`sep-by`) would collapse.
+
 **Toolchain gaps the arc surfaced and closed (the instrument working):**
 1. The regex engine had NO escape support — no metachar was matchable
    literally in any pattern; std/parser's first terminal (`\[`) found it.
@@ -63,6 +83,13 @@ qualified). Roadmap-red pin until the resolver feature lands.
 3. The emitter's inline-body effect bridge synthesized Handlers structs from
    transform-consumed arms and tried to alias wildcard decl branches
    (`const * = Handlers_0.*` — a pattern is not a name).
+4. When-clause/coverage checkers still descended into transform-owned
+   subtrees (the 2026-07-17 ruling above closed this).
+5. SURFACED, NOT CLOSED: the Stage-A string lexer silently DROPS a whole
+   statement when a literal contains `\\` immediately followed by `\"`
+   (030_018 honest-red pin; suspect lexer.zig indexOfAtDepthZero, whose
+   for-loop escape "skip" skips nothing — five hand-rolled in_string
+   scanners is the bug class).
 
 Rulings from the walk (Lars, 2026-07-12):
 - **`std/parser` lives in koru_std**, not koru-libs — transforms must import

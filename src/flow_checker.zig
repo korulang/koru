@@ -13,18 +13,23 @@ const expression_parser = @import("expression_parser");
 /// 4. Optional branches (can be skipped, |? catch-all is optional)
 ///
 /// Check modes:
-/// - frontend: Syntactic checks (KORU050/051 when-clause, KORU100 unused binding) - runs before transforms
+/// - frontend: Syntactic checks (KORU100 unused binding, KORU104 expression purity) - runs before transforms
 ///             Note: KORU100 skips [transform] invocations since binding usage isn't visible until after transform
-/// - all: Full validation (KORU100 for transforms, KORU021/022 branch coverage) - runs after transforms
-
+/// - all: Full validation (KORU050/051 when-clause, KORU100 for transforms, KORU021/022 branch coverage) - runs after transforms
+///
+/// Duplicate-named branches are a COMPTIME EXPRESSION TOOL (ruled 2026-07-17):
+/// a transform consumes same-named branches as data (std/parser grammars:
+/// ordered-choice alternatives sharing a head). The tree must normalize before
+/// emission, so ambiguity (KORU050/051) is only judgeable AFTER transforms —
+/// frontend never rejects it.
 pub const CheckMode = enum {
     /// Frontend mode: Syntactic checks that can run before transforms
-    /// Checks: KORU050/051 (when-clause exhaustiveness), KORU100 (unused binding, skips [transform] invocations)
+    /// Checks: KORU100 (unused binding, skips [transform] invocations), KORU104
     frontend,
 
     /// Full mode: All checks including branch coverage
     /// Must run after transforms are applied (backend)
-    /// Checks: KORU100 (for transform invocations), KORU021 (unknown branch), KORU022 (missing branch)
+    /// Checks: KORU050/051 (when-clause exhaustiveness), KORU100 (for transforms), KORU021 (unknown branch), KORU022 (missing branch)
     all,
 };
 
@@ -147,9 +152,12 @@ pub const FlowChecker = struct {
             try self.checkDuplicateBranchHandlers(flow.body.continuations, location);
         }
 
-        // Skip when-clause checks for transformed flows (structure has changed)
-        // Also skip for transform invocations (like ~tap) which use fan-out semantics
-        if (!is_transformed and !is_transform_flow) {
+        // When-clause checks judge AMBIGUITY, and ambiguity only exists after
+        // transforms have consumed their same-named branches (comptime data —
+        // e.g. std/parser ordered-choice alternatives). Post-transform only.
+        // Skip for transformed flows (structure has changed) and for transform
+        // invocations (like ~tap) which use fan-out semantics.
+        if (self.mode == .all and !is_transformed and !is_transform_flow) {
             // Validate when-clause exhaustiveness for all continuations (KORU050, KORU051)
             try self.validateWhenClauseExhaustiveness(flow.body.continuations, location);
         }
@@ -176,8 +184,12 @@ pub const FlowChecker = struct {
         // isDeferredBindingInvocation.
         const root_is_transform = self.flowRootIsTransform(flow);
         for (flow.body.continuations) |*cont| {
-            if (!is_transformed) {
+            // Nested when-clause ambiguity: post-transform only, same ruling
+            // as the top-level check above.
+            if (self.mode == .all and !is_transformed) {
                 try self.validateContinuationWhenClauses(cont, location);
+            }
+            if (!is_transformed) {
                 try self.validateBranchesHangOffPickers(cont);
             }
             // KORU100: Unused binding check

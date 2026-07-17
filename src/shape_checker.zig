@@ -1347,6 +1347,24 @@ pub const ShapeChecker = struct {
 
         // Report errors
         for (result.missing_branches) |branch_name| {
+            // A branch whose handlers are ALL behind `when` guards is not
+            // "unhandled" — it is non-exhaustive. Say so (KORU050, the same
+            // teaching message the flow checker uses), never the misleading
+            // "no continuation found". Since when-clause judging moved
+            // post-transform (2026-07-17), this site is the first responder.
+            var guarded_only = false;
+            for (continuations) |cont| {
+                if (std.mem.eql(u8, cont.branch, branch_name) and cont.condition != null) {
+                    guarded_only = true;
+                    break;
+                }
+            }
+            if (guarded_only) {
+                try self.reporter.addErrorAtLocation(.KORU050, location,
+                    "branch '{s}' has multiple when-clauses but no else case - add one continuation without 'when'", .{branch_name});
+                has_errors = true;
+                continue;
+            }
             log.debug("ERROR: Branch '{s}' must be handled but no continuation found\n", .{branch_name});
             try self.reporter.addErrorAtLocation(.KORU022, location,
                 "branch '{s}' must be handled but no continuation found", .{branch_name});
@@ -1456,6 +1474,11 @@ pub const ShapeChecker = struct {
 
         // For each continuation, check if it properly handles or terminates
         for (continuations) |cont| {
+            // A transform-owned subtree (std/parser grammar rule arms, store's
+            // synthesized capture-cell chains) is comptime data the transform
+            // has already consumed and validated — not user dispatch. Skip its
+            // coverage walk entirely. Mirrors the SHAPE002 recursion skip.
+            if (cont.is_transformed_subtree) continue;
             // PRESENCE scope: entering the `| then` of `if(<optional arm>)`,
             // or a continuation guarded `when <optional arm>`, establishes the
             // arm's presence for everything validated inside this subtree —
