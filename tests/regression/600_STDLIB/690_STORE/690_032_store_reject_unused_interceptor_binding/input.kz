@@ -1,0 +1,23 @@
+// A lifecycle interceptor that BINDS a row field but never uses it must be
+// rejected — the same KORU100 discipline every other binding obeys (bind it
+// or discard with `_`). Here `! inserted { hp }` names `hp`, but the body only
+// maintains a count and never reads it; the honest form is `! inserted _`.
+//
+// This wall has to live in the store transform: flow_checker's KORU100 pass
+// deliberately SKIPS `[transform]` invocations, and `std/store:new` is one, so
+// the normal unused-binding check never sees these arms.
+
+~import std/io
+~import std/store
+
+~std/store:new(stats) { count: 0[i64] }
+
+~std/store:new(pool) { hp: i64 }
+! inserted { hp } |> std/store:stored { stats.count: stats.count + 1 }
+
+~std/store:watch(stats)
+! count c |> std/io:print.ln("count {{ c:d }}")
+
+~std/store:insert(pool) { hp: 1 }
+| row _ |> _
+| full |> _

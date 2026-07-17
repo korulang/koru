@@ -2,8 +2,11 @@
 // compiles down into these same interceptor branches. Here the store's own
 // contract maintains COUNT(*) in a second (singleton) store: `inserted`
 // bumps it, `removed` decrements it. The lifecycle branches fire from the
-// insert and take write paths — the qbody transplant pattern: the
-// destructured row fields arrive as the interceptor body's inputs.
+// insert and take write paths — the qbody transplant pattern.
+//
+// The bodies don't read the row, so the payload is DISCARDED (`_`) — the same
+// KORU100 discipline as any binding; naming a field you never use is rejected
+// (690_032). Consuming the field is 690_033.
 //
 // Bare take (no `[entity]`) is frictionless: swap-remove, no obligation.
 
@@ -13,8 +16,8 @@
 ~std/store:new(stats) { count: 0[i64] }
 
 ~std/store:new(pool) { hp: i64 }
-! inserted { hp } |> std/store:stored { stats.count: stats.count + 1 }
-! removed { hp } |> std/store:stored { stats.count: stats.count - 1 }
+! inserted _ |> std/store:stored { stats.count: stats.count + 1 }
+! removed _ |> std/store:stored { stats.count: stats.count - 1 }
 
 ~std/store:watch(stats)
 ! count c |> std/io:print.ln("count {{ c:d }}")

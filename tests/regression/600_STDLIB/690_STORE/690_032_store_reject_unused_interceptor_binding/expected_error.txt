@@ -1,0 +1,1 @@
+std/store:new(pool): `! inserted` binds 'hp' but never uses it — discard the payload (`! inserted _`), or use the field in the body

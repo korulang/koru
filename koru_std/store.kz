@@ -520,6 +520,46 @@ const std = @import("std");
         };
         var inserted_arms = std.ArrayList(LifecycleArm).initCapacity(allocator, 2) catch unreachable;
         var removed_arms = std.ArrayList(LifecycleArm).initCapacity(allocator, 2) catch unreachable;
+        // KORU100 for interceptor payloads: a bound row field must be USED in
+        // the body (or discarded with `_`). flow_checker's unused-binding pass
+        // skips `[transform]` invocations, and `std/store:new` is one, so the
+        // store transform enforces it here — scanning the body's expression /
+        // source text for the field name at a word boundary.
+        const Usage = struct {
+            fn inText(text: []const u8, name: []const u8) bool {
+                if (name.len == 0) return false;
+                var i: usize = 0;
+                while (i + name.len <= text.len) : (i += 1) {
+                    if (!std.mem.eql(u8, text[i .. i + name.len], name)) continue;
+                    const before_ok = i == 0 or !H.isIdentChar(text[i - 1]);
+                    const after_ok = i + name.len == text.len or !H.isIdentChar(text[i + name.len]);
+                    if (before_ok and after_ok) return true;
+                }
+                return false;
+            }
+            fn inCont(cont: *const ast.Continuation, name: []const u8) bool {
+                if (cont.condition) |c| {
+                    if (inText(c, name)) return true;
+                }
+                if (cont.node) |n| {
+                    if (n == .invocation) {
+                        for (n.invocation.args) |a| {
+                            if (inText(a.value, name)) return true;
+                            if (a.expression_value) |ev| {
+                                if (inText(ev.text, name)) return true;
+                            }
+                            if (a.source_value) |sv| {
+                                if (inText(sv.text, name)) return true;
+                            }
+                        }
+                    }
+                }
+                for (cont.continuations) |*c| {
+                    if (inCont(c, name)) return true;
+                }
+                return false;
+            }
+        };
         for (flow.body.continuations) |*ic| {
             const bname = std.mem.trim(u8, ic.branch, " ");
             if (ic.condition != null) {
@@ -551,6 +591,11 @@ const std = @import("std");
             };
             if (bnode != .invocation) {
                 return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): the `! {s}` interceptor body must start with an invocation this rung", .{ store_name, bname }) } };
+            }
+            for (dnames.items) |fnm| {
+                if (!Usage.inCont(ic, fnm)) {
+                    return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): `! {s}` binds '{s}' but never uses it — discard the payload (`! {s} _`), or use the field in the body", .{ store_name, bname, fnm, bname }) } };
+                }
             }
             const arm = LifecycleArm{
                 .fields = dnames.toOwnedSlice(allocator) catch unreachable,

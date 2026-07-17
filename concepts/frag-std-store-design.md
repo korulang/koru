@@ -185,6 +185,21 @@ writes — the reactive-substrate belief now covers CRUD, not just mutation.
 `updated` and field interceptors on plural rows, and guarded interceptors,
 stay walled as later slices.
 
+An interceptor payload obeys KORU100 like any binding: `! inserted { hp }`
+that never reads `hp` is REJECTED — discard with `! inserted _`, or consume
+the field (690_032 the wall, 690_033 the used-binding, 690_016/029 corrected
+to `_`). This wall has to live in the store transform, and the reason is a
+load-bearing gap worth remembering: **`flow_checker`'s KORU100 pass
+deliberately skips `[transform]` invocations**, and `std/store:new` is one, so
+NOTHING in the normal frontend ever checks the arms attached to it — the store
+transplants the payload into a synthesized event input and the emitter then
+auto-discards an unused one, so a bound-but-unused field vanished silently.
+The store now scans each bound field against the body text. The general shape
+(every transform that transplants a bound payload has the same latent hole;
+the eventual fix is running the binding-usage check through transforms via the
+DFS transform mechanism) is noted but not yet taken — surfaced by a real
+program, walled store-side for now.
+
 **Guarded reactive rules on plural stores now work (690_030).** The reactive
 surface — `std/store(name) ! field h when <guard> |> …` — carried a `when`
 guard on a singleton (690_026) but was walled on a plural store. The wall was
