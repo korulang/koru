@@ -1,0 +1,51 @@
+// Module fixture for 400_155: proc bodies reach their OWN module scope
+// through the sanctioned `$mod.` spelling — a module type (Widget), a module
+// fn (twice), and a module const (BASE).
+//
+// Cut-1 effect inlining splices an effect event's proc body into the
+// CONSUMER's frame, where the module's bare names don't exist; before this
+// contract, libs reached back through emitter-internal naming
+// (`@import("root").koru_libs.<mangled>`), which broke silently when the
+// mangling changed. `$mod.` is the stable spelling: the emitter rewrites it
+// to the declaring module's namespace on the splice path and strips it to
+// bare names on the standalone Handlers-fn path — one spelling, every
+// lowering.
+const std = @import("std");
+
+pub const Widget = struct { n: i32 };
+
+pub const BASE: i32 = 10;
+
+pub fn twice(v: i32) i32 {
+    return v * 2;
+}
+
+// Handler-path probe: no effect branch, so this emits as an ordinary handler
+// fn INSIDE the module namespace — `$mod.` must strip to bare names there.
+~pub event calc { n: i32 } -> i32
+
+~proc calc|zig {
+    return $mod.twice(n) + $mod.BASE;
+}
+
+// Splice-path probe: the effect branch makes this event inline-eligible, so
+// this body lands in the consumer's frame — `$mod.` must rewrite to the
+// module's emitted namespace there.
+~pub event spin { count: i32 }
+! tick *Widget
+| done i32
+
+~proc spin|zig {
+    // NB: local is named `wid`, not `w` — the inline splice is deliberately
+    // non-hygienic (400_151), so proc locals share a frame with the caller's
+    // branch bindings.
+    var wid = $mod.Widget{ .n = 0 };
+    var i: i32 = 0;
+    var acc: i32 = 0;
+    while (i < count) : (i += 1) {
+        wid.n = $mod.twice(i) + $mod.BASE;
+        acc += wid.n;
+        tick(&wid);
+    }
+    return .{ .done = acc };
+}

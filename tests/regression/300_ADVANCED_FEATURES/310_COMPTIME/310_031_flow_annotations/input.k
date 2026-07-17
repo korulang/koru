@@ -16,11 +16,11 @@ import std/build
 }
 
 // Flow with parametrized annotation (multiple args - variadic)
-[depends_on("simple", "single_dep")]std/build:step(name: "multi_dep") {
+[depends_on(simple, single_dep)]std/build:step(name: "multi_dep") {
   echo "Multiple dependencies"
 }
 
 // Flow with multiple annotations
-[pure|depends_on("simple")]std/build:step(name: "combined") {
+[pure|depends_on(simple)]std/build:step(name: "combined") {
   echo "Combined annotations"
 }
