@@ -12,7 +12,7 @@ const Value = union(enum) {
     number: i64,
 };
 
-~pub event describe { v: Value } -> []const u8
+~pub event describe { v: Value } -> string
 
 ~proc describe|zig {
     return switch (v) {
