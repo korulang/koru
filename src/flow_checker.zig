@@ -242,7 +242,10 @@ pub const FlowChecker = struct {
             .invocation => |*inv| try self.checkInvocationArgsPurity(inv, location),
             .label_with_invocation => |*lwi| try self.checkInvocationArgsPurity(&lwi.invocation, location),
             .label_jump => |*lj| {
-                for (lj.args) |*arg| try self.checkArgPurity(arg, location);
+                // A label jump targets a `#label` anchor, not a proc directly —
+                // there is no invocation path here to resolve against a
+                // `|template|` proc, so the exemption stays as before.
+                for (lj.args) |*arg| try self.checkArgPurity(arg, location, true);
             },
             .branch_constructor => |*bc| try self.checkBranchConstructorPurity(bc, location),
             .conditional => |*c| {
@@ -313,12 +316,18 @@ pub const FlowChecker = struct {
         const segs = inv.path.segments;
         const last_seg: []const u8 = if (segs.len > 0) segs[segs.len - 1] else "";
         const is_capture_family = std.mem.eql(u8, last_seg, "capture") or std.mem.eql(u8, last_seg, "captured");
+        // The Expression-field exemption in checkArgPurity is only sound for a
+        // genuine QUOTING proc (text handed over as inert data). A `|template|`
+        // proc splices its Expression field's text verbatim into emitted code
+        // — if/for's `expr` condition executes there — so template targets do
+        // NOT get the exemption (see checkArgPurity + invocationResolvesToTemplateProc).
+        const allow_expression_exemption = !self.invocationResolvesToTemplateProc(&inv.path);
         for (inv.args) |*arg| {
             if (arg.source_value) |sv| {
                 if (is_capture_family) try self.checkCaptureFieldsPurity(sv.text, location);
                 continue;
             }
-            try self.checkArgPurity(arg, location);
+            try self.checkArgPurity(arg, location, allow_expression_exemption);
         }
     }
 
@@ -362,17 +371,24 @@ pub const FlowChecker = struct {
         }
     }
 
-    fn checkArgPurity(self: *FlowChecker, arg: *const ast.Arg, location: errors.SourceLocation) anyerror!void {
+    fn checkArgPurity(self: *FlowChecker, arg: *const ast.Arg, location: errors.SourceLocation, allow_expression_exemption: bool) anyerror!void {
         // Source-typed arguments are opaque code blocks by design (the
         // metaprogramming surface) — the wall does not judge them. (Capture-
         // family sources are handled field-wise in checkInvocationArgsPurity.)
         if (arg.source_value != null) return;
-        // Declared-Expression parameters are the comptime QUOTING surface:
-        // the text is captured verbatim and handed to a transform proc as
-        // data — it never executes in this flow, so call-shaped text there
-        // is not a call. (parser sets expression_value exactly when the
-        // event's field is declared `Expression`.)
-        if (arg.expression_value != null) return;
+        // Declared-Expression parameters are the comptime QUOTING surface —
+        // BUT ONLY for a genuine quoting proc: the text is captured verbatim
+        // and handed to a normal proc as inert []const u8 DATA, never executed
+        // in this flow (210_036/210_046 pin that verbatim-capture contract).
+        // A `|template|` proc is different in kind: its Expression field's
+        // text is SPLICED VERBATIM INTO THE EMITTED CODE and DOES execute
+        // there (if/for's zero-overhead `expr` condition — control.kz). A call
+        // hiding in that text is exactly as illegal as one in a nested
+        // condition, so the exemption must not apply to template targets —
+        // `allow_expression_exemption` is false for those (see
+        // invocationResolvesToTemplateProc), keeping root-position if/for
+        // conditions scanned identically to nested ones.
+        if (arg.expression_value != null and allow_expression_exemption) return;
         if (self.exprTextHasCall(arg.value)) {
             var buf: [256]u8 = undefined;
             const surface = std.fmt.bufPrint(&buf, "argument '{s}'", .{arg.name}) catch "an argument";
