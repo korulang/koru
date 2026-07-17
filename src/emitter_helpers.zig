@@ -836,19 +836,49 @@ pub fn isScalarValueFields(fields: []const ast.Field) bool {
     return true;
 }
 
+/// True when a bare type and a phantom-module qualifier look co-located —
+/// the type lives IN that module (`*Field` ↔ `std/field`, `*List_i64` ↔
+/// `std/list`). False when they diverge (`Enemy` ↔ `std/store`): the state
+/// is foreign, the type is local, and falling back would mis-qualify the
+/// base type. Orthogonality parked at frag-std-store-design.md rung 2.
+fn phantomModuleLooksLikeTypeHome(type_name: []const u8, phantom_module: []const u8) bool {
+    var base = type_name;
+    const prefixes = [_][]const u8{ "[]const ", "?*const ", "*const ", "[]", "?*", "?", "*" };
+    for (prefixes) |prefix| {
+        if (std.mem.startsWith(u8, base, prefix)) {
+            base = base[prefix.len..];
+            break;
+        }
+    }
+    const seg = if (std.mem.lastIndexOfScalar(u8, phantom_module, '/')) |idx|
+        phantom_module[idx + 1 ..]
+    else if (std.mem.lastIndexOfScalar(u8, phantom_module, '.')) |idx|
+        phantom_module[idx + 1 ..]
+    else
+        phantom_module;
+    if (seg.len == 0 or base.len < seg.len) return false;
+    // Exact match ignoring case: Field ↔ field
+    if (base.len == seg.len and std.ascii.eqlIgnoreCase(base, seg)) return true;
+    // Prefixed generated forms: List_i64 ↔ list
+    if (base.len > seg.len and base[seg.len] == '_' and std.ascii.eqlIgnoreCase(base[0..seg.len], seg)) return true;
+    return false;
+}
+
 /// Helper: Write field type with proper module path handling
 pub fn writeFieldType(emitter: *CodeEmitter, field: ast.Field, main_module_name: ?[]const u8) !void {
     // A bare foreign type carrying a module-qualified phantom (e.g.
     // `*Field<std/field:field>`) has no module_path on the TYPE itself, but the
-    // phantom names the module the type lives in — the state belongs to that
-    // type. Fall back to the phantom's module so the type emits qualified
-    // (`*koru_std.koru_field.Field`). Only triggers for explicitly-qualified
-    // phantoms (a same-module phantom like `field!` has no `:`), so local
-    // std-module events are unaffected.
+    // phantom names the module the type lives in — when type and state
+    // co-locate. Fall back to the phantom's module ONLY in that case so the
+    // type emits qualified (`*koru_std.koru_field.Field`). When they diverge
+    // (`Enemy<std/store:!taken>`), the type stays unqualified / uses its own
+    // module_path — base-type ≠ phantom-state orthogonality.
     const effective_module_path: ?[]const u8 = field.module_path orelse blk: {
         const ph = field.phantom orelse break :blk null;
         const colon = std.mem.indexOfScalar(u8, ph, ':') orelse break :blk null;
-        break :blk ph[0..colon];
+        const phantom_mod = ph[0..colon];
+        if (!phantomModuleLooksLikeTypeHome(field.type, phantom_mod)) break :blk null;
+        break :blk phantom_mod;
     };
     if (effective_module_path) |module_path| {
         // Cross-module type reference: module.path:Type -> prefix + koru_module.path.Type

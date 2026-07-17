@@ -156,18 +156,17 @@ substrate (reactions fused into the one write path, like taps).
 
 **Rung 2 landed (2026-07-17, 690_023 green / 690_024 the MUST_FAIL wall):**
 `[entity(<name>)]` on the create annotation synthesizes a user-nameable type
-alias (`enemy` → `const Enemy = __KoruStoreRow_enemies`) and makes `take` mint
-`<taken!>` on `Enemy`. The user's `event discharge-enemy { enemy: Enemy<!taken> }`
-consumes it — 660_027's base-type-filtered discharge, reused whole. Crucial
-spelling fact: **`taken` is an UNQUALIFIED (local) state**, not `std/store:taken`.
-Both mint (take unit) and consume (discharger) live in the user's module, so a
-local state is correct — and it sidesteps a real emitter limitation: `writeFieldType`
-(emitter_helpers ~848) falls back to a *phantom's* module to qualify the base
-*type* (right for `*Field<std/field:field>`, where type co-locates with state;
-wrong when base-type and phantom-state are in different modules, as the store's
-`Enemy`/`taken` are). PARKED: lifting that so a module-qualified store obligation
-resolves its base type independently — the base-type≠phantom-state orthogonality
-made an emitter rule.
+alias (`enemy` → `pub const Enemy = __KoruStoreRow_enemies`) and makes `take`
+mint `<std/store:taken!>` on `Enemy`. The user's discharger consumes
+`<std/store:!taken>` — 660_027's base-type-filtered discharge, reused whole.
+The obligation *state* is shared and module-qualified; the per-store *type*
+carries identity. An early rung-2 spelling kept `taken` local to dodge an
+emitter coupling (`writeFieldType` fell back to the phantom's module for the
+base type — right for `*Field<std/field:field>`, wrong for `Enemy`/`taken`);
+that is REPUDIATED. `writeFieldType` now falls back only when type and
+phantom-module look co-located; the take payload carries `module_path` for
+the user type; cross-module dischargers name `input:Enemy<std/store:!taken>`
+(690_036).
 
 **Rung 4 opened — plural lifecycle interceptors are BUILT (2026-07-17,
 690_016 green):** `! inserted { f } |> …` and `! removed { f } |> …` on a
