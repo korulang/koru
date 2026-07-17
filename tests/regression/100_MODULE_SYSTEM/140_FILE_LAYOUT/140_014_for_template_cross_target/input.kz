@@ -1,20 +1,14 @@
-// FRONTIER: ~for now HONESTLY selects `for|template|js` on a --lang=js build
-// (koru_std/control.kz), and the JS emitter resolves BOTH splice-marker kinds
-// the template mints:
-//   - the per-iteration `! each` effect splice (`__koru_inline_scoped_0(item)`)
-//     lowers to `{ const _x = item; <handler body> }` — RESOLVED, no longer a
-//     leaked, unresolved marker; and
-//   - the `| done |> _` terminal's `__koru_continue_N` lowers to an empty block,
-//     as `_` should.
-// Proven with a JS-array iterable: `~for([1,2,3]) ! each _ |> println(...)`
-// emits a runnable `for (const x of [1,2,3]) { … }` that prints tick×3.
-//
-// The ONE remaining gap is the iterable EXPRESSION: `{{ iterable }}` substitutes
-// `0..3` verbatim, so the JS body becomes `for (const x of 0..3)` — `0..3` is
-// Zig range syntax, not a JS iterable, and node rejects it. Closing this needs
-// range→JS lowering (`0..N` → a counting loop or `Array.from`/generator), a
-// target-aware transform of the iterable expression that does not exist yet.
-// That is the whole of what's left; the for-body + effect-splice lowering is done.
+// Cross-target `~for(0..3)` with a `print` effect-handler body. Pins the whole
+// chain lowering identically to Zig and JS:
+//   - `for|template|js` (koru_std/control.kz) is selected on a --lang=js build;
+//   - the range iterable `0..N` lowers to a JS counting loop
+//     (`for (let i = 0; i < N; i++)`) via `parse_range` (template_processor.zig),
+//     not a verbatim `for (… of 0..N)` that node would reject;
+//   - the `! each` effect splice binds the item and runs the handler body; and
+//   - that handler body — `std/io:print(...)`, a comptime|transform nested as an
+//     effect-splice body — lowers through its `|js` variant, spliced by the JS
+//     emitter from the invocation's `inline_body`, not emitted as a `.impl` call.
+// A JS-array iterable (`~for([1,2,3])`) rides the same path as a `for…of`.
 ~import std/control
 ~import std/io
 

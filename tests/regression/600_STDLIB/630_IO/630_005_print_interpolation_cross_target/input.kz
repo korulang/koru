@@ -1,0 +1,9 @@
+// Cross-target print interpolation. A `{{ expr:d }}` in print.ln lowers to a
+// format arg on Zig and a parenthesized string-concat operand on JS. Pins that
+// a MULTI-TERM interpolation expression (`40 + 2`) is emitted as ONE operand on
+// the JS side — `"answer = " + (40 + 2)` = "answer = 42", never the
+// left-to-right fold `"answer = " + 40 + 2` = "answer = 402". Same source, same
+// output, two backends.
+~import std/io
+
+~std/io:print.ln("answer = {{ 40 + 2:d }}")

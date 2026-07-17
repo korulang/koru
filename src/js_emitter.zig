@@ -513,6 +513,22 @@ const Emitter = struct {
         continuations: []const ast.Continuation,
         indent: []const u8,
     ) JsEmitError!void {
+        // TRANSFORM-PRODUCED INLINE BODY: a comptime|transform (`std.io:print`,
+        // `print.ln`, `eprint`, …) reroutes its invocation to a `.impl` stub and
+        // stores the target-lowered code on `inv.inline_body`. A top-level flow
+        // splices this in emitFlow; a NESTED invocation (an `~if`/`~for` branch
+        // body, an effect-handler body) recurses here, so we must splice it too —
+        // otherwise we emit `main_module.impl_event.handler(...)` against a stub
+        // that doesn't exist. Mirrors the Zig emitter routing `inv.inline_body`
+        // through emitInlineBodyNode (emitter_helpers.zig ~7287), the same helper
+        // top-level flows use.
+        if (inv.inline_body) |inline_body_raw| {
+            const stripped = stripInlineStmtMarker(inline_body_raw);
+            try self.emitInlineBodyResolvingContinuations(stripped, continuations, indent);
+            try self.write("\n");
+            return;
+        }
+
         const event = self.findEventDecl(&inv.path) orelse {
             log.debug("[js_emitter] flow invokes unresolved event\n", .{});
             return JsEmitError.UnresolvedEvent;

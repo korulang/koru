@@ -30,12 +30,28 @@ Corollaries held with it:
   emits it through the normal pipeline. The north-star application is
   PGO-shaped lowering (Orisha route dispatch reordered from profile data at
   compile time).
+- Facets are NOT a `|template`-only mechanism. A `[comptime|transform]` proc
+  carries the same per-target facet variants: the std/io print family renders
+  `print|zig` → a Zig posix.write, `print|js` → `process.stdout.write(...)`,
+  and the build target selects the variant exactly as it does for a template.
+  A transform stores its rendered text as the *invocation's* `inline_body` (and
+  reroutes the call to a `.impl` stub for shape-checking); the emitter must
+  splice that inline_body **wherever the invocation appears** — a nested `~if`/
+  `~for` branch or effect-handler body, not only a top-level flow — or the
+  nested site lowers to a dead call on the stub. A comptime|transform event is
+  therefore NOT target-agnostic: a target with no variant, or an emitter that
+  splices only at top level, silently breaks that target (JS printing was fully
+  broken this way until both halves landed). Pins: 010_008, 140_014, 630_001,
+  630_005.
 - Deliberately open, not part of this belief: surface spellings for the core
   nodes (foreach/conditional/assignment) and the fragment/AST-as-value
   surface.
 
 Prior state this extends (was valid, now grown): template lowering was
-host-text-only, and template-ness lived in the pipe path.
+host-text-only, template-ness lived in the pipe path, and the facet rule was
+framed around `|template`/`|koru` procs — the comptime|transform print family
+and the emitter's obligation to splice a nested transform's inline_body were
+outside it.
 
 Provenance: session INTERPRETER 2026-07-04/05 (Lars + Claude); pins
 310_099/310_100 @e478834a, 310_101 @1ab16a7. Migrated from koru-membrane
