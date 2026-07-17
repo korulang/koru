@@ -8,27 +8,6 @@
 
 ## Examples
 
-### 010_001_hello_world
-
-```koru
-// ============================================================================
-// VERIFIED REGRESSION TEST - DO NOT MODIFY WITHOUT DISCUSSION
-// ============================================================================
-// Test: Pure Zig code in a .kz file
-// ============================================================================
-const std = @import("std");
-
-pub fn main() void {
-    std.debug.print("Hello World\n", .{});
-}
-```
-
-**Output:**
-
-```
-Hello World
-```
-
 ### 010_000_hello_world_koru
 
 ```koru
@@ -73,72 +52,6 @@ greet (name: "World"): msg |> std/io:print.ln(msg)
 
 ```
 Hello, World!
-```
-
-### 201_multiple_branches
-
-```koru
-// ============================================================================
-// VERIFIED REGRESSION TEST - DO NOT MODIFY WITHOUT DISCUSSION
-// ============================================================================
-// Test 007: Multiple branches in events
-// Tests that events can have multiple branches and procs can return different ones
-const std = @import("std");
-
-~event check { value: i32 }
-| positive i32
-| zero
-| negative i32
-
-~proc check|zig {
-    if (value > 0) return .{ .positive = value };
-    if (value < 0) return .{ .negative = value };
-    return .{ .zero = .{} };
-}
-
-~event handle-positive { n: i32 }
-
-~proc handle-positive|zig {
-    std.debug.print("Positive branch works: {}\n", .{n});
-}
-
-~event handle-zero {}
-
-~proc handle-zero|zig {
-    std.debug.print("Zero branch works\n", .{});
-}
-
-~event handle-negative { n: i32 }
-
-~proc handle-negative|zig {
-    std.debug.print("Negative branch works: {}\n", .{n});
-}
-
-// Test 1: Positive value (42)
-~check(value: 42)
-| positive p |> handle-positive(n: p)
-| zero |> handle-zero()
-| negative n |> handle-negative(n)
-
-// Test 2: Zero value (0)
-~check(value: 0)
-| positive p |> handle-positive(n: p)
-| zero |> handle-zero()
-| negative n |> handle-negative(n)
-
-// Test 3: Negative value (-7)
-~check(value: -7)
-| positive p |> handle-positive(n: p)
-| zero |> handle-zero()
-| negative n |> handle-negative(n)
-```
-
-**Output:**
-
-```
-Positive branch works: 42
-Zero branch works
-Negative branch works: -7
 ```
 
 ### 240_subflow_defines_semantics
@@ -206,38 +119,5 @@ app/fs:open(path: "test.txt"): f |> app/fs:close(file: f)
 ```
 Opening file: test.txt
 Closing file
-```
-
-### 400_070_effect_branch_minimal
-
-```koru
-// Test: minimum effect-branch program — proc yields, consumer handles.
-//
-// `! pong []const u8` is an effect branch; the proc body calls `pong(msg)`
-// which transfers control to the consumer's `! pong reply |> ...` handler,
-// runs it, then returns. No terminal `|` branches — this is a void event
-// with one effect operation.
-
-~import std/io
-
-const std = @import("std");
-
-~pub event ping { msg: string }
-! pong string
-
-~proc ping|zig {
-    pong(msg);
-}
-
-~ping(msg: "hello effect branches")
-! pong reply |> std/io:print.blk {
-    {{ reply:s }}
-}
-```
-
-**Output:**
-
-```
-hello effect branches
 ```
 
