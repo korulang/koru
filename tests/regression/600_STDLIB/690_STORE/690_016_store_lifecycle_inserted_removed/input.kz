@@ -1,10 +1,11 @@
-// ASPIRATION — TODO idea pin. Ruling 5: stores emit inserted/updated/
-// removed, and everything reactive compiles down into these same
-// interceptor branches. Here the store's own contract maintains COUNT(*)
-// in a second store (ruling 2: stored scalars are often derived
-// aggregates). DESIGN.md ruling 4 shows this exact interceptor shape
-// (`! inserted { hp } |> stored { ... }`). Plural lifecycle payload
-// vocabulary = gauntlet-2 open; destructure shape PROVISIONAL.
+// Ruling 5: stores emit inserted/removed/updated, and everything reactive
+// compiles down into these same interceptor branches. Here the store's own
+// contract maintains COUNT(*) in a second (singleton) store: `inserted`
+// bumps it, `removed` decrements it. The lifecycle branches fire from the
+// insert and take write paths — the qbody transplant pattern: the
+// destructured row fields arrive as the interceptor body's inputs.
+//
+// Bare take (no `[entity]`) is frictionless: swap-remove, no obligation.
 
 ~import std/io
 ~import std/store
@@ -20,5 +21,5 @@
 
 ~std/store:insert(pool) { hp: 1 }
 | row a |> std/store:insert(pool) { hp: 2 }
-    | row b |> std/store:take(pool[b]): item
-        |> std/store:give-back(item)
+    | row b |> std/store:take(pool[b])
+        | item _ |> _

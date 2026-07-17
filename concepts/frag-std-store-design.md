@@ -169,6 +169,34 @@ wrong when base-type and phantom-state are in different modules, as the store's
 resolves its base type independently — the base-type≠phantom-state orthogonality
 made an emitter rule.
 
+**Rung 4 opened — plural lifecycle interceptors are BUILT (2026-07-17,
+690_016 green):** `! inserted { f } |> …` and `! removed { f } |> …` on a
+plural `new()` now fire from the write path itself, closing the gap the
+design named at line 21 (CRUD lifecycle is the single primitive) for the
+insert/take half. The mechanism is the **qbody transplant reused whole**:
+each interceptor becomes an event whose inputs are its destructured row
+fields plus an impl flow carrying the body, invoked from the generated
+insert/take |zig via `main_module.<n>_event.handler(.{…})` — inserted after
+the row append and before standing query enters (the contract runs before
+subscriptions observe settled state, (h)), removed before the swap-remove
+with the row's outgoing values. So a store keeps a sibling aggregate
+coherent with no bus and no dispatch, on row birth/death as well as field
+writes — the reactive-substrate belief now covers CRUD, not just mutation.
+`updated` and field interceptors on plural rows, and guarded interceptors,
+stay walled as later slices.
+
+This slice earned its priority the honest way: writing a real program (a
+wave-combat arena) made hand-bumping the scoreboard at every insert/take
+site the loudest friction. That same program surfaced the NEXT wall, which
+this slice does NOT close and must not be mistaken for closed: **a chained
+`stored |> stored` body drops all but the first write when spliced — in an
+interceptor AND in a watch.** It is pre-existing (not introduced here) and
+independent of lifecycle wiring; it is the executable edge of the chain-
+envelope lean (line 29-30 / (i), 690_009 NEED-RULED). Until multi-write
+grouping is built, an interceptor can carry exactly one write, so an
+aggregate needing two fields updated on one lifecycle event cannot yet be
+expressed in one branch.
+
 The full residue (rulings, stamped theses, gauntlet verdicts, open
 queue) lives in `tests/regression/600_STDLIB/690_STORE/DESIGN.md`, which
 deletes as pins absorb it. ECT/BLOOM (entity-component-taps) is
