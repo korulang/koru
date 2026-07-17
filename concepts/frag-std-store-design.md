@@ -181,8 +181,39 @@ subscriptions observe settled state, (h)), removed before the swap-remove
 with the row's outgoing values. So a store keeps a sibling aggregate
 coherent with no bus and no dispatch, on row birth/death as well as field
 writes — the reactive-substrate belief now covers CRUD, not just mutation.
-`updated` and field interceptors on plural rows, and guarded interceptors,
-stay walled as later slices.
+Field-named interceptors on plural rows, and guarded interceptors, stay
+walled as later slices.
+
+**Rung 4 closed its `updated` face (2026-07-17, 690_038/039/040/041):**
+`! updated { old, new }` on a plural `new()` is the row write-contract —
+the third of Ruling 5's three lifecycle primitives. The payload is the
+singleton grammar of 690_003 carried over unchanged (ONE grammar, not a
+plural dialect): old/new are the WRITTEN FIELD's images, and the pre-image
+read is usage-synthesized per the (c) lean — the `_` discard form
+synthesizes no read at all, so a store whose updated arms bind nothing
+keeps a write-only write path. Two structural beliefs earned here:
+
+- **The firing site is the apply switch, not the arm payload.** The
+  singleton walls `updated` + field watches on one store because its
+  updated mode FLIPS the write payload shape; the plural fires updated
+  interceptors as host calls inside the write's atomic step (after the
+  cell write, before the field arm dispatches), so the contract and the
+  subscriptions never contend — updated + watches + guarded reactive
+  rules coexist on one plural store (690_041 runs all three). The
+  singleton's mixing wall is an artifact of its slice, not doctrine.
+- **`updated` observes semantic writes only.** Births arrive whole (O9),
+  take is a remove, and take's swap-relocation of the last row is storage
+  mechanics — none of them fire it (690_040). The write path — query
+  update-where and row-addressed stored — is exactly what does.
+
+The payoff belief, proven by the arena (690_041): a maintained aggregate
+riding all three faces is CORRECT BY ARITHMETIC across lifecycle seams —
+overkill damage subtracts past zero at update time and the corpse's
+removal restores the overshoot, so SUM(hp-of-live-rows) holds at every
+settled point with no reconciliation scan. T2's cycle detector already
+covered the new face (an updated arm writing its own store rejects
+statically) because it scans branch names, not slices — walls built on
+the general mechanism extend for free.
 
 An interceptor payload obeys KORU100 like any binding: `! inserted { hp }`
 that never reads `hp` is REJECTED — discard with `! inserted _`, or consume

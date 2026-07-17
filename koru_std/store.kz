@@ -506,20 +506,23 @@ const std = @import("std");
         }
         const CAP: usize = cap_buf;
 
-        // ---- collect inserted/removed lifecycle interceptors (690_016) ----
-        // Ruling 5: stores emit inserted/removed/updated; the plural slice
-        // wires `inserted` (fires in the insert write path) and `removed`
-        // (fires in take). Each interceptor body is transplanted as an impl
-        // flow — the qbody pattern — so the destructured row fields arrive as
-        // its event inputs and a nested `stored { other.f: ... }` resolves the
-        // sibling store's write. `updated` and field interceptors on plural
-        // rows stay later slices.
+        // ---- collect lifecycle interceptors (690_016, 690_038) ----
+        // Ruling 5: stores emit inserted/removed/updated. The plural slice
+        // wires `inserted` (fires in the insert write path), `removed`
+        // (fires in take), and `updated` (fires in the row write path with
+        // the written field's { old, new } images — the (c) usage-synthesis
+        // lean, singleton grammar of 690_003). Each interceptor body is
+        // transplanted as an impl flow — the qbody pattern — so its bindings
+        // arrive as event inputs and a nested `stored { other.f: ... }`
+        // resolves the sibling store's write. Field-named interceptors on
+        // plural rows stay a later slice.
         const LifecycleArm = struct {
             fields: []const []const u8,
             body: ast.Continuation,
         };
         var inserted_arms = std.ArrayList(LifecycleArm).initCapacity(allocator, 2) catch unreachable;
         var removed_arms = std.ArrayList(LifecycleArm).initCapacity(allocator, 2) catch unreachable;
+        var updated_arms = std.ArrayList(LifecycleArm).initCapacity(allocator, 2) catch unreachable;
         // KORU100 for interceptor payloads: a bound row field must be USED in
         // the body (or discarded with `_`). flow_checker's unused-binding pass
         // skips `[transform]` invocations, and `std/store:new` is one, so the
@@ -567,8 +570,44 @@ const std = @import("std");
             }
             const is_inserted = std.mem.eql(u8, bname, "inserted");
             const is_removed = std.mem.eql(u8, bname, "removed");
-            if (!is_inserted and !is_removed) {
-                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): plural interceptor branch '{s}' - the lifecycle slice wires `inserted` and `removed`; `updated` and field interceptors on plural rows are a later slice", .{ store_name, bname }) } };
+            const is_updated = std.mem.eql(u8, bname, "updated");
+            if (!is_inserted and !is_removed and !is_updated) {
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): plural interceptor branch '{s}' - the lifecycle slice wires `inserted`, `removed`, and `updated`; field interceptors on plural rows are a later slice", .{ store_name, bname }) } };
+            }
+            if (is_updated) {
+                // `updated` carries the write contract — the written field's
+                // { old, new } images ((c) usage-synthesis lean, mirroring the
+                // singleton grammar of 690_003) — never row fields. The `_`
+                // discard form is legal like the other lifecycle arms; a
+                // discard arm synthesizes NO pre-image read (write-only path).
+                const is_discard = ic.destructure.len == 0;
+                if (!is_discard) {
+                    var has_old = false;
+                    var has_new = false;
+                    for (ic.destructure) |df| {
+                        if (std.mem.eql(u8, df.name, "old")) has_old = true;
+                        if (std.mem.eql(u8, df.name, "new")) has_new = true;
+                    }
+                    if (!has_old or !has_new or ic.destructure.len != 2) {
+                        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): `! updated` binds the written field's images — destructure exactly {{ old, new }} (row fields ride `inserted`/`removed`)", .{store_name}) } };
+                    }
+                }
+                const ubnode = ic.node orelse {
+                    return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): the `! updated` interceptor needs a body (`|> std/store:stored {{ ... }}`)", .{store_name}) } };
+                };
+                if (ubnode != .invocation) {
+                    return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): the `! updated` interceptor body must start with an invocation this rung", .{store_name}) } };
+                }
+                var unames = std.ArrayList([]const u8).initCapacity(allocator, 2) catch unreachable;
+                if (!is_discard) {
+                    unames.append(allocator, allocator.dupe(u8, "old") catch unreachable) catch unreachable;
+                    unames.append(allocator, allocator.dupe(u8, "new") catch unreachable) catch unreachable;
+                }
+                updated_arms.append(allocator, .{
+                    .fields = unames.toOwnedSlice(allocator) catch unreachable,
+                    .body = ast_functional.cloneContinuation(allocator, ic) catch unreachable,
+                }) catch unreachable;
+                continue;
             }
             var dnames = std.ArrayList([]const u8).initCapacity(allocator, ic.destructure.len) catch unreachable;
             for (ic.destructure) |df| {
@@ -1076,9 +1115,38 @@ const std = @import("std");
 
             var pbody = std.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
             pbody.appendSlice(allocator, "const __koru_r = @as(usize, @intCast(row));\nreturn switch (field) {\n") catch unreachable;
+            // `updated` lifecycle interceptors fire inside the write's atomic
+            // step — after the cell write, before the field arm dispatches to
+            // subscriptions — so no watch ever observes a row whose contract
+            // (e.g. a maintained aggregate) hasn't settled. The pre-image read
+            // is usage-synthesized ((c) lean): only an arm that binds
+            // { old, new } materializes it; discard arms stay write-only.
+            const updated_needs_old = blk: {
+                for (updated_arms.items) |ua| {
+                    if (ua.fields.len != 0) break :blk true;
+                }
+                break :blk false;
+            };
             for (field_names, 0..) |fname, i| {
-                const arm = std.fmt.allocPrint(allocator, "    {d} => blk: {{ __koru_store_{s}.{s}[__koru_r] = value; break :blk .{{ .{s} = value }}; }},\n", .{ i, store_name, fname, fname }) catch unreachable;
-                pbody.appendSlice(allocator, arm) catch unreachable;
+                var atext = std.ArrayList(u8).initCapacity(allocator, 128) catch unreachable;
+                const head = std.fmt.allocPrint(allocator, "    {d} => blk: {{ ", .{i}) catch unreachable;
+                atext.appendSlice(allocator, head) catch unreachable;
+                if (updated_needs_old) {
+                    const oldr = std.fmt.allocPrint(allocator, "const __koru_old = __koru_store_{s}.{s}[__koru_r]; ", .{ store_name, fname }) catch unreachable;
+                    atext.appendSlice(allocator, oldr) catch unreachable;
+                }
+                const wr = std.fmt.allocPrint(allocator, "__koru_store_{s}.{s}[__koru_r] = value; ", .{ store_name, fname }) catch unreachable;
+                atext.appendSlice(allocator, wr) catch unreachable;
+                for (updated_arms.items, 0..) |ua, ai| {
+                    const call = if (ua.fields.len != 0)
+                        std.fmt.allocPrint(allocator, "main_module.__store_updated_{s}_{d}_event.handler(.{{ .old = __koru_old, .new = value }}); ", .{ store_name, ai }) catch unreachable
+                    else
+                        std.fmt.allocPrint(allocator, "main_module.__store_updated_{s}_{d}_event.handler(.{{}}); ", .{ store_name, ai }) catch unreachable;
+                    atext.appendSlice(allocator, call) catch unreachable;
+                }
+                const tail = std.fmt.allocPrint(allocator, "break :blk .{{ .{s} = value }}; }},\n", .{fname}) catch unreachable;
+                atext.appendSlice(allocator, tail) catch unreachable;
+                pbody.appendSlice(allocator, atext.items) catch unreachable;
             }
             pbody.appendSlice(allocator, "    else => unreachable,\n};") catch unreachable;
             appended_items.append(allocator, ast.Item{ .proc_decl = ast.ProcDecl{
@@ -1438,6 +1506,10 @@ const std = @import("std");
             }
             for (removed_arms.items, 0..) |*arm, ai| {
                 const ev_name = std.fmt.allocPrint(allocator, "__store_removed_{s}_{d}", .{ store_name, ai }) catch unreachable;
+                LC.emit(allocator, &appended_items, flow.module, flow.location, ev_name, arm.fields, &arm.body, pstore_names.items);
+            }
+            for (updated_arms.items, 0..) |*arm, ai| {
+                const ev_name = std.fmt.allocPrint(allocator, "__store_updated_{s}_{d}", .{ store_name, ai }) catch unreachable;
                 LC.emit(allocator, &appended_items, flow.module, flow.location, ev_name, arm.fields, &arm.body, pstore_names.items);
             }
         }

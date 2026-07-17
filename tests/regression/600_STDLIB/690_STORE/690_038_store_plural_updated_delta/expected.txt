@@ -1,0 +1,4 @@
+pool -15
+hp now 25
+pool -30
+hp now 65

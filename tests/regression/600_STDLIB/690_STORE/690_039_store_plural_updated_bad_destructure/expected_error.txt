@@ -1,0 +1,1 @@
+std/store:new(squad): `! updated` binds the written field's images — destructure exactly { old, new } (row fields ride `inserted`/`removed`)

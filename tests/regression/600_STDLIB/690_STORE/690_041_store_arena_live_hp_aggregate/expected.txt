@@ -1,0 +1,13 @@
+board: 1 alive
+board: hp pool 30
+board: 2 alive
+board: hp pool 42
+board: 3 alive
+board: hp pool 82
+board: hp pool 62
+board: hp pool 42
+a foe reels (-8 hp)
+board: 2 alive
+board: 1 killed
+board: hp pool 50
+culled a foe at -8 hp
