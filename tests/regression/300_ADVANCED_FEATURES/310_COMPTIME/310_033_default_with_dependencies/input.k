@@ -15,11 +15,11 @@ std/build:step(name: "compile_backend") {
 }
 
 // Override build (depends on compile_backend)
-[depends_on("compile_backend")]std/build:step(name: "build") {
+[depends_on(compile_backend)]std/build:step(name: "build") {
     echo "step:build" >> tests/regression/300_ADVANCED_FEATURES/310_COMPTIME/310_033_default_with_dependencies/steps.log
 }
 
 // Override run (depends on build)
-[depends_on("build")]std/build:step(name: "run") {
+[depends_on(build)]std/build:step(name: "run") {
     echo "step:run" >> tests/regression/300_ADVANCED_FEATURES/310_COMPTIME/310_033_default_with_dependencies/steps.log
 }

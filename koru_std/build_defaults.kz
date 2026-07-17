@@ -29,11 +29,11 @@
 
 // Phase 2: Run backend to generate & compile final program
 // The backend applies optimizations and generates the runtime code
-~[default, depends_on("compile_backend")] std/build:step(name: "build") {
+~[default, depends_on(compile_backend)] std/build:step(name: "build") {
     ./zig-out/bin/main backend_tmp
 }
 
 // Phase 3: Run the final program
-~[default, depends_on("build")] std/build:step(name: "run") {
+~[default, depends_on(build)] std/build:step(name: "run") {
     ./backend_tmp
 }

@@ -390,11 +390,11 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
 //     zig build-exe main.zig
 //   }
 //
-//   ~[depends_on("compile")]std/build:step(name: "test") {
+//   ~[depends_on(compile)]std/build:step(name: "test") {
 //     ./main --test
 //   }
 //
-//   ~[depends_on("compile", "test")]std/build:step(name: "package") {
+//   ~[depends_on(compile, test)]std/build:step(name: "package") {
 //     tar czf app.tar.gz main
 //   }
 //
@@ -405,7 +405,7 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
 // - Steps execute in correct order (circular dependencies are detected and error)
 //
 // Annotations:
-// - ~[depends_on("step1", "step2", ...)] - Variadic dependency list
+// - ~[depends_on(step1, step2, ...)] - Variadic dependency list
 // - Future: ~[parallel], ~[optional], ~[timeout(30)], etc.
 
 ~[comptime|norun]pub event step { name: []const u8, source: Source }
@@ -428,12 +428,12 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
 }
 
 // Phase 2: Run backend to generate & compile final program
-~[default, depends_on("compile_backend")] step(name: "build") {
+~[default, depends_on(compile_backend)] step(name: "build") {
     ./zig-out/bin/main backend_tmp
 }
 
 // Phase 3: Run the final program
-~[default, depends_on("build")] step(name: "run") {
+~[default, depends_on(build)] step(name: "run") {
     ./backend_tmp
 }
 
