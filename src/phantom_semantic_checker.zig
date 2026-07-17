@@ -1116,6 +1116,85 @@ pub const PhantomSemanticChecker = struct {
         }
     }
 
+    /// Report every undischarged obligation still held at a HARD terminal
+    /// (`|> _`). The named-branch terminator path performs this inline with
+    /// escape analysis for branch constructors; a hard terminal permits no
+    /// escape, so the check reduces to: anything uncleaned — outer-scope
+    /// obligations excepted — is a KORU030 leak. The message mirrors the
+    /// inline path's, listing the discharger(s) so the error points at the
+    /// fix. Returns true if any leak was reported.
+    fn reportLeaksAtHardTerminal(
+        self: *PhantomSemanticChecker,
+        context: *BindingContext,
+        location: errors.SourceLocation,
+    ) !bool {
+        if (!context.hasUncleanedResources()) return false;
+        const uncleaned = try context.getUncleanedResources(self.allocator);
+        defer self.allocator.free(uncleaned);
+
+        var has_errors = false;
+        for (uncleaned) |resource| {
+            if (context.isOuterScope(resource)) continue;
+            const binding_info = context.getInfo(resource) orelse continue;
+            const phantom_state = binding_info.phantom_state;
+
+            const display_name = if (std.mem.indexOf(u8, resource, ".")) |dot_idx|
+                resource[dot_idx + 1 ..]
+            else
+                resource;
+            const display_state = if (std.mem.lastIndexOf(u8, phantom_state, ":")) |colon_idx|
+                phantom_state[colon_idx + 1 ..]
+            else
+                phantom_state;
+
+            var disposal_events = try self.findDisposalEventsForState(phantom_state, binding_info.base_type);
+            defer {
+                for (disposal_events.items) |item| {
+                    self.allocator.free(item);
+                }
+                disposal_events.deinit(self.allocator);
+            }
+
+            if (disposal_events.items.len == 0) {
+                const state_without_bang = if (std.mem.endsWith(u8, display_state, "!"))
+                    display_state[0 .. display_state.len - 1]
+                else
+                    display_state;
+                try self.reporter.addError(
+                    .KORU030,
+                    location.line,
+                    location.column,
+                    "Resource '{s}' carries obligation <{s}> was not discharged. No event accepts <!{s}>.",
+                    .{ display_name, display_state, state_without_bang },
+                );
+            } else if (disposal_events.items.len == 1) {
+                try self.reporter.addError(
+                    .KORU030,
+                    location.line,
+                    location.column,
+                    "Resource '{s}' carries obligation <{s}> was not discharged. Call: {s}",
+                    .{ display_name, display_state, disposal_events.items[0] },
+                );
+            } else {
+                var options_buf: [512]u8 = undefined;
+                var fbs = std.io.fixedBufferStream(&options_buf);
+                for (disposal_events.items, 0..) |event_name, i| {
+                    if (i > 0) fbs.writer().writeAll(", ") catch {};
+                    fbs.writer().writeAll(event_name) catch {};
+                }
+                try self.reporter.addError(
+                    .KORU030,
+                    location.line,
+                    location.column,
+                    "Resource '{s}' carries obligation <{s}> was not discharged. Call one of: {s}",
+                    .{ display_name, display_state, fbs.getWritten() },
+                );
+            }
+            has_errors = true;
+        }
+        return has_errors;
+    }
+
     fn validateContinuation(
         self: *PhantomSemanticChecker,
         cont: *const ast.Continuation,
@@ -1204,6 +1283,25 @@ pub const PhantomSemanticChecker = struct {
                     }
                 }
             }
+            // Flow exit on a HARD terminal (`|> _`) after a bare-return
+            // (0-branch) head/step: run the same undischarged-obligation check
+            // the named-branch terminator path performs below (its
+            // is_terminator block). This void-event path used to return true
+            // without ever balance-checking, so a leak held at the exit of a
+            // bare-return chain was silently accepted whenever insertion was
+            // opted out (--auto-discharge=disable / ~[strict] — 330_025,
+            // 330_070): the enforcement side must see every flow exit the
+            // insertion side sees (the 400_137 rule, one path further in).
+            // A hard terminal permits no documented escape, so the check is
+            // exactly: anything uncleaned — outer-scope excepted — is KORU030.
+            if (cont.node) |exit_node| {
+                if (exit_node == .terminal) {
+                    if (try self.reportLeaksAtHardTerminal(&void_context, location)) {
+                        return false;
+                    }
+                }
+            }
+
             // Validate nested continuations recursively (fallback: against void event)
             for (cont.continuations) |*nested| {
                 const nested_valid = try self.validateContinuation(nested, event_decl, event_module, flow_module, event_map, location, &void_context, implementing_event);

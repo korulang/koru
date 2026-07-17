@@ -562,6 +562,40 @@ pub const AutoDischargeInserter = struct {
         return current_program;
     }
 
+    /// The `--auto-discharge=disable` / `~[strict]` entry point: those modes opt
+    /// out of INSERTING discharges, not out of the language seeing a discard.
+    /// Runs declaration validation ([!] must be void — a malformed declaration
+    /// is a declaration error regardless of insertion mode) and the head-discard
+    /// normalization ONLY, so the phantom checker downstream sees the implicit
+    /// `: _ |> _` of an obligation-carrying bare call and fires KORU030 on the
+    /// leak. Deliberately skips label-loop @scope annotation and every insertion
+    /// path — nothing here adds a disposal call.
+    pub fn runNormalizeOnly(self: *AutoDischargeInserter, program: *const ast.Program) !*const ast.Program {
+        try self.buildEventMap(program);
+
+        if (self.reporter.hasErrors()) {
+            const stderr_writer = std.debug.lockStderrWriter(&.{});
+            defer std.debug.unlockStderrWriter();
+            try self.reporter.printErrors(stderr_writer);
+            return error.ValidationFailed;
+        }
+
+        var current_program = program;
+        var iteration: u32 = 0;
+        const max_iterations: u32 = 100000;
+
+        while (iteration < max_iterations) : (iteration += 1) {
+            const result = try self.transformOneFlow(current_program, .normalize_only);
+            if (result.transformed) {
+                current_program = result.program;
+            } else {
+                break;
+            }
+        }
+
+        return current_program;
+    }
+
     /// Build map of all events and their phantom annotations
     pub fn buildEventMap(self: *AutoDischargeInserter, program: *const ast.Program) !void {
         // IMPORTANT: Use |*item| to get pointers into the actual slice, not copies!
@@ -621,6 +655,15 @@ pub const AutoDischargeInserter = struct {
     const TransformMode = enum {
         full,
         scope_exit_only,
+        /// Head-discard normalization ONLY — no disposal insertion, no
+        /// terminator validation. Materializes the implicit discard of an
+        /// obligation-carrying bare call (`~open()` where open returns
+        /// `-> T<state!>` is the fully-discarded form of `~open(): _ |> _`)
+        /// so the ENFORCEMENT side (phantom checker) sees the obligation and
+        /// its flow exit. This is what pass-auto-discharge runs under
+        /// `--auto-discharge=disable` and `~[strict]`: those modes opt out of
+        /// INSERTING discharges, never out of the discard being visible.
+        normalize_only,
     };
 
     /// Try to find and transform one flow that needs auto-discharge
@@ -705,6 +748,33 @@ pub const AutoDischargeInserter = struct {
             }
         }
 
+        // UNBOUND flow head whose event returns a phantom obligation: a bare
+        // call (`~open()` with `open -> *File<opened!>`) is the fully-discarded
+        // form of `~open(): _` — the single-return migration made the dead bind
+        // droppable (a consumer that fully discards a bare-return result is
+        // just a bare call), so the obligation machinery must read the unbound
+        // head as the discard it is. Materialize the implicit `: _` bind here;
+        // the existing discard paths below (the `_`-rename and the
+        // continuation-less terminal synthesis) then handle it exactly like the
+        // spelled-out discard (330_094). Without this, the obligation is never
+        // minted and enforcement is silently OFF for the whole bare-call shape
+        // (330_011/025/028/036/043/070). Runs in normalize_only too — that is
+        // the entire point of that mode.
+        if (mode != .scope_exit_only and flow.inv().return_binding == null and
+            event_info.decl.return_phantom != null)
+        {
+            const rebuilt = try self.materializeHeadDiscardBind(flow);
+            const new_program = try ast_functional.replaceFlowRecursive(
+                self.allocator,
+                program,
+                flow,
+                .{ .flow = rebuilt },
+            ) orelse return .{ .transformed = false, .program = program };
+            const result_ptr = try self.allocator.create(ast.Program);
+            result_ptr.* = new_program;
+            return .{ .transformed = true, .program = result_ptr };
+        }
+
         // Flow-head `_` bind that carries a return obligation AND has
         // continuations: rename `_` to a synthetic so the eventual auto-inserted
         // disposal can reference the value (a bare `_` leaks into generated Zig
@@ -713,7 +783,7 @@ pub const AutoDischargeInserter = struct {
         // continuation discard (`call(): _ |> ...`) handled in checkContinuation.
         // Fires only when the head event returns a phantom obligation; a plain
         // `_` head with no obligation stays a genuine discard.
-        if (mode == .full and flow.body.continuations.len > 0) {
+        if (mode != .scope_exit_only and flow.body.continuations.len > 0) {
             if (flow.inv().return_binding) |rb| {
                 if (std.mem.eql(u8, rb, "_") and event_info.decl.return_phantom != null) {
                     const rebuilt = try self.renameHeadDiscardBinding(flow);
@@ -754,6 +824,10 @@ pub const AutoDischargeInserter = struct {
         }
 
         for (flow.body.continuations, 0..) |*cont, cont_idx| {
+            // Normalization never walks into continuations — no insertion, no
+            // terminator validation. The head materialization above is the whole
+            // job; enforcement stays with the phantom checker.
+            if (mode == .normalize_only) break;
             // Capture at flow-head lowers to sibling `branch=''` continuations (the
             // `! as` body chain + the `| captured` after-read chain) directly under
             // the flow body. All but the last are sequential prefixes — not flow
@@ -871,7 +945,7 @@ pub const AutoDischargeInserter = struct {
         // obligation then discharges through the normal path instead of leaking
         // (silently for `: _`, as a Zig unused-const for a named bind). Guarded
         // on hasObligations() so it fires only for a real cleanup obligation.
-        if (mode == .full and flow.body.continuations.len == 0 and
+        if (mode != .scope_exit_only and flow.body.continuations.len == 0 and
             flow.inv().return_binding != null and context.hasObligations())
         {
             const rebuilt = try self.giveContinuationlessHeadTerminal(flow);
@@ -2032,14 +2106,22 @@ pub const AutoDischargeInserter = struct {
         return false;
     }
 
-    /// Default auto-discharge targets must be void — inserted at scope exit with no branch dispatch.
+    /// Default auto-discharge targets must be void — inserted at scope exit with
+    /// no branch dispatch and no bind for an output. Non-void comes in TWO
+    /// spellings: named branches AND the single-return `-> T` bare return
+    /// (an EventDecl has either return_type or branches, never both — ast.zig).
+    /// Both disqualify: the inserter appends a bare call and cannot synthesize
+    /// the bind either output form requires (the same rule findDisposalEventsEx
+    /// applies when selecting candidates).
     fn validateDefaultDischargeEvent(self: *AutoDischargeInserter, event_decl: *const ast.EventDecl) !void {
-        if (eventHasDefaultAnnotation(event_decl) and event_decl.branches.len > 0) {
+        if (eventHasDefaultAnnotation(event_decl) and
+            (event_decl.branches.len > 0 or event_decl.return_type != null))
+        {
             try self.reporter.addError(
                 .KORU083,
                 event_decl.location.line,
                 event_decl.location.column,
-                "[!] annotation requires void event (no branches) - branched events cannot be auto-discharged",
+                "[!] annotation requires a void event (no branches, no `-> T` return) - an event with output cannot be auto-inserted",
                 .{},
             );
         }
@@ -2866,6 +2948,44 @@ pub const AutoDischargeInserter = struct {
             .location = flow.location,
         };
         const new_body = ast.rootSite(new_head_inv, term, flow.location);
+
+        var new_annotations = try self.allocator.alloc([]const u8, flow.annotations.len);
+        for (flow.annotations, 0..) |ann, i| new_annotations[i] = try self.allocator.dupe(u8, ann);
+        return .{
+            .body = new_body,
+            .annotations = new_annotations,
+            .pre_label = if (flow.pre_label) |l| try self.allocator.dupe(u8, l) else null,
+            .super_shape = flow.super_shape,
+            .inline_body = if (flow.inline_body) |b| try self.allocator.dupe(u8, b) else null,
+            .preamble_code = if (flow.preamble_code) |p| try self.allocator.dupe(u8, p) else null,
+            .is_pure = flow.is_pure,
+            .is_transitively_pure = flow.is_transitively_pure,
+            .location = flow.location,
+            .module = try self.allocator.dupe(u8, flow.module),
+            .impl_of = if (flow.impl_of) |io| try ast_functional.cloneDottedPath(self.allocator, &io) else null,
+            .impl_variant = if (flow.impl_variant) |v| try self.allocator.dupe(u8, v) else null,
+            .is_impl = flow.is_impl,
+        };
+    }
+
+    /// Materialize the implicit discard bind of an UNBOUND flow head whose
+    /// event returns a phantom obligation: `~open()` (with `open -> T<state!>`)
+    /// becomes `~open(): _`, continuations untouched. The bare call is the
+    /// fully-discarded spelling of the bind — dropping the dead `: _` must not
+    /// drop the obligation — so this rewrite makes the discard explicit and
+    /// hands it to the existing `_`-discard machinery (the rename below, the
+    /// continuation-less terminal synthesis, checkContinuation's flat-form
+    /// discard). Fires from the transform loop only when the head event's
+    /// return carries a phantom; a plain-value bare call stays untouched.
+    fn materializeHeadDiscardBind(self: *AutoDischargeInserter, flow: *const ast.Flow) !ast.Flow {
+        var new_head_inv = try ast_functional.cloneInvocation(self.allocator, flow.inv());
+        new_head_inv.return_binding = try self.allocator.dupe(u8, "_");
+
+        var new_conts = try self.allocator.alloc(ast.Continuation, flow.body.continuations.len);
+        for (flow.body.continuations, 0..) |*c, i| {
+            new_conts[i] = try ast_functional.cloneContinuation(self.allocator, c);
+        }
+        const new_body = ast.rootSite(new_head_inv, new_conts, flow.location);
 
         var new_annotations = try self.allocator.alloc([]const u8, flow.annotations.len);
         for (flow.annotations, 0..) |ann, i| new_annotations[i] = try self.allocator.dupe(u8, ann);

@@ -2454,11 +2454,13 @@ const joinPathAlloc = struct {
 }
 
 ~proc pass-auto-discharge|zig {
-    // Check if auto-discharge is disabled entirely
-    if (CompilerEnv.hasFlag("auto-discharge=disable")) {
-        // Skip auto-discharge pass - let phantom errors fire
-        return .{ .ctx = ctx };
-    }
+    // Check if auto-discharge is disabled entirely. Disabling means "do not
+    // INSERT disposal calls — let phantom errors fire"; it never means the
+    // discard shapes go invisible. The pass still runs in normalize-only mode
+    // below so an obligation-carrying bare call (`~open()` discarding a
+    // `-> T<state!>` return) is materialized into its explicit `: _ |> _`
+    // form and the phantom checker can fire KORU030 on the leak.
+    const insertion_disabled = CompilerEnv.hasFlag("auto-discharge=disable");
 
     // Honor the `strict` module-level convention.
     // `strict` is an opaque annotation word, not a fixed semantics: each pass
@@ -2467,9 +2469,10 @@ const joinPathAlloc = struct {
     // so a module marked ~[strict] opts out of insertion and the phantom checker
     // fires KORU030 for any undischarged obligation. Other passes (ours and
     // third-party) may read the same word and honor it in their own lane.
+    var strict_module = false;
     for (ctx.ast.module_annotations) |ann| {
         if (std.mem.eql(u8, ann, "strict")) {
-            return .{ .ctx = ctx };
+            strict_module = true;
         }
     }
 
@@ -2535,8 +2538,13 @@ const joinPathAlloc = struct {
     };
     defer inserter.deinit();
 
-    // Run the pass - may modify AST
-    const new_ast = inserter.run(mutable_ctx.ast) catch |err| {
+    // Run the pass - may modify AST. Insertion opted out (flag or ~[strict])
+    // still normalizes head discards so downstream enforcement sees them.
+    const run_result = if (insertion_disabled or strict_module)
+        inserter.runNormalizeOnly(mutable_ctx.ast)
+    else
+        inserter.run(mutable_ctx.ast);
+    const new_ast = run_result catch |err| {
         // Collect errors from reporter into context
         for (reporter.errors.items) |reporter_err| {
             std.debug.print("error[{s}]: {s}\n  --> {s}:{}:{}\n\n", .{
