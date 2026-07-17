@@ -701,6 +701,20 @@ const std = @import("std");
                             continue;
                         }
                     }
+                    // A BARE `entity` (not `entity.field`, not `entityXyz`) is the
+                    // query's row cursor itself — e.g. `take(store[entity])`
+                    // addresses the currently-swept row. Rewrite it to the qbody's
+                    // row-cursor input so take/stored heads resolve it (690_031).
+                    if (at_boundary and std.mem.startsWith(u8, text[i..], "entity")) {
+                        const after = i + "entity".len;
+                        const next_is_ident = after < text.len and H.isIdentChar(text[after]);
+                        const next_is_dot = after < text.len and text[after] == '.';
+                        if (!next_is_ident and !next_is_dot) {
+                            out.appendSlice(alloc, "__koru_qrow") catch unreachable;
+                            i = after;
+                            continue;
+                        }
+                    }
                     out.append(alloc, text[i]) catch unreachable;
                     i += 1;
                 }
@@ -1205,13 +1219,21 @@ const std = @import("std");
                 .location = flow.location,
                 .module = allocator.dupe(u8, flow.module) catch unreachable,
             } }) catch unreachable;
+            // The sweep tolerates a query body that REMOVES its own row (a
+            // `take` under the query branch). swap-remove drops the last row
+            // into the freed slot, so when the len shrinks we must re-check the
+            // SAME index — the swapped-in row has not been seen — rather than
+            // advance past it. A body that leaves len unchanged advances
+            // normally, so non-mutating queries are byte-identical (690_031).
             const sweep_body = std.fmt.allocPrint(allocator,
                 \\var __koru_i: usize = 0;
-                \\while (__koru_i < __koru_store_{s}.len) : (__koru_i += 1) {{
+                \\while (__koru_i < __koru_store_{s}.len) {{
+                \\    const __koru_len_before = __koru_store_{s}.len;
                 \\    main_module.{s}_event.handler(.{{ .row = @as(i64, @intCast(__koru_i)) }});
+                \\    if (__koru_store_{s}.len >= __koru_len_before) __koru_i += 1;
                 \\}}
                 \\return;
-            , .{ store_name, qrow_name }) catch unreachable;
+            , .{ store_name, store_name, qrow_name, store_name }) catch unreachable;
             appended_items.append(allocator, ast.Item{ .proc_decl = ast.ProcDecl{
                 .path = H.mkPathH(allocator, flow.module, qsweep_name),
                 .body = ast.Source{ .text = sweep_body, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },

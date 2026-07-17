@@ -228,6 +228,23 @@ now DISENTANGLED (a bisection matters here — one was misdiagnosed at first):
   (690_029, and the arena scoreboard tracks kills). This was an emitter gap,
   not a store one — it just took a store program to surface it.
 
+**A query branch can now TAKE its matched row (690_031) — deletion during a
+sweep.** `! query { … } when … |> std/store:take(store[entity])` removes each
+matching row ("sweep the dead and despawn them"), the natural bulk operation
+the arena reached for. Two pieces closed it. (i) Addressing: inside a query
+body a BARE `entity` (as opposed to `entity.field`) is the row cursor itself,
+so it rewrites to the qbody's `__koru_qrow` input — previously it leaked as a
+stray identifier into generated host code (`.row = entity`, undeclared), the
+class of raw-Zig drip the koru-level wall is meant to prevent. (ii) Iteration:
+`take` swap-removes, dropping the LAST row into the freed slot, so the sweep
+re-checks the same index when `len` shrank instead of advancing past the row
+that just moved in — the adversarial order `[5,50,8]` (taking slot 0 swaps 8
+back to slot 0) is the case a naive `for i in 0..len` silently skips. A query
+whose body leaves `len` unchanged advances normally, so non-mutating queries
+are byte-identical. This retires the arena_showcase's GAPS #4 ("query-row
+addressing is an enter-triggered standing rule, not a repeatable action"):
+it IS a repeatable action now, with correct mutation-during-iteration.
+
 The full residue (rulings, stamped theses, gauntlet verdicts, open
 queue) lives in `tests/regression/600_STDLIB/690_STORE/DESIGN.md`, which
 deletes as pins absorb it. ECT/BLOOM (entity-component-taps) is
