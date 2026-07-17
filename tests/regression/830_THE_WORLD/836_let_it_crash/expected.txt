@@ -1,0 +1,5 @@
+job 3: completed
+job -1: crashed, supervisor restarting worker
+job 5: completed
+job -2: crashed, supervisor restarting worker
+job 8: completed
