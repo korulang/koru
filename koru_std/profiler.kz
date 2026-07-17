@@ -8,8 +8,10 @@
 // View in Chrome: chrome://tracing
 //
 // Architecture:
-// - Uses meta-events (koru:start, koru:end) for file lifecycle
-// - Universal tap (~* -> *) captures all event transitions
+// - Universal tap (~* -> *) captures all event transitions (lane tid=0)
+// - Meta-events (koru:start, koru:end) are the program ENVELOPE, not
+//   transitions: they emit as ph:"i" instant anchors plus one synthesized
+//   ph:"X" "program" span between them, on their own named lane (tid=1)
 // - Zero-cost when disabled (dead-strips at compile time)
 // - Self-governing: requires both import AND --PROFILE flag
 //
@@ -29,6 +31,7 @@ var first_event: bool = true;
 var previous_timestamp_ns: i128 = 0;
 var previous_event_name: []const u8 = "";
 var profiler_finished: bool = false;  // Prevents write-event from creating new file after footer
+var program_start_ns: i128 = 0;       // Envelope open (koru:start anchor); footer synthesizes the span from it
 
 // Event: Write Chrome Tracing header
 ~event write-header {}
@@ -56,6 +59,41 @@ var profiler_finished: bool = false;  // Prevents write-event from creating new 
         first_event = true;
         previous_event_name = "";
     }
+
+    // Open the program envelope. If a transition was already buffered (the
+    // auto-create race above), the envelope opens at that earlier timestamp so
+    // the span always contains its first event.
+    program_start_ns = std.time.nanoTimestamp();
+    if (previous_timestamp_ns != 0 and previous_timestamp_ns < program_start_ns) {
+        program_start_ns = previous_timestamp_ns;
+    }
+
+    // Name the two lanes (ph:"M" metadata), then drop the koru:start anchor
+    // (ph:"i" global instant) on the envelope lane.
+    const file = profile_file orelse return;
+    var buffer: [1024]u8 = undefined;
+    var pos: usize = 0;
+    if (!first_event) {
+        buffer[pos] = ',';
+        pos += 1;
+        buffer[pos] = '\n';
+        pos += 1;
+    }
+    first_event = false;
+    const start_us = @divFloor(program_start_ns, 1000);
+    const json = std.fmt.bufPrint(buffer[pos..],
+        "{{\"name\":\"thread_name\",\"ph\":\"M\",\"pid\":0,\"tid\":0,\"args\":{{\"name\":\"transitions\"}}}},\n" ++
+        "{{\"name\":\"thread_name\",\"ph\":\"M\",\"pid\":0,\"tid\":1,\"args\":{{\"name\":\"program\"}}}},\n" ++
+        "{{\"name\":\"koru:start\",\"cat\":\"meta\",\"ph\":\"i\",\"s\":\"g\",\"ts\":{d},\"pid\":0,\"tid\":1}}",
+        .{start_us}
+    ) catch {
+        std.debug.print("ERROR: Failed to format envelope anchors\n", .{});
+        return;
+    };
+    pos += json.len;
+    file.writeAll(buffer[0..pos]) catch {
+        std.debug.print("ERROR: Failed to write envelope anchors\n", .{});
+    };
     return;
 }
 
@@ -170,6 +208,40 @@ var profiler_finished: bool = false;  // Prevents write-event from creating new 
         file.writeAll(buffer[0..pos]) catch {
             std.debug.print("ERROR: Failed to write final event\n", .{});
         };
+        first_event = false;
+    }
+
+    // Close the program envelope: koru:end anchor (ph:"i" global instant) and
+    // the synthesized "program" span between the two anchors, both on the
+    // envelope lane. Skipped if the envelope never opened (no write-header).
+    if (program_start_ns != 0) {
+        const end_ns = std.time.nanoTimestamp();
+        var abuffer: [1024]u8 = undefined;
+        var apos: usize = 0;
+        if (!first_event) {
+            abuffer[apos] = ',';
+            apos += 1;
+            abuffer[apos] = '\n';
+            apos += 1;
+        }
+        first_event = false;
+        const env_start_us = @divFloor(program_start_ns, 1000);
+        const end_us = @divFloor(end_ns, 1000);
+        const dur_us = end_us - env_start_us;
+        // A format failure skips the emission but must never skip the
+        // file close/reset below — no early return in the footer.
+        if (std.fmt.bufPrint(abuffer[apos..],
+            "{{\"name\":\"koru:end\",\"cat\":\"meta\",\"ph\":\"i\",\"s\":\"g\",\"ts\":{d},\"pid\":0,\"tid\":1}},\n" ++
+            "{{\"name\":\"program\",\"cat\":\"meta\",\"ph\":\"X\",\"ts\":{d},\"dur\":{d},\"pid\":0,\"tid\":1}}",
+            .{end_us, env_start_us, dur_us}
+        )) |ajson| {
+            apos += ajson.len;
+            file.writeAll(abuffer[0..apos]) catch {
+                std.debug.print("ERROR: Failed to write envelope close\n", .{});
+            };
+        } else |_| {
+            std.debug.print("ERROR: Failed to format envelope close\n", .{});
+        }
     }
 
     // Write closing bracket for events array and closing brace for JSON
@@ -189,6 +261,7 @@ var profiler_finished: bool = false;  // Prevents write-event from creating new 
     first_event = true;
     previous_timestamp_ns = 0;
     previous_event_name = "";
+    program_start_ns = 0;
 
     return;
 }
