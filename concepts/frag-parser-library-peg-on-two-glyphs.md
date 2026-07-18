@@ -74,6 +74,21 @@ open designs concrete: threading `sub(ws)` between tokens is the loud
 verbosity that argues for a trivia/skip declaration, and right-recursive
 lists are the shape repetition sugar (`many`/`sep-by`) would collapse.
 
+**Common-head FACTORING in the codegen (2026-07-18, the benchmark press):
+consecutive same-head alternatives compile to head-parsed-ONCE + tails
+tried in order.** Sound because cut-1 rule functions are DETERMINISTIC —
+same position in, same result out — so PEG's backtracking reparse of a
+shared head is guaranteed to reproduce the first parse and skipping it is
+unobservable. This closed a SILENT EXPONENTIAL: `item sep rest | item`
+reparsed every list's last element, compounding 2^depth on right-nested
+input (SHOWN: a 111-byte depth-24 right-nested doc parsed at 9 passes/3s
+vs 4.0M for its left-nested twin; after factoring both ~5M — the
+benchmark repo's json-parse suite carries the cliff gate). The
+no-silent-perf-degradation tenet is what made this a defect, not a
+curiosity. Factoring does NOT preempt `sep-by`/packrat — deeper overlaps
+(same head, diverging mid-chain) still backtrack; it makes the RATIFIED
+duplicate-head shapes linear.
+
 **Toolchain gaps the arc surfaced and closed (the instrument working):**
 1. The regex engine had NO escape support — no metachar was matchable
    literally in any pattern; std/parser's first terminal (`\[`) found it.

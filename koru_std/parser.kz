@@ -265,40 +265,19 @@ const std = @import("std");
             }
         }
 
-        /// Emit one alternative as a labeled attempt block: head element,
-        /// then the chain steps, ending in a produce-return. Falling out of
-        /// the block = this alternative failed; the caller tries the next.
-        fn genAlternative(ctx: *const Ctx, buf: *std2.ArrayList(u8), alt: *const ast2.Continuation, cp_label: usize) void {
-            if (alt.kind != .terminal) {
-                setFail(ctx, std2.fmt.allocPrint(ctx.a, "std/parser: alternatives are `|` patterned branches of match (`!` has no meaning here)", .{}) catch unreachable);
-                return;
-            }
-            if (alt.destructure.len > 0) {
-                setFail(ctx, std2.fmt.allocPrint(ctx.a, "std/parser: destructure in an alternative waits on typed captures (cut 2) — bind the span", .{}) catch unreachable);
-                return;
-            }
-            const k = ctx.label_n.*;
-            ctx.label_n.* += 1;
-
-            const open = std2.fmt.allocPrint(ctx.a, "__p = __cp{d};\na{d}: {{\n", .{ cp_label, k }) catch unreachable;
+        /// Emit one alternative's TAIL: bind the (already-parsed) head value,
+        /// walk the chain steps, end in a produce-return (or the default
+        /// consumed-span return). Falling out of the labeled block = this
+        /// tail failed; the caller tries the next tail of the group.
+        fn genTail(ctx: *const Ctx, out: *std2.ArrayList(u8), alt: *const ast2.Continuation, tail_label: usize, head_val: []const u8, head_end: []const u8) void {
+            // Body goes to a scratch buffer first: a tail whose chain has no
+            // failable step never breaks to its label, and Zig rejects unused
+            // block labels — so the label is emitted only when targeted.
+            var body = std2.ArrayList(u8){};
+            const buf = &body;
+            const open = std2.fmt.allocPrint(ctx.a, "__p = {s};\n", .{head_end}) catch unreachable;
             buf.appendSlice(ctx.a, open) catch unreachable;
-
-            // --- HEAD: the alternative's selector — a rule reference or a pattern terminal ---
-            if (findRule(ctx.rules, alt.branch)) |_| {
-                const rn = sanitize(ctx.a, alt.branch);
-                const head = std2.fmt.allocPrint(ctx.a, "const __h{d} = __koru_pr_{s}_{s}(input, __p, __err) orelse {{ if (__err.expected.len == 0 or __p > __err.pos) {{ __err.pos = __p; __err.expected = \"{s}\"; }} break :a{d}; }};\n", .{ k, ctx.sfx, rn, zigEscape(ctx.a, alt.branch), k }) catch unreachable;
-                buf.appendSlice(ctx.a, head) catch unreachable;
-                bindName(ctx, buf, alt.binding, std2.fmt.allocPrint(ctx.a, "__h{d}.val", .{k}) catch unreachable);
-                const adv = std2.fmt.allocPrint(ctx.a, "__p = __h{d}.end;\n", .{k}) catch unreachable;
-                buf.appendSlice(ctx.a, adv) catch unreachable;
-            } else {
-                const id = matcherFor(ctx, alt.branch);
-                const head = std2.fmt.allocPrint(ctx.a, "const __e{d} = __koru_pt_{s}_{d}(input, __p) orelse {{ if (__err.expected.len == 0 or __p > __err.pos) {{ __err.pos = __p; __err.expected = \"{s}\"; }} break :a{d}; }};\n", .{ k, ctx.sfx, id, zigEscape(ctx.a, alt.branch), k }) catch unreachable;
-                buf.appendSlice(ctx.a, head) catch unreachable;
-                bindName(ctx, buf, alt.binding, std2.fmt.allocPrint(ctx.a, "input[__p..__e{d}]", .{k}) catch unreachable);
-                const adv = std2.fmt.allocPrint(ctx.a, "__p = __e{d};\n", .{k}) catch unreachable;
-                buf.appendSlice(ctx.a, adv) catch unreachable;
-            }
+            bindName(ctx, buf, alt.binding, head_val);
 
             // --- CHAIN: walk the alternative's body — sub / lit steps, then produce ---
             var produced = false;
@@ -329,7 +308,7 @@ const std = @import("std");
                         return;
                     }
                     const rn = sanitize(ctx.a, rname);
-                    const step = std2.fmt.allocPrint(ctx.a, "const __s{d} = __koru_pr_{s}_{s}(input, __p, __err) orelse {{ if (__err.expected.len == 0 or __p > __err.pos) {{ __err.pos = __p; __err.expected = \"{s}\"; }} break :a{d}; }};\n", .{ sk, ctx.sfx, rn, zigEscape(ctx.a, rname), k }) catch unreachable;
+                    const step = std2.fmt.allocPrint(ctx.a, "const __s{d} = __koru_pr_{s}_{s}(input, __p, __err) orelse {{ if (__err.expected.len == 0 or __p > __err.pos) {{ __err.pos = __p; __err.expected = \"{s}\"; }} break :t{d}; }};\n", .{ sk, ctx.sfx, rn, zigEscape(ctx.a, rname), tail_label }) catch unreachable;
                     buf.appendSlice(ctx.a, step) catch unreachable;
                     bindName(ctx, buf, inv.return_binding, std2.fmt.allocPrint(ctx.a, "__s{d}.val", .{sk}) catch unreachable);
                     const adv = std2.fmt.allocPrint(ctx.a, "__p = __s{d}.end;\n", .{sk}) catch unreachable;
@@ -341,7 +320,7 @@ const std = @import("std");
                     }
                     const text = stripQuotes(inv.args[0].value);
                     const esc = zigEscape(ctx.a, text);
-                    const step = std2.fmt.allocPrint(ctx.a, "if (!(__p + {d} <= input.len and __koru_lit_eq_{s}(input[__p .. __p + {d}], \"{s}\"))) {{ if (__err.expected.len == 0 or __p > __err.pos) {{ __err.pos = __p; __err.expected = \"{s}\"; }} break :a{d}; }}\n__p += {d};\n", .{ text.len, ctx.sfx, text.len, esc, esc, k, text.len }) catch unreachable;
+                    const step = std2.fmt.allocPrint(ctx.a, "if (!(__p + {d} <= input.len and __koru_lit_eq_{s}(input[__p .. __p + {d}], \"{s}\"))) {{ if (__err.expected.len == 0 or __p > __err.pos) {{ __err.pos = __p; __err.expected = \"{s}\"; }} break :t{d}; }}\n__p += {d};\n", .{ text.len, ctx.sfx, text.len, esc, esc, tail_label, text.len }) catch unreachable;
                     buf.appendSlice(ctx.a, step) catch unreachable;
                 } else {
                     setFail(ctx, std2.fmt.allocPrint(ctx.a, "std/parser: `{s}` is not grammar vocabulary — an alternative's chain admits sub(<rule>) and lit(\"...\") (cut 1)", .{inv.path.segments[inv.path.segments.len - 1]}) catch unreachable);
@@ -360,6 +339,66 @@ const std = @import("std");
             if (!produced) {
                 // No `->`: the alternative's value defaults to its consumed span.
                 buf.appendSlice(ctx.a, "return .{ .end = __p, .val = input[__start..__p] };\n") catch unreachable;
+            }
+            const needle = std2.fmt.allocPrint(ctx.a, "break :t{d};", .{tail_label}) catch unreachable;
+            const labeled = std2.mem.indexOf(u8, body.items, needle) != null;
+            const wrap = if (labeled)
+                std2.fmt.allocPrint(ctx.a, "t{d}: {{\n", .{tail_label}) catch unreachable
+            else
+                std2.fmt.allocPrint(ctx.a, "{{\n", .{}) catch unreachable;
+            out.appendSlice(ctx.a, wrap) catch unreachable;
+            out.appendSlice(ctx.a, body.items) catch unreachable;
+            out.appendSlice(ctx.a, "}\n") catch unreachable;
+        }
+
+        /// Emit one GROUP: consecutive alternatives sharing the same head
+        /// element. The head parses ONCE; each alternative's tail then tries
+        /// in order against the saved head result. Sound because cut-1 rule
+        /// functions are deterministic (same position in, same result out) —
+        /// PEG's backtracking reparse of a shared head is guaranteed to
+        /// reproduce the first parse, so skipping it is unobservable. This
+        /// converts the `item sep rest | item` last-element reparse from
+        /// exponential (right-nested input) to linear.
+        fn genGroup(ctx: *const Ctx, buf: *std2.ArrayList(u8), alts: []const ast2.Continuation, cp_label: usize) void {
+            for (alts) |*alt| {
+                if (alt.kind != .terminal) {
+                    setFail(ctx, std2.fmt.allocPrint(ctx.a, "std/parser: alternatives are `|` patterned branches of match (`!` has no meaning here)", .{}) catch unreachable);
+                    return;
+                }
+                if (alt.destructure.len > 0) {
+                    setFail(ctx, std2.fmt.allocPrint(ctx.a, "std/parser: destructure in an alternative waits on typed captures (cut 2) — bind the span", .{}) catch unreachable);
+                    return;
+                }
+            }
+            const g = ctx.label_n.*;
+            ctx.label_n.* += 1;
+
+            const open = std2.fmt.allocPrint(ctx.a, "__p = __cp{d};\ng{d}: {{\n", .{ cp_label, g }) catch unreachable;
+            buf.appendSlice(ctx.a, open) catch unreachable;
+
+            // --- HEAD (identical across the group): rule reference or pattern terminal, parsed once ---
+            const head_name = alts[0].branch;
+            var head_val: []const u8 = undefined;
+            var head_end: []const u8 = undefined;
+            if (findRule(ctx.rules, head_name)) |_| {
+                const rn = sanitize(ctx.a, head_name);
+                const head = std2.fmt.allocPrint(ctx.a, "const __gh{d} = __koru_pr_{s}_{s}(input, __p, __err) orelse {{ if (__err.expected.len == 0 or __p > __err.pos) {{ __err.pos = __p; __err.expected = \"{s}\"; }} break :g{d}; }};\n", .{ g, ctx.sfx, rn, zigEscape(ctx.a, head_name), g }) catch unreachable;
+                buf.appendSlice(ctx.a, head) catch unreachable;
+                head_val = std2.fmt.allocPrint(ctx.a, "__gh{d}.val", .{g}) catch unreachable;
+                head_end = std2.fmt.allocPrint(ctx.a, "__gh{d}.end", .{g}) catch unreachable;
+            } else {
+                const id = matcherFor(ctx, head_name);
+                const head = std2.fmt.allocPrint(ctx.a, "const __ge{d} = __koru_pt_{s}_{d}(input, __p) orelse {{ if (__err.expected.len == 0 or __p > __err.pos) {{ __err.pos = __p; __err.expected = \"{s}\"; }} break :g{d}; }};\n", .{ g, ctx.sfx, id, zigEscape(ctx.a, head_name), g }) catch unreachable;
+                buf.appendSlice(ctx.a, head) catch unreachable;
+                head_val = std2.fmt.allocPrint(ctx.a, "input[__cp{d}..__ge{d}]", .{ cp_label, g }) catch unreachable;
+                head_end = std2.fmt.allocPrint(ctx.a, "__ge{d}", .{g}) catch unreachable;
+            }
+
+            // --- TAILS: in declaration order; falling out of the group = all failed ---
+            for (alts) |*alt| {
+                const t = ctx.label_n.*;
+                ctx.label_n.* += 1;
+                genTail(ctx, buf, alt, t, head_val, head_end);
             }
             buf.appendSlice(ctx.a, "}\n") catch unreachable;
         }
@@ -380,7 +419,17 @@ const std = @import("std");
             ctx.label_n.* += 1;
             const cpl = std2.fmt.allocPrint(ctx.a, "const __cp{d} = pos;\n", .{cp}) catch unreachable;
             buf.appendSlice(ctx.a, cpl) catch unreachable;
-            for (altsOf(rule)) |*alt| genAlternative(ctx, &buf, alt, cp);
+            // Group CONSECUTIVE same-head alternatives so the shared head
+            // parses once (genGroup). Non-adjacent same-heads keep strict
+            // declaration order — only adjacency factors.
+            const alts = altsOf(rule);
+            var i: usize = 0;
+            while (i < alts.len) {
+                var j = i + 1;
+                while (j < alts.len and std2.mem.eql(u8, alts[j].branch, alts[i].branch)) j += 1;
+                genGroup(ctx, &buf, alts[i..j], cp);
+                i = j;
+            }
             buf.appendSlice(ctx.a, "return null;\n}\n") catch unreachable;
             ctx.matchers.appendSlice(ctx.a, buf.items) catch unreachable;
         }
