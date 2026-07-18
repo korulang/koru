@@ -1,0 +1,37 @@
+// 400_168: a GUARDED-ONLY effect branch (`! beep n when n > 3`, no catch-all
+// `! beep _`) must NOT drop the optional-branch callable-alias prelude that the
+// inlined proc body needs for its SIBLING branches.
+//
+// BUG (pinned 2026-07-18, currently RED): when a consumer handles an effect
+// branch with only a `when`-guarded arm and no catch-all, the emitter drops the
+// entire alias prelude
+//     const tick: ?*const fn () void = if (@hasDecl(__H, "tick")) &__H.tick else null;
+// from the spliced `run|zig` body, so the SIBLING branch's callable (`tick`)
+// becomes `use of undeclared identifier 'tick'` in generated Zig — a raw
+// host-level leak, not a koru-level diagnostic.
+//
+// Isolated from koru-libs/vaxis (hello_vaxis.kz): the same wrapper builds when
+// the consumer adds a `! key _` catch-all and fails when it uses only a guarded
+// `! key ... when`. Single variable = the catch-all.
+//
+// RULING (2026-07-18): guarded-only effect branches are LEGAL — effect branches
+// are optional/flexible (0, a lone arm, or many), and `when` selects which
+// firings a listener reacts to. So the fix is emitter-side: emit the prelude
+// regardless of branch exhaustiveness.
+~import std/io
+
+~pub event run {}
+! ?tick
+! ?beep i64
+| done i64
+
+~proc run|zig {
+    if (tick) |f| f();
+    if (beep) |f| f(7);
+    return .{ .done = 99 };
+}
+
+~run()
+! tick |> std/io:print.ln("tick")
+! beep n when n > 3 |> std/io:print.ln("beep {{ n:d }}")
+| done r |> std/io:print.ln("done {{ r:d }}")

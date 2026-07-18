@@ -4996,6 +4996,16 @@ fn inlineEffectfulEligibility(ctx: *EmissionContext, inv: *const ast.Invocation,
         if (containsToken(proc.body.text, "fn")) return null;
         if (has_terminal_branch and !containsToken(proc.body.text, "return")) return null;
 
+        // Inline splicing lowers an optional effect arm only in DIRECT-CALL form
+        // (`ready(...)` → splice, or evaluate-and-discard when unhandled). A body
+        // that references an optional arm as a VALUE — `if (ready) |f| f()`, the
+        // nullable-fn-ptr contract the handler-call path provides via
+        // `emitOptionalArmNullableAlias` — has no such local in the spliced
+        // frame, so the reference leaks a raw Zig `undeclared identifier`. Those
+        // bodies keep the handler-call path, which emits the alias prelude.
+        // (400_168; the koru-libs vaxis `run` wrapper, guarded-only consumer.)
+        if (procRefsOptionalArmAsValue(proc.body.text, event_decl)) return null;
+
         return .{ .event_decl = event_decl, .proc = proc, .flow = null };
     }
 
@@ -5015,6 +5025,65 @@ fn inlineEffectfulEligibility(ctx: *EmissionContext, inv: *const ast.Invocation,
         .flow => |flow| return .{ .event_decl = event_decl, .proc = null, .flow = flow },
         else => return null,
     }
+}
+
+/// True if the proc body references any OPTIONAL effect arm as a VALUE rather
+/// than a direct call — e.g. `if (ready) |f| f()` (the handler-path nullable
+/// contract) instead of `ready(...)`. The inline splice lowers only direct
+/// calls, so a value reference has no local in the spliced frame and leaks a
+/// raw `undeclared identifier`. Names are matched in their emitted (Zig-
+/// sanitized: `-` → `_`) form, since that is how the body spells them. (400_168)
+fn procRefsOptionalArmAsValue(body: []const u8, event_decl: *const ast.EventDecl) bool {
+    for (event_decl.branches) |b| {
+        if (b.kind != .effect) continue;
+        if (!b.is_optional) continue;
+        if (std.mem.eql(u8, b.name, "*")) continue;
+        var name_buf: [128]u8 = undefined;
+        if (b.name.len > name_buf.len) continue;
+        for (b.name, 0..) |ch, i| name_buf[i] = if (ch == '-') '_' else ch;
+        const name = name_buf[0..b.name.len];
+        if (identUsedAsNonCall(body, name)) return true;
+    }
+    return false;
+}
+
+/// Quote- and comment-aware scan: true if `name` appears as a word-boundary
+/// token whose next non-whitespace character is NOT `(` — i.e. used as a value,
+/// not called.
+fn identUsedAsNonCall(body: []const u8, name: []const u8) bool {
+    var i: usize = 0;
+    var q: u8 = 0;
+    while (i < body.len) : (i += 1) {
+        const c = body[i];
+        if (q != 0) {
+            if (c == '\\') {
+                i += 1;
+            } else if (c == q) {
+                q = 0;
+            }
+            continue;
+        }
+        if (c == '"' or c == '\'') {
+            q = c;
+            continue;
+        }
+        if (c == '/' and i + 1 < body.len and body[i + 1] == '/') {
+            while (i < body.len and body[i] != '\n') i += 1;
+            continue;
+        }
+        if (std.mem.startsWith(u8, body[i..], name)) {
+            const before_ok = i == 0 or !(std.ascii.isAlphanumeric(body[i - 1]) or body[i - 1] == '_' or body[i - 1] == '.');
+            const after = i + name.len;
+            const after_ok = after >= body.len or !(std.ascii.isAlphanumeric(body[after]) or body[after] == '_');
+            if (before_ok and after_ok) {
+                // Peek past whitespace for a call `(`.
+                var j = after;
+                while (j < body.len and (body[j] == ' ' or body[j] == '\t' or body[j] == '\n' or body[j] == '\r')) j += 1;
+                if (j >= body.len or body[j] != '(') return true;
+            }
+        }
+    }
+    return false;
 }
 
 /// Word-boundary token scan, quote- and comment-aware.

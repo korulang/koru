@@ -1,8 +1,8 @@
 ---
 type: belief
 id: frag-presence-effect-arm-expressions
-provenance: introduced with the presence-expression implementation — feat(effects): if(arm)/when arm resolve at analysis+splice, KORU130/131 walls (400_146–400_150)
-ts: 2026-07-11
+provenance: introduced with the presence-expression implementation — feat(effects): if(arm)/when arm resolve at analysis+splice, KORU130/131 walls (400_146–400_150); evolved 2026-07-19 with the invocation-contract split surfaced by koru-libs vaxis (400_168)
+ts: 2026-07-19
 ---
 
 # Presence expressions for optional effect arms (belief)
@@ -75,7 +75,41 @@ absent — the same zero cost the inlined stand-in had, without the lie. A
 synthesized no-op in `__H` was indistinguishable from a real install and
 sent `if(<void arm>)` down the wrong branch for every omitting consumer.
 
+## PRESENCE is consistent across paths; INVOCATION is not (400_168)
+
+The section above establishes that *presence truth* resolves the same on both
+lowerings (`@hasDecl(__H, ...)` vs caller-conts). But the way a `|zig` proc body
+*invokes* a YIELDING optional arm does NOT — the two paths expose incompatible
+contracts, and the consumer's branch shape silently picks which:
+
+- **Handler-call path**: the arm is a nullable fn-pointer alias
+  (`emitOptionalArmNullableAlias`), so the body must write `if (ready) |f| f();`.
+- **Inline cut-1 splice**: no alias is bound — the rewriter lowers only DIRECT
+  calls (`ready(...)` → splice marker, or evaluate-and-discard when unhandled).
+  The nullable-unwrap form has no `ready` local in the spliced frame and leaks a
+  raw Zig `undeclared identifier`.
+
+So the "proc side gets a nullable fn-ptr alias" claim above is **handler-path
+only**. It reads as universal solely because 400_148's arm is *resuming* (`-> T`),
+which is permanently call-path (inline cannot express a resume value) — a yielding
+arm that reaches the inline path breaks under the same body text. One body cannot
+satisfy both paths; a guarded-only (catch-all-free) consumer is inline-eligible,
+a guard-group / catch-all keeps the call path.
+
+Conservative fix (committed with this evolution): `procRefsOptionalArmAsValue`
+excludes value-form proc bodies from inline eligibility, routing them to the
+handler path that supports them (pin 400_168). This is a router, not a contract —
+the canonical resolution is still open (below).
+
 ## Open questions
 
 - JS target: presence should be native truthiness on the handlers object —
   unverified, designed for the Zig target first.
+- **Canonical invocation contract (open ruling):** unify the two paths on ONE
+  invocation form for yielding optional arms so the body's spelling no longer
+  depends on which path the consumer picks. Leaning (a Fable design proposal
+  explores it): direct-call is canonical for yielding arms — the emitter binds an
+  always-callable alias whose absent case is a producer-side no-op — while the
+  nullable form stays for RESUMING arms (absence has no value to fabricate). When
+  ruled, `procRefsOptionalArmAsValue` converts from a router into a koru-level
+  wall that teaches the direct-call form.
