@@ -1596,7 +1596,43 @@ pub fn emitPrefixMatcher(w: anytype, dfa: *const Dfa, name: []const u8) !void {
         try w.writeAll(if (acc) "true" else "false");
     }
     try w.writeAll(" };\n");
+    // Suffix-terminal DFA: every accepting state transitions ONLY to the dead
+    // sink (accepting is a dead-end — string, keyword). Then an accept is
+    // reached at most once, immediately before the dead break, so the per-byte
+    // accept test/write is pure overhead: hoist it out and read the accept off
+    // the state we broke on. Numbers (digit -> digit keeps accepting) are NOT
+    // suffix-terminal and keep the per-byte last_end write.
+    var suffix_terminal = dead != null;
+    if (dead) |d| {
+        for (0..dfa.n_states) |q| {
+            if (!dfa.accept[q]) continue;
+            var b: usize = 0;
+            while (b < 256) : (b += 1) {
+                if (dfa.trans[q * 256 + b] != d) {
+                    suffix_terminal = false;
+                    break;
+                }
+            }
+            if (!suffix_terminal) break;
+        }
+    }
+
     try w.print("    var s: u32 = {d};\n", .{dfa.start});
+    if (suffix_terminal) {
+        // No per-byte accept work: walk transitions until dead/end, then the
+        // state we stopped on decides the (single) match end — `i` at the dead
+        // break is exactly the accepting end, `input.len` at a clean run-out.
+        try w.writeAll("    if (A[s]) return from;\n");
+        try w.writeAll("    var i: usize = from;\n");
+        try w.writeAll("    while (i < input.len) : (i += 1) {\n");
+        try w.print("        const ns = T[@as(usize, s) * 256 + @as(usize, input[i])];\n", .{});
+        try w.print("        if (ns == {d}) break;\n", .{dead.?});
+        try w.writeAll("        s = ns;\n");
+        try w.writeAll("    }\n");
+        try w.writeAll("    return if (A[s]) i else null;\n");
+        try w.writeAll("}\n");
+        return;
+    }
     try w.writeAll("    var last_end: ?usize = if (A[s]) from else null;\n");
     try w.writeAll("    var i: usize = from;\n");
     try w.writeAll("    while (i < input.len) : (i += 1) {\n");
@@ -1915,6 +1951,30 @@ test "emit prefix: well-formed anchored longest-prefix fn with dead-state exit" 
     try testing.expect(std.mem.indexOf(u8, src, "while (start <= input.len)") == null);
     // `[0-9]+` has a dead sink (any non-digit) — the early-exit must be emitted
     try testing.expect(std.mem.indexOf(u8, src, "break;") != null);
+}
+
+test "emit prefix: suffix-terminal patterns hoist the accept-write out of the loop" {
+    // A JSON string terminal: the only accepting state (post-close-quote)
+    // transitions solely to the dead sink, so no per-byte last_end write.
+    {
+        const src = try compilePrefixToZig(testing.allocator, "\"([^\"\\\\]|\\\\.)*\"", "ps");
+        defer testing.allocator.free(src);
+        try testing.expect(std.mem.indexOf(u8, src, "last_end = i + 1;") == null);
+        try testing.expect(std.mem.indexOf(u8, src, "return if (A[s]) i else null;") != null);
+    }
+    // A keyword terminal — accepts only at word end, also suffix-terminal.
+    {
+        const src = try compilePrefixToZig(testing.allocator, "true|false|null", "pk");
+        defer testing.allocator.free(src);
+        try testing.expect(std.mem.indexOf(u8, src, "last_end = i + 1;") == null);
+    }
+    // A number terminal: digit -> digit keeps re-accepting, so it is NOT
+    // suffix-terminal and MUST keep the per-byte last_end write.
+    {
+        const src = try compilePrefixToZig(testing.allocator, "-?(0|[1-9][0-9]*)(\\.[0-9]+)?", "pn");
+        defer testing.allocator.free(src);
+        try testing.expect(std.mem.indexOf(u8, src, "last_end = i + 1;") != null);
+    }
 }
 
 test "prefix first-bytes: only the admissible starts are set" {
