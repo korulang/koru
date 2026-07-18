@@ -41,7 +41,7 @@ fine, but it made the AST show `[]const u8`, broke round-trip (`string` in,
 the exact masquerade the ruling forbids. The round-trip unit tests are the wall
 that caught it.
 
-The irreducible whys — what the tests (020_060 positive, 510_069 negative)
+The irreducible whys — what the tests (020_060 positive, 510_105 negative)
 cannot themselves say:
 
 - **The surface language owns its own text type.** `[]const u8` names *one
@@ -74,5 +74,5 @@ deliberate ruling — it must not ride in for free under a rename.
 `[]const u8` in a plain `const` binding or inside a raw `~…|zig` body stays legal
 — that is still Zig, not surface. See [[frag-type-system-design]] (payload types
 as registry-checked, not host strings) for where this sits in the larger type
-story. Pins: 020_060 (payload positive), 510_069 (payload reject), 510_104
+story. Pins: 020_060 (payload positive), 510_105 (payload reject), 510_104
 (return reject).

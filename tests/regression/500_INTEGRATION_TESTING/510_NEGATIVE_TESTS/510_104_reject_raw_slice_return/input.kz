@@ -1,5 +1,5 @@
 // The raw Zig slice `[]const u8` is not a Koru surface type in a RETURN
 // position either — the same wall as payloads. Text returned from an event is
 // spelled `string` (the canonical surface type); the slice is only the internal
-// Zig lowering. Twin of 510_069 (which pins the payload position).
+// Zig lowering. Twin of 510_105 (which pins the payload position).
 ~event echo { msg: string } -> []const u8
