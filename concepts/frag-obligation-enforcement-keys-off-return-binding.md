@@ -71,11 +71,21 @@ Full parity (phantom-checker descent into record-return fields, which would make
 the field auto-dischargeable) is deliberately NOT built — the pin rules manual
 discharge, and the checker-descent is a larger mirror of the input-side tracking.
 
-## Open
+## The mid-chain-unbound frontier is CLOSED (2026-07-19)
 
 Mid-chain unbound obligation calls (`make(): h |> bump(h)` where `bump` returns an
-obligation and the chain ends unbound) are the continuation-level twin of this
-root — the head-only materialization here does not reach them. Enforcement mints
-only when a mid-chain invocation carries a `return_binding`
-(`auto_discharge_inserter.zig`), so `bump(h)`'s dropped return leaks. Pinned by
-330_097 — still open.
+obligation and the chain ends unbound) — the continuation-level twin of this root —
+are now caught. Enforcement used to mint only when a mid-chain invocation carried a
+`return_binding`, so `bump(h)`'s dropped return leaked silently. A TERMINAL
+unbound invocation (`cont.continuations.len == 0`) whose event returns a cleanup
+obligation now seeds an obligation under a synthetic, unreferencable key. An
+unbound value has no name to `dispose(...)`, so — exactly like the record-field
+case — it is NOT auto-dischargeable: it presents no disposal candidate and falls to
+the "was not discharged" wall (KORU030, error name `return of bump(...)`), guiding
+the author to bind and discharge the return. Non-terminal unbound calls are
+untouched (branch arms consume the return as payload; sequential prefixes are not
+flow exits). Pinned by 330_097.
+
+The two frontiers this belief named are both closed; the `not_auto_dischargeable`
+marker (renamed from `from_return_record` when it grew a second origin) is the
+shared "no auto-discharge → wall" lever for both.

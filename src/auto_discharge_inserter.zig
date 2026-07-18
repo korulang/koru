@@ -151,16 +151,21 @@ pub const AutoDischargeInserter = struct {
             base_type: []const u8, // e.g., "*Connection" - used to filter disposal events by type
             scope_depth: u32, // Scope where obligation was created
             acq_seq: u32, // Monotonic acquisition order (LIFO unwind uses descending)
-            // A record-RETURN field obligation (`-> { h: *H<owned!>, n }`, 330_096).
-            // Unlike a whole-value bare-return obligation (auto-dischargeable) or a
-            // branch-payload field (phantom-checker-tracked, so an inserted disposer
-            // type-checks), a return-record field is NOT tracked by the phantom
-            // checker, so an auto-inserted `dispose(r.h)` fails validation. Per the
-            // ruling that record fields follow the SAME rules as event-payload
-            // fields (error when undischarged — 690_024), these are NOT
-            // auto-discharged: they present no disposal candidate and fall to the
-            // "was not discharged" wall (KORU030), guiding manual discharge.
-            from_return_record: bool = false,
+            // An obligation the inserter must NOT auto-discharge: it presents no
+            // disposal candidate and falls to the "was not discharged" wall
+            // (KORU030), guiding manual discharge. Two origins:
+            // - A record-RETURN field (`-> { h: *H<owned!>, n }`, 330_096). Unlike
+            //   a whole-value bare-return obligation (auto-dischargeable) or a
+            //   branch-payload field (phantom-checker-tracked, so an inserted
+            //   disposer type-checks), a return-record field is NOT tracked by the
+            //   phantom checker, so an auto-inserted `dispose(r.h)` fails
+            //   validation. Per the ruling that record fields follow the SAME
+            //   rules as event-payload fields (error when undischarged — 690_024).
+            // - A terminal UNBOUND mid-chain return (`make(): h |> bump(h)` where
+            //   bump returns a fresh `<owned!>`, 330_097). The value has no name,
+            //   so no `dispose(...)` can be synthesized — the only honest move is
+            //   the wall.
+            not_auto_dischargeable: bool = false,
         };
 
         fn init(allocator: std.mem.Allocator) BindingContext {
@@ -262,7 +267,7 @@ pub const AutoDischargeInserter = struct {
                     .scope_depth = entry.value_ptr.scope_depth,
                     // Preserve original acquisition order — do not re-stamp.
                     .acq_seq = entry.value_ptr.acq_seq,
-                    .from_return_record = entry.value_ptr.from_return_record,
+                    .not_auto_dischargeable = entry.value_ptr.not_auto_dischargeable,
                 });
             }
 
@@ -867,7 +872,7 @@ pub const AutoDischargeInserter = struct {
                             const binding_name = entry.binding_path;
                             const info = entry.info;
 
-                            const disposals = if (info.from_return_record)
+                            const disposals = if (info.not_auto_dischargeable)
                 try self.allocator.alloc(DisposalEvent, 0)
             else
                 try self.findDisposalEvents(info.phantom_state, info.base_type);
@@ -1251,6 +1256,44 @@ pub const AutoDischargeInserter = struct {
                             try context.addBinding(rb, canonical, "__type_ref", info.decl.return_type orelse "", self.nextAcqSeq());
                         }
                     }
+                } else if (cont.continuations.len == 0) {
+                    // TERMINAL invocation with NO return binding: `make(): h |>
+                    // bump(h)` — bump returns a fresh `<owned!>` that the chain
+                    // drops on the floor. Enforcement otherwise keys off the
+                    // return_binding (or branch payloads, which require
+                    // continuations), so the dangling obligation would leak
+                    // silently (330_097; the continuation-level twin of the
+                    // flow-head discard materialization — concept
+                    // frag-obligation-enforcement-keys-off-return-binding).
+                    // Seed the obligation under a synthetic, unreferencable key.
+                    // An unbound value has no name to dispose, so it is NOT
+                    // auto-dischargeable — it presents no disposal candidate and
+                    // falls to the "was not discharged" wall (KORU030), guiding
+                    // the author to bind the return and discharge it. Non-terminal
+                    // unbound calls (branch arms consume the return as payload;
+                    // sequential prefixes are not flow exits) are untouched.
+                    const rb_event_name = try self.pathToString(node.invocation.path);
+                    defer self.allocator.free(rb_event_name);
+                    const rb_module = node.invocation.path.module_qualifier orelse module_name;
+                    const rb_qualified = try std.fmt.allocPrint(self.allocator, "{s}:{s}", .{ rb_module, rb_event_name });
+                    defer self.allocator.free(rb_qualified);
+                    if (self.event_map.get(rb_qualified)) |info| {
+                        if (info.decl.return_phantom) |rp| {
+                            if (std.mem.endsWith(u8, std.mem.trim(u8, rp, " \t"), "!")) {
+                                const canonical = try self.canonicalizePhantom(rp, rb_module);
+                                defer self.allocator.free(canonical);
+                                const key = try std.fmt.allocPrint(self.allocator, "__unbound_return.{s}", .{rb_event_name});
+                                defer self.allocator.free(key);
+                                // field_name doubles as the error display name
+                                // (formatBindingForError) — the synthetic key
+                                // itself must never surface to the user.
+                                const display = try std.fmt.allocPrint(self.allocator, "return of {s}(...)", .{rb_event_name});
+                                defer self.allocator.free(display);
+                                try context.addBinding(key, canonical, display, info.decl.return_type orelse "", self.nextAcqSeq());
+                                if (context.cleanup_obligations.getPtr(key)) |oblig| oblig.not_auto_dischargeable = true;
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -1408,7 +1451,7 @@ pub const AutoDischargeInserter = struct {
                             const info = entry.info;
 
                             // Find disposal event for this obligation
-                            const disposals = if (info.from_return_record)
+                            const disposals = if (info.not_auto_dischargeable)
                 try self.allocator.alloc(DisposalEvent, 0)
             else
                 try self.findDisposalEvents(info.phantom_state, info.base_type);
@@ -1764,7 +1807,7 @@ pub const AutoDischargeInserter = struct {
                 const binding_path = entry.binding_path;
                 const info = entry.info;
 
-                const disposals = if (info.from_return_record)
+                const disposals = if (info.not_auto_dischargeable)
                 try self.allocator.alloc(DisposalEvent, 0)
             else
                 try self.findDisposalEvents(info.phantom_state, info.base_type);
@@ -2011,7 +2054,7 @@ pub const AutoDischargeInserter = struct {
                 continue;
             }
 
-            const disposals = if (info.from_return_record)
+            const disposals = if (info.not_auto_dischargeable)
                 try self.allocator.alloc(DisposalEvent, 0)
             else
                 try self.findDisposalEvents(info.phantom_state, info.base_type);
@@ -3260,7 +3303,7 @@ pub const AutoDischargeInserter = struct {
             // Mark it as a return-record field obligation so enforcement routes it
             // to the "was not discharged" wall rather than an auto-insert the
             // phantom checker can't validate.
-            if (context.cleanup_obligations.getPtr(key)) |oblig| oblig.from_return_record = true;
+            if (context.cleanup_obligations.getPtr(key)) |oblig| oblig.not_auto_dischargeable = true;
         }
     }
 
