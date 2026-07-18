@@ -655,6 +655,10 @@ pub fn build(b: *std.Build) void {
     });
     struct_literal_module.addImport("liquid", liquid_module);
     exe.root_module.addImport("struct_literal", struct_literal_module);
+    // Shared record-classification predicates: the parser classifies `-> {...}`
+    // produce bodies and the emitter lowers records, both from this one module.
+    parser_module.addImport("struct_literal", struct_literal_module);
+    emitter_helpers_module.addImport("struct_literal", struct_literal_module);
 
     // Template processor: walks AST, renders `|template|...` proc bodies
     // through Liquid, strips the `template` tag from the variant chain.

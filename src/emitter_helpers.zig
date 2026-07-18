@@ -11,6 +11,7 @@ const type_registry_module = @import("type_registry");
 const purity_helpers = @import("compiler_passes/purity_helpers");
 const compiler_config = @import("compiler_config");
 const codegen_utils = @import("codegen_utils");
+const struct_literal = @import("struct_literal");
 const annotation_parser = @import("annotation_parser");
 
 /// Find a `~[transform]proc` implementing the event at `segments` among `items`.
@@ -1500,85 +1501,12 @@ fn parseSliceType(slice_type: []const u8) ?SliceTypeInfo {
 
 /// Check if a value looks like a Koru struct literal: { field: value, ... }
 /// Must be single-line (not a Source block) and contain field: value patterns
-fn isKoruStructLiteral(value: []const u8) bool {
-    if (value.len < 2) return false;
-    if (value[0] != '{' or value[value.len - 1] != '}') return false;
-
-    // Check for field: value pattern (has colon with identifier before it)
-    const inner = value[1 .. value.len - 1];
-    var i: usize = 0;
-    var found_field_pattern = false;
-
-    while (i < inner.len) {
-        // Skip whitespace
-        while (i < inner.len and (inner[i] == ' ' or inner[i] == '\t')) {
-            i += 1;
-        }
-        if (i >= inner.len) break;
-
-        // Look for identifier followed by colon
-        if (isIdentStartChar(inner[i])) {
-            var j = i + 1;
-            while (j < inner.len and isIdentChar(inner[j])) {
-                j += 1;
-            }
-            // Skip whitespace after identifier
-            while (j < inner.len and (inner[j] == ' ' or inner[j] == '\t')) {
-                j += 1;
-            }
-            // Check for colon
-            if (j < inner.len and inner[j] == ':') {
-                found_field_pattern = true;
-                break;
-            }
-        }
-        i += 1;
-    }
-
-    return found_field_pattern;
-}
-
-/// `{ p.x, p.y }` field-punning shorthand — no `field:` labels, dot paths only.
-fn isFieldPunningLiteral(value: []const u8) bool {
-    if (value.len < 2) return false;
-    if (value[0] != '{' or value[value.len - 1] != '}') return false;
-    if (isKoruStructLiteral(value)) return false;
-
-    const inner = value[1 .. value.len - 1];
-    var depth: i32 = 0;
-    var has_dot_at_depth_0 = false;
-    var has_comma_at_depth_0 = false;
-    var has_operator_at_depth_0 = false;
-    for (inner) |c| {
-        switch (c) {
-            '{', '(', '[' => depth += 1,
-            '}', ')', ']' => depth -= 1,
-            ':', '=' => if (depth == 0) return false,
-            '.' => {
-                if (depth == 0) has_dot_at_depth_0 = true;
-            },
-            ',' => {
-                if (depth == 0) has_comma_at_depth_0 = true;
-            },
-            '+', '-', '*', '/' => {
-                if (depth == 0) has_operator_at_depth_0 = true;
-            },
-            else => {},
-        }
-    }
-    if (has_dot_at_depth_0 and !has_operator_at_depth_0) return true;
-    if (has_comma_at_depth_0) return true;
-    return false;
-}
-
-/// `{ expr }` plain-value braces from branch/bare-return constructors — not a Zig block.
-fn isBracedPlainExpression(value: []const u8) bool {
-    if (value.len < 2) return false;
-    if (value[0] != '{' or value[value.len - 1] != '}') return false;
-    if (isKoruStructLiteral(value)) return false;
-    if (isFieldPunningLiteral(value)) return false;
-    return true;
-}
+// Record-classification predicates now live in struct_literal.zig — the single
+// source of truth shared with the parser (which classifies `-> { ... }` produce
+// bodies) and every emitter. Aliased so existing call sites read unchanged.
+const isKoruStructLiteral = struct_literal.isKoruStructLiteral;
+const isFieldPunningLiteral = struct_literal.isFieldPunningLiteral;
+const isBracedPlainExpression = struct_literal.isBracedPlainExpression;
 
 /// Emit `{ p.x, p.y }` as `.{ .x = p.x, .y = p.y }`.
 fn emitFieldPunningLiteral(emitter: *CodeEmitter, ctx: *EmissionContext, value: []const u8) EmitError!void {

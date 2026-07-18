@@ -209,6 +209,85 @@ pub fn parseFields(allocator: Allocator, input: []const u8) ParseError![]const S
     return out.toOwnedSlice(allocator);
 }
 
+// --- Classification predicates: "what kind of `{ ... }` is this?" -----------
+// Single source of truth shared by the parser (to classify a `-> { ... }`
+// produce body structurally instead of as raw host code) and every emitter
+// (to lower a record literal per target). Kept here beside the struct parser
+// so the answer to "is this a Koru record literal" lives in one place.
+
+fn isIdentStartChar(c: u8) bool {
+    return (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or c == '_';
+}
+
+fn isIdentChar(c: u8) bool {
+    return isIdentStartChar(c) or (c >= '0' and c <= '9');
+}
+
+/// `{ name: value, ... }` — a named-field record literal (has `ident :`).
+pub fn isKoruStructLiteral(value: []const u8) bool {
+    if (value.len < 2) return false;
+    if (value[0] != '{' or value[value.len - 1] != '}') return false;
+
+    const inner = value[1 .. value.len - 1];
+    var i: usize = 0;
+    while (i < inner.len) {
+        while (i < inner.len and (inner[i] == ' ' or inner[i] == '\t')) : (i += 1) {}
+        if (i >= inner.len) break;
+        if (isIdentStartChar(inner[i])) {
+            var j = i + 1;
+            while (j < inner.len and isIdentChar(inner[j])) : (j += 1) {}
+            while (j < inner.len and (inner[j] == ' ' or inner[j] == '\t')) : (j += 1) {}
+            if (j < inner.len and inner[j] == ':') return true;
+        }
+        i += 1;
+    }
+    return false;
+}
+
+/// `{ p.x, p.y }` field-punning shorthand — no `field:` labels, dot paths only.
+pub fn isFieldPunningLiteral(value: []const u8) bool {
+    if (value.len < 2) return false;
+    if (value[0] != '{' or value[value.len - 1] != '}') return false;
+    if (isKoruStructLiteral(value)) return false;
+
+    const inner = value[1 .. value.len - 1];
+    var depth: i32 = 0;
+    var has_dot_at_depth_0 = false;
+    var has_comma_at_depth_0 = false;
+    var has_operator_at_depth_0 = false;
+    for (inner) |c| {
+        switch (c) {
+            '{', '(', '[' => depth += 1,
+            '}', ')', ']' => depth -= 1,
+            ':', '=' => if (depth == 0) return false,
+            '.' => if (depth == 0) {
+                has_dot_at_depth_0 = true;
+            },
+            ',' => if (depth == 0) {
+                has_comma_at_depth_0 = true;
+            },
+            '+', '-', '*', '/' => if (depth == 0) {
+                has_operator_at_depth_0 = true;
+            },
+            else => {},
+        }
+    }
+    if (has_dot_at_depth_0 and !has_operator_at_depth_0) return true;
+    if (has_comma_at_depth_0) return true;
+    return false;
+}
+
+/// `{ expr }` plain-value braces from branch/bare-return constructors — not a
+/// Zig block, not a record. The residual `{ ... }` shape once the two record
+/// kinds above are ruled out.
+pub fn isBracedPlainExpression(value: []const u8) bool {
+    if (value.len < 2) return false;
+    if (value[0] != '{' or value[value.len - 1] != '}') return false;
+    if (isKoruStructLiteral(value)) return false;
+    if (isFieldPunningLiteral(value)) return false;
+    return true;
+}
+
 /// Filter adapter matching `liquid.Filter`: `parse_struct(text)`.
 pub fn filter(allocator: Allocator, args: []const Value) anyerror!Value {
     if (args.len != 1 or args[0] != .string) return error.BadArgs;

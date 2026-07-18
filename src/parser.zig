@@ -5,6 +5,7 @@ const lexer = @import("lexer");
 const errors = @import("errors");
 const type_registry = @import("type_registry");
 const expression_parser = @import("expression_parser");
+const struct_literal = @import("struct_literal");
 const annotation_parser = @import("annotation_parser");
 const ModuleResolver = @import("module_resolver").ModuleResolver;
 const module_resolver_mod = @import("module_resolver");
@@ -6228,6 +6229,24 @@ pub const Parser = struct {
                         // and returns its value; otherwise it's a Zig expression.
                         if (looksLikeInvocation(produced)) {
                             step = ast.Step{ .invocation = try self.parseEventInvocation(produced) };
+                        } else if (struct_literal.isKoruStructLiteral(produced) or
+                            struct_literal.isFieldPunningLiteral(produced))
+                        {
+                            // `-> { skip: v }` / `-> { p.x, p.y }` is a RECORD
+                            // produce, not raw host code. Wrap it as a bare-return
+                            // branch constructor — the same node the same-line
+                            // produce path builds — so the record lowers through the
+                            // shared struct-literal path for every emitter instead of
+                            // leaking a verbatim `return { ... }`. Braced plain
+                            // expressions (`{ a + b }`) and scalars fall through to
+                            // `.expression`, which is correct for them.
+                            step = ast.Step{ .branch_constructor = .{
+                                .branch_name = try self.allocator.dupe(u8, ""),
+                                .fields = &.{},
+                                .plain_value = try self.allocator.dupe(u8, produced),
+                                .has_expressions = true,
+                                .is_bare_return = true,
+                            } };
                         } else {
                             step = ast.Step{ .expression = try self.allocator.dupe(u8, produced) };
                         }
