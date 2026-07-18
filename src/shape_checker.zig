@@ -1578,6 +1578,26 @@ pub const ShapeChecker = struct {
 
                 // Branch constructors produce a single branch and don't need nested handling
                 if (step == .branch_constructor) {
+                    // Bare-return produce (`! ask -> { a, b }`): the `->` produces the
+                    // single anonymous resume VALUE, not a `=>`-constructed branch. The
+                    // parser encodes a record resume value as a branch_constructor with
+                    // an empty branch_name and `is_bare_return`; the scalar form takes
+                    // the `.expression` path above. Route it to the SAME produce-side
+                    // rule: it is legal against a `-> T` resume (that IS the value it
+                    // produces), and illegal only when the effect declares named resume
+                    // ARMS (then there is no anonymous value — select an arm with `=>`).
+                    // Never the `=>`-construct wall below, whose own advice — "use `->`"
+                    // — the author already followed.
+                    if (step.branch_constructor.is_bare_return) {
+                        if (resolveDeclaredBranch(event_branches, cont.branch)) |b| {
+                            if (b.kind == .effect and b.resume_arms != null) {
+                                try self.reporter.addErrorAtLocation(.KORU102, cont.location,
+                                    "`->` produces a single resume value, but '{s}' declares named resume arms — construct one with `=>` (e.g. `=> {s} ...`)",
+                                    .{ cont.branch, b.resume_arms.?[0].name });
+                            }
+                        }
+                        continue;
+                    }
                     // Glyph discipline: `=>` CONSTRUCTS a branch. It is illegal when
                     // the handled effect/event produces a single payload (`-> T`) —
                     // there is no branch to construct; the payload is produced with

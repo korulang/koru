@@ -378,6 +378,35 @@ fn splitTrailingReturnArrow(self: *Parser, s: []const u8) !ReturnArrowSplit {
     return .{ .head = head, .return_type = return_type, .return_phantom = return_phantom };
 }
 
+/// A `-> { ... }` type string carrying exactly ONE top-level field. Such a
+/// single-field record collapses to the scalar (`-> T`) in every produce
+/// position — bare return (`-> { a }`, 210_149) and effect-arm resume
+/// (`! ask -> { a }`, 210_150) — the produce-side twin of the single-field
+/// branch-payload rule (2032/8680). Legal forms are the scalar `-> T` or a
+/// multi-field record `-> { a, b, ... }`. Returns false for scalars (no
+/// braces), empty braces (a distinct error), and 2+-field records.
+fn isSingleFieldRecordType(t: []const u8) bool {
+    const s = std.mem.trim(u8, t, " \t");
+    if (s.len < 2 or s[0] != '{' or s[s.len - 1] != '}') return false;
+    const inner = std.mem.trim(u8, s[1 .. s.len - 1], " \t");
+    if (inner.len == 0) return false;
+    // Count top-level fields = top-level commas + 1 (commas nested in
+    // <>/{}/[]/() — e.g. a phantom `*H<owned!>` or nested record — don't split).
+    var depth: i32 = 0;
+    var fields: usize = 1;
+    for (inner) |c| {
+        switch (c) {
+            '<', '{', '[', '(' => depth += 1,
+            '>', '}', ']', ')' => depth -= 1,
+            ',' => if (depth == 0) {
+                fields += 1;
+            },
+            else => {},
+        }
+    }
+    return fields == 1;
+}
+
 /// Find '{' at top level (not inside (), [] or strings)
 /// startsWithKeyword: true iff `s` begins with `keyword` AND the next char is
 /// a non-identifier (whitespace / `{` / `(` / EOL). Prevents `~process_int`
@@ -2048,6 +2077,22 @@ pub const Parser = struct {
                 .{ br.name, br.payload.fields[0].type, br.name, br.payload.fields[0].name, br.payload.fields[0].type },
             );
             return error.ParseError;
+        }
+
+        // Single-field record RETURN (`-> { a: i64 }`) collapses to the scalar
+        // `-> i64` — the produce-side sibling of the single-field branch payload
+        // above; only a 2+-field record earns the braces. (210_149)
+        if (return_type) |rt| {
+            if (isSingleFieldRecordType(rt)) {
+                try self.reporter.addError(
+                    .PARSE003,
+                    event_line_index + 1,
+                    1,
+                    "single field in record return `{s}` — collapse to the scalar `-> <type>`; a record return is for two or more fields",
+                    .{rt},
+                );
+                return error.ParseError;
+            }
         }
 
         // Copy annotations verbatim — comptime is explicit, never synthesized.
@@ -8383,6 +8428,21 @@ pub const Parser = struct {
                     branch_start = lexer.trim(branch_start[0..idx]);
                     break;
                 }
+            }
+        }
+
+        // Single-field record resume (`! ask -> { a: i64 }`) collapses to the
+        // scalar `! ask -> i64`; only a 2+-field record earns the braces. (210_150)
+        if (resume_type) |rt| {
+            if (isSingleFieldRecordType(rt)) {
+                try self.reporter.addError(
+                    .PARSE003,
+                    self.current - 1,
+                    1,
+                    "single field in record resume `{s}` — collapse to the scalar `-> <type>`; a record resume is for two or more fields",
+                    .{rt},
+                );
+                return error.ParseError;
             }
         }
 

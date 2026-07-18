@@ -89,3 +89,22 @@ bare-return check; a multi-branch one gets the identity advice. The two forms
 are told apart post-parse by the field name — identity carries the `__type_ref`
 sentinel; a braced single field keeps its real name. Pinned 210_063 (sole →
 bare return) and 210_144 (multi → identity).
+
+## The collapse reaches the PRODUCE/RESUME position too (2026-07-18)
+
+The one-variant collapse is not a declaration-side-only rule: it governs every
+`->` PRODUCE position. A single-field record RETURN (`-> { a: T }`) and a
+single-field effect-arm RESUME (`! ask -> { a: T }`) both collapse to the scalar
+`-> T` — the record earns its braces only at TWO OR MORE fields. `-> { a }` and
+`-> a` carry identical information (bind `r` vs `r.a`); a one-field record is a
+distinction without a difference, exactly like the one-variant branch payload and
+the one-variant tag union above. Pinned 210_149 (bare-return) and 210_150 (effect
+resume), rejected as PARSE003 at parse time.
+
+**Repudiated**: 020_024 formerly pinned "a single-field record bare-return
+`-> { total: i64 }` is legal; restricting the bare return to scalars would be the
+arbitrary special case." That reading is wrong — *permitting* `-> { a }` is the
+special case (two spellings for one value). 020_024 migrated to the legal
+multi-field form. The multi-field record produce/resume is the real feature: it
+now emits correctly (`struct { ... }` type, `.{ .a = ... }` value) — pinned by the
+anonymous record resume 400_156.

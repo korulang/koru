@@ -5677,6 +5677,10 @@ fn writeEffectResumeType(emitter: *CodeEmitter, branch: *const ast.Branch) !void
         }
         try emitter.write(" }");
     } else if (branch.resume_type) |rt| {
+        // An anonymous record resume (`! ask -> { a: i64, b: i64 }`) carries its
+        // shape as a brace string; Zig spells that type `struct { ... }`. Mirrors
+        // the record-arm case above and the payload-field lowering.
+        if (rt.len > 0 and rt[0] == '{') try emitter.write("struct ");
         try emitter.write(lowerZigType(rt));
     } else {
         try emitter.write("void");
@@ -5995,11 +5999,24 @@ fn emitHandlersStruct(
                     .branch_constructor => |bc| {
                         if (bc.fields.len != 0) break :blk null;
                         if (bc.plain_value) |pv| {
-                            resume_expr_owned = try std.fmt.allocPrint(
-                                ctx.allocator,
-                                "{s} {s}",
-                                .{ bc.branch_name, pv },
-                            );
+                            // A record resume value (`! ask -> { a: 10, b: 20 }`)
+                            // is a Koru struct literal; lower it to Zig
+                            // `.{ .a = 10, .b = 20 }`. A scalar value (`-> 50`)
+                            // passes through with its (empty, for bare-return)
+                            // branch_name prefix.
+                            const trimmed_pv = std.mem.trim(u8, pv, " \t");
+                            if (isKoruStructLiteral(trimmed_pv)) {
+                                var scratch = try CodeEmitter.initGrowable(ctx.allocator, 128);
+                                defer ctx.allocator.free(scratch.buffer);
+                                try emitStructLiteral(&scratch, ctx, trimmed_pv);
+                                resume_expr_owned = try ctx.allocator.dupe(u8, scratch.buffer[0..scratch.pos]);
+                            } else {
+                                resume_expr_owned = try std.fmt.allocPrint(
+                                    ctx.allocator,
+                                    "{s} {s}",
+                                    .{ bc.branch_name, pv },
+                                );
+                            }
                             break :blk resume_expr_owned.?;
                         }
                         break :blk bc.branch_name;
@@ -10050,7 +10067,32 @@ pub fn emitBareReturnOutput(emitter: *CodeEmitter, event: *const ast.EventDecl, 
 /// front: `struct { f: T }`. Scalars and slices pass through unchanged. Every
 /// site that lowers a `return_type` to a Zig type routes through here.
 pub fn writeBareReturnType(emitter: *CodeEmitter, rt: []const u8, main_module_name: ?[]const u8) !void {
-    const trimmed = std.mem.trim(u8, rt, " \t");
+    // A record-field value carries its phantom inline (`*Handle<owned!>`) because
+    // the brace splitter is text-only, unlike an event-payload field whose parser
+    // lifts the phantom into `field.phantom`. Koru surface types never use `<>`
+    // for anything but a phantom (no language generics), so strip a `<...>` group
+    // here — it is a compile-time-only annotation, absent from the Zig type. The
+    // whole-value obligation is enforced separately (auto_discharge_inserter).
+    const phantom_stripped: []const u8 = if (std.mem.indexOfScalar(u8, rt, '<')) |lt| blk: {
+        var depth: usize = 0;
+        var end: ?usize = null;
+        for (rt[lt..], lt..) |c, i| {
+            if (c == '<') depth += 1 else if (c == '>') {
+                depth -= 1;
+                if (depth == 0) {
+                    end = i;
+                    break;
+                }
+            }
+        }
+        if (end) |e| {
+            const a = emitter.allocator orelse std.heap.page_allocator;
+            const joined = std.fmt.allocPrint(a, "{s}{s}", .{ rt[0..lt], rt[e + 1 ..] }) catch break :blk rt;
+            break :blk joined;
+        }
+        break :blk rt;
+    } else rt;
+    const trimmed = std.mem.trim(u8, phantom_stripped, " \t");
     if (trimmed.len > 0 and trimmed[0] == '{') {
         // Record return shape `{ name: T, ... }`: emit a Zig struct with each
         // field type LOWERED (string → []const u8, module-qual → mangled path),

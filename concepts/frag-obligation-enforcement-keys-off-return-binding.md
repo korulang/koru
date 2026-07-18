@@ -46,17 +46,36 @@ generated dispatch table had zero `.pre`-stage transforms. The coupling to
   bare-return `-> T` event (single-return moved non-void-ness out of `branches`
   into the return type).
 
+## The record-field frontier is CLOSED (2026-07-18)
+
+An obligation carried as a **record field** (a return/resume record like
+`-> { h: *Handle<owned!>, n }`) is now enforced. Two leaks were plugged:
+- The emitter used to paste the phantom into the Zig struct type
+  (`struct { h: *Handle<owned!>, n }`) — a raw-Zig compile error. It now strips
+  the compile-time-only phantom (`*Handle`), the same lift the input side gets for
+  free because its parser splits the phantom into `field.phantom`.
+- Enforcement keyed off the whole-value `return_phantom` and never descended.
+  It now parses the record return type and seeds a per-field obligation
+  (keyed `binding.field`, so multiple per record don't collide).
+
+The ruling that settled the *behavior* (Lars: record fields follow the SAME rules
+as event-payload fields, which error when undischarged — 690_024): a return-record
+field is NOT auto-dischargeable. Unlike a whole-value bare-return obligation
+(330_094, auto-discharged) or a branch-payload field (phantom-checker-tracked, so
+an inserted disposer type-checks), a return-record field is invisible to the
+phantom checker — an auto-inserted `dispose(r.h)` fails validation. So it presents
+no disposal candidate and falls to the "was not discharged" wall
+(KORU030 "Call: dispose"), guiding manual discharge. Pinned by 330_096.
+
+Full parity (phantom-checker descent into record-return fields, which would make
+the field auto-dischargeable) is deliberately NOT built — the pin rules manual
+discharge, and the checker-descent is a larger mirror of the input-side tracking.
+
 ## Open
 
 Mid-chain unbound obligation calls (`make(): h |> bump(h)` where `bump` returns an
 obligation and the chain ends unbound) are the continuation-level twin of this
-root — the head-only materialization here does not reach them. Pinned by 330_097.
-
-A sibling frontier on the *shape* the machinery reaches into: an obligation carried
-as a **record field** (a return/resume record like `-> { h: *Handle<owned!>, n }`)
-is enforced by the SAME rules as an obligation in an event-payload field — the
-input side already tracks these (2103, 330_082), and the output side mirrors it, to
-and from, multiple per record (Lars-ruled: a return record is a transparent bag, not
-an opaque payload). Enforcement today keys off the whole-value `return_phantom` and
-does not descend into fields, so a dropped field-obligation escapes — as a raw-Zig
-emission leak, not even a koru wall. Pinned by 330_096.
+root — the head-only materialization here does not reach them. Enforcement mints
+only when a mid-chain invocation carries a `return_binding`
+(`auto_discharge_inserter.zig`), so `bump(h)`'s dropped return leaks. Pinned by
+330_097 — still open.

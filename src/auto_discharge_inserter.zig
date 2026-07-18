@@ -151,6 +151,16 @@ pub const AutoDischargeInserter = struct {
             base_type: []const u8, // e.g., "*Connection" - used to filter disposal events by type
             scope_depth: u32, // Scope where obligation was created
             acq_seq: u32, // Monotonic acquisition order (LIFO unwind uses descending)
+            // A record-RETURN field obligation (`-> { h: *H<owned!>, n }`, 330_096).
+            // Unlike a whole-value bare-return obligation (auto-dischargeable) or a
+            // branch-payload field (phantom-checker-tracked, so an inserted disposer
+            // type-checks), a return-record field is NOT tracked by the phantom
+            // checker, so an auto-inserted `dispose(r.h)` fails validation. Per the
+            // ruling that record fields follow the SAME rules as event-payload
+            // fields (error when undischarged — 690_024), these are NOT
+            // auto-discharged: they present no disposal candidate and fall to the
+            // "was not discharged" wall (KORU030), guiding manual discharge.
+            from_return_record: bool = false,
         };
 
         fn init(allocator: std.mem.Allocator) BindingContext {
@@ -252,6 +262,7 @@ pub const AutoDischargeInserter = struct {
                     .scope_depth = entry.value_ptr.scope_depth,
                     // Preserve original acquisition order — do not re-stamp.
                     .acq_seq = entry.value_ptr.acq_seq,
+                    .from_return_record = entry.value_ptr.from_return_record,
                 });
             }
 
@@ -820,6 +831,10 @@ pub const AutoDischargeInserter = struct {
                 const canonical = try self.canonicalizePhantom(rp, module_name);
                 defer self.allocator.free(canonical);
                 try context.addBinding(rb, canonical, "__type_ref", event_info.decl.return_type orelse "", self.nextAcqSeq());
+            } else if (event_info.decl.return_type) |rt| {
+                // No whole-value phantom, but a record return may carry per-field
+                // obligations (`-> { h: *Handle<owned!>, n }`). Descend and seed.
+                try self.seedRecordFieldObligations(rb, rt, module_name, &context);
             }
         }
 
@@ -852,7 +867,10 @@ pub const AutoDischargeInserter = struct {
                             const binding_name = entry.binding_path;
                             const info = entry.info;
 
-                            const disposals = try self.findDisposalEvents(info.phantom_state, info.base_type);
+                            const disposals = if (info.from_return_record)
+                try self.allocator.alloc(DisposalEvent, 0)
+            else
+                try self.findDisposalEvents(info.phantom_state, info.base_type);
                             defer self.allocator.free(disposals);
 
                             const disposal = selectDisposal(disposals) orelse {
@@ -1390,7 +1408,10 @@ pub const AutoDischargeInserter = struct {
                             const info = entry.info;
 
                             // Find disposal event for this obligation
-                            const disposals = try self.findDisposalEvents(info.phantom_state, info.base_type);
+                            const disposals = if (info.from_return_record)
+                try self.allocator.alloc(DisposalEvent, 0)
+            else
+                try self.findDisposalEvents(info.phantom_state, info.base_type);
                             defer self.allocator.free(disposals);
 
                             const disposal = selectDisposal(disposals) orelse {
@@ -1743,7 +1764,10 @@ pub const AutoDischargeInserter = struct {
                 const binding_path = entry.binding_path;
                 const info = entry.info;
 
-                const disposals = try self.findDisposalEvents(info.phantom_state, info.base_type);
+                const disposals = if (info.from_return_record)
+                try self.allocator.alloc(DisposalEvent, 0)
+            else
+                try self.findDisposalEvents(info.phantom_state, info.base_type);
                 defer self.allocator.free(disposals);
 
                 // Use selectDisposal to handle [!] default annotation
@@ -1987,7 +2011,10 @@ pub const AutoDischargeInserter = struct {
                 continue;
             }
 
-            const disposals = try self.findDisposalEvents(info.phantom_state, info.base_type);
+            const disposals = if (info.from_return_record)
+                try self.allocator.alloc(DisposalEvent, 0)
+            else
+                try self.findDisposalEvents(info.phantom_state, info.base_type);
             defer self.allocator.free(disposals);
 
             // Use selectDisposal to handle [!] default annotation
@@ -3154,6 +3181,86 @@ pub const AutoDischargeInserter = struct {
                 // Unions are not canonicalized - they may have mixed modules
                 return try self.allocator.dupe(u8, phantom_str);
             },
+        }
+    }
+
+    /// Seed cleanup obligations from a RECORD return type's fields. A scalar
+    /// return carries its obligation as the whole-value `return_phantom`; a
+    /// record return (`-> { h: *Handle<owned!>, n: i64 }`) embeds the phantom
+    /// INSIDE the type string, one per field — the same shape an event-payload
+    /// field carries (2103, 330_082), mirrored on the output side (Lars-ruled:
+    /// a return record is a transparent bag, not an opaque payload). Enforcement
+    /// otherwise keys off the whole-value phantom and never descends, so a
+    /// dropped field obligation escapes as a raw-Zig leak with no koru wall.
+    /// (330_096; concept frag-obligation-enforcement-keys-off-return-binding.)
+    ///
+    /// Each phantom-carrying field mints an obligation keyed `binding.field`, so
+    /// multiple obligations per record don't collide (the capstone's "multiple
+    /// to and from a record"). A field whose phantom is not a cleanup obligation
+    /// (no trailing `!`) is a plain state marker and seeds nothing.
+    fn seedRecordFieldObligations(
+        self: *AutoDischargeInserter,
+        binding: []const u8,
+        return_type: []const u8,
+        module_name: []const u8,
+        context: *BindingContext,
+    ) !void {
+        const trimmed = std.mem.trim(u8, return_type, " \t");
+        if (trimmed.len < 2 or trimmed[0] != '{' or trimmed[trimmed.len - 1] != '}') return;
+        const inner = trimmed[1 .. trimmed.len - 1];
+        // Split the record into top-level `name: value` fields — commas nested in
+        // a phantom `<...>`, a slice `[...]`, or parens don't split a field.
+        var seg_start: usize = 0;
+        var depth: i32 = 0;
+        var i: usize = 0;
+        while (i <= inner.len) : (i += 1) {
+            const at_end = i == inner.len;
+            const c = if (at_end) ',' else inner[i];
+            switch (c) {
+                '<', '{', '[', '(' => depth += 1,
+                '>', '}', ']', ')' => depth -= 1,
+                else => {},
+            }
+            if (!(at_end or (c == ',' and depth == 0))) continue;
+            const seg = std.mem.trim(u8, inner[seg_start..i], " \t");
+            seg_start = i + 1;
+            if (seg.len == 0) continue;
+            const colon = std.mem.indexOfScalar(u8, seg, ':') orelse continue; // positional, no phantom
+            const f_name = std.mem.trim(u8, seg[0..colon], " \t");
+            const f_value = std.mem.trim(u8, seg[colon + 1 ..], " \t");
+            if (f_name.len == 0) continue;
+            const lt = std.mem.indexOfScalar(u8, f_value, '<') orelse continue;
+            // Match the phantom's closing `>` (koru surface types use `<>` only
+            // for phantoms — no language generics — so this group IS the phantom).
+            var ph_depth: usize = 0;
+            var close: ?usize = null;
+            for (f_value[lt..], lt..) |pc, pj| {
+                if (pc == '<') ph_depth += 1 else if (pc == '>') {
+                    ph_depth -= 1;
+                    if (ph_depth == 0) {
+                        close = pj;
+                        break;
+                    }
+                }
+            }
+            const gt = close orelse continue;
+            const phantom_content = std.mem.trim(u8, f_value[lt + 1 .. gt], " \t");
+            // Only a cleanup obligation (trailing `!`) is an obligation to track.
+            if (!std.mem.endsWith(u8, phantom_content, "!")) continue;
+            const base_type = try std.fmt.allocPrint(self.allocator, "{s}{s}", .{
+                std.mem.trim(u8, f_value[0..lt], " \t"),
+                f_value[gt + 1 ..],
+            });
+            defer self.allocator.free(base_type);
+            const canonical = try self.canonicalizePhantom(phantom_content, module_name);
+            defer self.allocator.free(canonical);
+            const key = try std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ binding, f_name });
+            defer self.allocator.free(key);
+            try context.addBinding(key, canonical, f_name, base_type, self.nextAcqSeq());
+            // Mark it as a return-record field obligation so enforcement routes it
+            // to the "was not discharged" wall rather than an auto-insert the
+            // phantom checker can't validate.
+            if (context.cleanup_obligations.getPtr(key)) |oblig| oblig.from_return_record = true;
         }
     }
 
