@@ -1,0 +1,16 @@
+// Phantom obligation carried as a RECORD FIELD. `make` returns { h: *Handle<owned!>,
+// n } — an obligation riding a field alongside a plain one. RULED: a return/resume
+// record field follows the SAME obligation rules as an event-payload field (which
+// already carries obligations — `write { file: *File<opened>, data: string }`, 2103;
+// `take { h: *Handle<!owned> }`, 330_082 — the input-side mirror of this). The
+// consumer binds the record, uses `n`, and never discharges `r.h`: the field-level
+// <owned!> must be caught (KORU030) exactly as a dropped whole-value obligation is
+// (330_094), never lowered as raw Zig. Obligations compose into records, to and from.
+~import std/io
+const std = @import("std");
+const Handle = struct { n: i32 };
+~event make { id: usize } -> { h: *Handle<owned!>, n: i64 }
+~proc make|zig { const h = std.heap.page_allocator.create(Handle) catch unreachable; h.* = .{ .n = 5 }; return .{ .h = h, .n = 7 }; }
+~event dispose { h: *Handle<!owned> }
+~proc dispose|zig { std.heap.page_allocator.destroy(h); }
+~make(id: 1): r |> std/io:print.ln("n={{ r.n:d }}")

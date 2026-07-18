@@ -50,5 +50,13 @@ generated dispatch table had zero `.pre`-stage transforms. The coupling to
 
 Mid-chain unbound obligation calls (`make(): h |> bump(h)` where `bump` returns an
 obligation and the chain ends unbound) are the continuation-level twin of this
-root — still uncovered, still a silent leak. Needs its own pin; the head-only
-materialization here does not reach it.
+root — the head-only materialization here does not reach them. Pinned by 330_097.
+
+A sibling frontier on the *shape* the machinery reaches into: an obligation carried
+as a **record field** (a return/resume record like `-> { h: *Handle<owned!>, n }`)
+is enforced by the SAME rules as an obligation in an event-payload field — the
+input side already tracks these (2103, 330_082), and the output side mirrors it, to
+and from, multiple per record (Lars-ruled: a return record is a transparent bag, not
+an opaque payload). Enforcement today keys off the whole-value `return_phantom` and
+does not descend into fields, so a dropped field-obligation escapes — as a raw-Zig
+emission leak, not even a koru wall. Pinned by 330_096.
