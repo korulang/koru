@@ -1,5 +1,7 @@
 ~[comptime]
 
+~import std/compiler
+
 // Koru Standard Library: Parser — compile-time PEG parsing as CONTROL FLOW.
 // The regex idiom (std/regex) lifted one level. A grammar is a PROTOCOL, not
 // a DSL (ruled 2026-07-12): rules are EFFECT ARMS demanded by name; each
@@ -73,6 +75,31 @@ const std = @import("std");
 ~[comptime|transform]pub event parse { expr: Expression, grammar: Expression }
 | `*` *
 | ?parse-error { line: usize, col: usize, expected: string, found: string }
+
+// ============================================================
+// The `generate` COMMAND: lower a grammar to a STANDALONE parser
+// in a target language (C first), OUTSIDE the normal emission
+// pipeline. It runs INSTEAD of compilation (the std/compiler
+// command contract) with full AST access, reads the grammar
+// region straight out of the program AST, and drives its own
+// target emitter — writing e.g. a self-contained .c/.h with a
+// fixed foreign API. It never enters coordinate/frontend/emission
+// and never consults --lang; the target is the command's own arg.
+//
+//   koruc parser_def.k generate c            # bare positional
+//   koruc parser_def.k generate --lang=c     # or the flag form
+// ============================================================
+
+~std/compiler:command.declare {
+    "name": "generate",
+    "description": "Generate a standalone parser in a target language from a grammar"
+}
+
+~[comptime|command]pub event generate {
+    program: *const Program,
+    allocator: __koru_std.mem.Allocator,
+    argv: []const []const u8,
+}
 
 ~[transform]proc grammar|zig {
     const ast = @import("ast");
@@ -608,4 +635,49 @@ const std = @import("std");
     } };
 
     return .{ .transformed = .{ .replacement = ast.Item{ .flow = new_flow }, .appended = appended } };
+}
+
+// The `generate` command handler. Runs standalone (the backend dispatches it
+// before koru_coordinate, so no pipeline pass fires). It reads the grammar
+// region from the program AST — the SAME continuations `parse` compiles — and
+// drives a target emitter. SLICE 1: prove the break-out end-to-end by reporting
+// the grammar it found and the target it will emit. The C emitter lands next.
+~proc generate|zig {
+    const ast = @import("ast");
+
+    // --- Target: bare positional (`generate c`) or `--lang=<x>`; default c ---
+    var target: []const u8 = "c";
+    for (argv) |a| {
+        if (std.mem.startsWith(u8, a, "--lang=")) {
+            target = a["--lang=".len..];
+        } else if (a.len > 0 and a[0] != '-') {
+            target = a;
+        }
+    }
+
+    // --- Find the first grammar region in the program (mirror parse's walk) ---
+    var rules: ?[]const ast.Continuation = null;
+    var gname: []const u8 = "";
+    for (program.items) |*it| {
+        if (it.* != .flow) continue;
+        const g = &it.flow;
+        const p = g.inv().path;
+        if (p.segments.len != 1 or !std.mem.eql(u8, p.segments[0], "grammar")) continue;
+        const q = p.module_qualifier orelse continue;
+        if (!std.mem.endsWith(u8, q, "parser")) continue;
+        if (g.inv().args.len == 0) continue;
+        gname = std.mem.trim(u8, g.inv().args[0].value, " \t");
+        rules = g.body.continuations;
+        break;
+    }
+
+    if (rules == null) {
+        std.debug.print("std/parser generate: no grammar region found in this program\n", .{});
+        std.process.exit(1);
+    }
+
+    std.debug.print("std/parser generate: grammar '{s}' -> target '{s}' ({d} rule(s))\n", .{ gname, target, rules.?.len });
+    for (rules.?) |r| {
+        std.debug.print("  rule {s}: {d} alternative(s)\n", .{ r.branch, r.continuations.len });
+    }
 }
