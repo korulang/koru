@@ -10052,9 +10052,27 @@ pub fn emitBareReturnOutput(emitter: *CodeEmitter, event: *const ast.EventDecl, 
 pub fn writeBareReturnType(emitter: *CodeEmitter, rt: []const u8, main_module_name: ?[]const u8) !void {
     const trimmed = std.mem.trim(u8, rt, " \t");
     if (trimmed.len > 0 and trimmed[0] == '{') {
-        try emitter.write("struct ");
-        try emitter.write(rt);
-        return;
+        // Record return shape `{ name: T, ... }`: emit a Zig struct with each
+        // field type LOWERED (string → []const u8, module-qual → mangled path),
+        // not pasted verbatim. Reuses the shared struct-literal splitter and
+        // recurses, so nested records and qualified field types lower too.
+        const a = emitter.allocator orelse std.heap.page_allocator;
+        if (struct_literal.parseFields(a, trimmed)) |fields| {
+            try emitter.write("struct { ");
+            for (fields, 0..) |f, i| {
+                if (i > 0) try emitter.write(", ");
+                try emitter.write(f.name);
+                try emitter.write(": ");
+                try writeBareReturnType(emitter, f.value, main_module_name);
+            }
+            try emitter.write(" }");
+            return;
+        } else |_| {
+            // Unparseable shape — preserve the prior verbatim behavior.
+            try emitter.write("struct ");
+            try emitter.write(rt);
+            return;
+        }
     }
     // `string` is the canonical surface text type; lower it to the Zig slice.
     if (std.mem.eql(u8, trimmed, "string")) {

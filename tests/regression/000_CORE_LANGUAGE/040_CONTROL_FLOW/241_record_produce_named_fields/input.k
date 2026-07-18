@@ -1,16 +1,11 @@
-// Pins named-field record PRODUCE. `-> { skip: "...", trivia: "..." }` must
-// lower to a Zig struct literal `.{ .skip = ..., .trivia = ... }`, mapping to
-// the declared return shape. The capture path already emits records correctly;
-// the produce/return path must route through that same lowering instead of
-// dumping the record expression raw (which emits invalid Zig `return { ... }`).
-// This is also the `! config -> { skip, trivia }` grammar-config shape.
+// Pins named-field record PRODUCE + inline-produce (`: bind`) CONSUMPTION.
+// `-> { a: i64, b: i64 }` lowers to a Zig struct literal, and the caller reads
+// it back with `config(...): r |> ... r.a`. Guards the classification that
+// routes `-> {record}` through the shared struct-literal path (parser.zig) for
+// every emitter, and the `: bind` consumption of a bare-return record.
 import std/io
-
-pub event config { strict: bool } -> { skip: string, trivia: string }
-
+pub event config { strict: bool } -> { a: i64, b: i64 }
 config = if(strict)
-    | then -> { skip: "WS", trivia: "CMT" }
-    | else -> { skip: "NONE", trivia: "NONE" }
-
-config(strict: true)
-| got { skip, trivia } |> std/io:print.ln("skip={{ skip:s }} trivia={{ trivia:s }}")
+    | then -> { a: 1, b: 2 }
+    | else -> { a: 0, b: 0 }
+config(strict: true): r |> std/io:print.ln("a={{ r.a:d }} b={{ r.b:d }}")
