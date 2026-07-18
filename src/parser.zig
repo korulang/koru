@@ -4670,6 +4670,25 @@ pub const Parser = struct {
                 }
             }
 
+            // Point-free chain over multiple lines: `~head = step` followed by
+            // indented `|> step` lines. Stitch those steps onto inv_str so the
+            // existing inline-chain machinery (has_inline_chain →
+            // parseInlineContinuation, which itself grabs base-indent handlers
+            // via parseContinuations) handles the chain AND the dedented choke
+            // below it. Stops at the first non-`|>` line (a `| branch` choke) or
+            // a dedent to the head level.
+            {
+                const head_indent = lexer.getIndent(line);
+                while (self.current < self.lines.len) {
+                    const nl = self.lines[self.current];
+                    const nt = lexer.trim(nl);
+                    if (nt.len < 2 or nt[0] != '|' or nt[1] != '>') break;
+                    if (lexer.getIndent(nl) <= head_indent) break;
+                    inv_str = try std.fmt.allocPrint(self.allocator, "{s} {s}", .{ inv_str, nt });
+                    self.current += 1;
+                }
+            }
+
             const invocation = try self.parseEventInvocation(inv_str);
 
             // If body has an inline |> chain (e.g. `head() |> tail() | branch ...`),
@@ -5506,18 +5525,15 @@ pub const Parser = struct {
         var cont: ast.Continuation = undefined;
 
         if (lexer.startsWith(after_bar, ">")) {
-            // `|>` is inline glue only — it never starts a line.
-            try self.reporter.addErrorWithHintAndSpan(
-                .KORU010,
-                location.line,
-                location.column,
-                2,
-                "'|>' cannot start a line",
-                .{},
-                "'|>' is inline glue, never a line start — it joins a branch handler to its body and chains steps on one line.\n        • Keep the chain inline regardless of length.\n        • If a step ends in a multi-line {{ }} block, put the next |> on the same line as that block's closing }} :  pairwise {{ ... }} |> self {{ ... }}\n        • Void chains may instead split into separate top-level statements (~A() then ~B()).\n        • Drop a trailing |> _ if the head already suffices.",
-                .{},
-            );
-            return error.ParseError;
+            // Line-start `|>` continues the preceding flow as a pipeline step
+            // (point-free chain). Route to the pipeline-continuation parser —
+            // its own step validation still rejects `|> _` and bare-value junk
+            // (KORU103). Return directly: the branch post-processing below would
+            // clobber the pipeline parser's chained-step continuations.
+            const step_content = lexer.trim(after_bar[1..]);
+            var pcont = try self.parsePipelineContinuationBase(step_content, indent, location);
+            pcont.kind = branch_kind;
+            return pcont;
         } else if (lexer.startsWith(after_bar, "*")) {
             // Deref continuation (`| *<binding>`) — REMOVED. The deferred/deref
             // mechanism for first-class events is retired (repudiated 2026-07-15):
@@ -5557,18 +5573,14 @@ pub const Parser = struct {
         var cont: ast.Continuation = undefined;
 
         if (lexer.startsWith(after_bar, ">")) {
-            // `|>` is inline glue only — it never starts a line.
-            try self.reporter.addErrorWithHintAndSpan(
-                .KORU010,
-                location.line,
-                location.column,
-                2,
-                "'|>' cannot start a line",
-                .{},
-                "'|>' is inline glue, never a line start — it joins a branch handler to its body and chains steps on one line.\n        • Keep the chain inline regardless of length.\n        • If a step ends in a multi-line {{ }} block, put the next |> on the same line as that block's closing }} :  pairwise {{ ... }} |> self {{ ... }}\n        • Void chains may instead split into separate top-level statements (~A() then ~B()).\n        • Drop a trailing |> _ if the head already suffices.",
-                .{},
-            );
-            return error.ParseError;
+            // Line-start `|>` continues the preceding flow as a pipeline step
+            // (point-free chain). Route to the pipeline-continuation parser,
+            // which handles its own chained tail; its step validation still
+            // rejects `|> _` and bare-value junk (KORU103).
+            const step_content = lexer.trim(after_bar[1..]);
+            var pcont = try self.parsePipelineContinuationBase(step_content, indent, location);
+            pcont.kind = branch_kind;
+            return pcont;
         } else if (lexer.startsWith(after_bar, "*")) {
             // Deref continuation (`| *<binding>`) — REMOVED. The deferred/deref
             // mechanism for first-class events is retired (repudiated 2026-07-15):
@@ -7233,6 +7245,23 @@ pub const Parser = struct {
         // discard — it never introduces a bare VALUE. A value (literal, arithmetic,
         // bare identifier, …) is PRODUCED with `->`. This kills the old
         // `! v p |> p.acc + 1` resume spelling in favour of `! v p -> p.acc + 1`.
+        //
+        // Point-free chain (option A): a bare identifier-PATH after `|>`
+        // (`stage-b`, `std/io:print`) is a PROVISIONAL invocation whose args
+        // thread in — accept it here; the desugar resolves it to an event and
+        // errors if it isn't one. A value/expression (spaces, operators, a
+        // leading digit, literals) still falls through to KORU103 below.
+        bare_ident: {
+            const bare = lexer.trim(clean_content);
+            if (bare.len == 0) break :bare_ident;
+            if (!(std.ascii.isAlphabetic(bare[0]) or bare[0] == '_')) break :bare_ident;
+            for (bare) |c| {
+                if (std.ascii.isAlphanumeric(c) or c == '_' or c == '-' or c == '.' or c == ':' or c == '/') continue;
+                break :bare_ident;
+            }
+            return ast.Step{ .invocation = try self.parseEventInvocation(clean_content) };
+        }
+
         if (!std.mem.eql(u8, clean_content, "_")) {
             try self.reporter.addError(
                 .KORU103,

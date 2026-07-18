@@ -1,0 +1,29 @@
+// Pins the point-free `|>` chain with its fifth check: a bare stage stands for
+// "the thread supplies this stage's WHOLE input". Each stage carries the real
+// two-branch shape (`| ctx` threaded, `| failed` harvested) so `| ctx` is a
+// named branch the `|>` can pun into the next `ctx` input — no `(ctx: cN)`
+// binder, no per-stage `failed` re-raise. The single trailing `| failed` arm
+// chokes the whole chain; the terminal `ctx` matches `run`'s declared `| ctx`
+// so it emits with no identity arm.  stage-a(2) => 3, stage-b(3) => 6.
+~import std/io
+
+~pub event stage-a { ctx: i64 }
+| ctx i64
+| failed string
+~proc stage-a|zig { return .{ .ctx = ctx + 1 }; }
+
+~pub event stage-b { ctx: i64 }
+| ctx i64
+| failed string
+~proc stage-b|zig { return .{ .ctx = ctx * 2 }; }
+
+~pub event run { ctx: i64 }
+| ctx i64
+| failed string
+~run = stage-a
+  |> stage-b
+| failed f => failed f
+
+~run(ctx: 2)
+| ctx c |> std/io:print.ln("{{ c:d }}")
+| failed f |> std/io:print.ln("err")

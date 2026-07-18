@@ -7353,6 +7353,14 @@ pub fn main() !void {
     // NOTE: Compiler override detection removed - the abstract/impl mechanism in
     // koru_std/compiler.kz handles this automatically via abstract events and cross-module overrides
 
+    // Point-free pipeline + choke desugar: rewrite parsed point-free `|>`
+    // chains (unnamed continuations + a dedented choke) into the canonical
+    // explicit-continuation pyramid BEFORE any checker or the AST
+    // serialization sees the tree — downstream stays frozen. Runs after
+    // canonicalization so declaration lookup is qualifier-symmetric.
+    const ast_transform = @import("ast_transform");
+    try ast_transform.desugarPointfreeChains(parse_allocator, &source_file);
+
     // Purity checking pass
     var purity_check = PurityChecker.init(compile_allocator);
     defer purity_check.deinit();
