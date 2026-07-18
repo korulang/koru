@@ -1627,6 +1627,26 @@ fn collectCommands(allocator: std.mem.Allocator, source_file: *ast.Program) !str
     var commands: [16]CommandInfo = undefined;
     var count: usize = 0;
 
+    // command.declare metadata. A declare carrying an `event` field OVERRIDES
+    // the CLI name of that event: dispatch/detection match argv against the
+    // declare's (colon-capable) `name`, while the handler symbol stays the event
+    // identifier. Absent → the CLI name is the event name (today's convention).
+    const decls = collectCommandDeclarations(allocator, source_file) catch &[_]CommandDeclaration{};
+    defer for (decls) |*d| {
+        var m = d.*;
+        m.deinit(allocator);
+    };
+    const CliOverride = struct {
+        // Freshly-duped CLI name if a declare's `event` matches this event, else null.
+        fn find(a: std.mem.Allocator, event_name: []const u8, ds: []const CommandDeclaration) !?[]const u8 {
+            for (ds) |d| {
+                const ev = d.event orelse continue;
+                if (std.mem.eql(u8, ev, event_name)) return try a.dupe(u8, d.name);
+            }
+            return null;
+        }
+    };
+
     // Scan top-level events
     for (source_file.items) |item| {
         if (item == .event_decl) {
@@ -1634,11 +1654,12 @@ fn collectCommands(allocator: std.mem.Allocator, source_file: *ast.Program) !str
             const has_command = annotation_parser.hasPart(event_decl.annotations, "command");
 
             if (has_command and count < 16) {
-                const name = try joinPathSegmentsWithDots(allocator, event_decl.path.segments);
+                const event_name = try joinPathSegmentsWithDots(allocator, event_decl.path.segments);
                 const handler_name = try joinPathSegments(allocator, event_decl.path.segments);
+                const cli = (try CliOverride.find(allocator, event_name, decls)) orelse event_name;
 
                 commands[count] = .{
-                    .name = name,
+                    .name = cli,
                     .handler_name = handler_name,
                     .module_path = null,
                 };
@@ -1655,13 +1676,14 @@ fn collectCommands(allocator: std.mem.Allocator, source_file: *ast.Program) !str
                     const has_command = annotation_parser.hasPart(event_decl.annotations, "command");
 
                     if (has_command and count < 16) {
-                        const name = try joinPathSegmentsWithDots(allocator, event_decl.path.segments);
+                        const event_name = try joinPathSegmentsWithDots(allocator, event_decl.path.segments);
                         // Handler name is just the event name (e.g., "install")
                         // The full path koru_std.package.install_event.handler is built at codegen
                         const handler_name = try joinPathSegments(allocator, event_decl.path.segments);
+                        const cli = (try CliOverride.find(allocator, event_name, decls)) orelse event_name;
 
                         commands[count] = .{
-                            .name = name,
+                            .name = cli,
                             .handler_name = handler_name,
                             .module_path = module.logical_name,
                         };
@@ -3980,12 +4002,20 @@ const CommandDeclaration = struct {
     name: []const u8,
     description: []const u8,
     alias: ?[]const u8,
+    // Optional handler-event override. When present, the CLI command name
+    // (`name`, which may contain a `:` or any token) is DECOUPLED from the
+    // handler event's identifier: dispatch matches argv against `name` but calls
+    // `<event>_event.handler`. This lets a command be spelled `parser:generate`
+    // (the module:verb idiom) while the event stays a legal identifier
+    // (`generate`). Absent → today's convention (CLI name == event name).
+    event: ?[]const u8,
     subcommands: []SubcommandDeclaration,
 
     fn deinit(self: *CommandDeclaration, allocator: std.mem.Allocator) void {
         allocator.free(self.name);
         allocator.free(self.description);
         if (self.alias) |a| allocator.free(a);
+        if (self.event) |e| allocator.free(e);
         for (self.subcommands) |*sub| {
             var mutable_sub = sub.*;
             mutable_sub.deinit(allocator);
@@ -4084,11 +4114,13 @@ fn parseCommandDeclaration(allocator: std.mem.Allocator, json_text: []const u8) 
     const name = extractJsonStringField(json_text, "name");
     const description = extractJsonStringField(json_text, "description");
     const alias = extractJsonStringField(json_text, "alias");
+    const event = extractJsonStringField(json_text, "event");
 
     return CommandDeclaration{
         .name = try allocator.dupe(u8, name orelse "unknown"),
         .description = try allocator.dupe(u8, description orelse ""),
         .alias = if (alias) |a| try allocator.dupe(u8, a) else null,
+        .event = if (event) |e| try allocator.dupe(u8, e) else null,
         .subcommands = try parseSubcommands(allocator, json_text),
     };
 }

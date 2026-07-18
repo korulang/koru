@@ -86,12 +86,17 @@ const std = @import("std");
 // fixed foreign API. It never enters coordinate/frontend/emission
 // and never consults --lang; the target is the command's own arg.
 //
-//   koruc parser_def.k generate c            # bare positional
-//   koruc parser_def.k generate --lang=c     # or the flag form
+//   koruc parser_def.k parser:generate c            # bare positional target
+//   koruc parser_def.k parser:generate --lang=c     # or the flag form
+//
+// The CLI name is `parser:generate` (the module:verb idiom) while the handler
+// event stays the legal identifier `generate` — the `event` field on the
+// declare decouples the two (see collectCommands in main.zig).
 // ============================================================
 
 ~std/compiler:command.declare {
-    "name": "generate",
+    "name": "parser:generate",
+    "event": "generate",
     "description": "Generate a standalone parser in a target language from a grammar"
 }
 
