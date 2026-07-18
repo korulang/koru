@@ -378,6 +378,43 @@ const std = @import("std");
 
             // --- HEAD (identical across the group): rule reference or pattern terminal, parsed once ---
             const head_name = alts[0].branch;
+
+            // --- FIRST-BYTE GATE (rung 1): only enter the group when the byte at
+            // the cursor can begin the head. A gated-out group is exactly one
+            // whose head-match would fail on byte 1 — same PEG order, the reject
+            // just happens without the matcher call.
+            //
+            // PATTERN heads only. A pattern head's admissible first bytes come
+            // straight from its prefix DFA, and the head text IS the diagnostic —
+            // so the miss path (cold: errors aren't hot) records the very same
+            // furthest-failure `(pos, expected-terminal)` the matcher `orelse`
+            // would, and the message is byte-for-byte the ungated one. RULE heads
+            // are deliberately NOT gated: skipping a rule's descent would rob the
+            // deepest terminal of its chance to record, coarsening `expected
+            // <terminal>` into `expected <rule>`. Keeping the specific wall beats
+            // the marginal saving of gating an already-internally-gated sub-call.
+            if (findRule(ctx.rules, head_name) == null) {
+                const fb = regex.prefixFirstBytes(ctx.a, head_name) catch [_]bool{true} ** 256;
+                var gate_all = true;
+                for (fb) |x| {
+                    if (!x) {
+                        gate_all = false;
+                        break;
+                    }
+                }
+                if (!gate_all) {
+                    var arr = std2.ArrayList(u8){};
+                    arr.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "const __fb{d} = [_]bool{{", .{g}) catch unreachable) catch unreachable;
+                    for (fb, 0..) |x, bi| {
+                        const cell = if (bi == 0) (if (x) "true" else "false") else (if (x) ",true" else ",false");
+                        arr.appendSlice(ctx.a, cell) catch unreachable;
+                    }
+                    arr.appendSlice(ctx.a, "};\n") catch unreachable;
+                    buf.appendSlice(ctx.a, arr.items) catch unreachable;
+                    const gate = std2.fmt.allocPrint(ctx.a, "if (__cp{d} >= input.len or !__fb{d}[input[__cp{d}]]) {{ if (__err.expected.len == 0 or __cp{d} > __err.pos) {{ __err.pos = __cp{d}; __err.expected = \"{s}\"; }} break :g{d}; }}\n", .{ cp_label, g, cp_label, cp_label, cp_label, zigEscape(ctx.a, head_name), g }) catch unreachable;
+                    buf.appendSlice(ctx.a, gate) catch unreachable;
+                }
+            }
             var head_val: []const u8 = undefined;
             var head_end: []const u8 = undefined;
             if (findRule(ctx.rules, head_name)) |_| {

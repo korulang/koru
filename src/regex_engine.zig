@@ -1625,6 +1625,59 @@ pub fn compilePrefixToZig(out: std.mem.Allocator, pattern: []const u8, name: []c
     return buf.toOwnedSlice(out);
 }
 
+/// The admissible FIRST-BYTE set of an anchored-prefix matcher: for each byte,
+/// can a (non-empty) match begin with it? Derived from the prefix DFA's start
+/// state — a byte is admissible iff consuming it lands in a LIVE state (one
+/// from which some accept is still reachable). Bytes that fall straight into
+/// the dead sink can never begin a match, so a caller may skip the matcher for
+/// them entirely (std/parser's rung-1 first-byte gate). Conservative by
+/// construction: it only ever excludes bytes that PROVABLY cannot start a
+/// match, so gating on it cannot change which inputs match. If the matcher
+/// accepts the empty string (start state is accepting), every byte is
+/// admissible — the matcher always succeeds, so there is nothing to gate.
+pub fn prefixFirstBytes(out: std.mem.Allocator, pattern: []const u8) ![256]bool {
+    var arena = std.heap.ArenaAllocator.init(out);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var p = Parser.init(a, pattern);
+    const ast = try p.parse();
+    var nfa = try buildNfa(a, ast);
+    const dfa = try buildDfa(a, &nfa);
+
+    var result: [256]bool = undefined;
+    // Empty match allowed → matcher never fails → never gate.
+    if (dfa.accept[dfa.start]) {
+        for (&result) |*x| x.* = true;
+        return result;
+    }
+
+    // Liveness: a state is live if it accepts or can reach an accept. Backward
+    // fixpoint over the transition table (states are few; grammars are tiny).
+    const live = try a.alloc(bool, dfa.n_states);
+    for (0..dfa.n_states) |s| live[s] = dfa.accept[s];
+    var changed = true;
+    while (changed) {
+        changed = false;
+        for (0..dfa.n_states) |s| {
+            if (live[s]) continue;
+            var b: usize = 0;
+            while (b < 256) : (b += 1) {
+                if (live[dfa.trans[s * 256 + b]]) {
+                    live[s] = true;
+                    changed = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    var b: usize = 0;
+    while (b < 256) : (b += 1) {
+        result[b] = live[dfa.trans[dfa.start * 256 + b]];
+    }
+    return result;
+}
+
 /// Compile a pattern WITH named groups straight to an emitted Zig captures
 /// matcher: `fn <name>(input: []const u8) ?[<2N>]u32` — null on no match,
 /// else the tag vector (2 byte-offsets per group, group-open order). The
@@ -1862,4 +1915,33 @@ test "emit prefix: well-formed anchored longest-prefix fn with dead-state exit" 
     try testing.expect(std.mem.indexOf(u8, src, "while (start <= input.len)") == null);
     // `[0-9]+` has a dead sink (any non-digit) — the early-exit must be emitted
     try testing.expect(std.mem.indexOf(u8, src, "break;") != null);
+}
+
+test "prefix first-bytes: only the admissible starts are set" {
+    // `[0-9]+` — digits begin a match, nothing else does.
+    {
+        const fb = try prefixFirstBytes(testing.allocator, "[0-9]+");
+        for (0..256) |b| {
+            const want = (b >= '0' and b <= '9');
+            try testing.expectEqual(want, fb[b]);
+        }
+    }
+    // JSON string terminal — only `"` can begin it.
+    {
+        const fb = try prefixFirstBytes(testing.allocator, "\"([^\"\\\\]|\\\\.)*\"");
+        for (0..256) |b| try testing.expectEqual(b == '"', fb[b]);
+    }
+    // JSON keyword terminal — first bytes are exactly f/n/t.
+    {
+        const fb = try prefixFirstBytes(testing.allocator, "true|false|null");
+        for (0..256) |b| {
+            const want = (b == 'f' or b == 'n' or b == 't');
+            try testing.expectEqual(want, fb[b]);
+        }
+    }
+    // Nullable matcher (`[0-9]*` accepts empty) — every byte admissible, no gate.
+    {
+        const fb = try prefixFirstBytes(testing.allocator, "[0-9]*");
+        for (0..256) |b| try testing.expect(fb[b]);
+    }
 }
