@@ -1,0 +1,9 @@
+✓ Compiled nums.k → ./backend.zig
+✓ Generated ./backend_output_emitted.zig (397941 bytes)
+✓ Found 1 compiler requirement(s) for backend
+✓ Generated ./build_backend.zig
+✓ Generated ./build.zig (for backend compilation)
+Building executable...
+🔧 Running command: parser:generate
+std/parser generate: grammar 'nums' -> nums.c (13989 bytes, 2 rule(s), start rule 'value')
+✓ Built executable: a.out
