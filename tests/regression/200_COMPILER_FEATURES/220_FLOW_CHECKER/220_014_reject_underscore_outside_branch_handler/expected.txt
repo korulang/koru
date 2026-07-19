@@ -1,0 +1,7 @@
+error[KORU010]: '_' is only legal as the body of a branch handler
+  --> tests/regression/200_COMPILER_FEATURES/220_FLOW_CHECKER/220_014_reject_underscore_outside_branch_handler/input.kz:21:0
+    |
+ 21 | |> _
+    | ^
+  hint: '_' has meaning only as `| branch [binding] |> _`. Outside a branch handler body — top-level void chain, split-pipeline tail — `|> _` is meaningless.
+
