@@ -1,5 +1,7 @@
 ~[comptime]
 
+~import std/compiler
+
 // Koru Standard Library: Parser — compile-time PEG parsing as CONTROL FLOW.
 // The regex idiom (std/regex) lifted one level. A grammar is a PROTOCOL, not
 // a DSL (ruled 2026-07-12): rules are EFFECT ARMS demanded by name; each
@@ -73,6 +75,36 @@ const std = @import("std");
 ~[comptime|transform]pub event parse { expr: Expression, grammar: Expression }
 | `*` *
 | ?parse-error { line: usize, col: usize, expected: string, found: string }
+
+// ============================================================
+// The `generate` COMMAND: lower a grammar to a STANDALONE parser
+// in a target language (C first), OUTSIDE the normal emission
+// pipeline. It runs INSTEAD of compilation (the std/compiler
+// command contract) with full AST access, reads the grammar
+// region straight out of the program AST, and drives its own
+// target emitter — writing e.g. a self-contained .c/.h with a
+// fixed foreign API. It never enters coordinate/frontend/emission
+// and never consults --lang; the target is the command's own arg.
+//
+//   koruc parser_def.k parser:generate c            # bare positional target
+//   koruc parser_def.k parser:generate --lang=c     # or the flag form
+//
+// The CLI name is `parser:generate` (the module:verb idiom) while the handler
+// event stays the legal identifier `generate` — the `event` field on the
+// declare decouples the two (see collectCommands in main.zig).
+// ============================================================
+
+~std/compiler:command.declare {
+    "name": "parser:generate",
+    "event": "generate",
+    "description": "Generate a standalone parser in a target language from a grammar"
+}
+
+~[comptime|command]pub event generate {
+    program: *const Program,
+    allocator: __koru_std.mem.Allocator,
+    argv: []const []const u8,
+}
 
 ~[transform]proc grammar|zig {
     const ast = @import("ast");
@@ -608,4 +640,438 @@ const std = @import("std");
     } };
 
     return .{ .transformed = .{ .replacement = ast.Item{ .flow = new_flow }, .appended = appended } };
+}
+
+// The `generate` command handler. Runs standalone (the backend dispatches it
+// before koru_coordinate, so no pipeline pass fires). It reads the grammar
+// region from the program AST — the SAME continuations `parse` compiles — and
+// drives a SEPARATE target emitter, writing a self-contained parser. This is
+// the C backend: the parse|zig algorithm (recursive descent, DFA terminals,
+// first-byte gate, same-head factoring, furthest-failure) re-expressed in C
+// vocabulary — koru_slice{ptr,len} values, bool-return + out-param + SIZE_MAX
+// for the nullable, goto-labels for the backtracking blocks.
+~proc generate|zig {
+    const ast = @import("ast");
+
+    // --- Target: bare positional (`generate c`) or `--lang=<x>`; default c ---
+    var target: []const u8 = "c";
+    for (argv) |a| {
+        if (std.mem.startsWith(u8, a, "--lang=")) {
+            target = a["--lang=".len..];
+        } else if (a.len > 0 and a[0] != '-') {
+            target = a;
+        }
+    }
+
+    // --- Find the first grammar region in the program (mirror parse's walk) ---
+    var found_rules: ?[]const ast.Continuation = null;
+    var gname: []const u8 = "";
+    for (program.items) |*it| {
+        if (it.* != .flow) continue;
+        const g = &it.flow;
+        const p = g.inv().path;
+        if (p.segments.len != 1 or !std.mem.eql(u8, p.segments[0], "grammar")) continue;
+        const q = p.module_qualifier orelse continue;
+        if (!std.mem.endsWith(u8, q, "parser")) continue;
+        if (g.inv().args.len == 0) continue;
+        gname = std.mem.trim(u8, g.inv().args[0].value, " \t");
+        found_rules = g.body.continuations;
+        break;
+    }
+
+    if (found_rules == null) {
+        std.debug.print("std/parser generate: no grammar region found in this program\n", .{});
+        std.process.exit(1);
+    }
+
+    if (!std.mem.eql(u8, target, "c")) {
+        std.debug.print("std/parser generate: target '{s}' is not implemented — only 'c' today (loud wall, not a silent fallback)\n", .{target});
+        std.process.exit(1);
+    }
+
+    // ================= C EMITTER =================
+    // Mirrors the parse|zig helper container. Re-imports what it needs; fn-scope
+    // containers cannot reach fn-scope consts, so it uses std2/ast2/regex.
+    const C = struct {
+        const std2 = @import("std");
+        const ast2 = @import("ast");
+        const regex = @import("regex_engine");
+
+        const Ctx = struct {
+            a: std2.mem.Allocator,
+            rules: []const ast2.Continuation,
+            out: *std2.ArrayList(u8), // rule fn definitions
+            matchers: *std2.ArrayList(u8), // terminal DFA matcher fns
+            pats: *std2.ArrayList([]const u8), // distinct patterns (index = matcher id)
+            label_n: *usize,
+            fail: *?[]const u8,
+        };
+
+        // C string-literal escaping — same admissible set as the Zig emitter.
+        fn cEscape(a: std2.mem.Allocator, s: []const u8) []const u8 {
+            var buf = std2.ArrayList(u8){};
+            for (s) |ch| {
+                switch (ch) {
+                    '"' => buf.appendSlice(a, "\\\"") catch unreachable,
+                    '\\' => buf.appendSlice(a, "\\\\") catch unreachable,
+                    '\n' => buf.appendSlice(a, "\\n") catch unreachable,
+                    '\r' => buf.appendSlice(a, "\\r") catch unreachable,
+                    '\t' => buf.appendSlice(a, "\\t") catch unreachable,
+                    else => buf.append(a, ch) catch unreachable,
+                }
+            }
+            return buf.toOwnedSlice(a) catch unreachable;
+        }
+
+        fn sanitize(a: std2.mem.Allocator, s: []const u8) []const u8 {
+            const out = a.dupe(u8, s) catch unreachable;
+            for (out) |*ch| {
+                if (!((ch.* >= 'a' and ch.* <= 'z') or (ch.* >= 'A' and ch.* <= 'Z') or (ch.* >= '0' and ch.* <= '9'))) ch.* = '_';
+            }
+            return out;
+        }
+
+        fn findRule(rules: []const ast2.Continuation, name: []const u8) ?*const ast2.Continuation {
+            for (rules) |*r| {
+                if (std2.mem.eql(u8, r.branch, name)) return r;
+            }
+            return null;
+        }
+
+        fn setFail(ctx: *const Ctx, msg: []const u8) void {
+            if (ctx.fail.* == null) ctx.fail.* = msg;
+        }
+
+        // NOTE: unlike parse|zig's isVerb, this does NOT require the module
+        // qualifier to end in "parser". The `generate` command runs on the RAW
+        // seed AST — resolve-with-scopes (which stamps `std/parser` onto the
+        // [with]-opened `sub`/`lit`/`match` names) lives in coordinate, which the
+        // command bypasses. So the verbs arrive main-module-stamped; inside a
+        // validated grammar region the single-segment name is unambiguous.
+        fn isVerb(inv: *const ast2.Invocation, verb: []const u8) bool {
+            return inv.path.segments.len == 1 and std2.mem.eql(u8, inv.path.segments[0], verb);
+        }
+
+        fn stripQuotes(s: []const u8) []const u8 {
+            const t = std2.mem.trim(u8, s, " \t");
+            if (t.len >= 2 and t[0] == '"' and t[t.len - 1] == '"') return t[1 .. t.len - 1];
+            return t;
+        }
+
+        // Matcher id for a terminal pattern, compiling it to C on first sight.
+        fn matcherFor(ctx: *const Ctx, pattern: []const u8) usize {
+            for (ctx.pats.items, 0..) |p, i| {
+                if (std2.mem.eql(u8, p, pattern)) return i;
+            }
+            const id = ctx.pats.items.len;
+            ctx.pats.append(ctx.a, pattern) catch unreachable;
+            const fn_name = std2.fmt.allocPrint(ctx.a, "__koru_pt_{d}", .{id}) catch unreachable;
+            const src = regex.compilePrefixToC(ctx.a, pattern, fn_name) catch |err| {
+                setFail(ctx, std2.fmt.allocPrint(ctx.a, "std/parser generate: cannot compile terminal `{s}`: {s}", .{ cEscape(ctx.a, pattern), @errorName(err) }) catch unreachable);
+                return id;
+            };
+            ctx.matchers.appendSlice(ctx.a, src) catch unreachable;
+            ctx.matchers.appendSlice(ctx.a, "\n") catch unreachable;
+            return id;
+        }
+
+        fn altsOf(rule: *const ast2.Continuation) []const ast2.Continuation {
+            return rule.continuations;
+        }
+
+        fn produceOf(node: *const ast2.Node) ?[]const u8 {
+            switch (node.*) {
+                .expression => |e| return e,
+                .branch_constructor => |bc| {
+                    if (bc.is_bare_return) return bc.plain_value;
+                    return null;
+                },
+                else => return null,
+            }
+        }
+
+        // `const koru_slice NAME = EXPR; (void)NAME;` — skip `_` / unbound.
+        fn bindName(ctx: *const Ctx, buf: *std2.ArrayList(u8), name_opt: ?[]const u8, val_expr: []const u8) void {
+            const name = name_opt orelse return;
+            if (std2.mem.eql(u8, name, "_")) return;
+            const bind = std2.fmt.allocPrint(ctx.a, "const koru_slice {s} = {s}; (void){s};\n", .{ name, val_expr, name }) catch unreachable;
+            buf.appendSlice(ctx.a, bind) catch unreachable;
+        }
+
+        // One alternative's TAIL: bind the head value, walk the chain, end in a
+        // produce (or default consumed-span). Falling to the tail's goto label =
+        // this tail failed; control drops to the next tail of the group.
+        fn genTail(ctx: *const Ctx, out: *std2.ArrayList(u8), alt: *const ast2.Continuation, tail_label: usize, head_val: []const u8, head_end: []const u8) void {
+            var body = std2.ArrayList(u8){};
+            const buf = &body;
+            buf.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "__p = {s};\n", .{head_end}) catch unreachable) catch unreachable;
+            bindName(ctx, buf, alt.binding, head_val);
+
+            var produced = false;
+            var node_opt: ?*const ast2.Node = if (alt.node) |*n| n else null;
+            var cont_list: []const ast2.Continuation = alt.continuations;
+            while (node_opt) |n| {
+                if (produceOf(n)) |e| {
+                    buf.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "*out = (koru_pres){{ __p, ({s}) }}; return true;\n", .{e}) catch unreachable) catch unreachable;
+                    produced = true;
+                    break;
+                }
+                if (n.* != .invocation) {
+                    setFail(ctx, "std/parser generate: an alternative's chain admits sub(<rule>), lit(\"...\"), and a trailing `-> expr` (cut 1)");
+                    return;
+                }
+                const inv = &n.invocation;
+                const sk = ctx.label_n.*;
+                ctx.label_n.* += 1;
+                if (isVerb(inv, "sub")) {
+                    if (inv.args.len == 0) {
+                        setFail(ctx, "std/parser generate: sub needs a rule: sub(<rule-name>)");
+                        return;
+                    }
+                    const rname = std2.mem.trim(u8, inv.args[0].value, " \t");
+                    if (findRule(ctx.rules, rname) == null) {
+                        setFail(ctx, std2.fmt.allocPrint(ctx.a, "std/parser generate: sub({s}) names no rule of this grammar", .{rname}) catch unreachable);
+                        return;
+                    }
+                    const rn = sanitize(ctx.a, rname);
+                    buf.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "koru_pres __s{d};\n", .{sk}) catch unreachable) catch unreachable;
+                    buf.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "if (!__koru_pr_{s}(input, len, __p, err, &__s{d})) {{ if (err->expected == 0 || __p > err->pos) {{ err->pos = __p; err->expected = \"{s}\"; }} goto Lt{d}_end; }}\n", .{ rn, sk, cEscape(ctx.a, rname), tail_label }) catch unreachable) catch unreachable;
+                    bindName(ctx, buf, inv.return_binding, std2.fmt.allocPrint(ctx.a, "__s{d}.val", .{sk}) catch unreachable);
+                    buf.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "__p = __s{d}.end;\n", .{sk}) catch unreachable) catch unreachable;
+                } else if (isVerb(inv, "lit")) {
+                    if (inv.args.len == 0) {
+                        setFail(ctx, "std/parser generate: lit needs its text: lit(\"...\")");
+                        return;
+                    }
+                    const text = stripQuotes(inv.args[0].value);
+                    const esc = cEscape(ctx.a, text);
+                    buf.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "if (!(__p + {d} <= len && __koru_lit_eq(input + __p, {d}, \"{s}\", {d}))) {{ if (err->expected == 0 || __p > err->pos) {{ err->pos = __p; err->expected = \"{s}\"; }} goto Lt{d}_end; }}\n__p += {d};\n", .{ text.len, text.len, esc, text.len, esc, tail_label, text.len }) catch unreachable) catch unreachable;
+                } else {
+                    setFail(ctx, std2.fmt.allocPrint(ctx.a, "std/parser generate: `{s}` is not grammar vocabulary — a chain admits sub(<rule>) and lit(\"...\") (cut 1)", .{inv.path.segments[inv.path.segments.len - 1]}) catch unreachable);
+                    return;
+                }
+                node_opt = null;
+                if (cont_list.len == 1 and cont_list[0].branch.len == 0) {
+                    node_opt = if (cont_list[0].node) |*nn| nn else null;
+                    cont_list = cont_list[0].continuations;
+                } else if (cont_list.len > 0) {
+                    setFail(ctx, "std/parser generate: an alternative's chain is linear — nested branching inside an alternative is cut 2");
+                    return;
+                }
+            }
+            if (!produced) {
+                buf.appendSlice(ctx.a, "*out = (koru_pres){ __p, (koru_slice){ input + __start, __p - __start } }; return true;\n") catch unreachable;
+            }
+            const needle = std2.fmt.allocPrint(ctx.a, "goto Lt{d}_end;", .{tail_label}) catch unreachable;
+            const labeled = std2.mem.indexOf(u8, body.items, needle) != null;
+            out.appendSlice(ctx.a, "{\n") catch unreachable;
+            out.appendSlice(ctx.a, body.items) catch unreachable;
+            out.appendSlice(ctx.a, "}\n") catch unreachable;
+            if (labeled) {
+                out.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "Lt{d}_end: ;\n", .{tail_label}) catch unreachable) catch unreachable;
+            }
+        }
+
+        // One GROUP: consecutive alternatives sharing the same head element. The
+        // head parses ONCE (sound by cut-1 determinism); each tail then tries in
+        // order. First-byte gate on pattern heads (rung 1).
+        fn genGroup(ctx: *const Ctx, buf: *std2.ArrayList(u8), alts: []const ast2.Continuation, cp_label: usize) void {
+            for (alts) |*alt| {
+                if (alt.kind != .terminal) {
+                    setFail(ctx, "std/parser generate: alternatives are `|` patterned branches of match");
+                    return;
+                }
+                if (alt.destructure.len > 0) {
+                    setFail(ctx, "std/parser generate: destructure in an alternative waits on typed captures (cut 2) — bind the span");
+                    return;
+                }
+            }
+            const g = ctx.label_n.*;
+            ctx.label_n.* += 1;
+
+            buf.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "__p = __cp{d};\n{{\n", .{cp_label}) catch unreachable) catch unreachable;
+
+            const head_name = alts[0].branch;
+
+            // First-byte gate — PATTERN heads only (rule heads must descend so the
+            // deepest terminal records the furthest failure).
+            if (findRule(ctx.rules, head_name) == null) {
+                const fb = regex.prefixFirstBytes(ctx.a, head_name) catch [_]bool{true} ** 256;
+                var gate_all = true;
+                for (fb) |x| {
+                    if (!x) {
+                        gate_all = false;
+                        break;
+                    }
+                }
+                if (!gate_all) {
+                    var arr = std2.ArrayList(u8){};
+                    arr.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "static const bool __fb{d}[256] = {{", .{g}) catch unreachable) catch unreachable;
+                    for (fb, 0..) |x, bi| {
+                        const cell = if (bi == 0) (if (x) "true" else "false") else (if (x) ",true" else ",false");
+                        arr.appendSlice(ctx.a, cell) catch unreachable;
+                    }
+                    arr.appendSlice(ctx.a, "};\n") catch unreachable;
+                    buf.appendSlice(ctx.a, arr.items) catch unreachable;
+                    buf.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "if (__cp{d} >= len || !__fb{d}[input[__cp{d}]]) {{ if (err->expected == 0 || __cp{d} > err->pos) {{ err->pos = __cp{d}; err->expected = \"{s}\"; }} goto Lg{d}_end; }}\n", .{ cp_label, g, cp_label, cp_label, cp_label, cEscape(ctx.a, head_name), g }) catch unreachable) catch unreachable;
+                }
+            }
+
+            // Head parse — rule reference or pattern terminal, once.
+            if (findRule(ctx.rules, head_name)) |_| {
+                const rn = sanitize(ctx.a, head_name);
+                buf.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "koru_pres __gh{d};\n", .{g}) catch unreachable) catch unreachable;
+                buf.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "if (!__koru_pr_{s}(input, len, __p, err, &__gh{d})) {{ if (err->expected == 0 || __p > err->pos) {{ err->pos = __p; err->expected = \"{s}\"; }} goto Lg{d}_end; }}\n", .{ rn, g, cEscape(ctx.a, head_name), g }) catch unreachable) catch unreachable;
+                buf.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "koru_slice __hv{d} = __gh{d}.val; size_t __he{d} = __gh{d}.end; (void)__hv{d};\n", .{ g, g, g, g, g }) catch unreachable) catch unreachable;
+            } else {
+                const id = matcherFor(ctx, head_name);
+                buf.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "size_t __ge{d} = __koru_pt_{d}(input, len, __p);\n", .{ g, id }) catch unreachable) catch unreachable;
+                buf.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "if (__ge{d} == SIZE_MAX) {{ if (err->expected == 0 || __p > err->pos) {{ err->pos = __p; err->expected = \"{s}\"; }} goto Lg{d}_end; }}\n", .{ g, cEscape(ctx.a, head_name), g }) catch unreachable) catch unreachable;
+                buf.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "koru_slice __hv{d} = (koru_slice){{ input + __cp{d}, __ge{d} - __cp{d} }}; size_t __he{d} = __ge{d}; (void)__hv{d};\n", .{ g, cp_label, g, cp_label, g, g, g }) catch unreachable) catch unreachable;
+            }
+            const head_val = std2.fmt.allocPrint(ctx.a, "__hv{d}", .{g}) catch unreachable;
+            const head_end = std2.fmt.allocPrint(ctx.a, "__he{d}", .{g}) catch unreachable;
+
+            for (alts) |*alt| {
+                const t = ctx.label_n.*;
+                ctx.label_n.* += 1;
+                genTail(ctx, buf, alt, t, head_val, head_end);
+            }
+            buf.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "}}\nLg{d}_end: ;\n", .{g}) catch unreachable) catch unreachable;
+        }
+
+        fn genRuleFn(ctx: *const Ctx, rule: *const ast2.Continuation) void {
+            const rn = sanitize(ctx.a, rule.branch);
+            var buf = std2.ArrayList(u8){};
+            buf.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "static bool __koru_pr_{s}(const uint8_t* input, size_t len, size_t pos, koru_perr* err, koru_pres* out) {{\nsize_t __start = pos; (void)__start;\nsize_t __p = pos;\n", .{rn}) catch unreachable) catch unreachable;
+            const cp = ctx.label_n.*;
+            ctx.label_n.* += 1;
+            buf.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "size_t __cp{d} = pos; (void)__cp{d};\n", .{ cp, cp }) catch unreachable) catch unreachable;
+            const alts = altsOf(rule);
+            var i: usize = 0;
+            while (i < alts.len) {
+                var j = i + 1;
+                while (j < alts.len and std2.mem.eql(u8, alts[j].branch, alts[i].branch)) j += 1;
+                genGroup(ctx, &buf, alts[i..j], cp);
+                i = j;
+            }
+            buf.appendSlice(ctx.a, "return false;\n}\n") catch unreachable;
+            ctx.out.appendSlice(ctx.a, buf.items) catch unreachable;
+        }
+    };
+
+    // --- Run the emitter ---
+    var out = std.ArrayList(u8){};
+    var matchers = std.ArrayList(u8){};
+    var pats = std.ArrayList([]const u8){};
+    var label_n: usize = 0;
+    var fail: ?[]const u8 = null;
+    const ctx = C.Ctx{ .a = allocator, .rules = found_rules.?, .out = &out, .matchers = &matchers, .pats = &pats, .label_n = &label_n, .fail = &fail };
+
+    for (found_rules.?) |*r| C.genRuleFn(&ctx, r);
+
+    if (fail) |f| {
+        std.debug.print("{s}\n", .{f});
+        std.process.exit(1);
+    }
+
+    const gid = C.sanitize(allocator, gname);
+    const start_rn = C.sanitize(allocator, found_rules.?[0].branch);
+
+    // --- Assemble the standalone C file ---
+    var file = std.ArrayList(u8){};
+    const w = &file;
+    w.appendSlice(allocator, std.fmt.allocPrint(allocator,
+        \\/* Generated by koru std/parser `generate` from grammar `{s}`. Do not edit. */
+        \\#include <stdint.h>
+        \\#include <stddef.h>
+        \\#include <stdbool.h>
+        \\#include <string.h>
+        \\
+        \\typedef struct {{ const uint8_t* p; size_t len; }} koru_slice;
+        \\typedef struct {{ size_t end; koru_slice val; }} koru_pres;
+        \\typedef struct {{ size_t pos; const char* expected; }} koru_perr;
+        \\
+        \\static bool __koru_lit_eq(const uint8_t* a, size_t alen, const char* b, size_t blen) {{
+        \\    if (alen != blen) return false;
+        \\    return memcmp(a, b, alen) == 0;
+        \\}}
+        \\
+        \\
+    , .{gname}) catch unreachable) catch unreachable;
+
+    // Forward declarations (mutual recursion between rule fns).
+    for (found_rules.?) |*r| {
+        const rn = C.sanitize(allocator, r.branch);
+        w.appendSlice(allocator, std.fmt.allocPrint(allocator, "static bool __koru_pr_{s}(const uint8_t* input, size_t len, size_t pos, koru_perr* err, koru_pres* out);\n", .{rn}) catch unreachable) catch unreachable;
+    }
+    w.appendSlice(allocator, "\n/* --- terminal matchers (anchored-prefix DFAs) --- */\n") catch unreachable;
+    w.appendSlice(allocator, matchers.items) catch unreachable;
+    w.appendSlice(allocator, "\n/* --- rule functions --- */\n") catch unreachable;
+    w.appendSlice(allocator, out.items) catch unreachable;
+
+    // Public API: parse the whole input against the start rule (first rule).
+    w.appendSlice(allocator, std.fmt.allocPrint(allocator,
+        \\
+        \\/* --- public API --- */
+        \\typedef struct {{
+        \\    bool ok;
+        \\    koru_slice value;      /* valid iff ok */
+        \\    size_t line, col;      /* valid iff !ok */
+        \\    const char* expected;  /* valid iff !ok */
+        \\    koru_slice found;      /* valid iff !ok */
+        \\}} koru_parse_result;
+        \\
+        \\koru_parse_result koru_parse_{s}(const uint8_t* input, size_t len) {{
+        \\    koru_perr err = {{ 0, 0 }};
+        \\    koru_pres res;
+        \\    koru_parse_result r;
+        \\    if (__koru_pr_{s}(input, len, 0, &err, &res)) {{
+        \\        if (res.end == len) {{ r.ok = true; r.value = res.val; return r; }}
+        \\        if (err.expected == 0 || res.end > err.pos) {{ err.pos = res.end; err.expected = "end of input"; }}
+        \\    }}
+        \\    r.ok = false;
+        \\    {{ size_t l = 1, c = 1; size_t ep = err.pos < len ? err.pos : len;
+        \\      for (size_t k = 0; k < ep; k++) {{ if (input[k] == '\n') {{ l++; c = 1; }} else c++; }}
+        \\      r.line = l; r.col = c; }}
+        \\    r.expected = err.expected ? err.expected : "";
+        \\    if (err.pos < len) {{ koru_slice f = {{ input + err.pos, 1 }}; r.found = f; }}
+        \\    else {{ koru_slice f = {{ (const uint8_t*)"end of input", 12 }}; r.found = f; }}
+        \\    return r;
+        \\}}
+        \\
+        \\#ifndef KORU_PARSER_NO_MAIN
+        \\#include <stdio.h>
+        \\int main(int argc, char** argv) {{
+        \\    if (argc < 2) {{ fprintf(stderr, "usage: %s <input>\n", argv[0]); return 2; }}
+        \\    const char* s = argv[1];
+        \\    koru_parse_result r = koru_parse_{s}((const uint8_t*)s, strlen(s));
+        \\    if (r.ok) {{ printf("OK: %.*s\n", (int)r.value.len, r.value.p); return 0; }}
+        \\    printf("PARSE-ERROR %zu:%zu expected %s found %.*s\n", r.line, r.col, r.expected, (int)r.found.len, r.found.p);
+        \\    return 1;
+        \\}}
+        \\#endif
+        \\
+    , .{ gid, start_rn, gid }) catch unreachable) catch unreachable;
+
+    // --- Write it out ---
+    const path = std.fmt.allocPrint(allocator, "{s}.c", .{gid}) catch unreachable;
+    const cwd = std.fs.cwd();
+    const f = cwd.createFile(path, .{}) catch |err| {
+        std.debug.print("std/parser generate: cannot write {s}: {s}\n", .{ path, @errorName(err) });
+        std.process.exit(1);
+    };
+    defer f.close();
+    f.writeAll(file.items) catch |err| {
+        std.debug.print("std/parser generate: write failed: {s}\n", .{@errorName(err)});
+        std.process.exit(1);
+    };
+
+    std.debug.print("std/parser generate: grammar '{s}' -> {s} ({d} bytes, {d} rule(s), start rule '{s}')\n", .{ gname, path, file.items.len, found_rules.?.len, found_rules.?[0].branch });
+
+    // A one-shot command: exit straight away. This also skips the backend's GPA
+    // teardown leak-check — the emitter allocates freely on the compile arena
+    // and never frees (the process is about to die), which is correct for a
+    // run-once-then-exit command, not a leak worth reporting.
+    std.process.exit(0);
 }

@@ -1622,21 +1622,23 @@ pub fn emitPrefixMatcher(w: anytype, dfa: *const Dfa, name: []const u8) !void {
         // No per-byte accept work: walk transitions until dead/end, then the
         // state we stopped on decides the (single) match end — `i` at the dead
         // break is exactly the accepting end, `input.len` at a clean run-out.
+        // `for` over the input SPAN, not a manual-index `while` — the canonical
+        // monotonic-iteration form the for-over-while rule prefers (measured on
+        // Zig hot loops). `end` carries the break position out of the loop body.
         try w.writeAll("    if (A[s]) return from;\n");
-        try w.writeAll("    var i: usize = from;\n");
-        try w.writeAll("    while (i < input.len) : (i += 1) {\n");
-        try w.print("        const ns = T[@as(usize, s) * 256 + @as(usize, input[i])];\n", .{});
-        try w.print("        if (ns == {d}) break;\n", .{dead.?});
+        try w.writeAll("    var end: usize = input.len;\n");
+        try w.writeAll("    for (input[from..], from..) |b, i| {\n");
+        try w.print("        const ns = T[@as(usize, s) * 256 + @as(usize, b)];\n", .{});
+        try w.print("        if (ns == {d}) {{ end = i; break; }}\n", .{dead.?});
         try w.writeAll("        s = ns;\n");
         try w.writeAll("    }\n");
-        try w.writeAll("    return if (A[s]) i else null;\n");
+        try w.writeAll("    return if (A[s]) end else null;\n");
         try w.writeAll("}\n");
         return;
     }
     try w.writeAll("    var last_end: ?usize = if (A[s]) from else null;\n");
-    try w.writeAll("    var i: usize = from;\n");
-    try w.writeAll("    while (i < input.len) : (i += 1) {\n");
-    try w.writeAll("        s = T[@as(usize, s) * 256 + @as(usize, input[i])];\n");
+    try w.writeAll("    for (input[from..], from..) |b, i| {\n");
+    try w.writeAll("        s = T[@as(usize, s) * 256 + @as(usize, b)];\n");
     if (dead) |d| try w.print("        if (s == {d}) break;\n", .{d});
     try w.writeAll("        if (A[s]) last_end = i + 1;\n");
     try w.writeAll("    }\n");
@@ -1658,6 +1660,104 @@ pub fn compilePrefixToZig(out: std.mem.Allocator, pattern: []const u8, name: []c
     var dfa = try buildDfa(a, &nfa);
     var buf = std.ArrayList(u8){};
     try emitPrefixMatcher(buf.writer(out), &dfa, name);
+    return buf.toOwnedSlice(out);
+}
+
+/// C sibling of `emitPrefixMatcher`. Same DFA, C vocabulary: a slice is a
+/// `(const uint8_t* input, size_t len)` pair; the `?usize` result becomes a
+/// `size_t` returning the match end, or `SIZE_MAX` for "no match" (offsets are
+/// always < len <= SIZE_MAX, so the sentinel is unambiguous). The suffix-terminal
+/// accept-write hoist (rung 3) carries over unchanged. Emitted functions assume
+/// <stdint.h>/<stddef.h>/<stdbool.h> are included by the enclosing file.
+pub fn emitPrefixMatcherC(w: anytype, dfa: *const Dfa, name: []const u8) !void {
+    // Detect the dead sink: non-accepting, every byte loops back to itself.
+    var dead: ?usize = null;
+    var st: usize = 0;
+    outer: while (st < dfa.n_states) : (st += 1) {
+        if (dfa.accept[st]) continue;
+        var b: usize = 0;
+        while (b < 256) : (b += 1) {
+            if (dfa.trans[st * 256 + b] != st) continue :outer;
+        }
+        dead = st;
+        break;
+    }
+
+    try w.print("static size_t {s}(const uint8_t* input, size_t len, size_t from) {{\n", .{name});
+    try w.writeAll("    static const uint32_t T[] = { ");
+    for (dfa.trans, 0..) |t, i| {
+        if (i != 0) try w.writeAll(", ");
+        try w.print("{d}", .{t});
+    }
+    try w.writeAll(" };\n");
+    try w.writeAll("    static const bool A[] = { ");
+    for (dfa.accept, 0..) |acc, i| {
+        if (i != 0) try w.writeAll(", ");
+        try w.writeAll(if (acc) "true" else "false");
+    }
+    try w.writeAll(" };\n");
+
+    // Suffix-terminal DFA: every accepting state transitions ONLY to the dead
+    // sink — accept reached at most once, immediately before break, so the
+    // per-byte accept test is pure overhead (rung 3). Numbers (digit -> digit
+    // re-accepts) are NOT suffix-terminal and keep the per-byte write.
+    var suffix_terminal = dead != null;
+    if (dead) |d| {
+        for (0..dfa.n_states) |q| {
+            if (!dfa.accept[q]) continue;
+            var b: usize = 0;
+            while (b < 256) : (b += 1) {
+                if (dfa.trans[q * 256 + b] != d) {
+                    suffix_terminal = false;
+                    break;
+                }
+            }
+            if (!suffix_terminal) break;
+        }
+    }
+
+    try w.print("    uint32_t s = {d};\n", .{dfa.start});
+    // The byte-scan is a `for` over a KNOWN SPAN, never a manual-index `while`:
+    // `for (i = from; i < len; i++)` hands the C compiler a canonical monotonic
+    // induction variable + contiguous bounds over `input`, unlocking
+    // vectorization / bounds-check elision / alias analysis. A hand-index while
+    // with a bottom `i++` emits weaker IR for the same logic (the standing
+    // for-over-while rule — measured up to ~20% on hot loops). This IS the
+    // recognizer's inner loop, so it is exactly where the span form pays.
+    if (suffix_terminal) {
+        try w.writeAll("    if (A[s]) return from;\n");
+        try w.writeAll("    size_t i = from;\n");
+        try w.writeAll("    for (i = from; i < len; i++) {\n");
+        try w.writeAll("        uint32_t ns = T[(size_t)s * 256 + (size_t)input[i]];\n");
+        try w.print("        if (ns == {d}) break;\n", .{dead.?});
+        try w.writeAll("        s = ns;\n");
+        try w.writeAll("    }\n");
+        try w.writeAll("    return A[s] ? i : SIZE_MAX;\n");
+        try w.writeAll("}\n");
+        return;
+    }
+    try w.writeAll("    size_t last_end = A[s] ? from : SIZE_MAX;\n");
+    try w.writeAll("    for (size_t i = from; i < len; i++) {\n");
+    try w.writeAll("        s = T[(size_t)s * 256 + (size_t)input[i]];\n");
+    if (dead) |d| try w.print("        if (s == {d}) break;\n", .{d});
+    try w.writeAll("        if (A[s]) last_end = i + 1;\n");
+    try w.writeAll("    }\n");
+    try w.writeAll("    return last_end;\n");
+    try w.writeAll("}\n");
+}
+
+/// C sibling of `compilePrefixToZig` — compile a pattern to a self-contained
+/// anchored longest-prefix-at-offset C function.
+pub fn compilePrefixToC(out: std.mem.Allocator, pattern: []const u8, name: []const u8) ![]const u8 {
+    var arena = std.heap.ArenaAllocator.init(out);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var p = Parser.init(a, pattern);
+    const ast = try p.parse();
+    var nfa = try buildNfa(a, ast);
+    var dfa = try buildDfa(a, &nfa);
+    var buf = std.ArrayList(u8){};
+    try emitPrefixMatcherC(buf.writer(out), &dfa, name);
     return buf.toOwnedSlice(out);
 }
 
@@ -1960,7 +2060,11 @@ test "emit prefix: suffix-terminal patterns hoist the accept-write out of the lo
         const src = try compilePrefixToZig(testing.allocator, "\"([^\"\\\\]|\\\\.)*\"", "ps");
         defer testing.allocator.free(src);
         try testing.expect(std.mem.indexOf(u8, src, "last_end = i + 1;") == null);
-        try testing.expect(std.mem.indexOf(u8, src, "return if (A[s]) i else null;") != null);
+        // The single accept-read off the stopped state. The scan loops over the
+        // input SPAN with `for (input[from..], from..) |b, i|`, so the break
+        // position is carried out in `end` (the for-body's `i` is scoped) — the
+        // hoist (no per-byte last_end) is what this test pins, not the loop form.
+        try testing.expect(std.mem.indexOf(u8, src, "return if (A[s]) end else null;") != null);
     }
     // A keyword terminal — accepts only at word end, also suffix-terminal.
     {
