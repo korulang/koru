@@ -1,0 +1,4 @@
+got 0
+got 10
+got 20
+sum 3
