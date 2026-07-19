@@ -375,6 +375,22 @@ fn cloneFields(allocator: std.mem.Allocator, fields: []const ast.Field) ![]ast.F
         result[i] = .{
             .name = try allocator.dupe(u8, field.name),
             .type = try allocator.dupe(u8, field.type),
+            // Preserve the field's VALUE and flags, not just name+type. A clone
+            // that keeps only name+type turns a record body `{ f.ctx, f.message }`
+            // into an empty `{ }`, so the bound `f` goes unused (KORU100). This is
+            // the record-construct sibling of the plain_value/kind clone fixes:
+            // faithful choke replication over a `=> failed { ... }` body needs it.
+            // `expression` is shared (not deep-cloned); the clone does not own it.
+            .module_path = if (field.module_path) |mp| try allocator.dupe(u8, mp) else null,
+            .phantom = if (field.phantom) |p| try allocator.dupe(u8, p) else null,
+            .is_source = field.is_source,
+            .is_file = field.is_file,
+            .is_embed_file = field.is_embed_file,
+            .is_expression = field.is_expression,
+            .is_invocation_meta = field.is_invocation_meta,
+            .expression = field.expression,
+            .expression_str = if (field.expression_str) |e| try allocator.dupe(u8, e) else null,
+            .owns_expression = false,
         };
     }
     return result;
