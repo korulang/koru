@@ -684,9 +684,397 @@ const std = @import("std");
         std.process.exit(1);
     }
 
-    if (!std.mem.eql(u8, target, "c")) {
-        std.debug.print("std/parser generate: target '{s}' is not implemented — only 'c' today (loud wall, not a silent fallback)\n", .{target});
+    if (!std.mem.eql(u8, target, "c") and !std.mem.eql(u8, target, "js")) {
+        std.debug.print("std/parser generate: target '{s}' is not implemented — only 'c' and 'js' today (loud wall, not a silent fallback)\n", .{target});
         std.process.exit(1);
+    }
+
+    if (std.mem.eql(u8, target, "js")) {
+        // ================= JS EMITTER =================
+        // Same algorithm as the C emitter below (recursive descent, DFA
+        // terminals, first-byte gate, same-head factoring, furthest-failure),
+        // re-expressed in JS vocabulary:
+        //   slice        -> {s,e} pair of byte offsets into a Node `Buffer`
+        //                    (a Buffer indexes like C's uint8_t*, so the DFA
+        //                    matchers transliterate almost verbatim)
+        //   "no match"    -> `null` for rule fns (in place of bool+out-param),
+        //                    `-1` sentinel for terminal matchers (in place of
+        //                    SIZE_MAX — offsets are never negative)
+        //   labeled break -> a JS labeled BLOCK statement (`Lx: { ... }`) plus
+        //                    `break Lx;` — the direct JS analogue of a C
+        //                    `goto Lx_end;` that jumps to a label placed right
+        //                    after the block: label the block itself instead,
+        //                    `break` lands exactly where the goto would.
+        const JsGen = struct {
+            const std2 = @import("std");
+            const ast2 = @import("ast");
+            const regex = @import("regex_engine");
+
+            const Ctx = struct {
+                a: std2.mem.Allocator,
+                rules: []const ast2.Continuation,
+                out: *std2.ArrayList(u8),
+                matchers: *std2.ArrayList(u8),
+                pats: *std2.ArrayList([]const u8),
+                label_n: *usize,
+                fail: *?[]const u8,
+            };
+
+            // JS string-literal escaping — same admissible set as the C emitter.
+            fn jsEscape(a: std2.mem.Allocator, s: []const u8) []const u8 {
+                var buf = std2.ArrayList(u8){};
+                for (s) |ch| {
+                    switch (ch) {
+                        '"' => buf.appendSlice(a, "\\\"") catch unreachable,
+                        '\\' => buf.appendSlice(a, "\\\\") catch unreachable,
+                        '\n' => buf.appendSlice(a, "\\n") catch unreachable,
+                        '\r' => buf.appendSlice(a, "\\r") catch unreachable,
+                        '\t' => buf.appendSlice(a, "\\t") catch unreachable,
+                        else => buf.append(a, ch) catch unreachable,
+                    }
+                }
+                return buf.toOwnedSlice(a) catch unreachable;
+            }
+
+            fn sanitize(a: std2.mem.Allocator, s: []const u8) []const u8 {
+                const out = a.dupe(u8, s) catch unreachable;
+                for (out) |*ch| {
+                    if (!((ch.* >= 'a' and ch.* <= 'z') or (ch.* >= 'A' and ch.* <= 'Z') or (ch.* >= '0' and ch.* <= '9'))) ch.* = '_';
+                }
+                return out;
+            }
+
+            fn findRule(rules: []const ast2.Continuation, name: []const u8) ?*const ast2.Continuation {
+                for (rules) |*r| {
+                    if (std2.mem.eql(u8, r.branch, name)) return r;
+                }
+                return null;
+            }
+
+            fn setFail(ctx: *const Ctx, msg: []const u8) void {
+                if (ctx.fail.* == null) ctx.fail.* = msg;
+            }
+
+            fn isVerb(inv: *const ast2.Invocation, verb: []const u8) bool {
+                return inv.path.segments.len == 1 and std2.mem.eql(u8, inv.path.segments[0], verb);
+            }
+
+            fn stripQuotes(s: []const u8) []const u8 {
+                const t = std2.mem.trim(u8, s, " \t");
+                if (t.len >= 2 and t[0] == '"' and t[t.len - 1] == '"') return t[1 .. t.len - 1];
+                return t;
+            }
+
+            // Matcher id for a terminal pattern, compiling it to JS on first sight.
+            fn matcherFor(ctx: *const Ctx, pattern: []const u8) usize {
+                for (ctx.pats.items, 0..) |p, i| {
+                    if (std2.mem.eql(u8, p, pattern)) return i;
+                }
+                const id = ctx.pats.items.len;
+                ctx.pats.append(ctx.a, pattern) catch unreachable;
+                const fn_name = std2.fmt.allocPrint(ctx.a, "__koru_pt_{d}", .{id}) catch unreachable;
+                const src = regex.compilePrefixToJs(ctx.a, pattern, fn_name) catch |err| {
+                    setFail(ctx, std2.fmt.allocPrint(ctx.a, "std/parser generate: cannot compile terminal `{s}`: {s}", .{ jsEscape(ctx.a, pattern), @errorName(err) }) catch unreachable);
+                    return id;
+                };
+                ctx.matchers.appendSlice(ctx.a, src) catch unreachable;
+                ctx.matchers.appendSlice(ctx.a, "\n") catch unreachable;
+                return id;
+            }
+
+            fn altsOf(rule: *const ast2.Continuation) []const ast2.Continuation {
+                return rule.continuations;
+            }
+
+            fn produceOf(node: *const ast2.Node) ?[]const u8 {
+                switch (node.*) {
+                    .expression => |e| return e,
+                    .branch_constructor => |bc| {
+                        if (bc.is_bare_return) return bc.plain_value;
+                        return null;
+                    },
+                    else => return null,
+                }
+            }
+
+            // `const NAME = EXPR;` — skip `_` / unbound.
+            fn bindName(ctx: *const Ctx, buf: *std2.ArrayList(u8), name_opt: ?[]const u8, val_expr: []const u8) void {
+                const name = name_opt orelse return;
+                if (std2.mem.eql(u8, name, "_")) return;
+                const bind = std2.fmt.allocPrint(ctx.a, "const {s} = {s};\n", .{ name, val_expr }) catch unreachable;
+                buf.appendSlice(ctx.a, bind) catch unreachable;
+            }
+
+            // One alternative's TAIL: bind the head value, walk the chain, end in a
+            // produce (or default consumed-span). Falling to the tail's `break`
+            // target = this tail failed; control drops to the next tail of the group.
+            fn genTail(ctx: *const Ctx, out: *std2.ArrayList(u8), alt: *const ast2.Continuation, tail_label: usize, head_val: []const u8, head_end: []const u8) void {
+                var body = std2.ArrayList(u8){};
+                const buf = &body;
+                buf.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "__p = {s};\n", .{head_end}) catch unreachable) catch unreachable;
+                bindName(ctx, buf, alt.binding, head_val);
+
+                var produced = false;
+                var node_opt: ?*const ast2.Node = if (alt.node) |*n| n else null;
+                var cont_list: []const ast2.Continuation = alt.continuations;
+                while (node_opt) |n| {
+                    if (produceOf(n)) |e| {
+                        buf.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "return {{ end: __p, val: ({s}) }};\n", .{e}) catch unreachable) catch unreachable;
+                        produced = true;
+                        break;
+                    }
+                    if (n.* != .invocation) {
+                        setFail(ctx, "std/parser generate: an alternative's chain admits sub(<rule>), lit(\"...\"), and a trailing `-> expr` (cut 1)");
+                        return;
+                    }
+                    const inv = &n.invocation;
+                    const sk = ctx.label_n.*;
+                    ctx.label_n.* += 1;
+                    if (isVerb(inv, "sub")) {
+                        if (inv.args.len == 0) {
+                            setFail(ctx, "std/parser generate: sub needs a rule: sub(<rule-name>)");
+                            return;
+                        }
+                        const rname = std2.mem.trim(u8, inv.args[0].value, " \t");
+                        if (findRule(ctx.rules, rname) == null) {
+                            setFail(ctx, std2.fmt.allocPrint(ctx.a, "std/parser generate: sub({s}) names no rule of this grammar", .{rname}) catch unreachable);
+                            return;
+                        }
+                        const rn = sanitize(ctx.a, rname);
+                        buf.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "const __s{d} = __koru_pr_{s}(input, len, __p, err);\n", .{ sk, rn }) catch unreachable) catch unreachable;
+                        buf.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "if (__s{d} === null) {{ if (err.expected === null || __p > err.pos) {{ err.pos = __p; err.expected = \"{s}\"; }} break Lt{d}_end; }}\n", .{ sk, jsEscape(ctx.a, rname), tail_label }) catch unreachable) catch unreachable;
+                        bindName(ctx, buf, inv.return_binding, std2.fmt.allocPrint(ctx.a, "__s{d}.val", .{sk}) catch unreachable);
+                        buf.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "__p = __s{d}.end;\n", .{sk}) catch unreachable) catch unreachable;
+                    } else if (isVerb(inv, "lit")) {
+                        if (inv.args.len == 0) {
+                            setFail(ctx, "std/parser generate: lit needs its text: lit(\"...\")");
+                            return;
+                        }
+                        const text = stripQuotes(inv.args[0].value);
+                        const esc = jsEscape(ctx.a, text);
+                        var bytes = std2.ArrayList(u8){};
+                        for (text, 0..) |b, i| {
+                            if (i != 0) bytes.appendSlice(ctx.a, ",") catch unreachable;
+                            bytes.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "{d}", .{b}) catch unreachable) catch unreachable;
+                        }
+                        buf.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "if (!(__p + {d} <= len && __koru_lit_eq(input, __p, [{s}]))) {{ if (err.expected === null || __p > err.pos) {{ err.pos = __p; err.expected = \"{s}\"; }} break Lt{d}_end; }}\n__p += {d};\n", .{ text.len, bytes.items, esc, tail_label, text.len }) catch unreachable) catch unreachable;
+                    } else {
+                        setFail(ctx, std2.fmt.allocPrint(ctx.a, "std/parser generate: `{s}` is not grammar vocabulary — a chain admits sub(<rule>) and lit(\"...\") (cut 1)", .{inv.path.segments[inv.path.segments.len - 1]}) catch unreachable);
+                        return;
+                    }
+                    node_opt = null;
+                    if (cont_list.len == 1 and cont_list[0].branch.len == 0) {
+                        node_opt = if (cont_list[0].node) |*nn| nn else null;
+                        cont_list = cont_list[0].continuations;
+                    } else if (cont_list.len > 0) {
+                        setFail(ctx, "std/parser generate: an alternative's chain is linear — nested branching inside an alternative is cut 2");
+                        return;
+                    }
+                }
+                if (!produced) {
+                    buf.appendSlice(ctx.a, "return { end: __p, val: { s: __start, e: __p } };\n") catch unreachable;
+                }
+                const needle = std2.fmt.allocPrint(ctx.a, "break Lt{d}_end;", .{tail_label}) catch unreachable;
+                const labeled = std2.mem.indexOf(u8, body.items, needle) != null;
+                if (labeled) {
+                    out.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "Lt{d}_end: {{\n", .{tail_label}) catch unreachable) catch unreachable;
+                } else {
+                    out.appendSlice(ctx.a, "{\n") catch unreachable;
+                }
+                out.appendSlice(ctx.a, body.items) catch unreachable;
+                out.appendSlice(ctx.a, "}\n") catch unreachable;
+            }
+
+            // One GROUP: consecutive alternatives sharing the same head element. The
+            // head parses ONCE (sound by cut-1 determinism); each tail then tries in
+            // order. First-byte gate on pattern heads (rung 1). The whole group is a
+            // labeled block: any head-parse failure `break`s straight past it,
+            // exactly where a C `goto Lg_end;` would land.
+            fn genGroup(ctx: *const Ctx, buf: *std2.ArrayList(u8), alts: []const ast2.Continuation, cp_label: usize) void {
+                for (alts) |*alt| {
+                    if (alt.kind != .terminal) {
+                        setFail(ctx, "std/parser generate: alternatives are `|` patterned branches of match");
+                        return;
+                    }
+                    if (alt.destructure.len > 0) {
+                        setFail(ctx, "std/parser generate: destructure in an alternative waits on typed captures (cut 2) — bind the span");
+                        return;
+                    }
+                }
+                const g = ctx.label_n.*;
+                ctx.label_n.* += 1;
+
+                buf.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "__p = __cp{d};\nLg{d}: {{\n", .{ cp_label, g }) catch unreachable) catch unreachable;
+
+                const head_name = alts[0].branch;
+
+                // First-byte gate — PATTERN heads only (rule heads must descend so the
+                // deepest terminal records the furthest failure).
+                if (findRule(ctx.rules, head_name) == null) {
+                    const fb = regex.prefixFirstBytes(ctx.a, head_name) catch [_]bool{true} ** 256;
+                    var gate_all = true;
+                    for (fb) |x| {
+                        if (!x) {
+                            gate_all = false;
+                            break;
+                        }
+                    }
+                    if (!gate_all) {
+                        var arr = std2.ArrayList(u8){};
+                        arr.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "const __fb{d} = [", .{g}) catch unreachable) catch unreachable;
+                        for (fb, 0..) |x, bi| {
+                            const cell = if (bi == 0) (if (x) "true" else "false") else (if (x) ",true" else ",false");
+                            arr.appendSlice(ctx.a, cell) catch unreachable;
+                        }
+                        arr.appendSlice(ctx.a, "];\n") catch unreachable;
+                        buf.appendSlice(ctx.a, arr.items) catch unreachable;
+                        buf.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "if (__cp{d} >= len || !__fb{d}[input[__cp{d}]]) {{ if (err.expected === null || __cp{d} > err.pos) {{ err.pos = __cp{d}; err.expected = \"{s}\"; }} break Lg{d}; }}\n", .{ cp_label, g, cp_label, cp_label, cp_label, jsEscape(ctx.a, head_name), g }) catch unreachable) catch unreachable;
+                    }
+                }
+
+                // Head parse — rule reference or pattern terminal, once.
+                if (findRule(ctx.rules, head_name)) |_| {
+                    const rn = sanitize(ctx.a, head_name);
+                    buf.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "const __gh{d} = __koru_pr_{s}(input, len, __p, err);\n", .{ g, rn }) catch unreachable) catch unreachable;
+                    buf.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "if (__gh{d} === null) {{ if (err.expected === null || __p > err.pos) {{ err.pos = __p; err.expected = \"{s}\"; }} break Lg{d}; }}\n", .{ g, jsEscape(ctx.a, head_name), g }) catch unreachable) catch unreachable;
+                    buf.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "const __hv{d} = __gh{d}.val, __he{d} = __gh{d}.end;\n", .{ g, g, g, g }) catch unreachable) catch unreachable;
+                } else {
+                    const id = matcherFor(ctx, head_name);
+                    buf.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "const __ge{d} = __koru_pt_{d}(input, len, __p);\n", .{ g, id }) catch unreachable) catch unreachable;
+                    buf.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "if (__ge{d} === -1) {{ if (err.expected === null || __p > err.pos) {{ err.pos = __p; err.expected = \"{s}\"; }} break Lg{d}; }}\n", .{ g, jsEscape(ctx.a, head_name), g }) catch unreachable) catch unreachable;
+                    buf.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "const __hv{d} = {{ s: __cp{d}, e: __ge{d} }}, __he{d} = __ge{d};\n", .{ g, cp_label, g, g, g }) catch unreachable) catch unreachable;
+                }
+                const head_val = std2.fmt.allocPrint(ctx.a, "__hv{d}", .{g}) catch unreachable;
+                const head_end = std2.fmt.allocPrint(ctx.a, "__he{d}", .{g}) catch unreachable;
+
+                for (alts) |*alt| {
+                    const t = ctx.label_n.*;
+                    ctx.label_n.* += 1;
+                    genTail(ctx, buf, alt, t, head_val, head_end);
+                }
+                buf.appendSlice(ctx.a, "}\n") catch unreachable;
+            }
+
+            fn genRuleFn(ctx: *const Ctx, rule: *const ast2.Continuation) void {
+                const rn = sanitize(ctx.a, rule.branch);
+                var buf = std2.ArrayList(u8){};
+                buf.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "function __koru_pr_{s}(input, len, pos, err) {{\nconst __start = pos;\nlet __p = pos;\n", .{rn}) catch unreachable) catch unreachable;
+                const cp = ctx.label_n.*;
+                ctx.label_n.* += 1;
+                buf.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "const __cp{d} = pos;\n", .{cp}) catch unreachable) catch unreachable;
+                const alts = altsOf(rule);
+                var i: usize = 0;
+                while (i < alts.len) {
+                    var j = i + 1;
+                    while (j < alts.len and std2.mem.eql(u8, alts[j].branch, alts[i].branch)) j += 1;
+                    genGroup(ctx, &buf, alts[i..j], cp);
+                    i = j;
+                }
+                buf.appendSlice(ctx.a, "return null;\n}\n") catch unreachable;
+                ctx.out.appendSlice(ctx.a, buf.items) catch unreachable;
+            }
+
+            fn run(a: std2.mem.Allocator, rules: []const ast2.Continuation, gname_: []const u8) void {
+                var out = std2.ArrayList(u8){};
+                var matchers = std2.ArrayList(u8){};
+                var pats = std2.ArrayList([]const u8){};
+                var label_n: usize = 0;
+                var fail: ?[]const u8 = null;
+                const ctx = Ctx{ .a = a, .rules = rules, .out = &out, .matchers = &matchers, .pats = &pats, .label_n = &label_n, .fail = &fail };
+
+                for (rules) |*r| genRuleFn(&ctx, r);
+
+                if (fail) |f| {
+                    std2.debug.print("{s}\n", .{f});
+                    std2.process.exit(1);
+                }
+
+                const gid = sanitize(a, gname_);
+                const start_rn = sanitize(a, rules[0].branch);
+
+                var file = std2.ArrayList(u8){};
+                const w = &file;
+                w.appendSlice(a, std2.fmt.allocPrint(a,
+                    \\/* Generated by koru std/parser `generate` from grammar `{s}`. Do not edit. */
+                    \\'use strict';
+                    \\
+                    \\function __koru_lit_eq(input, pos, bytes) {{
+                    \\    for (let i = 0; i < bytes.length; i++) {{ if (input[pos + i] !== bytes[i]) return false; }}
+                    \\    return true;
+                    \\}}
+                    \\
+                    \\
+                , .{gname_}) catch unreachable) catch unreachable;
+
+                w.appendSlice(a, "/* --- terminal matchers (anchored-prefix DFAs) --- */\n") catch unreachable;
+                w.appendSlice(a, matchers.items) catch unreachable;
+                w.appendSlice(a, "\n/* --- rule functions --- */\n") catch unreachable;
+                w.appendSlice(a, out.items) catch unreachable;
+
+                w.appendSlice(a, std2.fmt.allocPrint(a,
+                    \\
+                    \\/* --- public API --- */
+                    \\function koru_parse_{s}(input, len) {{
+                    \\    const err = {{ pos: 0, expected: null }};
+                    \\    const res = __koru_pr_{s}(input, len, 0, err);
+                    \\    if (res !== null) {{
+                    \\        if (res.end === len) return {{ ok: true, value: res.val }};
+                    \\        if (err.expected === null || res.end > err.pos) {{ err.pos = res.end; err.expected = "end of input"; }}
+                    \\    }}
+                    \\    let line = 1, col = 1;
+                    \\    const ep = err.pos < len ? err.pos : len;
+                    \\    for (let k = 0; k < ep; k++) {{ if (input[k] === 10) {{ line++; col = 1; }} else col++; }}
+                    \\    const expected = err.expected !== null ? err.expected : "";
+                    \\    if (err.pos < len) return {{ ok: false, line, col, expected, foundStart: err.pos, foundEnd: err.pos + 1, foundEof: false }};
+                    \\    return {{ ok: false, line, col, expected, foundStart: 0, foundEnd: 0, foundEof: true }};
+                    \\}}
+                    \\
+                , .{ gid, start_rn }) catch unreachable) catch unreachable;
+
+                w.appendSlice(a, std2.fmt.allocPrint(a,
+                    \\function __koru_main_{s}() {{
+                    \\    const arg = process.argv[2];
+                    \\    if (arg === undefined) {{ process.stderr.write("usage: " + process.argv[1] + " <input>\n"); process.exit(2); }}
+                    \\    const input = Buffer.from(arg, "utf8");
+                    \\    const r = koru_parse_{s}(input, input.length);
+                    \\    if (r.ok) {{
+                    \\        process.stdout.write(Buffer.concat([Buffer.from("OK: "), input.subarray(r.value.s, r.value.e), Buffer.from("\n")]));
+                    \\        process.exit(0);
+                    \\    }}
+                    \\    const found = r.foundEof ? Buffer.from("end of input") : input.subarray(r.foundStart, r.foundEnd);
+                    \\    process.stdout.write(Buffer.concat([Buffer.from("PARSE-ERROR " + r.line + ":" + r.col + " expected " + r.expected + " found "), found, Buffer.from("\n")]));
+                    \\    process.exit(1);
+                    \\}}
+                    \\
+                , .{ gid, gid }) catch unreachable) catch unreachable;
+
+                w.appendSlice(a, std2.fmt.allocPrint(a,
+                    \\module.exports = {{ koru_parse_{s} }};
+                    \\
+                    \\if (require.main === module) {{
+                    \\    __koru_main_{s}();
+                    \\}}
+                    \\
+                , .{ gid, gid }) catch unreachable) catch unreachable;
+
+                const path = std2.fmt.allocPrint(a, "{s}.js", .{gid}) catch unreachable;
+                const cwd = std2.fs.cwd();
+                const f = cwd.createFile(path, .{}) catch |err| {
+                    std2.debug.print("std/parser generate: cannot write {s}: {s}\n", .{ path, @errorName(err) });
+                    std2.process.exit(1);
+                };
+                defer f.close();
+                f.writeAll(file.items) catch |err| {
+                    std2.debug.print("std/parser generate: write failed: {s}\n", .{@errorName(err)});
+                    std2.process.exit(1);
+                };
+
+                std2.debug.print("std/parser generate: grammar '{s}' -> {s} ({d} bytes, {d} rule(s), start rule '{s}')\n", .{ gname_, path, file.items.len, rules.len, rules[0].branch });
+            }
+        };
+
+        JsGen.run(allocator, found_rules.?, gname);
+        std.process.exit(0);
     }
 
     // ================= C EMITTER =================
