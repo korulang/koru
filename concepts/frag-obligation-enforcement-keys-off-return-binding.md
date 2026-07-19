@@ -46,9 +46,46 @@ generated dispatch table had zero `.pre`-stage transforms. The coupling to
   bare-return `-> T` event (single-return moved non-void-ness out of `branches`
   into the return type).
 
-## Open
+## The record-field frontier is CLOSED (2026-07-18)
+
+An obligation carried as a **record field** (a return/resume record like
+`-> { h: *Handle<owned!>, n }`) is now enforced. Two leaks were plugged:
+- The emitter used to paste the phantom into the Zig struct type
+  (`struct { h: *Handle<owned!>, n }`) — a raw-Zig compile error. It now strips
+  the compile-time-only phantom (`*Handle`), the same lift the input side gets for
+  free because its parser splits the phantom into `field.phantom`.
+- Enforcement keyed off the whole-value `return_phantom` and never descended.
+  It now parses the record return type and seeds a per-field obligation
+  (keyed `binding.field`, so multiple per record don't collide).
+
+The ruling that settled the *behavior* (Lars: record fields follow the SAME rules
+as event-payload fields, which error when undischarged — 690_024): a return-record
+field is NOT auto-dischargeable. Unlike a whole-value bare-return obligation
+(330_094, auto-discharged) or a branch-payload field (phantom-checker-tracked, so
+an inserted disposer type-checks), a return-record field is invisible to the
+phantom checker — an auto-inserted `dispose(r.h)` fails validation. So it presents
+no disposal candidate and falls to the "was not discharged" wall
+(KORU030 "Call: dispose"), guiding manual discharge. Pinned by 330_096.
+
+Full parity (phantom-checker descent into record-return fields, which would make
+the field auto-dischargeable) is deliberately NOT built — the pin rules manual
+discharge, and the checker-descent is a larger mirror of the input-side tracking.
+
+## The mid-chain-unbound frontier is CLOSED (2026-07-19)
 
 Mid-chain unbound obligation calls (`make(): h |> bump(h)` where `bump` returns an
-obligation and the chain ends unbound) are the continuation-level twin of this
-root — still uncovered, still a silent leak. Needs its own pin; the head-only
-materialization here does not reach it.
+obligation and the chain ends unbound) — the continuation-level twin of this root —
+are now caught. Enforcement used to mint only when a mid-chain invocation carried a
+`return_binding`, so `bump(h)`'s dropped return leaked silently. A TERMINAL
+unbound invocation (`cont.continuations.len == 0`) whose event returns a cleanup
+obligation now seeds an obligation under a synthetic, unreferencable key. An
+unbound value has no name to `dispose(...)`, so — exactly like the record-field
+case — it is NOT auto-dischargeable: it presents no disposal candidate and falls to
+the "was not discharged" wall (KORU030, error name `return of bump(...)`), guiding
+the author to bind and discharge the return. Non-terminal unbound calls are
+untouched (branch arms consume the return as payload; sequential prefixes are not
+flow exits). Pinned by 330_097.
+
+The two frontiers this belief named are both closed; the `not_auto_dischargeable`
+marker (renamed from `from_return_record` when it grew a second origin) is the
+shared "no auto-discharge → wall" lever for both.

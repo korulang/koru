@@ -1,0 +1,30 @@
+// Pins the CHOKE's RUNTIME catch (210_151 only proves it structurally — no stage
+// there ever fails). A point-free chain where stage-a can produce `| failed`;
+// the dedented `| failed` choke claims it across the chain; a failing call is
+// caught. stage-a(-5) fails → desugar's replicated choke routes it → run
+// produces `failed` → call site prints "caught: negative".
+~import std/io
+
+~pub event stage-a { ctx: i64 }
+| ctx i64
+| failed string
+~proc stage-a|zig {
+    if (ctx < 0) return .{ .failed = "negative" };
+    return .{ .ctx = ctx + 1 };
+}
+
+~pub event stage-b { ctx: i64 }
+| ctx i64
+| failed string
+~proc stage-b|zig { return .{ .ctx = ctx * 2 }; }
+
+~pub event run { ctx: i64 }
+| ctx i64
+| failed string
+~run = stage-a
+  |> stage-b
+| failed f => failed f
+
+~run(ctx: -5)
+| ctx c |> std/io:print.ln("ok {{ c:d }}")
+| failed f |> std/io:print.ln("caught: {{ f:s }}")

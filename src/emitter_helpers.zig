@@ -326,6 +326,12 @@ pub const EmissionContext = struct {
     // continuation-switch machinery answers payload questions from this when
     // the branch set isn't an event's (the head is an arm, not an event).
     current_resume_arms: ?[]const ast.ResumeArm = null,
+    // Cross-boundary splice hygiene: when a consumer branch binding is
+    // site-unique-renamed because it would shadow a producer local in the
+    // shared inline-splice frame (400_151), this carries {from: original,
+    // to: unique} so the binding's uses in the spliced body rewrite too.
+    // Set only around the affected continuation body; honored by emitExpression.
+    splice_binding_rename: ?BindingSubstitution = null,
 };
 
 /// CodeEmitter - manages buffer and formatting
@@ -4018,6 +4024,19 @@ fn emitInlineCodeResolvingSplices(
         if (saw_digit and idx < continuations.len) {
             const cont = &continuations[idx];
             const binding = cont.binding orelse "_";
+            // Cross-boundary splice hygiene (400_151): the spliced body shares
+            // one frame with the producer's raw-|zig locals/captures. If the
+            // consumer binding's name also occurs as a token in that producer
+            // body, `const <binding>` would shadow it (e.g. vaxis's loop `|k|`
+            // vs a consumer's `! key k`). Rename the binding uniquely and rewrite
+            // its uses in the guard + body. `uniq_buf` outlives both below.
+            var uniq_buf: [64]u8 = undefined;
+            var bind_rename: ?BindingSubstitution = null;
+            const is_pun = arg.len != 0 and std.mem.eql(u8, std.mem.trim(u8, arg, " \t"), binding);
+            if (!std.mem.eql(u8, binding, "_") and cont.destructure.len == 0 and arg.len != 0 and !is_pun and containsToken(inline_code, binding)) {
+                const uniq = std.fmt.bufPrint(&uniq_buf, "__koru_bind_{d}_{d}", .{ cont.location.line, cont.location.column }) catch binding;
+                bind_rename = .{ .from = binding, .to = uniq };
+            }
             try emitter.write("{ ");
             if (arg.len == 0) {
                 // Void-payload effect (`pong()`): nothing to bind, nothing
@@ -4046,6 +4065,15 @@ fn emitInlineCodeResolvingSplices(
             } else if (std.mem.eql(u8, std.mem.trim(u8, arg, " \t"), binding)) {
                 // The splice arg IS the binding (an inline-lowered proc local
                 // sharing the name): rebinding would self-shadow — use as-is.
+            } else if (bind_rename) |br| {
+                // Site-unique rename to avoid shadowing a producer local.
+                try emitter.write("const ");
+                try emitter.write(br.to);
+                try emitter.write(" = ");
+                try emitter.write(arg);
+                try emitter.write("; _ = &");
+                try emitter.write(br.to);
+                try emitter.write("; ");
             } else {
                 try emitter.write("const ");
                 try writeBranchName(emitter, binding);
@@ -4066,7 +4094,11 @@ fn emitInlineCodeResolvingSplices(
                     break :blk (try presenceConditionRewrite(alloc, cont.condition.?, ev, ctx.inline_fire_conts)) orelse cont.condition.?;
                 };
                 try emitter.write("if (");
-                try emitter.write(cond_out);
+                if (bind_rename) |br| {
+                    try emitValueWithBindingSubstitution(emitter, cond_out, br);
+                } else {
+                    try emitter.write(cond_out);
+                }
                 try emitter.write(") { ");
             }
             // Give the spliced effect body a unique `result_N` namespace, so a
@@ -4087,6 +4119,9 @@ fn emitInlineCodeResolvingSplices(
             // (outer) vs `result_e0_e0_` (inner).
             ctx.result_prefix = std.fmt.bufPrint(&prefix_buf, "{s}e{d}_", .{ saved_prefix, idx }) catch saved_prefix;
             defer ctx.result_prefix = saved_prefix;
+            const saved_bind_rename = ctx.splice_binding_rename;
+            if (bind_rename) |br| ctx.splice_binding_rename = br;
+            defer ctx.splice_binding_rename = saved_bind_rename;
             var c: usize = 0;
             try emitContinuationBody(emitter, ctx, cont, &c);
             if (guarded) try emitter.write(" }");
@@ -4996,6 +5031,16 @@ fn inlineEffectfulEligibility(ctx: *EmissionContext, inv: *const ast.Invocation,
         if (containsToken(proc.body.text, "fn")) return null;
         if (has_terminal_branch and !containsToken(proc.body.text, "return")) return null;
 
+        // Inline splicing lowers an optional effect arm only in DIRECT-CALL form
+        // (`ready(...)` → splice, or evaluate-and-discard when unhandled). A body
+        // that references an optional arm as a VALUE — `if (ready) |f| f()`, the
+        // nullable-fn-ptr contract the handler-call path provides via
+        // `emitOptionalArmNullableAlias` — has no such local in the spliced
+        // frame, so the reference leaks a raw Zig `undeclared identifier`. Those
+        // bodies keep the handler-call path, which emits the alias prelude.
+        // (400_168; the koru-libs vaxis `run` wrapper, guarded-only consumer.)
+        if (procRefsOptionalArmAsValue(proc.body.text, event_decl)) return null;
+
         return .{ .event_decl = event_decl, .proc = proc, .flow = null };
     }
 
@@ -5015,6 +5060,65 @@ fn inlineEffectfulEligibility(ctx: *EmissionContext, inv: *const ast.Invocation,
         .flow => |flow| return .{ .event_decl = event_decl, .proc = null, .flow = flow },
         else => return null,
     }
+}
+
+/// True if the proc body references any OPTIONAL effect arm as a VALUE rather
+/// than a direct call — e.g. `if (ready) |f| f()` (the handler-path nullable
+/// contract) instead of `ready(...)`. The inline splice lowers only direct
+/// calls, so a value reference has no local in the spliced frame and leaks a
+/// raw `undeclared identifier`. Names are matched in their emitted (Zig-
+/// sanitized: `-` → `_`) form, since that is how the body spells them. (400_168)
+fn procRefsOptionalArmAsValue(body: []const u8, event_decl: *const ast.EventDecl) bool {
+    for (event_decl.branches) |b| {
+        if (b.kind != .effect) continue;
+        if (!b.is_optional) continue;
+        if (std.mem.eql(u8, b.name, "*")) continue;
+        var name_buf: [128]u8 = undefined;
+        if (b.name.len > name_buf.len) continue;
+        for (b.name, 0..) |ch, i| name_buf[i] = if (ch == '-') '_' else ch;
+        const name = name_buf[0..b.name.len];
+        if (identUsedAsNonCall(body, name)) return true;
+    }
+    return false;
+}
+
+/// Quote- and comment-aware scan: true if `name` appears as a word-boundary
+/// token whose next non-whitespace character is NOT `(` — i.e. used as a value,
+/// not called.
+fn identUsedAsNonCall(body: []const u8, name: []const u8) bool {
+    var i: usize = 0;
+    var q: u8 = 0;
+    while (i < body.len) : (i += 1) {
+        const c = body[i];
+        if (q != 0) {
+            if (c == '\\') {
+                i += 1;
+            } else if (c == q) {
+                q = 0;
+            }
+            continue;
+        }
+        if (c == '"' or c == '\'') {
+            q = c;
+            continue;
+        }
+        if (c == '/' and i + 1 < body.len and body[i + 1] == '/') {
+            while (i < body.len and body[i] != '\n') i += 1;
+            continue;
+        }
+        if (std.mem.startsWith(u8, body[i..], name)) {
+            const before_ok = i == 0 or !(std.ascii.isAlphanumeric(body[i - 1]) or body[i - 1] == '_' or body[i - 1] == '.');
+            const after = i + name.len;
+            const after_ok = after >= body.len or !(std.ascii.isAlphanumeric(body[after]) or body[after] == '_');
+            if (before_ok and after_ok) {
+                // Peek past whitespace for a call `(`.
+                var j = after;
+                while (j < body.len and (body[j] == ' ' or body[j] == '\t' or body[j] == '\n' or body[j] == '\r')) j += 1;
+                if (j >= body.len or body[j] != '(') return true;
+            }
+        }
+    }
+    return false;
 }
 
 /// Word-boundary token scan, quote- and comment-aware.
@@ -5106,9 +5210,15 @@ fn rewriteEffectfulProcBody(
                 for (event_decl.input.fields) |*f| {
                     var fb: [128]u8 = undefined;
                     const fname = lowerIdent(&fb, f.name);
-                    if (rest.len == fname.len + 1 and std.mem.startsWith(u8, rest, fname) and rest[fname.len] == ';') {
-                        is_param_discard = true;
-                        break;
+                    if (rest.len > fname.len and std.mem.startsWith(u8, rest, fname) and rest[fname.len] == ';') {
+                        // Allow a trailing line comment after the `;` (e.g.
+                        // `_ = title;  // not yet threaded`) — still a standalone
+                        // redundant param discard; don't strip if real code follows.
+                        const after = std.mem.trim(u8, rest[fname.len + 1 ..], " \t\r");
+                        if (after.len == 0 or std.mem.startsWith(u8, after, "//")) {
+                            is_param_discard = true;
+                            break;
+                        }
                     }
                 }
             }
@@ -5183,11 +5293,22 @@ fn rewriteEffectfulProcBody(
                     try out.appendSlice(allocator, INLINE_SPLICE_PREFIX);
                     var nb: [16]u8 = undefined;
                     try out.appendSlice(allocator, std.fmt.bufPrint(&nb, "{d}", .{ci}) catch unreachable);
+                    i = j; // resume at '(' — the resolver reads the args
                 } else {
                     // Unhandled optional effect: evaluate the payload, drop it.
-                    try out.appendSlice(allocator, "_ = ");
+                    // A VOID arm (`focus_in()`) has no payload to evaluate, and
+                    // `_ = ()` is invalid Zig — discard a void block instead and
+                    // consume the empty `()`.
+                    var k = j + 1; // past '('
+                    while (k < clean_body.len and (clean_body[k] == ' ' or clean_body[k] == '\t' or clean_body[k] == '\n' or clean_body[k] == '\r')) k += 1;
+                    if (k < clean_body.len and clean_body[k] == ')') {
+                        try out.appendSlice(allocator, "_ = {}");
+                        i = k + 1; // resume past ')'
+                    } else {
+                        try out.appendSlice(allocator, "_ = ");
+                        i = j; // resume at '(' — Zig reads the args
+                    }
                 }
-                i = j; // resume at '(' — the resolver (or Zig) reads the args
                 matched = true;
                 break;
             }
@@ -5677,51 +5798,85 @@ fn writeEffectResumeType(emitter: *CodeEmitter, branch: *const ast.Branch) !void
         }
         try emitter.write(" }");
     } else if (branch.resume_type) |rt| {
+        // An anonymous record resume (`! ask -> { a: i64, b: i64 }`) carries its
+        // shape as a brace string; Zig spells that type `struct { ... }`. Mirrors
+        // the record-arm case above and the payload-field lowering.
+        if (rt.len > 0 and rt[0] == '{') try emitter.write("struct ");
         try emitter.write(lowerZigType(rt));
     } else {
         try emitter.write("void");
     }
 }
 
-/// Emit the presence-aware alias for an OPTIONAL effect arm inside a handler
-/// body — a nullable function pointer that is comptime-known present/absent:
-///
-///   const ask: ?*const fn (i64) i64 = if (@hasDecl(__H, "ask")) &__H.ask else null;
-///   _ = &ask;
-///
-/// This replaces the plain `const ask = __H.ask` alias, which would force
-/// `__H.ask` to exist even when the consumer omitted the handler. Because the
-/// optional is comptime-known, a presence guard folds and Zig analyzes only the
-/// taken branch: `if (ask) | then | else` (400_146), `when ask` (400_147), and
-/// the proc-side `if (ask) |f| ...` (400_148). The `@hasDecl` key mirrors the
-/// handler-struct field name (`writeBranchName`); simple ASCII arm names in the
-/// corpus (`ask`/`note`) equal `b.name`.
-pub fn emitOptionalArmNullableAlias(emitter: *CodeEmitter, branch: *const ast.Branch, main_module_name: ?[]const u8) !void {
-    try emitter.writeIndent();
-    try emitter.write("const ");
-    try writeBranchName(emitter, branch.name);
-    try emitter.write(": ?*const fn (");
-    if (branch.payload.fields.len != 0) {
-        if (branch.payload.fields.len == 1 and std.mem.eql(u8, branch.payload.fields[0].name, "__type_ref")) {
-            try writeFieldType(emitter, branch.payload.fields[0], main_module_name);
-        } else {
-            try emitter.write("struct { ");
-            for (branch.payload.fields, 0..) |field, fi| {
-                if (fi > 0) try emitter.write(", ");
-                try writeBranchName(emitter, field.name);
-                try emitter.write(": ");
-                try writeFieldType(emitter, field, main_module_name);
-            }
-            try emitter.write(" }");
+/// Write the single-parameter payload TYPE of an effect arm's callback — the
+/// text between `fn (` and `)`. Empty for a void-payload arm; the bare type for
+/// a single `__type_ref`; a `struct { ... }` otherwise.
+fn writeArmPayloadParamType(emitter: *CodeEmitter, branch: *const ast.Branch, main_module_name: ?[]const u8) !void {
+    if (branch.payload.fields.len == 0) return;
+    if (branch.payload.fields.len == 1 and std.mem.eql(u8, branch.payload.fields[0].name, "__type_ref")) {
+        try writeFieldType(emitter, branch.payload.fields[0], main_module_name);
+    } else {
+        try emitter.write("struct { ");
+        for (branch.payload.fields, 0..) |field, fi| {
+            if (fi > 0) try emitter.write(", ");
+            try writeBranchName(emitter, field.name);
+            try emitter.write(": ");
+            try writeFieldType(emitter, field, main_module_name);
         }
+        try emitter.write(" }");
     }
-    try emitter.write(") ");
-    try writeEffectResumeType(emitter, branch);
-    try emitter.write(" = if (@hasDecl(__H, \"");
-    try emitter.write(branch.name);
-    try emitter.write("\")) &__H.");
-    try writeBranchName(emitter, branch.name);
-    try emitter.write(" else null;\n");
+}
+
+/// Emit the presence-aware alias for an OPTIONAL effect arm inside a handler
+/// body. The form depends on whether the arm RESUMES a value:
+///
+///   RESUMING (`-> T`) — a nullable fn pointer; the body must own the absent
+///   case, because absence has no value to fabricate:
+///     const ask: ?*const fn (i64) i64 = if (@hasDecl(__H, "ask")) &__H.ask else null;
+///     // body: `if (ask) |f| return f(q); return <fallback>;`   (400_148)
+///
+///   YIELDING (void) — an always-CALLABLE alias; present is the real handler,
+///   absent is a producer-side no-op with the same payload and void return:
+///     const ready = if (@hasDecl(__H, "ready")) __H.ready else struct { fn __koru_noop() void {} }.__koru_noop;
+///     // body: `ready();`  — the omitted case optimizes away.
+///   The no-op is NOT installed in __H, so `@hasDecl` presence truth for
+///   `if(arm)`/`when arm` is untouched — the safe half of the removed-stub idea
+///   (contrast the old consumer-side no-op that poisoned presence). This is the
+///   canonical yielding-arm contract; a yielding-optional and a required arm now
+///   share the same callable form, only resuming-optional is nullable.
+///
+/// The `@hasDecl` key mirrors the handler-struct field name (`writeBranchName`);
+/// simple ASCII arm names in the corpus (`ask`/`note`/`ready`) equal `b.name`.
+pub fn emitOptionalArmNullableAlias(emitter: *CodeEmitter, branch: *const ast.Branch, main_module_name: ?[]const u8) !void {
+    const is_resuming = branch.resume_type != null or branch.resume_arms != null;
+    try emitter.writeIndent();
+    if (is_resuming) {
+        try emitter.write("const ");
+        try writeBranchName(emitter, branch.name);
+        try emitter.write(": ?*const fn (");
+        try writeArmPayloadParamType(emitter, branch, main_module_name);
+        try emitter.write(") ");
+        try writeEffectResumeType(emitter, branch);
+        try emitter.write(" = if (@hasDecl(__H, \"");
+        try emitter.write(branch.name);
+        try emitter.write("\")) &__H.");
+        try writeBranchName(emitter, branch.name);
+        try emitter.write(" else null;\n");
+    } else {
+        // Yielding: always-callable, absent -> producer-side no-op.
+        try emitter.write("const ");
+        try writeBranchName(emitter, branch.name);
+        try emitter.write(" = if (@hasDecl(__H, \"");
+        try emitter.write(branch.name);
+        try emitter.write("\")) __H.");
+        try writeBranchName(emitter, branch.name);
+        try emitter.write(" else struct { fn __koru_noop(");
+        if (branch.payload.fields.len != 0) {
+            try emitter.write("_: ");
+            try writeArmPayloadParamType(emitter, branch, main_module_name);
+        }
+        try emitter.write(") void {} }.__koru_noop;\n");
+    }
     try emitter.writeIndent();
     try emitter.write("_ = &");
     try writeBranchName(emitter, branch.name);
@@ -5995,11 +6150,24 @@ fn emitHandlersStruct(
                     .branch_constructor => |bc| {
                         if (bc.fields.len != 0) break :blk null;
                         if (bc.plain_value) |pv| {
-                            resume_expr_owned = try std.fmt.allocPrint(
-                                ctx.allocator,
-                                "{s} {s}",
-                                .{ bc.branch_name, pv },
-                            );
+                            // A record resume value (`! ask -> { a: 10, b: 20 }`)
+                            // is a Koru struct literal; lower it to Zig
+                            // `.{ .a = 10, .b = 20 }`. A scalar value (`-> 50`)
+                            // passes through with its (empty, for bare-return)
+                            // branch_name prefix.
+                            const trimmed_pv = std.mem.trim(u8, pv, " \t");
+                            if (isKoruStructLiteral(trimmed_pv)) {
+                                var scratch = try CodeEmitter.initGrowable(ctx.allocator, 128);
+                                defer ctx.allocator.free(scratch.buffer);
+                                try emitStructLiteral(&scratch, ctx, trimmed_pv);
+                                resume_expr_owned = try ctx.allocator.dupe(u8, scratch.buffer[0..scratch.pos]);
+                            } else {
+                                resume_expr_owned = try std.fmt.allocPrint(
+                                    ctx.allocator,
+                                    "{s} {s}",
+                                    .{ bc.branch_name, pv },
+                                );
+                            }
                             break :blk resume_expr_owned.?;
                         }
                         break :blk bc.branch_name;
@@ -7395,6 +7563,13 @@ fn emitExpression(
         .identifier => |ident| {
             // Check if we need to substitute this identifier
             if (binding_substitution) |sub| {
+                if (std.mem.eql(u8, ident, sub.from)) {
+                    try emitter.write(sub.to);
+                    return;
+                }
+            }
+            // Cross-boundary splice hygiene: a renamed consumer binding.
+            if (ctx.splice_binding_rename) |sub| {
                 if (std.mem.eql(u8, ident, sub.from)) {
                     try emitter.write(sub.to);
                     return;
@@ -10050,7 +10225,32 @@ pub fn emitBareReturnOutput(emitter: *CodeEmitter, event: *const ast.EventDecl, 
 /// front: `struct { f: T }`. Scalars and slices pass through unchanged. Every
 /// site that lowers a `return_type` to a Zig type routes through here.
 pub fn writeBareReturnType(emitter: *CodeEmitter, rt: []const u8, main_module_name: ?[]const u8) !void {
-    const trimmed = std.mem.trim(u8, rt, " \t");
+    // A record-field value carries its phantom inline (`*Handle<owned!>`) because
+    // the brace splitter is text-only, unlike an event-payload field whose parser
+    // lifts the phantom into `field.phantom`. Koru surface types never use `<>`
+    // for anything but a phantom (no language generics), so strip a `<...>` group
+    // here — it is a compile-time-only annotation, absent from the Zig type. The
+    // whole-value obligation is enforced separately (auto_discharge_inserter).
+    const phantom_stripped: []const u8 = if (std.mem.indexOfScalar(u8, rt, '<')) |lt| blk: {
+        var depth: usize = 0;
+        var end: ?usize = null;
+        for (rt[lt..], lt..) |c, i| {
+            if (c == '<') depth += 1 else if (c == '>') {
+                depth -= 1;
+                if (depth == 0) {
+                    end = i;
+                    break;
+                }
+            }
+        }
+        if (end) |e| {
+            const a = emitter.allocator orelse std.heap.page_allocator;
+            const joined = std.fmt.allocPrint(a, "{s}{s}", .{ rt[0..lt], rt[e + 1 ..] }) catch break :blk rt;
+            break :blk joined;
+        }
+        break :blk rt;
+    } else rt;
+    const trimmed = std.mem.trim(u8, phantom_stripped, " \t");
     if (trimmed.len > 0 and trimmed[0] == '{') {
         // Record return shape `{ name: T, ... }`: emit a Zig struct with each
         // field type LOWERED (string → []const u8, module-qual → mangled path),

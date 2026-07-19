@@ -1,0 +1,21 @@
+// Design call #2: a REQUIRED param with no same-named binding in scope is a
+// HARD error, never a silent void-fill. `render-at` requires `text`; the only
+// binding in scope is `count` (i64). Nothing named `text` exists => the pun
+// cannot fire => hard koru diagnostic at the boundary (not a Zig leak, not a
+// blank string).
+//
+// DEFERRED (honest red until then): today this is correctly REJECTED, but at
+// the Zig boundary ("missing struct field") rather than with a koru-level
+// diagnostic. The clean rejection is redeemed by the future general
+// arg-validation pass, scoped to pure `.k` files — in `.kz`, host binds can be
+// opaque to Koru, so the full type registry only exists for pure Koru. See the
+// inline-scalar-bind-pun session; this pin turns green when that pass lands.
+const std = @import("std");
+
+~event tick {} -> i64
+~proc tick|zig { return 1; }
+
+~event render-at { x: i64, text: string }
+~proc render-at|zig { std.debug.print("{d}:{s}\n", .{ x, text }); }
+
+~tick(): count |> render-at(x: 5)

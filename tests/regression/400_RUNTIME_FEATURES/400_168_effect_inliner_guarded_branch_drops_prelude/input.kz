@@ -1,0 +1,32 @@
+// 400_168: a GUARDED-ONLY effect branch (`! beep n when n > 3`, no catch-all
+// `! beep _`) composes with sibling YIELDING optional arms through the inline
+// cut-1 splice — because a yielding arm is invoked by DIRECT CALL.
+//
+// HISTORY: this pinned the guarded-branch-drops-prelude bug. A guarded-only
+// consumer made the event inline-eligible, and the inline splice bound no
+// callable for the body's `if (tick) |f| f()` (the nullable-fn-ptr form) —
+// leaking a raw Zig `undeclared identifier 'tick'`.
+//
+// RESOLUTION (ruled 2026-07-19, Option B): a YIELDING optional arm is a
+// callable, invoked directly (`tick()`, `beep(7)`); an omitted handler is a
+// producer-side no-op that optimizes away. One contract across both lowerings —
+// the body's spelling no longer depends on which path the consumer's branch
+// shape picks. (Only a RESUMING arm `-> T` stays nullable: 400_148.) So this
+// body inlines cleanly, and the guarded-only consumer arm splices as-is.
+~import std/io
+
+~pub event run {}
+! ?tick
+! ?beep i64
+| done i64
+
+~proc run|zig {
+    tick();
+    beep(7);
+    return .{ .done = 99 };
+}
+
+~run()
+! tick |> std/io:print.ln("tick")
+! beep n when n > 3 |> std/io:print.ln("beep {{ n:d }}")
+| done r |> std/io:print.ln("done {{ r:d }}")

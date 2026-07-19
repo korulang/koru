@@ -1,0 +1,23 @@
+// 400_170: an UNHANDLED VOID optional arm fired by direct call on the inline
+// path lowers to a clean no-op. Under Option B (2026-07-19) a yielding arm is
+// invoked directly (`tick()`); when the consumer omits the handler, the inline
+// rewriter drops the call. For a VOID arm there is no payload to evaluate, so it
+// must emit `_ = {}` — NOT the invalid `_ = ()` (the payload-discard shape).
+//
+// Green here proves the void-discard path; a regression would be Zig
+// "expected expression, found ')'". (Surfaced by koru-libs vaxis: an app that
+// omits `! focus-in` / `! focus-out`.)
+~import std/io
+
+~pub event beat {}
+! ?tick
+| done i64
+
+~proc beat|zig {
+    tick();
+    tick();
+    return .{ .done = 2 };
+}
+
+~beat()
+| done r |> std/io:print.ln("done {{ r:d }}")

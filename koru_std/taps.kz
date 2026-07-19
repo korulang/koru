@@ -1,27 +1,20 @@
 // Koru Standard Library: Event Taps
 // ==================================
 //
-// LESSON IN METAPROGRAMMING: This file implements event observation as a
-// compile-time AST transformation. Taps are not a language primitive - they're
-// built using the same transform system available to any Koru library.
+// Observe event transitions without touching the flow being observed.
 //
-// THE TRANSFORMATION:
-//   Before: event() | branch b |> next_step(b.data)
-//   After:  event() | branch b |> tap_call(b) |> next_step(b.data)
+// A tap inserts a void call at the front of a matching continuation chain: the
+// bound value stays in scope, and the optimizer sees an ordinary step — so
+// observation lowers to a free, inline call rather than a runtime hook.
 //
-// That's it. A void call is inserted at the front of the continuation chain.
-// The binding `b` remains in scope. The optimizer sees no difference between
-// tap calls and regular calls - they're just steps in the flow.
-//
-// USAGE:
+// USAGE (in `.kz`):
 //   ~import std/taps
 //
-//   // Concrete source + branch (has payload access)
-//   ~tap(source: myEvent, destination: *)
-//   | result r |> log(data: r.value)
+//   // Observe a concrete source, bind its produced value, react:
+//   ~tap(compute -> *): v |> observed(value: v)
 //
-//   // Metatype branch (required for wildcard sources)
-//   ~tap(source: *, destination: *)
+//   // Metatype branch (required for wildcard sources):
+//   ~tap(* -> *)
 //   | Profile p |> profiler(p)
 
 ~[comptime]

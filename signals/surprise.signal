@@ -1,0 +1,6 @@
+name: surprise
+kind: inferred
+shape: categorical
+face: in
+membrane: false
+note: auto-registered orphan — declared before it was defined; refine me

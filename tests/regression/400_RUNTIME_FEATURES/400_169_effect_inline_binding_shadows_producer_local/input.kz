@@ -1,0 +1,43 @@
+// 400_169: cross-boundary splice hygiene. The inline cut-1 splice shares one
+// frame with the producer's raw-|zig locals (400_151, non-hygienic by design).
+// When a CONSUMER branch binding has the same name as a PRODUCER local, the
+// spliced `const <binding>` would shadow it — a collision neither author can see
+// across a library boundary (surfaced by koru-libs vaxis: the loop's `|k|` vs an
+// app's `! key k`).
+//
+// INTENDED FIX (2026-07-19): the splice site-unique-renames the consumer binding
+// when its name occurs as a token in the spliced producer body, rewriting its
+// uses in the guard and body (emitExpression honors ctx.splice_binding_rename).
+// Green would prove the rename; a regression would be Zig "shadows local".
+//
+// STATUS: currently RED on main (honest pin). The rename is NOT working here —
+// expected `got 0/10/20`, actual `got 0/1/2`: the consumer's `const k` still
+// binds the producer's live `var k` instead of its own computed payload. The
+// fix is unlanded/regressed on main (its home is the effect-branch-inline-scope
+// branch). This pin documents the shadow-hygiene bug until that fix lands.
+// (Adopted 2026-07-19: original author's session gone; kept as a legit pin.)
+//
+// Here the producer proc has `var k`, and the consumer binds `! key k` — same
+// name. The fire is inside `var k`'s scope, so a naive `const k = ...` shadows.
+~import std/io
+
+~pub event pump {}
+! ?key i64
+| done i64
+
+~proc pump|zig {
+    var k: i64 = 0;
+    var sum: i64 = 0;
+    while (k < 3) : (k += 1) {
+        // Payload is a COMPUTED expr over the producer's `k` (not `k` itself,
+        // which would pun) — so the consumer's `const k = <expr>` genuinely
+        // shadows `var k` unless the splice renames it.
+        key(k * 10);
+        sum += k;
+    }
+    return .{ .done = sum };
+}
+
+~pump()
+! key k |> std/io:print.ln("got {{ k:d }}")
+| done r |> std/io:print.ln("sum {{ r:d }}")

@@ -1,0 +1,21 @@
+// Design call #3: the pun hard-gates on TYPE (phantom-inclusive). A binding
+// named `text` exists but is `i64` (from tick's `-> i64`); `render-at`'s
+// `text` param is `string`. Name matches, type does not => hard koru
+// diagnostic at the boundary, never a Zig type error from generated code.
+//
+// DEFERRED (honest red until then): today the pun fires (name matches) and the
+// mismatch is correctly REJECTED, but at the Zig boundary ("expected
+// '[]const u8', found 'i64'") rather than with a koru-level diagnostic. The
+// clean rejection is redeemed by the future general arg-validation pass, scoped
+// to pure `.k` files — in `.kz`, host binds can be opaque to Koru, so the full
+// type registry only exists for pure Koru. See the inline-scalar-bind-pun
+// session; this pin turns green when that pass lands.
+const std = @import("std");
+
+~event tick {} -> i64
+~proc tick|zig { return 1; }
+
+~event render-at { x: i64, text: string }
+~proc render-at|zig { std.debug.print("{d}:{s}\n", .{ x, text }); }
+
+~tick(): text |> render-at(x: 5)

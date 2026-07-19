@@ -378,6 +378,35 @@ fn splitTrailingReturnArrow(self: *Parser, s: []const u8) !ReturnArrowSplit {
     return .{ .head = head, .return_type = return_type, .return_phantom = return_phantom };
 }
 
+/// A `-> { ... }` type string carrying exactly ONE top-level field. Such a
+/// single-field record collapses to the scalar (`-> T`) in every produce
+/// position — bare return (`-> { a }`, 210_149) and effect-arm resume
+/// (`! ask -> { a }`, 210_150) — the produce-side twin of the single-field
+/// branch-payload rule (2032/8680). Legal forms are the scalar `-> T` or a
+/// multi-field record `-> { a, b, ... }`. Returns false for scalars (no
+/// braces), empty braces (a distinct error), and 2+-field records.
+fn isSingleFieldRecordType(t: []const u8) bool {
+    const s = std.mem.trim(u8, t, " \t");
+    if (s.len < 2 or s[0] != '{' or s[s.len - 1] != '}') return false;
+    const inner = std.mem.trim(u8, s[1 .. s.len - 1], " \t");
+    if (inner.len == 0) return false;
+    // Count top-level fields = top-level commas + 1 (commas nested in
+    // <>/{}/[]/() — e.g. a phantom `*H<owned!>` or nested record — don't split).
+    var depth: i32 = 0;
+    var fields: usize = 1;
+    for (inner) |c| {
+        switch (c) {
+            '<', '{', '[', '(' => depth += 1,
+            '>', '}', ']', ')' => depth -= 1,
+            ',' => if (depth == 0) {
+                fields += 1;
+            },
+            else => {},
+        }
+    }
+    return fields == 1;
+}
+
 /// Find '{' at top level (not inside (), [] or strings)
 /// startsWithKeyword: true iff `s` begins with `keyword` AND the next char is
 /// a non-identifier (whitespace / `{` / `(` / EOL). Prevents `~process_int`
@@ -2048,6 +2077,22 @@ pub const Parser = struct {
                 .{ br.name, br.payload.fields[0].type, br.name, br.payload.fields[0].name, br.payload.fields[0].type },
             );
             return error.ParseError;
+        }
+
+        // Single-field record RETURN (`-> { a: i64 }`) collapses to the scalar
+        // `-> i64` — the produce-side sibling of the single-field branch payload
+        // above; only a 2+-field record earns the braces. (210_149)
+        if (return_type) |rt| {
+            if (isSingleFieldRecordType(rt)) {
+                try self.reporter.addError(
+                    .PARSE003,
+                    event_line_index + 1,
+                    1,
+                    "single field in record return `{s}` — collapse to the scalar `-> <type>`; a record return is for two or more fields",
+                    .{rt},
+                );
+                return error.ParseError;
+            }
         }
 
         // Copy annotations verbatim — comptime is explicit, never synthesized.
@@ -4670,6 +4715,25 @@ pub const Parser = struct {
                 }
             }
 
+            // Point-free chain over multiple lines: `~head = step` followed by
+            // indented `|> step` lines. Stitch those steps onto inv_str so the
+            // existing inline-chain machinery (has_inline_chain →
+            // parseInlineContinuation, which itself grabs base-indent handlers
+            // via parseContinuations) handles the chain AND the dedented choke
+            // below it. Stops at the first non-`|>` line (a `| branch` choke) or
+            // a dedent to the head level.
+            {
+                const head_indent = lexer.getIndent(line);
+                while (self.current < self.lines.len) {
+                    const nl = self.lines[self.current];
+                    const nt = lexer.trim(nl);
+                    if (nt.len < 2 or nt[0] != '|' or nt[1] != '>') break;
+                    if (lexer.getIndent(nl) <= head_indent) break;
+                    inv_str = try std.fmt.allocPrint(self.allocator, "{s} {s}", .{ inv_str, nt });
+                    self.current += 1;
+                }
+            }
+
             const invocation = try self.parseEventInvocation(inv_str);
 
             // If body has an inline |> chain (e.g. `head() |> tail() | branch ...`),
@@ -5506,18 +5570,15 @@ pub const Parser = struct {
         var cont: ast.Continuation = undefined;
 
         if (lexer.startsWith(after_bar, ">")) {
-            // `|>` is inline glue only — it never starts a line.
-            try self.reporter.addErrorWithHintAndSpan(
-                .KORU010,
-                location.line,
-                location.column,
-                2,
-                "'|>' cannot start a line",
-                .{},
-                "'|>' is inline glue, never a line start — it joins a branch handler to its body and chains steps on one line.\n        • Keep the chain inline regardless of length.\n        • If a step ends in a multi-line {{ }} block, put the next |> on the same line as that block's closing }} :  pairwise {{ ... }} |> self {{ ... }}\n        • Void chains may instead split into separate top-level statements (~A() then ~B()).\n        • Drop a trailing |> _ if the head already suffices.",
-                .{},
-            );
-            return error.ParseError;
+            // Line-start `|>` continues the preceding flow as a pipeline step
+            // (point-free chain). Route to the pipeline-continuation parser —
+            // its own step validation still rejects `|> _` and bare-value junk
+            // (KORU103). Return directly: the branch post-processing below would
+            // clobber the pipeline parser's chained-step continuations.
+            const step_content = lexer.trim(after_bar[1..]);
+            var pcont = try self.parsePipelineContinuationBase(step_content, indent, location);
+            pcont.kind = branch_kind;
+            return pcont;
         } else if (lexer.startsWith(after_bar, "*")) {
             // Deref continuation (`| *<binding>`) — REMOVED. The deferred/deref
             // mechanism for first-class events is retired (repudiated 2026-07-15):
@@ -5557,18 +5618,14 @@ pub const Parser = struct {
         var cont: ast.Continuation = undefined;
 
         if (lexer.startsWith(after_bar, ">")) {
-            // `|>` is inline glue only — it never starts a line.
-            try self.reporter.addErrorWithHintAndSpan(
-                .KORU010,
-                location.line,
-                location.column,
-                2,
-                "'|>' cannot start a line",
-                .{},
-                "'|>' is inline glue, never a line start — it joins a branch handler to its body and chains steps on one line.\n        • Keep the chain inline regardless of length.\n        • If a step ends in a multi-line {{ }} block, put the next |> on the same line as that block's closing }} :  pairwise {{ ... }} |> self {{ ... }}\n        • Void chains may instead split into separate top-level statements (~A() then ~B()).\n        • Drop a trailing |> _ if the head already suffices.",
-                .{},
-            );
-            return error.ParseError;
+            // Line-start `|>` continues the preceding flow as a pipeline step
+            // (point-free chain). Route to the pipeline-continuation parser,
+            // which handles its own chained tail; its step validation still
+            // rejects `|> _` and bare-value junk (KORU103).
+            const step_content = lexer.trim(after_bar[1..]);
+            var pcont = try self.parsePipelineContinuationBase(step_content, indent, location);
+            pcont.kind = branch_kind;
+            return pcont;
         } else if (lexer.startsWith(after_bar, "*")) {
             // Deref continuation (`| *<binding>`) — REMOVED. The deferred/deref
             // mechanism for first-class events is retired (repudiated 2026-07-15):
@@ -7233,6 +7290,23 @@ pub const Parser = struct {
         // discard — it never introduces a bare VALUE. A value (literal, arithmetic,
         // bare identifier, …) is PRODUCED with `->`. This kills the old
         // `! v p |> p.acc + 1` resume spelling in favour of `! v p -> p.acc + 1`.
+        //
+        // Point-free chain (option A): a bare identifier-PATH after `|>`
+        // (`stage-b`, `std/io:print`) is a PROVISIONAL invocation whose args
+        // thread in — accept it here; the desugar resolves it to an event and
+        // errors if it isn't one. A value/expression (spaces, operators, a
+        // leading digit, literals) still falls through to KORU103 below.
+        bare_ident: {
+            const bare = lexer.trim(clean_content);
+            if (bare.len == 0) break :bare_ident;
+            if (!(std.ascii.isAlphabetic(bare[0]) or bare[0] == '_')) break :bare_ident;
+            for (bare) |c| {
+                if (std.ascii.isAlphanumeric(c) or c == '_' or c == '-' or c == '.' or c == ':' or c == '/') continue;
+                break :bare_ident;
+            }
+            return ast.Step{ .invocation = try self.parseEventInvocation(clean_content) };
+        }
+
         if (!std.mem.eql(u8, clean_content, "_")) {
             try self.reporter.addError(
                 .KORU103,
@@ -8383,6 +8457,21 @@ pub const Parser = struct {
                     branch_start = lexer.trim(branch_start[0..idx]);
                     break;
                 }
+            }
+        }
+
+        // Single-field record resume (`! ask -> { a: i64 }`) collapses to the
+        // scalar `! ask -> i64`; only a 2+-field record earns the braces. (210_150)
+        if (resume_type) |rt| {
+            if (isSingleFieldRecordType(rt)) {
+                try self.reporter.addError(
+                    .PARSE003,
+                    self.current - 1,
+                    1,
+                    "single field in record resume `{s}` — collapse to the scalar `-> <type>`; a record resume is for two or more fields",
+                    .{rt},
+                );
+                return error.ParseError;
             }
         }
 
