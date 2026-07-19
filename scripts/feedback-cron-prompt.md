@@ -18,9 +18,13 @@ Then post one digest to Discord. Work calmly.
 
 Repos:
 - Feedback CLI + Discord webhook: `~/src/korulang_org`
-- Koru compiler / tests / docs (where fixes land): `~/src/koru`
+- Koru compiler / tests / docs (where fixes land): the dedicated worktree at
+  `~/.koru-feedback-cron/worktree`, already on today's `feedback-auto/<date>`
+  branch. This — **not** `~/src/koru` — is your working copy of the koru repo;
+  `~/src/koru` is the shared main checkout and you must never touch its branch.
 
-**Read `~/src/koru/CLAUDE.md` before changing anything in that repo** —
+**Read `~/.koru-feedback-cron/worktree/CLAUDE.md` before changing anything in
+that repo** —
 greenfield rules apply, you are working on a compiler, and its cardinal
 disciplines bind you: build things *through the toolchain*, never fake output
 with a script, never route around a toolchain bug, pin bugs as failing
@@ -82,7 +86,7 @@ through the toolchain**:
 Verify as you go:
 
 ```bash
-cd ~/src/koru && ./run_regression.sh <test-id> --cache
+cd ~/.koru-feedback-cron/worktree && ./run_regression.sh <test-id> --cache
 ```
 
 Before committing, run the affected tests — and a broader
@@ -91,13 +95,15 @@ stdlib — and confirm you have not introduced a regression. If a change breaks
 something you cannot cleanly resolve, back that item's change out and describe
 the wall in the digest — honestly, never as a fake success.
 
-## Step 5 — Commit on a dated branch (never push, never main)
+## Step 5 — Commit on the dated branch (never push, never main)
 
-Commit all landed maintainer work together on a dated branch off `main`:
+You are **already** on today's `feedback-auto/<date>` branch inside the
+dedicated worktree — the wrapper created it for you. Do **not** run `git switch`,
+`git checkout -b`, or `git worktree`; that would touch the shared checkout.
+Just stage and commit all landed maintainer work together, right here:
 
 ```bash
-cd ~/src/koru
-git switch -c feedback-auto/$(date +%Y-%m-%d) 2>/dev/null || git switch feedback-auto/$(date +%Y-%m-%d)
+cd ~/.koru-feedback-cron/worktree
 git add -A
 git commit -m "fix(feedback): maintainer triage <date> — <item ids>" \
   -m "Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
