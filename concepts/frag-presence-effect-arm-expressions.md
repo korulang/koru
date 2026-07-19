@@ -96,20 +96,26 @@ arm that reaches the inline path breaks under the same body text. One body canno
 satisfy both paths; a guarded-only (catch-all-free) consumer is inline-eligible,
 a guard-group / catch-all keeps the call path.
 
-Conservative fix (committed with this evolution): `procRefsOptionalArmAsValue`
-excludes value-form proc bodies from inline eligibility, routing them to the
-handler path that supports them (pin 400_168). This is a router, not a contract —
-the canonical resolution is still open (below).
+RESOLUTION (ruled + implemented 2026-07-19, "Option B"): a YIELDING optional arm
+is a **callable** — the body calls it directly (`ready()`, `key(payload)`), and
+`emitOptionalArmNullableAlias` binds it as an always-callable alias whose absent
+case is a **producer-side no-op** (`else struct { fn __koru_noop(...) void {} }`)
+— NOT installed in `__H`, so presence truth is untouched. A RESUMING arm (`-> T`)
+stays nullable, because absence has no value to fabricate and you can't optimize
+away a call whose result you need (400_148). One contract across both lowerings;
+the body's spelling no longer depends on which path the consumer's branch shape
+picks. It lowers to plain calls / comptime-folded no-ops — zero runtime machinery.
+The earlier `procRefsOptionalArmAsValue` router is now inert (no yielding body
+uses the value form); converting it into a koru-level diagnostic that teaches
+`ready()` is a follow-up (Fable-plan step 3).
 
 ## Open questions
 
 - JS target: presence should be native truthiness on the handlers object —
   unverified, designed for the Zig target first.
-- **Canonical invocation contract (open ruling):** unify the two paths on ONE
-  invocation form for yielding optional arms so the body's spelling no longer
-  depends on which path the consumer picks. Leaning (a Fable design proposal
-  explores it): direct-call is canonical for yielding arms — the emitter binds an
-  always-callable alias whose absent case is a producer-side no-op — while the
-  nullable form stays for RESUMING arms (absence has no value to fabricate). When
-  ruled, `procRefsOptionalArmAsValue` converts from a router into a koru-level
-  wall that teaches the direct-call form.
+- **Follow-ups after Option B landed:** (1) convert the now-inert
+  `procRefsOptionalArmAsValue` router into a koru-level diagnostic that teaches
+  `ready()` when a yielding arm is referenced as a value (Fable-plan step 3);
+  (2) harden the `|template|zig` pump alias site, which still assumes a third
+  shape (step 4). Neither is required for correctness — Option B is complete and
+  green.

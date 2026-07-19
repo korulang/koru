@@ -1,23 +1,18 @@
 // 400_168: a GUARDED-ONLY effect branch (`! beep n when n > 3`, no catch-all
-// `! beep _`) must NOT drop the optional-branch callable-alias prelude that the
-// inlined proc body needs for its SIBLING branches.
+// `! beep _`) composes with sibling YIELDING optional arms through the inline
+// cut-1 splice — because a yielding arm is invoked by DIRECT CALL.
 //
-// BUG (pinned 2026-07-18, currently RED): when a consumer handles an effect
-// branch with only a `when`-guarded arm and no catch-all, the emitter drops the
-// entire alias prelude
-//     const tick: ?*const fn () void = if (@hasDecl(__H, "tick")) &__H.tick else null;
-// from the spliced `run|zig` body, so the SIBLING branch's callable (`tick`)
-// becomes `use of undeclared identifier 'tick'` in generated Zig — a raw
-// host-level leak, not a koru-level diagnostic.
+// HISTORY: this pinned the guarded-branch-drops-prelude bug. A guarded-only
+// consumer made the event inline-eligible, and the inline splice bound no
+// callable for the body's `if (tick) |f| f()` (the nullable-fn-ptr form) —
+// leaking a raw Zig `undeclared identifier 'tick'`.
 //
-// Isolated from koru-libs/vaxis (hello_vaxis.kz): the same wrapper builds when
-// the consumer adds a `! key _` catch-all and fails when it uses only a guarded
-// `! key ... when`. Single variable = the catch-all.
-//
-// RULING (2026-07-18): guarded-only effect branches are LEGAL — effect branches
-// are optional/flexible (0, a lone arm, or many), and `when` selects which
-// firings a listener reacts to. So the fix is emitter-side: emit the prelude
-// regardless of branch exhaustiveness.
+// RESOLUTION (ruled 2026-07-19, Option B): a YIELDING optional arm is a
+// callable, invoked directly (`tick()`, `beep(7)`); an omitted handler is a
+// producer-side no-op that optimizes away. One contract across both lowerings —
+// the body's spelling no longer depends on which path the consumer's branch
+// shape picks. (Only a RESUMING arm `-> T` stays nullable: 400_148.) So this
+// body inlines cleanly, and the guarded-only consumer arm splices as-is.
 ~import std/io
 
 ~pub event run {}
@@ -26,8 +21,8 @@
 | done i64
 
 ~proc run|zig {
-    if (tick) |f| f();
-    if (beep) |f| f(7);
+    tick();
+    beep(7);
     return .{ .done = 99 };
 }
 
