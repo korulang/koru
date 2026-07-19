@@ -1,0 +1,30 @@
+// Pins faithful choke REPLICATION over a record-construct body. The real
+// koru_std analysis choke is `| failed f => failed { f.ctx, f.message }` — a
+// record body, not a plain `=> failed f`. Replicating it across stages must
+// preserve the field values (`f.code`, `f.msg`); a lossy clone drops them,
+// leaving `f` unused (KORU100). Surfaced by dogfooding analysis on itself.
+~import std/io
+
+~pub event stage-a { code: i64 }
+| ok i64
+| failed { code: i64, msg: string }
+~proc stage-a|zig {
+    if (code < 0) return .{ .failed = .{ .code = code, .msg = "neg" } };
+    return .{ .ok = code + 1 };
+}
+
+~pub event stage-b { code: i64 }
+| ok i64
+| failed { code: i64, msg: string }
+~proc stage-b|zig { return .{ .ok = code * 2 }; }
+
+~pub event run { code: i64 }
+| ok i64
+| failed { code: i64, msg: string }
+~run = stage-a
+  |> stage-b
+| failed f => failed { f.code, f.msg }
+
+~run(code: -7)
+| ok v |> std/io:print.ln("ok {{ v:d }}")
+| failed f |> std/io:print.ln("caught {{ f.code:d }}: {{ f.msg:s }}")

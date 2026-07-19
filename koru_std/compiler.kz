@@ -1057,18 +1057,12 @@ pub const CompilerContext = struct {
 | ctx CompilerContext
 | failed { ctx: CompilerContext, message: string }
 
-~analysis = check-release-gate(ctx)
-| ctx cg |> check-structure(ctx: cg)
-  | ctx c1 |> pass-auto-discharge(ctx: c1)
-    | ctx c2 |> check-flow(ctx: c2)
-      | ctx c3 |> check-phantom-semantic(ctx: c3)
-        | ctx c4 |> check-purity(ctx: c4)
-          | ctx c5 => ctx c5
-          | failed f => failed { f.ctx, f.message }
-        | failed f => failed { f.ctx, f.message }
-      | failed f => failed { f.ctx, f.message }
-    | failed f => failed { f.ctx, f.message }
-  | failed f => failed { f.ctx, f.message }
+~analysis = check-release-gate
+  |> check-structure
+  |> pass-auto-discharge
+  |> check-flow
+  |> check-phantom-semantic
+  |> check-purity
 | failed f => failed { f.ctx, f.message }
 
 // Tap transformation segment: Insert tap invocations into AST
