@@ -1,0 +1,17 @@
+// Inline scalar-bind pun (the feature). A `: bind` names a scalar return; a
+// later stage's same-named param fills FROM that binding with no explicit
+// `text: text`. The binding is a real subtree symbol (no shadowing => unique),
+// so the pun is unambiguous. Target output: `5:punned!`.
+//
+// Currently RED: shape-checks green but the emitter drops the punned field
+// ("missing struct field: text"). This test goes green when the desugar
+// synthesizes the punned arg before the checkers, explicit-form-equivalent.
+const std = @import("std");
+
+~event get-msg {} -> string
+~proc get-msg|zig { return "punned!"; }
+
+~event render-at { x: i64, text: string }
+~proc render-at|zig { std.debug.print("{d}:{s}\n", .{ x, text }); }
+
+~get-msg(): text |> render-at(x: 5)

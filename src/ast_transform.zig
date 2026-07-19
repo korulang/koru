@@ -861,6 +861,126 @@ fn tryDesugarChain(
     return true;
 }
 
+// ============================================================================
+// Inline scalar-bind pun
+// ============================================================================
+//
+// A `: bind` names a scalar-return (or branch-payload) value; that name becomes
+// a real symbol legal through the whole subtree (Koru forbids shadowing, so the
+// name is unique). When a later invocation in that subtree declares an input
+// field of the SAME name that the call site left unfilled, the pun synthesizes
+// the explicit arg `field: field` — as if the author had typed it.
+//
+// This runs as a Stage-A desugar (after the point-free rewrite, before every
+// checker), so the synthesized arg is explicit-form-equivalent by the time the
+// structure and phantom-semantic passes see it: type and obligation validation
+// treat a punned arg identically to a hand-written one. No phantom logic lives
+// here — the pun only inserts the reference; correctness is the checkers' job.
+//
+// Scope rule: branch names are NOT durable symbols (a stage may repeat `| ctx`),
+// so they thread only one step in the point-free desugar; a `: bind` IS a
+// durable symbol, so its pun reaches its full subtree. No shadowing means the
+// in-scope match is always unique — never ambiguous.
+
+/// Entry point: synthesize binding-name puns across the program, in place.
+pub fn desugarBindingPuns(allocator: std.mem.Allocator, program: *ast.Program) !void {
+    var table = try SymbolTable.init(allocator);
+    defer table.deinit();
+    try table.buildFrom(program);
+
+    var scope = std.StringHashMap(void).init(allocator);
+    defer scope.deinit();
+    try punItemsBinding(allocator, &table, program.items, &scope);
+}
+
+fn punItemsBinding(
+    allocator: std.mem.Allocator,
+    table: *SymbolTable,
+    items: []const ast.Item,
+    scope: *std.StringHashMap(void),
+) std.mem.Allocator.Error!void {
+    for (@constCast(items)) |*item| {
+        switch (item.*) {
+            .flow => |*flow| try punContinuationBinding(allocator, table, &flow.body, scope),
+            .proc_decl => |*proc| {
+                for (@constCast(proc.inline_flows)) |*flow| {
+                    try punContinuationBinding(allocator, table, &flow.body, scope);
+                }
+            },
+            .module_decl => |*module| try punItemsBinding(allocator, table, module.items, scope),
+            else => {},
+        }
+    }
+}
+
+/// Fill this invocation's unfilled fields from in-scope bindings, then descend
+/// with this continuation's own binding added to scope for its subtree.
+fn punContinuationBinding(
+    allocator: std.mem.Allocator,
+    table: *SymbolTable,
+    cont: *ast.Continuation,
+    scope: *std.StringHashMap(void),
+) std.mem.Allocator.Error!void {
+    // 1. Fill unfilled input fields from bindings already in scope. Done BEFORE
+    //    this node's own binding is added, so a value never puns into the very
+    //    invocation that produces it.
+    if (cont.node) |*node| {
+        if (node.* == .invocation) {
+            if (table.getEventInfo(node.invocation.path)) |info| {
+                for (info.input.fields) |f| {
+                    if (argNamed(node.invocation.args, f.name)) continue;
+                    if (scope.contains(f.name)) {
+                        node.invocation.args = try appendedArgs(
+                            allocator,
+                            node.invocation.args,
+                            f.name,
+                            f.name,
+                            false,
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. Collect the durable symbols this continuation introduces into its
+    //    subtree. Three sources: a branch payload binding (`| ok x`), a scalar
+    //    return bind (`producer(): x`, stored on the invocation), and a
+    //    destructured return bind (`producer(): { a, b }`). No shadowing means
+    //    a name added here cannot already be live — but we guard anyway and
+    //    only remove names we actually added.
+    var added = try std.ArrayList([]const u8).initCapacity(allocator, 3);
+    defer added.deinit(allocator);
+    if (cont.binding) |b| {
+        if (!scope.contains(b)) {
+            try scope.put(b, {});
+            try added.append(allocator, b);
+        }
+    }
+    if (cont.node) |node| {
+        if (node == .invocation) {
+            if (node.invocation.return_binding) |rb| {
+                if (!scope.contains(rb)) {
+                    try scope.put(rb, {});
+                    try added.append(allocator, rb);
+                }
+            }
+            for (node.invocation.return_destructure) |df| {
+                if (!scope.contains(df.name)) {
+                    try scope.put(df.name, {});
+                    try added.append(allocator, df.name);
+                }
+            }
+        }
+    }
+
+    for (@constCast(cont.continuations)) |*child| {
+        try punContinuationBinding(allocator, table, child, scope);
+    }
+
+    for (added.items) |b| _ = scope.remove(b);
+}
+
 /// Replace an event invocation with its proc implementation inline
 pub fn inlineEvent(ctx: *TransformContext, invocation: *ast.Invocation, proc: *ast.ProcDecl) !void {
     // This is a complex transformation that would:
