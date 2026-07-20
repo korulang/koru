@@ -3759,3 +3759,130 @@ const std = @import("std");
         .module = allocator.dupe(u8, flow.module) catch unreachable,
     } } } };
 }
+
+// ============================================================
+// EXPLAINER — std/store reports what it DECIDED about your stores
+// ============================================================
+// The SQL-EXPLAIN move: walk the program's raw `std/store:new/watch` call-forms
+// (pre-analysis, so we see the surface the user wrote, not the lowered SoA cell)
+// and report, per store, the layout std/store ELECTED and the reactive wiring it
+// found. Every value is DERIVED from the same logic `new` uses — `is_plural` from
+// bare-vs-seeded fields, capacity from the arg, watcher count from watch flows —
+// never a hardcoded string. The `explain` command is the only caller.
+
+~[comptime|explainer]pub event explain-store {
+    program: *const Program,
+    allocator: __koru_std.mem.Allocator,
+} -> ExplainReport
+
+~proc explain-store|zig {
+    // `std` is ambient in this module's emitted namespace — redeclaring it shadows.
+    const ast = @import("ast");
+    const struct_literal = @import("struct_literal");
+
+    const StoreInfo = struct {
+        name: []const u8,
+        field_count: usize,
+        is_plural: bool,
+        capacity: ?i64,
+        watchers: usize,
+        is_entity: bool,
+    };
+
+    const Local = struct {
+        // Mirror of store.kz's isStoreInv: a top-level `std/store:<verb>(name)` flow.
+        fn storeVerbName(flow: *const ast.Flow, verb: []const u8) ?[]const u8 {
+            const iv = flow.inv();
+            if (iv.path.segments.len != 1) return null;
+            if (!std.mem.eql(u8, iv.path.segments[0], verb)) return null;
+            const mq = iv.path.module_qualifier orelse return null;
+            if (!std.mem.eql(u8, mq, "std.store")) return null;
+            for (iv.args) |a| {
+                if (std.mem.eql(u8, a.name, "expr")) {
+                    var n = a.value;
+                    if (n.len >= 2 and n[0] == '"') n = n[1 .. n.len - 1];
+                    return n;
+                }
+            }
+            return null;
+        }
+    };
+
+    var stores = std.ArrayList(StoreInfo){};
+
+    // Pass 1 — store declarations: `std/store:new(name) { fields }`.
+    for (program.items) |*item| {
+        if (item.* != .flow) continue;
+        const flow = &item.flow;
+        const name = Local.storeVerbName(flow, "new") orelse continue;
+        const iv = flow.inv();
+
+        var seed: ?[]const u8 = null;
+        var capacity: ?i64 = null;
+        for (iv.args) |a| {
+            if (std.mem.eql(u8, a.name, "source")) {
+                seed = a.value;
+            } else if (std.mem.eql(u8, a.name, "capacity")) {
+                capacity = std.fmt.parseInt(i64, a.value, 10) catch null;
+            }
+        }
+        if (seed == null) continue;
+
+        const braced = std.fmt.allocPrint(allocator, "{{{s}}}", .{seed.?}) catch continue;
+        const fields = struct_literal.parseFields(allocator, braced) catch &[_]struct_literal.StructField{};
+        var bare: usize = 0;
+        for (fields) |cf| {
+            const peeled = struct_literal.peelBaseType(cf.value);
+            if (peeled.type.len == 0) bare += 1;
+        }
+
+        var is_entity = false;
+        for (flow.annotations) |ann| {
+            if (std.mem.startsWith(u8, ann, "entity(")) is_entity = true;
+        }
+
+        stores.append(allocator, .{
+            .name = name,
+            .field_count = fields.len,
+            .is_plural = bare != 0,
+            .capacity = capacity,
+            .watchers = 0,
+            .is_entity = is_entity,
+        }) catch continue;
+    }
+
+    // Pass 2 — reactive wiring: `std/store:watch(name)`.
+    for (program.items) |*item| {
+        if (item.* != .flow) continue;
+        const wname = Local.storeVerbName(&item.flow, "watch") orelse continue;
+        for (stores.items) |*s| {
+            if (std.mem.eql(u8, s.name, wname)) s.watchers += 1;
+        }
+    }
+
+    // Build the report. One summary section + one section per store.
+    var sections = std.ArrayList(ast.ExplainReport.Section){};
+
+    const summary = allocator.alloc(ast.ExplainReport.Entry, 1) catch unreachable;
+    summary[0] = .{ .property = .{ .key = "count", .value = .{ .integer = @intCast(stores.items.len) } } };
+    sections.append(allocator, .{ .heading = "Stores", .entries = summary }) catch unreachable;
+
+    for (stores.items) |s| {
+        var es = std.ArrayList(ast.ExplainReport.Entry){};
+        es.append(allocator, .{ .property = .{ .key = "layout", .value = .{ .string = if (s.is_plural) "SoA (plural rows)" else "singleton" } } }) catch unreachable;
+        es.append(allocator, .{ .property = .{ .key = "fields", .value = .{ .integer = @intCast(s.field_count) } } }) catch unreachable;
+        if (s.capacity) |cap| {
+            es.append(allocator, .{ .property = .{ .key = "capacity", .value = .{ .integer = cap } } }) catch unreachable;
+        }
+        es.append(allocator, .{ .property = .{ .key = "watchers", .value = .{ .integer = @intCast(s.watchers) } } }) catch unreachable;
+        if (s.is_entity) {
+            es.append(allocator, .{ .note = "rows are named entities — take mints a taken-obligation the user discharges" }) catch unreachable;
+        }
+        sections.append(allocator, .{ .heading = s.name, .entries = es.toOwnedSlice(allocator) catch &.{} }) catch unreachable;
+    }
+
+    return .{
+        .title = "std/store",
+        .sections = sections.toOwnedSlice(allocator) catch &.{},
+    };
+}
