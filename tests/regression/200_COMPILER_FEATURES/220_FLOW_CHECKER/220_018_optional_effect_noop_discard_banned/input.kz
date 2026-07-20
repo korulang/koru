@@ -1,0 +1,20 @@
+// RULING 1: a no-op `_` body on an OPTIONAL effect branch is ILLEGAL.
+// `! ?tick` is optional; `! tick _ |> _` subscribes only to do nothing —
+// pure noise (just omit the handler), AND a hazard: if `tick` is later
+// promoted to REQUIRED, a no-op handler would silently swallow the event
+// instead of surfacing the must-handle error.
+//
+// STILL LEGAL (pinned elsewhere): a no-op `_` on a REQUIRED effect branch
+// (explicit handle-and-ignore carries meaning), and `! tick _ |> <action>`
+// (discard the payload but actually act).
+~import std/io
+
+~pub event poll { x: i64 }
+! ?tick i64
+| done
+
+~proc poll|zig { return .{ .done = .{} }; }
+
+~poll(x: 1)
+! tick _ |> _
+| done |> _

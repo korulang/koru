@@ -235,6 +235,63 @@ pub const BranchChecker = struct {
         allocator.free(result.duplicate_terminal_branches);
         allocator.free(result.prototype_undeclared_branches);
     }
+
+    // ========================================================================
+    // Sibling-level duplicate-handler rule — THE single source of truth.
+    //
+    // Both ShapeChecker and FlowChecker route their SHAPE002 duplicate-handler
+    // walks through this rule (they only adapt AST continuations into
+    // HandledBranch and report at the offending location). The rule is
+    // kind-aware and declaration-free:
+    //   - an effect (`!`) branch may be linked any number of times — every
+    //     link fires during the event, so repetition is composition, never
+    //     ambiguity;
+    //   - a terminal (`|`) branch is a continuation that runs at most once, so
+    //     at most ONE unguarded handler is legal at a level. A `when`-guard
+    //     chain (many guarded + one unguarded fallback) is fine — guards
+    //     narrow, they don't duplicate;
+    //   - catch-alls never count toward duplication.
+    // ========================================================================
+
+    /// The offending handler of a sibling-level duplicate: `index` is the
+    /// position of the SECOND unguarded handler of `name` in the slice handed
+    /// to `firstDuplicateSibling` (so callers can point the diagnostic at the
+    /// duplicate itself, not the level).
+    pub const SiblingDuplicate = struct {
+        index: usize,
+        name: []const u8,
+    };
+
+    /// Find the first sibling-level duplicate under the kind-aware rule above.
+    /// Returns null when the level is clean.
+    pub fn firstDuplicateSibling(handled: []const HandledBranch) ?SiblingDuplicate {
+        for (handled, 0..) |h, i| {
+            if (h.is_catchall) continue;
+            if (h.has_when_guard) continue;
+            if (h.kind == .effect) continue; // effect links may repeat freely
+            for (handled[0..i]) |p| {
+                if (p.is_catchall) continue;
+                if (p.has_when_guard) continue;
+                if (p.kind == .effect) continue;
+                if (std.mem.eql(u8, p.name, h.name)) {
+                    return .{ .index = i, .name = h.name };
+                }
+            }
+        }
+        return null;
+    }
+
+    /// SHAPE002 message for a duplicated NAMED terminal branch. Single-sourced
+    /// here so both checkers emit the identical diagnostic.
+    pub const duplicate_terminal_fmt =
+        "duplicate unguarded handler for branch '{s}' — a terminal '|' branch runs at most once, so at most one unguarded handler is allowed at a level; merge the handlers, or narrow all but one with 'when' guards (a guarded chain plus one unguarded fallback is legal)";
+
+    /// SHAPE002 message for duplicated UNNAMED `|>` pipeline steps. The parser
+    /// stitches consecutive line-start `|>` lines into one chain, so this only
+    /// fires when something interrupted the chain (a handler line or dedent
+    /// between steps) and left two loose steps at one level.
+    pub const duplicate_unnamed_msg =
+        "multiple unnamed '|>' steps at the same level — consecutive '|>' lines continue one chain only when nothing sits between them; write the steps as one '|>' chain (inline, or on consecutive '|>' continuation lines)";
 };
 
 // ============================================================================
@@ -542,6 +599,61 @@ test "for: unknown branch - invalid" {
     try std.testing.expect(!result.is_valid);
     try std.testing.expectEqual(@as(usize, 1), result.unknown_branches.len);
     try std.testing.expectEqualStrings("sideways", result.unknown_branches[0]);
+}
+
+// ============================================================================
+// SIBLING DUPLICATE RULE (firstDuplicateSibling)
+//
+// The shared sibling-level duplicate-handler rule both ShapeChecker and
+// FlowChecker route through. Kind-aware: effect links repeat freely, terminal
+// branches allow at most one unguarded handler per level.
+// ============================================================================
+
+test "sibling duplicates: two unguarded terminal handlers - duplicate" {
+    const handled = [_]BranchChecker.HandledBranch{
+        .{ .name = "done" },
+        .{ .name = "done" },
+    };
+    const dup = BranchChecker.firstDuplicateSibling(&handled) orelse return error.TestExpectedDuplicate;
+    try std.testing.expectEqual(@as(usize, 1), dup.index);
+    try std.testing.expectEqualStrings("done", dup.name);
+}
+
+test "sibling duplicates: repeated effect links - clean" {
+    const handled = [_]BranchChecker.HandledBranch{
+        .{ .name = "v", .kind = .effect },
+        .{ .name = "v", .kind = .effect },
+        .{ .name = "v", .kind = .effect },
+    };
+    try std.testing.expect(BranchChecker.firstDuplicateSibling(&handled) == null);
+}
+
+test "sibling duplicates: guarded chain plus one unguarded fallback - clean" {
+    const handled = [_]BranchChecker.HandledBranch{
+        .{ .name = "value", .has_when_guard = true },
+        .{ .name = "value", .has_when_guard = true },
+        .{ .name = "value" },
+    };
+    try std.testing.expect(BranchChecker.firstDuplicateSibling(&handled) == null);
+}
+
+test "sibling duplicates: two unnamed pipeline steps - duplicate" {
+    const handled = [_]BranchChecker.HandledBranch{
+        .{ .name = "" },
+        .{ .name = "" },
+    };
+    const dup = BranchChecker.firstDuplicateSibling(&handled) orelse return error.TestExpectedDuplicate;
+    try std.testing.expectEqual(@as(usize, 1), dup.index);
+    try std.testing.expectEqual(@as(usize, 0), dup.name.len);
+}
+
+test "sibling duplicates: catchall never counts - clean" {
+    const handled = [_]BranchChecker.HandledBranch{
+        .{ .name = "done" },
+        .{ .name = "", .is_catchall = true },
+        .{ .name = "err" },
+    };
+    try std.testing.expect(BranchChecker.firstDuplicateSibling(&handled) == null);
 }
 
 test "terminal: guarded chain plus one unguarded - valid" {

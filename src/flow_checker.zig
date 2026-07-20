@@ -147,10 +147,30 @@ pub const FlowChecker = struct {
             try self.checkExpressionPurity(&flow.body);
         }
 
-        // Check for duplicate branch handlers at each level
+        // Check for duplicate branch handlers at each level. On a hit the tree
+        // is structurally ambiguous — skip the rest of this flow's judgments
+        // (when-clause ambiguity, coverage) so one defect yields ONE diagnostic;
+        // other flows still validate, and checkSourceFile fails via the
+        // standard hasErrors → FlowValidationFailed path.
         if (!is_transform_flow) {
-            try self.checkDuplicateBranchHandlers(flow.body.continuations, location);
+            if (try self.checkDuplicateBranchHandlers(flow.body.continuations, location)) {
+                return;
+            }
         }
+
+        // KORU037 (RULING 1): ban a no-op `_` body on an OPTIONAL effect branch.
+        // Structural rule — runs in both modes so `--check` catches it at the
+        // frontend boundary (pit of success). Needs the event decl, which is in
+        // ast_items during both passes.
+        if (!is_transform_flow) {
+            if (try self.checkOptionalEffectNoop(flow)) return;
+        }
+
+        // The declared branches of the event this flow invokes — threaded into
+        // the when-clause checker so RULING 2 can tell an OPTIONAL effect branch
+        // (no else required) from a required/terminal one (else required).
+        const flow_decl = self.findEventDecl(&flow.inv().path);
+        const flow_branches: []const ast.Branch = if (flow_decl) |d| d.branches else &.{};
 
         // When-clause checks judge AMBIGUITY, and ambiguity only exists after
         // transforms have consumed their same-named branches (comptime data —
@@ -159,7 +179,7 @@ pub const FlowChecker = struct {
         // invocations (like ~tap) which use fan-out semantics.
         if (self.mode == .all and !is_transformed and !is_transform_flow) {
             // Validate when-clause exhaustiveness for all continuations (KORU050, KORU051)
-            try self.validateWhenClauseExhaustiveness(flow.body.continuations, location);
+            try self.validateWhenClauseExhaustiveness(flow.body.continuations, location, flow_branches);
         }
 
         // The flow HEAD's bind-position destructure (`~f(): { name, age } |> ...`)
@@ -914,7 +934,16 @@ pub const FlowChecker = struct {
         if (cont.is_transformed_subtree) return;
         // Validate when-clauses in nested continuations
         if (cont.continuations.len > 0) {
-            try self.validateWhenClauseExhaustiveness(cont.continuations, location);
+            // These continuations handle the event invoked by `cont.node`; look
+            // up its declared branches so RULING 2 (optional effect → no else
+            // required) applies at nested depth too.
+            const nested_branches: []const ast.Branch = blk: {
+                const node = cont.node orelse break :blk &.{};
+                if (node != .invocation) break :blk &.{};
+                const d = self.findEventDecl(&node.invocation.path) orelse break :blk &.{};
+                break :blk d.branches;
+            };
+            try self.validateWhenClauseExhaustiveness(cont.continuations, location, nested_branches);
 
             // Recursively validate deeper nesting
             for (cont.continuations) |*nested| {
@@ -923,7 +952,42 @@ pub const FlowChecker = struct {
         }
     }
 
-    fn validateWhenClauseExhaustiveness(self: *FlowChecker, continuations: []const ast.Continuation, location: errors.SourceLocation) !void {
+    /// RULING 1 — a no-op `_` body on an OPTIONAL effect branch is illegal.
+    /// Returns true (and reports KORU037) when the flow contains one, so the
+    /// caller short-circuits the rest of this flow's judgments. Subscribing to
+    /// an optional effect only to do nothing is pure noise (omit the handler),
+    /// AND a hazard: if the branch is later promoted to REQUIRED, a no-op
+    /// handler would silently swallow the event instead of surfacing the
+    /// must-handle error. A no-op `_` on a REQUIRED effect branch stays legal
+    /// (handle-and-ignore carries meaning), and `! b _ |> <action>` stays legal
+    /// (discard the payload but actually act — the body is not `_`).
+    fn checkOptionalEffectNoop(self: *FlowChecker, flow: *const ast.Flow) !bool {
+        const decl = self.findEventDecl(&flow.inv().path) orelse return false;
+        var found = false;
+        for (flow.body.continuations) |*cont| {
+            if (cont.kind != .effect) continue;
+            const node = cont.node orelse continue;
+            if (node != .terminal) continue; // body must be a bare `_` no-op
+            for (decl.branches) |b| {
+                if (!std.mem.eql(u8, b.name, cont.branch)) continue;
+                if (b.kind != .effect or !b.is_optional) continue;
+                try self.reporter.addErrorAtLocationWithHint(
+                    .KORU037,
+                    cont.location,
+                    "no-op `_` body on optional effect branch '{s}' — subscribing to an optional effect only to do nothing is pure noise",
+                    .{cont.branch},
+                    "omit the handler entirely. A no-op is also a hazard: if '{s}' is later promoted to REQUIRED, this handler would silently swallow the event instead of surfacing the must-handle error. To act, replace `_` with a real step; to intentionally handle-and-ignore, the branch must be REQUIRED (drop the `?`), not optional.",
+                    .{cont.branch},
+                );
+                found = true;
+            }
+        }
+        // Reporter carries the failure; checkSourceFile fails via hasErrors →
+        // FlowValidationFailed. Return whether to short-circuit this flow.
+        return found;
+    }
+
+    fn validateWhenClauseExhaustiveness(self: *FlowChecker, continuations: []const ast.Continuation, location: errors.SourceLocation, declared: []const ast.Branch) !void {
         if (continuations.len == 0) return;
 
         // Group continuations by branch name
@@ -962,6 +1026,13 @@ pub const FlowChecker = struct {
             }
 
             if (else_count == 0) {
+                // RULING 2: an OPTIONAL EFFECT branch needs no else. Unmatched
+                // guards falling through to nothing is exactly what "optional"
+                // means — the effect simply isn't handled that fire, which the
+                // optional contract permits. (KORU050 still applies to required
+                // and terminal branches, where exhaustiveness matters.)
+                if (isOptionalEffectBranchGroup(declared, branch_name, branch_continuations)) continue;
+
                 // ERROR: Not exhaustive - missing else case
                 log.debug("ERROR: Branch '{s}' has {d} when-clauses but no else case (non-exhaustive)\n",
                     .{branch_name, branch_continuations.len});
@@ -986,6 +1057,27 @@ pub const FlowChecker = struct {
             }
             // else: exactly one else case - valid!
         }
+    }
+
+    /// RULING 2 predicate: is this branch group an OPTIONAL EFFECT branch?
+    /// True when the group's handlers are effect (`!`) continuations AND the
+    /// declared branch of that name is both `.effect` and `.is_optional`. Such
+    /// a branch requires no unguarded else — guards that all miss simply leave
+    /// the optional effect unhandled, which its contract allows.
+    fn isOptionalEffectBranchGroup(
+        declared: []const ast.Branch,
+        branch_name: []const u8,
+        group: []const *const ast.Continuation,
+    ) bool {
+        // Handlers must actually be effect continuations.
+        for (group) |cont| {
+            if (cont.kind != .effect) return false;
+        }
+        for (declared) |b| {
+            if (!std.mem.eql(u8, b.name, branch_name)) continue;
+            return b.kind == .effect and b.is_optional;
+        }
+        return false;
     }
 
     /// Validate branch coverage: all required branches must be handled
@@ -1148,33 +1240,54 @@ pub const FlowChecker = struct {
         return null;
     }
 
-    /// Check for duplicate branch handlers at the same level (indentation error)
-    /// This catches patterns like:
-    ///   | done sum |> multiply(...)
-    ///   | done product |> done { ... }
-    /// Where both | done are at the same indent but the second should be nested under the first.
-    fn checkDuplicateBranchHandlers(self: *FlowChecker, continuations: []const ast.Continuation, location: errors.SourceLocation) !void {
-        // Check for duplicates at this level
-        for (continuations, 0..) |cont, i| {
-            for (continuations[i + 1 ..]) |other| {
-                if (std.mem.eql(u8, cont.branch, other.branch)) {
-                    // When-clauses allow multiple handlers for the same branch:
-                    //   | high h when (h.x > 10) |> ...
-                    //   | high h when (h.x > 5) |> ...
-                    //   | high |> ...  (else case)
-                    if (cont.condition != null or other.condition != null) continue;
+    /// Check for duplicate branch handlers at the same level. The RULE lives in
+    /// BranchChecker.firstDuplicateSibling (the single source of truth shared
+    /// with ShapeChecker): effect (`!`) links may repeat freely; a terminal
+    /// (`|`) branch allows at most one unguarded handler per level; guards and
+    /// catch-alls never count. This adapter only converts siblings, reports at
+    /// the offending continuation's own source location, and recurses — it
+    /// NEVER returns a raw error (the reporter carries the failure; callers
+    /// fail via the standard hasErrors → FlowValidationFailed path). Returns
+    /// true when any duplicate was reported, so the caller can short-circuit
+    /// judgments that would re-describe the same defect.
+    fn checkDuplicateBranchHandlers(self: *FlowChecker, continuations: []const ast.Continuation, location: errors.SourceLocation) !bool {
+        var found = false;
+        var handled = try std.ArrayList(branch_checker.BranchChecker.HandledBranch).initCapacity(
+            self.allocator,
+            continuations.len,
+        );
+        defer handled.deinit(self.allocator);
+        for (continuations) |cont| {
+            try handled.append(self.allocator, .{
+                .name = cont.branch,
+                .has_when_guard = cont.condition != null,
+                .is_catchall = cont.is_catchall,
+                .kind = if (cont.kind == .effect) .effect else .terminal,
+            });
+        }
 
-                    // Found duplicate branch at same level - this is an error
-                    try self.reporter.addError(
-                        .SHAPE002,
-                        location.line,
-                        location.column,
-                        "duplicate handler for branch '{s}' at same indentation level - if the second handles a chained event's result, indent it further",
-                        .{cont.branch},
-                    );
-                    return error.DuplicateBranchHandler;
-                }
+        if (branch_checker.BranchChecker.firstDuplicateSibling(handled.items)) |dup| {
+            // Point at the duplicate handler itself; fall back to the flow's
+            // location when the continuation carries no coordinates (synthesized
+            // nodes).
+            const cont = continuations[dup.index];
+            const loc = if (cont.location.line != 0) cont.location else location;
+            if (dup.name.len == 0) {
+                try self.reporter.addErrorAtLocation(
+                    .SHAPE002,
+                    loc,
+                    branch_checker.BranchChecker.duplicate_unnamed_msg,
+                    .{},
+                );
+            } else {
+                try self.reporter.addErrorAtLocation(
+                    .SHAPE002,
+                    loc,
+                    branch_checker.BranchChecker.duplicate_terminal_fmt,
+                    .{dup.name},
+                );
             }
+            found = true;
         }
 
         // Recursively check nested continuations
@@ -1185,9 +1298,13 @@ pub const FlowChecker = struct {
             // apply. Mirrors the flow-level `is_transform_flow` skip.
             if (cont.is_transformed_subtree) continue;
             if (cont.continuations.len > 0) {
-                try self.checkDuplicateBranchHandlers(cont.continuations, location);
+                if (try self.checkDuplicateBranchHandlers(cont.continuations, location)) {
+                    found = true;
+                }
             }
         }
+
+        return found;
     }
 };
 
@@ -1205,7 +1322,7 @@ test "when-clause exhaustiveness - single continuation" {
     };
 
     const location = errors.SourceLocation{ .file = "test.kz", .line = 1, .column = 1 };
-    try checker.validateWhenClauseExhaustiveness(&continuations, location);
+    try checker.validateWhenClauseExhaustiveness(&continuations, location, &.{});
 
     try std.testing.expect(!reporter.hasErrors());
 }
@@ -1225,7 +1342,7 @@ test "when-clause exhaustiveness - valid with else" {
     };
 
     const location = errors.SourceLocation{ .file = "test.kz", .line = 1, .column = 1 };
-    try checker.validateWhenClauseExhaustiveness(&continuations, location);
+    try checker.validateWhenClauseExhaustiveness(&continuations, location, &.{});
 
     try std.testing.expect(!reporter.hasErrors());
 }
@@ -1244,7 +1361,7 @@ test "when-clause exhaustiveness - missing else" {
     };
 
     const location = errors.SourceLocation{ .file = "test.kz", .line = 1, .column = 1 };
-    try checker.validateWhenClauseExhaustiveness(&continuations, location);
+    try checker.validateWhenClauseExhaustiveness(&continuations, location, &.{});
 
     try std.testing.expect(reporter.hasErrors());
 }
@@ -1264,7 +1381,7 @@ test "when-clause exhaustiveness - ambiguous else" {
     };
 
     const location = errors.SourceLocation{ .file = "test.kz", .line = 1, .column = 1 };
-    try checker.validateWhenClauseExhaustiveness(&continuations, location);
+    try checker.validateWhenClauseExhaustiveness(&continuations, location, &.{});
 
     try std.testing.expect(reporter.hasErrors());
 }

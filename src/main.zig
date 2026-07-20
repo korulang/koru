@@ -7399,7 +7399,15 @@ pub fn main() !void {
     // structure and phantom-semantic passes validate a punned arg exactly like
     // a hand-written one. Runs after the point-free rewrite so the canonical
     // pyramid's own explicit args are already in place.
-    try ast_transform.desugarBindingPuns(parse_allocator, &source_file);
+    try ast_transform.desugarBindingPuns(parse_allocator, &source_file, &parser.reporter);
+    // RULING 3: a bare pun of a formatted-result struct into a scalar param
+    // (KORU038) is reported here, at the koru level, before it can reach the
+    // emitter and leak a raw Zig type error.
+    if (parser.reporter.hasErrors()) {
+        const stderr_writer = FileWriter{ .file = std.fs.File.stderr() };
+        try parser.reporter.printErrors(stderr_writer);
+        std.process.exit(1);
+    }
 
     // Purity checking pass
     var purity_check = PurityChecker.init(compile_allocator);
@@ -7411,7 +7419,10 @@ pub fn main() !void {
     var flow_check = try FlowChecker.initWithMode(compile_allocator, &parser.reporter, .frontend);
     defer flow_check.deinit();
     flow_check.checkSourceFile(&source_file) catch |err| {
-        if (err == error.FlowValidationFailed) {
+        // Any checker failure with diagnostics pending must present them as
+        // koru diagnostics — a raw Zig error must never reach the user when a
+        // real diagnostic exists (only genuine ICEs propagate raw).
+        if (parser.reporter.hasErrors()) {
             const stderr_writer = FileWriter{ .file = std.fs.File.stderr() };
             try parser.reporter.printErrors(stderr_writer);
             std.process.exit(1);

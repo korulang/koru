@@ -126,23 +126,41 @@ pub const ShapeChecker = struct {
         event_branches: []const ast.Branch,
         continuations: []const ast.Continuation,
     ) !bool {
-        // Check for DUPLICATE branch handlers at the same level
-        // This catches incorrect indentation where someone writes:
-        //   | done x |> event1()
-        //   | done y |> event2()   <- WRONG: should be indented if handling event1's done
-        for (continuations, 0..) |cont, i| {
-            for (continuations[i + 1 ..]) |other| {
-                if (std.mem.eql(u8, cont.branch, other.branch)) {
-                    // Duplicate branch handler!
-                    try self.reporter.addError(
+        // Check for DUPLICATE branch handlers at the same level — routed
+        // through the shared kind-aware rule (BranchChecker.firstDuplicateSibling),
+        // same source of truth as checkDuplicateBranchHandlers.
+        {
+            var handled = try std.ArrayList(branch_checker.BranchChecker.HandledBranch).initCapacity(
+                self.allocator,
+                continuations.len,
+            );
+            defer handled.deinit(self.allocator);
+            for (continuations) |cont| {
+                try handled.append(self.allocator, .{
+                    .name = cont.branch,
+                    .has_when_guard = cont.condition != null,
+                    .is_catchall = cont.is_catchall,
+                    .kind = if (cont.kind == .effect) .effect else .terminal,
+                });
+            }
+            if (branch_checker.BranchChecker.firstDuplicateSibling(handled.items)) |dup| {
+                const cont = continuations[dup.index];
+                if (dup.name.len == 0) {
+                    try self.reporter.addErrorAtLocation(
                         .SHAPE002,
-                        0,
-                        0,
-                        "Duplicate handler for branch '{s}'. If the second handler is for a chained event's result, it must be indented further.",
-                        .{cont.branch},
+                        cont.location,
+                        branch_checker.BranchChecker.duplicate_unnamed_msg,
+                        .{},
                     );
-                    return false;
+                } else {
+                    try self.reporter.addErrorAtLocation(
+                        .SHAPE002,
+                        cont.location,
+                        branch_checker.BranchChecker.duplicate_terminal_fmt,
+                        .{dup.name},
+                    );
                 }
+                return false;
             }
         }
 
@@ -1883,8 +1901,13 @@ pub const ShapeChecker = struct {
             }
         }
 
-        // Check for duplicate branch handlers at each level (recursively)
-        try self.checkDuplicateBranchHandlers(flow.body.continuations);
+        // Check for duplicate branch handlers at each level (recursively). On a
+        // hit the tree is structurally ambiguous — the coverage checks below
+        // would only re-describe the same defect, so stop here; the SHAPE002 is
+        // already reported and ValidationFailed keeps the failure loud.
+        if (try self.checkDuplicateBranchHandlers(flow.body.continuations)) {
+            return error.ValidationFailed;
+        }
 
         // Inline flows with super_shape create union types - different validation
         if (flow.super_shape) |_| {
@@ -1949,26 +1972,50 @@ pub const ShapeChecker = struct {
         _ = proc_event;
     }
 
-    /// Check for duplicate branch handlers at the same level (recursively)
-    /// This catches incorrect indentation like:
-    ///   | done x |> event1()
-    ///   | done y |> event2()   <- WRONG: should be indented if handling event1's done
-    fn checkDuplicateBranchHandlers(self: *ShapeChecker, continuations: []const ast.Continuation) !void {
-        // Check for duplicates at this level
-        for (continuations, 0..) |cont, i| {
-            for (continuations[i + 1 ..]) |other| {
-                if (std.mem.eql(u8, cont.branch, other.branch)) {
-                    // Duplicate branch handler!
-                    try self.reporter.addError(
-                        .SHAPE002,
-                        0,
-                        0,
-                        "Duplicate handler for branch '{s}'. If the second handler is for a chained event's result, it must be indented further.",
-                        .{cont.branch},
-                    );
-                    return error.DuplicateBranchHandler;
-                }
+    /// Check for duplicate branch handlers at the same level (recursively).
+    /// The RULE lives in BranchChecker.firstDuplicateSibling — the single
+    /// source of truth shared with FlowChecker: effect (`!`) links may repeat
+    /// freely; a terminal (`|`) branch allows at most one unguarded handler
+    /// per level; guards and catch-alls never count. This adapter converts
+    /// siblings, reports at the offending continuation's own source location,
+    /// and recurses — it NEVER returns a raw error (the reporter carries the
+    /// failure; checkSourceFile fails via hasErrors → ValidationFailed).
+    /// Returns true when any duplicate was reported, so the caller can
+    /// short-circuit judgments that would re-describe the same defect.
+    fn checkDuplicateBranchHandlers(self: *ShapeChecker, continuations: []const ast.Continuation) !bool {
+        var found = false;
+        var handled = try std.ArrayList(branch_checker.BranchChecker.HandledBranch).initCapacity(
+            self.allocator,
+            continuations.len,
+        );
+        defer handled.deinit(self.allocator);
+        for (continuations) |cont| {
+            try handled.append(self.allocator, .{
+                .name = cont.branch,
+                .has_when_guard = cont.condition != null,
+                .is_catchall = cont.is_catchall,
+                .kind = if (cont.kind == .effect) .effect else .terminal,
+            });
+        }
+
+        if (branch_checker.BranchChecker.firstDuplicateSibling(handled.items)) |dup| {
+            const cont = continuations[dup.index];
+            if (dup.name.len == 0) {
+                try self.reporter.addErrorAtLocation(
+                    .SHAPE002,
+                    cont.location,
+                    branch_checker.BranchChecker.duplicate_unnamed_msg,
+                    .{},
+                );
+            } else {
+                try self.reporter.addErrorAtLocation(
+                    .SHAPE002,
+                    cont.location,
+                    branch_checker.BranchChecker.duplicate_terminal_fmt,
+                    .{dup.name},
+                );
             }
+            found = true;
         }
 
         // Recursively check nested continuations
@@ -1978,8 +2025,12 @@ pub const ShapeChecker = struct {
             // user-authored branches, so the duplicate-handler rule does not
             // apply. Mirrors the flow-level transform skip.
             if (cont.is_transformed_subtree) continue;
-            try self.checkDuplicateBranchHandlers(cont.continuations);
+            if (try self.checkDuplicateBranchHandlers(cont.continuations)) {
+                found = true;
+            }
         }
+
+        return found;
     }
 
     fn validateLabelJump(
