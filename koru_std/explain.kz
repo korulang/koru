@@ -1,0 +1,70 @@
+// explain.kz — the `explain` COMMAND for Koru
+//
+// The SQL-`EXPLAIN` move, lifted to the compiler: a library optionally ships a
+// comptime *explainer* that reads the program AST and explains how the library
+// interpreted YOUR program's use of ITS OWN facilities — not generic docs, but
+// "given this config and these call sites, here is what I decided about THIS
+// code." std/store, for instance, would report per-store: which layout the
+// current config elected, where it's watched, where it's updated.
+//
+//   koruc main.k explain            # human-readable (text)
+//   koruc main.k explain json       # machine-readable
+//   koruc main.k explain html       # rich page
+//
+// The `explain` command is the ONLY caller of explainers. Libraries *provide*
+// explainers; they never invoke them. Like `deps` and `parser:generate`, this
+// command runs INSTEAD of compilation with full AST access — the backend
+// dispatches it before koru_coordinate, so no pipeline pass fires. It sees the
+// freshly-parsed, pre-analysis AST (closest to original source).
+//
+// STATUS: item 1 of the build — the command registers and dispatches, and can
+// reach the program AST. Explainer *discovery* (walking for ~[explainer] events)
+// and output dispatch (json/html/text) are the next rungs; today it reports what
+// it can already see and names the not-yet-wired path.
+
+~import std/compiler
+
+~[comptime]
+
+// ============================================================
+// EXPLAIN COMMAND — report how libraries interpret this program
+// ============================================================
+
+~std/compiler:command.declare {
+    "name": "explain",
+    "description": "Explain how libraries interpret this program's use of their facilities"
+}
+
+~[comptime|command]pub event explain {
+    program: *const Program,
+    allocator: __koru_std.mem.Allocator,
+    argv: []const []const u8,
+}
+
+~proc explain|zig {
+    const std = @import("std");
+    _ = allocator;
+
+    // Output format is the command's own positional arg (default: text). The
+    // json/html/text dispatch is a later rung; parse it now so the surface is
+    // stable and the "unknown format" wall exists from the start.
+    var format: []const u8 = "text";
+    if (argv.len > 0) {
+        const fmt = argv[0];
+        if (std.mem.eql(u8, fmt, "text") or
+            std.mem.eql(u8, fmt, "json") or
+            std.mem.eql(u8, fmt, "html"))
+        {
+            format = fmt;
+        } else {
+            std.debug.print("explain: unknown format '{s}' — expected text | json | html\n", .{fmt});
+            return;
+        }
+    }
+
+    // Item 1 proof of life: the command reached the program AST. Explainer
+    // discovery (item 2) will replace this count with per-library reports.
+    std.debug.print("📖 explain — {d} top-level item(s) in this program\n", .{program.items.len});
+    std.debug.print("   No explainers registered yet. Libraries opt in by shipping a ~[explainer] event.\n", .{});
+    std.debug.print("   (requested format: {s})\n", .{format});
+}
