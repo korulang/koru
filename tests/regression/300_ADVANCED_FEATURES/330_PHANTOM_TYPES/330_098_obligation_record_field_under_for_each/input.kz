@@ -1,0 +1,20 @@
+// Obligation-in-record-field, threaded through a for-each `! each` iteration.
+// `make` returns { h: *Handle<owned!>, n } (330_096's record-field obligation)
+// and is invoked once per iteration of `for(0..3) ! each i |> ...` (330_053's
+// whole-value obligation-under-for-each). Neither sibling composition is new:
+// 330_096 proves the field-level obligation is tracked and caught (KORU030)
+// at flow-head; 330_053 proves a per-iteration obligation dropped inside a
+// for-each `! each` body is caught (KORU030) when the obligation IS the whole
+// fired value. Compositionality predicts the same field-level tracking must
+// survive being nested one level deeper, inside the for-each iteration body:
+// dropping `r.h` here should be caught exactly as dropping it at flow-head is.
+~import std/io
+const std = @import("std");
+const Handle = struct { n: i32 };
+~event make { id: usize } -> { h: *Handle<owned!>, n: i64 }
+~proc make|zig { const h = std.heap.page_allocator.create(Handle) catch unreachable; h.* = .{ .n = @intCast(id) }; return .{ .h = h, .n = @as(i64, @intCast(id)) * 10 }; }
+~event dispose { h: *Handle<!owned> }
+~proc dispose|zig { std.heap.page_allocator.destroy(h); }
+
+~for(0..3)
+! each i |> make(id: i): r |> std/io:print.ln("n={{ r.n:d }}")
