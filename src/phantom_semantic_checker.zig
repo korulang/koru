@@ -94,6 +94,26 @@ pub const PhantomSemanticChecker = struct {
         log.debug("[PHANTOM] All validation passed!\n", .{});
     }
 
+    /// Signature-only validation: the declaration-shape checks (phantom syntax,
+    /// polarity on event signatures — KORU033, unknown phantom modules — KORU040)
+    /// WITHOUT the obligation-flow analysis of `check()`. This is the entry point
+    /// for the `check-phantom-signatures` pipeline pass, which runs BEFORE
+    /// auto-discharge insertion: an illegal polarity on an event's own signature
+    /// (e.g. issuing `<owned!>` on an INPUT parameter) must be rejected before any
+    /// obligation-FLOW pass reasons about programs using that event — otherwise
+    /// auto-discharge halts first with a spurious KORU030 leak and the real
+    /// declaration error stays dormant (pin 330_110).
+    pub fn checkSignatures(self: *PhantomSemanticChecker, source_ast: *const ast.Program) !void {
+        log.debug("\n[PHANTOM-CHECK] Starting phantom signature check for program with {d} items\n", .{source_ast.items.len});
+        try self.buildModuleMap(source_ast);
+        const annotations_valid = try self.validatePhantomAnnotations(source_ast);
+        if (!annotations_valid) {
+            log.debug("[PHANTOM] Signature validation failed\n", .{});
+            return error.ValidationFailed;
+        }
+        log.debug("[PHANTOM] Signature validation passed\n", .{});
+    }
+
     fn buildModuleMap(self: *PhantomSemanticChecker, source_ast: *const ast.Program) !void {
         for (source_ast.items) |item| {
             switch (item) {
