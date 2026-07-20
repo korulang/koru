@@ -16,6 +16,46 @@ from the live catalog and adds one. The valuable *output* — a target backend t
 passes conformance — persists in `koru_std/parser.kz` and the conformance suite,
 not a to-do. C is the reference implementation and the first catalog entry.
 
+---
+
+## ⏸️ HOLD ON NEW CHALLENGERS — the values are untyped (Lars, 2026-07-20)
+
+**Status: this frame is PAUSED for new mainstream targets until the value model
+is typed.** Not cancelled — paused, with the reason recorded so it un-pauses on a
+concrete trigger.
+
+The reason: cut-1 `std/parser` produces **untyped text spans**, not typed syntax
+trees. Grounded in the codegen — every rule's result is `{ end: usize, val:
+[]const u8 }` (`koru_std/parser.kz:586`), and a `-> expr` produce arm compiles to
+`.val = (expr)` (line 320), so the produced value is constrained to a `[]const u8`
+slice. On success the parser hands back the *accepted span*; there is no path yet
+for a rule to build a typed node (an integer, a record, a variant, an AST struct).
+
+So every backend this frame emits — C today, Zig, JS, Haskell tomorrow — is a
+**fully-working span parser, not a typed-tree parser**. It correctly accepts,
+rejects, backtracks, and reports furthest-failure errors; it does not construct a
+typed value graph. Shipping a dozen native backends that all return spans
+multiplies a *recognizer* across languages — the catalog's value compounds only
+once the values are typed (one grammar → a dozen native parsers that all build the
+**same typed tree**).
+
+**The missing cut — the un-pause trigger:** typed captures / constructor
+composition. The produce arm is *already* the constructor slot; it's just typed to
+return text today. Lifting the value slot to per-rule (or grammar-declared) types,
+so a produce arm can build a typed node, is the named next cut (the "constructor
+composition" movement, 340_014-dependent). **When that lands, this frame
+un-pauses** and new targets resume — now emitting typed-tree parsers worth having a
+dozen of.
+
+**What stays active meanwhile:** the **Zig** target (already in flight) is retained
+— it's the emitter the Koru-self-parser probe needs regardless of the value cut.
+And the driving goal moves to **using Koru's own grammar as the artifact**: capture
+a self-contained slice of Koru's grammar as a `std/parser` grammar, generate a Zig
+parser, diff it against the hand-rolled parser via the referee — and let the exact
+walls it hits become the *measured* work list for the typed-value cut. Koru needs
+to be parsed in more than one place; one grammar reused everywhere is the prize,
+and it is worth more than breadth of span-only backends.
+
 **The dream this serves:** one grammar, `koruc grammar.k parser:generate <lang>`
 for a dozen mainstream languages, every emitted parser compiled by its own native
 toolchain and producing identical answers. Koru as a *universal* parser generator

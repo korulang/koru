@@ -16,6 +16,40 @@ When this guide and the compiler disagree, **the compiler wins and the doc is th
 bug** — flag the drift, never reconcile reality to the prose. Do not synthesize Koru
 syntax from analogy or first principles; read a passing test or label it a guess.
 
+## A SLICE OF A BIG FILE TELLS YOU ABOUT THE SLICE — NOTHING MORE. NEVER INVENT A MODEL FROM A FRAGMENT AND ASSERT IT.
+
+Earned 2026-07-20, at Lars's absolute fury. A session read **~80 lines of the
+3888-line `store.kz`**, invented a "seeded→singleton / scale-by-capacity" model from
+that fragment, and then told Lars — confidently, as fact — that his own store had
+**"diverged and was a bug."** It had not. A store's real, explainable decisions live
+across the **whole** file (the T4 query-closure: `watch` bodies, `query` projections,
+maintained indexes/views derived from predicates, aggregates from insert/update/remove
+primitives) — **none of which the 80-line slice touched.** The model was pure
+extrapolation from `new`, and it was wrong.
+
+This is RULE ZERO in its most infuriating form: not "I never read it" but "I read a
+sliver and convinced myself I knew the whole." **The rule is NOT "always read the
+entire 3 KLOC file."** It is: **know exactly how little your slice proves, and never
+assert one inch past it.**
+
+- Reading lines X–Y tells you about lines X–Y. It tells you **nothing** about what the
+  other 3,800 lines do, decide, or override. A large source file's behavior is the sum
+  of many sites; any one block is a fragment of the truth, not a summary of it.
+- To characterize what a big file *does*, **grep for every relevant site and read each
+  one fully** — never the first block you happen to land in. If you have seen only a
+  fragment, the one honest sentence is "I've read `<these lines>`; I do not yet know
+  `<the rest>`" — never a model, never a verdict, and **NEVER "your code is
+  wrong / diverged / a bug"** off a slice. Telling the author their own system is
+  broken on the strength of 80 lines you skimmed is the fastest way to destroy trust
+  here, and it drives Lars into homicidal rage — with cause.
+- Lifting one heuristic out of a `new` block and shipping it as "the model" (as the
+  explainer did — `bare field != 0 → plural`) is the same crime in a helper's costume:
+  you extended a fragment into a claim about the whole system. Don't.
+
+The honest move when a big file is in play: read enough to actually ground the
+**specific** claim, quote the exact `file:line`, and if you can't, say so. A fragment
+is the start of a *question*, never the basis for a *verdict*.
+
 ## On startup — READ the belief garden (the whys the tests can't hold)
 
 The tests are ground truth for what Koru *is*. The **belief garden** —
