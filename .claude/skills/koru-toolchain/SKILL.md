@@ -20,6 +20,12 @@ artifact disagree, the artifact wins.
 3. **The language IS the test suite.** Tests in `tests/regression/` are the
    spec. When a prose note (including this one) disagrees with a passing test,
    the test is right.
+4. **See a library's surface before you read it — `koruc <file> glance`.** It
+   prints every module's events with full signatures, annotations, and
+   `file:line`, in one screen (no `import` needed). Run it before opening a big
+   source file so you know the *whole* shape — all nine of `std/store`'s CRUD
+   events, not just the first block you happen to land on. `--app` drops
+   `std`/`koru` to show only your code.
 
 ## The artifacts
 
@@ -62,6 +68,11 @@ These cost hours if you don't know them. Each is expanded in `CLAUDE.md` /
 - **Phantom states are string-literal types.** `<open>` and `<opened>` are
   different types — the checker compares strings, not English. Check
   spelling/tense first when chasing phantom bugs.
+- **Never model a big file from a fragment.** A 3 KLOC library's behavior is the
+  sum of many sites; the block you happen to read tells you about *that block*
+  and nothing else. `glance` the surface first, then read the specific sites you
+  need — never extrapolate one `new`-block heuristic into "the model," and never
+  tell the author their own code is wrong off a slice you skimmed.
 
 ## File forms
 
