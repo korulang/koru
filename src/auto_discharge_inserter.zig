@@ -128,6 +128,7 @@ pub const AutoDischargeInserter = struct {
     const BindingContext = struct {
         bindings: std.StringHashMap([]const u8), // variable name → phantom state
         cleanup_obligations: std.StringHashMap(BindingInfo), // binding → obligation info
+        disposed_fields: std.StringHashMap(void), // field-path keys (`s.h`) already discharged, for double-discharge detection (330_109)
         allocator: std.mem.Allocator,
         scope_depth: u32, // Current scope depth (increments when entering loop body)
         is_repeating: bool, // True if we're inside a loop's `each` branch
@@ -172,6 +173,7 @@ pub const AutoDischargeInserter = struct {
             return .{
                 .bindings = std.StringHashMap([]const u8).init(allocator),
                 .cleanup_obligations = std.StringHashMap(BindingInfo).init(allocator),
+                .disposed_fields = std.StringHashMap(void).init(allocator),
                 .allocator = allocator,
                 .scope_depth = 0,
                 .is_repeating = false,
@@ -196,6 +198,10 @@ pub const AutoDischargeInserter = struct {
                 self.allocator.free(entry.value_ptr.base_type);
             }
             self.cleanup_obligations.deinit();
+
+            var disp_iter = self.disposed_fields.keyIterator();
+            while (disp_iter.next()) |key| self.allocator.free(key.*);
+            self.disposed_fields.deinit();
         }
 
         /// Add a binding with its phantom state and base type.
@@ -269,6 +275,11 @@ pub const AutoDischargeInserter = struct {
                     .acq_seq = entry.value_ptr.acq_seq,
                     .not_auto_dischargeable = entry.value_ptr.not_auto_dischargeable,
                 });
+            }
+
+            var disp_iter = self.disposed_fields.keyIterator();
+            while (disp_iter.next()) |key| {
+                try new_ctx.disposed_fields.put(try allocator.dupe(u8, key.*), {});
             }
 
             return new_ctx;
@@ -839,7 +850,7 @@ pub const AutoDischargeInserter = struct {
             } else if (event_info.decl.return_type) |rt| {
                 // No whole-value phantom, but a record return may carry per-field
                 // obligations (`-> { h: *Handle<owned!>, n }`). Descend and seed.
-                try self.seedRecordFieldObligations(rb, rt, module_name, &context);
+                try self.seedRecordFieldObligations(rb, rt, module_name, flow.inv().return_destructure, &context);
             }
         }
 
@@ -1254,6 +1265,15 @@ pub const AutoDischargeInserter = struct {
                             const canonical = try self.canonicalizePhantom(rp, rb_module);
                             defer self.allocator.free(canonical);
                             try context.addBinding(rb, canonical, "__type_ref", info.decl.return_type orelse "", self.nextAcqSeq());
+                        } else if (info.decl.return_type) |rt| {
+                            // No whole-value phantom, but a MID-CHAIN record return
+                            // may carry per-field obligations (`make(id): r` where
+                            // make returns `{ h: *Handle<owned!>, n }`). Seed each,
+                            // the continuation-level twin of the flow-head record
+                            // seeding — without it a record-field obligation bound
+                            // inside a for-each / subflow body is invisible and
+                            // leaks silently (330_098/099/100).
+                            try self.seedRecordFieldObligations(rb, rt, rb_module, node.invocation.return_destructure, &context);
                         }
                     }
                 } else if (cont.continuations.len == 0) {
@@ -2023,7 +2043,28 @@ pub const AutoDischargeInserter = struct {
             }
 
             // This parameter consumes an obligation - clear it.
+            //
+            // Field-granular double-discharge: a record-field projection (`s.h`)
+            // that was already discharged on a prior step has vanished from the
+            // record's type; discharging it again is a use-after-discharge
+            // (330_109). Whole-value re-use stays with the phantom checker's
+            // site-keyed detector — scope this to dotted field paths only.
+            const is_field_path = std.mem.indexOfScalar(u8, arg.value, '.') != null;
+            if (is_field_path and context.disposed_fields.contains(arg.value)) {
+                try self.reporter.addError(
+                    .KORU030,
+                    flow.location.line,
+                    flow.location.column,
+                    "Use-after-discharge: field '{s}' was already discharged and cannot be discharged again",
+                    .{arg.value},
+                );
+                continue;
+            }
             context.clearObligation(arg.value);
+            if (is_field_path) {
+                const dk = try self.allocator.dupe(u8, arg.value);
+                context.disposed_fields.put(dk, {}) catch self.allocator.free(dk);
+            }
         }
     }
 
@@ -3246,6 +3287,7 @@ pub const AutoDischargeInserter = struct {
         binding: []const u8,
         return_type: []const u8,
         module_name: []const u8,
+        destructure: []const ast.DestructureField,
         context: *BindingContext,
     ) !void {
         const trimmed = std.mem.trim(u8, return_type, " \t");
@@ -3297,7 +3339,24 @@ pub const AutoDischargeInserter = struct {
             defer self.allocator.free(base_type);
             const canonical = try self.canonicalizePhantom(phantom_content, module_name);
             defer self.allocator.free(canonical);
-            const key = try std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ binding, f_name });
+            // A destructured obligation field is discharged by its scalar binding
+            // name (`dispose(x: h)`), so it must be keyed by that name; an
+            // obligation field the destructure does NOT name keeps the
+            // `binding.field` key (unreachable → a guaranteed leak, the ordinary
+            // "every obligation must be discharged" rule — 330_103).
+            var named_in_destructure = false;
+            if (destructure.len > 0) {
+                for (destructure) |df| {
+                    if (std.mem.eql(u8, df.name, f_name)) {
+                        named_in_destructure = true;
+                        break;
+                    }
+                }
+            }
+            const key = if (named_in_destructure)
+                try self.allocator.dupe(u8, f_name)
+            else
+                try std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ binding, f_name });
             defer self.allocator.free(key);
             try context.addBinding(key, canonical, f_name, base_type, self.nextAcqSeq());
             // Mark it as a return-record field obligation so enforcement routes it
