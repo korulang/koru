@@ -7,6 +7,7 @@ const type_registry = @import("type_registry");
 const expression_parser = @import("expression_parser");
 const struct_literal = @import("struct_literal");
 const annotation_parser = @import("annotation_parser");
+const comptime_eval = @import("comptime_eval");
 const ModuleResolver = @import("module_resolver").ModuleResolver;
 const module_resolver_mod = @import("module_resolver");
 const file_types = @import("file_types");
@@ -514,6 +515,9 @@ pub const Parser = struct {
 
     // Compiler flags for conditional compilation (e.g., ~[profile]import)
     compiler_flags: []const []const u8,
+    // Process env for the import gate's provider chain (cflags → env →
+    // absent-is-false). Built lazily on the first gated import.
+    gate_env_map: ?std.process.EnvMap = null,
 
     // Module resolver for imports (null for bootstrap/help parsing)
     resolver: ?*ModuleResolver,
@@ -644,6 +648,7 @@ pub const Parser = struct {
     }
 
     pub fn deinit(self: *Parser) void {
+        if (self.gate_env_map) |*m| m.deinit();
         self.allocator.free(self.lines);
         self.reporter.deinit();
         self.context_stack.deinit(self.allocator);
@@ -901,6 +906,27 @@ pub const Parser = struct {
                         else
                             construct_trimmed;
 
+                        // Conditional import, annotation-block-above-construct
+                        // form: the block's entries gate the import exactly as
+                        // they would inline (they are the same entry list —
+                        // bullets and pipes tokenize identically).
+                        if (std.mem.startsWith(u8, construct_content, "import ")) {
+                            const keep = try self.gateImportEntries(result.annotations, construct_content, next_line_idx);
+                            for (result.annotations) |ann| {
+                                self.allocator.free(ann);
+                            }
+                            self.allocator.free(result.annotations);
+                            if (keep) {
+                                // Re-enter the main loop on a plain ~import line.
+                                const normalized_line = try std.fmt.allocPrint(self.allocator, "~{s}", .{construct_content});
+                                self.lines[next_line_idx] = normalized_line;
+                                self.current = next_line_idx;
+                            } else {
+                                self.current = next_line_idx + 1;
+                            }
+                            continue;
+                        }
+
                         // Build annotation string: [ann1|ann2|ann3]
                         var ann_str = try std.ArrayList(u8).initCapacity(self.allocator, 64);
                         defer ann_str.deinit(self.allocator);
@@ -967,6 +993,25 @@ pub const Parser = struct {
                     // ~[a|b|c]construct, so we just fall through to normal parsing which sees
                     // the annotations directly in the source.
                     if (used_vertical_syntax) {
+                        // Conditional import, vertical form with the construct
+                        // on the close-bracket line (`]import app/x`): gate on
+                        // the block's entries before any synthesis.
+                        if (std.mem.startsWith(u8, result.remaining, "import ")) {
+                            const line_with_bracket = self.current - 1;
+                            const keep = try self.gateImportEntries(result.annotations, result.remaining, line_with_bracket);
+                            for (result.annotations) |ann| {
+                                self.allocator.free(ann);
+                            }
+                            self.allocator.free(result.annotations);
+                            if (keep) {
+                                // Re-enter the main loop on a plain ~import line.
+                                const normalized_line = try std.fmt.allocPrint(self.allocator, "~{s}", .{result.remaining});
+                                self.lines[line_with_bracket] = normalized_line;
+                                self.current = line_with_bracket;
+                            }
+                            continue;
+                        }
+
                         // Build annotation string: [ann1|ann2|ann3]
                         var ann_str = try std.ArrayList(u8).initCapacity(self.allocator, 64);
                         defer ann_str.deinit(self.allocator);
@@ -1033,45 +1078,31 @@ pub const Parser = struct {
                     }
                 }
 
-                // Check for conditional imports: ~[flag]import
-                // If the import has annotations but no matching compiler flag, skip it
-                if (std.mem.indexOf(u8, after_tilde, "[") != null and
-                    std.mem.indexOf(u8, after_tilde, "]import ") != null)
-                {
-                    // This is an annotated import - check if we should skip it
-                    const close_bracket = std.mem.indexOf(u8, after_tilde, "]") orelse 0;
-                    if (close_bracket > 0) {
-                        const ann_str = after_tilde[1..close_bracket];
-                        var has_matching_flag = false;
+                // Conditional imports, inline form: ~[entries]import — entries
+                // evaluate through the shared annotation-entry vocabulary
+                // (comptime_eval + provider chain), replacing the old
+                // string-equality flag match whose only failure mode was
+                // SILENT drop. Delimiting is findBlockClose (nesting- and
+                // string-aware), so entries containing `]` never confuse the
+                // gate.
+                if (std.mem.startsWith(u8, after_tilde, "[")) {
+                    if (annotation_parser.findBlockClose(after_tilde[1..])) |close_idx| {
+                        const after_close = lexer.trim(after_tilde[1 + close_idx + 1 ..]);
+                        if (std.mem.startsWith(u8, after_close, "import ")) {
+                            const ann_str = after_tilde[1 .. 1 + close_idx];
+                            const entries = try annotation_parser.splitEntries(self.allocator, ann_str);
+                            defer self.allocator.free(entries);
 
-                        // Check each annotation against compiler flags
-                        var ann_iter = std.mem.splitScalar(u8, ann_str, '|');
-                        while (ann_iter.next()) |ann| {
-                            const trimmed_ann = lexer.trim(ann);
-                            if (trimmed_ann.len > 0) {
-                                for (self.compiler_flags) |flag| {
-                                    if (std.mem.eql(u8, trimmed_ann, flag)) {
-                                        has_matching_flag = true;
-                                        break;
-                                    }
-                                }
-                                if (has_matching_flag) break;
+                            const keep = try self.gateImportEntries(entries, after_close, self.current);
+                            if (!keep) {
+                                self.current += 1;
+                                continue;
                             }
-                        }
 
-                        // If no matching flag found, skip this import
-                        if (!has_matching_flag) {
-                            self.current += 1;
-                            continue;
+                            // Kept — normalize "~[entries]import ..." to "~import ..."
+                            const normalized_line = try std.fmt.allocPrint(self.allocator, "~{s}", .{after_close});
+                            self.lines[self.current] = normalized_line;
                         }
-
-                        // Flag matches - normalize the line by stripping [flag] annotation
-                        // Transform "~[profile]import ..." to "~import ..."
-                        const import_start = std.mem.indexOf(u8, after_tilde, "]import ") orelse unreachable;
-                        const after_bracket = after_tilde[import_start + 1 ..]; // Skip the ]
-                        // Allocate normalized line: ~ + (stuff after ])
-                        const normalized_line = try std.fmt.allocPrint(self.allocator, "~{s}", .{after_bracket});
-                        self.lines[self.current] = normalized_line;
                     }
                 }
 
@@ -1276,6 +1307,61 @@ pub const Parser = struct {
             if (std.mem.startsWith(u8, trimmed, prefix)) return true;
         }
         return false;
+    }
+
+    fn gateEnvMap(self: *Parser) ?*const std.process.EnvMap {
+        if (self.gate_env_map == null) {
+            self.gate_env_map = std.process.getEnvMap(self.allocator) catch null;
+        }
+        return if (self.gate_env_map) |*m| m else null;
+    }
+
+    fn activeCommand(self: *const Parser) ?[]const u8 {
+        for (self.compiler_flags) |f| {
+            if (std.mem.startsWith(u8, f, "command=")) return f["command=".len..];
+        }
+        return null;
+    }
+
+    /// The import gate — the first consumer of the annotation-entry
+    /// vocabulary, and the one that IS the core language: it runs at parse
+    /// time and decides what the AST contains. Its contract is therefore the
+    /// strictest: every entry MUST evaluate (loud KORU150 otherwise — the
+    /// same annotation that is legally inert on an event is an error on an
+    /// import, because an inert entry here is silent gating). ANY truthy
+    /// entry keeps the import; an excluded import gets a loud resolution
+    /// report with each entry's verdict and provenance.
+    fn gateImportEntries(self: *Parser, entries: []const []const u8, import_text: []const u8, report_line: usize) !bool {
+        const provider = comptime_eval.Provider{
+            .flags = self.compiler_flags,
+            .env_map = self.gateEnvMap(),
+            .command = self.activeCommand(),
+        };
+        var any_true = false;
+        var report = try std.ArrayList(u8).initCapacity(self.allocator, 128);
+        defer report.deinit(self.allocator);
+        const w = report.writer(self.allocator);
+        for (entries) |entry| {
+            var diag: []const u8 = "";
+            const res = comptime_eval.evalAnnotationEntryDiag(self.allocator, &provider, entry, &diag) catch {
+                try self.reporter.addError(
+                    .KORU150,
+                    report_line + 1,
+                    1,
+                    "conditional import: the gate cannot evaluate entry `{s}` ({s}). Entries deciding AST membership must evaluate — the vocabulary is bare flag atoms, comparisons, and/or/not, and cflag()/env()/command()",
+                    .{ entry, diag },
+                );
+                return error.ParseError;
+            };
+            if (res.truthy) any_true = true;
+            w.print("  `{s}` -> {s}", .{ entry, if (res.truthy) "true" else "false" }) catch return error.OutOfMemory;
+            for (res.trace) |t| w.print("  [{s}]", .{t}) catch return error.OutOfMemory;
+            w.print("\n", .{}) catch return error.OutOfMemory;
+        }
+        if (!any_true) {
+            std.debug.print("[import gate] {s}:{d}: `{s}` excluded — no entry true\n{s}", .{ self.module_name, report_line + 1, import_text, report.items });
+        }
+        return any_true;
     }
 
     fn parseKoruConstruct(self: *Parser) !ast.Item {

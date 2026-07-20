@@ -401,7 +401,7 @@ pub const Evaluator = struct {
     /// `env`. The single text→Value path for the walker and the Folder both.
     pub fn evalText(self: *Evaluator, env: *Env, text: []const u8) EvalError!Value {
         var parser = expression_parser.ExpressionParser.init(self.allocator, text);
-        const expr = parser.parse() catch |err| {
+        const expr = parser.parseAll() catch |err| {
             return self.fail(error.UnsupportedConstruct, "comptime evaluation: `{s}` did not parse as an expression ({s})", .{ text, @errorName(err) });
         };
         return self.evalExpr(env, expr);
@@ -975,3 +975,380 @@ pub fn findBareReturnImpl(items: []const ast.Item, path: *const ast.DottedPath) 
 fn lastSegment(path: *const ast.DottedPath) []const u8 {
     return if (path.segments.len > 0) path.segments[path.segments.len - 1] else "<empty>";
 }
+
+// ============================================================================
+// ANNOTATION ENTRY EVALUATION — the shared entry vocabulary
+// ============================================================================
+//
+// Annotation entries are expressions in the shared when-clause grammar, but
+// their meaning belongs to CONSUMERS, never the language: a pass that ignores
+// an entry ignores it freely; a pass that EVALUATES one and can't gets a loud
+// EvalError to report as itself (the import gate is the first and most
+// privileged such consumer — it decides AST membership, so its entries MUST
+// evaluate). Nothing here rejects an annotation globally; there is no global
+// rejector, by ruling (2026-07-20).
+//
+// Position rules (ruled 2026-07-20):
+//   - Truthiness positions (entry root, and/or/not operands): a bare
+//     identifier RESOLVES through the provider chain; absent-is-false.
+//   - Comparison RHS: a bare identifier is a SYMBOL — the word itself,
+//     never a chain lookup (`build == release` asks "is build the word
+//     'release'", and chain-resolving the RHS under absent-is-false would
+//     make it always-false, which nobody means).
+//   - Comparison LHS resolves (it names the thing being asked about).
+//   - Narrowing calls cflag(x) / env(x) / command(x) pin one provider
+//     instead of walking the chain.
+//
+// Provider chain: compiler flags → process env → absent-is-false. The
+// build:config provider slots between flags and env when Stage-C consumers
+// ride this vocabulary — the parse-time import gate structurally cannot see
+// config declared in the program it is still parsing.
+
+pub const ResolutionSource = enum {
+    cflag,
+    env,
+    command,
+    absent,
+
+    pub fn name(self: ResolutionSource) []const u8 {
+        return switch (self) {
+            .cflag => "compiler flag",
+            .env => "environment",
+            .command => "command",
+            .absent => "absent",
+        };
+    }
+};
+
+pub const Resolution = struct {
+    value: Value,
+    source: ResolutionSource,
+};
+
+/// Reader-side provenance: the entry author writes the terse intent-shaped
+/// atom; resolution answers "where did this value come from this build".
+pub const Provider = struct {
+    /// CLI flags exactly as koruc stores them: "name" or "name=value".
+    flags: []const []const u8 = &.{},
+    /// Process environment; null when the consumer has none to offer.
+    env_map: ?*const std.process.EnvMap = null,
+    /// The active koruc command, when one is running (e.g. "explain").
+    command: ?[]const u8 = null,
+
+    /// A flag value is textual on the CLI; numbers travel as numbers so
+    /// `version >= 15` works against `--version=15`. Everything else stays
+    /// a string.
+    fn coerce(text: []const u8) Value {
+        if (std.fmt.parseInt(i64, text, 0)) |i| return .{ .int = i } else |_| {}
+        if (std.fmt.parseFloat(f64, text)) |f| return .{ .float = f } else |_| {}
+        return .{ .string = text };
+    }
+
+    pub fn resolveFlag(self: *const Provider, atom: []const u8) ?Value {
+        for (self.flags) |f| {
+            if (std.mem.eql(u8, f, atom)) return .{ .boolean = true };
+            if (f.len > atom.len and f[atom.len] == '=' and std.mem.startsWith(u8, f, atom))
+                return coerce(f[atom.len + 1 ..]);
+        }
+        return null;
+    }
+
+    pub fn resolveEnv(self: *const Provider, atom: []const u8) ?Value {
+        const m = self.env_map orelse return null;
+        if (m.get(atom)) |v| return coerce(v);
+        return null;
+    }
+
+    pub fn resolve(self: *const Provider, atom: []const u8) Resolution {
+        if (self.resolveFlag(atom)) |v| return .{ .value = v, .source = .cflag };
+        if (self.resolveEnv(atom)) |v| return .{ .value = v, .source = .env };
+        return .{ .value = .{ .boolean = false }, .source = .absent };
+    }
+};
+
+pub const EntryResult = struct {
+    value: Value,
+    truthy: bool,
+    /// One line per resolution performed, e.g. `build = "release" (compiler
+    /// flag)` — the consumer's loud report prints these verbatim.
+    trace: []const []const u8,
+};
+
+/// Entry truthiness: presence-shaped, not strict-bool. A resolved flag is
+/// true by being there; an empty string is as good as absent.
+fn entryTruthy(v: Value) bool {
+    return switch (v) {
+        .boolean => |b| b,
+        .string => |s| s.len > 0,
+        .int => |i| i != 0,
+        .float => |f| f != 0,
+        else => false,
+    };
+}
+
+/// Evaluate one annotation entry against the provider chain. All allocations
+/// ride the caller's allocator (arena convention). Loud-failure contract:
+/// anything unevaluable is an EvalError with a diagnostic, never a guess.
+pub fn evalAnnotationEntry(
+    allocator: std.mem.Allocator,
+    provider: *const Provider,
+    entry_text: []const u8,
+) EvalError!EntryResult {
+    var parser = expression_parser.ExpressionParser.init(allocator, entry_text);
+    defer parser.deinit();
+    const expr = parser.parseAll() catch {
+        return error.UnsupportedConstruct;
+    };
+
+    var ev = EntryEvaluator{
+        .allocator = allocator,
+        .provider = provider,
+        .trace = std.ArrayList([]const u8).initCapacity(allocator, 4) catch return error.OutOfMemory,
+    };
+    const value = try ev.evalNode(&expr.node, .resolve);
+    return .{
+        .value = value,
+        .truthy = entryTruthy(value),
+        .trace = ev.trace.toOwnedSlice(allocator) catch return error.OutOfMemory,
+    };
+}
+
+/// Like evalAnnotationEntry but with the parse/eval diagnostic surfaced for
+/// the consumer's error message.
+pub fn evalAnnotationEntryDiag(
+    allocator: std.mem.Allocator,
+    provider: *const Provider,
+    entry_text: []const u8,
+    diag_out: *[]const u8,
+) EvalError!EntryResult {
+    var parser = expression_parser.ExpressionParser.init(allocator, entry_text);
+    defer parser.deinit();
+    const expr = parser.parseAll() catch |err| {
+        diag_out.* = std.fmt.allocPrint(allocator, "entry does not parse as an expression ({s})", .{@errorName(err)}) catch return error.OutOfMemory;
+        return error.UnsupportedConstruct;
+    };
+
+    var ev = EntryEvaluator{
+        .allocator = allocator,
+        .provider = provider,
+        .trace = std.ArrayList([]const u8).initCapacity(allocator, 4) catch return error.OutOfMemory,
+    };
+    const value = ev.evalNode(&expr.node, .resolve) catch |err| {
+        diag_out.* = ev.diag orelse @errorName(err);
+        return err;
+    };
+    return .{
+        .value = value,
+        .truthy = entryTruthy(value),
+        .trace = ev.trace.toOwnedSlice(allocator) catch return error.OutOfMemory,
+    };
+}
+
+const EntryEvaluator = struct {
+    allocator: std.mem.Allocator,
+    provider: *const Provider,
+    trace: std.ArrayList([]const u8),
+    diag: ?[]const u8 = null,
+
+    const Mode = enum { resolve, symbol };
+
+    fn fail(self: *EntryEvaluator, err: EvalError, comptime fmt: []const u8, args: anytype) EvalError {
+        self.diag = std.fmt.allocPrint(self.allocator, fmt, args) catch return error.OutOfMemory;
+        return err;
+    }
+
+    fn note(self: *EntryEvaluator, atom: []const u8, r: Resolution) EvalError!void {
+        var buf = std.ArrayList(u8).initCapacity(self.allocator, 32) catch return error.OutOfMemory;
+        const w = buf.writer(self.allocator);
+        w.print("{s} = ", .{atom}) catch return error.OutOfMemory;
+        r.value.format(w) catch return error.OutOfMemory;
+        w.print(" ({s})", .{r.source.name()}) catch return error.OutOfMemory;
+        self.trace.append(self.allocator, buf.toOwnedSlice(self.allocator) catch return error.OutOfMemory) catch return error.OutOfMemory;
+    }
+
+    fn evalNode(self: *EntryEvaluator, node: *const ast.ExprNode, mode: Mode) EvalError!Value {
+        switch (node.*) {
+            .identifier => |name| switch (mode) {
+                .symbol => return .{ .string = name },
+                .resolve => {
+                    const r = self.provider.resolve(name);
+                    try self.note(name, r);
+                    return r.value;
+                },
+            },
+            .literal => |lit| return self.evalLiteral(lit),
+            .grouped => |inner| return self.evalNode(&inner.node, mode),
+            .unary => |un| switch (un.op) {
+                .not => {
+                    const v = try self.evalNode(&un.operand.node, .resolve);
+                    return .{ .boolean = !entryTruthy(v) };
+                },
+                .negate => {
+                    const v = try self.evalNode(&un.operand.node, .symbol);
+                    return switch (v) {
+                        .int => |i| .{ .int = -i },
+                        .float => |f| .{ .float = -f },
+                        else => self.fail(error.TypeMismatch, "unary `-` needs a number", .{}),
+                    };
+                },
+            },
+            .binary => |bin| return self.evalBinary(bin),
+            .function_call => |fc| return self.evalNarrowing(fc),
+            else => return self.fail(error.UnsupportedConstruct, "this construct has no meaning in an annotation entry", .{}),
+        }
+    }
+
+    fn evalLiteral(self: *EntryEvaluator, lit: ast.Literal) EvalError!Value {
+        switch (lit) {
+            .number => |text| {
+                if (std.fmt.parseInt(i64, text, 0)) |i| return .{ .int = i } else |_| {}
+                if (std.fmt.parseFloat(f64, text)) |f| return .{ .float = f } else |_| {}
+                return self.fail(error.InvalidLiteral, "`{s}` is not a number", .{text});
+            },
+            .string => |text| {
+                const bare = if (text.len >= 2 and text[0] == '"' and text[text.len - 1] == '"')
+                    text[1 .. text.len - 1]
+                else
+                    text;
+                return .{ .string = bare };
+            },
+            .boolean => |b| return .{ .boolean = b },
+        }
+    }
+
+    fn isComparison(op: ast.BinaryOperator) bool {
+        return switch (op) {
+            .equal, .not_equal, .less, .greater, .less_equal, .greater_equal => true,
+            else => false,
+        };
+    }
+
+    fn evalBinary(self: *EntryEvaluator, bin: ast.BinaryOp) EvalError!Value {
+        switch (bin.op) {
+            .and_op => {
+                const l = try self.evalNode(&bin.left.node, .resolve);
+                if (!entryTruthy(l)) return .{ .boolean = false };
+                const r = try self.evalNode(&bin.right.node, .resolve);
+                return .{ .boolean = entryTruthy(r) };
+            },
+            .or_op => {
+                const l = try self.evalNode(&bin.left.node, .resolve);
+                if (entryTruthy(l)) return .{ .boolean = true };
+                const r = try self.evalNode(&bin.right.node, .resolve);
+                return .{ .boolean = entryTruthy(r) };
+            },
+            else => {},
+        }
+
+        if (!isComparison(bin.op)) {
+            return self.fail(error.UnsupportedConstruct, "only comparisons and and/or/not compose in annotation entries", .{});
+        }
+
+        // Comparison: LHS resolves, bare-identifier RHS is a symbol (ruled).
+        const left = try self.evalNode(&bin.left.node, .resolve);
+        const right = try self.evalNode(&bin.right.node, .symbol);
+
+        switch (bin.op) {
+            .equal => return .{ .boolean = try self.valuesEqual(left, right) },
+            .not_equal => return .{ .boolean = !(try self.valuesEqual(left, right)) },
+            else => {},
+        }
+
+        // Ordering needs numbers on both sides.
+        const lf = try self.asNumber(left, "left side of comparison");
+        const rf = try self.asNumber(right, "right side of comparison");
+        return .{ .boolean = switch (bin.op) {
+            .less => lf < rf,
+            .less_equal => lf <= rf,
+            .greater => lf > rf,
+            .greater_equal => lf >= rf,
+            else => unreachable,
+        } };
+    }
+
+    fn asNumber(self: *EntryEvaluator, v: Value, what: []const u8) EvalError!f64 {
+        return switch (v) {
+            .int => |i| @floatFromInt(i),
+            .float => |f| f,
+            .string => |s| std.fmt.parseFloat(f64, s) catch
+                self.fail(error.TypeMismatch, "{s} is `{s}`, not a number", .{ what, s }),
+            .boolean => self.fail(error.TypeMismatch, "{s} resolved absent or boolean; ordering needs numbers", .{what}),
+            else => self.fail(error.TypeMismatch, "{s} is not a number", .{what}),
+        };
+    }
+
+    fn valuesEqual(self: *EntryEvaluator, l: Value, r: Value) EvalError!bool {
+        _ = self;
+        return switch (l) {
+            .string => |ls| switch (r) {
+                .string => |rs| std.mem.eql(u8, ls, rs),
+                else => false,
+            },
+            .int => |li| switch (r) {
+                .int => |ri| li == ri,
+                .float => |rf| @as(f64, @floatFromInt(li)) == rf,
+                .string => |rs| if (std.fmt.parseInt(i64, rs, 0)) |ri| li == ri else |_| false,
+                else => false,
+            },
+            .float => |lf| switch (r) {
+                .float => |rf| lf == rf,
+                .int => |ri| lf == @as(f64, @floatFromInt(ri)),
+                .string => |rs| if (std.fmt.parseFloat(f64, rs)) |rf| lf == rf else |_| false,
+                else => false,
+            },
+            .boolean => |lb| switch (r) {
+                .boolean => |rb| lb == rb,
+                else => false,
+            },
+            else => false,
+        };
+    }
+
+    /// cflag(x) / env(x) / command(x): pin one provider instead of walking
+    /// the chain. The argument is a symbol (identifier) or string literal.
+    fn evalNarrowing(self: *EntryEvaluator, fc: ast.FunctionCall) EvalError!Value {
+        const head = switch (fc.callee.node) {
+            .identifier => |n| n,
+            else => return self.fail(error.UnsupportedConstruct, "a narrowing call needs a plain head (cflag/env/command)", .{}),
+        };
+        if (fc.args.len != 1) {
+            return self.fail(error.UnsupportedConstruct, "{s}(...) takes exactly one atom", .{head});
+        }
+        const atom = switch (fc.args[0].node) {
+            .identifier => |n| n,
+            .literal => |lit| switch (lit) {
+                .string => |s| if (s.len >= 2 and s[0] == '"' and s[s.len - 1] == '"') s[1 .. s.len - 1] else s,
+                else => return self.fail(error.UnsupportedConstruct, "{s}(...) takes a name, not a number", .{head}),
+            },
+            else => return self.fail(error.UnsupportedConstruct, "{s}(...) takes a plain atom", .{head}),
+        };
+
+        if (std.mem.eql(u8, head, "cflag")) {
+            const r: Resolution = if (self.provider.resolveFlag(atom)) |v|
+                .{ .value = v, .source = .cflag }
+            else
+                .{ .value = .{ .boolean = false }, .source = .absent };
+            try self.note(atom, r);
+            return r.value;
+        }
+        if (std.mem.eql(u8, head, "env")) {
+            const r: Resolution = if (self.provider.resolveEnv(atom)) |v|
+                .{ .value = v, .source = .env }
+            else
+                .{ .value = .{ .boolean = false }, .source = .absent };
+            try self.note(atom, r);
+            return r.value;
+        }
+        if (std.mem.eql(u8, head, "command")) {
+            const active = self.provider.command;
+            const matches = active != null and std.mem.eql(u8, active.?, atom);
+            const r: Resolution = if (matches)
+                .{ .value = .{ .boolean = true }, .source = .command }
+            else
+                .{ .value = .{ .boolean = false }, .source = if (active == null) .absent else .command };
+            try self.note(atom, r);
+            return r.value;
+        }
+        return self.fail(error.UnsupportedConstruct, "unknown narrowing head `{s}` — known: cflag, env, command", .{head});
+    }
+};

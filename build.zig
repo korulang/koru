@@ -114,6 +114,8 @@ pub fn build(b: *std.Build) void {
     });
     comptime_eval_module.addImport("ast", ast_module);
     comptime_eval_module.addImport("expression_parser", expression_parser_module);
+    // parser evaluates annotation entries (the import gate) through the one evaluator
+    parser_module.addImport("comptime_eval", comptime_eval_module);
 
     // Expression code generator module
     const expression_codegen_module = b.createModule(.{

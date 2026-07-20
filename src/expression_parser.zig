@@ -15,6 +15,7 @@ pub const ParseError = error{
     InvalidCharLiteral,
     UnterminatedString,
     InvalidIdentifier,
+    TrailingGarbage,
 };
 
 /// Simple expression parser for Koru
@@ -132,6 +133,18 @@ pub const ExpressionParser = struct {
     /// Parse an expression string
     pub fn parse(self: *ExpressionParser) ParseError!*Expression {
         return try self.parseExpression(.lowest);
+    }
+
+    /// Parse and require the WHOLE input to be one expression. `parse()`
+    /// stops at the first token that can't continue the expression, which is
+    /// right for prefix parsing but silently truncates a malformed whole
+    /// (`profile "with spaces" 1000Hz` would read as bare `profile`).
+    /// Consumers of complete inputs — annotation entries first — use this.
+    pub fn parseAll(self: *ExpressionParser) ParseError!*Expression {
+        const expr = try self.parseExpression(.lowest);
+        self.skipWhitespace();
+        if (self.pos < self.input.len) return error.TrailingGarbage;
+        return expr;
     }
 
     fn parseExpression(self: *ExpressionParser, min_prec: Precedence) ParseError!*Expression {
@@ -392,6 +405,19 @@ pub const ExpressionParser = struct {
         while (self.pos < self.input.len) {
             const c = self.peek();
             if (std.ascii.isAlphanumeric(c) or c == '_') {
+                self.advance();
+            } else if (c == '-' and self.pos + 1 < self.input.len and
+                (std.ascii.isAlphanumeric(self.input[self.pos + 1]) or self.input[self.pos + 1] == '_'))
+            {
+                // Kebab-greedy: an unspaced `-` joins identifier segments
+                // (`store-watchers`, `x86-64`); subtraction requires spaces.
+                self.advance();
+            } else if (c == '/' and self.pos + 1 < self.input.len and
+                (std.ascii.isAlphabetic(self.input[self.pos + 1]) or self.input[self.pos + 1] == '_'))
+            {
+                // Path atoms: unspaced `/` before a word joins (`std/explain`);
+                // division requires spaces. Digit RHS (`x/2`) stays division —
+                // path segments are word-led.
                 self.advance();
             } else {
                 break;

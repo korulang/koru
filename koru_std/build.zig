@@ -75,6 +75,15 @@ const expression_parser_module = b.createModule(.{
 expression_parser_module.addImport("lexer", lexer_module);
 expression_parser_module.addImport("ast", ast_module);
 
+// Comptime evaluator — the one evaluator; annotation entries ride it
+const comptime_eval_module = b.createModule(.{
+    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/comptime_eval.zig" },
+    .target = target,
+    .optimize = optimize,
+});
+comptime_eval_module.addImport("ast", ast_module);
+comptime_eval_module.addImport("expression_parser", expression_parser_module);
+
 // Union collector
 const union_collector_module = b.createModule(.{
     .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/union_collector.zig" },
@@ -120,6 +129,7 @@ parser_module.addImport("errors", errors_module);
 parser_module.addImport("log", log_module);
 parser_module.addImport("type_registry", type_registry_module);
 parser_module.addImport("expression_parser", expression_parser_module);
+parser_module.addImport("comptime_eval", comptime_eval_module);
 parser_module.addImport("annotation_parser", annotation_parser_module);
 parser_module.addImport("union_collector", union_collector_module);
 parser_module.addImport("module_resolver", module_resolver_module);

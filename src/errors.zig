@@ -103,6 +103,9 @@ pub const ErrorCode = enum(u16) {
     KORU140, // Bare name resolves against more than one opened `[with]` vocabulary — ambiguous, qualify the call explicitly to pick one. Emitted by the metacircular resolve-with-scopes pass (koru_std/compiler.kz), so the .zig-only registry emit-scan can't see it — reserved in scripts/registry_reserved.txt.
     KORU141, // Tap declared in a ~[comptime] module — the comptime pipeline does not expand transforms, so the tap-flow would leak into generated backend code as a bare invocation
 
+    // Annotation-entry vocabulary errors (the import gate is the first consumer)
+    KORU150, // Conditional-import entry the gate cannot evaluate — an entry deciding AST membership must evaluate; silence is never an option
+
     // Module structure errors
     KORU200, // Ambiguous module structure (both foo.kz and foo/ exist)
 };

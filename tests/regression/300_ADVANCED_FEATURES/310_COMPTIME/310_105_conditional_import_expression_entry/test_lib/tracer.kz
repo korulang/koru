@@ -11,5 +11,7 @@ const std = @import("std");
     std.debug.print("[TAP] {s}\n", .{event_name});
 }
 
-~tap(input:compute -> input:display)
-| result r |> log(event_name: "compute") => result { result: r }
+// compute is a bare-return `-> T` event, so the tap binds the produced value
+// with `: r` (call-site bind rule, Lars-ruled 2026-06-25; 310_001 is the green
+// precedent) — a branch tap has no named branch to match on a bare return.
+~tap(input:compute -> input:display): r |> log(event_name: "compute")

@@ -1,1 +1,0 @@
-Annotation entries as expressions over the compiler context — `build == "release"` evaluated (comptime_eval) against resolved bindings, replacing exact-string flag matching.

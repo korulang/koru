@@ -337,3 +337,153 @@ test "flow walker: unhandled branch and non-terminating loop fail loudly" {
     try std.testing.expectError(error.UnsupportedConstruct, err2);
     try std.testing.expect(std.mem.indexOf(u8, evaluator2.diag, "go") != null);
 }
+
+// ============================================================================
+// Annotation entry evaluation — provider chain, symbol rule, narrowing heads
+// ============================================================================
+
+const Provider = comptime_eval.Provider;
+
+fn entry(arena: std.mem.Allocator, provider: *const Provider, text: []const u8) !comptime_eval.EntryResult {
+    return comptime_eval.evalAnnotationEntry(arena, provider, text);
+}
+
+test "entry: bare atom resolves through flags, absent is false" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const flags = [_][]const u8{"profile"};
+    const p = Provider{ .flags = &flags };
+
+    try std.testing.expect((try entry(arena, &p, "profile")).truthy);
+    try std.testing.expect(!(try entry(arena, &p, "debug")).truthy);
+}
+
+test "entry: valued flag comparison with quoted RHS" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const flags = [_][]const u8{"build=release"};
+    const p = Provider{ .flags = &flags };
+
+    try std.testing.expect((try entry(arena, &p, "build == \"release\"")).truthy);
+    try std.testing.expect(!(try entry(arena, &p, "build == \"debug\"")).truthy);
+}
+
+test "entry: bare RHS is a symbol (ruled 2026-07-20)" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const flags = [_][]const u8{"build=release"};
+    const p = Provider{ .flags = &flags };
+
+    // `release` is NOT a flag; as a symbol the comparison is true anyway.
+    try std.testing.expect((try entry(arena, &p, "build == release")).truthy);
+    try std.testing.expect(!(try entry(arena, &p, "build == debug")).truthy);
+}
+
+test "entry: kebab and path atoms resolve as single identifiers" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const flags = [_][]const u8{ "fast-scan", "target=std/explain" };
+    const p = Provider{ .flags = &flags };
+
+    try std.testing.expect((try entry(arena, &p, "fast-scan")).truthy);
+    try std.testing.expect((try entry(arena, &p, "target == std/explain")).truthy);
+}
+
+test "entry: numeric flag values order-compare" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const flags = [_][]const u8{"version=15"};
+    const p = Provider{ .flags = &flags };
+
+    try std.testing.expect((try entry(arena, &p, "version >= 15")).truthy);
+    try std.testing.expect(!(try entry(arena, &p, "version > 15")).truthy);
+}
+
+test "entry: and/or/not compose with truthiness" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const flags = [_][]const u8{ "profile", "build=release" };
+    const p = Provider{ .flags = &flags };
+
+    try std.testing.expect((try entry(arena, &p, "profile && build == \"release\"")).truthy);
+    try std.testing.expect((try entry(arena, &p, "debug || profile")).truthy);
+    try std.testing.expect(!(try entry(arena, &p, "!profile")).truthy);
+    try std.testing.expect((try entry(arena, &p, "!debug")).truthy);
+}
+
+test "entry: narrowing heads pin one provider" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const flags = [_][]const u8{"profile"};
+    const p = Provider{ .flags = &flags, .command = "explain" };
+
+    try std.testing.expect((try entry(arena, &p, "cflag(profile)")).truthy);
+    try std.testing.expect(!(try entry(arena, &p, "cflag(missing)")).truthy);
+    try std.testing.expect((try entry(arena, &p, "command(explain)")).truthy);
+    try std.testing.expect(!(try entry(arena, &p, "command(deps)")).truthy);
+}
+
+test "entry: unknown narrowing head fails loudly" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const p = Provider{};
+    try std.testing.expectError(error.UnsupportedConstruct, entry(arena, &p, "flock(profile)"));
+}
+
+test "entry: feral text fails loudly for an evaluating consumer" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const p = Provider{};
+    var diag: []const u8 = "";
+    try std.testing.expectError(
+        error.UnsupportedConstruct,
+        comptime_eval.evalAnnotationEntryDiag(arena, &p, "inline@500", &diag),
+    );
+}
+
+test "entry: resolution trace carries provenance" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const flags = [_][]const u8{"build=release"};
+    const p = Provider{ .flags = &flags };
+
+    const r = try entry(arena, &p, "build == \"release\"");
+    try std.testing.expectEqual(@as(usize, 1), r.trace.len);
+    try std.testing.expectEqualStrings("build = \"release\" (compiler flag)", r.trace[0]);
+}
+
+test "entry: juxtaposed feral text is trailing garbage, never a silent prefix" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const flags = [_][]const u8{"profile"};
+    const p = Provider{ .flags = &flags };
+
+    // Without consume-all this would silently evaluate as bare `profile`
+    // (true!) and gate an import on garbage.
+    try std.testing.expectError(
+        error.UnsupportedConstruct,
+        entry(arena, &p, "profile \"with spaces\" 1000Hz"),
+    );
+}

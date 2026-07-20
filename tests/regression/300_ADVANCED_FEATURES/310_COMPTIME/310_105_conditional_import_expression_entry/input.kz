@@ -13,12 +13,11 @@ const std = @import("std");
 
 ~[build == "release"]import app/test_lib/tracer
 
-~event compute { x: i32 }
-| result i32
+~event compute { x: i32 } -> i32
 
 ~proc compute|zig {
     std.debug.print("compute({d})\n", .{x});
-    return .{ .result = x * 2 };
+    return x * 2;
 }
 
 ~event display { value: i32 }
@@ -27,5 +26,4 @@ const std = @import("std");
     std.debug.print("Final: {d}\n", .{value});
 }
 
-~compute(x: 21)
-| result r |> display(value: r)
+~compute(x: 21): r |> display(value: r)

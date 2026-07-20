@@ -627,3 +627,102 @@ fn freeExpression(allocator: std.mem.Allocator, expr: *Expression) void {
     }
     allocator.destroy(expr);
 }
+test "kebab-greedy: unspaced minus joins identifier segments" {
+    const allocator = testing.allocator;
+    var parser = ExpressionParser.init(allocator, "store-watchers");
+    defer parser.deinit();
+
+    const expr = try parser.parse();
+    defer freeExpression(allocator, expr);
+
+    try testing.expect(expr.node == .identifier);
+    try testing.expectEqualStrings("store-watchers", expr.node.identifier);
+}
+
+test "kebab-greedy: digit segments join (x86-64)" {
+    const allocator = testing.allocator;
+    var parser = ExpressionParser.init(allocator, "x86-64");
+    defer parser.deinit();
+
+    const expr = try parser.parse();
+    defer freeExpression(allocator, expr);
+
+    try testing.expect(expr.node == .identifier);
+    try testing.expectEqualStrings("x86-64", expr.node.identifier);
+}
+
+test "kebab-greedy: spaced minus stays subtraction" {
+    const allocator = testing.allocator;
+    var parser = ExpressionParser.init(allocator, "a - b");
+    defer parser.deinit();
+
+    const expr = try parser.parse();
+    defer freeExpression(allocator, expr);
+
+    try testing.expect(expr.node == .binary);
+    try testing.expect(expr.node.binary.op == .subtract);
+}
+
+test "path atoms: unspaced slash before a word joins" {
+    const allocator = testing.allocator;
+    var parser = ExpressionParser.init(allocator, "std/explain");
+    defer parser.deinit();
+
+    const expr = try parser.parse();
+    defer freeExpression(allocator, expr);
+
+    try testing.expect(expr.node == .identifier);
+    try testing.expectEqualStrings("std/explain", expr.node.identifier);
+}
+
+test "path atoms: digit RHS stays division" {
+    const allocator = testing.allocator;
+    var parser = ExpressionParser.init(allocator, "x/2");
+    defer parser.deinit();
+
+    const expr = try parser.parse();
+    defer freeExpression(allocator, expr);
+
+    try testing.expect(expr.node == .binary);
+    try testing.expect(expr.node.binary.op == .divide);
+}
+
+test "path atoms: spaced slash stays division" {
+    const allocator = testing.allocator;
+    var parser = ExpressionParser.init(allocator, "a / b");
+    defer parser.deinit();
+
+    const expr = try parser.parse();
+    defer freeExpression(allocator, expr);
+
+    try testing.expect(expr.node == .binary);
+    try testing.expect(expr.node.binary.op == .divide);
+}
+
+test "entry shape: comparison with quoted RHS" {
+    const allocator = testing.allocator;
+    var parser = ExpressionParser.init(allocator, "build == \"release\"");
+    defer parser.deinit();
+
+    const expr = try parser.parse();
+    defer freeExpression(allocator, expr);
+
+    try testing.expect(expr.node == .binary);
+    try testing.expect(expr.node.binary.op == .equal);
+    try testing.expect(expr.node.binary.left.node == .identifier);
+    try testing.expect(expr.node.binary.right.node == .literal);
+}
+
+test "entry shape: narrowing call parses as function_call" {
+    const allocator = testing.allocator;
+    var parser = ExpressionParser.init(allocator, "command(explain)");
+    defer parser.deinit();
+
+    const expr = try parser.parse();
+    defer freeExpression(allocator, expr);
+
+    try testing.expect(expr.node == .function_call);
+    try testing.expect(expr.node.function_call.callee.node == .identifier);
+    try testing.expectEqualStrings("command", expr.node.function_call.callee.node.identifier);
+    try testing.expect(expr.node.function_call.args.len == 1);
+}
