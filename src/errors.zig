@@ -27,6 +27,8 @@ pub const ErrorCode = enum(u16) {
     KORU034, // '_' in a Koru name — use '-' (kebab); '_' is reserved for digit separators
     KORU035, // '.' used as a namespace separator — use '/' ('.' is member access after ':')
     KORU036, // Binding-position destructure names a field the branch payload does not have
+    KORU037, // No-op `_` body on an OPTIONAL effect branch (pure noise; a promote-to-required silent-swallow hazard)
+    KORU038, // Whole result-struct punned into a scalar field (e.g. an fmt result `text` into a `text: string` param) — reach the field (`text.text`)
     SHAPE001, // Inconsistent branch shapes in subflow
     SHAPE002, // Duplicate branch handler at same level (indentation error)
     

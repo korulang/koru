@@ -296,6 +296,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     ast_transform_module.addImport("ast", ast_module);
+    ast_transform_module.addImport("errors", errors_module);
 
     // AST Visitor module (moved up for main exe)
     const ast_visitor_module = b.createModule(.{

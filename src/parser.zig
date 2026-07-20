@@ -5643,10 +5643,49 @@ pub const Parser = struct {
         return continuations.toOwnedSlice(self.allocator);
     }
 
+    /// Join following line-start `|>` continuation lines onto `head_text`, so a
+    /// multi-line pipe chain parses EXACTLY like its inline spelling — the same
+    /// stitch the `=` subflow body applies (see parse of `~head = step` +
+    /// indented `|> step` lines). ONE rule for `|>` chains everywhere:
+    ///   - a branch head (`| ok v |> a()` / `! v x |> a()`) absorbs following
+    ///     `|>` lines MORE indented than itself (equal-indent run or staircase —
+    ///     both are the same chain);
+    ///   - a line-start `|>` step absorbs following `|>` lines at its own
+    ///     indent or deeper (consecutive `|>` lines are one chain).
+    /// Comments, blanks, `| branch` handler lines, and dedents end the chain.
+    /// The stitched text flows into the existing inline-chain machinery, which
+    /// builds the canonical nested pyramid — so every checker downstream sees
+    /// one shape regardless of how the chain was laid out in source.
+    fn stitchPipeChainLines(self: *Parser, head_text: []const u8, head_indent: usize) ![]const u8 {
+        const head_is_pipe_step = head_text.len > 1 and head_text[0] == '|' and head_text[1] == '>';
+        var text = head_text;
+        while (self.current < self.lines.len) {
+            const nl = self.lines[self.current];
+            const nt = lexer.trim(nl);
+            if (nt.len < 2 or nt[0] != '|' or nt[1] != '>') break;
+            const ni = lexer.getIndent(nl);
+            if (head_is_pipe_step) {
+                if (ni < head_indent) break;
+            } else {
+                if (ni <= head_indent) break;
+            }
+            // Trailing `//` line-comments must not swallow the joined steps:
+            // strip them from each segment before joining (a `//` inside a
+            // string literal is data and stays). Reuses the file-level
+            // stripTrailingLineComment helper.
+            text = try std.fmt.allocPrint(self.allocator, "{s} {s}", .{
+                stripTrailingLineComment(text),
+                stripTrailingLineComment(nt),
+            });
+            self.current += 1;
+        }
+        return text;
+    }
+
     fn parseContinuationInternal(self: *Parser, indent: usize, parent_indent: usize, location: errors.SourceLocation) !ast.Continuation {
         _ = parent_indent;
         const line = self.lines[self.current - 1]; // We already incremented
-        const trimmed = lexer.trim(line);
+        const trimmed = try self.stitchPipeChainLines(lexer.trim(line), indent);
 
         // Detect kind from prefix: `|` = terminal, `!` = effect.
         const branch_kind: ast.BranchKind = if (trimmed.len > 0 and trimmed[0] == '!') .effect else .terminal;
@@ -5694,7 +5733,10 @@ pub const Parser = struct {
 
     fn parseContinuationWithNested(self: *Parser, indent: usize, location: errors.SourceLocation) anyerror!ast.Continuation {
         const line = self.lines[self.current - 1]; // We already incremented in parseContinuations
-        const trimmed = lexer.trim(line);
+        // Multi-line `|>` chain: stitch following line-start `|>` lines onto
+        // this continuation's text so the chain parses exactly like its inline
+        // spelling (see stitchPipeChainLines).
+        const trimmed = try self.stitchPipeChainLines(lexer.trim(line), indent);
 
         // Detect kind from prefix: `|` = terminal, `!` = effect.
         const branch_kind: ast.BranchKind = if (trimmed.len > 0 and trimmed[0] == '!') .effect else .terminal;

@@ -1,0 +1,19 @@
+// RULING 2: KORU050 (multiple when-clauses, no else) must NOT fire for an
+// OPTIONAL effect branch. `! ?tick` is optional; guarding it with several
+// `when` clauses and NO unguarded fallback is exactly what "optional" means —
+// if no guard matches, the effect simply isn't handled, which is legal for an
+// optional effect. (KORU050 still applies to required/terminal branches.)
+// This is the coupled fix to Ruling 1: without it, banning the no-op else
+// leaves multi-guard optional effect branches with no legal spelling.
+~import std/io
+
+~pub event poll { x: i64 }
+! ?tick i64
+| done
+
+~proc poll|zig { return .{ .done = .{} }; }
+
+~poll(x: 1)
+! tick t when t > 10 |> std/io:print.ln("big")
+! tick t when t > 5 |> std/io:print.ln("mid")
+| done |> std/io:print.ln("done")

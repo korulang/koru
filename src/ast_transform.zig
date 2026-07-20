@@ -1,5 +1,6 @@
 const std = @import("std");
 const ast = @import("ast");
+const errors_mod = @import("errors");
 
 /// AST Transformation Infrastructure
 /// Provides mutation primitives and context for safely transforming AST nodes
@@ -115,6 +116,7 @@ pub const SymbolTable = struct {
                         .path = event.path,
                         .input = event.input,
                         .branches = event.branches,
+                        .return_type = event.return_type,
                         .has_proc = false,
                         .has_subflow = false,
                         .is_recursive = false,
@@ -184,6 +186,11 @@ pub const EventInfo = struct {
     input: ast.Shape = .{ .fields = &.{} },
     /// Declared branches (references the AST; valid while the AST lives).
     branches: []const ast.Branch = &.{},
+    /// Declared `-> T` single return type name (null if the event returns via
+    /// named branches). A `[transform]` event lands as `-> SiteResult`; its
+    /// RUNTIME value is a result struct the caller must field-access (e.g.
+    /// std/fmt:ln's `{ text }`), never punned whole into a scalar param.
+    return_type: ?[]const u8 = null,
     has_proc: bool,
     has_subflow: bool,
     is_recursive: bool,
@@ -883,34 +890,61 @@ fn tryDesugarChain(
 // in-scope match is always unique — never ambiguous.
 
 /// Entry point: synthesize binding-name puns across the program, in place.
-pub fn desugarBindingPuns(allocator: std.mem.Allocator, program: *ast.Program) !void {
+pub fn desugarBindingPuns(
+    allocator: std.mem.Allocator,
+    program: *ast.Program,
+    reporter: *errors_mod.ErrorReporter,
+) !void {
     var table = try SymbolTable.init(allocator);
     defer table.deinit();
     try table.buildFrom(program);
 
-    var scope = std.StringHashMap(void).init(allocator);
+    // scope maps a live binding NAME -> the `-> T` return type of the event
+    // that produced it (null for branch payloads and non-return binds). RULING
+    // 3 reads this: a bind whose producer returns `SiteResult` (a transform
+    // result struct — e.g. std/fmt:ln's `{ text }`) must be field-accessed, not
+    // punned whole into a scalar param.
+    var scope = std.StringHashMap(?[]const u8).init(allocator);
     defer scope.deinit();
-    try punItemsBinding(allocator, &table, program.items, &scope);
+    try punItemsBinding(allocator, &table, program.items, &scope, reporter);
 }
 
 fn punItemsBinding(
     allocator: std.mem.Allocator,
     table: *SymbolTable,
     items: []const ast.Item,
-    scope: *std.StringHashMap(void),
+    scope: *std.StringHashMap(?[]const u8),
+    reporter: *errors_mod.ErrorReporter,
 ) std.mem.Allocator.Error!void {
     for (@constCast(items)) |*item| {
         switch (item.*) {
-            .flow => |*flow| try punContinuationBinding(allocator, table, &flow.body, scope),
+            .flow => |*flow| try punContinuationBinding(allocator, table, &flow.body, scope, reporter),
             .proc_decl => |*proc| {
                 for (@constCast(proc.inline_flows)) |*flow| {
-                    try punContinuationBinding(allocator, table, &flow.body, scope);
+                    try punContinuationBinding(allocator, table, &flow.body, scope, reporter);
                 }
             },
-            .module_decl => |*module| try punItemsBinding(allocator, table, module.items, scope),
+            .module_decl => |*module| try punItemsBinding(allocator, table, module.items, scope, reporter),
             else => {},
         }
     }
+}
+
+/// A `[transform]` event's declared single-return type. Its RUNTIME value is a
+/// result struct (not the type name itself) that the caller must field-access
+/// (std/fmt:ln → `{ text }`), never pun whole into a scalar param.
+fn isTransformResultReturn(return_type: ?[]const u8) bool {
+    const rt = return_type orelse return false;
+    return std.mem.eql(u8, rt, "SiteResult");
+}
+
+/// A string-typed parameter — the class RULING 3 governs. A whole result struct
+/// punned into a string param is the leak; a struct-typed param could legitimately
+/// receive a struct, so the KORU038 wall is scoped to string params only.
+fn isStringParamType(type_str: []const u8) bool {
+    return std.mem.eql(u8, type_str, "string") or
+        std.mem.eql(u8, type_str, "[]const u8") or
+        std.mem.eql(u8, type_str, "[]u8");
 }
 
 /// Fill this invocation's unfilled fields from in-scope bindings, then descend
@@ -919,7 +953,8 @@ fn punContinuationBinding(
     allocator: std.mem.Allocator,
     table: *SymbolTable,
     cont: *ast.Continuation,
-    scope: *std.StringHashMap(void),
+    scope: *std.StringHashMap(?[]const u8),
+    reporter: *errors_mod.ErrorReporter,
 ) std.mem.Allocator.Error!void {
     // 1. Fill unfilled input fields from bindings already in scope. Done BEFORE
     //    this node's own binding is added, so a value never puns into the very
@@ -929,7 +964,26 @@ fn punContinuationBinding(
             if (table.getEventInfo(node.invocation.path)) |info| {
                 for (info.input.fields) |f| {
                     if (argNamed(node.invocation.args, f.name)) continue;
-                    if (scope.contains(f.name)) {
+                    if (scope.get(f.name)) |producer_ret| {
+                        // RULING 3: the in-scope binding `f.name` is a whole
+                        // transform result struct (producer returns SiteResult).
+                        // Punning it into this scalar/string param would emit
+                        // invalid Zig (`.text = text` where `text` is a struct).
+                        // Reject at the koru level with a source line that guides
+                        // to the field access, instead of leaking the raw Zig
+                        // type error. (Every passing fmt test field-accesses the
+                        // result — `l.text` — never bare `l`.)
+                        if (isTransformResultReturn(producer_ret) and isStringParamType(f.type)) {
+                            try reporter.addErrorAtLocationWithHint(
+                                .KORU038,
+                                cont.location,
+                                "cannot fill '{s}' by punning binding '{s}' — '{s}' names a formatted-result struct, not a plain value",
+                                .{ f.name, f.name, f.name },
+                                "reach the field explicitly: write `{s}: {s}.{s}` (a std/fmt result carries its string in `.{s}`). A bare `{s}` puns the whole result struct into the parameter.",
+                                .{ f.name, f.name, f.name, f.name, f.name },
+                            );
+                            continue;
+                        }
                         node.invocation.args = try appendedArgs(
                             allocator,
                             node.invocation.args,
@@ -948,26 +1002,29 @@ fn punContinuationBinding(
     //    return bind (`producer(): x`, stored on the invocation), and a
     //    destructured return bind (`producer(): { a, b }`). No shadowing means
     //    a name added here cannot already be live — but we guard anyway and
-    //    only remove names we actually added.
+    //    only remove names we actually added. The producer's declared return
+    //    type rides with a return bind so a downstream pun can tell a transform
+    //    result struct (SiteResult) from a plain scalar.
     var added = try std.ArrayList([]const u8).initCapacity(allocator, 3);
     defer added.deinit(allocator);
     if (cont.binding) |b| {
         if (!scope.contains(b)) {
-            try scope.put(b, {});
+            try scope.put(b, null); // branch payload — no producer return type
             try added.append(allocator, b);
         }
     }
     if (cont.node) |node| {
         if (node == .invocation) {
+            const producer_ret: ?[]const u8 = if (table.getEventInfo(node.invocation.path)) |info| info.return_type else null;
             if (node.invocation.return_binding) |rb| {
                 if (!scope.contains(rb)) {
-                    try scope.put(rb, {});
+                    try scope.put(rb, producer_ret);
                     try added.append(allocator, rb);
                 }
             }
             for (node.invocation.return_destructure) |df| {
                 if (!scope.contains(df.name)) {
-                    try scope.put(df.name, {});
+                    try scope.put(df.name, null);
                     try added.append(allocator, df.name);
                 }
             }
@@ -975,7 +1032,7 @@ fn punContinuationBinding(
     }
 
     for (@constCast(cont.continuations)) |*child| {
-        try punContinuationBinding(allocator, table, child, scope);
+        try punContinuationBinding(allocator, table, child, scope, reporter);
     }
 
     for (added.items) |b| _ = scope.remove(b);
