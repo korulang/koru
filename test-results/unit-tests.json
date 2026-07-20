@@ -1,12 +1,12 @@
 {
-  "timestamp": "2026-07-20T06:23:06.310Z",
+  "timestamp": "2026-07-20T08:20:20.460Z",
   "summary": {
-    "passed": 291,
+    "passed": 299,
     "failed": 0,
     "skipped": 12,
     "leaked": 0,
     "compileErrors": 0,
-    "total": 303,
+    "total": 311,
     "suiteCount": 40,
     "status": "success"
   },
@@ -101,10 +101,10 @@
     },
     {
       "name": "expression_parser_tests",
-      "passed": 30,
+      "passed": 38,
       "failed": 0,
       "skipped": 0,
-      "total": 30,
+      "total": 38,
       "status": "success"
     },
     {
