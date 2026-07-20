@@ -1,0 +1,5 @@
+IDEA/RULING PIN (residue-tier, no spelling yet): the store's shape is selected
+by CAPACITY, not by whether fields are seeded. Ruled with Lars 2026-07-21 on a
+long design walk. residue.md carries the ruling until spelling pins supersede.
+Supersedes the seeded-vs-bare selector; blocks the plural-mixed-scalar work
+(690_049) landing on the OLD selector. See residue.md.
