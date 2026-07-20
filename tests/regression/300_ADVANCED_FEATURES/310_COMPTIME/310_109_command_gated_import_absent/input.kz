@@ -1,0 +1,23 @@
+// The negative twin of 310_108: `command(trace)` with NO command in the
+// invocation resolves absent → false, the import is excluded (loudly, on
+// stderr — the gate's resolution report), and the program compiles and runs
+// WITHOUT the module. No tap line: exclusion is the pinned behavior.
+
+const std = @import("std");
+
+~[command(trace)]import app/test_lib/tracer
+
+~event compute { x: i32 } -> i32
+
+~proc compute|zig {
+    std.debug.print("compute({d})\n", .{x});
+    return x * 2;
+}
+
+~event display { value: i32 }
+
+~proc display|zig {
+    std.debug.print("Final: {d}\n", .{value});
+}
+
+~compute(x: 21): r |> display(value: r)

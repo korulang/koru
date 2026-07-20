@@ -1,0 +1,30 @@
+// Pins the command() narrowing head gating an import: the entry
+// `command(trace)` is true exactly when the koruc invocation carries `trace`
+// in command position, so the module rides along only under its command.
+// This is the activation story for command-scoped tooling modules
+// (std/explain is the motivating case): the module's own gate, not every
+// import site's memory, decides when it exists.
+//
+// The imported module registers a tap, so the import is load-bearing: the
+// [TAP] line in the output IS the import surviving the gate. COMPILER_FLAGS
+// carries the bare word `trace`, which the harness passes in command
+// position.
+
+const std = @import("std");
+
+~[command(trace)]import app/test_lib/tracer
+
+~event compute { x: i32 } -> i32
+
+~proc compute|zig {
+    std.debug.print("compute({d})\n", .{x});
+    return x * 2;
+}
+
+~event display { value: i32 }
+
+~proc display|zig {
+    std.debug.print("Final: {d}\n", .{value});
+}
+
+~compute(x: 21): r |> display(value: r)

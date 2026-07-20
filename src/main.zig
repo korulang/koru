@@ -6279,6 +6279,7 @@ pub fn main() !void {
     }
 
     var input_file: ?[]const u8 = null;
+    var command_candidate: ?[]const u8 = null;
     var output_file: ?[]const u8 = null;
     var exe_output_name: ?[]const u8 = null;
     var check_only = false;
@@ -6367,6 +6368,13 @@ pub fn main() !void {
             // Any more would be arguments to the command
             if (input_file == null) {
                 input_file = arg;
+            } else if (command_candidate == null) {
+                // Command-position argument. Whether it names a real
+                // [comptime|command] event is only knowable post-parse, but
+                // the parse-time import gate needs it NOW: `command(explain)`
+                // entries gate imports on the invocation's command position.
+                // Injected below as the `command=<name>` provider atom.
+                command_candidate = arg;
             }
             // Silently ignore other non-flag args - might be command name or command args
         } else {
@@ -6381,6 +6389,16 @@ pub fn main() !void {
 
             try compiler_config.addFlag(flag_name);
         }
+    }
+
+    // Inject the command-position argument as the `command=<name>` provider
+    // atom, so the parse-time import gate can evaluate `command(x)` entries
+    // (`~[command(explain)]import std/explain` — the module rides along only
+    // under its command). Mirrors the build=<os> injection below.
+    if (command_candidate) |cmd| {
+        const flag = try std.fmt.allocPrint(allocator, "command={s}", .{cmd});
+        defer allocator.free(flag);
+        try compiler_config.addFlag(flag);
     }
 
     // Auto-inject build=<host_os> if no build=<os> flag was passed.
