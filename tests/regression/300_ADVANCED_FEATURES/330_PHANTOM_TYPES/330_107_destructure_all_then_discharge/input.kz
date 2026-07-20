@@ -1,0 +1,14 @@
+// FEATURE SPEC: destructuring ALL obligation fields { h, g } moves each debt onto
+// its own scalar binding; discharging each -> clean. The 'peel all at once' path,
+// dual to the projection cascade. RED until discharge of a destructured obligation
+// binding is credited (today it is not).
+~import std/io
+const std = @import("std");
+const Handle = struct { n: i32 };
+
+~event dispose { x: *Handle<!owned> }
+~proc dispose|zig { std.heap.page_allocator.destroy(x); }
+
+~event make2 { id: usize } -> { h: *Handle<owned!>, g: *Handle<owned!> }
+~proc make2|zig { const h = std.heap.page_allocator.create(Handle) catch unreachable; const g = std.heap.page_allocator.create(Handle) catch unreachable; h.* = .{ .n = 1 }; g.* = .{ .n = 2 }; return .{ .h = h, .g = g }; }
+~make2(id: 1): { h, g } |> dispose(x: h): _ |> dispose(x: g): _ |> std/io:print.ln("clean")

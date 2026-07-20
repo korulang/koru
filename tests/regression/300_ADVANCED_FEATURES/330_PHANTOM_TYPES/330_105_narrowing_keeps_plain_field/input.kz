@@ -1,0 +1,14 @@
+// FEATURE SPEC: discharging the sole obligation field of {h!, n:i64} leaves the
+// plain data behind — s collapses to the scalar n, still readable via s.n. Pins
+// that discharge consumes only the obligation, not the plain data. RED until the
+// feature lands.
+~import std/io
+const std = @import("std");
+const Handle = struct { n: i32 };
+
+~event dispose { x: *Handle<!owned> }
+~proc dispose|zig { std.heap.page_allocator.destroy(x); }
+
+~event makeMixed { id: usize } -> { h: *Handle<owned!>, n: i64 }
+~proc makeMixed|zig { const h = std.heap.page_allocator.create(Handle) catch unreachable; h.* = .{ .n = 7 }; return .{ .h = h, .n = 7 }; }
+~makeMixed(id: 1): s |> dispose(x: s.h): _ |> std/io:print.ln("n={{ s.n:d }}")
