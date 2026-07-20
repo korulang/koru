@@ -1,3 +1,10 @@
+---
+type: belief
+id: frag-annotation-entries-are-expressions
+provenance: walked with Lars 2026-07-10 (formalization arc); frontmatter added 2026-07-20 on the consumer-relative-rejection evolve
+ts: 2026-07-20
+---
+
 # Annotation entries are expressions; consumers own policy (belief)
 
 An annotation block is a **list of entries** — pipe-separated inline,
@@ -38,14 +45,38 @@ entry that cannot be evaluated, or that drops code, must say so.
 
 Grammar rulings settled on the walk: kebab-greedy lexing (unspaced `-` joins
 identifiers; subtraction requires spaces), with the same unspaced rule
-extending to `/` path atoms. Open rulings, deliberately unpinned: bare
-identifier on a comparison's RHS (symbol vs resolution atom); brackets vs
-parens for entry parameterization (brackets rhyme with the variant/selection
-language, parens with the call form); whether the deliberately-feral
-annotation forms survive the expression-list grammar (lean: no, loudly);
-whether [[frag-arguments-are-atoms]]'s calls-are-not-expressions wall treats
-annotation entries as a quoting surface (entries are comptime data handed to
-consumers, so call-shaped entries are data, not execution — unruled).
+extending to `/` path atoms.
+
+Two rulings settled 2026-07-20 (walked with Lars on the `koruc explain`
+design night):
+
+- **Rejection is consumer-relative; there is no global rejector.** The
+  earlier open question — "do the deliberately-feral annotation forms
+  survive the expression-list grammar (lean: no, loudly)?" — dissolved
+  rather than resolved: it presumed a language-level rejection pass that
+  the layering forbids. The language stores entries opaquely (the 310_010
+  pin is unmoved); a consumer that *evaluates* an entry and cannot errs
+  loudly *as itself*; a consumer that ignores an entry ignores it freely.
+  The import gate is the first evaluating consumer and the one that IS the
+  core language — it runs at parse time and decides AST membership — so its
+  entries MUST evaluate (the KORU150 wall). The same annotation that is
+  legally inert on an event is an error on an import; the asymmetry is
+  correct because an inert entry on an import is silent gating, the failure
+  class this whole design exists to kill.
+- **A bare identifier on a comparison's RHS is a SYMBOL — the word itself,
+  never a chain lookup.** `build == release` asks "is build the word
+  release"; resolving the RHS through the provider chain under
+  absent-is-false would make the comparison always-false, which nobody
+  means. Position carries the role: entry-root and truthiness positions
+  resolve; comparison-RHS is a value position. Rhymes with `~[build(macos)]`
+  variant keys, where the parenthesized word is already a value.
+
+Still open, deliberately unpinned: brackets vs parens for entry
+parameterization (brackets rhyme with the variant/selection language, parens
+with the call form); whether [[frag-arguments-are-atoms]]'s
+calls-are-not-expressions wall treats annotation entries as a quoting
+surface (entries are comptime data handed to consumers, so call-shaped
+entries are data, not execution — unruled).
 
 Pairs with [[frag-expression-source-are-strings-not-comptime]] (annotation
 entries are another captured-representation surface whose meaning belongs to
