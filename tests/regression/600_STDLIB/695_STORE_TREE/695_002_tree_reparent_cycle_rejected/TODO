@@ -1,0 +1,25 @@
+ASPIRATIONAL — tree-store TT2: a reparent that would create a CYCLE must be
+REJECTED, not silently corrupt the forest. NOT built yet.
+
+Grounded current behavior (SHOWN 2026-07-20): the cycle-creating write
+`stored { tree[root].parent: b }` (b is in subtree(root)) is silently accepted →
+root.parent stops being -1 → the forest has NO roots → preorder emits NOTHING.
+Silent wrong answer, no diagnostic. This is the bug.
+
+Desired: the cycle-creating parent-write is rejected; the tree stays
+root(10)->a(20)->b(30) and preorder still emits 10/20/30 (expected.txt reflects
+the reject-as-no-op reading — see OPEN FORK #2).
+
+OPEN DESIGN FORKS (floated to Lars 2026-07-20 — do NOT solo-resolve):
+  1. MECHANISM — comptime vs runtime. The spec says "write-site rejection, not a
+     runtime check, reusing T2's comptime cycle rejection". But `p in subtree(n)`
+     is a RUNTIME data condition (parent pointers are runtime), so it cannot be
+     comptime-decided for dynamic handles. T2's comptime detection is over the
+     STATIC interceptor write-graph — a different kind of cycle. Achievable TT2
+     is a COMPILER-INSERTED RUNTIME GUARD at the parent-write: walk p->root via
+     parent; if n appears, reject. O(depth) per reparent.
+  2. SEMANTICS — reject = no-op the bad write (tree preserved; expected.txt =
+     10/20/30) vs reject = hard error/abort with a diagnostic. Spec wording
+     ("rejected with a koru diagnostic") leans hard-error; expected.txt currently
+     assumes no-op. Lars rules; then the marker (MUST_RUN vs a fail/abort form)
+     and expected.txt are finalized.
