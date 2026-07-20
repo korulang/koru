@@ -59,6 +59,14 @@ VERBOSE=false
 # Use --keep-artifacts to preserve per-test build artifacts for successful tests
 KEEP_ARTIFACTS=false
 
+# Concurrent-suite override (default: OFF)
+# A second suite anywhere on this machine is refused by default: two suites
+# thrash the same cores/disk and both come out slower than running them serially.
+# --allow-concurrent (or KORU_ALLOW_CONCURRENT=1) opts out. This does NOT relax
+# the per-checkout lock, which guards artifact corruption, not just perf.
+ALLOW_CONCURRENT=${KORU_ALLOW_CONCURRENT:+true}
+ALLOW_CONCURRENT=${ALLOW_CONCURRENT:-false}
+
 # Cache mode (default: OFF). When ON, per-test fingerprints are used to skip
 # tests whose inputs haven't changed since the last successful run.
 # Set via --cache; disabled with --no-cache (default).
@@ -134,6 +142,8 @@ if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
     echo "  --no-backend-cache                     Disable backend-binary reuse across tests (default: on)"
     echo "  --keep-artifacts                        Keep per-test artifacts even on success (uses lots of disk)"
     echo "  --parallel N                           Run N tests concurrently (default: 1 = sequential)"
+    echo "  --allow-concurrent                     Permit a second suite while one is already running machine-wide"
+    echo "                                         (default: refuse — concurrent suites thrash CPU/disk, both slower)"
     echo ""
     echo -e "${CYAN}SNAPSHOT SYSTEM:${NC}"
     echo "  After each full run, a snapshot is saved to test-results/ with:"
@@ -395,6 +405,10 @@ while [[ $# -gt 0 ]]; do
             REBUILD_COMPILER=false
             shift
             ;;
+        --allow-concurrent)
+            ALLOW_CONCURRENT=true
+            shift
+            ;;
         --run-units)
             # Backwards compatibility - unit tests now run by default
             RUN_UNIT_TESTS=true
@@ -508,6 +522,53 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# One suite run per MACHINE (perf, not correctness): separate worktrees don't
+# corrupt each other's artifacts, but two `--parallel N` suites thrash the same
+# cores/disk and BOTH finish slower than running them back-to-back. So a second
+# suite anywhere on this box is refused by default. This is a soft guard —
+# --allow-concurrent / KORU_ALLOW_CONCURRENT=1 opts out (with a warning), unlike
+# the per-checkout lock below, which guards actual artifact corruption.
+KORU_MACHINE_LOCK="${TMPDIR:-/tmp}/koru-regression.lock"
+KORU_MACHINE_LOCK="${KORU_MACHINE_LOCK%/}"   # strip any trailing slash from $TMPDIR
+OWNS_MACHINE_LOCK=false
+if mkdir "$KORU_MACHINE_LOCK" 2>/dev/null; then
+    OWNS_MACHINE_LOCK=true
+else
+    OTHER_PID=$(cat "$KORU_MACHINE_LOCK/pid" 2>/dev/null || echo "")
+    if [ -n "$OTHER_PID" ] && kill -0 "$OTHER_PID" 2>/dev/null; then
+        OTHER_DIR=$(cat "$KORU_MACHINE_LOCK/checkout" 2>/dev/null || echo "unknown checkout")
+        OTHER_START=$(cat "$KORU_MACHINE_LOCK/started" 2>/dev/null || echo "")
+        ELAPSED=""
+        if [ -n "$OTHER_START" ]; then
+            SECS=$(( $(date +%s) - OTHER_START ))
+            ELAPSED=" · started ${SECS}s ago"
+        fi
+        if [ "$ALLOW_CONCURRENT" = true ]; then
+            echo -e "${YELLOW}⚠️  Another suite is running (pid $OTHER_PID · $OTHER_DIR${ELAPSED}).${NC}"
+            echo -e "${YELLOW}   --allow-concurrent set — proceeding anyway; expect both runs to be slower.${NC}"
+            echo ""
+        else
+            echo -e "${RED}❌ A regression suite is already running on this machine.${NC}"
+            echo "   pid $OTHER_PID · $OTHER_DIR${ELAPSED}"
+            echo "   Concurrent suites thrash CPU/disk and both come out slower."
+            echo "   Wait for it, or pass --allow-concurrent to override."
+            exit 1
+        fi
+    else
+        # Holder is gone — stale lock from a dead/reaped run. Take it over.
+        echo "Stale machine lock (pid ${OTHER_PID:-unknown} gone) — taking over."
+        rm -rf "$KORU_MACHINE_LOCK"
+        mkdir "$KORU_MACHINE_LOCK" 2>/dev/null && OWNS_MACHINE_LOCK=true
+    fi
+fi
+if [ "$OWNS_MACHINE_LOCK" = true ]; then
+    echo "$$"          > "$KORU_MACHINE_LOCK/pid"
+    echo "$SCRIPT_DIR" > "$KORU_MACHINE_LOCK/checkout"
+    date +%s           > "$KORU_MACHINE_LOCK/started"
+    # Only remove the machine lock if WE own it — never rm a concurrent run's lock.
+    trap 'rm -rf "$KORU_MACHINE_LOCK"' EXIT
+fi
+
 # One suite run per CHECKOUT: per-test artifacts (backend.zig, SUCCESS/FAILURE
 # markers) live in the test dirs themselves, so two concurrent runs in the same
 # checkout silently corrupt each other's results. Separate worktrees are fine —
@@ -525,7 +586,10 @@ if ! mkdir "$KORU_RUN_LOCK" 2>/dev/null; then
     echo "Stale suite lock (pid ${LOCK_PID:-unknown} gone) — taking over."
 fi
 echo $$ > "$KORU_RUN_LOCK/pid"
-trap 'rm -rf "$KORU_RUN_LOCK"' EXIT
+# Cleanup covers BOTH locks: the per-checkout lock always, the machine lock only
+# if we own it (a concurrent --allow-concurrent run must not delete the holder's).
+# This replaces the machine-lock-only trap set above, so it must handle both.
+trap 'rm -rf "$KORU_RUN_LOCK"; [ "$OWNS_MACHINE_LOCK" = true ] && rm -rf "$KORU_MACHINE_LOCK"' EXIT
 
 # Display what we're running
 if [ "$SMOKE_MODE" = true ]; then
