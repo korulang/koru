@@ -1530,6 +1530,59 @@ fn generateComptimeBackendEmitted(allocator: std.mem.Allocator, source_file: *as
         );
     }
 
+    // koru_explain_gather — calls every discovered `[explainer]` once and
+    // collects the returned ExplainReport values into an owned slice, which the
+    // `explain` command handler renders. ALWAYS emitted (even with zero
+    // explainers → empty slice) so std/explain's proc can reference it
+    // unconditionally, exactly as backend.zig references koru_run_pass.
+    {
+        const explainers = try collectExplainers(allocator, source_file);
+        defer allocator.free(explainers);
+        try code_emitter.write(
+            \\pub fn koru_explain_gather(
+            \\    program: *const __koru_ast.Program,
+            \\    allocator: *const __koru_std.mem.Allocator,
+            \\) []const __koru_ast.ExplainReport {
+            \\    _ = &program; // may be unused when zero explainers are registered
+            \\    var __explain_list = __koru_std.ArrayList(__koru_ast.ExplainReport){};
+            \\
+        );
+        for (explainers) |ex| {
+            var buf: [1024]u8 = undefined;
+            // Handler symbols mangle kebab to underscore (`explain-store` →
+            // `explain_store_event`); the raw joined name still carries the hyphen.
+            var ident_buf: [256]u8 = undefined;
+            const handler_ident = lowerKebabIdent(&ident_buf, ex.handler_name);
+            if (ex.module_path) |mod_path| {
+                const full_path = try codegen_utils.buildKoruModulePath(allocator, mod_path);
+                defer allocator.free(full_path);
+                const line = try std.fmt.bufPrint(&buf,
+                    \\    __explain_list.append(allocator.*, {s}.{s}_event.handler(.{{
+                    \\        .program = program,
+                    \\        .allocator = allocator.*,
+                    \\    }})) catch return &.{{}};
+                    \\
+                , .{ full_path, handler_ident });
+                try code_emitter.write(line);
+            } else {
+                const line = try std.fmt.bufPrint(&buf,
+                    \\    __explain_list.append(allocator.*, main_module.{s}_event.handler(.{{
+                    \\        .program = program,
+                    \\        .allocator = allocator.*,
+                    \\    }})) catch return &.{{}};
+                    \\
+                , .{handler_ident});
+                try code_emitter.write(line);
+            }
+        }
+        try code_emitter.write(
+            \\    return __explain_list.toOwnedSlice(allocator.*) catch return &.{};
+            \\}
+            \\
+            \\
+        );
+    }
+
     // Get the generated code and trim to actual size
     const generated = code_emitter.getOutput();
     return ComptimeBackendResult{
@@ -1695,6 +1748,46 @@ fn collectCommands(allocator: std.mem.Allocator, source_file: *ast.Program) !str
     }
 
     return .{ .commands = commands, .count = count };
+}
+
+/// ExplainerInfo — a discovered `[explainer]` event: the handler symbol and the
+/// module it lives in. The `explain` command calls each once and collects the
+/// returned ExplainReport. Mirrors CommandInfo but keyed on the `[explainer]`
+/// annotation, with no CLI name — explainers are never invoked directly, only
+/// the `explain` command calls them.
+const ExplainerInfo = struct {
+    handler_name: []const u8, // joined event path segments, e.g. "explain_store"
+    module_path: ?[]const u8, // e.g. "koru_std.store"; null = main module
+};
+
+/// Collect all `[explainer]` events from the AST — top-level and inside imported
+/// modules — mirroring collectCommands' two-level walk.
+fn collectExplainers(allocator: std.mem.Allocator, source_file: *ast.Program) ![]ExplainerInfo {
+    var list = std.ArrayList(ExplainerInfo){};
+    errdefer list.deinit(allocator);
+
+    for (source_file.items) |item| {
+        if (item == .event_decl) {
+            const event_decl = item.event_decl;
+            if (annotation_parser.hasPart(event_decl.annotations, "explainer")) {
+                const handler_name = try joinPathSegments(allocator, event_decl.path.segments);
+                try list.append(allocator, .{ .handler_name = handler_name, .module_path = null });
+            }
+        }
+        if (item == .module_decl) {
+            const module = item.module_decl;
+            for (module.items) |mod_item| {
+                if (mod_item == .event_decl) {
+                    const event_decl = mod_item.event_decl;
+                    if (annotation_parser.hasPart(event_decl.annotations, "explainer")) {
+                        const handler_name = try joinPathSegments(allocator, event_decl.path.segments);
+                        try list.append(allocator, .{ .handler_name = handler_name, .module_path = module.logical_name });
+                    }
+                }
+            }
+        }
+    }
+    return list.toOwnedSlice(allocator);
 }
 
 

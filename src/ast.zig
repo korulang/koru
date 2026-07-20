@@ -298,6 +298,66 @@ pub const SiteResult = struct {
     whole_program: ?*const Program = null,
 };
 
+/// ExplainReport — what a library's `[explainer]` returns to the `explain`
+/// command's walk. The explain-world analogue of `SiteResult`: the explainer is
+/// a near-pure function (program AST in, ExplainReport out), and the `explain`
+/// command aggregates the returned reports in its OWN call-frame, then renders
+/// them to text / json / html. Libraries never format — they emit typed entries
+/// and the command's renderer owns all three formats. Because reports flow back
+/// as return values, nothing is threaded through CompilerContext (the
+/// tap-registry anti-pattern can't arise).
+///
+/// Machinable data is a flat bag of PROPERTIES — a "symbol catalog". A property
+/// is one `key → value` symbol whose value is a TYPED scalar (int / float / bool
+/// / string), so `explain json` emits correct JSON (`7`, not `"7"`) while
+/// text/html stringify at the render boundary. A counter is just a property with
+/// an `.integer` value the library carried straight through — no early
+/// stringification. Keeping the shape uniform lets the `explain` command GATHER
+/// every property across every report into one table — the free-form symbol
+/// catalog — namespacing each key under its report `title`
+/// (`std/store.users.listeners = 7`) and rendering three ways. New value kinds
+/// and new Entry variants are pure additions.
+pub const ExplainReport = struct {
+    /// The library/facility this report is about, e.g. "std/store".
+    title: []const u8,
+    sections: []const Section = &.{},
+
+    pub const Section = struct {
+        heading: []const u8,
+        entries: []const Entry = &.{},
+    };
+
+    pub const Entry = union(enum) {
+        /// Prose — the human story a machine reader ignores.
+        note: []const u8,
+        /// One symbol: `key → value`, both strings. The machinable primitive. A
+        /// counter is a property whose value is an int the library stringified;
+        /// a choice ("SoA"), a path, a version are all just properties too. The
+        /// command gathers every property across all reports into the catalog.
+        property: Property,
+
+        pub const Property = struct {
+            /// Library-local key, e.g. "users.listeners". Namespaced under the
+            /// report `title` when gathered into the catalog.
+            key: []const u8,
+            /// The value, carrying its own type so `explain json` emits correct
+            /// JSON. The library keeps its i64 all the way to here as `.integer`.
+            value: Value,
+
+            /// A machinable scalar that knows its JSON type — the same tag set as
+            /// Zig's own `std.json.Value`, minus the composite/null cases we don't
+            /// need yet. json honors the type (`7` / `7.5` / `true` / `"SoA"`);
+            /// text/html stringify every variant. Grows like any other union.
+            pub const Value = union(enum) {
+                integer: i64,
+                float: f64,
+                bool: bool,
+                string: []const u8,
+            };
+        };
+    };
+};
+
 pub const Item = union(enum) {
     // === SOURCE-LEVEL NODES (created by parser) ===
     module_decl: ModuleDecl,
