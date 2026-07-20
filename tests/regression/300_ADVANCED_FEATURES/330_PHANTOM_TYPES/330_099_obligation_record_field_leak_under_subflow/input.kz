@@ -1,0 +1,26 @@
+// Record-field obligation (330_096: `make` returns { h: *Handle<owned!>, n }),
+// re-bound through a SUBFLOW's declared return type before the caller ever
+// sees it (302_subflow_flow:24's `~process = double(value: input): r -> r`
+// bind-then-bare-return shape). `spin` declares the SAME record return type as
+// `make` and its body is nothing but a bare pass-through of `make`'s result.
+// The caller binds `res`, uses `res.n`, and never discharges `res.h`.
+//
+// Compositionality predicts: 330_096 already proves this exact leak is caught
+// (KORU030) when `make` is called directly. Routing the identical obligation
+// record through a subflow's own return-type declaration and a bind-then-
+// bare-return body is not supposed to launder the obligation away — the leak
+// must be caught identically, regardless of the extra flow-head boundary.
+~import std/io
+const std = @import("std");
+const Handle = struct { n: i32 };
+
+~event make { id: usize } -> { h: *Handle<owned!>, n: i64 }
+~proc make|zig { const h = std.heap.page_allocator.create(Handle) catch unreachable; h.* = .{ .n = 5 }; return .{ .h = h, .n = 7 }; }
+
+~event dispose { h: *Handle<!owned> }
+~proc dispose|zig { std.heap.page_allocator.destroy(h); }
+
+~event spin { id: usize } -> { h: *Handle<owned!>, n: i64 }
+~spin = make(id): r -> r
+
+~spin(id: 1): res |> std/io:print.ln("n={{ res.n:d }}")

@@ -1,0 +1,19 @@
+// WALL: destructure must account for every obligation field. Naming only { h }
+// of {h!, g!} leaves g un-bound and therefore un-discharged -> KORU030 on g.
+// This is NOT a destructure-specific rule: an un-named obligation field is just
+// an un-discharged obligation, caught by the ordinary discharge rule.
+~import std/io
+const std = @import("std");
+const Handle = struct { n: i32 };
+
+~event make2 { id: usize } -> { h: *Handle<owned!>, g: *Handle<owned!> }
+~proc make2|zig {
+    const h = std.heap.page_allocator.create(Handle) catch unreachable;
+    const g = std.heap.page_allocator.create(Handle) catch unreachable;
+    h.* = .{ .n = 1 }; g.* = .{ .n = 2 };
+    return .{ .h = h, .g = g };
+}
+
+~event dispose { x: *Handle<!owned> }
+~proc dispose|zig { std.heap.page_allocator.destroy(x); }
+~make2(id: 1): { h } |> std/io:print.ln("bound only h, ignored g")

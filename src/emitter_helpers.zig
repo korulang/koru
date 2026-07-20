@@ -10315,7 +10315,13 @@ pub fn writeBareReturnType(emitter: *CodeEmitter, rt: []const u8, main_module_na
             return;
         }
     }
-    try emitter.write(rt);
+    // Emit the PHANTOM-STRIPPED, trimmed form — not the original `rt`. A record
+    // field recursion arrives here with a per-field value like `*Handle<owned!>`;
+    // writing the raw `rt` would leak the compile-time-only `<owned!>` phantom
+    // into the generated Zig (a syntax error), which the top-level single strip
+    // only masks for a record's FIRST phantom-bearing field (challenge 007:
+    // multi-obligation records `{ h!, g! }`).
+    try emitter.write(trimmed);
 }
 
 fn emitBranchConstructorWithEventType(

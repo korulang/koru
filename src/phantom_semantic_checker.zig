@@ -1069,6 +1069,13 @@ pub const PhantomSemanticChecker = struct {
                 } else {
                     try root_context.set(rb, canonical_phantom);
                 }
+            } else if (event_info.decl.return_type) |rt| {
+                // No whole-value phantom, but a record return may carry per-field
+                // obligations (`-> { h: *Handle<owned!>, g: *Handle<owned!> }`).
+                // Seed each so a field projection / destructured field discharge
+                // is credited (challenge 007). Uses the head's destructure (if
+                // any) to key destructured obligation fields by scalar name.
+                try self.seedRecordFieldObligations(rb, rt, module_name, flow.inv().return_destructure, &root_context);
             }
         }
 
@@ -1113,6 +1120,97 @@ pub const PhantomSemanticChecker = struct {
             try context.setWithType(rb, canonical_phantom, canonical_base_type);
         } else {
             try context.set(rb, canonical_phantom);
+        }
+    }
+
+    /// Seed the per-field obligations of a record RETURN into `context`, so a
+    /// field projection (`s.h`) or destructured field binding (`h`) is a
+    /// first-class tracked entity the discharge machinery can credit. This is
+    /// the phantom-checker twin of the auto-discharge inserter's
+    /// `seedRecordFieldObligations`: without it, `dispose(x: s.h)` looks up an
+    /// untracked value and reports the misleading "argument carries no
+    /// obligation here" (challenge 007 — field-granular obligation narrowing).
+    ///
+    /// `binding` is the whole-record bind name (`s`, or the synthetic
+    /// `__ret_destr_N` when the head destructures). `destructure`, when
+    /// non-empty, names the fields peeled onto their own scalar bindings — each
+    /// obligation field it names is keyed by that scalar NAME (`h`), matching
+    /// what the user discharges; an obligation field it does NOT name stays
+    /// keyed `binding.field` (an unreachable key → a guaranteed leak, exactly
+    /// the ordinary "every obligation must be discharged" rule, 330_103).
+    fn seedRecordFieldObligations(
+        self: *PhantomSemanticChecker,
+        binding: []const u8,
+        return_type: []const u8,
+        module_name: []const u8,
+        destructure: []const ast.DestructureField,
+        context: *BindingContext,
+    ) !void {
+        const trimmed = std.mem.trim(u8, return_type, " \t");
+        if (trimmed.len < 2 or trimmed[0] != '{' or trimmed[trimmed.len - 1] != '}') return;
+        const inner = trimmed[1 .. trimmed.len - 1];
+        var seg_start: usize = 0;
+        var depth: i32 = 0;
+        var i: usize = 0;
+        while (i <= inner.len) : (i += 1) {
+            const at_end = i == inner.len;
+            const c = if (at_end) ',' else inner[i];
+            switch (c) {
+                '<', '{', '[', '(' => depth += 1,
+                '>', '}', ']', ')' => depth -= 1,
+                else => {},
+            }
+            if (!(at_end or (c == ',' and depth == 0))) continue;
+            const seg = std.mem.trim(u8, inner[seg_start..i], " \t");
+            seg_start = i + 1;
+            if (seg.len == 0) continue;
+            const colon = std.mem.indexOfScalar(u8, seg, ':') orelse continue;
+            const f_name = std.mem.trim(u8, seg[0..colon], " \t");
+            const f_value = std.mem.trim(u8, seg[colon + 1 ..], " \t");
+            if (f_name.len == 0) continue;
+            const lt = std.mem.indexOfScalar(u8, f_value, '<') orelse continue;
+            var ph_depth: usize = 0;
+            var close: ?usize = null;
+            for (f_value[lt..], lt..) |pc, pj| {
+                if (pc == '<') ph_depth += 1 else if (pc == '>') {
+                    ph_depth -= 1;
+                    if (ph_depth == 0) {
+                        close = pj;
+                        break;
+                    }
+                }
+            }
+            const gt = close orelse continue;
+            const phantom_content = std.mem.trim(u8, f_value[lt + 1 .. gt], " \t");
+            if (!std.mem.endsWith(u8, phantom_content, "!")) continue;
+            const base_type = try std.fmt.allocPrint(self.allocator, "{s}{s}", .{
+                std.mem.trim(u8, f_value[0..lt], " \t"),
+                f_value[gt + 1 ..],
+            });
+            defer self.allocator.free(base_type);
+            const canonical = try self.canonicalizePhantomState(phantom_content, module_name);
+            defer self.allocator.free(canonical);
+            const canonical_base_type = try self.canonicalizeBaseType(base_type, null, module_name);
+            defer self.allocator.free(canonical_base_type);
+
+            // Choose the tracking key: a destructured obligation field is keyed by
+            // its scalar binding name; otherwise by the `binding.field` projection.
+            var named_in_destructure = false;
+            if (destructure.len > 0) {
+                for (destructure) |df| {
+                    if (std.mem.eql(u8, df.name, f_name)) {
+                        named_in_destructure = true;
+                        break;
+                    }
+                }
+            }
+            const key = if (named_in_destructure)
+                try self.allocator.dupe(u8, f_name)
+            else
+                try std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ binding, f_name });
+            defer self.allocator.free(key);
+
+            try context.setWithType(key, canonical, canonical_base_type);
         }
     }
 
@@ -2688,13 +2786,18 @@ pub const PhantomSemanticChecker = struct {
                     // Hints use the user-facing state spelling (e.g. `<owned!>`), never the
                     // internal canonicalized form (`input:owned`), which is not writable syntax.
                     if (concrete.consumes_obligation) {
-                        // <!state> - consumption - argument must carry the obligation to consume
+                        // <!state> - consumption - argument must carry the obligation to consume.
+                        // Name the VALUE the user wrote (`s.h`), not just the parameter (`x`):
+                        // a field projection IS now a tracked entity (challenge 007), so if we
+                        // reach here the value genuinely holds no live `<{name}!>` obligation
+                        // (never acquired, or already discharged) — say so, don't blame it for a
+                        // checker blind spot.
                         try self.reporter.addError(
                             .KORU030,
                             location.line,
                             location.column,
-                            "Phantom state mismatch: argument '{s}' carries no obligation here, but this event consumes '<!{s}>'. Pass a value that still holds its '<{s}!>' obligation.",
-                            .{ arg.name, concrete.name, concrete.name },
+                            "Phantom state mismatch: '{s}' (parameter '{s}') holds no live '<{s}!>' obligation to consume here — it was never acquired or has already been discharged. Pass a value that still holds its '<{s}!>' obligation.",
+                            .{ arg.value, arg.name, concrete.name, concrete.name },
                         );
                     } else {
                         // [state] - requirement - argument must be in this state

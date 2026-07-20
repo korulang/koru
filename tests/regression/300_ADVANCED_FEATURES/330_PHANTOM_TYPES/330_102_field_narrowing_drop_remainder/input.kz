@@ -1,0 +1,18 @@
+// WALL: discharging one obligation field and dropping the record must still be
+// caught for the UN-discharged field. Pins that narrowing does not let you leak
+// the remainder — dropping s while g is still owed is KORU030 on g.
+~import std/io
+const std = @import("std");
+const Handle = struct { n: i32 };
+
+~event make2 { id: usize } -> { h: *Handle<owned!>, g: *Handle<owned!> }
+~proc make2|zig {
+    const h = std.heap.page_allocator.create(Handle) catch unreachable;
+    const g = std.heap.page_allocator.create(Handle) catch unreachable;
+    h.* = .{ .n = 1 }; g.* = .{ .n = 2 };
+    return .{ .h = h, .g = g };
+}
+
+~event dispose { x: *Handle<!owned> }
+~proc dispose|zig { std.heap.page_allocator.destroy(x); }
+~make2(id: 1): s |> dispose(x: s.h): _ |> std/io:print.ln("dropped g still owed")

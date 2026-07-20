@@ -1,0 +1,30 @@
+// FEATURE SPEC (field-granular obligation narrowing): a record with two
+// obligation fields {h!, g!} must be dischargeable field-by-field. dispose(x: s.h)
+// consumes h and narrows s to {g}, which collapses to the scalar (210_149),
+// poisoning the base s while s.g stays projectable; dispose(x: s.g) clears the
+// last one. All obligations paid -> clean run. Same surface as 610_001's
+// `| ok s |> ... |> free(s)` (bound name referenced down-chain), field-projected.
+//
+// RESIDUAL: today the FIRST discharge already fails — the checker can't track a
+// field-projected obligation, so `dispose(x: s.h)` reports KORU030 "argument 'x'
+// carries no obligation here ... pass a value that still holds its '<owned!>'
+// obligation." That message is MISLEADING: s.h demonstrably holds the obligation
+// (it's *Handle<owned!> in the record) — the checker just can't see it through
+// the projection. It also names the parameter 'x', not the argument 's.h' the
+// user wrote. When the feature lands this goes green; the diagnostic should also
+// stop blaming the value for the checker's blind spot.
+~import std/io
+const std = @import("std");
+const Handle = struct { n: i32 };
+
+~event make2 { id: usize } -> { h: *Handle<owned!>, g: *Handle<owned!> }
+~proc make2|zig {
+    const h = std.heap.page_allocator.create(Handle) catch unreachable;
+    const g = std.heap.page_allocator.create(Handle) catch unreachable;
+    h.* = .{ .n = 1 }; g.* = .{ .n = 2 };
+    return .{ .h = h, .g = g };
+}
+
+~event dispose { x: *Handle<!owned> }
+~proc dispose|zig { std.heap.page_allocator.destroy(x); }
+~make2(id: 1): s |> dispose(x: s.h): _ |> dispose(x: s.g): _ |> std/io:print.ln("clean")
