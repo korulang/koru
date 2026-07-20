@@ -1,82 +1,75 @@
-# Challenge 007 — Fix Queue (for a Fable implementation session)
+# Challenge 007 — Fable Commission: field-granular obligation narrowing
 
-Compiler gaps surfaced by the 007 combinatorial-composition fleets. Each item is
-a red pin in the suite with a raw reproduction, the suspected checker site, and
-the design question that must be ruled **before** implementation. Both items are
-**obligation-model** issues — that model is Lars's, so each carries a ⛔ RULING
-gate. A Fable session implements an item only after its gate is green.
+This supersedes the earlier two-symptom queue. Challenge 007's obligation findings
+all trace to **one root feature that isn't built**: a record's obligation-bearing
+fields cannot be discharged independently. Build that, and the symptoms fall out.
 
-Run everything from the worktree `/Users/larsde/src/koru-challenge-007`
-(`./zig-out/bin/koruc`). Verify with `./run_regression.sh <id>`.
+Read first, in order:
+1. `concepts/frag-field-granular-obligation-narrowing.md` — the model and the *why*
+   (consume→vanish→narrow→collapse→poison; implicit narrowing; destructure falls out).
+2. The spec pins below (they ARE the acceptance criteria).
+3. Repo standards: `CLAUDE.md`, `AGENTS.md`.
 
----
+## ⚠️ Keep your eyes open — float, don't blindly satisfy
 
-## Item 1 — FALSE-ACCEPT: record-field obligation leaks under for-each  🔴 dangerous
+This spec was designed in one sitting with Lars. It is good, but there is a real
+(small) chance it's missing or mis-stating something you'll only discover while
+implementing. So:
 
-- **Pin:** `tests/regression/300_ADVANCED_FEATURES/330_PHANTOM_TYPES/330_098_obligation_record_field_under_for_each` (`MUST_FAIL` / `EXPECT` KORU030 "was not discharged").
-- **Symptom:** an obligation carried in a **record field** (`{ h: *Handle<owned!>, … }`), dropped inside a `for(0..n) ! each` body, compiles and runs silently — **no KORU030**, three handles leak. `koruc` exit 0, prints `n=0/10/20`.
-- **Why it's a bug (grounded in the corpus):** both halves enforce this catch in
-  isolation — `330_096_obligation_in_record_field` (field-level) and
-  `330_053_for_loop_obligation_escape` (for-loop escape) are BOTH `MUST_FAIL`
-  expecting KORU030. `330_098` is their composition; the checker loses the
-  field-level obligation once the record is bound inside a for-each iteration.
-- **Suspected site:** the phantom/obligation pass that seeds per-iteration
-  tracking (`phantom_semantic_checker.zig`) vs. the field-level obligation walk —
-  the field obligation on `r.h` is never entered into the tracked set inside the
-  `! each` scope. Same class as the (now-fixed) 220_017 SHAPE002 "check
-  implemented twice diverges under composition".
-- **⛔ RULING (Lars):** *Confirmed a real bug* (Lars, this session) — a dropped
-  record-field obligation under for-each MUST be caught (KORU030), matching the
-  330_096 shape. **Gate: GREEN.** The remaining design surface is only *where* the
-  fix lands in the obligation model — flag it to Lars if the fix forces a model
-  choice, otherwise implement to make 330_098 catch KORU030.
-- **Done when:** `330_098` flips to PASS (the leak is caught with
-  `error[KORU030] … was not discharged`), and 330_096/330_053 stay green.
+- **If a pin looks wrong, do NOT edit it green.** Stop, say exactly why you think
+  it's wrong, and float it back for a ruling. (`AGENTS.md`: understand tests before
+  changing them; the one banned move is red→edit-green→claim-success.)
+- **If the design needs a decision the spec doesn't cover** (especially a diagnostic
+  wording — see "un-pinned" below), float it. The obligation model is Lars's.
+- A pin you made green by *understanding* and building the feature is the goal. A pin
+  you made green by contorting the checker to dodge it is worth less than the red was.
 
----
+## The root
 
-## Item 2 — BAD-DIAGNOSTIC: explicit discharge of a record-field obligation ignored under subflow  🔴 needs ruling first
+Obligations are tracked by **binding-name string** (`phantom_semantic_checker.zig`
+~2604) with a fragile `.suffix` fallback, so a **field projection `s.a` is not a
+first-class tracked entity**. That is why `dispose(x: s.a)` reports the misleading
+`"argument 'x' carries no obligation here"` even though `s.a` visibly holds one. The
+build: make a field-projected obligation a first-class entity **keyed by path**
+(`s.a`, `s.b`), consume it on discharge, and **narrow the source record's type**
+down-flow — a field vanishes when discharged; one field left collapses to a scalar
+(`210_149`) and poisons the base binding.
 
-- **Pins:**
-  - `…/330_099_obligation_record_field_leak_under_subflow` — **green**: record-field
-    obligation returned through a subflow, never discharged → KORU030 fires
-    correctly across the subflow boundary. (Locks the correct catch; not a bug.)
-  - `…/330_100_obligation_record_field_explicit_discharge_misdiagnosed_under_subflow`
-    — **red** (`wrong-error`): the *same* obligation with an explicit
-    `dispose(res.h)` in source. Expected the precise diagnostic; got the generic
-    auto-discharge `"was not discharged"` (KORU030), which silently ignores the
-    explicit discharge call.
-- **What was measured:** a direct-call control (no subflow) with the same explicit
-  `dispose(res.h)` is rejected by `phantom_semantic_checker.zig:2696` with a
-  *specific, argument-located* message ("Phantom state mismatch: argument 'h'
-  carries no obligation here …"). The subflow-routed form instead falls through to
-  the generic `auto_discharge_inserter.zig` wall — a strictly worse diagnostic for
-  the same intent.
-- **The deeper question (contestant-flagged, verified):** manual discharge of a
-  record-field obligation (`dispose(res.h)`) is **already rejected even without a
-  subflow**. So this is not purely a message bug — it sits on top of an unsettled
-  model question.
-- **⛔ RULING NEEDED (Lars) — obligation model:** *Should manually discharging a
-  record-field obligation be legal?*
-  - If **YES** (you can `dispose(res.h)`): then BOTH the direct-call and
-    subflow-routed forms are bugs — the discharge must be *accepted*, not rejected.
-    330_100 should flip to a **green MUST_RUN**, and the fix is in the phantom
-    checker's handling of field-projected obligation arguments.
-  - If **NO** (record-field obligations are auto-discharge-only): then the correct
-    behavior is a *good rejection* — and 330_100's finding narrows to "the subflow
-    path must give the same precise `phantom_semantic_checker` diagnostic as the
-    direct call, not degrade to the generic auto-discharge message." Fix is
-    diagnostic-routing under the subflow boundary.
-- **Gate: RED until Lars rules YES/NO above.** A Fable session must not pick a
-  direction here — the two directions produce opposite tests.
-- **Done when:** per the ruling — either 330_100 becomes a green MUST_RUN (discharge
-  accepted), or it stays MUST_FAIL with the precise `phantom_semantic_checker`
-  diagnostic surfaced across the subflow boundary.
+## Acceptance — the spec pins (all on this branch)
 
----
+Positive (`MUST_RUN`, must go GREEN):
+- `330_101` discharge both fields of `{h!,g!}` → clean.
+- `330_104` discharge all three of `{a!,b!,c!}` → clean (narrows across >1 step + mid-collapse).
+- `330_105` discharge the sole obligation of `{h!, n:i64}` → plain `n` survives, readable via `s.n`.
+- `330_106` discharge out of declared order → clean (fields independent).
+- `330_107` full destructure `{h,g}` then discharge each scalar → clean.
+- `330_108` destructure `{h}` of `{h!, n:i64}` (drop plain `n`) then discharge → clean.
 
-## Not in scope (surfaced, not bugs)
+Walls (`MUST_FAIL`, must assert correctly):
+- `330_102` discharge one, drop → KORU030 on the remainder. (already green — keep it green)
+- `330_103` partial destructure omits an *obligation* field → KORU030. (already green)
+- `330_109` double-discharge a field → **`already discharged`** (the `:2597` message), NOT
+  today's "carries no obligation". Currently wrong-error red; flip it to the right diagnostic.
 
-- The `usize`→`i64` loop-index cast friction (a for-each index needs
-  `@as(i64, @intCast(i))` to feed an `i64` event param) — pre-existing, grounded at
-  `810_092_day09_part2:31`, orthogonal to composition. Note only.
+Symptoms that must fall out of the root fix (don't patch these directly):
+- `330_098` obligation-in-record-field under `for ! each` — false-accept, must catch KORU030.
+- `330_099` (already green) / `330_100` record-field obligation through a subflow — the
+  subflow path must give the same precise phantom diagnostic as a direct call, not degrade.
+
+Also: the misleading `330_101` diagnostic (`RESIDUAL` in that file) should stop blaming the
+value once projections are tracked.
+
+## Un-pinned — exists, but NOT spec'd (needs Lars's diagnostic wording; float when you reach it)
+
+- **Poison-base**: using `s` as a whole record after it collapsed to a scalar must be rejected.
+  Diagnostic wording is Lars's call. Don't invent a wall; surface what you observe.
+- **Branch chokepoint**: symmetric discharge across arms → clean; asymmetric → reject with a
+  "divergent obligation signatures at the chokepoint" diagnostic (wording is Lars's).
+- **Nested obligations** (an obligation field that is itself a record with obligations): v2.
+
+## Done
+
+The six `MUST_RUN` pins green, the three walls asserting correctly (incl. `330_109`'s
+diagnostic), `330_098`/`330_100` falling out, and nothing else in the suite regressed —
+built by *understanding and extending the obligation model*, with anything the spec got
+wrong floated rather than papered over.
