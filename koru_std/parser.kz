@@ -176,6 +176,7 @@ const std = @import("std");
             pats: *std2.ArrayList([]const u8), // distinct terminal patterns (index = matcher id)
             label_n: *usize, // unique Zig block labels
             fail: *?[]const u8, // first validation failure, as a @compileError body
+            cur_rule: *[]const u8, // name of the rule currently being emitted (the node tag)
         };
 
         fn zigEscape(a: std2.mem.Allocator, s: []const u8) []const u8 {
@@ -317,7 +318,7 @@ const std = @import("std");
             var cont_list: []const ast2.Continuation = alt.continuations;
             while (node_opt) |n| {
                 if (produceOf(n)) |e| {
-                    const ret = std2.fmt.allocPrint(ctx.a, "return .{{ .end = __p, .val = ({s}) }};\n", .{e}) catch unreachable;
+                    const ret = std2.fmt.allocPrint(ctx.a, "return .{{ .end = __p, .val = __wrap_{s}(\"{s}\", ({s})), .tag = \"{s}\" }};\n", .{ ctx.sfx, zigEscape(ctx.a, ctx.cur_rule.*), e, zigEscape(ctx.a, ctx.cur_rule.*) }) catch unreachable;
                     buf.appendSlice(ctx.a, ret) catch unreachable;
                     produced = true;
                     break;
@@ -370,7 +371,7 @@ const std = @import("std");
             }
             if (!produced) {
                 // No `->`: the alternative's value defaults to its consumed span.
-                buf.appendSlice(ctx.a, "return .{ .end = __p, .val = input[__start..__p] };\n") catch unreachable;
+                buf.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "return .{{ .end = __p, .val = __wrap_{s}(\"{s}\", input[__start..__p]), .tag = \"{s}\" }};\n", .{ ctx.sfx, zigEscape(ctx.a, ctx.cur_rule.*), zigEscape(ctx.a, ctx.cur_rule.*) }) catch unreachable) catch unreachable;
             }
             const needle = std2.fmt.allocPrint(ctx.a, "break :t{d};", .{tail_label}) catch unreachable;
             const labeled = std2.mem.indexOf(u8, body.items, needle) != null;
@@ -481,6 +482,7 @@ const std = @import("std");
 
         fn genRuleFn(ctx: *const Ctx, rule: *const ast2.Continuation) void {
             const rn = sanitize(ctx.a, rule.branch);
+            ctx.cur_rule.* = rule.branch; // this rule's name is the tag its returns wrap with
             var buf = std2.ArrayList(u8){};
             const head = std2.fmt.allocPrint(ctx.a, "fn __koru_pr_{s}_{s}(input: []const u8, pos: usize, __err: *__koru_perr_{s}) ?__koru_pres_{s} {{\nconst __start = pos; _ = &__start;\nvar __p: usize = pos;\n", .{ ctx.sfx, rn, ctx.sfx, ctx.sfx }) catch unreachable;
             buf.appendSlice(ctx.a, head) catch unreachable;
@@ -581,10 +583,16 @@ const std = @import("std");
     var pats = std.ArrayList([]const u8){};
     var label_n: usize = 0;
     var fail: ?[]const u8 = null;
-    const ctx = H.Ctx{ .a = allocator, .sfx = sfx, .rules = rules.?, .matchers = &matchers, .pats = &pats, .label_n = &label_n, .fail = &fail };
+    var cur_rule: []const u8 = "";
+    const ctx = H.Ctx{ .a = allocator, .sfx = sfx, .rules = rules.?, .matchers = &matchers, .pats = &pats, .label_n = &label_n, .fail = &fail, .cur_rule = &cur_rule };
 
-    const structs = std.fmt.allocPrint(allocator, "const __koru_perr_{s} = struct {{ pos: usize = 0, expected: []const u8 = \"\" }};\nconst __koru_pres_{s} = struct {{ end: usize, val: []const u8 }};\nfn __koru_lit_eq_{s}(a: []const u8, b: []const u8) bool {{ if (a.len != b.len) return false; for (a, b) |x, y| {{ if (x != y) return false; }} return true; }}\n", .{ sfx, sfx, sfx }) catch unreachable;
+    const structs = std.fmt.allocPrint(allocator, "const __koru_perr_{s} = struct {{ pos: usize = 0, expected: []const u8 = \"\" }};\nconst __koru_pres_{s} = struct {{ end: usize, val: []const u8, tag: []const u8 = \"\" }};\nfn __koru_lit_eq_{s}(a: []const u8, b: []const u8) bool {{ if (a.len != b.len) return false; for (a, b) |x, y| {{ if (x != y) return false; }} return true; }}\n", .{ sfx, sfx, sfx }) catch unreachable;
     matchers.appendSlice(allocator, structs) catch unreachable;
+    // Auto-wrap helper: every rule's return wraps its value in `rulename(...)`,
+    // so a rule that keeps a child produces `parent(child)` and the nesting is
+    // preserved through the walk. Rendered as nested text so the built structure
+    // is visible; the typed-struct version is the same shape with a *Node payload.
+    matchers.appendSlice(allocator, std.fmt.allocPrint(allocator, "fn __wrap_{s}(tag: []const u8, inner: []const u8) []const u8 {{ const s = @import(\"std\"); return s.fmt.allocPrint(s.heap.page_allocator, \"{{s}}({{s}})\", .{{ tag, inner }}) catch unreachable; }}\n", .{sfx}) catch unreachable) catch unreachable;
 
     for (rules.?) |*r| H.checkStaticPicker(&ctx, r);
     for (rules.?) |*r| H.genRuleFn(&ctx, r);
@@ -612,7 +620,7 @@ const std = @import("std");
     }
 
     const rn = H.sanitize(allocator, top.branch);
-    const body = std.fmt.allocPrint(allocator, "if (__koru_pr_{s}_{s}(__koru_pin, 0, &__koru_pe)) |__koru_pres| {{\nif (__koru_pres.end == __koru_pin.len) {{ __koru_inline_{d}(__koru_pres.val); }}\nelse {{ if (__koru_pe.expected.len == 0 or __koru_pres.end > __koru_pe.pos) {{ __koru_pe.pos = __koru_pres.end; __koru_pe.expected = \"end of input\"; }}\n{s} }}\n}} else {{\n{s} }}\n}}", .{ sfx, rn, top_idx.?, errsplice, errsplice }) catch unreachable;
+    const body = std.fmt.allocPrint(allocator, "if (__koru_pr_{s}_{s}(__koru_pin, 0, &__koru_pe)) |__koru_pres| {{\nif (__koru_pres.end == __koru_pin.len) {{ __koru_inline_{d}(.{{ .tag = __koru_pres.tag, .val = __koru_pres.val }}); }}\nelse {{ if (__koru_pe.expected.len == 0 or __koru_pres.end > __koru_pe.pos) {{ __koru_pe.pos = __koru_pres.end; __koru_pe.expected = \"end of input\"; }}\n{s} }}\n}} else {{\n{s} }}\n}}", .{ sfx, rn, top_idx.?, errsplice, errsplice }) catch unreachable;
     dispatch.appendSlice(allocator, body) catch unreachable;
 
     // --- Rebuild the flow: @pass_ran, dispatch inline_body, continuations kept ---
