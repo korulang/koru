@@ -2862,6 +2862,30 @@ const std = @import("std");
         return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:stored: '{s}' is not a field of store '{s}'", .{ target_field, target_store }) } };
     };
 
+    // SELF-FK traversal head: `store[handle.reffield]` addresses the row whose
+    // index IS the value of `reffield` in row `handle` — i.e. it FOLLOWS a
+    // stored self-foreign-key. `reffield` must be a field of THIS store (a
+    // handle-carrying column); the head is rewritten to a column read so the
+    // ref dereferences to a row index (one hop). A plain handle head (`[a]`,
+    // `[__koru_qrow]`) has no dot and is left untouched.
+    if (row_expr) |re| {
+        if (std.mem.indexOfScalar(u8, re, '.')) |dp| {
+            const base = std.mem.trim(u8, re[0..dp], " ");
+            const ref_field = std.mem.trim(u8, re[dp + 1 ..], " ");
+            var ref_ok = false;
+            for (order) |fname| {
+                if (std.mem.eql(u8, fname, ref_field)) {
+                    ref_ok = true;
+                    break;
+                }
+            }
+            if (!ref_ok) {
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:stored: self-FK head '{s}[{s}]' - '{s}' is not a field of store '{s}' (a reference head follows a handle-carrying column of the same store)", .{ target_store, re, ref_field, target_store }) } };
+            }
+            row_expr = std.fmt.allocPrint(allocator, "__koru_store_{s}.{s}[@as(usize, @intCast({s}))]", .{ target_store, ref_field, base }) catch unreachable;
+        }
+    }
+
     const rewritten_expr = H.storeRefs(allocator, w.value, target_store);
 
     const write_name = std.fmt.allocPrint(allocator, "__store_write_{s}", .{target_store}) catch unreachable;
