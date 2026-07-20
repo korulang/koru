@@ -1,0 +1,17 @@
+// PIN (phantom_semantic_checker — mirror of 330_110): an OUTPUT/return may ISSUE
+// an obligation (<owned!>) or produce-in-state (<owned>), but may NEVER CONSUME
+// one (<!owned>). A discharge consumes an INCOMING obligation; a return has
+// nothing incoming to consume, so <!owned> in output is a discharge placed where
+// only an issue belongs — nonsense. (Prefix-! reads as discharge, suffix-! as
+// issue: the position IS the polarity.)
+//
+// Desired: a clear polarity rejection at the SEMANTIC phantom checker (not the
+// parser). Roadmap red until the wall exists. [diagnostic wording Lars's to finalize]
+~import std/io
+const std = @import("std");
+const Handle = struct { n: i32 };
+
+~event weird { } -> *Handle<!owned>
+~proc weird|zig { const h = std.heap.page_allocator.create(Handle) catch unreachable; h.* = .{ .n = 1 }; return h; }
+
+~weird(): h |> std/io:print.ln("returned a consumed-in-output handle")
