@@ -22,6 +22,7 @@ KORULANG="$HOME/src/korulang_org"
 PROMPT_FILE="$KORU/scripts/feedback-cron-prompt.md"
 LOG_DIR="$HOME/.koru-feedback-cron"
 WT="$LOG_DIR/worktree"          # stable path — referenced verbatim in the prompt
+KORULANG_WT="$LOG_DIR/korulang-worktree"  # isolate korulang_org too (see 2026-07-20)
 STAMP="$(date +%Y-%m-%d)"
 BRANCH="feedback-auto/$STAMP"
 LOG="$LOG_DIR/$STAMP.log"
@@ -62,14 +63,43 @@ if [ "$WT_RC" -ne 0 ] || [ ! -d "$WT" ]; then
   exit 1
 fi
 
+# --- Same isolation for korulang_org ---------------------------------------
+# WHY (2026-07-20): the koru side got worktree isolation on 2026-07-19, but
+# korulang_org was still passed as the SHARED checkout via --add-dir. The bot
+# created dated branches directly in ~/src/korulang_org and left it parked on
+# them — corrupting whatever was open there (a manual ceremony committed board
+# data onto feedback-auto/* because of exactly this). Isolate it identically.
+{
+  git -C "$KORULANG" worktree remove --force "$KORULANG_WT" 2>/dev/null || true
+  git -C "$KORULANG" worktree prune
+
+  if git -C "$KORULANG" show-ref --verify --quiet "refs/heads/$BRANCH"; then
+    git -C "$KORULANG" worktree add "$KORULANG_WT" "$BRANCH"
+  else
+    git -C "$KORULANG" worktree add -b "$BRANCH" "$KORULANG_WT" main
+  fi
+} >> "$LOG" 2>&1
+KL_RC=$?
+
+if [ "$KL_RC" -ne 0 ] || [ ! -d "$KORULANG_WT" ]; then
+  echo "=== korulang worktree setup FAILED (rc=$KL_RC) at $(date); aborting ===" >> "$LOG" 2>&1
+  WEBHOOK="$(grep -E '^DISCORD_STATUS_WEBHOOK=' "$KORULANG/.env.local" 2>/dev/null | cut -d= -f2- | tr -d '"')"
+  if [ -n "$WEBHOOK" ]; then
+    curl -sS -H "Content-Type: application/json" \
+      -d "{\"content\": \"⚠️ feedback-cron could not create its korulang worktree ($STAMP). Log: $LOG\"}" \
+      "$WEBHOOK" >/dev/null 2>&1
+  fi
+  exit 1
+fi
+
 cd "$WT" || exit 1
 
 # Runtime preamble — the strongest signal that the koru repo == this worktree,
 # and that Step 5 must NOT switch branches (it already is on the dated branch).
-PREAMBLE="RUNTIME CONTEXT (read this first). You are running headless in a DEDICATED GIT WORKTREE of the koru repo at $WT, already checked out on branch $BRANCH. This worktree IS your current working directory and the ONLY place you touch the koru repo. NEVER cd to ~/src/koru — that is the shared main checkout, and switching its branch corrupts other work. Do NOT run 'git switch', 'git checkout -b', or 'git worktree'; you are already on the correct dated branch, so Step 5 is only: stage and commit here. Everywhere the prompt below names the koru repo (~/src/koru), it means this worktree, $WT."
+PREAMBLE="RUNTIME CONTEXT (read this first). You are running headless in DEDICATED GIT WORKTREES, already checked out on branch $BRANCH: koru at $WT (your current working directory) and korulang_org at $KORULANG_WT. These worktrees are the ONLY places you touch either repo. NEVER cd to ~/src/koru or ~/src/korulang_org — those are the shared main checkouts, and switching their branch corrupts other work. Do NOT run 'git switch', 'git checkout -b', or 'git worktree'; you are already on the correct dated branch in both, so Step 5 is only: stage and commit in the worktrees. Everywhere the prompt below names the koru repo (~/src/koru) it means $WT; everywhere it names korulang_org (~/src/korulang_org) it means $KORULANG_WT."
 
 claude -p "$PREAMBLE"$'\n\n'"$(cat "$PROMPT_FILE")" \
-  --add-dir "$KORULANG" \
+  --add-dir "$KORULANG_WT" \
   --permission-mode bypassPermissions \
   --model claude-opus-4-8 >> "$LOG" 2>&1
 RC=$?
