@@ -5,10 +5,14 @@
 // obligation on a value it was handed; a `read`-style borrow requires the state,
 // it does not re-open the resource. Only a RETURN issues.
 //
-// Desired: a clear polarity rejection at the semantic phantom checker. Today the
-// checker silently accepts <owned!> in input and lets the nonsense flow
-// downstream (a spurious leak error), so this is a roadmap red until the wall
-// exists. [exact diagnostic wording is Lars's to finalize]
+// The wall EXISTS and WORKS — KORU033 at phantom_semantic_checker.zig:333 rejects
+// exactly this ("Cannot issue obligation '<owned!>' on input parameter ..."), and
+// it fires correctly under `--auto-discharge=disable`. It is DORMANT by default
+// because of PASS ORDERING: the auto-discharge pass runs first, sees the issued-
+// but-undischarged obligation, and halts with a spurious KORU030 leak before the
+// phantom signature validation rejects it. Fix = run phantom signature/polarity
+// validation BEFORE auto-discharge (a declaration error precedes flow analysis).
+// EXPECT already matches KORU033's live message, so the reorder greens this pin.
 ~import std/io
 const std = @import("std");
 const Handle = struct { n: i32 };
