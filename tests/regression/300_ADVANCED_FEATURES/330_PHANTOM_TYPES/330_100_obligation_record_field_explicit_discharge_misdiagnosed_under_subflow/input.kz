@@ -1,0 +1,31 @@
+// Same shape as 330_099 (record-field obligation routed through a subflow's
+// bare-return boundary), but this time the caller DOES issue an explicit
+// discharge on the field: `dispose(res.h)`. A direct (non-subflow) call to
+// `make` with the identical explicit `dispose(res.h)` is rejected by the
+// phantom semantic checker with a precise, argument-located diagnostic:
+// "Phantom state mismatch: argument 'h' carries no obligation here...".
+//
+// Compositionality predicts: routing the same record through a subflow's
+// declared return type must not change WHICH checker's diagnostic the caller
+// sees, or degrade its precision — a rejection is only correct per the
+// challenge's own oracle when it "carries a correct, specific, koru-level
+// diagnostic naming why" (007 brief). This pins that the subflow-routed form
+// keeps the same argument-located "Phantom state mismatch" diagnostic that
+// the direct-call sibling produces, rather than falling through to the
+// auto-discharge inserter's generic "was not discharged" / "no disposal
+// event" wall, which never acknowledges the explicit dispose() call already
+// present in the source.
+~import std/io
+const std = @import("std");
+const Handle = struct { n: i32 };
+
+~event make { id: usize } -> { h: *Handle<owned!>, n: i64 }
+~proc make|zig { const h = std.heap.page_allocator.create(Handle) catch unreachable; h.* = .{ .n = 5 }; return .{ .h = h, .n = 7 }; }
+
+~event dispose { h: *Handle<!owned> }
+~proc dispose|zig { std.heap.page_allocator.destroy(h); }
+
+~event spin { id: usize } -> { h: *Handle<owned!>, n: i64 }
+~spin = make(id): r -> r
+
+~spin(id: 1): res |> dispose(res.h): _ |> std/io:print.ln("n={{ res.n:d }}")
