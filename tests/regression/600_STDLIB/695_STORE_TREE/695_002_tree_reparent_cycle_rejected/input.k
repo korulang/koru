@@ -1,9 +1,11 @@
-// 695_002 — [tree] store TT2: a reparent that would create a CYCLE must be
-// REJECTED, not silently corrupt the forest. ASPIRATIONAL (see TODO) — no cycle
-// guard exists yet; today the `tree[root].parent: b` write is silently accepted
-// and preorder emits NOTHING (no row left with parent == -1 → no roots).
+// 695_002 — [tree] store TT2: a reparent that would create a CYCLE is REJECTED
+// by a default-on guard; the `| cycle` branch handles it (mirrors insert's
+// `| full`). The bad write is refused, the tree stays intact. ASPIRATIONAL
+// (see TODO) — the guard + `| cycle` branch don't exist yet; today the write is
+// silently accepted and preorder emits NOTHING (no row left with parent == -1).
 // chain root(10) -> a(20) -> b(30); then attempt to make root a child of b.
-// b is in subtree(root) (root->a->b), so root->a->b->root is a cycle.
+// b is in subtree(root) (root->a->b), so root->a->b->root would be a cycle →
+// the `| cycle` branch fires, the write is refused, preorder still walks 10/20/30.
 import std/io
 import std/store
 
@@ -14,7 +16,7 @@ std/store:insert(tree) { val: 10 }
     | row a |> std/store:insert(tree) { val: 30 }
         | row b |> std/store:stored { tree[a].parent: root }
             |> std/store:stored { tree[b].parent: a }
-            |> std/store:stored { tree[root].parent: b }
+            |> std/store:stored { tree[root].parent: b } | cycle |> std/io:print.ln("cycle rejected")
 
 std/store:preorder(tree)
 ! preorder { entity.val } |> std/io:print.ln("{{ val:d }}")
