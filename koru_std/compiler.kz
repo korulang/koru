@@ -2509,9 +2509,14 @@ const joinPathAlloc = struct {
             }) catch {};
         }
 
+        // Generic phantom-checker banner — identical to check-phantom-semantic's.
+        // Both passes drive the SAME PhantomSemanticChecker library; the specific
+        // KORU0xx line above carries the real diagnostic. Keeping the banner
+        // uniform means a declaration-shape rejection reads the same whether it
+        // surfaces in the signature pass or the flow pass (330_034 asserts it).
         const err_msg = switch (err) {
-            error.ValidationFailed => "Phantom signature validation failed",
-            else => "Phantom signature validation error",
+            error.ValidationFailed => "Phantom semantic validation failed",
+            else => "Phantom semantic validation error",
         };
 
         // Return failed branch - stops the pipeline!
