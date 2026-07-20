@@ -3044,7 +3044,15 @@ const std = @import("std");
     // ------------------------------------------------------------------
     const Purity = struct {
         const Ctx = struct {
-            allowed: []const []const u8,
+            // Names in scope at the CURRENT point in the arm: the branch
+            // payload of each enclosing continuation plus the mid-pipe
+            // `: name` binds (Invocation.return_binding) produced by earlier
+            // steps of the SAME arm. Grown/shrunk push-pop as scanCont
+            // descends, so a pipe bind is visible to downstream steps but not
+            // to itself or to sibling arms. A name from the ENCLOSING flow is
+            // never pushed here — that is precisely the 690_006 rejection.
+            scope: *std.ArrayList([]const u8),
+            allocator: std.mem.Allocator,
             stores: []const []const u8,
             violation: ?[]const u8 = null,
         };
@@ -3058,7 +3066,7 @@ const std = @import("std");
             if (std.mem.startsWith(u8, root, "__koru_")) return true;
             const keywords = [_][]const u8{ "and", "or", "not", "true", "false", "_" };
             for (keywords) |k| if (std.mem.eql(u8, root, k)) return true;
-            for (ctx.allowed) |a| if (std.mem.eql(u8, root, a)) return true;
+            for (ctx.scope.items) |a| if (std.mem.eql(u8, root, a)) return true;
             for (ctx.stores) |s| if (std.mem.eql(u8, root, s)) return true;
             return false;
         }
@@ -3130,6 +3138,12 @@ const std = @import("std");
         }
         fn scanCont(ctx: *Ctx, cont: *const ast.Continuation) void {
             if (ctx.violation != null) return;
+            const base = ctx.scope.items.len;
+            // This continuation's branch payload is in scope for its own node
+            // args (`! clicks c |> f(c)`) and for everything below it.
+            if (cont.binding) |b| ctx.scope.append(ctx.allocator, b) catch unreachable;
+            for (cont.destructure) |df| ctx.scope.append(ctx.allocator, df.name) catch unreachable;
+
             if (cont.condition) |cond| scanText(ctx, cond);
             if (cont.node) |n| {
                 switch (n) {
@@ -3138,13 +3152,30 @@ const std = @import("std");
                             scanText(ctx, a.value);
                             if (a.expression_value) |ev| scanText(ctx, ev.text);
                             if (a.source_value) |sv| scanText(ctx, sv.text);
-                            if (ctx.violation != null) return;
+                            if (ctx.violation != null) break;
                         }
                     },
                     else => {},
                 }
             }
-            for (cont.continuations) |*c| scanCont(ctx, c);
+
+            if (ctx.violation == null) {
+                // The pipe result of THIS step (`... : l |>`) is in scope for
+                // the downstream steps (its continuations), NOT for its own
+                // args above. return_binding / return_destructure are the
+                // mid-chain binds the flat allowed-set used to miss.
+                if (cont.node) |n| switch (n) {
+                    .invocation => |inv| {
+                        if (inv.return_binding) |rb| ctx.scope.append(ctx.allocator, rb) catch unreachable;
+                        for (inv.return_destructure) |df| ctx.scope.append(ctx.allocator, df.name) catch unreachable;
+                    },
+                    else => {},
+                };
+                for (cont.continuations) |*c| scanCont(ctx, c);
+            }
+
+            // Pop everything this level pushed: siblings must not see these binds.
+            ctx.scope.shrinkRetainingCapacity(base);
         }
     };
 
@@ -3191,10 +3222,11 @@ const std = @import("std");
 
     if (site) |sc| {
         for (sc.continuations) |*wc| {
-            var allowed = std.ArrayList([]const u8).initCapacity(allocator, 4) catch unreachable;
-            if (wc.binding) |b| allowed.append(allocator, b) catch unreachable;
-            for (wc.destructure) |df| allowed.append(allocator, df.name) catch unreachable;
-            var pctx = Purity.Ctx{ .allowed = allowed.items, .stores = known_stores.items };
+            // scanCont owns all scope: it pushes wc's own payload binding and
+            // every mid-pipe `: name` bind as it descends, so the initial
+            // scope is empty (comptime-known store names live in `stores`).
+            var scope = std.ArrayList([]const u8).initCapacity(allocator, 8) catch unreachable;
+            var pctx = Purity.Ctx{ .scope = &scope, .allocator = allocator, .stores = known_stores.items };
             Purity.scanCont(&pctx, wc);
             if (pctx.violation) |name| {
                 return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store: watch body references '{s}', runtime state of the enclosing flow - a watch body executes at '{s}'s write sites, not here; bind it through a store or react at a write site", .{ name, store_name }) } };
