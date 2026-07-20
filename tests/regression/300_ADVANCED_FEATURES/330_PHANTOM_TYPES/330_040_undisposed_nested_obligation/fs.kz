@@ -15,8 +15,11 @@ const Data = struct { content: []const u8 };
     return f;
 }
 
-// Read - returns data! state (nested obligation)
-~pub event read { file: *File<opened!> } -> { file: *File<opened!>, content: *Data<data!> }
+// Read - requires an opened file, returns data! state (nested obligation).
+// Input is a STATE REQUIREMENT (<opened>), never an issue: `<opened!>` on an
+// input parameter is illegal polarity (KORU033, pinned by 330_110) — only
+// outputs issue obligations.
+~pub event read { file: *File<opened> } -> { file: *File<opened!>, content: *Data<data!> }
 
 ~proc read|zig {
     const d = std.heap.page_allocator.create(Data) catch unreachable;

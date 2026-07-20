@@ -1061,6 +1061,7 @@ pub const CompilerContext = struct {
 ~analysis = check-release-gate
   |> check-structure
   |> check-phantom-signatures
+  |> check-phantom-args
   |> pass-auto-discharge
   |> check-flow
   |> check-phantom-semantic
@@ -1621,6 +1622,18 @@ const emitFlowWithMocks = struct {
 // about programs using that event (otherwise auto-discharge halts first with
 // a spurious KORU030 leak and the declaration error stays dormant).
 ~pub event check-phantom-signatures { ctx: CompilerContext }
+| ctx CompilerContext
+| failed { ctx: CompilerContext, message: string }
+
+// Phantom ARGUMENT validation - the argument-located call-site checks (state
+// threading, per-argument "Phantom state mismatch", use-after-discharge).
+// Runs BEFORE pass-auto-discharge: a call-site mismatch the user can point at
+// must surface with its precise, argument-located diagnostic — not be
+// preempted by the inserter's generic "was not discharged" wall, which never
+// acknowledges the explicit discharge already present in the source. The
+// flow-EXIT obligation-balance walls stay in check-phantom-semantic, after
+// insertion, where the inserted disposal calls exist to be credited.
+~pub event check-phantom-args { ctx: CompilerContext }
 | ctx CompilerContext
 | failed { ctx: CompilerContext, message: string }
 
@@ -2514,6 +2527,95 @@ const joinPathAlloc = struct {
         // KORU0xx line above carries the real diagnostic. Keeping the banner
         // uniform means a declaration-shape rejection reads the same whether it
         // surfaces in the signature pass or the flow pass (330_034 asserts it).
+        const err_msg = switch (err) {
+            error.ValidationFailed => "Phantom semantic validation failed",
+            else => "Phantom semantic validation error",
+        };
+
+        // Return failed branch - stops the pipeline!
+        return .{ .failed = .{ .ctx = mutable_ctx, .message = err_msg } };
+    };
+
+    mutable_ctx.passes_completed += 1;
+    return .{ .ctx = mutable_ctx };
+}
+
+// Phantom argument validation implementation
+// The argument-located call-site slice of the phantom checker (state
+// threading + per-argument mismatch + use-after-discharge), run BEFORE
+// auto-discharge so the precise "Phantom state mismatch" diagnostics preempt
+// the inserter's generic "was not discharged" wall. The flow-EXIT
+// obligation-balance walls stay in check-phantom-semantic (post-insertion).
+~proc check-phantom-args|zig {
+    var mutable_ctx = ctx;
+    mutable_ctx.current_pass = "check_phantom_args";
+
+    const phantom_semantic_checker = @import("phantom_semantic_checker");
+    const errors_mod = @import("errors");
+
+    // Create error reporter
+    var reporter = errors_mod.ErrorReporter.init(
+        std.heap.page_allocator,
+        "phantom_args_check",
+        ""
+    ) catch {
+        mutable_ctx.errors.append(mutable_ctx.allocator, .{
+            .message = "Failed to initialize error reporter",
+            .location = .{ .file = "compiler", .line = 0, .column = 0 },
+        }) catch {};
+        return .{ .ctx = mutable_ctx };
+    };
+    defer reporter.deinit();
+
+    // Create phantom semantic checker (argument-only entry point)
+    var checker = phantom_semantic_checker.PhantomSemanticChecker.init(
+        std.heap.page_allocator,
+        &reporter
+    ) catch {
+        mutable_ctx.errors.append(mutable_ctx.allocator, .{
+            .message = "Failed to initialize phantom semantic checker",
+            .location = .{ .file = "compiler", .line = 0, .column = 0 },
+        }) catch {};
+        return .{ .ctx = mutable_ctx };
+    };
+    defer checker.deinit();
+
+    // ~[prototype]: same relaxation as check-phantom-semantic (400_165) — the
+    // argument slice walks the same continuations, so the same doodle arms
+    // must slide here too.
+    for (mutable_ctx.ast.module_annotations) |ann| {
+        if (std.mem.eql(u8, ann, "prototype")) {
+            checker.prototype_mode = true;
+        }
+    }
+
+    // Run argument-located validation only — no exit-balance walls here
+    checker.checkArguments(mutable_ctx.ast) catch |err| {
+        // Collect errors from reporter into context
+        for (reporter.errors.items) |reporter_err| {
+            // Print to stderr immediately for visibility in regression tests
+            std.debug.print("error[{s}]: {s}\n  --> {s}:{}:{}\n\n", .{
+                @tagName(reporter_err.code),
+                reporter_err.message,
+                reporter_err.location.file,
+                reporter_err.location.line,
+                reporter_err.location.column,
+            });
+
+            mutable_ctx.errors.append(mutable_ctx.allocator, .{
+                .message = mutable_ctx.allocator.dupe(u8, reporter_err.message) catch reporter_err.message,
+                .location = .{
+                    .file = mutable_ctx.allocator.dupe(u8, reporter_err.location.file) catch reporter_err.location.file,
+                    .line = @intCast(reporter_err.location.line),
+                    .column = @intCast(reporter_err.location.column),
+                },
+            }) catch {};
+        }
+
+        // Generic phantom-checker banner — identical to check-phantom-semantic's.
+        // All three phantom passes drive the SAME PhantomSemanticChecker library;
+        // the specific KORU0xx line above carries the real diagnostic (see the
+        // banner-parity note in check-phantom-signatures, 330_034).
         const err_msg = switch (err) {
             error.ValidationFailed => "Phantom semantic validation failed",
             else => "Phantom semantic validation error",

@@ -43,16 +43,19 @@ if grep -qE 'general protection exception|panic:|Segmentation fault' backend.err
 fi
 
 # Must identify the bound-binding shape mismatch. Phantom checker catches this
-# as either "no tracked phantom state" on the argument or "not discharged" on
-# the bound resource — either is acceptable evidence the mismatch was caught.
-if ! grep -qE 'no tracked phantom state|was not discharged' backend.err; then
+# as one of: "no tracked phantom state" on the argument, "not discharged" on
+# the bound resource, or the argument-located consume mismatch ("holds no live
+# '<state!>' obligation") from the pre-discharge argument pass — any is
+# acceptable evidence the mismatch was caught with a precise diagnostic.
+if ! grep -qE 'no tracked phantom state|was not discharged|holds no live' backend.err; then
     echo "FAIL: diagnostic doesn't reference the bound-shape mismatch"
     cat backend.err
     exit 1
 fi
 
-# Must reference at least one of the bindings from the test flow.
-if ! grep -qE "'(c1|c2|conn|tx)'" backend.err; then
+# Must reference at least one of the bindings from the test flow (bare or as a
+# field projection the user wrote, e.g. 'c1.conn').
+if ! grep -qE "'(c1|c2|conn|tx)([.'])" backend.err; then
     echo "FAIL: diagnostic doesn't name any of the involved bindings"
     cat backend.err
     exit 1

@@ -27,6 +27,25 @@ pub const PhantomSemanticChecker = struct {
     /// TERMINAL continuations — the doodle where handler arms lead the event's
     /// declaration (400_165). Set from module_annotations in check_phantom.
     prototype_mode: bool = false,
+    /// Which slice of flow analysis this run performs. `.full` (check-phantom-
+    /// semantic, post-auto-discharge) runs everything, including the flow-exit
+    /// obligation-balance walls — those must see the inserted disposal calls,
+    /// or every auto-dischargeable obligation reads as a leak. `.args_only`
+    /// (check-phantom-args, PRE-auto-discharge) runs only the argument-located
+    /// call-site checks: state threading + per-argument phantom mismatch. Those
+    /// depend on nothing auto-discharge inserts (insertions land at terminators,
+    /// downstream of every user call), so running them first lets the PRECISE
+    /// "Phantom state mismatch" diagnostics preempt the inserter's generic
+    /// "was not discharged" wall (330_040/330_100 — the diagnostic-precision
+    /// half of the signature-pass reordering, see checkSignatures).
+    check_mode: CheckMode = .full,
+    /// Events implemented by a SUBFLOW (`~spin = ...`), keyed `module:event`.
+    /// A subflow-implemented event's declared record return does not (yet)
+    /// thread its field obligations across the call boundary — see
+    /// seedRecordFieldObligations' caller in validateFlow.
+    subflow_impl_map: std.StringHashMap(void),
+
+    pub const CheckMode = enum { full, args_only };
 
     /// Information about an event for disposal suggestions
     const DisposalEventInfo = struct {
@@ -41,6 +60,7 @@ pub const PhantomSemanticChecker = struct {
             .module_map = std.StringHashMap([]const u8).init(allocator),
             .label_map = std.StringHashMap(*const ast.EventDecl).init(allocator),
             .disposal_event_map = std.StringHashMap(DisposalEventInfo).init(allocator),
+            .subflow_impl_map = std.StringHashMap(void).init(allocator),
         };
     }
 
@@ -53,6 +73,11 @@ pub const PhantomSemanticChecker = struct {
         self.disposal_event_map.deinit();
         self.module_map.deinit();
         self.label_map.deinit();
+        var subflow_iter = self.subflow_impl_map.keyIterator();
+        while (subflow_iter.next()) |key| {
+            self.allocator.free(key.*);
+        }
+        self.subflow_impl_map.deinit();
     }
 
     /// Check phantom types in the entire AST
@@ -66,6 +91,10 @@ pub const PhantomSemanticChecker = struct {
 
         // Build event map for disposal suggestions
         try self.buildDisposalEventMap(source_ast);
+
+        // Subflow-implemented events (their record returns don't seed field
+        // obligations — see validateFlow)
+        try self.buildSubflowImplMap(source_ast);
 
         // Reset label map for this run
         self.label_map.clearRetainingCapacity();
@@ -112,6 +141,62 @@ pub const PhantomSemanticChecker = struct {
             return error.ValidationFailed;
         }
         log.debug("[PHANTOM] Signature validation passed\n", .{});
+    }
+
+    /// Argument-located validation only: the call-site checks (state threading,
+    /// per-argument phantom mismatch — the precise "Phantom state mismatch"
+    /// family) WITHOUT the flow-exit obligation-balance walls of `check()`.
+    /// This is the entry point for the `check-phantom-args` pipeline pass,
+    /// which runs BEFORE auto-discharge insertion: a call-site mismatch the
+    /// user can point at (`dispose(res.h)` consuming an obligation the value
+    /// doesn't hold, an argument in the wrong state) must be reported with its
+    /// precise, argument-located diagnostic — not preempted by the inserter's
+    /// generic "was not discharged" wall, which never acknowledges the
+    /// explicit discharge already present in the source (330_040, 330_100).
+    /// The exit-balance walls stay in `check()` after insertion, where the
+    /// inserted disposal calls exist to be credited.
+    pub fn checkArguments(self: *PhantomSemanticChecker, source_ast: *const ast.Program) !void {
+        log.debug("\n[PHANTOM-CHECK] Starting phantom argument check for program with {d} items\n", .{source_ast.items.len});
+        self.check_mode = .args_only;
+        defer self.check_mode = .full;
+        try self.buildModuleMap(source_ast);
+        try self.buildDisposalEventMap(source_ast);
+        try self.buildSubflowImplMap(source_ast);
+        self.label_map.clearRetainingCapacity();
+        const flows_valid = try self.validatePhantomFlows(source_ast);
+        if (!flows_valid) {
+            log.debug("[PHANTOM] Argument validation failed\n", .{});
+            return error.ValidationFailed;
+        }
+        log.debug("[PHANTOM] Argument validation passed\n", .{});
+    }
+
+    /// Record every event implemented by a SUBFLOW (`~spin = ...`, Flow.impl_of),
+    /// keyed `module:event`, at both the top level and inside module decls.
+    fn buildSubflowImplMap(self: *PhantomSemanticChecker, source_ast: *const ast.Program) !void {
+        for (source_ast.items) |item| {
+            switch (item) {
+                .flow => |*flow| try self.recordSubflowImpl(flow),
+                .module_decl => |module| {
+                    for (module.items) |*mod_item| {
+                        if (mod_item.* == .flow) {
+                            try self.recordSubflowImpl(&mod_item.flow);
+                        }
+                    }
+                },
+                else => {},
+            }
+        }
+    }
+
+    fn recordSubflowImpl(self: *PhantomSemanticChecker, flow: *const ast.Flow) !void {
+        const impl_path = flow.impl_of orelse return;
+        const event_name = try self.pathToString(impl_path);
+        defer self.allocator.free(event_name);
+        const module = impl_path.module_qualifier orelse flow.module;
+        const qualified = try std.fmt.allocPrint(self.allocator, "{s}:{s}", .{ module, event_name });
+        const gop = try self.subflow_impl_map.getOrPut(qualified);
+        if (gop.found_existing) self.allocator.free(qualified);
     }
 
     fn buildModuleMap(self: *PhantomSemanticChecker, source_ast: *const ast.Program) !void {
@@ -1095,7 +1180,18 @@ pub const PhantomSemanticChecker = struct {
                 // Seed each so a field projection / destructured field discharge
                 // is credited (challenge 007). Uses the head's destructure (if
                 // any) to key destructured obligation fields by scalar name.
-                try self.seedRecordFieldObligations(rb, rt, module_name, flow.inv().return_destructure, &root_context);
+                //
+                // NOT for a SUBFLOW-implemented event (`~spin = make(id): r -> r`):
+                // subflow field threading is unbuilt, so a record routed through a
+                // subflow's declared return type does not carry its field
+                // obligations to the caller. Seeding here would silently credit an
+                // explicit `dispose(res.h)` against an obligation the value does
+                // not hold — the precise argument-located mismatch must fire
+                // instead (330_100; direct-call crediting pins 330_101-109 are
+                // proc-implemented and keep seeding).
+                if (!self.subflow_impl_map.contains(qualified_name)) {
+                    try self.seedRecordFieldObligations(rb, rt, module_name, flow.inv().return_destructure, &root_context);
+                }
             }
         }
 
@@ -1246,6 +1342,9 @@ pub const PhantomSemanticChecker = struct {
         context: *BindingContext,
         location: errors.SourceLocation,
     ) !bool {
+        // Exit-balance wall: only the post-insertion full pass may judge it —
+        // pre-insertion, auto-discharge hasn't placed the disposals yet.
+        if (self.check_mode == .args_only) return false;
         if (!context.hasUncleanedResources()) return false;
         const uncleaned = try context.getUncleanedResources(self.allocator);
         defer self.allocator.free(uncleaned);
@@ -1702,7 +1801,10 @@ pub const PhantomSemanticChecker = struct {
                 is_terminator = true;
             }
         }
-        if (is_terminator) {
+        if (is_terminator and self.check_mode == .full) {
+            // Exit-balance wall: gated to the post-insertion full pass — the
+            // args-only pre-pass would read every not-yet-inserted disposal
+            // as a leak.
             const terminator_type = if (cont.node) |n| @tagName(n) else "empty";
             log.debug("[CLEANUP] Terminator detected ({s}), checking for uncleaned resources\n", .{terminator_type});
             if (context.hasUncleanedResources()) {
@@ -2307,7 +2409,9 @@ pub const PhantomSemanticChecker = struct {
                 // must be supplied by a jump arg — is not yet checked here; a body
                 // that disposes the carried obligation and back-edges with empty
                 // hands still falls to a stage-D error today.
-                if (context.hasUncleanedResources()) {
+                if (context.hasUncleanedResources() and self.check_mode == .full) {
+                    // Back-edge conservation is an obligation-balance judgment —
+                    // post-insertion full pass only (see the terminator gate).
                     const uncleaned = try context.getUncleanedResources(self.allocator);
                     defer self.allocator.free(uncleaned);
 
