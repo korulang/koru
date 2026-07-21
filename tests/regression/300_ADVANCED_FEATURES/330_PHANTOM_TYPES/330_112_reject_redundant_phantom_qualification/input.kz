@@ -1,0 +1,23 @@
+// PIN (unbuilt — ratified design): a phantom state qualified with the SAME
+// module its base type already names is REDUNDANT and must be REJECTED with a
+// teaching diagnostic ("bare `<!active>` already scopes to the base type's
+// module `app/lib/db` — drop the qualifier"). One-canonical-spelling: there is
+// exactly ONE way to write "app/lib/db's active on app/lib/db's Transaction" —
+// the bare form (330_087-style base-type-module self-resolution).
+//
+// Currently NOT built: the redundant form compiles fine (the qualified state
+// resolves and unifies with the issued state), so this MUST_FAIL is RED until
+// the rejection lands. Contrast 330_087 (qualifying a FOREIGN module's state on
+// a primitive base — required, not redundant).
+~import std/io
+~import app/lib/db
+
+// REDUNDANT: `*app/lib/db:Transaction` already names app/lib/db; re-qualifying
+// the state `<app/lib/db:!active>` restates it. Should be `<!active>` (bare).
+~event finish { t: *app/lib/db:Transaction<app/lib/db:!active> }
+
+~proc finish|zig {
+    return;
+}
+
+~app/lib/db:begin(): tx |> finish(t: tx) |> std/io:print.ln("ok")

@@ -1,0 +1,12 @@
+// A module that declares a resource TYPE with intrinsic typestate. `active` is
+// app/lib/db's own state, issued bare in-module (self-resolves to app/lib/db).
+const std = @import("std");
+const Transaction = struct { id: i32 };
+
+~pub event begin { } -> *Transaction<active!>
+
+~proc begin|zig {
+    const t = std.heap.page_allocator.create(Transaction) catch unreachable;
+    t.* = .{ .id = 1 };
+    return t;
+}

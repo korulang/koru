@@ -1,27 +1,27 @@
-// Aspirational: bare phantom state referenced OUTSIDE its declaring module must
-// be REJECTED (ratified design, OUTSTANDING_DESIGN_DECISIONS.md).
+// Negative: a bare phantom state referenced OUTSIDE its declaring module does
+// NOT unify with the foreign state — it self-resolves to a DIFFERENT state and
+// is caught as an ordinary phantom-state mismatch (the ratified self-resolution
+// model — no special "reject bare-outside" mechanism is needed).
 //
-// Rule: bare `<secret>` / `<secret!>` / `<!secret>` is legal only INSIDE the
-// declaring module (resolves to *this* module). Referenced from a DIFFERENT
-// module it is ambiguous — the state's home cannot be inferred — and must be
-// written qualified: `<app/lib/store:secret>`. The checker must reject the
-// bare form with a clear error pointing the user at the qualified spelling.
-//
-// Today this is WRONG-GREEN: the bare `<secret>` on a user-module field
-// canonicalizes to `<user>:secret` (the field's defining module) and silently
-// compiles — it neither unifies with app/lib/store's secret nor errors. The
-// fix (ratified design) makes bare-outside a hard error so the ambiguity is
-// caught at the call site instead of producing a state that can never match.
+// Rule: a bare phantom self-resolves to its BASE TYPE's module; a primitive base
+// (`string`) has no module, so it resolves to the WRITING module. So bare
+// `<!secret>` written here in module `input` means `input:secret` — `input`'s
+// own (distinct) state — NOT app/lib/store's `secret`. `input:secret` and
+// `app.lib.store:secret` are genuinely different states, so consuming the former
+// from a value holding the latter is a plain KORU030 mismatch. To reach
+// app/lib/store's state you must qualify it (contrast 330_087:
+// `<app/lib/store:!secret>`).
 ~import std/io
 ~import app/lib/store
 
-// BARE <secret> in a USER module — outside app/lib/store. Must be rejected.
-~event use-secret { s: string<secret> } -> string
+// BARE <!secret> in a USER module — outside app/lib/store. `secret` is
+// app/lib/store's state, referenced here with no module qualifier on a
+// module-less base type (`string`). Its home cannot be inferred, so this must
+// be REJECTED (contrast 330_087, which qualifies it: `<app/lib/store:!secret>`).
+~event use-secret { s: string<!secret> } -> string
 
 ~proc use-secret|zig {
     return s;
 }
 
-~app/lib/store:make-secret(payload: "shh")
-| secret s |> app/lib/store:reveal(s)
-    | plain p |> use-secret(p): _ |> std/io:print.ln("ok")
+~app/lib/store:make-secret(payload: "shh"): s |> use-secret(s): _ |> std/io:print.ln("ok")

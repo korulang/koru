@@ -566,6 +566,32 @@ pub const PhantomSemanticChecker = struct {
         phantom_str: []const u8,
         defining_module: []const u8,
     ) ![]const u8 {
+        return self.canonicalizePhantomStateWithBase(phantom_str, defining_module, null);
+    }
+
+    /// Resolve a field's base-type module qualifier (e.g. `app/lib/db` in
+    /// `*app/lib/db:Transaction`) through the import map. Returns null when the
+    /// base type carries no module — a primitive like `string`/`f32` — so a bare
+    /// phantom on it falls back to the writing module (its only home).
+    fn baseTypeModule(self: *PhantomSemanticChecker, field_module_path: ?[]const u8) !?[]const u8 {
+        const mod_path = field_module_path orelse return null;
+        return (try self.lookupModule(mod_path)) orelse mod_path;
+    }
+
+    /// Canonicalize a phantom state, resolving a BARE state to `base_type_module`
+    /// when the base type has a home module, else to `defining_module`. This is
+    /// the ratified rule: a bare phantom self-resolves to the base type's module
+    /// (`*app/lib/db:Transaction<active>` → `app/lib/db:active`); a primitive base
+    /// has no module, so bare resolves to the writing module (`f32<celsius>` in
+    /// module X → `X:celsius`). An explicitly-qualified state always names its own
+    /// module and is unaffected.
+    fn canonicalizePhantomStateWithBase(
+        self: *PhantomSemanticChecker,
+        phantom_str: []const u8,
+        defining_module: []const u8,
+        base_type_module: ?[]const u8,
+    ) ![]const u8 {
+        const bare_module = base_type_module orelse defining_module;
         var phantom = try phantom_parser.PhantomState.parse(self.allocator, phantom_str);
         defer phantom.deinit(self.allocator);
 
@@ -580,8 +606,8 @@ pub const PhantomSemanticChecker = struct {
                         break :blk mod_path;
                     }
                 } else blk: {
-                    // No module qualifier - use the defining module
-                    break :blk defining_module;
+                    // No module qualifier - self-resolve to the base type's module
+                    break :blk bare_module;
                 };
 
                 // Build canonical form: module:state or module:state!
@@ -609,7 +635,7 @@ pub const PhantomSemanticChecker = struct {
                             break :blk mod_path;
                         }
                     } else blk: {
-                        break :blk defining_module;
+                        break :blk bare_module;
                     };
 
                     // Append module:state
@@ -2978,11 +3004,16 @@ pub const PhantomSemanticChecker = struct {
             }
         }
 
-        // Canonicalize both phantom states for proper comparison
-        // Use event_module (qualified module name from lookup) for proper canonicalization
-        const canonical_expected = try self.canonicalizePhantomState(
+        // Canonicalize both phantom states for proper comparison.
+        // A BARE expected phantom self-resolves to the base type's module
+        // (`*app/lib/db:Transaction<!active>` → `app/lib/db:active`), not the
+        // consuming event's writing module; a primitive base falls back to the
+        // writing module inside canonicalizePhantomStateWithBase.
+        const expected_base_mod = try self.baseTypeModule(expected_module_path);
+        const canonical_expected = try self.canonicalizePhantomStateWithBase(
             expected_phantom.?,
             module_for_canon,
+            expected_base_mod,
         );
         defer self.allocator.free(canonical_expected);
 
