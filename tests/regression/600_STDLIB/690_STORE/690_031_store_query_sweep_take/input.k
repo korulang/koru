@@ -12,7 +12,7 @@
 import std/io
 import std/store
 
-std/store:new(arena) { hp: i64 }
+std/store:new(arena, capacity: 64) { hp: i64 }
 
 std/store:insert(arena) { hp: 5 }
 | row _ |> _

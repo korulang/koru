@@ -10,7 +10,7 @@
 import std/io
 import std/store
 
-std/store:new(arena) { hp: i64 }
+std/store:new(arena, capacity: 64) { hp: i64 }
 
 std/store(arena)
 ! hp h when h <= 0 |> std/io:print.ln("an enemy has fallen (hp {{ h:d }})")

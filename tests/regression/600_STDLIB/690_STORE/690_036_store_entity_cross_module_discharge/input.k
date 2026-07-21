@@ -9,7 +9,7 @@ import std/io
 import std/store
 import app/despawner
 
-[entity(enemy)]std/store:new(enemies) { hp: i64 }
+[entity(enemy)]std/store:new(enemies, capacity: 64) { hp: i64 }
 
 std/store:insert(enemies) { hp: 9 }
 | row r |> std/store:take(enemies[r])

@@ -13,7 +13,7 @@
 import std/io
 import std/store
 
-std/store:new(nodes) { val: i64, next: i64 }
+std/store:new(nodes, capacity: 64) { val: i64, next: i64 }
 
 // parent (row a) and child (row b); `next` starts at the -1 sentinel (unset).
 // First `stored` sets a.next to b's handle. Second `stored` FOLLOWS the ref:

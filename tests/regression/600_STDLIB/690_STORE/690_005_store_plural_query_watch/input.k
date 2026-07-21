@@ -21,7 +21,7 @@
 import std/io
 import std/store
 
-std/store:new(game) { hp: i64, kind: i64 }
+std/store:new(game, capacity: 64) { hp: i64, kind: i64 }
 
 std/store:query(game)
 ! query { entity.hp, enemy_kind: entity.kind } when hp > 40 and enemy_kind == 1 |> std/io:print.ln("enemy hp {{ hp:d }}")

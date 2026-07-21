@@ -15,7 +15,7 @@ import std/store
 
 std/store:new(stats) { count: 0[i64] }
 
-std/store:new(pool) { hp: i64 }
+std/store:new(pool, capacity: 64) { hp: i64 }
 ! inserted _ |> std/store:stored { stats.count: stats.count + 1 }
 ! removed _ |> std/store:stored { stats.count: stats.count - 1 }
 

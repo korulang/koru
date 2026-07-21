@@ -7,7 +7,7 @@
 import std/io
 import std/store
 
-std/store:new(game) { a: i64, b: i64 }
+std/store:new(game, capacity: 64) { a: i64, b: i64 }
 
 std/store:insert(game) { a: 1, b: 10 }
 | row _ |> _

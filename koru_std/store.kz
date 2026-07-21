@@ -72,10 +72,14 @@ const std = @import("std");
 // STORE.CREATE — declare + instantiate a store; the (f) coordinator
 // ============================================================================
 //
-//   ~std/store:new(game) { entities: 0[i64] }
+//   ~std/store:new(game) { entities: 0[i64] }              — capacity-1 VALUE
+//   ~std/store:new(pool, capacity: 64) { hp: i64 }         — CONTAINER (rows)
 //
-// Name arg + seed block (kernel:shape's surface). Seed fields use the
-// bracket type annotation (`0[i64]`) — the same parser as const/capture.
+// Name arg + seed block (kernel:shape's surface). CAPACITY selects the
+// shape (690_050 ruling): default 1 → reactive value, > 1 → container.
+// A field is bare-typed (`hp: i64`) or carries a default via the bracket
+// annotation (`hp: 100[i64]` — same parser as const/capture); defaults
+// are orthogonal to shape.
 
 ~[keyword|comptime|transform]pub event new {
     expr: Expression,
@@ -426,27 +430,34 @@ const std = @import("std");
         }
     }
 
-    // Field table: names + host types. Two store shapes, told apart by the
-    // seed block (ruling 2 — the store IS the table):
-    //   seeded fields  (`entities: 0[i64]`) — SINGLETON store, rung one.
-    //   bare-type fields (`hp: i64`)        — PLURAL store (rows), rung two.
-    // Mixing is a loud wall. Scalar i64 columns only (compound types are
-    // pin 690_020's walk).
-    var seeded_count: usize = 0;
-    var bare_count: usize = 0;
-    for (cell_fields) |cf| {
-        const peeled = struct_literal.peelBaseType(cf.value);
-        if (peeled.type.len != 0) seeded_count += 1 else bare_count += 1;
+    // CAPACITY selects the shape (690_050 ruling). Two store shapes:
+    //   capacity 1 (default)  — reactive VALUE: always present, direct
+    //                           `store.field` access, stored/watch.
+    //   capacity > 1          — reactive CONTAINER: rows, grows from empty,
+    //                           insert/query/take, `store[r].field` access.
+    // Initialization is ORTHOGONAL: a seeded field (`hp: 100[i64]`) means
+    // only "this column has a default value" — legal at any capacity, never
+    // the shape selector. A bare field (`hp: i64`) zero-defaults at
+    // capacity 1. (O10: capacity is fixed static memory declared at create;
+    // exhaustion is the insert's `| full` branch, 690_011.)
+    var cap_buf: usize = 1;
+    for (invocation.args) |a| {
+        if (std.mem.eql(u8, a.name, "capacity")) {
+            cap_buf = std.fmt.parseInt(usize, std.mem.trim(u8, a.value, " "), 10) catch {
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): capacity must be an integer literal (got '{s}')", .{ store_name, a.value }) } };
+            };
+            if (cap_buf == 0) {
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): capacity must be >= 1 (capacity 1 is the reactive value shape; capacity > 1 is the container shape)", .{store_name}) } };
+            }
+        }
     }
-    if (seeded_count != 0 and bare_count != 0) {
-        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): mixing seeded fields (singleton) and bare-type fields (plural rows) in one store is not a shape - seed every field or none", .{store_name}) } };
-    }
-    const is_plural = bare_count != 0;
+    const CAP: usize = cap_buf;
+    const is_plural = CAP > 1;
 
-    // [tree] sits on the plural (rows) substrate — a singleton has no rows
-    // to arrange into a forest.
+    // [tree] sits on the container substrate — a capacity-1 value has no
+    // rows to arrange into a forest.
     if (is_tree and !is_plural) {
-        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): [tree] needs a plural store (bare-type columns, e.g. `val: i64`) - a seeded singleton has no rows to arrange", .{store_name}) } };
+        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): [tree] needs a container store - declare a capacity (`capacity: N`, N > 1); a capacity-1 value has no rows to arrange", .{store_name}) } };
     }
 
     // TT1: the synthesized `parent` column is INVISIBLE — the user's seed
@@ -457,37 +468,39 @@ const std = @import("std");
     const synth_count: usize = if (is_tree) 1 else 0;
     const field_names = allocator.alloc([]const u8, cell_fields.len + synth_count) catch unreachable;
     const field_types = allocator.alloc([]const u8, cell_fields.len + synth_count) catch unreachable;
+    // Per-column optional default (the seed): `hp: 100[i64]` carries "100",
+    // `hp: i64` carries none. Orthogonal to shape (690_050).
+    const field_defaults = allocator.alloc(?[]const u8, cell_fields.len + synth_count) catch unreachable;
     for (cell_fields, 0..) |cf, i| {
         if (is_tree and std.mem.eql(u8, cf.name, "parent")) {
             return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): [tree] synthesizes the `parent` column itself (TT1, invisible) - drop the explicit `parent` declaration", .{store_name}) } };
         }
-        if (is_plural) {
-            if (!std.mem.eql(u8, std.mem.trim(u8, cf.value, " "), "i64")) {
-                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): column '{s}' is {s} - rung two supports i64 columns only (compound column types are pinned at 690_020)", .{ store_name, cf.name, cf.value }) } };
-            }
-            field_names[i] = cf.name;
-            field_types[i] = "i64";
-            continue;
-        }
         const peeled = struct_literal.peelBaseType(cf.value);
-        if (peeled.type.len == 0) {
-            return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): field '{s}' needs a bracket type annotation (e.g. `{s}: 0[i64]`) — rung one", .{ store_name, cf.name, cf.name }) } };
-        }
-        // Scalar widening (690_020 tier 1): i64/i32/f64/f32 columns — the
-        // kernel:shape f64 precedent (390_001) applied to the store cell.
-        const known_scalar = std.mem.eql(u8, peeled.type, "i64") or std.mem.eql(u8, peeled.type, "i32") or
-            std.mem.eql(u8, peeled.type, "f64") or std.mem.eql(u8, peeled.type, "f32");
-        if (!known_scalar) {
-            return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): field '{s}' is {s} — scalar columns are i64/i32/f64/f32 (vec/mat tiers are pinned at 690_020)", .{ store_name, cf.name, peeled.type }) } };
+        const has_default = peeled.type.len != 0;
+        const ftype = if (has_default) peeled.type else std.mem.trim(u8, cf.value, " ");
+        if (is_plural) {
+            if (!std.mem.eql(u8, ftype, "i64")) {
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): column '{s}' is {s} - container stores support i64 columns only this rung (mixed scalars are pinned at 690_049, compound types at 690_020)", .{ store_name, cf.name, cf.value }) } };
+            }
+        } else {
+            // Scalar widening (690_020 tier 1): i64/i32/f64/f32 columns — the
+            // kernel:shape f64 precedent (390_001) applied to the store cell.
+            const known_scalar = std.mem.eql(u8, ftype, "i64") or std.mem.eql(u8, ftype, "i32") or
+                std.mem.eql(u8, ftype, "f64") or std.mem.eql(u8, ftype, "f32");
+            if (!known_scalar) {
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): field '{s}' is {s} — scalar columns are i64/i32/f64/f32 (vec/mat tiers are pinned at 690_020)", .{ store_name, cf.name, ftype }) } };
+            }
         }
         field_names[i] = cf.name;
-        field_types[i] = peeled.type;
+        field_types[i] = ftype;
+        field_defaults[i] = if (has_default) peeled.value else null;
     }
     if (is_tree) {
         field_names[user_field_count] = allocator.dupe(u8, "parent") catch unreachable;
         field_types[user_field_count] = allocator.dupe(u8, "i64") catch unreachable;
+        field_defaults[user_field_count] = null;
     }
-    // The write plumbing carries ONE value type; mixed-type singletons are
+    // The write plumbing carries ONE value type; mixed-type values are
     // the per-field-event slice (690_020 tier 1 boundary).
     if (!is_plural) {
         for (field_types[1..]) |ft| {
@@ -496,6 +509,8 @@ const std = @import("std");
             }
         }
     }
+    // Keyed off capacity: containers carry i64 columns this rung, so the
+    // value-shape (capacity 1) is the only place a non-i64 type flows.
     const value_type: []const u8 = if (cell_fields.len > 0 and !is_plural) field_types[0] else "i64";
 
     // ------------------------------------------------------------------
@@ -524,19 +539,9 @@ const std = @import("std");
     //      returning `| item { fields }` (obligation wiring: 690_007).
     // ------------------------------------------------------------------
     if (is_plural) {
-        // Declared capacity (O10: fixed static memory; exhaustion is a
-        // branch). Default stays a fixed pool with a LOUD overflow panic
-        // (capacity-declared inserts that want graceful exhaustion handle
-        // `| full`).
-        var cap_buf: usize = 1024;
-        for (invocation.args) |a| {
-            if (std.mem.eql(u8, a.name, "capacity")) {
-                cap_buf = std.fmt.parseInt(usize, std.mem.trim(u8, a.value, " "), 10) catch {
-                    return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): capacity must be an integer literal (got '{s}')", .{ store_name, a.value }) } };
-                };
-            }
-        }
-        const CAP: usize = cap_buf;
+        // CAP is the declared capacity (parsed above — it IS the shape
+        // selector). Fixed static memory with a LOUD overflow panic;
+        // inserts that want graceful exhaustion handle `| full`.
 
         // ---- collect lifecycle interceptors (690_016, 690_038) ----
         // Ruling 5: stores emit inserted/removed/updated. The plural slice
@@ -2216,11 +2221,12 @@ const std = @import("std");
         seed.append(allocator, '.') catch unreachable;
         seed.appendSlice(allocator, cf.name) catch unreachable;
         seed.appendSlice(allocator, " = ") catch unreachable;
-        const peeled = struct_literal.peelBaseType(cf.value);
+        // Declared default when seeded; a bare field zero-defaults
+        // (initialization is orthogonal to shape — 690_050).
         seed.appendSlice(allocator, "@as(") catch unreachable;
-        seed.appendSlice(allocator, peeled.type) catch unreachable;
+        seed.appendSlice(allocator, field_types[i]) catch unreachable;
         seed.appendSlice(allocator, ", ") catch unreachable;
-        seed.appendSlice(allocator, peeled.value) catch unreachable;
+        seed.appendSlice(allocator, field_defaults[i] orelse "0") catch unreachable;
         seed.appendSlice(allocator, ")") catch unreachable;
     }
     seed.appendSlice(allocator, " }") catch unreachable;
@@ -3013,10 +3019,10 @@ const std = @import("std");
         break :blk false;
     };
     if (row_expr == null and is_plural_store) {
-        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:stored: '{s}' is a plural store - address the row ({s}[handle].{s}, or write through a query branch)", .{ target_store, target_store, target_field }) } };
+        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:stored: '{s}' is a container store (capacity > 1) - address the row ({s}[handle].{s}, or write through a query branch)", .{ target_store, target_store, target_field }) } };
     }
     if (row_expr != null and !is_plural_store) {
-        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:stored: '{s}' is a singleton store - write it as {s}.{s}", .{ target_store, target_store, target_field }) } };
+        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:stored: '{s}' is a capacity-1 value store - write it as {s}.{s}", .{ target_store, target_store, target_field }) } };
     }
 
     const order = H.fieldOrder(allocator, program, target_store) orelse {
@@ -3824,7 +3830,7 @@ const std = @import("std");
         if (create_exists) {
             return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:query({s}): the query precedes its store's create in source - declare the store first", .{store_name}) } };
         }
-        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:query({s}): unknown store - no std/store:new({s}) found (or the store is a seeded singleton - queries need a plural store)", .{ store_name, store_name }) } };
+        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:query({s}): unknown store - no std/store:new({s}) found (or the store is a capacity-1 value - queries need a container, declare `capacity: N` at create)", .{ store_name, store_name }) } };
     }
 
     const sweep_inv = ast.Invocation{
@@ -3927,7 +3933,7 @@ const std = @import("std");
         if (create_exists) {
             return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:preorder({s}): the preorder precedes its store's create in source - declare the store first", .{store_name}) } };
         }
-        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:preorder({s}): unknown store - no std/store:new({s}) found (preorder walks a plural [tree] store)", .{ store_name, store_name }) } };
+        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:preorder({s}): unknown store - no std/store:new({s}) found (preorder walks a [tree] container store)", .{ store_name, store_name }) } };
     }
 
     const sweep_inv = ast.Invocation{
@@ -4018,7 +4024,7 @@ const std = @import("std");
         }
     }
     if (!unit_exists) {
-        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:take({s}[...]): unknown or not-yet-created plural store '{s}'", .{ store_name, store_name }) } };
+        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:take({s}[...]): unknown or not-yet-created container store '{s}'", .{ store_name, store_name }) } };
     }
 
     const call_args = allocator.alloc(ast.Arg, 1) catch unreachable;

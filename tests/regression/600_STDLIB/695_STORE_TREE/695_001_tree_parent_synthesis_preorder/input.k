@@ -30,7 +30,7 @@
 import std/io
 import std/store
 
-[tree]std/store:new(tree) { val: i64 }
+[tree]std/store:new(tree, capacity: 64) { val: i64 }
 
 // Insert four nodes (parent starts at the -1 root sentinel, synthesized), then
 // attach three of them by setting the synthesized self-FK `parent` — the exact

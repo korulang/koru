@@ -13,7 +13,7 @@ import std/store
 
 std/store:new(board) { alive: 0[i64], kills: 0[i64] }
 
-std/store:new(pool) { hp: i64 }
+std/store:new(pool, capacity: 64) { hp: i64 }
 ! inserted _ |> std/store:stored { board.alive: board.alive + 1 }
 ! removed _ |> std/store:stored { board.alive: board.alive - 1 } |> std/store:stored { board.kills: board.kills + 1 }
 

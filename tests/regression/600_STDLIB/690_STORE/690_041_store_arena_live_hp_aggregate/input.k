@@ -18,7 +18,7 @@ import std/store
 
 std/store:new(board) { alive: 0[i64], kills: 0[i64], pool: 0[i64] }
 
-std/store:new(arena) { hp: i64, kind: i64 }
+std/store:new(arena, capacity: 64) { hp: i64, kind: i64 }
 ! inserted { hp } |> std/store:stored { board.alive: board.alive + 1 } |> std/store:stored { board.pool: board.pool + hp }
 ! removed { hp } |> std/store:stored { board.alive: board.alive - 1 } |> std/store:stored { board.kills: board.kills + 1 } |> std/store:stored { board.pool: board.pool - hp }
 ! updated { old, new } |> std/store:stored { board.pool: board.pool + new - old }

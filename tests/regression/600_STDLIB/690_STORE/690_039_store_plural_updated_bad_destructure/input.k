@@ -9,7 +9,7 @@ import std/store
 
 std/store:new(reserve) { pool: 0[i64] }
 
-std/store:new(squad) { hp: i64 }
+std/store:new(squad, capacity: 64) { hp: i64 }
 ! updated { hp } |> std/store:stored { reserve.pool: reserve.pool + hp }
 
 std/store:insert(squad) { hp: 10 }

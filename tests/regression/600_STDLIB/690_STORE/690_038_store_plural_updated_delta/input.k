@@ -21,7 +21,7 @@ import std/store
 
 std/store:new(reserve) { pool: 0[i64] }
 
-std/store:new(squad) { hp: i64, kind: i64 }
+std/store:new(squad, capacity: 64) { hp: i64, kind: i64 }
 ! updated { old, new } |> std/store:stored { reserve.pool: reserve.pool + new - old }
 
 std/store:watch(reserve)

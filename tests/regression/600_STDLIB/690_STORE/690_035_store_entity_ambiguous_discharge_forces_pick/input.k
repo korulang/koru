@@ -8,7 +8,7 @@
 import std/io
 import std/store
 
-[entity(enemy)]std/store:new(enemies) { hp: i64 }
+[entity(enemy)]std/store:new(enemies, capacity: 64) { hp: i64 }
 
 pub event despawn-quietly { enemy: Enemy<std/store:!taken> }
 despawn-quietly = std/io:print.ln("quietly despawned")

@@ -9,7 +9,7 @@
 import std/io
 import std/store
 
-[tree]std/store:new(tree) { val: i64 }
+[tree]std/store:new(tree, capacity: 64) { val: i64 }
 
 std/store:insert(tree) { val: 10 }
 | row root |> std/store:insert(tree) { val: 20 }

@@ -15,7 +15,7 @@ import std/store
 
 std/store:new(tally) { writes: 0[i64] }
 
-std/store:new(crew) { hp: i64 }
+std/store:new(crew, capacity: 64) { hp: i64 }
 ! updated _ |> std/store:stored { tally.writes: tally.writes + 1 }
 
 std/store:watch(tally)

@@ -21,7 +21,7 @@
 import std/io
 import std/store
 
-std/store:new(game) { hp: i64, kind: i64 }
+std/store:new(game, capacity: 64) { hp: i64, kind: i64 }
 
 std/store:watch(game)
 ! hp h |> std/io:print.ln("hp now {{ h:d }}")

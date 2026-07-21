@@ -9,7 +9,7 @@
 import std/io
 import std/store
 
-std/store:new(m) { n: i64, r: f64 }
+std/store:new(m, capacity: 64) { n: i64, r: f64 }
 
 std/store:insert(m) { n: 5, r: 2.5 }
 
