@@ -1,0 +1,5 @@
+open a
+close 42
+took-and-closed
+open b
+close 42

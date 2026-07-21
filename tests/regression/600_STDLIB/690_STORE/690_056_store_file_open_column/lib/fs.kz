@@ -1,0 +1,23 @@
+// The app/fs File resource, verbatim from the corpus (330_006/013/…): an owned
+// *File<opened!> with a VOID canonical discharger `close` consuming <!opened>.
+// This is a REAL pre-existing obligation type — the store owns it unchanged.
+const std = @import("std");
+
+const File = struct { handle: i32 };
+
+~pub event open { path: string } -> *File<opened!>
+
+~proc open|zig {
+    std.debug.print("open {s}\n", .{path});
+    const f = std.heap.page_allocator.create(File) catch unreachable;
+    f.* = File{ .handle = 42 };
+    return f;
+}
+
+// Canonical discharger: consumes <!opened>, closes (void).
+~pub event close { file: *File<!opened> }
+
+~proc close|zig {
+    std.debug.print("close {d}\n", .{file.handle});
+    std.heap.page_allocator.destroy(file);
+}
