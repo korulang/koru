@@ -80,8 +80,9 @@ through the toolchain**:
 - **The one exception — "obviously wrong":** if an item is plainly mistaken
   (contradicts the language design, would break a settled invariant, rests on a
   false premise), **do not implement it.** Flag it in the digest with your
-  reasoning and leave it open for Lars. This is the "unless something is
-  obviously wrong" backstop — use it sparingly, only when you are confident.
+  reasoning and **park it** (Step 5) so it doesn't re-triage every morning. This
+  is the "unless something is obviously wrong" backstop — use it sparingly, only
+  when you are confident.
 
 Verify as you go:
 
@@ -113,10 +114,24 @@ The branch **is the review gate** — Lars reads it before it ever merges. That
 is what makes "implement as best you can" safe: nothing reaches `main` or the
 remote without his eyes.
 
-Mark each fully-implemented item resolved so it doesn't reappear tomorrow:
-`cd ~/src/korulang_org && node scripts/pull-feedback.js --done <id8>`
-(Reversible with `--reopen <id8>`.) Leave partial or held ("obviously wrong")
-items **open**.
+Then close the loop on each item so it doesn't grind through the same triage
+every morning:
+
+- **Fully implemented** → mark resolved:
+  `cd ~/src/korulang_org && node scripts/pull-feedback.js --done <id8>`
+- **Held** — an "obviously wrong" item, a language/design call, or anything that
+  genuinely needs Lars before it can move → **park** it:
+  `cd ~/src/korulang_org && node scripts/pull-feedback.js --park <id8>`
+  Parking means "seen, held for Lars": the item drops out of tomorrow's open
+  queue (so you stop re-triaging it), still shows in the digest below, and
+  surfaces in the admin sidebar under "closed" for Lars to review. **This is the
+  fix for the re-run problem — never leave a held item `open`, or it comes back
+  every single morning.**
+
+Both are reversible with `--reopen <id8>`. The **only** items you leave `open`
+are ones that are genuinely partial *and that you expect to make more progress
+on in a future unattended run* — real, resumable work. If you can't move it and
+it needs Lars, it is **held → park it**, not open.
 
 ## Step 6 — Post the digest to Discord
 
@@ -136,7 +151,9 @@ The digest must contain:
   State plainly: "committed on a branch, NOT merged — review & merge, or
   `--reopen <id>` to send it back."
 - 🚧 **Partial / left a note**: one line per item — what landed, what remains.
-- ⚠️ **Held (looks wrong)**: one line per item + why you didn't implement it.
+  Left `open` only if it's resumable next run; otherwise it's held → parked.
+- ⏸️ **Held → parked**: one line per item + why you didn't implement it. State
+  plainly: "parked (held for Lars) — `--reopen <id>` to send it back."
 
 ## Hard rules
 - Never push. Never commit to `main`. All work lives on the dated branch — that
