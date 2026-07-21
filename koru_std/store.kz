@@ -471,6 +471,13 @@ const std = @import("std");
     // Per-column optional default (the seed): `hp: 100[i64]` carries "100",
     // `hp: i64` carries none. Orthogonal to shape (690_050).
     const field_defaults = allocator.alloc(?[]const u8, cell_fields.len + synth_count) catch unreachable;
+    // char[N] (690_052, Tier A strings): a FIXED-LENGTH byte column. Non-null
+    // = the declared byte length N. The SoA column is [CAP][N]u8 — static,
+    // zero-alloc, NO ownership (the variable-string take/discharge tier is a
+    // LATER rung). Event-level (insert input, apply branch payload, qbody
+    // projection) the column travels as `string` ([]const u8); only the Zig
+    // cell/row emission and the read/write text consult N.
+    const field_char_caps = allocator.alloc(?usize, cell_fields.len + synth_count) catch unreachable;
     for (cell_fields, 0..) |cf, i| {
         if (is_tree and std.mem.eql(u8, cf.name, "parent")) {
             return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): [tree] synthesizes the `parent` column itself (TT1, invisible) - drop the explicit `parent` declaration", .{store_name}) } };
@@ -478,22 +485,39 @@ const std = @import("std");
         const peeled = struct_literal.peelBaseType(cf.value);
         const has_default = peeled.type.len != 0;
         const ftype = if (has_default) peeled.type else std.mem.trim(u8, cf.value, " ");
+        // `label: char[16]` — the bracket size is the buffer length.
+        var char_cap: ?usize = null;
+        if (std.mem.startsWith(u8, ftype, "char[") and ftype.len > "char[".len and ftype[ftype.len - 1] == ']') {
+            const digits = std.mem.trim(u8, ftype["char[".len .. ftype.len - 1], " ");
+            const n = std.fmt.parseInt(usize, digits, 10) catch {
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): field '{s}': char[N] needs an integer byte length (got '{s}')", .{ store_name, cf.name, ftype }) } };
+            };
+            if (n == 0) {
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): field '{s}': char[N] needs N >= 1 - a zero-length fixed-char column holds nothing", .{ store_name, cf.name }) } };
+            }
+            if (!is_plural) {
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): field '{s}' is char[{d}] - fixed-char columns live on the container shape (declare `capacity: N`, N > 1); the capacity-1 value tier is scalar-only this rung", .{ store_name, cf.name, n }) } };
+            }
+            char_cap = n;
+        }
         // Scalar widening (690_020 tier 1): i64/i32/f64/f32 columns — the
         // kernel:shape f64 precedent (390_001) applied to the store cell.
         // Containers (690_049) and values (690_021) share the scalar tier;
         // a container carries per-field typed SoA columns.
         const known_scalar = std.mem.eql(u8, ftype, "i64") or std.mem.eql(u8, ftype, "i32") or
             std.mem.eql(u8, ftype, "f64") or std.mem.eql(u8, ftype, "f32");
-        if (!known_scalar) {
-            return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): field '{s}' is {s} — scalar columns are i64/i32/f64/f32 (vec/mat tiers are pinned at 690_020)", .{ store_name, cf.name, ftype }) } };
+        if (!known_scalar and char_cap == null) {
+            return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): field '{s}' is {s} — columns are scalars (i64/i32/f64/f32) or fixed-char (char[N], 690_052); vec/mat tiers are pinned at 690_020", .{ store_name, cf.name, ftype }) } };
         }
         field_names[i] = cf.name;
-        field_types[i] = ftype;
+        field_types[i] = if (char_cap != null) allocator.dupe(u8, "string") catch unreachable else ftype;
+        field_char_caps[i] = char_cap;
         field_defaults[i] = if (has_default) peeled.value else null;
     }
     if (is_tree) {
         field_names[user_field_count] = allocator.dupe(u8, "parent") catch unreachable;
         field_types[user_field_count] = allocator.dupe(u8, "i64") catch unreachable;
+        field_char_caps[user_field_count] = null;
         field_defaults[user_field_count] = null;
     }
     // The SINGLETON write plumbing carries ONE value type; a mixed-type
@@ -934,10 +958,16 @@ const std = @import("std");
         //     query-row head), the VALUE side to a direct fresh column read.
         //   - anywhere else: direct fresh column read.
         const PRewrite = struct {
-            fn colRead(alloc: std.mem.Allocator, store: []const u8, field: []const u8) []const u8 {
+            fn colRead(alloc: std.mem.Allocator, store: []const u8, field: []const u8, is_char: bool) []const u8 {
+                // A char column reads as the string slice up to the first NUL
+                // (the same shape the qrow projection binds); scalars read
+                // their cell slot directly.
+                if (is_char) {
+                    return std.fmt.allocPrint(alloc, "@import(\"std\").mem.sliceTo(&__koru_store_{s}.{s}[@as(usize, @intCast(__koru_qrow))], 0)", .{ store, field }) catch unreachable;
+                }
                 return std.fmt.allocPrint(alloc, "__koru_store_{s}.{s}[@as(usize, @intCast(__koru_qrow))]", .{ store, field }) catch unreachable;
             }
-            fn entityRefs(alloc: std.mem.Allocator, text: []const u8, store: []const u8, fields: []const []const u8, target_form: bool) []const u8 {
+            fn entityRefs(alloc: std.mem.Allocator, text: []const u8, store: []const u8, fields: []const []const u8, char_caps: []const ?usize, target_form: bool) []const u8 {
                 var out = std.ArrayList(u8).initCapacity(alloc, text.len + 32) catch unreachable;
                 var i: usize = 0;
                 while (i < text.len) {
@@ -947,16 +977,16 @@ const std = @import("std");
                         var fend = fstart;
                         while (fend < text.len and H.isIdentChar(text[fend])) fend += 1;
                         const fname = text[fstart..fend];
-                        var known = false;
-                        for (fields) |f| {
-                            if (std.mem.eql(u8, f, fname)) known = true;
+                        var known: ?usize = null;
+                        for (fields, 0..) |f, kfi| {
+                            if (std.mem.eql(u8, f, fname)) known = kfi;
                         }
-                        if (known) {
+                        if (known) |kidx| {
                             if (target_form) {
                                 const t = std.fmt.allocPrint(alloc, "{s}[__koru_qrow].{s}", .{ store, fname }) catch unreachable;
                                 out.appendSlice(alloc, t) catch unreachable;
                             } else {
-                                out.appendSlice(alloc, colRead(alloc, store, fname)) catch unreachable;
+                                out.appendSlice(alloc, colRead(alloc, store, fname, char_caps[kidx] != null)) catch unreachable;
                             }
                             i = fend;
                             continue;
@@ -983,20 +1013,20 @@ const std = @import("std");
             }
             // A stored block is `target: value` pairs — target keys keep the
             // indexed-lvalue form, values read columns directly.
-            fn storedBlock(alloc: std.mem.Allocator, text: []const u8, store: []const u8, fields: []const []const u8) []const u8 {
+            fn storedBlock(alloc: std.mem.Allocator, text: []const u8, store: []const u8, fields: []const []const u8, char_caps: []const ?usize) []const u8 {
                 const braced2 = std.fmt.allocPrint(alloc, "{{{s}}}", .{text}) catch unreachable;
                 const struct_literal2 = @import("struct_literal");
                 const pairs = struct_literal2.parseFields(alloc, braced2) catch return text;
                 var out = std.ArrayList(u8).initCapacity(alloc, text.len + 64) catch unreachable;
                 for (pairs, 0..) |pr, i| {
                     if (i > 0) out.appendSlice(alloc, ", ") catch unreachable;
-                    out.appendSlice(alloc, entityRefs(alloc, pr.name, store, fields, true)) catch unreachable;
+                    out.appendSlice(alloc, entityRefs(alloc, pr.name, store, fields, char_caps, true)) catch unreachable;
                     out.appendSlice(alloc, ": ") catch unreachable;
-                    out.appendSlice(alloc, entityRefs(alloc, pr.value, store, fields, false)) catch unreachable;
+                    out.appendSlice(alloc, entityRefs(alloc, pr.value, store, fields, char_caps, false)) catch unreachable;
                 }
                 return out.toOwnedSlice(alloc) catch unreachable;
             }
-            fn walkCont(alloc: std.mem.Allocator, cont: *ast.Continuation, store: []const u8, fields: []const []const u8) void {
+            fn walkCont(alloc: std.mem.Allocator, cont: *ast.Continuation, store: []const u8, fields: []const []const u8, char_caps: []const ?usize) void {
                 if (cont.node) |*n| {
                     switch (@constCast(n).*) {
                         .invocation => |*inv| {
@@ -1008,25 +1038,25 @@ const std = @import("std");
                             };
                             for (inv.args) |*a| {
                                 if (is_stored and std.mem.eql(u8, a.name, "source")) {
-                                    @constCast(a).value = storedBlock(alloc, a.value, store, fields);
+                                    @constCast(a).value = storedBlock(alloc, a.value, store, fields, char_caps);
                                     if (a.source_value) |sv| {
                                         const fresh = alloc.create(ast.Source) catch unreachable;
                                         fresh.* = sv.*;
-                                        fresh.text = storedBlock(alloc, sv.text, store, fields);
+                                        fresh.text = storedBlock(alloc, sv.text, store, fields, char_caps);
                                         @constCast(a).source_value = fresh;
                                     }
                                 } else {
-                                    @constCast(a).value = entityRefs(alloc, a.value, store, fields, false);
+                                    @constCast(a).value = entityRefs(alloc, a.value, store, fields, char_caps, false);
                                     if (a.expression_value) |ev| {
                                         const fresh = alloc.create(ast.CapturedExpression) catch unreachable;
                                         fresh.* = ev.*;
-                                        fresh.text = entityRefs(alloc, ev.text, store, fields, false);
+                                        fresh.text = entityRefs(alloc, ev.text, store, fields, char_caps, false);
                                         @constCast(a).expression_value = fresh;
                                     }
                                     if (a.source_value) |sv| {
                                         const fresh = alloc.create(ast.Source) catch unreachable;
                                         fresh.* = sv.*;
-                                        fresh.text = entityRefs(alloc, sv.text, store, fields, false);
+                                        fresh.text = entityRefs(alloc, sv.text, store, fields, char_caps, false);
                                         @constCast(a).source_value = fresh;
                                     }
                                 }
@@ -1035,10 +1065,10 @@ const std = @import("std");
                         else => {},
                     }
                 }
-                for (cont.continuations) |*c| walkCont(alloc, @constCast(c), store, fields);
+                for (cont.continuations) |*c| walkCont(alloc, @constCast(c), store, fields, char_caps);
             }
         };
-        for (qsites.items) |*qs| PRewrite.walkCont(allocator, &qs.body, store_name, field_names);
+        for (qsites.items) |*qs| PRewrite.walkCont(allocator, &qs.body, store_name, field_names, field_char_caps);
 
         // Store-name rewriting for watch bodies (other stores readable —
         // same as rung one).
@@ -1067,8 +1097,13 @@ const std = @import("std");
         pc.appendSlice(allocator, "const __KoruStoreT_") catch unreachable;
         pc.appendSlice(allocator, store_name) catch unreachable;
         pc.appendSlice(allocator, " = struct {\n") catch unreachable;
-        for (field_names, field_types) |fname, ftype| {
-            const col = std.fmt.allocPrint(allocator, "    {s}: [{d}]{s} = undefined,\n", .{ fname, CAP, ftype }) catch unreachable;
+        for (field_names, field_types, field_char_caps) |fname, ftype, fcc| {
+            // A fixed-char column is [CAP][N]u8 (the event-level `string`
+            // type never reaches Zig emission); scalars emit their own type.
+            const col = if (fcc) |n|
+                std.fmt.allocPrint(allocator, "    {s}: [{d}][{d}]u8 = undefined,\n", .{ fname, CAP, n }) catch unreachable
+            else
+                std.fmt.allocPrint(allocator, "    {s}: [{d}]{s} = undefined,\n", .{ fname, CAP, ftype }) catch unreachable;
             pc.appendSlice(allocator, col) catch unreachable;
         }
         pc.appendSlice(allocator, "    len: usize = 0,\n};\n") catch unreachable;
@@ -1086,7 +1121,12 @@ const std = @import("std");
             pc.appendSlice(allocator, " ") catch unreachable;
             pc.appendSlice(allocator, fname) catch unreachable;
             pc.appendSlice(allocator, ": ") catch unreachable;
-            pc.appendSlice(allocator, ftype) catch unreachable;
+            if (field_char_caps[fi]) |n| {
+                const rt = std.fmt.allocPrint(allocator, "[{d}]u8", .{n}) catch unreachable;
+                pc.appendSlice(allocator, rt) catch unreachable;
+            } else {
+                pc.appendSlice(allocator, ftype) catch unreachable;
+            }
         }
         pc.appendSlice(allocator, " };") catch unreachable;
         // `[entity(<name>)]` → a user-nameable alias for the row type, so a
@@ -1121,8 +1161,21 @@ const std = @import("std");
             // User columns write their insert bindings; the [tree]-synthesized
             // `parent` has NO user binding (TT1 — invisible): every new row is
             // born a root (-1) and is attached by the self-FK stored write.
-            for (field_names[0..user_field_count]) |fname| {
-                const w = std.fmt.allocPrint(allocator, "__koru_store_{s}.{s}[__koru_new_row] = {s};\n", .{ store_name, fname, fname }) catch unreachable;
+            for (field_names[0..user_field_count], 0..) |fname, fci| {
+                // A fixed-char column copies the incoming string into its
+                // [N]u8 buffer: zero the buffer, copy at most N bytes
+                // (comptime-known overflow is a compile error at the insert
+                // site; runtime bytes truncate — the `| toolong` branch is a
+                // deferred refinement), zero-padding the rest.
+                const w = if (field_char_caps[fci]) |n|
+                    std.fmt.allocPrint(allocator,
+                        \\__koru_store_{s}.{s}[__koru_new_row] = @import("std").mem.zeroes([{d}]u8);
+                        \\const __koru_cl_{s} = @min({s}.len, {d});
+                        \\@memcpy(__koru_store_{s}.{s}[__koru_new_row][0..__koru_cl_{s}], {s}[0..__koru_cl_{s}]);
+                        \\
+                    , .{ store_name, fname, n, fname, fname, n, store_name, fname, fname, fname, fname }) catch unreachable
+                else
+                    std.fmt.allocPrint(allocator, "__koru_store_{s}.{s}[__koru_new_row] = {s};\n", .{ store_name, fname, fname }) catch unreachable;
                 ap.appendSlice(allocator, w) catch unreachable;
             }
             if (is_tree) {
@@ -1343,10 +1396,20 @@ const std = @import("std");
                     atext.appendSlice(allocator, guard) catch unreachable;
                 }
                 if (updated_needs_old) {
-                    const oldr = std.fmt.allocPrint(allocator, "const __koru_old = __koru_store_{s}.{s}[__koru_r]; ", .{ store_name, fname }) catch unreachable;
+                    // A char column's pre-image is COPIED before the write (a
+                    // slice into the cell would observe the overwrite), then
+                    // sliced to the first NUL — the `updated` payload's
+                    // `string` shape.
+                    const oldr = if (field_char_caps[i] != null)
+                        std.fmt.allocPrint(allocator, "const __koru_oldbuf = __koru_store_{s}.{s}[__koru_r]; const __koru_old = @import(\"std\").mem.sliceTo(&__koru_oldbuf, 0); ", .{ store_name, fname }) catch unreachable
+                    else
+                        std.fmt.allocPrint(allocator, "const __koru_old = __koru_store_{s}.{s}[__koru_r]; ", .{ store_name, fname }) catch unreachable;
                     atext.appendSlice(allocator, oldr) catch unreachable;
                 }
-                const wr = std.fmt.allocPrint(allocator, "__koru_store_{s}.{s}[__koru_r] = value_{d}; ", .{ store_name, fname, i }) catch unreachable;
+                const wr = if (field_char_caps[i]) |n|
+                    std.fmt.allocPrint(allocator, "__koru_store_{s}.{s}[__koru_r] = @import(\"std\").mem.zeroes([{d}]u8); const __koru_wl = @min(value_{d}.len, {d}); @memcpy(__koru_store_{s}.{s}[__koru_r][0..__koru_wl], value_{d}[0..__koru_wl]); ", .{ store_name, fname, n, i, n, store_name, fname, i }) catch unreachable
+                else
+                    std.fmt.allocPrint(allocator, "__koru_store_{s}.{s}[__koru_r] = value_{d}; ", .{ store_name, fname, i }) catch unreachable;
                 atext.appendSlice(allocator, wr) catch unreachable;
                 for (updated_arms.items, 0..) |ua, ai| {
                     const call = if (ua.fields.len != 0)
@@ -1487,7 +1550,12 @@ const std = @import("std");
                     const s = std.fmt.allocPrint(allocator, ", .value_{d} = value", .{ci}) catch unreachable;
                     cw_slots.appendSlice(allocator, s) catch unreachable;
                 } else {
-                    const s = std.fmt.allocPrint(allocator, ", .value_{d} = 0", .{ci}) catch unreachable;
+                    // A char slot's typed zero is the empty string (the slot
+                    // type is `string`); scalars ride comptime-int 0.
+                    const s = if (field_char_caps[ci] != null)
+                        std.fmt.allocPrint(allocator, ", .value_{d} = \"\"", .{ci}) catch unreachable
+                    else
+                        std.fmt.allocPrint(allocator, ", .value_{d} = 0", .{ci}) catch unreachable;
                     cw_slots.appendSlice(allocator, s) catch unreachable;
                 }
             }
@@ -1538,7 +1606,13 @@ const std = @import("std");
             var qr = std.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
             qr.appendSlice(allocator, "const __koru_r = @as(usize, @intCast(row));\n") catch unreachable;
             for (qs.proj_names, qs.proj_fields) |pname, pfidx| {
-                const ld = std.fmt.allocPrint(allocator, "const {s} = __koru_store_{s}.{s}[__koru_r];\n_ = &{s};\n", .{ pname, store_name, field_names[pfidx], pname }) catch unreachable;
+                // A char column projects as a string slice into the cell —
+                // the bytes up to the first NUL (zero-padded buffers trim;
+                // an N-full buffer yields all N bytes).
+                const ld = if (field_char_caps[pfidx] != null)
+                    std.fmt.allocPrint(allocator, "const {s} = @import(\"std\").mem.sliceTo(&__koru_store_{s}.{s}[__koru_r], 0);\n_ = &{s};\n", .{ pname, store_name, field_names[pfidx], pname }) catch unreachable
+                else
+                    std.fmt.allocPrint(allocator, "const {s} = __koru_store_{s}.{s}[__koru_r];\n_ = &{s};\n", .{ pname, store_name, field_names[pfidx], pname }) catch unreachable;
                 qr.appendSlice(allocator, ld) catch unreachable;
             }
             if (qs.guard) |g| {
@@ -1728,7 +1802,19 @@ const std = @import("std");
                 tb.appendSlice(allocator, head) catch unreachable;
                 for (arm.fields, 0..) |fnm, fi| {
                     if (fi > 0) tb.appendSlice(allocator, ", ") catch unreachable;
-                    const p = std.fmt.allocPrint(allocator, ".{s} = __koru_out_{s}", .{ fnm, fnm }) catch unreachable;
+                    // A char field's payload is the NUL-trimmed slice of the
+                    // outgoing COPY (`__koru_out_*` outlives the handler call;
+                    // the cell slot is about to be swap-clobbered).
+                    const fnm_is_char = blk: {
+                        for (field_names, field_char_caps) |cn, cc| {
+                            if (std.mem.eql(u8, cn, fnm)) break :blk cc != null;
+                        }
+                        break :blk false;
+                    };
+                    const p = if (fnm_is_char)
+                        std.fmt.allocPrint(allocator, ".{s} = @import(\"std\").mem.sliceTo(&__koru_out_{s}, 0)", .{ fnm, fnm }) catch unreachable
+                    else
+                        std.fmt.allocPrint(allocator, ".{s} = __koru_out_{s}", .{ fnm, fnm }) catch unreachable;
                     tb.appendSlice(allocator, p) catch unreachable;
                 }
                 tb.appendSlice(allocator, " });\n") catch unreachable;
@@ -3238,12 +3324,15 @@ const std = @import("std");
         };
         for (col_types, 0..) |ct, ci| {
             const is_float = std.mem.eql(u8, ct, "f64") or std.mem.eql(u8, ct, "f32");
+            // A fixed-char column's slot is `string` — its typed zero is the
+            // empty string literal (690_052).
+            const is_string = std.mem.eql(u8, ct, "string") or std.mem.eql(u8, ct, "[]const u8");
             args[2 + ci] = ast.Arg{
                 .name = std.fmt.allocPrint(allocator, "value_{d}", .{ci}) catch unreachable,
                 .value = if (ci == field_idx)
                     rewritten_expr
                 else
-                    allocator.dupe(u8, if (is_float) "0.0" else "0") catch unreachable,
+                    allocator.dupe(u8, if (is_string) "\"\"" else if (is_float) "0.0" else "0") catch unreachable,
             };
         }
         break :blk args;
@@ -3757,6 +3846,81 @@ const std = @import("std");
             }
             return null;
         }
+        // Is `col` a fixed-char column, and how many bytes does it hold?
+        // (690_052 — the comptime-literal overflow check needs N at the
+        // insert site.) Sources, mirroring fieldOrder's transform-order
+        // tolerance: the generated SoA cell host_line when create already
+        // ran (`<col>: [CAP][N]u8` — store.kz owns both the writer and this
+        // reader), else the untransformed create's seed block (`char[N]`).
+        fn charCap(alloc: std.mem.Allocator, prog: *const ast.Program, store: []const u8, col: []const u8) ?usize {
+            const marker = std.fmt.allocPrint(alloc, "const __KoruStoreT_{s} = struct {{", .{store}) catch unreachable;
+            for (prog.items) |pi| {
+                if (pi != .host_line) continue;
+                const t = pi.host_line.content;
+                if (std.mem.indexOf(u8, t, marker) == null) continue;
+                const fkey = std.fmt.allocPrint(alloc, "\n    {s}: [", .{col}) catch unreachable;
+                const fpos = std.mem.indexOf(u8, t, fkey) orelse return null;
+                const rest = t[fpos + fkey.len ..];
+                // scalar: `8]i64 = undefined`; fixed-char: `8][16]u8 = undefined`
+                const close = std.mem.indexOfScalar(u8, rest, ']') orelse return null;
+                const after = rest[close + 1 ..];
+                if (after.len == 0 or after[0] != '[') return null;
+                const close2 = std.mem.indexOfScalar(u8, after, ']') orelse return null;
+                if (!std.mem.startsWith(u8, after[close2 + 1 ..], "u8")) return null;
+                return std.fmt.parseInt(usize, after[1..close2], 10) catch null;
+            }
+            // create not yet transformed: read the raw seed block.
+            for (prog.items) |pi| {
+                if (pi != .flow) continue;
+                const f = &pi.flow;
+                const inv = f.inv();
+                if (inv.path.segments.len != 1 or !std.mem.eql(u8, inv.path.segments[0], "new")) continue;
+                const mq = inv.path.module_qualifier orelse continue;
+                if (!std.mem.eql(u8, mq, "std.store")) continue;
+                var name_matches = false;
+                var seed: ?[]const u8 = null;
+                for (inv.args) |a| {
+                    if (std.mem.eql(u8, a.name, "expr")) {
+                        name_matches = std.mem.eql(u8, stripQuotes(a.value), store);
+                    } else if (std.mem.eql(u8, a.name, "source")) {
+                        seed = a.value;
+                    }
+                }
+                if (!name_matches or seed == null) continue;
+                const braced = std.fmt.allocPrint(alloc, "{{{s}}}", .{seed.?}) catch unreachable;
+                const cf = struct_literal.parseFields(alloc, braced) catch return null;
+                for (cf) |c| {
+                    if (!std.mem.eql(u8, c.name, col)) continue;
+                    const v = std.mem.trim(u8, c.value, " ");
+                    if (std.mem.startsWith(u8, v, "char[") and v.len > "char[".len and v[v.len - 1] == ']') {
+                        return std.fmt.parseInt(usize, std.mem.trim(u8, v["char[".len .. v.len - 1], " "), 10) catch null;
+                    }
+                    return null;
+                }
+                return null;
+            }
+            return null;
+        }
+        // Unescaped byte length of a string literal's inner text: `\n` is one
+        // byte, `\x41` is one byte. (`\u{...}` overcounts — acceptable
+        // conservatism for a fixed-buffer limit check this rung.)
+        fn literalByteLen(lit: []const u8) usize {
+            var blen: usize = 0;
+            var k: usize = 0;
+            while (k < lit.len) {
+                if (lit[k] == '\\' and k + 1 < lit.len) {
+                    if (lit[k + 1] == 'x' and k + 3 < lit.len) {
+                        k += 4;
+                    } else {
+                        k += 2;
+                    }
+                } else {
+                    k += 1;
+                }
+                blen += 1;
+            }
+            return blen;
+        }
     };
 
     var store_name: []const u8 = "";
@@ -3788,6 +3952,19 @@ const std = @import("std");
             }
             return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:insert({s}): row block is missing column '{s}'", .{ store_name, col }) } };
         };
+        // Fixed-char overflow (690_052): a COMPTIME-KNOWN string literal that
+        // exceeds the column's byte length is a compile error naming column +
+        // limit. Runtime values truncate in the insert proc (the `| toolong`
+        // branch is a deferred refinement).
+        if (H.charCap(allocator, program, store_name, col)) |ncap| {
+            const v = std.mem.trim(u8, val, " ");
+            if (v.len >= 2 and v[0] == '"' and v[v.len - 1] == '"') {
+                const blen = H.literalByteLen(v[1 .. v.len - 1]);
+                if (blen > ncap) {
+                    return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:insert({s}): string literal ({d} bytes) overflows char[{d}] column '{s}' - a fixed-char column holds at most its declared byte length", .{ store_name, blen, ncap, col }) } };
+                }
+            }
+        }
         call_args[i] = ast.Arg{
             .name = allocator.dupe(u8, col) catch unreachable,
             .value = allocator.dupe(u8, val) catch unreachable,

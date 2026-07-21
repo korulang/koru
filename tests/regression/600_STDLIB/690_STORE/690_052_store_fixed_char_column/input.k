@@ -2,8 +2,10 @@
 // container. Tier A of the string story (690_020 lineage): STATIC SoA
 // (`[CAP][N]u8`), zero allocation, NO ownership (no take/discharge). Rides the
 // typed-SoA-column work (690_049) — char[N] is just another column array type.
-// This is the store shape a to-do TUI needs: a flag + a label.
-// ASPIRATIONAL (see TODO): char[N] columns don't exist yet.
+// This is the store shape a to-do TUI needs: a flag + a label. Write path:
+// a string literal copies into the fixed buffer (zero-padded; comptime-known
+// overflow is a compile error at the insert site, runtime bytes truncate).
+// Read path: `query { entity.label }` binds the bytes up to the first NUL.
 import std/io
 import std/store
 
