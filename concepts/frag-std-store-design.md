@@ -316,10 +316,16 @@ structural beliefs earned:
   auto-discharge finder compares canonicalized `module:state` strings
   verbatim; std/string's bare states canonicalize through the module's
   logical dot-name. A slash-spelled generated phantom
-  (`std/string:instance!`) misses `free`'s `!instance` and KORU030s —
-  probed in isolation before building (a user-decl slash issue still
-  misses; the slash-canonical migration remains 330_087's ratified,
-  unbuilt design). The entity phantoms live in a parallel slash island
+  (`std/string:instance!`) misses `free`'s `!instance` and KORU030s in the
+  AUTO-DISCHARGE FINDER — `findDisposalEventsForState` compares `module:state`
+  strings verbatim (no separator tolerance) — probed in isolation before
+  building. This is FINDER-PATH-specific: the EXPLICIT-consume path
+  (`validateArgument` → `canonicalizePhantomState` → `lookupModule`) IS
+  slash<->dot tolerant, so a user-decl slash-qualified issue AND consume unify
+  fine (330_087 green; isolated slash-issue probe compiles). So 330_087 is NOT
+  the unbuilt-migration pin — it tests explicit cross-module qualified consume,
+  which works; the dot-canonical island requirement stands only because the
+  finder path is verbatim. The entity phantoms live in a parallel slash island
   where both sides are source-spelled — the two islands must not be mixed
   per obligation.
 - **One obligation surface per store, and no un-commissioned surface half

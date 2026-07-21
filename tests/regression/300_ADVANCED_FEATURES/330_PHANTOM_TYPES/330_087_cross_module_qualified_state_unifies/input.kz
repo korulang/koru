@@ -1,19 +1,19 @@
-// Aspirational: cross-module phantom state unification (the ratified design,
+// Cross-module phantom state unification (the ratified design,
 // OUTSTANDING_DESIGN_DECISIONS.md "phantom state cross-module resolution").
 //
 // A USER module references a phantom state DECLARED in an imported library
-// module, via the qualified form `<app/lib/store:secret>`. The qualified state
-// must RESOLVE through the import map and UNIFY with the `<secret!>` that
+// module, via the qualified form `<app/lib/store:!secret>`. The qualified state
+// RESOLVES through the import map and UNIFIES with the `<secret!>` that
 // make-secret issues — so this compiles, runs, and prints "ok".
 //
-// Today this is RED: phantom_semantic_checker.zig keys module_map on the dot
-// local_name and canonicalizes with the dot separator, so a slash-qualified
-// app/lib/store:secret fails to resolve (KORU040 "Unknown module 'app/lib/store'
-// ... Module not imported") even though app/lib/store IS imported. The fix is
-// the ratified design: canonical form -> slash, module_map slash keying,
-// qualifier resolved through the import map like an event path.
+// This is GREEN: phantom_semantic_checker.zig's lookupModule resolves the
+// slash-qualified `app/lib/store` through module_map (tolerating slash<->dot),
+// canonicalizing BOTH the issued `<secret!>` and the consumed `<!secret>` to
+// `app.lib.store:secret`, which unify. (The obligation is issued by a
+// cross-module bare-return event and bound via `: s`, then consumed by a
+// user-module event whose param names the foreign module explicitly.)
 //
-// This is the scalar-phantom case (the obligation is on []const u8, a builtin
+// This is the scalar-phantom case (the obligation rides on `string`, a builtin
 // with no home module) — the case that proves bare-is-not-enough and the state
 // must name its own module. See also 330_088 (bare-outside rejection) and
 // 330_089 (taint-tracking capability use case).
@@ -27,6 +27,4 @@
     return s;
 }
 
-~app/lib/store:make-secret(payload: "shh")
-| secret s |> app/lib/store:reveal(s)
-    | plain p |> use-secret(p): _ |> std/io:print.ln("ok")
+~app/lib/store:make-secret(payload: "shh"): s |> use-secret(s): _ |> std/io:print.ln("ok")
