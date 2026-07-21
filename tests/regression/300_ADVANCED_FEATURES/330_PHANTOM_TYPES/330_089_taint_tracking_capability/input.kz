@@ -21,18 +21,13 @@
 // `taint` qualifier resolves through the import map, and the borrowing module
 // must import it.
 //
-// Current RED (honest): this trips KORU030 auto-discharge ("Resource 'c' with
-// phantom state <sanitized!> was not discharged. No event accepts <!sanitized>."
-// — the sanitized obligation issued by `sanitize` has no downstream consumer in
-// this flow). It does NOT hit the KORU040 cross-module resolution gap that
-// 330_087 isolates, because the consume-marker position (`!` on the state
-// token, <app/lib/taint:!sanitized>) is silently accepted by the current
-// checker where the issue-marker form (<...:tainted!>) is not. The
-// ratified-design fix changes this: once the qualified state resolves
-// cross-module, `query` consuming <!app/lib/taint:sanitized> discharges the
-// obligation and the flow compiles and prints "ok". 330_087 is the test that
-// pins the KORU040 resolution gap itself; this test pins the taint use case
-// and the ratified consume syntax (<module:!state>, ! on the state token).
+// GREEN: the qualified taint states resolve cross-module through the import map
+// and the full chain discharges — read-input issues <app/lib/taint:tainted!>,
+// sanitize consumes <!tainted> and issues <sanitized!>, query consumes
+// <app/lib/taint:!sanitized> — so the flow compiles and prints "ok". This test
+// pins the taint use case and the ratified consume syntax (<module:!state>, `!`
+// on the state token). See 330_087 for the cross-module qualified-consume
+// resolution it rides on.
 ~import std/io
 ~import app/lib/taint
 
@@ -53,5 +48,4 @@
     return;
 }
 
-~read-input(): l |> app/lib/taint:sanitize(s: l)
-    | clean c |> query(q: c) |> std/io:print.ln("ok")
+~read-input(): l |> app/lib/taint:sanitize(s: l): c |> query(q: c) |> std/io:print.ln("ok")
