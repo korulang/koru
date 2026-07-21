@@ -487,6 +487,51 @@ const std = @import("std");
     // gated to exactly that one type; any other obligation-bearing qualified
     // column is a loud later-rung wall.
     const field_owned = allocator.alloc(bool, cell_fields.len + synth_count) catch unreachable;
+    // Owned-column metadata (B-narrow GENERALIZED): for an owned column
+    // `*mod:Type<state!>`, the store no longer hardcodes std/string — it reads
+    // the type + module + state from the column type and DISCOVERS the canonical
+    // discharger (the void `<!state>`-consuming event) from the program. `String`
+    // is just the first instance; `*Player<allocated!>`, `*File<open!>` are the
+    // same citizen. Non-null exactly when field_owned[i] is true; disch_* are
+    // filled by the canonical-discharger search below.
+    const OwnedCol = struct {
+        type_name: []const u8, // "String" / "Resource" (base type, no `*`)
+        module_slash: []const u8, // "std/string" (the type's module, slash form)
+        module_dot: []const u8, // "std.string" (dot form, for phantom canon)
+        host_type: []const u8, // "koru_std.koru_string.String" (Zig storage cell)
+        state: []const u8, // "instance" / "owned"
+        disch_event: []const u8, // canonical discharger event name ("free")
+        disch_param: []const u8, // its consuming param field name ("s")
+        disch_host: []const u8, // "koru_std.koru_string" (discharger module host)
+    };
+    const field_owned_info = allocator.alloc(?OwnedCol, cell_fields.len + synth_count) catch unreachable;
+    for (field_owned_info) |*oi| oi.* = null;
+    // module logical name (slash or dot) -> Zig host namespace: each '.'/'/'
+    // segment gets a `koru_` prefix. Mirrors codegen_utils.buildKoruModulePath /
+    // continuation_codegen.buildEventPath — the ONE convention for naming any
+    // module's emitted handler; the store reuses it instead of hardcoding.
+    const HostPath = struct {
+        fn build(alloc: std.mem.Allocator, logical: []const u8) []const u8 {
+            var buf = std.ArrayList(u8).initCapacity(alloc, 32) catch unreachable;
+            var first = true;
+            var it = std.mem.splitAny(u8, logical, "./");
+            while (it.next()) |seg| {
+                if (seg.len == 0) continue;
+                if (!first) buf.append(alloc, '.') catch unreachable;
+                buf.appendSlice(alloc, "koru_") catch unreachable;
+                buf.appendSlice(alloc, seg) catch unreachable;
+                first = false;
+            }
+            return buf.toOwnedSlice(alloc) catch unreachable;
+        }
+        fn toDot(alloc: std.mem.Allocator, logical: []const u8) []const u8 {
+            const out = alloc.dupe(u8, logical) catch unreachable;
+            for (out) |*c| {
+                if (c.* == '/') c.* = '.';
+            }
+            return out;
+        }
+    };
     for (cell_fields, 0..) |cf, i| {
         if (is_tree and std.mem.eql(u8, cf.name, "parent")) {
             return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): [tree] synthesizes the `parent` column itself (TT1, invisible) - drop the explicit `parent` declaration", .{store_name}) } };
@@ -509,19 +554,46 @@ const std = @import("std");
             }
             char_cap = n;
         }
-        // Owned-string column (B-narrow): exactly `*std/string:String<std/string:instance!>`.
-        // Any OTHER pointer/qualified/phantom-carrying column type is a loud
-        // later-rung wall — never a silent scalar fallback.
+        // Owned column (B-narrow GENERALIZED): `*mod:Type<state!>` — the store
+        // owns an obligation-bearing value of ANY type and discharges it through
+        // that type's own canonical discharger. Parse the type/module/state here;
+        // the single-canonical-discharger check happens below. Any pointer- or
+        // phantom-carrying column that isn't a well-formed `*mod:Type<state!>` is
+        // a loud wall — never a silent scalar fallback.
         var owned_col = false;
+        var owned_info: ?OwnedCol = null;
         if (std.mem.startsWith(u8, ftype, "*") or std.mem.indexOfScalar(u8, ftype, '<') != null) {
-            if (std.mem.eql(u8, ftype, "*std/string:String<std/string:instance!>")) {
-                if (!is_plural) {
-                    return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): field '{s}' is an owned-string column - owned columns live on the container shape (declare `capacity: N`, N > 1); the capacity-1 value tier is scalar-only this rung", .{ store_name, cf.name }) } };
-                }
-                owned_col = true;
-            } else {
-                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): field '{s}' is {s} - the only owned column type this rung is `*std/string:String<std/string:instance!>` (690_053, B-narrow); other owned/qualified column types are later rungs", .{ store_name, cf.name, ftype }) } };
+            if (!std.mem.startsWith(u8, ftype, "*") or std.mem.indexOfScalar(u8, ftype, '<') == null or ftype[ftype.len - 1] != '>') {
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): field '{s}' is {s} - an owned column must be a well-formed `*mod:Type<state!>` (pointer, module-qualified type, held obligation)", .{ store_name, cf.name, ftype }) } };
             }
+            const lt = std.mem.indexOfScalar(u8, ftype, '<').?;
+            const type_part = std.mem.trim(u8, ftype[1..lt], " "); // "mod:Type"
+            var phantom_part = std.mem.trim(u8, ftype[lt + 1 .. ftype.len - 1], " "); // "mod:state!" | "state!"
+            const tcolon = std.mem.lastIndexOfScalar(u8, type_part, ':');
+            if (tcolon == null) {
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): field '{s}' is {s} - an owned column type must be module-qualified `*mod:Type<state!>` so the store can locate its discharger", .{ store_name, cf.name, ftype }) } };
+            }
+            const module_slash = type_part[0..tcolon.?];
+            const type_name = type_part[tcolon.? + 1 ..];
+            if (phantom_part.len == 0 or phantom_part[phantom_part.len - 1] != '!') {
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): field '{s}' is {s} - an owned column must hold a live obligation `<state!>` (a bare `<state>` borrow is not owned; 330_067/069)", .{ store_name, cf.name, ftype }) } };
+            }
+            phantom_part = phantom_part[0 .. phantom_part.len - 1]; // strip trailing '!'
+            const state = if (std.mem.lastIndexOfScalar(u8, phantom_part, ':')) |pc| phantom_part[pc + 1 ..] else phantom_part;
+            if (!is_plural) {
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): field '{s}' is an owned column - owned columns live on the container shape (declare `capacity: N`, N > 1); the capacity-1 value tier is scalar-only this rung", .{ store_name, cf.name }) } };
+            }
+            owned_col = true;
+            owned_info = OwnedCol{
+                .type_name = allocator.dupe(u8, type_name) catch unreachable,
+                .module_slash = allocator.dupe(u8, module_slash) catch unreachable,
+                .module_dot = HostPath.toDot(allocator, module_slash),
+                .host_type = std.fmt.allocPrint(allocator, "{s}.{s}", .{ HostPath.build(allocator, module_slash), type_name }) catch unreachable,
+                .state = allocator.dupe(u8, state) catch unreachable,
+                .disch_event = "",
+                .disch_param = "",
+                .disch_host = "",
+            };
         }
         // Scalar widening (690_020 tier 1): i64/i32/f64/f32 columns — the
         // kernel:shape f64 precedent (390_001) applied to the store cell.
@@ -535,12 +607,13 @@ const std = @import("std");
         field_names[i] = cf.name;
         field_types[i] = if (char_cap != null)
             allocator.dupe(u8, "string") catch unreachable
-        else if (owned_col)
-            allocator.dupe(u8, "*String") catch unreachable
+        else if (owned_info) |oi|
+            std.fmt.allocPrint(allocator, "*{s}", .{oi.type_name}) catch unreachable
         else
             ftype;
         field_char_caps[i] = char_cap;
         field_owned[i] = owned_col;
+        field_owned_info[i] = owned_info;
         field_defaults[i] = if (has_default) peeled.value else null;
     }
     if (is_tree) {
@@ -548,6 +621,7 @@ const std = @import("std");
         field_types[user_field_count] = allocator.dupe(u8, "i64") catch unreachable;
         field_char_caps[user_field_count] = null;
         field_owned[user_field_count] = false;
+        field_owned_info[user_field_count] = null;
         field_defaults[user_field_count] = null;
     }
     var has_owned = false;
@@ -569,42 +643,66 @@ const std = @import("std");
                 return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): fixed-char (char[N]) and owned-string columns in one store are a later rung", .{store_name}) } };
             }
         }
-        // The canonical-discharge wall (the 690_035 ambiguity rule, at the
-        // column boundary): the column type must have EXACTLY ONE void
-        // terminal discharger for <!instance> on *String (std/string:free).
-        // Zero or several -> a drain/pick surface this rung does not build.
-        var discharger_count: usize = 0;
-        var saw_string_module = false;
-        for (program.items) |pi| {
-            if (pi != .module_decl) continue;
-            const md = &pi.module_decl;
-            if (!std.mem.eql(u8, md.logical_name, "std.string") and !std.mem.eql(u8, md.logical_name, "std/string")) continue;
-            saw_string_module = true;
-            for (md.items) |mi| {
-                if (mi != .event_decl) continue;
-                const ed = &mi.event_decl;
-                // Auto-discharge inserts VOID events only (KORU083 rule):
-                // any output (branch or bare return) disqualifies.
-                if (ed.branches.len > 0 or ed.return_type != null) continue;
-                for (ed.input.fields) |f| {
-                    if (!std.mem.eql(u8, f.type, "*String")) continue;
-                    const ph = f.phantom orelse continue;
-                    // Union members split on '|'; a consuming member is `!instance`.
-                    var members = std.mem.splitScalar(u8, ph, '|');
-                    while (members.next()) |m| {
-                        if (std.mem.eql(u8, std.mem.trim(u8, m, " "), "!instance")) {
-                            discharger_count += 1;
-                            break;
+        // The canonical-discharge wall (690_035, at the column boundary),
+        // GENERALIZED past std/string: for EACH owned column type the program
+        // must expose EXACTLY ONE void terminal discharger consuming <!state>
+        // on *Type — e.g. std/string:free for *String<!instance>, or `free`/
+        // `close` for a user *Resource<!owned>. Zero -> the module isn't in
+        // scope; several -> ambiguous (commit|rollback), which needs a drain/
+        // pick surface this rung does not build. The discharger's identity
+        // (event + consuming param + host namespace) is captured for codegen.
+        for (field_owned_info, 0..) |maybe_oi, oi_idx| {
+            var oi = maybe_oi orelse continue;
+            const want_type = std.fmt.allocPrint(allocator, "*{s}", .{oi.type_name}) catch unreachable;
+            const want_consume = std.fmt.allocPrint(allocator, "!{s}", .{oi.state}) catch unreachable;
+            var discharger_count: usize = 0;
+            var saw_module = false;
+            var found_event: []const u8 = "";
+            var found_param: []const u8 = "";
+            for (program.items) |pi| {
+                if (pi != .module_decl) continue;
+                const md = &pi.module_decl;
+                if (!std.mem.eql(u8, md.logical_name, oi.module_dot) and !std.mem.eql(u8, md.logical_name, oi.module_slash)) continue;
+                saw_module = true;
+                for (md.items) |mi| {
+                    if (mi != .event_decl) continue;
+                    const ed = &mi.event_decl;
+                    // Auto-discharge inserts VOID events only (KORU083 rule):
+                    // any output (branch or bare return) disqualifies.
+                    if (ed.branches.len > 0 or ed.return_type != null) continue;
+                    for (ed.input.fields) |f| {
+                        if (!std.mem.eql(u8, f.type, want_type)) continue;
+                        const ph = f.phantom orelse continue;
+                        // Union members split on '|'; a consuming member is `!state`.
+                        var members = std.mem.splitScalar(u8, ph, '|');
+                        while (members.next()) |m| {
+                            if (std.mem.eql(u8, std.mem.trim(u8, m, " "), want_consume)) {
+                                discharger_count += 1;
+                                // Event name = path segments joined by '_' (the
+                                // `<name>_event.handler` codegen convention).
+                                var nb = std.ArrayList(u8).initCapacity(allocator, 16) catch unreachable;
+                                for (ed.path.segments, 0..) |seg, si| {
+                                    if (si > 0) nb.append(allocator, '_') catch unreachable;
+                                    nb.appendSlice(allocator, seg) catch unreachable;
+                                }
+                                found_event = nb.toOwnedSlice(allocator) catch unreachable;
+                                found_param = allocator.dupe(u8, f.name) catch unreachable;
+                                break;
+                            }
                         }
                     }
                 }
             }
-        }
-        if (!saw_string_module) {
-            return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): an owned-string column needs std/string in scope - add `import std/string`", .{store_name}) } };
-        }
-        if (discharger_count != 1) {
-            return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): column type *std/string:String has {d} terminal discharge candidates for <!instance> - a store column needs exactly ONE (the canonical discharger, std/string:free); an ambiguous-discharge column needs a drain surface, not yet supported (690_035 pins the ambiguity wall)", .{ store_name, discharger_count }) } };
+            if (!saw_module) {
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): an owned column of *{s}:{s} needs module {s} in scope - add `import {s}`", .{ store_name, oi.module_slash, oi.type_name, oi.module_slash, oi.module_slash }) } };
+            }
+            if (discharger_count != 1) {
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): column type *{s}:{s} has {d} terminal discharge candidates for <!{s}> - a store column needs exactly ONE (the canonical discharger); an ambiguous-discharge column needs a drain surface, not yet supported (690_035 pins the ambiguity wall)", .{ store_name, oi.module_slash, oi.type_name, discharger_count, oi.state }) } };
+            }
+            oi.disch_event = found_event;
+            oi.disch_param = found_param;
+            oi.disch_host = HostPath.build(allocator, oi.module_slash);
+            field_owned_info[oi_idx] = oi;
         }
     }
     // The SINGLETON write plumbing carries ONE value type; a mixed-type
@@ -1199,15 +1297,16 @@ const std = @import("std");
         pc.appendSlice(allocator, "const __KoruStoreT_") catch unreachable;
         pc.appendSlice(allocator, store_name) catch unreachable;
         pc.appendSlice(allocator, " = struct {\n") catch unreachable;
-        for (field_names, field_types, field_char_caps, field_owned) |fname, ftype, fcc, fowned| {
+        for (field_names, field_types, field_char_caps, field_owned_info) |fname, ftype, fcc, foi| {
             // A fixed-char column is [CAP][N]u8 (the event-level `string`
-            // type never reaches Zig emission); an owned-string column is
-            // [CAP]*String (the store OWNS the pointers — teardown frees the
-            // live ones); scalars emit their own type.
+            // type never reaches Zig emission); an owned column is [CAP]*Type
+            // (the store OWNS the pointers — teardown frees the live ones) with
+            // Type the discovered host cell (e.g. koru_std.koru_string.String);
+            // scalars emit their own type.
             const col = if (fcc) |n|
                 std.fmt.allocPrint(allocator, "    {s}: [{d}][{d}]u8 = undefined,\n", .{ fname, CAP, n }) catch unreachable
-            else if (fowned)
-                std.fmt.allocPrint(allocator, "    {s}: [{d}]*koru_std.koru_string.String = undefined,\n", .{ fname, CAP }) catch unreachable
+            else if (foi) |oi|
+                std.fmt.allocPrint(allocator, "    {s}: [{d}]*{s} = undefined,\n", .{ fname, CAP, oi.host_type }) catch unreachable
             else
                 std.fmt.allocPrint(allocator, "    {s}: [{d}]{s} = undefined,\n", .{ fname, CAP, ftype }) catch unreachable;
             pc.appendSlice(allocator, col) catch unreachable;
@@ -1230,8 +1329,9 @@ const std = @import("std");
             if (field_char_caps[fi]) |n| {
                 const rt = std.fmt.allocPrint(allocator, "[{d}]u8", .{n}) catch unreachable;
                 pc.appendSlice(allocator, rt) catch unreachable;
-            } else if (field_owned[fi]) {
-                pc.appendSlice(allocator, "*koru_std.koru_string.String") catch unreachable;
+            } else if (field_owned_info[fi]) |oi| {
+                pc.appendSlice(allocator, "*") catch unreachable;
+                pc.appendSlice(allocator, oi.host_type) catch unreachable;
             } else {
                 pc.appendSlice(allocator, ftype) catch unreachable;
             }
@@ -1324,20 +1424,19 @@ const std = @import("std");
         const append_text = ap.toOwnedSlice(allocator) catch unreachable;
 
         const mkInsertInput = struct {
-            // An owned-string column's insert param CONSUMES the caller's
-            // obligation: `<std.string:!instance>` (dot-canonical, the form
-            // std/string's own bare states canonicalize to today — the
-            // slash-canonical migration is the 330_087 ratified design).
-            // Ownership moves INTO the store; the phantom checker rejects a
-            // value not holding <instance!> (690_054).
-            fn call(alloc: std.mem.Allocator, fnames: []const []const u8, ftypes: []const []const u8, fowned: []const bool) []ast.Field {
+            // An owned column's insert param CONSUMES the caller's obligation:
+            // `<mod:!state>` (dot-canonical, the form the type's own bare states
+            // canonicalize to). Ownership moves INTO the store; the phantom
+            // checker rejects a value not holding <state!> (690_054). Generalized
+            // past std/string — the module/state come from the discovered type.
+            fn call(alloc: std.mem.Allocator, fnames: []const []const u8, ftypes: []const []const u8, foinfo: []const ?OwnedCol) []ast.Field {
                 const fields = alloc.alloc(ast.Field, fnames.len + 1) catch unreachable;
-                for (fnames, ftypes, fowned, 0..) |fname, ftype, fown, i| {
+                for (fnames, ftypes, foinfo, 0..) |fname, ftype, foi, i| {
                     fields[i] = ast.Field{
                         .name = alloc.dupe(u8, fname) catch unreachable,
                         .type = alloc.dupe(u8, ftype) catch unreachable,
-                        .module_path = if (fown) alloc.dupe(u8, "std/string") catch unreachable else null,
-                        .phantom = if (fown) alloc.dupe(u8, "std.string:!instance") catch unreachable else null,
+                        .module_path = if (foi) |oi| alloc.dupe(u8, oi.module_slash) catch unreachable else null,
+                        .phantom = if (foi) |oi| std.fmt.allocPrint(alloc, "{s}:!{s}", .{ oi.module_dot, oi.state }) catch unreachable else null,
                     };
                 }
                 fields[fnames.len] = ast.Field{ .name = alloc.dupe(u8, "__site_line") catch unreachable, .type = alloc.dupe(u8, "i64") catch unreachable };
@@ -1350,7 +1449,7 @@ const std = @import("std");
             const insert_name = std.fmt.allocPrint(allocator, "__store_insert_{s}", .{store_name}) catch unreachable;
             appended_items.append(allocator, ast.Item{ .event_decl = ast.EventDecl{
                 .path = H.mkPathH(allocator, flow.module, insert_name),
-                .input = ast.Shape{ .fields = mkInsertInput(allocator, field_names[0..user_field_count], field_types[0..user_field_count], field_owned[0..user_field_count]) },
+                .input = ast.Shape{ .fields = mkInsertInput(allocator, field_names[0..user_field_count], field_types[0..user_field_count], field_owned_info[0..user_field_count]) },
                 .branches = &[_]ast.Branch{},
                 .is_public = false,
                 .is_implicit_flow = false,
@@ -1380,7 +1479,7 @@ const std = @import("std");
             };
             appended_items.append(allocator, ast.Item{ .event_decl = ast.EventDecl{
                 .path = H.mkPathH(allocator, flow.module, inserth_name),
-                .input = ast.Shape{ .fields = mkInsertInput(allocator, field_names[0..user_field_count], field_types[0..user_field_count], field_owned[0..user_field_count]) },
+                .input = ast.Shape{ .fields = mkInsertInput(allocator, field_names[0..user_field_count], field_types[0..user_field_count], field_owned_info[0..user_field_count]) },
                 .branches = row_branches,
                 .is_public = false,
                 .is_implicit_flow = false,
@@ -1425,7 +1524,7 @@ const std = @import("std");
             };
             appended_items.append(allocator, ast.Item{ .event_decl = ast.EventDecl{
                 .path = H.mkPathH(allocator, flow.module, insertf_name),
-                .input = ast.Shape{ .fields = mkInsertInput(allocator, field_names[0..user_field_count], field_types[0..user_field_count], field_owned[0..user_field_count]) },
+                .input = ast.Shape{ .fields = mkInsertInput(allocator, field_names[0..user_field_count], field_types[0..user_field_count], field_owned_info[0..user_field_count]) },
                 .branches = f_branches,
                 .is_public = false,
                 .is_implicit_flow = false,
@@ -1897,12 +1996,12 @@ const std = @import("std");
             // seeding both checkers already run on branch payloads.
             const item_pf = if (has_owned) blk: {
                 const pf = allocator.alloc(ast.Field, field_names.len) catch unreachable;
-                for (field_names, field_types, field_owned, 0..) |pfname, pftype, pfowned, pfi| {
+                for (field_names, field_types, field_owned_info, 0..) |pfname, pftype, pfoi, pfi| {
                     pf[pfi] = ast.Field{
                         .name = allocator.dupe(u8, pfname) catch unreachable,
                         .type = allocator.dupe(u8, pftype) catch unreachable,
-                        .module_path = if (pfowned) allocator.dupe(u8, "std/string") catch unreachable else null,
-                        .phantom = if (pfowned) allocator.dupe(u8, "std.string:instance!") catch unreachable else null,
+                        .module_path = if (pfoi) |oi| allocator.dupe(u8, oi.module_slash) catch unreachable else null,
+                        .phantom = if (pfoi) |oi| std.fmt.allocPrint(allocator, "{s}:{s}!", .{ oi.module_dot, oi.state }) catch unreachable else null,
                     };
                 }
                 break :blk pf;
@@ -2208,9 +2307,14 @@ const std = @import("std");
             var td = std.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
             const td_head = std.fmt.allocPrint(allocator, "var __koru_i: usize = 0;\nwhile (__koru_i < __koru_store_{s}.len) : (__koru_i += 1) {{\n", .{store_name}) catch unreachable;
             td.appendSlice(allocator, td_head) catch unreachable;
-            for (field_names, field_owned) |fname, fowned| {
-                if (!fowned) continue;
-                const fr = std.fmt.allocPrint(allocator, "    _ = koru_std.koru_string.free_event.handler(.{{ .s = __koru_store_{s}.{s}[__koru_i] }});\n", .{ store_name, fname }) catch unreachable;
+            for (field_names, field_owned_info) |fname, foi| {
+                const oi = foi orelse continue;
+                // Discharge each live element through the DISCOVERED canonical
+                // discharger: <host>.<event>_event.handler(.{ .<param> = elem }),
+                // the same `<name>_event.handler` convention every emitted call
+                // uses (buildKoruModulePath). std/string's `free` is just one
+                // instance; a user *Resource routes to its own `free`/`close`.
+                const fr = std.fmt.allocPrint(allocator, "    _ = {s}.{s}_event.handler(.{{ .{s} = __koru_store_{s}.{s}[__koru_i] }});\n", .{ oi.disch_host, oi.disch_event, oi.disch_param, store_name, fname }) catch unreachable;
                 td.appendSlice(allocator, fr) catch unreachable;
             }
             const td_tail = std.fmt.allocPrint(allocator, "}}\n__koru_store_{s}.len = 0;\nreturn;", .{store_name}) catch unreachable;
@@ -4225,8 +4329,11 @@ const std = @import("std");
             if (pi != .host_line) continue;
             const t = pi.host_line.content;
             if (std.mem.indexOf(u8, t, cell_marker) == null) continue;
-            if (std.mem.indexOf(u8, t, "]*koru_std.koru_string.String") != null) {
-                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:insert({s}): the `| full` branch on an owned-string store is a later rung - graceful exhaustion (690_011) must GIVE BACK the consumed ownership, a surface 690_053 does not build; drop `| full` (capacity overflow panics loudly)", .{store_name}) } };
+            // Any owned column emits a `[CAP]*Type` pointer cell (`]*`);
+            // scalars/char never do. Type-independent so it catches *String and
+            // any generalized owned column (*Resource, *File, …) alike.
+            if (std.mem.indexOf(u8, t, "]*") != null) {
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:insert({s}): the `| full` branch on an owned store is a later rung - graceful exhaustion (690_011) must GIVE BACK the consumed ownership, a surface 690_053 does not build; drop `| full` (capacity overflow panics loudly)", .{store_name}) } };
             }
             break;
         }

@@ -294,15 +294,26 @@ are byte-identical. This retires the arena_showcase's GAPS #4 ("query-row
 addressing is an enter-triggered standing rule, not a repeatable action"):
 it IS a repeatable action now, with correct mutation-during-iteration.
 
-**Owned-string columns landed — B-narrow (2026-07-21, 690_053 green /
-690_054 the wall).** The "owned-resource cells" case anticipated by the
-disposal repudiation is now real: a column can hold an owned
-`*std/string:String<std/string:instance!>`, and the obligation THREADS the
-store boundary — insert's synthesized param consumes it (push by move; a
-value not holding `<instance!>` is a Phantom-state-mismatch rejection),
-take's payload reissues it per field (pop by move), and a synthesized
-teardown flow — appended LAST, so it runs after every user flow — frees
-each still-live element through the canonical discharger's handler. Three
+**Owned columns landed and GENERALIZED — B-narrow → any owned type
+(2026-07-21).** B-narrow first proved the shape for exactly
+`*std/string:String<std/string:instance!>` (690_053 green / 690_054 the wall).
+The SAME session then generalized it (690_055 green, `*app/lib/res:Resource<owned!>`):
+a column can hold ANY `*mod:Type<state!>` — `*Player<allocated!>`, `*File<open!>`,
+`*Resource<owned!>` are the same citizen. The store no longer hardcodes the
+std/string tuple; it PARSES the column type (`{type, module, state}`) and
+DISCOVERS the canonical discharger from the program (the one void `<!state>`-
+consuming event in the type's module), then emits every site — storage cell,
+insert-consume phantom, take-reissue phantom, teardown call — from those
+discovered values, reusing the `buildKoruModulePath`/`<event>_event.handler`
+convention. **Pure `koru_std/store.kz` work — zero compiler/`src/` change.** The
+"owned-resource cells" case the disposal repudiation anticipated is now real for
+arbitrary resources: the obligation THREADS the store boundary — insert's
+synthesized param consumes it (push by move; a value not holding `<state!>` is a
+Phantom-state-mismatch rejection), take's payload reissues it per field (pop by
+move), and a synthesized teardown flow — appended LAST, so it runs after every
+user flow — frees each still-live element through the canonical discharger's
+handler. Ambiguous discharge (>1 void `<!state>` consumer, e.g. commit|rollback)
+stays the 690_035 drain wall — the caller-driven drain is the later rung. Three
 structural beliefs earned:
 
 - **The reissue rides the branch-payload FIELD seeding, not the identity

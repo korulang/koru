@@ -1,0 +1,28 @@
+// A minimal OWNED-POINTER resource type (non-string), for generalizing B-narrow
+// past std/string. `new` issues <owned!>; `free` is the canonical VOID
+// discharger consuming <!owned>; `tag` borrows to read a field.
+const std = @import("std");
+
+const Resource = struct { tag: i64 };
+
+~pub event new { } -> *Resource<owned!>
+
+~proc new|zig {
+    const r = std.heap.page_allocator.create(Resource) catch unreachable;
+    r.* = .{ .tag = 42 };
+    return r;
+}
+
+// Canonical discharger: consumes <!owned>, frees the resource. Void (no output).
+~pub event free { r: *Resource<!owned> }
+
+~proc free|zig {
+    std.heap.page_allocator.destroy(r);
+}
+
+// Borrow: read the tag without consuming the obligation.
+~pub event tag { r: *Resource<owned> } -> i64
+
+~proc tag|zig {
+    return r.tag;
+}
