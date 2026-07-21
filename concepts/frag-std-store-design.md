@@ -294,6 +294,44 @@ are byte-identical. This retires the arena_showcase's GAPS #4 ("query-row
 addressing is an enter-triggered standing rule, not a repeatable action"):
 it IS a repeatable action now, with correct mutation-during-iteration.
 
+**Owned-string columns landed — B-narrow (2026-07-21, 690_053 green /
+690_054 the wall).** The "owned-resource cells" case anticipated by the
+disposal repudiation is now real: a column can hold an owned
+`*std/string:String<std/string:instance!>`, and the obligation THREADS the
+store boundary — insert's synthesized param consumes it (push by move; a
+value not holding `<instance!>` is a Phantom-state-mismatch rejection),
+take's payload reissues it per field (pop by move), and a synthesized
+teardown flow — appended LAST, so it runs after every user flow — frees
+each still-live element through the canonical discharger's handler. Three
+structural beliefs earned:
+
+- **The reissue rides the branch-payload FIELD seeding, not the identity
+  payload.** An owned store's `| item` payload is a STRUCT of row fields
+  (not `__type_ref`), because both checkers already seed per-field
+  obligations on struct branch payloads (`binding.field` keys) and — unlike
+  bare-return record fields, which are `not_auto_dischargeable` by design
+  (330_096's wall) — branch-payload field obligations auto-discharge. So
+  `i.name` auto-frees at scope exit with zero new checker code.
+- **Generation-time phantoms must land in the DOT-canonical island.** The
+  auto-discharge finder compares canonicalized `module:state` strings
+  verbatim; std/string's bare states canonicalize through the module's
+  logical dot-name. A slash-spelled generated phantom
+  (`std/string:instance!`) misses `free`'s `!instance` and KORU030s —
+  probed in isolation before building (a user-decl slash issue still
+  misses; the slash-canonical migration remains 330_087's ratified,
+  unbuilt design). The entity phantoms live in a parallel slash island
+  where both sides are source-spelled — the two islands must not be mixed
+  per obligation.
+- **One obligation surface per store, and no un-commissioned surface half
+  works.** The canonical-discharge rule (exactly ONE void `<!instance>`
+  consumer on `*String` — the 690_035 ambiguity wall applied at the column
+  boundary) is enforced at create; `[entity]`/`[tree]`/char mixes,
+  watch/query/interceptors/`stored`, and insert's `| full` (whose early
+  return would consume the caller's obligation without keeping the value —
+  a silent ownership leak) are all loud later-rung walls, and an owned
+  store generates no write surface at all rather than one that moves owned
+  pointers without their obligations.
+
 The full residue (rulings, stamped theses, gauntlet verdicts, open
 queue) lives in `tests/regression/600_STDLIB/690_STORE/DESIGN.md`, which
 deletes as pins absorb it. ECT/BLOOM (entity-component-taps) is
