@@ -1,28 +1,20 @@
-ASPIRATIONAL — store scalar widening, TIER 1 REMAINDER (690_020): PLURAL +
-MIXED scalar columns. NOT built yet.
+ASPIRATIONAL — store scalar widening, TIER 1 REMAINDER (690_020): mixed scalar
+columns in a CONTAINER (capacity > 1). NOT built yet.
 
-Context (690_020/residue.md, Lars 2026-07-05): tier 1 SHIPPED for singletons
-(690_021 f64 GREEN — uniform-scalar seeded columns flow the whole write path).
-The remainder walled loudly: mixed-type stores + PLURAL column widening =
-"typed SoA columns / per-field write events."
+On the settled capacity model (690_050): capacity > 1 = container (rows). Its
+column arrays are hardcoded [CAP]i64; the row-value struct is i64-typed; the
+write plumbing carries one value_type. A non-i64 container column (f64/i32/f32)
+is therefore silently mis-emitted or walled.
 
-Evidence it's scoping not architecture: std/kernel:shape (390_001) runs f64
-fields through the SAME transform substrate. Extension, not invention.
-
-Grounded i64-hardcoded sites to widen:
-  - store.kz:1056  column array  `{fname}: [{CAP}]i64`  → `[{CAP}]{field_types[i]}`
-  - store.kz:1073  row struct    `{fname}: i64`         → `: {field_types[i]}`
-  - store.kz:499   single `value_type`                  → per-field types (per-field write)
+Grounded i64-hardcoded sites to widen (per-field types via field_types[]):
+  - column array  `{fname}: [{CAP}]i64`   → `[{CAP}]{field_types[i]}`
+  - row-value struct  `{fname}: i64`       → `: {field_types[i]}`
+  - single value_type → per-field types (per-field write emission)
   - colRead / insert-write / stored-write: thread the column's type, not i64.
 
-Constraint: i64 columns (incl. the [tree] synthesized `parent` self-FK) must
-stay i64 and keep working alongside widened columns.
+Precedent it's scoping not architecture: std/kernel:shape (390_001) runs f64
+fields through the same transform substrate. 690_021 proves value-shape f64.
 
-Current failure (SHOWN): a plural `{ n: i64, r: f64 }` cascades to a misleading
-"unknown store 'm'" — the i64-only wall fires on `r: f64` in `new`, so the store
-never registers and downstream insert/query report it missing. (Bad error msg —
-should name the real wall.)
-
-Scalars need NO ownership (a value column never discharges). The reference/string
-tier — where `take`/`<std/store:!taken>` discharge finally has bytes to free —
-is the NEXT rung, not this one.
+i64 columns (incl. the [tree] synthesized `parent` self-FK) must stay i64 and
+keep working alongside widened columns. Scalars need NO ownership — the
+string/reference (take/discharge) tier is the NEXT rung.
