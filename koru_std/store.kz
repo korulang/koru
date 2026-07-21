@@ -628,6 +628,20 @@ const std = @import("std");
     for (field_owned) |fo| {
         if (fo) has_owned = true;
     }
+    // DRAIN rung (690_057/058): an owned column whose type has MORE THAN ONE
+    // void `<!state>` discharger (commit|rollback) is AMBIGUOUS — the store
+    // cannot pick. The column stays owned (insert still consumes the caller's
+    // obligation into the store), but teardown fires a USER-provided
+    // `! discharge item |> ...` effect branch bolted onto the store
+    // declaration instead of a discovered canonical discharger. The store is
+    // static (program-lifetime), so its discharger is declared statically AT
+    // the store. drain_required marks the store; the ambig_* capture feeds
+    // the teaching error when the `! discharge` branch is missing.
+    var drain_required = false;
+    var ambig_module: []const u8 = "";
+    var ambig_type: []const u8 = "";
+    var ambig_state: []const u8 = "";
+    var ambig_count: usize = 0;
     if (has_owned) {
         // One obligation surface per store this rung: [entity] mints
         // <std/store:taken!> on the whole row; an owned column reissues
@@ -696,13 +710,39 @@ const std = @import("std");
             if (!saw_module) {
                 return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): an owned column of *{s}:{s} needs module {s} in scope - add `import {s}`", .{ store_name, oi.module_slash, oi.type_name, oi.module_slash, oi.module_slash }) } };
             }
-            if (discharger_count != 1) {
-                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): column type *{s}:{s} has {d} terminal discharge candidates for <!{s}> - a store column needs exactly ONE (the canonical discharger); an ambiguous-discharge column needs a drain surface, not yet supported (690_035 pins the ambiguity wall)", .{ store_name, oi.module_slash, oi.type_name, discharger_count, oi.state }) } };
+            if (discharger_count == 0) {
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): column type *{s}:{s} has no terminal discharge candidate for <!{s}> - declare a void event in {s} consuming `*{s}<!{s}>` (the canonical discharger)", .{ store_name, oi.module_slash, oi.type_name, oi.state, oi.module_slash, oi.type_name, oi.state }) } };
+            }
+            if (discharger_count > 1) {
+                // AMBIGUOUS: >1 dischargers (commit|rollback) — mark the store
+                // drain-required and leave disch_* empty as the per-column
+                // ambiguity marker. The `! discharge` branch is collected off
+                // the store declaration below; teardown fires it per live
+                // element instead of a discovered discharger.
+                drain_required = true;
+                ambig_module = oi.module_slash;
+                ambig_type = oi.type_name;
+                ambig_state = oi.state;
+                ambig_count = discharger_count;
+                continue;
             }
             oi.disch_event = found_event;
             oi.disch_param = found_param;
             oi.disch_host = HostPath.build(allocator, oi.module_slash);
             field_owned_info[oi_idx] = oi;
+        }
+        if (drain_required) {
+            // One teardown surface per store this rung: the drain payload
+            // carries the row's obligations for the user handler, while a
+            // canonical column would ALSO auto-fire its discovered discharger
+            // in the same loop — a double-discharge composition question.
+            // Loud wall, later rung.
+            for (field_owned_info) |maybe_oi| {
+                const oi = maybe_oi orelse continue;
+                if (oi.disch_event.len != 0) {
+                    return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): mixing a canonical owned column (*{s}:{s}) with an ambiguous one (*{s}:{s}) in one store is a later rung - the drain's `! discharge` payload and auto-discharge compose there", .{ store_name, oi.module_slash, oi.type_name, ambig_module, ambig_type }) } };
+                }
+            }
         }
     }
     // The SINGLETON write plumbing carries ONE value type; a mixed-type
@@ -776,6 +816,13 @@ const std = @import("std");
         var inserted_arms = std.ArrayList(LifecycleArm).initCapacity(allocator, 2) catch unreachable;
         var removed_arms = std.ArrayList(LifecycleArm).initCapacity(allocator, 2) catch unreachable;
         var updated_arms = std.ArrayList(LifecycleArm).initCapacity(allocator, 2) catch unreachable;
+        // The drain handler (690_057): `! discharge item |> ...` on the store
+        // declaration. Collected as a WHOLE continuation and re-attached to
+        // the synthesized teardown flow (the 400_105 effect-branch shape) —
+        // the handler binds the row record, whose ambiguous owned fields
+        // carry `<state!>`, so the phantom checker forces the body to
+        // discharge each element. Exactly one per store.
+        var discharge_arm: ?ast.Continuation = null;
         // KORU100 for interceptor payloads: a bound row field must be USED in
         // the body (or discarded with `_`). flow_checker's unused-binding pass
         // skips `[transform]` invocations, and `std/store:new` is one, so the
@@ -820,6 +867,22 @@ const std = @import("std");
             const bname = std.mem.trim(u8, ic.branch, " ");
             if (ic.condition != null) {
                 return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): guarded interceptors are a later slice - interceptors are the store's unconditional contract", .{store_name}) } };
+            }
+            if (std.mem.eql(u8, bname, "discharge")) {
+                if (!drain_required) {
+                    return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): `! discharge` applies only to a store with an AMBIGUOUS owned column (>1 dischargers) - this store's owned columns have canonical dischargers and auto-discharge at teardown", .{store_name}) } };
+                }
+                if (discharge_arm != null) {
+                    return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): one `! discharge` handler per store - the teardown fires ONE handler per live element", .{store_name}) } };
+                }
+                if (ic.binding == null or ic.destructure.len != 0) {
+                    return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): `! discharge` binds the whole row record - spell it `! discharge item |> ...(item.<field>)`", .{store_name}) } };
+                }
+                if (ic.node == null) {
+                    return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): the `! discharge` handler needs a body that discharges the row's obligations (e.g. `! discharge item |> {s}:commit(item.<field>)`)", .{ store_name, ambig_module }) } };
+                }
+                discharge_arm = ast_functional.cloneContinuation(allocator, ic) catch unreachable;
+                continue;
             }
             const is_inserted = std.mem.eql(u8, bname, "inserted");
             const is_removed = std.mem.eql(u8, bname, "removed");
@@ -901,6 +964,16 @@ const std = @import("std");
             } else {
                 removed_arms.append(allocator, arm) catch unreachable;
             }
+        }
+        // Drain ENFORCEMENT (690_058): an ambiguous owned column with no
+        // `! discharge` handler would leave still-live elements undischarged
+        // at teardown — a silent leak. Refusing the declaration here keeps
+        // the store's units unsynthesized, so any insert's obligation leaks
+        // and the natural checker fires too (KORU030 "multiple discharge
+        // options", which surfaces first when inserts exist); with no
+        // inserts, THIS teaching error is the one the user sees.
+        if (drain_required and discharge_arm == null) {
+            return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): column *{s}:{s} has {d} dischargers for <!{s}> (ambiguous) - the store cannot pick one, so it must be DRAINED: bolt a `! discharge item |> ...` handler onto the store declaration to discharge each still-live element at teardown", .{ store_name, ambig_module, ambig_type, ambig_count, ambig_state }) } };
         }
 
         // ---- collect this store's watch arms (field-granular, plural) ----
@@ -2294,10 +2367,36 @@ const std = @import("std");
         // user flow — before the emitter's leak check.
         if (has_owned) {
             const td_name = std.fmt.allocPrint(allocator, "__store_teardown_{s}", .{store_name}) catch unreachable;
+            // Drain (690_057): the teardown event declares the `! discharge`
+            // EFFECT branch (the 400_105 producer shape). Its payload is the
+            // ROW RECORD — every column as a field, the ambiguous owned
+            // fields carrying `<state!>` (dot-canonical, the take-item form)
+            // so the phantom checker FORCES the user's handler to discharge
+            // each fired element. That per-element forcing IS the drain
+            // enforcement; the store adds no manual check.
+            var td_branches: []ast.Branch = &[_]ast.Branch{};
+            if (drain_required) {
+                const dpf = allocator.alloc(ast.Field, field_names.len) catch unreachable;
+                for (field_names, field_types, field_owned_info, 0..) |pfname, pftype, pfoi, pfi| {
+                    dpf[pfi] = ast.Field{
+                        .name = allocator.dupe(u8, pfname) catch unreachable,
+                        .type = allocator.dupe(u8, pftype) catch unreachable,
+                        .module_path = if (pfoi) |oi| allocator.dupe(u8, oi.module_slash) catch unreachable else null,
+                        .phantom = if (pfoi) |oi| std.fmt.allocPrint(allocator, "{s}:{s}!", .{ oi.module_dot, oi.state }) catch unreachable else null,
+                    };
+                }
+                const tdb = allocator.alloc(ast.Branch, 1) catch unreachable;
+                tdb[0] = ast.Branch{
+                    .name = allocator.dupe(u8, "discharge") catch unreachable,
+                    .payload = ast.Shape{ .fields = dpf },
+                    .kind = .effect,
+                };
+                td_branches = tdb;
+            }
             appended_items.append(allocator, ast.Item{ .event_decl = ast.EventDecl{
                 .path = H.mkPathH(allocator, flow.module, td_name),
                 .input = ast.Shape{ .fields = &[_]ast.Field{} },
-                .branches = &[_]ast.Branch{},
+                .branches = td_branches,
                 .is_public = false,
                 .is_implicit_flow = false,
                 .annotations = &[_][]const u8{},
@@ -2305,17 +2404,32 @@ const std = @import("std");
                 .module = allocator.dupe(u8, flow.module) catch unreachable,
             } }) catch unreachable;
             var td = std.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
-            const td_head = std.fmt.allocPrint(allocator, "var __koru_i: usize = 0;\nwhile (__koru_i < __koru_store_{s}.len) : (__koru_i += 1) {{\n", .{store_name}) catch unreachable;
+            const td_head = std.fmt.allocPrint(allocator, "for (0..__koru_store_{s}.len) |__koru_i| {{\n", .{store_name}) catch unreachable;
             td.appendSlice(allocator, td_head) catch unreachable;
-            for (field_names, field_owned_info) |fname, foi| {
-                const oi = foi orelse continue;
-                // Discharge each live element through the DISCOVERED canonical
-                // discharger: <host>.<event>_event.handler(.{ .<param> = elem }),
-                // the same `<name>_event.handler` convention every emitted call
-                // uses (buildKoruModulePath). std/string's `free` is just one
-                // instance; a user *Resource routes to its own `free`/`close`.
-                const fr = std.fmt.allocPrint(allocator, "    _ = {s}.{s}_event.handler(.{{ .{s} = __koru_store_{s}.{s}[__koru_i] }});\n", .{ oi.disch_host, oi.disch_event, oi.disch_param, store_name, fname }) catch unreachable;
-                td.appendSlice(allocator, fr) catch unreachable;
+            if (drain_required) {
+                // Fire the user's `! discharge` handler with the row record —
+                // the 400_105 producer move (`make(r)`), record payload per
+                // 400_079: `discharge(.{ .f = col[i], ... })`. Ownership of
+                // each ambiguous element moves OUT through the payload; the
+                // handler is forced to discharge it within the firing.
+                td.appendSlice(allocator, "    discharge(.{ ") catch unreachable;
+                for (field_names, 0..) |fname, fi| {
+                    if (fi > 0) td.appendSlice(allocator, ", ") catch unreachable;
+                    const p = std.fmt.allocPrint(allocator, ".{s} = __koru_store_{s}.{s}[__koru_i]", .{ fname, store_name, fname }) catch unreachable;
+                    td.appendSlice(allocator, p) catch unreachable;
+                }
+                td.appendSlice(allocator, " });\n") catch unreachable;
+            } else {
+                for (field_names, field_owned_info) |fname, foi| {
+                    const oi = foi orelse continue;
+                    // Discharge each live element through the DISCOVERED canonical
+                    // discharger: <host>.<event>_event.handler(.{ .<param> = elem }),
+                    // the same `<name>_event.handler` convention every emitted call
+                    // uses (buildKoruModulePath). std/string's `free` is just one
+                    // instance; a user *Resource routes to its own `free`/`close`.
+                    const fr = std.fmt.allocPrint(allocator, "    _ = {s}.{s}_event.handler(.{{ .{s} = __koru_store_{s}.{s}[__koru_i] }});\n", .{ oi.disch_host, oi.disch_event, oi.disch_param, store_name, fname }) catch unreachable;
+                    td.appendSlice(allocator, fr) catch unreachable;
+                }
             }
             const td_tail = std.fmt.allocPrint(allocator, "}}\n__koru_store_{s}.len = 0;\nreturn;", .{store_name}) catch unreachable;
             td.appendSlice(allocator, td_tail) catch unreachable;
@@ -2331,8 +2445,17 @@ const std = @import("std");
                 .path = H.mkPathH(allocator, flow.module, td_name),
                 .args = &[_]ast.Arg{},
             };
+            // The user's `! discharge item |> ...` continuation rides the
+            // teardown flow as its handler — the consumer half of 400_105
+            // (`! make r |> destroy(r)`), verbatim from the store declaration.
+            var td_conts: []ast.Continuation = &[_]ast.Continuation{};
+            if (discharge_arm) |da| {
+                const tdc = allocator.alloc(ast.Continuation, 1) catch unreachable;
+                tdc[0] = da;
+                td_conts = tdc;
+            }
             appended_items.append(allocator, ast.Item{ .flow = ast.Flow{
-                .body = ast.rootSite(td_inv, &[_]ast.Continuation{}, flow.location),
+                .body = ast.rootSite(td_inv, td_conts, flow.location),
                 .pre_label = null,
                 .impl_of = null,
                 .super_shape = null,

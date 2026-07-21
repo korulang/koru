@@ -1,7 +1,9 @@
 // 690_058 — the drain ENFORCEMENT (negative). An ambiguous *Transaction<active!>
-// column that is NEVER drained: the store's whole-store <drain!> obligation is
-// never discharged → a loud leak/undischarged-obligation error. Proves koru
-// FORCES the drain (no silent drop of ambiguous elements).
+// column with NO `! discharge` handler bolted onto the store: the store refuses
+// the declaration (teaching error at the store), so the insert never consumes
+// t1's obligation and the undischarged-obligation leak fires loudly (KORU030:
+// "multiple discharge options: rollback, commit"). Proves koru FORCES the drain
+// (no silent drop of ambiguous elements).
 import std/store
 import app/lib/tx
 
