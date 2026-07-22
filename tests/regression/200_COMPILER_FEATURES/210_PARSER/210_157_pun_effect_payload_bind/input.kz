@@ -1,0 +1,43 @@
+// Effect-payload scalar-bind pun (the gap). An effect branch `! emit text`
+// binds a scalar payload named `text`; a later stage's same-named param should
+// fill FROM that binding with no explicit `text: text` — exactly like the
+// return-binding pun in 210_154. IMPLICITLY, it does NOT. Target: `5:punned!`.
+//
+// Currently RED: `error[KORU100]: unused binding 'text'`.
+//
+// Root cause (grounded 2026-07-22): NOT "effect payloads aren't pun sources" —
+// they are collected (`punContinuationBinding` step 2 adds `cont.binding`). It's
+// an ORDERING gap. The AST shapes differ:
+//   return-bind  `get-msg(): text |> render-at(x:5)`  ->  producer and consumer
+//                are SEPARATE continuations (consumer is a CHILD); the return
+//                bind enters scope, THEN the child fills. Works.
+//   effect-payload `! emit text |> render-at(x:5)`    ->  the branch payload
+//                binding AND the consumer node sit on the SAME continuation
+//                (`| emit text => INVOKE render-at`). Step 1 fills cont.node
+//                BEFORE step 2 adds `cont.binding` — so `text` isn't in scope
+//                when its own consumer is filled. (The step-1-before-step-2
+//                order is CORRECT for return binds, where cont.node is the
+//                PRODUCER; it's wrong for branch payloads, where cont.node is
+//                the CONSUMER and the payload came from upstream.)
+//
+// Two spellings already WORK today, proving the binding is a live pun source —
+// only the fully-implicit form misses: `render-at(x:5, text)` (bare arg) runs;
+// `render-at(x:5, text: text)` is REJECTED as a redundant label ("'text' already
+// puns to 'text'"). So the compiler advertises the pun, then fails to apply it
+// implicitly. Fix: seed the branch payload `cont.binding` into scope BEFORE the
+// step-1 fill; keep return_binding/destructure added AFTER.
+//
+// Found 2026-07-22 building koru-libs/vaxis: `! draw win |> app()` (win the
+// draw-effect payload) hit this. `app(win)` works today; this makes `app()` do
+// too. See vaxis-component-baton.
+const std = @import("std");
+
+~event render-at { x: i64, text: string }
+~proc render-at|zig { std.debug.print("{d}:{s}\n", .{ x, text }); }
+
+~event source {}
+! emit string
+~proc source|zig { emit("punned!"); }
+
+~source()
+! emit text |> render-at(x: 5)
