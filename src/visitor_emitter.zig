@@ -3116,6 +3116,32 @@ pub const VisitorEmitter = struct {
                                         const source_event_name = try emitter.buildCanonicalEventName(&flow.inv().path, self.allocator, self.main_module_name);
                                         try emitter.emitSubflowContinuations(self.code_emitter, flow.body.continuations, 0, indent_str, items_to_search, self.tap_registry, self.type_registry, self.main_module_name, source_event_name, "main_module", event.return_type != null);
                                       }
+                                    } else if (std.mem.indexOf(u8, inline_code, "__KORU_INLINE__") != null) {
+                                        // Value-producing inline body bound mid-pipe (`sub = fmt:ln(...): l |>
+                                        // use l`): materialising the `break :__KORU_INLINE__` value as
+                                        // `const l = <labeled block>` (so the void steps that follow can read
+                                        // `l.text`) is emitInlineBodyNode's job — the SAME helper the
+                                        // inline_stmt_marker path above and 3ba4d00a's void-continuation bail
+                                        // use. The raw emitReindentedText branch below dumps the block unlabeled
+                                        // with `__KORU_INLINE__` intact (020_061). Bound-value sibling of that
+                                        // void-continuation emitter fix.
+                                        var bound_ctx = emitter.EmissionContext{
+                                            .allocator = self.allocator,
+                                            .ast_items = self.all_items,
+                                            .tap_registry = self.tap_registry,
+                                            .type_registry = self.type_registry,
+                                            .main_module_name = self.main_module_name,
+                                            .current_source_event = null,
+                                            .label_contexts = null,
+                                            .is_sync = true,
+                                            .in_handler = true,
+                                            .self_loop_active = is_self_loop,
+                                            .self_loop_event_canonical = self_loop_canonical,
+                                            .impl_event_decl = event,
+                                            .bare_return_active = event.return_type != null,
+                                        };
+                                        var bound_result_counter: usize = 0;
+                                        try emitter.emitInlineBodyNode(self.code_emitter, &bound_ctx, inline_code, flow.body.continuations, &flow.inv().path, &bound_result_counter, flow.inv().return_binding);
                                     } else {
                                         // Void/pipeline continuations -- emit inline code + branch constructors
                                         try self.code_emitter.writeIndent();
