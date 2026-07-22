@@ -1395,19 +1395,22 @@ const std = @import("std");
         }
         for (pwatch_arms.items) |*wa| H.storeRefsContH(allocator, &wa.cont, pstore_names.items);
 
-        // Owned-column stores build insert/take/teardown (690_053) plus the
-        // READ surface (query/preorder, 690_060): a query projects an owned
-        // column as a BARE borrow `*mod:Type<mod:state>` (no `!` — the store
-        // keeps the live `<state!>`, teardown still frees; `read` accepts the
-        // bare state and consumes nothing). READ (query/preorder, 690_060) +
-        // REACT-on-insert (`inserted` interceptor, 690_061) borrow-read the
-        // owned column. `watch`, `removed`/`updated` interceptors, and WRITE
-        // (stored-update) over owned columns are still later rungs — loud walls,
-        // never silent miscompiles. (`removed` fires in the take path where the
-        // element moves OUT; `updated` is the owned-write image path.)
+        // Owned-column stores build insert/take/teardown (690_053), the READ
+        // surface (query/preorder, 690_060: an owned column projects as a BARE
+        // borrow `*mod:Type<mod:state>` — no `!`, the store keeps the live
+        // `<state!>`, `read` consumes nothing), REACT-on-insert (`inserted`
+        // interceptor, 690_061), and — this rung — WRITE (stored-update,
+        // 690_062: discharge-old + consume-new through the unit-4 apply/write
+        // pair) with field-`watch` firing on the write (690_063: the apply
+        // branch payload borrow-reads the fresh cell). Still later rungs, loud
+        // walls, never silent miscompiles: `removed`/`updated` interceptors
+        // (`removed` fires in the take path where the element moves OUT;
+        // `updated` is the owned-write image path), and watch over a DRAIN
+        // store (ambiguous discharger — unit-4 is not generated there, so a
+        // watch arm would silently never fire).
         if (has_owned) {
-            if (pwatch_arms.items.len > 0) {
-                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:watch({s}): watch over a store with an owned column is a later rung (690_061 builds the `inserted` interceptor react; field-watch is next)", .{store_name}) } };
+            if (drain_required and pwatch_arms.items.len > 0) {
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:watch({s}): watch over a DRAIN store (ambiguous discharger) is a later rung - the write surface needs the canonical discharger to evict the old value (690_062), which *{s}:{s} does not have (declare exactly one, or drop the watch)", .{ store_name, ambig_module, ambig_type }) } };
             }
             if (removed_arms.items.len > 0 or updated_arms.items.len > 0) {
                 return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): `removed`/`updated` interceptors over an owned column are a later rung (690_061 builds `inserted`; removed rides the take move-out, updated rides the owned-write)", .{store_name}) } };
@@ -1681,11 +1684,15 @@ const std = @import("std");
         }
 
         // ---- unit 4: the row-addressed apply/write pair ((f), plural) ----
-        // NOT generated for owned-string stores (690_053 builds insert/take/
-        // teardown only): with no write surface, `stored`/watch sites fail
-        // loudly at their own transforms instead of silently moving an owned
-        // pointer without its obligation.
-        if (!has_owned) {
+        // Generated for owned-column stores too (the WRITE rung, 690_062/063):
+        // an owned column's write is discharge-old + consume-new — the apply
+        // arm evicts the old pointer through the discovered canonical
+        // discharger, then moves the caller's consumed value in. NOT generated
+        // for a DRAIN store (ambiguous discharger, 690_057/058): the eviction
+        // has no canonical discharger to fire, so `stored`/watch sites fail
+        // loudly at their own transforms instead of silently leaking the old
+        // value.
+        if (!drain_required) {
             const papply_name = std.fmt.allocPrint(allocator, "__store_apply_{s}", .{store_name}) catch unreachable;
             const pwrite_name = std.fmt.allocPrint(allocator, "__store_write_{s}", .{store_name}) catch unreachable;
 
@@ -1694,23 +1701,46 @@ const std = @import("std");
             // container reads/writes each column in its own type. `field`
             // (a comptime constant at every generated call site) selects the
             // live slot; the other slots ride as typed zeros no arm reads.
+            // An owned column's value slot mirrors mkInsertInput: it CONSUMES
+            // the caller's obligation (`<mod:!state>`, dot-canonical) — the
+            // move-in half of the WRITE rung (690_062). The consume phantom
+            // rides the USER-FACING `__store_write_*` event (with_consume);
+            // the internal `__store_apply_*` hop receives the already-owned
+            // plain pointer (module_path still resolves the host cell type).
             const mkWriteInput = struct {
-                fn call(alloc: std.mem.Allocator, ftypes: []const []const u8) []ast.Field {
+                fn call(alloc: std.mem.Allocator, ftypes: []const []const u8, foinfo: []const ?OwnedCol, with_consume: bool) []ast.Field {
                     const fields = alloc.alloc(ast.Field, ftypes.len + 2) catch unreachable;
                     fields[0] = ast.Field{ .name = alloc.dupe(u8, "row") catch unreachable, .type = alloc.dupe(u8, "i64") catch unreachable };
                     fields[1] = ast.Field{ .name = alloc.dupe(u8, "field") catch unreachable, .type = alloc.dupe(u8, "i64") catch unreachable };
-                    for (ftypes, 0..) |ft, i| {
-                        fields[2 + i] = ast.Field{ .name = std.fmt.allocPrint(alloc, "value_{d}", .{i}) catch unreachable, .type = alloc.dupe(u8, ft) catch unreachable };
+                    for (ftypes, foinfo, 0..) |ft, foi, i| {
+                        fields[2 + i] = ast.Field{
+                            .name = std.fmt.allocPrint(alloc, "value_{d}", .{i}) catch unreachable,
+                            .type = alloc.dupe(u8, ft) catch unreachable,
+                            .module_path = if (foi) |oi| alloc.dupe(u8, oi.module_slash) catch unreachable else null,
+                            .phantom = if (foi) |oi|
+                                (if (with_consume) std.fmt.allocPrint(alloc, "{s}:!{s}", .{ oi.module_dot, oi.state }) catch unreachable else null)
+                            else
+                                null,
+                        };
                     }
                     return fields;
                 }
             }.call;
-            const in_fields = mkWriteInput(allocator, field_types);
+            const in_fields = mkWriteInput(allocator, field_types, field_owned_info, false);
 
             const papply_branches = allocator.alloc(ast.Branch, field_names.len) catch unreachable;
             for (field_names, 0..) |fname, i| {
                 const pf = allocator.alloc(ast.Field, 1) catch unreachable;
-                pf[0] = ast.Field{ .name = allocator.dupe(u8, "__type_ref") catch unreachable, .type = allocator.dupe(u8, field_types[i]) catch unreachable };
+                // An owned field's arm payload is the query projection's BARE
+                // borrow `*mod:Type<mod:state>` (no `!`, 690_060/063): the
+                // watch arm reads the just-written value and consumes nothing;
+                // the store keeps the live `<state!>` it frees at teardown.
+                pf[0] = ast.Field{
+                    .name = allocator.dupe(u8, "__type_ref") catch unreachable,
+                    .type = allocator.dupe(u8, field_types[i]) catch unreachable,
+                    .module_path = if (field_owned_info[i]) |oi| allocator.dupe(u8, oi.module_slash) catch unreachable else null,
+                    .phantom = if (field_owned_info[i]) |oi| std.fmt.allocPrint(allocator, "{s}:{s}", .{ oi.module_dot, oi.state }) catch unreachable else null,
+                };
                 papply_branches[i] = ast.Branch{
                     .name = allocator.dupe(u8, fname) catch unreachable,
                     .payload = ast.Shape{ .fields = pf },
@@ -1769,7 +1799,16 @@ const std = @import("std");
                         std.fmt.allocPrint(allocator, "const __koru_old = __koru_store_{s}.{s}[__koru_r]; ", .{ store_name, fname }) catch unreachable;
                     atext.appendSlice(allocator, oldr) catch unreachable;
                 }
-                const wr = if (field_char_caps[i]) |n|
+                // An OWNED arm is discharge-old + consume-new (690_062): read
+                // the OLD pointer UNCONDITIONALLY (eviction always needs it —
+                // not gated on updated_needs_old, which serves the `updated`
+                // interceptor's pre-image), fire the DISCOVERED canonical
+                // discharger on it (the teardown call convention,
+                // `<host>.<event>_event.handler`), then move the new pointer
+                // in. The caller's <!state> was consumed at the write event.
+                const wr = if (field_owned_info[i]) |oi|
+                    std.fmt.allocPrint(allocator, "const __koru_old_ptr = __koru_store_{s}.{s}[__koru_r]; _ = {s}.{s}_event.handler(.{{ .{s} = __koru_old_ptr }}); __koru_store_{s}.{s}[__koru_r] = value_{d}; ", .{ store_name, fname, oi.disch_host, oi.disch_event, oi.disch_param, store_name, fname, i }) catch unreachable
+                else if (field_char_caps[i]) |n|
                     std.fmt.allocPrint(allocator, "__koru_store_{s}.{s}[__koru_r] = @import(\"std\").mem.zeroes([{d}]u8); const __koru_wl = @min(value_{d}.len, {d}); @memcpy(__koru_store_{s}.{s}[__koru_r][0..__koru_wl], value_{d}[0..__koru_wl]); ", .{ store_name, fname, n, i, n, store_name, fname, i }) catch unreachable
                 else
                     std.fmt.allocPrint(allocator, "__koru_store_{s}.{s}[__koru_r] = value_{d}; ", .{ store_name, fname, i }) catch unreachable;
@@ -1781,7 +1820,13 @@ const std = @import("std");
                         std.fmt.allocPrint(allocator, "main_module.__store_updated_{s}_{d}_event.handler(.{{}}); ", .{ store_name, ai }) catch unreachable;
                     atext.appendSlice(allocator, call) catch unreachable;
                 }
-                const tail = std.fmt.allocPrint(allocator, "break :blk .{{ .{s} = value_{d} }}; }},\n", .{ fname, i }) catch unreachable;
+                // An owned arm dispatches the FRESH cell read, not the consumed
+                // param (the 690_061 fresh-from-cell rule, 690_063): the watch
+                // arm borrow-reads the value the store now owns.
+                const tail = if (field_owned_info[i] != null)
+                    std.fmt.allocPrint(allocator, "break :blk .{{ .{s} = __koru_store_{s}.{s}[__koru_r] }}; }},\n", .{ fname, store_name, fname }) catch unreachable
+                else
+                    std.fmt.allocPrint(allocator, "break :blk .{{ .{s} = value_{d} }}; }},\n", .{ fname, i }) catch unreachable;
                 atext.appendSlice(allocator, tail) catch unreachable;
                 pbody.appendSlice(allocator, atext.items) catch unreachable;
             }
@@ -1795,7 +1840,7 @@ const std = @import("std");
                 .module = allocator.dupe(u8, flow.module) catch unreachable,
             } }) catch unreachable;
 
-            const win_fields = mkWriteInput(allocator, field_types);
+            const win_fields = mkWriteInput(allocator, field_types, field_owned_info, true);
             appended_items.append(allocator, ast.Item{ .event_decl = ast.EventDecl{
                 .path = H.mkPathH(allocator, flow.module, pwrite_name),
                 .input = ast.Shape{ .fields = win_fields },
@@ -3706,19 +3751,26 @@ const std = @import("std");
         return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:stored: '{s}' is a capacity-1 value store - write it as {s}.{s}", .{ target_store, target_store, target_field }) } };
     }
 
-    // An owned-column store generates NO write surface (unit-2's write path is
-    // gated on !has_owned), so H.fieldOrder below would leak a raw "unknown
-    // store" — detect the owned store FIRST (by its teardown unit) and name the
-    // real rung. A stored write must thread the evicted <state!>'s discharge and
-    // the incoming <!state>'s consume; that is the later WRITE rung.
+    // Owned-column stores now generate the write surface (the WRITE rung,
+    // 690_062: discharge-old + consume-new) — EXCEPT a DRAIN store (ambiguous
+    // discharger, 690_057/058), where unit-4 stays ungated-off: the write's
+    // eviction has no canonical discharger to fire. Detect that store FIRST
+    // (teardown unit exists, apply unit does not) and name the real rung —
+    // otherwise H.fieldOrder below would leak a raw "unknown store".
     {
         const td_probe = std.fmt.allocPrint(allocator, "__store_teardown_{s}", .{target_store}) catch unreachable;
+        const apply_probe = std.fmt.allocPrint(allocator, "__store_apply_{s}", .{target_store}) catch unreachable;
+        var has_teardown = false;
+        var has_apply = false;
         for (program.items) |pi| {
             if (pi != .event_decl) continue;
             const ed = &pi.event_decl;
-            if (ed.path.segments.len == 1 and std.mem.eql(u8, ed.path.segments[0], td_probe)) {
-                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:stored: store '{s}' has an owned column - stored writes over owned columns are a later rung (WRITE = discharge-old + consume-new; 690_060/061 build read/react)", .{target_store}) } };
-            }
+            if (ed.path.segments.len != 1) continue;
+            if (std.mem.eql(u8, ed.path.segments[0], td_probe)) has_teardown = true;
+            if (std.mem.eql(u8, ed.path.segments[0], apply_probe)) has_apply = true;
+        }
+        if (has_teardown and !has_apply) {
+            return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:stored: store '{s}' is a DRAIN store (ambiguous discharger) - a stored write must evict the old value through the canonical discharger, which its owned column does not have; declare exactly one void discharger for the column type (690_062 pins the write; 690_057/058 pin the drain)", .{target_store}) } };
         }
     }
 
@@ -3849,6 +3901,11 @@ const std = @import("std");
     // path guarantees create ran (is_plural_store keys off the generated
     // inserth event). A SINGLETON keeps the uniform {field, value} shape.
     const call_args = if (row_expr != null) blk: {
+        // Column owned-ness rides the apply event's branch payloads (an owned
+        // field's payload carries the bare-borrow phantom, 690_063) — the
+        // stored transform reads it back rather than re-deriving the column
+        // types from the declaration.
+        var col_owned: []const bool = &[_]bool{};
         const col_types: []const []const u8 = types_blk: {
             const apply_name = std.fmt.allocPrint(allocator, "__store_apply_{s}", .{target_store}) catch unreachable;
             for (program.items) |pi| {
@@ -3856,14 +3913,27 @@ const std = @import("std");
                 const ed = &pi.event_decl;
                 if (ed.path.segments.len == 1 and std.mem.eql(u8, ed.path.segments[0], apply_name)) {
                     const types = allocator.alloc([]const u8, ed.branches.len) catch unreachable;
+                    const owneds = allocator.alloc(bool, ed.branches.len) catch unreachable;
                     for (ed.branches, 0..) |b, bi| {
                         types[bi] = if (b.payload.fields.len > 0) b.payload.fields[0].type else "i64";
+                        owneds[bi] = b.payload.fields.len > 0 and b.payload.fields[0].phantom != null;
                     }
+                    col_owned = owneds;
                     break :types_blk types;
                 }
             }
             return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:stored: internal - plural store '{s}' has no generated apply event (create must have run: inserth exists without apply)", .{target_store}) } };
         };
+        // A write rides ONE typed value slot per column; a slot no arm reads
+        // is a typed zero (690_049). An OWNED column has no typed zero — a
+        // dead owned slot would need a consumed obligation it does not hold.
+        // Writing any OTHER field of a store with an owned column is walled
+        // loudly (the mixed-write shape is a later rung).
+        for (col_owned, 0..) |co, ci| {
+            if (co and ci != field_idx) {
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:stored: writing '{s}.{s}' rides a dead value slot for owned column '{s}', and an owned slot has no typed zero (nothing to consume) - writing alongside an owned column is a later rung (690_062 pins the owned-field write itself)", .{ target_store, target_field, order[ci] }) } };
+            }
+        }
         const args = allocator.alloc(ast.Arg, col_types.len + 2) catch unreachable;
         args[0] = ast.Arg{
             .name = allocator.dupe(u8, "row") catch unreachable,

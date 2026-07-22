@@ -349,6 +349,33 @@ structural beliefs earned:
   store generates no write surface at all rather than one that moves owned
   pointers without their obligations.
 
+**Owned-column WRITE + watch landed (2026-07-22, 690_062 write / 690_063
+watch).** The "an owned store generates no write surface at all" belief above
+is now SCOPED, not retired: a **canonical-discharger** owned store gets the
+full write+watch surface; only a **drain** store (ambiguous discharger) keeps
+none. `stored{}` over an owned column is **discharge-old + consume-new** —
+Rust's `vec[i]=x` made koru-explicit: unit-4's apply/write pair generates for
+owned stores (gated `!drain_required`, NOT `!has_owned` — the boundary the
+build sharpened), the value slot carries the consume-phantom (insert's move-in
+reused), and the apply arm reads the OLD pointer, fires the discovered
+canonical discharger, then moves the new one in. The eviction is *why* a drain
+store is walled: with >1 `<!state>` consumer there is no single discharger to
+free the evicted value, so a drain store correctly gets no write surface and
+`stored`/`watch` name the drain boundary. `watch` over an owned column fires on
+that write — the apply branch payload carries the **bare-borrow** phantom (the
+690_060 query projection) and the arm reads the field FRESH from the cell
+(690_061's rule), so the subscription borrow-reads the just-written value and
+consumes nothing (the store keeps the live `<state!>` it frees at teardown).
+Two walls stay honest later rungs: `removed`/`updated` interceptors over owned
+(removed rides take's move-out, updated carries two owned images), and writing
+a NON-owned field of a store that has an owned column (that write rides a dead
+owned value slot, and an owned slot has no typed zero — nothing to consume).
+Still pure `koru_std/store.kz`, generalized via `field_owned_info`. This closes
+Path B's read→react→write arc: an owned column is now a first-class writable,
+reactive citizen. The consume rides the user-facing `__store_write_*` event;
+the internal apply proc receives the already-owned plain pointer (the
+two-hop phantom placement the build resolved).
+
 The full residue (rulings, stamped theses, gauntlet verdicts, open
 queue) lives in `tests/regression/600_STDLIB/690_STORE/DESIGN.md`, which
 deletes as pins absorb it. ECT/BLOOM (entity-component-taps) is

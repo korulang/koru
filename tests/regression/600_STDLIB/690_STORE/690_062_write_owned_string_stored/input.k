@@ -5,11 +5,12 @@
 // After the rewrite, a query read shows "new"; the "old" String is freed at the
 // write (no leak), and "new" is freed at teardown.
 //
-// MUST_FAIL pin: the `stored` transform walls owned-column writes with a
-// koru-level "later rung" diagnostic (was leaking a raw "unknown store" host
-// error before the wall was reordered ahead of H.fieldOrder). EXPECT matches
-// that wall. Flip to MUST_RUN when the WRITE rung (discharge-old + consume-new)
-// lands — see the store baton.
+// MUST_RUN pin for the WRITE rung: the `stored` transform now generates the
+// apply/write surface for owned columns (unit-4 unlocked past !has_owned), the
+// write cell reads the OLD pointer, fires the discovered canonical discharger
+// (free), then moves the NEW pointer in (its <!instance> consumed at the write
+// call via the owned value slot's consume-phantom). Output "new" proves the
+// in-place replace; no leak (old freed at write, new freed at teardown).
 import std/io
 import std/string
 import std/store
