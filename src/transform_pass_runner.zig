@@ -1021,6 +1021,27 @@ fn applyTransform(
     const count_after = countMatchingFlowsInProgram(&transform, spliced);
 
     if (count_after >= count_before and count_before > 0) {
+        // Continuation/nested-position whole-program transforms: for a nested
+        // site the runner hands the handler a synthetic top-level VIEW of the
+        // site (siteView), but a `whole_program` result short-circuits the
+        // graft-back (spliceSiteResult returns wp verbatim), so the handler
+        // rewrites the synthetic copy and the REAL nested invocation is never
+        // replaced — the count can't drop. This is a genuine capability
+        // frontier (210_024_source_scope_capture), NOT an infinite loop. Teach
+        // it at the koru level with a source location instead of leaking a raw
+        // host panic through evaluate-comptime's @panic.
+        if (sr.wrapper == null and result.whole_program != null) {
+            const loc = sr.holding.location;
+            std.debug.print(
+                "error[KORU124]: transform '{s}' invoked in continuation position is not supported here\n" ++
+                    "  --> {s}:{d}:{d}\n" ++
+                    "  this transform uses the whole-program escape, which matches flow-root invocations only; a continuation-position invocation is never rewritten (frontier: 210_024_source_scope_capture).\n" ++
+                    "  fix: invoke '{s}' at top level, or have it return a site-local SiteResult instead of a whole_program.\n\n",
+                .{ transform.name, loc.file, loc.line, loc.column, transform.name },
+            );
+            return error.TransformContinuationPositionUnsupported;
+        }
+
         log.err("\n", .{});
         log.err("╔══════════════════════════════════════════════════════════════════╗\n", .{});
         log.err("║  TRANSFORM ERROR: Invocation not replaced!                       ║\n", .{});

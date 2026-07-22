@@ -810,6 +810,13 @@ pub const CompilerContext = struct {
     var updated_ctx = ctx;
     if (@hasDecl(backend_output, "run_pass")) {
         const pre_ast = backend_output.run_pass("pre", ctx.ast, ctx.allocator) catch |err| {
+            if (err == error.TransformContinuationPositionUnsupported) {
+                // The runner already emitted a located error[KORU124] koru
+                // diagnostic. evaluate/run-pre have no clean error channel
+                // (they return a ctx), so stop the pipeline cleanly rather than
+                // leaking the ICE-shaped @panic + host stack trace.
+                std.process.exit(1);
+            }
             log.err("FATAL: pre-stage transform pass failed ({s}). The pipeline cannot continue with a partially-transformed AST.\n", .{@errorName(err)});
             @panic("pre-stage transform pass failed — see error above");
         };
@@ -1947,6 +1954,13 @@ const joinPathAlloc = struct {
         backend_output.dumpAST(ctx.ast, "3-pre-transform", ctx.allocator);
 
         const post_transform_ast = backend_output.run_pass("transform", ctx.ast, ctx.allocator) catch |err| {
+            if (err == error.TransformContinuationPositionUnsupported) {
+                // The runner already emitted a located error[KORU124] koru
+                // diagnostic. This proc returns a ctx (no clean error channel),
+                // so stop the pipeline cleanly rather than leaking the
+                // ICE-shaped @panic + host stack trace.
+                std.process.exit(1);
+            }
             // Transforms either complete or fail loudly. Continuing with the
             // untransformed AST used to mask the failure behind a cascade of
             // downstream KORU021/022 errors about events the transform should

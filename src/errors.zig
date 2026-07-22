@@ -96,6 +96,7 @@ pub const ErrorCode = enum(u16) {
     KORU121, // Per-call template construct has no variant for the build target
     KORU122, // Transform invocation requests a |variant the transform doesn't declare — never silently falls back
     KORU123, // Kernel |mlir generation restriction — the walking skeleton rejects shapes it can't generate yet
+    KORU124, // Transform invoked in continuation position via the whole-program escape — the real nested invocation is never rewritten (frontier: 210_024_source_scope_capture)
 
     // Presence errors (optional effect arms — `if(arm)` / `when arm`)
     KORU130, // Value-resuming optional arm fired without a dominating presence test
