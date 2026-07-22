@@ -1,0 +1,1 @@
+continuation marker `|` used where an effect branch is required — `query` fires the effect arm `! query`, not `| query`
