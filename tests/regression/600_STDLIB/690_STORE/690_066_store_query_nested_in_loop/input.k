@@ -1,21 +1,22 @@
-// ASPIRATIONAL (RED by design) — pins the "top-level-only" transform-lowering
-// class for std/store:query. See memory: nested-transform-lowering-gap.
+// MESSAGE-QUALITY PIN (RED until the diagnostic teaches the real constraint).
 //
-// std/store:query is the only row-iteration primitive, and it is a
-// TOP-LEVEL-ONLY comptime transform: it resolves its store by scanning
-// top-level program items. Invoked in a NESTED position (here a `! each`
-// for-loop body; equally a vaxis `! draw` / `! key` handler body) it fails to
-// resolve the store — EVEN THOUGH `items` is declared `capacity: 8` right above.
+// std/store:query is a STANDING-RULE INSTALLATION (like watch): comptime-fused,
+// its body copied into write sites. Ruled 2026-07-18 (concept:
+// frag-store-verb-placement): installations are TOP-LEVEL-ONLY BY CONSTRUCTION
+// — at runtime inside an effect/loop body there is nothing to install into, so
+// in-body installation is incoherent by design, NOT a lowering bug. (Momentary
+// verbs — insert/take — DO run in nested bodies; 690_037 pins that green. The
+// discriminator that refuted the "registry-scan bug" hypothesis was exactly
+// "insert-in-body works, query-in-body doesn't".)
 //
-// Top-level `query` composes (690_005). Only the nested position breaks, which
-// is the tell that store-discovery, like the transform pass, is position-limited.
-//
-// ACTUAL today: BACKEND_COMPILE_ERROR — "std/store:query(items): unknown store -
-//   no std/store:new(items) found" — which is ALSO a misleading diagnostic: the
-//   store IS declared; the real constraint is "query can't resolve from a nested
-//   position". Flips GREEN when nested transforms compose uniformly.
-//
-// EXPECTED: the 2 rows swept on demand on each of the 2 loop iterations.
+// So this test does NOT expect rows. It expects a GOOD diagnostic. Today the
+// compiler emits the MISLEADING "unknown store - no std/store:new(items) found"
+// — but the store IS declared (capacity: 8). The real cause is "query is a
+// standing-rule installation; install it at top level". This pin fails until
+// the message stops lying (NOT_CONTAINS "unknown store") and teaches the
+// constraint (CONTAINS "top-level"). Message quality IS the point (the frag's
+// own open TODO). The on-demand row-sweep a retained-mode renderer needs is a
+// SEPARATE capability (the plural stripe gap), not this.
 
 import std/io
 import std/store
