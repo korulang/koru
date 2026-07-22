@@ -366,9 +366,18 @@ that write — the apply branch payload carries the **bare-borrow** phantom (the
 690_060 query projection) and the arm reads the field FRESH from the cell
 (690_061's rule), so the subscription borrow-reads the just-written value and
 consumes nothing (the store keeps the live `<state!>` it frees at teardown).
-`removed`/`updated` interceptors over owned stay honest later rungs (removed
-rides take's move-out, updated carries two owned images). Still pure
-`koru_std/store.kz`, generalized via `field_owned_info`. This closes Path B's
+The `updated` interceptor over owned stays an honest later rung (it carries TWO
+owned images — old and new — of the written field, distinct from removed's
+single outgoing borrow). REMOVED over owned IS built (2026-07-22, 690_065): the
+`removed` interceptor fires in the take path before the swap-remove,
+bare-borrow-reading the outgoing row via the SAME `LC.emit` projection as
+`inserted`/`query` — and the finding is that it needed NO new codegen, only an
+unwall. `LC.emit` already built the bare-borrow payload for any owned arm field,
+and the take proc already fired `removed` with the outgoing copies; the
+create-time wall rejected `removed`/`updated` together purely out of caution.
+Splitting it (admit `removed`, keep `updated`) is the whole change — react-on-
+delete for a reactive todo. Still pure `koru_std/store.kz`, generalized via
+`field_owned_info`. This closes Path B's
 read→react→write arc: an owned column is now a first-class writable, reactive
 citizen. The consume rides the user-facing `__store_write_*` event; the
 internal apply proc receives the already-owned plain pointer (the two-hop

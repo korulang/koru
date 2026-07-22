@@ -1419,18 +1419,21 @@ const std = @import("std");
         // interceptor, 690_061), and — this rung — WRITE (stored-update,
         // 690_062: discharge-old + consume-new through the unit-4 apply/write
         // pair) with field-`watch` firing on the write (690_063: the apply
-        // branch payload borrow-reads the fresh cell). Still later rungs, loud
-        // walls, never silent miscompiles: `removed`/`updated` interceptors
-        // (`removed` fires in the take path where the element moves OUT;
-        // `updated` is the owned-write image path), and watch over a DRAIN
-        // store (ambiguous discharger — unit-4 is not generated there, so a
-        // watch arm would silently never fire).
+        // branch payload borrow-reads the fresh cell), and REACT-on-remove
+        // (`removed` interceptor, 690_065: fires in the take path before the
+        // swap-remove, bare-borrow-reading the outgoing row via the same
+        // LC.emit projection). Still later rungs, loud walls, never silent
+        // miscompiles: the `updated` interceptor (it carries TWO owned images —
+        // old and new — of the written field, a distinct rung from removed's
+        // single outgoing borrow), and watch over a DRAIN store (ambiguous
+        // discharger — unit-4 is not generated there, so a watch arm would
+        // silently never fire).
         if (has_owned) {
             if (drain_required and pwatch_arms.items.len > 0) {
                 return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:watch({s}): watch over a DRAIN store (ambiguous discharger) is a later rung - the write surface needs the canonical discharger to evict the old value (690_062), which *{s}:{s} does not have (declare exactly one, or drop the watch)", .{ store_name, ambig_module, ambig_type }) } };
             }
-            if (removed_arms.items.len > 0 or updated_arms.items.len > 0) {
-                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): `removed`/`updated` interceptors over an owned column are a later rung (690_061 builds `inserted`; removed rides the take move-out, updated rides the owned-write)", .{store_name}) } };
+            if (updated_arms.items.len > 0) {
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): the `updated` interceptor over an owned column is a later rung - it carries TWO owned images (old and new) of the written field; `inserted`/`removed`/`watch` over owned are built (690_061/065/063)", .{store_name}) } };
             }
         }
 
