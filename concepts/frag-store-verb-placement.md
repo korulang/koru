@@ -56,13 +56,22 @@ instead of checker code. Rule sketch: an arm rejecting
   to top-level scope. Momentary verbs (insert/take) DO nest." The trellis-law
   ENFORCEMENT home (regex-over-ancestry-paths, Stage-C located) is still the
   aspiration; today's wall lives in the query transform's error path.
-- **The RETAINED-RENDER read is a SEPARATE momentary verb, not this.** A
-  retained-mode renderer (vaxis `! draw`, fires on mount + every resize with no
-  write) must read ALL live rows to repaint. `query` (standing rule) can't serve
-  it. The bridge wants a MOMENTARY row-sweep — a runtime read of the corpus,
-  which this belief already sanctions as nestable (like insert/take). It must
-  lower SITE-LOCAL (inline at the call site), NOT via the top-level coordinator,
-  or it re-enters this exact wall. In flight 2026-07-23.
+- ~~The RETAINED-RENDER read is a SEPARATE momentary verb.~~ LANDED 2026-07-23
+  as `std/store:sweep` (690_067). The momentary twin of `query`: "for each live
+  row RIGHT NOW, project, run the body." Lowers SITE-LOCAL — schema from the
+  persistent `__store_insert_<s>` event (the insert path, survives after `new`
+  lowers), body transplanted to a `__store_sweepbody_<s>_L<n>` impl flow, and an
+  inline sweep loop emitted AT THE CALL SITE (`.replacement` inline_code +
+  `.appended` decls) — NOT a coordinator `__store_qsweep` unit. So it nests
+  (proven inside a for-loop body; the vaxis `! draw` case is the point).
+  KEY LESSON: a site-local transform that transplants a body carrying `{{ }}`
+  template holes MUST be `[claims_descendants]`, or the deeper `print.ln`
+  transform resolves the holes depth-first BEFORE the projection binding is in
+  scope (pre-transplant), leaving a raw template. `query` dodges this by having
+  `create` drive the transplant early on `new`; `sweep` drives its own, so it
+  claims its descendants to win the same race. OPEN: top-level `sweep` (outside a
+  handler) still hits an inline_code-at-module-scope placement error — a
+  follow-up rung; the nested render-bridge case is what works and matters.
 - Plural stripe slice: needed before any per-frame system can fire standing
   rules; rule ORDERING under a stripe (move before draw) and the
   cascade-cycle interaction of self-writing movement rules (690_012) are
