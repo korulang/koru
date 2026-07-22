@@ -366,15 +366,34 @@ that write — the apply branch payload carries the **bare-borrow** phantom (the
 690_060 query projection) and the arm reads the field FRESH from the cell
 (690_061's rule), so the subscription borrow-reads the just-written value and
 consumes nothing (the store keeps the live `<state!>` it frees at teardown).
-Two walls stay honest later rungs: `removed`/`updated` interceptors over owned
-(removed rides take's move-out, updated carries two owned images), and writing
-a NON-owned field of a store that has an owned column (that write rides a dead
-owned value slot, and an owned slot has no typed zero — nothing to consume).
-Still pure `koru_std/store.kz`, generalized via `field_owned_info`. This closes
-Path B's read→react→write arc: an owned column is now a first-class writable,
-reactive citizen. The consume rides the user-facing `__store_write_*` event;
-the internal apply proc receives the already-owned plain pointer (the
-two-hop phantom placement the build resolved).
+`removed`/`updated` interceptors over owned stay honest later rungs (removed
+rides take's move-out, updated carries two owned images). Still pure
+`koru_std/store.kz`, generalized via `field_owned_info`. This closes Path B's
+read→react→write arc: an owned column is now a first-class writable, reactive
+citizen. The consume rides the user-facing `__store_write_*` event; the
+internal apply proc receives the already-owned plain pointer (the two-hop
+phantom placement the build resolved).
+
+**MIXED-field write DE-BUNDLED (2026-07-22, 690_064) — the `captured` model.**
+The WRITE rung above bundled all columns into one `__store_write_<s>(row,
+field, value_0..n)` event (690_049), unwritten slots riding as typed zeros. A
+scalar's zero is cheap; an OWNED slot has NO typed zero (its value is a consumed
+obligation), so writing a NON-owned field of a `{label: owned, done: i64}`
+store was walled — a `done`-only write couldn't fill `label`'s slot. The fix is
+`control.kz`'s `captured` model made concrete: for an owned-containing store the
+write is DE-BUNDLED into one TARGETED per-field event `__store_fwrite_<s>_<i>
+(row, value)` threading ONLY that field's value. A scalar write never references
+an owned sibling's slot or its obligation; the owned field's own write keeps the
+consume-phantom on its single `value` (discharge-old in its apply arm, watch off
+the fresh cell read). The bundling was signature-only — the apply switch's arm
+for field `i` already wrote only cell `i` — so this is a mechanical split, not
+new semantics: scalar-only stores keep the untouched bundled 690_049 path, and
+the bundled surface stays as the DISCOVERY surface (field order, column types,
+watch-splice marker) for owned stores. Distinct `fwrite`/`fapply` prefixes are
+load-bearing: store-name discovery strips `__store_apply_`/`__store_write_`, so
+a per-field name sharing them would parse as a bogus store. This unblocks a real
+reactive todo store — toggle `done` AND rename `label` in one `{owned, scalar}`
+table.
 
 The full residue (rulings, stamped theses, gauntlet verdicts, open
 queue) lives in `tests/regression/600_STDLIB/690_STORE/DESIGN.md`, which

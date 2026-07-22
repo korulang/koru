@@ -350,6 +350,23 @@ const std = @import("std");
                                     .to_field = alloc.dupe(u8, fieldNameByIndex(alloc, prog, to_store, fidx2)) catch unreachable,
                                 }) catch unreachable;
                             }
+                            // Per-field spelling (owned-containing stores,
+                            // unit 4c): __store_fwrite_<to>_<idx>(row, value)
+                            // — the field index rides the NAME's suffix after
+                            // the last '_', not a `field` arg.
+                            if (inv.path.segments.len == 1 and std.mem.startsWith(u8, inv.path.segments[0], "__store_fwrite_")) {
+                                const rest = inv.path.segments[0]["__store_fwrite_".len..];
+                                if (std.mem.lastIndexOfScalar(u8, rest, '_')) |up| {
+                                    const to_store = rest[0..up];
+                                    const fidx2 = std.fmt.parseInt(usize, rest[up + 1 ..], 10) catch 0;
+                                    list.append(alloc, .{
+                                        .from = from,
+                                        .from_field = from_field,
+                                        .to = alloc.dupe(u8, to_store) catch unreachable,
+                                        .to_field = alloc.dupe(u8, fieldNameByIndex(alloc, prog, to_store, fidx2)) catch unreachable,
+                                    }) catch unreachable;
+                                }
+                            }
                         },
                         else => {},
                     }
@@ -1910,6 +1927,189 @@ const std = @import("std");
                 .location = flow.location,
                 .module = allocator.dupe(u8, flow.module) catch unreachable,
             } }) catch unreachable;
+
+            // ---- unit 4c (owned-containing stores): per-field TARGETED writes ----
+            // The bundled surface above carries one value slot per column, a
+            // dead slot riding as a typed zero — but an OWNED slot has no
+            // typed zero (its value is a consumed obligation; nothing can
+            // synthesize one), so a `done`-only write in a `{label: owned,
+            // done: i64}` store could never fill `label`'s slot (690_064).
+            // The fix is the `captured` model: DE-BUNDLE into one targeted
+            // event per field, `__store_fwrite_<s>_<i>(row, value)`, threading
+            // ONLY that field's value. A scalar write never references an
+            // owned sibling's slot or its obligation; the owned field's own
+            // write keeps consume-new on its single slot (discharge-old lives
+            // in its apply arm, 690_062) and its watch arm fires off the
+            // fresh cell read (690_063). The `stored` transform routes EVERY
+            // row-addressed write of an owned-containing store here; the
+            // bundled surface above remains as the discovery surface (field
+            // order, column types, the watch-splice marker). The distinct
+            // `fwrite`/`fapply` prefixes are load-bearing: store-name
+            // discovery strips `__store_apply_`/`__store_write_` prefixes,
+            // and a per-field name sharing them would parse as a bogus store.
+            if (has_owned) {
+                for (field_names, 0..) |fname, i| {
+                    const fwrite_name = std.fmt.allocPrint(allocator, "__store_fwrite_{s}_{d}", .{ store_name, i }) catch unreachable;
+                    const fapply_name = std.fmt.allocPrint(allocator, "__store_fapply_{s}_{d}", .{ store_name, i }) catch unreachable;
+
+                    // fapply: the internal hop — an owned column's value is the
+                    // already-owned plain pointer (module_path resolves the
+                    // host cell type; no phantom), mirroring the bundled
+                    // in_fields (with_consume=false).
+                    const fa_in = allocator.alloc(ast.Field, 2) catch unreachable;
+                    fa_in[0] = ast.Field{ .name = allocator.dupe(u8, "row") catch unreachable, .type = allocator.dupe(u8, "i64") catch unreachable };
+                    fa_in[1] = ast.Field{
+                        .name = allocator.dupe(u8, "value") catch unreachable,
+                        .type = allocator.dupe(u8, field_types[i]) catch unreachable,
+                        .module_path = if (field_owned_info[i]) |oi| allocator.dupe(u8, oi.module_slash) catch unreachable else null,
+                    };
+                    // The single arm carries the same bare-borrow payload as
+                    // the bundled apply's arm for this field (690_060/063):
+                    // the watch arm reads the just-written value, consuming
+                    // nothing; the store keeps the live `<state!>`.
+                    const fa_pf = allocator.alloc(ast.Field, 1) catch unreachable;
+                    fa_pf[0] = ast.Field{
+                        .name = allocator.dupe(u8, "__type_ref") catch unreachable,
+                        .type = allocator.dupe(u8, field_types[i]) catch unreachable,
+                        .module_path = if (field_owned_info[i]) |oi| allocator.dupe(u8, oi.module_slash) catch unreachable else null,
+                        .phantom = if (field_owned_info[i]) |oi| std.fmt.allocPrint(allocator, "{s}:{s}", .{ oi.module_dot, oi.state }) catch unreachable else null,
+                    };
+                    const fa_branches = allocator.alloc(ast.Branch, 1) catch unreachable;
+                    fa_branches[0] = ast.Branch{
+                        .name = allocator.dupe(u8, fname) catch unreachable,
+                        .payload = ast.Shape{ .fields = fa_pf },
+                        .kind = .terminal,
+                        .annotations = &[_][]const u8{},
+                    };
+                    appended_items.append(allocator, ast.Item{ .event_decl = ast.EventDecl{
+                        .path = H.mkPathH(allocator, flow.module, fapply_name),
+                        .input = ast.Shape{ .fields = fa_in },
+                        .branches = fa_branches,
+                        .is_public = false,
+                        .is_implicit_flow = false,
+                        .annotations = &[_][]const u8{},
+                        .location = flow.location,
+                        .module = allocator.dupe(u8, flow.module) catch unreachable,
+                    } }) catch unreachable;
+
+                    // The proc body is the bundled switch's arm for field i,
+                    // straight-lined: `value` in place of `value_<i>`.
+                    var fatext = std.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
+                    fatext.appendSlice(allocator, "const __koru_r = @as(usize, @intCast(row));\n") catch unreachable;
+                    if (is_tree and i == user_field_count) {
+                        const fguard = std.fmt.allocPrint(allocator, "var __koru_cyc = value; while (__koru_cyc != -1) {{ if (__koru_cyc == row) @panic(\"std/store:stored: reparent in [tree] store '{s}' would make the row its own ancestor (cycle) - the write is rejected; handle it with a `| cycle` branch (default-on guard and branch are pinned at 695_002)\"); __koru_cyc = __koru_store_{s}.parent[@as(usize, @intCast(__koru_cyc))]; }} ", .{ store_name, store_name }) catch unreachable;
+                        fatext.appendSlice(allocator, fguard) catch unreachable;
+                    }
+                    if (updated_needs_old) {
+                        const foldr = if (field_char_caps[i] != null)
+                            std.fmt.allocPrint(allocator, "const __koru_oldbuf = __koru_store_{s}.{s}[__koru_r]; const __koru_old = @import(\"std\").mem.sliceTo(&__koru_oldbuf, 0); ", .{ store_name, fname }) catch unreachable
+                        else
+                            std.fmt.allocPrint(allocator, "const __koru_old = __koru_store_{s}.{s}[__koru_r]; ", .{ store_name, fname }) catch unreachable;
+                        fatext.appendSlice(allocator, foldr) catch unreachable;
+                    }
+                    // An OWNED arm is discharge-old + consume-new (690_062);
+                    // the caller's <!state> was consumed at the fwrite event.
+                    const fwr = if (field_owned_info[i]) |oi|
+                        std.fmt.allocPrint(allocator, "const __koru_old_ptr = __koru_store_{s}.{s}[__koru_r]; _ = {s}.{s}_event.handler(.{{ .{s} = __koru_old_ptr }}); __koru_store_{s}.{s}[__koru_r] = value; ", .{ store_name, fname, oi.disch_host, oi.disch_event, oi.disch_param, store_name, fname }) catch unreachable
+                    else if (field_char_caps[i]) |n|
+                        std.fmt.allocPrint(allocator, "__koru_store_{s}.{s}[__koru_r] = @import(\"std\").mem.zeroes([{d}]u8); const __koru_wl = @min(value.len, {d}); @memcpy(__koru_store_{s}.{s}[__koru_r][0..__koru_wl], value[0..__koru_wl]); ", .{ store_name, fname, n, n, store_name, fname }) catch unreachable
+                    else
+                        std.fmt.allocPrint(allocator, "__koru_store_{s}.{s}[__koru_r] = value; ", .{ store_name, fname }) catch unreachable;
+                    fatext.appendSlice(allocator, fwr) catch unreachable;
+                    for (updated_arms.items, 0..) |ua, ai| {
+                        const fcall = if (ua.fields.len != 0)
+                            std.fmt.allocPrint(allocator, "main_module.__store_updated_{s}_{d}_event.handler(.{{ .old = __koru_old, .new = value }}); ", .{ store_name, ai }) catch unreachable
+                        else
+                            std.fmt.allocPrint(allocator, "main_module.__store_updated_{s}_{d}_event.handler(.{{}}); ", .{ store_name, ai }) catch unreachable;
+                        fatext.appendSlice(allocator, fcall) catch unreachable;
+                    }
+                    // An owned arm dispatches the FRESH cell read (690_061/063).
+                    const ftail = if (field_owned_info[i] != null)
+                        std.fmt.allocPrint(allocator, "return .{{ .{s} = __koru_store_{s}.{s}[__koru_r] }};", .{ fname, store_name, fname }) catch unreachable
+                    else
+                        std.fmt.allocPrint(allocator, "return .{{ .{s} = value }};", .{fname}) catch unreachable;
+                    fatext.appendSlice(allocator, ftail) catch unreachable;
+                    appended_items.append(allocator, ast.Item{ .proc_decl = ast.ProcDecl{
+                        .path = H.mkPathH(allocator, flow.module, fapply_name),
+                        .body = ast.Source{ .text = fatext.toOwnedSlice(allocator) catch unreachable, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
+                        .annotations = &[_][]const u8{},
+                        .target = allocator.dupe(u8, "zig") catch unreachable,
+                        .location = flow.location,
+                        .module = allocator.dupe(u8, flow.module) catch unreachable,
+                    } }) catch unreachable;
+
+                    // fwrite: the user-facing event — the consume phantom
+                    // (`<mod:!state>`) rides ONLY an owned field's own value.
+                    const fw_in = allocator.alloc(ast.Field, 2) catch unreachable;
+                    fw_in[0] = ast.Field{ .name = allocator.dupe(u8, "row") catch unreachable, .type = allocator.dupe(u8, "i64") catch unreachable };
+                    fw_in[1] = ast.Field{
+                        .name = allocator.dupe(u8, "value") catch unreachable,
+                        .type = allocator.dupe(u8, field_types[i]) catch unreachable,
+                        .module_path = if (field_owned_info[i]) |oi| allocator.dupe(u8, oi.module_slash) catch unreachable else null,
+                        .phantom = if (field_owned_info[i]) |oi| std.fmt.allocPrint(allocator, "{s}:!{s}", .{ oi.module_dot, oi.state }) catch unreachable else null,
+                    };
+                    appended_items.append(allocator, ast.Item{ .event_decl = ast.EventDecl{
+                        .path = H.mkPathH(allocator, flow.module, fwrite_name),
+                        .input = ast.Shape{ .fields = fw_in },
+                        .branches = &[_]ast.Branch{},
+                        .is_public = false,
+                        .is_implicit_flow = false,
+                        .annotations = &[_][]const u8{},
+                        .location = flow.location,
+                        .module = allocator.dupe(u8, flow.module) catch unreachable,
+                    } }) catch unreachable;
+
+                    // The fwrite → fapply flow carries THIS field's watch arm
+                    // (or the unguarded no-op fallthrough), mirroring the
+                    // bundled warms loop one field at a time.
+                    const fap_args = allocator.alloc(ast.Arg, 2) catch unreachable;
+                    fap_args[0] = ast.Arg{ .name = allocator.dupe(u8, "row") catch unreachable, .value = allocator.dupe(u8, "row") catch unreachable };
+                    fap_args[1] = ast.Arg{ .name = allocator.dupe(u8, "value") catch unreachable, .value = allocator.dupe(u8, "value") catch unreachable };
+                    const fap_inv = ast.Invocation{
+                        .path = H.mkPathH(allocator, flow.module, fapply_name),
+                        .args = fap_args,
+                    };
+                    var fwarms = std.ArrayList(ast.Continuation).initCapacity(allocator, 2) catch unreachable;
+                    var farm_body: ?ast.Continuation = null;
+                    for (pwatch_arms.items) |*wa| {
+                        if (wa.field_idx == i) {
+                            var a = ast_functional.cloneContinuation(allocator, &wa.cont) catch unreachable;
+                            a.branch = allocator.dupe(u8, fname) catch unreachable;
+                            a.kind = .terminal;
+                            a.binding = if (wa.cont.binding) |b| allocator.dupe(u8, b) catch unreachable else allocator.dupe(u8, "_") catch unreachable;
+                            farm_body = a;
+                        }
+                    }
+                    const fnoop_arm = ast.Continuation{
+                        .branch = allocator.dupe(u8, fname) catch unreachable,
+                        .binding = allocator.dupe(u8, "_") catch unreachable,
+                        .kind = .terminal,
+                        .condition = null,
+                        .node = .terminal,
+                        .indent = 1,
+                        .continuations = &[_]ast.Continuation{},
+                        .location = flow.location,
+                    };
+                    if (farm_body) |a| {
+                        fwarms.append(allocator, a) catch unreachable;
+                        if (a.condition != null) fwarms.append(allocator, fnoop_arm) catch unreachable;
+                    } else {
+                        fwarms.append(allocator, fnoop_arm) catch unreachable;
+                    }
+                    appended_items.append(allocator, ast.Item{ .flow = ast.Flow{
+                        .body = ast.rootSite(fap_inv, fwarms.toOwnedSlice(allocator) catch unreachable, flow.location),
+                        .pre_label = null,
+                        .impl_of = H.mkPathH(allocator, flow.module, fwrite_name),
+                        .super_shape = null,
+                        .inline_body = null,
+                        .preamble_code = null,
+                        .is_pure = false,
+                        .is_transitively_pure = false,
+                        .location = flow.location,
+                        .module = allocator.dupe(u8, flow.module) catch unreachable,
+                    } }) catch unreachable;
+                }
+            }
         }
 
         // ---- unit 4b ([tree] only): the cycle-guarded parent write ----
@@ -3891,9 +4091,11 @@ const std = @import("std");
         } } } };
     }
 
-    const write_name = std.fmt.allocPrint(allocator, "__store_write_{s}", .{target_store}) catch unreachable;
-    const segs = allocator.alloc([]const u8, 1) catch unreachable;
-    segs[0] = write_name;
+    // The target event: the bundled `__store_write_<s>` surface, EXCEPT for a
+    // row-addressed write in an owned-containing store, which routes to the
+    // per-field targeted event `__store_fwrite_<s>_<i>` (unit 4c) — resolved
+    // inside the plural block below once column owned-ness is known.
+    var write_name = std.fmt.allocPrint(allocator, "__store_write_{s}", .{target_store}) catch unreachable;
     // A PLURAL write surface carries per-field typed value slots (690_049):
     // `value_<i>: <column type>`, the written column's slot gets the
     // expression, the others typed zeros its arm never reads. Column types
@@ -3927,12 +4129,28 @@ const std = @import("std");
         // A write rides ONE typed value slot per column; a slot no arm reads
         // is a typed zero (690_049). An OWNED column has no typed zero — a
         // dead owned slot would need a consumed obligation it does not hold.
-        // Writing any OTHER field of a store with an owned column is walled
-        // loudly (the mixed-write shape is a later rung).
-        for (col_owned, 0..) |co, ci| {
-            if (co and ci != field_idx) {
-                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:stored: writing '{s}.{s}' rides a dead value slot for owned column '{s}', and an owned slot has no typed zero (nothing to consume) - writing alongside an owned column is a later rung (690_062 pins the owned-field write itself)", .{ target_store, target_field, order[ci] }) } };
-            }
+        // So an owned-containing store's write is DE-BUNDLED (the `captured`
+        // model, 690_064): it targets the per-field event
+        // `__store_fwrite_<s>_<i>(row, value)`, threading ONLY the written
+        // field's value — a scalar write never references an owned sibling's
+        // slot or its obligation, and the owned field's own write consumes
+        // its <!state> on its single slot (690_062).
+        var store_has_owned = false;
+        for (col_owned) |co| {
+            if (co) store_has_owned = true;
+        }
+        if (store_has_owned) {
+            write_name = std.fmt.allocPrint(allocator, "__store_fwrite_{s}_{d}", .{ target_store, field_idx }) catch unreachable;
+            const fargs = allocator.alloc(ast.Arg, 2) catch unreachable;
+            fargs[0] = ast.Arg{
+                .name = allocator.dupe(u8, "row") catch unreachable,
+                .value = allocator.dupe(u8, row_expr.?) catch unreachable,
+            };
+            fargs[1] = ast.Arg{
+                .name = allocator.dupe(u8, "value") catch unreachable,
+                .value = rewritten_expr,
+            };
+            break :blk fargs;
         }
         const args = allocator.alloc(ast.Arg, col_types.len + 2) catch unreachable;
         args[0] = ast.Arg{
@@ -3969,6 +4187,8 @@ const std = @import("std");
         };
         break :blk args;
     };
+    const segs = allocator.alloc([]const u8, 1) catch unreachable;
+    segs[0] = write_name;
     const write_inv = ast.Invocation{
         .path = ast.DottedPath{
             .module_qualifier = allocator.dupe(u8, flow.module) catch unreachable,
