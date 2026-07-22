@@ -1,0 +1,15 @@
+compiler:1784526518
+ERROR:list-imports-failed
+EXPECT:0
+expected_patterns:0
+expected:1784509311
+input:0
+koru_json:/Users/larsde/src/koru/tests/regression/600_STDLIB/641_PARSER/641_020_typed_value_channel/koru.json:0
+koru_json:/Users/larsde/src/koru/tests/regression/600_STDLIB/641_PARSER/koru.json:0
+koru_json:/Users/larsde/src/koru/tests/regression/600_STDLIB/koru.json:0
+koru_json:/Users/larsde/src/koru/tests/regression/koru.json:1783200883
+marker_MUST_COMPILE_KZ:0
+marker_MUST_COMPILE_ZIG:0
+marker_MUST_COMPILE:0
+marker_MUST_FAIL:0
+marker_MUST_RUN:1784509311
