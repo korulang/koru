@@ -87,9 +87,11 @@ ZIG_GLOBAL_CACHE="${TMPDIR:-/tmp}/koru-regression-cache"
 # Use --clean to remove all Zig caches before running tests
 CLEAN_CACHE=false
 
-# Parallel execution (default: 1 = sequential)
-# Use --parallel N to run N tests concurrently
-PARALLEL_JOBS=1
+# Parallel execution (default: 8 concurrent jobs).
+# Use --parallel N to override (N=1 forces the old sequential mode).
+# Result counting reads on-disk SUCCESS/FAILURE markers (source of truth), so the
+# verdict is identical to sequential — parallel only changes wall-clock.
+PARALLEL_JOBS=8
 
 # Backend-binary cache (default: ON). The built backend compiler binary is
 # reused across tests that share a handler set — sound because the program AST
@@ -141,7 +143,7 @@ if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
     echo "  --verify-cache                         Run each test twice (cached + uncached), assert parity"
     echo "  --no-backend-cache                     Disable backend-binary reuse across tests (default: on)"
     echo "  --keep-artifacts                        Keep per-test artifacts even on success (uses lots of disk)"
-    echo "  --parallel N                           Run N tests concurrently (default: 1 = sequential)"
+    echo "  --parallel N                           Run N tests concurrently (default: 8; N=1 = sequential)"
     echo "  --allow-concurrent                     Permit a second suite while one is already running machine-wide"
     echo "                                         (default: refuse — concurrent suites thrash CPU/disk, both slower)"
     echo ""
