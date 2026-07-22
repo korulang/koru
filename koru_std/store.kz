@@ -730,6 +730,51 @@ const std = @import("std");
             oi.disch_param = found_param;
             oi.disch_host = HostPath.build(allocator, oi.module_slash);
             field_owned_info[oi_idx] = oi;
+            // RETAIN the discovered discharger (its event_decl AND matching
+            // proc_decl) so dead-strip preserves them. The teardown calls the
+            // discharger from RAW HOST CODE (`<host>.<name>_event.handler`,
+            // ~line 2441) — invisible to dead-strip's invocation scan. Without
+            // this, an insert-then-query-only owned store (no user `take`-back
+            // invoking the discharger) strips `free`/`close`, and the teardown
+            // call dangles at a nonexistent `<mod>.<name>_event` (690_060). Same
+            // @retain mechanism runtime.kz uses for registered events: mutate the
+            // carried-forward program nodes in place (by pointer, not the
+            // by-value discovery copies above).
+            for (program.items) |*pi_c| {
+                if (pi_c.* != .module_decl) continue;
+                const md_m = &@constCast(pi_c).module_decl;
+                if (!std.mem.eql(u8, md_m.logical_name, oi.module_dot) and !std.mem.eql(u8, md_m.logical_name, oi.module_slash)) continue;
+                for (md_m.items) |*mi_c| {
+                    const mi_m = @constCast(mi_c);
+                    var segs: []const []const u8 = undefined;
+                    switch (mi_m.*) {
+                        .event_decl => |*e| segs = e.path.segments,
+                        .proc_decl => |*p| segs = p.path.segments,
+                        else => continue,
+                    }
+                    var jb = std.ArrayList(u8).initCapacity(allocator, 16) catch unreachable;
+                    for (segs, 0..) |seg, si| {
+                        if (si > 0) jb.append(allocator, '_') catch unreachable;
+                        jb.appendSlice(allocator, seg) catch unreachable;
+                    }
+                    if (!std.mem.eql(u8, jb.items, oi.disch_event)) continue;
+                    switch (mi_m.*) {
+                        .event_decl => |*e| {
+                            const na = allocator.alloc([]const u8, e.annotations.len + 1) catch unreachable;
+                            @memcpy(na[0..e.annotations.len], e.annotations);
+                            na[e.annotations.len] = "retain";
+                            e.annotations = na;
+                        },
+                        .proc_decl => |*p| {
+                            const na = allocator.alloc([]const u8, p.annotations.len + 1) catch unreachable;
+                            @memcpy(na[0..p.annotations.len], p.annotations);
+                            na[p.annotations.len] = "retain";
+                            p.annotations = na;
+                        },
+                        else => {},
+                    }
+                }
+            }
         }
         if (drain_required) {
             // One teardown surface per store this rung: the drain payload
@@ -1350,18 +1395,19 @@ const std = @import("std");
         }
         for (pwatch_arms.items) |*wa| H.storeRefsContH(allocator, &wa.cont, pstore_names.items);
 
-        // Owned-string stores build the commissioned surface ONLY (insert /
-        // take / teardown, 690_053). Every other surface is a loud
-        // later-rung wall — never a silently-miscompiling one.
+        // Owned-column stores build insert/take/teardown (690_053) plus the
+        // READ surface (query/preorder, 690_060): a query projects an owned
+        // column as a BARE borrow `*mod:Type<mod:state>` (no `!` — the store
+        // keeps the live `<state!>`, teardown still frees; `read` accepts the
+        // bare state and consumes nothing). REACT (watch/interceptors) and
+        // WRITE (stored-update) over owned columns are still later rungs — a
+        // loud wall, never a silently-miscompiling one.
         if (has_owned) {
             if (pwatch_arms.items.len > 0) {
-                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:watch({s}): watch over a store with an owned-string column is a later rung (690_053 builds insert/take/teardown only)", .{store_name}) } };
-            }
-            if (qsites.items.len > 0) {
-                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:query({s}): query/preorder over a store with an owned-string column is a later rung (690_053 builds insert/take/teardown only)", .{store_name}) } };
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:watch({s}): watch over a store with an owned column is a later rung (690_060 builds query/preorder read; react is next)", .{store_name}) } };
             }
             if (inserted_arms.items.len > 0 or removed_arms.items.len > 0 or updated_arms.items.len > 0) {
-                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): lifecycle interceptors on a store with an owned-string column are a later rung (690_053 builds insert/take/teardown only)", .{store_name}) } };
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): lifecycle interceptors on a store with an owned column are a later rung (690_060 builds query/preorder read; react is next)", .{store_name}) } };
             }
         }
 
@@ -1942,7 +1988,17 @@ const std = @import("std");
             // projected names + the row cursor.
             const qbody_in = allocator.alloc(ast.Field, qs.proj_names.len + 1) catch unreachable;
             for (qs.proj_names, qs.proj_fields, 0..) |pname, pfidx, i| {
-                qbody_in[i] = ast.Field{ .name = allocator.dupe(u8, pname) catch unreachable, .type = allocator.dupe(u8, field_types[pfidx]) catch unreachable };
+                // An owned column projects as a BARE borrow `*mod:Type<mod:state>`
+                // (no `!`): `read` accepts the bare state and consumes nothing, so
+                // the qbody carries no obligation to discharge and the store keeps
+                // the live `<state!>` it frees at teardown. Scalars/char project
+                // their value type directly.
+                qbody_in[i] = if (field_owned_info[pfidx]) |oi| ast.Field{
+                    .name = allocator.dupe(u8, pname) catch unreachable,
+                    .type = allocator.dupe(u8, field_types[pfidx]) catch unreachable,
+                    .module_path = allocator.dupe(u8, oi.module_slash) catch unreachable,
+                    .phantom = std.fmt.allocPrint(allocator, "{s}:{s}", .{ oi.module_dot, oi.state }) catch unreachable,
+                } else ast.Field{ .name = allocator.dupe(u8, pname) catch unreachable, .type = allocator.dupe(u8, field_types[pfidx]) catch unreachable };
             }
             qbody_in[qs.proj_names.len] = ast.Field{ .name = allocator.dupe(u8, "__koru_qrow") catch unreachable, .type = allocator.dupe(u8, "i64") catch unreachable };
             appended_items.append(allocator, ast.Item{ .event_decl = ast.EventDecl{
