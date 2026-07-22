@@ -956,8 +956,35 @@ fn punContinuationBinding(
     scope: *std.StringHashMap(?[]const u8),
     reporter: *errors_mod.ErrorReporter,
 ) std.mem.Allocator.Error!void {
-    // 1. Fill unfilled input fields from bindings already in scope. Done BEFORE
-    //    this node's own binding is added, so a value never puns into the very
+    // The names this continuation introduces into scope are added in two phases
+    // relative to the step-1 fill of cont.node, keyed by WHERE the value is
+    // produced:
+    //   PHASE A (before the fill) — a BRANCH PAYLOAD binding (`| emit text`,
+    //     `| ok x`). The payload is produced UPSTREAM (the emitting event / a
+    //     prior branch), so cont.node here is a CONSUMER that may legitimately
+    //     pun the payload into its own unfilled args. Seeding it first is what
+    //     lets `! emit text |> render-at(x:5)` fill `text` implicitly (210_157).
+    //   PHASE B (after the fill) — a RETURN bind (`producer(): x`) or a
+    //     destructured return. That value is produced BY cont.node itself, so it
+    //     must NOT pun into the very invocation that produces it.
+    // No shadowing means a name added here cannot already be live — but we guard
+    // anyway and only remove names we actually added. A return bind carries its
+    // producer's declared return type so a downstream pun can tell a transform
+    // result struct (SiteResult) from a plain scalar.
+    var added = try std.ArrayList([]const u8).initCapacity(allocator, 3);
+    defer added.deinit(allocator);
+
+    // Phase A: branch payload — in scope BEFORE this node's fill (upstream value).
+    if (cont.binding) |b| {
+        if (!scope.contains(b)) {
+            try scope.put(b, null); // branch payload — no producer return type
+            try added.append(allocator, b);
+        }
+    }
+
+    // 1. Fill unfilled input fields from bindings already in scope — including
+    //    this continuation's own branch payload (phase A), but NOT its return
+    //    bind (phase B, added after this), so a value never puns into the very
     //    invocation that produces it.
     if (cont.node) |*node| {
         if (node.* == .invocation) {
@@ -997,22 +1024,12 @@ fn punContinuationBinding(
         }
     }
 
-    // 2. Collect the durable symbols this continuation introduces into its
-    //    subtree. Three sources: a branch payload binding (`| ok x`), a scalar
-    //    return bind (`producer(): x`, stored on the invocation), and a
-    //    destructured return bind (`producer(): { a, b }`). No shadowing means
-    //    a name added here cannot already be live — but we guard anyway and
-    //    only remove names we actually added. The producer's declared return
-    //    type rides with a return bind so a downstream pun can tell a transform
-    //    result struct (SiteResult) from a plain scalar.
-    var added = try std.ArrayList([]const u8).initCapacity(allocator, 3);
-    defer added.deinit(allocator);
-    if (cont.binding) |b| {
-        if (!scope.contains(b)) {
-            try scope.put(b, null); // branch payload — no producer return type
-            try added.append(allocator, b);
-        }
-    }
+    // Phase B: return bind (`producer(): x`) and destructured return
+    //    (`producer(): { a, b }`) — produced BY cont.node, so added to scope only
+    //    AFTER its own fill above, never punning into the very invocation that
+    //    produces them. The producer's declared return type rides with a return
+    //    bind so a downstream pun can tell a transform result struct (SiteResult)
+    //    from a plain scalar.
     if (cont.node) |node| {
         if (node == .invocation) {
             const producer_ret: ?[]const u8 = if (table.getEventInfo(node.invocation.path)) |info| info.return_type else null;
