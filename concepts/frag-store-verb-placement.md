@@ -46,8 +46,23 @@ instead of checker code. Rule sketch: an arm rejecting
 
 ## Open
 
-- Author the trellis law + MUST_FAIL pin for in-body installation (message
-  quality is the point).
+- ~~MUST_FAIL pin for in-body installation (message quality is the point).~~
+  DONE 2026-07-23 (690_066): a nested `query` over a DECLARED store no longer
+  lies "unknown store - no std/store:new found". The query transform probes for
+  the store's persistent coordinator unit (`__store_insert_<s>`, which survives
+  after the `new` flow lowers) and, when the store IS declared but this site got
+  no sweep unit, teaches the real constraint: "query is top-level-only — a
+  standing-rule installation; a nested body has nothing to install into; move it
+  to top-level scope. Momentary verbs (insert/take) DO nest." The trellis-law
+  ENFORCEMENT home (regex-over-ancestry-paths, Stage-C located) is still the
+  aspiration; today's wall lives in the query transform's error path.
+- **The RETAINED-RENDER read is a SEPARATE momentary verb, not this.** A
+  retained-mode renderer (vaxis `! draw`, fires on mount + every resize with no
+  write) must read ALL live rows to repaint. `query` (standing rule) can't serve
+  it. The bridge wants a MOMENTARY row-sweep — a runtime read of the corpus,
+  which this belief already sanctions as nestable (like insert/take). It must
+  lower SITE-LOCAL (inline at the call site), NOT via the top-level coordinator,
+  or it re-enters this exact wall. In flight 2026-07-23.
 - Plural stripe slice: needed before any per-frame system can fire standing
   rules; rule ORDERING under a stripe (move before draw) and the
   cascade-cycle interaction of self-writing movement rules (690_012) are
