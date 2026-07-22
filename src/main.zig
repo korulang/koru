@@ -1306,6 +1306,7 @@ fn generateComptimeBackendEmitted(allocator: std.mem.Allocator, source_file: *as
         \\    while (i < depth) : (i += 1) __koru_std.debug.print("  ", .{});
         \\    __koru_std.debug.print("| {s}", .{cont.branch});
         \\    if (cont.binding) |b| __koru_std.debug.print(" {s}", .{b});
+        \\    if (cont.is_transformed_subtree) __koru_std.debug.print(" [XFORMED-SUBTREE]", .{});
         \\    if (cont.node) |n| {
         \\        switch (n) {
         \\            .invocation => |inv| {
@@ -1313,6 +1314,12 @@ fn generateComptimeBackendEmitted(allocator: std.mem.Allocator, source_file: *as
         \\                koruDumpPath(inv.path);
         \\                if (inv.return_binding) |rb| __koru_std.debug.print(": {s}", .{rb});
         \\                if (inv.inserted_by_tap) __koru_std.debug.print("  [TAP]", .{});
+        \\                if (inv.annotations.len > 0) {
+        \\                    __koru_std.debug.print("  ANN[", .{});
+        \\                    for (inv.annotations) |a| __koru_std.debug.print("{s} ", .{a});
+        \\                    __koru_std.debug.print("]", .{});
+        \\                }
+        \\                if (inv.inline_body != null) __koru_std.debug.print("  [INLINE_BODY]", .{});
         \\            },
         \\            .branch_constructor => |bc| {
         \\                if (bc.is_bare_return) {

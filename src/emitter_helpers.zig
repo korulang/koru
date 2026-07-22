@@ -2222,6 +2222,56 @@ fn emitSubflowContinuationsWithDepth(
             }
         }
 
+        // A void step whose invocation carries a rendered template body
+        // (`inline_body`, e.g. a comptime `print`) — or any node the simple
+        // step-switch below can't lower — must go through emitContinuationBody,
+        // whose line ~8594 routes `inline_body` through `emitInlineBodyNode` (the
+        // SAME helper the return-switch path bails to at ~2450). The simple-step
+        // path below emits a raw `_event.handler(...)` call and DROPS the template
+        // body — this is the `read: text |> print` residue inside a synthesized
+        // query/watch handler body (690_060): the print was transformed and the
+        // `__kw` interpolation attached, but the void-chain emitter never emitted it.
+        if (continuationsHaveReturnSwitchUnemittable(remaining_conts)) {
+            try emitter.write(indent);
+            if (parent_result_name) |prn| {
+                try emitter.write("_ = &");
+                try emitter.write(prn);
+                try emitter.write(";\n");
+            } else if (depth == 0) {
+                try emitter.write("_ = &result;\n");
+            } else {
+                var buf: [48]u8 = undefined;
+                const discard = try std.fmt.bufPrint(&buf, "_ = &nested_result_{d};\n", .{depth - 1});
+                try emitter.write(discard);
+            }
+            var ctx = EmissionContext{
+                .allocator = std.heap.page_allocator,
+                .indent_level = 0,
+                .ast_items = all_items,
+                .is_sync = true,
+                .tap_registry = tap_registry,
+                .type_registry = type_registry,
+                .main_module_name = main_module_name,
+                .current_source_event = source_event_name,
+                .bare_return_active = enclosing_bare_return,
+            };
+            var label_contexts = std.StringHashMap(LabelContext).init(ctx.allocator);
+            ctx.label_contexts = &label_contexts;
+            defer {
+                var it = label_contexts.valueIterator();
+                while (it.next()) |label_ctx| {
+                    ctx.allocator.free(label_ctx.result_var);
+                }
+                label_contexts.deinit();
+            }
+            var label_counter: usize = depth;
+            const old_indent = emitter.indent_level;
+            emitter.indent_level = 0;
+            try emitContinuationBody(emitter, &ctx, cont, &label_counter);
+            emitter.indent_level = old_indent;
+            return;
+        }
+
         // If the next continuation needs to switch on a result (has a non-empty
         // branch), we must KEEP this step's return value instead of discarding
         // it — otherwise the downstream switch falls back to a stale `result`
