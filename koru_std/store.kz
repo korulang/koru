@@ -1399,15 +1399,18 @@ const std = @import("std");
         // READ surface (query/preorder, 690_060): a query projects an owned
         // column as a BARE borrow `*mod:Type<mod:state>` (no `!` — the store
         // keeps the live `<state!>`, teardown still frees; `read` accepts the
-        // bare state and consumes nothing). REACT (watch/interceptors) and
-        // WRITE (stored-update) over owned columns are still later rungs — a
-        // loud wall, never a silently-miscompiling one.
+        // bare state and consumes nothing). READ (query/preorder, 690_060) +
+        // REACT-on-insert (`inserted` interceptor, 690_061) borrow-read the
+        // owned column. `watch`, `removed`/`updated` interceptors, and WRITE
+        // (stored-update) over owned columns are still later rungs — loud walls,
+        // never silent miscompiles. (`removed` fires in the take path where the
+        // element moves OUT; `updated` is the owned-write image path.)
         if (has_owned) {
             if (pwatch_arms.items.len > 0) {
-                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:watch({s}): watch over a store with an owned column is a later rung (690_060 builds query/preorder read; react is next)", .{store_name}) } };
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:watch({s}): watch over a store with an owned column is a later rung (690_061 builds the `inserted` interceptor react; field-watch is next)", .{store_name}) } };
             }
-            if (inserted_arms.items.len > 0 or removed_arms.items.len > 0 or updated_arms.items.len > 0) {
-                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): lifecycle interceptors on a store with an owned column are a later rung (690_060 builds query/preorder read; react is next)", .{store_name}) } };
+            if (removed_arms.items.len > 0 or updated_arms.items.len > 0) {
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): `removed`/`updated` interceptors over an owned column are a later rung (690_061 builds `inserted`; removed rides the take move-out, updated rides the owned-write)", .{store_name}) } };
             }
         }
 
@@ -1520,7 +1523,21 @@ const std = @import("std");
                 ap.appendSlice(allocator, head) catch unreachable;
                 for (arm.fields, 0..) |fnm, fi| {
                     if (fi > 0) ap.appendSlice(allocator, ", ") catch unreachable;
-                    const p = std.fmt.allocPrint(allocator, ".{s} = {s}", .{ fnm, fnm }) catch unreachable;
+                    // An OWNED column reads FRESH from the stored cell — the
+                    // interceptor borrows the pointer the store now owns (a bare
+                    // <state>), NOT the insert param `fnm` which the store write
+                    // just CONSUMED (<!state>): reusing the consumed param yields
+                    // "no tracked phantom state" at the arm's read (690_061). The
+                    // row is already appended here (__koru_new_row valid). Scalars
+                    // /char pass the param by value as before.
+                    var is_owned = false;
+                    for (field_names, field_owned) |cn, co| {
+                        if (co and std.mem.eql(u8, cn, fnm)) is_owned = true;
+                    }
+                    const p = if (is_owned)
+                        std.fmt.allocPrint(allocator, ".{s} = __koru_store_{s}.{s}[__koru_new_row]", .{ fnm, store_name, fnm }) catch unreachable
+                    else
+                        std.fmt.allocPrint(allocator, ".{s} = {s}", .{ fnm, fnm }) catch unreachable;
                     ap.appendSlice(allocator, p) catch unreachable;
                 }
                 ap.appendSlice(allocator, " });\n") catch unreachable;
@@ -2240,12 +2257,24 @@ const std = @import("std");
                     ev_name: []const u8,
                     arm_fields: []const []const u8,
                     arm_types: []const []const u8,
+                    arm_owned: []const ?OwnedCol,
                     arm_body: *const ast.Continuation,
                     pnames: []const []const u8,
                 ) void {
                     const ev_in = alloc.alloc(ast.Field, arm_fields.len) catch unreachable;
-                    for (arm_fields, arm_types, 0..) |fnm, ftp, fi| {
-                        ev_in[fi] = ast.Field{ .name = alloc.dupe(u8, fnm) catch unreachable, .type = alloc.dupe(u8, ftp) catch unreachable };
+                    for (arm_fields, arm_types, arm_owned, 0..) |fnm, ftp, aoi, fi| {
+                        // An owned column binds into the reactive arm as a BARE
+                        // borrow `*mod:Type<mod:state>` (no `!`): the interceptor
+                        // reads it (read accepts the bare state, consumes nothing)
+                        // while the store keeps the live <state!> it frees at
+                        // teardown — 690_060's query projection, now in the
+                        // `inserted` arm (690_061). Scalars/char bind their value.
+                        ev_in[fi] = if (aoi) |oi| ast.Field{
+                            .name = alloc.dupe(u8, fnm) catch unreachable,
+                            .type = alloc.dupe(u8, ftp) catch unreachable,
+                            .module_path = alloc.dupe(u8, oi.module_slash) catch unreachable,
+                            .phantom = std.fmt.allocPrint(alloc, "{s}:{s}", .{ oi.module_dot, oi.state }) catch unreachable,
+                        } else ast.Field{ .name = alloc.dupe(u8, fnm) catch unreachable, .type = alloc.dupe(u8, ftp) catch unreachable };
                     }
                     const retain = blk: {
                         const anns = alloc.alloc([]const u8, 1) catch unreachable;
@@ -2298,19 +2327,36 @@ const std = @import("std");
                     return out;
                 }
             }.call;
+            // Parallel of colTypes: the OwnedCol info per arm field (null for
+            // scalar/char), so the reactive arm binds an owned column as a bare
+            // borrow (690_061). Non-owned stores get all-null — a no-op.
+            const colOwned = struct {
+                fn call(alloc: std.mem.Allocator, names: []const []const u8, owned: []const ?OwnedCol, wanted: []const []const u8) []const ?OwnedCol {
+                    const out = alloc.alloc(?OwnedCol, wanted.len) catch unreachable;
+                    for (wanted, 0..) |w, i| {
+                        out[i] = blk: {
+                            for (names, owned) |n, o| {
+                                if (std.mem.eql(u8, n, w)) break :blk o;
+                            }
+                            break :blk null;
+                        };
+                    }
+                    return out;
+                }
+            }.call;
             for (inserted_arms.items, 0..) |*arm, ai| {
                 const ev_name = std.fmt.allocPrint(allocator, "__store_inserted_{s}_{d}", .{ store_name, ai }) catch unreachable;
-                LC.emit(allocator, &appended_items, flow.module, flow.location, ev_name, arm.fields, colTypes(allocator, field_names, field_types, arm.fields), &arm.body, pstore_names.items);
+                LC.emit(allocator, &appended_items, flow.module, flow.location, ev_name, arm.fields, colTypes(allocator, field_names, field_types, arm.fields), colOwned(allocator, field_names, field_owned_info, arm.fields), &arm.body, pstore_names.items);
             }
             for (removed_arms.items, 0..) |*arm, ai| {
                 const ev_name = std.fmt.allocPrint(allocator, "__store_removed_{s}_{d}", .{ store_name, ai }) catch unreachable;
-                LC.emit(allocator, &appended_items, flow.module, flow.location, ev_name, arm.fields, colTypes(allocator, field_names, field_types, arm.fields), &arm.body, pstore_names.items);
+                LC.emit(allocator, &appended_items, flow.module, flow.location, ev_name, arm.fields, colTypes(allocator, field_names, field_types, arm.fields), colOwned(allocator, field_names, field_owned_info, arm.fields), &arm.body, pstore_names.items);
             }
             for (updated_arms.items, 0..) |*arm, ai| {
                 const ev_name = std.fmt.allocPrint(allocator, "__store_updated_{s}_{d}", .{ store_name, ai }) catch unreachable;
                 const utypes = allocator.alloc([]const u8, arm.fields.len) catch unreachable;
                 for (utypes) |*ut| ut.* = if (field_types.len > 0) field_types[0] else "i64";
-                LC.emit(allocator, &appended_items, flow.module, flow.location, ev_name, arm.fields, utypes, &arm.body, pstore_names.items);
+                LC.emit(allocator, &appended_items, flow.module, flow.location, ev_name, arm.fields, utypes, colOwned(allocator, field_names, field_owned_info, arm.fields), &arm.body, pstore_names.items);
             }
         }
 
