@@ -3706,6 +3706,22 @@ const std = @import("std");
         return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:stored: '{s}' is a capacity-1 value store - write it as {s}.{s}", .{ target_store, target_store, target_field }) } };
     }
 
+    // An owned-column store generates NO write surface (unit-2's write path is
+    // gated on !has_owned), so H.fieldOrder below would leak a raw "unknown
+    // store" — detect the owned store FIRST (by its teardown unit) and name the
+    // real rung. A stored write must thread the evicted <state!>'s discharge and
+    // the incoming <!state>'s consume; that is the later WRITE rung.
+    {
+        const td_probe = std.fmt.allocPrint(allocator, "__store_teardown_{s}", .{target_store}) catch unreachable;
+        for (program.items) |pi| {
+            if (pi != .event_decl) continue;
+            const ed = &pi.event_decl;
+            if (ed.path.segments.len == 1 and std.mem.eql(u8, ed.path.segments[0], td_probe)) {
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:stored: store '{s}' has an owned column - stored writes over owned columns are a later rung (WRITE = discharge-old + consume-new; 690_060/061 build read/react)", .{target_store}) } };
+            }
+        }
+    }
+
     const order = H.fieldOrder(allocator, program, target_store) orelse {
         return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:stored: unknown store '{s}' - no std/store:new({s}) found", .{ target_store, target_store }) } };
     };
@@ -3715,21 +3731,6 @@ const std = @import("std");
         }
         return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:stored: '{s}' is not a field of store '{s}'", .{ target_field, target_store }) } };
     };
-
-    // An owned-string store (690_053) generates NO write surface — a stored
-    // write would move an owned pointer without threading its obligation.
-    // Recognized by its teardown unit so the wall names the real rung
-    // instead of leaking an unknown-event host error.
-    {
-        const td_probe = std.fmt.allocPrint(allocator, "__store_teardown_{s}", .{target_store}) catch unreachable;
-        for (program.items) |pi| {
-            if (pi != .event_decl) continue;
-            const ed = &pi.event_decl;
-            if (ed.path.segments.len == 1 and std.mem.eql(u8, ed.path.segments[0], td_probe)) {
-                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:stored: store '{s}' has an owned-string column - stored writes are a later rung (690_053 builds insert/take/teardown only)", .{target_store}) } };
-            }
-        }
-    }
 
     // SELF-FK traversal head: `store[handle.reffield]` addresses the row whose
     // index IS the value of `reffield` in row `handle` — i.e. it FOLLOWS a
