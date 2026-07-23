@@ -45,8 +45,8 @@ std/string-map:new()
                                     | captured pk |> std/map:get(m: happy, k: pa.prev * 16 + pk.pick)
                                         | value fwd |> std/map:get(m: happy, k: pk.pick * 16 + pa.prev)
                                             | value bwd |> captured { used: pa.used | (@as(i64, 1) << @as(u6, @intCast(pk.pick))), prev: pk.pick, first: pa.first + @as(i64, @intFromBool(pa.first == -1)) * (pk.pick + 1), cost: pa.cost + (fwd + bwd) * @as(i64, @intFromBool(pa.prev >= 0)), rem: @divTrunc(pa.rem, @as(i64, @intCast(n)) + 1 - @as(i64, @intCast(pos))) }
-                                            | missing |> captured { used: pa.used | (@as(i64, 1) << @as(u6, @intCast(pk.pick))), prev: pk.pick, first: pa.first + @as(i64, @intFromBool(pa.first == -1)) * (pk.pick + 1), cost: pa.cost, rem: @divTrunc(pa.rem, @as(i64, @intCast(n)) + 1 - @as(i64, @intCast(pos))) }
-                                        | missing |> captured { used: pa.used | (@as(i64, 1) << @as(u6, @intCast(pk.pick))), prev: pk.pick, first: pa.first + @as(i64, @intFromBool(pa.first == -1)) * (pk.pick + 1), cost: pa.cost, rem: @divTrunc(pa.rem, @as(i64, @intCast(n)) + 1 - @as(i64, @intCast(pos))) }
+                                            | missing |> captured { used: pa.used | (@as(i64, 1) << @as(u6, @intCast(pk.pick))), prev: pk.pick, first: pa.first + @as(i64, @intFromBool(pa.first == -1)) * (pk.pick + 1), pa.cost, rem: @divTrunc(pa.rem, @as(i64, @intCast(n)) + 1 - @as(i64, @intCast(pos))) }
+                                        | missing |> captured { used: pa.used | (@as(i64, 1) << @as(u6, @intCast(pk.pick))), prev: pk.pick, first: pa.first + @as(i64, @intFromBool(pa.first == -1)) * (pk.pick + 1), pa.cost, rem: @divTrunc(pa.rem, @as(i64, @intCast(n)) + 1 - @as(i64, @intCast(pos))) }
                             | captured route |> std/map:get(m: happy, k: route.prev * 16 + route.first)
                                 | value cf |> std/map:get(m: happy, k: route.first * 16 + route.prev)
                                     | value cb |> captured { best: @max(bo.best, route.cost + cf + cb) }

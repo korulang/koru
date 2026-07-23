@@ -241,22 +241,30 @@ const std = @import("std");
     }
 
     // The cell's fields, in declaration order, parsed ONCE via the struct-literal
-    // projector (the walker foundation). Used for the `var` seed below and to map
-    // positional `captured { a, b }` values onto field names by index. The
-    // Source text is the block INTERIOR; the projector wants braces back.
+    // projector (the walker foundation). Used for the `var` seed below. Bare
+    // entries pun by name/path; bare expressions and redundant labels are
+    // rejected (nothing is positional). The Source text is the block INTERIOR;
+    // the projector wants braces back. Singleton non-punnable (`capture { entity }`)
+    // is the existing-expression seed carve-out.
     const expr = std.fmt.allocPrint(allocator, "{{{s}}}", .{source_text.?}) catch unreachable;
-    const cell_fields = struct_literal.parseFields(allocator, expr) catch &[_]struct_literal.StructField{};
+    const cell_fields = struct_literal.parseFieldsWithOptions(allocator, expr, .{ .allow_singleton_expression = true }) catch |err| {
+        const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"~capture seed: {s}\"); }}", .{struct_literal.describeError(err)}) catch unreachable;
+        return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+    };
 
     // --- Rewrite `captured(...)` invocations into general `.assignment` nodes
     //     that write field-wise into the cell. The opaque `{...}` payload is
-    //     interpreted by the projector; positional values map onto the cell's
-    //     fields by index. No `.capture` node, no emitter concession. ---
+    //     interpreted by the projector under the pun law — bare paths pun by
+    //     last segment; bare expressions / redundant labels fail loudly.
+    //     No `.capture` node, no emitter concession. ---
     const Rewriter = struct {
+        err_msg: ?[]const u8 = null,
+
         fn rewrite(
+            self: *@This(),
             alloc: std.mem.Allocator,
             cont: *const ast.Continuation,
             target: []const u8,
-            cells: []const struct_literal.StructField,
         ) *const ast.Continuation {
             var new_node: ?ast.Node = cont.node;
             if (cont.node) |step| {
@@ -267,17 +275,16 @@ const std = @import("std");
                         // source arg's value; the projector wants braces back.
                         const raw = if (step.invocation.args.len > 0) step.invocation.args[0].value else "";
                         const payload = std.fmt.allocPrint(alloc, "{{{s}}}", .{raw}) catch unreachable;
-                        const parsed = struct_literal.parseFields(alloc, payload) catch &[_]struct_literal.StructField{};
+                        const parsed = struct_literal.parseFields(alloc, payload) catch |err| {
+                            self.err_msg = std.fmt.allocPrint(alloc, "captured: {s}", .{struct_literal.describeError(err)}) catch "captured: struct literal error";
+                            const out_err = alloc.create(ast.Continuation) catch unreachable;
+                            out_err.* = cont.*;
+                            return out_err;
+                        };
                         const asgn_fields = alloc.alloc(ast.Field, parsed.len) catch unreachable;
                         for (parsed, 0..) |pf, i| {
-                            const fname = if (pf.name.len > 0)
-                                pf.name
-                            else if (i < cells.len)
-                                cells[i].name
-                            else
-                                pf.name;
                             asgn_fields[i] = .{
-                                .name = alloc.dupe(u8, fname) catch unreachable,
+                                .name = alloc.dupe(u8, pf.name) catch unreachable,
                                 .type = "",
                                 .expression_str = alloc.dupe(u8, pf.value) catch unreachable,
                             };
@@ -291,7 +298,7 @@ const std = @import("std");
             }
             const new_conts = alloc.alloc(ast.Continuation, cont.continuations.len) catch unreachable;
             for (cont.continuations, 0..) |*nc, i| {
-                new_conts[i] = rewrite(alloc, nc, target, cells).*;
+                new_conts[i] = self.rewrite(alloc, nc, target).*;
             }
             const out = alloc.create(ast.Continuation) catch unreachable;
             out.* = cont.*;
@@ -301,7 +308,12 @@ const std = @import("std");
         }
     };
 
-    const rewritten_as = Rewriter.rewrite(allocator, as_cont.?, cell_name, cell_fields);
+    var rewriter = Rewriter{};
+    const rewritten_as = rewriter.rewrite(allocator, as_cont.?, cell_name);
+    if (rewriter.err_msg) |em| {
+        const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"{s}\"); }}", .{em}) catch unreachable;
+        return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+    }
 
     // --- Assemble the new flow continuations: void chains so the REAL ~for / ~if
     //     templates run over the cell (no degradation). ---
@@ -351,10 +363,13 @@ const std = @import("std");
     //     projector's fields (no koruStructToZig text surgery). For existing-var
     //     captures (`~capture(myVar)`) the expr is not a struct literal, so emit
     //     it verbatim. `_ = &cell;` keeps it live even if the loop never writes. ---
-    // A block holding exactly one bare (unnamed) expression seeds from an
-    // existing value: `~capture { entity }`. Anything with named fields builds
-    // a fresh struct cell.
-    const is_existing_var = cell_fields.len == 1 and cell_fields[0].name.len == 0;
+    // A block holding exactly one bare expression seeds from an existing
+    // value: `~capture { entity }`. After the pun law, a bare punnable name
+    // resolves to name==value (e.g. entity/entity); a singleton non-punnable
+    // keeps name=="". Anything with distinct named fields builds a fresh
+    // struct cell.
+    const is_existing_var = cell_fields.len == 1 and (cell_fields[0].name.len == 0 or
+        std.mem.eql(u8, cell_fields[0].name, cell_fields[0].value));
     const is_struct_init = !is_existing_var;
     const init_zig = if (is_struct_init) blk: {
         var seed = std.ArrayList(u8).initCapacity(allocator, 64) catch unreachable;

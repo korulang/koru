@@ -1,9 +1,5 @@
-// PIN (RED until pun lands) — a store write block should support koru's
-// mandatory PUNNING: `insert(todos) { label }` = "column label <- binding label".
-// Today the write block is a `source: Source` parsed by struct_literal (not
-// koru's destructure machinery), so a bare `label` is "missing column 'label'".
-// koru puns EVERYWHERE (`! sweep { label }`, destructures) — except writing to
-// a store. This MUST_RUN pins the pun should work.
+// PIN — store write blocks support koru's mandatory PUNNING:
+// `insert(todos) { label }` = "column label <- binding label".
 import std/io
 import std/string
 import std/store

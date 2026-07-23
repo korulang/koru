@@ -2,15 +2,19 @@
 // ==========================================
 //
 // A small parser that projects a Koru struct literal — `{ name: expr, ... }`
-// (named) or `{ a, b }` (positional) — into a `liquid.Value` record node, the
-// universal walkable shape the template engine consumes. One entry in the
+// or bare puns `{ a, b }` / `{ p.x, p.y }` — into a `liquid.Value` record node,
+// the universal walkable shape the template engine consumes. One entry in the
 // "parser palette" (docs/PARSER_PALETTE.md): the smartness lives here in Zig
 // with real errors; a per-target walker template emits the result (Zig
 // `.{ .name = expr }`, JS `{ name: expr }`, …).
 //
-// This is the foundation for the capture rework: `captured({...})` lowers to a
-// general `.assignment`, and the opaque `{...}` is interpreted by the walker
-// over THIS record — no koruStructToZig text surgery, no `.capture` node.
+// LAW (nothing is positional; punning is mandatory):
+//   - Bare entry `label` / `acc.sum` → pun by last segment (name = label / sum).
+//   - Bare expression `a.x + 1` → REJECT (name the target: `x: expr`).
+//   - Redundant `x: x` / `sum: acc.sum` → REJECT (write the pun).
+// Positional assignment is never allowed. The one carve-out is a SINGLETON
+// bare non-punnable expression under `allow_singleton_expression` — capture's
+// existing-value seed (`capture { entity }` / `capture { expr }`).
 //
 // Field VALUES are kept as opaque raw text (Model A — pasted verbatim per
 // target); only the STRUCTURE (field order + names) is parsed out. Nested
@@ -18,8 +22,8 @@
 //
 // Node shapes (every node is a `record` Context with a `kind` field):
 //   struct → kind="struct", children = array of field records
-//   field  → kind="field",  name = "<ident>" | "" (empty ⇒ positional),
-//                           value = raw expression text (trimmed)
+//   field  → kind="field",  name = "<ident>", value = raw expression text
+//            (name is "" ONLY for the singleton-expression carve-out)
 
 const std = @import("std");
 const liquid = @import("liquid");
@@ -31,6 +35,16 @@ pub const ParseError = error{
     OutOfMemory,
     NotAStruct,
     UnterminatedStruct,
+    BareEntryNotPunnable,
+    RedundantExplicitLabel,
+};
+
+/// Options for `parseFields` / `parse`. Defaults enforce the pun law.
+pub const ParseOptions = struct {
+    /// Allow a single bare non-punnable entry (capture's existing-expression
+    /// seed: `capture { entity }`). Write blocks (`captured`, `insert`,
+    /// `stored`) leave this false so a lone bare expression is rejected.
+    allow_singleton_expression: bool = false,
 };
 
 /// Split a struct-literal body on TOP-LEVEL commas, honoring `{}`/`()`/`[]`
@@ -79,7 +93,7 @@ fn splitFields(allocator: Allocator, body: []const u8) ParseError![]const []cons
 }
 
 /// Find the first TOP-LEVEL `:` in `field`, honoring nesting and strings.
-/// Returns its index, or null if the field is positional (no top-level colon).
+/// Returns its index, or null if the field is bare (no top-level colon).
 fn topLevelColon(field: []const u8) ?usize {
     var depth: usize = 0;
     var i: usize = 0;
@@ -103,34 +117,80 @@ fn topLevelColon(field: []const u8) ?usize {
     return null;
 }
 
+/// The field name a value would pun to — the segment after the last `.`, or
+/// the whole token when there's no dot — or `null` when the value CANNOT pun.
+/// Mirrors `lexer.punnableName` (kept local so this module stays free of a
+/// lexer import; the two must stay in lockstep).
+pub fn punnableName(value: []const u8) ?[]const u8 {
+    if (value.len == 0) return null;
+    for (value) |c| {
+        switch (c) {
+            'a'...'z', 'A'...'Z', '0'...'9', '_', '.' => {},
+            else => return null,
+        }
+    }
+    if (std.mem.indexOf(u8, value, "..") != null) return null;
+    if (value[0] == '.' or value[value.len - 1] == '.') return null;
+    if (value[0] >= '0' and value[0] <= '9') return null;
+
+    return if (std.mem.lastIndexOfScalar(u8, value, '.')) |dot_idx|
+        value[dot_idx + 1 ..]
+    else
+        value;
+}
+
+fn projectRawFields(
+    allocator: Allocator,
+    raw_fields: []const []const u8,
+    opts: ParseOptions,
+) ParseError![]const StructField {
+    var out = try std.ArrayList(StructField).initCapacity(allocator, raw_fields.len);
+    for (raw_fields) |raw| {
+        if (topLevelColon(raw)) |colon| {
+            const name = std.mem.trim(u8, raw[0..colon], " \t\n\r");
+            const value = std.mem.trim(u8, raw[colon + 1 ..], " \t\n\r");
+            if (punnableName(value)) |punned| {
+                if (std.mem.eql(u8, punned, name)) return error.RedundantExplicitLabel;
+            }
+            try out.append(allocator, .{ .name = name, .value = value });
+        } else {
+            const value = std.mem.trim(u8, raw, " \t\n\r");
+            if (punnableName(value)) |punned| {
+                try out.append(allocator, .{ .name = punned, .value = value });
+            } else if (opts.allow_singleton_expression and raw_fields.len == 1) {
+                // Capture existing-expression seed: `capture { entity }` /
+                // `capture { expr }` — not a field write.
+                try out.append(allocator, .{ .name = "", .value = value });
+            } else {
+                return error.BareEntryNotPunnable;
+            }
+        }
+    }
+    return out.toOwnedSlice(allocator);
+}
+
 /// Parse a Koru struct literal into a liquid record tree. All nodes are
 /// allocated with `allocator`; use an arena so the tree frees in one shot.
 pub fn parse(allocator: Allocator, input: []const u8) ParseError!Value {
+    return parseWithOptions(allocator, input, .{});
+}
+
+pub fn parseWithOptions(allocator: Allocator, input: []const u8, opts: ParseOptions) ParseError!Value {
     const trimmed = std.mem.trim(u8, input, " \t\n\r");
     if (trimmed.len < 2 or trimmed[0] != '{' or trimmed[trimmed.len - 1] != '}') {
         return error.NotAStruct;
     }
     const body = trimmed[1 .. trimmed.len - 1];
-
     const raw_fields = try splitFields(allocator, body);
+    const fields = try projectRawFields(allocator, raw_fields, opts);
 
-    var children = try std.ArrayList(*Context).initCapacity(allocator, raw_fields.len);
-    for (raw_fields) |raw| {
+    var children = try std.ArrayList(*Context).initCapacity(allocator, fields.len);
+    for (fields) |f| {
         const field_node = try allocator.create(Context);
         field_node.* = Context.init(allocator);
         try field_node.put("kind", .{ .string = "field" });
-
-        if (topLevelColon(raw)) |colon| {
-            const name = std.mem.trim(u8, raw[0..colon], " \t\n\r");
-            const value = std.mem.trim(u8, raw[colon + 1 ..], " \t\n\r");
-            try field_node.put("name", .{ .string = name });
-            try field_node.put("value", .{ .string = value });
-        } else {
-            // Positional: empty name (falsy in the walker), value is the whole field.
-            const value = std.mem.trim(u8, raw, " \t\n\r");
-            try field_node.put("name", .{ .string = "" });
-            try field_node.put("value", .{ .string = value });
-        }
+        try field_node.put("name", .{ .string = f.name });
+        try field_node.put("value", .{ .string = f.value });
         try children.append(allocator, field_node);
     }
 
@@ -141,16 +201,27 @@ pub fn parse(allocator: Allocator, input: []const u8) ParseError!Value {
     return Value{ .record = node };
 }
 
-/// A parsed struct-literal field: a name (empty ⇒ positional) and its raw value
-/// expression text. The typed counterpart to the `.record` walk, for Zig-side
-/// consumers (the capture transform) that want field pairs directly rather than
-/// walking a liquid record by string key.
+/// A parsed struct-literal field: a resolved name and its raw value expression
+/// text. Bare puns are resolved (name = last path segment); the empty-name
+/// carve-out is only the singleton existing-expression seed.
 pub const StructField = struct {
-    /// Field name, or "" for a positional field (`{ a, b }`).
+    /// Field name (last-segment pun for bare entries). Empty only for the
+    /// singleton-expression carve-out (`allow_singleton_expression`).
     name: []const u8,
     /// Raw value expression text, trimmed (opaque — per-target paste).
     value: []const u8,
 };
+
+/// Teaching diagnostic for a `ParseError` from the pun law.
+pub fn describeError(err: ParseError) []const u8 {
+    return switch (err) {
+        error.BareEntryNotPunnable => "positional assignment is never allowed — name the target (`x: expr`); a bare entry must be a punnable name or path",
+        error.RedundantExplicitLabel => "punning is mandatory — drop the redundant label and write the bare pun",
+        error.NotAStruct => "not a struct literal",
+        error.UnterminatedStruct => "unterminated struct literal",
+        error.OutOfMemory => "out of memory",
+    };
+}
 
 /// Recognized Koru-native base types for the `value[type]` annotation.
 /// A closed allowlist on purpose: it is what keeps `acc.arr[i]` (indexing)
@@ -182,31 +253,19 @@ pub fn peelBaseType(field_value: []const u8) struct { value: []const u8, type: [
     return .{ .value = prefix, .type = inner };
 }
 
-/// Parse a Koru struct literal into ordered (name, value) field pairs. Same
-/// parser as `parse` (single source of struct-splitting truth), but returns a
-/// Zig slice instead of a liquid record. Positional fields carry `name = ""`.
+/// Parse a Koru struct literal into ordered (name, value) field pairs. Bare
+/// entries are resolved to puns; bare expressions and redundant labels error.
 pub fn parseFields(allocator: Allocator, input: []const u8) ParseError![]const StructField {
+    return parseFieldsWithOptions(allocator, input, .{});
+}
+
+pub fn parseFieldsWithOptions(allocator: Allocator, input: []const u8, opts: ParseOptions) ParseError![]const StructField {
     const trimmed = std.mem.trim(u8, input, " \t\n\r");
     if (trimmed.len < 2 or trimmed[0] != '{' or trimmed[trimmed.len - 1] != '}') {
         return error.NotAStruct;
     }
     const raw_fields = try splitFields(allocator, trimmed[1 .. trimmed.len - 1]);
-
-    var out = try std.ArrayList(StructField).initCapacity(allocator, raw_fields.len);
-    for (raw_fields) |raw| {
-        if (topLevelColon(raw)) |colon| {
-            try out.append(allocator, .{
-                .name = std.mem.trim(u8, raw[0..colon], " \t\n\r"),
-                .value = std.mem.trim(u8, raw[colon + 1 ..], " \t\n\r"),
-            });
-        } else {
-            try out.append(allocator, .{
-                .name = "",
-                .value = std.mem.trim(u8, raw, " \t\n\r"),
-            });
-        }
-    }
-    return out.toOwnedSlice(allocator);
+    return projectRawFields(allocator, raw_fields, opts);
 }
 
 // --- Classification predicates: "what kind of `{ ... }` is this?" -----------
@@ -320,7 +379,7 @@ test "parse + walk a named struct literal" {
     );
 }
 
-test "positional struct literal yields empty (falsy) names" {
+test "bare path entries pun by last segment (not positional)" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
@@ -333,12 +392,11 @@ test "positional struct literal yields empty (falsy) names" {
     defer ctx.deinit();
     try ctx.put("src", .{ .string = "{ acc.sum, acc.count }" });
 
-    // The walker branches on `f.name`: present ⇒ named, empty ⇒ positional.
     const tmpl = "{% const s = parse_struct(src) %}" ++
-        "{% for f in s.children %}{% if f.name %}NAMED:{{ f.name }}{% else %}POS:{{ f.value }}{% endif %} {% endfor %}";
+        "{% for f in s.children %}{{ f.name }}={{ f.value }} {% endfor %}";
 
     const result = try liquid.renderWithEnv(allocator, tmpl, &ctx, null, .{ .filters = &filters });
-    try std.testing.expectEqualStrings("POS:acc.sum POS:acc.count ", result);
+    try std.testing.expectEqualStrings("sum=acc.sum count=acc.count ", result);
 }
 
 test "value with nested parens does not split on inner commas" {
@@ -356,7 +414,7 @@ test "value with nested parens does not split on inner commas" {
     try std.testing.expectEqualStrings("1", children[1].get("value").?.string);
 }
 
-test "parseFields: named + positional pairs (typed)" {
+test "parseFields: named + bare puns; reject bare expression and redundant label" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
@@ -368,12 +426,33 @@ test "parseFields: named + positional pairs (typed)" {
     try std.testing.expectEqualStrings("count", named[1].name);
     try std.testing.expectEqualStrings("acc.count + 1", named[1].value);
 
-    const positional = try parseFields(allocator, "{ acc.sum, acc.count }");
-    try std.testing.expectEqual(@as(usize, 2), positional.len);
-    try std.testing.expectEqualStrings("", positional[0].name);
-    try std.testing.expectEqualStrings("acc.sum", positional[0].value);
-    try std.testing.expectEqualStrings("", positional[1].name);
-    try std.testing.expectEqualStrings("acc.count", positional[1].value);
+    const punned = try parseFields(allocator, "{ acc.sum, acc.count }");
+    try std.testing.expectEqual(@as(usize, 2), punned.len);
+    try std.testing.expectEqualStrings("sum", punned[0].name);
+    try std.testing.expectEqualStrings("acc.sum", punned[0].value);
+    try std.testing.expectEqualStrings("count", punned[1].name);
+    try std.testing.expectEqualStrings("acc.count", punned[1].value);
+
+    // Reordered bare paths still land by NAME, not index.
+    const reordered = try parseFields(allocator, "{ acc.count, acc.sum }");
+    try std.testing.expectEqualStrings("count", reordered[0].name);
+    try std.testing.expectEqualStrings("sum", reordered[1].name);
+
+    try std.testing.expectError(error.BareEntryNotPunnable, parseFields(allocator, "{ a.x + 1, a.y + 100 }"));
+    try std.testing.expectError(error.RedundantExplicitLabel, parseFields(allocator, "{ label: label }"));
+    try std.testing.expectError(error.RedundantExplicitLabel, parseFields(allocator, "{ sum: acc.sum }"));
+
+    // Bare punnable singleton always puns (name == value → capture existing-var).
+    const alone = try parseFields(allocator, "{ entity }");
+    try std.testing.expectEqualStrings("entity", alone[0].name);
+    try std.testing.expectEqualStrings("entity", alone[0].value);
+
+    // Singleton non-punnable expression: only with the capture-seed carve-out.
+    try std.testing.expectError(error.BareEntryNotPunnable, parseFields(allocator, "{ a + 1 }"));
+    const seed = try parseFieldsWithOptions(allocator, "{ a + 1 }", .{ .allow_singleton_expression = true });
+    try std.testing.expectEqual(@as(usize, 1), seed.len);
+    try std.testing.expectEqualStrings("", seed[0].name);
+    try std.testing.expectEqualStrings("a + 1", seed[0].value);
 }
 
 test "empty struct literal yields no fields" {

@@ -39,7 +39,7 @@ std/string-map:new()
                                         ! each j |> captured { pick: sa.pick + @as(i64, @intFromBool(sa.pick == -1 and ((pa.used >> @as(u6, @intCast(j))) & 1) == 0 and sa.seen == sa.dig)) * (@as(i64, @intCast(j)) + 1), seen: sa.seen + (1 - ((pa.used >> @as(u6, @intCast(j))) & 1)) }
                                     | captured pk |> std/map:get(m: dist, k: pa.prev * 16 + pk.pick)
                                         | value edge |> captured { used: pa.used | (@as(i64, 1) << @as(u6, @intCast(pk.pick))), prev: pk.pick, cost: pa.cost + edge * @as(i64, @intFromBool(pa.prev >= 0)), rem: @divTrunc(pa.rem, @as(i64, @intCast(n)) - @as(i64, @intCast(pos))) }
-                                        | missing |> captured { used: pa.used | (@as(i64, 1) << @as(u6, @intCast(pk.pick))), prev: pk.pick, cost: pa.cost, rem: @divTrunc(pa.rem, @as(i64, @intCast(n)) - @as(i64, @intCast(pos))) }
+                                        | missing |> captured { used: pa.used | (@as(i64, 1) << @as(u6, @intCast(pk.pick))), prev: pk.pick, pa.cost, rem: @divTrunc(pa.rem, @as(i64, @intCast(n)) - @as(i64, @intCast(pos))) }
                             | captured route |> captured { best: @max(bo.best, route.cost) }
                     | captured result |> std/io:print.ln("{{ result.best:d }}") |> std/map:free(m: dist) |> std/string-map:free(m: names)
         | failed e |> std/io:print.ln("FAILED {{ e:s }}") |> std/map:free(m: dist) |> std/string-map:free(m: names)
