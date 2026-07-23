@@ -245,6 +245,31 @@ pub const String = struct {
     return .ok;
 }
 
+// Single-byte append — TUI key input (todo rename): `k.ch` is a u8, not a
+// string literal. Pin 610_022. Without this, every keystroke would need a
+// one-char String allocation just to call `append`.
+~pub event append-char { s: *String<instance>, ch: u8 }
+| ok
+| err string
+
+~proc append-char|zig {
+    const new_len = s.data.len + 1;
+    const new_data = s.allocator.realloc(s.data, new_len) catch {
+        return .{ .err = "realloc failed" };
+    };
+    new_data[s.data.len] = ch;
+    s.data = new_data;
+    return .ok;
+}
+
+// Drop the last byte (backspace). Empty stays empty — `| ok` either way so
+// a held key doesn't force an err arm.
+~pub event pop-char { s: *String<instance> }
+
+~proc pop-char|zig {
+    if (s.data.len > 0) s.data.len -= 1;
+}
+
 ~pub event clear { s: *String<instance> }
 
 ~proc clear|zig {
