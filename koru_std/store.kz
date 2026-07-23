@@ -1685,12 +1685,11 @@ const std = @import("std");
 
 
         // insertf: row + full — exhaustion is a BRANCH (O10, 690_011).
-        // NOT generated for owned-string stores: the `| full` early return
-        // happens AFTER the caller's obligation was consumed but BEFORE the
-        // store kept the value — the ownership would silently leak. The
-        // give-back shape (full re-issuing the obligation) is a later rung;
-        // the insert transform walls the `| full` arm at the site.
-        if (!has_owned) {
+        // Owned stores (690_077): `| full` REISSUES every column (owned fields
+        // with `<mod:state!>`, scalars bare) so the caller can free/keep the
+        // value the insert consumed but the store never kept. Without that
+        // give-back, an early return would silently leak the obligation.
+        {
             const insertf_name = std.fmt.allocPrint(allocator, "__store_insertf_{s}", .{store_name}) catch unreachable;
             const f_branches = allocator.alloc(ast.Branch, 2) catch unreachable;
             const f_row_pf = allocator.alloc(ast.Field, 1) catch unreachable;
@@ -1701,9 +1700,24 @@ const std = @import("std");
                 .kind = .terminal,
                 .annotations = &[_][]const u8{},
             };
+            // Give-back payload: mirror take's owned `| item` — reissue
+            // obligation on owned columns; scalars ride bare. Empty for a
+            // scalar-only store (690_011).
+            const f_full_pf: []ast.Field = if (has_owned) blk: {
+                const pf = allocator.alloc(ast.Field, user_field_count) catch unreachable;
+                for (field_names[0..user_field_count], field_types[0..user_field_count], field_owned_info[0..user_field_count], 0..) |pfname, pftype, pfoi, pfi| {
+                    pf[pfi] = ast.Field{
+                        .name = allocator.dupe(u8, pfname) catch unreachable,
+                        .type = allocator.dupe(u8, pftype) catch unreachable,
+                        .module_path = if (pfoi) |oi| allocator.dupe(u8, oi.module_slash) catch unreachable else null,
+                        .phantom = if (pfoi) |oi| std.fmt.allocPrint(allocator, "{s}:{s}!", .{ oi.module_dot, oi.state }) catch unreachable else null,
+                    };
+                }
+                break :blk pf;
+            } else &[_]ast.Field{};
             f_branches[1] = ast.Branch{
                 .name = allocator.dupe(u8, "full") catch unreachable,
-                .payload = ast.Shape{ .fields = &[_]ast.Field{} },
+                .payload = ast.Shape{ .fields = f_full_pf },
                 .kind = .terminal,
                 .annotations = &[_][]const u8{},
             };
@@ -1717,7 +1731,17 @@ const std = @import("std");
                 .location = flow.location,
                 .module = allocator.dupe(u8, flow.module) catch unreachable,
             } }) catch unreachable;
-            const fcheck = std.fmt.allocPrint(allocator, "if (__koru_store_{s}.len >= {d}) return .{{ .full = .{{}} }};\n", .{ store_name, CAP }) catch unreachable;
+            const fcheck = if (has_owned) blk: {
+                var fb = std.ArrayList(u8).initCapacity(allocator, 128) catch unreachable;
+                fb.appendSlice(allocator, std.fmt.allocPrint(allocator, "if (__koru_store_{s}.len >= {d}) return .{{ .full = .{{ ", .{ store_name, CAP }) catch unreachable) catch unreachable;
+                for (field_names[0..user_field_count], 0..) |fname, fi| {
+                    if (fi > 0) fb.appendSlice(allocator, ", ") catch unreachable;
+                    fb.appendSlice(allocator, std.fmt.allocPrint(allocator, ".{s} = {s}", .{ fname, fname }) catch unreachable) catch unreachable;
+                }
+                fb.appendSlice(allocator, " }};\n") catch unreachable;
+                break :blk fb.toOwnedSlice(allocator) catch unreachable;
+            } else
+                std.fmt.allocPrint(allocator, "if (__koru_store_{s}.len >= {d}) return .{{ .full = .{{}} }};\n", .{ store_name, CAP }) catch unreachable;
             const fbody = std.fmt.allocPrint(allocator, "{s}{s}return .{{ .row = @as(i64, @intCast(__koru_new_row)) }};", .{ fcheck, append_text }) catch unreachable;
             appended_items.append(allocator, ast.Item{ .proc_decl = ast.ProcDecl{
                 .path = H.mkPathH(allocator, flow.module, insertf_name),
@@ -5044,26 +5068,9 @@ const std = @import("std");
         }
     }
 
-    // Owned-string store (690_053): the `| full` give-back is a later rung —
-    // insertf's early return would consume the caller's obligation without
-    // keeping the value (a silent ownership leak). Detected from the
-    // generated SoA cell text (store.kz owns both the writer and this
-    // reader, the charCap pattern).
-    if (has_full_cont) {
-        const cell_marker = std.fmt.allocPrint(allocator, "const __KoruStoreT_{s} = struct {{", .{store_name}) catch unreachable;
-        for (program.items) |pi| {
-            if (pi != .host_line) continue;
-            const t = pi.host_line.content;
-            if (std.mem.indexOf(u8, t, cell_marker) == null) continue;
-            // Any owned column emits a `[CAP]*Type` pointer cell (`]*`);
-            // scalars/char never do. Type-independent so it catches *String and
-            // any generalized owned column (*Resource, *File, …) alike.
-            if (std.mem.indexOf(u8, t, "]*") != null) {
-                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:insert({s}): the `| full` branch on an owned store is a later rung - graceful exhaustion (690_011) must GIVE BACK the consumed ownership, a surface 690_053 does not build; drop `| full` (capacity overflow panics loudly)", .{store_name}) } };
-            }
-            break;
-        }
-    }
+    // Owned-store `| full` routes to insertf, which reissues column ownership
+    // on the full arm (690_077). Sites without `| full` still panic via the
+    // void/inserth append path.
     const target = if (has_full_cont)
         std.fmt.allocPrint(allocator, "__store_insertf_{s}", .{store_name}) catch unreachable
     else if (has_row_cont)
