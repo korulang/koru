@@ -1,0 +1,42 @@
+// FRONTIER (pinned RED) — COMPONENT_CHALLENGE replay 04 / Charm spinner.
+//
+// Charm Bubbles spinner needs a time-driven frame tick (TickMsg / tea.Tick)
+// so glyph cycling advances without keypress chrome. The natural consumer
+// against koru/vaxis:run is:
+//
+//   ! tick _ |> std/store:stored { spin.frame: (spin.frame + 1) % N }
+//
+// ACTUAL: koru/vaxis:run declares only draw / key / resize / focus-in /
+// focus-out — no tick. Consumer gets KORU021.
+//
+// EXPECTED (after substrate): run grows `! ?tick` (payload TBD — void or
+// timestamp) and the event loop posts it on an interval so Charm spinners
+// (and progress spring) can animate.
+//
+// This pin is the minimal self-contained mirror of today's run branch set
+// (no vaxis import). Floated program + exact error live in koru-libs:
+//   vaxis/tests/frontier/charm_spinner_natural.k
+//   vaxis/tests/frontier/charm_spinner_walls.md
+
+~import std/io
+
+const Win = struct { w: u16, h: u16 };
+const Key = struct { ch: u8 };
+
+~pub event run { title: string }
+! ?draw Win
+! ?key Key
+! ?resize Win
+! ?focus-in
+! ?focus-out
+| ?done
+| err string
+
+~proc run|zig {
+    _ = title;
+    return .{ .err = "no tick substrate" };
+}
+
+~run(title: "spinner")
+! tick _ |> std/io:print.ln("tick")
+| err e |> std/io:print.ln(e)
