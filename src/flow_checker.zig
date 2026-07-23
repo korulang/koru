@@ -608,9 +608,18 @@ pub const FlowChecker = struct {
             }
         }
 
-        // Recursively check nested continuations
+        // Recursively check nested continuations. If THIS continuation's node is
+        // a [transform] / template proc, its BRANCH continuations carry that
+        // transform's arm bindings — their usage is invisible until the transform
+        // runs (moved into a generated body, e.g. std/store:sweep's projection →
+        // its sweepbody), so defer them to `all` mode exactly as a flow whose ROOT
+        // is a transform. This is the nested-position twin of flowRootIsTransform:
+        // a transform in continuation position (a `sweep`/`query`-shaped read
+        // inside a `! draw`/loop body) otherwise loses the deferral and
+        // false-positives KORU100 on projection fields that ARE used downstream.
+        const child_deferred = root_transform or self.isDeferredBindingInvocation(cont);
         for (cont.continuations) |*nested| {
-            try self.validateBindingUsage(nested, root_transform);
+            try self.validateBindingUsage(nested, child_deferred);
         }
 
         // Also check inside ForeachNode and ConditionalNode branches
@@ -618,13 +627,13 @@ pub const FlowChecker = struct {
             if (node == .foreach) {
                 for (node.foreach.branches) |*branch| {
                     for (branch.body) |*body_cont| {
-                        try self.validateBindingUsage(body_cont, root_transform);
+                        try self.validateBindingUsage(body_cont, child_deferred);
                     }
                 }
             } else if (node == .conditional) {
                 for (node.conditional.branches) |*branch| {
                     for (branch.body) |*body_cont| {
-                        try self.validateBindingUsage(body_cont, root_transform);
+                        try self.validateBindingUsage(body_cont, child_deferred);
                     }
                 }
             }

@@ -53,6 +53,26 @@ verbatim — OR migrate such transforms off the whole-program escape onto
 site-local results. Then flip 210_158 MUST_FAIL→MUST_RUN. koru's own suite already
 parks the sibling frontier at `210_024_source_scope_capture` (TODO, 2026-06-03).
 
+## Third instance of the family — the FRONTEND checker (2026-07-23, building sweep)
+
+The "nested transform loses its top-level treatment" pattern is NOT confined to
+the transform pass. Building `std/store:sweep` (a transform in continuation
+position — a `! draw`/loop-body read) surfaced the SAME shape in the frontend
+flow_checker: the KORU100 unused-binding deferral was keyed on
+`flowRootIsTransform` (the FLOW ROOT being a `[transform]`). A top-level `query`
+gets its projection bindings deferred to `all` mode (usage invisible until the
+transform runs); a nested `sweep` under a non-transform root (`for`, vaxis `run`)
+lost that deferral and false-positived KORU100 on projection fields that ARE used
+downstream. Fix: propagate the deferral to a continuation's BRANCH continuations
+when that continuation's node is itself a transform/template
+(`validateBindingUsage` now threads `root_transform or isDeferredBindingInvocation(cont)`)
+— the nested-position twin of `flowRootIsTransform`. So the family now has THREE
+confirmed members: the transform-pass circuit breaker (this frag), the store
+top-level-only discovery ([[frag-store-verb-placement]]), and the frontend
+KORU100 deferral. The general lesson holds: any pass that special-cases
+"top-level / flow-root" position will mis-handle a nested transform until it
+threads the same treatment down.
+
 ## Not the same class as the store nested-query wall
 
 The memory baton `nested-transform-lowering-gap` over-unified this with the

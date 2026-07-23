@@ -1,0 +1,4 @@
+buy milk [0]
+write koru [1]
+buy milk [0]
+write koru [1]

@@ -5068,6 +5068,21 @@ const std = @import("std");
             segs[0] = alloc.dupe(u8, name) catch unreachable;
             return ast.DottedPath{ .module_qualifier = alloc.dupe(u8, module) catch unreachable, .segments = segs };
         }
+        // An owned column's __store_insert phantom is the CONSUMING form
+        // `mod:!state` (ownership moves IN). A sweep projects it as a BARE BORROW
+        // `mod:state` (no `!`) — read accepts it and consumes nothing, so the
+        // store keeps the live `<state!>` it frees at teardown (query's qbody does
+        // the same, store.kz:2261). Strip the `!` right after the `:`.
+        fn bareBorrow(alloc: std.mem.Allocator, ph: []const u8) []const u8 {
+            const colon = std.mem.indexOfScalar(u8, ph, ':') orelse return alloc.dupe(u8, ph) catch unreachable;
+            if (colon + 1 < ph.len and ph[colon + 1] == '!') {
+                const out = alloc.alloc(u8, ph.len - 1) catch unreachable;
+                @memcpy(out[0 .. colon + 1], ph[0 .. colon + 1]);
+                @memcpy(out[colon + 1 ..], ph[colon + 2 ..]);
+                return out;
+            }
+            return alloc.dupe(u8, ph) catch unreachable;
+        }
     };
 
     // --- store name from the invocation (arg named "expr") ---
@@ -5086,6 +5101,8 @@ const std = @import("std");
     const insert_ev_name = std.fmt.allocPrint(allocator, "__store_insert_{s}", .{store_name}) catch unreachable;
     var col_names: []const []const u8 = &[_][]const u8{};
     var col_types: []const []const u8 = &[_][]const u8{};
+    var col_mods: []const ?[]const u8 = &[_]?[]const u8{};
+    var col_phantoms: []const ?[]const u8 = &[_]?[]const u8{};
     for (program.items) |pi| {
         if (pi != .event_decl) continue;
         const ed = &pi.event_decl;
@@ -5094,12 +5111,18 @@ const std = @import("std");
             const n = if (flds.len > 0) flds.len - 1 else 0;
             const nm = allocator.alloc([]const u8, n) catch unreachable;
             const ty = allocator.alloc([]const u8, n) catch unreachable;
+            const mp = allocator.alloc(?[]const u8, n) catch unreachable;
+            const ph = allocator.alloc(?[]const u8, n) catch unreachable;
             for (flds[0..n], 0..) |f2, i| {
                 nm[i] = f2.name;
                 ty[i] = f2.type;
+                mp[i] = f2.module_path;
+                ph[i] = f2.phantom;
             }
             col_names = nm;
             col_types = ty;
+            col_mods = mp;
+            col_phantoms = ph;
             break;
         }
     }
@@ -5161,7 +5184,15 @@ const std = @import("std");
     const sbody_name = std.fmt.allocPrint(allocator, "__store_sweepbody_{s}_L{d}", .{ store_name, flow.location.line }) catch unreachable;
     const sbody_in = allocator.alloc(ast.Field, proj_names.len) catch unreachable;
     for (proj_names, proj_cols, 0..) |pn, ci, i| {
-        sbody_in[i] = ast.Field{ .name = allocator.dupe(u8, pn) catch unreachable, .type = allocator.dupe(u8, col_types[ci]) catch unreachable };
+        // An owned column (insert phantom present) projects as a BARE borrow so
+        // the body may read it without discharging; scalars/char project the
+        // value type directly (the qbody owned/scalar split, store.kz:2261).
+        sbody_in[i] = if (col_phantoms[ci]) |ins_ph| ast.Field{
+            .name = allocator.dupe(u8, pn) catch unreachable,
+            .type = allocator.dupe(u8, col_types[ci]) catch unreachable,
+            .module_path = if (col_mods[ci]) |m| allocator.dupe(u8, m) catch unreachable else null,
+            .phantom = H.bareBorrow(allocator, ins_ph),
+        } else ast.Field{ .name = allocator.dupe(u8, pn) catch unreachable, .type = allocator.dupe(u8, col_types[ci]) catch unreachable };
     }
     const retain_ann = blk: {
         const anns = allocator.alloc([]const u8, 1) catch unreachable;
