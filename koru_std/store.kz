@@ -5144,6 +5144,16 @@ const std = @import("std");
     var pnames = std.ArrayList([]const u8).initCapacity(allocator, sc.destructure.len) catch unreachable;
     var pcols = std.ArrayList(usize).initCapacity(allocator, sc.destructure.len) catch unreachable;
     for (sc.destructure) |df| {
+        // Reserved ordinal: a bare `row` (no rename, no path) projects the
+        // 0-based row index — the layout cursor a retained renderer needs
+        // (`! sweep { entity.label, row } |> write-at(y: row, …)`). Opt-in, so
+        // it's only bound when the body asks for it (KORU100-safe). Sentinel
+        // column index = maxInt(usize).
+        if (df.type_text == null and std.mem.eql(u8, df.name, "row")) {
+            pnames.append(allocator, allocator.dupe(u8, "row") catch unreachable) catch unreachable;
+            pcols.append(allocator, std.math.maxInt(usize)) catch unreachable;
+            continue;
+        }
         var bound: []const u8 = undefined;
         var path: []const u8 = undefined;
         if (df.type_text) |tt| {
@@ -5152,7 +5162,7 @@ const std = @import("std");
         } else {
             path = df.name;
             const last_dot = std.mem.lastIndexOfScalar(u8, df.name, '.') orelse {
-                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:sweep({s}): projection entry '{s}' is not a path - project store fields as `entity.<field>`", .{ store_name, df.name }) } };
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:sweep({s}): projection entry '{s}' is not a path - project store fields as `entity.<field>` (or bare `row` for the ordinal)", .{ store_name, df.name }) } };
             };
             bound = df.name[last_dot + 1 ..];
         }
@@ -5184,6 +5194,11 @@ const std = @import("std");
     const sbody_name = std.fmt.allocPrint(allocator, "__store_sweepbody_{s}_L{d}", .{ store_name, flow.location.line }) catch unreachable;
     const sbody_in = allocator.alloc(ast.Field, proj_names.len) catch unreachable;
     for (proj_names, proj_cols, 0..) |pn, ci, i| {
+        // The reserved ordinal is a plain i64 (not a store column).
+        if (ci == std.math.maxInt(usize)) {
+            sbody_in[i] = ast.Field{ .name = allocator.dupe(u8, pn) catch unreachable, .type = allocator.dupe(u8, "i64") catch unreachable };
+            continue;
+        }
         // An owned column (insert phantom present) projects as a BARE borrow so
         // the body may read it without discharging; scalars/char project the
         // value type directly (the qbody owned/scalar split, store.kz:2261).
@@ -5230,7 +5245,10 @@ const std = @import("std");
     const hdr = std.fmt.allocPrint(allocator, "{{\nvar __koru_si: usize = 0;\nwhile (__koru_si < __koru_store_{s}.len) : (__koru_si += 1) {{\n", .{store_name}) catch unreachable;
     loop.appendSlice(allocator, hdr) catch unreachable;
     for (proj_names, proj_cols) |pn, ci| {
-        const bind = std.fmt.allocPrint(allocator, "const {s} = __koru_store_{s}.{s}[__koru_si];\n_ = &{s};\n", .{ pn, store_name, col_names[ci], pn }) catch unreachable;
+        const bind = if (ci == std.math.maxInt(usize))
+            std.fmt.allocPrint(allocator, "const {s} = @as(i64, @intCast(__koru_si));\n_ = &{s};\n", .{ pn, pn }) catch unreachable
+        else
+            std.fmt.allocPrint(allocator, "const {s} = __koru_store_{s}.{s}[__koru_si];\n_ = &{s};\n", .{ pn, store_name, col_names[ci], pn }) catch unreachable;
         loop.appendSlice(allocator, bind) catch unreachable;
     }
     loop.appendSlice(allocator, "main_module.") catch unreachable;
