@@ -21,7 +21,7 @@ pub const ErrorCode = enum(u16) {
 
     // Shape errors
     KORU030, // Shape mismatch
-    KORU031, // Payload type mismatch
+    KORU031, // Payload type mismatch — point-free choke claims a branch whose payload shape disagrees across stages (220_025)
     KORU032, // Cannot auto-discharge outer-scope resource inside loop
     KORU033, // Invalid phantom annotation (e.g., obligation issuance on input)
     KORU034, // '_' in a Koru name — use '-' (kebab); '_' is reserved for digit separators

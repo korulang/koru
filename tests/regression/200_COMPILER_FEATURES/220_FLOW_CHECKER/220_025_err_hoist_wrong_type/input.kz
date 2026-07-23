@@ -1,0 +1,32 @@
+// TEST: a point-free choke claims a branch by NAME across every stage; when
+// two stages declare that branch with different payload shapes, the claim
+// must be REJECTED (type-aware choke — KORU031).
+//
+// Mini-`analysis` (compiler.kz): `~analysis = check-… |> check-… | failed f => …`
+// works because every stage agrees on `| failed { ctx, message }`. This pin is
+// the wall when that invariant breaks — stage-b's `failed` is i64 while the
+// choke / stage-a / enclosing `run` carry string. Name-only replication would
+// hand the host a silent type lie; Koru owns the diagnostic instead.
+
+~pub event stage-a { ctx: i64 }
+| ctx i64
+| failed string
+~proc stage-a|zig {
+    return .{ .ctx = ctx + 1 };
+}
+
+~pub event stage-b { ctx: i64 }
+| ctx i64
+| failed i64
+~proc stage-b|zig { return .{ .ctx = ctx * 2 }; }
+
+~pub event run { ctx: i64 }
+| ctx i64
+| failed string
+~run = stage-a
+  |> stage-b
+| failed e => failed e
+
+~run(ctx: 1)
+| ctx _ |> _
+| failed _ |> _

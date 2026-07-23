@@ -11,7 +11,7 @@
 # Decide per code: (a) wire the emit (it's a real bug the enum promises), or
 #                  (b) move it below the line as genuinely-reserved future semantics.
 #
-#   KORU031  Payload type mismatch                 -> bug or reserved?
+#   KORU031  Payload type mismatch                 -> WIRED (point-free choke type-aware claim, 220_025)
 #   KORU042  Duplicate label                       -> bug or reserved?
 #   KORU043  Label shape mismatch                  -> bug or reserved?
 #   KORU052  Proc payload mismatch                 -> bug or reserved?

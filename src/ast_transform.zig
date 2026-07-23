@@ -560,6 +560,11 @@ pub fn findNodeIndex(ctx: *TransformContext, target: *ast.Item) ?usize {
 //      field.
 //   2. The choke handlers replicate at EVERY stage of the chain (their reach
 //      is the whole lexical block). `!` effect arms clone through unchanged.
+//      Claim is NAME-first, then TYPE-aware: every stage that declares the
+//      claimed branch must carry the SAME payload shape (and if the enclosing
+//      event declares it too, that shape is the reference). Mismatch → KORU031
+//      at the choke site; the chain is left untouched (never guess, never
+//      hand the host a silent type lie — 220_025).
 //   3. The terminus closes the last stage's survivor into a branch
 //      constructor producing the flow's own output.
 //   4. A bare HEAD stage takes the flow's whole input by pun (`stage-a` →
@@ -575,13 +580,19 @@ pub fn findNodeIndex(ctx: *TransformContext, target: *ast.Item) ?usize {
 // terminal branches has nothing to thread and is left alone.
 
 /// Entry point: desugar every point-free chain in the program, in place.
-pub fn desugarPointfreeChains(allocator: std.mem.Allocator, program: *ast.Program) !void {
+/// `reporter` receives KORU031 when a choke claims a branch whose payload
+/// shape disagrees across stages (type-aware claim wall).
+pub fn desugarPointfreeChains(
+    allocator: std.mem.Allocator,
+    program: *ast.Program,
+    reporter: *errors_mod.ErrorReporter,
+) !void {
     var table = try SymbolTable.init(allocator);
     defer table.deinit();
     try table.buildFrom(program);
 
     var counter: usize = 0;
-    try desugarItemsPointfree(allocator, &table, program.items, &counter);
+    try desugarItemsPointfree(allocator, &table, program.items, &counter, reporter);
 }
 
 fn desugarItemsPointfree(
@@ -589,20 +600,21 @@ fn desugarItemsPointfree(
     table: *SymbolTable,
     items: []const ast.Item,
     counter: *usize,
+    reporter: *errors_mod.ErrorReporter,
 ) std.mem.Allocator.Error!void {
     for (@constCast(items)) |*item| {
         switch (item.*) {
             .flow => |*flow| {
                 const enclosing: ?EventInfo = if (flow.impl_of) |p| table.getEventInfo(p) else null;
-                try desugarSitePointfree(allocator, table, &flow.body, enclosing, counter);
+                try desugarSitePointfree(allocator, table, &flow.body, enclosing, counter, reporter);
             },
             .proc_decl => |*proc| {
                 for (@constCast(proc.inline_flows)) |*flow| {
                     const enclosing: ?EventInfo = if (flow.impl_of) |p| table.getEventInfo(p) else null;
-                    try desugarSitePointfree(allocator, table, &flow.body, enclosing, counter);
+                    try desugarSitePointfree(allocator, table, &flow.body, enclosing, counter, reporter);
                 }
             },
-            .module_decl => |*module| try desugarItemsPointfree(allocator, table, module.items, counter),
+            .module_decl => |*module| try desugarItemsPointfree(allocator, table, module.items, counter, reporter),
             else => {},
         }
     }
@@ -617,11 +629,12 @@ fn desugarSitePointfree(
     site: *ast.Continuation,
     enclosing: ?EventInfo,
     counter: *usize,
+    reporter: *errors_mod.ErrorReporter,
 ) std.mem.Allocator.Error!void {
-    const transformed = try tryDesugarChain(allocator, table, site, enclosing, counter);
+    const transformed = try tryDesugarChain(allocator, table, site, enclosing, counter, reporter);
     if (transformed) return;
     for (@constCast(site.continuations)) |*child| {
-        try desugarSitePointfree(allocator, table, child, null, counter);
+        try desugarSitePointfree(allocator, table, child, null, counter, reporter);
     }
 }
 
@@ -677,6 +690,59 @@ fn shapeHasField(shape: ast.Shape, name: []const u8) bool {
         if (std.mem.eql(u8, f.name, name)) return true;
     }
     return false;
+}
+
+/// Branch payload shape equality for choke claims. Phantom states ignored
+/// (same rule as ShapeChecker.shapesEqual) — this wall is about the host
+/// type the binding carries, not obligation polarity.
+fn payloadShapesEqual(a: ast.Shape, b: ast.Shape) bool {
+    if (a.is_wildcard or b.is_wildcard) return a.is_wildcard and b.is_wildcard;
+    if (a.fields.len != b.fields.len) return false;
+    for (a.fields) |field_a| {
+        var found = false;
+        for (b.fields) |field_b| {
+            if (std.mem.eql(u8, field_a.name, field_b.name)) {
+                if (!std.mem.eql(u8, field_a.type, field_b.type)) return false;
+                found = true;
+                break;
+            }
+        }
+        if (!found) return false;
+    }
+    return true;
+}
+
+/// Human-readable payload summary for diagnostics: identity `string`,
+/// struct `{ a: i64, b: string }`, void `(none)`, wildcard `*`.
+fn formatPayload(allocator: std.mem.Allocator, shape: ast.Shape) ![]const u8 {
+    if (shape.is_wildcard) return try allocator.dupe(u8, "*");
+    if (shape.fields.len == 0) return try allocator.dupe(u8, "(none)");
+    if (shape.fields.len == 1 and std.mem.eql(u8, shape.fields[0].name, "__type_ref")) {
+        return try allocator.dupe(u8, shape.fields[0].type);
+    }
+    var buf = try std.ArrayList(u8).initCapacity(allocator, 32);
+    errdefer buf.deinit(allocator);
+    try buf.appendSlice(allocator, "{ ");
+    for (shape.fields, 0..) |f, i| {
+        if (i > 0) try buf.appendSlice(allocator, ", ");
+        try buf.appendSlice(allocator, f.name);
+        try buf.appendSlice(allocator, ": ");
+        try buf.appendSlice(allocator, f.type);
+    }
+    try buf.appendSlice(allocator, " }");
+    return try buf.toOwnedSlice(allocator);
+}
+
+fn branchNamed(info: EventInfo, name: []const u8) ?ast.Branch {
+    for (info.branches) |b| {
+        if (std.mem.eql(u8, b.name, name)) return b;
+    }
+    return null;
+}
+
+fn eventLeafName(info: EventInfo) []const u8 {
+    if (info.path.segments.len == 0) return "<event>";
+    return info.path.segments[info.path.segments.len - 1];
 }
 
 /// The single input field of `info` not already supplied by `args` — the slot
@@ -737,6 +803,7 @@ fn tryDesugarChain(
     site: *ast.Continuation,
     enclosing: ?EventInfo,
     counter: *usize,
+    reporter: *errors_mod.ErrorReporter,
 ) std.mem.Allocator.Error!bool {
     const site_node = if (site.node) |*n| n else return false;
     if (site_node.* != .invocation) return false;
@@ -771,7 +838,7 @@ fn tryDesugarChain(
             } else {
                 // Choke handler. Desugar its own subtree first (it may host a
                 // nested chain), then record it for replication.
-                try desugarSitePointfree(allocator, table, child, null, counter);
+                try desugarSitePointfree(allocator, table, child, null, counter, reporter);
                 try chokes.append(allocator, child.*);
             }
         }
@@ -788,6 +855,48 @@ fn tryDesugarChain(
     var claimed = try std.ArrayList([]const u8).initCapacity(allocator, 4);
     defer claimed.deinit(allocator);
     for (chokes.items) |c| try claimed.append(allocator, c.branch);
+
+    // TYPE-AWARE CHOKE CLAIM (KORU031): every stage that declares a claimed
+    // branch must agree on its payload shape. Reference = enclosing event's
+    // same-named branch when present (the analysis shape), else the first
+    // stage that carries it. Name-only replication was the silent Zig leak
+    // 220_025 pins.
+    var type_mismatch = false;
+    for (chokes.items) |choke| {
+        if (choke.branch.len == 0 or choke.is_catchall) continue;
+        var ref_payload: ?ast.Shape = null;
+        var ref_label: []const u8 = "choke";
+        if (enclosing) |encl| {
+            if (branchNamed(encl, choke.branch)) |b| {
+                ref_payload = b.payload;
+                ref_label = eventLeafName(encl);
+            }
+        }
+        for (stage_infos.items) |info| {
+            const b = branchNamed(info, choke.branch) orelse continue;
+            if (b.payload.is_wildcard) continue;
+            if (ref_payload == null) {
+                ref_payload = b.payload;
+                ref_label = eventLeafName(info);
+                continue;
+            }
+            if (payloadShapesEqual(ref_payload.?, b.payload)) continue;
+            const expected = try formatPayload(allocator, ref_payload.?);
+            defer allocator.free(expected);
+            const actual = try formatPayload(allocator, b.payload);
+            defer allocator.free(actual);
+            try reporter.addErrorAtLocationWithHint(
+                .KORU031,
+                choke.location,
+                "`| {s}` handled here, but has wrong type: '{s}' carries {s}, choke expects {s} (from '{s}')",
+                .{ choke.branch, eventLeafName(info), actual, expected, ref_label },
+                "a point-free choke claims by name across every stage — payload shapes must agree (see `analysis` in compiler.kz)",
+                .{},
+            );
+            type_mismatch = true;
+        }
+    }
+    if (type_mismatch) return false;
 
     var survivors = try std.ArrayList([]const u8).initCapacity(allocator, n + 1);
     defer survivors.deinit(allocator);

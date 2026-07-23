@@ -7437,7 +7437,7 @@ pub fn main() !void {
     // serialization sees the tree — downstream stays frozen. Runs after
     // canonicalization so declaration lookup is qualifier-symmetric.
     const ast_transform = @import("ast_transform");
-    try ast_transform.desugarPointfreeChains(parse_allocator, &source_file);
+    try ast_transform.desugarPointfreeChains(parse_allocator, &source_file, &parser.reporter);
 
     // Inline scalar-bind pun: fill an invocation's unfilled input field from a
     // same-named in-scope `: bind` (subtree-scoped, unique by no-shadowing),
