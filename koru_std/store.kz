@@ -5208,8 +5208,211 @@ const std = @import("std");
         return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:sweep({s}): the sweep body must start with an invocation this rung", .{store_name}) } };
     }
 
+    // --- ENCLOSING CAPTURES (690_073 / todo_tui render bridge) ---
+    // The sweep loop is site-local Zig (inline where `: n` / `: body` live), but
+    // the transplanted sweepbody is a SEPARATE event. Free names from enclosing
+    // mid-pipe binds must be threaded as extra inputs — otherwise the host
+    // leaks `undeclared identifier`. Watch bodies REJECT enclosing names (they
+    // run at write sites elsewhere); sweep bodies CAPTURE them (they run HERE).
+    const Cap = struct {
+        const Bind = struct {
+            name: []const u8,
+            type: []const u8,
+            module_path: ?[]const u8 = null,
+        };
+        fn isIdentStart(ch: u8) bool {
+            return (ch >= 'a' and ch <= 'z') or (ch >= 'A' and ch <= 'Z') or ch == '_';
+        }
+        fn isIdent(ch: u8) bool {
+            return isIdentStart(ch) or (ch >= '0' and ch <= '9') or ch == '-';
+        }
+        fn textRefs(alloc: std.mem.Allocator, text: []const u8, out: *std.ArrayList([]const u8)) void {
+            var i: usize = 0;
+            while (i < text.len) {
+                if (!isIdentStart(text[i])) {
+                    i += 1;
+                    continue;
+                }
+                const start = i;
+                i += 1;
+                while (i < text.len and isIdent(text[i])) i += 1;
+                const tok = text[start..i];
+                // Skip keywords / ambient.
+                const skip = [_][]const u8{ "and", "or", "not", "true", "false", "_", "entity", "row" };
+                var skipped = false;
+                for (skip) |s| {
+                    if (std.mem.eql(u8, tok, s)) {
+                        skipped = true;
+                        break;
+                    }
+                }
+                if (skipped) continue;
+                out.append(alloc, tok) catch unreachable;
+            }
+        }
+        fn collectRefs(alloc: std.mem.Allocator, cont: *const ast.Continuation, out: *std.ArrayList([]const u8)) void {
+            if (cont.binding) |b| textRefs(alloc, b, out);
+            if (cont.condition) |c| textRefs(alloc, c, out);
+            if (cont.node) |*n| {
+                if (n.* == .invocation) {
+                    for (n.invocation.args) |a| textRefs(alloc, a.value, out);
+                }
+            }
+            for (cont.continuations) |*c| collectRefs(alloc, c, out);
+        }
+        // Nested sites arrive as a siteView: the handler's `flow.body` is a
+        // SHALLOW copy of the real holding continuation (transform_pass_runner
+        // siteView). The invocation pointer is therefore NOT in program.items —
+        // but the children slice IS shared. Locate the real holding by that
+        // shared slice, then walk ancestor mid-pipe binds on the real host.
+        fn findHolding(items: []const ast.Item, children: []const ast.Continuation) ?*const ast.Continuation {
+            const walk = struct {
+                fn call(cont: *const ast.Continuation, ch: []const ast.Continuation) ?*const ast.Continuation {
+                    if (cont.continuations.ptr == ch.ptr and cont.continuations.len == ch.len) return cont;
+                    for (cont.continuations) |*c| {
+                        if (call(c, ch)) |f| return f;
+                    }
+                    return null;
+                }
+            }.call;
+            for (items) |*pi| {
+                if (pi.* == .flow) {
+                    if (walk(&pi.flow.body, children)) |h| return h;
+                } else if (pi.* == .module_decl) {
+                    if (findHolding(pi.module_decl.items, children)) |h| return h;
+                }
+            }
+            return null;
+        }
+        fn findHostFlow(items: []const ast.Item, holding: *const ast.Continuation) ?*const ast.Flow {
+            const contains = struct {
+                fn call(cont: *const ast.Continuation, t: *const ast.Continuation) bool {
+                    if (cont == t) return true;
+                    for (cont.continuations) |*c| {
+                        if (call(c, t)) return true;
+                    }
+                    return false;
+                }
+            }.call;
+            for (items) |*pi| {
+                if (pi.* == .flow and contains(&pi.flow.body, holding)) return &pi.flow;
+                if (pi.* == .module_decl) {
+                    if (findHostFlow(pi.module_decl.items, holding)) |f| return f;
+                }
+            }
+            return null;
+        }
+        const RetTy = struct { type: []const u8, module_path: ?[]const u8 };
+        fn lookupReturnIn(its: []const ast.Item, name: []const u8) ?RetTy {
+            for (its) |pi| {
+                if (pi == .event_decl) {
+                    const ed = &pi.event_decl;
+                    if (ed.path.segments.len > 0 and std.mem.eql(u8, ed.path.segments[ed.path.segments.len - 1], name)) {
+                        if (ed.return_type) |rt| {
+                            // `koru/vaxis:Window` → type Window + module_path
+                            if (std.mem.indexOfScalar(u8, rt, ':')) |colon| {
+                                return .{ .type = rt[colon + 1 ..], .module_path = rt[0..colon] };
+                            }
+                            return .{ .type = rt, .module_path = null };
+                        }
+                    }
+                } else if (pi == .module_decl) {
+                    if (lookupReturnIn(pi.module_decl.items, name)) |r| return r;
+                }
+            }
+            return null;
+        }
+        fn lookupReturn(items: []const ast.Item, path: ast.DottedPath) ?RetTy {
+            const leaf = if (path.segments.len > 0) path.segments[path.segments.len - 1] else return null;
+            return lookupReturnIn(items, leaf);
+        }
+        fn collectBindsOnPath(alloc: std.mem.Allocator, items: []const ast.Item, cont: *const ast.Continuation, target: *const ast.Invocation, out: *std.ArrayList(Bind)) bool {
+            // Returns true if `target` lives under `cont`. Pushes mid-pipe binds
+            // on the path TO the target (ancestors only — not sibling arms or
+            // the sweep body itself).
+            if (cont.node) |*n| {
+                if (n.* == .invocation and &n.invocation == target) return true;
+            }
+            for (cont.continuations) |*c| {
+                if (collectBindsOnPath(alloc, items, c, target, out)) {
+                    // Child path hit — this cont is an ancestor. Record its
+                    // mid-pipe bind if any, then bubble up.
+                    if (cont.node) |*n| {
+                        if (n.* == .invocation) {
+                            if (n.invocation.return_binding) |rb| {
+                                if (lookupReturn(items, n.invocation.path)) |rt| {
+                                    out.append(alloc, .{
+                                        .name = rb,
+                                        .type = alloc.dupe(u8, rt.type) catch unreachable,
+                                        .module_path = if (rt.module_path) |mp| alloc.dupe(u8, mp) catch unreachable else null,
+                                    }) catch unreachable;
+                                } else {
+                                    out.append(alloc, .{
+                                        .name = rb,
+                                        .type = alloc.dupe(u8, "i64") catch unreachable,
+                                    }) catch unreachable;
+                                }
+                            }
+                        }
+                    }
+                    return true;
+                }
+            }
+            return false;
+        }
+    };
+
+    var refs = std.ArrayList([]const u8).initCapacity(allocator, 8) catch unreachable;
+    Cap.collectRefs(allocator, sc, &refs);
+
+    var avail = std.ArrayList(Cap.Bind).initCapacity(allocator, 4) catch unreachable;
+    // Resolve the REAL holding continuation (shared children slice survives
+    // siteView's shallow copy) and collect enclosing mid-pipe binds from its
+    // host flow. Pointer equality on `invocation` alone fails for nested sites.
+    if (Cap.findHolding(program.items, flow.body.continuations)) |holding| {
+        if (holding.node) |*hn| {
+            if (hn.* == .invocation) {
+                if (Cap.findHostFlow(program.items, holding)) |host| {
+                    _ = Cap.collectBindsOnPath(allocator, program.items, &host.body, &hn.invocation, &avail);
+                }
+            }
+        }
+    }
+
+    var captures = std.ArrayList(Cap.Bind).initCapacity(allocator, 4) catch unreachable;
+    for (avail.items) |b| {
+        // Already a projection field? Skip.
+        var is_proj = false;
+        for (proj_names) |pn| {
+            if (std.mem.eql(u8, pn, b.name)) {
+                is_proj = true;
+                break;
+            }
+        }
+        if (is_proj) continue;
+        // Referenced in the sweep body?
+        var used = false;
+        for (refs.items) |r| {
+            if (std.mem.eql(u8, r, b.name)) {
+                used = true;
+                break;
+            }
+        }
+        if (!used) continue;
+        // Dedup.
+        var seen = false;
+        for (captures.items) |c| {
+            if (std.mem.eql(u8, c.name, b.name)) {
+                seen = true;
+                break;
+            }
+        }
+        if (seen) continue;
+        captures.append(allocator, b) catch unreachable;
+    }
+
     const sbody_name = std.fmt.allocPrint(allocator, "__store_sweepbody_{s}_L{d}", .{ store_name, flow.location.line }) catch unreachable;
-    const sbody_in = allocator.alloc(ast.Field, proj_names.len) catch unreachable;
+    const sbody_in = allocator.alloc(ast.Field, proj_names.len + captures.items.len) catch unreachable;
     for (proj_names, proj_cols, 0..) |pn, ci, i| {
         // The reserved ordinal is a plain i64 (not a store column).
         if (ci == std.math.maxInt(usize)) {
@@ -5225,6 +5428,13 @@ const std = @import("std");
             .module_path = if (col_mods[ci]) |m| allocator.dupe(u8, m) catch unreachable else null,
             .phantom = H.bareBorrow(allocator, ins_ph),
         } else ast.Field{ .name = allocator.dupe(u8, pn) catch unreachable, .type = allocator.dupe(u8, col_types[ci]) catch unreachable };
+    }
+    for (captures.items, 0..) |c, i| {
+        sbody_in[proj_names.len + i] = ast.Field{
+            .name = allocator.dupe(u8, c.name) catch unreachable,
+            .type = c.type,
+            .module_path = c.module_path,
+        };
     }
     const retain_ann = blk: {
         const anns = allocator.alloc([]const u8, 1) catch unreachable;
@@ -5257,7 +5467,8 @@ const std = @import("std");
 
     // --- the inline sweep loop, emitted SITE-LOCAL (never a coordinator unit).
     //     Reads the SoA cell (__koru_store_<s>.len + column arrays), binds the
-    //     projected fields per row, calls the transplanted body event. ---
+    //     projected fields per row, calls the transplanted body event — plus any
+    //     enclosing captures (names already live in this Zig scope). ---
     var loop = std.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
     const hdr = std.fmt.allocPrint(allocator, "{{\nvar __koru_si: usize = 0;\nwhile (__koru_si < __koru_store_{s}.len) : (__koru_si += 1) {{\n", .{store_name}) catch unreachable;
     loop.appendSlice(allocator, hdr) catch unreachable;
@@ -5274,6 +5485,11 @@ const std = @import("std");
     for (proj_names, 0..) |pn, i| {
         if (i > 0) loop.appendSlice(allocator, ", ") catch unreachable;
         const a = std.fmt.allocPrint(allocator, ".{s} = {s}", .{ pn, pn }) catch unreachable;
+        loop.appendSlice(allocator, a) catch unreachable;
+    }
+    for (captures.items) |c| {
+        loop.appendSlice(allocator, ", ") catch unreachable;
+        const a = std.fmt.allocPrint(allocator, ".{s} = {s}", .{ c.name, c.name }) catch unreachable;
         loop.appendSlice(allocator, a) catch unreachable;
     }
     loop.appendSlice(allocator, " });\n}\n}\n") catch unreachable;
