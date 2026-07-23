@@ -72,17 +72,11 @@ pub const String = struct {
 
 // Take ownership - view becomes instance
 ~pub event take { s: *String<!view> } -> *String<instance!>
-
-~proc take|zig {
-    return s;
-}
+~take -> s
 
 // Release ownership - instance becomes view
 ~pub event release { s: *String<!instance> } -> *String<view!>
-
-~proc release|zig {
-    return s;
-}
+~release -> s
 
 // ============================================
 // Cleanup
@@ -104,16 +98,10 @@ pub const String = struct {
 // ============================================
 
 ~pub event read { s: *String<view|instance> } -> string
-
-~proc read|zig {
-    return s.data;
-}
+~read -> s.data
 
 ~pub event len { s: *String<view|instance> } -> usize
-
-~proc len|zig {
-    return s.data.len;
-}
+~len -> s.data.len
 
 // ============================================
 // Query / transform operations (FRONTIERS gap 4)

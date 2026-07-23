@@ -2092,6 +2092,63 @@ fn isSimpleIdentifier(s: []const u8) bool {
     return true;
 }
 
+/// Emit a bare-return plain value, replacing event-parameter identifiers with
+/// call-site argument names already in scope (read(s: owned) → `owned.data`).
+fn emitPlainValueWithParamAliases(
+    emitter: *CodeEmitter,
+    ctx: *EmissionContext,
+    plain_value: []const u8,
+    param_names: []const []const u8,
+    arg_values: []const []const u8,
+) EmitError!void {
+    var idx: usize = 0;
+    while (idx < plain_value.len) {
+        if (plain_value[idx] == '"') {
+            try emitter.write("\"");
+            idx += 1;
+            while (idx < plain_value.len) {
+                if (plain_value[idx] == '\\') {
+                    try emitter.write("\\");
+                    idx += 1;
+                    if (idx < plain_value.len) {
+                        try emitter.write(plain_value[idx .. idx + 1]);
+                        idx += 1;
+                    }
+                } else if (plain_value[idx] == '"') {
+                    try emitter.write("\"");
+                    idx += 1;
+                    break;
+                } else {
+                    try emitter.write(plain_value[idx .. idx + 1]);
+                    idx += 1;
+                }
+            }
+            continue;
+        }
+
+        var replaced = false;
+        for (param_names, arg_values) |param, arg_val| {
+            if (idx + param.len <= plain_value.len and
+                std.mem.eql(u8, plain_value[idx .. idx + param.len], param))
+            {
+                const valid_start = idx == 0 or !isIdentifierChar(plain_value[idx - 1]);
+                const valid_end = idx + param.len >= plain_value.len or
+                    !isIdentifierChar(plain_value[idx + param.len]);
+                if (valid_start and valid_end) {
+                    try emitValue(emitter, ctx, arg_val);
+                    idx += param.len;
+                    replaced = true;
+                    break;
+                }
+            }
+        }
+        if (replaced) continue;
+
+        try emitter.write(plain_value[idx .. idx + 1]);
+        idx += 1;
+    }
+}
+
 // Branch group for when-clause emission
 const BranchGroup = struct {
     branch_name: []const u8,
@@ -6550,7 +6607,12 @@ fn emitInvocation(
             try emitter.write(bind_name);
             try emitter.write(": ");
             if (bare_return and event_decl != null and event_decl.?.return_type != null) {
-                try writeBareReturnType(emitter, event_decl.?.return_type.?, ctx.main_module_name);
+                const decl_mod: ?[]const u8 = blk: {
+                    if (invocation.path.module_qualifier) |mq| break :blk mq;
+                    if (event_decl.?.module.len > 0) break :blk event_decl.?.module;
+                    break :blk null;
+                };
+                try writeBareReturnType(emitter, event_decl.?.return_type.?, ctx.main_module_name, decl_mod);
             } else {
                 try emitInvocationTarget(emitter, ctx, &invocation.path);
                 try emitter.write(".Output");
@@ -6559,12 +6621,19 @@ fn emitInvocation(
 
             emitter.indent_level += 1;
 
+            const max_param_aliases = 8;
+            var alias_params: [max_param_aliases][]const u8 = undefined;
+            var alias_values: [max_param_aliases][]const u8 = undefined;
+            var alias_count: usize = 0;
+
             // Bind input arguments so they're available in the expression
             // e.g., for ~double(n: 5) with ~double = result { n * 2 }
             // we need: const n = 5;
             // Skip if:
             //   - pass-through: param name equals a simple identifier value already in scope
             //     (echo(v: v), echo(v)) — rebinding inside the blk shadows continuation bindings
+            //   - bare-return alias: param maps to a different in-scope identifier — substitute
+            //     in the plain value instead of rebinding (read(s: owned) → owned.data)
             //   - arg.name is not referenced in the immediate expression (avoid shadowing outer scope)
             for (invocation.args, 0..) |arg, arg_idx| {
                 // Resolve actual parameter name for positional args
@@ -6585,6 +6654,19 @@ fn emitInvocation(
                 const trimmed_value = std.mem.trim(u8, arg.value, " \t");
                 if (isSimpleIdentifier(trimmed_value) and std.mem.eql(u8, param_name, trimmed_value)) {
                     continue;
+                }
+
+                if (bare_return and isSimpleIdentifier(trimmed_value)) {
+                    if (immediate_bc.plain_value) |pv| {
+                        if (containsIdentifier(pv, param_name)) {
+                            if (alias_count < max_param_aliases) {
+                                alias_params[alias_count] = param_name;
+                                alias_values[alias_count] = trimmed_value;
+                                alias_count += 1;
+                            }
+                            continue;
+                        }
+                    }
                 }
 
                 // Check if this parameter is actually used in the immediate expression
@@ -6624,7 +6706,17 @@ fn emitInvocation(
             if (bare_return) {
                 // `-> T`: yield the expression directly, no `.{ .name = ... }` wrap.
                 if (immediate_bc.plain_value) |pv| {
-                    try emitValue(emitter, ctx, pv);
+                    if (alias_count > 0) {
+                        try emitPlainValueWithParamAliases(
+                            emitter,
+                            ctx,
+                            pv,
+                            alias_params[0..alias_count],
+                            alias_values[0..alias_count],
+                        );
+                    } else {
+                        try emitValue(emitter, ctx, pv);
+                    }
                 } else {
                     try emitter.write("undefined");
                 }
@@ -10263,18 +10355,48 @@ pub fn emitArrayLiteralForField(
 pub fn emitBareReturnOutput(emitter: *CodeEmitter, event: *const ast.EventDecl, main_module_name: ?[]const u8) !bool {
     if (event.return_type) |rt| {
         try emitter.write("pub const Output = ");
-        try writeBareReturnType(emitter, rt, main_module_name);
+        try writeBareReturnType(emitter, rt, main_module_name, null);
         try emitter.write(";\n");
         return true;
     }
     return false;
 }
 
+fn isModuleLocalBareTypeBase(name: []const u8) bool {
+    if (name.len == 0) return false;
+    const scalars = [_][]const u8{
+        "anytype", "bool",   "f16",    "f32",    "f64",    "f128", "i8",  "i16", "i32",
+        "i64",     "i128",  "isize",  "noreturn", "string", "u8",  "u16", "u32", "u64",
+        "u128",    "usize", "void",
+    };
+    for (scalars) |scalar| {
+        if (std.mem.eql(u8, name, scalar)) return false;
+    }
+    for (name, 0..) |ch, i| {
+        const ok = (ch >= 'a' and ch <= 'z') or (ch >= 'A' and ch <= 'Z') or
+            (ch >= '0' and ch <= '9') or ch == '_';
+        if (!ok) return false;
+        if (i == 0 and !(ch >= 'A' and ch <= 'Z') and !(ch >= 'a' and ch <= 'z') and ch != '_') {
+            return false;
+        }
+    }
+    return true;
+}
+
 /// Write a bare-return `-> T` type as a Zig type. A record literal `{ f: T }`
 /// shares Koru/Zig field syntax and only needs the Zig anon-struct keyword in
 /// front: `struct { f: T }`. Scalars and slices pass through unchanged. Every
 /// site that lowers a `return_type` to a Zig type routes through here.
-pub fn writeBareReturnType(emitter: *CodeEmitter, rt: []const u8, main_module_name: ?[]const u8) !void {
+/// `declaring_module` — when set (immediate-impl inline at an external call
+/// site), unqualified module-local bases like `*String` lower to a qualified
+/// Zig path (`*koru_std.koru_string.String`). Omitted when emitting handler
+/// Output inside the declaring module's own struct.
+pub fn writeBareReturnType(
+    emitter: *CodeEmitter,
+    rt: []const u8,
+    main_module_name: ?[]const u8,
+    declaring_module: ?[]const u8,
+) !void {
     // A record-field value carries its phantom inline (`*Handle<owned!>`) because
     // the brace splitter is text-only, unlike an event-payload field whose parser
     // lifts the phantom into `field.phantom`. Koru surface types never use `<>`
@@ -10313,7 +10435,7 @@ pub fn writeBareReturnType(emitter: *CodeEmitter, rt: []const u8, main_module_na
                 if (i > 0) try emitter.write(", ");
                 try emitter.write(f.name);
                 try emitter.write(": ");
-                try writeBareReturnType(emitter, f.value, main_module_name);
+                try writeBareReturnType(emitter, f.value, main_module_name, declaring_module);
             }
             try emitter.write(" }");
             return;
@@ -10341,6 +10463,12 @@ pub fn writeBareReturnType(emitter: *CodeEmitter, rt: []const u8, main_module_na
             prefix = candidate;
             remaining = remaining[candidate.len..];
             break;
+        }
+    }
+    if (declaring_module) |mod_path| {
+        if (isModuleLocalBareTypeBase(remaining)) {
+            try writeQualifiedType(emitter, mod_path, main_module_name, trimmed);
+            return;
         }
     }
     if (std.mem.indexOfScalar(u8, remaining, ':')) |colon| {
@@ -10768,7 +10896,7 @@ fn emitEventDeclForModuleFromType(
     try code_emitter.writeIndent();
     if (event_type.return_type) |rt| {
         try code_emitter.write("pub const Output = ");
-        try writeBareReturnType(code_emitter, rt, ctx.main_module_name);
+        try writeBareReturnType(code_emitter, rt, ctx.main_module_name, null);
         try code_emitter.write(";\n");
     } else if (event_type.branches.len == 0) {
         try code_emitter.write("pub const Output = void;\n");
