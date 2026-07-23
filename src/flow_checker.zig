@@ -1053,6 +1053,14 @@ pub const FlowChecker = struct {
                     .{branch_name}
                 );
             } else if (else_count > 1) {
+                // Void `!` effect multicast: N unguarded effect handlers are
+                // subscribe-all (composition), not exclusive "elses". Matches
+                // branch_checker.firstDuplicateSibling (effect links may
+                // repeat). Resume-typed effects and `|` outcomes stay exclusive
+                // — those still need exactly one unguarded arm. Mixed
+                // when-guards + multiple unguarded elses also stay exclusive.
+                if (isVoidEffectMulticastGroup(declared, branch_name, branch_continuations)) continue;
+
                 // ERROR: Ambiguous - multiple else cases
                 log.debug("ERROR: Branch '{s}' has {d} else cases (ambiguous)\n",
                     .{branch_name, else_count});
@@ -1087,6 +1095,31 @@ pub const FlowChecker = struct {
             return b.kind == .effect and b.is_optional;
         }
         return false;
+    }
+
+    /// Void-effect multicast: every handler is an unguarded `!` arm and the
+    /// declared branch is a non-resuming effect. N such arms all fire (400_173);
+    /// KORU051 must not treat them as competing elses. Resume-typed effects
+    /// and `|` outcomes are exclusive — one unguarded arm only.
+    fn isVoidEffectMulticastGroup(
+        declared: []const ast.Branch,
+        branch_name: []const u8,
+        group: []const *const ast.Continuation,
+    ) bool {
+        for (group) |cont| {
+            if (cont.kind != .effect) return false;
+            if (cont.condition != null) return false;
+        }
+        for (declared) |b| {
+            if (!std.mem.eql(u8, b.name, branch_name)) continue;
+            if (b.kind != .effect) return false;
+            if (b.resume_type != null) return false;
+            if (b.resume_arms != null) return false;
+            return true;
+        }
+        // No decl in hand — still all unguarded effects at this site; treat as
+        // multicast so a missing decl doesn't invent exclusive ambiguity.
+        return true;
     }
 
     /// Validate branch coverage: all required branches must be handled

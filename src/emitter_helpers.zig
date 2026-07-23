@@ -6015,15 +6015,15 @@ fn emitHandlersStruct(
     emitter.indent();
 
     // Group continuations by branch name. Two sibling handlers for the same
-    // `!` branch name (e.g., `! tick i when i > 0 |> a` + `! tick _ |> b`)
-    // must collapse into ONE synthesized fn whose body chains the guards:
-    // `if (g1) { body1; return; } if (g2) { body2; return; } unguarded_body`.
-    // Without this, the struct would have two `fn tick` declarations and Zig
-    // rejects with "duplicate struct member name".
+    // `!` branch name collapse into ONE synthesized fn:
+    //   - when-guards present → exclusive chain
+    //     (`if (g1) { body1; return; } … unguarded_fallback`); first match wins.
+    //   - ALL unguarded, void (non-resuming) effect → MULTICAST: every body
+    //     runs in source order (400_173 / branch_checker: effect links compose).
+    // Without collapsing, the struct would have two `fn tick` declarations and
+    // Zig rejects with "duplicate struct member name".
     //
-    // Source order is preserved within each group — first matching guard
-    // wins, and an unguarded handler (if present) is the fallback after
-    // all guards.
+    // Source order is preserved within each group.
     var group_order: std.ArrayList([]const u8) = .empty;
     defer group_order.deinit(ctx.allocator);
 
@@ -6158,9 +6158,18 @@ fn emitHandlersStruct(
         // Emit each cont in source order. Each cont gets its own block scope
         // so binding aliases (e.g., `const i = __koru_h_arg`) are visible to
         // the guard expression. Guarded conts wrap their body in
-        // `if (cond) { ... return; }`. The first unguarded cont is the
-        // fallback — its body runs unconditionally, and subsequent conts are
-        // unreachable and skipped.
+        // `if (cond) { ... return; }`.
+        // Exclusive (any when): first unguarded is fallback — stop after it.
+        // Multicast (all unguarded, void resume): every body runs (400_173).
+        var any_guarded = false;
+        for (group.items) |gc| {
+            if (gc.condition != null) {
+                any_guarded = true;
+                break;
+            }
+        }
+        const multicast = !any_guarded and branch.resume_type == null and branch.resume_arms == null;
+
         for (group.items) |cont| {
             const guarded = cont.condition != null;
 
@@ -6332,9 +6341,9 @@ fn emitHandlersStruct(
             try emitter.writeIndent();
             try emitter.write("}\n");
 
-            // Unguarded cont = fallback. Anything after it is unreachable;
-            // stop emitting siblings for this branch.
-            if (!guarded) break;
+            // Exclusive fallback: stop after first unguarded. Multicast keeps
+            // going so every unguarded void-effect body runs.
+            if (!guarded and !multicast) break;
         }
 
         emitter.dedent();
