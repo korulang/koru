@@ -1,0 +1,2 @@
+took 42
+empty

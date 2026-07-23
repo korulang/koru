@@ -2409,10 +2409,23 @@ const std = @import("std");
                 };
                 break :blk pf;
             };
-            const take_branches = allocator.alloc(ast.Branch, 1) catch unreachable;
+            const take_branches = allocator.alloc(ast.Branch, 2) catch unreachable;
             take_branches[0] = ast.Branch{
                 .name = allocator.dupe(u8, "item") catch unreachable,
                 .payload = ast.Shape{ .fields = item_pf },
+                .kind = .terminal,
+                .annotations = &[_][]const u8{},
+            };
+            // `| empty`: the addressed row is out of range (an empty store, or a
+            // handle past len). is_panic (`?!`): a site that DOESN'T handle it
+            // gets a synthesized panic — the exact old out-of-range behavior, so
+            // every existing take site is unchanged — while a site that DOES
+            // handle it (an interactive delete off an empty list) stays graceful.
+            // No payload, so no obligation on this arm.
+            take_branches[1] = ast.Branch{
+                .name = allocator.dupe(u8, "empty") catch unreachable,
+                .payload = ast.Shape{ .fields = &[_]ast.Field{} },
+                .is_panic = true,
                 .kind = .terminal,
                 .annotations = &[_][]const u8{},
             };
@@ -2430,9 +2443,9 @@ const std = @import("std");
             var tb = std.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
             const thead = std.fmt.allocPrint(allocator,
                 \\const __koru_r = @as(usize, @intCast(row));
-                \\if (__koru_r >= __koru_store_{s}.len) @panic("std/store: take({s}[...]) - row handle out of range (generational staleness checks are O10)");
+                \\if (__koru_r >= __koru_store_{s}.len) return .{{ .empty = .{{}} }};
                 \\
-            , .{ store_name, store_name }) catch unreachable;
+            , .{store_name}) catch unreachable;
             tb.appendSlice(allocator, thead) catch unreachable;
             for (field_names) |fname| {
                 const ld = std.fmt.allocPrint(allocator, "const __koru_out_{s} = __koru_store_{s}.{s}[__koru_r];\n", .{ fname, store_name, fname }) catch unreachable;
