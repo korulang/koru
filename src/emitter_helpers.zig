@@ -2092,34 +2092,36 @@ fn isSimpleIdentifier(s: []const u8) bool {
     return true;
 }
 
-/// Emit a bare-return plain value, replacing event-parameter identifiers with
-/// call-site argument names already in scope (read(s: owned) → `owned.data`).
-fn emitPlainValueWithParamAliases(
-    emitter: *CodeEmitter,
-    ctx: *EmissionContext,
+/// Build a plain-return expression with event-parameter identifiers replaced by
+/// call-site argument text (read(s: i.name) → `i.name.data`). The result is
+/// fed through emitValue so field-punning/struct-literal lowering still runs.
+fn substituteParamNamesInPlainValue(
+    allocator: std.mem.Allocator,
     plain_value: []const u8,
     param_names: []const []const u8,
     arg_values: []const []const u8,
-) EmitError!void {
+) ![]const u8 {
+    var out = try std.ArrayList(u8).initCapacity(allocator, plain_value.len);
+    errdefer out.deinit(allocator);
     var idx: usize = 0;
     while (idx < plain_value.len) {
         if (plain_value[idx] == '"') {
-            try emitter.write("\"");
+            try out.append(allocator, plain_value[idx]);
             idx += 1;
             while (idx < plain_value.len) {
                 if (plain_value[idx] == '\\') {
-                    try emitter.write("\\");
+                    try out.append(allocator, plain_value[idx]);
                     idx += 1;
                     if (idx < plain_value.len) {
-                        try emitter.write(plain_value[idx .. idx + 1]);
+                        try out.append(allocator, plain_value[idx]);
                         idx += 1;
                     }
                 } else if (plain_value[idx] == '"') {
-                    try emitter.write("\"");
+                    try out.append(allocator, plain_value[idx]);
                     idx += 1;
                     break;
                 } else {
-                    try emitter.write(plain_value[idx .. idx + 1]);
+                    try out.append(allocator, plain_value[idx]);
                     idx += 1;
                 }
             }
@@ -2135,7 +2137,7 @@ fn emitPlainValueWithParamAliases(
                 const valid_end = idx + param.len >= plain_value.len or
                     !isIdentifierChar(plain_value[idx + param.len]);
                 if (valid_start and valid_end) {
-                    try emitValue(emitter, ctx, arg_val);
+                    try out.appendSlice(allocator, arg_val);
                     idx += param.len;
                     replaced = true;
                     break;
@@ -2144,9 +2146,10 @@ fn emitPlainValueWithParamAliases(
         }
         if (replaced) continue;
 
-        try emitter.write(plain_value[idx .. idx + 1]);
+        try out.append(allocator, plain_value[idx]);
         idx += 1;
     }
+    return try out.toOwnedSlice(allocator);
 }
 
 // Branch group for when-clause emission
@@ -6632,8 +6635,8 @@ fn emitInvocation(
             // Skip if:
             //   - pass-through: param name equals a simple identifier value already in scope
             //     (echo(v: v), echo(v)) — rebinding inside the blk shadows continuation bindings
-            //   - bare-return alias: param maps to a different in-scope identifier — substitute
-            //     in the plain value instead of rebinding (read(s: owned) → owned.data)
+            //   - bare-return alias: param maps to the call-site argument — substitute
+            //     in the plain value instead of rebinding (read(s: i.name) → i.name.data)
             //   - arg.name is not referenced in the immediate expression (avoid shadowing outer scope)
             for (invocation.args, 0..) |arg, arg_idx| {
                 // Resolve actual parameter name for positional args
@@ -6656,7 +6659,7 @@ fn emitInvocation(
                     continue;
                 }
 
-                if (bare_return and isSimpleIdentifier(trimmed_value)) {
+                if (bare_return) {
                     if (immediate_bc.plain_value) |pv| {
                         if (containsIdentifier(pv, param_name)) {
                             if (alias_count < max_param_aliases) {
@@ -6707,13 +6710,15 @@ fn emitInvocation(
                 // `-> T`: yield the expression directly, no `.{ .name = ... }` wrap.
                 if (immediate_bc.plain_value) |pv| {
                     if (alias_count > 0) {
-                        try emitPlainValueWithParamAliases(
-                            emitter,
-                            ctx,
+                        const a = emitter.allocator orelse std.heap.page_allocator;
+                        const substituted = try substituteParamNamesInPlainValue(
+                            a,
                             pv,
                             alias_params[0..alias_count],
                             alias_values[0..alias_count],
                         );
+                        defer a.free(substituted);
+                        try emitValue(emitter, ctx, substituted);
                     } else {
                         try emitValue(emitter, ctx, pv);
                     }
