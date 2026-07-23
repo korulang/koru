@@ -1,0 +1,37 @@
+// FRONTIER (pinned RED) — COMPONENT_CHALLENGE replay 03 / Charm progress.
+//
+// Natural shape for a colored progress cell: a Style record literal with an
+// `fg` color field (Charm purple #5A56E0). Koru accepts the unknown field
+// through analysis and emission; only Stage-D Zig rejects it.
+//
+//   style: { bold: false, dim: false, fg: 0x5A56E0 }
+//
+// EXPECTED: Koru shape/analysis rejects unknown fields on a known struct type
+// with a Koru diagnostic (and, for Charm progress, vaxis Style must grow a
+// Color `fg`/`bg` surface that maps onto libvaxis Cell.Style — which already
+// has them; the koru/vaxis wrapper strips them: "Boolean attrs only for now").
+//
+// ACTUAL: Stage-D zig build of output_emitted.zig fails with:
+//   error: no field named 'fg' in struct '...Style'
+//
+// This pin is the minimal self-contained form (local Style, no vaxis import).
+// The Charm meter also needs grapheme-aware writeCell (write-at currently
+// walks bytes) and fill math inside the component boundary — floated in
+// koru-libs vaxis/tests/frontier/charm_progress_walls.md.
+
+const std = @import("std");
+
+const Style = struct {
+    bold: bool = false,
+    dim: bool = false,
+};
+
+~pub event write-styled { text: string, style: Style }
+
+~proc write-styled|zig {
+    _ = text;
+    _ = style;
+    std.debug.print("painted\n", .{});
+}
+
+~write-styled(text: "▌", style: { bold: false, dim: false, fg: 0x5A56E0 })
