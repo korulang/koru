@@ -6483,8 +6483,29 @@ pub fn main() !void {
         output_file = allocated_output;
     }
 
-    // Read input file
-    const file = try std.fs.cwd().openFile(input, .{});
+    // Read input file. A missing input is a user error, not a compiler bug, so
+    // it gets a clean CLI diagnostic — never a raw Zig FileNotFound stack trace.
+    // There is no .kz source location to point at (the file doesn't exist), so
+    // this is a plain CLI message rather than a KORUxxx semantic diagnostic.
+    const file = std.fs.cwd().openFile(input, .{}) catch |err| switch (err) {
+        error.FileNotFound => {
+            const raw = input_file.?;
+            if (file_types.isKoruFile(raw)) {
+                // User named a concrete facet path that isn't on disk.
+                try printStderr(allocator, "error: input file not found: {s}\n\n  koruc could not open the file you named — check the path and try again.\n", .{raw});
+            } else {
+                // User named a bare stem; no facet resolved during probing above.
+                var probed: []u8 = try allocator.dupe(u8, "");
+                for (file_types.koru_extensions, 0..) |ext, ext_idx| {
+                    const sep = if (ext_idx != 0) ", " else "";
+                    probed = try std.fmt.allocPrint(allocator, "{s}{s}{s}{s}", .{ probed, sep, raw, ext });
+                }
+                try printStderr(allocator, "error: no koru module found for '{s}'\n\n  koruc looked for: {s}\n  None exist in the current directory — name an existing module or facet.\n", .{ raw, probed });
+            }
+            std.process.exit(1);
+        },
+        else => return err,
+    };
     defer file.close();
     const file_size = try file.getEndPos();
     const source = try parse_allocator.alloc(u8, file_size);
