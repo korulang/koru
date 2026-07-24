@@ -146,10 +146,29 @@ SCOPING gap, not a binding-form gap. `330_115` is the control — same obligatio
 same continuation, delivered as `| lit lamp`, caught — and it must stay green
 through any fix, or the hole moved rather than closed.
 
-The fix therefore wants a flow-exit validation of the head context, reusing the
-arm's terminal-validation path rather than inventing a second one. Two spellings
-of the same program must type the same; the inserter's own head-seeding comment
-already asserts that as the intent.
+### The check already exists and is structurally unreachable
+
+The working spelling hands over the fix. `reportLeaksAtHardTerminal` performs
+precisely the needed check — "a hard terminal permits no escape, so the check
+reduces to: anything uncleaned, outer-scope excepted, is a KORU030 leak" — and
+its comment records that it was added for this very class, so that "the
+enforcement side sees every flow exit the insertion side sees."
+
+It is called under `if (exit_node == .terminal)`. And `.terminal` is `|> _`,
+which **`KORU010` permits only as a branch-handler body**: "'_' has meaning only
+as `| branch [binding] |> _`." So the guard is not merely unsatisfied for a
+top-level `:` chain — it is unsatisfiable. The exit check can only ever fire
+inside a branch arm, which is the entire reason the two spellings diverge.
+
+The fix is therefore not new machinery: a top-level chain's LAST continuation is
+also a flow exit and must run the same check. The care needed is in identifying
+that exit — the inserter already distinguishes sequential prefixes from real flow
+exits (`isSequentialPrefix`), because a capture at flow head lowers to sibling
+continuations where all but the last are prefixes, not exits. Reuse that notion
+rather than "the last element of the list".
+
+Two spellings of the same program must type the same; the inserter's own
+head-seeding comment already asserts that as the intent.
 
 Default auto-discharge masks all of it — with insertion on, the compiler emits the
 missing discharger for these exact programs and they are correct. The wall is only
