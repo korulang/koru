@@ -89,3 +89,100 @@ flow exits). Pinned by 330_097.
 The two frontiers this belief named are both closed; the `not_auto_dischargeable`
 marker (renamed from `from_return_record` when it grew a second origin) is the
 shared "no auto-discharge → wall" lever for both.
+
+## The third frontier is CLOSED (2026-07-25): the bound head keeps its obligation across a continuation
+
+Both closed frontiers are about invocations with NO bind. The symmetric case is
+still leaking, and it is the ordinary one: a **bound head whose whole-value
+obligation is live at exit, where the head has a continuation**.
+
+    app/lantern:light(): lamp                                   # caught, KORU030
+    app/lantern:light(): lamp |> std/io:print.ln("in the dark")  # silent leak, exit 0
+
+Appending one void continuation to the caught form switches the wall off. The
+continuation mints nothing and never touches `lamp`; the head's own obligation is
+simply no longer checked once it is not terminal. Under `--auto-discharge=disable`
+this is the normalize-only promise above failing on a shape the earlier fix did
+not cover — enforcement is reached, but the head's seeded obligation does not
+survive to validation.
+
+Three things this is NOT, each ruled out by a green neighbour:
+
+- **Not the bind form.** Named captures are enforced — the terminal form above is
+  caught by name (`Resource 'lamp'`).
+- **Not `:` versus `->`.** An obligation produced through a value-return subflow
+  is carried correctly across the produce and caught when terminal, then lost to a
+  continuation identically. `330_114` pins the `->` surface, `330_113` the `:` one.
+- **Not payload shape.** A record-FIELD obligation in exactly this position — bound
+  head, continuation present (`make(id: 1): r |> print.ln(r.n)`) — is caught. It
+  survives because the record path seeds per-field under `binding.field` with
+  `not_auto_dischargeable`, rather than riding the whole-value `return_phantom`.
+
+That last contrast is the lead: the record-field path already does the right thing
+in the shape the whole-value path drops.
+
+### Which layer loses it: NEITHER — it is a seam (established 2026-07-24)
+
+The open question above is settled, and the answer is that no layer owns the
+check. Both halves are present and both are doing what their comments say:
+
+- The **inserter**, in normalize-only mode (what `--auto-discharge=disable`
+  runs), materializes the head binding and then breaks out of the continuation
+  walk — "no insertion, no terminator validation … enforcement stays with the
+  phantom checker."
+- The **phantom checker** seeds the head's `return_binding` obligation into
+  `root_context` so the chained continuation can SEE it — which is why a
+  discharge LATE in the chain is correctly credited, and the lantern game
+  auto-discharges fine. It then validates each continuation and returns. There is
+  no post-loop check that `root_context` is empty at flow exit.
+
+So consumption is tracked across the chain and absence is not. Each layer
+delegates the exit check to the other.
+
+A branch arm escapes this because `validateContinuation` performs a terminal
+validation of the ARM's own scope. The flow head's `root_context` has no
+equivalent. That is the whole asymmetry, and it is Lars's reading: this is a
+SCOPING gap, not a binding-form gap. `330_115` is the control — same obligation,
+same continuation, delivered as `| lit lamp`, caught — and it must stay green
+through any fix, or the hole moved rather than closed.
+
+### The check already exists and is structurally unreachable
+
+The working spelling hands over the fix. `reportLeaksAtHardTerminal` performs
+precisely the needed check — "a hard terminal permits no escape, so the check
+reduces to: anything uncleaned, outer-scope excepted, is a KORU030 leak" — and
+its comment records that it was added for this very class, so that "the
+enforcement side sees every flow exit the insertion side sees."
+
+It is called under `if (exit_node == .terminal)`. And `.terminal` is `|> _`,
+which **`KORU010` permits only as a branch-handler body**: "'_' has meaning only
+as `| branch [binding] |> _`." So the guard is not merely unsatisfied for a
+top-level `:` chain — it is unsatisfiable. The exit check can only ever fire
+inside a branch arm, which is the entire reason the two spellings diverge.
+
+The fix was therefore not new machinery. In the void/bare-return path, a step
+that resolves to a known invocation validated its nested continuations and
+returned; it now first asks whether there ARE any, and with none treats that as
+the flow exit and runs `reportLeaksAtHardTerminal` against the live context.
+Same function, reached by a satisfiable condition.
+
+The feared complication did not materialise. `cont.continuations.len == 0`
+cannot by itself distinguish a real exit from a sequential-prefix sibling, and
+capture-at-flow-head lowers to exactly such siblings — so the prediction was
+that capture and scope tests would false-positive. The full suite says
+otherwise: zero regressions attributable to the change. Prefix siblings inherit
+a fresh context from the root rather than accumulating into the final sibling
+here, so the naive exit test holds. If a future capture form breaks this, the
+inserter's `isSequentialPrefix` is the notion to port.
+
+Pinned by `330_113` (`:` bind), `330_114` (`->` produce across a subflow
+boundary), with `330_115` as the branch-arm control that must stay green — a
+fix that reddens it moved the hole instead of closing it.
+
+Two spellings of the same program must type the same; the inserter's own
+head-seeding comment already asserted that as the intent, and now they do.
+
+Default auto-discharge masks all of it — with insertion on, the compiler emits the
+missing discharger for these exact programs and they are correct. The wall is only
+observable under `disable`/`~[strict]`, which is why this sat behind the two
+frontiers that were found first.
