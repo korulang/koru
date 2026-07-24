@@ -151,12 +151,23 @@ const flow_parser = @import("flow_parser");
         .optimize = optimize,
     });
 
+    // Struct-literal parser - parser.zig imports it for seed/field literals.
+    // Depends on liquid; keep this beside parser or the graph drifts (the
+    // module list here must stay a superset of src/parser.zig's imports).
+    const struct_literal_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/struct_literal.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    struct_literal_module.addImport("liquid", liquid_module);
+
     // Parser module - the core!
     const parser_module = b.createModule(.{
         .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/parser.zig" },
         .target = target,
         .optimize = optimize,
     });
+    parser_module.addImport("struct_literal", struct_literal_module);
     parser_module.addImport("ast", ast_module);
     parser_module.addImport("ast_mangle", ast_mangle_module);
     parser_module.addImport("lexer", lexer_module);
