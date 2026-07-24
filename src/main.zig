@@ -1621,6 +1621,71 @@ fn collectVariantTargetsForEventPath(
     return try found.toOwnedSlice(allocator);
 }
 
+/// Frontend `glance` — print the program's declaration surface (every module's
+/// events with full signatures, annotations, and file:line) from the fully
+/// resolved post-import AST, then return. Same category as `--help`/`--ast-json`:
+/// an AST-introspection mode, no backend, no codegen. `app_only` drops std/koru.
+fn glancePrintEvent(ed: *const ast.EventDecl) void {
+    std.debug.print("  ", .{});
+    if (ed.annotations.len > 0) {
+        std.debug.print("[", .{});
+        for (ed.annotations, 0..) |ann, i| {
+            if (i > 0) std.debug.print("|", .{});
+            std.debug.print("{s}", .{ann});
+        }
+        std.debug.print("] ", .{});
+    }
+    for (ed.path.segments, 0..) |seg, i| {
+        if (i > 0) std.debug.print(".", .{});
+        std.debug.print("{s}", .{seg});
+    }
+    std.debug.print("(", .{});
+    if (ed.input.is_wildcard) {
+        std.debug.print("*", .{});
+    } else {
+        for (ed.input.fields, 0..) |f, i| {
+            if (i > 0) std.debug.print(", ", .{});
+            std.debug.print("{s}: {s}", .{ f.name, f.type });
+        }
+    }
+    std.debug.print(")", .{});
+    if (ed.return_type) |rt| std.debug.print(" -> {s}", .{rt});
+    const file = ed.location.file;
+    const base = if (std.mem.lastIndexOfScalar(u8, file, '/')) |ix| file[ix + 1 ..] else file;
+    std.debug.print("  {s}:{d}\n", .{ base, ed.location.line });
+}
+
+fn runGlance(source_file: *const ast.Program, app_only: bool) void {
+    std.debug.print("📄 glance\n", .{});
+
+    var main_count: usize = 0;
+    for (source_file.items) |item| {
+        if (item == .event_decl) main_count += 1;
+    }
+    if (main_count > 0) {
+        std.debug.print("(main) — {d} event(s)\n", .{main_count});
+        for (source_file.items) |item| {
+            if (item == .event_decl) glancePrintEvent(&item.event_decl);
+        }
+    }
+
+    for (source_file.items) |item| {
+        if (item != .module_decl) continue;
+        const mod = item.module_decl;
+        if (app_only and (std.mem.startsWith(u8, mod.logical_name, "std") or
+            std.mem.startsWith(u8, mod.logical_name, "koru"))) continue;
+        var n: usize = 0;
+        for (mod.items) |mi| {
+            if (mi == .event_decl) n += 1;
+        }
+        if (n == 0) continue;
+        std.debug.print("{s} — {d} event(s)\n", .{ mod.logical_name, n });
+        for (mod.items) |mi| {
+            if (mi == .event_decl) glancePrintEvent(&mi.event_decl);
+        }
+    }
+}
+
 /// CommandInfo stores CLI command metadata for [comptime|command] events
 /// Commands run instead of normal compilation when invoked via `koruc file.kz <command>`
 const CommandInfo = struct {
@@ -7310,6 +7375,20 @@ pub fn main() !void {
     if (show_help) {
         try printDynamicHelp(allocator, &source_file);
         return;
+    }
+
+    // `glance` — a frontend AST-introspection mode. The imports are fully
+    // resolved (conditional gate already ran in the parser), so source_file holds
+    // exactly the active module surface. Walk it, print, and return — no backend.
+    if (command_candidate) |cmd| {
+        if (std.mem.eql(u8, cmd, "glance")) {
+            var glance_app_only = false;
+            for (args) |a| {
+                if (std.mem.eql(u8, a, "--app")) glance_app_only = true;
+            }
+            runGlance(&source_file, glance_app_only);
+            return;
+        }
     }
 
     // Now check for comptime commands (after imports are processed)
