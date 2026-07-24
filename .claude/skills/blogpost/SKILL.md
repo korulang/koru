@@ -48,6 +48,22 @@ alone.** Lead with the concrete subject — the feature or concept, by name.
    koru — `./run_regression.sh <cluster>` — and quote the real test directories.
    Never invent test ids or paths; if you name a test, you ran/read it this turn.
 
+   **DIFF every code sample against the test it came from, before shipping.**
+   Reading the test is not enough — a sample lifted with `head -N`, `sed -n`, or
+   a grep that drops comment lines is a *truncated* citation, which is a
+   fabrication wearing a footnote: it names a real green test and puts broken
+   code on a public page. Run the check, don't eyeball it:
+
+   ```bash
+   diff <(sed -n '/^tor check/,/^| small s -> s/p' <post>.svx) \
+        <(sed -n '/^tor check/,/^| small s -> s/p' <test>/input.k)
+   ```
+
+   (Earned 2026-07-24: the tor post shipped `classify = check(n) | big b -> …`
+   with the `| small` arm sliced off by `head -10`. Non-exhaustive, wouldn't
+   compile, and it contradicted the post's own claim two sections later that you
+   cannot forget an outcome. Lars caught it on the live page.)
+
 2. **Read the two or three most recent posts** in
    `src/routes/blog/*/+page.svx` (sort by `date` in frontmatter) before writing.
    They set the house voice and show the current component usage. The most
@@ -119,3 +135,8 @@ alone.** Lead with the concrete subject — the feature or concept, by name.
 - Never write `draft: false`. That flag is Lars's to flip.
 - Never cite a test you haven't read/run this session, and never invent a
   `directory`/`categorySlug` — a wrong one renders a dead link on the live site.
+  Verify each pair resolves in `src/lib/data/status.json` under the key
+  `${categorySlug}/${directory}` before publishing.
+- Never ship a code sample you haven't **diffed** against its source test.
+  "I read the test" is not the bar — reading ten lines of a twenty-six-line file
+  satisfies it and still publishes broken code. The diff is the bar.
