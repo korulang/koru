@@ -164,6 +164,12 @@ check_expected_patterns() {
 #   CONTAINS <substr>        — substr must appear in target (literal)
 #   NOT_CONTAINS <substr>    — substr must NOT appear in target
 #   STDOUT_CONTAINS:<substr> — substr must appear (alias of CONTAINS)
+#   ERROR_AT <line>[:<col>]  — some diagnostic's `-->` location must point at
+#                              <line> (and <col> when given). Substring matching
+#                              cannot see a location, so a pin that only asserts
+#                              message text stays green while the caret points at
+#                              a blank line, or past EOF. This is the assertion
+#                              that pins WHERE a diagnostic lands.
 # Returns:
 #   0 = at least one assertion was present and ALL satisfied
 #   1 = at least one assertion failed (details printed)
@@ -208,6 +214,19 @@ check_expect_assertions() {
                     failed+=("STDOUT_CONTAINS '$substr' not found")
                 fi
                 ;;
+            "ERROR_AT "*)
+                count=$((count + 1))
+                local loc pat found
+                loc="${line#ERROR_AT }"
+                case "$loc" in
+                    *:*) pat=":${loc}([^0-9]|\$)" ;;
+                    *)   pat=":${loc}:" ;;
+                esac
+                if ! grep -qE -- "-->.*${pat}" "$actual_file" 2>/dev/null; then
+                    found=$(grep -oE -- '-->[[:space:]]*[^[:space:]]+' "$actual_file" 2>/dev/null | head -3 | tr '\n' ' ')
+                    failed+=("ERROR_AT '$loc' — no diagnostic points there (actual: ${found:-no located diagnostic})")
+                fi
+                ;;
         esac
     done < "$expect_file"
 
@@ -232,7 +251,7 @@ check_expect_assertions() {
 expect_has_assertions() {
     local expect_file="$1"
     [ -f "$expect_file" ] || return 1
-    grep -qE '^(CONTAINS |NOT_CONTAINS |STDOUT_CONTAINS:)' "$expect_file"
+    grep -qE '^(CONTAINS |NOT_CONTAINS |STDOUT_CONTAINS:|ERROR_AT )' "$expect_file"
 }
 
 # Cross-target equivalence check. If a test's LANGUAGES marker lists `js`, the
