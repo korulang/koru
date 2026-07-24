@@ -60,6 +60,11 @@ are in the set — the newest obligation work is the least watched at runtime.
 
 Open, and NOT covered by that: a double-free, and a leak on a path that prints
 nothing. Neither is caught by the output diff, and neither is caught by the
-counter when the memory is author-owned. Whether that residue is worth a
-mechanism is unruled — it may simply be the accepted cost of an unsafe escape
-hatch, which is the correct place for it to live.
+counter when the memory is author-owned.
+
+**This is an OPEN QUESTION, not a settled cost.** The ruling above is narrow —
+a proc may name its own allocator — and it says nothing about whether these two
+classes deserve a mechanism. An earlier draft of this fragment inferred from
+"procs are unsafe" that a double-free is therefore acceptable, and attributed
+that inference to Lars. He did not rule it. `unsafe` names where the
+responsibility sits; it is not a decision to stop detecting anything.
