@@ -1139,6 +1139,16 @@ const std = @import("std");
             if (!std.mem.eql(u8, std.mem.trim(u8, qc.branch, " "), q_verb)) {
                 return .{ .transformed = .{ .replacement = H.errItem(allocator, qf.location, qf.module, "std/store:{s}({s}): branch '{s}' - the row branch is spelled `! {s} {{ projection }}` (O1 fire-vocabulary is open)", .{ q_verb, store_name, qc.branch, q_verb }) } };
             }
+            // The row branch is an EFFECT arm the site FIRES (`! query`), not an
+            // outcome it returns — the continuation marker must be `!`, never `|`.
+            // A `|` here is the marker/kind mismatch (400_172): today it is
+            // silently accepted and runs benignly, so reject it at koru's own
+            // boundary. (The take/insert OUTCOME direction is caught by KORU025 in
+            // the phantom checker; query installs a standing rule and never mints a
+            // matchable outcome event, so its marker is validated here.)
+            if (qc.kind != .effect) {
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, qf.location, qf.module, "std/store:{s}({s}): continuation marker `|` used where an effect branch is required — `{s}` fires the effect arm `! {s}`, not `| {s}`", .{ q_verb, store_name, q_verb, q_verb, q_verb }) } };
+            }
             if (qc.destructure.len == 0) {
                 return .{ .transformed = .{ .replacement = H.errItem(allocator, qf.location, qf.module, "std/store:{s}({s}): the {s} branch needs a projection block: `! {s} {{ entity.field, name: entity.field }}`", .{ q_verb, store_name, q_verb, q_verb }) } };
             }

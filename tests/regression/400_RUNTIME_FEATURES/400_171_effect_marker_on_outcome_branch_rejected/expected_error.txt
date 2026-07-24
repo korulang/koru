@@ -1,1 +1,1 @@
-effect marker `!` used where a continuation branch is required — take returns outcome branch `item`; match it with `| item`, not `! item`
+branch 'item' is declared as terminal `|` but the handler uses effect `!`
