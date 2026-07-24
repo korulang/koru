@@ -1,22 +1,23 @@
-// Pins: an obligation captured into a NAMED binding and then never consumed
-// must be rejected, exactly as the bare-drop form already is.
+// Pins: a BOUND head obligation must stay enforced when the head acquires a
+// CONTINUATION. `light(): lamp` alone is caught (KORU030, "Resource 'lamp'");
+// append one void continuation and the same live <lit!> is dropped silently.
 //
-// The bare drop `app/lantern:light()` mints `_auto_0` and 330_025's checker
-// catches it: "Resource '_auto_0' carries obligation <lit!> was not
-// discharged." Give the very same call a name and chain past it, and the
-// obligation walks out of the program unexamined — `lamp` is bound, `<lit!>`
-// is live at end of flow, and the compile succeeds.
+// The continuation is the only difference between the caught form and this one.
+// It is not the bind — named captures are enforced — and not the payload shape:
+// a record-field obligation in this very position IS caught (330_096), because
+// it seeds per-field under `binding.field` with the not_auto_dischargeable
+// marker rather than riding the whole-value return_phantom.
 //
-// The capture is the only difference between this file and the accepted one.
-// Auto-discharge is disabled here so the wall itself is under test rather
-// than the LIFO insertion that normally hides the question.
+// Distinct from 330_097, which pins the opposite end of the chain: an unbound
+// TERMINAL invocation whose own return carries an obligation. Here the terminal
+// call is void and mints nothing; the leak is the HEAD's obligation, live at
+// exit, forgotten as soon as a continuation exists.
+//
+// Auto-discharge is disabled so the wall is under test rather than the LIFO
+// insertion — which, with the flag on, correctly emits the douse for this exact
+// program. Per frag-obligation-enforcement-keys-off-return-binding, disable opts
+// out of INSERTING, never out of the discard staying visible to enforcement.
 import std/io
 import app/lantern
 
-tor delve { room: i64 }
-
-delve = if(room > 4)
-| then |> std/io:print.ln("You climb back into daylight.")
-| else |> delve(room: room + 1)
-
-app/lantern:light(): lamp |> delve(room: 0)
+app/lantern:light(): lamp |> std/io:print.ln("in the dark")

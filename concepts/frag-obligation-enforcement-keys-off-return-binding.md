@@ -89,3 +89,44 @@ flow exits). Pinned by 330_097.
 The two frontiers this belief named are both closed; the `not_auto_dischargeable`
 marker (renamed from `from_return_record` when it grew a second origin) is the
 shared "no auto-discharge → wall" lever for both.
+
+## A third frontier is OPEN (2026-07-24): the bound head loses its obligation to a continuation
+
+Both closed frontiers are about invocations with NO bind. The symmetric case is
+still leaking, and it is the ordinary one: a **bound head whose whole-value
+obligation is live at exit, where the head has a continuation**.
+
+    app/lantern:light(): lamp                                   # caught, KORU030
+    app/lantern:light(): lamp |> std/io:print.ln("in the dark")  # silent leak, exit 0
+
+Appending one void continuation to the caught form switches the wall off. The
+continuation mints nothing and never touches `lamp`; the head's own obligation is
+simply no longer checked once it is not terminal. Under `--auto-discharge=disable`
+this is the normalize-only promise above failing on a shape the earlier fix did
+not cover — enforcement is reached, but the head's seeded obligation does not
+survive to validation.
+
+Three things this is NOT, each ruled out by a green neighbour:
+
+- **Not the bind form.** Named captures are enforced — the terminal form above is
+  caught by name (`Resource 'lamp'`).
+- **Not `:` versus `->`.** An obligation produced through a value-return subflow
+  is carried correctly across the produce and caught when terminal, then lost to a
+  continuation identically. `330_114` pins the `->` surface, `330_113` the `:` one.
+- **Not payload shape.** A record-FIELD obligation in exactly this position — bound
+  head, continuation present (`make(id: 1): r |> print.ln(r.n)`) — is caught. It
+  survives because the record path seeds per-field under `binding.field` with
+  `not_auto_dischargeable`, rather than riding the whole-value `return_phantom`.
+
+That last contrast is the lead: the record-field path already does the right thing
+in the shape the whole-value path drops. The likely fix is to give the whole-value
+head obligation the same survival the per-field seeding has, rather than a new
+continuation-walking pass — but which layer loses it (the inserter's head seeding
+versus the phantom checker's flow-head threading, both of which the top of this
+belief names as `return_binding`-gated) is NOT yet established. Determine that
+before building; the two produce different fixes.
+
+Default auto-discharge masks all of it — with insertion on, the compiler emits the
+missing discharger for these exact programs and they are correct. The wall is only
+observable under `disable`/`~[strict]`, which is why this sat behind the two
+frontiers that were found first.
