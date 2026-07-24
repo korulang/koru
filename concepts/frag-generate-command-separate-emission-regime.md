@@ -38,6 +38,26 @@ spelling (native block-break vs `goto`). Those are the ONLY per-target decisions
 everything else keeps its shape. That is why the first C backend was thin, and it
 predicts the next target is another vocabulary table, not another emitter.
 
+**The prediction held — and the table has one entry nobody listed: the HOST
+LANGUAGE'S OWN STRICTNESS.** The Zig backend confirmed the vocabulary-swap
+thesis (slice = native `[]const u8`, nullable = `?ParseResult`/`?usize`,
+labeled-break = `break :Lx` out of a labeled block — a direct native stand-in
+for C's forward `goto Lx_end`). But one C idiom that *looked* target-blind is
+not: the emitter's blind always-discard. `(void)x;` is harmless in C whatever
+happens later, so the C path emits it unconditionally; Zig 0.15 makes a
+pointless discard of a later-used local a HARD COMPILE ERROR. The Zig backend
+must therefore decide provable-unusedness — from the AST facts codegen already
+holds (which alt binds, whether a tail produced), plus a token-boundary text
+scan for the one case AST shape cannot settle (whether a produce expression
+happens to mention a bound name).
+
+The general form: a per-target decision is not only *how do I spell this
+construct* but *what will this host reject that C tolerated*. C is the
+permissive floor, so anything written against it silently encodes C's
+tolerances as if they were universal. A fourth backend should re-derive the
+discard discipline rather than inherit it, and should expect the same class of
+surprise anywhere the C emitter is unconditionally permissive.
+
 **The raw-seed-AST seam (load-bearing).** A command runs on the seed AST BEFORE
 `resolve-with-scopes` — which lives in `coordinate` and is therefore bypassed. So
 the `[with]`-opened grammar verbs (`sub`/`lit`/`match`) arrive stamped with the
