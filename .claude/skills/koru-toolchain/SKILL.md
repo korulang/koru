@@ -47,9 +47,8 @@ These cost hours if you don't know them. Each is expanded in `CLAUDE.md` /
 - **`~` is parser mode, not a call — and only exists in host-embedded files.**
   In a `.kz`/`.kjs`, `~` switches the parser from the host language into Koru. It
   is NEVER written inside a Koru flow: once you're in a flow you stay in Koru,
-  and a `~` mid-flow silently opens a second, unrelated flow (pinned `320_047`,
-  a `MUST_FAIL` wall — not a gap awaiting a fix). In a `.k` the character doesn't
-  appear at all, which is one reason to prefer `.k`.
+  and a `~` mid-flow silently opens a second, unrelated flow (`320_047`). In a
+  `.k` the character doesn't appear at all.
 - **Punning is mandatory.** When a call argument's value is exactly the field
   name, write `f(n)` — the compiler rejects the redundant `f(n: n)`. Use a label
   only when the value differs from the field (`f(n: p)`).
@@ -69,13 +68,9 @@ These cost hours if you don't know them. Each is expanded in `CLAUDE.md` /
 
 - **`.k`** — pure Koru, host-agnostic, and a **full program**: events implement
   as subflows right there in the file, private events included. **No `~`
-  characters at all.** This is the default for a pure-Koru program, and a great
-  deal can now be written this way. See `frag-k-file-is-a-full-program`.
+  characters at all.** This is the default for a pure-Koru program.
 - **`.kz`** — Koru-Zig: a valid Zig file where `~` switches the parser into Koru.
-  Reach for it when you actually need host-level declarations or a `|zig` proc
-  body — not by default. Much of the corpus is historically `.kz` because a
-  since-removed rule (KORU111 Rule 1) forced pure-Koru programs to wear the host
-  extension; don't read that volume as a recommendation.
+  Use it when you need host-level declarations or a `|zig` proc body.
 - **`.kjs`** — the JS-host counterpart to `.kz`.
 
 ## Running tests

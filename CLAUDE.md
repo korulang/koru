@@ -31,7 +31,7 @@ irreducible rationale, regime changes. Read it before improvising anything it
 governs; a belief that settles the surface you're about to touch usually already
 exists.
 
-The doctrine that used to live in this file now lives there:
+The doctrine that governs work here:
 
 - `frag-milestone-suites-are-instruments` — AoC and every application cluster
   surface toolchain gaps and then drop off the work list. Never "green day N."
