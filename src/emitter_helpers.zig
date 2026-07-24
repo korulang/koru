@@ -10616,6 +10616,24 @@ pub fn writeBareReturnType(
         try emitter.write("[]const u8");
         return;
     }
+    // Compiler-provided AST types used as a BARE return live in the ast module,
+    // aliased `__koru_ast` in the emitted backend (e.g. `ExplainReport` — the
+    // explain-command ABI; `SiteResult` — the transform ABI). Param positions
+    // qualify these via writeFieldType's ast_types list; the bare-return path
+    // needs the same courtesy, or the reference is undeclared. Exact-match (not
+    // substring) so a user type merely CONTAINING one of these names is untouched.
+    const ast_return_types = [_][]const u8{
+        "ExplainReport", "SiteResult",  "Program",     "Item",  "Source",
+        "Invocation",    "EventDecl",   "ProcDecl",    "Flow",  "Branch",
+        "Continuation",  "ASTNode",
+    };
+    for (ast_return_types) |t| {
+        if (std.mem.eql(u8, trimmed, t)) {
+            try emitter.write("__koru_ast.");
+            try emitter.write(t);
+            return;
+        }
+    }
     // Module-qualified scalar `mod/path:Type` must lower to the mangled Zig
     // module path (`koru_std.koru_compiler.CompilerContext`) — raw passthrough
     // of the `:` is a Zig syntax error. Pointer/slice prefixes sit in front of
