@@ -35,12 +35,24 @@ not want, and each such example is load-bearing precisely because nobody
 verifies prose and test fixtures against a rule no tool enforces. That is the
 poison; the sweep is the antidote.
 
-Open: **the wall is not built.** The current interpreter accepts both forms via
-`src/flow_parser.zig`, so the tilde is presently ignored rather than rejected.
-`430_047` is the red pin holding that gap, and the interpreter rewrite owns it.
-The rewrite should reject the tilde with a diagnostic that names the reason —
-"`~` marks host-embedded Koru; interpreter source is already pure Koru" — rather
-than a bare parse failure, since a user arriving from `.kz` will reach for it
-by habit.
+The wall is built: `findHostTilde` in `koru_std/interpreter.kz`, called from
+`run` and `run-cached` — the single choke point, since `std/runtime:run`
+delegates there. It returns the declared `parse-error` branch with real
+line/column and a message naming the reason rather than a bare parse failure,
+because a user arriving from `.kz` reaches for the tilde by habit and deserves
+to be told why it is wrong here.
+
+**The scan skips string literals, and that is not a concession.** `~` inside a
+string is data — `open(path: "~/notes.txt")` is the most common path on a unix
+machine, and a rule that made it unexpressable would be wrong, not strict. The
+axis is code position vs. data, never "contains the character." `430_054` pins
+the path case; `430_047` pins the rejection.
+
+Open: **both pins are inert on the board.** They live in `430_RUNTIME`, whose
+category-level `TODO` unconditionally marks every test beneath it — the harness
+has no per-test override, so parking a cluster silently disarms walls inside it,
+including walls for rules that are ruled and shipped. Verified by hand instead
+(`~ping()` → PARSE ERROR; `"~/notes.txt"` → OK). Arming them wants a harness
+ruling, not a test relocation: relocating would be the route-around.
 
 Related: [[frag-k-file-is-a-full-program]] (the `.k` half of the same rule).
