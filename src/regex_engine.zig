@@ -1761,6 +1761,92 @@ pub fn compilePrefixToC(out: std.mem.Allocator, pattern: []const u8, name: []con
     return buf.toOwnedSlice(out);
 }
 
+/// JS sibling of `emitPrefixMatcherC`. Same DFA, JS vocabulary: a slice is a
+/// Node `Buffer` (byte-indexed, matching C's `const uint8_t*`) plus a
+/// `(from)` offset; the "no match" sentinel is `-1` (offsets are always >= 0,
+/// so it is unambiguous, mirroring C's SIZE_MAX). No goto in JS, so the
+/// suffix-terminal early-return shape carries over as a plain early `return`
+/// inside the loop instead of a labeled break — this matcher never needs to
+/// jump past its own loop, only return from the function.
+pub fn emitPrefixMatcherJs(w: anytype, dfa: *const Dfa, name: []const u8) !void {
+    var dead: ?usize = null;
+    var st: usize = 0;
+    outer: while (st < dfa.n_states) : (st += 1) {
+        if (dfa.accept[st]) continue;
+        var b: usize = 0;
+        while (b < 256) : (b += 1) {
+            if (dfa.trans[st * 256 + b] != st) continue :outer;
+        }
+        dead = st;
+        break;
+    }
+
+    try w.print("function {s}(input, len, from) {{\n", .{name});
+    try w.writeAll("    const T = [");
+    for (dfa.trans, 0..) |t, i| {
+        if (i != 0) try w.writeAll(",");
+        try w.print("{d}", .{t});
+    }
+    try w.writeAll("];\n");
+    try w.writeAll("    const A = [");
+    for (dfa.accept, 0..) |acc, i| {
+        if (i != 0) try w.writeAll(",");
+        try w.writeAll(if (acc) "true" else "false");
+    }
+    try w.writeAll("];\n");
+
+    var suffix_terminal = dead != null;
+    if (dead) |d| {
+        for (0..dfa.n_states) |q| {
+            if (!dfa.accept[q]) continue;
+            var b: usize = 0;
+            while (b < 256) : (b += 1) {
+                if (dfa.trans[q * 256 + b] != d) {
+                    suffix_terminal = false;
+                    break;
+                }
+            }
+            if (!suffix_terminal) break;
+        }
+    }
+
+    try w.print("    let s = {d};\n", .{dfa.start});
+    if (suffix_terminal) {
+        try w.writeAll("    if (A[s]) return from;\n");
+        try w.writeAll("    let i = from;\n");
+        try w.writeAll("    for (i = from; i < len; i++) {\n");
+        try w.writeAll("        const ns = T[s * 256 + input[i]];\n");
+        try w.print("        if (ns === {d}) break;\n", .{dead.?});
+        try w.writeAll("        s = ns;\n");
+        try w.writeAll("    }\n");
+        try w.writeAll("    return A[s] ? i : -1;\n");
+        try w.writeAll("}\n");
+        return;
+    }
+    try w.writeAll("    let last_end = A[s] ? from : -1;\n");
+    try w.writeAll("    for (let i = from; i < len; i++) {\n");
+    try w.writeAll("        s = T[s * 256 + input[i]];\n");
+    if (dead) |d| try w.print("        if (s === {d}) break;\n", .{d});
+    try w.writeAll("        if (A[s]) last_end = i + 1;\n");
+    try w.writeAll("    }\n");
+    try w.writeAll("    return last_end;\n");
+    try w.writeAll("}\n");
+}
+
+/// JS sibling of `compilePrefixToC`.
+pub fn compilePrefixToJs(out: std.mem.Allocator, pattern: []const u8, name: []const u8) ![]const u8 {
+    var arena = std.heap.ArenaAllocator.init(out);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var p = Parser.init(a, pattern);
+    const ast = try p.parse();
+    var nfa = try buildNfa(a, ast);
+    var dfa = try buildDfa(a, &nfa);
+    var buf = std.ArrayList(u8){};
+    try emitPrefixMatcherJs(buf.writer(out), &dfa, name);
+    return buf.toOwnedSlice(out);
+}
+
 /// The admissible FIRST-BYTE set of an anchored-prefix matcher: for each byte,
 /// can a (non-empty) match begin with it? Derived from the prefix DFA's start
 /// state — a byte is admissible iff consuming it lands in a LIVE state (one
