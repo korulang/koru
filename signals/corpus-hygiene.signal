@@ -1,0 +1,17 @@
+name: corpus-hygiene
+kind: declared
+shape: count
+face: in
+membrane: false
+note: |
+  Fires when the corpus is found asserting something about itself that is no
+  longer true — a test comment claiming a red/green state the harness contradicts,
+  or a doc describing a pin as a gap when the pin is a deliberate wall. Value is
+  the number of such divergences found in one sweep.
+
+  Attention-worthy because the suite has no verdict on prose that describes it:
+  these lie silently, and the generated learn pages carry them outward.
+
+  Detector:
+    grep -rlE "RED PIN|fails today|currently (red|failing|broken)|goes green when|PINNED FAILING|NOT yet supported" tests/regression --include="input.k*"
+  then cross-check each against test-results/latest.json before believing it.
