@@ -36,8 +36,8 @@ artifact disagree, the artifact wins.
 These cost hours if you don't know them. Each is expanded in `CLAUDE.md` /
 `koru-tutorial.md`; here they're just named so you don't trip:
 
-- **Implement in subflows, not procs.** An event is implemented by a *subflow* —
-  pure Koru. Branch selection (mapping one event's branches to another's, and
+- **Implement in subflows, not procs.** A tor is implemented by a *subflow* —
+  pure Koru. Branch selection (mapping one tor's branches to another's, and
   `when`-guards) is a Koru act. For conditional selection use `~if(cond)
   | then |> ... | else |> ...` (a fast convenience over `when`; available once
   you import any `std` module). A `~proc …|zig { ... }` host body is the
@@ -53,8 +53,8 @@ These cost hours if you don't know them. Each is expanded in `CLAUDE.md` /
   name, write `f(n)` — the compiler rejects the redundant `f(n: n)`. Use a label
   only when the value differs from the field (`f(n: p)`).
 - **Branches are equal — there is no happy path.** `| ok`, `| err`, `| done`
-  are all just named outcomes. No success/error/Result framing. An event with
-  one branch `| err` is not "an event that fails" — it's an event whose only
+  are all just named outcomes. No success/error/Result framing. A tor with
+  one branch `| err` is not "a tor that fails" — it's a tor whose only
   declared outcome is named `err`. A branch's meaning comes from the subflow
   that resolves it, not the compiler.
 - **Koru is emit-only with the host.** Koru → host (Zig) is parse/check/codegen.
@@ -66,8 +66,8 @@ These cost hours if you don't know them. Each is expanded in `CLAUDE.md` /
 
 ## File forms
 
-- **`.k`** — pure Koru, host-agnostic, and a **full program**: events implement
-  as subflows right there in the file, private events included. **No `~`
+- **`.k`** — pure Koru, host-agnostic, and a **full program**: tors implement
+  as subflows right there in the file, private tors included. **No `~`
   characters at all.** This is the default for a pure-Koru program.
 - **`.kz`** — Koru-Zig: a valid Zig file where `~` switches the parser into Koru.
   Use it when you need host-level declarations or a `|zig` proc body.

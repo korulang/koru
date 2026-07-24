@@ -26,7 +26,7 @@ by contorting the source is worth less than the red it replaced.
 
 **Move 1 — Diagnose from the Koru code.** Most of the time the *shape* of the naive
 kernel already tells you where the compiler will fail: mutual recursion that can't
-tail-flatten and falls back to per-call event dispatch; a fold that rebuilds a
+tail-flatten and falls back to per-call tor dispatch; a fold that rebuilds a
 structure each step; a value threaded by-copy that should be by-reference. Read the
 `.k`, reason about what the optimal binary *should* be, and form the hypothesis
 before you open a single line of generated Zig. You can often see it directly.
