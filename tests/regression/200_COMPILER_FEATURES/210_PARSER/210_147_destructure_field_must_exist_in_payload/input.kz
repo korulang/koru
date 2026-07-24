@@ -6,7 +6,7 @@
 // happens at BINDING, never in the event declaration.
 ~import std/io
 
-~event read { path: string }
+~tor read { path: string }
 | ok { a: i32, b: u8 }
 | err string
 

@@ -9,7 +9,7 @@
 
 ~import std/io
 
-~pub event maybe { count: usize }
+~pub tor maybe { count: usize }
 ! ?warn string
 | done usize
 

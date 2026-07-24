@@ -5,7 +5,7 @@
 // the handler hands back one record, the producer binds it and field-accesses. The
 // single-field case collapses to the scalar (210_150); two fields is the legal record.
 import std/io
-pub event request { seed: i64 }
+pub tor request { seed: i64 }
 ! ask -> { a: i64, b: i64 }
 | done i64
 request = ask(): c => done c.a + c.b + seed

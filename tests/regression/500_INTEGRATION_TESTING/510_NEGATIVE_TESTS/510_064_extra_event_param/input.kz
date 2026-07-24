@@ -4,6 +4,6 @@
 // must name a real parameter, and an unknown one is caught at our own boundary
 // with a koru-level diagnostic. `foo` has field `x` only; `y: 2` is rejected.
 
-~event foo { x: i32 }
+~tor foo { x: i32 }
 
 ~foo(x: 1, y: 2)

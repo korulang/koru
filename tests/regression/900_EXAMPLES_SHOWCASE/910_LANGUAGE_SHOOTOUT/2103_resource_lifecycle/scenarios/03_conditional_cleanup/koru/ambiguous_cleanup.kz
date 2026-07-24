@@ -10,7 +10,7 @@ const std = @import("std");
 
 const File = struct { handle: i32, dirty: bool };
 
-~event open { path: string }
+~tor open { path: string }
 | opened *File<opened!>
 
 ~proc open|zig {
@@ -19,21 +19,21 @@ const File = struct { handle: i32, dirty: bool };
     return .{ .opened = f };
 }
 
-~event write { file: *File<opened>, data: string }
+~tor write { file: *File<opened>, data: string }
 
 ~proc write|zig {
     file.dirty = true;
 }
 
 // Two different ways to close - user must choose!
-~event close { file: *File<!opened> }
+~tor close { file: *File<!opened> }
 
 ~proc close|zig {
     std.debug.print("Close (no flush)\n", .{});
     std.heap.page_allocator.destroy(file);
 }
 
-~event flush-close { file: *File<!opened> }
+~tor flush-close { file: *File<!opened> }
 
 ~proc flush-close|zig {
     std.debug.print("Flush and close\n", .{});

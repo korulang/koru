@@ -19,11 +19,11 @@
 
 ~import std/io
 
-~event echo { v: i32 } -> i32
+~tor echo { v: i32 } -> i32
 
 ~echo -> v
 
-~event src {} -> i32
+~tor src {} -> i32
 
 ~proc src|zig { return 5; }
 

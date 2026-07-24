@@ -6,12 +6,12 @@
 // mistake, and the wall should point at the rule that was broken.
 import std/io
 
-pub event ping { x: i64 }
+pub tor ping { x: i64 }
 ! pong i64
 
 ping = pong(x)
 
-pub event other { x: i64 }
+pub tor other { x: i64 }
 ! stray i64
 
 other = pong(x)

@@ -32,7 +32,7 @@ pub const JsonValue = union(enum) {
 // Object Builder - Create JSON objects
 // ============================================================================
 
-~pub event object.new { allocator: ?std.mem.Allocator } -> *JsonObject<building!>
+~pub tor object.new { allocator: ?std.mem.Allocator } -> *JsonObject<building!>
 
 ~proc object.new|zig {
     const alloc = allocator orelse koru_allocator();
@@ -50,7 +50,7 @@ pub const JsonValue = union(enum) {
     return obj;
 }
 
-~pub event object.set { obj: *JsonObject<building>, key: string, value: JsonValue } -> *JsonObject<building>
+~pub tor object.set { obj: *JsonObject<building>, key: string, value: JsonValue } -> *JsonObject<building>
 
 ~proc object.set|zig {
     const writer = obj.buffer.writer();
@@ -93,7 +93,7 @@ pub const JsonValue = union(enum) {
     return obj;
 }
 
-~pub event object.finish { obj: *JsonObject<!building> } -> string
+~pub tor object.finish { obj: *JsonObject<!building> } -> string
 
 ~proc object.finish|zig {
     obj.buffer.append('}') catch {};
@@ -106,7 +106,7 @@ pub const JsonValue = union(enum) {
 // Array Builder - Create JSON arrays
 // ============================================================================
 
-~pub event array.new { allocator: ?std.mem.Allocator } -> *JsonObject<building!>  // Reuse JsonObject for simplicity
+~pub tor array.new { allocator: ?std.mem.Allocator } -> *JsonObject<building!>  // Reuse JsonObject for simplicity
 
 ~proc array.new|zig {
     const alloc = allocator orelse koru_allocator();
@@ -124,7 +124,7 @@ pub const JsonValue = union(enum) {
     return obj;
 }
 
-~pub event array.push { arr: *JsonObject<building>, value: JsonValue } -> *JsonObject<building>
+~pub tor array.push { arr: *JsonObject<building>, value: JsonValue } -> *JsonObject<building>
 
 ~proc array.push|zig {
     const writer = arr.buffer.writer();
@@ -160,7 +160,7 @@ pub const JsonValue = union(enum) {
     return arr;
 }
 
-~pub event array.finish { arr: *JsonObject<!building> } -> string
+~pub tor array.finish { arr: *JsonObject<!building> } -> string
 
 ~proc array.finish|zig {
     arr.buffer.append(']') catch {};
@@ -172,7 +172,7 @@ pub const JsonValue = union(enum) {
 // Decoding - Extract values from JSON strings
 // ============================================================================
 
-~pub event get.string { json: string, key: string }
+~pub tor get.string { json: string, key: string }
 | ok string
 | not-found
 
@@ -209,7 +209,7 @@ pub const JsonValue = union(enum) {
     return .{ .ok = json[value_start..value_end] };
 }
 
-~pub event get.int { json: string, key: string }
+~pub tor get.int { json: string, key: string }
 | ok i64
 | not-found
 

@@ -23,7 +23,7 @@ const Transaction = struct {
     id: i32,
 };
 
-~pub event connect { url: string }
+~pub tor connect { url: string }
 | connected *Connection<connected!>
 
 ~proc connect|zig {
@@ -32,7 +32,7 @@ const Transaction = struct {
     return .{ .connected = c };
 }
 
-~pub event query { conn: *Connection<connected> }
+~pub tor query { conn: *Connection<connected> }
 | started *Transaction<transaction!>
 
 ~proc query|zig {
@@ -42,21 +42,21 @@ const Transaction = struct {
 }
 
 // commit requires conn in <connected> (non-consuming read) and consumes tx
-~pub event commit { tx: *Transaction<!transaction>, conn: *Connection<connected> }
+~pub tor commit { tx: *Transaction<!transaction>, conn: *Connection<connected> }
 
 ~proc commit|zig {
     std.debug.print("Committing\n", .{});
 }
 
 // rollback requires conn in <connected> (non-consuming read) and consumes tx
-~pub event rollback { tx: *Transaction<!transaction>, conn: *Connection<connected> }
+~pub tor rollback { tx: *Transaction<!transaction>, conn: *Connection<connected> }
 
 ~proc rollback|zig {
     std.debug.print("Rolling back\n", .{});
 }
 
 // disconnect consumes connected! — after this conn is dead
-~pub event disconnect { conn: *Connection<!connected> }
+~pub tor disconnect { conn: *Connection<!connected> }
 
 ~proc disconnect|zig {
     std.debug.print("Disconnecting\n", .{});

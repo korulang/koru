@@ -6,7 +6,7 @@
 ~import std/compiler
 
 // Event using qualified type in branch output
-~pub event passthrough { ctx: std/compiler:CompilerContext } -> std/compiler:CompilerContext
+~pub tor passthrough { ctx: std/compiler:CompilerContext } -> std/compiler:CompilerContext
 
 ~proc passthrough|zig {
     return ctx;

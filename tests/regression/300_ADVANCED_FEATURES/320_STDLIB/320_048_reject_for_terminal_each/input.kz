@@ -12,7 +12,7 @@
 
 const std = @import("std");
 
-~event start {}
+~tor start {}
 
 ~proc start|zig {
 }

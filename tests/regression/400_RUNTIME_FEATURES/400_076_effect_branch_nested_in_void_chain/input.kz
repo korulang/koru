@@ -18,12 +18,12 @@
 
 ~import std/io
 
-~pub event setup { }
+~pub tor setup { }
 
 ~proc setup|zig {
 }
 
-~pub event emitter { n: usize }
+~pub tor emitter { n: usize }
 ! item usize
 
 ~proc emitter|zig {

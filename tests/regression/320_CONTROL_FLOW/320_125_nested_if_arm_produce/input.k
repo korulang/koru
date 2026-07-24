@@ -13,7 +13,7 @@
 // koruc); pinned here minimal as collatz(6) = 8 (6→3→10→5→16→8→4→2→1).
 import std/io
 
-pub event collatz { n: i64 } -> i64
+pub tor collatz { n: i64 } -> i64
 
 collatz = if(n == 1)
 | then -> 0

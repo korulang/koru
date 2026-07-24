@@ -1,7 +1,7 @@
 const std = @import("std");
 const Data = struct { value: i32 };
 
-~pub event gc-alloc {} -> *Data<gc>  // GC-managed, NOT owned or borrowed
+~pub tor gc-alloc {} -> *Data<gc>  // GC-managed, NOT owned or borrowed
 
 ~proc gc-alloc|zig {
     const allocator = std.heap.page_allocator;
@@ -11,7 +11,7 @@ const Data = struct { value: i32 };
 }
 
 // Generic processor constrained to owned OR borrowed ONLY
-~pub event process { d: *Data<M'owned|borrowed> } -> *Data<M'owned|borrowed>
+~pub tor process { d: *Data<M'owned|borrowed> } -> *Data<M'owned|borrowed>
 
 ~proc process|zig {
     return d;

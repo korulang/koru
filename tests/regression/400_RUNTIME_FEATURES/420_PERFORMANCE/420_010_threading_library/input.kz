@@ -173,7 +173,7 @@ fn consumerWorker(ctx: *anyopaque) *anyopaque {
 // Ring and Producer Setup (same as test 2005)
 // ============================================================================
 
-~event createRing {} -> *Ring
+~tor createRing {} -> *Ring
 
 ~proc createRing|zig {
     const ring_storage = std.heap.page_allocator.create(Ring) catch unreachable;
@@ -181,7 +181,7 @@ fn consumerWorker(ctx: *anyopaque) *anyopaque {
     return ring_storage;
 }
 
-~event spawnProducer { ring: *Ring }
+~tor spawnProducer { ring: *Ring }
 
 ~proc spawnProducer|zig {
     const producer = std.Thread.spawn(.{}, struct {
@@ -202,7 +202,7 @@ fn consumerWorker(ctx: *anyopaque) *anyopaque {
 // Consumer Spawning Using Threading Library
 // ============================================================================
 
-~event spawnConsumer { ring: *Ring, target: u64 } -> *ConsumerContext
+~tor spawnConsumer { ring: *Ring, target: u64 } -> *ConsumerContext
 
 ~proc spawnConsumer|zig {
     // Allocate context on heap (must outlive this function)
@@ -221,7 +221,7 @@ fn consumerWorker(ctx: *anyopaque) *anyopaque {
 // Result Processing
 // ============================================================================
 
-~event combineResults { contexts: []*ConsumerContext }
+~tor combineResults { contexts: []*ConsumerContext }
 | combined { total_sum: u64, total_count: u64 }
 
 ~proc combineResults|zig {
@@ -236,7 +236,7 @@ fn consumerWorker(ctx: *anyopaque) *anyopaque {
     return .{ .combined = .{ .total_sum = total_sum, .total_count = total_count } };
 }
 
-~event validate { sum: u64, count: u64 }
+~tor validate { sum: u64, count: u64 }
 
 ~proc validate|zig {
     const expected_sum: u64 = TOTAL_MESSAGES * (TOTAL_MESSAGES - 1) / 2;
@@ -253,13 +253,13 @@ fn consumerWorker(ctx: *anyopaque) *anyopaque {
 // Helper Events: Wrap context casting in events
 // ============================================================================
 
-~event castToOpaque { context: *ConsumerContext } -> *anyopaque
+~tor castToOpaque { context: *ConsumerContext } -> *anyopaque
 
 ~proc castToOpaque|zig {
     return @as(*anyopaque, @ptrCast(context));
 }
 
-~event extractContexts { results: []*anyopaque } -> []*ConsumerContext
+~tor extractContexts { results: []*anyopaque } -> []*ConsumerContext
 
 ~proc extractContexts|zig {
     const contexts = std.heap.page_allocator.alloc(*ConsumerContext, results.len) catch unreachable;
@@ -285,7 +285,7 @@ fn consumerWorker(ctx: *anyopaque) *anyopaque {
 // All threading primitives come from the LIBRARY! 🎉
 
 // Helper to collect handles into array
-~event collectHandles { h1: threading:WorkerHandle, h2: threading:WorkerHandle, h3: threading:WorkerHandle, h4: threading:WorkerHandle }
+~tor collectHandles { h1: threading:WorkerHandle, h2: threading:WorkerHandle, h3: threading:WorkerHandle, h4: threading:WorkerHandle }
 | collected { handles: []const threading:WorkerHandle }
 
 ~proc collectHandles|zig {

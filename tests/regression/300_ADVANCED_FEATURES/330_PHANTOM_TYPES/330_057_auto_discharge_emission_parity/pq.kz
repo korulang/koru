@@ -9,7 +9,7 @@ const std = @import("std");
 const Conn = struct { handle: i32 };
 
 // Connect to database - returns connected! obligation
-~pub event connect { conninfo: string }
+~pub tor connect { conninfo: string }
 | ok *Conn<connected!>
 | err string
 
@@ -20,7 +20,7 @@ const Conn = struct { handle: i32 };
 }
 
 // Disconnect - consumes connected obligation (void return)
-~pub event disconnect { conn: *Conn<!connected> }
+~pub tor disconnect { conn: *Conn<!connected> }
 
 ~proc disconnect|zig {
     std.heap.page_allocator.destroy(conn);

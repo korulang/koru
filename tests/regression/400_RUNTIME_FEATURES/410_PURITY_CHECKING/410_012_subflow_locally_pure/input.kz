@@ -8,8 +8,8 @@
 
 const std = @import("std");
 
-~[pure] event a {}
-~[pure] event b {}
+~[pure] tor a {}
+~[pure] tor b {}
 
 ~proc a|zig {}
 ~proc b|zig {}

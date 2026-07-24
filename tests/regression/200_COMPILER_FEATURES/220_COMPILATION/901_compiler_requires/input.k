@@ -10,6 +10,6 @@ std/compiler:requires {
     exe.linkSystemLibrary("c");
 }
 
-event hello {}
+tor hello {}
 
 hello()

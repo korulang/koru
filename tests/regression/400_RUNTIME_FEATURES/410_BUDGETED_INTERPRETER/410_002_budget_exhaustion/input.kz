@@ -6,7 +6,7 @@
 
 const std = @import("std");
 
-~pub event expensive { data: string }
+~pub tor expensive { data: string }
 | processed string
 
 ~proc expensive|zig {

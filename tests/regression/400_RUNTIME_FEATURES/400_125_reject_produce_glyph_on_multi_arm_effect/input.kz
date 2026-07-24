@@ -5,7 +5,7 @@
 // resume union is expected and die as a raw Zig type error.
 ~import std/io
 
-~pub event request { payload: i32 }
+~pub tor request { payload: i32 }
 ! ask i32
     | halved i32
     | timeout

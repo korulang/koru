@@ -53,7 +53,7 @@ const std = @import("std");
 // The grammar declaration: a region of `! <rule-name> <cursor>` effect arms.
 // Wildcard arm names (the regex `scan` decl precedent) — the arm name IS the
 // rule name, the binding is the rule's cursor.
-~[comptime|transform]pub event grammar { expr: Expression }
+~[comptime|transform]pub tor grammar { expr: Expression }
 ! `*` *
 
 // The common picker: explicit ordered-choice over patterned branches at the
@@ -61,18 +61,18 @@ const std = @import("std");
 // page resolves honestly. `no-match` mirrors regex:match's fallback — unused
 // by cut-1 rules (a rule with no matching alternative fails upward), reserved
 // as the explicit-recovery arm.
-~pub event match { expr: Expression }
+~pub tor match { expr: Expression }
 | `*` *
 | ?no-match
 
 // Demand a sub-rule at the current position; binds the rule's produced value.
-~pub event sub { expr: Expression } -> string
+~pub tor sub { expr: Expression } -> string
 
 // Consume a literal token (plain text, NOT a regex — no escaping needed).
-~pub event lit { expr: Expression }
+~pub tor lit { expr: Expression }
 
 // The parse site: dispatches on the named top rule's success, or parse-error.
-~[comptime|transform]pub event parse { expr: Expression, grammar: Expression }
+~[comptime|transform]pub tor parse { expr: Expression, grammar: Expression }
 | `*` *
 | ?parse-error { line: usize, col: usize, expected: string, found: string }
 
@@ -100,7 +100,7 @@ const std = @import("std");
     "description": "Generate a standalone parser in a target language from a grammar"
 }
 
-~[comptime|command]pub event generate {
+~[comptime|command]pub tor generate {
     program: *const Program,
     allocator: __koru_std.mem.Allocator,
     argv: []const []const u8,

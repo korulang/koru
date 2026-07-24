@@ -5,7 +5,7 @@
 const std = @import("std");
 
 // Test 1: Comptime event that executes during compilation
-~[comptime] event validateConventions {}
+~[comptime] tor validateConventions {}
 
 ~proc validateConventions|zig {
     // This code executes at compile time!
@@ -15,7 +15,7 @@ const std = @import("std");
 }
 
 // Test 2: Comptime event with literal string parameter
-~[comptime] event bundleAssets {
+~[comptime] tor bundleAssets {
     dir: string
 } -> i32
 
@@ -27,7 +27,7 @@ const std = @import("std");
 }
 
 // Test 3: Comptime event with error branch
-~[comptime] event preprocessMipmaps {
+~[comptime] tor preprocessMipmaps {
     inputDir: string
 }
 | ok i32

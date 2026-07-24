@@ -10,7 +10,7 @@
 // (400_116), so this test's red is entirely the impl side.
 import std/io
 
-pub event query { q: i64 }
+pub tor query { q: i64 }
 ! ask i64 -> i64
 | done i64
 

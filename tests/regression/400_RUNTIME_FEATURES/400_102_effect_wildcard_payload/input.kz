@@ -3,7 +3,7 @@
 // correctness primitive that lets one generic iterator serve any element type.
 ~import std/io
 
-~pub event walk { items: []const i32 }
+~pub tor walk { items: []const i32 }
 ! each *
 | done usize
 

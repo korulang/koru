@@ -23,14 +23,14 @@ const Program = ast.Program;
 | failed f => error f.message
 
 // Helper event to print marker (must be comptime since it's called from coordinate handler)
-~[comptime] event custom-marker {}
+~[comptime] tor custom-marker {}
 
 ~proc custom-marker|zig {
     std.debug.print("CUSTOM COORDINATOR: Pipeline override active!\n", .{});
 }
 
 // Simple test event
-~pub event hello {}
+~pub tor hello {}
 
 ~proc hello|zig {
     std.debug.print("Hello from custom-compiled code!\n", .{});

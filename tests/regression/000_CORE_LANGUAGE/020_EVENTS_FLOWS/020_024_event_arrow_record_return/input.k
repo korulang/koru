@@ -13,7 +13,7 @@
 // tag union collapses to a bare return (210_131).
 import std/io
 
-pub event run { x: i64 } -> { total: i64, doubled: i64 }
+pub tor run { x: i64 } -> { total: i64, doubled: i64 }
 run -> { total: x * 2, doubled: x + x }
 
 run(x: 21): r |> std/io:print.ln("{{ r.total:d }}")

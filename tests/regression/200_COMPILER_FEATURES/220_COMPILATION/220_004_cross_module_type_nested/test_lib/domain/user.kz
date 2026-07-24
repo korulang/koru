@@ -9,7 +9,7 @@ pub const DomainUser = struct {
 };
 
 // Event that creates a domain user
-~pub event create {
+~pub tor create {
     email: string,
     role: string,
     permissions: u32,

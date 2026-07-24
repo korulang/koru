@@ -5,7 +5,7 @@
 // flows, use a branch binding and invoke from the continuation body.
 // ============================================================================
 
-~event greet { name: string }
+~tor greet { name: string }
 |> is not valid Koru
 ~greet(name: "World")
 |>

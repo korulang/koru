@@ -27,7 +27,7 @@ import std/testing
 import std/fs
 
 // A flow that depends on an external module event
-event process-config { path: string }
+tor process-config { path: string }
 | ok usize
 | failed string
 

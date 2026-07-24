@@ -10,13 +10,13 @@
 const std = @import("std");
 ~import std/taps
 
-~event helper {}
+~tor helper {}
 
 ~proc helper|zig {
     std.debug.print("Helper executed\n", .{});
 }
 
-~event log-tap {}
+~tor log-tap {}
 
 ~proc log-tap|zig {
     std.debug.print("TAP executed from nested context!\n", .{});
@@ -27,7 +27,7 @@ const std = @import("std");
 | Profile _ |> log-tap()
 
 // Call helper from a NESTED context (inside a continuation)
-~event outer {}
+~tor outer {}
 
 ~proc outer|zig {
 }

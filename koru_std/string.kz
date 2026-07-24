@@ -28,7 +28,7 @@ pub const String = struct {
 // ============================================
 
 // Create with explicit allocator
-~pub event new { allocator: std.mem.Allocator, text: string }
+~pub tor new { allocator: std.mem.Allocator, text: string }
 | ok *String<view!>
 | err string
 
@@ -47,7 +47,7 @@ pub const String = struct {
 }
 
 // Create with page allocator (simple, for demos)
-~pub event from-page { text: string }
+~pub tor from-page { text: string }
 | ok *String<view!>
 | err string
 
@@ -71,11 +71,11 @@ pub const String = struct {
 // ============================================
 
 // Take ownership - view becomes instance
-~pub event take { s: *String<!view> } -> *String<instance!>
+~pub tor take { s: *String<!view> } -> *String<instance!>
 ~take -> s
 
 // Release ownership - instance becomes view
-~pub event release { s: *String<!instance> } -> *String<view!>
+~pub tor release { s: *String<!instance> } -> *String<view!>
 ~release -> s
 
 // ============================================
@@ -86,7 +86,7 @@ pub const String = struct {
 // the union discharges either state; `<!view|instance>` marked only `view`,
 // hiding `free` from `instance!` obligations — the discharge-finder's
 // .state_union branch keys off each member's own consume marker).
-~pub event free { s: *String<!view|!instance> }
+~pub tor free { s: *String<!view|!instance> }
 
 ~proc free|zig {
     s.allocator.free(s.data);
@@ -97,10 +97,10 @@ pub const String = struct {
 // Read operations - work on view or instance
 // ============================================
 
-~pub event read { s: *String<view|instance> } -> string
+~pub tor read { s: *String<view|instance> } -> string
 ~read -> s.data
 
-~pub event len { s: *String<view|instance> } -> usize
+~pub tor len { s: *String<view|instance> } -> usize
 ~len -> s.data.len
 
 // ============================================
@@ -114,7 +114,7 @@ pub const String = struct {
 // ============================================
 
 // Parse the string's text as a base-10 integer.
-~pub event parse-int { s: *String<view|instance> }
+~pub tor parse-int { s: *String<view|instance> }
 | ok i64
 | err string
 
@@ -127,7 +127,7 @@ pub const String = struct {
 
 // Build a NEW owned String from a base-10 integer (the int→string mirror of
 // parse-int). Owned return, so it carries its own ownership obligation.
-~pub event from-int { n: i64 }
+~pub tor from-int { n: i64 }
 | ok *String<view!>
 | err string
 
@@ -145,7 +145,7 @@ pub const String = struct {
 }
 
 // Does the string contain `needle`?
-~pub event contains { s: *String<view|instance>, needle: string }
+~pub tor contains { s: *String<view|instance>, needle: string }
 | yes
 | no
 
@@ -157,7 +157,7 @@ pub const String = struct {
 }
 
 // First index of `needle`, or not-found.
-~pub event index-of { s: *String<view|instance>, needle: string }
+~pub tor index-of { s: *String<view|instance>, needle: string }
 | found usize
 | not-found
 
@@ -170,7 +170,7 @@ pub const String = struct {
 
 // Extract [start, end) as a NEW owned String<view!> (a fresh copy, not a
 // borrow into `s`). The result carries its own ownership obligation.
-~pub event substring { s: *String<view|instance>, start: usize, end: usize }
+~pub tor substring { s: *String<view|instance>, start: usize, end: usize }
 | ok *String<view!>
 | err string
 
@@ -207,7 +207,7 @@ pub const String = struct {
 // alternative — a global/streaming regex (`scan`) that finds repeated matches
 // in place — is pinned (640_011) and waits on the engine's unanchored-search
 // "later cut"; split needs no engine work.
-~pub event split { s: string, sep: string }
+~pub tor split { s: string, sep: string }
 ! piece string
 | done usize
 
@@ -231,7 +231,7 @@ pub const String = struct {
 // Write operations - require instance
 // ============================================
 
-~pub event append { s: *String<instance>, text: string }
+~pub tor append { s: *String<instance>, text: string }
 | ok
 | err string
 
@@ -248,7 +248,7 @@ pub const String = struct {
 // Single-byte append — TUI key input (todo rename): `k.ch` is a u8, not a
 // string literal. Pin 610_022. Without this, every keystroke would need a
 // one-char String allocation just to call `append`.
-~pub event append-char { s: *String<instance>, ch: u8 }
+~pub tor append-char { s: *String<instance>, ch: u8 }
 | ok
 | err string
 
@@ -264,13 +264,13 @@ pub const String = struct {
 
 // Drop the last byte (backspace). Empty stays empty — `| ok` either way so
 // a held key doesn't force an err arm.
-~pub event pop-char { s: *String<instance> }
+~pub tor pop-char { s: *String<instance> }
 
 ~proc pop-char|zig {
     if (s.data.len > 0) s.data.len -= 1;
 }
 
-~pub event clear { s: *String<instance> }
+~pub tor clear { s: *String<instance> }
 
 ~proc clear|zig {
     s.data.len = 0;

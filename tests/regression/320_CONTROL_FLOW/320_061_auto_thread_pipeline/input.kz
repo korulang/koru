@@ -24,14 +24,14 @@ const std = @import("std");
 // Pipeline events with single "seq" branch
 // The branch name "seq" matches the input parameter name - this enables auto-threading
 
-~pub event from { source: []const i32 }
+~pub tor from { source: []const i32 }
 | seq []const i32
 
 ~proc from|zig {
     return .{ .seq = source };
 }
 
-~pub event where { pred: bool, seq: []const i32 }
+~pub tor where { pred: bool, seq: []const i32 }
 | seq []const i32
 
 ~proc where|zig {
@@ -40,7 +40,7 @@ const std = @import("std");
     return .{ .seq = seq };
 }
 
-~pub event select-len { seq: []const i32 }
+~pub tor select-len { seq: []const i32 }
 | seq []const usize
 
 ~proc select-len|zig {
@@ -51,7 +51,7 @@ const std = @import("std");
 }
 
 // Terminal: different branch name stops the chain
-~pub event count { seq: []const i32 }
+~pub tor count { seq: []const i32 }
 | count usize
 
 ~proc count|zig {
@@ -74,7 +74,7 @@ const test_data = [_]i32{ 1, 2, 3, 4, 5 };
 |> count
 | count c |> print-result(c)
 
-~event print-result { value: usize }
+~tor print-result { value: usize }
 
 ~proc print-result|zig {
     std.debug.print("Count: {d}\n", .{value});

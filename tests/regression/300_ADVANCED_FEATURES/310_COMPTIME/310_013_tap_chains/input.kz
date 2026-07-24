@@ -3,9 +3,9 @@
 const std = @import("std");
 ~import std/taps
 
-~event main-flow {}
+~tor main-flow {}
 
-~event logger {}
+~tor logger {}
 |> logger()
     |> _
 

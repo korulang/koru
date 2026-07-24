@@ -29,12 +29,12 @@ const std = @import("std");
 }
 
 // [expand] event — template produces inline_body + branches
-~[norun|expand]pub event classify-num { expr: Expression }
+~[norun|expand]pub tor classify-num { expr: Expression }
 | positive i32
 | non-positive
 
 // Abstract event — simulates a library event like orisha:handler
-~[abstract]pub event categorize { value: i32 } -> i32
+~[abstract]pub tor categorize { value: i32 } -> i32
 
 // Default implementation (fallback)
 ~proc categorize|zig {
@@ -50,7 +50,7 @@ const std = @import("std");
 | non-positive -> 0
 
 // Helper to print
-~event print-num { n: i32 }
+~tor print-num { n: i32 }
 
 ~proc print-num|zig {
     std.debug.print("{}\n", .{n});

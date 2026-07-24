@@ -17,7 +17,7 @@
 // [template] annotation placement, the |koru facet, parse-the-rendering.
 ~import std/io
 
-~[comptime] pub event double-sum { a: i64, b: i64 } -> i64
+~[comptime] pub tor double-sum { a: i64, b: i64 } -> i64
 
 ~[template] proc double-sum|koru {
     -> ({{ a }} + {{ b }}) * 2

@@ -14,7 +14,7 @@
 // `?`/`when` modifiers apply uniformly regardless of count.
 ~import std/io
 
-~pub event maybe { n: usize }
+~pub tor maybe { n: usize }
 ! ?warn string
 
 ~proc maybe|zig {

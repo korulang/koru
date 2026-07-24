@@ -15,7 +15,7 @@
 import std/io
 
 // Lower-level event: arbitrary outcome names
-pub event step {}
+pub tor step {}
 | return
 | break
 | continue
@@ -23,7 +23,7 @@ pub event step {}
 step => continue
 
 // Outer event: its own outcome vocabulary
-pub event run {}
+pub tor run {}
 | stopped
 | iterated
 

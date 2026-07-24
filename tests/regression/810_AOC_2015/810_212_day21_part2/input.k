@@ -15,7 +15,7 @@ import std/io
 import std/fs
 import std/regex
 
-pub event shop { bh: i64, bd: i64, ba: i64, want-loss: i64 } -> i64
+pub tor shop { bh: i64, bd: i64, ba: i64, want-loss: i64 } -> i64
 
 shop = capture { best: 0[i64] }
 ! as acc |> for(0..5)

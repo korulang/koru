@@ -164,7 +164,7 @@ pub fn MpmcRing(comptime T: type, comptime capacity: usize) type {
 // Users replace with their concrete Ring type
 // (Future: derive handler to auto-generate typed events)
 
-~pub event enqueue { ring: *anyopaque, value: u64 }
+~pub tor enqueue { ring: *anyopaque, value: u64 }
 | ok
 | full
 
@@ -177,7 +177,7 @@ pub fn MpmcRing(comptime T: type, comptime capacity: usize) type {
     return .full;
 }
 
-~pub event dequeue { ring: *anyopaque }
+~pub tor dequeue { ring: *anyopaque }
 | some u64
 | none
 

@@ -6,9 +6,9 @@ const std = @import("std");
 
 ~import std/taps
 
-~event work {}
+~tor work {}
 
-~event logger {}
+~tor logger {}
 
 ~proc work|zig {
 }

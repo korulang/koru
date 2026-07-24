@@ -6,13 +6,13 @@ const Resource = struct {
     id: usize,
 };
 const allocator = std.heap.c_allocator;
-~event create { id: usize } -> *Resource<active!>
+~tor create { id: usize } -> *Resource<active!>
 ~proc create|zig {
     const r = allocator.create(Resource) catch unreachable;
     r.* = Resource{ .id = id };
     return r;
 }
-~event use { r: *Resource<active> }
+~tor use { r: *Resource<active> }
 ~proc use|zig {
     std.debug.print("using {}\n", .{r.id});
 }

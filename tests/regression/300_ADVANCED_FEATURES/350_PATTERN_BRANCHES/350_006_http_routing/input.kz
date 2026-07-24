@@ -12,7 +12,7 @@ pub const Request = struct {
     path: []const u8,
 };
 
-~pub event handle { req: Request } -> { status: u16, body: []const u8 }
+~pub tor handle { req: Request } -> { status: u16, body: []const u8 }
 
 ~proc handle|zig {
     return .{ .status = 200, .body = "ok" };

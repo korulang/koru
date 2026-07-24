@@ -5,5 +5,5 @@
 // per 330_088. Never called explicitly: auto-discharge is the sole caller.
 import std/io
 
-pub event discharge-enemy { enemy: input:Enemy<std/store:!taken> }
+pub tor discharge-enemy { enemy: input:Enemy<std/store:!taken> }
 discharge-enemy = std/io:print.ln("despawned an enemy")

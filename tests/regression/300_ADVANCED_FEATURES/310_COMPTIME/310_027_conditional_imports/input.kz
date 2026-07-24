@@ -13,7 +13,7 @@ const std = @import("std");
 // This import requires --test flag (NOT SET - will be deadstripped)
 ~[test]import std/testing
 
-~event hello {}
+~tor hello {}
 
 ~proc hello|zig {
     std.debug.print("Hello from conditional import test!\n", .{});

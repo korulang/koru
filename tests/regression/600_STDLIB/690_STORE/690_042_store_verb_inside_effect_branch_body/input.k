@@ -26,7 +26,7 @@ import std/store
 
 std/store:new(game, capacity: 64) { hp: i64 }
 
-pub event beat { x: i64 }
+pub tor beat { x: i64 }
 ! tick i64
 
 beat = tick(x)

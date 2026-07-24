@@ -6,7 +6,7 @@
 
 const std = @import("std");
 
-~event probe { c: u8 }
+~tor probe { c: u8 }
 
 ~proc probe|zig {
     std.debug.print("{c}\n", .{c});

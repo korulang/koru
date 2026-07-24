@@ -8,7 +8,7 @@
 
 const std = @import("std");
 
-~[comptime|transform]pub event labeled {
+~[comptime|transform]pub tor labeled {
     expr: ?Expression,
     invocation: *const Invocation,
     item: *const Item,
@@ -40,7 +40,7 @@ const std = @import("std");
 
 // The invocations sit nested under a noop chain on purpose: they exercise the
 // lift/graft path — the transform above must work identically at any depth.
-~event noop {}
+~tor noop {}
 
 ~proc noop|zig {}
 

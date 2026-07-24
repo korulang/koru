@@ -55,7 +55,7 @@ const std = @import("std");
 // convention, not part of the event. The event keeps `[transform]` too —
 // downstream passes read it as "implemented by a transform" (deferred
 // bindings, comptime-flow skipping, variant emission).
-~[comptime|transform]pub event match { expr: Expression }
+~[comptime|transform]pub tor match { expr: Expression }
 | `*` *
 | ?no-match
 
@@ -280,7 +280,7 @@ const std = @import("std");
 // therefore runs per match, which is exactly effect-branch semantics. Single
 // pattern for now (multi-pattern scan is pinned as a follow-up); pattern
 // branches MUST be effect `!` (dispatch-into-each-match), mirroring the router.
-~[comptime|transform]pub event scan { input: string }
+~[comptime|transform]pub tor scan { input: string }
 ! `*` *
 | ?done
 

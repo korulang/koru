@@ -79,7 +79,7 @@ pub const CompilerContext = struct {
 // [norun] annotation prevents auto-execution - frontend reads from AST instead.
 // This makes build.zig generation metacircular - discovered by parsing, not hardcoded!
 
-~[comptime|norun]pub event requires { source: Source }
+~[comptime|norun]pub tor requires { source: Source }
 
 // Core compiler modules needed for backend compilation
 // This replaces the manual temp_build.zig generation in run_regression.sh
@@ -635,7 +635,7 @@ pub const CompilerContext = struct {
 // This makes help metacircular - discovered by parsing, not hardcoded!
 
 
-~[comptime|norun]pub event flag.declare { source: Source }
+~[comptime|norun]pub tor flag.declare { source: Source }
 
 ~flag.declare {
   "name": "ccp",
@@ -686,7 +686,7 @@ pub const CompilerContext = struct {
 // Commands appear in --help under "Commands:" section.
 // [norun] prevents auto-execution - collected from AST like flags.
 
-~[comptime|norun]pub event command.declare { source: Source }
+~[comptime|norun]pub tor command.declare { source: Source }
 
 // ============================================================
 // COMPILER COORDINATION - User-overridable compilation pipeline
@@ -694,7 +694,7 @@ pub const CompilerContext = struct {
 
 // The compiler coordinator (user-overridable)
 // Abstract: Users can override with ~std/compiler:coordinate = ...
-~[comptime|abstract] pub event coordinate { program_ast: *const Program, allocator: std.mem.Allocator }
+~[comptime|abstract] pub tor coordinate { program_ast: *const Program, allocator: std.mem.Allocator }
 | coordinated { ast: *const Program, code: string, metrics: string }
 | error string
 
@@ -717,7 +717,7 @@ pub const CompilerContext = struct {
 // Composable pipeline segments - users can mix and match!
 
 // Helper: Create CompilerContext from ast and allocator
-~pub event context-create { program_ast: *const Program, allocator: std.mem.Allocator } -> CompilerContext
+~pub tor context-create { program_ast: *const Program, allocator: std.mem.Allocator } -> CompilerContext
 
 ~proc context-create|zig {
     // The seed AST is deserialized from `program.ast.json` onto the compile arena
@@ -741,7 +741,7 @@ pub const CompilerContext = struct {
 }
 
 // Helper: Format metrics string
-~pub event metrics-format { passes_completed: u32, allocator: std.mem.Allocator } -> string
+~pub tor metrics-format { passes_completed: u32, allocator: std.mem.Allocator } -> string
 
 ~proc metrics-format|zig {
     const metrics = std.fmt.allocPrint(
@@ -756,7 +756,7 @@ pub const CompilerContext = struct {
 // Usage: Insert at key points in pipeline to inspect AST state
 // Void event - just prints and continues
 // Example: ~ast-dump(ctx: c, flag: "frontend") |> ...
-~[comptime]pub event ast-dump {
+~[comptime]pub tor ast-dump {
     ctx: CompilerContext,
     flag: string
 }
@@ -778,7 +778,7 @@ pub const CompilerContext = struct {
 // tag so downstream emission sees a plain host-language proc. See
 // memory project_proc_variant_pipeline / docs/EFFECT_BRANCHES for the
 // `host[:processor]` story this implements.
-~pub event process-template-procs { ctx: CompilerContext } -> CompilerContext
+~pub tor process-template-procs { ctx: CompilerContext } -> CompilerContext
 
 ~proc process-template-procs|zig {
     const tp = @import("template_processor");
@@ -803,7 +803,7 @@ pub const CompilerContext = struct {
 // Phase 2.4 (evaluate-comptime). `.pre` transforms carry @pass_ran, so that later
 // all-stages run re-visits them as no-ops. This is the named-stage design: the
 // pipeline sprinkles transform stages where they belong, deliberately.
-~pub event run-pre-transforms { ctx: CompilerContext } -> CompilerContext
+~pub tor run-pre-transforms { ctx: CompilerContext } -> CompilerContext
 
 ~proc run-pre-transforms|zig {
     const backend_output = @import("backend_output_emitted.zig");
@@ -839,7 +839,7 @@ pub const CompilerContext = struct {
 // grammar transform (parser.kz `isVerb` keys off the qualifier being present)
 // sees the resolved `std.parser:match`. Mirrors canonicalize_names' own
 // flow/continuation/node recursion, so it visits exactly the paths it does.
-~pub event resolve-with-scopes { ctx: CompilerContext } -> CompilerContext
+~pub tor resolve-with-scopes { ctx: CompilerContext } -> CompilerContext
 
 ~proc resolve-with-scopes|zig {
     const ast_mod = @import("ast");
@@ -1030,7 +1030,7 @@ pub const CompilerContext = struct {
 // with the folded value spliced in. Failure is LOUD: an unfoldable foldable
 // flow is a compile error carrying the evaluator's diagnostic, never a silent
 // pass-through. See docs/comptime_core_ast_inventory.md.
-~pub event fold-comptime { ctx: CompilerContext } -> CompilerContext
+~pub tor fold-comptime { ctx: CompilerContext } -> CompilerContext
 
 ~proc fold-comptime|zig {
     const comptime_eval = @import("comptime_eval");
@@ -1056,12 +1056,12 @@ pub const CompilerContext = struct {
 }
 
 // Frontend segment: Early AST processing (abstract, can be overridden)
-~[comptime|abstract] pub event frontend { ctx: CompilerContext } -> CompilerContext
+~[comptime|abstract] pub tor frontend { ctx: CompilerContext } -> CompilerContext
 
 ~frontend = process-ccp-commands(ctx): c1 |> resolve-with-scopes(ctx: c1): cw |> run-pre-transforms(ctx: cw): cp |> process-template-procs(ctx: cp): c2 |> fold-comptime(ctx: c2): c3 |> evaluate-comptime(ctx: c3): c4 -> c4
 
 // Analysis segment: Validation passes (abstract, can be overridden)
-~[comptime|abstract] pub event analysis { ctx: CompilerContext }
+~[comptime|abstract] pub tor analysis { ctx: CompilerContext }
 | ctx CompilerContext
 | failed { ctx: CompilerContext, message: string }
 
@@ -1079,7 +1079,7 @@ pub const CompilerContext = struct {
 // This converts taps from emission-time code injection to AST nodes,
 // enabling the optimizer to see and optimize them (zero-cost abstraction!)
 // (abstract, can be overridden)
-~[comptime|abstract] pub event transform-taps { ctx: CompilerContext } -> CompilerContext
+~[comptime|abstract] pub tor transform-taps { ctx: CompilerContext } -> CompilerContext
 
 ~proc transform-taps|zig {
     // Build tap registry from AST (before transformation removes taps)
@@ -1114,7 +1114,7 @@ pub const CompilerContext = struct {
 // Test generation segment: Generates Zig test blocks from ~test declarations
 // Runs AFTER analysis (purity is propagated) but BEFORE optimization
 // This uses the SAME emitter as emission - no hand-rolled code generation!
-~[comptime|abstract] pub event test-generation { ctx: CompilerContext } -> CompilerContext
+~[comptime|abstract] pub tor test-generation { ctx: CompilerContext } -> CompilerContext
 
 // Test generation implementation
 // Finds ~test invocations in AST and generates Zig test blocks
@@ -1591,34 +1591,34 @@ const emitFlowWithMocks = struct {
 }.call;
 
 // Emission segment: Final code generation (abstract, can be overridden)
-~[comptime|abstract] pub event emission { ctx: CompilerContext } -> { ctx: CompilerContext, code: []const u8 }
+~[comptime|abstract] pub tor emission { ctx: CompilerContext } -> { ctx: CompilerContext, code: []const u8 }
 
 ~emission = inject-ccp(ctx): c1 |> pass-dead-strip(ctx: c1): c2 |> emit-zig(ctx: c2): c3 -> { ctx: c3.ctx, code: c3.code }
 
 // Parser service - makes the Koru parser available at backend comptime
 // This enables dynamic module loading during compilation passes
-~pub event parse { source: string, module_name: string }
+~pub tor parse { source: string, module_name: string }
 | parsed []Item
 | failed string
 
 // Zig code emission event - the final step of compilation!
-~pub event emit-zig { ctx: CompilerContext } -> { ctx: CompilerContext, code: []const u8 }
+~pub tor emit-zig { ctx: CompilerContext } -> { ctx: CompilerContext, code: []const u8 }
 
 // Comptime evaluation pass - executes events with Program/Source parameters
-~pub event evaluate-comptime { ctx: CompilerContext } -> CompilerContext
+~pub tor evaluate-comptime { ctx: CompilerContext } -> CompilerContext
 
 // Structural shape checking - validates events/branches exist, base types match
 // Release gate - rejects ~[prototype] modules under --release (runs first in analysis)
-~pub event check-release-gate { ctx: CompilerContext }
+~pub tor check-release-gate { ctx: CompilerContext }
 | ctx CompilerContext
 | failed { ctx: CompilerContext, message: string }
 
-~pub event check-structure { ctx: CompilerContext }
+~pub tor check-structure { ctx: CompilerContext }
 | ctx CompilerContext
 | failed { ctx: CompilerContext, message: string }
 
 // Flow checking - validates control flow properties (when-clause exhaustiveness, etc.)
-~pub event check-flow { ctx: CompilerContext }
+~pub tor check-flow { ctx: CompilerContext }
 | ctx CompilerContext
 | failed { ctx: CompilerContext, message: string }
 
@@ -1628,7 +1628,7 @@ const emitFlowWithMocks = struct {
 // declaration must be rejected before any obligation-FLOW analysis reasons
 // about programs using that event (otherwise auto-discharge halts first with
 // a spurious KORU030 leak and the declaration error stays dormant).
-~pub event check-phantom-signatures { ctx: CompilerContext }
+~pub tor check-phantom-signatures { ctx: CompilerContext }
 | ctx CompilerContext
 | failed { ctx: CompilerContext, message: string }
 
@@ -1640,36 +1640,36 @@ const emitFlowWithMocks = struct {
 // acknowledges the explicit discharge already present in the source. The
 // flow-EXIT obligation-balance walls stay in check-phantom-semantic, after
 // insertion, where the inserted disposal calls exist to be credited.
-~pub event check-phantom-args { ctx: CompilerContext }
+~pub tor check-phantom-args { ctx: CompilerContext }
 | ctx CompilerContext
 | failed { ctx: CompilerContext, message: string }
 
 // Auto-discharge insertion - inserts disposal calls before terminators
 // Runs BEFORE check-phantom-semantic so checker validates the inserted calls
-~pub event pass-auto-discharge { ctx: CompilerContext }
+~pub tor pass-auto-discharge { ctx: CompilerContext }
 | ctx CompilerContext
 | failed { ctx: CompilerContext, message: string }
 
 // Semantic phantom type checking - validates type-state compatibility using
 // the default Koru semantic checker (module-qualified phantom states)
-~pub event check-phantom-semantic { ctx: CompilerContext }
+~pub tor check-phantom-semantic { ctx: CompilerContext }
 | ctx CompilerContext
 | failed { ctx: CompilerContext, message: string }
 
 // Purity checking - trusts [pure] annotations as developer assertions
-~pub event check-purity { ctx: CompilerContext }
+~pub tor check-purity { ctx: CompilerContext }
 | ctx CompilerContext
 | failed { ctx: CompilerContext, message: string }
 
 // Dead strip pass - removes unreachable events/flows from the AST
 // Walks from entry points, marks reachable events, prunes the rest
-~pub event pass-dead-strip { ctx: CompilerContext } -> CompilerContext
+~pub tor pass-dead-strip { ctx: CompilerContext } -> CompilerContext
 
 // CCP observability pass - injects universal observability taps into user AST
 // When enabled, this makes every compiled program self-observing by adding:
 // - emit_json event/proc for JSON output
 // - Universal tap (~* -> *) that emits transition events
-~pub event inject-ccp { ctx: CompilerContext } -> CompilerContext
+~pub tor inject-ccp { ctx: CompilerContext } -> CompilerContext
 
 // Implementation of Zig code emission - this IS ComptimeEmitter as a Koru proc!
 ~proc emit-zig|zig {
@@ -2360,7 +2360,7 @@ const joinPathAlloc = struct {
 
         // Generate error message based on error type
         const err_msg = switch (err) {
-            error.UnknownEvent => "Unknown event referenced",
+            error.UnknownEvent => "Unknown tor referenced",
             error.IncompleteBranchCoverage => "Incomplete branch coverage",
             error.ProcWithoutEvent => "Proc without matching event",
             error.SubflowWithoutEvent => "Subflow without matching event",
@@ -2926,7 +2926,7 @@ const joinPathAlloc = struct {
 
 // CCP Command Processing Pass
 // Reads and processes incoming AI commands from stdin when --ccp is enabled
-~pub event process-ccp-commands { ctx: CompilerContext } -> CompilerContext
+~pub tor process-ccp-commands { ctx: CompilerContext } -> CompilerContext
 
 ~proc process-ccp-commands|zig {
     // TODO: Check if --ccp flag is enabled via CompilerEnv

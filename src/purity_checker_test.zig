@@ -41,7 +41,7 @@ test "proc with pure annotation is marked pure" {
     const allocator = std.testing.allocator;
 
     const source =
-        \\~event add { x: i32 }
+        \\~tor add { x: i32 }
         \\| done i32
         \\
         \\~[pure]proc add {
@@ -66,7 +66,7 @@ test "proc without pure annotation is not pure" {
     const allocator = std.testing.allocator;
 
     const source =
-        \\~event log { msg: string }
+        \\~tor log { msg: string }
         \\| done {}
         \\
         \\~proc log {
@@ -95,7 +95,7 @@ test "pure proc calling no events is transitively pure" {
     const allocator = std.testing.allocator;
 
     const source =
-        \\~event compute { x: i32 } -> i32
+        \\~tor compute { x: i32 } -> i32
         \\
         \\~[pure]proc compute {
         \\    return x * 2;

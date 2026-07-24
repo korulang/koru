@@ -18,7 +18,7 @@ const DT: f64 = 0.01;
 
 var iterations: usize = 50000000;
 
-~event parse-args {}
+~tor parse-args {}
 ~proc parse-args|zig {
     const args = std.process.argsAlloc(std.heap.page_allocator) catch unreachable;
     defer std.process.argsFree(std.heap.page_allocator, args);

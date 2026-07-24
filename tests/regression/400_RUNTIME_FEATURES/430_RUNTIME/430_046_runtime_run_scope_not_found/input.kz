@@ -3,7 +3,7 @@
 ~import std/runtime
 ~import std/io
 
-~pub event greet {}
+~pub tor greet {}
 
 ~proc greet|zig {
 }

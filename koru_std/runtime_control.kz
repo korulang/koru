@@ -324,7 +324,7 @@ fn floatOp(l: f64, r: f64, op: ArithOp) EvalError!Value {
 // Takes an expression and evaluates it against provided bindings.
 // Returns | then |> or | else |> to match control.kz conventions.
 
-~pub event if {
+~pub tor if {
     expression: Expression,
     bindings: *const Bindings
 }

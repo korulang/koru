@@ -5,6 +5,6 @@
 // enforcement: the old snake form must fail loudly.
 ~import std/io
 
-~event foo_bar {}
+~tor foo_bar {}
 
 ~std/io:print.ln("underscore should have been rejected")

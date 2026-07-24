@@ -24,7 +24,7 @@
 
 // Define a named template with source code pattern
 // [norun] means it doesn't execute - just stores data in AST for later lookup
-~[comptime|norun]pub event define {
+~[comptime|norun]pub tor define {
     name: string,
     source: Source
 }

@@ -1,4 +1,4 @@
 // Test 905: Event declaration missing name
 // Parser should reject - event must have identifier
 
-~event { value: i32 }
+~tor { value: i32 }

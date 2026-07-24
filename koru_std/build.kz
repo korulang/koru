@@ -93,7 +93,7 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
 // Declare build dependency using implicit Source block
 // Usage: ~std/build:requires { exe.linkSystemLibrary("sqlite3"); }
 // [norun] annotation prevents auto-execution - collect() reads from AST instead
-~[comptime|norun]pub event requires {
+~[comptime|norun]pub tor requires {
     source: Source
 }
 | ?added
@@ -126,7 +126,7 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
 // The Source block contains JSON-like mappings: event_name → variant_name
 // The program AST is used to validate that referenced events exist
 
-~[comptime]pub event variants { meta: InvocationMeta, source: Source, program: Program }
+~[comptime]pub tor variants { meta: InvocationMeta, source: Source, program: Program }
 | configured usize
 | skipped string
 | invalid-event string
@@ -216,7 +216,7 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
 // The compiler is agnostic to the keys — it just passes them through.
 // Currently the backend recognizes "target" for zig cross-compilation.
 
-~[comptime]pub event config { meta: InvocationMeta, source: Source }
+~[comptime]pub tor config { meta: InvocationMeta, source: Source }
 | configured usize
 | skipped string
 
@@ -299,7 +299,7 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
 // The shell command receives all remaining argv as arguments.
 // Use `koruc main.kz help` to list all available commands.
 
-~[comptime|norun]pub event command.sh { name: string, description: string, source: Source }
+~[comptime|norun]pub tor command.sh { name: string, description: string, source: Source }
 
 // ============================================================================
 // BUILD COMMANDS - Zig Functions (Frontend Compilation + Execution)
@@ -343,7 +343,7 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
 //   koruc main.kz clean           # Custom cleanup command
 //   koruc main.kz deploy prod     # Deployment orchestration
 
-~[comptime|norun]pub event command.zig { name: string, source: Source }
+~[comptime|norun]pub tor command.zig { name: string, source: Source }
 
 // ============================================================================
 // BUILD COMMANDS - Native Koru Flows (Zero Context Switch)
@@ -377,7 +377,7 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
 //           | failed e |> std/io:println("Tests failed: " ++ e)
 //       | failed e |> std/io:println("Lint failed: " ++ e)
 
-~[comptime|norun]pub event command { name: string, description: string } -> [][]const u8
+~[comptime|norun]pub tor command { name: string, description: string } -> [][]const u8
 
 // ============================================================================
 // BUILD STEPS - Declarative Build Pipeline with Dependencies
@@ -408,7 +408,7 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
 // - ~[depends_on(step1, step2, ...)] - Variadic dependency list
 // - Future: ~[parallel], ~[optional], ~[timeout(30)], etc.
 
-~[comptime|norun]pub event step { name: string, source: Source }
+~[comptime|norun]pub tor step { name: string, source: Source }
 
 // ============================================================================
 // DEFAULT BUILD STEPS - Standard 2-Phase Metaprogramming Compilation
@@ -456,7 +456,7 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
 // - Generates build.zig using emit_build_zig library
 // - Returns updated ctx with passes_completed incremented
 
-~[comptime]pub event collect {
+~[comptime]pub tor collect {
     ctx: koru_compiler_types.CompilerContext,
     output_path: string
 } -> koru_compiler_types.CompilerContext

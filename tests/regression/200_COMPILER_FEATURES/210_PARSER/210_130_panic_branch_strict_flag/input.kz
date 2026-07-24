@@ -15,7 +15,7 @@
 // 'oom' and pointing at the flow. (Same input compiles WITHOUT the flag —
 // see 210_127.)
 
-~pub event alloc { n: usize }
+~pub tor alloc { n: usize }
 | success []u8
 | ?!oom usize
 

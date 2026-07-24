@@ -8,7 +8,7 @@
 const std = @import("std");
 
 // Event producing an integer field
-~pub event produce-int {} -> i32
+~pub tor produce-int {} -> i32
 
 ~proc produce-int|zig {
     return 12;

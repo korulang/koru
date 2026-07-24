@@ -13,7 +13,7 @@ std/store:insert(game) { hp: 3 }
 [name(report)]std/store:query(game)
 ! query { entity.hp } |> std/io:print.ln("hp {{ hp:d }}")
 
-pub event beat { x: i64 }
+pub tor beat { x: i64 }
 ! tick i64
 
 beat = tick(x)

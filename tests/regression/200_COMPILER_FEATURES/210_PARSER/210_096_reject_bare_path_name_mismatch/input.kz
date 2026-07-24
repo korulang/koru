@@ -20,11 +20,11 @@
 
 ~import std/io
 
-~event echo { v: i32 } -> i32
+~tor echo { v: i32 } -> i32
 
 ~echo -> v
 
-~event get-box {} -> { v: i32, other: i32 }
+~tor get-box {} -> { v: i32, other: i32 }
 
 ~proc get-box|zig { return .{ .v = 7, .other = 11 }; }
 

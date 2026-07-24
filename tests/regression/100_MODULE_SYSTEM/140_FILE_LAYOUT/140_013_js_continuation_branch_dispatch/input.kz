@@ -7,7 +7,7 @@
 // no std/args dependency.
 ~import std/io
 
-~event pick { n: i32 }
+~tor pick { n: i32 }
 | even string
 | odd string
 

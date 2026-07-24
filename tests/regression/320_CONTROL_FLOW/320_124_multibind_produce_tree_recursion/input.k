@@ -9,7 +9,7 @@
 // (fib(35) = 9227465 through koruc); pinned here minimal as fib(10) = 55.
 import std/io
 
-pub event fib { n: i64 } -> i64
+pub tor fib { n: i64 } -> i64
 
 fib = if(n < 2)
 | then -> n

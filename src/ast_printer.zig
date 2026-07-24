@@ -177,7 +177,7 @@ const Printer = struct {
             try self.write("] ");
         }
         if (ev.is_public) try self.write("pub ");
-        try self.write("event ");
+        try self.write("tor ");
         try self.writePath(&ev.path);
         try self.write(" ");
         try self.printShape(&ev.input);
@@ -727,7 +727,7 @@ test "round-trip: event + proc + flow with branches" {
     try expectRoundTrip(
         \\const std = @import("std");
         \\
-        \\~event check { value: i32 }
+        \\~tor check { value: i32 }
         \\| positive i32
         \\| zero
         \\| negative i32
@@ -747,21 +747,21 @@ test "round-trip: event + proc + flow with branches" {
 
 test "round-trip: subflow impl, immediate impl, bare-return" {
     try expectRoundTrip(
-        \\~event greet { name: string } -> string
+        \\~tor greet { name: string } -> string
         \\
         \\~greet -> "Hello, " ++ name ++ "!"
         \\
-        \\~pub event double { a: i32 } -> i32
+        \\~pub tor double { a: i32 } -> i32
         \\
         \\~double -> a * 2
         \\
-        \\~pub event step {}
+        \\~pub tor step {}
         \\| return
         \\| continue
         \\
         \\~step => continue
         \\
-        \\~event run {}
+        \\~tor run {}
         \\| stopped
         \\| iterated
         \\
@@ -775,14 +775,14 @@ test "round-trip: effect branches, labels, nesting" {
     try expectRoundTrip(
         \\const std = @import("std");
         \\
-        \\~pub event ping { msg: string }
+        \\~pub tor ping { msg: string }
         \\! pong string
         \\
         \\~proc ping|zig {
         \\    pong(msg);
         \\}
         \\
-        \\~event count { current: i32, target: i32 }
+        \\~tor count { current: i32, target: i32 }
         \\| more i32
         \\| done i32
         \\

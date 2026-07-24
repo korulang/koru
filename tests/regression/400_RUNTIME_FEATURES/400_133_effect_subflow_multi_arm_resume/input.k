@@ -10,7 +10,7 @@
 // arm (400_114), so this test's red is entirely the impl side.
 import std/io
 
-pub event request { payload: i64 }
+pub tor request { payload: i64 }
 ! ask i64
     | halved i64
     | timeout

@@ -16,7 +16,7 @@
 // scoping that rejection to terminal branches only.
 ~import std/io
 
-~pub event heartbeat { n: usize }
+~pub tor heartbeat { n: usize }
 ! beat
 
 ~proc heartbeat|zig {

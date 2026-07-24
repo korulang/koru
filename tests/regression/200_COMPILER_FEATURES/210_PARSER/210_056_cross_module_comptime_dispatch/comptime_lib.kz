@@ -6,7 +6,7 @@
 
 const std = @import("std");
 
-~[comptime|norun] pub event setup { config: string } -> string
+~[comptime|norun] pub tor setup { config: string } -> string
 
 ~proc setup|zig {
     std.debug.print("Comptime setup: {s}\n", .{config});

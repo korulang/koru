@@ -1,5 +1,5 @@
 ~import app/fs
-~event log-done {}
+~tor log-done {}
 ~proc log-done|zig {
     std.debug.print("Done!\n", .{});
 }

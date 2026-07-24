@@ -23,7 +23,7 @@
     exe.addIncludePath(b.path("vendor/include"));
 }
 
-~event main {}
+~tor main {}
 
 ~proc main|zig {
 }

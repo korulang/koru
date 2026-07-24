@@ -35,7 +35,7 @@ pub const List_i64 = struct {
 // must be a [transform] — a plain event taking the type as an Expression would
 // make the whole flow comptime. The branches (`| list` / `| err`) carry over to
 // the concrete constructor unchanged.
-~[comptime|transform]pub event new {
+~[comptime|transform]pub tor new {
     expr: Expression,
     invocation: *const Invocation,
     item: *const Item,
@@ -83,7 +83,7 @@ pub const List_i64 = struct {
 
 // Concrete i64 constructor (runtime). `new(i64)` rewrites to this. Carries the
 // <list!> ownership obligation.
-~pub event new-i64 {}
+~pub tor new-i64 {}
 | list *List_i64<list!>
 | err string
 
@@ -108,7 +108,7 @@ pub const List_i64 = struct {
 
 // Append a value. Void, chains with `|>`. OOM panics (the approved split: a
 // growable push is loud-on-failure, not a per-call error branch).
-~pub event push { xs: *List_i64<list>, v: i64 }
+~pub tor push { xs: *List_i64<list>, v: i64 }
 
 ~proc push|zig {
     xs.items.append(xs.allocator, v) catch {
@@ -122,7 +122,7 @@ pub const List_i64 = struct {
 
 // Current length as a scalar. (The `xs.len` expression form rides a separate
 // bridge; this event is the plain call form.)
-~pub event len { xs: *List_i64<list> } -> usize
+~pub tor len { xs: *List_i64<list> } -> usize
 
 ~proc len|zig {
     return xs.items.items.len;
@@ -130,7 +130,7 @@ pub const List_i64 = struct {
 
 // Random access by index. <list> borrow — read, list untouched. `out-of-bounds`
 // when i is past the end.
-~pub event get { xs: *List_i64<list>, i: usize }
+~pub tor get { xs: *List_i64<list>, i: usize }
 | item i64
 | out-of-bounds
 
@@ -145,7 +145,7 @@ pub const List_i64 = struct {
 // binding keeps <list!>), so it can be popped again or freed. `empty` when there
 // is nothing to pop. For i64 the popped value carries no obligation; an element
 // type that DID would have its obligation reissued to `v` here.
-~pub event pop { xs: *List_i64<list> }
+~pub tor pop { xs: *List_i64<list> }
 | item i64
 | empty
 
@@ -160,7 +160,7 @@ pub const List_i64 = struct {
 // Teardown (consume — discharges <!list>)
 // ============================================
 
-~pub event free { xs: *List_i64<!list> }
+~pub tor free { xs: *List_i64<!list> }
 
 ~proc free|zig {
     xs.deinit();

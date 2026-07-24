@@ -11,7 +11,7 @@
 const std = @import("std");
 const Handle = struct { n: i32 };
 
-~event weird { } -> *Handle<!owned>
+~tor weird { } -> *Handle<!owned>
 ~proc weird|zig { const h = std.heap.page_allocator.create(Handle) catch unreachable; h.* = .{ .n = 1 }; return h; }
 
 ~weird(): h |> std/io:print.ln("returned a consumed-in-output handle")

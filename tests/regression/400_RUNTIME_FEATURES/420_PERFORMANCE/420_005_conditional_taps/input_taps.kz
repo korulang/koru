@@ -26,7 +26,7 @@ var sum8: u64 = 0;
 var sum9: u64 = 0;
 
 // Producer event
-~event count { i: u64 }
+~tor count { i: u64 }
 | next u64
 
 ~proc count|zig {
@@ -36,37 +36,37 @@ var sum9: u64 = 0;
 }
 
 // Accumulator events for each range
-~event accumulate0 { value: u64 }
+~tor accumulate0 { value: u64 }
 ~proc accumulate0|zig { sum0 += value; }
 
-~event accumulate1 { value: u64 }
+~tor accumulate1 { value: u64 }
 ~proc accumulate1|zig { sum1 += value; }
 
-~event accumulate2 { value: u64 }
+~tor accumulate2 { value: u64 }
 ~proc accumulate2|zig { sum2 += value; }
 
-~event accumulate3 { value: u64 }
+~tor accumulate3 { value: u64 }
 ~proc accumulate3|zig { sum3 += value; }
 
-~event accumulate4 { value: u64 }
+~tor accumulate4 { value: u64 }
 ~proc accumulate4|zig { sum4 += value; }
 
-~event accumulate5 { value: u64 }
+~tor accumulate5 { value: u64 }
 ~proc accumulate5|zig { sum5 += value; }
 
-~event accumulate6 { value: u64 }
+~tor accumulate6 { value: u64 }
 ~proc accumulate6|zig { sum6 += value; }
 
-~event accumulate7 { value: u64 }
+~tor accumulate7 { value: u64 }
 ~proc accumulate7|zig { sum7 += value; }
 
-~event accumulate8 { value: u64 }
+~tor accumulate8 { value: u64 }
 ~proc accumulate8|zig { sum8 += value; }
 
-~event accumulate9 { value: u64 }
+~tor accumulate9 { value: u64 }
 ~proc accumulate9|zig { sum9 += value; }
 
-~event validate {}
+~tor validate {}
 ~proc validate|zig {
     const total = sum0 + sum1 + sum2 + sum3 + sum4 + sum5 + sum6 + sum7 + sum8 + sum9;
     const expected: u64 = MESSAGES * (MESSAGES - 1) / 2;
@@ -77,7 +77,7 @@ var sum9: u64 = 0;
     }
 }
 
-~event start {} | ready
+~tor start {} | ready
 ~proc start|zig { return .{ .ready = .{} }; }
 
 // 10 CONDITIONAL TAPS with `when` clauses

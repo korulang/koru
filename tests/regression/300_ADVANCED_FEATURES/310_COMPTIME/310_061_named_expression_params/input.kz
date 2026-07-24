@@ -8,7 +8,7 @@ const std = @import("std");
 ~[comptime]
 
 // Event with implicit Expression + named Expression parameter
-~[keyword|comptime|transform]pub event operation {
+~[keyword|comptime|transform]pub tor operation {
     expr: Expression,
     guard: Expression,
     program: *const Program,
@@ -26,7 +26,7 @@ const std = @import("std");
 ~operation(1..N, guard: i > 100)
 
 // Scaffold to make it compile
-~event dummy {}
+~tor dummy {}
 
 ~proc dummy|zig {
     std.debug.print("dummy\n", .{});

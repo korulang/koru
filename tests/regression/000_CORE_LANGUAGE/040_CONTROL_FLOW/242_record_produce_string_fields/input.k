@@ -4,7 +4,7 @@
 // piece of the `! config -> { skip, trivia }` grammar-config shape — record
 // produce and `: bind` consumption already hold.
 import std/io
-pub event config { strict: bool } -> { skip: string, trivia: string }
+pub tor config { strict: bool } -> { skip: string, trivia: string }
 config = if(strict)
     | then -> { skip: "WS", trivia: "CMT" }
     | else -> { skip: "NONE", trivia: "NONE" }

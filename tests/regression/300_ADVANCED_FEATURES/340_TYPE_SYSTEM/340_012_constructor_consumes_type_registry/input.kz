@@ -23,7 +23,7 @@ const std = @import("std");
 ! construct |> std/types:fields-of(Player)
     ! each f |> std/constructor:field(f.name, f.type)
 
-~event main {}
+~tor main {}
 
 ~proc main|zig {
     const s = PlayerSnapshot{ .name = "Alice", .health = 100 };

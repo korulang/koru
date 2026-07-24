@@ -4,12 +4,12 @@
 
 const std = @import("std");
 
-~event log { message: string }
+~tor log { message: string }
 
 ~proc log|zig {
     std.debug.print("LOG: {s}\n", .{message});
 }
 
-~event main {}
+~tor main {}
 
 ~log(message: "hello")

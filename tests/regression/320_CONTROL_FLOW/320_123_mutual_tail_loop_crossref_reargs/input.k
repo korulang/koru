@@ -7,9 +7,9 @@
 // (1,2) return `a` to 1; a sequential rearg would corrupt the swap and yield 2.
 import std/io
 
-pub event ping { a: i64, b: i64, n: i64 } -> i64
+pub tor ping { a: i64, b: i64, n: i64 } -> i64
 
-pub event pong { a: i64, b: i64, n: i64 } -> i64
+pub tor pong { a: i64, b: i64, n: i64 } -> i64
 
 ping = if(n == 0)
 | then -> a

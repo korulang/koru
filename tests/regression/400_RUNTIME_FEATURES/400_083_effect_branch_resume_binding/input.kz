@@ -6,7 +6,7 @@
 
 ~import std/io
 
-~pub event transform { payload: i32 }
+~pub tor transform { payload: i32 }
 ! squarify i32 -> i32
 | done i32
 

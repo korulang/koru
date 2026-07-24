@@ -14,11 +14,11 @@ const HandlePool = @import("root").koru_std.koru_interpreter.HandlePool;
 var bridge_pool = HandlePool.init(std.heap.page_allocator);
 
 // Events with obligations
-~pub event open { path: string } -> string<opened!>
+~pub tor open { path: string } -> string<opened!>
 
 ~open -> "file_1"
 
-~pub event close { handle: string<!opened> }
+~pub tor close { handle: string<!opened> }
 
 ~proc close|zig {
     std.debug.print("close() called for handle\n", .{});
@@ -49,7 +49,7 @@ const SESSION_2 = "~close(handle: \"file_1\")\n| closed |> result {}";
 | scope-not-found _ |> std/io:print.ln("FAIL: session 1 scope_not_found")
 
 // Helper event to run session 2 and report both counts
-~event run-session-2 { handles_after_open: u32 }
+~tor run-session-2 { handles_after_open: u32 }
 | done { after_open: u32, after_close: u32 }
 | fail string
 

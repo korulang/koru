@@ -9,7 +9,7 @@ import std/io
 import std/build
 
 
-pub event greet {}
+pub tor greet {}
 
 greet|en = std/io:print("hello")
 

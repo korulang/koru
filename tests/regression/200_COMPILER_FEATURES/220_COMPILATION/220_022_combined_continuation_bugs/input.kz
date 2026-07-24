@@ -27,7 +27,7 @@ const allocator = std.heap.c_allocator;
 // These are void events - no branches. Should chain with |>
 // ============================================================
 
-~event work-void { r: *Resource }
+~tor work-void { r: *Resource }
 
 ~proc work-void|zig {
     r.data[0] +%= 1;
@@ -38,7 +38,7 @@ const allocator = std.heap.c_allocator;
 // Same branch name "done" at multiple nesting levels
 // ============================================================
 
-~event work-done { r: *Resource }
+~tor work-done { r: *Resource }
 
 ~proc work-done|zig {
     r.data[0] +%= 1;
@@ -49,7 +49,7 @@ const allocator = std.heap.c_allocator;
 // Obligation escapes to differently-named field
 // ============================================================
 
-~event create { id: usize } -> *Resource<active!>
+~tor create { id: usize } -> *Resource<active!>
 
 ~proc create|zig {
     const r = allocator.create(Resource) catch unreachable;
@@ -57,14 +57,14 @@ const allocator = std.heap.c_allocator;
     return r;
 }
 
-~event destroy { r: *Resource<!active> }
+~tor destroy { r: *Resource<!active> }
 
 ~proc destroy|zig {
     allocator.destroy(r);
 }
 
 // Factory with DIFFERENT field name than create
-~event make-resource { id: usize } -> *Resource<active!>  // "resource" not "r"
+~tor make-resource { id: usize } -> *Resource<active!>  // "resource" not "r"
 
 // BUG #3: f.r -> resource field name mismatch
 ~make-resource = create(id): f -> f

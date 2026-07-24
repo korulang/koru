@@ -13,17 +13,17 @@
 // ============================================
 
 // Database layer (impure - external DB)
-~event db.get-user { id: u32 }
+~tor db.get-user { id: u32 }
 | found { id: u32, balance: u32 }
 | not-found
 
 // Payment service (impure - external API)
-~event payment.charge { user_id: u32, amount: u32 }
+~tor payment.charge { user_id: u32, amount: u32 }
 | success string
 | failed string
 
 // Pure validation (no side effects)
-~event validate.amount { amount: u32, balance: u32 }
+~tor validate.amount { amount: u32, balance: u32 }
 | valid
 | insufficient
 
@@ -36,7 +36,7 @@
 }
 
 // The main flow - chains everything together
-~event process-payment { user_id: u32, amount: u32 }
+~tor process-payment { user_id: u32, amount: u32 }
 | success string
 | user-not-found
 | insufficient-funds

@@ -16,6 +16,6 @@
 // PINNED FAILING (parse-accept): same gap as 210_092 — the flat decl-branch
 // collection doesn't yet peel same-line `|` arms into the preceding `!`'s
 // resume sum.
-~pub event request { payload: i32 }
+~pub tor request { payload: i32 }
 ! ask i32 | halved i32 | timeout
 | done i32

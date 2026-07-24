@@ -8,7 +8,7 @@ const std = @import("std");
 
 // Sample Koru code to parse
 const SAMPLE_CODE =
-    \\~event greet { name: string }
+    \\~tor greet { name: string }
     \\| greeted
     \\
     \\~proc greet {
@@ -17,7 +17,7 @@ const SAMPLE_CODE =
 ;
 
 // Event to inspect AST - using module:Type syntax!
-~event inspect-ast { result: std/koru:ParseResult }
+~tor inspect-ast { result: std/koru:ParseResult }
 
 ~proc inspect-ast|zig {
     std.debug.print("Parsed {} items\n", .{result.source_file.items.len});
@@ -44,7 +44,7 @@ const SAMPLE_CODE =
 }
 
 // Event to report error - returns done when complete
-~event report-error { message: string }
+~tor report-error { message: string }
 
 ~proc report-error|zig {
     std.debug.print("Parse error: {s}\n", .{message});

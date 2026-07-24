@@ -3,7 +3,7 @@
 
 const std = @import("std");
 
-~pub event double { x: i32 } -> i32
+~pub tor double { x: i32 } -> i32
 
 ~proc double|zig {
     const result = x * 2;

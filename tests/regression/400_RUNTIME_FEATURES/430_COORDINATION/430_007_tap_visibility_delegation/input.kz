@@ -13,7 +13,7 @@
 const std = @import("std");
 
 // Define abstract event
-~[abstract] event process { value: i32 }
+~[abstract] tor process { value: i32 }
 | result i32
 
 // Default implementation: double the value

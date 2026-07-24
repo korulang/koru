@@ -1,7 +1,7 @@
 const std = @import("std");
 const File = struct { handle: i32 };
 
-~pub event open { path: string } -> *File<opened!>
+~pub tor open { path: string } -> *File<opened!>
 
 ~proc open|zig {
     std.debug.print("Opening file: {s}\n", .{path});
@@ -11,7 +11,7 @@ const File = struct { handle: i32 };
     return f;
 }
 
-~pub event close { file: *File<!opened> }
+~pub tor close { file: *File<!opened> }
 
 ~proc close|zig {
     std.debug.print("Closing file\n", .{});
@@ -19,7 +19,7 @@ const File = struct { handle: i32 };
 
 // Subflow that opens a file and returns it with obligation
 // The obligation escapes via the return signature - caller must handle it
-~pub event my-subflow {} -> *File<opened!>
+~pub tor my-subflow {} -> *File<opened!>
 
 // SUBFLOW: opens a file and bare-returns it, threading the <opened!>
 // obligation through the return signature to the caller.

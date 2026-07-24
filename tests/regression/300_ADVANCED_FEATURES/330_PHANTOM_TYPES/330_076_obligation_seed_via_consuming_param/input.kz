@@ -19,7 +19,7 @@
 const std = @import("std");
 const Handle = struct { n: i32 };
 
-~event step { h: *Handle<!owned> }
+~tor step { h: *Handle<!owned> }
 | again *Handle<owned!>
 | stop *Handle<owned!>
 ~proc step|zig {
@@ -28,7 +28,7 @@ const Handle = struct { n: i32 };
     return .{ .stop = h };
 }
 
-~event done { h: *Handle<!owned> }
+~tor done { h: *Handle<!owned> }
 ~proc done|zig {
     std.debug.print("n={}\n", .{h.n});
     std.heap.page_allocator.destroy(h);
@@ -37,13 +37,13 @@ const Handle = struct { n: i32 };
 // `spin` tries to take the owned handle as a CONSUMING parameter and feed it to
 // the loop seed. The consume discharges `h` at spin's door, so `#loop step(h: h)`
 // is handed a value that carries no obligation -> KORU030.
-~event spin { h: *Handle<!owned> } -> *Handle<owned!>
+~tor spin { h: *Handle<!owned> } -> *Handle<owned!>
 
 ~spin = #loop step(h)
 | again v |> @loop(h: v)
 | stop r -> r
 
-~event make {} -> *Handle<owned!>
+~tor make {} -> *Handle<owned!>
 ~proc make|zig {
     const h = std.heap.page_allocator.create(Handle) catch unreachable;
     h.* = .{ .n = 0 };

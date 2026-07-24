@@ -19,7 +19,7 @@
 import std/io
 import std/control
 
-pub event gen { n: usize }
+pub tor gen { n: usize }
 ! ?note usize
 | done usize
 

@@ -32,10 +32,10 @@
 // too. See vaxis-component-baton.
 const std = @import("std");
 
-~event render-at { x: i64, text: string }
+~tor render-at { x: i64, text: string }
 ~proc render-at|zig { std.debug.print("{d}:{s}\n", .{ x, text }); }
 
-~event source {}
+~tor source {}
 ! emit string
 ~proc source|zig { emit("punned!"); }
 

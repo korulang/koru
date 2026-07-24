@@ -19,7 +19,7 @@ const std = @import("std");
 
 // [norun] = no proc needed, event just stores shape
 // [expand] = transform replaces invocation with template expansion
-~[norun|expand]pub event sort { arr: Expression }
+~[norun|expand]pub tor sort { arr: Expression }
 
 // Test data
 var numbers = [_]i32{ 5, 2, 8, 1, 9, 3 };
@@ -28,7 +28,7 @@ var numbers = [_]i32{ 5, 2, 8, 1, 9, 3 };
 ~sort(arr: numbers[0..])
 
 // Verify it worked
-~event verify {}
+~tor verify {}
 
 ~proc verify|zig {
     // Check sorted order

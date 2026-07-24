@@ -15,7 +15,7 @@ const Entity = struct {
 };
 
 // The broadcast point
-~pub event process-entity { e: Entity }
+~pub tor process-entity { e: Entity }
 | entity Entity
 
 ~proc process-entity|zig {
@@ -26,7 +26,7 @@ const Entity = struct {
 ~tap(process-entity -> *)
 | entity ent when ent.e.has_damage |> handle-damage(ent.e)
 
-~event handle-damage { e: Entity }
+~tor handle-damage { e: Entity }
 ~proc handle-damage|zig {
     std.debug.print("DAMAGE on Entity {d}!\n", .{ e.id });
 }
@@ -46,10 +46,10 @@ const entities = [_]Entity{
     | entity _ |> noop()
 | done |> print-done()
 
-~event noop {}
+~tor noop {}
 ~proc noop|zig {}
 
-~event print-done {}
+~tor print-done {}
 ~proc print-done|zig {
     std.debug.print("Done!\n", .{});
 }

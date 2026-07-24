@@ -12,7 +12,7 @@
 
 ~import std/compiler
 
-~event main {}
+~tor main {}
 
 ~proc main|zig {
 }

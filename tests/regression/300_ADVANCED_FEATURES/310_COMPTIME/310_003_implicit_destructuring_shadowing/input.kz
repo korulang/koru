@@ -6,7 +6,7 @@
 // ============================================================================
 const std = @import("std");
 
-~event greet { name: string }
+~tor greet { name: string }
 
 ~proc greet|zig {
     std.debug.print("Hello, {s}!\n", .{name});

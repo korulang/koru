@@ -7,7 +7,7 @@
 // branch-ctor field form (`=> result { ... }`, 400_129 — landed grammar).
 import std/io
 
-pub event request { payload: i64 }
+pub tor request { payload: i64 }
 ! ask i64 | result { halved: i64, quadrupled: i64 } | timeout
 | done i64
 

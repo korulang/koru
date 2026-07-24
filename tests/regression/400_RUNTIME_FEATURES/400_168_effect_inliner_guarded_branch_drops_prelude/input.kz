@@ -15,7 +15,7 @@
 // body inlines cleanly, and the guarded-only consumer arm splices as-is.
 ~import std/io
 
-~pub event run {}
+~pub tor run {}
 ! ?tick
 ! ?beep i64
 | done i64

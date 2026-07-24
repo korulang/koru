@@ -3,7 +3,7 @@
 // Library defining a keyword event with Expression parameter
 // This tests that keywords properly capture expressions
 
-~[keyword|comptime]pub event check { expr: Expression }
+~[keyword|comptime]pub tor check { expr: Expression }
 
 ~proc check|zig {
     const std = @import("std");

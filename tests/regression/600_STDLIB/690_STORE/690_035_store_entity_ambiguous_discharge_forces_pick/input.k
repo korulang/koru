@@ -10,10 +10,10 @@ import std/store
 
 [entity(enemy)]std/store:new(enemies, capacity: 64) { hp: i64 }
 
-pub event despawn-quietly { enemy: Enemy<std/store:!taken> }
+pub tor despawn-quietly { enemy: Enemy<std/store:!taken> }
 despawn-quietly = std/io:print.ln("quietly despawned")
 
-pub event despawn-loudly { enemy: Enemy<std/store:!taken> }
+pub tor despawn-loudly { enemy: Enemy<std/store:!taken> }
 despawn-loudly = std/io:print.ln("LOUDLY despawned")
 
 std/store:insert(enemies) { hp: 9 }

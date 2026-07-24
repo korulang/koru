@@ -3,4 +3,4 @@
 // "path\\to\\file" should NOT be flagged as Zig code (\\t ≠ \t).
 
 
-event process-path { path: string }
+tor process-path { path: string }

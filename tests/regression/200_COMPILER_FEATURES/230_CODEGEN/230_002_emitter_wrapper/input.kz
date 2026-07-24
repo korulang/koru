@@ -15,7 +15,7 @@ const std = @import("std");
 // We don't actually call emit.program here - just verify it exists and compiles
 // The import itself proves the wrapper is available and generates valid code
 
-~event main {}
+~tor main {}
 
 ~proc main|zig {
 }

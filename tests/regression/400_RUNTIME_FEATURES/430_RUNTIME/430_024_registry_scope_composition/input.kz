@@ -11,25 +11,25 @@
 const std = @import("std");
 
 // User management events
-~pub event users.get { id: u64 }
+~pub tor users.get { id: u64 }
 | found string
 
-~pub event users.list {}
+~pub tor users.list {}
 | listed usize
 
-~pub event users.create { name: string }
+~pub tor users.create { name: string }
 | created u64
 
 // Admin events (restricted)
-~pub event admin.delete-user { id: u64 }
+~pub tor admin.delete-user { id: u64 }
 
-~pub event admin.reset-db {}
+~pub tor admin.reset-db {}
 
 // Debug events (only in debug builds)
-~pub event debug.dump-state {}
+~pub tor debug.dump-state {}
 | dumped string
 
-~pub event debug.trace { message: string }
+~pub tor debug.trace { message: string }
 
 // =============================================================================
 // REGISTRY SCOPES

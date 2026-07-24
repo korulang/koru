@@ -15,28 +15,28 @@ const std = @import("std");
 ~import std/control
 
 // Void event (no branches)
-~event step-one {}
+~tor step-one {}
 
 ~proc step-one|zig {
     // Does nothing, just tests void event handling
 }
 
 // Another void event
-~event step-two {}
+~tor step-two {}
 
 ~proc step-two|zig {
     // Does nothing
 }
 
 // Event with a result branch
-~event get-value {} -> i32
+~tor get-value {} -> i32
 
 ~proc get-value|zig {
     return 42;
 }
 
 // Event to print
-~event print-value { v: i32 }
+~tor print-value { v: i32 }
 
 ~proc print-value|zig {
     std.debug.print("{d}\n", .{v});

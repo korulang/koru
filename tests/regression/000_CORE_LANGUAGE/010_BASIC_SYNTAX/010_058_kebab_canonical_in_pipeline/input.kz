@@ -25,7 +25,7 @@
 // this test to expect snake — that would cement the blunder.
 const std = @import("std");
 
-~[comptime|transform]pub event report-status {
+~[comptime|transform]pub tor report-status {
     event_name: string,
     item: *const Item,
     program: *const Program,

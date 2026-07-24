@@ -18,7 +18,7 @@
 // predicate: uurcxstgmygtbstg has NO gap letter, ieodomkazucvgmuy has one).
 import std/io
 
-pub event checkgap { s: string }
+pub tor checkgap { s: string }
 
 checkgap = capture { p2: -1[i64], p1: -1[i64], found_gap: 0[i64] }
 ! as st |> for(s)

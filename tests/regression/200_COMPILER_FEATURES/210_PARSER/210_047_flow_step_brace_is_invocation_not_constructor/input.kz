@@ -10,6 +10,6 @@
 // DESIRED: `|>` + `name { ... }` is always an invocation (constructions are
 // marked with `=>`). Layout is irrelevant. This test pins the single-line case
 // to the invocation reading. It is RED until the parser stops guessing by newline.
-~event render { source: Source<HTML> }
-~event setup {}
+~tor render { source: Source<HTML> }
+~tor setup {}
 ~setup() |> render { x: 1 }

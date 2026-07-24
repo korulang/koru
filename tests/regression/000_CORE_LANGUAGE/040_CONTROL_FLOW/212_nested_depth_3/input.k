@@ -9,15 +9,15 @@
 
 import std/io
 
-event add-one { value: i32 } -> i32
+tor add-one { value: i32 } -> i32
 
 add-one -> value + 1
 
-event add-two { value: i32 } -> i32
+tor add-two { value: i32 } -> i32
 
 add-two -> value + 2
 
-event add-three { value: i32 } -> i32
+tor add-three { value: i32 } -> i32
 
 add-three -> value + 3
 

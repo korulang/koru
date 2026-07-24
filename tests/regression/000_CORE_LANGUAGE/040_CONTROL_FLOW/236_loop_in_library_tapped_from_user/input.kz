@@ -6,7 +6,7 @@
 
 const std = @import("std");
 
-~event log { n: u32 }
+~tor log { n: u32 }
 ~proc log|zig {
     std.debug.print("tick {}\n", .{n});
 }

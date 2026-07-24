@@ -7,7 +7,7 @@
 
 ~import std/io
 
-~pub event sum-upto { n: i64 } -> i64
+~pub tor sum-upto { n: i64 } -> i64
 
 // Zig fallback — defines the answer.
 ~proc sum-upto|zig {

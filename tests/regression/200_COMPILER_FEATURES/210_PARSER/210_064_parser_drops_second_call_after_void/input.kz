@@ -14,23 +14,23 @@
 
 const std = @import("std");
 
-~event ping {}
+~tor ping {}
 ~proc ping|zig {
     std.debug.print("ping\n", .{});
 }
 
-~event make-payload {} -> u32
+~tor make-payload {} -> u32
 
 ~proc make-payload|zig {
     return 42;
 }
 
-~event consume { v: u32 }
+~tor consume { v: u32 }
 ~proc consume|zig {
     std.debug.print("got {}\n", .{v});
 }
 
-~event run {}
+~tor run {}
 ~run = ping() |> make-payload(): v |> consume(v)
 
 ~run()

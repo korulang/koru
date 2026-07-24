@@ -5,7 +5,7 @@
 // one-field resume record is illegal — it must collapse to `! ask -> i64`. The
 // intended rejection is a parser diagnostic guiding to the scalar form.
 import std/io
-pub event request { seed: i64 }
+pub tor request { seed: i64 }
 ! ask -> { a: i64 }
 | done i64
 request = ask(): c => done c.a

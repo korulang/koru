@@ -7,7 +7,7 @@
 
 const std = @import("std");
 
-~event sum { numbers: []const i32 } -> i32
+~tor sum { numbers: []const i32 } -> i32
 
 ~proc sum|zig {
     var total: i32 = 0;
@@ -17,7 +17,7 @@ const std = @import("std");
     return total;
 }
 
-~event check { expected: i32, actual: i32 }
+~tor check { expected: i32, actual: i32 }
 
 ~proc check|zig {
     if (expected != actual) {

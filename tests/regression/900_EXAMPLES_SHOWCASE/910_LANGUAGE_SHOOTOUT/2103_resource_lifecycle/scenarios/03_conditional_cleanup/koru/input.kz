@@ -19,7 +19,7 @@ const std = @import("std");
 
 const File = struct { handle: i32 };
 
-~event open { path: string } -> *File<opened!>
+~tor open { path: string } -> *File<opened!>
 
 ~proc open|zig {
     std.debug.print("Open\n", .{});
@@ -28,13 +28,13 @@ const File = struct { handle: i32 };
     return f;
 }
 
-~event write { file: *File<opened>, data: string }
+~tor write { file: *File<opened>, data: string }
 
 ~proc write|zig {
     std.debug.print("Write: {s}\n", .{data});
 }
 
-~event close { file: *File<!opened> }
+~tor close { file: *File<!opened> }
 
 ~proc close|zig {
     std.debug.print("Close\n", .{});

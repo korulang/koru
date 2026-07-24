@@ -10,7 +10,7 @@
 // of generated code into the host template — the emit-only boundary holds.
 ~import std/io
 
-~pub event probe { n: usize }
+~pub tor probe { n: usize }
 ! each usize
 | done
 

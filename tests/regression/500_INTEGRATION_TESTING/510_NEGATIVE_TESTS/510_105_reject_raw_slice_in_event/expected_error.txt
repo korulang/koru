@@ -1,1 +1,1 @@
-'[]const u8' is not a Koru event-payload type. Use 'string'
+'[]const u8' is not a Koru tor-payload type. Use 'string'

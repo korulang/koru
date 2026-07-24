@@ -210,7 +210,7 @@ pub const AbstractImplValidator = struct {
             // Check if target exists and is abstract
             const target_event = self.abstract_events.get(target_path);
             if (target_event == null) {
-                log.debug("ERROR: Implementation targets non-existent or non-abstract event '{s}'\n", .{target_path});
+                log.debug("ERROR: Implementation targets non-existent or non-abstract tor '{s}'\n", .{target_path});
                 log.debug("  Impl at: {s}:{}:{}\n", .{
                     impl_location.file,
                     impl_location.line,

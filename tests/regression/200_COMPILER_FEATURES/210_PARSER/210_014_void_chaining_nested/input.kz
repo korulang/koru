@@ -4,9 +4,9 @@
 //              | branch1 |> _
 //              | branch2 |> _
 
-~event void-event {}
+~tor void-event {}
 
-~event branching-event {}
+~tor branching-event {}
 
 // MUST_FAIL: branching-event is declared void (no branches), so `| error` is a
 // branch handler on an event that has no branches — category error.

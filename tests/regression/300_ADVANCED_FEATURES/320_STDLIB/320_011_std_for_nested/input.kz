@@ -13,21 +13,21 @@ const std = @import("std");
 ~import std/control
 
 // Event 1: double a number
-~event double { x: i32 } -> i32
+~tor double { x: i32 } -> i32
 
 ~proc double|zig {
     return x * 2;
 }
 
 // Event 2: print a number
-~event print-num { y: i32 }
+~tor print-num { y: i32 }
 
 ~proc print-num|zig {
     std.debug.print("{}\n", .{y});
 }
 
 // Event to finalize
-~event finalize {}
+~tor finalize {}
 
 ~proc finalize|zig {
     std.debug.print("done\n", .{});

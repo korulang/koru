@@ -1,16 +1,16 @@
 // Depth 4 test: start |> +1 |> +2 |> +3 |> +4 → result (10+1+2+3+4 = 20)
 import std/io
 
-event add-one { value: i32 } -> i32
+tor add-one { value: i32 } -> i32
 add-one -> value + 1
 
-event add-two { value: i32 } -> i32
+tor add-two { value: i32 } -> i32
 add-two -> value + 2
 
-event add-three { value: i32 } -> i32
+tor add-three { value: i32 } -> i32
 add-three -> value + 3
 
-event add-four { value: i32 } -> i32
+tor add-four { value: i32 } -> i32
 add-four -> value + 4
 
 add-one(value: 10): a |> add-two(value: a): b |> add-three(value: b): c |> add-four(value: c): d |> std/io:print.ln("{{d:d}}")

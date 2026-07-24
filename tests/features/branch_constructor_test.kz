@@ -1,6 +1,6 @@
 // Test inline branch constructors
 
-~event process.data { value: u32 }
+~tor process.data { value: u32 }
 | success u32
 | error []const u8
 

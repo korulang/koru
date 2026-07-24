@@ -13,7 +13,7 @@ const std = @import("std");
 // Event that takes Source[HTML] parameter for template rendering
 // [comptime|transform] annotation marks this as compile-time transformation
 // Transform events receive: source (user args), invocation (for context), program (AST), allocator (memory)
-~[comptime|transform]event renderHTML { source: Source<HTML>, invocation: *const Invocation, program: *const Program, allocator: std.mem.Allocator }
+~[comptime|transform]tor renderHTML { source: Source<HTML>, invocation: *const Invocation, program: *const Program, allocator: std.mem.Allocator }
 | transformed SiteResult
 | failed string
 
@@ -236,7 +236,7 @@ const std = @import("std");
 // pin goes GREEN — the CONTAINS assertion is satisfied). Capability rung: make
 // the transform actually compose in continuation position, then flip
 // MUST_FAIL -> MUST_RUN with expected.txt.
-~event seed {} -> i64
+~tor seed {} -> i64
 ~proc seed|zig {
     return 1;
 }

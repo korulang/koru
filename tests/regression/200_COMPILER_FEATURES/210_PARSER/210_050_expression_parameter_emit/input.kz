@@ -12,7 +12,7 @@
 const std = @import("std");
 
 // Event with Expression parameter
-~[comptime|norun]pub event test-expr {
+~[comptime|norun]pub tor test-expr {
     route: Expression,
     source: Source
 }

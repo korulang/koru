@@ -6,14 +6,14 @@
 const std = @import("std");
 const Handle = struct { n: i32 };
 
-~event make {} -> *Handle<owned!>
+~tor make {} -> *Handle<owned!>
 ~proc make|zig {
     const h = std.heap.page_allocator.create(Handle) catch unreachable;
     h.* = .{ .n = 0 };
     return h;
 }
 
-~event step { h: *Handle<!owned> }
+~tor step { h: *Handle<!owned> }
 | again *Handle<owned!>
 | stop *Handle<owned!>
 ~proc step|zig {
@@ -22,7 +22,7 @@ const Handle = struct { n: i32 };
     return .{ .stop = h };
 }
 
-~event icount { c: i32 }
+~tor icount { c: i32 }
 | more i32
 | fin i32
 ~proc icount|zig {
@@ -30,13 +30,13 @@ const Handle = struct { n: i32 };
     return .{ .fin = c };
 }
 
-~event dispose { h: *Handle<!owned> }
+~tor dispose { h: *Handle<!owned> }
 ~proc dispose|zig {
     std.debug.print("n={}\n", .{h.n});
     std.heap.page_allocator.destroy(h);
 }
 
-~event spin {} -> *Handle<owned!>
+~tor spin {} -> *Handle<owned!>
 
 ~spin = make(): h0 |> #oloop step(h: h0): v |> #iloop icount(c: 0): k |> @iloop(c: k)
         | fin _ |> @oloop(h: v)

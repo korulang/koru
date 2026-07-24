@@ -11,7 +11,7 @@
 
 ~import std/io
 
-~pub event run {}
+~pub tor run {}
 | done
 | err string
 

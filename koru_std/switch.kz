@@ -40,7 +40,7 @@ fn charLiteral(allocator: std.mem.Allocator, ch: u8) []const u8 {
 // char (bind or discard with `_`), plus an optional void `no-match` fallback.
 // The shape checker enforces this contract; the transform owns pattern parsing
 // and code emission.
-~[comptime|transform]pub event char { expr: Expression }
+~[comptime|transform]pub tor char { expr: Expression }
 | `*` *
 | ?no-match
 

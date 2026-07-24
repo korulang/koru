@@ -2,13 +2,13 @@
 
 const std = @import("std");
 
-~pub event z-buffer.render { width: i32, height: i32 } -> i32
+~pub tor z-buffer.render { width: i32, height: i32 } -> i32
 
-~pub event z-buffer.clear {}
+~pub tor z-buffer.clear {}
 
-~pub event sprite.draw { x: i32, y: i32 }
+~pub tor sprite.draw { x: i32, y: i32 }
 
-~pub event texture.load { path: string }
+~pub tor texture.load { path: string }
 | loaded i32
 | failed string
 

@@ -17,7 +17,7 @@
 
 ~import std/io
 
-~pub event tokenize { source: string }
+~pub tor tokenize { source: string }
 ! token string
 ! ?warning string
 | done usize

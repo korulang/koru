@@ -2,7 +2,7 @@
 // Symmetric with `| ?name` — consumers may omit handlers without
 // exhaustiveness error; unhandled calls become no-ops.
 
-~pub event tokenize { source: string }
+~pub tor tokenize { source: string }
 ! token string
 ! ?warning string
 | done usize

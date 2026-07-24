@@ -8,13 +8,13 @@
 // PIN: must produce r2 (= a then b: (5+1)+10 = 16).
 import std/io
 
-pub event a { x: i64 } -> i64
+pub tor a { x: i64 } -> i64
 a -> x + 1
 
-pub event b { x: i64 } -> i64
+pub tor b { x: i64 } -> i64
 b -> x + 10
 
-pub event combo { x: i64 } -> i64
+pub tor combo { x: i64 } -> i64
 combo = a(x): r1 |> b(x: r1): r2 -> r2
 
 combo(x: 5): out |> std/io:print.ln("{{ out:d }}")

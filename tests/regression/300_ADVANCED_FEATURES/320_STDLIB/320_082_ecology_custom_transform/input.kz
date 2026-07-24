@@ -11,7 +11,7 @@
 
 // User-defined transform event - should work just like stdlib transforms
 ~[keyword|comptime|transform]
-pub event repeat {
+pub tor repeat {
     times: i32,
     invocation: *const Invocation,
     item: *const Item,

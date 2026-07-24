@@ -12,7 +12,7 @@
 // Surfaced by the wordfreq kernel port (koru-benchmarks 19/22).
 import std/io
 
-pub event r1 { x: i64 } -> i64
+pub tor r1 { x: i64 } -> i64
 r1 -> @rem(x * 16807, 2147483647)
 
 r1(x: r1(x: 5)): v |> std/io:print.ln("{{ v:d }}")

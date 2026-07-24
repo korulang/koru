@@ -18,7 +18,7 @@
 // app/lib/store's state, referenced here with no module qualifier on a
 // module-less base type (`string`). Its home cannot be inferred, so this must
 // be REJECTED (contrast 330_087, which qualifies it: `<app/lib/store:!secret>`).
-~event use-secret { s: string<!secret> } -> string
+~tor use-secret { s: string<!secret> } -> string
 
 ~proc use-secret|zig {
     return s;

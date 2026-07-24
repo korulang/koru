@@ -19,7 +19,7 @@ std/build:step(name: "run") {
 
 // Event definition with annotation on separate line
 ~[comptime|norun]
-pub event test.signal {
+pub tor test.signal {
     value: i32
 }
 

@@ -4,7 +4,7 @@
 // `.expression` Node carrying the Zig source. (`|>` cannot introduce a value —
 // that is KORU103; the producer glyph is `->`.)
 
-~pub event prompt-user { question: string }
+~pub tor prompt-user { question: string }
 ! ask string -> string
 | done
 

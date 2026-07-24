@@ -12,7 +12,7 @@
 import std/fmt
 import std/io
 
-event sink { text: string }
+tor sink { text: string }
 sink = std/io:print.ln(text)
 
 std/fmt:ln("value: 7"): text |> sink()

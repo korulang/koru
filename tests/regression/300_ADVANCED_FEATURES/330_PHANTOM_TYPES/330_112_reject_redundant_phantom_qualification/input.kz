@@ -14,7 +14,7 @@
 
 // REDUNDANT: `*app/lib/db:Transaction` already names app/lib/db; re-qualifying
 // the state `<app/lib/db:!active>` restates it. Should be `<!active>` (bare).
-~event finish { t: *app/lib/db:Transaction<app/lib/db:!active> }
+~tor finish { t: *app/lib/db:Transaction<app/lib/db:!active> }
 
 ~proc finish|zig {
     return;

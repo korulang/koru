@@ -15,4 +15,4 @@ const std = @import("std");
 
 // Sort an array in-place (ascending order)
 // arr: Expression - any slice, Zig figures out the element type
-~[norun|expand]pub event sort { arr: Expression }
+~[norun|expand]pub tor sort { arr: Expression }

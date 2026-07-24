@@ -3,7 +3,7 @@
 // Gallery on-q wants: text pages absorb `q`; `|? |> quit()` for the rest.
 import std/io
 
-event page-route { page: i64 }
+tor page-route { page: i64 }
 | ?catalog
 | ?text-input
 | ?style
@@ -14,7 +14,7 @@ page-route = if(page == 0)
     | then => text-input
     | else => style
 
-event on-q { page: i64 }
+tor on-q { page: i64 }
 on-q = page-route(page)
 | text-input |> std/io:print.ln("keep")
 |? |> std/io:print.ln("quit")

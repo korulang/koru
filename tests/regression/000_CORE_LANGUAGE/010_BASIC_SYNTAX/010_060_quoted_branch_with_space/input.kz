@@ -13,7 +13,7 @@
 // tokenization).
 const std = @import("std");
 
-~[comptime|transform]pub event scan-spaced {
+~[comptime|transform]pub tor scan-spaced {
     invocation: *const Invocation,
     item: *const Item,
     program: *const Program,

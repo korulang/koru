@@ -10,15 +10,15 @@
 // What this proves beyond 140_010: THREE kinds (not two), real work in each
 // handler (counter + sum + xor + conditional quit-counter), so neither V8
 // nor LLVM can DCE the dispatch to a tie.
-pub event run { n: u64 }
+pub tor run { n: u64 }
 ! key u64
 ! resize u64
 ! focus-in u64
 
-pub event on-key { ch: u64 }
-pub event on-resize { width: u64 }
-pub event on-focus { id: u64 }
-pub event report {}
+pub tor on-key { ch: u64 }
+pub tor on-resize { width: u64 }
+pub tor on-focus { id: u64 }
+pub tor report {}
 
 run(n: 200)
 ! key c |> on-key(ch: c)

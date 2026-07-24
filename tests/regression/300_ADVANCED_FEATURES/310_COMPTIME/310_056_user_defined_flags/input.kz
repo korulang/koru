@@ -24,7 +24,7 @@
     "type": "string"
 }
 
-~event main {}
+~tor main {}
 
 ~proc main|zig {
 }

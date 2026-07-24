@@ -4,7 +4,7 @@
 
 const std = @import("std");
 
-~pub event compute { x: u32 } -> u32
+~pub tor compute { x: u32 } -> u32
 
 ~proc compute|zig {
     return x + 100;

@@ -9,9 +9,9 @@
 // ============================================================================
 
 const std = @import("std");
-~event get { id: usize }
+~tor get { id: usize }
 | ok usize
-~event show { v: usize }
+~tor show { v: usize }
 ~proc get|zig { return .{ .ok = id }; }
 ~proc show|zig { std.debug.print("{}\n", .{v}); }
 

@@ -15,7 +15,7 @@
 // path with mutually-referential args. Surfaced by the koru-benchmarks `gcdsum` kernel.
 import std/io
 
-pub event gcd { a: i64, b: i64 } -> i64
+pub tor gcd { a: i64, b: i64 } -> i64
 
 gcd = if(b == 0)
 | then -> a

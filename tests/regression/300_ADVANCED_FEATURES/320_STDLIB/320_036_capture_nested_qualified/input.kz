@@ -9,7 +9,7 @@
 
 const std = @import("std");
 
-~event print-results { outer-val: i32, inner-val: i32 }
+~tor print-results { outer-val: i32, inner-val: i32 }
 
 ~proc print-results|zig {
     std.debug.print("outer={d}, inner={d}\n", .{outer_val, inner_val});

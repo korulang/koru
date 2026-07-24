@@ -8,7 +8,7 @@
 const std = @import("std");
 
 // Validation events
-~event validate { value: i32 }
+~tor validate { value: i32 }
 | valid i32
 | invalid string
 
@@ -19,25 +19,25 @@ const std = @import("std");
     return .{ .invalid = "Value must be positive" };
 }
 
-~event double { value: i32 } -> i32
+~tor double { value: i32 } -> i32
 
 ~proc double|zig {
     return value * 2;
 }
 
-~event triple { value: i32 } -> i32
+~tor triple { value: i32 } -> i32
 
 ~proc triple|zig {
     return value * 3;
 }
 
-~event success { result: i32 }
+~tor success { result: i32 }
 
 ~proc success|zig {
     std.debug.print("Success: {}\n", .{result});
 }
 
-~event failure { msg: string }
+~tor failure { msg: string }
 
 ~proc failure|zig {
     std.debug.print("Failure: {s}\n", .{msg});

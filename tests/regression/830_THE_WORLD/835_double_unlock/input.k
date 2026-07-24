@@ -8,10 +8,10 @@
 // at compile time. Use-after-release is unrepresentable, not merely unlucky.
 import std/io
 
-pub event lock { name: string } -> string<held!>
+pub tor lock { name: string } -> string<held!>
 lock -> name
 
-pub event unlock { name: string<!held> }
+pub tor unlock { name: string<!held> }
 unlock = std/io:print.ln("unlock {{ name:s }}")
 
 // Release once (discharges <!held>), then try to release the same token again.

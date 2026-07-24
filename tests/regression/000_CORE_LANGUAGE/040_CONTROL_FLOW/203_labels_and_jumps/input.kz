@@ -8,7 +8,7 @@
 const std = @import("std");
 
 // Event for counting iteration
-~event count { current: i32, target: i32 }
+~tor count { current: i32, target: i32 }
 | next { value: i32, target: i32 }
 | done i32
 

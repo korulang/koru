@@ -12,7 +12,7 @@
 
 const std = @import("std");
 
-~pub event from-a { msg: string } -> string
+~pub tor from-a { msg: string } -> string
 
 ~proc from-a|zig {
     std.debug.print("input.kz received: {s}\n", .{msg});

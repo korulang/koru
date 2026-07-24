@@ -8,7 +8,7 @@
 ~import std/io
 
 // Event with required + optional branches
-~event process { value: u32 }
+~tor process { value: u32 }
 | success u32
 | ?warning string
 | ?debug string
@@ -24,7 +24,7 @@
 }
 
 // Helper: print a string (void event - no branches)
-~event print-str { text: string }
+~tor print-str { text: string }
 
 ~proc print-str|zig {
     _ = @import("std").posix.write(1, text) catch {};

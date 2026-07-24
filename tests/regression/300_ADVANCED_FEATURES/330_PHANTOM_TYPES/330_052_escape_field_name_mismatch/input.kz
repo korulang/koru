@@ -1,17 +1,17 @@
 const std = @import("std");
 const File = struct { handle: i32 };
-~event open { path: string } -> *File<opened!>
+~tor open { path: string } -> *File<opened!>
 ~proc open|zig {
     std.debug.print("opened: {s}\n", .{path});
     const f = std.heap.page_allocator.create(File) catch unreachable;
     f.* = File{ .handle = 42 };
     return f;
 }
-~event close { file: *File<!opened> }
+~tor close { file: *File<!opened> }
 ~proc close|zig {
     std.debug.print("closed\n", .{});
     std.heap.page_allocator.destroy(file);
 }
-~event get-resource { path: string } -> *File<opened!>
+~tor get-resource { path: string } -> *File<opened!>
 ~get-resource = open(path): f -> f
 ~get-resource(path: "test.txt"): r |> close(file: r)

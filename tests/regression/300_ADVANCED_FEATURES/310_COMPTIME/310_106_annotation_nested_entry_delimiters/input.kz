@@ -5,12 +5,12 @@
 
 const std = @import("std");
 
-~[custom(foo(bar: 1))|other[x, y]|doc("pipes | and ] stay put")]event guarded {}
+~[custom(foo(bar: 1))|other[x, y]|doc("pipes | and ] stay put")]tor guarded {}
 
 ~[
 - custom(foo(bar: 1))
 - doc("vertical ] too")
-]event vertical-guarded {}
+]tor vertical-guarded {}
 
 ~proc guarded|zig {
     std.debug.print("guarded ran\n", .{});

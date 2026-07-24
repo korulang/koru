@@ -8,7 +8,7 @@ const MESSAGES: u64 = 10_000_000;
 
 var sum1: u64 = 0;
 
-~event count { i: u64 }
+~tor count { i: u64 }
 | next u64
 
 ~proc count|zig {
@@ -18,10 +18,10 @@ var sum1: u64 = 0;
 }
 
 // Observer 1
-~event accumulate1 { value: u64 }
+~tor accumulate1 { value: u64 }
 ~proc accumulate1|zig { sum1 += value; }
 
-~event validate {}
+~tor validate {}
 ~proc validate|zig {
     const expected: u64 = MESSAGES * (MESSAGES - 1) / 2;
     if (sum1 == expected) {
@@ -31,7 +31,7 @@ var sum1: u64 = 0;
     }
 }
 
-~event start {} | ready
+~tor start {} | ready
 ~proc start|zig { return .{ .ready = .{} }; }
 
 // 1 TAP - fused at compile time

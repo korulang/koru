@@ -14,6 +14,6 @@
 // branch whose `is_panic` is true (and `is_optional` is false). Symmetric
 // with 210_076 (optional effect branch decl) which pins `is_optional`.
 
-~pub event alloc { n: usize }
+~pub tor alloc { n: usize }
 | success []u8
 | ?!oom usize

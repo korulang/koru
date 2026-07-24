@@ -2,9 +2,9 @@
 
 const std = @import("std");
 
-~event render { width: i32, height: i32 } -> i32
+~tor render { width: i32, height: i32 } -> i32
 
-~event clear { color: i32 }
+~tor clear { color: i32 }
 
 ~proc render|zig {
     return .{ .@"drawn" = .{ .pixels = width * height } };

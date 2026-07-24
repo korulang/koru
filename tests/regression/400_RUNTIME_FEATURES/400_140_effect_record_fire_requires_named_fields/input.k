@@ -6,7 +6,7 @@
 // value — `pong(x)` — which cannot pun: there is no field name to pun on.)
 import std/io
 
-pub event scan { n: i64 }
+pub tor scan { n: i64 }
 ! token { kind: i64, val: i64 } -> i64
 | done i64
 

@@ -4,7 +4,7 @@
 // parameter is a slice (e.g. []const i32). Using it for a non-slice
 // parameter must fail.
 
-~event take { numbers: i32 }
+~tor take { numbers: i32 }
 
 ~proc take|zig {
     return .{ .done = {} };

@@ -7,13 +7,13 @@
 const std = @import("std");
 
 // Pure operation
-~event compute { x: i32 } -> i32
+~tor compute { x: i32 } -> i32
 
 ~[pure] proc compute|zig {
     return x * 2;
 }
 
-~event main {}
+~tor main {}
 
 // Subflow dispatching pure event — should be transitively PURE
 ~compute(x: 21)

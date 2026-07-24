@@ -9,7 +9,7 @@
 
 ~import std/io
 
-~pub event ping {}
+~pub tor ping {}
 ! pong
 | result i32
 

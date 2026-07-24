@@ -3,14 +3,14 @@
 
 const std = @import("std");
 
-~event get-data {} -> i32
+~tor get-data {} -> i32
 
 ~proc get-data|zig {
     return 42;
 }
 
 // This event mutates the value it receives via a pointer
-~event mutate-and-print { ptr: *i32 }
+~tor mutate-and-print { ptr: *i32 }
 
 ~proc mutate-and-print|zig {
     ptr.* += 1;  // Mutate the value

@@ -11,7 +11,7 @@ test "enhanced visitor framework" {
     
     const source =
         \\// Test various AST nodes
-        \\~event math.add { a: i32, b: i32 }
+        \\~tor math.add { a: i32, b: i32 }
         \\| sum { result: i32 }
         \\
         \\~proc calculator {

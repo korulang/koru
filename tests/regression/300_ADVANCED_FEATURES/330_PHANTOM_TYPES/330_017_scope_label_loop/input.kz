@@ -1,6 +1,6 @@
 ~import app/fs
 const std = @import("std");
-~event iterate { count: i32 } -> i32
+~tor iterate { count: i32 } -> i32
 ~proc iterate|zig {
     if (count < 3) {
         return count + 1;

@@ -19,6 +19,6 @@
 // - "What's the minimal fix?" → AI suggests patch
 
 // Placeholder - this test documents the pattern, not a specific implementation
-~event test.placeholder {}
+~tor test.placeholder {}
 ~proc test.placeholder|zig { }
 ~test.placeholder()

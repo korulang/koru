@@ -22,10 +22,10 @@
 // to THIS pin: a comptime-evaluated value arriving in Liquid as data.
 ~import std/io
 
-~[comptime] pub event answer {} -> i64
+~[comptime] pub tor answer {} -> i64
 ~answer -> 6 * 7
 
-~pub event show-n { n: i64 }
+~pub tor show-n { n: i64 }
 
 ~[template] proc show-n|koru {
     std/io:print.ln("n = {{ n }}")

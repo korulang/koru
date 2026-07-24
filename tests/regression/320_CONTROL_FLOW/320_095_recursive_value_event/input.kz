@@ -31,11 +31,11 @@ const std = @import("std");
     }
 }
 
-~[norun|expand]pub event leq-zero { expr: Expression }
+~[norun|expand]pub tor leq-zero { expr: Expression }
 | yes
 | no
 
-~event sum-to { n: i64 } -> i64
+~tor sum-to { n: i64 } -> i64
 
 // The recursive subflow: base case returns 0; recursive case calls itself and
 // adds n to the returned subtotal. `=>` is the branch-construct glyph.
@@ -43,7 +43,7 @@ const std = @import("std");
 | yes -> 0
 | no |> sum-to(n: n - 1): t -> t + n
 
-~event print-result { value: i64 }
+~tor print-result { value: i64 }
 ~proc print-result|zig { std.debug.print("{d}\n", .{value}); }
 
 ~sum-to(n: 5): r |> print-result(value: r)

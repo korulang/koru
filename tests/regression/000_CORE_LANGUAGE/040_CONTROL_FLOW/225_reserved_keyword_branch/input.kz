@@ -13,7 +13,7 @@ const std = @import("std");
 
 ~import std/io
 
-~pub event process-file { path: string }
+~pub tor process-file { path: string }
 | success string
 | error string  // "error" is a Zig reserved keyword!
 

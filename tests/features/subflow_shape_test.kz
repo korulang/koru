@@ -1,6 +1,6 @@
 // Test that subflow invocations need proper continuations
 
-~event data.process { value: u32 }
+~tor data.process { value: u32 }
 | ok u32
 | error []const u8
 

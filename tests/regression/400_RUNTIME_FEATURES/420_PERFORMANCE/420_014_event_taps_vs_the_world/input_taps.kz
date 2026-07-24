@@ -21,7 +21,7 @@ var sum: u64 = 0;
 // The counting loop - this is the "producer"
 // ============================================================================
 
-~event count { i: u64 }
+~tor count { i: u64 }
 | next u64
 
 ~proc count|zig {
@@ -34,13 +34,13 @@ var sum: u64 = 0;
 // Void events for tap actions
 // ============================================================================
 
-~event accumulate { value: u64 }
+~tor accumulate { value: u64 }
 
 ~proc accumulate|zig {
     sum += value;
 }
 
-~event validate {}
+~tor validate {}
 
 ~proc validate|zig {
     const expected: u64 = MESSAGES * (MESSAGES - 1) / 2;
@@ -52,7 +52,7 @@ var sum: u64 = 0;
 }
 
 // Starting event to kick off the loop
-~event start {}
+~tor start {}
 
 ~proc start|zig {
 }

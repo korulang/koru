@@ -9,7 +9,7 @@ const Handle = struct {
 };
 
 // Open a handle - produces obligation (must be finalized)
-~pub event open {} -> *Handle<opened!>
+~pub tor open {} -> *Handle<opened!>
 
 ~proc open|zig {
     std.debug.print("Opening handle\n", .{});
@@ -20,7 +20,7 @@ const Handle = struct {
 }
 
 // Start closing - explicitly discharges opened! and produces closing! obligation
-~pub event start-close { h: *Handle<!opened> } -> *Handle<closing!>
+~pub tor start-close { h: *Handle<!opened> } -> *Handle<closing!>
 
 ~proc start-close|zig {
     std.debug.print("Starting close: {d}\n", .{h.id});
@@ -28,7 +28,7 @@ const Handle = struct {
 }
 
 // Finalize - accepts EITHER opened OR closing, discharging whichever obligation exists
-~pub event finalize { h: *Handle<!opened|closing> }
+~pub tor finalize { h: *Handle<!opened|closing> }
 
 ~proc finalize|zig {
     std.debug.print("Finalizing handle: {d}\n", .{h.id});

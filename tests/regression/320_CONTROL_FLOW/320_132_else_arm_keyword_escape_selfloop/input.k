@@ -9,13 +9,13 @@
 // exhibit the discard at all.)
 import std/io
 
-pub event same { x: i64 } -> i64
+pub tor same { x: i64 } -> i64
 
 same = if(x > 0)
 | then -> x
 | else -> x
 
-pub event countdown { n: i64 } -> i64
+pub tor countdown { n: i64 } -> i64
 
 countdown = same(x: n): k |> if(k == 0)
 | then -> 0

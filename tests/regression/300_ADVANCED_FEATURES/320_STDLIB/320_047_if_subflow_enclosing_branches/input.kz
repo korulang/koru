@@ -46,7 +46,7 @@ pub const Ctx = struct {
     n: usize,
 };
 
-~pub event decide { ctx: Ctx }
+~pub tor decide { ctx: Ctx }
 | yes Ctx
 | no Ctx
 
@@ -54,13 +54,13 @@ pub const Ctx = struct {
 | then => yes ctx
 | else => no ctx
 
-~pub event report { text: string }
+~pub tor report { text: string }
 
 ~proc report|zig {
     std.io.getStdOut().writer().print("{s}\n", .{text}) catch {};
 }
 
-~pub event run { ctx: Ctx }
+~pub tor run { ctx: Ctx }
 
 ~run = decide(ctx)
 | yes _ |> report(text: "YES")

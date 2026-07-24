@@ -8,7 +8,7 @@
 //
 // Expected: parser rejects with PARSE003 "duplicate branch name 'oom'".
 
-~pub event e { n: u32 }
+~pub tor e { n: u32 }
 | success u32
 | ?!oom u32
 | oom u32

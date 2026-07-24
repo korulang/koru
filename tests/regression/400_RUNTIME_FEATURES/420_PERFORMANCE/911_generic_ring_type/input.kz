@@ -39,7 +39,7 @@ pub const RingU32 = struct {
 };
 
 // Now try using it in an event shape
-~event ring.enqueue { ring: *RingU32, value: u32 }
+~tor ring.enqueue { ring: *RingU32, value: u32 }
 
 ~proc ring.enqueue|zig {
     if (ring.tryEnqueue(value)) {
@@ -47,7 +47,7 @@ pub const RingU32 = struct {
     }
 }
 
-~event ring.dequeue { ring: *RingU32 }
+~tor ring.dequeue { ring: *RingU32 }
 | value u32
 
 ~proc ring.dequeue|zig {

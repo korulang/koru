@@ -10,7 +10,7 @@
 // single-variant union carried the ~2.9x-behind-C recursion gap.
 import std/io
 
-event digitsum { n: i64 } -> i64
+tor digitsum { n: i64 } -> i64
 digitsum = if(n < 10)
 | then -> n
 | else |> digitsum(n: @divTrunc(n, 10)): rest -> rest + @mod(n, 10)

@@ -15,12 +15,12 @@
 // event's field name (on-token's field is `t`, dispatched as `on-token(t)`). The
 // case where they differ is a real JS-emitter gap, pinned separately by
 // 400_112_effect_branch_arg_name_mismatch_cross_target.
-pub event tokenize { n: u64 }
+pub tor tokenize { n: u64 }
 ! token u64
 ! warning u64
-pub event on-token { t: u64 }
-pub event on-warning { w: u64 }
-pub event report {}
+pub tor on-token { t: u64 }
+pub tor on-warning { w: u64 }
+pub tor report {}
 
 tokenize(n: 5)
 ! token t |> on-token(t)

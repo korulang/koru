@@ -293,8 +293,8 @@ fn writeMainFile(
             \\
             \\~import std/io
             \\
-            \\// Example public event - void events just do their work
-            \\~pub event greet {{ name: string }}
+            \\// Example public tor - void tors just do their work
+            \\~pub tor greet {{ name: string }}
             \\
             \\~proc greet =
             \\    std.io:print.ln("Hello, ${{name}}")

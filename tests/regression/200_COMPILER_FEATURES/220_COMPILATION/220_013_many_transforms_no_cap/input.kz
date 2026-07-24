@@ -17,140 +17,140 @@
 // Each transform replaces its invocation with a comment (no output); success
 // is a clean compile + run with empty output (same shape as 700_002).
 
-~[comptime|transform]pub event t1.* { expr: Expression, item: *const Item, program: *const Program } -> SiteResult
+~[comptime|transform]pub tor t1.* { expr: Expression, item: *const Item, program: *const Program } -> SiteResult
 ~proc t1.*|zig {
     const ast = @import("ast");
     const allocator = @import("std").heap.page_allocator;
     const flow = if (item.* == .flow) &item.flow else return .{};
     return .{ .replacement = ast.Item{ .inline_code = .{ .code = "// t1 ran", .location = flow.location, .module = allocator.dupe(u8, flow.module) catch return .{} } } };
 }
-~[comptime|transform]pub event t2.* { expr: Expression, item: *const Item, program: *const Program } -> SiteResult
+~[comptime|transform]pub tor t2.* { expr: Expression, item: *const Item, program: *const Program } -> SiteResult
 ~proc t2.*|zig {
     const ast = @import("ast");
     const allocator = @import("std").heap.page_allocator;
     const flow = if (item.* == .flow) &item.flow else return .{};
     return .{ .replacement = ast.Item{ .inline_code = .{ .code = "// t2 ran", .location = flow.location, .module = allocator.dupe(u8, flow.module) catch return .{} } } };
 }
-~[comptime|transform]pub event t3.* { expr: Expression, item: *const Item, program: *const Program } -> SiteResult
+~[comptime|transform]pub tor t3.* { expr: Expression, item: *const Item, program: *const Program } -> SiteResult
 ~proc t3.*|zig {
     const ast = @import("ast");
     const allocator = @import("std").heap.page_allocator;
     const flow = if (item.* == .flow) &item.flow else return .{};
     return .{ .replacement = ast.Item{ .inline_code = .{ .code = "// t3 ran", .location = flow.location, .module = allocator.dupe(u8, flow.module) catch return .{} } } };
 }
-~[comptime|transform]pub event t4.* { expr: Expression, item: *const Item, program: *const Program } -> SiteResult
+~[comptime|transform]pub tor t4.* { expr: Expression, item: *const Item, program: *const Program } -> SiteResult
 ~proc t4.*|zig {
     const ast = @import("ast");
     const allocator = @import("std").heap.page_allocator;
     const flow = if (item.* == .flow) &item.flow else return .{};
     return .{ .replacement = ast.Item{ .inline_code = .{ .code = "// t4 ran", .location = flow.location, .module = allocator.dupe(u8, flow.module) catch return .{} } } };
 }
-~[comptime|transform]pub event t5.* { expr: Expression, item: *const Item, program: *const Program } -> SiteResult
+~[comptime|transform]pub tor t5.* { expr: Expression, item: *const Item, program: *const Program } -> SiteResult
 ~proc t5.*|zig {
     const ast = @import("ast");
     const allocator = @import("std").heap.page_allocator;
     const flow = if (item.* == .flow) &item.flow else return .{};
     return .{ .replacement = ast.Item{ .inline_code = .{ .code = "// t5 ran", .location = flow.location, .module = allocator.dupe(u8, flow.module) catch return .{} } } };
 }
-~[comptime|transform]pub event t6.* { expr: Expression, item: *const Item, program: *const Program } -> SiteResult
+~[comptime|transform]pub tor t6.* { expr: Expression, item: *const Item, program: *const Program } -> SiteResult
 ~proc t6.*|zig {
     const ast = @import("ast");
     const allocator = @import("std").heap.page_allocator;
     const flow = if (item.* == .flow) &item.flow else return .{};
     return .{ .replacement = ast.Item{ .inline_code = .{ .code = "// t6 ran", .location = flow.location, .module = allocator.dupe(u8, flow.module) catch return .{} } } };
 }
-~[comptime|transform]pub event t7.* { expr: Expression, item: *const Item, program: *const Program } -> SiteResult
+~[comptime|transform]pub tor t7.* { expr: Expression, item: *const Item, program: *const Program } -> SiteResult
 ~proc t7.*|zig {
     const ast = @import("ast");
     const allocator = @import("std").heap.page_allocator;
     const flow = if (item.* == .flow) &item.flow else return .{};
     return .{ .replacement = ast.Item{ .inline_code = .{ .code = "// t7 ran", .location = flow.location, .module = allocator.dupe(u8, flow.module) catch return .{} } } };
 }
-~[comptime|transform]pub event t8.* { expr: Expression, item: *const Item, program: *const Program } -> SiteResult
+~[comptime|transform]pub tor t8.* { expr: Expression, item: *const Item, program: *const Program } -> SiteResult
 ~proc t8.*|zig {
     const ast = @import("ast");
     const allocator = @import("std").heap.page_allocator;
     const flow = if (item.* == .flow) &item.flow else return .{};
     return .{ .replacement = ast.Item{ .inline_code = .{ .code = "// t8 ran", .location = flow.location, .module = allocator.dupe(u8, flow.module) catch return .{} } } };
 }
-~[comptime|transform]pub event t9.* { expr: Expression, item: *const Item, program: *const Program } -> SiteResult
+~[comptime|transform]pub tor t9.* { expr: Expression, item: *const Item, program: *const Program } -> SiteResult
 ~proc t9.*|zig {
     const ast = @import("ast");
     const allocator = @import("std").heap.page_allocator;
     const flow = if (item.* == .flow) &item.flow else return .{};
     return .{ .replacement = ast.Item{ .inline_code = .{ .code = "// t9 ran", .location = flow.location, .module = allocator.dupe(u8, flow.module) catch return .{} } } };
 }
-~[comptime|transform]pub event t10.* { expr: Expression, item: *const Item, program: *const Program } -> SiteResult
+~[comptime|transform]pub tor t10.* { expr: Expression, item: *const Item, program: *const Program } -> SiteResult
 ~proc t10.*|zig {
     const ast = @import("ast");
     const allocator = @import("std").heap.page_allocator;
     const flow = if (item.* == .flow) &item.flow else return .{};
     return .{ .replacement = ast.Item{ .inline_code = .{ .code = "// t10 ran", .location = flow.location, .module = allocator.dupe(u8, flow.module) catch return .{} } } };
 }
-~[comptime|transform]pub event t11.* { expr: Expression, item: *const Item, program: *const Program } -> SiteResult
+~[comptime|transform]pub tor t11.* { expr: Expression, item: *const Item, program: *const Program } -> SiteResult
 ~proc t11.*|zig {
     const ast = @import("ast");
     const allocator = @import("std").heap.page_allocator;
     const flow = if (item.* == .flow) &item.flow else return .{};
     return .{ .replacement = ast.Item{ .inline_code = .{ .code = "// t11 ran", .location = flow.location, .module = allocator.dupe(u8, flow.module) catch return .{} } } };
 }
-~[comptime|transform]pub event t12.* { expr: Expression, item: *const Item, program: *const Program } -> SiteResult
+~[comptime|transform]pub tor t12.* { expr: Expression, item: *const Item, program: *const Program } -> SiteResult
 ~proc t12.*|zig {
     const ast = @import("ast");
     const allocator = @import("std").heap.page_allocator;
     const flow = if (item.* == .flow) &item.flow else return .{};
     return .{ .replacement = ast.Item{ .inline_code = .{ .code = "// t12 ran", .location = flow.location, .module = allocator.dupe(u8, flow.module) catch return .{} } } };
 }
-~[comptime|transform]pub event t13.* { expr: Expression, item: *const Item, program: *const Program } -> SiteResult
+~[comptime|transform]pub tor t13.* { expr: Expression, item: *const Item, program: *const Program } -> SiteResult
 ~proc t13.*|zig {
     const ast = @import("ast");
     const allocator = @import("std").heap.page_allocator;
     const flow = if (item.* == .flow) &item.flow else return .{};
     return .{ .replacement = ast.Item{ .inline_code = .{ .code = "// t13 ran", .location = flow.location, .module = allocator.dupe(u8, flow.module) catch return .{} } } };
 }
-~[comptime|transform]pub event t14.* { expr: Expression, item: *const Item, program: *const Program } -> SiteResult
+~[comptime|transform]pub tor t14.* { expr: Expression, item: *const Item, program: *const Program } -> SiteResult
 ~proc t14.*|zig {
     const ast = @import("ast");
     const allocator = @import("std").heap.page_allocator;
     const flow = if (item.* == .flow) &item.flow else return .{};
     return .{ .replacement = ast.Item{ .inline_code = .{ .code = "// t14 ran", .location = flow.location, .module = allocator.dupe(u8, flow.module) catch return .{} } } };
 }
-~[comptime|transform]pub event t15.* { expr: Expression, item: *const Item, program: *const Program } -> SiteResult
+~[comptime|transform]pub tor t15.* { expr: Expression, item: *const Item, program: *const Program } -> SiteResult
 ~proc t15.*|zig {
     const ast = @import("ast");
     const allocator = @import("std").heap.page_allocator;
     const flow = if (item.* == .flow) &item.flow else return .{};
     return .{ .replacement = ast.Item{ .inline_code = .{ .code = "// t15 ran", .location = flow.location, .module = allocator.dupe(u8, flow.module) catch return .{} } } };
 }
-~[comptime|transform]pub event t16.* { expr: Expression, item: *const Item, program: *const Program } -> SiteResult
+~[comptime|transform]pub tor t16.* { expr: Expression, item: *const Item, program: *const Program } -> SiteResult
 ~proc t16.*|zig {
     const ast = @import("ast");
     const allocator = @import("std").heap.page_allocator;
     const flow = if (item.* == .flow) &item.flow else return .{};
     return .{ .replacement = ast.Item{ .inline_code = .{ .code = "// t16 ran", .location = flow.location, .module = allocator.dupe(u8, flow.module) catch return .{} } } };
 }
-~[comptime|transform]pub event t17.* { expr: Expression, item: *const Item, program: *const Program } -> SiteResult
+~[comptime|transform]pub tor t17.* { expr: Expression, item: *const Item, program: *const Program } -> SiteResult
 ~proc t17.*|zig {
     const ast = @import("ast");
     const allocator = @import("std").heap.page_allocator;
     const flow = if (item.* == .flow) &item.flow else return .{};
     return .{ .replacement = ast.Item{ .inline_code = .{ .code = "// t17 ran", .location = flow.location, .module = allocator.dupe(u8, flow.module) catch return .{} } } };
 }
-~[comptime|transform]pub event t18.* { expr: Expression, item: *const Item, program: *const Program } -> SiteResult
+~[comptime|transform]pub tor t18.* { expr: Expression, item: *const Item, program: *const Program } -> SiteResult
 ~proc t18.*|zig {
     const ast = @import("ast");
     const allocator = @import("std").heap.page_allocator;
     const flow = if (item.* == .flow) &item.flow else return .{};
     return .{ .replacement = ast.Item{ .inline_code = .{ .code = "// t18 ran", .location = flow.location, .module = allocator.dupe(u8, flow.module) catch return .{} } } };
 }
-~[comptime|transform]pub event t19.* { expr: Expression, item: *const Item, program: *const Program } -> SiteResult
+~[comptime|transform]pub tor t19.* { expr: Expression, item: *const Item, program: *const Program } -> SiteResult
 ~proc t19.*|zig {
     const ast = @import("ast");
     const allocator = @import("std").heap.page_allocator;
     const flow = if (item.* == .flow) &item.flow else return .{};
     return .{ .replacement = ast.Item{ .inline_code = .{ .code = "// t19 ran", .location = flow.location, .module = allocator.dupe(u8, flow.module) catch return .{} } } };
 }
-~[comptime|transform]pub event t20.* { expr: Expression, item: *const Item, program: *const Program } -> SiteResult
+~[comptime|transform]pub tor t20.* { expr: Expression, item: *const Item, program: *const Program } -> SiteResult
 ~proc t20.*|zig {
     const ast = @import("ast");
     const allocator = @import("std").heap.page_allocator;

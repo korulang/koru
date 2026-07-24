@@ -13,7 +13,7 @@ const emitter_impl = @import("emitter");
 const ast = @import("ast");
 
 // Emit a complete program from AST
-~pub event emit.program {
+~pub tor emit.program {
     source_ast: *const ast.Program,
     allocator: std.mem.Allocator
 }

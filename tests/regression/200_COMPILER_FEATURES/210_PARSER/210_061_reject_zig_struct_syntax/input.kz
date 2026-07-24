@@ -3,7 +3,7 @@
 
 const std = @import("std");
 
-~[abstract] event fetch { url: string }
+~[abstract] tor fetch { url: string }
 | success string
 | error i32
 

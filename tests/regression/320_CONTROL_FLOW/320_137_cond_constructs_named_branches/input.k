@@ -4,7 +4,7 @@
 // (page-route → | catalog | progress | …).
 import std/io
 
-event page-route { page: i64 }
+tor page-route { page: i64 }
 | catalog
 | progress
 | other

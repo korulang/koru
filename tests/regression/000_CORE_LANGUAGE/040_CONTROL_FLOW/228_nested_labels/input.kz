@@ -7,11 +7,11 @@
 
 const std = @import("std");
 
-~event outer { count: i32 }
+~tor outer { count: i32 }
 | continue-outer i32
 | done-outer
 
-~event inner { count: i32 }
+~tor inner { count: i32 }
 | continue-inner i32
 | done-inner
 

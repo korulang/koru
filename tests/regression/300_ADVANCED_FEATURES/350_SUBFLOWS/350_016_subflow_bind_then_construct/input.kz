@@ -10,10 +10,10 @@
 const std = @import("std");
 ~import std/io
 
-~event mk { x: i32 } -> i32
+~tor mk { x: i32 } -> i32
 ~proc mk|zig { return x * 2; }
 
-~event proc1 { n: i32 } -> i32
+~tor proc1 { n: i32 } -> i32
 
 ~proc1 = mk(x: n): v -> v
 

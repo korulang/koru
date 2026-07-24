@@ -5,12 +5,12 @@
 // flows remains in the codebase (unreachable) so the feature can be
 // re-enabled later by removing the rejection block in extractInlineFlows.
 
-~event ping {}
+~tor ping {}
 
 ~proc ping|zig {
 }
 
-~event main {}
+~tor main {}
 
 ~proc main|zig {
     ~ping()

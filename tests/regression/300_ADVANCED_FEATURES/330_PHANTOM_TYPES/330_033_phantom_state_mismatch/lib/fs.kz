@@ -6,7 +6,7 @@ const File = struct {
 };
 
 // Opens a file, returns with fs:open phantom state
-~pub event open { path: string } -> *File<open>
+~pub tor open { path: string } -> *File<open>
 
 ~proc open|zig {
     const allocator = std.heap.page_allocator;

@@ -19,14 +19,14 @@ const std = @import("std");
     value: f64,
 }
 
-~event make-float-box {}
+~tor make-float-box {}
 | made box#f64
 
 ~proc make-float-box|zig {
     return .{ .made = @"box#f64"{ .value = 3.14 } };
 }
 
-~event show-int-box { b: box#i64 }
+~tor show-int-box { b: box#i64 }
 
 ~proc show-int-box|zig {
     std.debug.print("Value: {d}\n", .{b.value});

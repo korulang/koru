@@ -6,7 +6,7 @@
 // the fire changes: `pong(x)` is a plain arm-call, firing-is-a-call.
 import std/io
 
-pub event ping { x: i64 }
+pub tor ping { x: i64 }
 ! ?pong i64
 
 ping = pong(x)

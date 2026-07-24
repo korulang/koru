@@ -6,7 +6,7 @@
 
 const std = @import("std");
 
-~event compute { x: u32, y: u32 }
+~tor compute { x: u32, y: u32 }
 | sum u32              // REQUIRED
 | ?product u32         // OPTIONAL
 | ?difference u32      // OPTIONAL

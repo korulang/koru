@@ -8,7 +8,7 @@
 ~import std/testing
 
 // Impure event - needs mock in tests (no proc = impure by default)
-~event get-balance {} -> u32
+~tor get-balance {} -> u32
 
 // Test: Mock value is inlined, binding extracted, value verified
 ~test(Mock value inlined with binding) {

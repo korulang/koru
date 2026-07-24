@@ -4,18 +4,18 @@
 const std = @import("std");
 
 // Event with plain value branch (not a struct)
-~event double { n: i32 } -> i32
+~tor double { n: i32 } -> i32
 
 // Subflow with plain value return - no field name needed!
 ~double -> { n * 2 }
 
 // Another example with expressions
-~event square { n: i32 } -> i32
+~tor square { n: i32 } -> i32
 
 ~square -> { n * n }
 
 // Printer event
-~event print-results { a: i32, b: i32 }
+~tor print-results { a: i32, b: i32 }
 
 ~proc print-results|zig {
     std.debug.print("{} {}\n", .{ a, b });

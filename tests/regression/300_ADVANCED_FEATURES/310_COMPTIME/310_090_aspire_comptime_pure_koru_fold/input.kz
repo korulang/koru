@@ -1,6 +1,6 @@
 import std/io
 
-~[comptime] event comptime-sum {}
+~[comptime] tor comptime-sum {}
 | result i64
 
 comptime-sum = capture { s: 0[i64] }

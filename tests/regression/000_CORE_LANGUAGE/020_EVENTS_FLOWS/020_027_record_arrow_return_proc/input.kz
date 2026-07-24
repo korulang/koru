@@ -6,7 +6,7 @@
 // PINNED (2026-06-29): record bare returns are not yet built.
 ~import std/io
 
-~pub event dims {} -> { w: i64, h: i64 }
+~pub tor dims {} -> { w: i64, h: i64 }
 ~proc dims|zig {
     return .{ .w = 4, .h = 3 };
 }

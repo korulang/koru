@@ -20,7 +20,7 @@ import std/fs
 import std/string
 
 // Parse 8 letters into a base-26 number.
-pub event to-n { s: string } -> i64
+pub tor to-n { s: string } -> i64
 
 to-n = capture { n: 0[i64] }
 ! as a |> for(s)
@@ -28,7 +28,7 @@ to-n = capture { n: 0[i64] }
 | captured r -> r.n
 
 // One candidate: is `n` a valid password?
-pub event istep { n: i64 }
+pub tor istep { n: i64 }
 | ok i64
 | again i64
 
@@ -37,7 +37,7 @@ istep = if((((@mod(@divTrunc(n, 308915776), 26) - @mod(@divTrunc(n, 8031810176),
 | else => again n
 
 // Search: from n0, increment until a valid password is found.
-pub event seek { n: i64 } -> i64
+pub tor seek { n: i64 } -> i64
 
 seek = #s istep(n)
 | again m |> @s(n: m + 1)

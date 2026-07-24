@@ -28,12 +28,12 @@ const Config = struct {
 var stashed: ?*Config = null;
 
 // Handler stashes the firing-scoped borrow past the firing boundary.
-~event stash { cfg: *Config<ready> }
+~tor stash { cfg: *Config<ready> }
 ~proc stash|zig {
     stashed = cfg;                      // <-- escape: pointer outlives the firing
 }
 
-~pub event fetch { url: string }
+~pub tor fetch { url: string }
 ! ?configure *Config<ready>
 | done usize
 

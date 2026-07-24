@@ -4,19 +4,19 @@
 const std = @import("std");
 
 // Single annotation
-~[comptime] event single {}
+~[comptime] tor single {}
 
 // Multiple annotations with | delimiter
-~[comptime|runtime] event dual {}
+~[comptime|runtime] tor dual {}
 
 // Many annotations
-~[comptime|runtime|fuseable|inline] event many {}
+~[comptime|runtime|fuseable|inline] tor many {}
 
 // Parameterized annotation (opaque string)
-~[optimize(level: 3)] event optimized {}
+~[optimize(level: 3)] tor optimized {}
 
 // Mix of simple and parameterized
-~[comptime|optimize(level: 3)|inline] event mixed {}
+~[comptime|optimize(level: 3)|inline] tor mixed {}
 
 ~proc single|zig { return .{ .done = .{} }; }
 ~proc dual|zig { return .{ .done = .{} }; }

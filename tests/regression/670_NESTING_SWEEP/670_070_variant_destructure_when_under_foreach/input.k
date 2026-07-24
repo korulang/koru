@@ -21,7 +21,7 @@
 // 44>40 so the guarded arm fires ("elder lars 44").
 import std/io
 
-event fetch { id: i64 }
+tor fetch { id: i64 }
 | found { name: string, age: i64 }
 | missing
 

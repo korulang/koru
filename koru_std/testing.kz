@@ -222,7 +222,7 @@ const validateMocks = struct {
 
 // Main test event - takes name as Expression, body as Source
 // Transform generates Zig test blocks using real emitter infrastructure
-~[keyword|comptime|transform] pub event test {
+~[keyword|comptime|transform] pub tor test {
     expr: Expression,
     source: Source,
     invocation: *const Invocation,
@@ -231,7 +231,7 @@ const validateMocks = struct {
     allocator: std.mem.Allocator
 } -> SiteResult
 
-~[comptime|retain] pub event validate-mocks {
+~[comptime|retain] pub tor validate-mocks {
     program: *const Program,
     mocks: []const Item,
     source: *const Source,
@@ -784,14 +784,14 @@ const emitFlowWithMocks = struct {
 }.call;
 
 // Test with shared harness (mocks can be unused per-test)
-~[keyword|comptime|transform] pub event test.with-harness {
+~[keyword|comptime|transform] pub tor test.with-harness {
     expr: Expression,
     harness: string,
     source: Source
 }
 
 // Define a test harness with shared mocks
-~[keyword|comptime|transform] pub event test.harness {
+~[keyword|comptime|transform] pub tor test.harness {
     expr: Expression,
     source: Source
 }
@@ -803,7 +803,7 @@ const emitFlowWithMocks = struct {
 // Pass-through assertion checkpoint
 // Usage: assert(u.name == "Alice") |> next_step()
 // Panics with message if expression is false, otherwise continues
-~[keyword|comptime|transform|pure] pub event assert {
+~[keyword|comptime|transform|pure] pub tor assert {
     expr: Expression,
     invocation: *const Invocation,
     item: *const Item,
@@ -871,7 +871,7 @@ const emitFlowWithMocks = struct {
 }
 
 // Simple pass - marks a test branch as passing (noop)
-~[keyword|comptime|transform|pure] pub event assert.ok {}
+~[keyword|comptime|transform|pure] pub tor assert.ok {}
 
 ~proc assert.ok|zig {
     // assert.ok is a pass-through checkpoint - do nothing
@@ -879,7 +879,7 @@ const emitFlowWithMocks = struct {
 }
 
 // Simple fail - fails the test with optional message
-~[keyword] pub event assert.fail { message: ?[]const u8 }
+~[keyword] pub tor assert.fail { message: ?[]const u8 }
 
 ~[pure] proc assert.fail|zig {
     const msg = message orelse "Assertion failed";
@@ -887,14 +887,14 @@ const emitFlowWithMocks = struct {
 }
 
 // Equality assertion
-~[keyword] pub event assert.eq { expected: Expression, actual: Expression }
+~[keyword] pub tor assert.eq { expected: Expression, actual: Expression }
 | ok
 | failed { expected: string, actual: string }
 
 // TODO: Transform to generate Zig equality check
 
 // Contains assertion (for strings/slices)
-~[keyword] pub event assert.contains { haystack: Expression, needle: Expression }
+~[keyword] pub tor assert.contains { haystack: Expression, needle: Expression }
 | ok
 | failed
 
@@ -909,7 +909,7 @@ const emitFlowWithMocks = struct {
 //   ~test.property.equivalent {
 //       ~ast:select(blur|*)
 //   }
-~[comptime|transform] pub event test.property.equivalent {
+~[comptime|transform] pub tor test.property.equivalent {
     source: Source
 }
 

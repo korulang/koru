@@ -12,7 +12,7 @@
 const std = @import("std");
 
 // Inner loop checker: j from start to limit
-~event inner-step { i: u64, j: u64, limit: u64, sum: u64 }
+~tor inner-step { i: u64, j: u64, limit: u64, sum: u64 }
 | continue { i: u64, j: u64, sum: u64 }
 | done { i: u64, sum: u64 }
 
@@ -27,7 +27,7 @@ const std = @import("std");
 }
 
 // Outer loop checker: i from 0 to limit
-~event outer-step { i: u64, limit: u64, sum: u64 }
+~tor outer-step { i: u64, limit: u64, sum: u64 }
 | continue { i: u64, limit: u64, sum: u64 }
 | done u64
 
@@ -40,7 +40,7 @@ const std = @import("std");
 }
 
 // Print result
-~event print { result: u64 }
+~tor print { result: u64 }
 
 ~proc print|zig {
     std.debug.print("Sum: {}\n", .{result});

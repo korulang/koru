@@ -2,4 +2,4 @@
 // event. The sibling .kz must NOT also declare it as public — the public
 // surface lives in .k exclusively when a .k companion exists.
 
-pub event compute { x: u32 } -> u32
+pub tor compute { x: u32 } -> u32

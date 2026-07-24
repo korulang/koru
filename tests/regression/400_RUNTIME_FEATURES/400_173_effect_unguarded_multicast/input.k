@@ -4,7 +4,7 @@
 // treating them as too-many-elses. Contrast `|` outcomes, which stay exclusive.)
 import std/io
 
-pub event ticker { n: usize }
+pub tor ticker { n: usize }
 ! tick usize
 
 proc ticker|zig {

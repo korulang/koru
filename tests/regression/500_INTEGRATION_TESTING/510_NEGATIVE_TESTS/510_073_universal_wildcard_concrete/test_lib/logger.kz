@@ -3,7 +3,7 @@
 const std = @import("std");
 ~import std/taps
 
-~pub event log { msg: string }
+~pub tor log { msg: string }
 
 ~proc log|zig {
     std.debug.print("[TAP] {s}\n", .{msg});

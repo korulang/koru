@@ -9,7 +9,7 @@
 
 const std = @import("std");
 
-~pub event ping {}
+~pub tor ping {}
 
 ~proc ping|template(once)|zig {
     std.debug.print("proc was: {{ proc_name }}\n", .{});

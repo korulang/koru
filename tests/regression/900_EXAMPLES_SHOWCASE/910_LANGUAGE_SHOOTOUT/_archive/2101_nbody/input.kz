@@ -40,7 +40,7 @@ const Body = struct {
 // Event 1: Initialize planetary bodies
 // ============================================================================
 
-~event initialize-bodies {} -> [5]Body[mutable]
+~tor initialize-bodies {} -> [5]Body[mutable]
 
 ~proc initialize-bodies|zig {
     // Sun, Jupiter, Saturn, Uranus, Neptune
@@ -95,7 +95,7 @@ const Body = struct {
 // Event 2: Offset momentum (sun at rest) - MUTATES bodies in place!
 // ============================================================================
 
-~event offset-momentum { bodies: []Body }
+~tor offset-momentum { bodies: []Body }
 
 ~proc offset-momentum|zig {
     var px: f64 = 0.0;
@@ -118,7 +118,7 @@ const Body = struct {
 // Event 3: Calculate total energy (kinetic + potential)
 // ============================================================================
 
-~event calculate-energy { bodies: []const Body } -> f64
+~tor calculate-energy { bodies: []const Body } -> f64
 
 ~proc calculate-energy|zig {
     var e: f64 = 0.0;
@@ -145,7 +145,7 @@ const Body = struct {
 // Event 4: Print energy value
 // ============================================================================
 
-~event print-energy { energy: f64 }
+~tor print-energy { energy: f64 }
 
 ~proc print-energy|zig {
     std.debug.print("{d:.9}\n", .{energy});
@@ -156,7 +156,7 @@ const Body = struct {
 // Single responsibility: ONLY velocity updates from forces
 // ============================================================================
 
-~event calculate-interactions { bodies: []Body, dt: f64 }
+~tor calculate-interactions { bodies: []Body, dt: f64 }
 
 ~proc calculate-interactions|zig {
     var i: usize = 0;
@@ -186,7 +186,7 @@ const Body = struct {
 // Single responsibility: ONLY position updates
 // ============================================================================
 
-~event update-positions { bodies: []Body, dt: f64 }
+~tor update-positions { bodies: []Body, dt: f64 }
 
 ~proc update-positions|zig {
     for (bodies) |*body| {
@@ -201,7 +201,7 @@ const Body = struct {
 // Event 7: Simulation step counter
 // ============================================================================
 
-~event simulation-step { i: u32, n: u32 }
+~tor simulation-step { i: u32, n: u32 }
 | continue { i: u32, n: u32 }
 
 ~proc simulation-step|zig {
@@ -215,7 +215,7 @@ const Body = struct {
 // Event 8: Parse command line argument
 // ============================================================================
 
-~event parse-args {} -> u32
+~tor parse-args {} -> u32
 
 ~proc parse-args|zig {
     const args = std.process.argsAlloc(std.heap.page_allocator) catch unreachable;

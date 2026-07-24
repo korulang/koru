@@ -12,7 +12,7 @@ const std = @import("std");
 // RUNTIME IMPLEMENTATION - handles the actual branching
 // ============================================================================
 
-~event my-if-impl { condition: bool }
+~tor my-if-impl { condition: bool }
 | then
 | else
 
@@ -28,7 +28,7 @@ const std = @import("std");
 // COMPTIME TRANSFORM - rewrites my-if(expr) to my-if-impl(condition: expr)
 // ============================================================================
 
-~[comptime|transform]event my-if {
+~[comptime|transform]tor my-if {
     expr: Expression,
     item: *const Item,
     program: *const Program,

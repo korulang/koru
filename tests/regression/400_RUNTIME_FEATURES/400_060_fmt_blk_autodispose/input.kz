@@ -11,7 +11,7 @@ pub const Resource = struct {
     allocator: std.mem.Allocator,
 };
 
-~pub event create-resource { name: string } -> *Resource<allocated!>
+~pub tor create-resource { name: string } -> *Resource<allocated!>
 
 ~proc create-resource|zig {
     const alloc = std.heap.page_allocator;
@@ -21,7 +21,7 @@ pub const Resource = struct {
     return res;
 }
 
-~pub event destroy-resource { res: *Resource<!allocated> }
+~pub tor destroy-resource { res: *Resource<!allocated> }
 
 ~proc destroy-resource|zig {
     res.allocator.free(res.data);

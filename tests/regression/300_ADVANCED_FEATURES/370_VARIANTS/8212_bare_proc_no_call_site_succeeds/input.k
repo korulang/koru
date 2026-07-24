@@ -6,7 +6,7 @@
 // only fires at call sites.
 
 
-pub event compute {}
+pub tor compute {}
 
 // Bare proc — unresolvable but uncalled, so no error.
 proc compute {

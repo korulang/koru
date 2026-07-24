@@ -7,16 +7,16 @@
 
 const std = @import("std");
 
-~event ping {}
+~tor ping {}
 ~proc ping|zig { std.debug.print("ping\n", .{}); }
 
-~event mk {} -> u32
+~tor mk {} -> u32
 ~proc mk|zig { return 42; }
 
-~event consume { v: u32 }
+~tor consume { v: u32 }
 ~proc consume|zig { std.debug.print("got {d}\n", .{v}); }
 
-~event run {}
+~tor run {}
 ~run = ping() |> mk(): v |> consume(v)
 
 ~run()

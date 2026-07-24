@@ -42,7 +42,7 @@ const Body = struct {
 // Event 1: Initialize planetary bodies
 // ============================================================================
 
-~event initialize-bodies {}
+~tor initialize-bodies {}
 | initialized [5]Body
 
 ~proc initialize-bodies|zig {
@@ -98,7 +98,7 @@ const Body = struct {
 // Event 2: Offset momentum (sun at rest) - MUTATES bodies in place!
 // ============================================================================
 
-~event offset-momentum { bodies: []Body }
+~tor offset-momentum { bodies: []Body }
 
 ~proc offset-momentum|zig {
     var px: f64 = 0.0;
@@ -121,7 +121,7 @@ const Body = struct {
 // Event 3: Calculate total energy (kinetic + potential)
 // ============================================================================
 
-~event calculate-energy { bodies: []const Body }
+~tor calculate-energy { bodies: []const Body }
 | result f64
 
 ~proc calculate-energy|zig {
@@ -149,7 +149,7 @@ const Body = struct {
 // Event 4: Print energy value
 // ============================================================================
 
-~event print-energy { energy: f64 }
+~tor print-energy { energy: f64 }
 
 ~proc print-energy|zig {
     std.debug.print("{d:.9}\n", .{energy});
@@ -160,7 +160,7 @@ const Body = struct {
 // Single responsibility: ONLY velocity updates from forces
 // ============================================================================
 
-~event calculate-interactions { bodies: []Body, dt: f64 }
+~tor calculate-interactions { bodies: []Body, dt: f64 }
 
 ~proc calculate-interactions|zig {
     var i: usize = 0;
@@ -190,7 +190,7 @@ const Body = struct {
 // Single responsibility: ONLY position updates
 // ============================================================================
 
-~event update-positions { bodies: []Body, dt: f64 }
+~tor update-positions { bodies: []Body, dt: f64 }
 
 ~proc update-positions|zig {
     for (bodies) |*body| {
@@ -205,7 +205,7 @@ const Body = struct {
 // Event 7: Parse command line argument
 // ============================================================================
 
-~event parse-args {}
+~tor parse-args {}
 | parsed u32
 
 ~proc parse-args|zig {

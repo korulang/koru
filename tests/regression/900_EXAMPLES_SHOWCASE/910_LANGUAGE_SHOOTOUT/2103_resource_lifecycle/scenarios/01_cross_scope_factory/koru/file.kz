@@ -14,7 +14,7 @@ pub const File = struct {
 };
 
 // Open a file - returns with cleanup obligation
-~pub event open { path: string }
+~pub tor open { path: string }
 | opened *File<opened!>
 | error string
 
@@ -30,7 +30,7 @@ pub const File = struct {
 }
 
 // Close a file - consumes the cleanup obligation
-~pub event close { file: *File<!opened> }
+~pub tor close { file: *File<!opened> }
 
 ~proc close|zig {
     file.handle.close();
@@ -38,7 +38,7 @@ pub const File = struct {
 }
 
 // Write to a file - requires open state but doesn't consume obligation
-~pub event write { file: *File<opened>, data: string }
+~pub tor write { file: *File<opened>, data: string }
 | written usize
 | error string
 
@@ -51,7 +51,7 @@ pub const File = struct {
 
 // Batch close - consumes obligations for ALL files at once
 // This is what RAII cannot express: cleanup multiple resources in one operation
-~pub event close-batch { files: []*File<!opened> }
+~pub tor close-batch { files: []*File<!opened> }
 | closed usize
 
 ~proc close-batch|zig {

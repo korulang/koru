@@ -8,7 +8,7 @@
 const std = @import("std");
 
 // Outer loop event
-~event outer { x: i32, max: i32 }
+~tor outer { x: i32, max: i32 }
 | next-outer { x: i32, max: i32 }
 | done-outer
 
@@ -22,7 +22,7 @@ const std = @import("std");
 }
 
 // Inner loop event
-~event inner { x: i32, y: i32, max: i32 }
+~tor inner { x: i32, y: i32, max: i32 }
 | next-inner { x: i32, y: i32, max: i32 }
 | done-inner i32
 
@@ -36,7 +36,7 @@ const std = @import("std");
 }
 
 // Start event
-~event start { }
+~tor start { }
 
 ~proc start|zig {
     std.debug.print("Starting nested loops...\n", .{});

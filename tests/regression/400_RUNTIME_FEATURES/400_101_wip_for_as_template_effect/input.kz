@@ -6,7 +6,7 @@
 // only delta here is the templated iterable.
 ~import std/io
 
-~pub event loop { r: i32 }
+~pub tor loop { r: i32 }
 ! each usize
 
 ~proc loop|template|zig {

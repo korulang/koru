@@ -34,7 +34,7 @@ var profiler_finished: bool = false;  // Prevents write-event from creating new 
 var program_start_ns: i128 = 0;       // Envelope open (koru:start anchor); footer synthesizes the span from it
 
 // Event: Write Chrome Tracing header
-~event write-header {}
+~tor write-header {}
 
 ~proc write-header|zig {
     // Only create file if not already created by write-event
@@ -98,7 +98,7 @@ var program_start_ns: i128 = 0;       // Envelope open (koru:start anchor); foot
 }
 
 // Event: Write a profile event
-~event write-event {
+~tor write-event {
     source: string,
     timestamp_ns: i128,
 }
@@ -176,7 +176,7 @@ var program_start_ns: i128 = 0;       // Envelope open (koru:start anchor); foot
 }
 
 // Event: Write Chrome Tracing footer and close file
-~event write-footer {}
+~tor write-footer {}
 
 ~proc write-footer|zig {
     const file = profile_file orelse return;

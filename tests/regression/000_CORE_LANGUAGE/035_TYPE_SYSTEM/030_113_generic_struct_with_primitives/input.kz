@@ -17,7 +17,7 @@ const std = @import("std");
     value: EmailAddress,
 }
 
-~event test-email {}
+~tor test-email {}
 
 ~proc test-email|zig {
     const email: EmailAddress = "test@example.com";

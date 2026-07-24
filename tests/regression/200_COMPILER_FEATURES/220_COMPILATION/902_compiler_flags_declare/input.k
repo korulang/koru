@@ -7,6 +7,6 @@ std/compiler:flag.declare {
   "type": "boolean"
 }
 
-event hello {}
+tor hello {}
 
 hello()

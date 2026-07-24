@@ -145,7 +145,7 @@ const AsyncHandle = struct {
 // Ring Creation
 // ============================================================================
 
-~event createRing {} -> *Ring
+~tor createRing {} -> *Ring
 
 ~proc createRing|zig {
     const ring_storage = std.heap.page_allocator.create(Ring) catch unreachable;
@@ -157,7 +157,7 @@ const AsyncHandle = struct {
 // Producer: Spawns thread to fill ring with messages
 // ============================================================================
 
-~event spawnProducer { ring: *Ring }
+~tor spawnProducer { ring: *Ring }
 
 ~proc spawnProducer|zig {
     const producer = std.Thread.spawn(.{}, struct {
@@ -180,7 +180,7 @@ const AsyncHandle = struct {
 // This is the simple interface - caller doesn't know about threads.
 // Use this when you just want the work done and don't care about the details.
 
-~event consumeMessages { ring: *Ring, target: u64 }
+~tor consumeMessages { ring: *Ring, target: u64 }
 | completed { sum: u64, count: u64 }
 
 ~proc consumeMessages|zig {
@@ -205,7 +205,7 @@ const AsyncHandle = struct {
 // This is the advanced interface - caller gets a handle to async work.
 // Threading happens INSIDE the proc, but the event signature is still clean.
 
-~event consumeMessages.async { ring: *Ring, target: u64 } -> AsyncHandle
+~tor consumeMessages.async { ring: *Ring, target: u64 } -> AsyncHandle
 
 ~proc consumeMessages.async|zig {
     // Allocate result storage (shared between thread and caller)
@@ -240,7 +240,7 @@ const AsyncHandle = struct {
 // ============================================================================
 // Explicitly wait for one async operation to complete.
 
-~event consumeMessages.await { handle: AsyncHandle }
+~tor consumeMessages.await { handle: AsyncHandle }
 | completed { sum: u64, count: u64 }
 
 ~proc consumeMessages.await|zig {
@@ -255,7 +255,7 @@ const AsyncHandle = struct {
 // Wait for multiple async operations to complete.
 // This is where the power of progressive disclosure shines!
 
-~event consumeMessages.join { handles: []const AsyncHandle } -> []const ConsumeResult
+~tor consumeMessages.join { handles: []const AsyncHandle } -> []const ConsumeResult
 
 ~proc consumeMessages.join|zig {
     // Allocate results array
@@ -274,7 +274,7 @@ const AsyncHandle = struct {
 // Combine Results from Multiple Consumers
 // ============================================================================
 
-~event combineResults { results: []const ConsumeResult }
+~tor combineResults { results: []const ConsumeResult }
 | combined { total_sum: u64, total_count: u64 }
 
 ~proc combineResults|zig {
@@ -293,7 +293,7 @@ const AsyncHandle = struct {
 // Validation
 // ============================================================================
 
-~event validate { sum: u64, count: u64 }
+~tor validate { sum: u64, count: u64 }
 
 ~proc validate|zig {
     const expected_sum: u64 = TOTAL_MESSAGES * (TOTAL_MESSAGES - 1) / 2;
@@ -310,7 +310,7 @@ const AsyncHandle = struct {
 // Helper: Start First Consumer (Kicks off the chain)
 // ============================================================================
 
-~event startConsumers { ring: *Ring } -> AsyncHandle
+~tor startConsumers { ring: *Ring } -> AsyncHandle
 
 ~proc startConsumers|zig {
     // Just delegate to .async

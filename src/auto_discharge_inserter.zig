@@ -2146,7 +2146,7 @@ pub const AutoDischargeInserter = struct {
                             .KORU030,
                             flow.location.line,
                             flow.location.column,
-                            "Resource '{s}' obligation <{s}> was not discharged. No event accepts <!{s}>.",
+                            "Resource '{s}' obligation <{s}> was not discharged. No tor accepts <!{s}>.",
                             .{ display_name, display_state, state_without_bang },
                         );
                     }
@@ -2232,7 +2232,7 @@ pub const AutoDischargeInserter = struct {
                 .KORU083,
                 event_decl.location.line,
                 event_decl.location.column,
-                "[!] annotation requires a void event (no branches, no `-> T` return) - an event with output cannot be auto-inserted",
+                "[!] annotation requires a void tor (no branches, no `-> T` return) - a tor with output cannot be auto-inserted",
                 .{},
             );
         }
@@ -3606,7 +3606,7 @@ pub const AutoDischargeInserter = struct {
         if (self.prototype_mode and (missing_prototype.items.len > 0 or prune_count > 0)) {
             const ev_name = try self.pathToString(event_decl.path);
             defer self.allocator.free(ev_name);
-            std.debug.print("📋 prototype gaps — event '{s}' ({s}:{d}):\n", .{
+            std.debug.print("📋 prototype gaps — tor '{s}' ({s}:{d}):\n", .{
                 ev_name, flow.location.file, flow.location.line,
             });
             for (missing_prototype.items) |name| {

@@ -19,7 +19,7 @@ const std = @import("std");
 // ============================================================================
 
 // Get current timestamp in nanoseconds
-~pub event now {} -> i128
+~pub tor now {} -> i128
 
 ~proc now|zig {
     return std.time.nanoTimestamp();
@@ -30,7 +30,7 @@ const std = @import("std");
 // ============================================================================
 
 // Calculate elapsed time since start
-~pub event elapsed { start: i128 } -> { ns: i128, us: f64, ms: f64, s: f64 }
+~pub tor elapsed { start: i128 } -> { ns: i128, us: f64, ms: f64, s: f64 }
 
 ~proc elapsed|zig {
     const end = std.time.nanoTimestamp();
@@ -45,7 +45,7 @@ const std = @import("std");
 }
 
 // Print elapsed time to stderr (for use inside comptime event overrides)
-~pub event report { start: i128, label: string }
+~pub tor report { start: i128, label: string }
 
 ~proc report|zig {
     const end = std.time.nanoTimestamp();
@@ -59,14 +59,14 @@ const std = @import("std");
 // ============================================================================
 
 // Sleep for specified milliseconds
-~[runtime] pub event sleep-ms { ms: u64 }
+~[runtime] pub tor sleep-ms { ms: u64 }
 
 ~[runtime] proc sleep-ms|zig {
     std.time.sleep(ms * 1_000_000);
 }
 
 // Sleep for specified seconds
-~[runtime] pub event sleep-s { s: u64 }
+~[runtime] pub tor sleep-s { s: u64 }
 
 ~[runtime] proc sleep-s|zig {
     std.time.sleep(s * 1_000_000_000);

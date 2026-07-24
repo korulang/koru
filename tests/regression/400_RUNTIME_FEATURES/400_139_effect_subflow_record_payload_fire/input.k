@@ -11,7 +11,7 @@
 // 400_079) with a `->` resume producer (`! v { ... } -> u64`, 400_118).
 import std/io
 
-pub event scan { n: i64 }
+pub tor scan { n: i64 }
 ! token { kind: i64, val: i64 } -> i64
 | done i64
 

@@ -3817,7 +3817,7 @@ const zen_text =
     \\  The Zen of Koru
     \\  ═══════════════
     \\
-    \\  The atom is the event.
+    \\  The atom is the tor.
     \\  Functions are just events that forgot how to branch.
     \\  Branches are how decisions actually work.
     \\  Flows are how things actually happen.
@@ -3836,7 +3836,7 @@ const zen_text =
     \\
     \\  The AST is the program.
     \\  The program is the compiler.
-    \\  The compiler is an event.
+    \\  The compiler is a tor.
     \\
     \\  Zero cost at runtime.
     \\  All magic at compile time.
@@ -5957,7 +5957,7 @@ fn checkInvocationVisibility(
         location.column,
         "cannot access private event '{s}' from module '{s}'",
         .{ event_display, source_module },
-        "mark the event as public with ~pub event",
+        "mark the tor as public with ~pub tor",
         .{},
     );
 }
@@ -6191,7 +6191,7 @@ pub fn main() !void {
             \\//     "@koru/example": "^1.0.0"
             \\// }
             \\
-            \\~event main {}
+            \\~tor main {}
             \\
             \\~proc main|zig {
             \\    const std = @import("std");

@@ -3,7 +3,7 @@
 // interpolate invocation args. Anchors the cluster.
 ~import std/io
 
-~pub event show { n: usize }
+~pub tor show { n: usize }
 
 ~proc show|template|zig {
     @import("std").debug.print("n={{ n }}\n", .{});

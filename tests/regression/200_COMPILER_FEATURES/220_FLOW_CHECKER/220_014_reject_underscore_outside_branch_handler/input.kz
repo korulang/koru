@@ -13,7 +13,7 @@
 // Legal:   ~hello() |> next()
 // Illegal: ~hello() |> _
 
-~event hello {}
+~tor hello {}
 
 ~proc hello|zig {}
 

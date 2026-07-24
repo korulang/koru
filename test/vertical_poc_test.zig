@@ -123,7 +123,7 @@ test "vertical POC - parse, generate, and verify" {
         \\// Simple vertical test - mix of Zig and Koru
         \\const std = @import("std");
         \\
-        \\~event greet { name: string }
+        \\~tor greet { name: string }
         \\| done
         \\| err string
         \\
@@ -198,7 +198,7 @@ test "vertical POC - complex example" {
     const source =
         \\const std = @import("std");
         \\
-        \\~event calculate { x: i32, y: i32 }
+        \\~tor calculate { x: i32, y: i32 }
         \\| result i32
         \\| err string
         \\

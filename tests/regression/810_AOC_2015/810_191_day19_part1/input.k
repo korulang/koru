@@ -7,9 +7,9 @@ import std/io
 import std/fs
 import std/regex
 
-pub event add-rule { line: string }
+pub tor add-rule { line: string }
 
-pub event count-molecules { molecule: string }
+pub tor count-molecules { molecule: string }
 | distinct i64
 
 std/fs:read-lines(path: "tests/regression/810_AOC_2015/810_191_day19_part1/input.txt")

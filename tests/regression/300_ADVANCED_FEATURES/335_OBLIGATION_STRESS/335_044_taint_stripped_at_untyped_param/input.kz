@@ -28,14 +28,14 @@
 
 ~import std/io
 
-~pub event get-input {}
+~pub tor get-input {}
 | line []const u8<unsanitized!>
 
 ~get-input => line "user input data"
 
 // Sink that takes a PLAIN []const u8 — no phantom annotation.
 // It does NOT declare <!unsanitized>, so it cannot discharge the obligation.
-~event log-raw { data: string }
+~tor log-raw { data: string }
 | logged
 
 ~log-raw => logged

@@ -12,7 +12,7 @@ var sum3: u64 = 0;
 var sum4: u64 = 0;
 var sum5: u64 = 0;
 
-~event count { i: u64 }
+~tor count { i: u64 }
 | next u64
 
 ~proc count|zig {
@@ -22,22 +22,22 @@ var sum5: u64 = 0;
 }
 
 // 5 Observers
-~event accumulate1 { value: u64 }
+~tor accumulate1 { value: u64 }
 ~proc accumulate1|zig { sum1 += value; }
 
-~event accumulate2 { value: u64 }
+~tor accumulate2 { value: u64 }
 ~proc accumulate2|zig { sum2 += value; }
 
-~event accumulate3 { value: u64 }
+~tor accumulate3 { value: u64 }
 ~proc accumulate3|zig { sum3 += value; }
 
-~event accumulate4 { value: u64 }
+~tor accumulate4 { value: u64 }
 ~proc accumulate4|zig { sum4 += value; }
 
-~event accumulate5 { value: u64 }
+~tor accumulate5 { value: u64 }
 ~proc accumulate5|zig { sum5 += value; }
 
-~event validate {}
+~tor validate {}
 ~proc validate|zig {
     const expected: u64 = MESSAGES * (MESSAGES - 1) / 2;
     if (sum1 == expected and sum2 == expected and sum3 == expected and sum4 == expected and sum5 == expected) {
@@ -47,7 +47,7 @@ var sum5: u64 = 0;
     }
 }
 
-~event start {} | ready
+~tor start {} | ready
 ~proc start|zig { return .{ .ready = .{} }; }
 
 // 5 TAPS - ALL fused at compile time

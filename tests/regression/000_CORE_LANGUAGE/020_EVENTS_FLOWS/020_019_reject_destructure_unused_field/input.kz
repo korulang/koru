@@ -3,7 +3,7 @@
 // binding. `age` is named but never read.
 ~import std/io
 
-~pub event fetch {} -> { name: []const u8, age: i64 }
+~pub tor fetch {} -> { name: []const u8, age: i64 }
 
 ~proc fetch|zig { return .{ .name = "lars", .age = 44 }; }
 

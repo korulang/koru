@@ -13,7 +13,7 @@
 const std = @import("std");
 
 // Checker event: Two branches (continue/done), proc with if/else
-~event loop-step { i: u64, limit: u64, sum: u64 }
+~tor loop-step { i: u64, limit: u64, sum: u64 }
 | continue { i: u64, sum: u64 }
 | done u64
 
@@ -27,7 +27,7 @@ const std = @import("std");
 }
 
 // Print result
-~event print { result: u64 }
+~tor print { result: u64 }
 
 ~proc print|zig {
     std.debug.print("Sum: {}\n", .{result});

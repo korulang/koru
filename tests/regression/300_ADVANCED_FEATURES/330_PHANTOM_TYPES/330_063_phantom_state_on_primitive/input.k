@@ -11,11 +11,11 @@
 
 import std/io
 
-event read-temp { sensor_id: u8 } -> f32<celsius>
+tor read-temp { sensor_id: u8 } -> f32<celsius>
 
 read-temp -> 22.5
 
-event to-fahrenheit { c: f32<celsius> } -> f32<fahrenheit>
+tor to-fahrenheit { c: f32<celsius> } -> f32<fahrenheit>
 
 to-fahrenheit -> c * 9.0 / 5.0 + 32.0
 

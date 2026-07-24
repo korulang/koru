@@ -5,7 +5,7 @@
 ~import std/io
 const std = @import("std");
 
-~event print-sum { g: [2][2]i32 }
+~tor print-sum { g: [2][2]i32 }
 ~proc print-sum|zig {
     const sum = g[0][0] + g[0][1] + g[1][0] + g[1][1];
     std.debug.print("{d}\n", .{sum});

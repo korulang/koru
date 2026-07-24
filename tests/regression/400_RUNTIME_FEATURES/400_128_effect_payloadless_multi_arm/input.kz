@@ -6,7 +6,7 @@
 // and the handler binds nothing (`! ask => halved 7`).
 ~import std/io
 
-~pub event request { payload: i32 }
+~pub tor request { payload: i32 }
 ! ask | halved i32 | timeout
 | done i32
 

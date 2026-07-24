@@ -9,7 +9,7 @@ const std = @import("std");
 
 ~import std/control
 
-~event print-pair { i: usize, j: usize }
+~tor print-pair { i: usize, j: usize }
 
 ~proc print-pair|zig {
     std.debug.print("{},{}\n", .{i, j});

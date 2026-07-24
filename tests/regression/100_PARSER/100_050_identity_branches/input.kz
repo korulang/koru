@@ -2,13 +2,13 @@
 // MUST_RUN: Verify identity values flow correctly at runtime
 ~import std/io
 
-~pub event get-number {} -> i32
+~pub tor get-number {} -> i32
 
 ~proc get-number|zig {
     return 42;
 }
 
-~pub event get-message {} -> string
+~pub tor get-message {} -> string
 
 ~proc get-message|zig {
     return "Hello from identity branch!";

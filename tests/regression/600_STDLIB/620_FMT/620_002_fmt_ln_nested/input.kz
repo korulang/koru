@@ -10,7 +10,7 @@
 ~import std/fmt
 ~import std/io
 
-~event get-name {} -> string
+~tor get-name {} -> string
 
 ~proc get-name|zig {
     return "World";

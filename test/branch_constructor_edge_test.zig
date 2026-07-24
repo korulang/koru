@@ -217,7 +217,7 @@ test "branch constructor outside proc context fails" {
     
     // Branch constructors with expressions should not work in events
     const source =
-        \\~event test_event : { value: Text } => 
+        \\~tor test_event : { value: Text } => 
         \\    | ok o |> success { data: o.value }
     ;
     

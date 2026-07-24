@@ -1,6 +1,6 @@
 // A library with a [keyword] event that can be called unqualified
 
-~[keyword]pub event greet { name: string }
+~[keyword]pub tor greet { name: string }
 
 ~proc greet|zig {
     const std = @import("std");

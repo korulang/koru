@@ -16,7 +16,7 @@ import std/store
 
 [entity(enemy)]std/store:new(enemies, capacity: 64) { hp: i64 }
 
-pub event discharge-enemy { enemy: Enemy<std/store:!taken> }
+pub tor discharge-enemy { enemy: Enemy<std/store:!taken> }
 discharge-enemy = std/io:print.ln("despawned an enemy")
 
 for(0..3)

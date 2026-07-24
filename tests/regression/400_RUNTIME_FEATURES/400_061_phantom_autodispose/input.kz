@@ -12,7 +12,7 @@ pub const Resource = struct {
     allocator: std.mem.Allocator,
 };
 
-~pub event create-resource { name: string } -> *Resource<allocated!>
+~pub tor create-resource { name: string } -> *Resource<allocated!>
 
 ~proc create-resource|zig {
     const alloc = std.heap.page_allocator;
@@ -22,7 +22,7 @@ pub const Resource = struct {
     return res;
 }
 
-~pub event destroy-resource { res: *Resource<!allocated> }
+~pub tor destroy-resource { res: *Resource<!allocated> }
 
 ~proc destroy-resource|zig {
     std.debug.print("  Auto-discharge called!\n", .{});
@@ -31,7 +31,7 @@ pub const Resource = struct {
 }
 
 // Helper to use the resource
-~pub event use-resource { res: *Resource }
+~pub tor use-resource { res: *Resource }
 
 ~proc use-resource|zig {
     std.debug.print("  Using: {s}\n", .{res.data});

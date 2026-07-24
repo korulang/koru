@@ -4,7 +4,7 @@
 
 const std = @import("std");
 
-~pub event check {}
+~pub tor check {}
 
 ~proc check|template(once)|zig {
     std.debug.print("running {{ proc_name }}\n", .{});

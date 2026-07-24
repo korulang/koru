@@ -8,7 +8,7 @@ pub const User = struct {
 };
 
 // Event that creates a user
-~pub event create {
+~pub tor create {
     name: string,
     age: u32,
 } -> User

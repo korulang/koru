@@ -9,7 +9,7 @@
 import std/io
 import std/fs
 
-pub event life-step { g: [8][8]i64 } -> [8][8]i64
+pub tor life-step { g: [8][8]i64 } -> [8][8]i64
 
 life-step = capture { h: [8][8]i64{ .{ 0, 0, 0, 0, 0, 0, 0, 0 }, .{ 0, 0, 0, 0, 0, 0, 0, 0 }, .{ 0, 0, 0, 0, 0, 0, 0, 0 }, .{ 0, 0, 0, 0, 0, 0, 0, 0 }, .{ 0, 0, 0, 0, 0, 0, 0, 0 }, .{ 0, 0, 0, 0, 0, 0, 0, 0 }, .{ 0, 0, 0, 0, 0, 0, 0, 0 }, .{ 0, 0, 0, 0, 0, 0, 0, 0 } } }
 ! as a |> for(1..7)
@@ -19,7 +19,7 @@ life-step = capture { h: [8][8]i64{ .{ 0, 0, 0, 0, 0, 0, 0, 0 }, .{ 0, 0, 0, 0, 
   | done |> _
 | captured result -> result.h
 
-pub event run-steps { g: [8][8]i64, k: i64 } -> [8][8]i64
+pub tor run-steps { g: [8][8]i64, k: i64 } -> [8][8]i64
 
 run-steps = if(k >= 4)
 | then -> g

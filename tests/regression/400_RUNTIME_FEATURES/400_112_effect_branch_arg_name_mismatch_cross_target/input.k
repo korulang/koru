@@ -13,10 +13,10 @@
 // mismatch can never reach an emitter. Labeled dispatch resolves by name
 // identically on Zig and JS, so the old "make JS resolve positionally" fix is
 // unnecessary — the rule closed the gap by construction. Green on both.
-pub event ticker { n: u64 }
+pub tor ticker { n: u64 }
 ! tick u64
-pub event onTick { slot: u64 }
-pub event report {}
+pub tor onTick { slot: u64 }
+pub tor report {}
 
 ticker(n: 1)
 ! tick i |> onTick(slot: i)

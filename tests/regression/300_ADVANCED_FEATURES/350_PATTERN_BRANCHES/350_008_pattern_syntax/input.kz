@@ -12,7 +12,7 @@ pub const Request = struct {
 };
 
 // Event returns a request
-~pub event incoming {} -> Request
+~pub tor incoming {} -> Request
 
 ~proc incoming|zig {
     return .{ .method = "GET", .path = "/users/42" };

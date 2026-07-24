@@ -9,7 +9,7 @@
 // Legal:   | err _ |> next()
 // Illegal: |> next()           (no branch handler — which branch is this?)
 
-~event ping {}
+~tor ping {}
 | ok
 | err string
 

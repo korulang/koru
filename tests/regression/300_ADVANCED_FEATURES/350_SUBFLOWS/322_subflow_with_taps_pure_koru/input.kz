@@ -24,13 +24,13 @@
 
 // Base event: adds 5 to a number, as a pure value continuation.
 // (cf. 040_CONTROL_FLOW/211_nested_depth_2: `~add-one => done value + 1`)
-~event add-five { value: i32 } -> i32
+~tor add-five { value: i32 } -> i32
 
 ~add-five -> value + 5
 
 // Subflow that calls add-five and passes its result through.
 // (cf. 350_SUBFLOWS/303_subflow_chained)
-~event double { value: i32 } -> i32
+~tor double { value: i32 } -> i32
 
 ~double = add-five(value): r -> r
 

@@ -38,7 +38,7 @@
     ]
 }
 
-~[comptime|command]pub event deps {
+~[comptime|command]pub tor deps {
     program: *const Program,
     allocator: __koru_std.mem.Allocator,
     argv: []const []const u8,
@@ -542,7 +542,7 @@
 // REQUIRES.SYSTEM EVENT - Declare a system dependency
 // ============================================================
 
-~[comptime|norun]pub event requires.system { source: Source }
+~[comptime|norun]pub tor requires.system { source: Source }
 
 ~proc requires.system|zig {
     // Void event - collected during AST walking
@@ -552,7 +552,7 @@
 // REQUIRES.ZIG EVENT - Declare a Zig package dependency
 // ============================================================
 
-~[comptime|norun]pub event requires.zig { source: Source }
+~[comptime|norun]pub tor requires.zig { source: Source }
 
 ~proc requires.zig|zig {
     // Void event - collected during AST walking / build.zig.zon generation

@@ -6,9 +6,9 @@
 const std = @import("std");
 const Handle = struct { n: i32 };
 
-~event dispose { x: *Handle<!owned> }
+~tor dispose { x: *Handle<!owned> }
 ~proc dispose|zig { std.heap.page_allocator.destroy(x); }
 
-~event make3 { id: usize } -> { a: *Handle<owned!>, b: *Handle<owned!>, c: *Handle<owned!> }
+~tor make3 { id: usize } -> { a: *Handle<owned!>, b: *Handle<owned!>, c: *Handle<owned!> }
 ~proc make3|zig { const a = std.heap.page_allocator.create(Handle) catch unreachable; const b = std.heap.page_allocator.create(Handle) catch unreachable; const c = std.heap.page_allocator.create(Handle) catch unreachable; a.* = .{ .n = 1 }; b.* = .{ .n = 2 }; c.* = .{ .n = 3 }; return .{ .a = a, .b = b, .c = c }; }
 ~make3(id: 1): s |> dispose(x: s.a): _ |> dispose(x: s.b): _ |> dispose(x: s.c): _ |> std/io:print.ln("clean")

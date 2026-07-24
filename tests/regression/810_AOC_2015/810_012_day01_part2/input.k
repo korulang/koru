@@ -7,7 +7,7 @@
 import std/io
 import std/fs
 
-pub event basement-pos { moves: string } -> i64
+pub tor basement-pos { moves: string } -> i64
 
 basement-pos = capture { floor: 0[i64], idx: 0[i64], pos: 0[i64] }
 ! as acc |> for(moves)

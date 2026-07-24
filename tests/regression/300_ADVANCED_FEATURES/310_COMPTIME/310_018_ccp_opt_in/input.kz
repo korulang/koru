@@ -5,7 +5,7 @@
 
 const std = @import("std");
 
-~event greet { name: string } -> string
+~tor greet { name: string } -> string
 
 ~proc greet|zig {
     std.debug.print("Hello, {s}!\n", .{name});

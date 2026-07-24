@@ -10,7 +10,7 @@
 
 ~import std/io
 
-~event validate { value: i32 }
+~tor validate { value: i32 }
 | ok i32
 | failure string
 
@@ -22,7 +22,7 @@
     }
 }
 
-~event double { value: i32 }
+~tor double { value: i32 }
 | ok i32
 | failure string
 
@@ -35,7 +35,7 @@
 }
 
 // Chain with failure handling at each level
-~event process { input: i32 }
+~tor process { input: i32 }
 | success i32
 | failed string
 

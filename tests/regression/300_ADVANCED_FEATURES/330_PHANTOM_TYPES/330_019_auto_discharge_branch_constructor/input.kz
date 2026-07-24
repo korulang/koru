@@ -1,5 +1,5 @@
 ~import app/fs
-~event check-file { path: string } -> string
+~tor check-file { path: string } -> string
 ~check-file = app/fs:open(path)
 | opened _ -> "file exists"  // obligation should be auto-discharged before returning!
 ~check-file(path: "test.txt")

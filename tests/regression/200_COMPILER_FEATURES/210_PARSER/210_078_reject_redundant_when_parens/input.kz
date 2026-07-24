@@ -8,7 +8,7 @@
 // legal — only whole-expression wrapping is rejected.
 // ============================================================================
 
-~event check { x: i32 }
+~tor check { x: i32 }
 | high i32
 
 ~check(x: 5)

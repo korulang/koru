@@ -58,14 +58,14 @@ const std = @import("std");
 // kernel:shape pattern. Any raw-name branch is a pattern arm; the verdict
 // is the arm's branch constructor (=> ok / => error "msg").
 
-~[norun]pub event define { expr: Expression }
+~[norun]pub tor define { expr: Expression }
 | `*` *
 
 // ============================================================================
 // ENFORCE - program-wide law
 // ============================================================================
 
-~[comptime|transform]pub event enforce { expr: Expression }
+~[comptime|transform]pub tor enforce { expr: Expression }
 
 ~[transform]proc enforce|zig {
     const ast = @import("ast");
@@ -224,7 +224,7 @@ const std = @import("std");
 // CHECK - categorization as dispatch
 // ============================================================================
 
-~[comptime|transform]pub event check { expr: Expression }
+~[comptime|transform]pub tor check { expr: Expression }
 | ok
 | ?error string
 

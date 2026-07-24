@@ -2,12 +2,12 @@
 
 const std = @import("std");
 
-~pub event read { path: string }
+~pub tor read { path: string }
 | success string
 | notfound string
 | ioerror string
 
-~pub event write { path: string, data: string }
+~pub tor write { path: string, data: string }
 | written i32
 | ioerror string
 

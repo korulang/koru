@@ -14,7 +14,7 @@ fn getN() usize {
     return std.fmt.parseInt(usize, n_str, 10) catch 100000000;
 }
 
-~event print_result { sum: i64 }
+~tor print_result { sum: i64 }
 
 ~proc print_result|zig {
     std.debug.print("Koru runtime sum: {d}\n", .{sum});

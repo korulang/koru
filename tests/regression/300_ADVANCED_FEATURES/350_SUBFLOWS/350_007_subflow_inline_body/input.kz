@@ -31,12 +31,12 @@ const std = @import("std");
 }
 
 // [expand] event with branches — produces inline_body + switch
-~[norun|expand]pub event check-positive { expr: Expression }
+~[norun|expand]pub tor check-positive { expr: Expression }
 | positive i32
 | negative
 
 // Event to test
-~event classify { input: i32 } -> i32
+~tor classify { input: i32 } -> i32
 
 // Subflow: uses check-positive (an [expand] with inline_body) inside subflow_impl
 // This is the key pattern — inline_body must work in the default handler path
@@ -45,7 +45,7 @@ const std = @import("std");
 | negative -> -1
 
 // Helper to print
-~event print-result { value: i32 }
+~tor print-result { value: i32 }
 
 ~proc print-result|zig {
     std.debug.print("{}\n", .{value});

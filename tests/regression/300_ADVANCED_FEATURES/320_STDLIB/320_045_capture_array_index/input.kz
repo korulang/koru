@@ -9,7 +9,7 @@
 const std = @import("std");
 
 // Simple helper to print result
-~event print-sum { arr: [3]i32 }
+~tor print-sum { arr: [3]i32 }
 
 ~proc print-sum|zig {
     const sum = arr[0] + arr[1] + arr[2];

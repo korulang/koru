@@ -2,9 +2,9 @@
 // Void events (no output branches) should support continuation syntax
 // ~void-event() |> next_event() should create a continuation
 
-event void-event {}
+tor void-event {}
 
-event another-void {}
+tor another-void {}
 
 // This should parse as a flow with ONE continuation
 // Initial invocation: void-event()

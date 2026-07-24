@@ -18,7 +18,7 @@ const std = @import("std");
 const Connection = struct { handle: i32 };
 const Transaction = struct { conn_handle: i32 };
 
-~pub event connect { host: string }
+~pub tor connect { host: string }
 | ok Connection<open!>
 | err string
 
@@ -27,7 +27,7 @@ const Transaction = struct { conn_handle: i32 };
     return .{ .ok = .{ .conn = .{ .handle = 1 } } };
 }
 
-~pub event begin { conn: Connection<!open> }
+~pub tor begin { conn: Connection<!open> }
 | ok Transaction<active!>
 | err string
 
@@ -35,14 +35,14 @@ const Transaction = struct { conn_handle: i32 };
     return .{ .ok = .{ .tx = .{ .conn_handle = conn.handle } } };
 }
 
-~pub event commit { tx: Transaction<!active> } -> string
+~pub tor commit { tx: Transaction<!active> } -> string
 
 ~proc commit|zig {
     _ = tx;
     return .ok;
 }
 
-~event report-err { stage: string, msg: string }
+~tor report-err { stage: string, msg: string }
 
 ~proc report-err|zig {
     std.debug.print("{s} err: {s}\n", .{ stage, msg });

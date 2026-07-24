@@ -6,10 +6,10 @@
 ~import std/io
 
 // Event with no proc and mismatched input/output - but never called
-~pub event unused-event { x: i32 } -> string
+~pub tor unused-event { x: i32 } -> string
 
 // A real event that IS called
-~pub event greet {}
+~pub tor greet {}
 
 ~proc greet|zig {
     std.debug.print("hello\n", .{});

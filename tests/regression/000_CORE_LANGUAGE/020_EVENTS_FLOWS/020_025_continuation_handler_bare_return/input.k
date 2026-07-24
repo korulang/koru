@@ -11,7 +11,7 @@
 // PINNED (2026-06-29): no corpus coverage for handler-produced bare returns yet.
 import std/io
 
-event check { n: i64 }
+tor check { n: i64 }
 | big i64
 | small i64
 
@@ -19,7 +19,7 @@ check = if(n > 10)
 | then => big n
 | else => small n
 
-event classify { n: i64 } -> i64
+tor classify { n: i64 } -> i64
 classify = check(n)
 | big b -> b * 100
 | small s -> s

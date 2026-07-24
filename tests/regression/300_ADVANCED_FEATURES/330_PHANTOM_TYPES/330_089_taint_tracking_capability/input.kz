@@ -32,7 +32,7 @@
 ~import app/lib/taint
 
 // Untrusted source: issues <app/lib/taint:tainted!>.
-~event read-input { } -> string<app/lib/taint:tainted!>
+~tor read-input { } -> string<app/lib/taint:tainted!>
 
 ~proc read-input|zig {
     return "untrusted";
@@ -42,7 +42,7 @@
 // data can't land (it carries tainted!, not sanitized); and the obligation is
 // discharged here so auto-discharge has nothing to complain about — isolating
 // the cross-module-resolution gap as the sole RED reason.
-~event query { q: string<app/lib/taint:!sanitized> }
+~tor query { q: string<app/lib/taint:!sanitized> }
 
 ~proc query|zig {
     return;

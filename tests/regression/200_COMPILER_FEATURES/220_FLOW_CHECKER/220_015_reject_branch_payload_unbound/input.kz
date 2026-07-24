@@ -8,7 +8,7 @@
 // Legal:   | ok _ |> _          — explicit discard
 // Illegal: | ok |> _            — neither bound nor discarded
 
-~event compute {} -> i32
+~tor compute {} -> i32
 
 ~proc compute|zig {
     return 42;

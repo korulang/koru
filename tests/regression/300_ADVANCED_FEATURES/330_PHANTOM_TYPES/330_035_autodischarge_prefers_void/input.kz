@@ -1,19 +1,19 @@
 pub const Handle = struct {
     id: i32,
 };
-~event open {} -> *Handle<open!>
+~tor open {} -> *Handle<open!>
 ~proc open|zig {
     std.debug.print("opened\n", .{});
     const h = std.heap.page_allocator.create(Handle) catch unreachable;
     h.* = .{ .id = 42 };
     return h;
 }
-~event close-quiet { h: *Handle<!open> }
+~tor close-quiet { h: *Handle<!open> }
 ~proc close-quiet|zig {
     std.debug.print("closed quietly\n", .{});
     std.heap.page_allocator.destroy(h);
 }
-~event close-checked { h: *Handle<!open> } -> string
+~tor close-checked { h: *Handle<!open> } -> string
 ~proc close-checked|zig {
     std.heap.page_allocator.destroy(h);
 }

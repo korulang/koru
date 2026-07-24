@@ -6,7 +6,7 @@
 // guess pending next-session grounding. Base surface: 320_133.
 import std/io
 
-pub event classify { n: i64 } -> i64
+pub tor classify { n: i64 } -> i64
 
 classify = cond({ value: n })
 | c { value } when value == 4 -> value * 100

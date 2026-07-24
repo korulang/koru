@@ -13,7 +13,7 @@
 // `| else` and the program prints 0. The handled twin behaves like 400_132.
 import std/io
 
-pub event query { q: i64 }
+pub tor query { q: i64 }
 ! ?ask i64 -> i64
 | done i64
 

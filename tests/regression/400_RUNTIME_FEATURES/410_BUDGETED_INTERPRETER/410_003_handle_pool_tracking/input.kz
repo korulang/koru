@@ -8,7 +8,7 @@
 const std = @import("std");
 
 // Open creates an obligation
-~pub event open { path: string }
+~pub tor open { path: string }
 | opened []const u8<opened!>
 
 ~proc open|zig {
@@ -16,7 +16,7 @@ const std = @import("std");
 }
 
 // Close discharges the obligation
-~pub event close { handle: string<!opened> }
+~pub tor close { handle: string<!opened> }
 
 ~proc close|zig {
 }

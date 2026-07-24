@@ -6,7 +6,7 @@
 
 const std = @import("std");
 
-~pub event each-in { r: i32 }
+~pub tor each-in { r: i32 }
 
 ~proc each-in|template|zig {
     for ({{ r }}) |item| std.debug.print("{d}\n", .{item});

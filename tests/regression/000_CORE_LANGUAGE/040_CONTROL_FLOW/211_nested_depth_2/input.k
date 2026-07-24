@@ -10,11 +10,11 @@
 import std/io
 
 // Simple events that add values
-event add-one { value: i32 } -> i32
+tor add-one { value: i32 } -> i32
 
 add-one -> value + 1
 
-event add-two { value: i32 } -> i32
+tor add-two { value: i32 } -> i32
 
 add-two -> value + 2
 

@@ -21,7 +21,7 @@
 // name. The fire is inside `var k`'s scope, so a naive `const k = ...` shadows.
 ~import std/io
 
-~pub event pump {}
+~pub tor pump {}
 ! ?key i64
 | done i64
 

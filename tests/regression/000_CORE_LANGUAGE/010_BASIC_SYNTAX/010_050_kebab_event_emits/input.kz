@@ -5,7 +5,7 @@
 const std = @import("std");
 ~import std/io
 
-~event my-event {}
+~tor my-event {}
 ~proc my-event|zig {
     std.debug.print("kebab event ok\n", .{});
 }

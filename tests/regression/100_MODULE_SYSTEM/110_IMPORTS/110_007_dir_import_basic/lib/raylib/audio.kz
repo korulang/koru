@@ -2,9 +2,9 @@
 
 const std = @import("std");
 
-~pub event play { sound_id: i32 }
+~pub tor play { sound_id: i32 }
 
-~pub event stop {}
+~pub tor stop {}
 
 ~proc play|zig {
 }

@@ -2,9 +2,9 @@
 
 const std = @import("std");
 
-~pub event init {}
+~pub tor init {}
 
-~pub event play { sound: string }
+~pub tor play { sound: string }
 
 ~proc init|zig {
     std.debug.print("Audio initialized\n", .{});

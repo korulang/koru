@@ -13,7 +13,7 @@
 
 ~import std/io
 
-~event step { n: i64 }
+~tor step { n: i64 }
 | next i64
 | done i64
 
@@ -22,7 +22,7 @@
     return .{ .done = n };
 }
 
-~event spin {} -> i64
+~tor spin {} -> i64
 
 ~spin = #loop step(n: 0)
 | next v |> @loop(n: v)

@@ -36,7 +36,7 @@ pub const Set_i64 = struct {
   the handle unconditionally. The hash table's own storage is heap regardless.
   Marked so the box debt is explicit and greppable, not hidden; closes with the
   shared escape-allocation model (list / grid / set / string together).
-]pub event new {}
+]pub tor new {}
 | set *Set_i64<set!>
 | err string
 
@@ -54,7 +54,7 @@ pub const Set_i64 = struct {
 // ============================================
 
 // Add a key (idempotent — adding a present key is a no-op). Void, chains with `|>`.
-~pub event add { s: *Set_i64<set>, v: i64 }
+~pub tor add { s: *Set_i64<set>, v: i64 }
 
 ~proc add|zig {
     s.map.put(s.allocator, v, {}) catch {
@@ -67,7 +67,7 @@ pub const Set_i64 = struct {
 // ============================================
 
 // Membership test.
-~pub event contains { s: *Set_i64<set>, v: i64 }
+~pub tor contains { s: *Set_i64<set>, v: i64 }
 | yes
 | no
 
@@ -79,7 +79,7 @@ pub const Set_i64 = struct {
 }
 
 // Number of distinct keys.
-~pub event count { s: *Set_i64<set> } -> i64
+~pub tor count { s: *Set_i64<set> } -> i64
 
 ~proc count|zig {
     return @intCast(s.map.count());
@@ -89,7 +89,7 @@ pub const Set_i64 = struct {
 // Teardown (consume — discharges <!set>)
 // ============================================
 
-~pub event free { s: *Set_i64<!set> }
+~pub tor free { s: *Set_i64<!set> }
 
 ~proc free|zig {
     s.deinit();

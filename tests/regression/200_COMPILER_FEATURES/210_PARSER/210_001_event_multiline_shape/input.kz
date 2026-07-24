@@ -3,7 +3,7 @@
 // Also verifies branch payload shapes can span multiple lines cleanly
 // ============================================================================
 
-~event example.write
+~tor example.write
     // intentionally keep the opening brace on the next line
 {
     value: i32,

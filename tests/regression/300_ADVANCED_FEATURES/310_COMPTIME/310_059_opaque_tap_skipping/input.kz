@@ -12,10 +12,10 @@ const std = @import("std");
 ~import std/taps
 
 // Public event - will be tapped
-~event hello {}
+~tor hello {}
 
 // Internal event - marked opaque to prevent tapping
-~[opaque] event internal-log { msg: string }
+~[opaque] tor internal-log { msg: string }
 
 ~proc hello|zig {
     std.debug.print("Hello\n", .{});

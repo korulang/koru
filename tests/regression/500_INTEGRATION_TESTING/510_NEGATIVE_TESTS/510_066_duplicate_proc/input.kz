@@ -1,7 +1,7 @@
 // Test: Two procs for same event
 // Question: Should this be rejected or is last-wins intentional?
 
-~event foo { x: i32 }
+~tor foo { x: i32 }
 
 ~foo => done
 ~foo => done

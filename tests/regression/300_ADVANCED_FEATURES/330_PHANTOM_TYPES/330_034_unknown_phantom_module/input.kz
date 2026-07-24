@@ -3,7 +3,7 @@ const std = @import("std");
 const File = struct {
     handle: i32,
 };
-~event check-file { file: *File<unknown:open> }
+~tor check-file { file: *File<unknown:open> }
 ~proc check-file|zig {
 }
 ~std/io:print.ln("Test file - phantom checker should fail before this runs")

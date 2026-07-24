@@ -4,7 +4,7 @@
 // form (`~echo -> s`), the same as the scalar 020_021.
 import std/io
 
-pub event echo { s: string } -> string
+pub tor echo { s: string } -> string
 echo -> s
 
 echo(s: "hello"): r |> std/io:print.ln("{{ r:s }}")

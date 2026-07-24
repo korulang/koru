@@ -51,14 +51,14 @@ pub fn Ring(comptime T: type, comptime size: usize) type {
 const MyRing = Ring(u32, 1024);
 
 // Ring operations
-~event ring.enqueue { ring: *Ring(u32, 1024), value: u32 }
+~tor ring.enqueue { ring: *Ring(u32, 1024), value: u32 }
 
 ~proc ring.enqueue|zig {
     if (ring.tryEnqueue(value)) {
     }
 }
 
-~event ring.dequeue { ring: *Ring(u32, 1024) }
+~tor ring.dequeue { ring: *Ring(u32, 1024) }
 | value u32
 
 ~proc ring.dequeue|zig {
@@ -68,13 +68,13 @@ const MyRing = Ring(u32, 1024);
 }
 
 // Processing event - what we do with dequeued values
-~event process { data: u32 }
+~tor process { data: u32 }
 
 ~proc process|zig {
     std.debug.print("Processing x 1: {}\n", .{data});
 }
 
-~event process-timestwo { data: u32 }
+~tor process-timestwo { data: u32 }
 
 ~proc process-timestwo|zig {
     std.debug.print("Processing x 2: {}\n", .{data * 2});
@@ -88,7 +88,7 @@ const MyRing = Ring(u32, 1024);
 | value v when v.data * 2 > 2 |> process-timestwo(v.data) | done |> _
 
 // Producer: Fill the ring with values
-~event produce { ring: *Ring(u32, 1024), count: u32 }
+~tor produce { ring: *Ring(u32, 1024), count: u32 }
 
 ~proc produce|zig {
     var i: u32 = 0;
@@ -100,7 +100,7 @@ const MyRing = Ring(u32, 1024);
 
 // Consumer loop using label + tap
 // The tap fires automatically for each dequeued value!
-~event start {}
+~tor start {}
 
 ~[pure]proc start|zig {
 }

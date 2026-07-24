@@ -17,7 +17,7 @@ const std = @import("std");
 const File = struct { handle: i32 };
 
 // Open a file — mints the <opened!> obligation.
-~pub event open { path: string } -> *File<opened!>
+~pub tor open { path: string } -> *File<opened!>
 
 ~proc open|zig {
     std.debug.print("Opening file\n", .{});
@@ -27,7 +27,7 @@ const File = struct { handle: i32 };
 }
 
 // The ONLY consumer of <!opened> — but with a DOTTED event name.
-~pub event dispose.file { file: *File<!opened> }
+~pub tor dispose.file { file: *File<!opened> }
 
 ~proc dispose.file|zig {
     _ = file;

@@ -6,7 +6,7 @@ import std/control
 
 
 // Event that uses ~for in its implementation
-event count-to-three {} -> i32
+tor count-to-three {} -> i32
 
 // Subflow implementation using ~for as the starting construct
 count-to-three = for(0..3)

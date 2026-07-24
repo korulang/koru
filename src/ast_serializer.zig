@@ -3035,7 +3035,7 @@ test "serialize simple Koru program" {
     const source =
         \\const std = @import("std");
         \\
-        \\~event hello {}
+        \\~tor hello {}
         \\| done
         \\| err string
         \\
@@ -3107,7 +3107,7 @@ test "serialize proc body preserves Zig code" {
     const allocator = std.testing.allocator;
 
     const source =
-        \\~event compute { x: i32 }
+        \\~tor compute { x: i32 }
         \\| result { value: i32 }
         \\
         \\~proc compute {
@@ -3147,7 +3147,7 @@ test "serialize complete mixed program" {
         \\
         \\~import std/math
         \\
-        \\~event process { input: string }
+        \\~tor process { input: string }
         \\| success string
         \\| failure string
         \\

@@ -10,7 +10,7 @@ const std = @import("std");
 // Events that produce data
 // ============================================================================
 
-~pub event validate { data: string }
+~pub tor validate { data: string }
 | valid string
 | invalid string
 
@@ -22,7 +22,7 @@ const std = @import("std");
     return .{ .invalid = "empty input" };
 }
 
-~pub event transform { input: string }
+~pub tor transform { input: string }
 | transformed string
 
 ~proc transform|zig {

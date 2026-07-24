@@ -7,7 +7,7 @@
 import std/testing
 
 // Event with constant implementation (immediate branch constructor)
-event get-config {} -> { timeout: u32, retries: u32 }
+tor get-config {} -> { timeout: u32, retries: u32 }
 
 // Constant implementation - always returns the same value
 get-config -> { timeout: 30, retries: 3 }

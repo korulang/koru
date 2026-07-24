@@ -1,5 +1,5 @@
 // Test: Unknown label should produce a clear error message
 
-~event foo {}
+~tor foo {}
 
 ~foo() |> @missing()

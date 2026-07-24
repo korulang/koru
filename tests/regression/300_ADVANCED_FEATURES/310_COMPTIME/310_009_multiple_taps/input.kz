@@ -6,12 +6,12 @@ const std = @import("std");
 ~import std/taps
 
 // Event with an identity branch for the taps to observe
-~event hello {} -> string
+~tor hello {} -> string
 
 // Void observer events
-~event tap1 {}
+~tor tap1 {}
 
-~event tap2 {}
+~tor tap2 {}
 
 ~proc hello|zig {
     std.debug.print("Main flow executed\n", .{});

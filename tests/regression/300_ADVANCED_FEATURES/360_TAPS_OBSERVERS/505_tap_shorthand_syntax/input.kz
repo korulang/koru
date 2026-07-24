@@ -9,7 +9,7 @@
 ~import std/taps
 
 // Simple event with one branch we care about
-~event ping {} -> string
+~tor ping {} -> string
 
 ~proc ping|zig {
     return "Pong!";

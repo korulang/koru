@@ -11,7 +11,7 @@
 ~import std/io
 const std = @import("std");
 
-~event run-cmd { argv0: string }
+~tor run-cmd { argv0: string }
 | ok i32
 | failed { code: i32, msg: string }
 

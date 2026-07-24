@@ -9,7 +9,7 @@ const Connection = struct {
 };
 
 // Create a new connection - starts in 'idle' state
-~pub event create {} -> *Connection<idle>
+~pub tor create {} -> *Connection<idle>
 
 ~proc create|zig {
     std.debug.print("Creating connection\n", .{});
@@ -20,7 +20,7 @@ const Connection = struct {
 }
 
 // Connect - transitions from idle to active
-~pub event connect { conn: *Connection<idle> } -> *Connection<active>
+~pub tor connect { conn: *Connection<idle> } -> *Connection<active>
 
 ~proc connect|zig {
     std.debug.print("Connecting: {d}\n", .{conn.id});
@@ -28,7 +28,7 @@ const Connection = struct {
 }
 
 // Pause - transitions from active to paused
-~pub event pause { conn: *Connection<active> } -> *Connection<paused>
+~pub tor pause { conn: *Connection<active> } -> *Connection<paused>
 
 ~proc pause|zig {
     std.debug.print("Pausing: {d}\n", .{conn.id});
@@ -37,7 +37,7 @@ const Connection = struct {
 
 // Resume - accepts EITHER paused OR active (union!) - always returns active
 // This demonstrates the core union feature: flexible input acceptance
-~pub event resume { conn: *Connection<paused|active> } -> *Connection<active>
+~pub tor resume { conn: *Connection<paused|active> } -> *Connection<active>
 
 ~proc resume|zig {
     std.debug.print("Resuming/continuing: {d}\n", .{conn.id});
@@ -45,7 +45,7 @@ const Connection = struct {
 }
 
 // Close - accepts active OR paused (union!) - cleans up connection
-~pub event close { conn: *Connection<active|paused> }
+~pub tor close { conn: *Connection<active|paused> }
 
 ~proc close|zig {
     std.debug.print("Closing: {d}\n", .{conn.id});

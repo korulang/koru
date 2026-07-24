@@ -9,7 +9,7 @@
 ~import std/io
 
 // Define abstract event
-~[abstract] event process { name: string }
+~[abstract] tor process { name: string }
 | result string
 
 // Default implementation: just returns the name

@@ -14,7 +14,7 @@
 const std = @import("std");
 
 // Event with required and optional branches
-~event process { value: u32 }
+~tor process { value: u32 }
 | success u32        // Required
 | ?warning string   // Optional
 | ?debug string // Optional
@@ -23,7 +23,7 @@ const std = @import("std");
     return .{ .success = value };
 }
 
-~pub event observe { name: string }
+~pub tor observe { name: string }
 ~proc observe|zig {
     _ = name;
 }

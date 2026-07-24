@@ -7,27 +7,27 @@
 const std = @import("std");
 
 // Events for testing scoping
-~event outer { x: i32 } -> i32
+~tor outer { x: i32 } -> i32
 
 ~proc outer|zig {
     // x is accessible here directly
     return x;
 }
 
-~event middle { y: i32 } -> i32
+~tor middle { y: i32 } -> i32
 
 ~proc middle|zig {
     return y * 2;
 }
 
-~event inner { z: i32 } -> i32
+~tor inner { z: i32 } -> i32
 
 ~proc inner|zig {
     return z * 3;
 }
 
 // Event with nested structure for field access testing
-~event nested-data { info: UserInfo } -> i32
+~tor nested-data { info: UserInfo } -> i32
 
 // Define the struct type inline
 const UserInfo = struct {
@@ -44,7 +44,7 @@ const UserInfo = struct {
 }
 
 // Event to demonstrate access to outer scope bindings
-~event show-values { a: i32, b: i32, c: i32 }
+~tor show-values { a: i32, b: i32, c: i32 }
 
 ~proc show-values|zig {
     // Should print values showing the scope chain worked

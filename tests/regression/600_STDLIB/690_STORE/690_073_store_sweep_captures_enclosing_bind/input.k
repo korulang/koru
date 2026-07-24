@@ -8,7 +8,7 @@
 import std/io
 import std/store
 
-pub event make {} -> i64
+pub tor make {} -> i64
 proc make|zig {
     return 7;
 }

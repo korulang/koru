@@ -1,19 +1,19 @@
 // Depth 5 test: Maximum stress test (10+1+2+3+4+5 = 25)
 import std/io
 
-event add-one { value: i32 } -> i32
+tor add-one { value: i32 } -> i32
 add-one -> value + 1
 
-event add-two { value: i32 } -> i32
+tor add-two { value: i32 } -> i32
 add-two -> value + 2
 
-event add-three { value: i32 } -> i32
+tor add-three { value: i32 } -> i32
 add-three -> value + 3
 
-event add-four { value: i32 } -> i32
+tor add-four { value: i32 } -> i32
 add-four -> value + 4
 
-event add-five { value: i32 } -> i32
+tor add-five { value: i32 } -> i32
 add-five -> value + 5
 
 add-one(value: 10): a |> add-two(value: a): b |> add-three(value: b): c |> add-four(value: c): d |> add-five(value: d): e |> std/io:print.ln("{{e:d}}")

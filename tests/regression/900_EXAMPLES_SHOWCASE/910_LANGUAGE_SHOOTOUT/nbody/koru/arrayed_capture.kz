@@ -40,12 +40,12 @@ const ZERO_DV = [5][3]f64{
 // Events
 // ============================================================================
 
-~event init {}
+~tor init {}
 | bodies [5]Body
 
 ~proc init|zig { return .{ .bodies = BODIES }; }
 
-~event offset { bodies: []Body }
+~tor offset { bodies: []Body }
 
 ~proc offset|zig {
     var px: f64 = 0; var py: f64 = 0; var pz: f64 = 0;
@@ -53,7 +53,7 @@ const ZERO_DV = [5][3]f64{
     bodies[0].vx = -px / SOLAR_MASS; bodies[0].vy = -py / SOLAR_MASS; bodies[0].vz = -pz / SOLAR_MASS;
 }
 
-~event energy { bodies: []const Body }
+~tor energy { bodies: []const Body }
 | e f64
 
 ~proc energy|zig {
@@ -68,11 +68,11 @@ const ZERO_DV = [5][3]f64{
     return .{ .e = e };
 }
 
-~event print-e { e: f64 }
+~tor print-e { e: f64 }
 
 ~proc print-e|zig { std.debug.print("{d:.9}\n", .{e}); }
 
-~event parse {}
+~tor parse {}
 | n u32
 
 ~proc parse|zig {
@@ -83,7 +83,7 @@ const ZERO_DV = [5][3]f64{
 }
 
 // Apply velocity deltas from [5][3] array and advance positions
-~event apply { bodies: []Body, dt: f64, dv: [5][3]f64 }
+~tor apply { bodies: []Body, dt: f64, dv: [5][3]f64 }
 
 ~proc apply|zig {
     for (bodies, 0..) |*b, i| {
@@ -97,7 +97,7 @@ const ZERO_DV = [5][3]f64{
 }
 
 // Compute force contribution for one body pair
-~event pair-force { bi: Body, bj: Body, dt: f64 }
+~tor pair-force { bi: Body, bj: Body, dt: f64 }
 | result { fx: f64, fy: f64, fz: f64, mi: f64, mj: f64 }
 
 ~proc pair-force|zig {

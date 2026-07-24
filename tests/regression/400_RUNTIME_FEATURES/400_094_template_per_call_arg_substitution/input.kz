@@ -6,7 +6,7 @@
 
 const std = @import("std");
 
-~pub event count-to { n: i32 }
+~pub tor count-to { n: i32 }
 
 ~proc count-to|template|zig {
     var i: i32 = 0;

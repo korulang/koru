@@ -8,7 +8,7 @@
 const std = @import("std");
 
 // Event for counting/summing
-~event count { i: u64, sum: u64 }
+~tor count { i: u64, sum: u64 }
 | next { i: u64, sum: u64 }
 | done u64
 
@@ -24,7 +24,7 @@ const std = @import("std");
 }
 
 // Print result
-~event print { result: u64 }
+~tor print { result: u64 }
 
 ~proc print|zig {
     std.debug.print("Sum: {}\n", .{result});

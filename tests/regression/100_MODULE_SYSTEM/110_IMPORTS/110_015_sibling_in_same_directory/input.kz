@@ -17,7 +17,7 @@ const std = @import("std");
 ~mylib:greet(name: "World") |> on-done()
 
 // Handler that uses std - this will trigger ambiguity if nested
-~event on-done {}
+~tor on-done {}
 
 ~proc on-done|zig {
     std.debug.print("Done!\n", .{});

@@ -17,7 +17,7 @@
 ~import std/io
 ~import std/list
 
-~pub event roundtrip { cur: *List_i64<std/list:!list> }
+~pub tor roundtrip { cur: *List_i64<std/list:!list> }
 | out *List_i64<std/list:list!>
 
 ~roundtrip => out cur

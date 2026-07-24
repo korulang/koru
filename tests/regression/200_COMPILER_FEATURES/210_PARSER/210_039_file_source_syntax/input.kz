@@ -6,7 +6,7 @@
 const std = @import("std");
 
 // Event that takes Source parameter
-~[comptime|transform]event render.file {
+~[comptime|transform]tor render.file {
     source: Source[text],
     program: *const Program,
     allocator: std.mem.Allocator

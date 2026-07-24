@@ -9,7 +9,7 @@
 // survives byte-for-byte (hyphen intact). GREEN proves the glyph works.
 const std = @import("std");
 
-~[comptime|transform]pub event scan {
+~[comptime|transform]pub tor scan {
     invocation: *const Invocation,
     item: *const Item,
     program: *const Program,

@@ -4,7 +4,7 @@
 // field-existence wall from over-rejecting valid destructures.
 import std/io
 
-event read { path: string }
+tor read { path: string }
 | ok { a: i32, b: u8 }
 | err string
 

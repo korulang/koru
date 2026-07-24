@@ -3,7 +3,7 @@
 // Actual injection of host types will be tested in Phase 2
 const std = @import("std");
 
-~event test-pass {}
+~tor test-pass {}
 
 ~proc test-pass|zig {
     std.debug.print("HostTypeDecl infrastructure ready\n", .{});

@@ -7,4 +7,4 @@
 // contract.kz has nothing to attach to. This test fails until the loader
 // learns to load every companion file sharing a stem.
 
-pub event compute { x: u32 } -> u32
+pub tor compute { x: u32 } -> u32

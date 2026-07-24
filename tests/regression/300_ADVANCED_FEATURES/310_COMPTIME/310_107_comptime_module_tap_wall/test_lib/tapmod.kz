@@ -4,7 +4,7 @@
 const std = @import("std");
 ~import std/taps
 
-~[opaque] event observe { msg: string }
+~[opaque] tor observe { msg: string }
 
 ~proc observe|zig {
     std.debug.print("[obs] {s}\n", .{msg});

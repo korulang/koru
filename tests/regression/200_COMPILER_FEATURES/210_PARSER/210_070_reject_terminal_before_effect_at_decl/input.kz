@@ -13,6 +13,6 @@
 //   effect-handler in between.
 // ============================================================================
 
-~pub event for { start: usize, end: usize }
+~pub tor for { start: usize, end: usize }
 | done usize
 ! each usize

@@ -11,7 +11,7 @@
 const std = @import("std");
 
 // Simple event that returns a count
-~event get-count {} -> u32
+~tor get-count {} -> u32
 
 ~proc get-count|zig {
     return 3;

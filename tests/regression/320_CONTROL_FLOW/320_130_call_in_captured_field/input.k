@@ -10,7 +10,7 @@
 // holds the wall that does. Before: verbatim Koru leak into emitted Zig.
 import std/io
 
-pub event g { a: i64 } -> i64
+pub tor g { a: i64 } -> i64
 g -> a + 1
 
 capture { acc: 0[i64] }

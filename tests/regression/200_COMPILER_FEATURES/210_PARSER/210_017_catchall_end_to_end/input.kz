@@ -12,7 +12,7 @@
 // surface. EXPECT FRONTEND_OK to limit scope to parse acceptance.
 // ============================================================================
 
-~event process { value: u32 }
+~tor process { value: u32 }
 | success u32
 | ?warning string
 
@@ -20,7 +20,7 @@
     return .{ .success = value };
 }
 
-~pub event observed { name: string }
+~pub tor observed { name: string }
 ~proc observed|zig {
     _ = name;
 }

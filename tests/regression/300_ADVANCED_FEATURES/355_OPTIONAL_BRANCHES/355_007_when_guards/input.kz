@@ -13,7 +13,7 @@
 
 // Event with required + optional branches
 // success is REQUIRED, warning/debug are OPTIONAL
-~event process { value: u32 }
+~tor process { value: u32 }
 | success u32
 | ?warning { msg: string, level: u32 }
 | ?debug string

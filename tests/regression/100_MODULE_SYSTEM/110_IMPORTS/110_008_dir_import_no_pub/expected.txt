@@ -3,26 +3,26 @@ error[KORU044]: cannot access private event 'app.lib.raylib.graphics:render' fro
     |
  13 | ~app/lib/raylib/graphics:render(width: 1920, height: 1080) |> app/lib/raylib/graphics:clear(color: 0xFF0000)
     | ^
-  hint: mark the event as public with ~pub event
+  hint: mark the tor as public with ~pub tor
 
 error[KORU044]: cannot access private event 'app.lib.raylib.graphics:clear' from module 'input'
   --> tests/regression/100_MODULE_SYSTEM/110_IMPORTS/110_008_dir_import_no_pub/input.kz:16:0
     |
  16 | 
     | ^
-  hint: mark the event as public with ~pub event
+  hint: mark the tor as public with ~pub tor
 
 error[KORU044]: cannot access private event 'app.lib.raylib.audio:play' from module 'input'
   --> tests/regression/100_MODULE_SYSTEM/110_IMPORTS/110_008_dir_import_no_pub/input.kz:14:4
     |
  14 |     | cleared |> app/lib/raylib/audio:play(sound_id: 42) |> app/lib/raylib/audio:stop()
     |    ^
-  hint: mark the event as public with ~pub event
+  hint: mark the tor as public with ~pub tor
 
 error[KORU044]: cannot access private event 'app.lib.raylib.audio:stop' from module 'input'
   --> tests/regression/100_MODULE_SYSTEM/110_IMPORTS/110_008_dir_import_no_pub/input.kz:14:4
     |
  14 |     | cleared |> app/lib/raylib/audio:play(sound_id: 42) |> app/lib/raylib/audio:stop()
     |    ^
-  hint: mark the event as public with ~pub event
+  hint: mark the tor as public with ~pub tor
 

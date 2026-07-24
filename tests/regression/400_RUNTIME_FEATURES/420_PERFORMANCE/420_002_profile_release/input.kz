@@ -3,11 +3,11 @@
 const std = @import("std");
 ~import std/taps
 
-~event hello {}
+~tor hello {}
 
-~event goodbye {}
+~tor goodbye {}
 
-~event profiler { source: string, branch: string, destination: ?[]const u8, timestamp_ns: i128 }
+~tor profiler { source: string, branch: string, destination: ?[]const u8, timestamp_ns: i128 }
 
 ~proc hello|zig {
     std.debug.print("Hello executed\n", .{});

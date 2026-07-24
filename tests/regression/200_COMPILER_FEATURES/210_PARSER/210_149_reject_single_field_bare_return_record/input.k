@@ -5,7 +5,7 @@
 // the multi-field record return (241/242) is the legal form. The single-field
 // event INPUT payload (`{ strict: bool }`) is exempt and stays legal.
 import std/io
-pub event config { strict: bool } -> { a: i64 }
+pub tor config { strict: bool } -> { a: i64 }
 config = if(strict)
     | then -> { a: 1 }
     | else -> { a: 0 }

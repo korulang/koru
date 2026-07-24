@@ -13,7 +13,7 @@
 // ❌ Variant selection logic (future work)
 // ❌ GPU code generation (future work)
 
-pub event blur { }
+pub tor blur { }
 
 proc blur|naive {
     return .done;

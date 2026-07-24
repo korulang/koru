@@ -16,6 +16,6 @@
 
 // This is a glob pattern event - a template for any log.* event
 // Marked [norun] since we're just testing syntax acceptance, not transform execution
-[comptime|transform|norun]pub event log.* {
+[comptime|transform|norun]pub tor log.* {
     message: string,
 }

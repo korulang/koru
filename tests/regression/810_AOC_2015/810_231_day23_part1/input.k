@@ -11,7 +11,7 @@ import std/io
 import std/fs
 import std/regex
 
-pub event run { pc: i64, a: i64, b: i64, ops: [8]i64, regs: [8]i64, offs: [8]i64, n: i64 } -> { a: i64, b: i64 }
+pub tor run { pc: i64, a: i64, b: i64, ops: [8]i64, regs: [8]i64, offs: [8]i64, n: i64 } -> { a: i64, b: i64 }
 
 run = if(pc >= n or pc < 0)
 | then -> { a, b }

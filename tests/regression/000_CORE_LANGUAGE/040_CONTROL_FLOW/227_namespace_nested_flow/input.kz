@@ -11,11 +11,11 @@
 const std = @import("std");
 
 // Events with namespace
-~event net.connect { host: string }
+~tor net.connect { host: string }
 | connected u32
 | failed string
 
-~event net.send { id: u32, data: string }
+~tor net.send { id: u32, data: string }
 | sent usize
 | failed string
 

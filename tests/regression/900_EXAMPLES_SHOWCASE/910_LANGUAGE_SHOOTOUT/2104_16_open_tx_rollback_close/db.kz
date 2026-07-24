@@ -5,7 +5,7 @@ const std = @import("std");
 const Connection = struct { handle: i32 };
 const Transaction = struct { conn_handle: i32 };
 
-~pub event open { connstr: string }
+~pub tor open { connstr: string }
 | connected *Connection<connected!>
 | connection-failed
 
@@ -16,7 +16,7 @@ const Transaction = struct { conn_handle: i32 };
     return .{ .connected = c };
 }
 
-~pub event tx.begin { conn: *Connection<!connected|!active> } -> *Transaction<started!>
+~pub tor tx.begin { conn: *Connection<!connected|!active> } -> *Transaction<started!>
 
 ~proc tx.begin|zig {
     const t = std.heap.page_allocator.create(Transaction) catch unreachable;
@@ -24,14 +24,14 @@ const Transaction = struct { conn_handle: i32 };
     return t;
 }
 
-~pub event tx.exec { tx: *Transaction<!started|!active>, sql: string } -> *Transaction<active!>
+~pub tor tx.exec { tx: *Transaction<!started|!active>, sql: string } -> *Transaction<active!>
 
 ~proc tx.exec|zig {
     std.debug.print("Executing: {s}\n", .{sql});
     return tx;
 }
 
-~pub event tx.commit { tx: *Transaction<!active> } -> *Connection<active!>
+~pub tor tx.commit { tx: *Transaction<!active> } -> *Connection<active!>
 
 ~proc tx.commit|zig {
     std.debug.print("COMMIT\n", .{});
@@ -41,7 +41,7 @@ const Transaction = struct { conn_handle: i32 };
     return c;
 }
 
-~pub event tx.rollback { tx: *Transaction<!active> } -> *Connection<active!>
+~pub tor tx.rollback { tx: *Transaction<!active> } -> *Connection<active!>
 
 ~proc tx.rollback|zig {
     std.debug.print("ROLLBACK\n", .{});
@@ -51,7 +51,7 @@ const Transaction = struct { conn_handle: i32 };
     return c;
 }
 
-~pub event close { conn: *Connection<!active> }
+~pub tor close { conn: *Connection<!active> }
 
 ~proc close|zig {
     std.debug.print("Connection closed\n", .{});

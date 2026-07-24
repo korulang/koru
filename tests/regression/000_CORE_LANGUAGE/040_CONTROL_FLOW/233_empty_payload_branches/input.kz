@@ -6,7 +6,7 @@
 ~import std/io
 
 // Event with two branches, BOTH empty (no payload fields)
-~event check-value { n: i32 }
+~tor check-value { n: i32 }
 | positive
 | non-positive
 

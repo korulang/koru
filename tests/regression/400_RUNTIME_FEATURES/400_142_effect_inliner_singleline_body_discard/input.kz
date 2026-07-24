@@ -13,7 +13,7 @@
 const std = @import("std");
 const Config = struct { timeout_ms: usize = 30 };
 
-~pub event fetch { url: string }
+~pub tor fetch { url: string }
 ! ?configure *Config
 | done usize
 

@@ -20,14 +20,14 @@ const std = @import("std");
     v: i64,
 }
 
-~event get-altitude {}
+~tor get-altitude {}
 | alt Feet
 
 ~proc get-altitude|zig {
     return .{ .alt = Feet{ .v = 30000 } };
 }
 
-~event show-meters { m: Meters }
+~tor show-meters { m: Meters }
 
 ~proc show-meters|zig {
     std.debug.print("{d}m\n", .{m.v});

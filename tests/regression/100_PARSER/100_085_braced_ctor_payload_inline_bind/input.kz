@@ -8,17 +8,17 @@
 
 const std = @import("std");
 
-~event double { value: i32 } -> i32
+~tor double { value: i32 } -> i32
 
 ~proc double|zig {
     return value * 2;
 }
 
-~event process { input: i32 } -> i32
+~tor process { input: i32 } -> i32
 
 ~process = double(value: input): r -> { r }
 
-~event print-result { value: i32 }
+~tor print-result { value: i32 }
 
 ~proc print-result|zig {
     std.debug.print("{}\n", .{value});

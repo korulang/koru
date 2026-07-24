@@ -1,1 +1,1 @@
-error: expected identifier after '~event'
+error[PARSE003]: tor declaration missing name

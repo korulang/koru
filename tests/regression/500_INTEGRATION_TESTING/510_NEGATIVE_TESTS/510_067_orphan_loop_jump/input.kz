@@ -1,6 +1,6 @@
 // Test: @loop without matching #loop
 // GOOD: Backend catches with "Unknown label referenced"
 
-~event foo {}
+~tor foo {}
 
 ~foo() |> @loop

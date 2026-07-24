@@ -19,7 +19,7 @@ const koru_parser = @import("koru_parser");
 // SCOPE DECLARATION - [norun] declaration collected by collect-scopes
 // ============================================================================
 
-~[comptime|transform]pub event register {
+~[comptime|transform]pub tor register {
     source: Source,
     invocation: *const Invocation,
     item: *const Item,
@@ -1236,7 +1236,7 @@ fn buildScopeTable() []const ScopeRuntime {
     return table[0..];
 }
 
-~[retain]pub event get-scope { name: string }
+~[retain]pub tor get-scope { name: string }
 | scope {
     dispatcher: DispatchFn,
     cost_fn: ?CostFn,
@@ -1283,7 +1283,7 @@ fn lookupEventBranches(scope_name: []const u8, event_name: []const u8) []const B
 // PARSE - Parse Koru source using the interpreter parser
 // ============================================================================
 
-~pub event parse.source {
+~pub tor parse.source {
     source: string,
     file_name: string,
     allocator: std.mem.Allocator,
@@ -1310,7 +1310,7 @@ fn lookupEventBranches(scope_name: []const u8, event_name: []const u8) []const B
 // EVAL - Run a parsed AST against a named scope
 // ============================================================================
 
-~pub event eval {
+~pub tor eval {
     ast: koru_parser.ParseResult,
     scope: string,
     budget: ?u64,
@@ -1390,7 +1390,7 @@ fn lookupEventBranches(scope_name: []const u8, event_name: []const u8) []const B
 // shape: Optional event name to validate response shape against
 // @retain: run_event is referenced from generated Zig code in user pipelines
 // (std/runtime:run invocations in continuations compile to run_event.handler(...))
-~[retain]pub event run {
+~[retain]pub tor run {
     source: string,
     scope: string,
     budget: ?u64 = null,
@@ -1511,7 +1511,7 @@ fn lookupEventBranches(scope_name: []const u8, event_name: []const u8) []const B
 }
 
 // RUN_CACHED - Parse and execute Koru source against a named scope with cached parsing
-~pub event run-cached {
+~pub tor run-cached {
     source: string,
     scope: string,
     budget: ?u64 = null,
@@ -1586,7 +1586,7 @@ fn lookupEventBranches(scope_name: []const u8, event_name: []const u8) []const B
 // COLLECT SCOPES - Comptime event that walks AST and generates dispatchers
 // ============================================================================
 
-~[comptime]pub event collect-scopes {}
+~[comptime]pub tor collect-scopes {}
 
 ~proc collect-scopes|zig {
     // Access PROGRAM_AST from backend

@@ -25,7 +25,7 @@
 ~import std/io
 ~import std/string
 
-~[comptime|transform]event t1.* {
+~[comptime|transform]tor t1.* {
     expr: Expression,
     item: *const Item,
     program: *const Program,

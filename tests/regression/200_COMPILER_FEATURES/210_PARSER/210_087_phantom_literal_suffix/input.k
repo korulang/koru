@@ -18,7 +18,7 @@
 
 import std/io
 
-event accept-celsius { c: f32<celsius> } -> f32<celsius>
+tor accept-celsius { c: f32<celsius> } -> f32<celsius>
 
 accept-celsius -> c
 

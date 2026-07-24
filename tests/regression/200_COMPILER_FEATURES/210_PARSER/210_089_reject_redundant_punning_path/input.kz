@@ -9,12 +9,12 @@
 
 ~import std/io
 
-~event echo { v: i32 }
+~tor echo { v: i32 }
 | out i32
 
 ~echo => out v
 
-~event get-box { }
+~tor get-box { }
 | got { v: i32, other: i32 }
 
 ~proc get-box|zig {

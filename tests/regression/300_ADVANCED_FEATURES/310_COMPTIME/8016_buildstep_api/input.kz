@@ -48,7 +48,7 @@ const CompileFlag = struct {
 // Compiler Pass Event (what coordinator invokes)
 // ================================================================
 
-~pub event compile.proc-target {
+~pub tor compile.proc-target {
     target_name: string,
     body: string,
 }

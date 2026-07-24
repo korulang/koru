@@ -14,7 +14,7 @@ const std = @import("std");
 
 const Resource = struct { id: usize };
 
-~event create {} -> *Resource<active!>
+~tor create {} -> *Resource<active!>
 
 ~proc create|zig {
     const r = std.heap.page_allocator.create(Resource) catch unreachable;
@@ -22,19 +22,19 @@ const Resource = struct { id: usize };
     return r;
 }
 
-~event work { r: *Resource<active> }
+~tor work { r: *Resource<active> }
 
 ~proc work|zig {
     std.debug.print("Work\n", .{});
 }
 
-~event destroy { r: *Resource<!active> }
+~tor destroy { r: *Resource<!active> }
 
 ~proc destroy|zig {
     std.heap.page_allocator.destroy(r);
 }
 
-~event run-one {}
+~tor run-one {}
 
 ~run-one = create(): r |> work(r) |> work(r) |> destroy(r)
 

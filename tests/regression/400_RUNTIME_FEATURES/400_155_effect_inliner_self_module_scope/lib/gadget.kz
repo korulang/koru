@@ -22,7 +22,7 @@ pub fn twice(v: i32) i32 {
 
 // Handler-path probe: no effect branch, so this emits as an ordinary handler
 // fn INSIDE the module namespace — `$mod.` must strip to bare names there.
-~pub event calc { n: i32 } -> i32
+~pub tor calc { n: i32 } -> i32
 
 ~proc calc|zig {
     return $mod.twice(n) + $mod.BASE;
@@ -31,7 +31,7 @@ pub fn twice(v: i32) i32 {
 // Splice-path probe: the effect branch makes this event inline-eligible, so
 // this body lands in the consumer's frame — `$mod.` must rewrite to the
 // module's emitted namespace there.
-~pub event spin { count: i32 }
+~pub tor spin { count: i32 }
 ! tick *Widget
 | done i32
 

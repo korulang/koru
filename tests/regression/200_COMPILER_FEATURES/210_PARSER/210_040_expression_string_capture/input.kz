@@ -3,7 +3,7 @@
 
 const std = @import("std");
 
-~[comptime|transform]event test.expr { expr: Expression, program: *const Program, allocator: std.mem.Allocator } -> *const Program
+~[comptime|transform]tor test.expr { expr: Expression, program: *const Program, allocator: std.mem.Allocator } -> *const Program
 
 ~proc test.expr|zig {
     std.debug.print("Captured expression: '{s}'\n", .{expr});

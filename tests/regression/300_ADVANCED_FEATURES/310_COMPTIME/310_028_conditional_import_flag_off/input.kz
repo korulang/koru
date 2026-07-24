@@ -4,4 +4,4 @@
 
 ~[profile]import std/profiler
 
-~event test {}
+~tor test {}

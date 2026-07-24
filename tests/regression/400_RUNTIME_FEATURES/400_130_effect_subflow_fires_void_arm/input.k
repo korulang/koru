@@ -11,7 +11,7 @@
 // checker can see, instead of an opaque host call trusted "unsafe"-style.
 import std/io
 
-pub event ping { x: i64 }
+pub tor ping { x: i64 }
 ! pong i64
 
 ping = pong(x)

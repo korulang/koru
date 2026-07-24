@@ -8,7 +8,7 @@
 
 ~import std/io
 
-~pub event work { steps: usize }
+~pub tor work { steps: usize }
 ! progress usize
 | done usize
 

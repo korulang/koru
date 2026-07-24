@@ -12,7 +12,7 @@
 // quote forms to inner content.
 const std = @import("std");
 
-~[comptime|transform]pub event scan-two {
+~[comptime|transform]pub tor scan-two {
     invocation: *const Invocation,
     item: *const Item,
     program: *const Program,

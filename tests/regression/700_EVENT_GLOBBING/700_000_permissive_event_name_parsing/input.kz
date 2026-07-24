@@ -22,7 +22,7 @@
 
 // These should ALL parse successfully (transform may reject some)
 
-~[comptime|transform]pub event test.* {
+~[comptime|transform]pub tor test.* {
     event_name: string,
 }
 

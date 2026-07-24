@@ -40,7 +40,7 @@ const std = @import("std");
 // Compiler Pass Interface (would come from koru-gpu package)
 // ================================================================
 
-~pub event compile.target {
+~pub tor compile.target {
     target_name: string,
     body: string,
     path: []const []const u8,
@@ -148,7 +148,7 @@ const std = @import("std");
 // Simple Test Event (verifies basic compilation works)
 // ================================================================
 
-~pub event greet { }
+~pub tor greet { }
 | done { }
 
 ~proc greet|zig {

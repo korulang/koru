@@ -4,7 +4,7 @@
 const std = @import("std");
 
 // HTTP Request
-~pub event http.parse-request { data: string }
+~pub tor http.parse-request { data: string }
 | request { method: string, path: string, headers: string, body: string }
 | invalid string
 
@@ -52,7 +52,7 @@ const std = @import("std");
 }
 
 // HTTP Response Builder
-~pub event http.response { status: u16, status_text: string, headers: string, body: string } -> string
+~pub tor http.response { status: u16, status_text: string, headers: string, body: string } -> string
 
 ~proc http.response|zig {
     const allocator = koru_allocator();
@@ -70,7 +70,7 @@ const std = @import("std");
 }
 
 // Route matching
-~pub event http.match-route { path: string, pattern: string }
+~pub tor http.match-route { path: string, pattern: string }
 | matched string  // For simplicity, params as comma-separated string
 | no-match
 
@@ -92,7 +92,7 @@ const std = @import("std");
 }
 
 // Simple JSON response helper
-~pub event http.json-response { status: u16, json: string } -> string
+~pub tor http.json-response { status: u16, json: string } -> string
 
 ~proc http.json-response|zig {
     const allocator = koru_allocator();
@@ -118,7 +118,7 @@ const std = @import("std");
 }
 
 // HTML response helper
-~pub event http.html-response { status: u16, html: string } -> string
+~pub tor http.html-response { status: u16, html: string } -> string
 
 ~proc http.html-response|zig {
     const allocator = koru_allocator();
@@ -142,7 +142,7 @@ const std = @import("std");
 }
 
 // Static file serving helper
-~pub event http.mime-type { extension: string } -> string
+~pub tor http.mime-type { extension: string } -> string
 
 ~proc http.mime-type|zig {
     const mime = if (std.mem.eql(u8, extension, ".html")) "text/html"
@@ -159,7 +159,7 @@ const std = @import("std");
 }
 
 // URL decode helper
-~pub event http.url-decode { encoded: string }
+~pub tor http.url-decode { encoded: string }
 | decoded string
 | error string
 
@@ -195,7 +195,7 @@ const std = @import("std");
 }
 
 // Parse query string
-~pub event http.parse-query { query: string } -> string  // Simplified: key=value,key2=value2 format
+~pub tor http.parse-query { query: string } -> string  // Simplified: key=value,key2=value2 format
 
 ~proc http.parse-query|zig {
     const allocator = koru_allocator();

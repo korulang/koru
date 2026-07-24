@@ -24,7 +24,7 @@
 // arms to the preceding `!` as `resume_arms`.
 //
 // Same AST (modulo source locations) as the single-line form, 210_093.
-~pub event request { payload: i32 }
+~pub tor request { payload: i32 }
 ! ask i32
     | halved i32
     | timeout

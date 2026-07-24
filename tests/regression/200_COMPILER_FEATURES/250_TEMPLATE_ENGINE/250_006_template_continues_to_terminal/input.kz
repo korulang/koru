@@ -13,7 +13,7 @@
 // parses host code out of the opaque proc body; the emit-only boundary holds.
 ~import std/io
 
-~pub event probe3 { n: usize }
+~pub tor probe3 { n: usize }
 ! each usize
 | done
 

@@ -321,7 +321,7 @@ pub const Value = struct {
 // VALUE SERIALIZATION - Convert interpreter Value to JSON
 // ============================================================================
 
-~[retain]pub event value.stringify { value: Value } -> string
+~[retain]pub tor value.stringify { value: Value } -> string
 
 ~proc value.stringify|zig {
     return value.toJsonBuf();
@@ -985,7 +985,7 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
 
 // Parse and execute in one step - the main interpreter entry point
 // Use ~get-scope to get the dispatcher first, then pass it here
-~[retain]pub event run {
+~[retain]pub tor run {
     source: string,
     dispatcher: DispatchFn,
     cost_fn: ?CostFn,  // Optional cost lookup (null = default cost 1)
@@ -1007,7 +1007,7 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
 | dispatch-error { event_name: string, message: string }
 
 // Cached parse + execute (reuses parsed flow for identical source input)
-~[retain]pub event run-cached {
+~[retain]pub tor run-cached {
     source: string,
     dispatcher: DispatchFn,
     cost_fn: ?CostFn,  // Optional cost lookup (null = default cost 1)
@@ -1030,7 +1030,7 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
 
 // Execute pre-parsed AST - for benchmarks and advanced use
 // This is the fast path: no parsing overhead, just execution!
-~[retain]pub event eval {
+~[retain]pub tor eval {
     flow: *const ast.Flow,
     dispatcher: DispatchFn,
     cost_fn: ?CostFn,  // Optional cost lookup (null = default cost 1)

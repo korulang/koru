@@ -17,7 +17,7 @@ const std = @import("std");
 ~import std/threading
 
 // Minimal reproduction: Event that returns slice of imported type
-~event getHandles {} -> []const threading:WorkerHandle
+~tor getHandles {} -> []const threading:WorkerHandle
 
 ~proc getHandles|zig {
     // Create empty slice just to test codegen

@@ -7,7 +7,7 @@
 const std = @import("std");
 
 // Event with identity branch payload
-~pub event add { a: i64, b: i64 }
+~pub tor add { a: i64, b: i64 }
 | sum i64
 
 ~add => sum a + b

@@ -27,7 +27,7 @@ const std = @import("std");
 
 pub const Widget = struct { id: u32 };
 
-~pub event acquire {} -> *Widget<raw!>
+~pub tor acquire {} -> *Widget<raw!>
 
 ~proc acquire|zig {
     const w = std.heap.page_allocator.create(Widget) catch unreachable;
@@ -36,14 +36,14 @@ pub const Widget = struct { id: u32 };
 }
 
 // Single-branch FORWARD transition raw! → cured!, takes only the resource.
-~pub event cure { w: *Widget<!raw> } -> *Widget<cured!>
+~pub tor cure { w: *Widget<!raw> } -> *Widget<cured!>
 
 ~proc cure|zig {
     return w;
 }
 
 // VOID terminal — consumes cured!, issues nothing.
-~pub event discard { w: *Widget<!cured> }
+~pub tor discard { w: *Widget<!cured> }
 
 ~proc discard|zig {
     std.heap.page_allocator.destroy(w);

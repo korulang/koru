@@ -11,10 +11,10 @@ test "shape checker stores correct event pointers - regression" {
     const allocator = std.testing.allocator;
     
     const source =
-        \\~event A { x: i32 }
+        \\~tor A { x: i32 }
         \\| ok { y: i32 }
         \\
-        \\~event B { msg: string }
+        \\~tor B { msg: string }
         \\| done {}
         \\
         \\~A (x: 1)
@@ -48,11 +48,11 @@ test "shape checker validates correct branches for each event" {
     const allocator = std.testing.allocator;
     
     const source =
-        \\~event First { }
+        \\~tor First { }
         \\| alpha {}
         \\| beta {}
         \\
-        \\~event Second { }
+        \\~tor Second { }
         \\| gamma {}
         \\| delta {}
         \\
@@ -95,10 +95,10 @@ test "shape checker detects wrong branch names" {
     const allocator = std.testing.allocator;
     
     const source =
-        \\~event First { }
+        \\~tor First { }
         \\| alpha {}
         \\
-        \\~event Second { }
+        \\~tor Second { }
         \\| beta {}
         \\
         \\~First ()

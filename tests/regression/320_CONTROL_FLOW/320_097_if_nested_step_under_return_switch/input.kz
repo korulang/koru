@@ -33,17 +33,17 @@
 // A single-branch value-producing head — mirrors `std/time:now() -> | t`, the
 // clock read at the top of the self-timed loop. Deterministic stand-in: echoes
 // the running pass count as branch `t`.
-~pub event clock { passes: i64 } -> i64
+~pub tor clock { passes: i64 } -> i64
 
 ~proc clock|zig {
     return passes;
 }
 
-~pub event tick { limit: i64, passes: i64 }
+~pub tor tick { limit: i64, passes: i64 }
 | live { limit: i64, passes: i64 }
 | expired i64
 
-~pub event run { limit: i64 } -> i64
+~pub tor run { limit: i64 } -> i64
 
 // Head = value-producing `clock`; nested STEP = `~if` deciding live/expired.
 ~tick = clock(passes): n |> if(n < limit)

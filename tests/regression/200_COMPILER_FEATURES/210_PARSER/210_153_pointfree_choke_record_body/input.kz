@@ -5,7 +5,7 @@
 // leaving `f` unused (KORU100). Surfaced by dogfooding analysis on itself.
 ~import std/io
 
-~pub event stage-a { code: i64 }
+~pub tor stage-a { code: i64 }
 | ok i64
 | failed { code: i64, msg: string }
 ~proc stage-a|zig {
@@ -13,12 +13,12 @@
     return .{ .ok = code + 1 };
 }
 
-~pub event stage-b { code: i64 }
+~pub tor stage-b { code: i64 }
 | ok i64
 | failed { code: i64, msg: string }
 ~proc stage-b|zig { return .{ .ok = code * 2 }; }
 
-~pub event run { code: i64 }
+~pub tor run { code: i64 }
 | ok i64
 | failed { code: i64, msg: string }
 ~run = stage-a

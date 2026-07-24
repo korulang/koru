@@ -9,7 +9,7 @@
 
 ~import std/io
 
-~event hello {}
+~tor hello {}
 
 ~proc hello|zig {
 }

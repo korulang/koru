@@ -4,7 +4,7 @@
 const std = @import("std");
 
 // TCP Server (simplified for demo)
-~pub event tcp.listen { port: u16 }
+~pub tor tcp.listen { port: u16 }
 | listening u16
 | error string
 
@@ -15,7 +15,7 @@ const std = @import("std");
 }
 
 // Accept connection (stub)
-~pub event tcp.accept { port: u16 }
+~pub tor tcp.accept { port: u16 }
 | connection u32
 | error string
 
@@ -25,7 +25,7 @@ const std = @import("std");
 }
 
 // Read from connection (stub)
-~pub event tcp.read { id: u32, max_bytes: usize }
+~pub tor tcp.read { id: u32, max_bytes: usize }
 | data string
 | closed
 | error string
@@ -37,7 +37,7 @@ const std = @import("std");
 }
 
 // Write to connection (stub)
-~pub event tcp.write { id: u32, data: string }
+~pub tor tcp.write { id: u32, data: string }
 | sent usize
 | error string
 
@@ -47,7 +47,7 @@ const std = @import("std");
 }
 
 // Close connection (stub)  
-~pub event tcp.close { id: u32 }
+~pub tor tcp.close { id: u32 }
 
 ~proc tcp.close|zig {
     std.debug.print("[NET] Connection {} closed\n", .{id});

@@ -25,7 +25,7 @@ const std = @import("std");
     tick: i64,
 }
 
-~event main {}
+~tor main {}
 
 ~proc main|zig {
     const s = PlayerSnapshot{ .name = "Alice", .health = 100, .tick = 7 };

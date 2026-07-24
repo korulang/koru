@@ -3,7 +3,7 @@
 
 ~import app/input
 
-~pub event from-b { msg: string } -> string
+~pub tor from-b { msg: string } -> string
 
 ~from-b = app/input:from-a(msg)
     | received r -> r

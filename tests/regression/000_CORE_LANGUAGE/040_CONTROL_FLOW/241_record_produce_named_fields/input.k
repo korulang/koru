@@ -4,7 +4,7 @@
 // routes `-> {record}` through the shared struct-literal path (parser.zig) for
 // every emitter, and the `: bind` consumption of a bare-return record.
 import std/io
-pub event config { strict: bool } -> { a: i64, b: i64 }
+pub tor config { strict: bool } -> { a: i64, b: i64 }
 config = if(strict)
     | then -> { a: 1, b: 2 }
     | else -> { a: 0, b: 0 }

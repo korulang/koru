@@ -70,13 +70,13 @@
         {
             "type": "parse_error",
             "code": "PARSE004",
-            "message": "unmatched '{' in event shape",
+            "message": "unmatched '{' in tor shape",
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/052_lenient_multiple_errors/input.kz",
                 "line": 9,
                 "col": 1
             },
-            "raw_text": "~event broken-event {\n    value: i32\n\n// This event is valid - should still be parsed\n"
+            "raw_text": "~tor broken-event {\n    value: i32\n\n// This event is valid - should still be parsed\n"
         },
         {
             "type": "event_decl",

@@ -518,7 +518,7 @@ pub const FlowChecker = struct {
                 .KORU110,
                 location.line,
                 location.column,
-                "event '{s}' is called but its ~proc declaration has no |variant tag — bare procs are unresolvable",
+                "tor '{s}' is called but its ~proc declaration has no |variant tag — bare procs are unresolvable",
                 .{event_name},
                 "tag the proc with a host: `~proc {s}|zig {{ ... }}` (or another host like |gpu, |js)",
                 .{event_name},

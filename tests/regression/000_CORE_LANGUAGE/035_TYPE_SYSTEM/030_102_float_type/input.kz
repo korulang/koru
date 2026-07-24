@@ -11,7 +11,7 @@ const std = @import("std");
 
 ~float(Temperature)
 
-~event report-temp { temp: Temperature }
+~tor report-temp { temp: Temperature }
 
 ~proc report-temp|zig {
     std.debug.print("Temperature: {d:.1}\n", .{temp});

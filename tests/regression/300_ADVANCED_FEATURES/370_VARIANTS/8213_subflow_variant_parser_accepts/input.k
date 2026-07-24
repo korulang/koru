@@ -11,7 +11,7 @@ import std/io
 import std/build
 
 
-pub event greet {}
+pub tor greet {}
 
 // Two semantically-different subflows under one canonical event name.
 greet|en = std/io:print("hello")

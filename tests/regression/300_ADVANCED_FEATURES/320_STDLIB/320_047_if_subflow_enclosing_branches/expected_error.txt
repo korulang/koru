@@ -1,1 +1,1 @@
-error[KORU040]: unknown event 'input:~if'
+error[KORU040]: unknown tor 'input:~if'

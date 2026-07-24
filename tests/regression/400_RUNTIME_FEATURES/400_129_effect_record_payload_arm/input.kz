@@ -5,7 +5,7 @@
 // any tagged union — switch, then field access. Scalar-arm sibling: 400_114.
 ~import std/io
 
-~pub event request { payload: i32 }
+~pub tor request { payload: i32 }
 ! ask i32 | result { halved: i32, quadrupled: i64 } | timeout
 | done i64
 

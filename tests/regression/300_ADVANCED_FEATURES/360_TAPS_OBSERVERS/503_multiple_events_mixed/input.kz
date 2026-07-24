@@ -8,14 +8,14 @@
 ~import std/io
 
 // Event with single output branch
-~event compute { x: i32 } -> i32
+~tor compute { x: i32 } -> i32
 
 ~proc compute|zig {
     return x * 2;
 }
 
 // Event with two branches
-~event validate { n: i32 }
+~tor validate { n: i32 }
 | valid
 | invalid
 

@@ -8,14 +8,14 @@
 const std = @import("std");
 const Handle = struct { n: i32 };
 
-~event make {} -> *Handle<owned!>
+~tor make {} -> *Handle<owned!>
 ~proc make|zig {
     const h = std.heap.page_allocator.create(Handle) catch unreachable;
     h.* = .{ .n = 0 };
     return h;
 }
 
-~event icount { c: i32 }
+~tor icount { c: i32 }
 | more i32
 | fin i32
 ~proc icount|zig {
@@ -23,13 +23,13 @@ const Handle = struct { n: i32 };
     return .{ .fin = c };
 }
 
-~event dispose { h: *Handle<!owned> }
+~tor dispose { h: *Handle<!owned> }
 ~proc dispose|zig {
     std.debug.print("n={}\n", .{h.n});
     std.heap.page_allocator.destroy(h);
 }
 
-~event spin {} -> *Handle<owned!>
+~tor spin {} -> *Handle<owned!>
 
 ~spin = make(): h0 |> #loop icount(c: 0): v |> @loop(c: v)
     | fin _ -> h0

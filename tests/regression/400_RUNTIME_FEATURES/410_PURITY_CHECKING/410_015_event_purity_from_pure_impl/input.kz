@@ -5,12 +5,12 @@
 
 const std = @import("std");
 
-~event compute { x: i32 } -> i32
+~tor compute { x: i32 } -> i32
 
 ~[pure] proc compute|zig {
     return x * 2;
 }
 
-~event main {}
+~tor main {}
 
 ~compute(x: 21)

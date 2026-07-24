@@ -8,7 +8,7 @@
 // this test's `local-warn:` line would vanish.
 import std/io
 
-pub event warn { msg: string } -> string
+pub tor warn { msg: string } -> string
 warn -> msg
 
 [with]std/io:print.ln("open") |> warn(msg: "kept"): w |> std/io:print.ln("local-warn: {{ w:s }}")

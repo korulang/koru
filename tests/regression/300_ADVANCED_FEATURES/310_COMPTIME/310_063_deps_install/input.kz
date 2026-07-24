@@ -21,7 +21,7 @@
     "apt": "nonexistent-apt-pkg"
 }
 
-~event main {}
+~tor main {}
 
 ~proc main|zig {
 }

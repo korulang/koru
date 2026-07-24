@@ -7,10 +7,10 @@
 // SAME expected.txt — that's the cross-target contract.
 //
 // Modeled on 140_012 (dispatch) but stripped to one fire, no binding shadow.
-pub event ticker { n: u64 }
+pub tor ticker { n: u64 }
 ! tick u64
-pub event onTick { i: u64 }
-pub event report {}
+pub tor onTick { i: u64 }
+pub tor report {}
 
 ticker(n: 1)
 ! tick i |> onTick(i)

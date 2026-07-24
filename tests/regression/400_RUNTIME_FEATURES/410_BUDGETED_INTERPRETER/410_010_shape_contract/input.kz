@@ -13,7 +13,7 @@ const std = @import("std");
 // This defines what shape interpreted "handlers" must return.
 // Think of it as a response schema for code sent over the wire.
 
-~pub event handler { req: string }
+~pub tor handler { req: string }
 | ok { status: i32, body: string }
 | error string
 
@@ -21,7 +21,7 @@ const std = @import("std");
 // Backend events the handler can call
 // =============================================================================
 
-~pub event db.user.get { id: i32 } -> string
+~pub tor db.user.get { id: i32 } -> string
 
 ~proc db.user.get|zig {
     if (id == 1) {

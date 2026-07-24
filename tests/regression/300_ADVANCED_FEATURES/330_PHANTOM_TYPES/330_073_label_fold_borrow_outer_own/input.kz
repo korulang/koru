@@ -21,7 +21,7 @@
 const std = @import("std");
 const Handle = struct { n: i32 };
 
-~event make {} -> *Handle<owned!>
+~tor make {} -> *Handle<owned!>
 ~proc make|zig {
     const h = std.heap.page_allocator.create(Handle) catch unreachable;
     h.* = .{ .n = 0 };
@@ -29,7 +29,7 @@ const Handle = struct { n: i32 };
 }
 
 // step folds a plain counter; it does NOT touch the handle's obligation.
-~event step { c: i32 }
+~tor step { c: i32 }
 | next i32
 | done i32
 ~proc step|zig {
@@ -37,14 +37,14 @@ const Handle = struct { n: i32 };
     return .{ .done = c };
 }
 
-~event done { h: *Handle<!owned> }
+~tor done { h: *Handle<!owned> }
 ~proc done|zig {
     std.debug.print("n={}\n", .{h.n});
     std.heap.page_allocator.destroy(h);
 }
 
 // spin BORROWS the handle (untouched), runs the label-fold over a counter.
-~event spin { h: *Handle<owned> } -> i32
+~tor spin { h: *Handle<owned> } -> i32
 
 ~spin = #loop step(c: 0)
 | next v |> @loop(c: v)

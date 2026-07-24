@@ -18,7 +18,7 @@ const std = @import("std");
 // here (2026-06-11, Lars ruling: std/io's print surface is comptime-only;
 // stage/runtime printing is the future std/compiler print-family). Its
 // positional-arg mis-emit bug died with the codepath.
-~[keyword|comptime|transform]pub event print {
+~[keyword|comptime|transform]pub tor print {
     expr: Expression,
     invocation: *const Invocation,
     item: *const Item,
@@ -41,7 +41,7 @@ const std = @import("std");
 // }
 
 // Read line from stdin (for future interactive programs)
-~pub event readln {}
+~pub tor readln {}
 | line string
 | eof
 | failed string
@@ -54,7 +54,7 @@ const std = @import("std");
 
 // Simple line reader - returns the line, or empty string on EOF/error
 // No error handling, just returns what it gets
-~pub event read.ln {} -> string
+~pub tor read.ln {} -> string
 
 ~proc read.ln|zig {
     const stdin = std.fs.File.stdin();
@@ -80,7 +80,7 @@ const std = @import("std");
 // }
 
 // Print error to stderr
-~pub event eprintln { message: string }
+~pub tor eprintln { message: string }
 
 ~proc eprintln|zig {
     const stderr = std.fs.File.stderr().writer();
@@ -91,14 +91,14 @@ const std = @import("std");
 }
 
 // Success message with green color (if terminal supports it)
-~pub event success { message: string }
+~pub tor success { message: string }
 
 ~proc success|zig {
     std.debug.print("✅ {s}\n", .{message});
 }
 
 // Warning message
-~pub event warn { message: string }
+~pub tor warn { message: string }
 
 ~proc warn|zig {
     std.debug.print("⚠️  {s}\n", .{message});
@@ -115,7 +115,7 @@ const std = @import("std");
   Same gap as std/fs:read-lines: a per-line streaming surface backed by a
   whole-stream slurp (readToEndAlloc), bounded by RAM. True streaming is the
   deferred honest fix; marked so the gap is explicit and greppable.
-]pub event read-lines {}
+]pub tor read-lines {}
 ! line string
 | done usize
 | failed string
@@ -146,7 +146,7 @@ const std = @import("std");
 }
 
 // Read entire stdin as text
-~pub event read-stdin {}
+~pub tor read-stdin {}
 | ok string
 | eof
 | failed string
@@ -169,7 +169,7 @@ const std = @import("std");
 }
 
 // Read entire file as text
-~pub event read-file { path: string }
+~pub tor read-file { path: string }
 | ok string
 | not-found
 | failed string
@@ -197,7 +197,7 @@ const std = @import("std");
 }
 
 // Get command line arguments
-~pub event args {} -> []const []const u8
+~pub tor args {} -> []const []const u8
 
 ~proc args|zig {
     var arg_list = std.ArrayList([]const u8).init(koru_allocator());
@@ -222,7 +222,7 @@ const std = @import("std");
 //
 // This is NOT a regular event - it's a pure compile-time transformation.
 
-~[keyword|comptime|transform]pub event print.ln {
+~[keyword|comptime|transform]pub tor print.ln {
     expr: Expression,
     invocation: *const Invocation,
     item: *const Item,
@@ -230,14 +230,14 @@ const std = @import("std");
     allocator: std.mem.Allocator
 } -> SiteResult
 
-~[norun]pub event print.impl {
+~[norun]pub tor print.impl {
     expr: string,
 }
 
 // eprint / eprint.ln — the stderr siblings of print / print.ln. Same engine
 // (__printInterpolate), routed to fd 2. They reuse print.impl for shape
 // checking (the reroute is analysis-only; the inline body does the write).
-~[keyword|comptime|transform]pub event eprint.ln {
+~[keyword|comptime|transform]pub tor eprint.ln {
     expr: Expression,
     invocation: *const Invocation,
     item: *const Item,
@@ -245,7 +245,7 @@ const std = @import("std");
     allocator: std.mem.Allocator
 } -> SiteResult
 
-~[keyword|comptime|transform]pub event eprint {
+~[keyword|comptime|transform]pub tor eprint {
     expr: Expression,
     invocation: *const Invocation,
     item: *const Item,
@@ -859,7 +859,7 @@ fn __printInterpolateJs(
 //
 // This is NOT a regular event - it's a pure compile-time transformation.
 
-~[comptime|transform]pub event print.blk {
+~[comptime|transform]pub tor print.blk {
     source: Source,
     invocation: *const Invocation,  // The specific invocation being transformed
     item: *const Item,
@@ -867,7 +867,7 @@ fn __printInterpolateJs(
     allocator: std.mem.Allocator
 } -> SiteResult
 
-~[norun]pub event print.blk.impl {
+~[norun]pub tor print.blk.impl {
     text: string,
 }
 

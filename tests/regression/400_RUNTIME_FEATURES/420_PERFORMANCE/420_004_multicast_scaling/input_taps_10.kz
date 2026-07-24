@@ -17,7 +17,7 @@ var sum8: u64 = 0;
 var sum9: u64 = 0;
 var sum10: u64 = 0;
 
-~event count { i: u64 }
+~tor count { i: u64 }
 | next u64
 
 ~proc count|zig {
@@ -27,37 +27,37 @@ var sum10: u64 = 0;
 }
 
 // 10 Observers
-~event accumulate1 { value: u64 }
+~tor accumulate1 { value: u64 }
 ~proc accumulate1|zig { sum1 += value; }
 
-~event accumulate2 { value: u64 }
+~tor accumulate2 { value: u64 }
 ~proc accumulate2|zig { sum2 += value; }
 
-~event accumulate3 { value: u64 }
+~tor accumulate3 { value: u64 }
 ~proc accumulate3|zig { sum3 += value; }
 
-~event accumulate4 { value: u64 }
+~tor accumulate4 { value: u64 }
 ~proc accumulate4|zig { sum4 += value; }
 
-~event accumulate5 { value: u64 }
+~tor accumulate5 { value: u64 }
 ~proc accumulate5|zig { sum5 += value; }
 
-~event accumulate6 { value: u64 }
+~tor accumulate6 { value: u64 }
 ~proc accumulate6|zig { sum6 += value; }
 
-~event accumulate7 { value: u64 }
+~tor accumulate7 { value: u64 }
 ~proc accumulate7|zig { sum7 += value; }
 
-~event accumulate8 { value: u64 }
+~tor accumulate8 { value: u64 }
 ~proc accumulate8|zig { sum8 += value; }
 
-~event accumulate9 { value: u64 }
+~tor accumulate9 { value: u64 }
 ~proc accumulate9|zig { sum9 += value; }
 
-~event accumulate10 { value: u64 }
+~tor accumulate10 { value: u64 }
 ~proc accumulate10|zig { sum10 += value; }
 
-~event validate {}
+~tor validate {}
 ~proc validate|zig {
     const expected: u64 = MESSAGES * (MESSAGES - 1) / 2;
     if (sum1 == expected and sum2 == expected and sum3 == expected and sum4 == expected and sum5 == expected and
@@ -68,7 +68,7 @@ var sum10: u64 = 0;
     }
 }
 
-~event start {} | ready
+~tor start {} | ready
 ~proc start|zig { return .{ .ready = .{} }; }
 
 // 10 TAPS - ALL fused at compile time

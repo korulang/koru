@@ -1,16 +1,16 @@
 // Test 052: Lenient parsing with multiple errors
 // Parser should continue past errors and create parse-error nodes
 
-~event valid-before {
+~tor valid-before {
     x: i32
 }
 
 // This event has an unclosed brace - should create parse-error node
-~event broken-event {
+~tor broken-event {
     value: i32
 
 // This event is valid - should still be parsed
-~event valid-after {
+~tor valid-after {
     y: i32
 }
 
@@ -20,6 +20,6 @@
 }
 
 // One more valid event to verify recovery
-~event final-valid {
+~tor final-valid {
     data: string
 }

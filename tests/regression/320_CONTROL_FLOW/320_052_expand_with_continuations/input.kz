@@ -33,7 +33,7 @@ const std = @import("std");
 }
 
 // Event with branches - expand detects branches and uses switch_result mode
-~[norun|expand]pub event maybe { expr: Expression }
+~[norun|expand]pub tor maybe { expr: Expression }
 | some i32
 | none
 

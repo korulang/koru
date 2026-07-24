@@ -11,26 +11,26 @@ const std = @import("std");
 ~import std/io
 
 // Base proc: adds 5 to a number
-~event add-five { value: i32 } -> i32
+~tor add-five { value: i32 } -> i32
 
 ~proc add-five|zig {
     return value + 5;
 }
 
 // Event that will be implemented as a subflow
-~event double { value: i32 } -> i32
+~tor double { value: i32 } -> i32
 
 // Subflow 1: double calls add-five and passes through the result
 ~double = add-five(value): r -> r
 
 // Event that will call the subflow
-~event process { input: i32 } -> i32
+~tor process { input: i32 } -> i32
 
 // Subflow 2: process calls double (which is itself a subflow)
 ~process = double(value: input): r -> r
 
 // Helper to print i32
-~event print-result { value: i32 }
+~tor print-result { value: i32 }
 
 ~proc print-result|zig {
     std.debug.print("{}\n", .{value});

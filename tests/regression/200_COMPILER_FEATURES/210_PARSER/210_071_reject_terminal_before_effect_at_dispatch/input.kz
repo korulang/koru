@@ -12,7 +12,7 @@
 //   | done |> result 3
 // ============================================================================
 
-~pub event for { start: usize, end: usize }
+~pub tor for { start: usize, end: usize }
 ! each usize
 | done usize
 

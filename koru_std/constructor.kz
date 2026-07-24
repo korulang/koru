@@ -28,24 +28,24 @@ const std = @import("std");
 // runs, so its grafted `~for(built)` (over the comptime list it defines) is
 // template-processed as ordinary code. The pipeline runs `.pre` transforms via
 // `run-pre-transforms`, ahead of `process-template-procs` (see compiler.kz).
-~[comptime|transform|pre]pub event default { expr: Expression }
+~[comptime|transform|pre]pub tor default { expr: Expression }
 ! construct *
 | ?constructed *
 
 // The core collect verb, consumed by the transform (never emitted). `expr` is the
 // implicit first slot so `push(x)` needs no label.
-~pub event push { expr: Expression }
+~pub tor push { expr: Expression }
 
 // STRUCT KIND terminal — `std/constructor:struct(Vec3)` GENERATES a struct type
 // from field specs collected over a LINQ range. GENERATION only: no existing type
 // is read, so no registry — the lowered `@Type` lives in Zig's own scope. `.pre`
 // keeps it consistent with the value terminal (dissolves before the main passes).
-~[comptime|transform|pre]pub event struct { expr: Expression }
+~[comptime|transform|pre]pub tor struct { expr: Expression }
 ! construct *
 
 // The field vocabulary verb (consumed by the struct transform). `name` is a
 // projection template (`"v{i}"` splices the loop var); `type` is the field type.
-~pub event field { name: Expression, type: Expression }
+~pub tor field { name: Expression, type: Expression }
 
 // VALUE TERMINAL transform. Dissolves the `! construct` half into a comptime
 // list-accumulator preamble and keeps the `| constructed` after-body as a void

@@ -1,18 +1,18 @@
 // Chain of events that all preserve the same state variable M
 
-~pub event validate { data: *Data<M'_> } -> *Data<M'_>  // Preserves M
+~pub tor validate { data: *Data<M'_> } -> *Data<M'_>  // Preserves M
 
 ~proc validate|zig {
     return data;
 }
 
-~pub event process { data: *Data<M'_> } -> *Data<M'_>  // Preserves M
+~pub tor process { data: *Data<M'_> } -> *Data<M'_>  // Preserves M
 
 ~proc process|zig {
     return data;
 }
 
-~pub event finalize { data: *Data<M'_> } -> *Data<M'_>  // Preserves M
+~pub tor finalize { data: *Data<M'_> } -> *Data<M'_>  // Preserves M
 
 ~proc finalize|zig {
     return data;

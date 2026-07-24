@@ -7,7 +7,7 @@
 // The transform replaces the invocation with a simple inline print.
 
 // Glob pattern transform event - matches any log.* invocation
-~[comptime|transform]pub event log.* {
+~[comptime|transform]pub tor log.* {
     expr: Expression,
     item: *const Item,
     program: *const Program,

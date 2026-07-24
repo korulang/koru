@@ -6,11 +6,11 @@ const std = @import("std");
 
 ~import std/taps
 
-~event file.read {}
+~tor file.read {}
 
-~event file.write {}
+~tor file.write {}
 
-~event logger {}
+~tor logger {}
 
 ~proc file.read|zig {
     std.debug.print("Reading file\n", .{});

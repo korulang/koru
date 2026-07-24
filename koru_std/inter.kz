@@ -28,7 +28,7 @@ const std = @import("std");
 
 // The interactive mode entry point
 // Called from the compiler pipeline with contexts from each stage
-~[comptime] pub event start {
+~[comptime] pub tor start {
     contexts: []const std/compiler:CompilerContext,
 }
 | launched

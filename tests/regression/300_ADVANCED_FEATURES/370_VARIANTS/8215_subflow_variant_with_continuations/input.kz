@@ -12,17 +12,17 @@
 
 const std = @import("std");
 
-~event greet { value: i32 }
+~tor greet { value: i32 }
 | final i32
 
 // Two helper events with proc bodies, copied from 302_subflow_flow.
-~event double { value: i32 } -> i32
+~tor double { value: i32 } -> i32
 
 ~proc double|zig {
     return value * 2;
 }
 
-~event identity { value: i32 } -> i32
+~tor identity { value: i32 } -> i32
 
 ~proc identity|zig {
     return value;
@@ -42,7 +42,7 @@ const std = @import("std");
 | skipped _ |> _
 | invalid-event _ |> _
 
-~event print-result { value: i32 }
+~tor print-result { value: i32 }
 
 ~proc print-result|zig {
     std.debug.print("{}\n", .{value});

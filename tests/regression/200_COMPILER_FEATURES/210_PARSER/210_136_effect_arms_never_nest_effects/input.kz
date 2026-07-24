@@ -1,7 +1,7 @@
 // "Never nest `!`": an indented `!` under an effect branch is not a resume
 // arm and not legal anywhere — effect composition lives in the flat `|` arm
 // list, never in nested effects. Sibling of the accept pins 210_092/093.
-~pub event request { payload: i32 }
+~pub tor request { payload: i32 }
 ! ask i32
     ! nested i32
     | timeout

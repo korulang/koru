@@ -4,7 +4,7 @@
 // with when clauses (guard expressions)
 // ============================================================================
 
-event check { x: i32, y: i32 }
+tor check { x: i32, y: i32 }
 | high i32
 | low i32
 

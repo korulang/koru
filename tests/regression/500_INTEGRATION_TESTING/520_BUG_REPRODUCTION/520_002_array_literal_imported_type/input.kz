@@ -17,7 +17,7 @@ const std = @import("std");
 ~import std/threading
 
 // Create some handles
-~event makeHandle { id: u64 } -> threading:WorkerHandle
+~tor makeHandle { id: u64 } -> threading:WorkerHandle
 
 ~proc makeHandle|zig {
     // Create a dummy handle (just for testing codegen)
@@ -29,7 +29,7 @@ const std = @import("std");
 }
 
 // Event that accepts array of handles
-~event joinHandles { handles: []const threading:WorkerHandle }
+~tor joinHandles { handles: []const threading:WorkerHandle }
 
 ~proc joinHandles|zig {
 }

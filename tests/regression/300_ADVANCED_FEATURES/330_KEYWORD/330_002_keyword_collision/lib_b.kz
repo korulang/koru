@@ -1,5 +1,5 @@
 // Library B also defines [keyword] event process - creates collision!
-~[keyword]pub event process {}
+~[keyword]pub tor process {}
 
 ~proc process|zig {
     const std = @import("std");

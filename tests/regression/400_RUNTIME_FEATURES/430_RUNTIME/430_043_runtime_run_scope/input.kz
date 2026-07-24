@@ -5,7 +5,7 @@
 
 const std = @import("std");
 
-~pub event greet { name: string }
+~pub tor greet { name: string }
 | greeted string
 
 ~proc greet|zig {

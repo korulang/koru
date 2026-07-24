@@ -6,7 +6,7 @@ test "parse File and EmbedFile types" {
     const allocator = std.testing.allocator;
     
     const source =
-        \\~event test-files {
+        \\~tor test-files {
         \\    compile_only: File,
         \\    runtime_data: EmbedFile,
         \\    normal_field: string
@@ -62,7 +62,7 @@ test "serialize File and EmbedFile types" {
     const allocator = std.testing.allocator;
     
     const source =
-        \\~event loader {
+        \\~tor loader {
         \\    config: File,
         \\    asset: EmbedFile
         \\}
@@ -98,7 +98,7 @@ test "File and EmbedFile with other special types" {
     const allocator = std.testing.allocator;
 
     const source =
-        \\~event mixed {
+        \\~tor mixed {
         \\    src: Source,
         \\    file: File,
         \\    embed: EmbedFile,

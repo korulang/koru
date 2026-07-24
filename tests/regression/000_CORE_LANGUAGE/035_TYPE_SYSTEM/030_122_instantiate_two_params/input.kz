@@ -17,7 +17,7 @@ const std = @import("std");
 }
 
 // Site A constructs by the stamped name.
-~event make-entry {}
+~tor make-entry {}
 | made entry#i64#i64
 
 ~proc make-entry|zig {
@@ -25,7 +25,7 @@ const std = @import("std");
 }
 
 // Site B consumes by spelling the same name independently.
-~event show-entry { e: entry#i64#i64 }
+~tor show-entry { e: entry#i64#i64 }
 
 ~proc show-entry|zig {
     std.debug.print("{d} = {d}\n", .{ e.key, e.value });

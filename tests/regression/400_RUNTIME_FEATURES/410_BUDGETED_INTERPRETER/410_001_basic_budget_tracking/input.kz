@@ -8,7 +8,7 @@
 const std = @import("std");
 
 // Simple event with no resources
-~pub event greet { name: string }
+~pub tor greet { name: string }
 | greeted string
 
 ~proc greet|zig {

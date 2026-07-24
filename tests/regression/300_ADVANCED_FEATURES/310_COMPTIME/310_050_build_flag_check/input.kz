@@ -7,7 +7,7 @@ const std = @import("std");
 const Root = @import("root");
 
 // A comptime event that checks build configuration (no Source, just meta)
-~[comptime]pub event check-build { meta: InvocationMeta }
+~[comptime]pub tor check-build { meta: InvocationMeta }
 | activated string
 | skipped string
 

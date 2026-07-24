@@ -5,7 +5,7 @@
 // - REJECTS: Multiple continuations with when-clauses but NO else (tested separately)
 // ============================================================================
 
-~event check { x: i32, y: i32 }
+~tor check { x: i32, y: i32 }
 | high i32
 | low i32
 

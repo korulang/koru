@@ -19,7 +19,7 @@
 // only covered by a guarded handler.
 // ============================================================================
 
-~pub event ticker { n: usize }
+~pub tor ticker { n: usize }
 ! tick usize
 | done usize
 

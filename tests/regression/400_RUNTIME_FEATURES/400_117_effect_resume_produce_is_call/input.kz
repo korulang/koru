@@ -9,10 +9,10 @@
 // event invoked once per effect firing, its output threaded as the resume.
 ~import std/io
 
-~pub event mix { x: i32 } -> i32
+~pub tor mix { x: i32 } -> i32
 ~proc mix|zig { return x + 1; }
 
-~pub event driver {}
+~pub tor driver {}
 ! step i32 -> i32
 | done i32
 

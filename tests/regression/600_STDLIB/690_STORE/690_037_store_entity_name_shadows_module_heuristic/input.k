@@ -18,7 +18,7 @@ import std/store
 
 [entity(store)]std/store:new(things, capacity: 64) { hp: i64 }
 
-pub event despawn-thing { thing: Store<std/store:!taken> }
+pub tor despawn-thing { thing: Store<std/store:!taken> }
 despawn-thing = std/io:print.ln("despawned a thing")
 
 std/store:insert(things) { hp: 9 }

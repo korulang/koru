@@ -15,7 +15,7 @@
 
 ~import std/io
 
-~pub event compute { value: i32 } -> i32
+~pub tor compute { value: i32 } -> i32
 
 // Zig fallback — always works, and defines the answer the MLIR variant must match.
 ~proc compute|zig {

@@ -41,7 +41,7 @@
 
 import std/io
 
-event sum-to { n: i64 } -> i64
+tor sum-to { n: i64 } -> i64
 
 sum-to = if(n <= 0)
 | then -> 0

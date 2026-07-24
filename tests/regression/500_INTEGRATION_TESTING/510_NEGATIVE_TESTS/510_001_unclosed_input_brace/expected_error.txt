@@ -1,1 +1,1 @@
-error[PARSE004]: unmatched '{' in event shape
+error[PARSE004]: unmatched '{' in tor shape

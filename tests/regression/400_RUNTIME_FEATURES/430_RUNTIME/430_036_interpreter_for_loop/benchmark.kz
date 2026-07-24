@@ -13,7 +13,7 @@ const std = @import("std");
 // Events for computation
 // ============================================================================
 
-~pub event add { a: string, b: string }
+~pub tor add { a: string, b: string }
 | sum string
 
 ~proc add|zig {
@@ -25,7 +25,7 @@ const std = @import("std");
     return .{ .sum = result_str };
 }
 
-~pub event init-sum {}
+~pub tor init-sum {}
 | value string
 
 ~proc init-sum|zig {

@@ -9,10 +9,10 @@
 const std = @import("std");
 
 // [pure] on an event — redundant but legal
-~[pure] event noop {}
+~[pure] tor noop {}
 
 ~proc noop|zig {}
 
-~event main {}
+~tor main {}
 
 ~noop()

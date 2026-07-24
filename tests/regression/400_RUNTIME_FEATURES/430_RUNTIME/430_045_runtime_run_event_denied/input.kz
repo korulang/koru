@@ -3,12 +3,12 @@
 ~import std/runtime
 ~import std/io
 
-~pub event allowed {}
+~pub tor allowed {}
 
 ~proc allowed|zig {
 }
 
-~pub event denied {}
+~pub tor denied {}
 
 ~proc denied|zig {
 }

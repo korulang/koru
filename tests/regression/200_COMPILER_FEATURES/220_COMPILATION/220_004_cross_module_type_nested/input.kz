@@ -17,7 +17,7 @@ const std = @import("std");
 ~import domain/user
 
 // This event uses a type from an explicitly imported nested module
-~pub event grant-access {
+~pub tor grant-access {
     user_data: domain/user:DomainUser,
 } -> bool
 

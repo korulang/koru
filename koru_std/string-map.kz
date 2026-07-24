@@ -47,7 +47,7 @@ pub const Map_string_i64 = struct {
   one generic `map` are the shared collections follow-ups. `| err` OOM is the
   proven shape across collections; uniform panic-branch migration is the noted
   follow-up.
-]pub event new {}
+]pub tor new {}
 | map *Map_string_i64<map!>
 | err string
 
@@ -66,7 +66,7 @@ pub const Map_string_i64 = struct {
 
 // Insert or overwrite key → value. Dupes the key on first insert; an overwrite
 // reuses the already-stored key (no re-dupe, no leak). Void, chains with `|>`.
-~pub event set { m: *Map_string_i64<map>, k: string, v: i64 }
+~pub tor set { m: *Map_string_i64<map>, k: string, v: i64 }
 
 ~proc set|zig {
     const gop = m.map.getOrPut(m.allocator, k) catch {
@@ -85,7 +85,7 @@ pub const Map_string_i64 = struct {
 // ============================================
 
 // Lookup by key. `value` on hit, `missing` when absent.
-~pub event get { m: *Map_string_i64<map>, k: string }
+~pub tor get { m: *Map_string_i64<map>, k: string }
 | value i64
 | missing
 
@@ -97,7 +97,7 @@ pub const Map_string_i64 = struct {
 }
 
 // Membership test.
-~pub event contains { m: *Map_string_i64<map>, k: string }
+~pub tor contains { m: *Map_string_i64<map>, k: string }
 | yes
 | no
 
@@ -109,7 +109,7 @@ pub const Map_string_i64 = struct {
 }
 
 // Number of distinct keys.
-~pub event count { m: *Map_string_i64<map> } -> i64
+~pub tor count { m: *Map_string_i64<map> } -> i64
 
 ~proc count|zig {
     return @intCast(m.map.count());
@@ -119,7 +119,7 @@ pub const Map_string_i64 = struct {
 // Teardown (consume — discharges <!map>)
 // ============================================
 
-~pub event free { m: *Map_string_i64<!map> }
+~pub tor free { m: *Map_string_i64<!map> }
 
 ~proc free|zig {
     m.deinit();

@@ -11,7 +11,7 @@
 
 const std = @import("std");
 
-~[comptime|transform]event make-kiss { expr: Expression, program: *const Program, allocator: std.mem.Allocator } -> *const Program
+~[comptime|transform]tor make-kiss { expr: Expression, program: *const Program, allocator: std.mem.Allocator } -> *const Program
 
 ~proc make-kiss|zig {
     std.debug.print("Captured: '{s}'\n", .{expr});

@@ -6,7 +6,7 @@
 // the kinds must match between decl and handler.
 // ============================================================================
 
-~pub event tokenize { source: string }
+~pub tor tokenize { source: string }
 ! each string
 | done usize
 

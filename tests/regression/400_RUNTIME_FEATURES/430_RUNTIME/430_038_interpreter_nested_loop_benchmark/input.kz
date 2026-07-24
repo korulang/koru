@@ -15,7 +15,7 @@ const std = @import("std");
 var global_sum: i64 = 0;
 
 // add() updates global accumulator - same work as Python
-~pub event add { a: string, b: string }
+~pub tor add { a: string, b: string }
 | sum string
 
 ~proc add|zig {

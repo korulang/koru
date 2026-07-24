@@ -14,7 +14,7 @@ const std = @import("std");
 
 const Frame = struct { id: i32 };
 
-~pub event frames { n: usize }
+~pub tor frames { n: usize }
 ! frame *Frame<ready>
 
 ~proc frames|zig {

@@ -11,7 +11,7 @@
 
 import std/io
 
-pub event get-input {} -> string<unsanitized!>
+pub tor get-input {} -> string<unsanitized!>
 
 get-input -> "user input data"
 

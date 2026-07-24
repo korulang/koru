@@ -2,9 +2,9 @@
 
 const std = @import("std");
 
-~event init {}
+~tor init {}
 
-~event render { frame: i32 }
+~tor render { frame: i32 }
 
 ~proc init|zig {
     std.debug.print("Graphics initialized\n", .{});

@@ -28,7 +28,7 @@
 
 import std/io
 
-event to-fahrenheit { c: f32<celsius> } -> f32<fahrenheit>
+tor to-fahrenheit { c: f32<celsius> } -> f32<fahrenheit>
 
 to-fahrenheit -> c * 9.0 / 5.0 + 32.0
 

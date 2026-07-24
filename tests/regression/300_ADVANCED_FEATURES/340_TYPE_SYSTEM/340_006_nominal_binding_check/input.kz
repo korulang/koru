@@ -23,14 +23,14 @@ const std = @import("std");
     v: i64,
 }
 
-~event measure {}
+~tor measure {}
 | height Meters
 
 ~proc measure|zig {
     return .{ .height = Meters{ .v = 8848 } };
 }
 
-~event report-feet { f: Feet }
+~tor report-feet { f: Feet }
 
 ~proc report-feet|zig {
     std.debug.print("{d}ft\n", .{f.v});

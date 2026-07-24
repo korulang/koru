@@ -5,7 +5,7 @@
 import std/io
 
 // Event with value branch
-pub event value-result {} -> i32
+pub tor value-result {} -> i32
 
 // Subflow impl using braceless syntax with value
 value-result -> 42

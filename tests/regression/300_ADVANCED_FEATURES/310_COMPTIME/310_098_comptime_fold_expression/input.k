@@ -12,7 +12,7 @@
 // prints 42; nothing about `answer` survives to runtime.
 import std/io
 
-[comptime] pub event answer {} -> i64
+[comptime] pub tor answer {} -> i64
 answer -> 40 + 2
 
 [comptime] answer(): r |> std/io:print.ln("{{ r:d }}")

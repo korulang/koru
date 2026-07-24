@@ -413,13 +413,13 @@ test "multi-line annotation syntax for event definitions" {
     // Test annotation on separate line from event definition
     const source =
         \\~[comptime|norun]
-        \\pub event build.step {
+        \\pub tor build.step {
         \\    name: string,
         \\    source: Source
         \\}
         \\
         \\~[runtime]
-        \\event notify.user {
+        \\tor notify.user {
         \\    message: string
         \\}
     ;

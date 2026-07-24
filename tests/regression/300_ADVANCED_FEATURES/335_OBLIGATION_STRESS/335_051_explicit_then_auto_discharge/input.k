@@ -10,10 +10,10 @@
 // auto-discharge alone would produce.
 import std/io
 
-pub event lock { name: string } -> string<held!>
+pub tor lock { name: string } -> string<held!>
 lock -> name
 
-pub event unlock { name: string<!held> }
+pub tor unlock { name: string<!held> }
 unlock = std/io:print.ln("unlock {{ name:s }}")
 
 lock(name: "outer"): outer |> lock(name: "inner"): inner |> std/io:print.ln("both held") |> unlock(name: outer)

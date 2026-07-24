@@ -1,7 +1,7 @@
 const std = @import("std");
 const File = struct { handle: i32 };
 
-~pub event open { path: string } -> *File<opened!>
+~pub tor open { path: string } -> *File<opened!>
 
 ~proc open|zig {
     std.debug.print("Opening file: {s}\n", .{path});
@@ -11,13 +11,13 @@ const File = struct { handle: i32 };
     return f;
 }
 
-~pub event close { file: *File<!opened> }  // Consumes obligation
+~pub tor close { file: *File<!opened> }  // Consumes obligation
 
 ~proc close|zig {
     std.debug.print("Closing file\n", .{});
 }
 
-~pub event use-file { file: *File<opened> }  // Expects opened file
+~pub tor use-file { file: *File<opened> }  // Expects opened file
 
 ~proc use-file|zig {
     std.debug.print("Using file\n", .{});

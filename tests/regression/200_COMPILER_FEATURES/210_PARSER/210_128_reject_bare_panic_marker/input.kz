@@ -8,6 +8,6 @@
 //
 // Expected: parser rejects `| ?!` with PARSE003 "branch missing name".
 
-~pub event e { n: u32 }
+~pub tor e { n: u32 }
 | success u32
 | ?!

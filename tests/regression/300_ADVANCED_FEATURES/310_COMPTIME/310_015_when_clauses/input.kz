@@ -2,7 +2,7 @@
 const std = @import("std");
 ~import std/taps
 
-~event process { value: usize }
+~tor process { value: usize }
 |> alert(result: d)
     |> _
 

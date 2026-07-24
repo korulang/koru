@@ -1,14 +1,14 @@
 // Test subflow with parameters in pipeline
 
-~event file.read { path: []const u8 }
+~tor file.read { path: []const u8 }
 | success []const u8
 | failure u8
 
-~event file.print { contents: []const u8 }
+~tor file.print { contents: []const u8 }
 | success
 | failure u8
 
-~event proc.exit { errno: u8 }
+~tor proc.exit { errno: u8 }
 
 // Test subflow with parameters in pipeline
 ~process_file (p) = file.read (path: p)

@@ -13,7 +13,7 @@
 
 ~import std/io
 
-~event echo { v: i32 }
+~tor echo { v: i32 }
 | out i32
 
 ~echo => out v

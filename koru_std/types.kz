@@ -46,7 +46,7 @@ const std = @import("std");
 // consumed by std/constructor's struct terminal (lowered to Zig `@typeInfo`); a
 // standalone lowering — `fields-of` traversing outside a constructor — is the later
 // generalization, and the surface where Koru-level type reflection eventually lands.
-~[comptime]pub event fields-of { expr: Expression }
+~[comptime]pub tor fields-of { expr: Expression }
 ! each *
 | ?done
 
@@ -63,7 +63,7 @@ const std = @import("std");
     {{ continuations["done"].continue }}
 }
 
-~[keyword|comptime|transform]pub event struct {
+~[keyword|comptime|transform]pub tor struct {
     expr: Expression,
     source: Source,
     item: *const Item,
@@ -71,7 +71,7 @@ const std = @import("std");
     allocator: std.mem.Allocator
 } -> SiteResult
 
-~[norun]pub event struct.impl { name: string }
+~[norun]pub tor struct.impl { name: string }
 
 ~proc struct|zig {
     const ast = @import("ast");
@@ -187,14 +187,14 @@ const std = @import("std");
 }
 
 // Declare a Zig enum type
-~[comptime|norun]pub event enum { expr: Expression, source: Source }
+~[comptime|norun]pub tor enum { expr: Expression, source: Source }
 
 ~proc enum|zig {
     // Emits: `pub const Name = enum { ...source... };` (or without pub)
 }
 
 // Declare a Zig union type
-~[comptime|norun]pub event union { expr: Expression, source: Source }
+~[comptime|norun]pub tor union { expr: Expression, source: Source }
 
 ~proc union|zig {
     // Emits: `pub const Name = union { ...source... };` (or without pub)
@@ -214,7 +214,7 @@ const std = @import("std");
 //   ~bool(IsActive)          // wraps bool
 
 // Declare a nominal string type (wraps []const u8)
-~[keyword|comptime|transform]pub event string {
+~[keyword|comptime|transform]pub tor string {
     expr: Expression,
     item: *const Item,
     program: *const Program,
@@ -265,7 +265,7 @@ const std = @import("std");
 }
 
 // Declare a nominal integer type (wraps i64)
-~[keyword|comptime|transform]pub event int {
+~[keyword|comptime|transform]pub tor int {
     expr: Expression,
     item: *const Item,
     program: *const Program,
@@ -314,7 +314,7 @@ const std = @import("std");
 }
 
 // Declare a nominal float type (wraps f64)
-~[keyword|comptime|transform]pub event float {
+~[keyword|comptime|transform]pub tor float {
     expr: Expression,
     item: *const Item,
     program: *const Program,
@@ -363,7 +363,7 @@ const std = @import("std");
 }
 
 // Declare a nominal bool type (wraps bool)
-~[keyword|comptime|transform]pub event bool {
+~[keyword|comptime|transform]pub tor bool {
     expr: Expression,
     item: *const Item,
     program: *const Program,
@@ -423,7 +423,7 @@ const std = @import("std");
 //   ~struct(Pair<A, B>) { first: A, second: B }
 //   ~type(StringIntPair = Pair<[]const u8, i32>)
 
-~[keyword|comptime|transform]pub event type {
+~[keyword|comptime|transform]pub tor type {
     expr: Expression,
     item: *const Item,
     program: *const Program,

@@ -33,7 +33,7 @@ var metatype_global_counter: usize = 0;
 // 3. Wraps matching continuations with the tap's void call
 // 4. Removes the tap declaration (it compiled away)
 
-~[keyword|comptime|transform]pub event tap {
+~[keyword|comptime|transform]pub tor tap {
     expr: Expression,
     invocation: *const Invocation,
     item: *const Item,

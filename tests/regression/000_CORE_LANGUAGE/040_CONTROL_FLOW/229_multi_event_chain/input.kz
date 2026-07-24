@@ -10,7 +10,7 @@
 const std = @import("std");
 
 // Stage 1: Parse input
-~event parse { input: string }
+~tor parse { input: string }
 | parsed i32
 | invalid string
 
@@ -22,7 +22,7 @@ const std = @import("std");
 }
 
 // Stage 2: Validate
-~event validate { value: i32 }
+~tor validate { value: i32 }
 | valid i32
 | invalid string
 
@@ -34,14 +34,14 @@ const std = @import("std");
 }
 
 // Stage 3: Transform
-~event transform { value: i32 } -> i32
+~tor transform { value: i32 } -> i32
 
 ~proc transform|zig {
     return value * 2;
 }
 
 // Stage 4: Format
-~event format { value: i32 } -> string
+~tor format { value: i32 } -> string
 
 ~proc format|zig {
     const allocator = std.heap.page_allocator;
@@ -52,7 +52,7 @@ const std = @import("std");
 }
 
 // Stage 5: Display
-~event display { text: string }
+~tor display { text: string }
 
 ~proc display|zig {
     std.debug.print("{s}\n", .{text});

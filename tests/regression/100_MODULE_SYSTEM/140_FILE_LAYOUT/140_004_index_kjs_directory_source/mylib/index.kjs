@@ -3,7 +3,7 @@
 
 const std = @import("std");
 
-~pub event greet { name: string } -> string
+~pub tor greet { name: string } -> string
 
 ~proc greet|zig {
     return "hello from index.kjs";

@@ -39,7 +39,7 @@ pub const WorkerHandle = struct {
 // Simple interface - spawn and forget
 // Use when you don't need to wait for result
 
-~event worker.spawn { work_fn: WorkFn, context: *anyopaque }
+~tor worker.spawn { work_fn: WorkFn, context: *anyopaque }
 
 ~proc worker.spawn|zig {
     // Spawn thread with work function
@@ -59,7 +59,7 @@ pub const WorkerHandle = struct {
 // Advanced interface - spawn and return handle for later joining
 // Threading happens INSIDE the proc, but event signature is clean
 
-~event worker.spawn.async { work_fn: WorkFn, context: *anyopaque } -> WorkerHandle
+~tor worker.spawn.async { work_fn: WorkFn, context: *anyopaque } -> WorkerHandle
 
 ~proc worker.spawn.async|zig {
     // Spawn thread with work function
@@ -82,7 +82,7 @@ pub const WorkerHandle = struct {
 // ============================================================================
 // Explicitly wait for one worker to complete
 
-~event worker.spawn.await { handle: WorkerHandle } -> *anyopaque
+~tor worker.spawn.await { handle: WorkerHandle } -> *anyopaque
 
 ~proc worker.spawn.await|zig {
     // Block until thread completes
@@ -98,7 +98,7 @@ pub const WorkerHandle = struct {
 // Wait for multiple workers to complete
 // This is where progressive disclosure really shines!
 
-~event worker.spawn.join { handles: []const WorkerHandle } -> []*anyopaque
+~tor worker.spawn.join { handles: []const WorkerHandle } -> []*anyopaque
 
 ~proc worker.spawn.join|zig {
     // Allocate results array

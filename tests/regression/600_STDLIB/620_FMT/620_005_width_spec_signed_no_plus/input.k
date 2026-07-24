@@ -10,7 +10,7 @@
 // moves with it.
 import std/io
 
-pub event thru { n: i64 } -> i64
+pub tor thru { n: i64 } -> i64
 
 thru = if(n > 0)
 | then -> n

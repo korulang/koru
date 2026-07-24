@@ -9,7 +9,7 @@
 const std = @import("std");
 
 // Event that prints a number
-~pub event print-num { n: string }
+~pub tor print-num { n: string }
 
 ~proc print-num|zig {
     std.debug.print("[print_num] n = {s}\n", .{n});

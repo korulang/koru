@@ -17,7 +17,7 @@
 // optional branches synthesize empty no-op bodies. Here the unhandled
 // panic branch synthesizes a @panic body. Same mechanism, loud body.
 
-~pub event alloc { n: usize }
+~pub tor alloc { n: usize }
 | success []u8
 | ?!oom usize
 

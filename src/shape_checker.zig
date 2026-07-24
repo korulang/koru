@@ -637,7 +637,7 @@ pub const ShapeChecker = struct {
                 try self.reporter.addErrorAtLocation(
                     .KORU040,
                     location,
-                    "'{s}' is an effect arm of event '{s}' — only that event's own implementation may fire it",
+                    "'{s}' is an effect arm of tor '{s}' — only that tor's own implementation may fire it",
                     .{ flow.inv().path.segments[flow.inv().path.segments.len - 1], owner_name },
                 );
                 return error.UnknownEvent;
@@ -645,7 +645,7 @@ pub const ShapeChecker = struct {
             try self.reporter.addErrorAtLocation(
                 .KORU040,
                 location,
-                "unknown event '{s}'",
+                "unknown tor '{s}'",
                 .{event_name},
             );
             return error.UnknownEvent;
@@ -845,7 +845,7 @@ pub const ShapeChecker = struct {
 
                 if (!is_meta_event and (try self.lookupEventInfo(source)) == null) {
                     log.debug("ERROR: Unknown source event '{s}' in tap\n", .{source_path});
-                    try self.reporter.addErrorAtLocation(.KORU040, location, "unknown source event '{s}' in tap", .{source_path});
+                    try self.reporter.addErrorAtLocation(.KORU040, location, "unknown source tor '{s}' in tap", .{source_path});
                     // Continue checking for more errors
                 }
             }
@@ -1696,12 +1696,12 @@ pub const ShapeChecker = struct {
                             const owner_name = try self.pathToString(owner.path);
                             defer self.allocator.free(owner_name);
                             try self.reporter.addErrorAtLocation(.KORU040, location,
-                                "'{s}' is an effect arm of event '{s}' — only that event's own implementation may fire it",
+                                "'{s}' is an effect arm of tor '{s}' — only that tor's own implementation may fire it",
                                 .{ step.invocation.path.segments[step.invocation.path.segments.len - 1], owner_name });
                             return error.UnknownEvent;
                         }
                         try self.reporter.addErrorAtLocation(.KORU040, location,
-                            "unknown event '{s}' in pipeline", .{nested_event_name});
+                            "unknown tor '{s}' in pipeline", .{nested_event_name});
                         return error.UnknownEvent;
                     };
 
@@ -1920,7 +1920,7 @@ pub const ShapeChecker = struct {
                 try self.reporter.addErrorAtLocation(
                     .KORU040,
                     flow.location,
-                    "unknown event '{s}'",
+                    "unknown tor '{s}'",
                     .{event_name},
                 );
                 return error.UnknownEvent;
@@ -1950,7 +1950,7 @@ pub const ShapeChecker = struct {
             try self.reporter.addErrorAtLocation(
                 .KORU040,
                 flow.location,
-                "unknown event '{s}'",
+                "unknown tor '{s}'",
                 .{event_name},
             );
             return error.UnknownEvent;

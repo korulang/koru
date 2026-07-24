@@ -8,7 +8,7 @@
 const std = @import("std");
 
 // Define some application events
-~pub event greet { name: string }
+~pub tor greet { name: string }
 | greeted string
 
 ~proc greet|zig {
@@ -16,7 +16,7 @@ const std = @import("std");
     return .{ .greeted = msg };
 }
 
-~pub event farewell { name: string }
+~pub tor farewell { name: string }
 
 ~proc farewell|zig {
     std.debug.print("Goodbye, {s}!\n", .{name});

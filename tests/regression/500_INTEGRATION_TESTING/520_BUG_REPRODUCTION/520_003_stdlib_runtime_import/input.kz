@@ -18,14 +18,14 @@
 
 const std = @import("std");
 
-~event test-parser-runtime {}
+~tor test-parser-runtime {}
 
 ~proc test-parser-runtime|zig {
     const allocator = std.heap.page_allocator;
 
     // This code is CORRECT but won't work until ~build.requires is implemented
     const test_source =
-        \\~event hello {}
+        \\~tor hello {}
         \\| done
     ;
 

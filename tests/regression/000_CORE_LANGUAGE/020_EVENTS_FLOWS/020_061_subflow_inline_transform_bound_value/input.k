@@ -14,7 +14,7 @@
 import std/io
 import std/fmt
 
-event show { n: i64 }
+tor show { n: i64 }
 show = std/fmt:ln("num {{ n:d }}"): l |> std/io:print.ln(l.text)
 
 show(n: 42)

@@ -1,6 +1,6 @@
 // Test 901: Unclosed input brace
 // Parser should reject with clear error about missing '}'
 
-~event write {
+~tor write {
     value: i32,
     note: string

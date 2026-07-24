@@ -13,7 +13,7 @@
 // crash — that 836 never exercises because it catches everything.
 import std/io
 
-pub event process-job { code: i64 }
+pub tor process-job { code: i64 }
 | ok i64
 | ?!badjob i64
 

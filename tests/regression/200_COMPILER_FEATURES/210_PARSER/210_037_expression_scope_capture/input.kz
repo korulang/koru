@@ -10,7 +10,7 @@
 
 const std = @import("std");
 
-~[comptime]event check-expr { expr: Expression }
+~[comptime]tor check-expr { expr: Expression }
 
 // Proc receives expr as []const u8
 ~proc check-expr|zig {

@@ -42,7 +42,7 @@ pub const Map_i64_i64 = struct {
   collections; upgrading allocation failure to a `| ?!oom` panic branch is the
   uniform follow-up across all of them (panic-branches' first collection
   customers), not a map-only fork.
-]pub event new {}
+]pub tor new {}
 | map *Map_i64_i64<map!>
 | err string
 
@@ -60,7 +60,7 @@ pub const Map_i64_i64 = struct {
 // ============================================
 
 // Insert or overwrite key → value. Void, chains with `|>`.
-~pub event set { m: *Map_i64_i64<map>, k: i64, v: i64 }
+~pub tor set { m: *Map_i64_i64<map>, k: i64, v: i64 }
 
 ~proc set|zig {
     m.map.put(m.allocator, k, v) catch {
@@ -73,7 +73,7 @@ pub const Map_i64_i64 = struct {
 // ============================================
 
 // Lookup by key. `value` on hit, `missing` when absent.
-~pub event get { m: *Map_i64_i64<map>, k: i64 }
+~pub tor get { m: *Map_i64_i64<map>, k: i64 }
 | value i64
 | missing
 
@@ -85,7 +85,7 @@ pub const Map_i64_i64 = struct {
 }
 
 // Membership test (key present, value ignored).
-~pub event contains { m: *Map_i64_i64<map>, k: i64 }
+~pub tor contains { m: *Map_i64_i64<map>, k: i64 }
 | yes
 | no
 
@@ -97,7 +97,7 @@ pub const Map_i64_i64 = struct {
 }
 
 // Number of distinct keys.
-~pub event count { m: *Map_i64_i64<map> } -> i64
+~pub tor count { m: *Map_i64_i64<map> } -> i64
 
 ~proc count|zig {
     return @intCast(m.map.count());
@@ -107,7 +107,7 @@ pub const Map_i64_i64 = struct {
 // Teardown (consume — discharges <!map>)
 // ============================================
 
-~pub event free { m: *Map_i64_i64<!map> }
+~pub tor free { m: *Map_i64_i64<!map> }
 
 ~proc free|zig {
     m.deinit();

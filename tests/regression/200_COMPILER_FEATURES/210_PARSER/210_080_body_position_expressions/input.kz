@@ -9,7 +9,7 @@
 //  - bare identifier:     q
 //  - arithmetic:          1 + 2
 
-~pub event sample
+~pub tor sample
 ! one string -> string
 ! two string -> usize
 ! three string -> string

@@ -2,7 +2,7 @@
 import std/fmt
 import std/io
 
-event greet { name: string } -> string
+tor greet { name: string } -> string
 
 greet = std/fmt:ln("Hello, {{ name:s }}!")
 | line l -> l.text

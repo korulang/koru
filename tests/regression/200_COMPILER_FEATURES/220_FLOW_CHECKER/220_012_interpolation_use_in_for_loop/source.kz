@@ -1,7 +1,7 @@
 // Helper module: an event that optionally returns a string.
 // Used by 220_003 to trigger the for-loop binding-use bug.
 
-~pub event maybe-str {}
+~pub tor maybe-str {}
 | some string
 
 ~proc maybe-str|zig {

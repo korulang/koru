@@ -20,7 +20,7 @@ const std = @import("std");
 
 // Emit template output at runtime (prints rendered template)
 // First positional arg is the template string, named args are context
-~[keyword|comptime|transform]pub event emit {
+~[keyword|comptime|transform]pub tor emit {
     expr: Expression,
     item: *const Item,
     program: *const Program,
@@ -28,7 +28,7 @@ const std = @import("std");
 } -> SiteResult
 
 // Internal event for shape checking (never runs)
-~[norun]pub event emit.impl {
+~[norun]pub tor emit.impl {
     text: string,
 }
 

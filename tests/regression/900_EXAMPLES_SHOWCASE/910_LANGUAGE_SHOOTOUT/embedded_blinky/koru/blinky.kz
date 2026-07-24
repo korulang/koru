@@ -33,7 +33,7 @@
 // The whole firmware is one void event with a cortex_m4 variant.
 // Idiomatic surface: "this program does main()." All target-specific
 // register access lives below the variant boundary.
-~pub event main { }
+~pub tor main { }
 
 ~proc main|cortex_m4 {
     const rcc_ahb1enr = @as(*volatile u32, @ptrFromInt(0x40023830));

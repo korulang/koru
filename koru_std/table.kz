@@ -21,7 +21,7 @@
 
 ~[comptime]
 
-~[keyword|declaration]pub event from { expr: Expression, source: Source }
+~[keyword|declaration]pub tor from { expr: Expression, source: Source }
 
 ~proc from|template|zig {
 {% const rows = table_from(source) %}{% const ty = table_type(source) %}const {{ expr }} = [_]{{ ty }}{ {% for r in rows %}{{ r.v }}, {% endfor %}};
@@ -36,7 +36,7 @@
 // generated wheel into the sieve. The fold is comptime over a comptime const, so
 // `name` is itself a compile-time constant. The reduce is target-shaped: a Zig
 // `comptime` fold vs a JS `.reduce`, but the surface is one declaration.
-~[keyword|declaration]pub event sum { expr: Expression, source: Source }
+~[keyword|declaration]pub tor sum { expr: Expression, source: Source }
 
 ~proc sum|template|zig {
 const {{ expr }} = blk: { @setEvalBranchQuota(1_000_000); var __acc: i64 = 0; for ({{ source }}) |__v| __acc += __v; break :blk __acc; };
@@ -51,7 +51,7 @@ const {{ expr }} = {{ source }}.reduce((__a, __v) => __a + __v, 0);
 // the next gap, no per-candidate coprimality test). Same comprehension grammar as
 // `from`; the k gaps tile one period and sum to it. This is the table primesieve
 // ships hand-written for the big wheels — here, one line, derived at compile time.
-~[keyword|declaration]pub event gaps { expr: Expression, source: Source }
+~[keyword|declaration]pub tor gaps { expr: Expression, source: Source }
 
 ~proc gaps|template|zig {
 {% const rows = table_gaps(source) %}{% const ty = table_type(source) %}const {{ expr }} = [_]{{ ty }}{ {% for r in rows %}{{ r.v }}, {% endfor %}};

@@ -4,9 +4,9 @@
 
 ~import std/taps
 
-~event hello { }
+~tor hello { }
 
-~event logger { msg: string }
+~tor logger { msg: string }
 
 ~[pure]proc hello|zig {
 }

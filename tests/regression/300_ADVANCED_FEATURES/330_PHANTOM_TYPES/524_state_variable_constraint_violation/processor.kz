@@ -1,6 +1,6 @@
 // Generic processor constrained to owned OR borrowed ONLY
 
-~pub event process { data: *Data<M'owned|borrowed> } -> *Data<M'owned|borrowed>
+~pub tor process { data: *Data<M'owned|borrowed> } -> *Data<M'owned|borrowed>
 
 ~proc process|zig {
     return data;

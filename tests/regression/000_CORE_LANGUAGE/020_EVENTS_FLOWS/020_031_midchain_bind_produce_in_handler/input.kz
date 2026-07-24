@@ -11,14 +11,14 @@
 ~import std/io
 const std = @import("std");
 
-~pub event start {} -> i64
+~pub tor start {} -> i64
 
 ~proc start|zig { return 5; }
 
-~pub event mk { x: i64 } -> i64
+~pub tor mk { x: i64 } -> i64
 ~mk -> x + 1
 
-~pub event use-it { x: i64 }
+~pub tor use-it { x: i64 }
 ~proc use-it|zig { std.debug.print("got {d}\n", .{x}); }
 
 ~start(): c0 |> mk(x: c0): c1 |> use-it(x: c1)

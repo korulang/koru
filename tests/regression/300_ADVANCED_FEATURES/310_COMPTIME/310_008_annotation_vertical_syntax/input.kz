@@ -8,14 +8,14 @@ const std = @import("std");
 - comptime
 - runtime
 - fuseable
-] event vertical-bullets {}
+] tor vertical-bullets {}
 
 // Vertical with parameterized annotations
 ~[
 - optimize(level: 3)
 - inline(threshold: 500)
 - gpu(target: "metal", precision: "half")
-] event vertical-params {}
+] tor vertical-params {}
 
 // Mix of simple and complex
 ~[
@@ -23,10 +23,10 @@ const std = @import("std");
 - runtime
 - optimize(level: 2)
 - profile(sample_rate: 1000)
-] event vertical-mixed {}
+] tor vertical-mixed {}
 
 // Should be equivalent to inline
-~[comptime|runtime|fuseable] event inline-equiv {}
+~[comptime|runtime|fuseable] tor inline-equiv {}
 
 ~proc vertical-bullets|zig { return .{ .done = .{} }; }
 ~proc vertical-params|zig { return .{ .done = .{} }; }

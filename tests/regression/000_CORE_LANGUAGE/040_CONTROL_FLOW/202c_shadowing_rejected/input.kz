@@ -8,19 +8,19 @@
 
 const std = @import("std");
 
-~event first { value: i32 } -> i32
+~tor first { value: i32 } -> i32
 
 ~proc first|zig {
     return value * 2;
 }
 
-~event second { value: i32 } -> i32
+~tor second { value: i32 } -> i32
 
 ~proc second|zig {
     return value * 3;
 }
 
-~event show { outer_val: i32, inner_val: i32 }
+~tor show { outer_val: i32, inner_val: i32 }
 
 ~proc show|zig {
     std.debug.print("Outer: {}, Inner: {}\n", .{outer_val, inner_val});

@@ -21,11 +21,11 @@ import std/io
 import std/field
 import std/control
 
-pub event tick { limit: i64, passes: i64 }
+pub tor tick { limit: i64, passes: i64 }
 | live { limit: i64, passes: i64 }
 | expired i64
 
-pub event run { limit: i64 } -> i64
+pub tor run { limit: i64 } -> i64
 
 tick = if(passes < limit)
 | then => live { limit, passes }

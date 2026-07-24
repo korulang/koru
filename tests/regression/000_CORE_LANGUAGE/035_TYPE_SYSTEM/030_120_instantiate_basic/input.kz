@@ -15,14 +15,14 @@ const std = @import("std");
     value: i64,
 }
 
-~event make-box {}
+~tor make-box {}
 | made box#i64
 
 ~proc make-box|zig {
     return .{ .made = @"box#i64"{ .value = 123 } };
 }
 
-~event show-box { b: box#i64 }
+~tor show-box { b: box#i64 }
 
 ~proc show-box|zig {
     std.debug.print("Value: {d}\n", .{b.value});

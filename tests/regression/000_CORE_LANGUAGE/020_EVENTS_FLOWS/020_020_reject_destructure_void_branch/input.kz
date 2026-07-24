@@ -2,7 +2,7 @@
 // that carries no payload has nothing to destructure — KORU101.
 ~import std/io
 
-~pub event check {}
+~pub tor check {}
 | ok { code: i64, note: string }
 | empty
 

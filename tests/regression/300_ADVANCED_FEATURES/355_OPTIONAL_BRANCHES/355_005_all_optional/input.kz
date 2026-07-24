@@ -8,7 +8,7 @@
 ~import std/io
 
 // Event with ONLY optional branches
-~event process { value: u32 }
+~tor process { value: u32 }
 | ?success u32
 | ?warning string
 | ?err string

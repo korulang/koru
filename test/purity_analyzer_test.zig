@@ -12,7 +12,7 @@ test "transitive purity analysis" {
         \\| transformed { result: i32 }
         \\
         \\// Impure event (no annotation)
-        \\~event side_effect { data: []u8 }
+        \\~tor side_effect { data: []u8 }
         \\| done {}
         \\
         \\// Syntactically pure proc that calls pure event

@@ -7,7 +7,7 @@
 const std = @import("std");
 
 // Simple event for benchmarking
-~pub event ping { value: string }
+~pub tor ping { value: string }
 | pong string
 
 ~proc ping|zig {

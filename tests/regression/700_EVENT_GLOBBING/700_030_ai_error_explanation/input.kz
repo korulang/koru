@@ -12,7 +12,7 @@
 // The AI's explanation varies, but it must fill the required slots.
 
 // This code has an intentional error for the AI to explain
-~event broken.example {
+~tor broken.example {
     value: NonexistentType,  // ← This type doesn't exist
 }
 

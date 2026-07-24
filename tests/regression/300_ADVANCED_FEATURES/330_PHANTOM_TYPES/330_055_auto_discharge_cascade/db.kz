@@ -11,7 +11,7 @@ const Connection = struct { handle: i32 };
 const Transaction = struct { conn: *Connection };
 
 // connect: creates connection obligation
-~pub event connect { host: string }
+~pub tor connect { host: string }
 | connected *Connection<connected!>
 
 ~proc connect|zig {
@@ -21,7 +21,7 @@ const Transaction = struct { conn: *Connection };
 }
 
 // begin: consumes connection, creates transaction obligation
-~pub event begin { conn: *Connection<!connected> }
+~pub tor begin { conn: *Connection<!connected> }
 | begun *Transaction<in_transaction!>
 
 ~proc begin|zig {
@@ -32,7 +32,7 @@ const Transaction = struct { conn: *Connection };
 
 // commit: consumes transaction, CREATES connection obligation
 // Marked [!] as default discharge for transactions
-~[!]pub event commit { tx: *Transaction<!in_transaction> }
+~[!]pub tor commit { tx: *Transaction<!in_transaction> }
 | committed *Connection<connected!>
 
 ~proc commit|zig {
@@ -43,7 +43,7 @@ const Transaction = struct { conn: *Connection };
 
 // close: consumes connection obligation, returns void
 // Marked [!] as default discharge for connections
-~pub event close { conn: *Connection<!connected> }
+~pub tor close { conn: *Connection<!connected> }
 
 ~proc close|zig {
     std.heap.page_allocator.destroy(conn);
@@ -51,7 +51,7 @@ const Transaction = struct { conn: *Connection };
 }
 
 // do-work: uses transaction without consuming it
-~pub event do-work { tx: *Transaction<in_transaction> }
+~pub tor do-work { tx: *Transaction<in_transaction> }
 | done *Transaction<in_transaction>
 
 ~proc do-work|zig {

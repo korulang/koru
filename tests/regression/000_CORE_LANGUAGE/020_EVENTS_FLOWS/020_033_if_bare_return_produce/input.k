@@ -8,7 +8,7 @@
 // arms — no union, no tag, no data movement beyond the value itself.
 import std/io
 
-event pick { n: i64 } -> i64
+tor pick { n: i64 } -> i64
 pick = if(n < 10)
 | then -> n
 | else -> n - 10

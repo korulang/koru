@@ -6,7 +6,7 @@
 import std/testing
 
 // Event with multiple possible outcomes
-event withdraw { amount: u32 }
+tor withdraw { amount: u32 }
 | success u32
 | insufficient-funds
 | account-locked

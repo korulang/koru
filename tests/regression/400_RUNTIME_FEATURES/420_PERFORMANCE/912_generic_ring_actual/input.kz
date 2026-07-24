@@ -46,7 +46,7 @@ pub fn Ring(comptime T: type, comptime size: usize) type {
 const MyRing = Ring(u32, 1024);
 
 // Can we use the GENERIC TYPE in an event shape?
-~event ring.enqueue { ring: *Ring(u32, 1024), value: u32 }
+~tor ring.enqueue { ring: *Ring(u32, 1024), value: u32 }
 
 ~proc ring.enqueue|zig {
     if (ring.tryEnqueue(value)) {
@@ -54,7 +54,7 @@ const MyRing = Ring(u32, 1024);
     }
 }
 
-~event ring.dequeue { ring: *Ring(u32, 1024) }
+~tor ring.dequeue { ring: *Ring(u32, 1024) }
 | value u32
 
 ~proc ring.dequeue|zig {

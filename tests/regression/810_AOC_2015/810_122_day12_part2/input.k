@@ -18,7 +18,7 @@ import std/fs
 
 // Advance past a string: j points just AFTER the opening quote; returns the
 // index just AFTER the closing quote.
-pub event skip-str { s: string, n: i64, j: i64 } -> i64
+pub tor skip-str { s: string, n: i64, j: i64 } -> i64
 
 skip-str = if(j < n)
     | then |> if(s[@intCast(j)] == 34)
@@ -35,7 +35,7 @@ skip-str = if(j < n)
 // sequential lowering correct. (Reordering is the local workaround for the
 // tail-loop arg-aliasing in commit c7337761; the general fix is to snapshot
 // recursive args before assigning.)
-pub event num { s: string, n: i64, acc: i64, i: i64 } -> { sum: i64, next: i64 }
+pub tor num { s: string, n: i64, acc: i64, i: i64 } -> { sum: i64, next: i64 }
 
 num = if(i < n)
     | then |> if(s[@intCast(i)] >= 48 and s[@intCast(i)] <= 57)
@@ -45,7 +45,7 @@ num = if(i < n)
     | else -> { sum: acc, next: i }
 
 // Parse one JSON value at index i. isred=1 iff this value is the string "red".
-pub event parse-val { s: string, n: i64, i: i64 } -> { sum: i64, next: i64, isred: i64 }
+pub tor parse-val { s: string, n: i64, i: i64 } -> { sum: i64, next: i64, isred: i64 }
 
 parse-val = if(s[@intCast(i)] == 91)
     | then |> arr-sum(s, n, i: i + 1, acc: 0)
@@ -61,7 +61,7 @@ parse-val = if(s[@intCast(i)] == 91)
 
 // Fold an array's element values (arrays always count, even with "red").
 // i points at the first element or at the closing ']'.
-pub event arr-sum { s: string, n: i64, i: i64, acc: i64 } -> { sum: i64, next: i64 }
+pub tor arr-sum { s: string, n: i64, i: i64, acc: i64 } -> { sum: i64, next: i64 }
 
 arr-sum = if(s[@intCast(i)] == 93)
     | then -> { sum: acc, next: i + 1 }
@@ -75,7 +75,7 @@ arr-sum = if(s[@intCast(i)] == 93)
 // Fold an object's value entries; if ANY value is "red", the whole object
 // (and its children, already summed) contributes 0. i points at a key '"' or
 // at the closing '}'.
-pub event obj-sum { s: string, n: i64, i: i64, acc: i64, red: i64 } -> { sum: i64, next: i64 }
+pub tor obj-sum { s: string, n: i64, i: i64, acc: i64, red: i64 } -> { sum: i64, next: i64 }
 
 obj-sum = if(s[@intCast(i)] == 125)
     | then -> { sum: acc * (1 - red), next: i + 1 }
@@ -88,7 +88,7 @@ obj-sum = if(s[@intCast(i)] == 125)
                     | done r -> { r.sum, r.next }
 
 // Sum all numbers in one JSON line, skipping red-poisoned objects.
-pub event sum-no-red { s: string } -> i64
+pub tor sum-no-red { s: string } -> i64
 
 sum-no-red = capture { len: 0[i64] }
 ! as a |> for(s)

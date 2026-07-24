@@ -18,14 +18,14 @@ const std = @import("std");
     inner: box#i64,
 }
 
-~event make-wrapped {}
+~tor make-wrapped {}
 | made wrapper#(box#i64)
 
 ~proc make-wrapped|zig {
     return .{ .made = @"wrapper#(box#i64)"{ .inner = .{ .value = 77 } } };
 }
 
-~event show-wrapped { w: wrapper#(box#i64) }
+~tor show-wrapped { w: wrapper#(box#i64) }
 
 ~proc show-wrapped|zig {
     std.debug.print("Nested value: {d}\n", .{w.inner.value});

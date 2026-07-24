@@ -7,7 +7,7 @@
 // the same way ~if/~for are templates in koru_std/control.kz.
 import std/io
 
-pub event coin-value { k: i64 } -> i64
+pub tor coin-value { k: i64 } -> i64
 
 coin-value = cond(k)
 | c k when k == 1 -> 1

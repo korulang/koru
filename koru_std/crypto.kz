@@ -12,7 +12,7 @@ const std = @import("std");
 //   found n   — yes: n is the answer.
 //   miss (n+1) — no: the caller's search should try the next candidate.
 // The +1 lives here so the Koru label fold just threads the returned value.
-~pub event md5-check { key: string, n: i64, zeros: i64 }
+~pub tor md5-check { key: string, n: i64, zeros: i64 }
 | found i64
 | miss i64
 

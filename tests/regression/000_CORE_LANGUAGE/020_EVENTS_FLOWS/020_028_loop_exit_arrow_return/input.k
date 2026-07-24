@@ -12,11 +12,11 @@
 // path — the bare-return signal never reaches emitFlow's loop-exit emission.
 import std/io
 
-event step { n: i64, acc: i64 }
+tor step { n: i64, acc: i64 }
 | more { n: i64, acc: i64 }
 | done i64
 
-event run { start: i64 } -> i64
+tor run { start: i64 } -> i64
 
 step = if(n > 0)
 | then => more { n: n - 1, acc: acc + n }

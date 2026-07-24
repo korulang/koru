@@ -8,7 +8,7 @@
 const std = @import("std");
 
 // Outer counter event (counts outer iterations)
-~event outer { x: i32, max_inner: i32 }
+~tor outer { x: i32, max_inner: i32 }
 | next-outer { x: i32, max_inner: i32 }
 | done-outer
 
@@ -23,7 +23,7 @@ const std = @import("std");
 }
 
 // Inner counter event (counts inner iterations)
-~event inner { x: i32, y: i32, max_inner: i32 }
+~tor inner { x: i32, y: i32, max_inner: i32 }
 | next-inner { x: i32, y: i32, max_inner: i32 }
 | done-inner { x: i32, max_inner: i32 }
 
@@ -38,7 +38,7 @@ const std = @import("std");
 }
 
 // Start event
-~event start {}
+~tor start {}
 
 ~proc start|zig {
     std.debug.print("Starting nested loops...\n", .{});

@@ -25,7 +25,7 @@ pub const FormattedText = struct {
 // FMT.DEALLOC - Discharge the <allocated!> obligation
 // ============================================================================
 
-~pub event fmt.dealloc { formatted: *FormattedText<!allocated> }
+~pub tor fmt.dealloc { formatted: *FormattedText<!allocated> }
 
 ~proc fmt.dealloc|zig {
     formatted.allocator.free(formatted.text);
@@ -51,7 +51,7 @@ pub const FormattedText = struct {
 // `ln` is the twin). The RUNTIME value is the `.formatted` union the inline_body
 // breaks with, which the caller branches on as `| formatted f`; the `<allocated!>`
 // obligation rides that runtime value, not the transform event's own return.
-~[comptime|transform]pub event fmt.blk {
+~[comptime|transform]pub tor fmt.blk {
     source: Source,
     invocation: *const Invocation,
     item: *const Item,
@@ -59,7 +59,7 @@ pub const FormattedText = struct {
     allocator: std.mem.Allocator
 } -> SiteResult
 
-~[norun]pub event fmt.blk.impl {
+~[norun]pub tor fmt.blk.impl {
     text: string,
 }
 
@@ -306,14 +306,14 @@ pub const FormattedText = struct {
 // The {{ var:spec }} placeholders are resolved at compile time into
 // std.fmt.bufPrint calls that run at runtime in the caller's scope.
 
-~[comptime|transform]pub event ln {
+~[comptime|transform]pub tor ln {
     invocation: *const Invocation,
     item: *const Item,
     program: *const Program,
     allocator: std.mem.Allocator
 } -> SiteResult
 
-~[norun]pub event ln.impl {
+~[norun]pub tor ln.impl {
     expr: string,
 } -> string
 

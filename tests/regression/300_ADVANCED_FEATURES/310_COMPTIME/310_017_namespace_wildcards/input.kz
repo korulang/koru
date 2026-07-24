@@ -2,13 +2,13 @@
 const std = @import("std");
 ~import std/taps
 
-~event http.request {}
+~tor http.request {}
 
-~event http.response {}
+~tor http.response {}
 
-~event db.query {}
+~tor db.query {}
 
-~event logger { source: string }
+~tor logger { source: string }
 
 ~proc http.request|zig {
     std.debug.print("HTTP request\n", .{});

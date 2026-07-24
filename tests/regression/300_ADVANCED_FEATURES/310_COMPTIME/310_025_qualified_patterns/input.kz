@@ -8,13 +8,13 @@ const std = @import("std");
 ~import std/io
 
 // Local event to transition to (so tap can fire)
-~event finish {}
+~tor finish {}
 
 ~proc finish|zig {
     std.debug.print("Local print\n", .{});
 }
 
-~event logger { source: string }
+~tor logger { source: string }
 
 ~proc logger|zig {
     std.debug.print("Observed: {s}\n", .{source});

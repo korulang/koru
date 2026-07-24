@@ -10,7 +10,7 @@
 // - Without [comptime], the transform won't be available and will fail silently
 // - This validation catches the mistake immediately
 
-~[transform]event badTransform { count: i32 } -> (result: i32)
+~[transform]tor badTransform { count: i32 } -> (result: i32)
 
 ~proc badTransform|zig {
     return .{ .result = count * 2 };

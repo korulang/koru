@@ -22,7 +22,7 @@ const std = @import("std");
     value: i64,
 }
 
-~event main {}
+~tor main {}
 
 ~proc main|zig {
     const b = @"box#i64"{ .value = 42 };

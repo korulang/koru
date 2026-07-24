@@ -13,7 +13,7 @@ const std = @import("std");
     value: f64,
 }
 
-~event test-entry {}
+~tor test-entry {}
 
 ~proc test-entry|zig {
     const e = @"entry#i64#f64"{ .key = 7, .value = 3.5 };

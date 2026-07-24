@@ -7,5 +7,5 @@
 
 const std = @import("std");
 
-~event compute {}
+~tor compute {}
 | ok { value: i32 }

@@ -7,7 +7,7 @@
 
 const std = @import("std");
 
-~event compute {}
+~tor compute {}
 
 // Bare proc - no |variant tag. Unresolvable.
 ~proc compute {

@@ -16,7 +16,7 @@
 
 ~import std/io
 
-~pub event ramp { start: usize }
+~pub tor ramp { start: usize }
 ! step usize
 | restart usize
 | done usize

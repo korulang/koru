@@ -2,7 +2,7 @@
 
 const std = @import("std");
 
-~pub event uppercase { text: string } -> string
+~pub tor uppercase { text: string } -> string
 
 ~proc uppercase|zig {
     std.debug.print("uppercase ({} chars)\n", .{text.len});

@@ -27,7 +27,7 @@ const LargeStruct = struct {
     data: [100]f64,  // 800 bytes - expensive to copy!
 };
 
-~event process-data { input: [100]f64 } -> [100]f64
+~tor process-data { input: [100]f64 } -> [100]f64
 
 ~proc process-data|zig {
     var output_data = input;
@@ -37,7 +37,7 @@ const LargeStruct = struct {
     return output_data;
 }
 
-~event chain { values: [100]f64 } -> [100]f64
+~tor chain { values: [100]f64 } -> [100]f64
 
 ~proc chain|zig {
     return values;

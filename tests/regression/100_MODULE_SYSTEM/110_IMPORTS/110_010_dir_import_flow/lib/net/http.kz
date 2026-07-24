@@ -2,11 +2,11 @@
 
 const std = @import("std");
 
-~pub event request.parse { bytes: string }
+~pub tor request.parse { bytes: string }
 | request { method: string, path: string }
 | invalid string
 
-~pub event response.build { status: i32, body: string } -> string
+~pub tor response.build { status: i32, body: string } -> string
 
 ~proc request.parse|zig {
     std.debug.print("parsed request ({} bytes)\n", .{bytes.len});

@@ -25,7 +25,7 @@ var bin_b: Bin = .{ .items = .{ null, null, null, null }, .n = 0 };
 // obligations are held inside bin_a); `seeded` carries no per-value obligation.
 // `| seeded i64` is identity-typed (carries the count) so the event is not a
 // single no-payload branch (PARSE003); same fix as 210_123.
-~event seed {} -> i64
+~tor seed {} -> i64
 ~proc seed|zig {
     const a = std.heap.page_allocator.create(Handle) catch unreachable;
     a.* = .{ .tag = 1 };
@@ -39,7 +39,7 @@ var bin_b: Bin = .{ .items = .{ null, null, null, null }, .n = 0 };
 
 // Pop the next owned handle out of A: reissue the obligation onto the popped
 // value (`| moved` carries <owned!>); `| drained` when A is empty.
-~event pop-a {}
+~tor pop-a {}
 | moved *Handle<owned!>
 | drained i64
 ~proc pop-a|zig {
@@ -51,14 +51,14 @@ var bin_b: Bin = .{ .items = .{ null, null, null, null }, .n = 0 };
 }
 
 // Push the owned handle into B: consume the obligation (B now holds it).
-~event push-b { h: *Handle<!owned> }
+~tor push-b { h: *Handle<!owned> }
 ~proc push-b|zig {
     bin_b.items[bin_b.n] = h;
     bin_b.n += 1;
 }
 
 // Free everything B holds at the end (drains B's obligations).
-~event free-b {}
+~tor free-b {}
 ~proc free-b|zig {
     var i: usize = 0;
     while (i < bin_b.n) : (i += 1) {
@@ -70,7 +70,7 @@ var bin_b: Bin = .{ .items = .{ null, null, null, null }, .n = 0 };
 // The shuttle: pop one off A, push into B, loop until A drained. The obligation
 // on the popped handle is carried from `pop-a`'s issue to `push-b`'s consume each
 // iteration; the back-edge re-enters `pop-a` for the next handle.
-~event shuttle {} -> i64
+~tor shuttle {} -> i64
 
 ~shuttle = #loop pop-a()
 | moved v |> push-b(h: v) |> @loop()

@@ -4,14 +4,14 @@
 const std = @import("std");
 
 // Impure operation (unmarked, so defaults to impure)
-~event log { message: string }
+~tor log { message: string }
 
 ~proc log|zig {
     std.debug.print("LOG: {s}\n", .{message});
 }
 
 // Main entry using subflow
-~event main {}
+~tor main {}
 
 // Subflow that calls impure event - should be transitively IMPURE
 ~log(message: "Hello")

@@ -6,7 +6,7 @@
 // is `run(seconds: 5)` with the sieve in the `! pass` body, then emit the result.
 const std = @import("std");
 
-~pub event run { seconds: i64 }
+~pub tor run { seconds: i64 }
 ! pass
 | done { passes: i64, seconds: f64 }
 

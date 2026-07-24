@@ -5,7 +5,7 @@ const std = @import("std");
 
 const Resource = struct { tag: i64 };
 
-~pub event new { } -> *Resource<owned!>
+~pub tor new { } -> *Resource<owned!>
 
 ~proc new|zig {
     const r = std.heap.page_allocator.create(Resource) catch unreachable;
@@ -14,14 +14,14 @@ const Resource = struct { tag: i64 };
 }
 
 // Canonical discharger: consumes <!owned>, frees the resource. Void (no output).
-~pub event free { r: *Resource<!owned> }
+~pub tor free { r: *Resource<!owned> }
 
 ~proc free|zig {
     std.heap.page_allocator.destroy(r);
 }
 
 // Borrow: read the tag without consuming the obligation.
-~pub event tag { r: *Resource<owned> } -> i64
+~pub tor tag { r: *Resource<owned> } -> i64
 
 ~proc tag|zig {
     return r.tag;

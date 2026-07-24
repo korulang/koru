@@ -9,15 +9,15 @@
 
 import std/io
 
-event read-distance { trip_id: u8 } -> i32<meter>
+tor read-distance { trip_id: u8 } -> i32<meter>
 
 read-distance -> 100
 
-event read-time { trip_id: u8 } -> i32<second>
+tor read-time { trip_id: u8 } -> i32<second>
 
 read-time -> 4
 
-event compute-velocity { d: i32<meter>, t: i32<second> } -> i32<meter/second>
+tor compute-velocity { d: i32<meter>, t: i32<second> } -> i32<meter/second>
 
 compute-velocity -> d / t
 

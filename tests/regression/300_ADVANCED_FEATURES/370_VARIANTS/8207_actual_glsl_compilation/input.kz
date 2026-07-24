@@ -17,7 +17,7 @@ const std = @import("std");
 // GPU Compiler Pass - REAL Implementation!
 // ================================================================
 
-~pub event gpu-shader {
+~pub tor gpu-shader {
     glsl_code: string,
 }
 | compiled {
@@ -77,7 +77,7 @@ const std = @import("std");
 // Test: Compile a simple GLSL shader
 // ================================================================
 
-~pub event test-shader-compilation { }
+~pub tor test-shader-compilation { }
 | result { success: bool, spv_path: string }
 
 ~proc test-shader-compilation|zig {
@@ -105,7 +105,7 @@ const std = @import("std");
 }
 
 // Validation event - verify compilation succeeded
-~pub event validate-compilation { success: bool, spv_path: string }
+~pub tor validate-compilation { success: bool, spv_path: string }
 
 ~proc validate-compilation|zig {
     if (success) {

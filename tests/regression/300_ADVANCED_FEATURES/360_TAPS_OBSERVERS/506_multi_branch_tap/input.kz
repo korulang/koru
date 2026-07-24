@@ -9,7 +9,7 @@
 const std = @import("std");
 ~import std/taps
 
-~event process { value: i32 }
+~tor process { value: i32 }
 | success i32
 | error string
 
@@ -21,18 +21,18 @@ const std = @import("std");
 }
 
 // Multiple handlers for success branch - both should fire
-~event log-success { result: i32 }
+~tor log-success { result: i32 }
 ~proc log-success|zig {
     std.debug.print("LOG: success with {d}\n", .{result});
 }
 
-~event audit-success { result: i32 }
+~tor audit-success { result: i32 }
 ~proc audit-success|zig {
     std.debug.print("AUDIT: success with {d}\n", .{result});
 }
 
 // Single handler for error branch
-~event log-error { msg: string }
+~tor log-error { msg: string }
 ~proc log-error|zig {
     std.debug.print("LOG: error - {s}\n", .{msg});
 }

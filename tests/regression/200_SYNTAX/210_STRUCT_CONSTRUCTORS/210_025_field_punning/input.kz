@@ -6,7 +6,7 @@
 
 ~import std/io
 
-~event data { x: i32, y: i32 } -> { x: i32, y: i32 }
+~tor data { x: i32, y: i32 } -> { x: i32, y: i32 }
 
 // Explicit field names (always works)
 ~data -> { x, y }

@@ -18,7 +18,7 @@
 const std = @import("std");
 ~import std/taps
 
-~event log { data: ?[]const u8 }
+~tor log { data: ?[]const u8 }
 
 ~proc log|zig {
 }

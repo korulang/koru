@@ -5,23 +5,23 @@
 
 const std = @import("std");
 
-~event step1 {}
+~tor step1 {}
 | ok i32
 | failed string
 
-~event step2 { value: i32 }
+~tor step2 { value: i32 }
 | ok i32
 | failed string
 
-~event step3 { value: i32 }
+~tor step3 { value: i32 }
 | ok i32
 | failed string
 
-~event step4 { value: i32 }
+~tor step4 { value: i32 }
 | ok i32
 | failed string
 
-~event log { msg: string }
+~tor log { msg: string }
 
 ~proc step1|zig {
     return .{ .@"ok" = 1 };

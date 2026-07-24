@@ -4,7 +4,7 @@
 // representation and timing are orthogonal), so an event that splices its
 // captured expression at compile time declares `[comptime]` explicitly.
 
-~[comptime]event test-expr { val: Expression }
+~[comptime]tor test-expr { val: Expression }
 
 ~proc test-expr|zig {
     const std = @import("std");

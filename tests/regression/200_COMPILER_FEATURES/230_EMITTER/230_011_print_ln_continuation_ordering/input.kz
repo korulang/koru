@@ -11,31 +11,31 @@ const std = @import("std");
 ~import std/io
 
 // Void event (like advance-velocities)
-~event step-one {}
+~tor step-one {}
 
 ~proc step-one|zig {}
 
 // Another void event (like advance-positions)
-~event step-two {}
+~tor step-two {}
 
 ~proc step-two|zig {}
 
 // Branched event (like calculate-energy)
-~event get-result {} -> i32
+~tor get-result {} -> i32
 
 ~proc get-result|zig {
     return 42;
 }
 
 // Print event with a result (like print-energy)
-~event print-value { v: i32 }
+~tor print-value { v: i32 }
 
 ~proc print-value|zig {
     std.debug.print("{d}\n", .{v});
 }
 
 // Initial setup (like initialize-bodies)
-~event setup {} -> i32
+~tor setup {} -> i32
 
 ~proc setup|zig {
     return 1;

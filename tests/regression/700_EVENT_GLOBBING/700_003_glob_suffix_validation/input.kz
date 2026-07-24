@@ -8,7 +8,7 @@
 // 4. Find closest match via Levenshtein: "warn"
 // 5. Emit compile error: "Unknown log level 'warning', did you mean 'warn'?"
 
-~[comptime|transform]pub event log.* {
+~[comptime|transform]pub tor log.* {
     event_name: string,
     item: *const Item,
     program: *const Program,

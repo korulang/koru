@@ -1,4 +1,4 @@
-error[KORU110]: event 'compute' is called but its ~proc declaration has no |variant tag — bare procs are unresolvable
+error[KORU110]: tor 'compute' is called but its ~proc declaration has no |variant tag — bare procs are unresolvable
   --> tests/regression/300_ADVANCED_FEATURES/370_VARIANTS/8211_bare_proc_call_site_fails/input.kz:17:0
     |
  17 | ~compute()

@@ -5,7 +5,7 @@
 const std = @import("std");
 ~import std/taps
 
-~event counter { n: i32 }
+~tor counter { n: i32 }
 | next i32
 | done i32
 
@@ -16,7 +16,7 @@ const std = @import("std");
     return .{ .done = n };
 }
 
-~event log-iteration { value: i32 }
+~tor log-iteration { value: i32 }
 
 ~proc log-iteration|zig {
     std.debug.print("Iteration: {}\n", .{value});
@@ -26,7 +26,7 @@ const std = @import("std");
 ~tap(counter -> *)
 | next v |> log-iteration(value: v)
 
-~event start {}
+~tor start {}
 
 ~proc start|zig {
 }

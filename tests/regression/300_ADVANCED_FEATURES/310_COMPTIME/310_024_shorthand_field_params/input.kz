@@ -3,7 +3,7 @@
 
 const std = @import("std");
 
-~event process {
+~tor process {
     source: string,
     branch: string,
     destination: ?[]const u8,
@@ -22,7 +22,7 @@ pub const Data = struct {
 // Main flow: Use shorthand syntax (r.source) which should expand to (source: r.source)
 ~start(): r |> process(r.source, r.branch, r.destination)
 
-~event start {} -> Data
+~tor start {} -> Data
 
 ~proc start|zig {
     const data = Data{

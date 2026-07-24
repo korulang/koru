@@ -4,11 +4,11 @@
 
 ~import std/taps
 
-~event process { value: i32 }
+~tor process { value: i32 }
 | ok i32
 | error string
 
-~event logger { msg: string }
+~tor logger { msg: string }
 
 ~[pure]proc process|zig {
     if (value > 0) {

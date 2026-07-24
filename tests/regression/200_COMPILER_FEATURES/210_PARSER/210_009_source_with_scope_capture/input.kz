@@ -9,14 +9,14 @@
 ~import std/io
 
 // Event that provides user data
-~event getUserData { } -> { name: []const u8, age: i32 }
+~tor getUserData { } -> { name: []const u8, age: i32 }
 
 ~proc getUserData|zig {
     return .{ .name = "Alice", .age = 42 };
 }
 
 // Event that takes Source parameter for HTML rendering
-~event renderHTML { source: Source<HTML> } -> string
+~tor renderHTML { source: Source<HTML> } -> string
 
 // Comptime proc that receives Source with captured scope
 ~proc renderHTML|zig {

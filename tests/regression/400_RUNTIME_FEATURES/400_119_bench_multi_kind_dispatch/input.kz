@@ -4,7 +4,7 @@ const std = @import("std");
 
 var input_n: u64 = 0;
 
-~pub event read-n {}
+~pub tor read-n {}
 
 ~proc read-n|zig {
     var args = std.process.args();
@@ -16,7 +16,7 @@ var input_n: u64 = 0;
     }
 }
 
-~pub event ticker { n: u64 }
+~pub tor ticker { n: u64 }
 ! tick { item: u64, acc: u64 } -> u64
 ! tock { item: u64, acc: u64 } -> u64
 | done { ticks: u64, tocks: u64 }

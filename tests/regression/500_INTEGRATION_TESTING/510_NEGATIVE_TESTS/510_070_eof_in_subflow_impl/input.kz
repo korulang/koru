@@ -1,6 +1,6 @@
 // MUST_FAIL: EOF after subflow impl '=' should produce clear error
 // This tests CODEX_REVIEW_FINDINGS CRITICAL #3
 
-~event foo {}
+~tor foo {}
 
 ~foo =

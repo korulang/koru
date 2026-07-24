@@ -8,7 +8,7 @@
 const std = @import("std");
 
 // Server events
-~event listen { port: u16 }
+~tor listen { port: u16 }
 | ready u32
 | failed string
 
@@ -20,7 +20,7 @@ const std = @import("std");
     return .{ .ready = port };
 }
 
-~event accept { server: u32 }
+~tor accept { server: u32 }
 | connected { conn: u32, server: u32 }
 | failed u32
 
@@ -32,7 +32,7 @@ const std = @import("std");
     return .{ .connected = .{ .conn = server + 1, .server = server } };
 }
 
-~event process { conn: u32 }
+~tor process { conn: u32 }
 | done u32
 | retry u32
 | error { conn: u32, msg: string }
@@ -48,20 +48,20 @@ const std = @import("std");
     return .{ .retry = conn };
 }
 
-~event close { conn: u32 }
+~tor close { conn: u32 }
 
 ~proc close|zig {
     std.debug.print("Closed connection {}\n", .{conn});
 }
 
-~event log-error { conn: u32, msg: string } -> u32
+~tor log-error { conn: u32, msg: string } -> u32
 
 ~proc log-error|zig {
     std.debug.print("Error on connection {}: {s}\n", .{conn, msg});
     return conn;
 }
 
-~event cleanup { conn: u32 }
+~tor cleanup { conn: u32 }
 
 ~proc cleanup|zig {
     std.debug.print("Cleaning up connection {}\n", .{conn});

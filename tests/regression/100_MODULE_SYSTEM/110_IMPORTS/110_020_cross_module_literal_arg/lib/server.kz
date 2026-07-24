@@ -1,7 +1,7 @@
 // Library: defines a simple event with a port parameter
 const std = @import("std");
 
-~pub event start { port: u16 } -> u16
+~pub tor start { port: u16 } -> u16
 
 ~proc start|zig {
     std.debug.print("Server starting on port {}\n", .{port});

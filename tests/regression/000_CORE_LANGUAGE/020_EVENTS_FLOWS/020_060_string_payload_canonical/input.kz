@@ -5,7 +5,7 @@
 // and `{{ name:s }}` formatting all work identically.
 ~import std/io
 
-~pub event fetch { id: i64 }
+~pub tor fetch { id: i64 }
 | found { name: string, age: i64 }
 | missing
 

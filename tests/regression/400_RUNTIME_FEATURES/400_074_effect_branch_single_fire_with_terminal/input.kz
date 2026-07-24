@@ -7,7 +7,7 @@
 
 ~import std/io
 
-~pub event init { value: usize }
+~pub tor init { value: usize }
 ! ready usize
 | done usize
 

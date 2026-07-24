@@ -11,7 +11,7 @@
 
 const std = @import("std");
 
-~pub event prompt-user { question: string }
+~pub tor prompt-user { question: string }
 ! ask string -> string
 | done string
 

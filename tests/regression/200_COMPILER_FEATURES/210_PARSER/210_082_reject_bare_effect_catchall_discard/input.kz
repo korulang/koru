@@ -15,14 +15,14 @@
 // catch-all line and explaining the no-engagement rule.
 // ============================================================================
 
-~pub event tokenize { source: string }
+~pub tor tokenize { source: string }
 ! token string
 ! ?warning string
 ! ?debug string
 | done usize
 
-~pub event consume-token { t: string }
-~pub event end-run { n: usize }
+~pub tor consume-token { t: string }
+~pub tor end-run { n: usize }
 
 ~tokenize(source: "x")
 ! token t |> consume-token(t)

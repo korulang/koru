@@ -16,7 +16,7 @@
 
 // === USE CASE 1: Property Testing ===
 
-~pub event sort { items: []i32 } -> []i32
+~pub tor sort { items: []i32 } -> []i32
 
 // Reference implementation - simple, obviously correct
 ~proc sort|zig(reference) {
@@ -52,7 +52,7 @@
 
 // === USE CASE 2: Target-Specific Implementations ===
 
-~[transform]pub event image.transform.* {
+~[transform]pub tor image.transform.* {
     event_name: string,
     pixels: []u8,
     width: u32,

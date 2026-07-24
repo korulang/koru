@@ -9,14 +9,14 @@
 const std = @import("std");
 const Handle = struct { n: i32 };
 
-~event make {} -> *Handle<owned!>
+~tor make {} -> *Handle<owned!>
 ~proc make|zig {
     const h = std.heap.page_allocator.create(Handle) catch unreachable;
     h.* = .{ .n = 0 };
     return h;
 }
 
-~event consume { h: *Handle<!owned> }
+~tor consume { h: *Handle<!owned> }
 ~proc consume|zig {
     std.heap.page_allocator.destroy(h);
 }

@@ -14,7 +14,7 @@ const std = @import("std");
 
 const Conn = struct { id: i32 };
 
-~event connect { name: string } -> *Conn<active!>
+~tor connect { name: string } -> *Conn<active!>
 
 ~proc connect|zig {
     std.debug.print("Connect: {s}\n", .{name});
@@ -23,13 +23,13 @@ const Conn = struct { id: i32 };
     return c;
 }
 
-~event process { conn: *Conn<active> }
+~tor process { conn: *Conn<active> }
 
 ~proc process|zig {
     std.debug.print("Process: {}\n", .{conn.id});
 }
 
-~event disconnect { conn: *Conn<!active> }
+~tor disconnect { conn: *Conn<!active> }
 
 ~proc disconnect|zig {
     std.debug.print("Disconnect: {}\n", .{conn.id});

@@ -9,7 +9,7 @@ const std = @import("std");
 const Resource = struct { id: usize };
 var global_r = Resource{ .id = 99 };
 
-~pub event borrow { n: usize }
+~pub tor borrow { n: usize }
 ! lend usize -> *Resource<active!>
 | done usize
 ~proc borrow|zig {

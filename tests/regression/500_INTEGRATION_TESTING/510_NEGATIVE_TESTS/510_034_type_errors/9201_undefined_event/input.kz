@@ -1,5 +1,5 @@
 // This should fail: calling an event that doesn't exist
-~event main {}
+~tor main {}
 
 ~proc main|zig {
     const result = nonexistent_event.handler(.{ .x = 10 });

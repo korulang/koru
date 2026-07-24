@@ -6,7 +6,7 @@ const std = @import("std");
 const File = struct { handle: i32 };
 
 // Open a file - returns opened! state (requires cleanup)
-~pub event open { path: string } -> *File<opened!>
+~pub tor open { path: string } -> *File<opened!>
 
 ~proc open|zig {
     std.debug.print("Opening file\n", .{});
@@ -16,7 +16,7 @@ const File = struct { handle: i32 };
 }
 
 // Close - the ONLY consumer of <!opened>
-~pub event close { file: *File<!opened> }
+~pub tor close { file: *File<!opened> }
 
 ~proc close|zig {
     std.debug.print("Closing file (auto-discharged)\n", .{});
@@ -24,7 +24,7 @@ const File = struct { handle: i32 };
 
 // A logging event for taps - can observe file handle from the tap binding
 // The tap passes in the handle it observed from the opened event
-~pub event log-open { handle: i32 }
+~pub tor log-open { handle: i32 }
 
 ~proc log-open|zig {
     // Note: Procs receive input via generated code, we just print a static message

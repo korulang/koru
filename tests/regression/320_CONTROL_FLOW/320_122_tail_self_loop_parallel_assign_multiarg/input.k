@@ -8,7 +8,7 @@
 // Surfaced by the koru-benchmarks `nestedloop` kernel (challenge 004).
 import std/io
 
-pub event loop-k { i: i64, j: i64, k: i64, acc: i64 } -> i64
+pub tor loop-k { i: i64, j: i64, k: i64, acc: i64 } -> i64
 
 loop-k = if(k == 0)
 | then -> acc

@@ -2,7 +2,7 @@
 // Only events can be pub, procs cannot.
 // Procs are implementation details - they follow their event's visibility.
 
-~pub event greet { name: string } -> string
+~pub tor greet { name: string } -> string
 
 // This should cause a compiler error - pub is not valid on procs
 ~pub proc greet {

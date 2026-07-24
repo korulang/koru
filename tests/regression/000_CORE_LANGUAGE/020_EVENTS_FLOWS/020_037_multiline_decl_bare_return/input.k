@@ -5,7 +5,7 @@
 // The single-line twin is 020_033; this pins the split-line form.
 import std/io
 
-event pick {
+tor pick {
     n: i64
 } -> i64
 

@@ -10,7 +10,7 @@ const std = @import("std");
 
 const N: i64 = 100_000_000;
 
-~event print_result { sum: i64, time_ms: i64 }
+~tor print_result { sum: i64, time_ms: i64 }
 
 ~proc print_result|zig {
     std.debug.print("Koru capture sum: {d}\n", .{sum});
@@ -18,7 +18,7 @@ const N: i64 = 100_000_000;
 }
 
 // Time the capture-based sum
-~event timed_capture_sum {}
+~tor timed_capture_sum {}
 | done { sum: i64, time_ms: i64 }
 
 ~proc timed_capture_sum|zig {

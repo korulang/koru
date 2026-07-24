@@ -25,7 +25,7 @@ const Body = struct {
 // Event: Initialize planetary bodies
 // ============================================================================
 
-~event initialize-bodies {} -> [5]Body
+~tor initialize-bodies {} -> [5]Body
 
 ~proc initialize-bodies|zig {
     const bodies_data = [_]Body{
@@ -74,7 +74,7 @@ const Body = struct {
 // Event: Process ONE body pair - the atomic unit of computation
 // ============================================================================
 
-~event process-pair { bodies: []Body, i: usize, j: usize, dt: f64 }
+~tor process-pair { bodies: []Body, i: usize, j: usize, dt: f64 }
 
 ~proc process-pair|zig {
     const dx = bodies[i].x - bodies[j].x;
@@ -97,7 +97,7 @@ const Body = struct {
 // Event: Update ONE body position - atomic unit
 // ============================================================================
 
-~event update-position { body: *Body, dt: f64 }
+~tor update-position { body: *Body, dt: f64 }
 
 ~proc update-position|zig {
     body.x += dt * body.vx;
@@ -109,7 +109,7 @@ const Body = struct {
 // Other events (same as before)
 // ============================================================================
 
-~event offset-momentum { bodies: []Body }
+~tor offset-momentum { bodies: []Body }
 
 ~proc offset-momentum|zig {
     var px: f64 = 0.0;
@@ -128,7 +128,7 @@ const Body = struct {
 
 }
 
-~event calculate-energy { bodies: []const Body } -> f64
+~tor calculate-energy { bodies: []const Body } -> f64
 
 ~proc calculate-energy|zig {
     var e: f64 = 0.0;
@@ -149,13 +149,13 @@ const Body = struct {
     return e;
 }
 
-~event print-energy { energy: f64 }
+~tor print-energy { energy: f64 }
 
 ~proc print-energy|zig {
     std.debug.print("{d:.9}\n", .{energy});
 }
 
-~event parse-args {} -> u32
+~tor parse-args {} -> u32
 
 ~proc parse-args|zig {
     const args = std.process.argsAlloc(std.heap.page_allocator) catch unreachable;
@@ -177,7 +177,7 @@ const Body = struct {
 // Start simple: just test the outer simulation loop with ~for
 // The body loops are still in process-all-pairs for now
 
-~event process-all-pairs { bodies: []Body, dt: f64 }
+~tor process-all-pairs { bodies: []Body, dt: f64 }
 
 // This uses Koru ~for for the OUTER loop
 ~process-all-pairs = for(0..5)
@@ -186,7 +186,7 @@ const Body = struct {
         | done |> _
 |> done {}
 
-~event update-all-positions { bodies: []Body, dt: f64 }
+~tor update-all-positions { bodies: []Body, dt: f64 }
 
 ~update-all-positions = for(0..5)
 | each k |> update-position(body: &bodies[k.val], dt)

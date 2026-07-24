@@ -10,20 +10,20 @@ const std = @import("std");
 const Resource = struct { id: usize };
 const allocator = std.heap.c_allocator;
 
-~event create { id: usize } -> *Resource<active!>
+~tor create { id: usize } -> *Resource<active!>
 ~proc create|zig {
     const r = allocator.create(Resource) catch unreachable;
     r.* = Resource{ .id = id };
     return r;
 }
 
-~event destroy { r: *Resource<!active> }
+~tor destroy { r: *Resource<!active> }
 ~proc destroy|zig {
     std.debug.print("freeing {}\n", .{r.id});
     allocator.destroy(r);
 }
 
-~pub event gen { n: usize }
+~pub tor gen { n: usize }
 ! each usize
 | done usize
 ~proc gen|zig {

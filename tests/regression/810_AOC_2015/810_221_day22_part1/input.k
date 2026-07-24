@@ -50,7 +50,7 @@
 import std/io
 import std/fs
 
-pub event fight { line: string }
+pub tor fight { line: string }
 | outcome string
 
 std/fs:read-lines(path: "tests/regression/810_AOC_2015/810_221_day22_part1/input.txt")

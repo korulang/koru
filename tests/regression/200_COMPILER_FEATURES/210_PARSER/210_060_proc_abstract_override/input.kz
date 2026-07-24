@@ -9,7 +9,7 @@
 const std = @import("std");
 
 // Abstract event WITHOUT default implementation
-~[abstract] event greet { name: string } -> string
+~[abstract] tor greet { name: string } -> string
 
 // Provide proc implementation using module-qualified syntax
 // This should be equivalent to ~input:greet = greeted { message: name }

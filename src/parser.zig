@@ -873,7 +873,7 @@ pub const Parser = struct {
                                 std.mem.indexOf(u8, next_trimmed, "(") != null or
                                 std.mem.indexOf(u8, next_trimmed, ":") != null or
                                 std.mem.startsWith(u8, next_trimmed, "pub ") or
-                                std.mem.startsWith(u8, next_trimmed, "event ") or
+                                std.mem.startsWith(u8, next_trimmed, "tor ") or
                                 std.mem.startsWith(u8, next_trimmed, "proc ");
                             break :blk looks_like_construct;
                         } else false;
@@ -1298,8 +1298,8 @@ pub const Parser = struct {
     fn looksLikeBareKoruModuleConstruct(trimmed: []const u8) bool {
         const prefixes = [_][]const u8{
             "import ",
-            "pub event",
-            "event ",
+            "pub tor",
+            "tor ",
             "proc ",
             "pub proc ",
         };
@@ -1410,14 +1410,24 @@ pub const Parser = struct {
         }
 
         // Now check for constructs
-        if (lexer.startsWith(remaining, "pub event")) {
+        if (lexer.startsWith(remaining, "pub tor")) {
             // Public event declaration with annotations
             return .{ .event_decl = try self.parseEventDeclWithAnnotations(true, annotations.items) };
         } else if (lexer.startsWith(remaining, "import ")) {
             // Note: Conditional imports (~[flag]import) are already filtered out
             // at a higher level in parse(), so if we reach here the import is allowed
             return .{ .import_decl = try self.parseImportDecl() };
-        } else if (lexer.startsWith(remaining, "event ")) {
+        } else if (lexer.startsWith(remaining, "pub event ") or lexer.startsWith(remaining, "event ")) {
+            // `event` is not a Koru keyword. Declarations are introduced with `tor`.
+            try self.reporter.addError(
+                .PARSE003,
+                self.current + 1,
+                1,
+                "'event' is not a Koru keyword - a declaration is introduced with 'tor' (e.g. 'tor jump {{ how-high: i32 }}')",
+                .{},
+            );
+            return error.ParseError;
+        } else if (lexer.startsWith(remaining, "tor ")) {
             // Private event declaration with annotations
             return .{ .event_decl = try self.parseEventDeclWithAnnotations(false, annotations.items) };
         } else if (lexer.startsWith(remaining, "pub proc ") or lexer.startsWith(remaining, "pub ~proc")) {
@@ -1570,7 +1580,7 @@ pub const Parser = struct {
                 .PARSE004,
                 start_line,
                 @intCast(brace_start + 1), // Convert to 1-based column
-                "unmatched '{{' in event shape",
+                "unmatched '{{' in tor shape",
                 .{},
             );
             return error.ParseError;
@@ -1595,7 +1605,7 @@ pub const Parser = struct {
                     .PARSE003,
                     error_line,
                     1,
-                    "event declaration missing input shape",
+                    "tor declaration missing input shape",
                     .{},
                 );
                 return error.ParseError;
@@ -1610,7 +1620,7 @@ pub const Parser = struct {
                 .PARSE003,
                 error_line,
                 1,
-                "event declaration missing input shape",
+                "tor declaration missing input shape",
                 .{},
             );
             return error.ParseError;
@@ -1620,7 +1630,7 @@ pub const Parser = struct {
             .PARSE003,
             error_line,
             1,
-            "event declaration missing input shape",
+            "tor declaration missing input shape",
             .{},
         );
         return error.ParseError;
@@ -1689,7 +1699,7 @@ pub const Parser = struct {
                 .PARSE001,
                 self.current,
                 0,
-                "unexpected end of file while parsing event declaration",
+                "unexpected end of file while parsing tor declaration",
                 .{},
             );
             return error.UnexpectedEOF;
@@ -1717,17 +1727,17 @@ pub const Parser = struct {
             remaining = lexer.trim(result.remaining);
         }
 
-        // Strip the event keyword (with optional pub prefix)
-        const after_event = if (lexer.afterPrefix(remaining, "pub event")) |ae|
+        // Strip the tor keyword (with optional pub prefix)
+        const after_event = if (lexer.afterPrefix(remaining, "pub tor")) |ae|
             ae
-        else if (lexer.afterPrefix(remaining, "event")) |ae|
+        else if (lexer.afterPrefix(remaining, "tor")) |ae|
             ae
         else {
             try self.reporter.addError(
                 .PARSE003,
                 self.current - 1,
                 1,
-                "malformed event declaration",
+                "malformed tor declaration",
                 .{},
             );
             return error.ParseError;
@@ -1755,13 +1765,13 @@ pub const Parser = struct {
                 .PARSE003,
                 event_line_index + 1,
                 1,
-                "event declaration missing name",
+                "tor declaration missing name",
                 .{},
             );
             return error.ParseError;
         }
 
-        try self.rejectSnakeName(parsed_path_str, event_line_index, "event");
+        try self.rejectSnakeName(parsed_path_str, event_line_index, "tor");
         var path = try lexer.parseQualifiedPath(self.allocator, parsed_path_str, ast);
         errdefer path.deinit(self.allocator);
         log_debug("PARSER parseEventDeclWithAnnotations: Just parsed event path: module={s} segments=", .{if (path.module_qualifier) |m| m else "null"});
@@ -1790,7 +1800,7 @@ pub const Parser = struct {
                     .PARSE003,
                     event_line_index + 1,
                     1,
-                    "unexpected content after the closing '}}' of a multi-line event shape: '{s}' (only a bare return `-> T` may follow)",
+                    "unexpected content after the closing '}}' of a multi-line tor shape: '{s}' (only a bare return `-> T` may follow)",
                     .{tail},
                 );
                 return error.ParseError;
@@ -1858,7 +1868,7 @@ pub const Parser = struct {
                             .PARSE003,
                             event_line_index + 1,
                             @intCast(shape_end + 1), // Column where the annotation block starts
-                            "event annotation missing closing ']'",
+                            "tor annotation missing closing ']'",
                             .{},
                         );
                         return error.ParseError;
@@ -1999,7 +2009,7 @@ pub const Parser = struct {
                             .PARSE003,
                             self.current,
                             @intCast(close_idx + 1),
-                            "event annotation missing closing ']'",
+                            "tor annotation missing closing ']'",
                             .{},
                         );
                         return error.ParseError;
@@ -2111,7 +2121,7 @@ pub const Parser = struct {
                 .PARSE003,
                 event_line_index + 1,
                 1,
-                "single branch '{s}' with no payload is redundant - remove it to make this a void event (no branches)",
+                "single branch '{s}' with no payload is redundant - remove it to make this a void tor (no branches)",
                 .{branches.items[0].name},
             );
             return error.ParseError;
@@ -2223,7 +2233,7 @@ pub const Parser = struct {
                 .PARSE001,
                 self.current,
                 0,
-                "unexpected end of file while parsing event declaration",
+                "unexpected end of file while parsing tor declaration",
                 .{},
             );
             return error.UnexpectedEOF;
@@ -2233,17 +2243,17 @@ pub const Parser = struct {
         self.current += 1;
         const event_line_index = self.current - 1;
 
-        // Parse: ~[pub] event[annotations] <path> { <fields> }
-        const after_event = if (lexer.afterPrefix(line, "~pub event")) |ae|
+        // Parse: ~[pub] tor[annotations] <path> { <fields> }
+        const after_event = if (lexer.afterPrefix(line, "~pub tor")) |ae|
             ae
-        else if (lexer.afterPrefix(line, "~event")) |ae|
+        else if (lexer.afterPrefix(line, "~tor")) |ae|
             ae
         else {
             try self.reporter.addError(
                 .PARSE003,
                 self.current,
                 1,
-                "malformed event declaration",
+                "malformed tor declaration",
                 .{},
             );
             return error.ParseError;
@@ -2284,13 +2294,13 @@ pub const Parser = struct {
                 .PARSE003,
                 event_line_index + 1,
                 1,
-                "event declaration missing name",
+                "tor declaration missing name",
                 .{},
             );
             return error.ParseError;
         }
 
-        try self.rejectSnakeName(parsed_path_str, event_line_index, "event");
+        try self.rejectSnakeName(parsed_path_str, event_line_index, "tor");
         var path = try lexer.parseQualifiedPath(self.allocator, parsed_path_str, ast);
         errdefer path.deinit(self.allocator);
 
@@ -2730,7 +2740,7 @@ pub const Parser = struct {
             const has_inline_flow = blk: {
                 if (lexer.startsWith(trimmed, "~")) {
                     if (startsWithKeyword(trimmed, "~proc") or
-                        startsWithKeyword(trimmed, "~event") or
+                        startsWithKeyword(trimmed, "~tor") or
                         startsWithKeyword(trimmed, "~import") or
                         startsWithKeyword(trimmed, "~pub") or
                         startsWithKeyword(trimmed, "~for") or
@@ -3553,7 +3563,7 @@ pub const Parser = struct {
 
             // Find the < to extract scope type
             const angle_start = std.mem.lastIndexOf(u8, trimmed_after[0 .. quote_start + 1], "<") orelse {
-                try self.reporter.addError(.PARSE001, self.current, 0, "File source syntax requires scope type: ~event <type>\"path\"", .{});
+                try self.reporter.addError(.PARSE001, self.current, 0, "File source syntax requires scope type: ~tor <type>\"path\"", .{});
                 return error.ParseError;
             };
             const phantom_type = trimmed_after[angle_start + 1 .. quote_start];
@@ -4040,7 +4050,7 @@ pub const Parser = struct {
                             .PARSE001,
                             self.current,
                             0,
-                            "expected a binding name after `:` (e.g. `~event(...): result |> ...`)",
+                            "expected a binding name after `:` (e.g. `~greet(...): result |> ...`)",
                             .{},
                         );
                         return error.ParseError;
@@ -4056,7 +4066,7 @@ pub const Parser = struct {
                                 .PARSE001,
                                 self.current,
                                 0,
-                                "unterminated binding annotation; expected `]` (e.g. `~event(...): r[mutable] |> ...`)",
+                                "unterminated binding annotation; expected `]` (e.g. `~greet(...): r[mutable] |> ...`)",
                                 .{},
                             );
                             return error.ParseError;
@@ -4100,7 +4110,7 @@ pub const Parser = struct {
                 .PARSE001,
                 self.current,
                 0,
-                "bind a result with `:` not `->` (e.g. `~event(...): result |> ...`) — `->` is the produce glyph",
+                "bind a result with `:` not `->` (e.g. `~greet(...): result |> ...`) — `->` is the produce glyph",
                 .{},
             );
             return error.ParseError;
@@ -4628,7 +4638,7 @@ pub const Parser = struct {
                 .PARSE003,
                 self.current,
                 1,
-                "subflow implementation requires '=' (e.g., ~event = delegate())",
+                "subflow implementation requires '=' (e.g., ~greet = delegate())",
                 .{},
             );
             return error.InvalidSyntax;
@@ -7397,7 +7407,7 @@ pub const Parser = struct {
                 .PARSE001,
                 self.current,
                 0,
-                "Nested flows (~) are not allowed inside continuations. Use a bare event call instead: remove the ~ prefix.",
+                "Nested flows (~) are not allowed inside continuations. Use a bare tor call instead: remove the ~ prefix.",
                 .{},
             );
             return error.ParseError;
@@ -7844,7 +7854,7 @@ pub const Parser = struct {
                         .PARSE003,
                         self.current + 1,
                         1,
-                        "branch constructor field '{s}' contains a function call — branch constructors must be pure. Use event chaining instead.",
+                        "branch constructor field '{s}' contains a function call — branch constructors must be pure. Use tor chaining instead.",
                         .{field_name},
                     );
                     return error.ParseError;
@@ -8546,7 +8556,7 @@ pub const Parser = struct {
                             .PARSE003,
                             self.current - 1,
                             1,
-                            "'->' is not allowed in a continuation branch declaration - the bare-return arrow belongs on the event signature (`event x {{}} -> T`), not a `|` branch",
+                            "'->' is not allowed in a continuation branch declaration - the bare-return arrow belongs on the tor signature (`tor x {{}} -> T`), not a `|` branch",
                             .{},
                         );
                         return error.ParseError;
@@ -8787,7 +8797,7 @@ pub const Parser = struct {
                     .PARSE003,
                     self.current,
                     1,
-                    "'[]const u8' is not a Koru event-payload type. Use 'string' for text — it lowers to []const u8 for Zig",
+                    "'[]const u8' is not a Koru tor-payload type. Use 'string' for text — it lowers to []const u8 for Zig",
                     .{},
                 );
                 return error.ParseError;
@@ -9237,7 +9247,7 @@ pub const Parser = struct {
                     .PARSE003,
                     self.current + 1,
                     1,
-                    "'[]const u8' is not a Koru event-payload type. Use 'string' for text — it lowers to []const u8 for Zig",
+                    "'[]const u8' is not a Koru tor-payload type. Use 'string' for text — it lowers to []const u8 for Zig",
                     .{},
                 );
                 return error.ParseError;
@@ -9682,7 +9692,7 @@ test "parser produces AST from simple event" {
     // spelling PARSE003 now rejects. branches[] is empty; the output lives on
     // return_type.
     const source =
-        \\~event compute { x: i32 } -> i32
+        \\~tor compute { x: i32 } -> i32
     ;
 
     var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
@@ -9852,7 +9862,7 @@ test "parser handles Source in event field" {
     const allocator = std.testing.allocator;
 
     const source =
-        \\~event macro { code: Source } -> Source
+        \\~tor macro { code: Source } -> Source
     ;
 
     var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
@@ -9872,7 +9882,7 @@ test "parser validates branch names" {
     // Valid branch name
     {
         const source =
-            \\~event test {}
+            \\~tor test {}
             \\| valid-branch i32
             \\| another-one string
         ;
@@ -9895,7 +9905,7 @@ test "parser validates branch names" {
     // Invalid branch name starting with number
     {
         const source =
-            \\~event test {}
+            \\~tor test {}
             \\| 123invalid i32
         ;
 
@@ -9917,7 +9927,7 @@ test "parser validates branch constructors" {
     // Valid branch constructor
     {
         const source =
-            \\~event test {}
+            \\~tor test {}
             \\| ok string
             \\
             \\~test()
@@ -9936,7 +9946,7 @@ test "parser validates branch constructors" {
     // Invalid branch constructor with spaces in name
     {
         const source =
-            \\~event test {}
+            \\~tor test {}
             \\| ok string
             \\
             \\~test()
@@ -9958,7 +9968,7 @@ test "parser handles shorthand notation in branch constructors" {
     const allocator = std.testing.allocator;
 
     const source =
-        \\~event test {}
+        \\~tor test {}
         \\| ok { id: i32, value: i32 }
         \\
         \\~test => ok { r.user.id, 0 }
@@ -10165,7 +10175,7 @@ test "parser rejects single empty branch as redundant" {
     const allocator = std.testing.allocator;
 
     const source =
-        \\~event done {}
+        \\~tor done {}
         \\| done
     ;
 
@@ -10181,14 +10191,14 @@ test "parser rejects single empty branch as redundant" {
     const first_error = parser.reporter.errors.items[0];
     try std.testing.expectEqual(errors.ErrorCode.PARSE003, first_error.code);
     try std.testing.expect(std.mem.indexOf(u8, first_error.message, "single branch 'done'") != null);
-    try std.testing.expect(std.mem.indexOf(u8, first_error.message, "void event") != null);
+    try std.testing.expect(std.mem.indexOf(u8, first_error.message, "void tor") != null);
 }
 
 test "parser allows void event with zero branches" {
     const allocator = std.testing.allocator;
 
     const source =
-        \\~event done {}
+        \\~tor done {}
     ;
 
     var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
@@ -10213,7 +10223,7 @@ test "parser rejects single identity branch — collapse to bare return" {
     // parser enforces it identically (Lars-ruled 2026-07-15: identity single
     // payloads are handled the same as any other single continuation branch).
     const source =
-        \\~event result {}
+        \\~tor result {}
         \\| ok i32
     ;
 
@@ -10235,7 +10245,7 @@ test "parser allows two empty branches" {
     const allocator = std.testing.allocator;
 
     const source =
-        \\~event result {}
+        \\~tor result {}
         \\| ok
         \\| err
     ;

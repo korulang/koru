@@ -10,7 +10,7 @@
 // optional-arm intersection.
 import std/io
 
-pub event gen { n: usize }
+pub tor gen { n: usize }
 ! each usize
 ! ?tap usize
 | done

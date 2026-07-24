@@ -4,7 +4,7 @@
 
 const std = @import("std");
 
-~event greet {
+~tor greet {
     first: string,
     last: string,
     age: u32

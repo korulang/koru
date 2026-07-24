@@ -11,7 +11,7 @@
 
 ~import std/io
 
-~pub event each-i32 { items: []const i32 }
+~pub tor each-i32 { items: []const i32 }
 ! item i32
 
 ~proc each-i32|zig {

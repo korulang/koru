@@ -8,7 +8,7 @@
 
 ~import std/testing
 
-~event get-data {}
+~tor get-data {}
 | ok u32
 | error-result u32
 

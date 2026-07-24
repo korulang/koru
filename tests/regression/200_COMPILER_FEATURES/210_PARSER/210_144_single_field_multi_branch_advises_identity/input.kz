@@ -2,6 +2,6 @@
 // the identity form `| ok T` (drop the redundant braces) — the single-branch
 // collapse to bare-return does NOT apply here, two branches are a real tag
 // union. Guards that the sole-branch advice fix does not regress this case.
-~event compute {}
+~tor compute {}
 | ok { value: i32 }
 | err string

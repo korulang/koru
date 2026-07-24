@@ -31,7 +31,7 @@
 const std = @import("std");
 const Handle = struct { n: i32 };
 
-~event make {}
+~tor make {}
 | ok *Handle<owned!>
 ~proc make|zig {
     const h = std.heap.page_allocator.create(Handle) catch unreachable;
@@ -40,14 +40,14 @@ const Handle = struct { n: i32 };
 }
 
 // BORROW: bare <owned>, no consume — the obligation stays with the caller.
-~event touch { h: *Handle<owned> }
+~tor touch { h: *Handle<owned> }
 ~proc touch|zig { h.n += 1; }
 
-~event report { n: i32 }
+~tor report { n: i32 }
 ~proc report|zig { std.debug.print("n={}\n", .{n}); }
 
 // Discharge — the ONLY consumer of <!owned>.
-~event dispose { h: *Handle<!owned> }
+~tor dispose { h: *Handle<!owned> }
 ~proc dispose|zig { std.heap.page_allocator.destroy(h); }
 
 // h0 is borrowed by `touch`, then the pipeline CONTINUES to `report`.

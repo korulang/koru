@@ -6,7 +6,7 @@
 const std = @import("std");
 
 // Event with optional branches that have complex logic
-~event analyze { data: string }
+~tor analyze { data: string }
 | success u32           // REQUIRED
 | ?warning { code: u32, msg: string }  // OPTIONAL - expensive validation
 | ?debug string      // OPTIONAL - detailed logging

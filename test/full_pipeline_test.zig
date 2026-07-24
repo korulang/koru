@@ -20,7 +20,7 @@ test "full vertical: parse -> check -> emit" {
 
     // A complete Koru program
     const source =
-        \\~event file.read { path: string }
+        \\~tor file.read { path: string }
         \\| success string
         \\| failure u32
         \\
@@ -35,7 +35,7 @@ test "full vertical: parse -> check -> emit" {
         \\    return .{ .success = contents };
         \\}
         \\
-        \\~event log.message { msg: string }
+        \\~tor log.message { msg: string }
         \\| logged
         \\| err string
         \\
@@ -44,7 +44,7 @@ test "full vertical: parse -> check -> emit" {
         \\    return .{ .logged = {} };
         \\}
         \\
-        \\~event proc.exit { code: u32 }
+        \\~tor proc.exit { code: u32 }
         \\| exited
         \\| err string
         \\

@@ -5,7 +5,7 @@
 
 ~import std/io
 
-~pub event request { payload: i32 }
+~pub tor request { payload: i32 }
 ! double i32 -> i32
 | done i32
 

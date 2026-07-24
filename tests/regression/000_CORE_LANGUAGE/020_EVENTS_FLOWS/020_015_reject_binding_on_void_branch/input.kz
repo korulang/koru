@@ -7,7 +7,7 @@
 // the full linear discipline: payload => bind or discard; void => bindingless.
 const std = @import("std");
 
-~event check {}
+~tor check {}
 | ok i32
 | done
 

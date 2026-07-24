@@ -5,7 +5,7 @@
 // produces `failed` → call site prints "caught: negative".
 ~import std/io
 
-~pub event stage-a { ctx: i64 }
+~pub tor stage-a { ctx: i64 }
 | ctx i64
 | failed string
 ~proc stage-a|zig {
@@ -13,12 +13,12 @@
     return .{ .ctx = ctx + 1 };
 }
 
-~pub event stage-b { ctx: i64 }
+~pub tor stage-b { ctx: i64 }
 | ctx i64
 | failed string
 ~proc stage-b|zig { return .{ .ctx = ctx * 2 }; }
 
-~pub event run { ctx: i64 }
+~pub tor run { ctx: i64 }
 | ctx i64
 | failed string
 ~run = stage-a

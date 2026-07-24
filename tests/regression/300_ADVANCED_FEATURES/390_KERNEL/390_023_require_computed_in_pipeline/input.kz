@@ -14,7 +14,7 @@
     mass: f64,
 }
 
-~event get-count {} -> u32
+~tor get-count {} -> u32
 
 ~proc get-count|zig {
     return 3;

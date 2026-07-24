@@ -5,23 +5,23 @@
 const std = @import("std");
 ~import std/taps
 
-~event file.read {}
+~tor file.read {}
 
 ~proc file.read|zig {
 }
 
-~event file.write {}
+~tor file.write {}
 
 ~proc file.write|zig {
     std.debug.print("Writing\n", .{});
 }
 
-~event network.fetch {}
+~tor network.fetch {}
 
 ~proc network.fetch|zig {
 }
 
-~event logger { caller: string }
+~tor logger { caller: string }
 
 ~proc logger|zig {
     std.debug.print("write called from: {s}\n", .{caller});

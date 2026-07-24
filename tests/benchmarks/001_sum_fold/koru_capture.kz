@@ -7,7 +7,7 @@ const std = @import("std");
 
 const N: usize = 100_000_000;  // 100M
 
-~event print_result { sum: i64 }
+~tor print_result { sum: i64 }
 
 ~proc print_result|zig {
     std.debug.print("Koru capture sum: {d}\n", .{sum});

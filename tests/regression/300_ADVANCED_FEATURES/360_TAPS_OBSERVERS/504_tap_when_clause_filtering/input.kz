@@ -26,7 +26,7 @@ const Entity = struct {
 };
 
 // Producer event - broadcasts entities
-~pub event process-entity { e: Entity }
+~pub tor process-entity { e: Entity }
 | entity Entity
 
 ~proc process-entity|zig {
@@ -37,7 +37,7 @@ const Entity = struct {
 ~tap(process-entity -> *)
 | entity ent when ent.has_damage |> handle-damage(e: ent)
 
-~event handle-damage { e: Entity }
+~tor handle-damage { e: Entity }
 ~proc handle-damage|zig {
     std.debug.print("DAMAGE on Entity {d}!\n", .{ e.id });
 }
@@ -50,10 +50,10 @@ const entities = [_]Entity{
     .{ .id = 4, .health = 30, .has_damage = true },    // Should trigger
 };
 
-~event noop {}
+~tor noop {}
 ~proc noop|zig {}
 
-~event print-done {}
+~tor print-done {}
 ~proc print-done|zig {
     std.debug.print("Done!\n", .{});
 }

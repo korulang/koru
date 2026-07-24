@@ -12,7 +12,7 @@
 const std = @import("std");
 
 // Event interface - pure, platform-agnostic
-~pub event double-values { data: []f32 }
+~pub tor double-values { data: []f32 }
 | done { }
 
 // GPU implementation using GLSL compute shader
@@ -43,7 +43,7 @@ const std = @import("std");
     }
 
 // Test event - verifies GPU execution
-~pub event test-gpu-execution { }
+~pub tor test-gpu-execution { }
 
 ~proc test-gpu-execution|zig {
     var values = [_]f32{ 1.0, 2.0, 3.0, 4.0, 5.0 };

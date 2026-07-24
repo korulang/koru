@@ -5,7 +5,7 @@
 
 ~import std/io
 
-~[comptime|transform]event capture.source {
+~[comptime|transform]tor capture.source {
     source: Source,
     item: *const Item
 } -> Item

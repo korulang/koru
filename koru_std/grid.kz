@@ -40,7 +40,7 @@ pub const Grid_i64 = struct {
   model lands (shared with std/list and std/string). The `| err` branch is the
   proven shape; upgrading allocation failure to a `| ?!oom` panic branch is the
   immediate follow-up (panic-branches' first real collection customer).
-]pub event new { rows: usize, cols: usize }
+]pub tor new { rows: usize, cols: usize }
 | grid *Grid_i64<grid!>
 | err string
 
@@ -63,7 +63,7 @@ pub const Grid_i64 = struct {
 // ============================================
 
 // Set the cell at (x = column, y = row) to v. Void, chains with `|>`.
-~pub event set { g: *Grid_i64<grid>, x: usize, y: usize, v: i64 }
+~pub tor set { g: *Grid_i64<grid>, x: usize, y: usize, v: i64 }
 
 ~proc set|zig {
     g.data[y * g.cols + x] = v;
@@ -72,7 +72,7 @@ pub const Grid_i64 = struct {
 // Reset every cell to 0 in place (borrow). Lets a caller reuse one grid across
 // many logical passes instead of new/free-ing each time — the construct owning
 // the buffer lifecycle, which kills the per-pass alloc/fault tax.
-~pub event clear { g: *Grid_i64<grid> }
+~pub tor clear { g: *Grid_i64<grid> }
 
 ~proc clear|zig {
     @memset(g.data, 0);
@@ -80,7 +80,7 @@ pub const Grid_i64 = struct {
 
 // Set every flat-index cell in the AP {from, from+stride, ...} <= limit to 1.
 // Incremental (m += stride), matching C's strided marking — no per-mark multiply.
-~pub event strike { g: *Grid_i64<grid>, from: usize, stride: usize, limit: usize }
+~pub tor strike { g: *Grid_i64<grid>, from: usize, stride: usize, limit: usize }
 
 ~proc strike|zig {
     var m: usize = from;
@@ -94,14 +94,14 @@ pub const Grid_i64 = struct {
 // ============================================
 
 // Cell value at (x, y).
-~pub event get { g: *Grid_i64<grid>, x: usize, y: usize } -> i64
+~pub tor get { g: *Grid_i64<grid>, x: usize, y: usize } -> i64
 
 ~proc get|zig {
     return g.data[y * g.cols + x];
 }
 
 // Count of nonzero cells across the whole grid.
-~pub event count-nonzero { g: *Grid_i64<grid> } -> i64
+~pub tor count-nonzero { g: *Grid_i64<grid> } -> i64
 
 ~proc count-nonzero|zig {
     var n: i64 = 0;
@@ -113,7 +113,7 @@ pub const Grid_i64 = struct {
 
 // Count of zero cells in the flat index range [lo, hi). A tight reduction (the
 // IR's reduce field) — replaces a per-cell capture-fold count in callers.
-~pub event count-zeros { g: *Grid_i64<grid>, lo: usize, hi: usize } -> i64
+~pub tor count-zeros { g: *Grid_i64<grid>, lo: usize, hi: usize } -> i64
 
 ~proc count-zeros|zig {
     var n: i64 = 0;
@@ -125,7 +125,7 @@ pub const Grid_i64 = struct {
 }
 
 // Sum of all cell values across the whole grid.
-~pub event sum { g: *Grid_i64<grid> } -> i64
+~pub tor sum { g: *Grid_i64<grid> } -> i64
 
 ~proc sum|zig {
     var t: i64 = 0;
@@ -139,7 +139,7 @@ pub const Grid_i64 = struct {
 // Teardown (consume — discharges <!grid>)
 // ============================================
 
-~pub event free { g: *Grid_i64<!grid> }
+~pub tor free { g: *Grid_i64<!grid> }
 
 ~proc free|zig {
     g.deinit();

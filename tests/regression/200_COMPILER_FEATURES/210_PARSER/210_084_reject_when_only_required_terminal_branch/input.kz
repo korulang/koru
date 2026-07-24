@@ -21,7 +21,7 @@
 // only covered by a guarded handler.
 // ============================================================================
 
-~event compute { x: i32 }
+~tor compute { x: i32 }
 | ok i32
 | err string
 

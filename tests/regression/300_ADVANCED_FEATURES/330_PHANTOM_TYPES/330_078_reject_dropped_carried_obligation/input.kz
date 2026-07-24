@@ -8,7 +8,7 @@
 const std = @import("std");
 const Handle = struct { n: i32 };
 
-~event make {} -> *Handle<owned!>
+~tor make {} -> *Handle<owned!>
 ~proc make|zig {
     const h = std.heap.page_allocator.create(Handle) catch unreachable;
     h.* = .{ .n = 0 };
@@ -17,7 +17,7 @@ const Handle = struct { n: i32 };
 
 // Consumes the carried handle. `again` re-issues (linearity OK on that edge),
 // but `stop` drops it: a void branch with no <owned!> output and no disposal.
-~event step { h: *Handle<!owned> }
+~tor step { h: *Handle<!owned> }
 | again *Handle<owned!>
 | stop i32
 ~proc step|zig {
@@ -28,10 +28,10 @@ const Handle = struct { n: i32 };
     return .{ .stop = h.n };
 }
 
-~event spin { h: *Handle<!owned> }
+~tor spin { h: *Handle<!owned> }
 | finished i32
 
-~event report { n: i32 }
+~tor report { n: i32 }
 ~proc report|zig {
     std.debug.print("n={}\n", .{n});
 }

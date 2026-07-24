@@ -5,7 +5,7 @@
 // `=>` rejection (KORU102, 400_122).
 ~import std/io
 
-~pub event query { q: string }
+~pub tor query { q: string }
 ! ask string -> i32
 | done i32
 

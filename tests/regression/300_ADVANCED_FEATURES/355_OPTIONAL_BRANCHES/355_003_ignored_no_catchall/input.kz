@@ -9,7 +9,7 @@
 
 // Event with required + multiple optional branches
 // success is REQUIRED, warning and debug are OPTIONAL (ignored)
-~event analyze { value: u32 }
+~tor analyze { value: u32 }
 | success u32
 | ?warning string
 | ?debug string

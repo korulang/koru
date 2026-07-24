@@ -5,7 +5,7 @@
 // glyph ambiguity Phase 2 closes. Twin of the positive 400_116/400_117.
 ~import std/io
 
-~pub event query { q: string }
+~pub tor query { q: string }
 ! ask string -> i32
 | done i32
 

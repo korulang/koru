@@ -1,1 +1,1 @@
-Resource 'i' obligation <taken!> was not discharged. No event accepts <!taken>.
+Resource 'i' obligation <taken!> was not discharged. No tor accepts <!taken>.

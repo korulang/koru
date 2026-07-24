@@ -17,7 +17,7 @@ const std = @import("std");
 // This import has 3 segments after $app and should FAIL
 ~import app/test_lib/net/tcp
 
-~event test {}
+~tor test {}
 
 ~proc test|zig {
     std.debug.print("Test: optional parent\n", .{});

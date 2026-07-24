@@ -36,7 +36,7 @@
     "description": "Install npm packages from requires.npm declarations"
 }
 
-~[comptime|command]pub event install {
+~[comptime|command]pub tor install {
     program: *const Program,
     allocator: __koru_std.mem.Allocator,
     argv: []const []const u8,
@@ -129,7 +129,7 @@
 }
 
 // Koru packages distributed via npm
-~[comptime|norun]pub event requires.npm { source: Source }
+~[comptime|norun]pub tor requires.npm { source: Source }
 
 ~proc requires.npm|zig {
     // Void event - no return value needed
@@ -137,21 +137,21 @@
 }
 
 // Koru packages distributed via Cargo
-~[comptime|norun]pub event requires.cargo { source: Source }
+~[comptime|norun]pub tor requires.cargo { source: Source }
 
 ~proc requires.cargo|zig {
     // Void event - collected by compiler
 }
 
 // Koru packages distributed via Go modules
-~[comptime|norun]pub event requires.go { source: Source }
+~[comptime|norun]pub tor requires.go { source: Source }
 
 ~proc requires.go|zig {
     // Void event - collected by compiler
 }
 
 // Koru packages distributed via pip
-~[comptime|norun]pub event requires.pip { source: Source }
+~[comptime|norun]pub tor requires.pip { source: Source }
 
 ~proc requires.pip|zig {
     // Void event - collected by compiler

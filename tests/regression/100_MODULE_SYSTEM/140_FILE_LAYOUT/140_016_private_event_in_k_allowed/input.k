@@ -4,7 +4,7 @@
 // removal of KORU111 Rule 1 ("private event in contract file").
 import std/io
 
-event add-one { value: i32 } -> i32
+tor add-one { value: i32 } -> i32
 
 add-one -> value + 1
 

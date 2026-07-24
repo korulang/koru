@@ -10,7 +10,7 @@
 // from inside an effect-handler flow. So this bug blocks the vaxis pattern.
 const std = @import("std");
 
-~pub event emit-one { }
+~pub tor emit-one { }
 ! step usize
 | done usize
 
@@ -19,7 +19,7 @@ const std = @import("std");
     return .{ .done = 35 };
 }
 
-~pub event plain { v: usize }
+~pub tor plain { v: usize }
 
 ~proc plain|zig {
     std.debug.print("plain = {d}\n", .{v});

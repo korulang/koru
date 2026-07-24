@@ -1,2 +1,2 @@
 // This should fail: malformed event syntax with missing closing brace
-~event broken-syntax { x: i32  | done i32
+~tor broken-syntax { x: i32  | done i32

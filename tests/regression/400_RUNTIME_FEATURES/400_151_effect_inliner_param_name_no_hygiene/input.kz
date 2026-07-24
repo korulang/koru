@@ -32,12 +32,12 @@
 
 ~import std/io
 
-~pub event get-count { n: i32 } -> i32
+~pub tor get-count { n: i32 } -> i32
 ~proc get-count|zig {
     return n;
 }
 
-~pub event each-i32 { v: []const i32 }
+~pub tor each-i32 { v: []const i32 }
 ! item i32
 
 ~proc each-i32|zig {

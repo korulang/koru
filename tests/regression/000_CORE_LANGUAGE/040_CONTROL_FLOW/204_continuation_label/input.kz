@@ -8,7 +8,7 @@
 const std = @import("std");
 
 // Simple counter event
-~event counter { n: i32 }
+~tor counter { n: i32 }
 | next i32
 | done i32
 
@@ -23,7 +23,7 @@ const std = @import("std");
 }
 
 // Start event to kick things off
-~event start {}
+~tor start {}
 
 ~proc start|zig {
     std.debug.print("Starting counter...\n", .{});

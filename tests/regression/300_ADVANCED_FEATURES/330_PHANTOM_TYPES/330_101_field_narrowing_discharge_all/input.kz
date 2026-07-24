@@ -17,7 +17,7 @@
 const std = @import("std");
 const Handle = struct { n: i32 };
 
-~event make2 { id: usize } -> { h: *Handle<owned!>, g: *Handle<owned!> }
+~tor make2 { id: usize } -> { h: *Handle<owned!>, g: *Handle<owned!> }
 ~proc make2|zig {
     const h = std.heap.page_allocator.create(Handle) catch unreachable;
     const g = std.heap.page_allocator.create(Handle) catch unreachable;
@@ -25,6 +25,6 @@ const Handle = struct { n: i32 };
     return .{ .h = h, .g = g };
 }
 
-~event dispose { x: *Handle<!owned> }
+~tor dispose { x: *Handle<!owned> }
 ~proc dispose|zig { std.heap.page_allocator.destroy(x); }
 ~make2(id: 1): s |> dispose(x: s.h): _ |> dispose(x: s.g): _ |> std/io:print.ln("clean")

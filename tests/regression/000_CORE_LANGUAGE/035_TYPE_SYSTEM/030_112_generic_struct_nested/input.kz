@@ -20,7 +20,7 @@ const std = @import("std");
     inner: box#i64,
 }
 
-~event test-nested {}
+~tor test-nested {}
 
 ~proc test-nested|zig {
     const inner = @"box#i64"{ .value = 77 };

@@ -9,7 +9,7 @@
 // (discard the payload but actually act).
 ~import std/io
 
-~pub event poll { x: i64 }
+~pub tor poll { x: i64 }
 ! ?tick i64
 | done
 

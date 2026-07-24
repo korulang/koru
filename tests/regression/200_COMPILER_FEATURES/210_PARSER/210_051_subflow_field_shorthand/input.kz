@@ -24,12 +24,12 @@ const Entity = struct {
     id: u32,
 };
 
-~pub event test-event { e: Entity } -> Entity
+~pub tor test-event { e: Entity } -> Entity
 
 // Identity branch syntax - result IS the Entity
 ~test-event -> e
 
-~event print-result { e: Entity }
+~tor print-result { e: Entity }
 ~proc print-result|zig {
     std.debug.print("Got entity {d}\n", .{ e.id });
 }

@@ -4,7 +4,7 @@
 // resume type; a discard produces nothing.
 // ============================================================================
 
-~pub event prompt-user { question: string }
+~pub tor prompt-user { question: string }
 ! ask string -> string
 | done string
 

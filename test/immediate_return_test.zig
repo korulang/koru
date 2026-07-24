@@ -7,7 +7,7 @@ test "parse immediate return syntax" {
     const allocator = testing.allocator;
     
     const source =
-        \\~event test.mock { input: i32 }
+        \\~tor test.mock { input: i32 }
         \\| success { value: i32, label: string }
         \\| failure
         \\
@@ -45,7 +45,7 @@ test "parse immediate return with multiple fields" {
     const allocator = testing.allocator;
     
     const source =
-        \\~event user.get { id: i32 }
+        \\~tor user.get { id: i32 }
         \\| found { name: string, email: string }
         \\
         \\~user.get => found { name: "Alice", email: "alice@test.com" }
@@ -74,7 +74,7 @@ test "parse regular subflow still works" {
     const allocator = testing.allocator;
     
     const source =
-        \\~event process.data { input: i32 }
+        \\~tor process.data { input: i32 }
         \\| done { result: i32 }
         \\
         \\~process.data = compute.run(value: input)

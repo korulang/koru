@@ -9,7 +9,7 @@
 // omits `! focus-in` / `! focus-out`.)
 ~import std/io
 
-~pub event beat {}
+~pub tor beat {}
 ! ?tick
 | done i64
 

@@ -14,10 +14,10 @@
 // Fix shape: the JS emitter should rename the dispatch binding when it
 // collides with a local at the call site, OR skip the binding emit when the
 // payload expression IS the binding name (`const c = c` is a no-op).
-pub event run { n: u64 }
+pub tor run { n: u64 }
 ! key u64
-pub event onKey { ch: u64 }
-pub event report {}
+pub tor onKey { ch: u64 }
+pub tor report {}
 
 run(n: 1)
 ! key c |> onKey(ch: c)

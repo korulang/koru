@@ -9,7 +9,7 @@
 const std = @import("std");
 
 // Simulate an imported module with an event
-~event mymodule.tick {}
+~tor mymodule.tick {}
 | next u32
 | done
 

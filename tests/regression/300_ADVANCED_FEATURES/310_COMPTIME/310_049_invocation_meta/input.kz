@@ -6,7 +6,7 @@
 const std = @import("std");
 
 // A comptime event that receives metadata about its invocation
-~[comptime]pub event check-config { meta: InvocationMeta }
+~[comptime]pub tor check-config { meta: InvocationMeta }
 | matched string
 
 ~proc check-config|zig {

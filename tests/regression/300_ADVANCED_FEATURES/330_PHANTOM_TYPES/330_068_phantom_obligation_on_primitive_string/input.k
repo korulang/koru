@@ -11,11 +11,11 @@
 
 import std/io
 
-pub event get-input {} -> string<unsanitized!>
+pub tor get-input {} -> string<unsanitized!>
 
 get-input -> "user input data"
 
-event sanitize { input: string<!unsanitized> } -> string
+tor sanitize { input: string<!unsanitized> } -> string
 
 sanitize -> input
 

@@ -11,7 +11,7 @@ const std = @import("std");
 
 const File = struct { handle: i32 };
 
-~event open { path: string }
+~tor open { path: string }
 | opened *File<opened!>
 
 ~proc open|zig {
@@ -20,12 +20,12 @@ const File = struct { handle: i32 };
     return .{ .opened = f };
 }
 
-~event write { file: *File<opened>, data: string }
+~tor write { file: *File<opened>, data: string }
 
 ~proc write|zig {
 }
 
-~event close { file: *File<!opened> }
+~tor close { file: *File<!opened> }
 
 ~proc close|zig {
     std.heap.page_allocator.destroy(file);

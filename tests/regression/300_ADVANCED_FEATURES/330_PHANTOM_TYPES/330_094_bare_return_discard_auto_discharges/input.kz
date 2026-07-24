@@ -5,11 +5,11 @@
 // name so the inserted dispose() can reference it (never a bare `_` in Zig).
 const std = @import("std");
 const Handle = struct { n: i32 };
-~event make {} -> *Handle<owned!>
+~tor make {} -> *Handle<owned!>
 ~proc make|zig { const h = std.heap.page_allocator.create(Handle) catch unreachable; h.* = .{ .n = 5 }; return h; }
-~event bump { h: *Handle<!owned> } -> *Handle<owned!>
+~tor bump { h: *Handle<!owned> } -> *Handle<owned!>
 ~proc bump|zig { h.n += 1; return h; }
-~event dispose { h: *Handle<!owned> }
+~tor dispose { h: *Handle<!owned> }
 ~proc dispose|zig { std.debug.print("disposed n={}\n", .{h.n}); std.heap.page_allocator.destroy(h); }
 
 ~make(): h |> bump(h): _

@@ -9,10 +9,10 @@
 
 const std = @import("std");
 
-~pub event outer {} -> i32
+~pub tor outer {} -> i32
 
-~pub event inner { x: i32 }
+~pub tor inner { x: i32 }
 
 ~outer(): d |> ~inner(x: d.value) |> nop()
 
-~pub event nop {}
+~pub tor nop {}

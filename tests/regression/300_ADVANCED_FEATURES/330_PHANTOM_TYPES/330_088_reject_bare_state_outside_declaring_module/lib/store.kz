@@ -9,14 +9,14 @@
 // must name its own module rather than being implied by the type.
 const std = @import("std");
 
-~pub event make-secret { payload: string } -> string<secret!>
+~pub tor make-secret { payload: string } -> string<secret!>
 
 ~proc make-secret|zig {
     return payload;
 }
 
 // Consume the secret obligation: discharges <secret!> -> a plain value.
-~pub event reveal { s: string<!secret> } -> string
+~pub tor reveal { s: string<!secret> } -> string
 
 ~proc reveal|zig {
     return s;

@@ -5,7 +5,7 @@
 // its produces are literals; this exercises the binder itself.) Base surface: 320_133.
 import std/io
 
-pub event classify { k: i64 } -> i64
+pub tor classify { k: i64 } -> i64
 
 classify = cond(k)
 | c v when v > 2 and v < 5 -> v * 10

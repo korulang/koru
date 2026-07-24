@@ -4,7 +4,7 @@
 const std = @import("std");
 
 // Count event - loop controller
-~event count { i: u64 }
+~tor count { i: u64 }
 | next u64
 
 ~proc count|zig {
@@ -15,7 +15,7 @@ const std = @import("std");
 }
 
 // Print event
-~event print { i: u64 }
+~tor print { i: u64 }
 
 ~proc print|zig {
     std.debug.print("i = {}\n", .{i});

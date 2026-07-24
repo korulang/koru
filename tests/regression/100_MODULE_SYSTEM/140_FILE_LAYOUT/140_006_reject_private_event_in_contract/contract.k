@@ -3,4 +3,4 @@
 // implementation), so nothing inside .k can call a private event, and
 // nothing outside can see it. Declaring it is a confused intent.
 
-event compute { x: u32 } -> u32
+tor compute { x: u32 } -> u32

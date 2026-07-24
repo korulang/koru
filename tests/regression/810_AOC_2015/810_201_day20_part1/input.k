@@ -10,11 +10,11 @@
 import std/io
 import std/fs
 
-pub event presents-check { target: i64, house: i64, lazy: i64 }
+pub tor presents-check { target: i64, house: i64, lazy: i64 }
 | found i64
 | next { target: i64, house: i64, lazy: i64 }
 
-pub event hunt { target: i64 } -> i64
+pub tor hunt { target: i64 } -> i64
 
 presents-check = capture { sum: 0[i64] }
 ! as a |> for(1..@as(usize, @intCast(house + 1)))
@@ -36,7 +36,7 @@ capture { goal: 0[i64] }
 | captured r |> hunt(target: r.goal)
     | house h |> std/io:print.ln("{{ h:d }}")
 
-pub event to-int { s: string } -> i64
+pub tor to-int { s: string } -> i64
 
 to-int = capture { n: 0[i64] }
 ! as a |> for(s)

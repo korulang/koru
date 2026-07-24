@@ -5,7 +5,7 @@
 // the resume sum as branches mapped to terminals, 240-style.
 import std/io
 
-pub event request { payload: i64 }
+pub tor request { payload: i64 }
 ! ask | halved i64 | timeout
 | done i64
 

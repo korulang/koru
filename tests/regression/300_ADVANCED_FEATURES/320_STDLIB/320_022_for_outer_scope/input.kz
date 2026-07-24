@@ -17,14 +17,14 @@
 const std = @import("std");
 
 // Event that returns data we reference in the loop
-~event get-params {} -> { count: u32, items: [5]i32 }
+~tor get-params {} -> { count: u32, items: [5]i32 }
 
 ~proc get-params|zig {
     return .{ .count = 3, .items = .{ 10, 20, 30, 40, 50 } };
 }
 
 // Event to process items (void - no branches, for use inside for loop)
-~event process-item { value: i32 }
+~tor process-item { value: i32 }
 
 ~proc process-item|zig {
     std.debug.print("Processing: {d}\n", .{value});

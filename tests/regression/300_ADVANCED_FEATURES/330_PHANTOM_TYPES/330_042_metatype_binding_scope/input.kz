@@ -1,6 +1,6 @@
 ~import std/taps
 ~import std/io
-~event work {}
+~tor work {}
 ~proc work|zig {
 }
 ~tap(work -> *)

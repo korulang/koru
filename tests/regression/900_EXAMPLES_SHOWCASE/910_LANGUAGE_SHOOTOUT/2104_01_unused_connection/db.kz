@@ -18,7 +18,7 @@ const Transaction = struct { conn_handle: i32 };
 const QueryResult = struct { rows: i32 };
 
 // connect: creates connection with obligation to use it
-~pub event connect { host: string }
+~pub tor connect { host: string }
 | ok *Connection<open!>
 | err string
 
@@ -29,7 +29,7 @@ const QueryResult = struct { rows: i32 };
 }
 
 // begin: consumes connection obligation, creates transaction obligation
-~pub event begin { conn: *Connection<!open> }
+~pub tor begin { conn: *Connection<!open> }
 | ok *Transaction<active!>
 | err string
 
@@ -41,7 +41,7 @@ const QueryResult = struct { rows: i32 };
 }
 
 // execute: uses transaction WITHOUT consuming it (can call multiple times)
-~pub event execute { tx: *Transaction<active>, sql: string }
+~pub tor execute { tx: *Transaction<active>, sql: string }
 | ok { tx: *Transaction<active>, result: QueryResult }
 | err { tx: *Transaction<active>, msg: string }
 
@@ -53,7 +53,7 @@ const QueryResult = struct { rows: i32 };
 // commit: consumes transaction obligation - this is a MEANINGFUL END
 // [!] marks this as the default discharge for Transaction<active!>
 // Void event (no branches) so [!] works correctly
-~[!]pub event commit { tx: *Transaction<!active> }
+~[!]pub tor commit { tx: *Transaction<!active> }
 
 ~proc commit|zig {
     std.debug.print("COMMIT\n", .{});
@@ -62,7 +62,7 @@ const QueryResult = struct { rows: i32 };
 
 // rollback: consumes transaction obligation - this is also a MEANINGFUL END
 // Also marked [!] as alternative discharge
-~[!]pub event rollback { tx: *Transaction<!active> }
+~[!]pub tor rollback { tx: *Transaction<!active> }
 
 ~proc rollback|zig {
     std.debug.print("ROLLBACK\n", .{});

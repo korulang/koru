@@ -14,7 +14,7 @@
 
 ~import std/io
 
-~pub event probe {}
+~pub tor probe {}
 | got { a: i32], b: u8 }
 
 ~std/io:print.ln("hi")

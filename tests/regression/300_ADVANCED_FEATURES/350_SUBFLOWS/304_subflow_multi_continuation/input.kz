@@ -11,27 +11,27 @@ const std = @import("std");
 ~import std/io
 
 // Helper event: triples a number
-~event triple { value: i32 } -> i32
+~tor triple { value: i32 } -> i32
 
 ~proc triple|zig {
     return value * 3;
 }
 
 // Helper event: doubles a number
-~event double { value: i32 } -> i32
+~tor double { value: i32 } -> i32
 
 ~proc double|zig {
     return value * 2;
 }
 
 // Event to test
-~event process { input: i32 } -> i32
+~tor process { input: i32 } -> i32
 
 // Multi-continuation subflow: chains triple -> double -> final
 ~process = triple(value: input): t |> double(value: t): d -> d
 
 // Helper to verify and print the result
-~event verify-and-print { value: i32 }
+~tor verify-and-print { value: i32 }
 
 ~proc verify-and-print|zig {
     if (value == 30) {

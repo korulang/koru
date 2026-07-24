@@ -12,7 +12,7 @@ pub const Point = struct {
     y: i32,
 };
 
-~event sumPoints { points: []const Point } -> { total_x: i32, total_y: i32 }
+~tor sumPoints { points: []const Point } -> { total_x: i32, total_y: i32 }
 
 ~proc sumPoints|zig {
     var tx: i32 = 0;
@@ -24,7 +24,7 @@ pub const Point = struct {
     return .{ .total_x = tx, .total_y = ty };
 }
 
-~event check { expected_x: i32, expected_y: i32, actual_x: i32, actual_y: i32 }
+~tor check { expected_x: i32, expected_y: i32, actual_x: i32, actual_y: i32 }
 
 ~proc check|zig {
     if (expected_x != actual_x or expected_y != actual_y) {

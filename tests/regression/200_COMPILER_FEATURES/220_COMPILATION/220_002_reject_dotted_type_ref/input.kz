@@ -7,5 +7,5 @@
 // rejected at the frontend — write `std/koru:ParseResult`.
 ~import std/koru
 
-~pub event inspect { result: std.parser:ParseResult }
+~pub tor inspect { result: std.parser:ParseResult }
 | ok bool

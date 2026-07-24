@@ -4,7 +4,7 @@ const std = @import("std");
 
 const File = struct { handle: i32 };
 
-~event open { path: string }
+~tor open { path: string }
 | opened *File<opened!>
 
 ~proc open|zig {
@@ -13,14 +13,14 @@ const File = struct { handle: i32 };
     return .{ .opened = f };
 }
 
-~event close { file: *File<!opened> }
+~tor close { file: *File<!opened> }
 
 ~proc close|zig {
     std.heap.page_allocator.destroy(file);
 }
 
 // Factory that escapes obligation
-~event create { path: string }
+~tor create { path: string }
 | created *File<opened!>
 
 ~create = open(path)

@@ -1,6 +1,6 @@
 // Submodule - this is what we explicitly import
 
-~pub event sub-hello {}
+~pub tor sub-hello {}
 
 ~proc sub-hello|zig {
 }

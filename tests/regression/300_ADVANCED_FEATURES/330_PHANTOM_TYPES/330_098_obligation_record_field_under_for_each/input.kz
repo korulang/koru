@@ -11,9 +11,9 @@
 ~import std/io
 const std = @import("std");
 const Handle = struct { n: i32 };
-~event make { id: usize } -> { h: *Handle<owned!>, n: i64 }
+~tor make { id: usize } -> { h: *Handle<owned!>, n: i64 }
 ~proc make|zig { const h = std.heap.page_allocator.create(Handle) catch unreachable; h.* = .{ .n = @intCast(id) }; return .{ .h = h, .n = @as(i64, @intCast(id)) * 10 }; }
-~event dispose { h: *Handle<!owned> }
+~tor dispose { h: *Handle<!owned> }
 ~proc dispose|zig { std.heap.page_allocator.destroy(h); }
 
 ~for(0..3)

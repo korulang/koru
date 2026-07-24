@@ -14,10 +14,10 @@ const Context = struct {
 };
 
 // Abstract event with multiple contexts
-~[comptime|abstract] event process { allocator: std.mem.Allocator } -> u32
+~[comptime|abstract] tor process { allocator: std.mem.Allocator } -> u32
 
 // Step 1: Create contexts
-~[comptime] event setup {} -> { c0: Context, c1: Context, c2: Context }
+~[comptime] tor setup {} -> { c0: Context, c1: Context, c2: Context }
 
 ~proc setup|zig {
     return .{ .ready = .{
@@ -28,7 +28,7 @@ const Context = struct {
 }
 
 // Step 2: Process array of contexts
-~[comptime] event consume { contexts: []const Context } -> u32
+~[comptime] tor consume { contexts: []const Context } -> u32
 
 ~proc consume|zig {
     std.debug.print("[COMPTIME] Processing {} contexts\n", .{contexts.len});
@@ -44,7 +44,7 @@ const Context = struct {
 // Trigger the flow
 ~process(allocator: std.heap.page_allocator): d |> report(count: d)
 
-~[comptime] event report { count: u32 }
+~[comptime] tor report { count: u32 }
 
 ~proc report|zig {
     if (count == 3) {

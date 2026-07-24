@@ -18,7 +18,7 @@
 // proc dispatches with an ordinary Zig `switch`.
 ~import std/io
 
-~pub event request { payload: i32 }
+~pub tor request { payload: i32 }
 ! ask i32
     | halved i32
     | timeout

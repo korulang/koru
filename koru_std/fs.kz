@@ -24,7 +24,7 @@ const std = @import("std");
   Marked aspirational so the gap is explicit and greppable, never hidden behind
   a clean API. Discipline to close it: a future --allow-aspirational gate flag
   plus koruc --list-aspirational. See the no-silent-degradation doctrine.
-]pub event read-lines { path: string }
+]pub tor read-lines { path: string }
 ! line string
 | done usize
 | failed string

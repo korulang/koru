@@ -24,7 +24,7 @@ const DT: f64 = 0.01;
 }
 
 // Parse command line args
-~event parse-args {} -> u32
+~tor parse-args {} -> u32
 
 ~proc parse-args|zig {
     const args = std.process.argsAlloc(std.heap.page_allocator) catch unreachable;
@@ -37,7 +37,7 @@ const DT: f64 = 0.01;
 }
 
 // Offset momentum so system has zero total momentum
-~event offset-momentum { bodies: []Body }
+~tor offset-momentum { bodies: []Body }
 
 ~proc offset-momentum|zig {
     var px: f64 = 0;
@@ -54,7 +54,7 @@ const DT: f64 = 0.01;
 }
 
 // Calculate total energy
-~event energy { bodies: []const Body } -> f64
+~tor energy { bodies: []const Body } -> f64
 
 ~proc energy|zig {
     var e: f64 = 0;
@@ -71,14 +71,14 @@ const DT: f64 = 0.01;
 }
 
 // Print energy value
-~event print-energy { e: f64 }
+~tor print-energy { e: f64 }
 
 ~proc print-energy|zig {
     std.debug.print("{d:.9}\n", .{e});
 }
 
 // Update positions after velocity changes
-~event advance-positions { bodies: []Body }
+~tor advance-positions { bodies: []Body }
 
 ~proc advance-positions|zig {
     for (bodies) |*b| {

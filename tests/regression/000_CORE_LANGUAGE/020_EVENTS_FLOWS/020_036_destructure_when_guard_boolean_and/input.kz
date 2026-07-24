@@ -13,7 +13,7 @@
 
 ~import std/io
 
-~pub event scan-pairs {}
+~pub tor scan-pairs {}
 ! pair { a: i64, b: i64 }
 | done
 

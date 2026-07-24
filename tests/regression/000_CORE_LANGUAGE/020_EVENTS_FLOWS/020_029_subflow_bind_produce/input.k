@@ -7,10 +7,10 @@
 // rejected ALL top-level `->` in an invocation line, killing the produce arm.
 import std/io
 
-pub event a { x: i64 } -> i64
+pub tor a { x: i64 } -> i64
 a -> x + 1
 
-pub event combo { x: i64 } -> i64
+pub tor combo { x: i64 } -> i64
 combo = a(x): r -> r
 
 combo(x: 5): out |> std/io:print.ln("{{ out:d }}")

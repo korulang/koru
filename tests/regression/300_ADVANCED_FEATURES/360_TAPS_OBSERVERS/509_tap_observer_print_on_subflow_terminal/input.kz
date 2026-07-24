@@ -8,10 +8,10 @@
 ~import std/io
 ~import std/taps
 
-~event inc { n: i32 } -> i32
+~tor inc { n: i32 } -> i32
 ~inc -> n + 1
 
-~event run { n: i32 } -> i32
+~tor run { n: i32 } -> i32
 ~run = inc(n): r -> r
 
 ~tap(inc -> *): v |> std/io:print.ln("tapped")

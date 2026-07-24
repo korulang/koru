@@ -2,7 +2,7 @@
 const std = @import("std");
 
 // Define the interface
-~event transform.data { input: u32 }
+~tor transform.data { input: u32 }
 | success { output: u32, status: []const u8 }
 | error { code: u32, message: []const u8 }
 
@@ -14,11 +14,11 @@ const std = @import("std");
 | invalid i |> error { code: 400, message: i.msg }
 
 // Helper events
-~event validate.input { value: u32 }
+~tor validate.input { value: u32 }
 | valid u32
 | invalid []const u8
 
-~event process.value { data: u32 }
+~tor process.value { data: u32 }
 | done u32
 | failed { error_code: u32, reason: []const u8 }
 
@@ -28,9 +28,9 @@ const std = @import("std");
 | error e |> log.error (e.code, e.message)
 
 // Logging events
-~event log.info { msg: []const u8 }
+~tor log.info { msg: []const u8 }
 
-~event log.error { code: u32, message: []const u8 }
+~tor log.error { code: u32, message: []const u8 }
 
 // Procs
 ~proc validate.input|zig {

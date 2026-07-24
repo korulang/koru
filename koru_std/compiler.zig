@@ -1111,7 +1111,7 @@ pub const PROGRAM_AST = Program{
                 \\
                 \\        // Generic error without specific messages
                 \\        const err_msg = switch (err) {
-                \\            error.UnknownEvent => "Unknown event referenced",
+                \\            error.UnknownEvent => "Unknown tor referenced",
                 \\            error.UnknownBranch => "Unknown branch referenced",
                 \\            error.IncompleteBranchCoverage => "Incomplete branch coverage",
                 \\            error.ProcWithoutEvent => "Proc without matching event",
@@ -2596,7 +2596,7 @@ pub const PROGRAM_AST = Program{
                 \\
                 \\        // Generic error without specific messages
                 \\        const err_msg = switch (err) {
-                \\            error.UnknownEvent => "Unknown event referenced",
+                \\            error.UnknownEvent => "Unknown tor referenced",
                 \\            error.UnknownBranch => "Unknown branch referenced",
                 \\            error.IncompleteBranchCoverage => "Incomplete branch coverage",
                 \\            error.ProcWithoutEvent => "Proc without matching event",

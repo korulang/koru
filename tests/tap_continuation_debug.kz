@@ -2,10 +2,10 @@
 // Run: koruc --ast-json tap_continuation_debug.kz
 // NO IMPORTS - pure parser test
 
-~event source { x: i32 }
+~tor source { x: i32 }
 | value i32
 
-~event log { data: i32 }
+~tor log { data: i32 }
 | done
 
 ~proc log|zig {

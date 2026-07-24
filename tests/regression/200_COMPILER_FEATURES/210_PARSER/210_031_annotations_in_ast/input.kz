@@ -4,13 +4,13 @@
 const std = @import("std");
 
 // Single annotation
-~[comptime] event compile-only {}
+~[comptime] tor compile-only {}
 
 // Multiple annotations (inline with |)
-~[comptime|runtime] event dual-phase {}
+~[comptime|runtime] tor dual-phase {}
 
 // Multiple annotations (should also work - future vertical syntax)
-~[fuseable] pub event optimizable {}
+~[fuseable] pub tor optimizable {}
 
 // Proc with annotations
 ~[inline] proc compile-only|zig {

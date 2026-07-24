@@ -21,7 +21,7 @@ const std = @import("std");
 // when any tap uses it. No need to define it here.
 
 // Event: Emit a transition event as JSONL to stdout
-~event emit-transition {
+~tor emit-transition {
     source: string,
     branch: string,
     destination: ?[]const u8,

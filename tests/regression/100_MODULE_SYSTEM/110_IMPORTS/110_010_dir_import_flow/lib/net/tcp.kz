@@ -2,19 +2,19 @@
 
 const std = @import("std");
 
-~pub event server.listen { port: i32 }
+~pub tor server.listen { port: i32 }
 | listening i32
 | failed string
 
-~pub event server.accept { server_id: i32 }
+~pub tor server.accept { server_id: i32 }
 | connection i32
 | failed string
 
-~pub event connection.read { conn_id: i32 }
+~pub tor connection.read { conn_id: i32 }
 | data string
 | failed string
 
-~pub event connection.write { conn_id: i32, data: string }
+~pub tor connection.write { conn_id: i32, data: string }
 | sent i32
 | failed string
 

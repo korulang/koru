@@ -89,7 +89,7 @@
 
 ~import std/deps
 
-~event main {}
+~tor main {}
 
 ~proc main|zig {
 }

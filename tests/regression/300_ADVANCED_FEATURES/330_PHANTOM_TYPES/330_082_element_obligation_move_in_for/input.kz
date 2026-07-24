@@ -28,7 +28,7 @@
 const std = @import("std");
 const Handle = struct { n: i32 };
 
-~event make {} -> *Handle<owned!>
+~tor make {} -> *Handle<owned!>
 ~proc make|zig {
     const h = std.heap.page_allocator.create(Handle) catch unreachable;
     h.* = .{ .n = 7 };
@@ -37,13 +37,13 @@ const Handle = struct { n: i32 };
 
 // Take the owned handle "out of A": consume the incoming hold, reissue it on the
 // popped value (the collection-memory pop-reissue move, hand-rolled).
-~event take { h: *Handle<!owned> } -> *Handle<owned!>
+~tor take { h: *Handle<!owned> } -> *Handle<owned!>
 ~proc take|zig {
     return h;
 }
 
 // Put the owned handle "into B": consume the obligation.
-~event put { h: *Handle<!owned> }
+~tor put { h: *Handle<!owned> }
 ~proc put|zig {
     std.debug.print("moved n={}\n", .{h.n});
     std.heap.page_allocator.destroy(h);

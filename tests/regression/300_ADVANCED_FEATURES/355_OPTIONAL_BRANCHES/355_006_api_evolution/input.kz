@@ -10,7 +10,7 @@
 
 // VERSION 2: added ?debug branch (new in v2)
 // success is REQUIRED, warning/debug are OPTIONAL
-~event process { value: u32 }
+~tor process { value: u32 }
 | success u32
 | ?warning string
 | ?debug string

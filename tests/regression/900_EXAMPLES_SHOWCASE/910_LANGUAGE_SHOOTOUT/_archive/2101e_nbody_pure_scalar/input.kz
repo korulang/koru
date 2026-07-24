@@ -40,11 +40,11 @@ const BODIES = [_]Body{
 // Events - with simplified branch syntax
 // ============================================================================
 
-~event init {} -> [5]Body
+~tor init {} -> [5]Body
 
 ~proc init|zig { return BODIES; }
 
-~event offset { bodies: []Body }
+~tor offset { bodies: []Body }
 
 ~proc offset|zig {
     var px: f64 = 0; var py: f64 = 0; var pz: f64 = 0;
@@ -52,7 +52,7 @@ const BODIES = [_]Body{
     bodies[0].vx = -px / SOLAR_MASS; bodies[0].vy = -py / SOLAR_MASS; bodies[0].vz = -pz / SOLAR_MASS;
 }
 
-~event energy { bodies: []const Body } -> f64
+~tor energy { bodies: []const Body } -> f64
 
 ~proc energy|zig {
     var e: f64 = 0;
@@ -67,11 +67,11 @@ const BODIES = [_]Body{
     return e;
 }
 
-~event print-e { e: f64 }
+~tor print-e { e: f64 }
 
 ~proc print-e|zig { std.debug.print("{d:.9}\n", .{e}); }
 
-~event parse {} -> u32
+~tor parse {} -> u32
 
 ~proc parse|zig {
     const args = std.process.argsAlloc(std.heap.page_allocator) catch unreachable;
@@ -81,7 +81,7 @@ const BODIES = [_]Body{
 }
 
 // Event to apply computed deltas and advance positions
-~event apply { bodies: []Body, dt: f64, dv0x: f64, dv0y: f64, dv0z: f64, dv1x: f64, dv1y: f64, dv1z: f64, dv2x: f64, dv2y: f64, dv2z: f64, dv3x: f64, dv3y: f64, dv3z: f64, dv4x: f64, dv4y: f64, dv4z: f64 }
+~tor apply { bodies: []Body, dt: f64, dv0x: f64, dv0y: f64, dv0z: f64, dv1x: f64, dv1y: f64, dv1z: f64, dv2x: f64, dv2y: f64, dv2z: f64, dv3x: f64, dv3y: f64, dv3z: f64, dv4x: f64, dv4y: f64, dv4z: f64 }
 
 ~proc apply|zig {
     bodies[0].vx += dv0x; bodies[0].vy += dv0y; bodies[0].vz += dv0z;
@@ -93,7 +93,7 @@ const BODIES = [_]Body{
 }
 
 // Helper to compute one pair's force contribution
-~event pair-force { bi: Body, bj: Body, dt: f64 }
+~tor pair-force { bi: Body, bj: Body, dt: f64 }
 | result { fx: f64, fy: f64, fz: f64, mi: f64, mj: f64 }
 
 ~proc pair-force|zig {

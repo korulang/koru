@@ -5,7 +5,7 @@
 // Tests that events can have multiple branches and procs can return different ones
 const std = @import("std");
 
-~event check { value: i32 }
+~tor check { value: i32 }
 | positive i32
 | zero
 | negative i32
@@ -16,19 +16,19 @@ const std = @import("std");
     return .{ .zero = .{} };
 }
 
-~event handle-positive { n: i32 }
+~tor handle-positive { n: i32 }
 
 ~proc handle-positive|zig {
     std.debug.print("Positive branch works: {}\n", .{n});
 }
 
-~event handle-zero {}
+~tor handle-zero {}
 
 ~proc handle-zero|zig {
     std.debug.print("Zero branch works\n", .{});
 }
 
-~event handle-negative { n: i32 }
+~tor handle-negative { n: i32 }
 
 ~proc handle-negative|zig {
     std.debug.print("Negative branch works: {}\n", .{n});

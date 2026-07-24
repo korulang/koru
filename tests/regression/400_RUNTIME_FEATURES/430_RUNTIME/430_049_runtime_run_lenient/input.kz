@@ -5,7 +5,7 @@
 
 const std = @import("std");
 
-~pub event ping {}
+~pub tor ping {}
 
 ~proc ping|zig {
     std.debug.print("PING\n", .{});
@@ -16,7 +16,7 @@ const std = @import("std");
 }
 
 const TEST_SOURCE =
-    \\~event broken
+    \\~tor broken
     \\| ok
     \\~ping()
 ;

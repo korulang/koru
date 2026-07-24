@@ -11,7 +11,7 @@ const std = @import("std");
 // Events to dispatch to
 // ============================================================================
 
-~pub event greet { name: string }
+~pub tor greet { name: string }
 | greeted string
 
 ~proc greet|zig {
@@ -19,7 +19,7 @@ const std = @import("std");
     return .{ .greeted = "Hello!" };
 }
 
-~pub event farewell { name: string }
+~pub tor farewell { name: string }
 | departed string
 
 ~proc farewell|zig {

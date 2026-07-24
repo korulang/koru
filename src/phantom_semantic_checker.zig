@@ -1793,7 +1793,7 @@ pub const PhantomSemanticChecker = struct {
                             log.debug("[PHANTOM-FLOW]   Recording label '#{s}' mapping to event '{s}'\n", .{ lwi.label, qualified_name });
                             try self.label_map.put(lwi.label, inv_info.decl);
                         } else {
-                            log.debug("[PHANTOM-FLOW]   WARNING: Label '#{s}' points to unknown event '{s}'\n", .{ lwi.label, qualified_name });
+                            log.debug("[PHANTOM-FLOW]   WARNING: Label '#{s}' points to unknown tor '{s}'\n", .{ lwi.label, qualified_name });
                         }
                     }
                 },

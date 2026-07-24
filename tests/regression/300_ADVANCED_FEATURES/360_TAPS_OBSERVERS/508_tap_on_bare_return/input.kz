@@ -9,14 +9,14 @@ const std = @import("std");
 ~import std/taps
 ~import std/io
 
-~event compute { x: i32 } -> i32
+~tor compute { x: i32 } -> i32
 
 ~proc compute|zig {
     std.debug.print("compute({d})\n", .{x});
     return x * 2;
 }
 
-~event observed { value: i32 }
+~tor observed { value: i32 }
 
 ~proc observed|zig {
     std.debug.print("[TAP] saw {d}\n", .{value});

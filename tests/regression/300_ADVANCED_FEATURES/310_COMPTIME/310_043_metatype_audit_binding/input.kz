@@ -10,9 +10,9 @@
 const std = @import("std");
 ~import std/taps
 
-~event hello {}
+~tor hello {}
 
-~event logger {}
+~tor logger {}
 
 ~proc hello|zig {
     std.debug.print("Hello\n", .{});

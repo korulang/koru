@@ -10,7 +10,7 @@ const std = @import("std");
 var tap_count: u64 = 0;
 
 // Event for loop iteration
-~event count { i: u64 } -> u64
+~tor count { i: u64 } -> u64
 
 ~proc count|zig {
     if (i < 1_000_000) {
@@ -20,7 +20,7 @@ var tap_count: u64 = 0;
 }
 
 // Tap target - simulates logging/metrics
-~event tap-point { i: u64 }
+~tor tap-point { i: u64 }
 
 ~proc tap-point|zig {
     tap_count += 1;
@@ -31,7 +31,7 @@ var tap_count: u64 = 0;
 }
 
 // Print result
-~event print-result {}
+~tor print-result {}
 
 ~proc print-result|zig {
     std.debug.print("Taps called: {}\n", .{tap_count});

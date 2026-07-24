@@ -11,7 +11,7 @@
 // are loud rather than silent.
 // ============================================================================
 
-~pub event prompt-user { question: string }
+~pub tor prompt-user { question: string }
 ! ask string -> string
 | done string
 

@@ -5,7 +5,7 @@
 
 ~import std/io
 
-~pub event query { question: string }
+~pub tor query { question: string }
 ! ask string -> i32
 | done i32
 

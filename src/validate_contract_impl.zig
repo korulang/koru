@@ -51,7 +51,7 @@ pub fn validate(items: []const ast.Item, reporter: *ErrorReporter) !void {
                         .KORU111,
                         event.location.line,
                         event.location.column,
-                        "public event in implementation file '{s}' when a .k contract companion exists in the same module",
+                        "public tor in implementation file '{s}' when a .k contract companion exists in the same module",
                         .{event.location.file},
                         "public event declarations belong in the .k contract — move this ~pub event to the sibling .k file, or drop ~pub if it is internal scaffolding",
                         .{},

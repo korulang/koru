@@ -124,7 +124,7 @@ const MESSAGES: u64 = 10_000_000;
 // Koru Events - Ring Operations
 // ============================================================================
 
-~event create-ring {} -> *Ring
+~tor create-ring {} -> *Ring
 
 ~proc create-ring|zig {
     // Allocate ring on heap (needs to outlive this function)
@@ -133,7 +133,7 @@ const MESSAGES: u64 = 10_000_000;
     return ring_storage;
 }
 
-~event spawn-producer { ring: *Ring }
+~tor spawn-producer { ring: *Ring }
 
 ~proc spawn-producer|zig {
     // Spawn producer thread
@@ -153,7 +153,7 @@ const MESSAGES: u64 = 10_000_000;
 
 }
 
-~event dequeue { ring: *Ring } -> u64
+~tor dequeue { ring: *Ring } -> u64
 
 ~proc dequeue|zig {
     if (ring.tryDequeue()) |value| {
@@ -162,7 +162,7 @@ const MESSAGES: u64 = 10_000_000;
     }
 }
 
-~event consume-loop { ring: *Ring, sum: u64, received: u64 }
+~tor consume-loop { ring: *Ring, sum: u64, received: u64 }
 | continue { sum: u64, received: u64 }
 | done u64
 
@@ -172,7 +172,7 @@ const MESSAGES: u64 = 10_000_000;
 | none |> yield-then-continue(sum, received)
     | continue s => continue { s.sum, s.received }
 
-~event check-if-done { sum: u64, received: u64 }
+~tor check-if-done { sum: u64, received: u64 }
 | continue { sum: u64, received: u64 }
 | done u64
 
@@ -184,7 +184,7 @@ const MESSAGES: u64 = 10_000_000;
     }
 }
 
-~event yield-then-continue { sum: u64, received: u64 }
+~tor yield-then-continue { sum: u64, received: u64 }
 | continue { sum: u64, received: u64 }
 
 ~proc yield-then-continue|zig {
@@ -192,7 +192,7 @@ const MESSAGES: u64 = 10_000_000;
     return .{ .continue = .{ .sum = sum, .received = received } };
 }
 
-~event validate { sum: u64 }
+~tor validate { sum: u64 }
 
 ~proc validate|zig {
     const expected: u64 = MESSAGES * (MESSAGES - 1) / 2;

@@ -7,5 +7,5 @@ const std = @import("std");
 // Should be either:
 // - A void event: ~event done {} (no branches at all)
 // - Identity syntax: | done SomeType
-~event verify {}
+~tor verify {}
 | ok {}

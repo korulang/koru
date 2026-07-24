@@ -2,9 +2,9 @@
 
 const std = @import("std");
 
-~pub event init {}
+~pub tor init {}
 
-~pub event shutdown {}
+~pub tor shutdown {}
 
 ~proc init|zig {
     std.debug.print("Physics initialized\n", .{});

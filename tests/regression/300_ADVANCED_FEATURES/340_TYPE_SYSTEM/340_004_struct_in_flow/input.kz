@@ -13,7 +13,7 @@
 }
 
 // Use it in an event signature
-~event greet { player: Player } -> string
+~tor greet { player: Player } -> string
 
 ~proc greet|zig {
     return player.name;

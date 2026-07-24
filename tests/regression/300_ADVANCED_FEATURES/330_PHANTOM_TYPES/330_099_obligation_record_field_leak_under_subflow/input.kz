@@ -14,13 +14,13 @@
 const std = @import("std");
 const Handle = struct { n: i32 };
 
-~event make { id: usize } -> { h: *Handle<owned!>, n: i64 }
+~tor make { id: usize } -> { h: *Handle<owned!>, n: i64 }
 ~proc make|zig { const h = std.heap.page_allocator.create(Handle) catch unreachable; h.* = .{ .n = 5 }; return .{ .h = h, .n = 7 }; }
 
-~event dispose { h: *Handle<!owned> }
+~tor dispose { h: *Handle<!owned> }
 ~proc dispose|zig { std.heap.page_allocator.destroy(h); }
 
-~event spin { id: usize } -> { h: *Handle<owned!>, n: i64 }
+~tor spin { id: usize } -> { h: *Handle<owned!>, n: i64 }
 ~spin = make(id): r -> r
 
 ~spin(id: 1): res |> std/io:print.ln("n={{ res.n:d }}")

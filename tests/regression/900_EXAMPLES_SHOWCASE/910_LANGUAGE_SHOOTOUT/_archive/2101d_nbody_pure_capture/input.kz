@@ -34,7 +34,7 @@ const Body = struct {
 // ============================================================================
 
 // Returns bodies array - simplified branch!
-~event initialize-bodies {} -> [5]Body
+~tor initialize-bodies {} -> [5]Body
 
 ~proc initialize-bodies|zig {
     return [_]Body{
@@ -79,7 +79,7 @@ const Body = struct {
 }
 
 // Void event - no branches needed!
-~event offset-momentum { bodies: []Body }
+~tor offset-momentum { bodies: []Body }
 
 ~proc offset-momentum|zig {
     var px: f64 = 0.0;
@@ -98,7 +98,7 @@ const Body = struct {
 }
 
 // Returns energy - simplified branch!
-~event calculate-energy { bodies: []const Body } -> f64
+~tor calculate-energy { bodies: []const Body } -> f64
 
 ~proc calculate-energy|zig {
     var e: f64 = 0.0;
@@ -120,7 +120,7 @@ const Body = struct {
 }
 
 // Void event - advances velocities
-~event advance-velocities { bodies: []Body, dt: f64 }
+~tor advance-velocities { bodies: []Body, dt: f64 }
 
 ~proc advance-velocities|zig {
     var i: usize = 0;
@@ -146,7 +146,7 @@ const Body = struct {
 }
 
 // Void event - advances positions
-~event advance-positions { bodies: []Body, dt: f64 }
+~tor advance-positions { bodies: []Body, dt: f64 }
 
 ~proc advance-positions|zig {
     for (bodies) |*body| {
@@ -157,14 +157,14 @@ const Body = struct {
 }
 
 // Void event - print energy (workaround for print.ln bug)
-~event print-energy { e: f64 }
+~tor print-energy { e: f64 }
 
 ~proc print-energy|zig {
     std.debug.print("{d:.9}\n", .{e});
 }
 
 // Arg parsing - returns n
-~event parse-args {} -> u32
+~tor parse-args {} -> u32
 
 ~proc parse-args|zig {
     const args = std.process.argsAlloc(std.heap.page_allocator) catch unreachable;

@@ -9,7 +9,7 @@
 
 ~import std/io
 
-~event make-point { x: i32, y: i32 }
+~tor make-point { x: i32, y: i32 }
 | point { x: i32, y: i32 }
 
 // Explicit labels `x: x, y: y` are redundant — punning produces the same names.

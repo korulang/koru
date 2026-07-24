@@ -29,15 +29,15 @@ test "findDisposalEvents filters by base type - same phantom state, different ty
     // Transaction uses commit() to discharge
     // All events are in module "test" (from filename)
     const source =
-        \\~event connect { }
+        \\~tor connect { }
         \\| ok: *Connection<active!>
         \\
-        \\~event close[!] { conn: *Connection<!active> }
+        \\~tor close[!] { conn: *Connection<!active> }
         \\
-        \\~event begin { }
+        \\~tor begin { }
         \\| ok: *Transaction<active!>
         \\
-        \\~event commit[!] { tx: *Transaction<!active> }
+        \\~tor commit[!] { tx: *Transaction<!active> }
     ;
 
     const empty_flags: []const []const u8 = &.{};
@@ -111,12 +111,12 @@ test "findDisposalEvents handles multiple disposal options for same type" {
 
     // One type with multiple ways to discharge the same state
     const source =
-        \\~event open { path: string }
+        \\~tor open { path: string }
         \\| ok: *File<open!>
         \\
-        \\~event close[!] { file: *File<!open> }
+        \\~tor close[!] { file: *File<!open> }
         \\
-        \\~event close-and-delete[!] { file: *File<!open> }
+        \\~tor close-and-delete[!] { file: *File<!open> }
     ;
 
     const empty_flags: []const []const u8 = &.{};
@@ -166,15 +166,15 @@ test "findDisposalEvents with different types same phantom state" {
     // Two types with same phantom state name but different base types
     // This is the CRITICAL test - verifies that base type filtering works
     const source =
-        \\~event connect { }
+        \\~tor connect { }
         \\| ok: *DbConn<connected!>
         \\
-        \\~event disconnect[!] { conn: *DbConn<!connected> }
+        \\~tor disconnect[!] { conn: *DbConn<!connected> }
         \\
-        \\~event acquire { }
+        \\~tor acquire { }
         \\| ok: *PoolConn<connected!>
         \\
-        \\~event release[!] { conn: *PoolConn<!connected> }
+        \\~tor release[!] { conn: *PoolConn<!connected> }
     ;
 
     const empty_flags: []const []const u8 = &.{};
@@ -232,10 +232,10 @@ test "findDisposalEvents excludes events with user-required extra inputs" {
     const test_alloc = std.testing.allocator;
 
     const source =
-        \\~event tx.exec { tx: *Transaction<!started>, sql: string }
+        \\~tor tx.exec { tx: *Transaction<!started>, sql: string }
         \\| ok *Transaction<active!>
         \\
-        \\~event tx.rollback { tx: *Transaction<!active> }
+        \\~tor tx.rollback { tx: *Transaction<!active> }
         \\| ok *Connection<active!>
     ;
 

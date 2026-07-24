@@ -1,4 +1,4 @@
-error[PARSE003]: branch constructor field 'metrics' contains a function call — branch constructors must be pure. Use event chaining instead.
+error[PARSE003]: branch constructor field 'metrics' contains a function call — branch constructors must be pure. Use tor chaining instead.
   --> tests/regression/400_RUNTIME_FEATURES/430_COORDINATION/430_006_coordinator_timing/input.kz:20:1
     |
  20 |     | error e => error { e.message }

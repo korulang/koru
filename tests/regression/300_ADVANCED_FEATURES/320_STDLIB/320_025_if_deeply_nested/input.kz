@@ -11,12 +11,12 @@
 const std = @import("std");
 
 // Event chain to create deep nesting
-~event step1 {}
+~tor step1 {}
 
 ~proc step1|zig {
 }
 
-~event step2 {} -> i32
+~tor step2 {} -> i32
 
 ~proc step2|zig {
     return 42;

@@ -27,7 +27,7 @@
 
 // BAD: accepts the opened file, declares no output branches, but never calls
 // close and never discharges <!opened>. Obligation is silently lost.
-~event process-file { file: *File<opened!> }
+~tor process-file { file: *File<opened!> }
 
 ~proc process-file|zig {
     std.debug.print("processing\n", .{});

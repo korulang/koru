@@ -9,7 +9,7 @@
 // impl silently takes the wrong branch for every omitting consumer.
 import std/io
 
-pub event gen { n: i64 }
+pub tor gen { n: i64 }
 ! ?note i64
 | done i64
 

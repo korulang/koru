@@ -1,6 +1,6 @@
 // Submodule - when imported, index.kz should also be auto-imported
 
-~pub event sub-hello {}
+~pub tor sub-hello {}
 
 ~proc sub-hello|zig {
 }

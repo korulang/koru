@@ -10,7 +10,7 @@
 
 ~import std/io
 
-~event greet { id: u32 } -> string
+~tor greet { id: u32 } -> string
 
 ~proc greet|zig {
     return "Alice";

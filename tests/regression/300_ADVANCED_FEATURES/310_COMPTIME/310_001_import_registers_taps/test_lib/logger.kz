@@ -5,7 +5,7 @@ const std = @import("std");
 ~import std/taps
 
 // Define a logging event
-~pub event log { event_name: string }
+~pub tor log { event_name: string }
 
 ~proc log|zig {
     std.debug.print("[TAP] Intercepted event: {s}\n", .{event_name});

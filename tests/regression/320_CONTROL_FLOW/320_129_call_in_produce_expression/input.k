@@ -9,10 +9,10 @@
 // `return 1 + g(a: 4);` pasted verbatim into emitted Zig, raw Stage-D error.
 import std/io
 
-pub event g { a: i64 } -> i64
+pub tor g { a: i64 } -> i64
 g -> a + 1
 
-pub event outer {} -> i64
+pub tor outer {} -> i64
 outer -> 1 + g(a: 4)
 
 outer(): v |> std/io:print.ln("{{ v:d }}")

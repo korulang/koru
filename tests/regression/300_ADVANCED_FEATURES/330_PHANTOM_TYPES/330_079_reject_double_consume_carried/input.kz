@@ -7,14 +7,14 @@
 const std = @import("std");
 const Handle = struct { n: i32 };
 
-~event make {} -> *Handle<owned!>
+~tor make {} -> *Handle<owned!>
 ~proc make|zig {
     const h = std.heap.page_allocator.create(Handle) catch unreachable;
     h.* = .{ .n = 0 };
     return h;
 }
 
-~event step { h: *Handle<!owned> }
+~tor step { h: *Handle<!owned> }
 | again *Handle<owned!>
 | stop *Handle<owned!>
 ~proc step|zig {
@@ -26,12 +26,12 @@ const Handle = struct { n: i32 };
 }
 
 // A consuming/disposing leaf.
-~event drop { h: *Handle<!owned> }
+~tor drop { h: *Handle<!owned> }
 ~proc drop|zig {
     std.heap.page_allocator.destroy(h);
 }
 
-~event spin { h: *Handle<!owned> } -> *Handle<owned!>
+~tor spin { h: *Handle<!owned> } -> *Handle<owned!>
 
 ~spin = #loop step(h)
 | again v |> drop(h: v) |> @loop(h: v)   // consumes v twice -> double consume

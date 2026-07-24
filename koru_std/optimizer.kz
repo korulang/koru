@@ -19,7 +19,7 @@
 
 // Optimization segment: AST transformations for performance (abstract, can be overridden)
 // This is where we create IR nodes (NativeLoop, etc.)
-~[comptime|abstract] pub event optimize { ctx: std/compiler:CompilerContext } -> std/compiler:CompilerContext
+~[comptime|abstract] pub tor optimize { ctx: std/compiler:CompilerContext } -> std/compiler:CompilerContext
 
 // ============================================================
 // DEFAULT OPTIMIZE IMPLEMENTATION

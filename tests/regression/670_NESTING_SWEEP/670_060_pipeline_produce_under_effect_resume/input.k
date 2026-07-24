@@ -19,13 +19,13 @@
 // resume value; `a` resumes at 43; `=> done a` constructs done(43).
 import std/io
 
-pub event query { q: i64 }
+pub tor query { q: i64 }
 ! ask i64 -> i64
 | done i64
 
 query = ask(q): a => done a
 
-pub event bump { x: i64 } -> i64
+pub tor bump { x: i64 } -> i64
 bump -> x + 1
 
 query(q: 41)

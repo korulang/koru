@@ -1,6 +1,6 @@
 // Parent module - should be auto-imported when importing mymod/sub
 
-~pub event parent-hello {}
+~pub tor parent-hello {}
 
 ~proc parent-hello|zig {
 }

@@ -7,7 +7,7 @@
 // CODE EMITTER - Handles generation of Zig code
 // ============================================================
 
-~event compiler.emit.buffer {} -> { buffer: []u8, size: usize }
+~tor compiler.emit.buffer {} -> { buffer: []u8, size: usize }
 
 ~proc compiler.emit.buffer|zig {
     const size = 64 * 1024; // 64KB buffer
@@ -480,7 +480,7 @@ const VisitorContext = struct {
 // NEW COMPILER.EMIT.ZIG - Simple coordinator
 // ============================================================
 
-~event compiler.emit.zig.visitor {} -> string
+~tor compiler.emit.zig.visitor {} -> string
 
 ~proc compiler.emit.zig.visitor|zig {
     // Get a buffer

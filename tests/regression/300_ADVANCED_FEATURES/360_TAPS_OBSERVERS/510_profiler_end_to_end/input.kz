@@ -4,7 +4,7 @@
 ~import std/io
 ~[profile]import std/profiler
 
-~pub event get-number {} -> i32
+~pub tor get-number {} -> i32
 
 ~proc get-number|zig {
     return 42;

@@ -14,9 +14,9 @@ const std = @import("std");
 ~import std/taps
 
 // Two simple events
-~event target {}
+~tor target {}
 
-~event other {}
+~tor other {}
 
 // Procs
 ~proc target|zig {
@@ -28,7 +28,7 @@ const std = @import("std");
 }
 
 // Logger for tap - void return
-~event log {}
+~tor log {}
 
 ~[pure] proc log|zig {
     std.debug.print("TAP: going to target\n", .{});

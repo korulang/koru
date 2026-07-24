@@ -9,7 +9,7 @@ const std = @import("std");
 
 const Digest = struct { n: i64 };
 
-~pub event open {}
+~pub tor open {}
 | ctx *Digest<hashing!>
 
 ~proc open|zig {
@@ -21,14 +21,14 @@ const Digest = struct { n: i64 };
 // Feed a chunk. BORROWS the handle (bare <hashing>): the obligation stays with
 // the caller, so `d` is still live (and still owing <hashing!>) after this call.
 // This borrow is the trigger for the bug the sibling input.kz pins.
-~pub event update { d: *Digest<hashing>, n: i64 }
+~pub tor update { d: *Digest<hashing>, n: i64 }
 
 ~proc update|zig {
     d.n += n;
 }
 
 // Discharge the obligation. Two options, neither a `[!]` default — same as evp.
-~pub event final.hex { d: *Digest<!hashing> }
+~pub tor final.hex { d: *Digest<!hashing> }
 | digest string
 
 ~proc final.hex|zig {
@@ -36,7 +36,7 @@ const Digest = struct { n: i64 };
     return .{ .digest = "hex" };
 }
 
-~pub event final.bytes { d: *Digest<!hashing> }
+~pub tor final.bytes { d: *Digest<!hashing> }
 | digest string
 
 ~proc final.bytes|zig {

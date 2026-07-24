@@ -1,7 +1,7 @@
 const std = @import("std");
 const File = struct { handle: i32 };
 
-~pub event open-two { path1: string, path2: string } -> { file1: *File<opened!>, file2: *File<opened!> }  // TWO obligations!
+~pub tor open-two { path1: string, path2: string } -> { file1: *File<opened!>, file2: *File<opened!> }  // TWO obligations!
 
 ~proc open-two|zig {
     std.debug.print("Opening two files: {s}, {s}\n", .{path1, path2});
@@ -13,7 +13,7 @@ const File = struct { handle: i32 };
     return .{ .file1 = f1, .file2 = f2 };
 }
 
-~pub event close { file: *File<!opened> }  // Consumes one obligation
+~pub tor close { file: *File<!opened> }  // Consumes one obligation
 
 ~proc close|zig {
     std.debug.print("Closing file\n", .{});

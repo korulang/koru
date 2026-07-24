@@ -13,7 +13,7 @@ test "validate complete flow" {
     // complete-coverage case this test pins; the sibling `validate incomplete
     // flow` handles only `ok` and expects IncompleteBranchCoverage.
     const source =
-        \\~event A { x: i32 }
+        \\~tor A { x: i32 }
         \\| ok i32
         \\| err string
         \\
@@ -38,7 +38,7 @@ test "validate complete flow" {
 
 test "validate incomplete flow" {
     const source =
-        \\~event read { path: string }
+        \\~tor read { path: string }
         \\| ok { contents: string, errno: u8 }
         \\| err { errno: u8, message: string }
         \\
@@ -102,11 +102,11 @@ test "validate event tap with known events" {
     // ~tap() is lowered by the tap transform; raw parse sees it as ~tap(...) flow.
     if (true) return error.SkipZigTest;
     const source =
-        \\~event read { path: string }
+        \\~tor read { path: string }
         \\| ok { contents: string, size: u32 }
         \\| err { errno: u8, message: string }
         \\
-        \\~event audit-log { message: string, path: string }
+        \\~tor audit-log { message: string, path: string }
         \\| ok {}
         \\
         \\~tap(read -> audit-log)
@@ -128,7 +128,7 @@ test "validate event tap with known events" {
 test "validate event tap with wildcard destination" {
     if (true) return error.SkipZigTest;
     const source =
-        \\~event read { path: string }
+        \\~tor read { path: string }
         \\| ok { contents: string, size: u32 }
         \\| err { errno: u8, message: string }
         \\
@@ -151,7 +151,7 @@ test "validate event tap with wildcard destination" {
 test "validate event tap with unknown source" {
     if (true) return error.SkipZigTest;
     const source =
-        \\~event audit-log { message: string, path: string }
+        \\~tor audit-log { message: string, path: string }
         \\| ok {}
         \\
         \\~tap(missing -> audit-log)
@@ -174,7 +174,7 @@ test "validate event tap with unknown source" {
 test "validate event tap with invalid branch" {
     if (true) return error.SkipZigTest;
     const source =
-        \\~event read { path: string }
+        \\~tor read { path: string }
         \\| ok { contents: string, size: u32 }
         \\| err { errno: u8, message: string }
         \\
@@ -198,7 +198,7 @@ test "validate event tap with invalid branch" {
 test "validate event tap non-exhaustive is OK" {
     if (true) return error.SkipZigTest;
     const source =
-        \\~event read { path: string }
+        \\~tor read { path: string }
         \\| ok { contents: string, size: u32 }
         \\| err { errno: u8, message: string }
         \\| timeout {}
@@ -242,10 +242,10 @@ test "validate wildcard tap with transition branch" {
 test "void event with branch constructor in inline flow should fail" {
     if (true) return error.SkipZigTest;
     const source =
-        \\~event helper { input: u32 }
+        \\~tor helper { input: u32 }
         \\| ok { value: u32, tag: u32 }
         \\
-        \\~event test-event { input: u32 }
+        \\~tor test-event { input: u32 }
         \\| ok {}
         \\
         \\~proc helper|zig {
@@ -277,7 +277,7 @@ test "void event with branch constructor in inline flow should fail" {
 // Destructuring happens at BINDING, never in the event declaration.
 test "binding destructure of an unknown payload field is a koru error (KORU036)" {
     const source =
-        \\~event A { x: i32 }
+        \\~tor A { x: i32 }
         \\| ok { a: i32, b: u8 }
         \\| err string
         \\
@@ -308,7 +308,7 @@ test "binding destructure of an unknown payload field is a koru error (KORU036)"
 
 test "binding destructure of real payload fields raises no KORU036" {
     const source =
-        \\~event A { x: i32 }
+        \\~tor A { x: i32 }
         \\| ok { a: i32, b: u8 }
         \\| err string
         \\

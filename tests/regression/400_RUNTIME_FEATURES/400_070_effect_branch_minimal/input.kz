@@ -9,7 +9,7 @@
 
 const std = @import("std");
 
-~pub event ping { msg: string }
+~pub tor ping { msg: string }
 ! pong string
 
 ~proc ping|zig {

@@ -1,10 +1,10 @@
 // Test subflows with actual output shapes
 
-~event data.validate { value: u32 }
+~tor data.validate { value: u32 }
 | valid u32
 | invalid []const u8
 
-~event data.transform { input: u32 }
+~tor data.transform { input: u32 }
 | done u32
 | error []const u8
 

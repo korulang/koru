@@ -1,7 +1,7 @@
 // Pins that a deref continuation (`| *<binding>`) is rejected. Twin of the
 // deferred branch decl rejection — the deferred/deref mechanism is retired
 // (repudiated 2026-07-15). Use a required effect-branch instead.
-~event pick { x: i32 }
+~tor pick { x: i32 }
 | chosen i32
 | skipped
 

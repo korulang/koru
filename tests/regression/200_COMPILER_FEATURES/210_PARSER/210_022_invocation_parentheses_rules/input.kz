@@ -1,24 +1,24 @@
 // Test the parentheses rules for event invocations
 
 // VALID: Zero params, no source block → requires ()
-~event voidCall {}
+~tor voidCall {}
 ~voidCall()
 
 // VALID: Zero params, source block → NO ()
-~event renderSimple { source: Source<HTML> }
+~tor renderSimple { source: Source<HTML> }
 ~renderSimple {
     <h1>Hello!</h1>
 }
 
 // VALID: With params, source block → requires () for params
-~event renderWithData { name: string, source: Source<HTML> }
+~tor renderWithData { name: string, source: Source<HTML> }
 ~renderWithData(name: "Alice") {
     <p>${name}</p>
 }
 
 // VALID: Chained void calls
-~event stepOne {}
-~event stepTwo {}
+~tor stepOne {}
+~tor stepTwo {}
 ~stepOne() |> stepTwo()
 
 // INVALID CASES (should be parser errors):

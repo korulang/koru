@@ -21,7 +21,7 @@ const allocator = std.heap.c_allocator;
 // Global accumulator (same pattern as Rust)
 var grand_total: u64 = 0;
 
-~event create { id: usize } -> *Resource<active!>
+~tor create { id: usize } -> *Resource<active!>
 
 ~proc create|zig {
     const r = allocator.create(Resource) catch unreachable;
@@ -29,7 +29,7 @@ var grand_total: u64 = 0;
     return r;
 }
 
-~event work { r: *Resource<active> }
+~tor work { r: *Resource<active> }
 
 ~proc work|zig {
     // Real work: sum the data array (same as Rust)
@@ -41,13 +41,13 @@ var grand_total: u64 = 0;
     std.mem.doNotOptimizeAway(sum);
 }
 
-~event destroy { r: *Resource<!active> }
+~tor destroy { r: *Resource<!active> }
 
 ~proc destroy|zig {
     allocator.destroy(r);
 }
 
-~event print-result {}
+~tor print-result {}
 
 ~proc print-result|zig {
     std.debug.print("Koru: {} iterations, checksum: {}\n", .{N, grand_total});

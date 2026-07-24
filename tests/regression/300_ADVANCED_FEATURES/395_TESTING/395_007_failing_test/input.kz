@@ -7,7 +7,7 @@
 
 ~import std/testing
 
-~event do-thing {} -> u32
+~tor do-thing {} -> u32
 
 ~test(This test passes) {
     ~do-thing -> 1

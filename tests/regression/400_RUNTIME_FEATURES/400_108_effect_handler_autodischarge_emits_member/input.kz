@@ -15,13 +15,13 @@ const std = @import("std");
 const Resource = struct { id: usize };
 const allocator = std.heap.c_allocator;
 
-~event destroy { r: *Resource<!active> }
+~tor destroy { r: *Resource<!active> }
 ~proc destroy|zig { std.debug.print("freed {}\n", .{r.id}); allocator.destroy(r); }
 
-~event use { r: *Resource<active> }
+~tor use { r: *Resource<active> }
 ~proc use|zig { std.debug.print("using {}\n", .{r.id}); }
 
-~pub event gen { n: usize }
+~pub tor gen { n: usize }
 ! make *Resource<active!>
 | done usize
 ~proc gen|zig {

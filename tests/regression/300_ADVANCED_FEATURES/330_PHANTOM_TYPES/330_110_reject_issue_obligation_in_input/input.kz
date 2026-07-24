@@ -17,10 +17,10 @@
 const std = @import("std");
 const Handle = struct { n: i32 };
 
-~event mk { } -> *Handle<owned!>
+~tor mk { } -> *Handle<owned!>
 ~proc mk|zig { const h = std.heap.page_allocator.create(Handle) catch unreachable; h.* = .{ .n = 1 }; return h; }
 
-~event use { r: *Handle<owned!> }
+~tor use { r: *Handle<owned!> }
 ~proc use|zig { _ = r; }
 
 ~mk(): r |> use(r)

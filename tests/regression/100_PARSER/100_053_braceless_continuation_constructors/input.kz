@@ -9,24 +9,24 @@
 ~import std/io
 
 // Source event
-~pub event compute { x: i32 } -> i32
+~pub tor compute { x: i32 } -> i32
 
 ~proc compute|zig {
     return x * 2;
 }
 
 // Result event with identity branches
-~pub event result {} -> i32
+~pub tor result {} -> i32
 
 // Wrapper that uses braceless constructors in continuations
-~pub event run-test {}
+~pub tor run-test {}
 
 ~proc run-test|zig {
     // This internally tests braceless continuation constructors
 }
 
 // Subflow using braceless identity in continuation
-~event process { input: i32 } -> i32
+~tor process { input: i32 } -> i32
 
 ~process = compute(x: input): v -> v
 

@@ -12,7 +12,7 @@ import std/io
 import std/field
 import std/control
 
-pub event gen { n: usize }
+pub tor gen { n: usize }
 ! each usize
 | done usize
 

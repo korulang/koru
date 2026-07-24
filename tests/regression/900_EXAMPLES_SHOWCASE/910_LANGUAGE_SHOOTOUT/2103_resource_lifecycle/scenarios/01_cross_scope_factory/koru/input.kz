@@ -4,7 +4,7 @@ const std = @import("std");
 
 const File = struct { handle: i32 };
 
-~event open { path: string } -> *File<opened!>
+~tor open { path: string } -> *File<opened!>
 
 ~proc open|zig {
     std.debug.print("Opening\n", .{});
@@ -13,20 +13,20 @@ const File = struct { handle: i32 };
     return f;
 }
 
-~event use { file: *File<opened> }
+~tor use { file: *File<opened> }
 
 ~proc use|zig {
     std.debug.print("Using\n", .{});
 }
 
-~event close { file: *File<!opened> }
+~tor close { file: *File<!opened> }
 
 ~proc close|zig {
     std.debug.print("Closing\n", .{});
     std.heap.page_allocator.destroy(file);
 }
 
-~event create { path: string }
+~tor create { path: string }
 | created *File<opened!>
 
 ~create = open(path): f => created { f.file }

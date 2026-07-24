@@ -105,13 +105,13 @@
         {
             "type": "parse_error",
             "code": "PARSE003",
-            "message": "event declaration missing input shape",
+            "message": "tor declaration missing input shape",
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_080_body_position_expressions/input.kz",
                 "line": 12,
                 "col": 1
             },
-            "raw_text": "~pub event sample\n! one string -> string\n! two string -> usize\n! three string -> string\n! four string -> i32\n| done\n\n"
+            "raw_text": "~pub tor sample\n! one string -> string\n! two string -> usize\n! three string -> string\n! four string -> i32\n| done\n\n"
         },
         {
             "type": "flow",

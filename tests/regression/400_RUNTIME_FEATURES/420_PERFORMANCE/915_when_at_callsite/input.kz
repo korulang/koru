@@ -5,7 +5,7 @@
 
 const std = @import("std");
 
-~event produce { value: u32 }
+~tor produce { value: u32 }
 |> log(d.result)
     |> _
 

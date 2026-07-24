@@ -19,7 +19,7 @@ const std = @import("std");
     alive: bool,
 }
 
-~event main {}
+~tor main {}
 
 ~proc main|zig {
     const p = Particle{

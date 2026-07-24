@@ -7,7 +7,7 @@ const std = @import("std");
 
 // Event with BOTH Expression and Source parameters
 // The Expression captures a condition, the Source captures template content
-~[comptime|transform]event conditional.render {
+~[comptime|transform]tor conditional.render {
     expr: Expression,
     source: Source<HTML>,
     invocation: *const Invocation,

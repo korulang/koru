@@ -5,7 +5,7 @@
 const std = @import("std");
 const File = struct { handle: i32 };
 
-~pub event open { path: string } -> *File<opened!>
+~pub tor open { path: string } -> *File<opened!>
 
 ~proc open|zig {
     std.debug.print("Opening file: {s}\n", .{path});
@@ -16,7 +16,7 @@ const File = struct { handle: i32 };
 }
 
 // Consumes the opened! obligation — grounded in 330_007/fs.kz line 13
-~pub event close { file: *File<!opened> }
+~pub tor close { file: *File<!opened> }
 
 ~proc close|zig {
     std.debug.print("Closing file\n", .{});

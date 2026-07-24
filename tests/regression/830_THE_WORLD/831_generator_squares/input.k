@@ -6,7 +6,7 @@
 // `| done` — a pure yielding generator hands back no summary.
 import std/io
 
-pub event squares { n: usize }
+pub tor squares { n: usize }
 ! each usize
 | done
 

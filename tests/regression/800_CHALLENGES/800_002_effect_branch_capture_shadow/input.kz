@@ -33,14 +33,14 @@
 
 const std = @import("std");
 
-~pub event run { n: u64 }
+~pub tor run { n: u64 }
 ! item u64
 
-~pub event classify { v: u64 }
+~pub tor classify { v: u64 }
 | lo u64
 | hi u64
 
-~pub event sink { v: u64 }
+~pub tor sink { v: u64 }
 
 ~proc run|zig {
     var i: u64 = 0;

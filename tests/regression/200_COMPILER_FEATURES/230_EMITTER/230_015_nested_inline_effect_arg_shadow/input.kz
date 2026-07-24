@@ -16,27 +16,27 @@ const std = @import("std");
 
 var counter: u64 = 0;
 
-~pub event leaf { n: u64 }
+~pub tor leaf { n: u64 }
 ! v u64
 
 ~proc leaf|zig {
     for (0..n) |i| v(i);
 }
 
-~pub event outer { n: u64 }
+~pub tor outer { n: u64 }
 ! v u64
 
 ~proc outer|zig {
     for (0..n) |i| v(i);
 }
 
-~pub event inc {}
+~pub tor inc {}
 
 ~proc inc|zig {
     counter +%= 1;
 }
 
-~pub event show {}
+~pub tor show {}
 
 ~proc show|zig {
     std.debug.print("{d}\n", .{counter});

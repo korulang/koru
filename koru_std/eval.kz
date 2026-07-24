@@ -408,7 +408,7 @@ fn floatOp(l: f64, r: f64, op: ArithOp) EvalError!Value {
 // ============================================================================
 
 // Evaluate an expression and return its value
-~pub event eval {
+~pub tor eval {
     expression: Expression,
     bindings: *const Bindings
 }
@@ -434,7 +434,7 @@ fn floatOp(l: f64, r: f64, op: ArithOp) EvalError!Value {
 }
 
 // Test an expression for truthiness (convenience for conditionals)
-~pub event eval-bool {
+~pub tor eval-bool {
     expression: Expression,
     bindings: *const Bindings
 }

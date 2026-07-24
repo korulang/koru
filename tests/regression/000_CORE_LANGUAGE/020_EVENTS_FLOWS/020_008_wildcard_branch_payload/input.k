@@ -15,7 +15,7 @@
 import std/io
 
 // Event with wildcard payload - parser should accept this
-[norun]event iterator-pattern {} -> *
+[norun]tor iterator-pattern {} -> *
 
 // Use stdlib to print
 std/io:print.ln("done")

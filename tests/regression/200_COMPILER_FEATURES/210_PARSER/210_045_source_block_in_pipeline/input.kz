@@ -17,7 +17,7 @@
 ~import std/io
 
 // First: void event to start a pipeline
-~event setup {}
+~tor setup {}
 
 ~proc setup|zig {
 }

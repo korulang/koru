@@ -12,10 +12,10 @@
 // session; this pin turns green when that pass lands.
 const std = @import("std");
 
-~event tick {} -> i64
+~tor tick {} -> i64
 ~proc tick|zig { return 1; }
 
-~event render-at { x: i64, text: string }
+~tor render-at { x: i64, text: string }
 ~proc render-at|zig { std.debug.print("{d}:{s}\n", .{ x, text }); }
 
 ~tick(): text |> render-at(x: 5)

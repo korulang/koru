@@ -28,7 +28,7 @@ const std = @import("std");
 // - Zero-overhead: the consumer's `then` / `else` body is spliced into the
 //   matching arm in the enclosing scope. An omitted optional branch mints no
 //   marker, so its arm renders empty.
-~[keyword]pub event if { expr: Expression }
+~[keyword]pub tor if { expr: Expression }
 | ?then
 | ?else
 
@@ -77,7 +77,7 @@ const std = @import("std");
 //   and the returns let the optimizer collapse it to a cascade. Same
 //   continuation-return machine as ~if; ~if's two fixed arms become N
 //   guard-selected ones. KORU050/051 exhaustiveness requires the guardless arm.
-~[keyword]pub event cond { expr: Expression }
+~[keyword]pub tor cond { expr: Expression }
 | c *
 
 ~proc cond|template|zig {
@@ -109,7 +109,7 @@ const std = @import("std");
 //   continuation-return); `for` and `if` are one mechanism.
 // - Zero-overhead: comptime-known handlers inline into the loop.
 
-~[keyword]pub event for { expr: Expression }
+~[keyword]pub tor for { expr: Expression }
 ! each *
 | ?done
 
@@ -178,7 +178,7 @@ const std = @import("std");
 // `| captured` after-read. The shape checker enforces this contract with zero
 // capture-specific code. The machine interface (invocation/item/program/
 // allocator → transformed SiteResult) is the proc-return convention.
-~[keyword|comptime|transform]pub event capture { source: Source }
+~[keyword|comptime|transform]pub tor capture { source: Source }
 ! as *
 | ?captured *
 

@@ -17,7 +17,7 @@ const Connection = struct { handle: i32 };
 const Transaction = struct { conn_handle: i32 };
 
 // connect: creates connection with <connected!> obligation
-~pub event connect { host: string }
+~pub tor connect { host: string }
 | ok *Connection<connected!>
 | err string
 
@@ -28,7 +28,7 @@ const Transaction = struct { conn_handle: i32 };
 }
 
 // begin: consumes <!connected> OR <!active>, produces Transaction<started!>
-~pub event begin { conn: *Connection<!connected|!active> }
+~pub tor begin { conn: *Connection<!connected|!active> }
 | ok *Transaction<started!>
 | err string
 
@@ -39,7 +39,7 @@ const Transaction = struct { conn_handle: i32 };
 }
 
 // exec: consumes <!started> OR <!active>, produces Transaction<active!>
-~pub event exec { tx: *Transaction<!started|!active>, sql: string }
+~pub tor exec { tx: *Transaction<!started|!active>, sql: string }
 | ok *Transaction<active!>
 | err string
 
@@ -49,7 +49,7 @@ const Transaction = struct { conn_handle: i32 };
 }
 
 // commit: consumes <!active>, returns Connection<active!>
-~pub event commit { tx: *Transaction<!active> }
+~pub tor commit { tx: *Transaction<!active> }
 | ok *Connection<active!>
 | err string
 
@@ -62,7 +62,7 @@ const Transaction = struct { conn_handle: i32 };
 }
 
 // rollback: consumes <!active>, returns Connection<active!>
-~pub event rollback { tx: *Transaction<!active> }
+~pub tor rollback { tx: *Transaction<!active> }
 | ok *Connection<active!>
 | err string
 
@@ -75,7 +75,7 @@ const Transaction = struct { conn_handle: i32 };
 }
 
 // close: ONLY accepts <!active> - forces meaningful use before close
-~pub event close { conn: *Connection<!active> }
+~pub tor close { conn: *Connection<!active> }
 
 ~proc close|zig {
     std.debug.print("Connection closed\n", .{});

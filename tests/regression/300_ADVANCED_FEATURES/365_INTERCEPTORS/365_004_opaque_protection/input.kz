@@ -8,7 +8,7 @@ const std = @import("std");
 ~import std/interceptors
 
 // Opaque event - cannot be intercepted
-~[opaque] event auth.verify { token: string }
+~[opaque] tor auth.verify { token: string }
 | valid u32
 | invalid string
 

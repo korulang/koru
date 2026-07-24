@@ -2,7 +2,7 @@
 // Issue: Complex nested recursion with multiple labels generates invalid Zig
 // Pattern: .continue-outer => , (missing expression)
 
-~event outer-step { i: u32 }
+~tor outer-step { i: u32 }
 | continue-outer u32
 | done-outer u32
 
@@ -14,7 +14,7 @@
     }
 }
 
-~event inner-step { i: u32, j: u32 }
+~tor inner-step { i: u32, j: u32 }
 | continue-inner { i: u32, j: u32 }
 | done-inner u32
 
@@ -26,14 +26,14 @@
     }
 }
 
-~event process-pair { i: u32, j: u32 } -> { i: u32, j: u32 }
+~tor process-pair { i: u32, j: u32 } -> { i: u32, j: u32 }
 
 ~proc process-pair|zig {
     return .{ .i = i, .j = j };
 }
 
 // Nested recursive loop with labels
-~event nested-loop { start: u32 } -> u32
+~tor nested-loop { start: u32 } -> u32
 
 ~nested-loop = outer-step(i: start)
 | continue-outer outer |> #inner_start inner-step(i: outer, j: 0)

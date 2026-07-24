@@ -16,7 +16,7 @@
 // Transform receives full name: "ring.new[T:u32;N:1024]"
 // Transform parses brackets, extracts T=u32, N=1024, synthesizes typed code.
 
-~[comptime|transform]pub event ring.* {
+~[comptime|transform]pub tor ring.* {
     event_name: string,
     item: *const Item,
     program: *const Program,

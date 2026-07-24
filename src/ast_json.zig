@@ -327,7 +327,7 @@ test "round-trip: parsed program (event + branches + proc + host lines)" {
     const source =
         \\const std = @import("std");
         \\
-        \\~event hello {}
+        \\~tor hello {}
         \\| done
         \\| err string
         \\

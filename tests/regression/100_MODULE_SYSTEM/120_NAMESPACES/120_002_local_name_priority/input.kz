@@ -9,7 +9,7 @@
 
 // Local print event - same name as std/io:print
 // This MUST take priority for unqualified invocations
-~event print {}
+~tor print {}
 
 ~proc print|zig {
     const std = @import("std");

@@ -6,7 +6,7 @@
 
 const std = @import("std");
 
-~event window { window: i32 } -> i32
+~tor window { window: i32 } -> i32
 
 ~proc window|zig {
     std.debug.print("Window size: {d}\n", .{window});

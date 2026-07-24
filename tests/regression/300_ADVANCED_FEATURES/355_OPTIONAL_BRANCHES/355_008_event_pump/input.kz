@@ -11,7 +11,7 @@
 const std = @import("std");
 
 // Simulated event pump - all branches optional (any event can fire)
-~event pump { iteration: u32 }
+~tor pump { iteration: u32 }
 | ?keyboard i32
 | ?mouse i32
 | ?window i32

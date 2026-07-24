@@ -11,7 +11,7 @@ const std = @import("std");
 // Events that the flow will dispatch to
 // ============================================================================
 
-~pub event compute { a: string, b: string, op: string }
+~pub tor compute { a: string, b: string, op: string }
 | result string
 | error string
 
@@ -33,7 +33,7 @@ const std = @import("std");
     return .{ .result = result_str };
 }
 
-~pub event print-result { value: string }
+~pub tor print-result { value: string }
 
 ~proc print-result|zig {
     std.debug.print("Result: {s}\n", .{value});

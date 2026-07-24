@@ -50,7 +50,7 @@ const std = @import("std");
 // Example:
 //   ~std/kernel:shape(Body) { x: f64, y: f64, z: f64, mass: f64 }
 
-~[norun]pub event shape {
+~[norun]pub tor shape {
     expr: Expression,
     source: Source
 }
@@ -58,7 +58,7 @@ const std = @import("std");
 // ============================================================================
 // Internal no-op event for refactored flows
 // (This is here for reference; the transform injects a local one into the user program)
-~[norun]pub event nop {}
+~[norun]pub tor nop {}
 
 // ============================================================================
 //
@@ -77,7 +77,7 @@ const std = @import("std");
 //   3. Generates a local init event+proc that allocates kernel data and returns a view
 //   4. Rewrites the flow to call that init event
 
-~[comptime|transform|claims_descendants]pub event init {
+~[comptime|transform|claims_descendants]pub tor init {
     expr: Expression,
     source: Source,
     invocation: *const Invocation,
@@ -1384,7 +1384,7 @@ const std = @import("std");
 //       }
 //   }
 
-~[comptime|transform]pub event pairwise {
+~[comptime|transform]pub tor pairwise {
     expr: ?Expression,
     source: Source,
     invocation: *const Invocation,
@@ -1702,7 +1702,7 @@ const std = @import("std");
 //       ptr[i].vel += ptr[i].force * dt;
 //   }
 
-~[comptime|transform]pub event self {
+~[comptime|transform]pub tor self {
     expr: Expression,
     source: Source,
     invocation: *const Invocation,
@@ -1932,7 +1932,7 @@ const std = @import("std");
 // Kernel:step - wraps kernel ops in an outer iteration loop.
 // The proc removes step from the AST after init's fusion consumes it.
 
-~[comptime|transform]pub event step {
+~[comptime|transform]pub tor step {
     expr: ?Expression,
     invocation: *const Invocation,
     item: *const Item,

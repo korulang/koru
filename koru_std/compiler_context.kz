@@ -51,7 +51,7 @@ pub const CompilerContext = struct {
 // ============================================================
 
 // Create a new compiler context
-~pub event init {
+~pub tor init {
     ast: Program,
     allocator: std.mem.Allocator,
     error_policy: ErrorPolicy
@@ -72,7 +72,7 @@ pub const CompilerContext = struct {
 }
 
 // Begin a compilation pass (increments metrics, emits CCP events)
-~pub event begin-pass { ctx: CompilerContext, name: string } -> CompilerContext
+~pub tor begin-pass { ctx: CompilerContext, name: string } -> CompilerContext
 
 ~proc begin-pass|zig {
     var ctx = ctx;
@@ -87,7 +87,7 @@ pub const CompilerContext = struct {
 }
 
 // End a compilation pass (increments pass counter, emits CCP events)
-~pub event end-pass { ctx: CompilerContext } -> CompilerContext
+~pub tor end-pass { ctx: CompilerContext } -> CompilerContext
 
 ~proc end-pass|zig {
     var ctx = ctx;
@@ -109,7 +109,7 @@ pub const CompilerContext = struct {
 }
 
 // Report a compilation error
-~pub event report-error {
+~pub tor report-error {
     ctx: CompilerContext,
     message: string,
     location: SourceLocation
@@ -146,7 +146,7 @@ pub const CompilerContext = struct {
 }
 
 // Report a compilation warning
-~pub event report-warning {
+~pub tor report-warning {
     ctx: CompilerContext,
     message: string,
     location: SourceLocation
@@ -183,7 +183,7 @@ pub const CompilerContext = struct {
 }
 
 // Report an informational message
-~pub event info { ctx: CompilerContext, message: string } -> CompilerContext
+~pub tor info { ctx: CompilerContext, message: string } -> CompilerContext
 
 ~proc info|zig {
     // TODO: Check if --verbose flag is set before printing
@@ -195,7 +195,7 @@ pub const CompilerContext = struct {
 }
 
 // Check if compilation should abort due to errors
-~pub event should-abort { ctx: CompilerContext }
+~pub tor should-abort { ctx: CompilerContext }
 | yes CompilerContext
 | no CompilerContext
 
@@ -212,7 +212,7 @@ pub const CompilerContext = struct {
 }
 
 // Query: Get current pass count
-~pub event pass-count { ctx: CompilerContext } -> { ctx: CompilerContext, value: u32 }
+~pub tor pass-count { ctx: CompilerContext } -> { ctx: CompilerContext, value: u32 }
 
 ~proc pass-count|zig {
     return .{
@@ -222,7 +222,7 @@ pub const CompilerContext = struct {
 }
 
 // Query: Get error count
-~pub event error-count { ctx: CompilerContext } -> { ctx: CompilerContext, value: u32 }
+~pub tor error-count { ctx: CompilerContext } -> { ctx: CompilerContext, value: u32 }
 
 ~proc error-count|zig {
     const err_count: u32 = @intCast(ctx.errors.items.len);
@@ -233,7 +233,7 @@ pub const CompilerContext = struct {
 }
 
 // Query: Get warning count
-~pub event warning-count { ctx: CompilerContext } -> { ctx: CompilerContext, value: u32 }
+~pub tor warning-count { ctx: CompilerContext } -> { ctx: CompilerContext, value: u32 }
 
 ~proc warning-count|zig {
     const warn_count: u32 = @intCast(ctx.warnings.items.len);
@@ -244,7 +244,7 @@ pub const CompilerContext = struct {
 }
 
 // Update AST in context (used by transformation passes)
-~pub event update-ast { ctx: CompilerContext, ast: Program } -> CompilerContext
+~pub tor update-ast { ctx: CompilerContext, ast: Program } -> CompilerContext
 
 ~proc update-ast|zig {
     var ctx = ctx;

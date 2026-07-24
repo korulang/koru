@@ -3,6 +3,6 @@
 import std/interpreter
 import std/io
 
-pub event test-nullable {
+pub tor test-nullable {
     pool: ?*std/interpreter:HandlePool,
 }

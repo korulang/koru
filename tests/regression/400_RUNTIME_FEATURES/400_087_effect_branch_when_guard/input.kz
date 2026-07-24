@@ -13,7 +13,7 @@
 
 ~import std/io
 
-~pub event ticker { n: usize }
+~pub tor ticker { n: usize }
 ! tick usize
 
 ~proc ticker|zig {

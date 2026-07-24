@@ -3,7 +3,7 @@
 ~import std/runtime
 ~import std/io
 
-~pub event ping {}
+~pub tor ping {}
 
 ~proc ping|zig {
 }
@@ -13,7 +13,7 @@
 }
 
 const TEST_SOURCE =
-    \\~event broken
+    \\~tor broken
     \\| ok
     \\~ping()
 ;

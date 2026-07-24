@@ -166,7 +166,7 @@ pub const ParseResult = parser_impl.ParseResult;
 // =============================================================================
 
 // Parse Koru source code into AST
-~pub event parse.source {
+~pub tor parse.source {
     source: string,
     file_name: string,
     allocator: std.mem.Allocator
@@ -190,7 +190,7 @@ pub const ParseResult = parser_impl.ParseResult;
 }
 
 // Serialize AST to JSON string
-~pub event dump.ast {
+~pub tor dump.ast {
     ast: parser_impl.ParseResult,
     allocator: std.mem.Allocator
 }

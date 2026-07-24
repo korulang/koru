@@ -50,7 +50,7 @@ var __field_noop_fba = std.heap.FixedBufferAllocator.init(&__field_noop_buf);
 // proven-local, comptime-sized fields. Mirrors std/list:new's
 // route-and-preserve-continuations shape (the `| field` / `| err` match carries
 // over to `new-heap` unchanged).
-~[comptime|transform]pub event new {
+~[comptime|transform]pub tor new {
     invocation: *const Invocation,
     item: *const Item,
     allocator: std.mem.Allocator
@@ -240,7 +240,7 @@ var __field_noop_fba = std.heap.FixedBufferAllocator.init(&__field_noop_buf);
 // Heap constructor — the concrete runtime allocation. `new` routes here unless
 // the escape pass proves the field local (then it's stack-built at the call
 // site). The Field carries its allocator, so `free` is allocator-agnostic.
-~pub event new-heap { bits: usize }
+~pub tor new-heap { bits: usize }
 | field *Field<field!>
 | err string
 
@@ -266,7 +266,7 @@ var __field_noop_fba = std.heap.FixedBufferAllocator.init(&__field_noop_buf);
 // is inlined at the call site. `bits` must be comptime (Zig errors otherwise —
 // the array size is comptime). `free` rides the no-op allocator, unchanged.
 // Brick 2 will route a provably-local `new` here automatically.
-~[comptime|transform]pub event new.on-stack { bits: usize } -> *Field<field!>
+~[comptime|transform]pub tor new.on-stack { bits: usize } -> *Field<field!>
 
 ~[transform]proc new.on-stack|zig {
     const ast = @import("ast");
@@ -343,7 +343,7 @@ var __field_noop_fba = std.heap.FixedBufferAllocator.init(&__field_noop_buf);
 // zeroes the buffer and wires the Field with the no-op allocator (so `free` is a
 // safe no-op — no free-site rewrite). Carries <field!> so the obligation survives
 // the transform. Not meant to be called directly.
-~pub event new-instack { buf: []u64, slot: *Field, bits: usize } -> *Field<field!>
+~pub tor new-instack { buf: []u64, slot: *Field, bits: usize } -> *Field<field!>
 
 ~proc new-instack|zig {
     @memset(buf, 0);
@@ -356,7 +356,7 @@ var __field_noop_fba = std.heap.FixedBufferAllocator.init(&__field_noop_buf);
 // ============================================
 
 // Set bit i to 1. Void, chains with `|>`. The irreducible per-cell poke.
-~pub event set { f: *Field<field>, i: usize }
+~pub tor set { f: *Field<field>, i: usize }
 
 ~proc set|zig {
     f.data[i >> 6] |= (@as(u64, 1) << @as(u6, @intCast(i & 63)));
@@ -366,7 +366,7 @@ var __field_noop_fba = std.heap.FixedBufferAllocator.init(&__field_noop_buf);
 // The IR's AP-write access pattern, fused: one tight strided bit-fill instead of a
 // per-cell `set` call through the flow. Word-blocking (precomputed per-stride
 // patterns) is a later refinement; this is the simple fused loop.
-~pub event strike { f: *Field<field>, from: usize, stride: usize, limit: usize }
+~pub tor strike { f: *Field<field>, from: usize, stride: usize, limit: usize }
 
 ~proc strike|zig {
     // Word-wise stepMask marking: precompute the per-phase word masks for this
@@ -490,7 +490,7 @@ var __field_noop_fba = std.heap.FixedBufferAllocator.init(&__field_noop_buf);
 // positions >= p)`, so this marks only coprime-to-period multiples — ~`period/φ`
 // fewer strikes than the full `strike`. Assumes `wheel[0] == 1` (the unit residue),
 // used for the cheap per-block early-out.
-~pub event strike-wheel { f: *Field<field>, p: usize, wheel: []const usize, period: usize, limit: usize }
+~pub tor strike-wheel { f: *Field<field>, p: usize, wheel: []const usize, period: usize, limit: usize }
 
 ~proc strike-wheel|zig {
     var j: usize = 0;
@@ -514,7 +514,7 @@ var __field_noop_fba = std.heap.FixedBufferAllocator.init(&__field_noop_buf);
 // restricted access pattern compiled to specialized native code. (v1: plumbing
 // proof — emits one simple correct marker; the per-stride unrolled codegen lands
 // next.)
-~[comptime|transform]pub event mark-multiples { f: *Field<field>, from: usize, stride: usize, limit: usize }
+~[comptime|transform]pub tor mark-multiples { f: *Field<field>, from: usize, stride: usize, limit: usize }
 
 ~[transform]proc mark-multiples|zig {
     const ast = @import("ast");
@@ -683,7 +683,7 @@ var __field_noop_fba = std.heap.FixedBufferAllocator.init(&__field_noop_buf);
 // alloc-once sieve loops: `new` once, `clear` each pass instead of new/free per
 // pass (the per-pass allocation/page-fault tax is the dominant cost once marking
 // is wheel-strided).
-~pub event clear { f: *Field<field> }
+~pub tor clear { f: *Field<field> }
 
 ~proc clear|zig {
     @memset(f.data, 0);
@@ -694,7 +694,7 @@ var __field_noop_fba = std.heap.FixedBufferAllocator.init(&__field_noop_buf);
 // ============================================
 
 // 1 if bit i is set, else 0.
-~pub event test { f: *Field<field>, i: usize } -> i64
+~pub tor test { f: *Field<field>, i: usize } -> i64
 
 ~proc test|zig {
     return @as(i64, @intCast((f.data[i >> 6] >> @as(u6, @intCast(i & 63))) & 1));
@@ -702,7 +702,7 @@ var __field_noop_fba = std.heap.FixedBufferAllocator.init(&__field_noop_buf);
 
 // Count of UNSET bits in [lo, hi). Word-wise @popCount over the aligned middle —
 // the IR's "1-bit (+,0) reduction recognized as popcount", made real.
-~pub event count-zeros { f: *Field<field>, lo: usize, hi: usize } -> i64
+~pub tor count-zeros { f: *Field<field>, lo: usize, hi: usize } -> i64
 
 ~proc count-zeros|zig {
     const total_bits: i64 = @intCast(hi - lo);
@@ -724,7 +724,7 @@ var __field_noop_fba = std.heap.FixedBufferAllocator.init(&__field_noop_buf);
 // Teardown (consume — discharges <!field>)
 // ============================================
 
-~pub event free { f: *Field<!field> }
+~pub tor free { f: *Field<!field> }
 
 ~proc free|zig {
     f.deinit();

@@ -5,7 +5,7 @@
 // Defends: parser rule that the chain is the documentation — comments
 // inside a chain are an admission of defeat and should be banned.
 
-~event work {}
+~tor work {}
 | ok i32
 | err string
 

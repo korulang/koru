@@ -3,7 +3,7 @@
 ~import std/runtime
 ~import std/io
 
-~pub event expensive {}
+~pub tor expensive {}
 
 ~proc expensive|zig {
 }

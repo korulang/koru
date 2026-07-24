@@ -38,7 +38,7 @@
 // rendered body directly at container scope (struct members), NOT wrapped in a
 // `flow()` function — so sibling flows see the names via Zig container-scope
 // lookup. Contrast `if`/`for`, which emit statements into a function body.
-~[keyword|declaration]pub event const { source: Source }
+~[keyword|declaration]pub tor const { source: Source }
 
 // An optional `value[type]` base-type annotation (e.g. `count: 42[i32]`) is the
 // FIRST thing that genuinely diverges between the two variants: Zig pins the type

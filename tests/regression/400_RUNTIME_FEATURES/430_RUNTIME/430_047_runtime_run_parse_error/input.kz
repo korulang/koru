@@ -3,7 +3,7 @@
 ~import std/runtime
 ~import std/io
 
-~pub event ping {} -> u64
+~pub tor ping {} -> u64
 
 ~proc ping|zig {
     return 1;

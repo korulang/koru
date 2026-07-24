@@ -12,14 +12,14 @@ pub const Config = struct {
     retries: i32,
 };
 
-~event configure { config: Config } -> i32
+~tor configure { config: Config } -> i32
 
 ~proc configure|zig {
     const total = config.timeout * config.retries;
     return total;
 }
 
-~event check { expected: i32, actual: i32 }
+~tor check { expected: i32, actual: i32 }
 
 ~proc check|zig {
     if (expected != actual) {

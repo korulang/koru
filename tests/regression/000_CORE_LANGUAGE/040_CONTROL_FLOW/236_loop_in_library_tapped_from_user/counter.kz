@@ -2,7 +2,7 @@
 
 const std = @import("std");
 
-~pub event tick { n: u32 }
+~pub tor tick { n: u32 }
 | next u32
 | done
 

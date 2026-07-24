@@ -38,10 +38,10 @@ test "validateArgument accepts correct base type with matching phantom state" {
 
     // Valid usage: pass *Connection<active!> to close() which expects *Connection<!active>
     const source =
-        \\~event connect { }
+        \\~tor connect { }
         \\| ok { conn: *Connection<active!> }
         \\
-        \\~event close { conn: *Connection<!active> }
+        \\~tor close { conn: *Connection<!active> }
         \\
         \\~connect()
         \\| ok c |>
@@ -87,10 +87,10 @@ test "identity branch capture preserves phantom state literal" {
     // cleaned up. This exercises the state-literal tracking path in isolation
     // from the obligation machinery.
     const source =
-        \\~event read-sensor { }
+        \\~tor read-sensor { }
         \\| temperature f32<celsius>
         \\
-        \\~event log-reading { value: f32<celsius> }
+        \\~tor log-reading { value: f32<celsius> }
         \\
         \\~read-sensor()
         \\| temperature t |> log-reading(value: t)
@@ -158,13 +158,13 @@ test "obligations track phantom states through multi-step flow" {
     // Two different types with same phantom state name
     // Both have <active!> obligations but they are DIFFERENT obligations
     const source =
-        \\~event connect { }
+        \\~tor connect { }
         \\| ok { conn: *Connection<active!> }
         \\
-        \\~event begin { conn: *Connection<!active> }
+        \\~tor begin { conn: *Connection<!active> }
         \\| ok { tx: *Transaction<active!> }
         \\
-        \\~event commit { tx: *Transaction<!active> }
+        \\~tor commit { tx: *Transaction<!active> }
         \\
         \\~connect()
         \\| ok c |>

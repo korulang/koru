@@ -3966,7 +3966,7 @@ pub const PROGRAM_AST = Program{
                         \\
                         \\        // Generate error message based on error type
                         \\        const err_msg = switch (err) {
-                        \\            error.UnknownEvent => "Unknown event referenced",
+                        \\            error.UnknownEvent => "Unknown tor referenced",
                         \\            error.IncompleteBranchCoverage => "Incomplete branch coverage",
                         \\            error.ProcWithoutEvent => "Proc without matching event",
                         \\            error.SubflowWithoutEvent => "Subflow without matching event",

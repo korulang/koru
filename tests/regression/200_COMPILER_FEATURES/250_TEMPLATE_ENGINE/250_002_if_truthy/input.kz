@@ -3,7 +3,7 @@
 // emits. Anchors the cluster.
 ~import std/io
 
-~pub event maybe { flag: usize }
+~pub tor maybe { flag: usize }
 
 ~proc maybe|template|zig {
     @import("std").debug.print("always\n", .{});

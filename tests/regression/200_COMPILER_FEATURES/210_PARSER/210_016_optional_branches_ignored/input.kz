@@ -9,7 +9,7 @@ const std = @import("std");
 // Event with required and optional branches
 // success: REQUIRED - must be handled
 // warning, debug: OPTIONAL - can be ignored!
-~event process { value: u32 }
+~tor process { value: u32 }
 | success u32
 | ?warning string
 | ?debug string

@@ -5,7 +5,7 @@
 
 const std = @import("std");
 
-~pub event debug.dump-state {}
+~pub tor debug.dump-state {}
 
 ~proc debug.dump-state|zig {
 }

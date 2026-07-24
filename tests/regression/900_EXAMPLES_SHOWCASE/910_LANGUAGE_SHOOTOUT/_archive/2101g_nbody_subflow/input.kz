@@ -36,11 +36,11 @@ const ZERO_DV = [5][3]f64{
 // Events with SUBFLOW implementations - no ~proc needed!
 // ============================================================================
 
-~event init {} -> [5]Body
+~tor init {} -> [5]Body
 
 ~proc init|zig { return BODIES; }
 
-~event offset { bodies: []Body }
+~tor offset { bodies: []Body }
 
 ~proc offset|zig {
     var px: f64 = 0; var py: f64 = 0; var pz: f64 = 0;
@@ -48,7 +48,7 @@ const ZERO_DV = [5][3]f64{
     bodies[0].vx = -px / SOLAR_MASS; bodies[0].vy = -py / SOLAR_MASS; bodies[0].vz = -pz / SOLAR_MASS;
 }
 
-~event energy { bodies: []const Body }
+~tor energy { bodies: []const Body }
 | e f64
 
 // Subflow with chained captures: kinetic first, then potential
@@ -67,7 +67,7 @@ const ZERO_DV = [5][3]f64{
             }
     | captured result |> e { result.e }
 
-~event parse {} -> u32
+~tor parse {} -> u32
 
 ~proc parse|zig {
     const args = std.process.argsAlloc(std.heap.page_allocator) catch unreachable;
@@ -76,7 +76,7 @@ const ZERO_DV = [5][3]f64{
     return std.fmt.parseInt(u32, args[1], 10) catch unreachable;
 }
 
-~event apply { bodies: []Body, dt: f64, dv: [5][3]f64 }
+~tor apply { bodies: []Body, dt: f64, dv: [5][3]f64 }
 
 ~proc apply|zig {
     for (bodies, 0..) |*b, i| {
@@ -94,7 +94,7 @@ const ZERO_DV = [5][3]f64{
 // ============================================================================
 
 // Step 1: Compute deltas - use const to compute dx/dy/dz once, then dsq from them
-~event pair-delta { bi: Body, bj: Body, dt: f64 }
+~tor pair-delta { bi: Body, bj: Body, dt: f64 }
 | delta { dx: f64, dy: f64, dz: f64, dsq: f64, dt: f64, mi: f64, mj: f64 }
 
 ~pair-delta = const({ dx: bi.x - bj.x, dy: bi.y - bj.y, dz: bi.z - bj.z })
@@ -109,7 +109,7 @@ const ZERO_DV = [5][3]f64{
 }
 
 // Step 2: Compute force - use const to compute mag once (inv_d^3 pattern)
-~event pair-force { dx: f64, dy: f64, dz: f64, dsq: f64, dt: f64, mi: f64, mj: f64 }
+~tor pair-force { dx: f64, dy: f64, dz: f64, dsq: f64, dt: f64, mi: f64, mj: f64 }
 | result { fx: f64, fy: f64, fz: f64, mi: f64, mj: f64 }
 
 ~pair-force = const({ mag: dt / (dsq * @sqrt(dsq)) })

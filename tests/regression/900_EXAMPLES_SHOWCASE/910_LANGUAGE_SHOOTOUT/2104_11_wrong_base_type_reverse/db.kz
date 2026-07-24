@@ -9,7 +9,7 @@ const Connection = struct { handle: i32 };
 const Transaction = struct { handle: i32 };  // Same layout as Connection!
 
 // connect: produces *Connection<active!>
-~pub event connect { host: string }
+~pub tor connect { host: string }
 | ok *Connection<active!>
 | err string
 
@@ -21,7 +21,7 @@ const Transaction = struct { handle: i32 };  // Same layout as Connection!
 
 // begin: consumes *Connection<!active>, produces *Transaction<active!>
 // NOTE: Transaction also has <active!> - same state name as Connection!
-~pub event begin { conn: *Connection<!active> }
+~pub tor begin { conn: *Connection<!active> }
 | ok *Transaction<active!>
 | err string
 
@@ -34,7 +34,7 @@ const Transaction = struct { handle: i32 };  // Same layout as Connection!
 
 // close: consumes *Connection<!active>
 // This should ONLY accept Connection, NOT Transaction!
-~pub event close { conn: *Connection<!active> }
+~pub tor close { conn: *Connection<!active> }
 
 ~proc close|zig {
     std.debug.print("Connection closed (handle={})\n", .{conn.handle});
@@ -43,7 +43,7 @@ const Transaction = struct { handle: i32 };  // Same layout as Connection!
 
 // commit: consumes *Transaction<!active>
 // This should ONLY accept Transaction, NOT Connection!
-~[!]pub event commit { tx: *Transaction<!active> }
+~[!]pub tor commit { tx: *Transaction<!active> }
 
 ~proc commit|zig {
     std.debug.print("COMMIT (handle={})\n", .{tx.handle});

@@ -4,9 +4,9 @@
 // Test 004: Multiple flows should all execute in order
 const std = @import("std");
 
-~event first {}
+~tor first {}
 
-~event second {}
+~tor second {}
 
 ~proc first|zig {
     std.debug.print("First\n", .{});

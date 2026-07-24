@@ -1,6 +1,6 @@
 const Connection = struct { id: i32 };
-~pub event query { conn: *Connection<connected>, sql: string }
+~pub tor query { conn: *Connection<connected>, sql: string }
 ~proc query|zig {
 }
-~pub event get-raw-connection {}
+~pub tor get-raw-connection {}
 | ok c |> query(conn: c, sql: "SELECT 1")

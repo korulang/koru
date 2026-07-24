@@ -9,7 +9,7 @@
 const std = @import("std");
 
 // Counter event that can go in both directions
-~event count { n: i32, direction: string }
+~tor count { n: i32, direction: string }
 | next i32
 | done i32
 
@@ -32,9 +32,9 @@ const std = @import("std");
 }
 
 // Start events for each flow
-~event start-up {}
+~tor start-up {}
 
-~event start-down {}
+~tor start-down {}
 
 ~proc start-up|zig {
     std.debug.print("Starting count-up flow...\n", .{});

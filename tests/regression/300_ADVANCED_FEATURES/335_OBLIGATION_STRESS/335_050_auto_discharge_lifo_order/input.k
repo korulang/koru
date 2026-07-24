@@ -8,10 +8,10 @@
 // nested dependent resources. The correct trace releases `child`, then `parent`.
 import std/io
 
-pub event acquire { name: string } -> string<held!>
+pub tor acquire { name: string } -> string<held!>
 acquire -> name
 
-pub event release { name: string<!held> }
+pub tor release { name: string<!held> }
 release = std/io:print.ln("release {{ name:s }}")
 
 acquire(name: "parent"): parent |> acquire(name: "child"): child |> std/io:print.ln("both held")

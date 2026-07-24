@@ -3,13 +3,13 @@ const ast = @import("ast");
 const Program = ast.Program;
 const Item = ast.Item;
 
-~[keyword|comptime|transform]pub event sample-transform {
+~[keyword|comptime|transform]pub tor sample-transform {
     item: *const Item,
     program: *const Program,
     allocator: std.mem.Allocator
 } -> SiteResult
 
-~[norun]pub event sample-impl {}
+~[norun]pub tor sample-impl {}
 
 ~proc sample-transform|zig {
     // Deriving flow from item

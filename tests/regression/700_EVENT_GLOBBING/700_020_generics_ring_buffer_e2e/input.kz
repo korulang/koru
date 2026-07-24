@@ -8,7 +8,7 @@
 // The ring buffer is fully typed at compile time.
 // No runtime overhead, no type erasure, no boxing.
 
-~[comptime|transform]pub event ring.* {
+~[comptime|transform]pub tor ring.* {
     event_name: string,
     expr: Expression,
     source: Source,

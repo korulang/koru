@@ -14,7 +14,7 @@
 
 ~import std/io
 
-~event pick { n: i32 }
+~tor pick { n: i32 }
 | high i32
 | low i32
 

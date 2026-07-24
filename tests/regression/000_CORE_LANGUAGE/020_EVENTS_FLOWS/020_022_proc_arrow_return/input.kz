@@ -2,7 +2,7 @@
 // the corpus). The proc returns the bare value directly; Output is i32, no union.
 ~import std/io
 
-~pub event double { a: i32 } -> i32
+~pub tor double { a: i32 } -> i32
 ~proc double|zig {
     return a * 2;
 }

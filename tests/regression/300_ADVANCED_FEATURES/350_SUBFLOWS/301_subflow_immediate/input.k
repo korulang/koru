@@ -9,7 +9,7 @@
 import std/io
 
 // Event: takes a name, produces a greeting message
-event greet { name: string } -> string
+tor greet { name: string } -> string
 
 // Subflow implementation: maps input directly to output
 greet -> name

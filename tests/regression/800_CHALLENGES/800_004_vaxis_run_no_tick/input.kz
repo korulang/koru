@@ -23,7 +23,7 @@
 const Win = struct { w: u16, h: u16 };
 const Key = struct { ch: u8 };
 
-~pub event run { title: string }
+~pub tor run { title: string }
 ! ?draw Win
 ! ?key Key
 ! ?resize Win

@@ -1,18 +1,18 @@
 const std = @import("std");
 
-~[comptime] event tick { n: i64 } -> i64
+~[comptime] tor tick { n: i64 } -> i64
 
 ~proc tick|zig {
     return n;
 }
 
-~[comptime] event report { v: i64 }
+~[comptime] tor report { v: i64 }
 
 ~proc report|zig {
     std.debug.print("{}\n", .{v});
 }
 
-~[comptime] pub event countdown {}
+~[comptime] pub tor countdown {}
 
 ~[comptime] countdown = #loop tick(n: 5)
 | go i when i > 0 |> @loop(n: i - 1)

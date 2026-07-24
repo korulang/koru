@@ -9,10 +9,10 @@
 // Zig, raw Stage-D host error.
 import std/io
 
-pub event g { a: i64 } -> i64
+pub tor g { a: i64 } -> i64
 g -> a + 1
 
-pub event pick {} -> i64
+pub tor pick {} -> i64
 pick = if(g(a: 4) > 3)
 | then -> 1
 | else -> 2

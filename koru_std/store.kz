@@ -81,7 +81,7 @@ const std = @import("std");
 // annotation (`hp: 100[i64]` — same parser as const/capture); defaults
 // are orthogonal to shape.
 
-~[keyword|comptime|transform]pub event new {
+~[keyword|comptime|transform]pub tor new {
     expr: Expression,
     source: Source,
     invocation: *const Invocation,
@@ -754,7 +754,7 @@ const std = @import("std");
                 return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): an owned column of *{s}:{s} needs module {s} in scope - add `import {s}`", .{ store_name, oi.module_slash, oi.type_name, oi.module_slash, oi.module_slash }) } };
             }
             if (discharger_count == 0) {
-                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): column type *{s}:{s} has no terminal discharge candidate for <!{s}> - declare a void event in {s} consuming `*{s}<!{s}>` (the canonical discharger)", .{ store_name, oi.module_slash, oi.type_name, oi.state, oi.module_slash, oi.type_name, oi.state }) } };
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): column type *{s}:{s} has no terminal discharge candidate for <!{s}> - declare a void tor in {s} consuming `*{s}<!{s}>` (the canonical discharger)", .{ store_name, oi.module_slash, oi.type_name, oi.state, oi.module_slash, oi.type_name, oi.state }) } };
             }
             if (discharger_count > 1) {
                 // AMBIGUOUS: >1 dischargers (commit|rollback) — mark the store
@@ -3844,7 +3844,7 @@ const std = @import("std");
 // <expr'> has dotted store reads rewritten to the cell. The replacement is
 // a real flow, so it is emitted inside a function like any other call.
 
-~[keyword|comptime|transform]pub event stored {
+~[keyword|comptime|transform]pub tor stored {
     source: Source,
     invocation: *const Invocation,
     item: *const Item,
@@ -4463,7 +4463,7 @@ const std = @import("std");
 // self-erase — handles it with no duplication. Reactive rules are top-level
 // only; they are standing rules, not mid-flow steps.
 
-~[keyword|comptime|transform|pre]pub event default {
+~[keyword|comptime|transform|pre]pub tor default {
     expr: Expression,
     invocation: *const Invocation,
     item: *const Item,
@@ -4536,7 +4536,7 @@ const std = @import("std");
 // watch precedes its create in source (a rung-one ordering wall); no create
 // anywhere is a plain unknown-store diagnostic.
 
-~[keyword|comptime|transform]pub event watch {
+~[keyword|comptime|transform]pub tor watch {
     expr: Expression,
     invocation: *const Invocation,
     item: *const Item,
@@ -4831,7 +4831,7 @@ const std = @import("std");
 // carries the site's source position so standing query enters stay honest
 // about program order (a query only hears inserts BELOW it in source).
 
-~[keyword|comptime|transform]pub event insert {
+~[keyword|comptime|transform]pub tor insert {
     expr: Expression,
     source: Source,
     invocation: *const Invocation,
@@ -5115,7 +5115,7 @@ const std = @import("std");
 // rows that exist when its program position executes ((l) lean: the
 // imperative sweep IS the stripe).
 
-~[keyword|comptime|transform]pub event query {
+~[keyword|comptime|transform]pub tor query {
     expr: Expression,
     invocation: *const Invocation,
     item: *const Item,
@@ -5252,7 +5252,7 @@ const std = @import("std");
 // (pre-transplant), leaving a raw template. query dodges this by having `create`
 // drive the transplant early (on `new`); sweep drives its OWN transplant at the
 // site, so it must claim its descendants to win the same race.
-~[keyword|comptime|transform|claims_descendants]pub event sweep {
+~[keyword|comptime|transform|claims_descendants]pub tor sweep {
     expr: Expression,
     invocation: *const Invocation,
     item: *const Item,
@@ -5712,7 +5712,7 @@ const std = @import("std");
 // Preorder on a non-[tree] store is rejected by the coordinator with a
 // teaching diagnostic (no parent column to walk).
 
-~[keyword|comptime|transform]pub event preorder {
+~[keyword|comptime|transform]pub tor preorder {
     expr: Expression,
     invocation: *const Invocation,
     item: *const Item,
@@ -5811,7 +5811,7 @@ const std = @import("std");
 // the row out. Obligation wiring (a taken row must be consumed or given
 // back — 690_007/690_015) rides on the take event's phantom.
 
-~[keyword|comptime|transform]pub event take {
+~[keyword|comptime|transform]pub tor take {
     expr: Expression,
     invocation: *const Invocation,
     item: *const Item,
@@ -5966,7 +5966,7 @@ const std = @import("std");
 // happens, so interceptors (the write contract) do NOT run. Compiles to
 // the generated `__store_stripe_<s>` unit.
 
-~[keyword|comptime|transform]pub event stripe {
+~[keyword|comptime|transform]pub tor stripe {
     expr: Expression,
     invocation: *const Invocation,
     item: *const Item,

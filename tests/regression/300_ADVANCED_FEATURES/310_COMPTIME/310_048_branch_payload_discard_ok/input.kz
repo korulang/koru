@@ -5,9 +5,9 @@
 
 const std = @import("std");
 
-~event compute { x: i32 } -> i32
+~tor compute { x: i32 } -> i32
 
-~event finish {}
+~tor finish {}
 
 ~proc compute|zig {
     return x * 2;

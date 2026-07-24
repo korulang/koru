@@ -6,7 +6,7 @@ const std = @import("std");
 const File = struct { handle: i32 };
 
 // Open a file - returns opened! state
-~pub event open { path: string } -> *File<opened!>
+~pub tor open { path: string } -> *File<opened!>
 
 ~proc open|zig {
     const f = std.heap.page_allocator.create(File) catch unreachable;
@@ -15,14 +15,14 @@ const File = struct { handle: i32 };
 }
 
 // Lock - transition opened! -> locked!
-~pub event lock { file: *File<!opened> } -> *File<locked!>
+~pub tor lock { file: *File<!opened> } -> *File<locked!>
 
 ~proc lock|zig {
     return file;
 }
 
 // Write - requires locked state (doesn't consume)
-~pub event write { file: *File<locked>, data: string }
+~pub tor write { file: *File<locked>, data: string }
 | written
 | err string
 
@@ -32,7 +32,7 @@ const File = struct { handle: i32 };
 }
 
 // Unlock - consumes locked! (Option 1 for disposing locked!)
-~pub event unlock { file: *File<!locked> }
+~pub tor unlock { file: *File<!locked> }
 
 ~proc unlock|zig {
     std.debug.print("Unlocking\n", .{});
@@ -40,7 +40,7 @@ const File = struct { handle: i32 };
 }
 
 // Force close - also consumes locked! (Option 2 for disposing locked!)
-~pub event force-close { file: *File<!locked> }
+~pub tor force-close { file: *File<!locked> }
 
 ~proc force-close|zig {
     std.debug.print("Force closing\n", .{});

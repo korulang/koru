@@ -3,4 +3,4 @@
 // is only the internal lowering, never a surface spelling. This wall holds in
 // BOTH .k and .kz — a .kz file is still Koru surface at the event declaration,
 // so being host-adjacent does not license the ziggy spelling here.
-~event greet { name: []const u8 }
+~tor greet { name: []const u8 }

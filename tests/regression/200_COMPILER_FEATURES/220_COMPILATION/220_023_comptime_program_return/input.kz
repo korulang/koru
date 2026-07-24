@@ -12,7 +12,7 @@ const ast = @import("ast");
 const ast_functional = @import("ast_functional");
 
 // Comptime event that RETURNS a modified Program
-~[comptime] event augment-program {
+~[comptime] tor augment-program {
     program: *const ast.Program,
     allocator: std.mem.Allocator
 } -> *const ast.Program
@@ -33,7 +33,7 @@ const ast_functional = @import("ast_functional");
 ~augment-program()
 
 // A simple runtime event to verify compilation works
-~event hello {}
+~tor hello {}
 
 ~proc hello|zig {
     std.debug.print("Hello from augmented program!\n", .{});

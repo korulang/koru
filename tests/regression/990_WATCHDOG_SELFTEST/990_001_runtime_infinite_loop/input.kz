@@ -3,7 +3,7 @@
 // inner binary timeout) must catch it and record a TIMEOUT failure instead of
 // hanging the suite forever. With EXPECT_TIMEOUT, a CAUGHT hang = PASS.
 const std = @import("std");
-~event spin {}
+~tor spin {}
 ~proc spin|zig {
     var i: u64 = 0;
     while (true) { i +%= 1; std.mem.doNotOptimizeAway(i); }

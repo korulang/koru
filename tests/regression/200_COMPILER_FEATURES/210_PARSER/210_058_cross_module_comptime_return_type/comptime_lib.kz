@@ -6,7 +6,7 @@
 
 const std = @import("std");
 
-~[comptime|norun] pub event sql { query: string }
+~[comptime|norun] pub tor sql { query: string }
 | ok
 | err string
 

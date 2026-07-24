@@ -7,11 +7,11 @@
 
 const std = @import("std");
 
-~event server.accept {}
+~tor server.accept {}
 | connection u32
 | stopped
 
-~event server.handle { id: u32 }
+~tor server.handle { id: u32 }
 
 ~proc server.accept|zig {
     std.debug.print("Accept\n", .{});

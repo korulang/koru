@@ -14,7 +14,7 @@
 const std = @import("std");
 
 // Event that processes a parse result - uses TYPE from std import
-~event process-ast {
+~tor process-ast {
     result: std/koru:ParseResult,
 } -> usize
 
@@ -23,7 +23,7 @@ const std = @import("std");
 }
 
 // Event to report count
-~event report { count: usize }
+~tor report { count: usize }
 
 ~proc report|zig {
     std.debug.print("AST has {} items\n", .{count});
@@ -31,7 +31,7 @@ const std = @import("std");
 
 // Sample code to parse
 const SAMPLE =
-    \\~event test {}
+    \\~tor test {}
     \\| done
 ;
 

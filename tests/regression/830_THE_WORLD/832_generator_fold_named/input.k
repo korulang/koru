@@ -17,7 +17,7 @@
 // template.
 import std/io
 
-pub event nats { n: usize }
+pub tor nats { n: usize }
 ! each usize
 | done
 

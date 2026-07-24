@@ -4,7 +4,7 @@
 // "branch present? lower it : comp error" shape.
 ~import std/io
 
-~pub event pick { }
+~pub tor pick { }
 
 ~proc pick|template|zig {
     {% if missing %}

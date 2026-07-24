@@ -7,7 +7,7 @@
 // leaves multi-guard optional effect branches with no legal spelling.
 ~import std/io
 
-~pub event poll { x: i64 }
+~pub tor poll { x: i64 }
 ! ?tick i64
 | done
 

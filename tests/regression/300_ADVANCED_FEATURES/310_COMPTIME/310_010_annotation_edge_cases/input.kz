@@ -4,22 +4,22 @@
 const std = @import("std");
 
 // Annotations with special characters (opaque!)
-~[gpu:metal:half] event colon-separated {}
+~[gpu:metal:half] tor colon-separated {}
 
 // Annotations with comparison operators
-~[version>=2.0] event version-check {}
+~[version>=2.0] tor version-check {}
 
 // Annotations with spaces in params
-~[profile "with spaces" 1000Hz] event spaced {}
+~[profile "with spaces" 1000Hz] tor spaced {}
 
 // Nested parens (opaque string handles it)
-~[custom(foo(bar: 1))] event nested {}
+~[custom(foo(bar: 1))] tor nested {}
 
 // URL-like annotation
-~[source("https://example.com/spec")] event url-annot {}
+~[source("https://example.com/spec")] tor url-annot {}
 
 // Future syntax experimentation
-~[inline@500] event at-syntax {}
+~[inline@500] tor at-syntax {}
 
 ~proc colon-separated|zig { return .{ .done = .{} }; }
 ~proc version-check|zig { return .{ .done = .{} }; }

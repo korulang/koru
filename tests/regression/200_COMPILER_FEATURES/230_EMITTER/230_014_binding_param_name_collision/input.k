@@ -11,7 +11,7 @@
 
 import std/io
 
-event echo { v: i32 } -> i32
+tor echo { v: i32 } -> i32
 
 echo -> v
 
