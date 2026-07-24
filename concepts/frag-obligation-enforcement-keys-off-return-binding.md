@@ -119,12 +119,37 @@ Three things this is NOT, each ruled out by a green neighbour:
   `not_auto_dischargeable`, rather than riding the whole-value `return_phantom`.
 
 That last contrast is the lead: the record-field path already does the right thing
-in the shape the whole-value path drops. The likely fix is to give the whole-value
-head obligation the same survival the per-field seeding has, rather than a new
-continuation-walking pass — but which layer loses it (the inserter's head seeding
-versus the phantom checker's flow-head threading, both of which the top of this
-belief names as `return_binding`-gated) is NOT yet established. Determine that
-before building; the two produce different fixes.
+in the shape the whole-value path drops.
+
+### Which layer loses it: NEITHER — it is a seam (established 2026-07-24)
+
+The open question above is settled, and the answer is that no layer owns the
+check. Both halves are present and both are doing what their comments say:
+
+- The **inserter**, in normalize-only mode (what `--auto-discharge=disable`
+  runs), materializes the head binding and then breaks out of the continuation
+  walk — "no insertion, no terminator validation … enforcement stays with the
+  phantom checker."
+- The **phantom checker** seeds the head's `return_binding` obligation into
+  `root_context` so the chained continuation can SEE it — which is why a
+  discharge LATE in the chain is correctly credited, and the lantern game
+  auto-discharges fine. It then validates each continuation and returns. There is
+  no post-loop check that `root_context` is empty at flow exit.
+
+So consumption is tracked across the chain and absence is not. Each layer
+delegates the exit check to the other.
+
+A branch arm escapes this because `validateContinuation` performs a terminal
+validation of the ARM's own scope. The flow head's `root_context` has no
+equivalent. That is the whole asymmetry, and it is Lars's reading: this is a
+SCOPING gap, not a binding-form gap. `330_115` is the control — same obligation,
+same continuation, delivered as `| lit lamp`, caught — and it must stay green
+through any fix, or the hole moved rather than closed.
+
+The fix therefore wants a flow-exit validation of the head context, reusing the
+arm's terminal-validation path rather than inventing a second one. Two spellings
+of the same program must type the same; the inserter's own head-seeding comment
+already asserts that as the intent.
 
 Default auto-discharge masks all of it — with insertion on, the compiler emits the
 missing discharger for these exact programs and they are correct. The wall is only
