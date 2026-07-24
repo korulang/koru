@@ -5,9 +5,9 @@
 // (`const name = "Claude";` etc.), so the following flow can interpolate them
 // directly — no host-side companion file needed.
 //
-// PINS THE GAP: today the `const` transform only implements the config-capture
-// form (`~const(...) | as cfg |> ...`); the module-declaration form is
-// unimplemented, so `name`/`count` never get declared and this fails.
+// Pins the module-declaration form specifically, as distinct from the
+// config-capture form (`~const(...) | as cfg |> ...`): the bare block must
+// declare `name`/`count` at module scope for the flow to interpolate them.
 import std/io
 
 const {

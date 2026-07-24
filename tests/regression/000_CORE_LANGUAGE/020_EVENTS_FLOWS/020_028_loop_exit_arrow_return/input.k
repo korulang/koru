@@ -6,10 +6,9 @@
 // subflow/switch path. `run` is declared `-> i64`; the loop sums 5+4+3+2+1 and
 // the `| done e -> e` exit arm produces the total.
 //
-// PINNED FAILING (2026-06-29): the label-fold loop lowers the exit arm as
-// `const e = result.done; _ = e;` (a discard) instead of `return e;`, so the
-// i64-returning handler falls off its end. Sibling gap to 020_025 on the loop
-// path — the bare-return signal never reaches emitFlow's loop-exit emission.
+// Guards the loop-exit emission path specifically: the bare-return signal must
+// reach emitFlow's loop-exit arm and produce `return e;`, never a discard. The
+// sibling on the non-loop path is 020_025.
 import std/io
 
 tor step { n: i64, acc: i64 }

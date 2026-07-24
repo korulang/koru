@@ -1,7 +1,5 @@
-// RED PIN (type-system design walk, 2026-07-06/07). REWRITTEN minus
-// the dead `Acc<T>`/`~type` grammar AND the dead `~capture({...}) | as`
-// form (current idiom: seed block + `! as` effect cell, 320_042). The
-// accumulator is a DECLARED nominal type — the capture cell holds a
+// Pins a DECLARED nominal type as the accumulator of an effect cell
+// (seed block + `! as`, 320_042). The accumulator is a DECLARED nominal type — the capture cell holds a
 // value of a Koru-minted type, so the cell must resolve the declared
 // type's identity, not a pasted Zig string. (The stamped-name variant
 // of this pin is 030_121.)

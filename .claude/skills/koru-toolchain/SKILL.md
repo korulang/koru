@@ -40,17 +40,18 @@ These cost hours if you don't know them. Each is expanded in `CLAUDE.md` /
   pure Koru. Branch selection (mapping one event's branches to another's, and
   `when`-guards) is a Koru act. For conditional selection use `~if(cond)
   | then |> ... | else |> ...` (a fast convenience over `when`; available once
-  you import any `$std` module). A `~proc …|zig { ... }` host body is the
+  you import any `std` module). A `~proc …|zig { ... }` host body is the
   *escape hatch*, reserved for an actual side effect or collecting data across
   a call. If a proc body is only selecting a branch with an `if`, it wants to
   be a subflow.
+- **`~` is parser mode, not a call — and only exists in host-embedded files.**
+  In a `.kz`/`.kjs`, `~` switches the parser from the host language into Koru. It
+  is NEVER written inside a Koru flow: once you're in a flow you stay in Koru,
+  and a `~` mid-flow silently opens a second, unrelated flow (`320_047`). In a
+  `.k` the character doesn't appear at all.
 - **Punning is mandatory.** When a call argument's value is exactly the field
   name, write `f(n)` — the compiler rejects the redundant `f(n: n)`. Use a label
   only when the value differs from the field (`f(n: p)`).
-- **`~` is parser mode, not a call.** `~` switches the parser from the host
-  language (Zig) into Koru. It is NEVER written inside a Koru flow — once you're
-  in a flow, you stay in Koru. Writing `~` mid-flow silently creates a second,
-  unrelated flow.
 - **Branches are equal — there is no happy path.** `| ok`, `| err`, `| done`
   are all just named outcomes. No success/error/Result framing. An event with
   one branch `| err` is not "an event that fails" — it's an event whose only
@@ -65,10 +66,12 @@ These cost hours if you don't know them. Each is expanded in `CLAUDE.md` /
 
 ## File forms
 
-- **`.kz`** — Koru-Zig: a valid Zig file where `~`-constructs switch into Koru.
-  The common form today.
-- **`.k`** — pure Koru, host-agnostic; pairs with a host file (`.kz` for Zig)
-  that supplies host-level declarations. Used by the frontpage hello-world.
+- **`.k`** — pure Koru, host-agnostic, and a **full program**: events implement
+  as subflows right there in the file, private events included. **No `~`
+  characters at all.** This is the default for a pure-Koru program.
+- **`.kz`** — Koru-Zig: a valid Zig file where `~` switches the parser into Koru.
+  Use it when you need host-level declarations or a `|zig` proc body.
+- **`.kjs`** — the JS-host counterpart to `.kz`.
 
 ## Running tests
 
@@ -84,6 +87,13 @@ A test is a directory under `tests/regression/<CLUSTER>/<NNN_name>/` with an
 `input.kz` (and/or `input.k`), plus markers: `MUST_RUN` + `expected.txt`
 (positive) or `MUST_FAIL` + `EXPECT` + `expected_error.txt` (negative).
 `MUST_FAIL` means *negative test*, NOT "a test that is currently failing."
+
+Pinning a bug as a `MUST_FAIL`: `expected_error.txt` is matched by concatenating
+all its lines (`tr -d '\n\r'`) then `grep -qF` against `backend.err` — so it must
+be a **single literal substring** of the actual error, not multi-line. `EXPECT`
+names the stage: `BACKEND_COMPILE_ERROR` catches any Stage-B failure;
+`BACKEND_EXEC_ERROR` is a Stage-C runtime/coordination error and needs the
+`expected_error.txt` substring to actually pin it. (See `320_047` for a worked pin.)
 
 ## How a compile actually runs (for reading failures)
 

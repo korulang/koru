@@ -43,11 +43,12 @@ These cost hours if you don't know them. Each is expanded in `CLAUDE.md` /
   you import any `std` module). A `~proc …|zig { ... }` host body is the
   *escape hatch*, reserved for an actual side effect or collecting data across
   a call. If a proc body is only selecting a branch with an `if`, it wants to
-  be a subflow. **Known gap:** `~if`/`~for` as a subflow-body RHS
-  (`~event = ~if(...) | then |> ... | else |> ...`) does NOT lower yet — the
-  template render only fires at flow-statement and nested-continuation
-  positions, not subflow-RHS. Pinned in `320_047`. Use `~if` at flow-statement
-  position (see `320_002`) until that closes.
+  be a subflow.
+- **`~` is parser mode, not a call — and only exists in host-embedded files.**
+  In a `.kz`/`.kjs`, `~` switches the parser from the host language into Koru. It
+  is NEVER written inside a Koru flow: once you're in a flow you stay in Koru,
+  and a `~` mid-flow silently opens a second, unrelated flow (`320_047`). In a
+  `.k` the character doesn't appear at all.
 - **Punning is mandatory.** When a call argument's value is exactly the field
   name, write `f(n)` — the compiler rejects the redundant `f(n: n)`. Use a label
   only when the value differs from the field (`f(n: p)`).
@@ -65,10 +66,12 @@ These cost hours if you don't know them. Each is expanded in `CLAUDE.md` /
 
 ## File forms
 
-- **`.kz`** — Koru-Zig: a valid Zig file where `~`-constructs switch into Koru.
-  The common form today.
-- **`.k`** — pure Koru, host-agnostic; pairs with a host file (`.kz` for Zig)
-  that supplies host-level declarations. Used by the frontpage hello-world.
+- **`.k`** — pure Koru, host-agnostic, and a **full program**: events implement
+  as subflows right there in the file, private events included. **No `~`
+  characters at all.** This is the default for a pure-Koru program.
+- **`.kz`** — Koru-Zig: a valid Zig file where `~` switches the parser into Koru.
+  Use it when you need host-level declarations or a `|zig` proc body.
+- **`.kjs`** — the JS-host counterpart to `.kz`.
 
 ## Running tests
 
