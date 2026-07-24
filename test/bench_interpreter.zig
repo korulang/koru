@@ -10,7 +10,7 @@ const flow_parser = @import("flow_parser");
 const ITERATIONS: u64 = 200_000;
 
 const SOURCE =
-    "~add(a: 3, b: 4)\n" ++
+    "add(a: 3, b: 4)\n" ++
     "    | ok r |> result { value: r }\n";
 
 fn dispatchAdd(_: *const @import("ast").Invocation, out: *interpreter.DispatchResult) anyerror!void {

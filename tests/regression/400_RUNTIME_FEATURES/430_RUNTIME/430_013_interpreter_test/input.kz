@@ -81,9 +81,9 @@ pub fn main() void {
     // ========================================================================
     // Test 2: Parse Koru source and dispatch!
     // ========================================================================
-    std.debug.print("Test 2: Parse and dispatch '~greet(name: \"Runtime\")'\n", .{});
+    std.debug.print("Test 2: Parse and dispatch 'greet(name: \"Runtime\")'\n", .{});
     {
-        const test_source = "~greet(name: \"Runtime\")";
+        const test_source = "greet(name: \"Runtime\")";
 
         // Create allocator
         var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -165,9 +165,9 @@ pub fn main() void {
     // ========================================================================
     // Test 3: Parse multi-arg call
     // ========================================================================
-    std.debug.print("Test 3: Parse '~farewell(name: \"Claude\")'\n", .{});
+    std.debug.print("Test 3: Parse 'farewell(name: \"Claude\")'\n", .{});
     {
-        const test_source = "~farewell(name: \"Claude\")";
+        const test_source = "farewell(name: \"Claude\")";
 
         var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
         defer arena.deinit();

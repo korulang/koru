@@ -34,7 +34,7 @@ only authority on what currently works):
 Instrument the whole program with taps. Add everything to a scope. Full REPL.
 
 ```
-koru> ~app:withdraw(amount: 100)
+koru> app:withdraw(amount: 100)
 
 TRACE: app:withdraw
   → account:balance | amount 50
@@ -42,9 +42,9 @@ TRACE: app:withdraw
 
 Result: .insufficient_funds
 
-koru> ~account.balance = amount 1000   // Live mock injection
+koru> account.balance = amount 1000   // Live mock injection
 
-koru> ~app:withdraw(amount: 100)
+koru> app:withdraw(amount: 100)
 
 TRACE: app:withdraw
   → account:balance | amount 1000  [MOCKED]
@@ -60,7 +60,7 @@ Result: .success { remaining: 900 }
 │ KORU COMPILER - Interactive Mode                    [--inter]   │
 ├──────────────────────────────────┬──────────────────────────────┤
 │ Pipeline                         │ AST Inspector                │
-│ ✓ context_create                 │ ~event greet { name: str }   │
+│ ✓ context_create                 │ ~tor greet { name: string }  │
 │ ✓ frontend                       │ | greeting { msg: str }      │
 │ ▶ transform_taps ←               │                              │
 │ ○ transform_user                 │ [Diff: +2 nodes, -0 nodes]   │
@@ -68,7 +68,7 @@ Result: .success { remaining: 900 }
 ├──────────────────────────────────┼──────────────────────────────┤
 │ AI Assistant                     │ Source: greet.kz             │
 │                                  │                              │
-│ You: Why did the tap wrap line   │  1│ ~event greet { ... }     │
+│ You: Why did the tap wrap line   │  1│ ~tor greet { ... }       │
 │      42 but not line 45?         │  2│ | greeting { ... }       │
 │                                  │  3│                          │
 │ AI: Line 42 matches pattern      │  4│ ~tap(greet -> *)         │
@@ -100,22 +100,22 @@ Traditional AI tool systems give the AI a bag of functions. The AI has to figure
 Koru solves all of this:
 
 ```koru
-~pub event fs:open { path: []const u8 }
-| handle []const u8<opened!>           // ← Phantom: creates obligation
+~pub tor fs:open { path: string }
+| handle string<opened!>              // ← Phantom: creates obligation
 
-~pub event fs:close { h: []const u8<!opened> }  // ← Must discharge!
+~pub tor fs:close { h: string<!opened> }  // ← Must discharge!
 | closed {}
 
-~pub event fs:read { h: []const u8<opened> }    // ← Requires opened state
-| data { content: []const u8 }
+~pub tor fs:read { h: string<opened> }    // ← Requires opened state
+| data { content: string }
 | eof {}
 ```
 
-**Event signatures are self-documenting.** The AI reads the types.
+**Tor signatures are self-documenting.** The AI reads the types.
 
 **Phantom obligations are constraints.** `<opened!>` means "this creates an obligation". `<!opened>` means "this discharges it". The AI knows EXACTLY what must happen.
 
-**Progressive disclosure.** The AI only sees events in scope. Register capabilities explicitly:
+**Progressive disclosure.** The AI only sees tors in scope. Register capabilities explicitly:
 
 ```koru
 ~std/runtime:register(scope: "file_ops") {
@@ -130,10 +130,10 @@ Koru solves all of this:
 ### The AI Interaction Model
 
 ```
-AI receives: scope "file_ops" with events:
-  - fs:open { path: str } → handle str<opened!>
-  - fs:close { h: str<!opened> } → closed
-  - fs:read { h: str<opened> } → data | eof
+AI receives: scope "file_ops" with tors:
+  - fs:open { path: string } → handle string<opened!>
+  - fs:close { h: string<!opened> } → closed
+  - fs:read { h: string<opened> } → data | eof
 
 AI understands:
   1. open creates obligation (must close)
@@ -141,7 +141,7 @@ AI understands:
   3. close discharges obligation
 
 AI generates:
-  ~fs:open(path: "/data.txt")
+  fs:open(path: "/data.txt")
   | handle h |>
       fs:read(h: h)
       | data d |> process(d.content)
@@ -161,7 +161,7 @@ The phantom types GUIDE the AI to correct code. No special prompting needed.
 ├──────────────────────────────────┬──────────────────────────────┤
 │ Flow Trace                       │ Test Editor                  │
 │                                  │                              │
-│ ~app:withdraw(amount: 100)       │ ~test(overdraft blocked) {   │
+│ app:withdraw(amount: 100)        │ ~test(overdraft blocked) {   │
 │   ├─ calls: account.balance ⚠️   │   ~account.balance = 50      │
 │   │   └─ IMPURE - needs mock!    │   ~app:withdraw(100)         │
 │   └─ returns: insufficient_funds │   | insufficient_funds |>    │

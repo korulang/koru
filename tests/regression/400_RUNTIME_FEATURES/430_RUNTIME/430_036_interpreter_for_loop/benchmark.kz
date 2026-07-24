@@ -41,14 +41,14 @@ const std = @import("std");
 
 // The benchmark flow: sum 0..100
 const BENCH_FLOW =
-    \\~for(0..100)
+    \\for(0..100)
     \\| each i |> add(a: "0", b: i)
     \\| done |> result { status: "complete" }
 ;
 
 // Simple flow for comparison (no loop)
 const SIMPLE_FLOW =
-    \\~add(a: "21", b: "21")
+    \\add(a: "21", b: "21")
 ;
 
 // ============================================================================
@@ -68,7 +68,7 @@ pub fn main() void {
     // ========================================================================
     // BENCHMARK 1: Simple dispatch (no loop) - parse once, dispatch N times
     // ========================================================================
-    std.debug.print("[1] SIMPLE DISPATCH: ~add(a: \"21\", b: \"21\")\n", .{});
+    std.debug.print("[1] SIMPLE DISPATCH: add(a: \"21\", b: \"21\")\n", .{});
     std.debug.print("    Iterations: {d}\n", .{ITERATIONS});
     {
         var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -128,7 +128,7 @@ pub fn main() void {
     // ========================================================================
     // BENCHMARK 2: Full interpreter with for loop
     // ========================================================================
-    std.debug.print("[2] FULL INTERPRETER: ~for(0..100) with adds\n", .{});
+    std.debug.print("[2] FULL INTERPRETER: for(0..100) with adds\n", .{});
     std.debug.print("    Iterations: {d}\n", .{ITERATIONS});
     {
         var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -207,7 +207,7 @@ pub fn main() void {
     // ========================================================================
     // BENCHMARK 3: Parse time only
     // ========================================================================
-    std.debug.print("[3] PARSE ONLY: ~for(0..100) flow\n", .{});
+    std.debug.print("[3] PARSE ONLY: for(0..100) flow\n", .{});
     std.debug.print("    Iterations: {d}\n", .{ITERATIONS});
     {
         // Time parsing only

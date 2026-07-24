@@ -10,7 +10,7 @@ const koru_errors = @import("errors");
 const ast = @import("ast");
 
 const ITERATIONS: u64 = 50_000;
-const SOURCE = "~add(a: 3, b: 4)";
+const SOURCE = "add(a: 3, b: 4)";
 
 pub fn main() void {
     std.debug.print("\n", .{});

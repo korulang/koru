@@ -24,7 +24,7 @@ const std = @import("std");
 }
 
 // Test 1: alias "hello" dispatches to greet
-const TEST1 = "~hello(name: \"World\")";
+const TEST1 = "hello(name: \"World\")";
 
 ~std/runtime:run(source: TEST1, scope: "api")
 | result _ |> std/io:print.ln("HELLO OK")
@@ -37,7 +37,7 @@ const TEST1 = "~hello(name: \"World\")";
 | scope-not-found _ |> std/io:print.ln("HELLO SCOPE NOT FOUND")
 
 // Test 2: alias "hi" also dispatches to greet (different cost)
-const TEST2 = "~hi(name: \"World\")";
+const TEST2 = "hi(name: \"World\")";
 
 ~std/runtime:run(source: TEST2, scope: "api")
 | result _ |> std/io:print.ln("HI OK")
@@ -50,7 +50,7 @@ const TEST2 = "~hi(name: \"World\")";
 | scope-not-found _ |> std/io:print.ln("HI SCOPE NOT FOUND")
 
 // Test 3: original name "greet" should NOT work (alias replaces)
-const TEST3 = "~greet(name: \"World\")";
+const TEST3 = "greet(name: \"World\")";
 
 ~std/runtime:run(source: TEST3, scope: "api")
 | result _ |> std/io:print.ln("GREET SHOULD NOT WORK")

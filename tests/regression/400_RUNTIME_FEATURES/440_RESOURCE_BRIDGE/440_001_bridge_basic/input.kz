@@ -24,7 +24,7 @@ var test_pool = HandlePool.init(std.heap.page_allocator);
     close(1)
 }
 
-const TEST_SOURCE = "~open(path: \"test.txt\")\n| opened f |> result { path: \"test.txt\" }";
+const TEST_SOURCE = "open(path: \"test.txt\")\n| opened f |> result { path: \"test.txt\" }";
 
 ~std/runtime:run(source: TEST_SOURCE, scope: "test", budget: 100, handle_pool: &test_pool, auto_discharge: false)
 | result r |> std/io:print.ln("PASS: external pool has {{ r.handles:d }} handle(s)")

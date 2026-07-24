@@ -18,7 +18,7 @@ const std = @import("std");
     expensive(50)  // costs 50 tokens per call
 }
 
-const TEST_SOURCE = "~expensive(data: \"a\")\n| processed p1 |> expensive(data: \"b\")\n| processed p2 |> result { p2.result }";
+const TEST_SOURCE = "expensive(data: \"a\")\n| processed p1 |> expensive(data: \"b\")\n| processed p2 |> result { p2.result }";
 
 // Run with budget of 75 - second call should exhaust
 ~std/runtime:run(source: TEST_SOURCE, scope: "test", budget: 75)

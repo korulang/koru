@@ -22,7 +22,7 @@ const std = @import("std");
     greet(10)  // costs 10 tokens per call
 }
 
-const TEST_SOURCE = "~greet(name: \"World\")\n| greeted g |> result { g.message }";
+const TEST_SOURCE = "greet(name: \"World\")\n| greeted g |> result { g.message }";
 
 // Run with budget of 100
 ~std/runtime:run(source: TEST_SOURCE, scope: "test", budget: 100)

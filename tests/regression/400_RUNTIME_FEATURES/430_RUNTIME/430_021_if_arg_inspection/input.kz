@@ -60,24 +60,24 @@ pub fn main() void {
     std.debug.print("╚══════════════════════════════════════════════════════════════╝\n\n", .{});
 
     // Test 1: Simple boolean
-    std.debug.print("Test 1: ~if(true)\n", .{});
-    inspectFlow("~if(true)\n| then |> _\n| else |> _", "~if(true)");
+    std.debug.print("Test 1: if(true)\n", .{});
+    inspectFlow("if(true)\n| then |> _\n| else |> _", "if(true)");
 
     // Test 2: Simple boolean false
-    std.debug.print("Test 2: ~if(false)\n", .{});
-    inspectFlow("~if(false)\n| then |> _\n| else |> _", "~if(false)");
+    std.debug.print("Test 2: if(false)\n", .{});
+    inspectFlow("if(false)\n| then |> _\n| else |> _", "if(false)");
 
     // Test 3: Identifier
-    std.debug.print("Test 3: ~if(active)\n", .{});
-    inspectFlow("~if(active)\n| then |> _\n| else |> _", "~if(active)");
+    std.debug.print("Test 3: if(active)\n", .{});
+    inspectFlow("if(active)\n| then |> _\n| else |> _", "if(active)");
 
     // Test 4: Comparison expression
-    std.debug.print("Test 4: ~if(score > 50)\n", .{});
-    inspectFlow("~if(score > 50)\n| then |> _\n| else |> _", "~if(score > 50)");
+    std.debug.print("Test 4: if(score > 50)\n", .{});
+    inspectFlow("if(score > 50)\n| then |> _\n| else |> _", "if(score > 50)");
 
     // Test 5: Complex expression
-    std.debug.print("Test 5: ~if(user.role == \"admin\")\n", .{});
-    inspectFlow("~if(user.role == \"admin\")\n| then |> _\n| else |> _", "~if(user.role == \"admin\")");
+    std.debug.print("Test 5: if(user.role == \"admin\")\n", .{});
+    inspectFlow("if(user.role == \"admin\")\n| then |> _\n| else |> _", "if(user.role == \"admin\")");
 
     std.debug.print("╔══════════════════════════════════════════════════════════════╗\n", .{});
     std.debug.print("║     INSPECTION COMPLETE                                      ║\n", .{});

@@ -23,7 +23,7 @@ const std = @import("std");
 
 // Test flow: loop 3 times, print each iteration
 const TEST_FLOW =
-    \\~for(0..3)
+    \\for(0..3)
     \\| each i |> print_num(n: i)
     \\| done |> result { status: "complete" }
 ;

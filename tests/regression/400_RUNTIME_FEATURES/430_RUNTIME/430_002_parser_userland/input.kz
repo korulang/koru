@@ -11,7 +11,7 @@ var gpa = std.heap.GeneralPurposeAllocator(.{}){};
 const allocator = gpa.allocator();
 
 // The source we want to parse
-const test_source = "~greet()";
+const test_source = "greet()";
 
 // Main flow - parse and report
 ~std/koru:parse.source(source: test_source, file_name: "test.kz", allocator)

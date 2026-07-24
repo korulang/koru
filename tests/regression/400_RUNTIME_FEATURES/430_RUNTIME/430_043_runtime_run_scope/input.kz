@@ -16,7 +16,7 @@ const std = @import("std");
     greet(1)
 }
 
-const TEST_SOURCE = "~greet(name: \"World\")";
+const TEST_SOURCE = "greet(name: \"World\")";
 
 ~std/runtime:run(source: TEST_SOURCE, scope: "api")
 | result _ |> std/io:print.ln("OK")

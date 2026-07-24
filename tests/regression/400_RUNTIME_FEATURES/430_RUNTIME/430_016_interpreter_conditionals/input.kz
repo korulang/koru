@@ -1,10 +1,10 @@
 // Test: Interpreter Conditionals (ASPIRATIONAL)
-// Runtime evaluation of ~if conditionals
+// Runtime evaluation of if conditionals
 //
 // THE GOAL: Parse and execute conditional flows at runtime
 //
-// ~validate(data: input)
-// | valid v |> ~if(v.score > 50)
+// validate(data: input)
+// | valid v |> if(v.score > 50)
 //     | true |> approved { data: v.value }
 //     | false |> rejected { reason: "score too low" }
 // | invalid e |> error { message: e.reason }
@@ -52,13 +52,13 @@ pub fn main() void {
     const dispatcher_fn = dispatch_test;
 
     // ========================================================================
-    // Test 1: See what ~if parses to
+    // Test 1: See what if parses to
     // ========================================================================
-    std.debug.print("Test 1: Parse ~if and inspect AST\n", .{});
+    std.debug.print("Test 1: Parse if and inspect AST\n", .{});
     {
         // Simple conditional flow
         const test_source =
-            \\~if(true)
+            \\if(true)
             \\| true |> yes {}
             \\| false |> no {}
         ;
@@ -80,7 +80,7 @@ pub fn main() void {
                     std.debug.print("    {s} at {}:{}\n", .{parse_err.message, parse_err.location.line, parse_err.location.column});
                 }
             }
-            std.debug.print("  (This is expected if ~if needs special handling)\n\n", .{});
+            std.debug.print("  (This is expected if the conditional needs special handling)\n\n", .{});
             return;
         };
 

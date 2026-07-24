@@ -17,7 +17,7 @@ const std = @import("std");
     greet(1)
 }
 
-const TEST_SOURCE = "~greet(name: \"World\")";
+const TEST_SOURCE = "greet(name: \"World\")";
 
 ~std/runtime:parse.source(source: TEST_SOURCE, file_name: "runtime_eval.kz", allocator: std.heap.page_allocator)
 | parsed p |> std/runtime:eval(ast: p, scope: "api")

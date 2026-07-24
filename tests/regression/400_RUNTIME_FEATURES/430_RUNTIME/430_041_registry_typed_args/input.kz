@@ -29,7 +29,7 @@ const std = @import("std");
     set-config
 }
 
-const SOURCE = "~set_config(enabled: true, ratio: 3.5, count: 42)";
+const SOURCE = "set_config(enabled: true, ratio: 3.5, count: 42)";
 
 ~std/runtime:parse.source(source: SOURCE, file_name: "typed_args.kz", allocator: std.heap.page_allocator)
 | parsed p |> std/runtime:eval(ast: p, scope: "config")
