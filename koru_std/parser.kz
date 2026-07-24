@@ -684,8 +684,10 @@ const std = @import("std");
         std.process.exit(1);
     }
 
-    if (!std.mem.eql(u8, target, "c")) {
-        std.debug.print("std/parser generate: target '{s}' is not implemented — only 'c' today (loud wall, not a silent fallback)\n", .{target});
+    const target_c = std.mem.eql(u8, target, "c");
+    const target_zig = std.mem.eql(u8, target, "zig");
+    if (!target_c and !target_zig) {
+        std.debug.print("std/parser generate: target '{s}' is not implemented — only 'c' and 'zig' today (loud wall, not a silent fallback)\n", .{target});
         std.process.exit(1);
     }
 
@@ -959,6 +961,392 @@ const std = @import("std");
             ctx.out.appendSlice(ctx.a, buf.items) catch unreachable;
         }
     };
+
+    // ================= ZIG EMITTER =================
+    // Same shape as C — recursive descent, DFA terminals, first-byte gate,
+    // same-head factoring, furthest-failure — re-expressed in Zig vocabulary:
+    // a slice is a native `[]const u8` (no wrapper struct needed), "no match"
+    // is `?ParseResult` / `?usize` (Zig's own optional, mirroring the koru
+    // compiler's own `emitPrefixMatcher` convention already used internally),
+    // and the C backend's `goto Lx_end` backtracking becomes a Zig **labeled
+    // block + `break :Lx`** — the exact native equivalent of a forward-only
+    // goto to the end of an enclosing block. Reuses C's target-blind helpers
+    // (AST walk, sanitize, escaping, verb/quote parsing) — those don't know
+    // or care which language they're emitting into.
+    const Z = struct {
+        const std2 = @import("std");
+        const ast2 = @import("ast");
+        const regex = @import("regex_engine");
+
+        // Zig 0.15 makes an unused-then-later-used `_ = x;` a hard compile
+        // error ("pointless discard of local constant") — unlike C, where
+        // `(void)x;` is always harmless regardless of later use. So a bound
+        // name only gets a discard emitted when it is PROVABLY unused, decided
+        // from the same AST facts the codegen already has (which alt binds,
+        // whether a tail produced) rather than a blind copy of the C emitter's
+        // always-discard idiom. The one place that can't be decided from AST
+        // shape alone — whether a produce EXPRESSION happens to mention a
+        // bound name — is settled with a token-boundary text scan, scoped to
+        // just that expression (bound names are never referenced anywhere
+        // else; chain items don't admit references to earlier bindings).
+        fn isIdentChar(c: u8) bool {
+            return (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or (c >= '0' and c <= '9') or c == '_';
+        }
+        fn identUsed(hay: []const u8, name: []const u8) bool {
+            var start: usize = 0;
+            while (std2.mem.indexOfPos(u8, hay, start, name)) |i| {
+                const end = i + name.len;
+                const before_ok = i == 0 or !isIdentChar(hay[i - 1]);
+                const after_ok = end == hay.len or !isIdentChar(hay[end]);
+                if (before_ok and after_ok) return true;
+                start = i + 1;
+            }
+            return false;
+        }
+
+        // Matcher id for a terminal pattern, compiling it to a Zig `?usize`
+        // anchored-prefix matcher fn on first sight (the koru compiler's own
+        // `compilePrefixToZig` — same DFA compiler the C path uses, C sibling).
+        fn matcherFor(ctx: *const C.Ctx, pattern: []const u8) usize {
+            for (ctx.pats.items, 0..) |p, i| {
+                if (std2.mem.eql(u8, p, pattern)) return i;
+            }
+            const id = ctx.pats.items.len;
+            ctx.pats.append(ctx.a, pattern) catch unreachable;
+            const fn_name = std2.fmt.allocPrint(ctx.a, "__koru_pt_{d}", .{id}) catch unreachable;
+            const src = regex.compilePrefixToZig(ctx.a, pattern, fn_name) catch |err| {
+                C.setFail(ctx, std2.fmt.allocPrint(ctx.a, "std/parser generate: cannot compile terminal `{s}`: {s}", .{ C.cEscape(ctx.a, pattern), @errorName(err) }) catch unreachable);
+                return id;
+            };
+            ctx.matchers.appendSlice(ctx.a, src) catch unreachable;
+            ctx.matchers.appendSlice(ctx.a, "\n") catch unreachable;
+            return id;
+        }
+
+        // `const NAME: []const u8 = EXPR;` — skip `_` / unbound. No discard
+        // here: whether NAME ends up used is decided by the caller (genTail),
+        // which alone knows the produce expression / default-return outcome.
+        fn bindName(ctx: *const C.Ctx, buf: *std2.ArrayList(u8), bound: *std2.ArrayList([]const u8), name_opt: ?[]const u8, val_expr: []const u8) void {
+            const name = name_opt orelse return;
+            if (std2.mem.eql(u8, name, "_")) return;
+            const bind = std2.fmt.allocPrint(ctx.a, "const {s}: []const u8 = {s};\n", .{ name, val_expr }) catch unreachable;
+            buf.appendSlice(ctx.a, bind) catch unreachable;
+            bound.append(ctx.a, name) catch unreachable;
+        }
+
+        // One alternative's TAIL. A Zig labeled block `Lt{d}: { ... }` stands in
+        // for the C tail's `{ ... } Lt{d}_end: ;` — `break :Lt{d};` is a forward
+        // jump straight to the end of the block, exactly like the goto it
+        // replaces. Zig treats an unused block label as a hard compile error, so
+        // (mirroring the C emitter's own `labeled` check) the label is only
+        // emitted when the tail actually contains a sub()/lit() that can fail.
+        // `any_default` is flipped to true when this tail falls through to the
+        // default span-return, so the caller (genRuleFn) knows whether `__start`
+        // is ever referenced anywhere in the rule.
+        fn genTail(ctx: *const C.Ctx, out: *std2.ArrayList(u8), alt: *const ast2.Continuation, tail_label: usize, head_val: []const u8, head_end: []const u8, any_default: *bool) void {
+            var body = std2.ArrayList(u8){};
+            const buf = &body;
+            var bound = std2.ArrayList([]const u8){};
+            buf.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "__p = {s};\n", .{head_end}) catch unreachable) catch unreachable;
+            bindName(ctx, buf, &bound, alt.binding, head_val);
+
+            var produced = false;
+            var node_opt: ?*const ast2.Node = if (alt.node) |*n| n else null;
+            var cont_list: []const ast2.Continuation = alt.continuations;
+            while (node_opt) |n| {
+                if (C.produceOf(n)) |e| {
+                    for (bound.items) |nm| {
+                        if (!identUsed(e, nm)) {
+                            buf.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "_ = {s};\n", .{nm}) catch unreachable) catch unreachable;
+                        }
+                    }
+                    buf.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "return .{{ .end = __p, .val = ({s}) }};\n", .{e}) catch unreachable) catch unreachable;
+                    produced = true;
+                    break;
+                }
+                if (n.* != .invocation) {
+                    C.setFail(ctx, "std/parser generate: an alternative's chain admits sub(<rule>), lit(\"...\"), and a trailing `-> expr` (cut 1)");
+                    return;
+                }
+                const inv = &n.invocation;
+                const sk = ctx.label_n.*;
+                ctx.label_n.* += 1;
+                if (C.isVerb(inv, "sub")) {
+                    if (inv.args.len == 0) {
+                        C.setFail(ctx, "std/parser generate: sub needs a rule: sub(<rule-name>)");
+                        return;
+                    }
+                    const rname = std2.mem.trim(u8, inv.args[0].value, " \t");
+                    if (C.findRule(ctx.rules, rname) == null) {
+                        C.setFail(ctx, std2.fmt.allocPrint(ctx.a, "std/parser generate: sub({s}) names no rule of this grammar", .{rname}) catch unreachable);
+                        return;
+                    }
+                    const rn = C.sanitize(ctx.a, rname);
+                    buf.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "const __s{d} = parseRule_{s}(input, __p, err) orelse {{ if (err.expected.len == 0 or __p > err.pos) {{ err.pos = __p; err.expected = \"{s}\"; }} break :Lt{d}; }};\n", .{ sk, rn, C.cEscape(ctx.a, rname), tail_label }) catch unreachable) catch unreachable;
+                    bindName(ctx, buf, &bound, inv.return_binding, std2.fmt.allocPrint(ctx.a, "__s{d}.val", .{sk}) catch unreachable);
+                    // Always referenced by the very next line — never discarded.
+                    buf.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "__p = __s{d}.end;\n", .{sk}) catch unreachable) catch unreachable;
+                } else if (C.isVerb(inv, "lit")) {
+                    if (inv.args.len == 0) {
+                        C.setFail(ctx, "std/parser generate: lit needs its text: lit(\"...\")");
+                        return;
+                    }
+                    const text = C.stripQuotes(inv.args[0].value);
+                    const esc = C.cEscape(ctx.a, text);
+                    buf.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "if (!(__p + {d} <= input.len and std.mem.eql(u8, input[__p..__p + {d}], \"{s}\"))) {{ if (err.expected.len == 0 or __p > err.pos) {{ err.pos = __p; err.expected = \"{s}\"; }} break :Lt{d}; }}\n__p += {d};\n", .{ text.len, text.len, esc, esc, tail_label, text.len }) catch unreachable) catch unreachable;
+                } else {
+                    C.setFail(ctx, std2.fmt.allocPrint(ctx.a, "std/parser generate: `{s}` is not grammar vocabulary — a chain admits sub(<rule>) and lit(\"...\") (cut 1)", .{inv.path.segments[inv.path.segments.len - 1]}) catch unreachable);
+                    return;
+                }
+                node_opt = null;
+                if (cont_list.len == 1 and cont_list[0].branch.len == 0) {
+                    node_opt = if (cont_list[0].node) |*nn| nn else null;
+                    cont_list = cont_list[0].continuations;
+                } else if (cont_list.len > 0) {
+                    C.setFail(ctx, "std/parser generate: an alternative's chain is linear — nested branching inside an alternative is cut 2");
+                    return;
+                }
+            }
+            if (!produced) {
+                any_default.* = true;
+                for (bound.items) |nm| {
+                    buf.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "_ = {s};\n", .{nm}) catch unreachable) catch unreachable;
+                }
+                buf.appendSlice(ctx.a, "return .{ .end = __p, .val = input[__start..__p] };\n") catch unreachable;
+            }
+            const needle = std2.fmt.allocPrint(ctx.a, "break :Lt{d};", .{tail_label}) catch unreachable;
+            const labeled = std2.mem.indexOf(u8, body.items, needle) != null;
+            if (labeled) {
+                out.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "Lt{d}: {{\n", .{tail_label}) catch unreachable) catch unreachable;
+            } else {
+                out.appendSlice(ctx.a, "{\n") catch unreachable;
+            }
+            out.appendSlice(ctx.a, body.items) catch unreachable;
+            out.appendSlice(ctx.a, "}\n") catch unreachable;
+        }
+
+        // One GROUP: consecutive alternatives sharing the same head element.
+        // `Lg{d}: { ... }` is always referenced (the head parse's fail branch
+        // always `break`s it), so — unlike the tail label — it is unconditional,
+        // same as the C emitter's own `Lg{d}_end`.
+        fn genGroup(ctx: *const C.Ctx, buf: *std2.ArrayList(u8), alts: []const ast2.Continuation, cp_label: usize, any_default: *bool) void {
+            for (alts) |*alt| {
+                if (alt.kind != .terminal) {
+                    C.setFail(ctx, "std/parser generate: alternatives are `|` patterned branches of match");
+                    return;
+                }
+                if (alt.destructure.len > 0) {
+                    C.setFail(ctx, "std/parser generate: destructure in an alternative waits on typed captures (cut 2) — bind the span");
+                    return;
+                }
+            }
+            const g = ctx.label_n.*;
+            ctx.label_n.* += 1;
+
+            buf.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "__p = __cp{d};\nLg{d}: {{\n", .{ cp_label, g }) catch unreachable) catch unreachable;
+
+            const head_name = alts[0].branch;
+
+            // First-byte gate — PATTERN heads only (rule heads must descend so
+            // the deepest terminal records the furthest failure). The gate
+            // array is always read on the very next line — never discarded.
+            if (C.findRule(ctx.rules, head_name) == null) {
+                const fb = regex.prefixFirstBytes(ctx.a, head_name) catch [_]bool{true} ** 256;
+                var gate_all = true;
+                for (fb) |x| {
+                    if (!x) {
+                        gate_all = false;
+                        break;
+                    }
+                }
+                if (!gate_all) {
+                    var arr = std2.ArrayList(u8){};
+                    arr.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "const __fb{d} = [_]bool{{", .{g}) catch unreachable) catch unreachable;
+                    for (fb, 0..) |x, bi| {
+                        const cell = if (bi == 0) (if (x) "true" else "false") else (if (x) ",true" else ",false");
+                        arr.appendSlice(ctx.a, cell) catch unreachable;
+                    }
+                    arr.appendSlice(ctx.a, "};\n") catch unreachable;
+                    buf.appendSlice(ctx.a, arr.items) catch unreachable;
+                    buf.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "if (__cp{d} >= input.len or !__fb{d}[input[__cp{d}]]) {{ if (err.expected.len == 0 or __cp{d} > err.pos) {{ err.pos = __cp{d}; err.expected = \"{s}\"; }} break :Lg{d}; }}\n", .{ cp_label, g, cp_label, cp_label, cp_label, C.cEscape(ctx.a, head_name), g }) catch unreachable) catch unreachable;
+                }
+            }
+
+            // Head parse — rule reference or pattern terminal, once. `__gh`/
+            // `__ge`/`__he` are always consumed by the very next statement(s) —
+            // never discarded. `__hv` (head_val) is only ever consumed via a
+            // head-level bindName call, so it is discarded here iff NO alt in
+            // this group actually binds the head (below).
+            if (C.findRule(ctx.rules, head_name)) |_| {
+                const rn = C.sanitize(ctx.a, head_name);
+                buf.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "const __gh{d} = parseRule_{s}(input, __p, err) orelse {{ if (err.expected.len == 0 or __p > err.pos) {{ err.pos = __p; err.expected = \"{s}\"; }} break :Lg{d}; }};\n", .{ g, rn, C.cEscape(ctx.a, head_name), g }) catch unreachable) catch unreachable;
+                buf.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "const __hv{d}: []const u8 = __gh{d}.val;\nconst __he{d}: usize = __gh{d}.end;\n", .{ g, g, g, g }) catch unreachable) catch unreachable;
+            } else {
+                const id = matcherFor(ctx, head_name);
+                buf.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "const __ge{d} = __koru_pt_{d}(input, __cp{d}) orelse {{ if (err.expected.len == 0 or __p > err.pos) {{ err.pos = __p; err.expected = \"{s}\"; }} break :Lg{d}; }};\n", .{ g, id, cp_label, C.cEscape(ctx.a, head_name), g }) catch unreachable) catch unreachable;
+                buf.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "const __hv{d}: []const u8 = input[__cp{d}..__ge{d}];\nconst __he{d}: usize = __ge{d};\n", .{ g, cp_label, g, g, g }) catch unreachable) catch unreachable;
+            }
+            var any_head_binding = false;
+            for (alts) |*alt| {
+                if (alt.binding) |b| {
+                    if (!std2.mem.eql(u8, b, "_")) any_head_binding = true;
+                }
+            }
+            if (!any_head_binding) {
+                buf.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "_ = __hv{d};\n", .{g}) catch unreachable) catch unreachable;
+            }
+            const head_val = std2.fmt.allocPrint(ctx.a, "__hv{d}", .{g}) catch unreachable;
+            const head_end = std2.fmt.allocPrint(ctx.a, "__he{d}", .{g}) catch unreachable;
+
+            for (alts) |*alt| {
+                const t = ctx.label_n.*;
+                ctx.label_n.* += 1;
+                genTail(ctx, buf, alt, t, head_val, head_end, any_default);
+            }
+            buf.appendSlice(ctx.a, "}\n") catch unreachable;
+        }
+
+        fn genRuleFn(ctx: *const C.Ctx, rule: *const ast2.Continuation) void {
+            const rn = C.sanitize(ctx.a, rule.branch);
+            var buf = std2.ArrayList(u8){};
+            buf.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "fn parseRule_{s}(input: []const u8, pos: usize, err: *ParseErr) ?ParseResult {{\nconst __start: usize = pos;\nvar __p: usize = pos;\n", .{rn}) catch unreachable) catch unreachable;
+            const cp = ctx.label_n.*;
+            ctx.label_n.* += 1;
+            // Always referenced (every group resets `__p = __cp{d};`) — no discard.
+            buf.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "const __cp{d}: usize = pos;\n", .{cp}) catch unreachable) catch unreachable;
+            const alts = C.altsOf(rule);
+            var any_default = false;
+            var i: usize = 0;
+            while (i < alts.len) {
+                var j = i + 1;
+                while (j < alts.len and std2.mem.eql(u8, alts[j].branch, alts[i].branch)) j += 1;
+                genGroup(ctx, &buf, alts[i..j], cp, &any_default);
+                i = j;
+            }
+            // `__start` is referenced only by a default (unproduced) tail return
+            // — discard it iff no tail in this rule ever took that path.
+            if (!any_default) {
+                buf.appendSlice(ctx.a, "_ = __start;\n") catch unreachable;
+            }
+            buf.appendSlice(ctx.a, "return null;\n}\n") catch unreachable;
+            ctx.out.appendSlice(ctx.a, buf.items) catch unreachable;
+        }
+    };
+
+    if (target_zig) {
+        // --- Run the Zig emitter ---
+        var zout = std.ArrayList(u8){};
+        var zmatchers = std.ArrayList(u8){};
+        var zpats = std.ArrayList([]const u8){};
+        var zlabel_n: usize = 0;
+        var zfail: ?[]const u8 = null;
+        const zctx = C.Ctx{ .a = allocator, .rules = found_rules.?, .out = &zout, .matchers = &zmatchers, .pats = &zpats, .label_n = &zlabel_n, .fail = &zfail };
+
+        for (found_rules.?) |*r| Z.genRuleFn(&zctx, r);
+
+        if (zfail) |f| {
+            std.debug.print("{s}\n", .{f});
+            std.process.exit(1);
+        }
+
+        const gid = C.sanitize(allocator, gname);
+        const start_rn = C.sanitize(allocator, found_rules.?[0].branch);
+
+        // --- Assemble the standalone Zig file ---
+        var zfile = std.ArrayList(u8){};
+        const zw = &zfile;
+        zw.appendSlice(allocator, std.fmt.allocPrint(allocator,
+            \\// Generated by koru std/parser `generate` from grammar `{s}`. Do not edit.
+            \\const std = @import("std");
+            \\
+            \\const ParseErr = struct {{ pos: usize = 0, expected: []const u8 = "" }};
+            \\const ParseResult = struct {{ end: usize, val: []const u8 }};
+            \\
+            \\
+        , .{gname}) catch unreachable) catch unreachable;
+
+        // Zig containers resolve declarations regardless of textual order, so
+        // (unlike C) mutual recursion between rule fns needs no forward decls.
+        zw.appendSlice(allocator, "// --- terminal matchers (anchored-prefix DFAs) ---\n") catch unreachable;
+        zw.appendSlice(allocator, zmatchers.items) catch unreachable;
+        zw.appendSlice(allocator, "\n// --- rule functions ---\n") catch unreachable;
+        zw.appendSlice(allocator, zout.items) catch unreachable;
+
+        // Public API: parse the whole input against the start rule (first rule).
+        zw.appendSlice(allocator, std.fmt.allocPrint(allocator,
+            \\
+            \\// --- public API ---
+            \\const ParseOutcome = struct {{
+            \\    ok: bool,
+            \\    value: []const u8 = "", // valid iff ok
+            \\    line: usize = 0, // valid iff !ok
+            \\    col: usize = 0, // valid iff !ok
+            \\    expected: []const u8 = "", // valid iff !ok
+            \\    found: []const u8 = "", // valid iff !ok
+            \\}};
+            \\
+            \\pub fn parseGrammar_{s}(input: []const u8) ParseOutcome {{
+            \\    var err = ParseErr{{}};
+            \\    if (parseRule_{s}(input, 0, &err)) |res| {{
+            \\        if (res.end == input.len) return .{{ .ok = true, .value = res.val }};
+            \\        if (err.expected.len == 0 or res.end > err.pos) {{ err.pos = res.end; err.expected = "end of input"; }}
+            \\    }}
+            \\    var line: usize = 1;
+            \\    var col: usize = 1;
+            \\    const ep: usize = if (err.pos < input.len) err.pos else input.len;
+            \\    for (input[0..ep]) |ch| {{
+            \\        if (ch == '\n') {{ line += 1; col = 1; }} else col += 1;
+            \\    }}
+            \\    const found: []const u8 = if (err.pos < input.len) input[err.pos .. err.pos + 1] else "end of input";
+            \\    return .{{ .ok = false, .line = line, .col = col, .expected = err.expected, .found = found }};
+            \\}}
+            \\
+            \\pub fn main() !void {{
+            \\    var gpa = std.heap.GeneralPurposeAllocator(.{{}}){{}};
+            \\    defer _ = gpa.deinit();
+            \\    const a = gpa.allocator();
+            \\    const args = try std.process.argsAlloc(a);
+            \\    defer std.process.argsFree(a, args);
+            \\    if (args.len < 2) {{
+            \\        std.debug.print("usage: {{s}} <input>\n", .{{args[0]}});
+            \\        std.process.exit(2);
+            \\    }}
+            \\    const r = parseGrammar_{s}(args[1]);
+            \\    var buf: [4096]u8 = undefined;
+            \\    const stdout = std.fs.File.stdout();
+            \\    if (r.ok) {{
+            \\        const msg = try std.fmt.bufPrint(&buf, "OK: {{s}}\n", .{{r.value}});
+            \\        try stdout.writeAll(msg);
+            \\        return;
+            \\    }}
+            \\    const msg = try std.fmt.bufPrint(&buf, "PARSE-ERROR {{d}}:{{d}} expected {{s}} found {{s}}\n", .{{ r.line, r.col, r.expected, r.found }});
+            \\    try stdout.writeAll(msg);
+            \\    std.process.exit(1);
+            \\}}
+            \\
+        , .{ gid, start_rn, gid }) catch unreachable) catch unreachable;
+
+        // Unlike the C backend (which gates `main` behind `KORU_PARSER_NO_MAIN`
+        // so its output can also be `#include`d as a library), Zig has no
+        // textual-include equivalent — `@import` always sees the whole file, so
+        // there is no way to hide `main` from a library consumer regardless.
+        // The emitted CLI is simply always runnable, which is exactly what the
+        // conformance runner (`run.sh`) builds and executes.
+        const zpath = std.fmt.allocPrint(allocator, "{s}.zig", .{gid}) catch unreachable;
+        const zcwd = std.fs.cwd();
+        const zf = zcwd.createFile(zpath, .{}) catch |err| {
+            std.debug.print("std/parser generate: cannot write {s}: {s}\n", .{ zpath, @errorName(err) });
+            std.process.exit(1);
+        };
+        defer zf.close();
+        zf.writeAll(zfile.items) catch |err| {
+            std.debug.print("std/parser generate: write failed: {s}\n", .{@errorName(err)});
+            std.process.exit(1);
+        };
+
+        std.debug.print("std/parser generate: grammar '{s}' -> {s} ({d} bytes, {d} rule(s), start rule '{s}')\n", .{ gname, zpath, zfile.items.len, found_rules.?.len, found_rules.?[0].branch });
+        std.process.exit(0);
+    }
 
     // --- Run the emitter ---
     var out = std.ArrayList(u8){};
