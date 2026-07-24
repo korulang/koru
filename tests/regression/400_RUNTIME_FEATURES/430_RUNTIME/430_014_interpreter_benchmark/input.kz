@@ -29,7 +29,7 @@ pub fn main() void {
     std.debug.print("╚══════════════════════════════════════════════════════════════╝\n\n", .{});
 
     const dispatcher_fn = dispatch_bench;
-    const test_source = "~ping(value: \"test\")";
+    const test_source = "ping(value: \"test\")";
     const ITERATIONS: u64 = 10_000;
 
     // ========================================================================

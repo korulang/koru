@@ -1,9 +1,9 @@
-// 400_172 — `|` (continuation marker) on an EFFECT branch MUST be rejected.
-// `query` INSTALLS a standing rule and fires the EFFECT arm `! query`. Writing
-// `| query` (the continuation/outcome marker) is the inverse marker/kind
-// mismatch to 400_171. Today koru silently accepts it (compiles + runs `hp 5`).
-// RED until koru rejects `|` on an effect at its own boundary. `!` and `|` are
-// separate kinds; the marker must match the event's declared branch-kind.
+// 400_172 — `|` (continuation marker) on an EFFECT branch is a kind error.
+// `query` installs a standing rule and fires the effect arm `! query`; it mints
+// no matchable outcome event. Writing `| query` is the inverse marker/kind
+// mismatch to 400_171 — `!` and `|` are separate kinds, and the marker must
+// match the branch's declared kind. koru rejects it in the query transform,
+// where the standing-rule branch vocabulary is validated.
 import std/io
 import std/store
 std/store:new(game, capacity: 8) { hp: i64 }

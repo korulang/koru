@@ -1,4 +1,8 @@
-// Test: std/runtime:run returns parse-error when no flow exists
+// Test: interpreter source is pure Koru — a leading `~` is rejected.
+//
+// `~` marks a Koru form embedded in Zig host text; it has no job in a context
+// that is already pure Koru. `.k` rejects it, and so does interpreter source:
+// what the shell and the wire accept is `ping()`, never `~ping()`.
 
 ~import std/runtime
 ~import std/io
@@ -13,7 +17,7 @@
     ping(1)
 }
 
-const TEST_SOURCE = "ping()"; // missing leading ~, so no flow
+const TEST_SOURCE = "~ping()"; // the Zig-boundary wart — not legal here
 
 ~std/runtime:run(source: TEST_SOURCE, scope: "api")
 | result _ |> std/io:print.ln("OK")

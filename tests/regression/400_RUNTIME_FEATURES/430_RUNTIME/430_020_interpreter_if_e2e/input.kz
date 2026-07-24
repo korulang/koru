@@ -1,5 +1,5 @@
-// Test: Interpreter ~if End-to-End
-// Full integration test: parse source with ~if, execute, verify branch taken
+// Test: Interpreter if End-to-End
+// Full integration test: parse source with if, execute, verify branch taken
 // Uses inline types since std module import not yet supported
 
 ~import std/runtime
@@ -61,7 +61,7 @@ pub const DispatchResult = struct {
     payload_json: ?[]const u8,
 };
 
-// Simplified expression bindings for ~if
+// Simplified expression bindings for if
 pub const ExprBindings = struct {
     values: std.StringHashMap(bool),
     allocator: std.mem.Allocator,
@@ -92,19 +92,19 @@ fn dummy_dispatcher(inv: *const ast.Invocation, result: *DispatchResult) !void {
     result.payload_json = null;
 }
 
-// Simplified executeFlow for ~if only
+// Simplified executeFlow for if only
 fn executeFlow(flow: *const ast.Flow, ctx: *InterpreterContext) !Value {
     const inv = flow.inv();
 
     var dispatch_result: DispatchResult = undefined;
 
-    // Check if this is ~if
+    // Check if this is if
     const is_if = inv.path.module_qualifier == null and
                   inv.path.segments.len == 1 and
                   std.mem.eql(u8, inv.path.segments[0], "if");
 
     if (is_if) {
-        std.debug.print("  [EXEC] Detected ~if\n", .{});
+        std.debug.print("  [EXEC] Detected if\n", .{});
 
         var condition_result: bool = false;
 
@@ -221,16 +221,16 @@ fn runInterpreter(source: []const u8) ?[]const u8 {
 pub fn main() void {
     std.debug.print("\n", .{});
     std.debug.print("╔══════════════════════════════════════════════════════════════╗\n", .{});
-    std.debug.print("║     INTERPRETER ~if END-TO-END TEST                          ║\n", .{});
+    std.debug.print("║     INTERPRETER if END-TO-END TEST                          ║\n", .{});
     std.debug.print("╚══════════════════════════════════════════════════════════════╝\n\n", .{});
 
     // ========================================================================
-    // Test 1: ~if(true) should take | then |> branch
+    // Test 1: if(true) should take | then |> branch
     // ========================================================================
-    std.debug.print("Test 1: ~if(true) -> | then |> -> yes branch\n", .{});
+    std.debug.print("Test 1: if(true) -> | then |> -> yes branch\n", .{});
     {
         const source =
-            \\~if(true)
+            \\if(true)
             \\| then |> yes { result: "passed" }
             \\| else |> no { result: "failed" }
         ;
@@ -248,12 +248,12 @@ pub fn main() void {
     }
 
     // ========================================================================
-    // Test 2: ~if(false) should take | else |> branch
+    // Test 2: if(false) should take | else |> branch
     // ========================================================================
-    std.debug.print("Test 2: ~if(false) -> | else |> -> no branch\n", .{});
+    std.debug.print("Test 2: if(false) -> | else |> -> no branch\n", .{});
     {
         const source =
-            \\~if(false)
+            \\if(false)
             \\| then |> yes { result: "failed" }
             \\| else |> no { result: "passed" }
         ;
@@ -271,6 +271,6 @@ pub fn main() void {
     }
 
     std.debug.print("╔══════════════════════════════════════════════════════════════╗\n", .{});
-    std.debug.print("║     INTERPRETER ~if E2E TESTS COMPLETE                       ║\n", .{});
+    std.debug.print("║     INTERPRETER if E2E TESTS COMPLETE                       ║\n", .{});
     std.debug.print("╚══════════════════════════════════════════════════════════════╝\n", .{});
 }

@@ -17,7 +17,7 @@
     allowed(1)
 }
 
-const TEST_SOURCE = "~denied()";
+const TEST_SOURCE = "denied()";
 
 ~std/runtime:run(source: TEST_SOURCE, scope: "limited")
 | result _ |> std/io:print.ln("OK")

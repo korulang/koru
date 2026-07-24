@@ -44,9 +44,9 @@ const std = @import("std");
 }
 
 // Source strings to parse at runtime - this is what we're benchmarking
-const ADD_SOURCE = "~add(a: \"10\", b: \"20\")";
-const MUL_SOURCE = "~multiply(value: \"30\", by: \"3\")";
-const SUB_SOURCE = "~subtract(value: \"90\", by: \"5\")";
+const ADD_SOURCE = "add(a: \"10\", b: \"20\")";
+const MUL_SOURCE = "multiply(value: \"30\", by: \"3\")";
+const SUB_SOURCE = "subtract(value: \"90\", by: \"5\")";
 
 // Benchmark: parse and execute each source string
 pub fn main() void {

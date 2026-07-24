@@ -17,7 +17,7 @@ const std = @import("std");
     greet(1)
 }
 
-const SOURCE = "~greet(id: 7)";
+const SOURCE = "greet(id: 7)";
 
 ~std/runtime:parse.source(source: SOURCE, file_name: "dotted.kz", allocator: std.heap.page_allocator)
 | parsed p |> std/runtime:eval(ast: p, scope: "api.v1")

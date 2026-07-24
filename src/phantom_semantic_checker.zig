@@ -1665,6 +1665,28 @@ pub const PhantomSemanticChecker = struct {
             }
         }
 
+        // KORU025 (marker/kind): the call-site marker must match the branch's
+        // declared KIND — `!` handles an effect arm the invocation FIRES, `|`
+        // matches an outcome branch it RETURNS. This site is where transform-
+        // generated events (store `take`/`query` → `__store_take_<s>`) first
+        // expose their branch kinds; the shape checker's KORU025 runs pre-
+        // transform and never sees them, so `! item` on take's `| item` outcome
+        // was silently miscompiled into a leak (400_171/172). Single-sourced
+        // through errors.branchKindMismatch so local and store events read the
+        // same. Catch-alls and the raw-name `*` class already resolved above.
+        if (branch_decl) |decl| {
+            if (decl.kind != cont.kind) {
+                try errors.branchKindMismatch(
+                    self.reporter,
+                    cont.location,
+                    cont.branch,
+                    if (decl.kind == .effect) .effect else .terminal,
+                    if (cont.kind == .effect) .effect else .terminal,
+                );
+                return false;
+            }
+        }
+
         if (branch_payload == null) {
             // ~[prototype]: an undeclared TERMINAL arm is the "handle a branch the
             // event doesn't produce yet" doodle (400_165). It can never fire (the

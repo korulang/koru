@@ -24,7 +24,7 @@ const std = @import("std");
     destroy(1)
 }
 
-const TEST_SOURCE = "~create()\n| handle h |> result { id: h }";
+const TEST_SOURCE = "create()\n| handle h |> result { id: h }";
 
 ~std/runtime:run(source: TEST_SOURCE, scope: "test", budget: 100)
 | result _ |> std/io:print.ln("PASS: got handle")

@@ -12,7 +12,7 @@
     greet(1)
 }
 
-const TEST_SOURCE = "~greet()";
+const TEST_SOURCE = "greet()";
 
 ~std/runtime:run(source: TEST_SOURCE, scope: "missing")
 | result _ |> std/io:print.ln("OK")

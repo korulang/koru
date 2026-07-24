@@ -14,10 +14,10 @@ const koru_errors = @import("errors");
 const ITERATIONS: u64 = 50_000;
 
 // The canonical 3-line eval flow from the blog post
-const SIMPLE_SOURCE = "~add(a: 3, b: 4)";
+const SIMPLE_SOURCE = "add(a: 3, b: 4)";
 
 const MULTI_LINE_SOURCE =
-    \\~add(a: 3, b: 4)
+    \\add(a: 3, b: 4)
     \\    | sum s |> add(a: s, b: 10)
     \\        | sum s2 |> result { value: s2 }
 ;
@@ -178,7 +178,7 @@ pub fn main() void {
     std.debug.print("\nA) REALISTIC (fresh arena per call — matches eval endpoint)\n", .{});
     std.debug.print("------------------------------------------------------------\n", .{});
 
-    std.debug.print("\n  Simple: ~add(a: 3, b: 4)\n", .{});
+    std.debug.print("\n  Simple: add(a: 3, b: 4)\n", .{});
     const r1_flow = benchFlowParserRealistic(SIMPLE_SOURCE, "simple");
     const r1_full = benchFullParserRealistic(SIMPLE_SOURCE, "simple");
     printSpeedup(r1_flow, r1_full);
@@ -197,7 +197,7 @@ pub fn main() void {
     std.debug.print("\nB) ISOLATED (shared arena — pure parsing logic)\n", .{});
     std.debug.print("------------------------------------------------------------\n", .{});
 
-    std.debug.print("\n  Simple: ~add(a: 3, b: 4)\n", .{});
+    std.debug.print("\n  Simple: add(a: 3, b: 4)\n", .{});
     const i1_flow = benchFlowParserIsolated(SIMPLE_SOURCE, "simple");
     const i1_full = benchFullParserIsolated(SIMPLE_SOURCE, "simple");
     printSpeedup(i1_flow, i1_full);

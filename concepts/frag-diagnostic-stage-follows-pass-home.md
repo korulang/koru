@@ -44,6 +44,32 @@ is "obviously a compile-time name thing," then chasing why koruc Pass-1 keeps
 succeeding. It succeeds because Pass-1 never ran the pass that catches it. Pin to
 the stage the *pass* lives in, not the stage the *concept* feels like.
 
+**A second, STRONGER forcing: the thing being judged may not EXIST yet at
+Stage A.** `[with]` sits in the metacircular compiler by *ruling* — a steering
+choice that could in principle be revisited. Marker/kind validation on
+transform-generated events cannot be revisited at all. `std/store:take` and
+`:query` mint their branch-carrying events (`__store_take_<s>`) inside a
+TRANSFORM; before that transform runs there is no event, no declared branch, and
+no kind to compare a call-site marker against. The shape checker's KORU025 runs
+pre-transform and is therefore structurally blind to them — which is why `! item`
+on take's `| item` outcome was silently miscompiled into an undischarged
+obligation (400_171), and `| query` on query's effect arm ran benignly wrong
+(400_172), both with no diagnostic at any stage.
+
+So the same rule can need TWO homes, and the pin follows each: the post-transform
+half lives in the phantom semantic checker (400_171 → BACKEND_RUNTIME_ERROR),
+while `query` — which installs a standing rule and never mints a matchable
+outcome event — is validated inside the store transform itself (400_172 →
+BACKEND_COMPILE_ERROR). Single-sourced through `errors.branchKindMismatch` so
+local and generated events read identically.
+
+The generalization: when a checker's subject is SYNTHESIZED by a pass, the check
+must live at or after that pass — no amount of wanting a frontend error can move
+it earlier. Ask "does this entity exist yet?" before "where should this error
+feel like it comes from." Every future transform that mints events inherits this,
+and each one needs its validation re-homed rather than assumed covered by the
+pre-transform checker of the same name.
+
 Open: whether we ever want to lift metacircular-analysis diagnostics up to a
 Stage-A koruc surface (a true frontend error for the user) is a separate, larger
 program — deliberately NOT done for `[with]` (it would undo the steering that put

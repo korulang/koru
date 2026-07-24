@@ -25,7 +25,7 @@ const std = @import("std");
     close-handle(1)
 }
 
-const TEST_SOURCE = "~open-handle()";
+const TEST_SOURCE = "open-handle()";
 
 ~std/runtime:parse.source(source: TEST_SOURCE, file-name: "runtime_eval_autodischarge.kz", allocator: std.heap.page_allocator)
 | parsed p |> std/runtime:eval(ast: p, scope: "api")

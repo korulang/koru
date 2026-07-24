@@ -16,9 +16,9 @@ const std = @import("std");
 }
 
 const TEST_SOURCE =
-    \\~tor broken
+    \\tor broken
     \\| ok
-    \\~ping()
+    \\ping()
 ;
 
 ~std/runtime:run(source: TEST_SOURCE, scope: "api", fail_fast: false)

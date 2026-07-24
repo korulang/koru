@@ -17,17 +17,17 @@ const std = @import("std");
 }
 
 const TEST_SOURCE_IDENTITY =
-    \\~add(a: 3, b: 4)
+    \\add(a: 3, b: 4)
     \\| sum s |> result s
 ;
 
 const TEST_SOURCE_BRANCH =
-    \\~add(a: 3, b: 4)
+    \\add(a: 3, b: 4)
     \\| sum s |> result s.Branch
 ;
 
 const TEST_SOURCE_DISCARD =
-    \\~add(a: 3, b: 4)
+    \\add(a: 3, b: 4)
     \\| sum s |> _
 ;
 

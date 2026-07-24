@@ -42,7 +42,7 @@ pub fn resetSum() void {
 
 // Same pattern as 230_012_for_binding_in_nested_range
 const BENCH_FLOW =
-    \\~for(0..1000)
+    \\for(0..1000)
     \\| each _ |> for(0..100)
     \\    | each i |> add(a: "0", b: i)
     \\| done |> _

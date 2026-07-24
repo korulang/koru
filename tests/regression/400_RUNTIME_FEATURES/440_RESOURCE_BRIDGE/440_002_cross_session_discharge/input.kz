@@ -30,10 +30,10 @@ var bridge_pool = HandlePool.init(std.heap.page_allocator);
 }
 
 // Session 1: Open a file (creates obligation)
-const SESSION_1 = "~open(path: \"test.txt\")\n| opened h |> result { handle: h }";
+const SESSION_1 = "open(path: \"test.txt\")\n| opened h |> result { handle: h }";
 
 // Session 2: Close the file (discharges obligation)
-const SESSION_2 = "~close(handle: \"file_1\")\n| closed |> result {}";
+const SESSION_2 = "close(handle: \"file_1\")\n| closed |> result {}";
 
 // Run session 1 - creates handle on bridge
 ~std/runtime:run(source: SESSION_1, scope: "files", budget: 100, handle_pool: &bridge_pool, auto_discharge: false)
