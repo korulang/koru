@@ -1,60 +1,65 @@
 ---
 type: belief
 id: frag-produced-program-leak-check-is-allocator-opt-in
-provenance: measured 2026-07-24 while asking whether the suite would catch a produced program that actually leaks; A/B run on one Koru source with two proc-body allocators
+provenance: measured 2026-07-24; reframed by Lars's ruling the same night — a proc may name its own allocator, the question is only whether a TOOLCHAIN bug can hide
 ts: 2026-07-24
 ---
 
-# The produced-program leak check is real, and almost nothing in the corpus opts into it (belief)
+# The produced-program leak counter is opt-in, and that is correct — the real question is whether a toolchain-caused missing discharge is observable (belief)
 
-The harness does check the final artifact, not just the compiler. Three phases
-grep Zig's GPA wording (`memory address … leaked`) across `compile_kz.err`,
-`compile_backend.err` and `backend.err` — frontend, backend-compile, backend-exec
-— and a fourth check greps the produced program's own output for
-`KORU LEAK CHECK FAILED`, with its own failure category that outranks the output
-diff. The emitted `main()` carries a counting allocator (`__koru_leak_count`
-over `koru_allocator()`) and exits 1 when the count is non-zero.
+The harness checks the final artifact, not only the compiler. Three phases grep
+Zig's GPA wording (`memory address … leaked`) across `compile_kz.err`,
+`compile_backend.err` and `backend.err`; a fourth greps the produced program's
+own output for `KORU LEAK CHECK FAILED`, with its own failure category that
+outranks the output diff. The emitted `main()` counts traffic through
+`koru_allocator()` and exits 1 when the count is non-zero. All four are live —
+verified by an A/B on one Koru source: with the proc body on
+`std.heap.page_allocator` the leak exits 0 silent, on `koru_allocator()` the
+same leak exits 1 and is caught.
 
-**All four are live. The fourth is opt-in by allocator choice, and the corpus
-does not take it.** `__koru_leak_count` moves only for traffic through
-`koru_allocator()`. A `|zig` proc body that reaches for `std.heap.page_allocator`,
-`c_allocator` or its own arena — which is the ordinary way host wrappers are
-written — allocates invisibly.
+## Lars's ruling: this is not a language problem
 
-The A/B, one Koru source, two proc bodies differing only in the allocator:
+**A `|zig` proc may name its own allocator.** `proc` is the unsafe escape hatch;
+Zig is supposed to do Zig things inside it. A wall rejecting raw allocators, or
+interposition removing the choice, would constrain the escape hatch to make our
+measurement convenient — which defeats the point of having one. Author-owned
+memory is the author's to manage, and a leak they cause in unsafe code is their
+bug, not a gap in Koru's guarantee.
 
-- `page_allocator`, resource never freed → exit 0, no marker, suite green
-- `koru_allocator()`, same resource never freed → exit 1, marker printed, caught
+The concern is narrower and sharper: **it matters only where an uninstrumented
+allocation can hide a bug in the TOOLCHAIN.** The bug class that counts is Koru
+promising a discharge — auto-discharge insertion, obligation enforcement — and
+then failing to emit it. That failure shows up as author-owned memory never
+freed, so the leak counter cannot see it regardless of what we do to `proc`.
 
-Measured population: 223 fixtures under `tests/regression` allocate through an
-uninstrumented allocator; 3 use `koru_allocator`. 97 of the 223 are in
-`330_PHANTOM_TYPES` — the cluster whose entire subject is resource discipline.
+## Which means the detection mechanism is the output diff, and it mostly works
 
-## Why this matters more than an ordinary coverage hole
+A missing discharge is observable without any allocator instrumentation, because
+the disposer prints. A fixture whose `expected.txt` contains its disposal line
+("Connection closed", "Closing file") fails the output diff the moment the
+toolchain stops emitting the call. That is more direct than a leak counter — it
+names the missing act rather than the residue.
 
-The obligation system's compile-time wall and the produced program's runtime
-counter are supposed to be independent layers over the same guarantee. For a
-fixture on a raw allocator they are not independent — they are both blind. The
-lantern shape that opened this
-([[frag-obligation-enforcement-keys-off-return-binding]], third frontier) is
-exactly that: the compile-time wall misses the undischarged obligation AND the
-produced binary leaks the struct at exit 0. Two layers, one program, neither
-fires. A green run on those 97 fixtures is not evidence that obligations are
-enforced; it is evidence that nothing was watching.
+Measured over `330_PHANTOM_TYPES`, of the 96 fixtures on a raw allocator:
 
-## The fork, unruled
+- 33 are `MUST_FAIL` — they never execute; runtime leak detection is moot
+- 36 execute AND assert the discharge in `expected.txt` — covered
+- **27 execute with no discharge assertion** (2 are shared `lib` dirs, so 25 tests)
 
-Making the counter unavoidable is the fix, and there are two shapes, which are
-not equivalent:
+That residue is the whole finding. An earlier draft of this belief claimed ~97
+blind fixtures and proposed the language-wall fork; both were wrong — the count
+ignored `MUST_FAIL` and the output-diff mechanism entirely, and the fork attacked
+`proc` for a problem `proc` does not have.
 
-- **A wall:** reject a `|zig` proc body that names a raw allocator, teaching
-  `koru_allocator()` instead. Real enforcement, and it makes the guarantee
-  structural — but it is a 223-fixture migration, and it presumes host code
-  never legitimately wants its own arena.
-- **Interposition:** make the emitted program's allocator the only one host code
-  can reach, so the choice stops existing. No migration, but it reaches further
-  into what a `|zig` body is allowed to be.
+## The work this leaves
 
-Unruled, and Lars's call — it is a language-surface question about what a proc
-body may do, not a harness tweak. Related to the library-boundary Zig-leak work,
-where hand-written `|zig` wrappers already drift from their Koru contract.
+Give the 27 a discharge assertion in `expected.txt`. Test hygiene, no language
+change, no user-facing migration, and it closes the observable gap for the bug
+class that matters. Notable that `330_101`–`330_108` (the field-narrowing pins)
+are in the set — the newest obligation work is the least watched at runtime.
+
+Open, and NOT covered by that: a double-free, and a leak on a path that prints
+nothing. Neither is caught by the output diff, and neither is caught by the
+counter when the memory is author-owned. Whether that residue is worth a
+mechanism is unruled — it may simply be the accepted cost of an unsafe escape
+hatch, which is the correct place for it to live.
