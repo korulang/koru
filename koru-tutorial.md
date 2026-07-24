@@ -41,7 +41,7 @@ The answer is 42.
 // This is the default authoring model for ordinary event behavior.
 import std/io
 
-event greet { name: string } -> string
+tor greet { name: string } -> string
 
 greet -> "Hello, " ++ name ++ "!"
 
@@ -74,7 +74,7 @@ Hello, World!
 import std/io
 
 // Lower-level event: arbitrary outcome names
-pub event step {}
+pub tor step {}
 | return
 | break
 | continue
@@ -82,7 +82,7 @@ pub event step {}
 step => continue
 
 // Outer event: its own outcome vocabulary
-pub event run {}
+pub tor run {}
 | stopped
 | iterated
 

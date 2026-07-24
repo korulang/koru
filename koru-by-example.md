@@ -77,7 +77,7 @@ Hello World
 // invoked, so the program compiles and produces no output.
 const std = @import("std");
 
-~event hello {}
+~tor hello {}
 
 ~proc hello|zig {
     std.debug.print("Event executed\n", .{});
@@ -93,7 +93,7 @@ const std = @import("std");
 // This should compile, run, and output "Flow executed"
 const std = @import("std");
 
-~event hello {}
+~tor hello {}
 
 ~proc hello|zig {
     std.debug.print("Flow executed\n", .{});
@@ -127,21 +127,21 @@ var cleanup_count: i32 = 0;
 var process_count: i32 = 0;
 
 // Void events have no output branches
-~event setup {}
+~tor setup {}
 
 ~proc setup|zig {
     setup_count += 1;
     std.debug.print("Setup: count={}\n", .{setup_count});
 }
 
-~event cleanup {}
+~tor cleanup {}
 
 ~proc cleanup|zig {
     cleanup_count += 1;
     std.debug.print("Cleanup: count={}\n", .{cleanup_count});
 }
 
-~event process {}
+~tor process {}
 
 ~proc process|zig {
     process_count += 1;
@@ -161,7 +161,7 @@ var process_count: i32 = 0;
 ~cleanup()
 
 // Verify with a regular event
-~event verify {}
+~tor verify {}
 
 ~proc verify|zig {
     if (setup_count == 1 and process_count == 3 and cleanup_count == 1) {
@@ -203,21 +203,21 @@ var cleanup_count: i32 = 0;
 var process_count: i32 = 0;
 
 // Void events have no output branches
-~event setup {}
+~tor setup {}
 
 ~proc setup|zig {
     setup_count += 1;
     std.debug.print("Setup: count={}\n", .{setup_count});
 }
 
-~event cleanup {}
+~tor cleanup {}
 
 ~proc cleanup|zig {
     cleanup_count += 1;
     std.debug.print("Cleanup: count={}\n", .{cleanup_count});
 }
 
-~event process {}
+~tor process {}
 
 ~proc process|zig {
     process_count += 1;
@@ -236,7 +236,7 @@ var process_count: i32 = 0;
 ~cleanup()
 
 // Verify with a regular event
-~event verify {}
+~tor verify {}
 
 ~proc verify|zig {
     if (setup_count == 1 and process_count == 3 and cleanup_count == 1) {
@@ -268,7 +268,7 @@ Void events work correctly
 // This is the default authoring model for ordinary event behavior.
 import std/io
 
-event greet { name: string } -> string
+tor greet { name: string } -> string
 
 greet -> "Hello, " ++ name ++ "!"
 
@@ -295,7 +295,7 @@ Hello, World!
 
 const std = @import("std");
 
-~event sum { numbers: []const i32 } -> i32
+~tor sum { numbers: []const i32 } -> i32
 
 ~proc sum|zig {
     var total: i32 = 0;
@@ -305,7 +305,7 @@ const std = @import("std");
     return total;
 }
 
-~event check { expected: i32, actual: i32 }
+~tor check { expected: i32, actual: i32 }
 
 ~proc check|zig {
     if (expected != actual) {
@@ -336,14 +336,14 @@ pub const Config = struct {
     retries: i32,
 };
 
-~event configure { config: Config } -> i32
+~tor configure { config: Config } -> i32
 
 ~proc configure|zig {
     const total = config.timeout * config.retries;
     return total;
 }
 
-~event check { expected: i32, actual: i32 }
+~tor check { expected: i32, actual: i32 }
 
 ~proc check|zig {
     if (expected != actual) {
@@ -369,7 +369,7 @@ pub const Config = struct {
 // Tests that events can have multiple branches and procs can return different ones
 const std = @import("std");
 
-~event check { value: i32 }
+~tor check { value: i32 }
 | positive i32
 | zero
 | negative i32
@@ -380,19 +380,19 @@ const std = @import("std");
     return .{ .zero = .{} };
 }
 
-~event handle-positive { n: i32 }
+~tor handle-positive { n: i32 }
 
 ~proc handle-positive|zig {
     std.debug.print("Positive branch works: {}\n", .{n});
 }
 
-~event handle-zero {}
+~tor handle-zero {}
 
 ~proc handle-zero|zig {
     std.debug.print("Zero branch works\n", .{});
 }
 
-~event handle-negative { n: i32 }
+~tor handle-negative { n: i32 }
 
 ~proc handle-negative|zig {
     std.debug.print("Negative branch works: {}\n", .{n});
@@ -438,7 +438,7 @@ Negative branch works: -7
 const std = @import("std");
 
 // Validation events
-~event validate { value: i32 }
+~tor validate { value: i32 }
 | valid i32
 | invalid string
 
@@ -449,25 +449,25 @@ const std = @import("std");
     return .{ .invalid = "Value must be positive" };
 }
 
-~event double { value: i32 } -> i32
+~tor double { value: i32 } -> i32
 
 ~proc double|zig {
     return value * 2;
 }
 
-~event triple { value: i32 } -> i32
+~tor triple { value: i32 } -> i32
 
 ~proc triple|zig {
     return value * 3;
 }
 
-~event success { result: i32 }
+~tor success { result: i32 }
 
 ~proc success|zig {
     std.debug.print("Success: {}\n", .{result});
 }
 
-~event failure { msg: string }
+~tor failure { msg: string }
 
 ~proc failure|zig {
     std.debug.print("Failure: {s}\n", .{msg});
@@ -490,7 +490,7 @@ const std = @import("std");
 ~import std/io
 
 // Event with two branches, BOTH empty (no payload fields)
-~event check-value { n: i32 }
+~tor check-value { n: i32 }
 | positive
 | non-positive
 
@@ -544,7 +544,7 @@ const std = @import("std");
 import std/io
 
 // Lower-level event: arbitrary outcome names
-pub event step {}
+pub tor step {}
 | return
 | break
 | continue
@@ -552,7 +552,7 @@ pub event step {}
 step => continue
 
 // Outer event: its own outcome vocabulary
-pub event run {}
+pub tor run {}
 | stopped
 | iterated
 
@@ -590,7 +590,7 @@ Testing subflow-defined semantics:
 const std = @import("std");
 
 // Server events
-~event listen { port: u16 }
+~tor listen { port: u16 }
 | ready u32
 | failed string
 
@@ -602,7 +602,7 @@ const std = @import("std");
     return .{ .ready = port };
 }
 
-~event accept { server: u32 }
+~tor accept { server: u32 }
 | connected { conn: u32, server: u32 }
 | failed u32
 
@@ -614,7 +614,7 @@ const std = @import("std");
     return .{ .connected = .{ .conn = server + 1, .server = server } };
 }
 
-~event process { conn: u32 }
+~tor process { conn: u32 }
 | done u32
 | retry u32
 | error { conn: u32, msg: string }
@@ -630,20 +630,20 @@ const std = @import("std");
     return .{ .retry = conn };
 }
 
-~event close { conn: u32 }
+~tor close { conn: u32 }
 
 ~proc close|zig {
     std.debug.print("Closed connection {}\n", .{conn});
 }
 
-~event log-error { conn: u32, msg: string } -> u32
+~tor log-error { conn: u32, msg: string } -> u32
 
 ~proc log-error|zig {
     std.debug.print("Error on connection {}: {s}\n", .{conn, msg});
     return conn;
 }
 
-~event cleanup { conn: u32 }
+~tor cleanup { conn: u32 }
 
 ~proc cleanup|zig {
     std.debug.print("Cleaning up connection {}\n", .{conn});
@@ -689,11 +689,11 @@ const std = @import("std");
 ~import app/test_lib/logger
 
 // Define some events to test with
-~event compute { x: i32 } -> i32
+~tor compute { x: i32 } -> i32
 
-~event format { value: i32 } -> string
+~tor format { value: i32 } -> string
 
-~event display { text: string }
+~tor display { text: string }
 
 ~proc compute|zig {
     std.debug.print("compute({d})\n", .{x});
@@ -734,19 +734,19 @@ Final: formatted
 const std = @import("std");
 
 // Single annotation
-~[comptime] event single {}
+~[comptime] tor single {}
 
 // Multiple annotations with | delimiter
-~[comptime|runtime] event dual {}
+~[comptime|runtime] tor dual {}
 
 // Many annotations
-~[comptime|runtime|fuseable|inline] event many {}
+~[comptime|runtime|fuseable|inline] tor many {}
 
 // Parameterized annotation (opaque string)
-~[optimize(level: 3)] event optimized {}
+~[optimize(level: 3)] tor optimized {}
 
 // Mix of simple and parameterized
-~[comptime|optimize(level: 3)|inline] event mixed {}
+~[comptime|optimize(level: 3)|inline] tor mixed {}
 
 ~proc single|zig { return .{ .done = .{} }; }
 ~proc dual|zig { return .{ .done = .{} }; }
@@ -803,7 +803,7 @@ pub const Resource = struct {
     allocator: std.mem.Allocator,
 };
 
-~pub event create-resource { name: string } -> *Resource<allocated!>
+~pub tor create-resource { name: string } -> *Resource<allocated!>
 
 ~proc create-resource|zig {
     const alloc = std.heap.page_allocator;
@@ -813,7 +813,7 @@ pub const Resource = struct {
     return res;
 }
 
-~pub event destroy-resource { res: *Resource<!allocated> }
+~pub tor destroy-resource { res: *Resource<!allocated> }
 
 ~proc destroy-resource|zig {
     res.allocator.free(res.data);
@@ -846,7 +846,7 @@ Test done
 
 const std = @import("std");
 
-~pub event ping { msg: string }
+~pub tor ping { msg: string }
 ! pong string
 
 ~proc ping|zig {
@@ -896,7 +896,7 @@ hello
 import std/fmt
 import std/io
 
-event greet { name: string } -> string
+tor greet { name: string } -> string
 
 greet = std/fmt:ln("Hello, {{ name:s }}!")
 | line l -> l.text
