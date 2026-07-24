@@ -2192,6 +2192,49 @@ fn groupContinuationsByBranch(
     return try groups.toOwnedSlice(allocator);
 }
 
+/// Expand a subflow `|?` catch-all into switch arms for each unhandled optional
+/// branch of `source_event_name`. Top-level `emitContinuationList` already does
+/// this; without it here, event bodies emit a literal `.@"?"` arm (355_011).
+fn emitSubflowCatchallOptionalArms(
+    emitter: *CodeEmitter,
+    ctx: *EmissionContext,
+    indent: []const u8,
+    catchall: *const ast.Continuation,
+    branch_groups: []const BranchGroup,
+    source_event_name: ?[]const u8,
+    all_items: []const ast.Item,
+    main_module_name: ?[]const u8,
+    result_counter: *usize,
+) !void {
+    var handled_branches = std.StringHashMap(void).init(ctx.allocator);
+    defer handled_branches.deinit();
+    for (branch_groups) |group| {
+        if (std.mem.eql(u8, group.branch_name, "?")) continue;
+        try handled_branches.put(group.branch_name, {});
+    }
+
+    const source_event = source_event_name orelse return;
+    const event_decl = findEventByName(all_items, source_event, ctx.allocator, main_module_name) orelse return;
+
+    for (event_decl.branches) |branch| {
+        if (!branch.is_optional) continue;
+        if (handled_branches.contains(branch.name)) continue;
+
+        try emitter.write(indent);
+        try emitter.write("    .");
+        try writeBranchName(emitter, branch.name);
+        try emitter.write(" => |_| {\n");
+
+        const old_indent = emitter.indent_level;
+        emitter.indent_level = 0;
+        try emitContinuationBody(emitter, ctx, catchall, result_counter);
+        emitter.indent_level = old_indent;
+
+        try emitter.write(indent);
+        try emitter.write("    },\n");
+    }
+}
+
 fn emitSubflowContinuationsWithDepth(
     emitter: *CodeEmitter,
     continuations: []const ast.Continuation,
@@ -2599,6 +2642,23 @@ fn emitSubflowContinuationsWithDepth(
             break :blk try std.fmt.bufPrint(&buf, "nested_result_{d}", .{depth - 1});
         };
 
+        // Sole `|?` (all optional): no "?" union field — discard and run body.
+        if (remaining_conts.len == 1 and
+            remaining_conts[0].is_catchall and
+            std.mem.eql(u8, remaining_conts[0].branch, "?") and
+            remaining_conts[0].catchall_metatype == null)
+        {
+            try emitter.write(indent);
+            try emitter.write("_ = &");
+            try emitter.write(result_var);
+            try emitter.write(";\n");
+            const old_indent = emitter.indent_level;
+            emitter.indent_level = 0;
+            try emitContinuationBody(emitter, &ctx, &remaining_conts[0], &result_counter);
+            emitter.indent_level = old_indent;
+            return;
+        }
+
         // Group continuations by branch name to handle when-clauses
         const normal_branch_groups = try groupContinuationsByBranch(std.heap.page_allocator, continuations[start_idx..]);
         defer {
@@ -2606,6 +2666,14 @@ fn emitSubflowContinuationsWithDepth(
                 std.heap.page_allocator.free(group.continuations);
             }
             std.heap.page_allocator.free(normal_branch_groups);
+        }
+
+        var catchall_cont: ?*const ast.Continuation = null;
+        for (remaining_conts) |*cont| {
+            if (cont.is_catchall) {
+                catchall_cont = cont;
+                break;
+            }
         }
 
         // Emit normal switch statement (NOT return switch)
@@ -2616,6 +2684,9 @@ fn emitSubflowContinuationsWithDepth(
 
         // Emit each branch group
         for (normal_branch_groups) |group| {
+            // `|?` expands below — never emit a literal "?" arm
+            if (std.mem.eql(u8, group.branch_name, "?")) continue;
+
             if (group.continuations.len == 1) {
                 // Single continuation - emit as normal
                 const cont = group.continuations[0];
@@ -2838,6 +2909,20 @@ fn emitSubflowContinuationsWithDepth(
             }
         }
 
+        if (catchall_cont) |catchall| {
+            try emitSubflowCatchallOptionalArms(
+                emitter,
+                &ctx,
+                indent,
+                catchall,
+                normal_branch_groups,
+                source_event_name,
+                all_items,
+                main_module_name,
+                &result_counter,
+            );
+        }
+
         try emitter.write(indent);
         try emitter.write("}\n");
         return;
@@ -2850,6 +2935,44 @@ fn emitSubflowContinuationsWithDepth(
             std.heap.page_allocator.free(group.continuations);
         }
         std.heap.page_allocator.free(branch_groups);
+    }
+
+    // Sole `|?` on the return-switch path
+    if (remaining_conts.len == 1 and
+        remaining_conts[0].is_catchall and
+        std.mem.eql(u8, remaining_conts[0].branch, "?") and
+        remaining_conts[0].catchall_metatype == null)
+    {
+        const result_var = if (depth == 0) "result" else blk: {
+            var buf: [32]u8 = undefined;
+            break :blk try std.fmt.bufPrint(&buf, "nested_result_{d}", .{depth - 1});
+        };
+        try emitter.write(indent);
+        try emitter.write("_ = &");
+        try emitter.write(result_var);
+        try emitter.write(";\n");
+        var ctx_sole = EmissionContext{
+            .allocator = std.heap.page_allocator,
+            .indent_level = 0,
+            .ast_items = all_items,
+            .is_sync = true,
+            .tap_registry = tap_registry,
+            .type_registry = type_registry,
+            .main_module_name = main_module_name,
+            .current_source_event = source_event_name,
+            .bare_return_active = enclosing_bare_return,
+        };
+        var result_counter_sole: usize = depth;
+        try emitContinuationBody(emitter, &ctx_sole, &remaining_conts[0], &result_counter_sole);
+        return;
+    }
+
+    var catchall_cont_ret: ?*const ast.Continuation = null;
+    for (remaining_conts) |*cont| {
+        if (cont.is_catchall) {
+            catchall_cont_ret = cont;
+            break;
+        }
     }
 
     // Start the switch statement ONCE for all sibling continuations
@@ -2866,6 +2989,8 @@ fn emitSubflowContinuationsWithDepth(
 
     // Emit ALL branch groups at this level
     for (branch_groups) |group| {
+        if (std.mem.eql(u8, group.branch_name, "?")) continue;
+
         // Handle single vs multiple continuations for this branch
         if (group.continuations.len == 1) {
             // Single continuation - emit as normal
@@ -3428,6 +3553,32 @@ fn emitSubflowContinuationsWithDepth(
             try emitter.write(",\n");
         } // End of if (single vs multiple continuations)
     } // End of for loop over all branch groups
+
+    if (catchall_cont_ret) |catchall| {
+        var ctx_ca = EmissionContext{
+            .allocator = std.heap.page_allocator,
+            .indent_level = 0,
+            .ast_items = all_items,
+            .is_sync = true,
+            .tap_registry = tap_registry,
+            .type_registry = type_registry,
+            .main_module_name = main_module_name,
+            .current_source_event = source_event_name,
+            .bare_return_active = enclosing_bare_return,
+        };
+        var result_counter_ca: usize = depth;
+        try emitSubflowCatchallOptionalArms(
+            emitter,
+            &ctx_ca,
+            indent,
+            catchall,
+            branch_groups,
+            source_event_name,
+            all_items,
+            main_module_name,
+            &result_counter_ca,
+        );
+    }
 
     // Close the switch
     try emitter.write(indent);

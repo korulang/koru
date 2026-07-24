@@ -6294,14 +6294,16 @@ pub const Parser = struct {
                 _ = parts.next(); // consume "when"
 
                 // Find where the condition ends: at the earliest arm-body
-                // delimiter — a `|>` continuation chain OR a `->` bare-return
-                // produce. A `when` guard can precede either (`when g |> body`
-                // or `when g -> value`); neither `|>` nor `->` is a legal
-                // expression operator, so the earliest occurrence unambiguously
-                // terminates the guard expression.
+                // delimiter — `|>` chain, `->` produce, or `=>` branch
+                // construct. A `when` guard can precede any of them
+                // (`when g |> body`, `when g -> value`, `when g => branch`);
+                // none of those glyphs is a legal expression operator, so the
+                // earliest top-level occurrence unambiguously ends the guard.
+                // (320_137: omitting `=>` swallowed `=> catalog` into the
+                // condition and emit pasted `if (p == 0 => catalog)`.)
                 const remaining = parts.rest();
                 const pipe_idx = std.mem.indexOf(u8, remaining, "|>");
-                const arrow_idx = std.mem.indexOf(u8, remaining, "->");
+                const arrow_idx = indexOfTopLevelHeadArrow(remaining); // `=>` or `->`
                 const end_idx: ?usize = if (pipe_idx) |p|
                     (if (arrow_idx) |a| @min(p, a) else p)
                 else
@@ -6358,7 +6360,7 @@ pub const Parser = struct {
                 condition = try self.allocator.dupe(u8, condition_str);
 
                 // Update rest to skip past the condition — preserving the
-                // delimiter (`|>` or `->`) so the arm body parses downstream.
+                // delimiter (`|>` / `->` / `=>`) so the arm body parses downstream.
                 if (end_idx) |idx| {
                     rest = remaining[idx..];
                 } else {
