@@ -123,6 +123,11 @@ alone.** Lead with the concrete subject — the feature or concept, by name.
 
 ## Voice
 
+- **Title leads with the subject by name; any hook rides behind it.** A reader
+  scanning the index must see WHAT the post is about from the title alone —
+  "Prototype Mode: Doodle the Flow", not "Doodle the Flow, Let the Events
+  Catch Up". (Lars-ruled 2026-07-15 after a title that never named its
+  feature.)
 - **Present tense, describe the feature — not the journey.** "A grammar is two
   glyphs" not "Today I added a parser." No changelog narration, no "we then…".
 - **Short and synthesized.** State the idea and let the tests carry the proof.
