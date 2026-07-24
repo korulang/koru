@@ -1522,6 +1522,22 @@ pub const PhantomSemanticChecker = struct {
                                 return false;
                             }
                         }
+                        // END OF CHAIN = A FLOW EXIT. With no nested continuation
+                        // there is nothing further to discharge into, so this is a
+                        // real exit and must balance — the same rule the hard
+                        // terminal (`|> _`) below already enforces. Without this,
+                        // a top-level bare-return chain (`light(): lamp |> log(x)`)
+                        // returned true holding an undischarged obligation: the
+                        // `.terminal` guard below is UNSATISFIABLE here, because
+                        // KORU010 permits `_` only as a branch-handler body. That
+                        // is the whole reason the `| branch lamp` spelling enforced
+                        // and the `: lamp` spelling did not (330_113/114 vs the
+                        // 330_115 control).
+                        if (cont.continuations.len == 0) {
+                            if (try self.reportLeaksAtHardTerminal(&void_context, location)) {
+                                return false;
+                            }
+                        }
                         return true;
                     }
                 }

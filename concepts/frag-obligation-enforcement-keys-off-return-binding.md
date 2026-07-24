@@ -90,7 +90,7 @@ The two frontiers this belief named are both closed; the `not_auto_dischargeable
 marker (renamed from `from_return_record` when it grew a second origin) is the
 shared "no auto-discharge → wall" lever for both.
 
-## A third frontier is OPEN (2026-07-24): the bound head loses its obligation to a continuation
+## The third frontier is CLOSED (2026-07-25): the bound head keeps its obligation across a continuation
 
 Both closed frontiers are about invocations with NO bind. The symmetric case is
 still leaking, and it is the ordinary one: a **bound head whose whole-value
@@ -160,15 +160,27 @@ as `| branch [binding] |> _`." So the guard is not merely unsatisfied for a
 top-level `:` chain — it is unsatisfiable. The exit check can only ever fire
 inside a branch arm, which is the entire reason the two spellings diverge.
 
-The fix is therefore not new machinery: a top-level chain's LAST continuation is
-also a flow exit and must run the same check. The care needed is in identifying
-that exit — the inserter already distinguishes sequential prefixes from real flow
-exits (`isSequentialPrefix`), because a capture at flow head lowers to sibling
-continuations where all but the last are prefixes, not exits. Reuse that notion
-rather than "the last element of the list".
+The fix was therefore not new machinery. In the void/bare-return path, a step
+that resolves to a known invocation validated its nested continuations and
+returned; it now first asks whether there ARE any, and with none treats that as
+the flow exit and runs `reportLeaksAtHardTerminal` against the live context.
+Same function, reached by a satisfiable condition.
+
+The feared complication did not materialise. `cont.continuations.len == 0`
+cannot by itself distinguish a real exit from a sequential-prefix sibling, and
+capture-at-flow-head lowers to exactly such siblings — so the prediction was
+that capture and scope tests would false-positive. The full suite says
+otherwise: zero regressions attributable to the change. Prefix siblings inherit
+a fresh context from the root rather than accumulating into the final sibling
+here, so the naive exit test holds. If a future capture form breaks this, the
+inserter's `isSequentialPrefix` is the notion to port.
+
+Pinned by `330_113` (`:` bind), `330_114` (`->` produce across a subflow
+boundary), with `330_115` as the branch-arm control that must stay green — a
+fix that reddens it moved the hole instead of closing it.
 
 Two spellings of the same program must type the same; the inserter's own
-head-seeding comment already asserts that as the intent.
+head-seeding comment already asserted that as the intent, and now they do.
 
 Default auto-discharge masks all of it — with insertion on, the compiler emits the
 missing discharger for these exact programs and they are correct. The wall is only
