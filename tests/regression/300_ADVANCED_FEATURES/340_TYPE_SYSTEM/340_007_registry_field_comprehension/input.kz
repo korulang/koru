@@ -1,5 +1,4 @@
-// RED PIN (type-system design walk, 2026-07-06/07). A TYPE
-// COMPREHENSION over the registry: a struct block row may be a
+// A TYPE COMPREHENSION over the registry: a struct block row may be a
 // comprehension clause whose DOMAIN is another registered type's
 // fields — deriving a type by ranging over an entry. This is the
 // registry acting as a comprehension domain (`f over Player`), the

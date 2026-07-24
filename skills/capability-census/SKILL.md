@@ -34,8 +34,8 @@ A rung has exactly **two terminal states**:
   Koru carries the structure; host code is leaves only. This is a proof and it
   is swept into the corpus.
 - **RED frontier pin** — `input.kz` spells the solution the way we *wish* it
-  read (the 010_058 pattern: pins as design documents), it fails today, and
-  the header names the gap precisely.
+  read (the 010_058 pattern: pins as design documents), and the header names
+  the gap precisely.
 
 **Never commit plumbed-green as a rung's solution.** A green test whose
 structure lives in host Zig reads as "Koru can do this" when the host did it —

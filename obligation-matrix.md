@@ -38,7 +38,7 @@ Snapshot: `5cae8fd5` @ 2026-06-14T05:11:21.144Z
 - **Designed:** `auto-discharge`
 - **Pinned by:** `336_003_string_instance_drop_discard_branch`
 - **Live status:** failure
-- An instance! String live on an all-discard `| err _ |> _` branch of a borrowing op (append) MUST auto-free on that branch. Currently RED — the inserter does not materialize `free` on an empty discard branch (branch-asymmetry / Root-B family). Goes green when the cluster fix lands.
+- An instance! String live on an all-discard `| err _ |> _` branch of a borrowing op (append) MUST auto-free on that branch. The inserter must materialize `free` on an empty discard branch (branch-asymmetry / Root-B family).
 
 ### ✅ String `<view!>` — drop-multibranch
 

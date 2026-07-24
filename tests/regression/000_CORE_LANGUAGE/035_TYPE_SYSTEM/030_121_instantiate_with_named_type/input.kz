@@ -1,8 +1,6 @@
-// RED PIN (type-system design walk, 2026-07-06/07). REWRITTEN from the
-// dead `~type(UserIdBox = Box<UserId>)` generation. This pin =
-// registry breakdown #2: a stamped type inside a CAPTURE CELL. The
-// cell must NAME the generated type's identity — the case that today
-// only works by leaking the raw Zig type. With stamped names the cell
+// Registry breakdown #2: a stamped type inside a CAPTURE CELL. The
+// cell must NAME the generated type's identity rather than leaking the
+// raw Zig type. With stamped names the cell
 // type is just the name. Spelling PROVISIONAL (capture-cell typing of
 // a Koru-minted type is itself part of the ask).
 

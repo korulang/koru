@@ -1,7 +1,6 @@
-// RED PIN (type-system design walk, 2026-07-06/07). Intent kept
-// (nominal primitive types as event parameters), dead `~const(...) |
-// as` form replaced with the flat const declaration (decls are
-// module-scope, visible to sibling flows). Under the registry design,
+// Pins nominal primitive types as event parameters, declared with the
+// flat const form (decls are module-scope, visible to sibling flows).
+// Under the registry design,
 // Username/UserId are registry entries and the call-site argument
 // types are checked against them at the Koru layer.
 

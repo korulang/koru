@@ -1,5 +1,4 @@
-// PROPOSED FORM (Barbour effect-typing arc) — NOT yet supported; pinned failing
-// to capture the baseline (Phase 1). This is the cornerstone of the change.
+// The Barbour effect-typing arc's cornerstone form.
 //
 // An event's single payload-bearing output becomes an UNNAMED arrow return
 // `-> T` instead of a redundant single named branch (`| doubled i32`). The

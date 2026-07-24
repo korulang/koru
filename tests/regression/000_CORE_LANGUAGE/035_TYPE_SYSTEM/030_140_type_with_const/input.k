@@ -1,6 +1,4 @@
-// RED PIN (type-system design walk, 2026-07-06/07). REWRITTEN minus
-// the dead `Config<T>`/`~type` grammar and the dropped `| as` const
-// form. Integration intent kept and sharpened to the registry design:
+// Pins the registry integration for `const`:
 // `const` REGISTERS its symbols (name -> type-ref + comptime value)
 // into the registry's symbols table instead of only splicing text —
 // the "const doesn't store its symbols" gap named by Lars 2026-07-06.
