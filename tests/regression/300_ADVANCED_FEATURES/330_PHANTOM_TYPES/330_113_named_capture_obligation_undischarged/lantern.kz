@@ -1,0 +1,24 @@
+// The lantern is a resource with a lifecycle the type system knows about.
+// `light` mints <lit!>. `douse` is the only thing that consumes it. A delve
+// that ends with the lantern still burning is not a losing game — it is a
+// program that does not compile.
+
+const std = @import("std");
+
+const Lantern = struct { oil: i32 };
+
+~pub tor light { } -> *Lantern<lit!>
+
+~proc light|zig {
+    const l = std.heap.page_allocator.create(Lantern) catch unreachable;
+    l.* = Lantern{ .oil = 3 };
+    std.debug.print("You strike the lantern. It catches.\n", .{});
+    return l;
+}
+
+~pub tor douse { lamp: *Lantern<!lit> }
+
+~proc douse|zig {
+    std.debug.print("You pinch the wick. Dark.\n", .{});
+    std.heap.page_allocator.destroy(lamp);
+}
