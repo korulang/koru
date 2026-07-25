@@ -149,12 +149,31 @@ grammar, where the whole point of the `ERROR_AT` work is that a diagnostic
 asserts where it lands. Spans are the precondition for the metacircular north
 star above, not a refinement of it.
 
-Still open, and the next structural gap: **`__wrap_` allocates exactly one kid**
-(`alloc(*const __N, 1)`), and `render`/`depth` only ever follow `kids[0]`. The
-node is a unary chain wearing a tree's vocabulary. It expresses nesting
-(`[[7]]` → depth 5) perfectly and cannot express breadth at all. Note that JSON
-did **not** force this — `641_004` went green on spans alone, because a
-recognizer only needs the consumed text. Breadth becomes load-bearing the
-moment a rule must deliver its parts *as parts*, which is what Koru's grammar
-will demand and what the arbitrary-picker door (rule bodies as ordinary code,
-walled today at `parser.kz:264`) is for.
+## Breadth — a rule keeps the parts it names (2026-07-25)
+
+`__wrap_` allocated exactly one kid and `render`/`depth` followed only
+`kids[0]`, so the node was a unary chain wearing a tree's vocabulary: nesting
+perfect, breadth impossible. It is now a real tree, and **no new surface was
+needed to get there** — an alternative's kids are exactly the parts it already
+binds: its head plus every `sub(<rule>)` it consumes, in source order. The
+grammar already named them; the codegen was throwing them away.
+
+The two produce paths differ, deliberately:
+- `-> e` **names** the rule's value, so the node has exactly one kid — whatever
+  `e` is. Parts the author did not name are not children. This is what keeps
+  the chain-shaped pins (`641_031`) reading exactly as before.
+- **No `->`** keeps everything bound, in order. That is where breadth comes
+  from: `string s |> lit(":") |> sub(ws): w |> sub(value): v` now delivers
+  three children instead of collapsing to one span.
+
+`depth` became `1 + max(kids)` rather than `1 + depth(kids[0])` — with breadth,
+"how deep is this tree" can no longer mean "how deep is its first child."
+`641_032` pins the whole thing: `pair(3,num(4)) depth=2`.
+
+**The trap worth remembering:** the `alloc` inside the old `__wrap_` looked like
+single-kid plumbing and was deleted as such. It was *ownership*. `&.{ a, b }` at
+the call site is a stack temporary, so the heap node ended up holding a slice
+into a dead frame — every parse silently produced nothing at all, no crash and
+no diagnostic, just empty output. A green-compiling generator that emits
+use-after-free is the ugliest failure mode this library has; the copy into
+heap memory is load-bearing and must survive any future rewrite of `__wrap_`.
