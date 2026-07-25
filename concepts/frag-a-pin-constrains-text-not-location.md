@@ -31,9 +31,31 @@ it exposed. Fixing a location bug without first being able to pin a location wou
 have produced tests that pass for the wrong reason — the same failure mode, one
 level up.
 
-Open: location is now assertable but not *required*. Nothing forces a new pin to
-constrain where its diagnostic lands, so the axis is defensible rather than
-defended. Whether to make it mandatory for new diagnostic pins — or to lint for
-carets that fall outside their own file — is unsettled.
+A widened assertion with no users is indistinguishable from the gap it closed.
+`ERROR_AT` shipped and then sat at zero consumers, and for that stretch the suite
+was exactly as blind as before — the capability existed, the coverage did not.
+An instrument change is only half a fix; the other half is pins that spend it.
+The first ones are `210_160`, `210_161`, `510_106`, `210_162` and `210_163`.
+
+Spending it immediately paid a dividend that argues for the whole approach: two
+findings the replay had counted as independent — a caret on the wrong line, and a
+caret at line 0 rendering compiler-injected source — turn out to be one
+off-by-one seen at two file lengths, and one fix retires both. An axis nobody can
+assert is also an axis nobody can *count* correctly; the instrument was inflating
+the bug list as well as hiding it.
+
+A location pin can also be hollowed out by its own fixture. `210_161`'s first
+draft explained the defect in a comment that happened to contain the exact text
+the assertion forbade, which suppressed the very output being asserted and left
+the pin green-ish for a reason having nothing to do with the compiler. A pin that
+constrains rendered output is coupled to its own file's content in a way a
+text-substring pin never was — verify a location pin fails for its stated reason,
+not merely that it fails.
+
+Open: location is assertable and now defended in a handful of places, but still
+not *required*. Nothing forces a new diagnostic pin to constrain where its caret
+lands. Whether to make it mandatory — or to lint for carets falling outside their
+own file, which would catch the whole family without waiting for a pin author to
+think of it — is unsettled.
 
 Pinned by: `ERROR_AT` in `scripts/regression_lib.sh`.

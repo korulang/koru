@@ -1,0 +1,20 @@
+~[comptime
+~tor hello {}
+// The trigger is deliberately on LINE 1 with all prose below it: this pin's
+// subject is what the reporter renders when a location walks BACKWARD off the
+// top of the file, so nothing may precede it. The prose also avoids spelling
+// the injected prologue line verbatim, because a file containing that text
+// suppresses the source excerpt and would hollow out the assertion below.
+//
+// Pins: a diagnostic renders the USER'S source, never the compiler's own. The
+// std/compiler import is auto-injected ahead of every file; it occupies no
+// line the programmer can see or edit, and no caret may ever land on it.
+//
+// The guarded shape is two invariants at once — the reported line must be a
+// real line of this file, and the rendered excerpt must be the user's text.
+// A location that underflows into the injected prologue satisfies neither,
+// and hands the programmer a line number that does not exist alongside code
+// they never wrote.
+//
+// Sibling pin: 210_160, the same off-by-one where the file is long enough
+// that it lands on a real (but wrong) line instead of underflowing.

@@ -1,0 +1,16 @@
+// Pins: the `unclosed annotation bracket` diagnostic points at the annotation
+// the user wrote. The malformed entry is on line 10; that is the line the
+// caret must name, and the only line that tells the user where to look.
+//
+// The guarded shape is location alone — the message text is already correct
+// and 210_159 pins the recovery. Held by ERROR_AT, which is the only
+// assertion that can see a `-->`; substring matching cannot.
+const std = @import("std");
+
+~[depends_on(broken] tor foo {}
+
+~proc foo|zig {
+    std.debug.print("foo ran\n", .{});
+}
+
+~foo()

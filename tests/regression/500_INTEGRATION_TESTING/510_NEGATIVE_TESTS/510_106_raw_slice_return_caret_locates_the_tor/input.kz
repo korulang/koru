@@ -1,0 +1,9 @@
+// Pins: the raw-slice return rejection points at the `~tor` that carries the
+// offending return type. 510_104 pins the MESSAGE for this identical source;
+// this pin holds the other half of the same diagnostic — WHERE it lands.
+//
+// The guarded shape is a diagnostic raised at end-of-declaration: the reporter
+// is handed a cursor that has already advanced past the construct, so the
+// caret must be walked back to the line the type was written on rather than
+// reported one past it, which on a file this short is past EOF entirely.
+~tor echo { msg: string } -> []const u8

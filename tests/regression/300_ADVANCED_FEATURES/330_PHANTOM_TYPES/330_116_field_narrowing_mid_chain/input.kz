@@ -1,0 +1,32 @@
+// Pins: field-granular obligation narrowing is POSITION-INDEPENDENT. The
+// record producer's place in the chain has nothing to do with whether its
+// fields carry obligations, so `make2` behind a leading void call must narrow
+// exactly as it does at the chain head.
+//
+// The guarded shape is the prepended step: this program is 330_101 with one
+// void `greet()` in front of it and not one character else changed. The two
+// must agree — a program that compiles at the head and is rejected one step
+// in means the checker is keying off chain position rather than off the
+// obligation, and every real pipeline puts work in front of its allocator.
+//
+// The 330_101-through-330_109 family all place the producer first, so this is
+// the shape none of them reach. Adjacent: 330_115 (obligation surviving a
+// continuation), 210_149 (single-field record collapsing to the scalar).
+~import std/io
+const std = @import("std");
+const Handle = struct { n: i32 };
+
+~tor greet {}
+~proc greet|zig { std.debug.print("hello\n", .{}); }
+
+~tor make2 { id: usize } -> { h: *Handle<owned!>, g: *Handle<owned!> }
+~proc make2|zig {
+    const h = std.heap.page_allocator.create(Handle) catch unreachable;
+    const g = std.heap.page_allocator.create(Handle) catch unreachable;
+    h.* = .{ .n = 1 }; g.* = .{ .n = 2 };
+    return .{ .h = h, .g = g };
+}
+
+~tor dispose { x: *Handle<!owned> }
+~proc dispose|zig { std.heap.page_allocator.destroy(x); }
+~greet() |> make2(id: 1): s |> dispose(x: s.h): _ |> dispose(x: s.g): _ |> std/io:print.ln("clean")

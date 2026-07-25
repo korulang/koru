@@ -1,0 +1,17 @@
+// Pins: a malformed annotation entry is ONE error, not a guillotine. An
+// unmatched `(` inside `~[...]` leaves the bracket-depth scan unable to find
+// the block close, but the declarations BELOW it are independent source and
+// must still be parsed and judged on their own terms.
+//
+// The guarded shape is the pair of errors: the annotation is malformed AND
+// the `~tor` two lines down returns a raw `[]const u8`, which 510_104 pins as
+// its own rejection. A parser that recovers reports both. A parser that
+// swallows the remainder to EOF reports only the first, and the second
+// defect — real, independent, in code the user wrote — never reaches them.
+//
+// Sibling pins: 210_160 (this same malformed entry must be LOCATED at the
+// line it occupies) and 310_106 (nested `()`/`[]` inside a well-formed entry
+// must NOT close the block early — the behaviour this recovery must not break).
+~[depends_on(broken] tor foo {}
+
+~tor echo { msg: string } -> []const u8

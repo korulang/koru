@@ -1,0 +1,4 @@
+FRONTEND_COMPILE_ERROR
+CONTAINS unclosed annotation bracket
+NOT_CONTAINS ~import std/compiler
+ERROR_AT 1
