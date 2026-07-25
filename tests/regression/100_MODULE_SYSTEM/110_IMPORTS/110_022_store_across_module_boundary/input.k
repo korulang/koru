@@ -1,28 +1,27 @@
-// RED BY DESIGN (pinned 2026-07-25). A store declared in the entry file is
-// invisible to an imported module — in BOTH directions, and each fails its own
-// way:
+// A store declared in the entry file is REACHABLE from an imported module, in
+// both directions. Store names are program-global, but the cell and the
+// synthesized accessors are emitted into the declaring module alone, so each
+// direction has to cross a namespace to get to them:
 //
-//   module READS  `s.v`                      -> raw Zig: "use of undeclared
-//                                               identifier 's'". The reference
-//                                               is never rewritten to
-//                                               __koru_store_s. A host leak.
-//   module WRITES `std/store:stored {s.v: …}` -> error[KORU040]: unknown tor
-//                                               'ops:__store_write_s'. The
-//                                               synthesized write tor is looked
-//                                               up in the MODULE's namespace.
+//   module WRITES  the write tor lives where the store was DECLARED, not where
+//                  the write is written — the call qualifies with the store's
+//                  home module.
+//   module READS   the cell is a module-scope var in the declaring module's
+//                  emitted struct, so the rewrite carries that namespace as a
+//                  prefix instead of naming it bare.
 //
-// Same axis as 110_021 (fixed by 50182722): entry vs imported module. Keyword
-// tors used to misresolve that way; store references still do. Store NAMES are
-// program-global for the transform's own lookup — which is why `std/store(name)`
-// attach works program-wide — but the synthesized accessors are emitted into the
-// declaring module only.
+// The REACH is what this pins. The other half of the original failure was not
+// about modules at all — a produce arm could not read a cell anywhere, in one
+// file or many — and is pinned at its own position by 690_078. Both are needed:
+// each stays green while the other breaks.
 //
-// Why it matters: it is the second half of "can an app be decomposed". With
-// 110_021 green, koru-examples' gallery key vocabulary parses fine in a module
-// — every tor there is `name = cond(ch)` — and then dies on the stores those
-// tors mutate. So a TUI app is STILL one file, for a different reason than it
-// was this morning. Value-only modules already work (koru-examples/ledger,
-// gallery/content); what cannot move is any flow that touches program state.
+// Why it matters: with 110_021 this is what lets an app be decomposed. A TUI's
+// per-page vocabulary is `name = cond(ch)` over stores those tors mutate, so
+// value-only modules were as far as decomposition went.
+//
+// Not covered here, and walled loudly in std/store rather than guessed: a store
+// declared in one imported module and read from a DIFFERENT one, which needs
+// the emitter's module-path mangling.
 import std/io
 import std/store
 import app/ops
