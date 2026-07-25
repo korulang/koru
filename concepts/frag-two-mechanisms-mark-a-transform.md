@@ -3,6 +3,7 @@ type: belief
 id: frag-two-mechanisms-mark-a-transform
 provenance: surfaced 2026-07-25 auditing what surface comptime authors actually get; Lars asked why `[transform]` sits on procs at all when the event already declares itself one
 ts: 2026-07-25
+tags: [open-fork, koru, transforms, comptime, annotations, language-design]
 ---
 
 # Two live mechanisms disagree about where a transform is marked, and both are green (belief)
@@ -53,7 +54,20 @@ Two consequences already observed, not predicted:
   happens to be on the annotation-driven side. A doc written from either half of
   a split surface is wrong about the other half and cannot tell.
 
-## Open — this is a ruling, not a cleanup
+## Open — POSTPONED as a fork (Lars, 2026-07-25)
+
+Deliberately not resolved. Lars: *"I am not sure transform SHOULD be on the
+implementation"* — a lean, not a ruling, and the fork stays open until it is one.
+Tagged `open-fork` so it is findable:
+
+    grep -l "open-fork" concepts/*.md
+
+Postponement is the point. Both conventions are green, nothing is bleeding, and
+picking under time pressure would settle a language-shape question by accident —
+the failure mode `frag-tests-and-compiler-coevolve` exists to name. What must NOT
+happen is the fork closing silently: a doc, a challenge brief, or a new transform
+authored from one half will keep presenting that half as the whole surface, which
+is exactly how `challenges/008` shipped wrong on the day this was found.
 
 Which model wins is Lars's call, and the two are not symmetric:
 
