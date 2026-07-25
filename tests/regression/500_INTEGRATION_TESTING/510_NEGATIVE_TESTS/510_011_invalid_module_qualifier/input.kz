@@ -1,6 +1,13 @@
-// Test 618b: Invalid Module Qualifier (MUST FAIL)
-// Validates that short-form module qualifiers like "io:println" are rejected
-// Koru does NOT support import aliases - must always use full path
+// A short-form module qualifier is rejected: `io:print.ln` where the module is
+// `std/io`. Koru has no import aliases — a qualifier is always the full path,
+// so the leading segment of an import is never a name you may call through.
+//
+// What this pins is the REJECTION, not the wording. The diagnostic today is
+// KORU040 "unknown tor", which lands the program in the right place by the
+// wrong road: it reports a missing tor rather than a malformed qualifier, and
+// it names `io:print.impl` — a symbol the user never wrote. Both are message
+// quality, tracked separately; if the wall ever moves to a qualifier-specific
+// diagnostic this pin should be tightened to name it.
 
 ~import std/io
 

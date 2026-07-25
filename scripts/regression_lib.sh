@@ -602,8 +602,12 @@ regression_run_one_test() {
     # MUST_ERROR and laundered green, and how a pinned wall keeps passing long
     # after its diagnostic has been replaced by a different error entirely.
     # A negative test must say WHICH rejection it pins.
+    # `expected.txt` counts: under MUST_ERROR the harness diffs it against the
+    # captured error output, so it pins the diagnostic exactly rather than by
+    # substring. Omitting it here over-fired on five real, properly-pinned tests.
     if [ -f "$test_dir/MUST_ERROR" ] \
        && [ ! -s "$test_dir/expected_error.txt" ] \
+       && [ ! -s "$test_dir/expected.txt" ] \
        && [ ! -f "$test_dir/expected_patterns.txt" ] \
        && [ ! -f "$test_dir/post.sh" ] \
        && ! grep -qE "^(CONTAINS|NOT_CONTAINS|STDOUT_CONTAINS:|ERROR_AT) " "$test_dir/EXPECT" 2>/dev/null; then

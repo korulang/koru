@@ -22,8 +22,8 @@ note: |
 
   Detector — negative tests that still prove nothing about WHY they fail:
     for d in $(find tests/regression -name MUST_ERROR -exec dirname {} \;); do
-      [ -s "$d/expected_error.txt" ] || [ -f "$d/expected_patterns.txt" ] \
-        || [ -f "$d/post.sh" ] \
+      [ -s "$d/expected_error.txt" ] || [ -s "$d/expected.txt" ] \
+        || [ -f "$d/expected_patterns.txt" ] || [ -f "$d/post.sh" ] \
         || grep -qE "^(CONTAINS|ERROR_AT) " "$d/EXPECT" 2>/dev/null || echo "$d"
     done
 route: surface, wake

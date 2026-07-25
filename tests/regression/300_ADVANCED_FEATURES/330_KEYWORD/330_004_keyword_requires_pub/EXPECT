@@ -1,2 +1,3 @@
 FRONTEND_COMPILE_ERROR
-[keyword] annotation requires 'pub'
+CONTAINS error[PARSE003
+CONTAINS requires 'pub'
