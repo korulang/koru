@@ -1,0 +1,43 @@
+// MUST_FAIL — RED BY DESIGN (pinned 2026-07-25).
+//
+// An unguarded `!` arm that is NOT LAST in an exclusive group silently
+// deletes every arm after it. This is `400_089` with the two arms in the
+// other order, and it is the trap that bit koru-examples' gallery:
+// KORU050 instructs you to add an unguarded else when a branch has
+// when-guarded handlers, and WHERE you put that else silently decides
+// whether your other arms exist at all.
+//
+// Today (SHOWN 2026-07-25) this compiles clean, emits `fn tick` containing
+// ONLY the unguarded body, and prints small 0..3 — `big` never fires. The
+// guarded arm is absent from the artifact, not merely unreachable:
+// emitter_helpers.zig:6497 `if (!guarded and !multicast) break;` stops
+// emitting the group at the first unguarded arm.
+//
+// Wanted: a located diagnostic naming the unreachable arms. The natural
+// home is flow_checker.zig:181, which already reasons over the guarded /
+// unguarded continuation set for KORU050/051 — same pass, same data.
+// Error code intentionally NOT asserted here: unassigned pending a ruling
+// on whether this joins the KORU05x family or takes a new number.
+//
+// Deliberately NOT a statement about multicast. Under every dispatch
+// policy — exclusive, or a future opt-in fan-out — silently dropping the
+// arm is wrong, so this pin holds either way.
+~import std/io
+
+~pub tor ticker { n: usize }
+! tick usize
+
+~proc ticker|zig {
+    var i: usize = 0;
+    while (i < n) : (i += 1) {
+        tick(i);
+    }
+}
+
+~ticker(n: 4)
+! tick i |> std/io:print.blk {
+    small {{ i:d }}
+}
+! tick i when i > 1 |> std/io:print.blk {
+    big {{ i:d }}
+}

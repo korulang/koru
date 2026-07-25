@@ -1071,8 +1071,45 @@ pub const FlowChecker = struct {
                     "branch '{s}' has {d} continuations without 'when' (ambiguous) - only one else case allowed",
                     .{branch_name, else_count}
                 );
+            } else {
+                // Exactly one unguarded arm — valid ONLY if it comes LAST.
+                //
+                // An exclusive group emits as an `if (g) { …; return; }` chain
+                // with the unguarded arm as the else, and an else TERMINATES
+                // the chain: emitter_helpers.zig stops the group at the first
+                // unguarded arm. An unguarded arm in any earlier position
+                // therefore deletes every arm after it from the artifact —
+                // they are not merely unreachable, they are never emitted.
+                //
+                // The shape trap this exists to catch: KORU050 above tells you
+                // to ADD an unguarded arm when a branch has when-guarded
+                // handlers, and where you put it silently decides whether your
+                // other arms exist. `! name` with no guard means "a subscriber"
+                // when every sibling is unguarded (void multicast, exempted in
+                // the else_count > 1 arm) but "the fallback" the moment any
+                // sibling is guarded. One spelling, two meanings — so say which
+                // is in force rather than resolving it in silence. (400_174)
+                const last = branch_continuations[branch_continuations.len - 1];
+                if (last.condition != null) {
+                    var unguarded_idx: usize = 0;
+                    for (branch_continuations, 0..) |cont, i| {
+                        if (cont.condition == null) {
+                            unguarded_idx = i;
+                            break;
+                        }
+                    }
+                    const shadowed = branch_continuations.len - unguarded_idx - 1;
+                    log.debug("ERROR: Branch '{s}' unguarded arm at {d} shadows {d} later arm(s)\n",
+                        .{branch_name, unguarded_idx, shadowed});
+                    try self.reporter.addError(
+                        .KORU053,
+                        location.line,
+                        location.column,
+                        "branch '{s}': the unguarded handler is #{d} of {d}, so the {d} when-guarded handler(s) after it are unreachable - an unguarded arm is the else of an exclusive group and must come last",
+                        .{ branch_name, unguarded_idx + 1, branch_continuations.len, shadowed }
+                    );
+                }
             }
-            // else: exactly one else case - valid!
         }
     }
 
