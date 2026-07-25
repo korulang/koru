@@ -52,10 +52,21 @@ constrains rendered output is coupled to its own file's content in a way a
 text-substring pin never was — verify a location pin fails for its stated reason,
 not merely that it fails.
 
-Open: location is assertable and now defended in a handful of places, but still
-not *required*. Nothing forces a new diagnostic pin to constrain where its caret
-lands. Whether to make it mandatory — or to lint for carets falling outside their
-own file, which would catch the whole family without waiting for a pin author to
-think of it — is unsettled.
+The axis is also wider than the diagnostics. Spending `ERROR_AT` surfaced that
+the compiler carries *two* location coordinate systems: `-->` diagnostics count
+from the user's line 1, while AST node locations count from a buffer that
+includes the injected prologue, and the two offsets do not even agree with each
+other across node kinds. `ERROR_AT` cannot see that face at all — it reads
+rendered diagnostics, and every consumer of `--ast-json` is downstream of a
+different number. Pinned by `210_164`, which asserts only the user
+declaration's line; what an *injected* node should report is a real fork and is
+deliberately not ruled there.
+
+Open: location is assertable for diagnostics, defended in a handful of places,
+and still not *required* anywhere. Nothing forces a new diagnostic pin to
+constrain where its caret lands, and nothing at all constrains AST coordinates.
+Whether to make caret-pinning mandatory — or to lint for locations falling
+outside their own file, which would catch both faces without waiting for a pin
+author to think of it — is unsettled.
 
 Pinned by: `ERROR_AT` in `scripts/regression_lib.sh`.

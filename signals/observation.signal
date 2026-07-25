@@ -1,0 +1,21 @@
+name: observation
+kind: inferred
+shape: categorical
+face: in
+membrane: false
+note: |
+  A property of the system was noticed and confirmed, but nothing previously
+  believed was flipped by it. Use when a probe surfaces real behaviour no prior
+  belief spoke to — an undocumented coupling, an off-axis quirk found while
+  chasing something else, a mechanism observed but not yet explained.
+
+  Distinct from `contradiction`, which requires a prior belief to overturn, and
+  from `addition`, which reports work added on purpose. An observation is
+  incidental: it fell out of doing something else and would be lost if nobody
+  wrote it down.
+
+  Deliberately `membrane: false`. An observation is not yet a belief — no
+  rationale attached, nothing repudiated. It earns a fragment only once someone
+  works out WHY, and it is usually better served by a pin that makes the
+  behaviour fail loudly. Prefer evolving it out into the suite.
+route: surface

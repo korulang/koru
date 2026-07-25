@@ -19,7 +19,7 @@
     z: i32
 }
 
-// One more valid event to verify recovery
+// A valid event past the annotation; that recovery is pinned by 210_159
 ~tor final-valid {
     data: string
 }

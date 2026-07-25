@@ -308,7 +308,12 @@ const ReturnArrowSplit = struct {
 /// `{...}` input payload, a `<...>` phantom, or `[...]` annotation is ignored —
 /// only the top-level return arrow is split. Caller owns the duped type/phantom.
 /// This is the event-level analogue of the effect-branch `-> U` resume parsing.
-fn splitTrailingReturnArrow(self: *Parser, s: []const u8) !ReturnArrowSplit {
+///
+/// `decl_line` is the 1-based line `s` was written on. It must be passed in:
+/// by the time this runs the cursor has already advanced past the declaration,
+/// so deriving a location from `self.current` here blames the line after the
+/// one at fault — which on a file ending in the declaration is past EOF.
+fn splitTrailingReturnArrow(self: *Parser, s: []const u8, decl_line: usize) !ReturnArrowSplit {
     var depth: i32 = 0;
     var in_string = false;
     var i: usize = 0;
@@ -368,7 +373,7 @@ fn splitTrailingReturnArrow(self: *Parser, s: []const u8) !ReturnArrowSplit {
     if (std.mem.eql(u8, rt, "[]const u8")) {
         try self.reporter.addError(
             .PARSE003,
-            self.current + 1,
+            decl_line,
             1,
             "'[]const u8' is not a Koru return type. Use 'string' for text — it lowers to []const u8 for Zig",
             .{},
@@ -487,6 +492,10 @@ pub const Parser = struct {
     // decl parser consumes it as the bare-return suffix. Single-line decls
     // never set this — their post-shape text is handled on the decl line.
     multiline_shape_tail: ?[]const u8 = null,
+    /// 1-based line the stashed tail was written on — the shape's CLOSING line,
+    /// not the tor header. A diagnostic about `} -> T` belongs on the line the
+    /// author wrote it on.
+    multiline_shape_tail_line: usize = 0,
 
     // Flag to indicate if we're parsing the compiler bootstrap library
     // When true, procs in this file cannot use inline flows (metacircular requirement)
@@ -793,15 +802,22 @@ pub const Parser = struct {
                 // NOTE: `const` is NOT here — it is a Koru keyword
                 // (declarations.kz), not host syntax. It lowers per-target and
                 // is legal in `.k`.
-                const host_decls = [_][]const u8{ "var ", "comptime ", "pub fn ", "fn ", "inline fn ", "export fn ", "extern fn " };
+                // A visibility qualifier cannot decide the question by itself —
+                // `pub` is legal Koru here (`pub tor`, `pub proc`). So strip it
+                // and judge the DECLARATION KEYWORD underneath, or every
+                // qualified spelling walks past a wall that lists only the bare
+                // one and dies later as a host error naming compiler internals.
+                const qualifier = lexer.afterPrefix(trimmed, "pub ");
+                const decl_body = qualifier orelse trimmed;
+                const host_decls = [_][]const u8{ "var ", "comptime ", "fn ", "inline fn ", "export fn ", "extern fn " };
                 for (host_decls) |kw| {
-                    if (std.mem.startsWith(u8, trimmed, kw)) {
+                    if (std.mem.startsWith(u8, decl_body, kw)) {
                         try self.reporter.addError(
                             .PARSE003,
                             self.current + 1,
                             lexer.getIndent(line) + 1,
-                            "host syntax '{s}' is not valid in a pure-Koru '.k' file — constants, functions, and types live in a '.kz'/'.kjs' companion (Koru has no native constant/function declaration yet)",
-                            .{lexer.trim(kw)},
+                            "host syntax '{s}{s}' is not valid in a pure-Koru '.k' file — constants, functions, and types live in a '.kz'/'.kjs' companion (Koru has no native constant/function declaration yet)",
+                            .{ if (qualifier != null) "pub " else "", lexer.trim(kw) },
                         );
                         return error.ParseError;
                     }
@@ -832,7 +848,13 @@ pub const Parser = struct {
                         if (self.fail_fast) {
                             return err;
                         }
-                        // Lenient mode: create error node and skip to next construct
+                        // Lenient mode: create error node and skip to next
+                        // construct. The failed block scan ran the cursor to
+                        // EOF looking for a `]`, so recovery must start again
+                        // from the line that OPENED the block — otherwise there
+                        // is nothing left to scan and every construct below the
+                        // malformed annotation is dropped without a trace.
+                        self.current = current_before;
                         const start_line = self.current;
                         self.recoverToNextConstruct();
                         const error_node = try self.createErrorNode(start_line, self.current);
@@ -1196,7 +1218,11 @@ pub const Parser = struct {
     /// - Inline: [a|b|c] on same line
     /// - Vertical: [\n-a\n-b\n-c\n] across multiple lines
     /// Returns annotations and content after ] (caller owns annotations)
-    fn parseAnnotationBlock(self: *Parser, content_with_bracket: []const u8, starting_line: usize) !AnnotationBlockResult {
+    /// `opening_line_idx` is the ZERO-based index of the line the `~[` sits on —
+    /// the same basis as `self.current`, which is what every caller derives it
+    /// from. It becomes a 1-based line only at the reporter, like everywhere
+    /// else in this file.
+    fn parseAnnotationBlock(self: *Parser, content_with_bracket: []const u8, opening_line_idx: usize) !AnnotationBlockResult {
         var annotations = try std.ArrayList([]const u8).initCapacity(self.allocator, 4);
         errdefer {
             for (annotations.items) |ann| {
@@ -1288,8 +1314,9 @@ pub const Parser = struct {
             continue;
         }
 
-        // Ran out of lines without finding ]
-        try self.reporter.addError(.PARSE003, starting_line, 1, "unclosed annotation bracket", .{});
+        // Ran out of lines without finding ]. Blame the line that OPENED the
+        // block — the scan ended at EOF, which is nowhere the author can act on.
+        try self.reporter.addError(.PARSE003, opening_line_idx + 1, 1, "unclosed annotation bracket", .{});
         return error.ParseError;
     }
 
@@ -1567,7 +1594,12 @@ pub const Parser = struct {
                 // here silently ate `} -> SiteResult` return types.
                 if (end_idx + 1 < trimmed.len) {
                     const tail = lexer.trim(trimmed[end_idx + 1 ..]);
-                    if (tail.len > 0) self.multiline_shape_tail = tail;
+                    if (tail.len > 0) {
+                        self.multiline_shape_tail = tail;
+                        // `self.current` was advanced past this line at the top
+                        // of the loop, so it already IS the 1-based close line.
+                        self.multiline_shape_tail_line = self.current;
+                    }
                 }
             } else if (brace_depth > 0) {
                 try shape_content.appendSlice(self.allocator, trimmed);
@@ -1746,7 +1778,7 @@ pub const Parser = struct {
         // Split a top-level `-> T` return suffix off the decl line BEFORE path /
         // shape / same-line-branch parsing, so none of them see the return arrow.
         const trimmed_after_event_raw = lexer.trim(after_event);
-        const return_split = try splitTrailingReturnArrow(self, trimmed_after_event_raw);
+        const return_split = try splitTrailingReturnArrow(self, trimmed_after_event_raw, event_line_index + 1);
         var return_type = return_split.return_type;
         var return_phantom = return_split.return_phantom;
         errdefer {
@@ -1791,14 +1823,16 @@ pub const Parser = struct {
         // dropped it, which ate return types without a trace.
         if (self.multiline_shape_tail) |tail| {
             self.multiline_shape_tail = null;
+            const tail_line = self.multiline_shape_tail_line;
+            self.multiline_shape_tail_line = 0;
             if (return_type == null and std.mem.startsWith(u8, tail, "->")) {
-                const tail_split = try splitTrailingReturnArrow(self, tail);
+                const tail_split = try splitTrailingReturnArrow(self, tail, tail_line);
                 return_type = tail_split.return_type;
                 return_phantom = tail_split.return_phantom;
             } else {
                 try self.reporter.addError(
                     .PARSE003,
-                    event_line_index + 1,
+                    tail_line,
                     1,
                     "unexpected content after the closing '}}' of a multi-line tor shape: '{s}' (only a bare return `-> T` may follow)",
                     .{tail},

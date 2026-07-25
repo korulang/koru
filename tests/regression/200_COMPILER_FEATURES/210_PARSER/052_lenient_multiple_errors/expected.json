@@ -121,10 +121,38 @@
             "message": "unclosed annotation bracket",
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/052_lenient_multiple_errors/input.kz",
-                "line": 17,
+                "line": 18,
                 "col": 1
             },
-            "raw_text": ""
+            "raw_text": "~[unclosed annotation event another_broken {\n    z: i32\n}\n\n// A valid event past the annotation; that recovery is pinned by 210_159\n"
+        },
+        {
+            "type": "event_decl",
+            "name": "final-valid",
+            "path": ["final-valid"],
+            "module": "input",
+            "input": {
+                "fields": [
+                    {
+                        "name": "data",
+                        "type": "string",
+                        "is_source": false,
+                        "is_file": false,
+                        "is_embed_file": false,
+                        "is_expression": false,
+                        "is_invocation_meta": false,
+                        "phantom": null
+                    }
+                ]
+            },
+            "branches": [
+
+            ],
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/052_lenient_multiple_errors/input.kz",
+                "line": 27,
+                "col": 0
+            }
         }
     ]
 }

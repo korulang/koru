@@ -1,0 +1,12 @@
+// Pins: a bare-return suffix written on a MULTI-LINE shape's closing line is
+// judged there and blamed there. `} -> []const u8` is the same wall 510_104
+// names, reached by the other of the two spellings, and its diagnostic must
+// point at the close line — not at the tor header several lines above it.
+//
+// The guarded shape is the split between where a construct STARTS and where
+// its return type is WRITTEN. The single-line form collapses the two, which
+// is why the multi-line form is the one that catches a location taken from
+// the declaration rather than from the text at fault.
+~tor site {
+    id: usize
+} -> []const u8
