@@ -1636,8 +1636,8 @@ EOF
                 LEAKED_TESTS=$((LEAKED_TESTS + 1))
             elif [ -f "$test_dir/MUST_ERROR" ]; then
                 echo -e "${RED}❌ MUST_ERROR test passed unexpectedly — expected failure didn't fire${NC}"
-                echo "must-fail-passed" > "$test_dir/FAILURE"
-                FAILED_TESTS="$FAILED_TESTS $TEST_NAME(must-fail-passed)"
+                echo "must-error-passed" > "$test_dir/FAILURE"
+                FAILED_TESTS="$FAILED_TESTS $TEST_NAME(must-error-passed)"
             else
                 echo -e "${GREEN}✅ PASS (ran successfully)${NC}"
                 mark_test_passed "$test_dir"
@@ -1671,8 +1671,8 @@ EOF
                         LEAKED_TESTS=$((LEAKED_TESTS + 1))
                     elif [ -f "$test_dir/MUST_ERROR" ]; then
                         echo -e "${RED}❌ MUST_ERROR test passed unexpectedly — expected failure didn't fire${NC}"
-                        echo "must-fail-passed" > "$test_dir/FAILURE"
-                        FAILED_TESTS="$FAILED_TESTS $TEST_NAME(must-fail-passed)"
+                        echo "must-error-passed" > "$test_dir/FAILURE"
+                        FAILED_TESTS="$FAILED_TESTS $TEST_NAME(must-error-passed)"
                     else
                         echo -e "${GREEN}✅ PASS (post-validated)${NC}"
                         mark_test_passed "$test_dir"
@@ -1721,8 +1721,8 @@ EOF
                     LEAKED_TESTS=$((LEAKED_TESTS + 1))
                 elif [ -f "$test_dir/MUST_ERROR" ]; then
                     echo -e "${RED}❌ MUST_ERROR test passed unexpectedly — expected failure didn't fire${NC}"
-                    echo "must-fail-passed" > "$test_dir/FAILURE"
-                    FAILED_TESTS="$FAILED_TESTS $TEST_NAME(must-fail-passed)"
+                    echo "must-error-passed" > "$test_dir/FAILURE"
+                    FAILED_TESTS="$FAILED_TESTS $TEST_NAME(must-error-passed)"
                 else
                     echo -e "${GREEN}✅ PASS (compile only)${NC}"
                     mark_test_passed "$test_dir"
