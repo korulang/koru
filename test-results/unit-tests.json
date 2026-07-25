@@ -1,12 +1,12 @@
 {
-  "timestamp": "2026-07-25T03:39:10.749Z",
+  "timestamp": "2026-07-25T06:36:18.664Z",
   "summary": {
-    "passed": 299,
+    "passed": 302,
     "failed": 0,
     "skipped": 12,
     "leaked": 0,
     "compileErrors": 0,
-    "total": 311,
+    "total": 314,
     "suiteCount": 40,
     "status": "success"
   },
@@ -181,10 +181,10 @@
     },
     {
       "name": "liquid_tests",
-      "passed": 9,
+      "passed": 12,
       "failed": 0,
       "skipped": 0,
-      "total": 9,
+      "total": 12,
       "status": "success"
     },
     {
