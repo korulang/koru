@@ -21,7 +21,7 @@
 // compiled — teaching the compiler to ACCEPT what the language forbids, the
 // exact lax-compiler anti-pattern. Both were premise-absorption failures: the
 // commission was never checked against the language standard. Reverted; this
-// test now correctly stands as MUST_FAIL.
+// test now correctly stands as MUST_ERROR.
 //
 // CURRENT REJECTION: the parser records the literal name `~if`, which Stage C
 // fails to resolve -> `error[KORU040]: unknown event 'input:~if'`
@@ -30,7 +30,7 @@
 // Improving the diagnostic to say so directly is legitimate future work, to be
 // done by TIGHTENING (a clear early-layer parser error), NEVER by accepting the
 // code. If that work lands, update expected_error.txt to the new message; the
-// test stays MUST_FAIL either way.
+// test stays MUST_ERROR either way.
 //
 // NOTE on the arms: `yes ctx` / `no ctx` use the canonical braceless
 // identity-branch constructor (not `yes(ctx)`, which `parser.zig:5984` would

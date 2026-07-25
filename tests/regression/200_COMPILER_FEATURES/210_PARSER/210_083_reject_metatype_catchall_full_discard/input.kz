@@ -1,5 +1,5 @@
 // ============================================================================
-// Test 210_083: MUST_FAIL — metatype catch-all with discard binding AND
+// Test 210_083: MUST_ERROR — metatype catch-all with discard binding AND
 //                          discard body is still pay-for-nothing.
 //
 // `|? Transition _ |> _` asks the compiler to build the Transition

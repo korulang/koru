@@ -61,7 +61,7 @@ cache_emit_fingerprint() {
         echo "input:$(cache_mtime "$test_dir/input.kz")"
         # Fixed-name markers: emit unconditionally with mtime=0 when absent so
         # additions of these files invalidate the cache (stored=0 vs current!=0).
-        # If we only emitted when present, adding MUST_FAIL to a previously-cached
+        # If we only emitted when present, adding MUST_ERROR to a previously-cached
         # test would not invalidate — the stored fingerprint just wouldn't mention it.
         echo "expected:$(cache_mtime "$test_dir/expected.txt")"
         echo "EXPECT:$(cache_mtime "$test_dir/EXPECT")"
@@ -69,7 +69,7 @@ cache_emit_fingerprint() {
         echo "marker_MUST_COMPILE:$(cache_mtime "$test_dir/MUST_COMPILE")"
         echo "marker_MUST_COMPILE_KZ:$(cache_mtime "$test_dir/MUST_COMPILE_KZ")"
         echo "marker_MUST_COMPILE_ZIG:$(cache_mtime "$test_dir/MUST_COMPILE_ZIG")"
-        echo "marker_MUST_FAIL:$(cache_mtime "$test_dir/MUST_FAIL")"
+        echo "marker_MUST_ERROR:$(cache_mtime "$test_dir/MUST_ERROR")"
         echo "marker_MUST_RUN:$(cache_mtime "$test_dir/MUST_RUN")"
 
         # Walk up for koru.json files. Stop at the regression root or filesystem root.
@@ -149,7 +149,7 @@ cache_check() {
                 a="${line#expected_patterns:}"
                 [ "$a" = "$(cache_mtime "$test_dir/expected_patterns.txt")" ] || return 1
                 ;;
-            marker_MUST_COMPILE|marker_MUST_COMPILE_KZ|marker_MUST_COMPILE_ZIG|marker_MUST_FAIL|marker_MUST_RUN)
+            marker_MUST_COMPILE|marker_MUST_COMPILE_KZ|marker_MUST_COMPILE_ZIG|marker_MUST_ERROR|marker_MUST_RUN)
                 local marker_name="${kind#marker_}"
                 a="${line#${kind}:}"
                 [ "$a" = "$(cache_mtime "$test_dir/$marker_name")" ] || return 1

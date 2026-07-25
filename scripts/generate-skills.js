@@ -58,7 +58,7 @@ function resolveTopicTests(topic, allTests, byName, negativeTests) {
       matched.set(name, byName.get(name));
     } else if (negativeTests.has(name)) {
       console.warn(
-        `[warn] topic "${topic.name}": includedTests entry is a NEGATIVE (MUST_FAIL) test — excluded: ${name}`
+        `[warn] topic "${topic.name}": includedTests entry is a NEGATIVE (MUST_ERROR) test — excluded: ${name}`
       );
     } else {
       console.warn(`[warn] topic "${topic.name}": includedTests not found (or not passing): ${name}`);

@@ -34,15 +34,15 @@ VERIFY=false
 
 # --- shared classification (mirrors migrate_kz_to_k.sh; the compiler is the oracle) ---
 is_green()        { [ -f "$1/SUCCESS" ] && [ ! -f "$1/FAILURE" ]; }
-is_error_expect() { [ -f "$1/EXPECT" ] && grep -qE 'FRONTEND_COMPILE_ERROR|BACKEND_COMPILE_ERROR|BACKEND_RUNTIME_ERROR|BACKEND_EXEC_ERROR|MUST_FAIL' "$1/EXPECT"; }
+is_error_expect() { [ -f "$1/EXPECT" ] && grep -qE 'FRONTEND_COMPILE_ERROR|BACKEND_COMPILE_ERROR|BACKEND_RUNTIME_ERROR|BACKEND_EXEC_ERROR|MUST_ERROR' "$1/EXPECT"; }
 # Exclusions that are NOT migration targets regardless of content:
-#   MUST_FAIL / error-EXPECT  — negatives; a rename can change which error fires.
+#   MUST_ERROR / error-EXPECT  — negatives; a rename can change which error fires.
 #   LANGUAGES                 — multi-target facet.
 #   input.k present           — collision.
 #   expected.json             — AST-snapshot tests: the .kz AST embeds the literal
 #                               input.kz filename + parses comments as host_line
 #                               nodes, so .k legitimately differs. They stay .kz.
-skip_dir()    { [ -f "$1/MUST_FAIL" ] || [ -f "$1/LANGUAGES" ] || [ -f "$1/input.k" ] \
+skip_dir()    { [ -f "$1/MUST_ERROR" ] || [ -f "$1/LANGUAGES" ] || [ -f "$1/input.k" ] \
                 || [ -f "$1/expected.json" ] || is_error_expect "$1"; }
 # Cheap host-content pre-filter. Deliberately conservative — anything it flags is
 # excluded from the FAST preview, but the --verify gate is what actually decides.

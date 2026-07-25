@@ -8,7 +8,7 @@
 
 ~tor branching-event {}
 
-// MUST_FAIL: branching-event is declared void (no branches), so `| error` is a
+// MUST_ERROR: branching-event is declared void (no branches), so `| error` is a
 // branch handler on an event that has no branches — category error.
 ~void-event() |> branching-event()
 | error |> _

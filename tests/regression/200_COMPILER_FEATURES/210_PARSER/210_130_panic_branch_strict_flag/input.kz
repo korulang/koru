@@ -1,4 +1,4 @@
-// Test 210_130: MUST_FAIL — --panic-branches=strict makes unhandled panic
+// Test 210_130: MUST_ERROR — --panic-branches=strict makes unhandled panic
 //                          branches compile errors (the crash-surface map).
 //
 // Panic branches are ignorable by default (210_127: unhandled | ?!oom

@@ -5169,7 +5169,7 @@
           "converged": true
         },
         {
-          "title": "MUST_FAIL negative tests that pass without pinning WHICH error fires",
+          "title": "MUST_ERROR negative tests that pass without pinning WHICH error fires",
           "anchor": "tests/regression/500_INTEGRATION_TESTING/510_NEGATIVE_TESTS/510_011_invalid_module_qualifier (no expected_error.txt); 510_052 (FRONTEND_COMPILE_ERROR only)",
           "substrate": "test",
           "severity": "med",

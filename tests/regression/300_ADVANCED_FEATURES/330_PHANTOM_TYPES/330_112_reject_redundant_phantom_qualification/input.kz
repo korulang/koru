@@ -6,7 +6,7 @@
 // the bare form (330_087-style base-type-module self-resolution).
 //
 // Currently NOT built: the redundant form compiles fine (the qualified state
-// resolves and unifies with the issued state), so this MUST_FAIL is RED until
+// resolves and unifies with the issued state), so this MUST_ERROR is RED until
 // the rejection lands. Contrast 330_087 (qualifying a FOREIGN module's state on
 // a primitive base — required, not redundant).
 ~import std/io

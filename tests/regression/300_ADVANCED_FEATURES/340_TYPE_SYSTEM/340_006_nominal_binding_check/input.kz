@@ -1,4 +1,4 @@
-// RED PIN, MUST_FAIL (type-system design walk, 2026-07-06/07).
+// RED PIN, MUST_ERROR (type-system design walk, 2026-07-06/07).
 // Binding types checked at the KORU layer against registry entries.
 // Today a bind's or branch payload's type is a string the checker can
 // pattern-match but not reason about — the true rejection happens in

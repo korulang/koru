@@ -1,0 +1,29 @@
+name: instrument-sharpened
+kind: inferred
+shape: categorical
+face: in
+membrane: false
+note: |
+  Fires when the measuring apparatus itself gains discrimination — the harness,
+  the board, or a checker can now tell apart two outcomes it previously scored
+  the same. Not "a bug was fixed" (that is gap-closed) and not "a new thing
+  works" (capability-gained): the SUBJECT is the instrument, and what changed is
+  what it is able to notice.
+
+  Attention-worthy because a blunt instrument reports success at exactly the
+  moments it should report nothing. Every such conflation is a green that was
+  never earned, and it is invisible by construction — the board cannot show you
+  a distinction it does not draw. Sharpening one usually turns greens red, and
+  those reds are the instrument working, not a regression.
+
+  Canonical instance: a negative test pinning no diagnostic passed when the
+  program failed for ANY reason, so "rejected for the reason I pinned" and
+  "broke somehow" scored identically (MUST_ERROR walls, 6f8dea46).
+
+  Detector — negative tests that still prove nothing about WHY they fail:
+    for d in $(find tests/regression -name MUST_ERROR -exec dirname {} \;); do
+      [ -s "$d/expected_error.txt" ] || [ -f "$d/expected_patterns.txt" ] \
+        || [ -f "$d/post.sh" ] \
+        || grep -qE "^(CONTAINS|ERROR_AT) " "$d/EXPECT" 2>/dev/null || echo "$d"
+    done
+route: surface, wake

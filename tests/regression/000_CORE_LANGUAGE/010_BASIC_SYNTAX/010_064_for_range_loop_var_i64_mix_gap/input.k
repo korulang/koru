@@ -11,7 +11,7 @@
 // that layer lands, the loop var should participate in the expression's integer
 // context (here i64) and THIS TEST GOES GREEN. If instead the ruling is a
 // Koru-level diagnostic demanding an explicit widening, this pin flips to
-// MUST_FAIL with that diagnostic as expected_error — either way, the raw Zig
+// MUST_ERROR with that diagnostic as expected_error — either way, the raw Zig
 // leak is the defect being pinned. See baton_koru_expression_layer_raw_zig_gap.
 //
 // Semantics check: sum of i over [1,11) = 1+2+...+10 = 55.

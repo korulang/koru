@@ -4,7 +4,7 @@
  * The reference corpus (generate-corpus.js), the teaching tutorial
  * (generate-tutorial.js) and the per-topic skill bundles
  * (generate-skills.js) all walk `tests/regression/` the same way: keep the
- * passing POSITIVE tests, drop the negative MUST_FAIL ones, read the source
+ * passing POSITIVE tests, drop the negative MUST_ERROR ones, read the source
  * verbatim. That walk lived in three near-identical copies; this is the one
  * copy they share.
  */
@@ -14,14 +14,14 @@ import path from 'path';
 
 /**
  * Walk `dir`, collecting every passing POSITIVE test (has a SUCCESS marker,
- * no MUST_FAIL marker). Negative tests "pass" by being rejected — they are
+ * no MUST_ERROR marker). Negative tests "pass" by being rejected — they are
  * examples of what the compiler REJECTS, never what-to-do — so they are
  * excluded from every generated artifact and tracked separately so config
  * references to them can warn specifically instead of silently vanishing.
  *
  * Returns { tests, negativeTests }:
  *   tests        — array of { name, breadcrumbs, dir, input, expected }
- *   negativeTests — Set of basenames of excluded MUST_FAIL tests
+ *   negativeTests — Set of basenames of excluded MUST_ERROR tests
  *
  * `breadcrumbs` is the category path above the test (its own dir name dropped),
  * so a test at 300_ADVANCED_FEATURES/330_PHANTOM_TYPES/330_005_foo carries
@@ -38,9 +38,9 @@ function walk(dir, breadcrumbs, negativeTests) {
   const hasSuccess = entries.some((e) => e.isFile() && e.name === 'SUCCESS');
 
   if (hasSuccess) {
-    // A MUST_FAIL test is negative: it passes by being rejected. Exclude it
+    // A MUST_ERROR test is negative: it passes by being rejected. Exclude it
     // from the positive example set — every artifact shows what TO do.
-    if (entries.some((e) => e.isFile() && e.name === 'MUST_FAIL')) {
+    if (entries.some((e) => e.isFile() && e.name === 'MUST_ERROR')) {
       negativeTests.add(path.basename(dir));
       return [];
     }

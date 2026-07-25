@@ -1,5 +1,5 @@
 // ============================================================================
-// Test 210_096: MUST_FAIL — a BARE path argument whose last segment puns to a
+// Test 210_096: MUST_ERROR — a BARE path argument whose last segment puns to a
 //   name that is NOT a parameter must be REJECTED at the koru frontend.
 //   Bare-side twin of 210_091's legal `echo(v: box.other)`.
 //

@@ -8,7 +8,7 @@
 // print "acquired 7" and exit 0. When the depth-N walk lands, flip this back to
 // MUST_RUN + expected.txt "acquired 7".
 //
-// PINNED MUST_FAIL, BY DESIGN — NOT A BUG. Our auto-discharger accepts ONLY void
+// PINNED MUST_ERROR, BY DESIGN — NOT A BUG. Our auto-discharger accepts ONLY void
 // events as dischargers (src/auto_discharge_inserter.zig: `branches.len > 0`
 // → skip), so the non-void `cure` is never auto-inserted, `raw!` is left
 // undischarged, and this is correctly rejected with KORU030. The void-only rule

@@ -15,6 +15,6 @@ Workflow:
 
 1. **Pin the behavior as a test first.** A new feature or a bug both start as a
    test under `tests/regression/<CLUSTER>/<NNN_descriptive_name>/` — either
-   `MUST_RUN` + `expected.txt`, or `MUST_FAIL` + `EXPECT` + `expected_error.txt`.
+   `MUST_RUN` + `expected.txt`, or `MUST_ERROR` + `EXPECT` + `expected_error.txt`.
 2. **Then make it green** (or pin it red if it's a known gap).
 3. **Run the suite:** `./run_regression.sh --cache --parallel 8`.

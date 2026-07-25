@@ -1,4 +1,4 @@
-// Test 644: Ambiguous Override Error (MUST_FAIL)
+// Test 644: Ambiguous Override Error (MUST_ERROR)
 // Tests that multiple non-default definitions with the same name is an error
 //
 // When multiple user modules define the same step (without [default]),

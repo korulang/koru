@@ -5,7 +5,7 @@
 // dropping the cleanup obligation. The checker must reject it.
 //
 // This is the asymmetric-drop mirror of GREEN 330_074 (where `@loop(h: v)`
-// carries the handle). It is the same class of bug as MUST_FAIL 370_020
+// carries the handle). It is the same class of bug as MUST_ERROR 370_020
 // (`| failed |> @loop()` drops the connection).
 //
 // EXPECTED: KORU030 — "Label jump '@loop' drops cleanup obligation for ..."

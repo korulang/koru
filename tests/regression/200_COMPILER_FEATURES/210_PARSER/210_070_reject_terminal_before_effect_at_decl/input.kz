@@ -1,5 +1,5 @@
 // ============================================================================
-// Test 210_070: MUST_FAIL — effect branches must precede terminal branches
+// Test 210_070: MUST_ERROR — effect branches must precede terminal branches
 //                          at the event declaration site.
 //
 // Per docs/EFFECT_BRANCHES.md: `!` (effect) branches always come first in

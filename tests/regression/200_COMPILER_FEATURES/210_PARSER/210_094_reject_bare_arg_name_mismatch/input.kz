@@ -1,5 +1,5 @@
 // ============================================================================
-// Test 210_094: MUST_FAIL — a BARE argument whose punned name matches NO
+// Test 210_094: MUST_ERROR — a BARE argument whose punned name matches NO
 //   parameter must be REJECTED. This is the bare-side twin of 210_091's
 //   legal `echo(v: other)`.
 //

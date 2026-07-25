@@ -1,4 +1,4 @@
-// Test 643: Multiple Defaults Error (MUST_FAIL)
+// Test 643: Multiple Defaults Error (MUST_ERROR)
 // Tests that having multiple [default] definitions for the same name is an error
 //
 // This is a STDLIB BUG - only one default per name is allowed

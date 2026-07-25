@@ -1,7 +1,7 @@
 // TEST: A stray ']' before any '[' in a struct payload must be rejected
 //       LOUDLY as an unbalanced bracket — not silently mis-split.
 //
-// MUST_FAIL: unbalanced ']'
+// MUST_ERROR: unbalanced ']'
 //
 // `splitFieldsRespectingBrackets` walks the payload content tracking
 // `bracket_depth`. A closing ']' with no matching '[' drives the depth

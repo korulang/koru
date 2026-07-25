@@ -11,9 +11,10 @@ before reading it.
 ## Ground truth is the tests
 
 What Koru *is* — what's legal, what's rejected — lives in the suite, never in
-prose. Every passing test is law; a `MUST_FAIL` test with its `expected_error` is
-law about what's *rejected*. (`MUST_FAIL` marks a negative test. It never means "a
-test that is failing when it shouldn't.")
+prose. Every passing test is law; a `MUST_ERROR` test with its `expected_error` is
+law about what's *rejected* — a negative test, pinning the program the compiler
+refuses and the diagnostic it refuses it with. A `MUST_ERROR` that pins no
+specific diagnostic passes on *any* failure, so the harness rejects one.
 
 - **`koru-by-example.md`** — curated tour of real tests, verbatim source.
 - **`tests/regression/`** — the full suite.
@@ -41,7 +42,7 @@ The doctrine that governs work here:
   wrong, nobody is to blame, and triage is design work.
 
 Keep the corpus honest: a belief that *could* live as a passing test or a
-`MUST_FAIL` wall belongs in the suite, not in prose. Prefer evolving it out into
+`MUST_ERROR` wall belongs in the suite, not in prose. Prefer evolving it out into
 running code and leaving a pointer.
 
 ## Test comments: intent, never state

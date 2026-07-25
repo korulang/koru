@@ -21,7 +21,7 @@
 // 2104_21_open_tx_forgot_close is the same forgotten-discharge WITHOUT a borrow,
 // and disable rejects it correctly.
 //
-// MUST_FAIL under --auto-discharge=disable (see COMPILER_FLAGS). RED until the
+// MUST_ERROR under --auto-discharge=disable (see COMPILER_FLAGS). RED until the
 // disable-path obligation check tracks obligations through a bare-borrow.
 
 ~import app/digest

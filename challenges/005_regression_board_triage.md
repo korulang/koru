@@ -22,13 +22,13 @@ board **that already exists**.
   breaking commit, the failure mode) and `./run_regression.sh --status` (166 reds across
   categories). A single test: `./run_regression.sh <id>`. Its history: `--history <id>`.
 - **A test lives at** `tests/regression/<CLUSTER>/<NNN_name>/` — `input.k`/`input.kz`, an
-  `EXPECT` stage, `MUST_RUN` + `expected.txt` (positive) or `MUST_FAIL` + `expected_error.txt`
+  `EXPECT` stage, `MUST_RUN` + `expected.txt` (positive) or `MUST_ERROR` + `expected_error.txt`
   (negative), and `post.sh`. `EXPECT` maps to the pipeline stage: `FRONTEND_COMPILE_ERROR` = A,
   `BACKEND_COMPILE_ERROR` = B, `BACKEND_RUNTIME_ERROR` = C (see `CLAUDE.md`, "four stages").
 - **Compiler:** `./zig-out/bin/koruc` (`--check`, `build`, `run`). Build it fresh once:
   `zig build`. Not on PATH; run from repo root.
 - **The three failure classes worth knowing** (from the harness verdict): a normal red
-  (`MUST_RUN` fails to run/produce output), an `expected-error-missing` (a `MUST_FAIL` no
+  (`MUST_RUN` fails to run/produce output), an `expected-error-missing` (a `MUST_ERROR` no
   longer emits its diagnostic), and a **`must-fail-passed`** — a negative test that now *passes
   clean*. That last class is the highest-value target: a guard that silently stopped biting is
   a hole in the language's law, not merely a stale test.
@@ -129,7 +129,7 @@ Produce **3–6 findings**, one per red claimed. For each:
 - `qualified_guess` — `{ lean: A | B | unsettled, confidence: grounded | inferred | unsettled,
   prior_art: <cited SUCCESS test path or "none found"> }`.
 - `proposed_pin` — IF the arbiter rules it real: the **minimal** runnable test that isolates the
-  reading (a small `input.k` + `MUST_FAIL`+`EXPECT`+`expected_error`, or `MUST_RUN`+`expected`).
+  reading (a small `input.k` + `MUST_ERROR`+`EXPECT`+`expected_error`, or `MUST_RUN`+`expected`).
   A minimal pin that isolates the exact gap is worth more than the compound application test it
   came from. Proposed, not applied.
 - `severity` — low / med / high.
@@ -162,7 +162,7 @@ On the walk, per finding:
    - **Toolchain wrong** → fix the root (merge the candidate diff or commission the fix), then
      confirm the **minimal pin** lands so the reading is captured runnably.
    - **Test wrong** → change or delete it **with the reason visible in the commit** (per
-     `CLAUDE.md`, "understand tests before changing them"); a `MUST_FAIL` that should now pass
+     `CLAUDE.md`, "understand tests before changing them"); a `MUST_ERROR` that should now pass
      becomes a positive pin locking in the confirmed legality.
    - **Real language gap** → keep the red honest and name the gap in the compiler's own terms;
      the red *is* the ledger entry.

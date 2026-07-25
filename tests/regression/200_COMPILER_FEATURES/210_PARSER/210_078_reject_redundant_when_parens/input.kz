@@ -1,5 +1,5 @@
 // ============================================================================
-// Test 210_078: MUST_FAIL — outer parens wrapping the whole `when` condition
+// Test 210_078: MUST_ERROR — outer parens wrapping the whole `when` condition
 //                          are redundant and rejected.
 //
 // `when` already delimits the expression; the outer parens add no information

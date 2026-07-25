@@ -3,7 +3,7 @@
 //       source line — not silently mis-split into malformed args that only
 //       blow up later as an opaque Zig backend error pointing at generated code.
 //
-// MUST_FAIL: unbalanced
+// MUST_ERROR: unbalanced
 //
 // `lexer.parseArgs` tracks paren/bracket depth as unsigned and previously
 // CLAMPED a closer with no opener (`]` while depth==0) to zero. The imbalance

@@ -1,5 +1,5 @@
 // Test: Impure events require overrides
-// MUST_FAIL: has impure events without overrides
+// MUST_ERROR: has impure events without overrides
 //
 // When a test calls an impure event (Zig proc without ~[pure]),
 // the compiler should error and list ALL impure events at once.

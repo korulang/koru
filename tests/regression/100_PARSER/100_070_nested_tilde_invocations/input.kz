@@ -1,5 +1,5 @@
 // TEST: Nested tilde invocations should fail
-// MUST_FAIL: Nested flows (~) are not allowed inside continuations
+// MUST_ERROR: Nested flows (~) are not allowed inside continuations
 //
 // The ~ prefix starts a flow at the top level. Inside a continuation,
 // you should use a bare event call instead.

@@ -68,5 +68,5 @@ After each full run, a snapshot is saved to `test-results/` with:
 
 - **Don't run the full suite** - it takes 40+ minutes. Use targeted commands.
 - **User runs full suite, I check regressions** - that's our division of labor.
-- **Tests that MUST_FAIL are negative tests** - they're supposed to fail compilation.
+- **Tests that MUST_ERROR are negative tests** - they're supposed to fail compilation.
 - **Check `--regressions` first** when the user reports failures.

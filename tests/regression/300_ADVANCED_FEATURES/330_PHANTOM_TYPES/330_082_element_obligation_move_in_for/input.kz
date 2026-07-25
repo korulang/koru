@@ -1,4 +1,4 @@
-// BOUNDARY (MUST_FAIL): you may NOT discharge an outer-scope obligation inside a
+// BOUNDARY (MUST_ERROR): you may NOT discharge an outer-scope obligation inside a
 // scope. `h0 <owned!>` is owned OUTSIDE the `for`; `take(h: h0)` consumes it
 // INSIDE the @scope. Correctly rejected with KORU032.
 //

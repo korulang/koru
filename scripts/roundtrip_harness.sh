@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Canonical-printer round-trip harness.
 #
-# For every positive regression test (no MUST_FAIL), checks the two-leg
+# For every positive regression test (no MUST_ERROR), checks the two-leg
 # round-trip contract of `koruc --print`:
 #
 #   leg 1 (tree):  parse(print(parse(src)))  ==  parse(src)   under --ast-canon
@@ -110,12 +110,12 @@ run_one() {
 export -f run_one
 export KORUC TESTS_DIR REPORT_DIR
 
-# Positive tests only: MUST_FAIL dirs are negative pins (rejected programs
+# Positive tests only: MUST_ERROR dirs are negative pins (rejected programs
 # have no canonical print).
 find "$TESTS_DIR" -mindepth 2 -maxdepth 4 -type d \( -name '_archive' -prune -o -print \) \
     | while read -r d; do
         [ -f "$d/input.kz" ] || [ -f "$d/input.k" ] || continue
-        [ -f "$d/MUST_FAIL" ] && continue
+        [ -f "$d/MUST_ERROR" ] && continue
         case "$d" in *_archive*|*openspec-archive*) continue;; esac
         [ -n "$FILTER" ] && case "$d" in *"$FILTER"*) ;; *) continue;; esac
         echo "$d"

@@ -1,4 +1,4 @@
-// MUST_FAIL: Zig-style struct syntax in parameter values must be rejected
+// MUST_ERROR: Zig-style struct syntax in parameter values must be rejected
 //
 // Koru does not support Zig anonymous struct literals (.{ .field = value })
 // in flow call parameters. Use named parameters instead.
