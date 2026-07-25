@@ -37,13 +37,13 @@ import std/io
     | `[ \t]*` s -> s
 
 std/parser:parse("{\"a\":[1,2.5e3,true],\"b\":{\"c\":null},\"d\":\"x y\",\"e\":[]}", grammar: json)
-| value v |> std/io:print.ln("ok {{ v:s }}")
+| value { text } |> std/io:print.ln("ok {{ text:s }}")
 | parse-error { line, col, expected, found } |> std/io:print.ln("err {{ line:d }}:{{ col:d }} expected {{ expected:s }} found {{ found:s }}")
 
 std/parser:parse("{\"a\": [1, 2], \"b\": null}", grammar: json)
-| value v |> std/io:print.ln("ok {{ v:s }}")
+| value { text } |> std/io:print.ln("ok {{ text:s }}")
 | parse-error { line, col, expected, found } |> std/io:print.ln("err {{ line:d }}:{{ col:d }} expected {{ expected:s }} found {{ found:s }}")
 
 std/parser:parse("{\"a\":[1,}", grammar: json)
-| value v |> std/io:print.ln("ok {{ v:s }}")
+| value { text } |> std/io:print.ln("ok {{ text:s }}")
 | parse-error { line, col, expected, found } |> std/io:print.ln("err {{ line:d }}:{{ col:d }} expected {{ expected:s }} found {{ found:s }}")

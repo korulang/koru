@@ -20,5 +20,5 @@ std/parser:grammar(nums)
     | `\[` _ |> std/parser:sub(value): v |> std/parser:lit("]") -> v
 
 std/parser:parse("[42]", grammar: nums)
-| value v |> std/io:print.ln("v={{ v:s }}")
+| value { leaf } |> std/io:print.ln("v={{ leaf:s }}")
 | parse-error { line, col, expected, found } |> std/io:print.ln("err {{ line:d }}:{{ col:d }} expected {{ expected:s }} found {{ found:s }}")

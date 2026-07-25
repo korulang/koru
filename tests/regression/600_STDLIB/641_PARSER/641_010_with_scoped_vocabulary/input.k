@@ -19,5 +19,5 @@ import std/io
     | `\[` _ |> sub(value): v |> lit("]") -> v
 
 std/parser:parse("[7]", grammar: nums)
-| value v |> std/io:print.ln("v={{ v:s }}")
+| value { leaf } |> std/io:print.ln("v={{ leaf:s }}")
 | parse-error { line, col, expected, found } |> std/io:print.ln("err {{ line:d }}:{{ col:d }} expected {{ expected:s }} found {{ found:s }}")

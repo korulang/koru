@@ -126,3 +126,35 @@ Rulings from the walk (Lars, 2026-07-12):
 - **North star held loosely**: the metacircular rewrite of Koru's own parser,
   refereed by diffing against `std/koru:parse` + serializer (220_007). An
   instrument, never the destination.
+
+## Interior spans — the node must know its own text (2026-07-25)
+
+Cut-1 shipped a node with `{ tag, text, kids }`, but only `__leaf_` ever set
+`text`; `__wrap_` set `tag` and `kids` and left `text` empty. So every interior
+node was **spanless**: `render` reconstructed a shape string, `leaf` walked down
+to the innermost token, and *nothing* answered "what text did this rule match?"
+for a non-terminal. Five of the ten `641_PARSER` pins were red on exactly that,
+and one of them — `641_005`, expecting `ok 7,8,9` — was pinning a property the
+model had quietly dropped, not a stale spelling. Migrating it to make it green
+would have destroyed a real pin.
+
+The fix is small because the span was always in scope: both wrap sites already
+had `input[__start..__p]`. `__wrap_` now takes the text, and the parse result
+exposes `.text` beside `.render` / `.depth` / `.leaf`.
+
+**Why this is not cosmetic: a parser whose interior nodes have no span cannot
+produce location-bearing diagnostics.** It can say which line a *token* was on,
+never which line a *construct* was on. That disqualifies it from Koru's own
+grammar, where the whole point of the `ERROR_AT` work is that a diagnostic
+asserts where it lands. Spans are the precondition for the metacircular north
+star above, not a refinement of it.
+
+Still open, and the next structural gap: **`__wrap_` allocates exactly one kid**
+(`alloc(*const __N, 1)`), and `render`/`depth` only ever follow `kids[0]`. The
+node is a unary chain wearing a tree's vocabulary. It expresses nesting
+(`[[7]]` → depth 5) perfectly and cannot express breadth at all. Note that JSON
+did **not** force this — `641_004` went green on spans alone, because a
+recognizer only needs the consumed text. Breadth becomes load-bearing the
+moment a rule must deliver its parts *as parts*, which is what Koru's grammar
+will demand and what the arbitrary-picker door (rule bodies as ordinary code,
+walled today at `parser.kz:264`) is for.

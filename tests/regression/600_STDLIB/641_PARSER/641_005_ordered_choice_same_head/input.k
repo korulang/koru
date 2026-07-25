@@ -13,5 +13,5 @@ import std/io
     | `[0-9]+` n -> n
 
 std/parser:parse("7,8,9", grammar: csv)
-| list v |> std/io:print.ln("ok {{ v:s }}")
+| list { text } |> std/io:print.ln("ok {{ text:s }}")
 | parse-error { line, col, expected, found } |> std/io:print.ln("err {{ line:d }}:{{ col:d }} expected {{ expected:s }} found {{ found:s }}")
