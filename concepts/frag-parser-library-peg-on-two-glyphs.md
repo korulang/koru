@@ -177,3 +177,36 @@ into a dead frame — every parse silently produced nothing at all, no crash and
 no diagnostic, just empty output. A green-compiling generator that emits
 use-after-free is the ugliest failure mode this library has; the copy into
 heap memory is load-bearing and must survive any future rewrite of `__wrap_`.
+
+## `generate` had no pin at all (2026-07-25)
+
+`~[comptime|command]pub tor generate` — the surface that turns a grammar into a
+**standalone parser in another language**, with no Koru runtime on the far side —
+had zero coverage in the regression suite. Its only check was
+`challenges/backend-bakeoff/run.sh`, a challenge harness outside the board, over
+one grammar. The node model was reworked twice in a single session (spans, then
+breadth) and nothing in the suite would have caught it if the emitters had
+broken, because nothing in the suite ran them.
+
+`641_040_generate_conforms` closes that: it emits the grammar to **both** C and
+Zig, builds each with the host toolchain, and checks seven oracle cases covering
+values *and* exact error positions (`PARSE-ERROR 1:4 expected ] found end of
+input`). Error positions are the part that rots silently — a recognizer that
+still says yes/no correctly while drifting on *where* it failed looks healthy
+from a distance.
+
+Two mechanics worth keeping, both forced by `tests/regression/.gitignore`
+ignoring everything not explicitly negated:
+- the oracle is **inline in post.sh**, because a sibling `.tsv` would never
+  reach a fresh clone and the pin would quietly stop asserting anything;
+- generated parsers are **deleted on success only** — `.gitignore` un-ignores
+  `**/*.c`, so a leftover `nums.c` would be committed as though hand-written.
+  On failure they stay, which is exactly when they are wanted.
+
+`zig cc` builds the C backend deliberately: zig is already a hard dependency, so
+pinning the C emitter costs no new toolchain.
+
+Note the emitters are span-based and do NOT share the `parse` path's node tree —
+that is cut-1 by design (a recognizer needs the consumed text, not a shape), not
+drift. If `generate` ever grows typed output, it is a second implementation of
+the node model and wants the same walls.
