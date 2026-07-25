@@ -44,6 +44,35 @@ fn emitCompErrorAndExit(location: errors.SourceLocation, message: []const u8) no
     std.process.exit(1);
 }
 
+/// An `{% if %}` / `{% unless %}` condition the template engine cannot parse
+/// (KORU125). The failure this replaces was silent: the whole condition text was
+/// taken as one variable NAME, so it missed, read as false, and rendered the
+/// `{% else %}` branch forever — the guarded branch sat there looking live while
+/// being dead code. Teach the grammar at the point of the mistake.
+fn emitInvalidConditionAndExit(location: errors.SourceLocation, condition: []const u8) noreturn {
+    std.debug.print(
+        \\error[{s}]: template condition `{s}` is not something `{{% if %}}` can evaluate
+        \\  --> {s}:{d}:{d}
+        \\
+        \\  a condition is a bare key, or two operands compared with `==` / `!=`:
+        \\      {{% if arm.guard %}}              key is truthy (missing key = false)
+        \\      {{% if arm.guard != "" %}}        key is bound and non-empty
+        \\      {{% if node.kind == "call" %}}    key equals a literal
+        \\
+        \\  an operand is a key or a "quoted literal". `and`, `or`, `>` and filters
+        \\  are not part of the grammar — restructure with nested tags, or move the
+        \\  decision into the Zig side that builds the context.
+        \\
+    , .{
+        @tagName(errors.ErrorCode.KORU125),
+        condition,
+        location.file,
+        location.line,
+        location.column,
+    });
+    std.process.exit(1);
+}
+
 /// Index of a top-level `..` (range operator) in `s` — one not nested inside
 /// `()`/`[]`/`{}` (so a slice like `buf[0..n]` is NOT seen as a range). Null if
 /// there is no top-level range. The "simplified ranges for JS" classifier; the
@@ -533,18 +562,28 @@ fn lowerScrutineeToZig(allocator: std.mem.Allocator, text: []const u8) ![]const 
 /// Append `const <name>[: <type>] = <prefix>.<name>; _ = &<name>; ` per named
 /// destructure leaf (recursing into nested sub-shapes), skipping `_` slots.
 /// String-building twin of emitter_helpers.emitDestructureConsts.
+///
+/// `seen`, when given, is a name set shared across the arms of one dispatch:
+/// the binders are hoisted into ONE scope (see `buildCondBinds`), so a name two
+/// arms both bind must be declared once. Both bind the same field of the same
+/// scrutinee, so the single declaration is the same value either arm would see.
 fn appendDestructureConsts(
     allocator: std.mem.Allocator,
     buf: *std.ArrayList(u8),
     fields: []const ast.DestructureField,
     prefix: []const u8,
+    seen: ?*std.StringHashMap(void),
 ) !void {
     for (fields) |f| {
         if (std.mem.eql(u8, f.name, "_")) continue;
         if (f.sub.len > 0) {
             const sub_prefix = try std.fmt.allocPrint(allocator, "{s}.{s}", .{ prefix, f.name });
-            try appendDestructureConsts(allocator, buf, f.sub, sub_prefix);
+            try appendDestructureConsts(allocator, buf, f.sub, sub_prefix, seen);
             continue;
+        }
+        if (seen) |s| {
+            if (s.contains(f.name)) continue;
+            try s.put(f.name, {});
         }
         try buf.appendSlice(allocator, "const ");
         try buf.appendSlice(allocator, f.name);
@@ -562,46 +601,63 @@ fn appendDestructureConsts(
     }
 }
 
-/// Build the Zig binder preamble for a `cond` arm: bind the scrutinee to the
-/// arm's `c <name>` (scalar) or `c { field }` (destructure) binder, so the arm's
-/// `when` guard and produce can reference it. Returns "" for a `_` catch-all or
-/// an unbound continuation (`~if`/`~for` terminals carry no scrutinee to bind).
-/// Cond arms reuse the payload-less terminal marker, so — unlike an effect
-/// splice, whose call arg the emitter binds — the scrutinee is threaded in here.
-fn buildCondArmBinder(
+/// Build the Zig binder preamble for a whole `cond`: one `const` per distinct
+/// arm binder (`c <name>` scalar, `c { field }` destructure), bound to the
+/// scrutinee, emitted ONCE ahead of the dispatch as `{{ binds }}`.
+///
+/// Hoisted, not per-arm, because a first-match dispatch is an `if / else if`
+/// CASCADE: each arm's `when` guard sits in the cascade's condition position,
+/// where the binder it names must already be in scope. Binding inside the arm
+/// body — where the guard cannot see it — is what forced `cond` to emit N
+/// independent blocks instead, and independent blocks all run (`320_138`).
+///
+/// Distinct-by-NAME: arms routinely reuse one binder (`| c k when …` ×5), and
+/// every arm binds the same scrutinee, so one declaration serves all of them.
+/// Returns "" when nothing binds — a `_` catch-all, or an `~if`/`~for` terminal
+/// with no scrutinee to bind. Cond arms reuse the payload-less terminal marker,
+/// so — unlike an effect splice, whose call arg the emitter binds — the
+/// scrutinee is threaded in here.
+fn buildCondBinds(
     allocator: std.mem.Allocator,
-    cont: ast.Continuation,
+    conts: []const ast.Continuation,
     scrutinee: []const u8,
 ) ![]const u8 {
     if (scrutinee.len == 0) return "";
-    // Destructure binder (`c { field, ... }`): materialize the scrutinee once to
-    // a site-unique temp, then one `const <field> = <tmp>.<field>;` per leaf.
-    if (cont.destructure.len > 0) {
-        const s_zig = try lowerScrutineeToZig(allocator, scrutinee);
-        const tmp = try std.fmt.allocPrint(allocator, "__koru_cond_s_{d}_{d}", .{ cont.location.line, cont.location.column });
-        var buf: std.ArrayList(u8) = .empty;
-        try buf.appendSlice(allocator, "const ");
-        try buf.appendSlice(allocator, tmp);
-        try buf.appendSlice(allocator, " = ");
-        try buf.appendSlice(allocator, s_zig);
-        try buf.appendSlice(allocator, "; _ = &");
-        try buf.appendSlice(allocator, tmp);
-        try buf.appendSlice(allocator, "; ");
-        try appendDestructureConsts(allocator, &buf, cont.destructure, tmp);
-        return buf.toOwnedSlice(allocator);
-    }
-    // Scalar binder (`c v`): bind the whole scrutinee. `_`/empty = no binder.
-    if (cont.binding) |b| {
-        if (b.len == 0 or std.mem.eql(u8, b, "_")) return "";
+    var buf: std.ArrayList(u8) = .empty;
+    var seen = std.StringHashMap(void).init(allocator);
+    defer seen.deinit();
+
+    for (conts) |cont| {
+        if (cont.branch.len == 0) continue;
+        // Destructure binder (`c { field, ... }`): materialize the scrutinee once
+        // to a site-unique temp, then one `const <field> = <tmp>.<field>;` per leaf.
+        if (cont.destructure.len > 0) {
+            const s_zig = try lowerScrutineeToZig(allocator, scrutinee);
+            const tmp = try std.fmt.allocPrint(allocator, "__koru_cond_s_{d}_{d}", .{ cont.location.line, cont.location.column });
+            try buf.appendSlice(allocator, "const ");
+            try buf.appendSlice(allocator, tmp);
+            try buf.appendSlice(allocator, " = ");
+            try buf.appendSlice(allocator, s_zig);
+            try buf.appendSlice(allocator, "; _ = &");
+            try buf.appendSlice(allocator, tmp);
+            try buf.appendSlice(allocator, "; ");
+            try appendDestructureConsts(allocator, &buf, cont.destructure, tmp, &seen);
+            continue;
+        }
+        // Scalar binder (`c v`): bind the whole scrutinee. `_`/empty = no binder.
+        const b = cont.binding orelse continue;
+        if (b.len == 0 or std.mem.eql(u8, b, "_")) continue;
         // The scrutinee expression IS the binder name (`cond(k) | c k …`): the
         // name is already in scope, so `const k = k;` would self-shadow (Zig
         // rejects it). Use it as-is — the binder is a no-op. Mirrors the effect
         // splice's same guard in emitter_helpers.
-        if (std.mem.eql(u8, std.mem.trim(u8, scrutinee, " \t\n\r"), b)) return "";
+        if (std.mem.eql(u8, std.mem.trim(u8, scrutinee, " \t\n\r"), b)) continue;
+        if (seen.contains(b)) continue;
+        try seen.put(b, {});
         const s_zig = try lowerScrutineeToZig(allocator, scrutinee);
-        return std.fmt.allocPrint(allocator, "const {s} = {s}; _ = &{s}; ", .{ b, s_zig, b });
+        try buf.appendSlice(allocator, try std.fmt.allocPrint(allocator, "const {s} = {s}; _ = &{s}; ", .{ b, s_zig, b }));
     }
-    return "";
+    return buf.toOwnedSlice(allocator);
 }
 
 /// Render a bare `|template|` proc for one invocation, returning the rendered
@@ -663,6 +719,12 @@ fn renderTemplateInvocation(
         }
     }
 
+    // `binds`: the whole dispatch's binder preamble, emitted once ahead of the
+    // arms so every arm's `when` guard can be read in condition position. Empty
+    // for a template whose arms bind nothing (`~if`, `~for`); `cond` is its
+    // consumer. See buildCondBinds for why this is hoisted and deduped.
+    try ctx.put("binds", .{ .string = try buildCondBinds(allocator, continuations, scrutinee_text) });
+
     // Expose the invoking handlers to the template, SPLIT BY KIND. Effect
     // handlers (`! each`, fire 0-to-N during) land under `effects["<branch>"]`;
     // terminal handlers (`| done`, fire once after) under
@@ -682,13 +744,6 @@ fn renderTemplateInvocation(
             try sub.put("link", .{ .string = cont.branch });
             try sub.put("binding", .{ .string = cont.binding orelse "" });
             try sub.put("guard", .{ .string = cont.condition orelse "" });
-            // `bind`: the Zig binder preamble that binds the scrutinee to this
-            // arm's `c <name>` / `c { field }` binder, so the arm's `when` guard
-            // and produce can reference it. Empty for a `_` catch-all or an
-            // unbound continuation (`~if`/`~for` terminals). Spliced by the
-            // cond template BEFORE the continue marker, so the guard the emitter
-            // writes at marker-resolution sees the binding in scope.
-            try sub.put("bind", .{ .string = try buildCondArmBinder(allocator, cont, scrutinee_text) });
             try sub.put("kind", .{ .string = if (cont.kind == .effect) "effect" else "terminal" });
             // `inlined_link` is a marker the emitter resolves to the handler's
             // body spliced INLINE (in the enclosing scope), vs `link` which is a
@@ -718,6 +773,16 @@ fn renderTemplateInvocation(
             if (cont.kind != .effect) {
                 const cont_marker = try std.fmt.allocPrint(allocator, "__koru_continue_{d}", .{idx});
                 try sub.put("continue", .{ .string = cont_marker });
+                // `continue[unguarded]` hands off the SAME body without the
+                // `if (<guard>)` wrapper the plain marker carries — for a
+                // template that has already put the guard somewhere the plain
+                // marker cannot reach. `cond` needs exactly this: its guards go
+                // into an `if / else if` cascade's condition position, and a
+                // second copy inside the body would evaluate every guard twice.
+                // Which of the two a hand-off uses is a property of the SPLICE
+                // SITE the template author chooses, same as `inlined_link[scope]`.
+                const bare_marker = try std.fmt.allocPrint(allocator, "__koru_continue_bare_{d}", .{idx});
+                try sub.put("continue[unguarded]", .{ .string = bare_marker });
             }
 
             const target_map = if (cont.kind == .effect) &by_effect else &by_terminal;
@@ -774,6 +839,9 @@ fn renderTemplateInvocation(
     const rendered = liquid.renderWithEnv(allocator, proc.body.text, &ctx, &comp_err, .{ .filters = &filters }) catch |err| {
         if (err == error.CompError) {
             emitCompErrorAndExit(location, comp_err orelse "template comp error");
+        }
+        if (err == error.InvalidIfCondition) {
+            emitInvalidConditionAndExit(location, comp_err orelse "");
         }
         return err;
     };
@@ -1142,9 +1210,12 @@ fn processProc(pd: *ast.ProcDecl, allocator: std.mem.Allocator) !void {
     try ctx.put("proc_name", .{ .string = proc_name });
 
     var comp_err: ?[]const u8 = null;
-    const rendered = liquid.renderCollectCompError(allocator, pd.body.text, &ctx, &comp_err) catch |err| {
+    const rendered = liquid.renderCollectDiag(allocator, pd.body.text, &ctx, &comp_err) catch |err| {
         if (err == error.CompError) {
             emitCompErrorAndExit(pd.location, comp_err orelse "template comp error");
+        }
+        if (err == error.InvalidIfCondition) {
+            emitInvalidConditionAndExit(pd.location, comp_err orelse "");
         }
         return err;
     };

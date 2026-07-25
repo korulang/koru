@@ -1,35 +1,17 @@
-// RED BY DESIGN (pinned 2026-07-25). `cond` is multi-way DISPATCH (320_133),
-// which means exclusive first-match: the arm whose guard matches runs, and the
-// rest do not. Emission does not do that — every arm is emitted as a bare
-// `if (guard) { body }` with NO `return`, so all arms evaluate in sequence and
-// a later guard reads state an earlier arm just mutated.
+// `cond` is multi-way DISPATCH (320_133), and dispatch is EXCLUSIVE: the arm
+// whose guard matches runs, and no other one does.
 //
-// Here arm 1 sets v := 0, then arm 2's guard (`v == 0`) is now true and undoes
-// it. Exclusive dispatch prints v=0; today it prints v=1 (SHOWN 2026-07-25).
+// This program is the smallest shape that can tell the difference. Arm 1 sets
+// v := 0; arm 2's guard is `v == 0`, so if arm 2 is reached at all it undoes
+// arm 1 and prints v=1. Exclusive dispatch prints v=0. Only a lowering that
+// cannot re-test a later guard against state an earlier arm just wrote passes
+// — an `if / else if` cascade does, N sibling blocks do not.
 //
-// This is not academic: it silently breaks every toggle written as a cond.
-// koru-examples' gallery had `clocks-keys` in exactly this shape — space set
-// running := 0 and the next arm set it straight back, so the timer never
-// paused. Compare the branch-group path, which DOES emit the exclusive chain
-// (`if (guard) { body; return; }` — emitter_helpers.zig), so the same arms
-// written as `| page when ...` siblings behave correctly. Two dispatch
-// constructs, two different answers for the same source shape.
-//
-// WHERE THE FIX IS NOT (checked 2026-07-25, so the next attempt can skip it):
-// not `koru_std/control.kz`. That template reads
-//   {% if arm.guard != "" %}if ({{ arm.guard }}) { ... }{% else %}{ ... }{% endif %}
-// and for EFFECT-position arms `arm.guard` is EMPTY — the guard has already been
-// baked into `arm.continue` by the emitter. So every arm renders through the
-// guardless `{% else %}` path as a bare block and the template's first-match
-// branch is dead code here. Emitted shape, verbatim:
-//   { const x = ch; _ = &x; { if (g1) { body1 } } }
-//   { const x = ch; _ = &x; { if (g2) { body2 } } }
-//   { {  } }
-// `else`-chaining the template was tried and is INERT for exactly this reason
-// (the value pins 320_133/137 stayed green because they take the same dead
-// path). The fix is emitter-side, in how continuation bodies are generated for
-// template procs — machinery `if` / `for` / `cond` share, hence the wider blast
-// radius and why this is pinned rather than patched.
+// EFFECT-position arms (`|>`) are the ones that can tell: a value arm returns,
+// so it stops the fall-through by accident whatever the lowering is. Every
+// toggle written as a cond is this shape — koru-examples' gallery had a clock
+// whose `space` arm set running := 0 and whose next arm set it back, so it
+// never paused.
 import std/io
 import std/store
 

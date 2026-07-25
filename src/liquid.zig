@@ -131,53 +131,61 @@ pub const RenderEnv = struct {
 
 /// Render a template with the given context.
 pub fn render(allocator: Allocator, template: []const u8, ctx: *const Context) ![]u8 {
-    return renderCollectCompError(allocator, template, ctx, null);
+    return renderCollectDiag(allocator, template, ctx, null);
 }
 
-/// Like `renderCollectCompError`, but with a `RenderEnv` (named sub-templates +
+/// Like `renderCollectDiag`, but with a `RenderEnv` (named sub-templates +
 /// callable filters) so `{% render %}` can recurse and `{% const x = f(a) %}`
 /// can call parsers. The tree-walker path.
 pub fn renderWithEnv(
     allocator: Allocator,
     template: []const u8,
     ctx: *const Context,
-    comp_error_out: ?*?[]const u8,
+    diag_out: ?*?[]const u8,
     env: RenderEnv,
 ) ![]u8 {
     var output = try std.ArrayList(u8).initCapacity(allocator, template.len);
     errdefer output.deinit(allocator);
-    try renderTo(template, ctx, output.writer(allocator), comp_error_out, env);
+    try renderTo(template, ctx, output.writer(allocator), diag_out, env);
     return try output.toOwnedSlice(allocator);
 }
 
-/// Like `render`, but if a `{% comp error %}` is reached during rendering, the
-/// author's message is written to `comp_error_out` (a slice into `template`,
-/// valid as long as the template buffer lives) and `error.CompError` is
-/// returned — letting the caller, which knows the invocation's source
-/// location, emit a proper Koru diagnostic instead of liquid panicking blind.
-pub fn renderCollectCompError(
+/// Like `render`, but routes a render-time diagnostic back to the caller instead
+/// of panicking blind. The offending text is written to `diag_out` (a slice into
+/// `template`, valid as long as the template buffer lives) alongside the error:
+///
+///   - `error.CompError` — a `{% comp error %}` was reached; the detail is the
+///     template author's message.
+///   - `error.InvalidIfCondition` — an `{% if %}` / `{% unless %}` condition the
+///     engine cannot parse; the detail is the condition text.
+///
+/// The caller knows the invocation's source location, so it is the one that can
+/// turn either into a located Koru diagnostic.
+pub fn renderCollectDiag(
     allocator: Allocator,
     template: []const u8,
     ctx: *const Context,
-    comp_error_out: ?*?[]const u8,
+    diag_out: ?*?[]const u8,
 ) ![]u8 {
     var output = try std.ArrayList(u8).initCapacity(allocator, template.len);
     errdefer output.deinit(allocator);
 
-    try renderTo(template, ctx, output.writer(allocator), comp_error_out, .{});
+    try renderTo(template, ctx, output.writer(allocator), diag_out, .{});
 
     return try output.toOwnedSlice(allocator);
 }
 
-/// Render a template directly to a writer. `comp_error` is an optional sink for
-/// a `{% comp error %}` message; when null, reaching one panics (no caller is
-/// positioned to render a located diagnostic). `env` carries the named-template
-/// and filter registries the template can call out to.
+/// Render a template directly to a writer. `diag_out` is an optional sink for
+/// the offending text of a render-time diagnostic (see `renderCollectDiag`);
+/// when null, a `{% comp error %}` panics — no caller is positioned to render a
+/// located diagnostic — while a malformed condition still returns its error.
+/// `env` carries the named-template and filter registries the template can call
+/// out to.
 pub fn renderTo(
     template: []const u8,
     ctx: *const Context,
     writer: anytype,
-    comp_error: ?*?[]const u8,
+    diag_out: ?*?[]const u8,
     env: RenderEnv,
 ) anyerror!void {
     var pos: usize = 0;
@@ -246,7 +254,7 @@ pub fn renderTo(
                         const msg = std.mem.trim(u8, template[msg_start..ec.start], " \t\r\n");
                         // Hand the message back to a caller that can locate it,
                         // or panic if nobody's collecting (no source context).
-                        if (comp_error) |sink| {
+                        if (diag_out) |sink| {
                             sink.* = msg;
                             return error.CompError;
                         }
@@ -255,7 +263,7 @@ pub fn renderTo(
 
                     // Parse the tag
                     if (std.mem.startsWith(u8, tag_content, "if ")) {
-                        const key = std.mem.trim(u8, tag_content[3..], " \t");
+                        const cond_text = std.mem.trim(u8, tag_content[3..], " \t");
                         const block_end = findEndTag(template, end + 2, "endif") orelse return error.UnmatchedIf;
                         const inner = template[end + 2 .. block_end.start];
 
@@ -265,11 +273,14 @@ pub fn renderTo(
                         else
                             .{ inner, inner[inner.len..] };
 
-                        const cond = if (cur.get(key)) |value| value.truthy() else false;
+                        const cond = evalCondition(cond_text, cur) catch |err| {
+                            if (diag_out) |sink| sink.* = cond_text;
+                            return err;
+                        };
                         if (cond) {
-                            try renderTo(then_part, cur, writer, comp_error, env);
+                            try renderTo(then_part, cur, writer, diag_out, env);
                         } else {
-                            try renderTo(else_part, cur, writer, comp_error, env);
+                            try renderTo(else_part, cur, writer, diag_out, env);
                         }
 
                         pos = block_end.end;
@@ -277,14 +288,18 @@ pub fn renderTo(
                     }
 
                     if (std.mem.startsWith(u8, tag_content, "unless ")) {
-                        const key = std.mem.trim(u8, tag_content[7..], " \t");
+                        const cond_text = std.mem.trim(u8, tag_content[7..], " \t");
                         const block_end = findEndTag(template, end + 2, "endunless") orelse return error.UnmatchedUnless;
                         const inner = template[end + 2 .. block_end.start];
 
-                        // Render if falsy or missing
-                        const should_render = if (cur.get(key)) |value| !value.truthy() else true;
+                        // `unless` is `if` negated — same condition grammar, so a
+                        // malformed one is just as loud here.
+                        const should_render = !(evalCondition(cond_text, cur) catch |err| {
+                            if (diag_out) |sink| sink.* = cond_text;
+                            return err;
+                        });
                         if (should_render) {
-                            try renderTo(inner, cur, writer, comp_error, env);
+                            try renderTo(inner, cur, writer, diag_out, env);
                         }
 
                         pos = block_end.end;
@@ -317,7 +332,7 @@ pub fn renderTo(
                                         // so it can be passed whole to `{% render
                                         // …, x: item %}`, not just dotted into.
                                         try loop_ctx.put(item_name, .{ .record = item_ctx });
-                                        try renderTo(inner, &loop_ctx, writer, comp_error, env);
+                                        try renderTo(inner, &loop_ctx, writer, diag_out, env);
                                     }
                                 },
                                 else => {},
@@ -343,7 +358,7 @@ pub fn renderTo(
                         else
                             null;
 
-                        try renderCase(inner, target, cur, writer, comp_error, env);
+                        try renderCase(inner, target, cur, writer, diag_out, env);
                         pos = block_end.end;
                         continue;
                     }
@@ -379,7 +394,7 @@ pub fn renderTo(
                     // target should be a child of the current node) keeps walks
                     // total. See docs/PARSER_PALETTE.md §6.
                     if (std.mem.startsWith(u8, tag_content, "render ")) {
-                        try renderInclude(tag_content[7..], cur, writer, comp_error, env);
+                        try renderInclude(tag_content[7..], cur, writer, diag_out, env);
                         pos = end + 2;
                         continue;
                     }
@@ -486,6 +501,88 @@ const Clause = struct {
     literal: []const u8, // meaningful only for `when_clause`
 };
 
+/// The condition grammar of `{% if %}` / `{% unless %}`, in full:
+///
+///     <cond>    := <key> | <operand> ("==" | "!=") <operand>
+///     <operand> := <key> | "<literal>"
+///
+/// A bare `<key>` is truthiness (`Value.truthy`), and a missing key is false.
+/// A comparison is on TEXT: each side resolves to its string form, and a missing
+/// key reads as the empty string — so `{% if x != "" %}` is the honest test for
+/// "x is bound and non-empty".
+///
+/// Anything outside this grammar is `error.InvalidIfCondition`. There is no
+/// silent-false path: before this parser existed the whole condition was taken
+/// as one variable NAME, so `{% if arm.guard != "" %}` looked up a variable
+/// literally called `arm.guard != ""`, missed, and rendered `{% else %}` every
+/// time — a branch that reads as live and is dead code (`320_138`, `250_012`).
+fn evalCondition(text: []const u8, ctx: *const Context) !bool {
+    if (findComparison(text)) |c| {
+        const lhs = try operandText(text[0..c.lhs_end], ctx);
+        const rhs = try operandText(text[c.rhs_start..], ctx);
+        const equal = std.mem.eql(u8, lhs, rhs);
+        return if (c.negated) !equal else equal;
+    }
+    // No operator, so the whole text must be a bare key. A key never contains
+    // whitespace, so anything that does is a condition this engine does not
+    // understand (`a and b`, `x > 1`, …) — and saying so out loud is the point.
+    if (!isKey(text)) return error.InvalidIfCondition;
+    return if (ctx.get(text)) |v| v.truthy() else false;
+}
+
+const Comparison = struct { lhs_end: usize, rhs_start: usize, negated: bool };
+
+/// Locate a top-level `==` / `!=`, skipping any inside a quoted literal — keys
+/// carry quotes too (`continuations["done"]`), so quote-tracking is what keeps
+/// `continuations["done"] != ""` splitting at the right operator.
+fn findComparison(text: []const u8) ?Comparison {
+    var in_quote = false;
+    var i: usize = 0;
+    while (i + 1 < text.len) : (i += 1) {
+        if (text[i] == '"') {
+            in_quote = !in_quote;
+            continue;
+        }
+        if (in_quote) continue;
+        const negated = text[i] == '!' and text[i + 1] == '=';
+        if (negated or (text[i] == '=' and text[i + 1] == '=')) {
+            return .{ .lhs_end = i, .rhs_start = i + 2, .negated = negated };
+        }
+    }
+    return null;
+}
+
+/// Resolve one side of a comparison to its text. A quoted literal is itself; a
+/// key is looked up, with a missing key reading as empty (same contract as the
+/// bare-key truthiness path). An `array` or `record` has no text form — `[array]`
+/// and `[node]` are display placeholders, never values to compare — so reaching
+/// for one is a template bug, not a false.
+fn operandText(raw: []const u8, ctx: *const Context) ![]const u8 {
+    const t = std.mem.trim(u8, raw, " \t");
+    if (t.len == 0) return error.InvalidIfCondition;
+    if (t[0] == '"') {
+        if (t.len < 2 or t[t.len - 1] != '"') return error.InvalidIfCondition;
+        return t[1 .. t.len - 1];
+    }
+    if (!isKey(t)) return error.InvalidIfCondition;
+    const v = ctx.get(t) orelse return "";
+    return switch (v) {
+        .string => |s| s,
+        .boolean => |b| if (b) "true" else "false",
+        .array, .record => error.InvalidIfCondition,
+    };
+}
+
+/// A context key: non-empty and whitespace-free. Quotes and brackets are legal —
+/// `template_processor` stores literal dotted keys like `continuations["done"]`.
+fn isKey(t: []const u8) bool {
+    if (t.len == 0) return false;
+    for (t) |ch| {
+        if (ch == ' ' or ch == '\t' or ch == '\n' or ch == '\r') return false;
+    }
+    return true;
+}
+
 /// Strip a single pair of surrounding double quotes, if present.
 fn stripQuotes(s: []const u8) []const u8 {
     if (s.len >= 2 and s[0] == '"' and s[s.len - 1] == '"') return s[1 .. s.len - 1];
@@ -538,7 +635,7 @@ fn renderCase(
     target: ?[]const u8,
     ctx: *const Context,
     writer: anytype,
-    comp_error: ?*?[]const u8,
+    diag_out: ?*?[]const u8,
     env: RenderEnv,
 ) anyerror!void {
     var pos: usize = 0;
@@ -551,7 +648,7 @@ fn renderCase(
             .when_clause => {
                 if (target) |t| {
                     if (std.mem.eql(u8, clause.literal, t)) {
-                        try renderTo(body, ctx, writer, comp_error, env);
+                        try renderTo(body, ctx, writer, diag_out, env);
                         return;
                     }
                 }
@@ -560,7 +657,7 @@ fn renderCase(
         }
         pos = clause.body_start;
     }
-    if (else_body) |eb| try renderTo(eb, ctx, writer, comp_error, env);
+    if (else_body) |eb| try renderTo(eb, ctx, writer, diag_out, env);
 }
 
 /// Evaluate a `{% const %}` right-hand side. Per the discipline, the RHS is
@@ -620,7 +717,7 @@ fn renderInclude(
     args: []const u8,
     ctx: *const Context,
     writer: anytype,
-    comp_error: ?*?[]const u8,
+    diag_out: ?*?[]const u8,
     env: RenderEnv,
 ) anyerror!void {
     const reg = env.templates orelse return; // no registry → nothing to render
@@ -645,9 +742,9 @@ fn renderInclude(
         sub.parent = ctx;
         sub.scope_name = var_name;
         sub.scope = pv.record;
-        try renderTo(body, &sub, writer, comp_error, env);
+        try renderTo(body, &sub, writer, diag_out, env);
     } else {
-        try renderTo(body, ctx, writer, comp_error, env);
+        try renderTo(body, ctx, writer, diag_out, env);
     }
 }
 
@@ -677,6 +774,75 @@ test "if conditional - true" {
     defer allocator.free(result);
 
     try std.testing.expectEqualStrings("pub const Player = struct {};", result);
+}
+
+test "if condition - comparison against a literal" {
+    const allocator = std.testing.allocator;
+
+    var ctx = Context.init(allocator);
+    defer ctx.deinit();
+    try ctx.put("guard", .{ .string = "x == 1" });
+    try ctx.put("empty", .{ .string = "" });
+
+    const cases = [_]struct { tmpl: []const u8, want: []const u8 }{
+        // The shape a dispatch template needs: bound-and-non-empty vs not.
+        .{ .tmpl = "{% if guard != \"\" %}Y{% else %}N{% endif %}", .want = "Y" },
+        .{ .tmpl = "{% if empty != \"\" %}Y{% else %}N{% endif %}", .want = "N" },
+        // A missing key reads as the empty string, matching the bare-key path
+        // where a missing key is false.
+        .{ .tmpl = "{% if nope != \"\" %}Y{% else %}N{% endif %}", .want = "N" },
+        .{ .tmpl = "{% if nope == \"\" %}Y{% else %}N{% endif %}", .want = "Y" },
+        .{ .tmpl = "{% if guard == \"x == 1\" %}Y{% else %}N{% endif %}", .want = "Y" },
+        .{ .tmpl = "{% if guard == \"other\" %}Y{% else %}N{% endif %}", .want = "N" },
+        // `unless` is `if` negated over the same grammar.
+        .{ .tmpl = "{% unless guard != \"\" %}Y{% endunless %}N", .want = "N" },
+    };
+    for (cases) |c| {
+        const result = try render(allocator, c.tmpl, &ctx);
+        defer allocator.free(result);
+        try std.testing.expectEqualStrings(c.want, result);
+    }
+}
+
+test "if condition - an operand may be a key carrying quotes" {
+    const allocator = std.testing.allocator;
+
+    var ctx = Context.init(allocator);
+    defer ctx.deinit();
+    // template_processor stores literal dotted keys whole, quotes included.
+    try ctx.put("continuations[\"done\"].continue", .{ .string = "__koru_continue_0" });
+
+    const result = try render(
+        allocator,
+        "{% if continuations[\"done\"].continue != \"\" %}Y{% else %}N{% endif %}",
+        &ctx,
+    );
+    defer allocator.free(result);
+    try std.testing.expectEqualStrings("Y", result);
+}
+
+test "if condition - outside the grammar is loud, never false" {
+    const allocator = std.testing.allocator;
+
+    var ctx = Context.init(allocator);
+    defer ctx.deinit();
+    try ctx.put("a", .{ .string = "1" });
+    try ctx.put("items", .{ .array = &.{} });
+
+    // Each of these once resolved to "look up a variable named <the whole
+    // condition>", missed, and rendered `{% else %}` — silently, forever.
+    const bad = [_][]const u8{
+        "{% if a and a %}Y{% endif %}",
+        "{% if a > 1 %}Y{% endif %}",
+        "{% if a == %}Y{% endif %}",
+        "{% if == \"1\" %}Y{% endif %}",
+        "{% if a == \"unterminated %}Y{% endif %}",
+        "{% if items == \"\" %}Y{% endif %}", // an array has no text form
+        "{% unless a and a %}Y{% endunless %}",
+    };
+    for (bad) |tmpl| {
+        try std.testing.expectError(error.InvalidIfCondition, render(allocator, tmpl, &ctx));
+    }
 }
 
 test "if conditional - false" {

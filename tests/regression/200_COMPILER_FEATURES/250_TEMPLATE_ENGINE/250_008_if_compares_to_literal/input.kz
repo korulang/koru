@@ -1,0 +1,21 @@
+// Template engine: `{% if %}` COMPARES — `==` / `!=` between an operand and a
+// "quoted literal", not only bare-key truthiness. Four cells, one per row of
+// the grammar: `==` fires on a match, stays quiet on a non-match; `!=` sees a
+// bound key as non-empty, and a MISSING key as the empty string — the same
+// reading the bare-key path gives a missing key when it calls it false.
+//
+// `key != ""` is the only honest test for "bound and non-empty", and it is what
+// a dispatch template needs to tell a guarded arm from its catch-all. What it
+// costs when the engine cannot parse it is pinned end-to-end by 320_138.
+~import std/io
+
+~pub tor probe-cmp { n: usize }
+
+~proc probe-cmp|template|zig {
+    {% if n == "3" %}@import("std").debug.print("eq-match\n", .{});{% endif %}
+    {% if n == "4" %}@import("std").debug.print("eq-nonmatch\n", .{});{% endif %}
+    {% if n != "" %}@import("std").debug.print("ne-bound\n", .{});{% endif %}
+    {% if missing != "" %}@import("std").debug.print("ne-missing-bound\n", .{});{% else %}@import("std").debug.print("ne-missing-empty\n", .{});{% endif %}
+}
+
+~probe-cmp(n: 3)

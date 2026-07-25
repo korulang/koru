@@ -1,0 +1,18 @@
+// Template engine: a condition outside the `{% if %}` grammar is a LOUD compile
+// error (KORU125), never a silent false. `and` is not in the grammar — a
+// condition is a bare key, or two operands compared with `==` / `!=`.
+//
+// The wall is what makes the grammar honest. Without it the whole condition
+// text was looked up as one variable NAME, missed, and rendered `{% else %}`
+// every time: a guarded branch that reads as live while being unreachable, and
+// unreachable no matter what a later author writes inside it. Any fix attempted
+// in that branch is inert, which is exactly how it stays undiscovered.
+~import std/io
+
+~pub tor probe-bad { n: usize }
+
+~proc probe-bad|template|zig {
+    {% if n and n %}@import("std").debug.print("never\n", .{});{% endif %}
+}
+
+~probe-bad(n: 1)

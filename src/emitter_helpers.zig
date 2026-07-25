@@ -4113,6 +4113,9 @@ const INLINE_CONTINUE_PREFIX = "__koru_continue_";
 ///     running the consumer's `| X |>` body at the hand-off point,
 ///     `{ [if (<guard>)] { <body> } }`. No arg — a no-payload terminal. Fires once.
 ///     (The Zig lowering of this is a `return`, but the surface name is `.continue`.)
+///   - `__koru_continue_bare_<idx>` (from `{{ …continue[unguarded] }}`) — the same
+///     hand-off with the guard left off, `{ <body> }`, for a template that has
+///     already placed the guard itself (`cond`'s `if / else if` cascade).
 ///
 /// Both index the same `continuations` slice the markers were minted against, so
 /// they round-trip deterministically. An omitted optional terminal never minted a
@@ -4187,6 +4190,12 @@ fn emitInlineCodeResolvingSplices(
         if (is_continue) {
             // CONTINUATION hand-off — run the terminal body once, here.
             var i = m + INLINE_CONTINUE_PREFIX.len;
+            // `bare_` infix (from `{{ arm.continue[unguarded] }}`): hand off the
+            // body WITHOUT wrapping it in the arm's `when` guard, because the
+            // template put that guard somewhere this splice cannot see — `cond`
+            // puts it in an `if / else if` cascade's condition position.
+            const unguarded = std.mem.startsWith(u8, inline_code[i..], "bare_");
+            if (unguarded) i += "bare_".len;
             var idx: usize = 0;
             var saw_digit = false;
             while (i < inline_code.len and inline_code[i] >= '0' and inline_code[i] <= '9') : (i += 1) {
@@ -4196,7 +4205,7 @@ fn emitInlineCodeResolvingSplices(
             if (saw_digit and idx < continuations.len) {
                 const cont = &continuations[idx];
                 try emitter.write("{ ");
-                const guarded = cont.condition != null;
+                const guarded = cont.condition != null and !unguarded;
                 if (guarded) {
                     // Presence rewrite (400_147): a bare optional-arm name as a
                     // `when` guard is a comptime `@hasDecl(__H, ...)` presence

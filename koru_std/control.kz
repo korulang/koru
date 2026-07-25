@@ -67,25 +67,30 @@ const std = @import("std");
 // - ~cond is a |template|zig proc, like ~if. `| c *` is a single VARIADIC
 //   terminal branch — the wildcard `*` legalizes the lone declaration (parser
 //   single-branch exemption) and marks it as filled by N guarded arms at the
-//   use site. The template iterates continuations["c"] into a first-match
-//   sequence of guard clauses: `if (<guard>) { <produce> }` per guarded arm,
-//   then the guardless `| c _` arm as an unconditional final `{ <produce> }`.
-//   Each arm's `when` guard is exposed as `arm.guard`, its produce body via
-//   `arm.continue`; the arm binding is wired to the scrutinee by the emitter.
-//   Every arm PRODUCES (returns), so the guard clauses dispatch first-match and
-//   the guardless arm is the fallthrough default — no `else` chaining needed,
-//   and the returns let the optimizer collapse it to a cascade. Same
-//   continuation-return machine as ~if; ~if's two fixed arms become N
-//   guard-selected ones. KORU050/051 exhaustiveness requires the guardless arm.
+//   use site. The template renders continuations["c"] as ONE `if / else if /
+//   else` cascade: each guarded arm's `when` becomes a condition (`arm.guard`)
+//   and its body the matching block (`arm.continue[unguarded]`), with the
+//   guardless `| c _` arm as the trailing `else`. Same continuation-return
+//   machine as ~if; ~if's two fixed arms become N guard-selected ones.
+// - DISPATCH IS EXCLUSIVE — the arm whose guard matches runs, and no other. The
+//   cascade is what makes that structural: `else if` cannot re-test a guard
+//   against state an earlier arm just wrote. Pinned by 320_138, whose two arms
+//   toggle one store field back and forth.
+// - `{{ binds }}` emits every arm's binder ONCE, ahead of the cascade, because
+//   a guard in condition position must already see the name its arm binds.
+//   Per-arm binding is what a cascade cannot express, and reaching for N
+//   independent blocks to get it is what made dispatch fall through.
+// - KORU050/051 require the guardless arm to exist and KORU053 requires it last,
+//   so the cascade always closes with a real `else` and never re-orders an arm.
 ~[keyword]pub tor cond { expr: Expression }
 | c *
 
 ~proc cond|template|zig {
+    {{ binds }}
     {% for arm in continuations["c"] %}{% if arm.guard != "" %}if ({{ arm.guard }}) {
-        {{ arm.bind }}{{ arm.continue }}
-    }
-    {% else %}{
-        {{ arm.bind }}{{ arm.continue }}
+        {{ arm.continue[unguarded] }}
+    } else {% else %}{
+        {{ arm.continue }}
     }{% endif %}{% endfor %}
 }
 
