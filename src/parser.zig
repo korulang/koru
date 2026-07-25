@@ -1668,6 +1668,37 @@ pub const Parser = struct {
         return error.ParseError;
     }
 
+    /// A `|target` variant tag belongs on a `~proc`, never on the `~tor` that
+    /// declares the contract: the tor names WHAT is done, the proc's variant
+    /// names HOW and for which target. Without this wall `|` is not an
+    /// identifier terminator, so `~tor compute|zig {}` mints a declaration
+    /// literally named `compute|zig` that no `~proc compute|zig` and no
+    /// `~compute()` call site can ever match — three spellings of one
+    /// construct, and a frontend with nothing left to disagree with.
+    ///
+    /// Scoped to `~tor` on purpose. A proc's variant is split off before its
+    /// name is validated, and a same-line branch (`~tor ping | ok`) is
+    /// whitespace-separated, so neither reaches this check.
+    fn rejectVariantTagOnTor(self: *Parser, raw: []const u8, line_index: usize) !void {
+        var end: usize = 0;
+        while (end < raw.len) : (end += 1) {
+            const c = raw[end];
+            if (c == '[' or c == '<' or c == '(' or c == '{' or c == ' ' or c == '\t') break;
+        }
+        const name_part = raw[0..end];
+        const bar = std.mem.indexOfScalar(u8, name_part, '|') orelse return;
+        try self.reporter.addErrorWithHint(
+            .PARSE003,
+            line_index + 1,
+            1,
+            "'{s}' is a variant tag and has no meaning on a '~tor' — a tor declares WHAT is done, and only a '~proc' carries the '|target' that says how",
+            .{name_part[bar..]},
+            "declare '~tor {s}' and put the variant on its implementation: '~proc {s} {{ ... }}'",
+            .{ name_part[0..bar], name_part },
+        );
+        return error.ParseError;
+    }
+
     /// Reject `_` in a Koru NAME. Kebab `-` is the sole word separator for Koru
     /// names; `_` is reserved for digit separators in numeric literals (rule G4).
     /// We won't accept both spellings — a snake name must fail loudly. The check
@@ -1803,6 +1834,7 @@ pub const Parser = struct {
             return error.ParseError;
         }
 
+        try self.rejectVariantTagOnTor(parsed_path_str, event_line_index);
         try self.rejectSnakeName(parsed_path_str, event_line_index, "tor");
         var path = try lexer.parseQualifiedPath(self.allocator, parsed_path_str, ast);
         errdefer path.deinit(self.allocator);
@@ -2334,6 +2366,7 @@ pub const Parser = struct {
             return error.ParseError;
         }
 
+        try self.rejectVariantTagOnTor(parsed_path_str, event_line_index);
         try self.rejectSnakeName(parsed_path_str, event_line_index, "tor");
         var path = try lexer.parseQualifiedPath(self.allocator, parsed_path_str, ast);
         errdefer path.deinit(self.allocator);
