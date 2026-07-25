@@ -1,27 +1,18 @@
-// RED BY DESIGN (pinned 2026-07-25). A keyword tor (`cond`, `if`, …) used as a
-// subflow's DEFINITION HEAD resolves only in the ENTRY file. Inside an imported
-// module it is looked up in that module's own namespace and fails:
+// A keyword tor (`cond`, `if`, `for`) is a keyword everywhere it is imported —
+// including as a subflow's DEFINITION HEAD inside a module, which is the
+// position this pins. `app/pick` is a plain `.k` module that never names
+// std/control: `pick = cond(n)` has to resolve from the bare name alone.
 //
-//   error[KORU040]: unknown tor 'app.pick:cond'
+// Keyword resolution is scoped by the ENCLOSING module, not by entry-file-ness.
+// Canonicalization stamps every bare path with its own module's name, so that
+// stamp is what says "the user wrote this bare" — read against the entry module
+// instead, every module's own flows look explicitly qualified and are skipped.
+// The `~lib_a:process` case that must still be skipped is pinned by 120_002.
 //
-// SHOWN 2026-07-25, all cells — the axis is ENTRY vs MODULE, not file kind:
-//   definition head, entry .k        -> WORKS  (`pick = cond(n)` prints 20)
-//   definition head, module .k       -> FAILS  (this pin)
-//   definition head, module .kz      -> FAILS  (identical error)
-//   definition head, module + explicit `import std/control`  -> FAILS
-//   pipeline step,   module .kz      -> WORKS  (corpus: 910_LANGUAGE_SHOOTOUT/
-//                                       nbody/koru/kernel_pairwise.kz calls
-//                                       bare `for(0..iterations)`)
-// `.k` vs `.kz` makes no difference and neither does importing std/control.
-// Pipeline-position keyword tors are fine; only the definition head misresolves.
-//
-// Why it matters: it blocks decomposing an app into modules. Found trying to
-// split koru-examples/gallery.k, where every per-page key vocabulary is
-// `name = cond(ch)`. Those cannot move out of the entry, so a TUI app is forced
-// to stay one file. The module system already works for value tors — see
-// koru-examples/ledger, a three-file program with a transitive hop — so this is
-// specifically the FLOW vocabulary that cannot be modularised, which is most of
-// what an app is made of.
+// What it buys: an app can be split into modules. Every per-page key vocabulary
+// in a TUI is `name = cond(ch)`, so without this the flow vocabulary — most of
+// what an app is — has to stay in the entry file, even though value tors
+// already modularise fine.
 import std/io
 import app/pick
 

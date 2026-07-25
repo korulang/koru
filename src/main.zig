@@ -5433,15 +5433,24 @@ fn resolveKeywordsInAST(
     main_module: []const u8,
 ) !void {
     for (items) |*item| {
-        try resolveKeywordsInItem(item, registry, allocator, main_module, items);
+        try resolveKeywordsInItem(item, registry, allocator, main_module, items, items);
     }
 }
 
+/// `home_module` / `home_items`: the module a bare name belongs to at this point
+/// in the walk, and that module's own declarations. At the entry file both are
+/// the main module's; inside an imported `module_decl` they are that module's.
+/// Keyword resolution is scoped by HOME, not by entry-file-ness — a `[keyword]`
+/// tor is a keyword everywhere it is imported, and the shadowing rule that lets
+/// a local declaration win has to be read against the same scope (110_021).
+/// `all_items` stays whole-program: `fixupExpressionArgs` resolves the event it
+/// just rewrote TO, which by definition lives in another module.
 fn resolveKeywordsInItem(
     item: *ast.Item,
     registry: *const keyword_registry.KeywordRegistry,
     allocator: std.mem.Allocator,
-    main_module: []const u8,
+    home_module: []const u8,
+    home_items: []const ast.Item,
     all_items: []const ast.Item,
 ) !void {
     switch (item.*) {
@@ -5450,7 +5459,7 @@ fn resolveKeywordsInItem(
             const old_qualifier = flow.inv().path.module_qualifier;
 
             // Resolve the main invocation path
-            try resolveKeywordInPath(&flow.invMut().path, registry, allocator, main_module, all_items);
+            try resolveKeywordInPath(&flow.invMut().path, registry, allocator, home_module, home_items);
 
             // If keyword resolution happened (qualifier changed), fix up Expression args
             const qualifier_changed = if (old_qualifier) |old| blk: {
@@ -5466,13 +5475,17 @@ fn resolveKeywordsInItem(
 
             // Resolve paths in continuations
             for (flow.body.continuations) |*cont| {
-                try resolveKeywordsInContinuation(@constCast(cont), registry, allocator, main_module, all_items);
+                try resolveKeywordsInContinuation(@constCast(cont), registry, allocator, home_module, home_items);
             }
         },
         .module_decl => |*module| {
-            // Process items in imported modules - recurse into module items
+            // Process items in imported modules — the module's own name and
+            // declarations become HOME for everything inside it.
             for (module.items) |*mod_item| {
-                try resolveKeywordsInItem(@constCast(mod_item), registry, allocator, main_module, all_items);
+                // `logical_name` is what canonicalization stamps as the qualifier
+                // of every bare path inside the module, so it is what a home-module
+                // comparison has to be made against.
+                try resolveKeywordsInItem(@constCast(mod_item), registry, allocator, module.logical_name, module.items, all_items);
             }
         },
         // impl flows are now .flow items with impl_of set — handled by the .flow case above
@@ -5599,15 +5612,15 @@ fn resolveKeywordsInStep(
     step: *ast.Step,
     registry: *const keyword_registry.KeywordRegistry,
     allocator: std.mem.Allocator,
-    main_module: []const u8,
-    top_items: []const ast.Item,
+    home_module: []const u8,
+    home_items: []const ast.Item,
 ) !void {
     switch (step.*) {
         .invocation => |*inv| {
-            try resolveKeywordInPath(&inv.path, registry, allocator, main_module, top_items);
+            try resolveKeywordInPath(&inv.path, registry, allocator, home_module, home_items);
         },
         .label_with_invocation => |*lwi| {
-            try resolveKeywordInPath(&lwi.invocation.path, registry, allocator, main_module, top_items);
+            try resolveKeywordInPath(&lwi.invocation.path, registry, allocator, home_module, home_items);
         },
         else => {},
     }
@@ -5617,26 +5630,27 @@ fn resolveKeywordsInContinuation(
     cont: *ast.Continuation,
     registry: *const keyword_registry.KeywordRegistry,
     allocator: std.mem.Allocator,
-    main_module: []const u8,
-    top_items: []const ast.Item,
+    home_module: []const u8,
+    home_items: []const ast.Item,
 ) !void {
     // Resolve paths in step
     if (cont.node) |*step| {
-        try resolveKeywordsInStep(@constCast(step), registry, allocator, main_module, top_items);
+        try resolveKeywordsInStep(@constCast(step), registry, allocator, home_module, home_items);
     }
 
     // Recursively process nested continuations
     for (cont.continuations) |*nested| {
-        try resolveKeywordsInContinuation(@constCast(nested), registry, allocator, main_module, top_items);
+        try resolveKeywordsInContinuation(@constCast(nested), registry, allocator, home_module, home_items);
     }
 }
 
-/// True if the main module's own items declare an event with this
+/// True if the HOME module's own items declare an event with this
 /// single-segment name. A local declaration SHADOWS any [keyword] event of
 /// the same name (the 120_002 name-priority rule): keyword resolution must
-/// not rewrite a name the user declared locally.
-fn localEventShadowsKeyword(top_items: []const ast.Item, name: []const u8) bool {
-    for (top_items) |item| {
+/// not rewrite a name the user declared locally. Home is the enclosing module,
+/// so a module that declares its own `cond` keeps it (110_021).
+fn localEventShadowsKeyword(home_items: []const ast.Item, name: []const u8) bool {
+    for (home_items) |item| {
         if (item != .event_decl) continue;
         const decl = item.event_decl;
         if (decl.path.segments.len == 1 and std.mem.eql(u8, decl.path.segments[0], name)) {
@@ -5650,19 +5664,24 @@ fn resolveKeywordInPath(
     path: *ast.DottedPath,
     registry: *const keyword_registry.KeywordRegistry,
     allocator: std.mem.Allocator,
-    main_module: []const u8,
-    top_items: []const ast.Item,
+    home_module: []const u8,
+    home_items: []const ast.Item,
 ) !void {
     // Only resolve single-segment paths
     if (path.segments.len != 1) return;
 
-    // Check if path has an explicit user-provided qualifier vs canonicalization-assigned one
-    // After canonicalization, unqualified paths get main_module as their qualifier
-    // Paths like ~lib_a:process have a different qualifier (set by parser, not canonicalization)
+    // Separate a qualifier the USER wrote from one canonicalization assigned.
+    // Canonicalization stamps every bare path with its enclosing module's name,
+    // so "qualifier == home" is exactly the bare case and anything else is an
+    // explicit `~lib_a:process` the user chose — which must not be rewritten,
+    // and must not raise a keyword collision either.
+    //
+    // Home is the ENCLOSING module, not the entry file. Comparing against the
+    // entry module made every keyword tor (`cond`, `if`, `for`) unresolvable
+    // from inside an imported module, which is most of what an app is: the
+    // flow vocabulary could not be split out of the entry file at all (110_021).
     if (path.module_qualifier) |qualifier| {
-        // If qualifier is NOT the main module, user explicitly chose a module - skip keyword resolution
-        // This prevents ~lib_a:process from triggering keyword collision when 'process' is ambiguous
-        if (!std.mem.eql(u8, qualifier, main_module)) {
+        if (!std.mem.eql(u8, qualifier, home_module)) {
             return;
         }
     }
@@ -5671,7 +5690,7 @@ fn resolveKeywordInPath(
 
     // Local-first: a name the main module declares as an event is LOCAL —
     // it must not be rewritten to an imported [keyword] event's module.
-    if (localEventShadowsKeyword(top_items, potential_keyword)) return;
+    if (localEventShadowsKeyword(home_items, potential_keyword)) return;
 
     const resolve_result = registry.resolveKeyword(potential_keyword) catch |err| switch (err) {
         error.KeywordCollision => {
