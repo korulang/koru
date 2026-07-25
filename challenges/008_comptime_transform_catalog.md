@@ -38,6 +38,16 @@ A transform is two declarations: a `tor` that names it, and a `|zig` proc that i
     ~[comptime|transform]pub tor <name> { <params> } -> SiteResult
     ~[transform]proc <name>|zig { ... }
 
+**The `[transform]` on the *proc* is optional, and the corpus is split.** `store.kz` writes
+`~[transform]proc new|zig`; `testing.kz` implements its transform tor with a bare
+`~proc test|zig` and is equally green — 27 transforms across 9 modules omit it. Two mechanisms
+disagree about where the marker lives: `main.zig` detects transforms from the tor's AST
+**parameter types** and is explicitly *"agnostic to `[transform]` annotations"*, while
+`emitter_helpers.zig:findTransformProc` looks for procs and **filters on that annotation**.
+Follow `220_013` and keep it; the divergence is a known open question, not something for you to
+resolve. If you trip over it, that is a **bucket 2** finding and exactly what this challenge is
+for.
+
 **Modifiers in live use** — `comptime`, `transform`, `keyword`, `pre`, `pure`,
 `claims_descendants`. If you need a behaviour none of these give you, **that is a finding**;
 write it in the friction report rather than working around it quietly.
