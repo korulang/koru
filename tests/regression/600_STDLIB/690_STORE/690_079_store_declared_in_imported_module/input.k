@@ -19,10 +19,15 @@
 // module is parsed BEFORE the stdlib's declarations are registered — the same
 // invocation reports registry_hit=false on that first parse and true on a later
 // one. So a module's args arrive still punned to their own value
-// (`name=cache value=cache` instead of `name=expr`), `new` fails its very first
-// argument check, and it raises an error that then VANISHES: errItem emits
-// `comptime { @compileError(...) }` as inline_code into that module, and it
-// never reaches the emitted Zig. Two defects, and the second hides the first.
+// (`name=cache value=cache` instead of `name=expr`), and `new` fails its very
+// first argument check.
+//
+// Its diagnostic IS emitted — `comptime { @compileError(...) }` is present in
+// the emitted Zig — but it loses the race: the un-lowered cell reference
+// produces `use of undeclared identifier 'cache'` and that is what the backend
+// surfaces, so what reaches the user is a raw Zig symptom instead of the
+// store's own authored message. The wall is built and standing behind a louder,
+// less useful error.
 //
 // Any transform taking `expr: Expression` is exposed to the same ordering —
 // 62 of the 85 transform declarations in the corpus.
