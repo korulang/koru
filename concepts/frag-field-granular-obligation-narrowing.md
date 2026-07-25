@@ -57,14 +57,17 @@ symptoms that surfaced the whole thing: `330_098` (false-accept under for-each),
 It is built (landed at `ebbe620f`): a field-projected obligation is a tracked
 entity keyed by *path*, and each discharge narrows the source record's type.
 
-**What the feature does not yet cover is position.** Narrowing is recognised only
-when the record producer sits at the head of its chain; putting any call in front
-of it — a void one is enough — loses the projection. `330_116` holds that shape
-against `330_101`, which is the same program at the head. This is not a rough
-edge at the boundary of the design: chain position has no bearing on whether a
-field carries a debt, so the checker is keying off the wrong thing, and every
-real pipeline does work before it allocates. Nested projection (`r.outer.h`) is
-untracked one rung further out.
+Narrowing is position-independent: `330_116` is `330_101` with a void call
+prepended and the two agree. Chain position never had any bearing on whether a
+field carries a debt — the apparent position-dependence was a missing mirror,
+not a design boundary. The flow head seeded record-field obligations; the
+intermediate-step path was written for the whole-value case and returned early
+whenever a step carried no whole-value phantom, which is exactly what a record
+return looks like. Worth remembering as a shape: when a feature works in one
+position and not another, look for the second code path that was supposed to
+match the first, before concluding the model is positional.
+
+Nested projection (`r.outer.h`) is untracked, one rung further out.
 
 Two questions the feature raises stay open and are Lars's to rule. When two
 fields alias one allocation — `.{ .h = h, .g = h }` from a `|zig` body Koru never

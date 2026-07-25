@@ -1250,18 +1250,38 @@ pub const PhantomSemanticChecker = struct {
         inv: *const ast.Invocation,
         step_decl: *const ast.EventDecl,
         step_module: []const u8,
+        step_qualified: []const u8,
         context: *BindingContext,
     ) anyerror!void {
         const rb = inv.return_binding orelse return;
-        const rp = step_decl.return_phantom orelse return;
-        const canonical_phantom = try self.canonicalizePhantomState(rp, step_module);
-        defer self.allocator.free(canonical_phantom);
+        if (step_decl.return_phantom) |rp| {
+            const canonical_phantom = try self.canonicalizePhantomState(rp, step_module);
+            defer self.allocator.free(canonical_phantom);
+            if (step_decl.return_type) |rt| {
+                const canonical_base_type = try self.canonicalizeBaseType(rt, null, step_module);
+                defer self.allocator.free(canonical_base_type);
+                try context.setWithType(rb, canonical_phantom, canonical_base_type);
+            } else {
+                try context.set(rb, canonical_phantom);
+            }
+            return;
+        }
+        // No WHOLE-VALUE phantom does not mean no obligation: a record return
+        // (`-> { h: *Handle<owned!>, g: *Handle<owned!> }`) carries its debts
+        // per FIELD. The flow head seeds those; without the same seeding here a
+        // record producer is tracked only when it happens to be the first call
+        // in its chain, and prepending any step — even a void one — loses every
+        // field obligation and reports KORU030 against valid code (330_116).
+        // Chain position has no bearing on whether a field carries a debt.
         if (step_decl.return_type) |rt| {
-            const canonical_base_type = try self.canonicalizeBaseType(rt, null, step_module);
-            defer self.allocator.free(canonical_base_type);
-            try context.setWithType(rb, canonical_phantom, canonical_base_type);
-        } else {
-            try context.set(rb, canonical_phantom);
+            // Same subflow carve-out as the head: subflow field threading is
+            // unbuilt, so a record routed through a subflow's declared return
+            // type does not carry its field obligations to the caller, and
+            // seeding would silently credit a discharge against a debt the
+            // value does not hold (330_100).
+            if (!self.subflow_impl_map.contains(step_qualified)) {
+                try self.seedRecordFieldObligations(rb, rt, step_module, inv.return_destructure, context);
+            }
         }
     }
 
@@ -1514,7 +1534,7 @@ pub const PhantomSemanticChecker = struct {
                         // Record this step's bare-return bind so a chained
                         // consumer (`make(): h |> t1(h): a |> fin(h: a)`) sees `a`'s
                         // obligation — the intermediate-step twin of the flow-head bind.
-                        try self.recordBareReturnBind(inv, step_event_info.decl, step_module, &void_context);
+                        try self.recordBareReturnBind(inv, step_event_info.decl, step_module, step_qualified, &void_context);
                         // Validate nested continuations against the step's event
                         for (cont.continuations) |*nested| {
                             const nested_valid = try self.validateContinuation(nested, step_event_info.decl, step_module, flow_module, event_map, location, &void_context, implementing_event);
@@ -1617,7 +1637,7 @@ pub const PhantomSemanticChecker = struct {
                             // Record this step's bare-return bind so a chained
                             // consumer sees its obligation (intermediate-step twin
                             // of the flow-head bind).
-                            try self.recordBareReturnBind(inv, step_event_info.decl, step_module, &void_chain_context);
+                            try self.recordBareReturnBind(inv, step_event_info.decl, step_module, step_qualified, &void_chain_context);
                             // Validate nested continuations against the step's event
                             for (cont.continuations) |*nested| {
                                 const nested_valid = try self.validateContinuation(nested, step_event_info.decl, step_module, flow_module, event_map, location, &void_chain_context, implementing_event);
