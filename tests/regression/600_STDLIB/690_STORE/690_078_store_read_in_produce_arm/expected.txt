@@ -1,0 +1,2 @@
+peek=7
+doubled=14

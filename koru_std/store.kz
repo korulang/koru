@@ -103,6 +103,25 @@ const std = @import("std");
             if (n.len >= 2 and n[0] == '"') return n[1 .. n.len - 1];
             return n;
         }
+        // The module a store was DECLARED in — where its cell and accessors are
+        // emitted. Twin of the `stored` transform's helper of the same name;
+        // each transform carries its own H, as the rest of this file does.
+        fn storeHomeModule(alloc: std.mem.Allocator, prog: *const ast.Program, store: []const u8) ?[]const u8 {
+            const apply_name = std.fmt.allocPrint(alloc, "__store_apply_{s}", .{store}) catch unreachable;
+            for (prog.items) |pi| {
+                if (pi != .event_decl) continue;
+                const ed = &pi.event_decl;
+                if (ed.path.segments.len == 1 and std.mem.eql(u8, ed.path.segments[0], apply_name)) {
+                    return ed.path.module_qualifier;
+                }
+            }
+            for (prog.items) |pi| {
+                if (pi != .flow) continue;
+                const f = &pi.flow;
+                if (isStoreInv(f, "new", store)) return f.module;
+            }
+            return null;
+        }
         fn isStoreInv(f: *const ast.Flow, verb: []const u8, want_name: ?[]const u8) bool {
             const inv = f.inv();
             if (inv.path.segments.len != 1) return false;
@@ -3125,7 +3144,12 @@ const std = @import("std");
         fn isIdent(ch: u8) bool {
             return (ch >= 'a' and ch <= 'z') or (ch >= 'A' and ch <= 'Z') or (ch >= '0' and ch <= '9') or ch == '_' or ch == '-';
         }
-        fn storeRefs(alloc: std.mem.Allocator, text: []const u8, name: []const u8) []const u8 {
+        // `prefix` names the Zig namespace the cell lives in, and is empty
+        // whenever the reader is in the declaring module (the common case).
+        // A reader in a DIFFERENT module has to reach across: the cell is a
+        // module-scope var in the declaring module's emitted struct, so a bare
+        // `__koru_store_s` there is an undeclared identifier (110_022).
+        fn storeRefs(alloc: std.mem.Allocator, text: []const u8, name: []const u8, prefix: []const u8) []const u8 {
             var out = std.ArrayList(u8).initCapacity(alloc, text.len + 32) catch unreachable;
             var i: usize = 0;
             while (i < text.len) {
@@ -3133,6 +3157,7 @@ const std = @import("std");
                 if (at_boundary and i + name.len < text.len and
                     std.mem.startsWith(u8, text[i..], name) and text[i + name.len] == '.')
                 {
+                    out.appendSlice(alloc, prefix) catch unreachable;
                     out.appendSlice(alloc, "__koru_store_") catch unreachable;
                     out.appendSlice(alloc, name) catch unreachable;
                     i += name.len;
@@ -3195,7 +3220,7 @@ const std = @import("std");
         // Invocation.inline_body is the FREEZE of an earlier template expand
         // (`if`/`for`) and MUST be rewritten even on std.store sites skipped
         // for args (690_074).
-        fn rewriteNode(alloc: std.mem.Allocator, n: *ast.Node, names: []const []const u8) void {
+        fn rewriteNode(alloc: std.mem.Allocator, n: *ast.Node, names: []const []const u8, prefixes: []const []const u8) void {
             // Same temporary-capture rule as storeRefsContH: never `|*inv|`
             // on `switch (n.*)`; mutate `n.invocation` in place (690_074).
             switch (n.*) {
@@ -3210,7 +3235,7 @@ const std = @import("std");
                     if (!skip_args) {
                         for (inv.args) |*a| {
                             var v = a.value;
-                            for (names) |nm| v = storeRefs(alloc, v, nm);
+                            for (names, prefixes) |nm, px| v = storeRefs(alloc, v, nm, px);
                             @constCast(a).value = v;
                             // Expression args carry their text separately — the
                             // emitter reads THAT, not .value. cloneContinuation
@@ -3219,7 +3244,7 @@ const std = @import("std");
                             // rather than mutating shared state.
                             if (a.expression_value) |ev| {
                                 var t = ev.text;
-                                for (names) |nm| t = storeRefs(alloc, t, nm);
+                                for (names, prefixes) |nm, px| t = storeRefs(alloc, t, nm, px);
                                 const fresh = alloc.create(ast.CapturedExpression) catch unreachable;
                                 fresh.* = ev.*;
                                 fresh.text = t;
@@ -3229,41 +3254,78 @@ const std = @import("std");
                     }
                     if (inv.inline_body) |ib| {
                         var t = ib;
-                        for (names) |nm| t = storeRefs(alloc, t, nm);
+                        for (names, prefixes) |nm, px| t = storeRefs(alloc, t, nm, px);
                         inv.inline_body = t;
                     }
                 },
                 .inline_code => {
                     var t = n.inline_code;
-                    for (names) |nm| t = storeRefs(alloc, t, nm);
+                    for (names, prefixes) |nm, px| t = storeRefs(alloc, t, nm, px);
                     n.* = .{ .inline_code = t };
+                },
+                // A PRODUCE arm (`peek -> s.v`, `| c _ -> s.v`) is an expression
+                // node, and it reads cells exactly like an arg does. Left out,
+                // the reference reached the host verbatim as `s.v` — an
+                // undeclared identifier in Zig, from valid Koru (110_022).
+                .expression => {
+                    var t = n.expression;
+                    for (names, prefixes) |nm, px| t = storeRefs(alloc, t, nm, px);
+                    n.* = .{ .expression = t };
                 },
                 else => {},
             }
         }
-        fn rewriteCont(alloc: std.mem.Allocator, cont: *ast.Continuation, names: []const []const u8) void {
+        fn rewriteCont(alloc: std.mem.Allocator, cont: *ast.Continuation, names: []const []const u8, prefixes: []const []const u8) void {
             // Guards ride as arm conditions at the write site - their
             // cross-store reads rewrite to the cells too (690_013).
             if (cont.condition) |cond| {
                 var cnd = cond;
-                for (names) |nm| cnd = storeRefs(alloc, cnd, nm);
+                for (names, prefixes) |nm, px| cnd = storeRefs(alloc, cnd, nm, px);
                 @constCast(cont).condition = cnd;
             }
-            if (cont.node) |*n| rewriteNode(alloc, @constCast(n), names);
-            for (cont.continuations) |*c| rewriteCont(alloc, @constCast(c), names);
+            if (cont.node) |*n| rewriteNode(alloc, @constCast(n), names, prefixes);
+            for (cont.continuations) |*c| rewriteCont(alloc, @constCast(c), names, prefixes);
         }
-        fn rewriteFlow(alloc: std.mem.Allocator, f: *ast.Flow, names: []const []const u8) void {
-            rewriteCont(alloc, &f.body, names);
+        fn rewriteFlow(alloc: std.mem.Allocator, f: *ast.Flow, names: []const []const u8, prefixes: []const []const u8) void {
+            rewriteCont(alloc, &f.body, names, prefixes);
             if (f.inline_body) |ib| {
                 var t = ib;
-                for (names) |nm| t = storeRefs(alloc, t, nm);
+                for (names, prefixes) |nm, px| t = storeRefs(alloc, t, nm, px);
                 @constCast(f).inline_body = t;
             }
         }
+        // A bare-return subflow (`peek -> s.v`) is not a Flow at all — it lands
+        // as an `immediate_impl` whose BranchConstructor carries the produced
+        // expression. Reading a cell there is as ordinary as reading one in an
+        // arg, but the walk used to visit only `.flow`, so the reference went
+        // to the host verbatim and Zig reported an undeclared `s` (110_022).
+        fn rewriteImmediateImpl(alloc: std.mem.Allocator, ii: *ast.ImmediateImpl, names: []const []const u8, prefixes: []const []const u8) void {
+            if (ii.value.plain_value) |pv| {
+                var t = pv;
+                for (names, prefixes) |nm, px| t = storeRefs(alloc, t, nm, px);
+                ii.value.plain_value = t;
+            }
+            // `=> branch { f: <expr> }` keeps each field's value in
+            // `expression_str`; a cell read there is the same read.
+            for (ii.value.fields) |*fld| {
+                if (fld.expression_str) |es| {
+                    var v = es;
+                    for (names, prefixes) |nm, px| v = storeRefs(alloc, v, nm, px);
+                    @constCast(fld).expression_str = v;
+                }
+            }
+        }
     };
-    for (watch_arms.items) |*wa| Rewrite.rewriteCont(allocator, &wa.cont, store_names.items);
-    for (field_iceptors.items) |*fi| Rewrite.rewriteCont(allocator, &fi.cont, store_names.items);
-    for (updated_iceptors.items) |*ui| Rewrite.rewriteCont(allocator, ui, store_names.items);
+    // Transplanted arms are spliced INTO the declaring module's generated
+    // units, so they read the cell from the same namespace: no prefix.
+    const local_prefixes = blk_lp: {
+        const px = allocator.alloc([]const u8, store_names.items.len) catch unreachable;
+        for (px) |*e| e.* = "";
+        break :blk_lp px;
+    };
+    for (watch_arms.items) |*wa| Rewrite.rewriteCont(allocator, &wa.cont, store_names.items, local_prefixes);
+    for (field_iceptors.items) |*fi| Rewrite.rewriteCont(allocator, &fi.cont, store_names.items, local_prefixes);
+    for (updated_iceptors.items) |*ui| Rewrite.rewriteCont(allocator, ui, store_names.items, local_prefixes);
 
     // ------------------------------------------------------------------
     // Unit 1: the module-scope typed cell (slice one, unchanged).
@@ -3802,20 +3864,47 @@ const std = @import("std");
     // Whole-program cell-path rewrite (same as the plural create path —
     // `ui.sel` in if/when/sweep outside transplanted watch arms).
     {
+        // The cell is a module-scope var in the DECLARING module's emitted
+        // struct. A reader in that same module names it bare; a reader
+        // anywhere else has to reach across namespaces (110_022).
         const Walk = struct {
-            fn items(alloc: std.mem.Allocator, its: []ast.Item, names: []const []const u8) void {
+            fn prefixesFor(alloc: std.mem.Allocator, prog: *const ast.Program, names: []const []const u8, reader: []const u8) []const []const u8 {
+                const px = alloc.alloc([]const u8, names.len) catch unreachable;
+                for (names, 0..) |nm, i| {
+                    const home = H.storeHomeModule(alloc, prog, nm) orelse "";
+                    if (home.len == 0 or std.mem.eql(u8, home, reader)) {
+                        px[i] = "";
+                        continue;
+                    }
+                    // Only the ENTRY module's emitted namespace has a name this
+                    // layer can spell (`main_module`). A store declared in an
+                    // imported module and read from a different one needs the
+                    // emitter's module-path mangling (emitter_helpers
+                    // writeModulePath), which this rewrite does not have —
+                    // refuse rather than emit a name that does not resolve.
+                    if (!std.mem.eql(u8, home, prog.main_module_name)) {
+                        std.debug.panic("std/store: store '{s}' is declared in module '{s}' and read from '{s}' - a cross-module cell read is only lowered for a store declared in the entry file; declare '{s}' in the entry, or read it through an accessor tor in '{s}'", .{ nm, home, reader, nm, home });
+                    }
+                    px[i] = "main_module.";
+                }
+                return px;
+            }
+            // Each item carries the module it was declared in, so the reader is
+            // read off the item rather than threaded down the walk.
+            fn items(alloc: std.mem.Allocator, prog: *const ast.Program, its: []ast.Item, names: []const []const u8) void {
                 for (its) |*pi| {
                     switch (pi.*) {
                         // Must use `&pi.flow` — `|*f|` on a switched copy
                         // mutates a temporary and the live AST stays raw.
-                        .flow => Rewrite.rewriteFlow(alloc, &pi.flow, names),
-                        .module_decl => items(alloc, @constCast(pi.module_decl.items), names),
+                        .flow => Rewrite.rewriteFlow(alloc, &pi.flow, names, prefixesFor(alloc, prog, names, pi.flow.module)),
+                        .immediate_impl => Rewrite.rewriteImmediateImpl(alloc, &pi.immediate_impl, names, prefixesFor(alloc, prog, names, pi.immediate_impl.module)),
+                        .module_decl => items(alloc, prog, @constCast(pi.module_decl.items), names),
                         else => {},
                     }
                 }
             }
         };
-        Walk.items(allocator, @constCast(program.items), store_names.items);
+        Walk.items(allocator, program, @constCast(program.items), store_names.items);
     }
 
     // ------------------------------------------------------------------
@@ -3995,6 +4084,35 @@ const std = @import("std");
             var t = storeRefsAll(alloc, prog, text);
             for (allStoreNames(alloc, prog)) |nm| t = indexedFieldRefs(alloc, prog, t, nm);
             return t;
+        }
+        // The module a store was DECLARED in — where its generated accessors
+        // live. A write site in another module must call them there, not in
+        // its own namespace: store names are program-global but the accessors
+        // are emitted into the declaring module only (110_022). Same two-source
+        // shape as `fieldOrder`, so it answers under any transform order.
+        fn storeHomeModule(alloc: std.mem.Allocator, prog: *const ast.Program, store: []const u8) ?[]const u8 {
+            const apply_name = std.fmt.allocPrint(alloc, "__store_apply_{s}", .{store}) catch unreachable;
+            for (prog.items) |pi| {
+                if (pi != .event_decl) continue;
+                const ed = &pi.event_decl;
+                if (ed.path.segments.len == 1 and std.mem.eql(u8, ed.path.segments[0], apply_name)) {
+                    return ed.path.module_qualifier;
+                }
+            }
+            for (prog.items) |pi| {
+                if (pi != .flow) continue;
+                const f = &pi.flow;
+                const inv = f.inv();
+                if (inv.path.segments.len != 1 or !std.mem.eql(u8, inv.path.segments[0], "new")) continue;
+                const mq = inv.path.module_qualifier orelse continue;
+                if (!std.mem.eql(u8, mq, "std.store")) continue;
+                for (inv.args) |a| {
+                    if (std.mem.eql(u8, a.name, "expr") and std.mem.eql(u8, stripQuotes(a.value), store)) {
+                        return f.module;
+                    }
+                }
+            }
+            return null;
         }
         // Field order for a store: from the generated apply event if the
         // coordinator already ran, else from the untransformed create flow's
@@ -4431,9 +4549,16 @@ const std = @import("std");
     };
     const segs = allocator.alloc([]const u8, 1) catch unreachable;
     segs[0] = write_name;
+    // The write tor lives where the store was DECLARED, which need not be where
+    // it is written from (110_022). `fieldOrder` above already proved the store
+    // exists, so the home module resolves through the same two sources; a miss
+    // here would mean the two disagree, and that is a compiler bug, not a
+    // user-facing case to paper over.
+    const write_home = H.storeHomeModule(allocator, program, target_store) orelse
+        std.debug.panic("std/store: store '{s}' resolved a field order but no declaring module", .{target_store});
     const write_inv = ast.Invocation{
         .path = ast.DottedPath{
-            .module_qualifier = allocator.dupe(u8, flow.module) catch unreachable,
+            .module_qualifier = allocator.dupe(u8, write_home) catch unreachable,
             .segments = segs,
         },
         .args = call_args,
