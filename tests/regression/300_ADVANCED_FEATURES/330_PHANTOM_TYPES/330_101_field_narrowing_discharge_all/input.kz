@@ -5,14 +5,10 @@
 // last one. All obligations paid -> clean run. Same surface as 610_001's
 // `| ok s |> ... |> free(s)` (bound name referenced down-chain), field-projected.
 //
-// RESIDUAL: today the FIRST discharge already fails — the checker can't track a
-// field-projected obligation, so `dispose(x: s.h)` reports KORU030 "argument 'x'
-// carries no obligation here ... pass a value that still holds its '<owned!>'
-// obligation." That message is MISLEADING: s.h demonstrably holds the obligation
-// (it's *Handle<owned!> in the record) — the checker just can't see it through
-// the projection. It also names the parameter 'x', not the argument 's.h' the
-// user wrote. When the feature lands this goes green; the diagnostic should also
-// stop blaming the value for the checker's blind spot.
+// This is the family's positive spec and its control: the producer sits at the
+// HEAD of the chain, which is the only position the 330_101-109 family covers.
+// 330_116 is this same program with one void call prepended, and the two must
+// agree — position in a chain says nothing about whether a field carries a debt.
 ~import std/io
 const std = @import("std");
 const Handle = struct { n: i32 };

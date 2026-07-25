@@ -1,9 +1,10 @@
 // WALL (spec): once a field's obligation is discharged, discharging it again is a
 // use-after-discharge — the field vanished from s's type. Target diagnostic is the
 // existing use-after-discharge message ('already discharged', phantom_semantic_
-// checker.zig:2597), NOT 'carries no obligation'. RESIDUAL: today the FIRST
-// discharge already fails with the projection message, so this is wrong-error red
-// until step one (credit a field discharge) lands.
+// checker.zig:2597), NOT 'carries no obligation'. The distinction is the whole
+// point: 'already discharged' names a debt that was paid, 'carries no obligation'
+// names a debt the checker cannot see — one is the user's error, the other is
+// the compiler's, and they must never be spelled the same way.
 ~import std/io
 const std = @import("std");
 const Handle = struct { n: i32 };

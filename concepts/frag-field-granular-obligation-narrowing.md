@@ -5,7 +5,7 @@ provenance: introduced by challenge(007) — field-narrowing design walk with La
 ts: 2026-07-20
 ---
 
-# A record's obligation-bearing fields discharge independently, narrowing its type down-flow (belief · design, not yet built)
+# A record's obligation-bearing fields discharge independently, narrowing its type down-flow (belief)
 
 An obligation `<obl!>` is a debt that must be discharged in the scope that holds
 it. When a record carries obligation-bearing fields — `{ a: *A<obl!>, b: *B<obl!> }`
@@ -54,13 +54,28 @@ remainder), `330_103` (partial destructure omits an obligation → KORU030). The
 symptoms that surfaced the whole thing: `330_098` (false-accept under for-each),
 `330_100` (diagnostic degrades under subflow).
 
-**Status: design settled, NOT built.** Today the *first* field discharge already
-fails — the checker tracks obligations by binding-name string
-(`phantom_semantic_checker.zig:2604`) with a fragile `.suffix` fallback, and a
-field projection isn't a tracked entity, so `dispose(x: s.a)` reports the
-(misleading) "argument carries no obligation here." Building this = making a
-field-projected obligation a first-class tracked entity keyed by *path*, and
-narrowing the source record's type at each discharge.
+It is built (landed at `ebbe620f`): a field-projected obligation is a tracked
+entity keyed by *path*, and each discharge narrows the source record's type.
+
+**What the feature does not yet cover is position.** Narrowing is recognised only
+when the record producer sits at the head of its chain; putting any call in front
+of it — a void one is enough — loses the projection. `330_116` holds that shape
+against `330_101`, which is the same program at the head. This is not a rough
+edge at the boundary of the design: chain position has no bearing on whether a
+field carries a debt, so the checker is keying off the wrong thing, and every
+real pipeline does work before it allocates. Nested projection (`r.outer.h`) is
+untracked one rung further out.
+
+Two questions the feature raises stay open and are Lars's to rule. When two
+fields alias one allocation — `.{ .h = h, .g = h }` from a `|zig` body Koru never
+reads — each field discharges independently and the binary double-frees; the
+phantom model is name-token-based rather than pointer-identity-based by choice,
+so this may be an inherent boundary of the chosen model rather than a defect.
+What is not in question is that nothing discloses the boundary and no pin probes
+it. Separately, whether a discharge diagnostic should name the argument the user
+wrote (`s.h`) rather than the parameter it bound to (`x`) is unsettled; `330_109`
+pins the neighbouring distinction between "already discharged" and "carries no
+obligation."
 
 **Prior art (why this is distinctive):** pieces exist — Rust's partial moves
 narrow what's usable but leaking is *safe* (no must-discharge, `Drop` is automatic
