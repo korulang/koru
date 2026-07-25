@@ -1,11 +1,11 @@
 {
   "subject": "koru",
-  "generated_at": "2026-07-25T07:36:17.515Z",
+  "generated_at": "2026-07-25T19:28:34.431Z",
   "scoreboard": {
-    "passed": 1058,
-    "expected": 1226,
-    "gap": 168,
-    "pass_rate": "86.3"
+    "passed": 1046,
+    "expected": 1227,
+    "gap": 181,
+    "pass_rate": "85.2"
   },
   "perf": {
     "promise_host": "at parity with the host language (Zig) — any gap is measurement noise",
@@ -5169,7 +5169,7 @@
           "converged": true
         },
         {
-          "title": "MUST_ERROR negative tests that pass without pinning WHICH error fires",
+          "title": "MUST_FAIL negative tests that pass without pinning WHICH error fires",
           "anchor": "tests/regression/500_INTEGRATION_TESTING/510_NEGATIVE_TESTS/510_011_invalid_module_qualifier (no expected_error.txt); 510_052 (FRONTEND_COMPILE_ERROR only)",
           "substrate": "test",
           "severity": "med",
