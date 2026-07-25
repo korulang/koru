@@ -1,5 +1,5 @@
 // ============================================================================
-// Test 210_089: MUST_FAIL — explicit label `v: p.q.v` at a call site is
+// Test 210_089: MUST_ERROR — explicit label `v: p.q.v` at a call site is
 //                          forbidden because the path puns to `v`.
 //
 // Punning takes the last segment of a dot-separated identifier path as the

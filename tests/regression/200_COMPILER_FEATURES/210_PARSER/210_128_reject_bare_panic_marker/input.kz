@@ -1,4 +1,4 @@
-// Test 210_128: MUST_FAIL — bare `| ?!` (panic marker with no branch name)
+// Test 210_128: MUST_ERROR — bare `| ?!` (panic marker with no branch name)
 //                          is a grammar error.
 //
 // `?!` is the panic-branch marker; it must be followed by a branch name

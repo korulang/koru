@@ -97,7 +97,7 @@ if (missing.length > 0) {
   const absent = missing.filter((n) => !negativeTests.has(n));
   if (negative.length > 0) {
     console.warn(
-      '[warn] includedTests entries are NEGATIVE (MUST_FAIL) tests — excluded; ' +
+      '[warn] includedTests entries are NEGATIVE (MUST_ERROR) tests — excluded; ' +
         'examples must be positive (what-to-do):'
     );
     for (const name of negative) console.warn(`         ${name}`);
@@ -146,7 +146,7 @@ lines.push(
 lines.push('');
 lines.push(
   'Every example below is verbatim source from a passing POSITIVE regression ' +
-    'test (negative MUST_FAIL tests are excluded — these are all what-to-do). ' +
+    'test (negative MUST_ERROR tests are excluded — these are all what-to-do). ' +
     'NO PROSE: category and per-test prose have been removed — the tests are the ' +
     'only source of truth (prose drifts and contaminates). These are the receipts.'
 );

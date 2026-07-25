@@ -163,7 +163,7 @@ You are dropped into the koru repo. **Read the repo-root standards first** —
      sibling). The interaction is now locked.
    - **Diverges** → write a **pin** next to the checker it indicts (as `220_017` sits
      in `220_FLOW_CHECKER`): `MUST_RUN` + `expected.txt` for a false-reject/false-accept
-     you want fixed, or `MUST_FAIL` + `EXPECT` + `expected_error.txt` for a rejection
+     you want fixed, or `MUST_ERROR` + `EXPECT` + `expected_error.txt` for a rejection
      you want to *keep* but whose message is wrong. The comment states **intent** (the
      shape it guards, the invariant it pins) — **never** red/green state prose (harness
      rule; tag any scaffolding `RESIDUAL:`).

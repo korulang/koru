@@ -1,5 +1,5 @@
 // TEST: KORU100 - Unused binding must be an error
-// MUST_FAIL: unused binding 'f'
+// MUST_ERROR: unused binding 'f'
 //
 // When a user writes `| opened f |>` but never uses `f`, this is an error.
 // The correct syntax for discarding is `| opened _ |>`.

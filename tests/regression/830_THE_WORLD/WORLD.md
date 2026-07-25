@@ -124,7 +124,7 @@ crashes:
   NOT stuff the broken part into a proc body.** The dodge hides a hole we
   needed *and* mistranslates the idiom.
 - **Pin it.** Reduce to the smallest input that reproduces, and leave a
-  **Frontier**: a failing test (`MUST_FAIL` + `EXPECT` + `expected_error.txt`)
+  **Frontier**: a failing test (`MUST_ERROR` + `EXPECT` + `expected_error.txt`)
   with a precise description of expected vs. actual.
 - Note it in your writeup. The human + Claude fix it together afterward.
 
@@ -142,7 +142,7 @@ So when you get stuck:
   hatch to force a green, no quietly-different idiom that dodges the wall, no
   trimming the doorway down to whatever compiles. A forced finish mistranslates
   the idiom *and* buries the find.
-- **Pin the wall as a Frontier** (`MUST_FAIL` + `EXPECT` + `expected_error.txt`)
+- **Pin the wall as a Frontier** (`MUST_ERROR` + `EXPECT` + `expected_error.txt`)
   — the smallest input that reproduces where Koru can't yet say the idiom.
 - **Write the draft post anyway, describing what is actually DONE** — the
   doorway, the Koru shape that works up to the wall, and exactly where and why
@@ -172,7 +172,7 @@ section).
 | `expected.txt` | The deterministic output trace (the oracle) |
 
 A passing submission is auto-run by the regression suite forever and swept
-into the corpus. If the doorway walled out, pin a Frontier instead: `MUST_FAIL`
+into the corpus. If the doorway walled out, pin a Frontier instead: `MUST_ERROR`
 + `EXPECT` + an `expected_error.txt` pinning the diagnostic (see the regression
 conventions in the repo's `CLAUDE.md`). The `// Doorway:` comment in `input.k`
 is the in-repo catalog signal — it's how the next contestant greps which
@@ -211,7 +211,7 @@ happy.
 2. Koru does the work — phantom states / flows / obligations carry the
    structure, not a proc body. (An adversarial reviewer will check this.)
 3. Output is deterministic and captured in `expected.txt` (or, if stuck, a
-   Frontier is pinned with `MUST_FAIL` + `EXPECT` + `expected_error.txt`).
+   Frontier is pinned with `MUST_ERROR` + `EXPECT` + `expected_error.txt`).
 4. If it runs: verified live — corrupt `expected.txt` → fail, restore → pass.
 5. A **draft blog post** (`draft: true`) is filed on korulang.org, in the
    series voice, naming the Doorway and grounded in the test via

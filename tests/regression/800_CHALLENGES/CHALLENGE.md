@@ -120,7 +120,7 @@ crashes:
   Do NOT stuff the broken part into a proc body to make it disappear.** The
   dodge doesn't just waste the find — it actively *hides* a hole we needed.
 - **Pin it.** Reduce to the smallest input that reproduces, and leave a
-  **Frontier**: a failing test (`MUST_FAIL` + `EXPECT` + `expected_error.txt`)
+  **Frontier**: a failing test (`MUST_ERROR` + `EXPECT` + `expected_error.txt`)
   with a precise description of expected vs. actual.
 - Note it in your writeup. The human + Claude fix it together afterward —
   that joint fix is where the toolchain actually improves.
@@ -151,7 +151,7 @@ error, no run. So use the next free `800_NNN_<name>` slot (short, lowercase
 | `README.md` | The writeup (template below) — part of "done" |
 
 A passing submission is auto-run by the regression suite forever and
-swept into the corpus. For a Frontier, use `MUST_FAIL` + `EXPECT` + an
+swept into the corpus. For a Frontier, use `MUST_ERROR` + `EXPECT` + an
 `expected_error.txt` pinning the diagnostic instead (see the regression
 conventions in the repo's `CLAUDE.md`).
 

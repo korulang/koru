@@ -13,7 +13,7 @@
 // .module_annotations), so today the leniency it grants is program-WIDE: the
 // prototype flag flips exhaustiveness for helper's flow too, and the hole is
 // silently tolerated instead of rejected. This test pins that leak — it stays
-// MUST_FAIL-passed (no KORU022) until prototype scope is made per-module.
+// MUST_ERROR-passed (no KORU022) until prototype scope is made per-module.
 
 ~[prototype]
 ~import app/helper

@@ -582,7 +582,7 @@ day one — the AoC pattern pointed at performance.
 
 1. **Scalar singleton store** — `create` / `link` / `stored` / scalar `watch`;
    compiled broadcast (tap machinery, via the (f) centralizing subflow);
-   transplant-purity reject pin (MUST_FAIL); interceptors on create.
+   transplant-purity reject pin (MUST_ERROR); interceptors on create.
 2. **Plurality** — rows, CRUD lifecycle effects, row identity (O2 four-heads),
    query-watch with destructure+when, the (i) chain-envelope.
 3. **The planner** — projections → layout, maintained aggregates/views (T3,
@@ -630,14 +630,14 @@ day one — the AoC pattern pointed at performance.
   enter gated on `__site_line` (a query hears only inserts below it);
   mandatory punning enforced in projections.
 - 690_006_store_reject_watch_body_ambient_context — transplant-purity
-  rejection, koru-level diagnostic. MUST_FAIL (designed negative).
+  rejection, koru-level diagnostic. MUST_ERROR (designed negative).
   expected_error.txt is DOCUMENTARY (harness checks EXPECT CONTAINS lines
   when both are present).
 - 690_007_store_reject_take_leak — taken row cannot be leaked (synthesized
   `<game:item!>` obligation). REWRITTEN 2026-07-04 to handle addressing
   (`insert | row r`, `take(game[r])`) per the four-heads ruling — the
   original `index: 0` spelling was incoherent (position ≠ identity).
-  MUST_FAIL (designed negative), **GREEN AS DESIGNED (SHOWN
+  MUST_ERROR (designed negative), **GREEN AS DESIGNED (SHOWN
   2026-07-05)** — take's `| item` identity payload carries the
   synthesized `<game-item!>` obligation (spelling: unqualified
   store-name-prefixed state; the `game:item` colon form would collide
@@ -679,7 +679,7 @@ promoted to honest reds):**
 - 690_011_store_insert_capacity_full_branch — O10: declared capacity +
   `| full` exhaustion branch (capacity spelling PROVISIONAL).
 - 690_012_store_reject_cascade_cycle — T2/(d): cross-store interceptor
-  cycle rejected at comptime WITH THE CYCLE NAMED (MUST_FAIL).
+  cycle rejected at comptime WITH THE CYCLE NAMED (MUST_ERROR).
 - 690_013_store_cross_store_guard_closure — (j): taps follow the guard's
   free-name closure; writing the guard's store re-fires.
 - 690_014_store_stripe_scan_firing — (l)/O13: `stripe(game)` = the
@@ -704,10 +704,10 @@ promoted to honest reds):**
 
 All seven original 690 pins RAN 2026-07-04 (QA pass): every one fails at
 Stage A — `KORU002: module not found: 'std/store'` — honest red. Mechanism
-note (corrected after tracing regression_lib.sh): the MUST_FAILs stay red
+note (corrected after tracing regression_lib.sh): the MUST_ERRORs stay red
 via STAGE mismatch (EXPECT declares BACKEND_COMPILE_ERROR; the actual
 failure is frontend, so CONTAINS lines are never evaluated) — coarser than
 content mismatch, same no-lying-green outcome. Convention notes: (1)
 BACKEND_COMPILE_ERROR-for-Stage-C-rejections follows 400_149/330_053
 precedent (harness treats it identically to BACKEND_RUNTIME_ERROR); (2)
-expected_error.txt files on the two MUST_FAILs are DOCUMENTARY.
+expected_error.txt files on the two MUST_ERRORs are DOCUMENTARY.

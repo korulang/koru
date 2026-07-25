@@ -1,5 +1,5 @@
 // ============================================================================
-// Test 210_084: MUST_FAIL — required terminal branch covered only by a
+// Test 210_084: MUST_ERROR — required terminal branch covered only by a
 //                          `when`-guarded handler is incomplete coverage.
 //
 // `when` guards NARROW a handler — they pick out a subset of fires that

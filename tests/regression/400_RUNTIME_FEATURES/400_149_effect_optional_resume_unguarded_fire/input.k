@@ -1,4 +1,4 @@
-// MUST_FAIL — firing a value-resuming OPTIONAL arm WITHOUT a presence test.
+// MUST_ERROR — firing a value-resuming OPTIONAL arm WITHOUT a presence test.
 // Designed 2026-07-03: `! ?ask i64 -> i64` may be omitted by the consumer,
 // so an UNGUARDED fire binds a value that might not exist. No no-op can be
 // synthesized (a fn with a mandatory return and an empty body is not a

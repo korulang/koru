@@ -1,5 +1,5 @@
 // ============================================================================
-// Test 210_071: MUST_FAIL — effect handlers must precede terminal handlers
+// Test 210_071: MUST_ERROR — effect handlers must precede terminal handlers
 //                          at the consumer dispatch site.
 //
 // Per docs/EFFECT_BRANCHES.md the ordering rule applies at both event decl

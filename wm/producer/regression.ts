@@ -106,7 +106,7 @@ export function testIdOf(t: { categorySlug: string; directory: string }): string
 
 export function testDirOf(t: { categorySlug: string; directory: string }): string {
   // The on-disk test directory in the koru repo — the path the fix agent must NOT
-  // touch (it holds the frozen oracle: input.kz + expected.txt / MUST_FAIL).
+  // touch (it holds the frozen oracle: input.kz + expected.txt / MUST_ERROR).
   return `tests/regression/${t.categorySlug}/${t.directory}`;
 }
 

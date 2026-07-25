@@ -1,5 +1,5 @@
 // ============================================================================
-// Test 210_138: MUST_FAIL — empty constructor braces `=> done {}` are a relic
+// Test 210_138: MUST_ERROR — empty constructor braces `=> done {}` are a relic
 //
 // A payloadless branch constructs with its name alone: `~foo => done`.
 // The braced spelling `=> done {}` used to parse to a DIFFERENT tree than

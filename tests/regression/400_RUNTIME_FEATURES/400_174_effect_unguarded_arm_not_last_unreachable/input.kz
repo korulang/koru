@@ -1,4 +1,4 @@
-// MUST_FAIL — RED BY DESIGN (pinned 2026-07-25).
+// MUST_ERROR — RED BY DESIGN (pinned 2026-07-25).
 //
 // An unguarded `!` arm that is NOT LAST in an exclusive group silently
 // deletes every arm after it. This is `400_089` with the two arms in the

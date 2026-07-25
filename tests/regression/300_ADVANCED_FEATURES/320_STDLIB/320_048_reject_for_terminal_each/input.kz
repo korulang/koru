@@ -1,4 +1,4 @@
-// Test 320_048: MUST_FAIL — reject the pre-migration `for(...) | each |>` form.
+// Test 320_048: MUST_ERROR — reject the pre-migration `for(...) | each |>` form.
 //
 // `for`'s `each` is an EFFECT branch (declared `! each *` in std/control), so
 // handling it with a terminal `|` continuation is illegal. The compiler must

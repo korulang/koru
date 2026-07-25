@@ -1,4 +1,4 @@
-// MUST_FAIL: Function calls in branch constructors must be rejected
+// MUST_ERROR: Function calls in branch constructors must be rejected
 //
 // Branch constructors must be pure — no side effects. Calling
 // std.fmt.allocPrint inside a branch constructor violates this rule.

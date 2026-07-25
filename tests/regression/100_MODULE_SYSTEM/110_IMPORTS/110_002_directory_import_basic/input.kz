@@ -16,7 +16,7 @@
 //   verify that a cross-module event reference points to a ~pub event.
 //
 // TODO: Implement visibility checking in event resolution, then mark
-//       this test as MUST_FAIL.
+//       this test as MUST_ERROR.
 //
 // See test 110_003 for the SUCCESS case (with ~pub events)
 

@@ -20,7 +20,7 @@
 //
 // FIX: add the same `if (len + seg.len > buf.len) ...` guard the sibling at :468
 // has, at all four sites (reject with a clear "path too long" diagnostic, or grow
-// the buffer). Pin a >=256-byte-path [expand] test and flip this to MUST_FAIL/
+// the buffer). Pin a >=256-byte-path [expand] test and flip this to MUST_ERROR/
 // MUST_RUN when fixed.
 //
 // CONTEXT: [expand] + std/template:define is the LEGACY template mechanism. The

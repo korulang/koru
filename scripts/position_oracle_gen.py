@@ -28,7 +28,7 @@ SCAFFOLD_NAME = "position-oracle-setup"
 # tests with their own validation machinery, dual-target tests whose JS leg
 # would lack a |zig-only scaffold proc).
 EXCLUDING_MARKERS = (
-    "MUST_FAIL", "TODO", "SKIP", "BROKEN", "BENCHMARK",
+    "MUST_ERROR", "TODO", "SKIP", "BROKEN", "BENCHMARK",
     "PARSER_TEST", "EXPECT", "post.sh", "LANGUAGES",
 )
 EXCLUDING_CATEGORY_MARKERS = ("SKIP", "TODO", "BENCHMARK")

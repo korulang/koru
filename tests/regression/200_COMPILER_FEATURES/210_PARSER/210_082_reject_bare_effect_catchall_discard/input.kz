@@ -1,5 +1,5 @@
 // ============================================================================
-// Test 210_082: MUST_FAIL — bare `!? |> _` effect catch-all is
+// Test 210_082: MUST_ERROR — bare `!? |> _` effect catch-all is
 //                          pay-for-nothing and must be parser-rejected.
 //
 // Symmetric with 210_081 for effect branches. Without `!?`, unhandled

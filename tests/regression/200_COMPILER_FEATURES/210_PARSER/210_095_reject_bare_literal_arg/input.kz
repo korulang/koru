@@ -1,5 +1,5 @@
 // ============================================================================
-// Test 210_095: MUST_FAIL — a BARE literal argument must be REJECTED; a
+// Test 210_095: MUST_ERROR — a BARE literal argument must be REJECTED; a
 //   literal cannot be punned, so it REQUIRES an explicit label. Bare-side
 //   twin of 210_091's legal `echo(v: 5)`.
 //

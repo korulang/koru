@@ -1,4 +1,4 @@
-// TEST: MUST_FAIL — a bare (non-`~`) module-qualified line in a `.kz` file is a
+// TEST: MUST_ERROR — a bare (non-`~`) module-qualified line in a `.kz` file is a
 //       HOST LINE, not a Koru construct. It must NEVER be caught by the frontend.
 //
 // In `.kz`, Koru flow statements require the `~` prefix (a `.k` file auto-

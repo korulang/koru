@@ -3,7 +3,7 @@
 //       different path: parseBranchConstructor's field-value handling. Here the
 //       `@as(...` is never closed.
 //
-// MUST_FAIL: unbalanced
+// MUST_ERROR: unbalanced
 //
 // Currently the imbalance is SWALLOWED — koruc exits 0, emits no diagnostic, and
 // the malformed value produces an EMPTY program (no output) instead of a parse

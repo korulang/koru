@@ -1,4 +1,4 @@
-// Test 167: Import Depth Limit Enforcement (MUST_FAIL)
+// Test 167: Import Depth Limit Enforcement (MUST_ERROR)
 //
 // Tests that import paths are limited to 2 segments after the alias.
 // This enforces good architectural design by forcing extraction of

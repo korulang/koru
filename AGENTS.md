@@ -48,7 +48,7 @@
 ## Coding Style & Naming Conventions
 - Follow standard Zig style (4-space indent, lowerCamelCase for funcs/vars, UpperCamel for types). Do not run `zig fmt` unless explicitly requested.
 - Keep modules focused; prefer small helpers in `src/` over ad-hoc scripts.
-- Tests: regression tests are directories under `tests/regression/`, each with `input.kz` + markers (`MUST_FAIL`/`EXPECT`/`expected_error`). The tree is the structure — read it.
+- Tests: regression tests are directories under `tests/regression/`, each with `input.kz` + markers (`MUST_ERROR`/`EXPECT`/`expected_error`). The tree is the structure — read it.
 
 ## Testing Guidelines
 - Add a failing regression test first, then fix; ensure it passes in `./run_regression.sh`.

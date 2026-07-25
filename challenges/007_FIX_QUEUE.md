@@ -45,7 +45,7 @@ Positive (`MUST_RUN`, must go GREEN):
 - `330_107` full destructure `{h,g}` then discharge each scalar → clean.
 - `330_108` destructure `{h}` of `{h!, n:i64}` (drop plain `n`) then discharge → clean.
 
-Walls (`MUST_FAIL`, must assert correctly):
+Walls (`MUST_ERROR`, must assert correctly):
 - `330_102` discharge one, drop → KORU030 on the remainder. (already green — keep it green)
 - `330_103` partial destructure omits an *obligation* field → KORU030. (already green)
 - `330_109` double-discharge a field → **`already discharged`** (the `:2597` message), NOT

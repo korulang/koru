@@ -1,5 +1,5 @@
 // ============================================================================
-// Test 210_090: MUST_FAIL — explicit field label `x: x` in a branch
+// Test 210_090: MUST_ERROR — explicit field label `x: x` in a branch
 //                          constructor is forbidden because punning would
 //                          produce the same field name.
 //

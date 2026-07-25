@@ -1,4 +1,4 @@
-// Test 110: Transform Annotation Requires Comptime (MUST_FAIL)
+// Test 110: Transform Annotation Requires Comptime (MUST_ERROR)
 // Tests that [transform] annotation without [comptime] fails compilation
 //
 // Expected Error: "Event 'badTransform' has [transform] annotation but is missing [comptime]"

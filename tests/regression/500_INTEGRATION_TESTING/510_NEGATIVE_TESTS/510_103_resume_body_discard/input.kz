@@ -1,5 +1,5 @@
 // ============================================================================
-// Test 510_103: MUST_FAIL — handler body is `_` discard but the branch
+// Test 510_103: MUST_ERROR — handler body is `_` discard but the branch
 // declares a resume type. The handler fn must produce a value of the
 // resume type; a discard produces nothing.
 // ============================================================================

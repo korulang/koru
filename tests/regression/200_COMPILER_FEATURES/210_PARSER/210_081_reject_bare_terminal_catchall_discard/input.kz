@@ -1,5 +1,5 @@
 // ============================================================================
-// Test 210_081: MUST_FAIL — bare `|? |> _` catch-all is pay-for-nothing
+// Test 210_081: MUST_ERROR — bare `|? |> _` catch-all is pay-for-nothing
 //                          and must be parser-rejected.
 //
 // Without a catch-all, unhandled branches compile-time-elide: the handler

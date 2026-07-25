@@ -1,5 +1,5 @@
 // ============================================================================
-// Test 210_088: MUST_FAIL — explicit label `v: v` at a call site is forbidden
+// Test 210_088: MUST_ERROR — explicit label `v: v` at a call site is forbidden
 //                          because punning would produce the same name.
 //
 // The bare identifier `v`, when passed positionally, puns to `v: v` (the last

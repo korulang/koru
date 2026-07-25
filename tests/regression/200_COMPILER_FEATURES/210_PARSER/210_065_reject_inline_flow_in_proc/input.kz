@@ -1,4 +1,4 @@
-// TEST: MUST_FAIL — inline flows in proc bodies are rejected at parse time.
+// TEST: MUST_ERROR — inline flows in proc bodies are rejected at parse time.
 //
 // Status: feature is currently disabled. The parser short-circuits with
 // KORU003 before reaching the extraction path. Backend codegen for inline

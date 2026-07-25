@@ -1,5 +1,5 @@
 // TEST: Phantom obligation tracking across label jumps
-// STATUS: MUST_FAIL (fixed)
+// STATUS: MUST_ERROR (fixed)
 //
 // BUG: When a label jump (@loop) occurs, phantom obligations from the
 // current scope are not being checked. This allows resource leaks.

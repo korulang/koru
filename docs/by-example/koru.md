@@ -3033,7 +3033,7 @@ const std = @import("std");
 ### 235_loop_imported_module
 
 ```koru
-// Test 235: Loop with imported module event (MUST_FAIL - documents known bug)
+// Test 235: Loop with imported module event (MUST_ERROR - documents known bug)
 //
 // BUG: #loop module:event() fails with "Event not found"
 // when the event comes from an imported module.

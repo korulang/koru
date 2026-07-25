@@ -16,9 +16,9 @@ for dir in */; do
     echo "=== $name ==="
 
     if ! koruc input.kz > koruc.log 2>&1; then
-        # koruc failed — check if MUST_FAIL is declared
-        if [ -f MUST_FAIL ]; then
-            echo "  koruc failed as expected (MUST_FAIL)"
+        # koruc failed — check if MUST_ERROR is declared
+        if [ -f MUST_ERROR ]; then
+            echo "  koruc failed as expected (MUST_ERROR)"
             PASS=$((PASS+1))
             cd /work/tests
             continue
@@ -48,8 +48,8 @@ for dir in */; do
                 echo "  ✓ a.out ran successfully (no expected.txt to compare)"
             fi
         else
-            if [ -f MUST_FAIL ]; then
-                echo "  ✓ a.out failed as expected (MUST_FAIL)"
+            if [ -f MUST_ERROR ]; then
+                echo "  ✓ a.out failed as expected (MUST_ERROR)"
             else
                 echo "  ✗ a.out crashed"
                 sed 's/^/    /' actual.txt | tail -10

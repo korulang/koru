@@ -107,7 +107,7 @@ Produce 4–8 **probes**. For each, return:
   `SUCCESS` test path, or "none found". A shrug with no dig is malformed; this is a hypothesis
   handed to the arbiters, never a verdict.
 - `proposed_pin` — IF the arbiter later rules it real, the regression test that would capture it
-  (`input.kz`, `MUST_FAIL` + `EXPECT=FRONTEND_COMPILE_ERROR` + `expected_error`, or a positive
+  (`input.kz`, `MUST_ERROR` + `EXPECT=FRONTEND_COMPILE_ERROR` + `expected_error`, or a positive
   `MUST_RUN` + `expected`). Proposed, not applied.
 - `severity` — low / med / high.
 

@@ -1,4 +1,4 @@
-// Test 210_129: MUST_FAIL — a branch name can't be both a panic branch
+// Test 210_129: MUST_ERROR — a branch name can't be both a panic branch
 //                          (`| ?!oom`) and a required branch (`| oom`).
 //
 // `?!` is a KIND marker on a branch (like `?` optional), not a separate

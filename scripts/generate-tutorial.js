@@ -62,7 +62,7 @@ if (missing.length > 0) {
   const absent = missing.filter((n) => !negativeTests.has(n));
   if (negative.length > 0) {
     console.warn(
-      '[warn] tutorial.tests entries are NEGATIVE (MUST_FAIL) tests — excluded; ' +
+      '[warn] tutorial.tests entries are NEGATIVE (MUST_ERROR) tests — excluded; ' +
         'the tutorial only teaches what-to-do:'
     );
     for (const name of negative) console.warn(`         ${name}`);

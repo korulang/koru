@@ -1,5 +1,5 @@
 // ============================================================================
-// Test 210_085: MUST_FAIL — required effect branch covered only by a
+// Test 210_085: MUST_ERROR — required effect branch covered only by a
 //                          `when`-guarded handler is incomplete coverage.
 //
 // Symmetric with 210_084. The producer fires `! tick(i)` 0-or-more times;

@@ -1,4 +1,4 @@
-MUST_FAIL
+MUST_ERROR
 # Should error because no void disposal candidate exists
 # Error occurs at backend-exec when auto-discharge finds no valid candidate
 CONTAINS Auto-discharge failed

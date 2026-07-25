@@ -160,7 +160,7 @@ check_expected_patterns() {
 
 # Check EXPECT-file assertions against an actual-output file.
 # Recognized lines (after skipping blanks, #-comments, and one leading
-# category marker like SUCCESS / FRONTEND_COMPILE_ERROR / MUST_FAIL):
+# category marker like SUCCESS / FRONTEND_COMPILE_ERROR / MUST_ERROR):
 #   CONTAINS <substr>        — substr must appear in target (literal)
 #   NOT_CONTAINS <substr>    — substr must NOT appear in target
 #   STDOUT_CONTAINS:<substr> — substr must appear (alias of CONTAINS)
@@ -188,7 +188,7 @@ check_expect_assertions() {
         if [ "$seen_first_non_comment" = false ]; then
             seen_first_non_comment=true
             case "$line" in
-                SUCCESS|COMPILE_ONLY|FRONTEND_COMPILE_ERROR|BACKEND_COMPILE_ERROR|BACKEND_RUNTIME_ERROR|BACKEND_EXEC_ERROR|MUST_FAIL)
+                SUCCESS|COMPILE_ONLY|FRONTEND_COMPILE_ERROR|BACKEND_COMPILE_ERROR|BACKEND_RUNTIME_ERROR|BACKEND_EXEC_ERROR|MUST_ERROR)
                     continue ;;
             esac
         fi
@@ -263,7 +263,7 @@ expect_has_assertions() {
 # positive MUST_RUN tests that already PASSED the Zig baseline (SUCCESS, no
 # FAILURE). On any JS divergence it flips SUCCESS→FAILURE so the test fails iff
 # all listed languages don't agree. First increment scope: positive-run tests
-# only; MUST_FAIL / EXPECT-error tests stay Zig-only.
+# only; MUST_ERROR / EXPECT-error tests stay Zig-only.
 regression_check_js_equivalence() {
     local test_dir="$1"
     local TEST_NAME
@@ -582,6 +582,34 @@ regression_run_one_test() {
        && [ ! -f "$test_dir/MUST_RUN" ] && [ ! -f "$test_dir/EXPECT" ]; then
         echo -e "${RED}❌ Test has expected output but no MUST_RUN or EXPECT marker${NC}"
         echo "  This test expects output but won't run! Add MUST_RUN/EXPECT or remove the expected file"
+        rm -f "$test_dir/SUCCESS" "$test_dir/FAILURE"
+        echo "config-error" > "$test_dir/FAILURE"
+        FAILED_TESTS="$FAILED_TESTS $TEST_NAME(config-error)"
+        return 0
+    fi
+    # A test cannot both demand a clean run and demand a rejection.
+    if [ -f "$test_dir/MUST_ERROR" ] && [ -f "$test_dir/MUST_RUN" ]; then
+        echo -e "${RED}❌ Test carries both MUST_ERROR and MUST_RUN${NC}"
+        echo "  MUST_ERROR pins a program the compiler must REJECT; MUST_RUN pins one that"
+        echo "  must run clean. Keep exactly one — whichever the test actually pins."
+        rm -f "$test_dir/SUCCESS" "$test_dir/FAILURE"
+        echo "config-error" > "$test_dir/FAILURE"
+        FAILED_TESTS="$FAILED_TESTS $TEST_NAME(config-error)"
+        return 0
+    fi
+    # A MUST_ERROR that names no diagnostic passes on ANY failure — including one
+    # wholly unrelated to what it means to pin. That is how a red pin gets marked
+    # MUST_ERROR and laundered green, and how a pinned wall keeps passing long
+    # after its diagnostic has been replaced by a different error entirely.
+    # A negative test must say WHICH rejection it pins.
+    if [ -f "$test_dir/MUST_ERROR" ] \
+       && [ ! -s "$test_dir/expected_error.txt" ] \
+       && [ ! -f "$test_dir/expected_patterns.txt" ] \
+       && [ ! -f "$test_dir/post.sh" ] \
+       && ! grep -qE "^(CONTAINS|NOT_CONTAINS|STDOUT_CONTAINS:|ERROR_AT) " "$test_dir/EXPECT" 2>/dev/null; then
+        echo -e "${RED}❌ MUST_ERROR test pins no diagnostic — it passes on ANY failure${NC}"
+        echo "  Add one of: a non-empty expected_error.txt, expected_patterns.txt, post.sh,"
+        echo "  or a CONTAINS / ERROR_AT assertion in EXPECT. Pin the rejection you mean."
         rm -f "$test_dir/SUCCESS" "$test_dir/FAILURE"
         echo "config-error" > "$test_dir/FAILURE"
         FAILED_TESTS="$FAILED_TESTS $TEST_NAME(config-error)"
@@ -1164,28 +1192,28 @@ EOF
                 # Backend execution failed - check if this was expected
                 BACKEND_ERROR_EXPECTED=false
 
-                # Check for MUST_FAIL marker - negative tests that must fail to pass.
+                # Check for MUST_ERROR marker - negative tests that must fail to pass.
                 # The error reason MUST be pinned by one of: expected_patterns.txt,
                 # EXPECT with CONTAINS/NOT_CONTAINS assertions, expected_error.txt, or
                 # EXPECT=BACKEND_COMPILE_ERROR. Without a pin, a segfault or any
                 # unrelated failure would count as "expected" and mask real bugs.
-                if [ -f "$test_dir/MUST_FAIL" ]; then
+                if [ -f "$test_dir/MUST_ERROR" ]; then
                     if [ "$CHECK_LEAKS" = true ] && [ "$HAS_MEMORY_LEAK" = true ]; then
-                        echo -e "${RED}❌ Expected failure (MUST_FAIL) but memory leak detected ($LEAK_PHASE)${NC}"
+                        echo -e "${RED}❌ Expected failure (MUST_ERROR) but memory leak detected ($LEAK_PHASE)${NC}"
                         echo "leak-$LEAK_PHASE" > "$test_dir/FAILURE"
                         FAILED_TESTS="$FAILED_TESTS $TEST_NAME(leak-$LEAK_PHASE)"
                         LEAKED_TESTS=$((LEAKED_TESTS + 1))
                         BACKEND_ERROR_EXPECTED=true
                     elif [ -f "$test_dir/expected_patterns.txt" ]; then
                         if check_expected_patterns "$test_dir/expected_patterns.txt" "$test_dir/backend.err"; then
-                            echo -e "${GREEN}✅ PASS (MUST_FAIL + error matches expected_patterns.txt)${NC}"
+                            echo -e "${GREEN}✅ PASS (MUST_ERROR + error matches expected_patterns.txt)${NC}"
                             mark_test_passed "$test_dir"
                             PASSED_TESTS=$((PASSED_TESTS + 1))
                             if [ "$HAS_MEMORY_LEAK" = true ]; then
                                 LEAKED_TESTS=$((LEAKED_TESTS + 1))
                             fi
                         else
-                            echo -e "${RED}❌ MUST_FAIL failed at backend, but error did not match expected_patterns.txt${NC}"
+                            echo -e "${RED}❌ MUST_ERROR failed at backend, but error did not match expected_patterns.txt${NC}"
                             echo "  Patterns: $test_dir/expected_patterns.txt"
                             echo "  Actual:   $test_dir/backend.err"
                             echo "wrong-error" > "$test_dir/FAILURE"
@@ -1196,7 +1224,7 @@ EOF
                         check_expect_assertions "$test_dir/EXPECT" "$test_dir/backend.err"
                         case $? in
                             0)
-                                echo -e "${GREEN}✅ PASS (MUST_FAIL + EXPECT assertions matched)${NC}"
+                                echo -e "${GREEN}✅ PASS (MUST_ERROR + EXPECT assertions matched)${NC}"
                                 mark_test_passed "$test_dir"
                                 PASSED_TESTS=$((PASSED_TESTS + 1))
                                 if [ "$HAS_MEMORY_LEAK" = true ]; then
@@ -1205,7 +1233,7 @@ EOF
                                 BACKEND_ERROR_EXPECTED=true
                                 ;;
                             1)
-                                echo -e "${RED}❌ MUST_FAIL failed at backend, but EXPECT assertions did not match${NC}"
+                                echo -e "${RED}❌ MUST_ERROR failed at backend, but EXPECT assertions did not match${NC}"
                                 echo "  EXPECT:  $test_dir/EXPECT"
                                 echo "  Actual:  $test_dir/backend.err"
                                 echo "wrong-error" > "$test_dir/FAILURE"
@@ -1220,14 +1248,14 @@ EOF
                         # shape is too rich for a regex pin — multiple required
                         # substrings, absence-checks, semantic assertions.
                         if (cd "$test_dir" && KORU_INPUT="$(basename "$(test_entry "$test_dir")")" PATH="$SCRIPT_DIR/zig-out/bin:$PATH" bash post.sh) > "$test_dir/post.log" 2>&1; then
-                            echo -e "${GREEN}✅ PASS (MUST_FAIL + post.sh validated)${NC}"
+                            echo -e "${GREEN}✅ PASS (MUST_ERROR + post.sh validated)${NC}"
                             mark_test_passed "$test_dir"
                             PASSED_TESTS=$((PASSED_TESTS + 1))
                             if [ "$HAS_MEMORY_LEAK" = true ]; then
                                 LEAKED_TESTS=$((LEAKED_TESTS + 1))
                             fi
                         else
-                            echo -e "${RED}❌ MUST_FAIL post.sh validation failed${NC}"
+                            echo -e "${RED}❌ MUST_ERROR post.sh validation failed${NC}"
                             echo "  See $test_dir/post.log for details"
                             echo "post-validation" > "$test_dir/FAILURE"
                             FAILED_TESTS="$FAILED_TESTS $TEST_NAME(post-validation)"
@@ -1282,9 +1310,9 @@ EOF
 
                 # If error wasn't expected, mark as failure. We reach here with a backend
                 # error and no matched pin. A test that DECLARED it expects a backend error
-                # — via MUST_FAIL, or a bare BACKEND_COMPILE_ERROR marker that did NOT pass
+                # — via MUST_ERROR, or a bare BACKEND_COMPILE_ERROR marker that did NOT pass
                 # because a Koru diagnostic fired — must pin WHICH error.
-                if [ "$BACKEND_ERROR_EXPECTED" = false ] && { [ -f "$test_dir/MUST_FAIL" ] || { [ -f "$test_dir/EXPECT" ] && grep -q "^BACKEND_COMPILE_ERROR$" "$test_dir/EXPECT"; }; }; then
+                if [ "$BACKEND_ERROR_EXPECTED" = false ] && { [ -f "$test_dir/MUST_ERROR" ] || { [ -f "$test_dir/EXPECT" ] && grep -q "^BACKEND_COMPILE_ERROR$" "$test_dir/EXPECT"; }; }; then
                     echo -e "${RED}❌ Backend error has no pin${NC}"
                     echo "  Backend failed, but nothing pins WHICH error to expect."
                     echo "  A bare BACKEND_COMPILE_ERROR marker only covers raw host/Zig"
@@ -1606,8 +1634,8 @@ EOF
                 echo "leak-$LEAK_PHASE" > "$test_dir/FAILURE"
                 FAILED_TESTS="$FAILED_TESTS $TEST_NAME(leak-$LEAK_PHASE)"
                 LEAKED_TESTS=$((LEAKED_TESTS + 1))
-            elif [ -f "$test_dir/MUST_FAIL" ]; then
-                echo -e "${RED}❌ MUST_FAIL test passed unexpectedly — expected failure didn't fire${NC}"
+            elif [ -f "$test_dir/MUST_ERROR" ]; then
+                echo -e "${RED}❌ MUST_ERROR test passed unexpectedly — expected failure didn't fire${NC}"
                 echo "must-fail-passed" > "$test_dir/FAILURE"
                 FAILED_TESTS="$FAILED_TESTS $TEST_NAME(must-fail-passed)"
             else
@@ -1641,8 +1669,8 @@ EOF
                         echo "leak-$LEAK_PHASE" > "$test_dir/FAILURE"
                         FAILED_TESTS="$FAILED_TESTS $TEST_NAME(leak-$LEAK_PHASE)"
                         LEAKED_TESTS=$((LEAKED_TESTS + 1))
-                    elif [ -f "$test_dir/MUST_FAIL" ]; then
-                        echo -e "${RED}❌ MUST_FAIL test passed unexpectedly — expected failure didn't fire${NC}"
+                    elif [ -f "$test_dir/MUST_ERROR" ]; then
+                        echo -e "${RED}❌ MUST_ERROR test passed unexpectedly — expected failure didn't fire${NC}"
                         echo "must-fail-passed" > "$test_dir/FAILURE"
                         FAILED_TESTS="$FAILED_TESTS $TEST_NAME(must-fail-passed)"
                     else
@@ -1691,8 +1719,8 @@ EOF
                     echo "leak-$LEAK_PHASE" > "$test_dir/FAILURE"
                     FAILED_TESTS="$FAILED_TESTS $TEST_NAME(leak-$LEAK_PHASE)"
                     LEAKED_TESTS=$((LEAKED_TESTS + 1))
-                elif [ -f "$test_dir/MUST_FAIL" ]; then
-                    echo -e "${RED}❌ MUST_FAIL test passed unexpectedly — expected failure didn't fire${NC}"
+                elif [ -f "$test_dir/MUST_ERROR" ]; then
+                    echo -e "${RED}❌ MUST_ERROR test passed unexpectedly — expected failure didn't fire${NC}"
                     echo "must-fail-passed" > "$test_dir/FAILURE"
                     FAILED_TESTS="$FAILED_TESTS $TEST_NAME(must-fail-passed)"
                 else

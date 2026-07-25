@@ -1,5 +1,5 @@
 // Test 8211: Bare ~proc declarations are unresolvable when called.
-// MUST_FAIL: KORU110 - event 'compute' is called but its proc has no |variant tag.
+// MUST_ERROR: KORU110 - event 'compute' is called but its proc has no |variant tag.
 //
 // Phase 1 of MULTI_VARIANT_PLAN.md (variant-mandatory): naked `~proc name { ... }`
 // remains parseable but unresolvable. A call site that finds only bare procs

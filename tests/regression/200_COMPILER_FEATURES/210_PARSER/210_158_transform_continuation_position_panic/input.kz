@@ -235,7 +235,7 @@ const std = @import("std");
 // panic with a koru diagnostic naming the continuation-position constraint (this
 // pin goes GREEN — the CONTAINS assertion is satisfied). Capability rung: make
 // the transform actually compose in continuation position, then flip
-// MUST_FAIL -> MUST_RUN with expected.txt.
+// MUST_ERROR -> MUST_RUN with expected.txt.
 ~tor seed {} -> i64
 ~proc seed|zig {
     return 1;

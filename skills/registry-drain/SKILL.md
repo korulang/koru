@@ -36,7 +36,7 @@ flagged code needs a **disposition**. This is how you decide and apply it.
      `#`-prefixed rationale line above it.
    - **Wire (bug):** add a `.CODE` emit at the detector site (or an `errors.zig` helper like
      `moduleNotFound → .KORU002`), then pin a regression test:
-     `tests/regression/<CLUSTER>/<NNN_name>/` with `input.kz`, `MUST_FAIL`,
+     `tests/regression/<CLUSTER>/<NNN_name>/` with `input.kz`, `MUST_ERROR`,
      `EXPECT=FRONTEND_COMPILE_ERROR`, `expected_error` containing the code. Run `./run_regression.sh <id>`.
    - **Consolidate:** point the duplicate's call sites at the kept code; reserve or delete the husk.
 
