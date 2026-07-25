@@ -69,15 +69,23 @@ match the first, before concluding the model is positional.
 
 Nested projection (`r.outer.h`) is untracked, one rung further out.
 
-Two questions the feature raises stay open and are Lars's to rule. When two
-fields alias one allocation — `.{ .h = h, .g = h }` from a `|zig` body Koru never
-reads — each field discharges independently and the binary double-frees; the
-phantom model is name-token-based rather than pointer-identity-based by choice,
-so this may be an inherent boundary of the chosen model rather than a defect.
-What is not in question is that nothing discloses the boundary and no pin probes
-it. Separately, whether a discharge diagnostic should name the argument the user
-wrote (`s.h`) rather than the parameter it bound to (`x`) is unsettled; `330_109`
-pins the neighbouring distinction between "already discharged" and "carries no
+**Aliasing is the proc's business, not Koru's** (Lars, 2026-07-25). When two
+fields hold one pointer — `.{ .h = h, .g = h }` from a `|zig` body — each
+discharges independently and Koru accepts it. That is not a hole in obligation
+tracking; it is where obligation tracking *ends*, and it ends there because two
+earlier choices already put it there: Koru never reads a `|zig` body, and the
+phantom model tracks name tokens rather than pointer identity. Catching this
+would mean abandoning one of those, which is a different language rather than a
+fix. `proc` is the unsafe escape hatch and this is what unsafe buys you.
+
+The ruling changed what the finding *was* — a defect became a boundary — and a
+boundary nobody can see is worth almost nothing, so it is now pinned green by
+`330_117`. That pin is the disclosure: it states where tracking stops, and if we
+ever move the line it flips loudly instead of silently widening.
+
+Still unsettled: whether a discharge diagnostic should name the argument the user
+wrote (`s.h`) rather than the parameter it bound to (`x`). `330_109` pins the
+neighbouring distinction between "already discharged" and "carries no
 obligation."
 
 **Prior art (why this is distinctive):** pieces exist — Rust's partial moves

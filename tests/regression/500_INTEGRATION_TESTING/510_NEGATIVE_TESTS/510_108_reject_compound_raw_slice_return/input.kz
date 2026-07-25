@@ -1,0 +1,16 @@
+// Pins that the raw-slice wall is STRUCTURAL, not textual. 510_104 rejects a
+// bare `-> []const u8`; the same slice one layer in must be rejected for the
+// same reason. `string` is the surface text type in every position, and a
+// compound is still a surface type.
+//
+// The guarded shape is the wall's method rather than its verdict: the check is
+// string equality against the literal "[]const u8", so anything that merely
+// CONTAINS the slice — `[][]const u8`, and presumably `?[]const u8` and
+// `*[]const u8` — walks past it and compiles clean to a binary. A wall matched
+// by spelling is not a wall; it is a spell-checker.
+//
+// Deferred on purpose (Lars, 2026-07-25): the fix rides with the wider sweep
+// over host syntax reaching the surface, not as a patch to one of three
+// std.mem.eql sites. This pin holds the gap on the board until that sweep runs,
+// so the deferral is visible rather than remembered.
+~tor echo { msg: string } -> [][]const u8

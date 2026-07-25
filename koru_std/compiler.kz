@@ -918,11 +918,16 @@ pub const CompilerContext = struct {
         //   .unknown   — no active target owns it; leave for the downstream KORU040
         //   .resolved  — exactly one target owns it; restamped in place here
         //   .ambiguous — two or more own it; caller raises the KORU140 pick-wall
+        //
+        // `.ambiguous` carries EVERY owner, not a pair. A pick-wall exists to
+        // hand the author the whole set to choose from; naming a subset means
+        // you qualify to escape the reported collision and the owner it never
+        // mentioned ambushes you on the next build (641_014).
         const Outcome = union(enum) {
             local,
             unknown,
             resolved,
-            ambiguous: struct { a: []const u8, b: []const u8 },
+            ambiguous: []const []const u8,
         };
 
         fn restamp(inv: *ast_mod.Invocation, targets: []const []const u8, main: []const u8, set: *std.StringHashMap(void), a: std.mem.Allocator) Outcome {
@@ -931,20 +936,15 @@ pub const CompilerContext = struct {
             if (!std.mem.eql(u8, mq, main)) return .unknown; // already qualified — not ours
             const seg = inv.path.segments[inv.path.segments.len - 1];
             if (has(set, main, seg, a)) return .local; // resolves locally — never shadow
-            var first: ?[]const u8 = null;
-            var second: ?[]const u8 = null;
+            var owners = std.ArrayList([]const u8){};
             for (targets) |t| {
-                if (has(set, t, seg, a)) {
-                    if (first == null) {
-                        first = t;
-                    } else if (second == null) {
-                        second = t;
-                    }
-                }
+                if (has(set, t, seg, a)) owners.append(a, t) catch return .unknown;
             }
-            if (first == null) return .unknown; // unknown in every target too
-            if (second) |b| return .{ .ambiguous = .{ .a = first.?, .b = b } };
-            inv.path.module_qualifier = a.dupe(u8, first.?) catch return .unknown;
+            if (owners.items.len == 0) return .unknown; // unknown in every target too
+            if (owners.items.len > 1) return .{ .ambiguous = owners.toOwnedSlice(a) catch return .unknown };
+            const only = owners.items[0];
+            owners.deinit(a);
+            inv.path.module_qualifier = a.dupe(u8, only) catch return .unknown;
             return .resolved;
         }
 
@@ -952,9 +952,19 @@ pub const CompilerContext = struct {
         // into ctx.errors — surfaced (and halted on) at the analysis boundary.
         fn resolveInv(inv: *ast_mod.Invocation, targets: []const []const u8, main: []const u8, set: *std.StringHashMap(void), a: std.mem.Allocator, errs: anytype, loc: anytype) void {
             switch (restamp(inv, targets, main, set, a)) {
-                .ambiguous => |amb| {
+                .ambiguous => |owners| {
+                    defer a.free(owners);
                     const seg = inv.path.segments[inv.path.segments.len - 1];
-                    const msg = std.fmt.allocPrint(a, "error[KORU140]: bare name '{s}' resolves against more than one opened vocabulary ('{s}' and '{s}') — qualify the call explicitly to pick one", .{ seg, amb.a, amb.b }) catch return;
+                    // Name every owner: `'a' and 'b'`, `'a', 'b' and 'c'`, ...
+                    var listing = std.ArrayList(u8){};
+                    defer listing.deinit(a);
+                    for (owners, 0..) |owner, i| {
+                        if (i > 0) listing.appendSlice(a, if (i + 1 == owners.len) " and " else ", ") catch return;
+                        listing.append(a, '\'') catch return;
+                        listing.appendSlice(a, owner) catch return;
+                        listing.append(a, '\'') catch return;
+                    }
+                    const msg = std.fmt.allocPrint(a, "error[KORU140]: bare name '{s}' resolves against more than one opened vocabulary ({s}) — qualify the call explicitly to pick one", .{ seg, listing.items }) catch return;
                     errs.append(a, .{ .message = msg, .location = .{
                         .file = loc.file,
                         .line = @intCast(loc.line),

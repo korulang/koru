@@ -1,0 +1,27 @@
+// Pins the BOUNDARY, not a bug: two obligation fields holding the SAME pointer
+// discharge independently, and Koru accepts it. That is `proc` unsafety working
+// as designed — Koru never reads a `|zig` body, and the phantom model tracks
+// name tokens rather than pointer identity, so nothing here can see that `h`
+// and `g` are one thing. A proc that wants to alias is allowed to.
+//
+// The guarded shape is the acceptance itself. Before this pin the boundary was
+// real but undisclosed: nothing in the compiler, the docs, or the suite said
+// where obligation tracking stops. If we ever move the line — pointer-identity
+// tracking, or reading proc bodies — this test is the one that flips, and it
+// flips loudly.
+//
+// The handle is a module-level slot precisely so the pin is safe to run. Swap
+// in an allocator and a real `destroy` and this same program double-frees; that
+// consequence is the proc author's to carry, which is the whole point.
+~import std/io
+const std = @import("std");
+const Handle = struct { n: i32 };
+var slot: Handle = .{ .n = 0 };
+
+~tor make-alias { id: usize } -> { h: *Handle<owned!>, g: *Handle<owned!> }
+~proc make-alias|zig { return .{ .h = &slot, .g = &slot }; }
+
+~tor retire { x: *Handle<!owned> }
+~proc retire|zig { x.n += 1; }
+
+~make-alias(id: 1): s |> retire(x: s.h): _ |> retire(x: s.g): _ |> std/io:print.ln("retired {{ slot.n:d }} times")
