@@ -36,15 +36,24 @@ everything — and where there is no reporter.
   exactly the kind of decl-level check that looks like it belongs in a *shape*
   checker.
 
-## Open, and it is the uncomfortable one
+## The duplicate is what covers the gap
 
-If a callee's declaration is invisible, a check that silently returns on a
-missed lookup is not checking anything for cross-module calls. Branch coverage
-is the case to measure first: `510_109` proved KORU022 reaches mid-chain, but
-its fixture declares the callee in the same file. Whether a branching tor
-imported from another module has its coverage enforced at all is **unmeasured**,
-and the shape of this belief says the honest prior is that it does not.
+The obvious worry — that a check returning quietly on a missed lookup enforces
+nothing across modules — was measured and is **false for branch coverage**. A
+branching tor imported from another module, with an arm unhandled, is refused.
 
-That would make the reach work of 2026-07-26 correct and incomplete in the same
-way twice over: reach along a chain, fixed; reach across a file boundary, never
-examined. One probe settles it and it has not been run.
+But not by the checker. The wording gives it away: what fires is the
+auto-discharge inserter's KORU022, the *second* implementation of that rule,
+which runs after the import fold and sees the merged program. The flow checker's
+copy structurally cannot reach that program, and does not.
+
+So the duplicate implementation that hid a reach gap
+([[frag-the-minimal-test-of-a-wall-cannot-test-its-reach]]) is also the only
+thing enforcing that rule across module boundaries. Collapsing the two into the
+checker would silently delete cross-module coverage; collapsing them into the
+inserter is the direction that keeps it. That is worth knowing before anyone
+tidies them together on the grounds that one error code should have one voice.
+
+It also answers where a whole-program check can stand: **the inserter runs
+post-merge and has a reporter.** KORU112 has a home; it was never that no pass
+existed, only that neither pass named "checker" was it.
