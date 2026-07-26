@@ -102,8 +102,8 @@ Relocating a body is not a semantics-preserving edit, and assuming it was cost
 one wrong reading already: a source-block-carrying transform moved into a tor
 body met a parser refusal that had nothing to do with the boundary, because the
 subflow-DEFINITION path stitched only `|>` lines onto the head and left a block
-that opened there unterminated. Ruled legal and fixed (210_166). A `|>` tail
-after such a block is still dropped in silence — 210_167, entry file, no module
+that opened there unterminated. Ruled legal and fixed (210_168). A `|>` tail
+after such a block is still dropped in silence — 210_169, entry file, no module
 involved.
 
 That gap was worth more than the mirror that found it: it blocked writing the
@@ -140,7 +140,7 @@ several arms often die at one gate. Neither number is the number of bugs.
   bookkeeping-not-re-run class (field) are two classes or one seen twice.
   Unknown until both are fixed; the pins hold the question open.
 - Why a `|>` tail after a multi-line source block on a definition line is
-  dropped without a diagnostic (210_167). Silent truncation of a written step is
+  dropped without a diagnostic (210_169). Silent truncation of a written step is
   worse than the refusal it replaced.
 - Whether any library breaks on the boundary for a reason with no entry-file
   analogue at all — the remaining mirrors decide this, and a further fault class

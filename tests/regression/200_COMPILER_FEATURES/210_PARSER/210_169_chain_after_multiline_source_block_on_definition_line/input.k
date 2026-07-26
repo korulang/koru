@@ -1,5 +1,5 @@
 // A `|>` chain continuing after a MULTI-LINE source block that opened on a
-// subflow-definition line. 210_166 pins the block itself; this pins the tail
+// subflow-definition line. 210_168 pins the block itself; this pins the tail
 // after its closing brace.
 //
 // Entry file, no module involved. The top-level form of exactly this chain works
