@@ -36,6 +36,21 @@ pins its own diagnostic; read them there rather than trusting a summary here.
 with no synthesizing library and stay green, which is what makes a red
 attributable to the library rather than to modules in general.
 
+## Invasiveness does not predict exposure; minting a name does
+
+The intuition that a transform which rewrites more is more likely to break the
+boundary is wrong, and it was wrong twice in a row about the same transform.
+`std/taps:tap` walks the entire program, wraps the continuations of every
+matching transition, and then erases its own declaration — nothing else on the
+wall reaches that far — and it relocates green. Meanwhile `std/kernel:init`,
+which appends one init tor and calls it, fails.
+
+The line is not how much a transform rewrites. It is whether it MINTS A NAME
+that something else has to resolve later. Rewriting in place, however sweeping,
+carries no name across a boundary; appending a declaration and referring to it
+does. That is also why the site-local class relocates for free and why
+`liquid_template:emit`, bare keyword and all, was never at risk.
+
 ## Why the distinction is load-bearing
 
 The proposed remedy is an authoring surface that makes the namespace
