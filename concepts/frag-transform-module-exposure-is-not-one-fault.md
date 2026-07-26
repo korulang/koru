@@ -61,14 +61,31 @@ with them. In this area, reasoning off a read has now been wrong every single
 time it has been tried; the same note appears in the store work that preceded
 it. Probe, change one variable, and let the diagnostic name the fault class.
 
+## The instrument also finds things that are not about modules
+
+Relocating a body is not a semantics-preserving edit, and assuming it was cost
+one wrong reading already: a source-block-carrying transform moved into a tor
+body meets a parser refusal that has nothing to do with the boundary, because a
+subflow-DEFINITION line cannot open a source block anywhere on it. Held by
+115_017 in the entry file, where no module exists to blame. The same construct
+relocates cleanly once the block closes on its line.
+
+So every red on this wall needs its entry-file twin before it counts as a module
+finding. That is not wall bureaucracy — it is the difference between a fault
+list and a list of things that happened to be red at the same time.
+
 ## Open
 
 - Whether the appended-declaration-lost class (regex) and the
   bookkeeping-not-re-run class (field) are two classes or one seen twice.
   Unknown until both are fixed; the pins hold the question open.
+- Whether a source block may open on a subflow-definition line at all. Unruled,
+  and the reading decides whether 115_017 is a parser gap or a missing negative
+  wall. Under either reading its diagnostic is wrong: it reports a missing
+  closing brace for balanced braces.
 - Whether any library breaks on the boundary for a reason with no entry-file
-  analogue at all — the remaining mirrors decide this, and a fourth fault class
-  would further weaken the single-surface remedy.
+  analogue at all — the remaining mirrors decide this, and a further fault class
+  would weaken the single-surface remedy again.
 
 Related: `frag-milestone-suites-are-instruments` (the gallery split is what
 surfaced this hole, then dropped off the work list exactly as that belief
