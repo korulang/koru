@@ -1,0 +1,60 @@
+// PINS: auto-discharge must DECLINE when a dropped obligation has more than
+// one legal disposer, and report the choice instead of making it.
+//
+// `*Pending<open!>` here can be satisfied two ways, and they mean opposite
+// things: `drain` carries the work forward, `cancel` abandons it. Choosing
+// between them is a semantic decision that belongs to the author. With the
+// pass disabled the compiler already says so, naming both — "Call one of:
+// drain, cancel" — so the ambiguity is known at the point of insertion.
+//
+// The wall this pins: under DEFAULT settings that same ambiguity must reach
+// the author as KORU030, not be resolved silently. No new diagnostic is
+// wanted — KORU030's existing "Call one of:" wording is the right sentence;
+// what is pinned is that auto-discharge stops instead of picking.
+//
+// Sibling: 330_025 pins the same KORU030 under `--auto-discharge=disable`
+// with a SINGLE disposer, where auto-insertion is unambiguous and correct.
+// KORU032 is the neighbouring refusal (outer-scope resource inside a loop).
+//
+// Grammar grounded against 330_074 (two continuation arms re-minting) and
+// raylib/index.kz:150 (`frames`, obligation re-minted through `| done`).
+const std = @import("std");
+const Pending = struct { n: i32 };
+const Multi = struct { n: i32 };
+
+~tor start {} -> *Pending<open!>
+~proc start|zig {
+    const p = std.heap.page_allocator.create(Pending) catch unreachable;
+    p.* = .{ .n = 0 };
+    return p;
+}
+
+// Consumes the pending obligation, re-issues exactly one on each arm — but of
+// two different types, with two different disposers downstream.
+~tor drain { p: *Pending<!open> }
+| pending *Pending<open!>
+| done *Multi<owned!>
+~proc drain|zig {
+    p.n += 1;
+    if (p.n < 2) return .{ .pending = p };
+    const m = std.heap.page_allocator.create(Multi) catch unreachable;
+    m.* = .{ .n = p.n };
+    std.heap.page_allocator.destroy(p);
+    return .{ .done = m };
+}
+
+~tor cancel { p: *Pending<!open> }
+~proc cancel|zig {
+    std.heap.page_allocator.destroy(p);
+}
+
+~tor close { m: *Multi<!owned> }
+~proc close|zig {
+    std.heap.page_allocator.destroy(m);
+}
+
+// The `pending` arm drops its re-minted obligation on the floor. Two disposers
+// are in scope for it; the compiler must say so rather than elect one.
+~start(): p |> drain(p)
+| pending _ |> _
+| done m |> close(m)
