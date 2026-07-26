@@ -27,6 +27,39 @@ source "$SCRIPT_DIR/scripts/regression_lib.sh"
 export KORU_STDLIB="$PWD/koru_std"
 export KORU_PATH="$PWD"
 
+# The coherence watchers, in one place because BOTH run paths must reach them.
+# They lived inline at the end of the sequential path, past the point parallel
+# mode exits — so `--parallel`, which is the documented way to run the suite,
+# skipped every one of them. A watcher the normal path cannot reach does not
+# block anything, however loudly its comment says "blocking": prose-check's
+# check A was failing unnoticed, and its duplicate-test-id check could not have
+# caught the 210_166 collision two sessions created.
+#
+# Appends to FAILED_TESTS, which both paths already consult before exiting.
+run_coherence_watchers() {
+    # Diagnostic-code drift in src/errors.zig — fires when a code is
+    # emitted-but-undeclared, declared-but-never-emitted, or pinned-but-undeclared.
+    # Cannot lie: it runs the real scan over real source.
+    echo ""
+    echo -e "${BLUE}Running registry-coherence watcher...${NC}"
+    if ! zig run "$SCRIPT_DIR/scripts/registry_check.zig"; then
+        FAILED_TESTS="$FAILED_TESTS registry-coherence"
+        echo -e "${RED}❌ registry-coherence watcher fired (diagnostic-code drift)${NC}"
+    else
+        echo -e "${GREEN}✅ registry coherent${NC}"
+    fi
+
+    # No-prose / pipeline coherence (enforcement E). Blocks on A (a generated file
+    # was hand-edited), B (prose re-entered the config), C (duplicate NNN_NNN test
+    # ids), D (a comptime transform with no module mirror).
+    echo ""
+    echo -e "${BLUE}Running prose-check (no-prose pipeline coherence)...${NC}"
+    if ! bash "$SCRIPT_DIR/scripts/prose_check.sh"; then
+        FAILED_TESTS="$FAILED_TESTS prose-check"
+        echo -e "${RED}❌ prose-check fired — see the failing check above${NC}"
+    fi
+}
+
 # Initialize counters
 TOTAL_TESTS=0
 PASSED_TESTS=0
@@ -948,7 +981,13 @@ PY
         echo ""
     fi
 
-    if [ "$FAILED_COUNT" -gt 0 ] || [ "$BROKEN_TESTS" -gt 0 ] || [ "$NO_MARKER_COUNT" -gt 0 ]; then
+    # Same full-run gate as the snapshot above: a filtered run asks about a few
+    # tests and has no business blocking on corpus-wide coherence.
+    if [ ${#TEST_FILTERS[@]} -eq 0 ] && [ "$SMOKE_MODE" = false ]; then
+        run_coherence_watchers
+    fi
+
+    if [ "$FAILED_COUNT" -gt 0 ] || [ "$BROKEN_TESTS" -gt 0 ] || [ "$NO_MARKER_COUNT" -gt 0 ] || [ -n "$FAILED_TESTS" ]; then
         echo -e "${RED}❌ Some tests failed${NC}"
         exit 1
     fi
@@ -1173,28 +1212,12 @@ if [ ${#TEST_FILTERS[@]} -eq 0 ] && [ "$SMOKE_MODE" = false ]; then
     fi
 fi
 
-# Registry-coherence watcher — diagnostic-code drift in src/errors.zig.
-# FACT-only watcher (scripts/registry_check.zig): fires when a diagnostic code is
-# emitted-but-undeclared, declared-but-never-emitted, or pinned-but-undeclared.
-# This CANNOT lie either — it runs the real scan over real source.
-echo ""
-echo -e "${BLUE}Running registry-coherence watcher...${NC}"
-if ! zig run "$SCRIPT_DIR/scripts/registry_check.zig"; then
-    FAILED_TESTS="$FAILED_TESTS registry-coherence"
-    echo -e "${RED}❌ registry-coherence watcher fired (diagnostic-code drift)${NC}"
-else
-    echo -e "${GREEN}✅ registry coherent${NC}"
+# Gated the same way as the parallel path, and as the snapshot: a filtered run
+# answers a question about a few tests. Ungated, prose-check's regeneration step
+# also left the tree dirty after every single-test invocation.
+if [ ${#TEST_FILTERS[@]} -eq 0 ] && [ "$SMOKE_MODE" = false ]; then
+    run_coherence_watchers
 fi
-
-# No-prose / pipeline coherence watcher (enforcement E). Blocks on A (a generated file was
-# hand-edited), B (prose re-entered the config), and C (duplicate NNN_NNN test ids).
-echo ""
-echo -e "${BLUE}Running prose-check (no-prose pipeline coherence)...${NC}"
-if ! bash "$SCRIPT_DIR/scripts/prose_check.sh"; then
-    FAILED_TESTS="$FAILED_TESTS prose-check"
-    echo -e "${RED}❌ prose-check fired — a generated file was hand-edited, or prose re-entered the config${NC}"
-fi
-
 # Exit with appropriate code
 # Success = all regression tests passed AND (unit tests passed OR skipped)
 if [ -z "$FAILED_TESTS" ]; then

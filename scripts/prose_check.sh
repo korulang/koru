@@ -65,9 +65,85 @@ else
   fail=1
 fi
 
+# --- D: every koru_std comptime transform is accounted for by the mirror wall -
+# A transform's subject living in a module is a position the corpus never tested,
+# because in the entry file the file-derived name, the import-derived logical
+# name and the emitted `main_module` are the same word. Five libraries shipped
+# the same class of fault behind that collapse. The 115 cluster mirrors each
+# transform; this check is what keeps it a wall rather than a snapshot of one
+# afternoon — a new transform fails the suite until someone decides, in writing,
+# whether it has a mirror or why it cannot.
+#
+# Enforced over koru_std only: koru-libs is a sibling repo and may be absent.
+D=$(python3 - <<'PY'
+import re, pathlib, sys
+
+root = pathlib.Path('.')
+manifest = root / 'tests/regression/100_MODULE_SYSTEM/115_COMPTIME_MIRROR/COVERAGE.tsv'
+if not manifest.exists():
+    print(f"MISSING-MANIFEST\t{manifest}")
+    sys.exit()
+
+REASONS = {'no-green-usage', 'pins-unimplemented-surface', 'tested-in-koru-libs'}
+
+rows = {}
+for line in manifest.read_text().splitlines():
+    line = line.rstrip()
+    if not line or line.lstrip().startswith('#'):
+        continue
+    parts = line.split('\t')
+    if len(parts) != 2 or not parts[1].strip():
+        print(f"MALFORMED-ROW\t{line}")
+        continue
+    rows[parts[0].strip()] = parts[1].strip()
+
+# The declaration form is `~[...comptime|transform...]pub tor NAME {`, with an
+# optional space before `pub`. Commented-out declarations do not count.
+decl = re.compile(r'^~\[[^\]]*\bcomptime\|transform\b[^\]]*\]\s*pub\s+tor\s+([A-Za-z0-9_.-]+)')
+declared = set()
+for f in sorted((root / 'koru_std').glob('*.kz')):
+    lib = f.stem
+    for line in f.read_text(errors='replace').splitlines():
+        m = decl.match(line.strip())
+        if m:
+            declared.add(f"{lib}:{m.group(1)}")
+
+for t in sorted(declared - rows.keys()):
+    print(f"UNDECLARED\t{t}")
+
+# A row naming a koru_std lib that no longer declares it is a stale row. Rows for
+# other libs (vaxis, sqlite3) are out of scope and skipped.
+std_libs = {f.stem for f in (root / 'koru_std').glob('*.kz')}
+for t in sorted(rows.keys() - declared):
+    if t.split(':', 1)[0] in std_libs:
+        print(f"STALE\t{t}")
+
+# A mirror must name a test directory that exists, anywhere in the corpus — the
+# store pair points at 690_079, outside the cluster.
+dirs = {p.name for p in root.glob('tests/regression/**/') if p.is_dir()}
+for t, d in sorted(rows.items()):
+    if d in REASONS:
+        continue
+    if d not in dirs:
+        print(f"NO-SUCH-TEST\t{t}\t{d}")
+PY
+)
+if [ -z "$D" ]; then
+  nD=$(grep -cvE '^\s*(#|$)' tests/regression/100_MODULE_SYSTEM/115_COMPTIME_MIRROR/COVERAGE.tsv)
+  echo -e "  ${GREEN}✓ D${NC} all koru_std comptime transforms accounted for by the mirror wall (${nD} rows)"
+else
+  echo -e "  ${RED}✗ D${NC} the comptime mirror wall is out of date:"
+  printf '%s\n' "$D" | sed 's/^/      /'
+  echo "      UNDECLARED   — a new transform with no row. Add a 115_* mirror, or a reason."
+  echo "      STALE        — a row for a transform koru_std no longer declares. Remove it."
+  echo "      NO-SUCH-TEST — a row naming a test directory that does not exist."
+  echo "      Manifest: tests/regression/100_MODULE_SYSTEM/115_COMPTIME_MIRROR/COVERAGE.tsv"
+  fail=1
+fi
+
 echo ""
 if [ "$fail" -ne 0 ]; then
   echo -e "${RED}prose-check FAILED${NC}"
   exit 1
 fi
-echo -e "${GREEN}prose-check OK${NC} (A/B/C all green — generated==regen, no prose fields, all test ids unique)"
+echo -e "${GREEN}prose-check OK${NC} (A/B/C/D all green — generated==regen, no prose fields, unique test ids, mirror wall current)"

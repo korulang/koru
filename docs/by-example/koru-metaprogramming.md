@@ -37,7 +37,7 @@ These are the receipts for the `koru-metaprogramming` skill — passing tests sh
 
 // This is a glob pattern event - a template for any log.* event
 // Marked [norun] since we're just testing syntax acceptance, not transform execution
-[comptime|transform|norun]pub event log.* {
+[comptime|transform|norun]pub tor log.* {
     message: string,
 }
 ```
@@ -63,7 +63,7 @@ These are the receipts for the `koru-metaprogramming` skill — passing tests sh
 // Transform receives full name: "ring.new[T:u32;N:1024]"
 // Transform parses brackets, extracts T=u32, N=1024, synthesizes typed code.
 
-~[comptime|transform]pub event ring.* {
+~[comptime|transform]pub tor ring.* {
     event_name: string,
     item: *const Item,
     program: *const Program,
@@ -133,7 +133,7 @@ These are the receipts for the `koru-metaprogramming` skill — passing tests sh
 //
 // This is generics-as-library: the transform IS the generic instantiation.
 
-~[comptime|transform]pub event ring.* {
+~[comptime|transform]pub tor ring.* {
     event_name: string,
     item: *const Item,
     program: *const Program,

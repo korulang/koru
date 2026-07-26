@@ -75,7 +75,7 @@ Hello World
 // invoked, so the program compiles and produces no output.
 const std = @import("std");
 
-~event hello {}
+~tor hello {}
 
 ~proc hello|zig {
     std.debug.print("Event executed\n", .{});
@@ -87,7 +87,7 @@ const std = @import("std");
 ```koru
 // Event input shape braces may open on the line after the event name.
 
-event example.write
+tor example.write
 {
     value: i32,
     note: string,
@@ -106,9 +106,9 @@ event example.write
 // (`const name = "Claude";` etc.), so the following flow can interpolate them
 // directly — no host-side companion file needed.
 //
-// PINS THE GAP: today the `const` transform only implements the config-capture
-// form (`~const(...) | as cfg |> ...`); the module-declaration form is
-// unimplemented, so `name`/`count` never get declared and this fails.
+// Pins the module-declaration form specifically, as distinct from the
+// config-capture form (`~const(...) | as cfg |> ...`): the bare block must
+// declare `name`/`count` at module scope for the flow to interpolate them.
 import std/io
 
 const {
@@ -234,7 +234,7 @@ Hello!
 const std = @import("std");
 ~import std/io
 
-~event my-event {}
+~tor my-event {}
 ~proc my-event|zig {
     std.debug.print("kebab event ok\n", .{});
 }
@@ -258,7 +258,7 @@ kebab event ok
 const std = @import("std");
 ~import std/io
 
-~event my-stuff { a_thing: string }
+~tor my-stuff { a_thing: string }
 ~proc my-stuff|zig {
     std.debug.print("{s}\n", .{a_thing});
 }
@@ -304,7 +304,7 @@ slash namespace ok
 // enforcement: the old snake form must fail loudly.
 ~import std/io
 
-~event foo_bar {}
+~tor foo_bar {}
 
 ~std/io:print.ln("underscore should have been rejected")
 ```
@@ -395,7 +395,7 @@ gamma
 // This should compile, run, and output "Flow executed"
 const std = @import("std");
 
-~event hello {}
+~tor hello {}
 
 ~proc hello|zig {
     std.debug.print("Flow executed\n", .{});
@@ -420,9 +420,9 @@ Flow executed
 // Test 004: Multiple flows should all execute in order
 const std = @import("std");
 
-~event first {}
+~tor first {}
 
-~event second {}
+~tor second {}
 
 ~proc first|zig {
     std.debug.print("First\n", .{});
@@ -462,21 +462,21 @@ var cleanup_count: i32 = 0;
 var process_count: i32 = 0;
 
 // Void events have no output branches
-~event setup {}
+~tor setup {}
 
 ~proc setup|zig {
     setup_count += 1;
     std.debug.print("Setup: count={}\n", .{setup_count});
 }
 
-~event cleanup {}
+~tor cleanup {}
 
 ~proc cleanup|zig {
     cleanup_count += 1;
     std.debug.print("Cleanup: count={}\n", .{cleanup_count});
 }
 
-~event process {}
+~tor process {}
 
 ~proc process|zig {
     process_count += 1;
@@ -496,7 +496,7 @@ var process_count: i32 = 0;
 ~cleanup()
 
 // Verify with a regular event
-~event verify {}
+~tor verify {}
 
 ~proc verify|zig {
     if (setup_count == 1 and process_count == 3 and cleanup_count == 1) {
@@ -538,21 +538,21 @@ var cleanup_count: i32 = 0;
 var process_count: i32 = 0;
 
 // Void events have no output branches
-~event setup {}
+~tor setup {}
 
 ~proc setup|zig {
     setup_count += 1;
     std.debug.print("Setup: count={}\n", .{setup_count});
 }
 
-~event cleanup {}
+~tor cleanup {}
 
 ~proc cleanup|zig {
     cleanup_count += 1;
     std.debug.print("Cleanup: count={}\n", .{cleanup_count});
 }
 
-~event process {}
+~tor process {}
 
 ~proc process|zig {
     process_count += 1;
@@ -571,7 +571,7 @@ var process_count: i32 = 0;
 ~cleanup()
 
 // Verify with a regular event
-~event verify {}
+~tor verify {}
 
 ~proc verify|zig {
     if (setup_count == 1 and process_count == 3 and cleanup_count == 1) {
@@ -604,7 +604,7 @@ Void events work correctly
 ~import std/io
 
 // Simple work event
-~event work {}
+~tor work {}
 
 ~proc work|zig {
 }
@@ -628,14 +628,14 @@ Done!
 
 const std = @import("std");
 
-~event get-data {} -> i32
+~tor get-data {} -> i32
 
 ~proc get-data|zig {
     return 42;
 }
 
 // This event mutates the value it receives via a pointer
-~event mutate-and-print { ptr: *i32 }
+~tor mutate-and-print { ptr: *i32 }
 
 ~proc mutate-and-print|zig {
     ptr.* += 1;  // Mutate the value
@@ -672,7 +672,7 @@ Value: 43
 import std/io
 
 // Event with wildcard payload - parser should accept this
-[norun]event iterator-pattern {} -> *
+[norun]tor iterator-pattern {} -> *
 
 // Use stdlib to print
 std/io:print.ln("done")
@@ -693,7 +693,7 @@ done
 // representation and timing are orthogonal), so an event that splices its
 // captured expression at compile time declares `[comptime]` explicitly.
 
-~[comptime]event test-expr { val: Expression }
+~[comptime]tor test-expr { val: Expression }
 
 ~proc test-expr|zig {
     const std = @import("std");
@@ -724,7 +724,7 @@ done
 **Output:**
 
 ```
-error[PARSE001]: Nested flows (~) are not allowed inside continuations. Use a bare event call instead: remove the ~ prefix.
+error[PARSE001]: Nested flows (~) are not allowed inside continuations. Use a bare tor call instead: remove the ~ prefix.
   --> tests/regression/000_CORE_LANGUAGE/020_EVENTS_FLOWS/020_011_reject_tilde_inside_flow/input.kz:11:0
     |
  11 | | captured |> ~std/io:println("Should reject this!")
@@ -739,7 +739,7 @@ error[PARSE001]: Nested flows (~) are not allowed inside continuations. Use a ba
 // This is the default authoring model for ordinary event behavior.
 import std/io
 
-event greet { name: string } -> string
+tor greet { name: string } -> string
 
 greet -> "Hello, " ++ name ++ "!"
 
@@ -762,7 +762,7 @@ Hello, World!
 // A type on a field is a CHECKED ASSERTION (typed const; Zig validates).
 ~import std/io
 
-~pub event fetch { id: i64 }
+~pub tor fetch { id: i64 }
 | found { name: string, age: i64 }
 | missing
 
@@ -794,7 +794,7 @@ elder lars 44
 
 const Pos = struct { x: i64, y: i64 };
 
-~pub event locate {} -> { pos: Pos, label: []const u8 }
+~pub tor locate {} -> { pos: Pos, label: []const u8 }
 
 ~proc locate|zig { return .{ .pos = .{ .x = 3, .y = 7 }, .label = "home" }; }
 
@@ -814,7 +814,7 @@ home at 3,7
 // extent (handlers-struct path), per-field consts off the shared param.
 ~import std/io
 
-~pub event scan-pairs {}
+~pub tor scan-pairs {}
 ! pair { a: i64, b: i64 }
 | done
 
@@ -840,8 +840,7 @@ done
 ### 020_021_event_arrow_return
 
 ```koru
-// PROPOSED FORM (Barbour effect-typing arc) — NOT yet supported; pinned failing
-// to capture the baseline (Phase 1). This is the cornerstone of the change.
+// The Barbour effect-typing arc's cornerstone form.
 //
 // An event's single payload-bearing output becomes an UNNAMED arrow return
 // `-> T` instead of a redundant single named branch (`| doubled i32`). The
@@ -859,7 +858,7 @@ done
 // is Koru's existing bind glyph (`a: 2`, `{ a: i32 }`) — no new symbol.
 import std/io
 
-pub event double { a: i32 } -> i32
+pub tor double { a: i32 } -> i32
 double -> a * 2
 
 double(a: 21): d |> std/io:print.ln("{{ d:d }}")
@@ -878,7 +877,7 @@ double(a: 21): d |> std/io:print.ln("{{ d:d }}")
 // the corpus). The proc returns the bare value directly; Output is i32, no union.
 ~import std/io
 
-~pub event double { a: i32 } -> i32
+~pub tor double { a: i32 } -> i32
 ~proc double|zig {
     return a * 2;
 }
@@ -901,7 +900,7 @@ double(a: 21): d |> std/io:print.ln("{{ d:d }}")
 // result at the call site. Pure Koru is always the `.k` no-`~` shape.
 import std/io
 
-pub event double { a: i32 } -> i32
+pub tor double { a: i32 } -> i32
 double -> a * 2
 
 double(a: 21): d |> std/io:print.ln("{{ d:d }}")
@@ -931,7 +930,7 @@ double(a: 21): d |> std/io:print.ln("{{ d:d }}")
 // tag union collapses to a bare return (210_131).
 import std/io
 
-pub event run { x: i64 } -> { total: i64, doubled: i64 }
+pub tor run { x: i64 } -> { total: i64, doubled: i64 }
 run -> { total: x * 2, doubled: x + x }
 
 run(x: 21): r |> std/io:print.ln("{{ r.total:d }}")
@@ -959,7 +958,7 @@ run(x: 21): r |> std/io:print.ln("{{ r.total:d }}")
 // PINNED (2026-06-29): no corpus coverage for handler-produced bare returns yet.
 import std/io
 
-event check { n: i64 }
+tor check { n: i64 }
 | big i64
 | small i64
 
@@ -967,7 +966,7 @@ check = if(n > 10)
 | then => big n
 | else => small n
 
-event classify { n: i64 } -> i64
+tor classify { n: i64 } -> i64
 classify = check(n)
 | big b -> b * 100
 | small s -> s
@@ -990,7 +989,7 @@ classify(n: 21): r |> std/io:print.ln("{{ r:d }}")
 // form (`~echo -> s`), the same as the scalar 020_021.
 import std/io
 
-pub event echo { s: string } -> string
+pub tor echo { s: string } -> string
 echo -> s
 
 echo(s: "hello"): r |> std/io:print.ln("{{ r:s }}")
@@ -1013,7 +1012,7 @@ hello
 // PINNED (2026-06-29): record bare returns are not yet built.
 ~import std/io
 
-~pub event dims {} -> { w: i64, h: i64 }
+~pub tor dims {} -> { w: i64, h: i64 }
 ~proc dims|zig {
     return .{ .w = 4, .h = 3 };
 }
@@ -1038,17 +1037,16 @@ hello
 // subflow/switch path. `run` is declared `-> i64`; the loop sums 5+4+3+2+1 and
 // the `| done e -> e` exit arm produces the total.
 //
-// PINNED FAILING (2026-06-29): the label-fold loop lowers the exit arm as
-// `const e = result.done; _ = e;` (a discard) instead of `return e;`, so the
-// i64-returning handler falls off its end. Sibling gap to 020_025 on the loop
-// path — the bare-return signal never reaches emitFlow's loop-exit emission.
+// Guards the loop-exit emission path specifically: the bare-return signal must
+// reach emitFlow's loop-exit arm and produce `return e;`, never a discard. The
+// sibling on the non-loop path is 020_025.
 import std/io
 
-event step { n: i64, acc: i64 }
+tor step { n: i64, acc: i64 }
 | more { n: i64, acc: i64 }
 | done i64
 
-event run { start: i64 } -> i64
+tor run { start: i64 } -> i64
 
 step = if(n > 0)
 | then => more { n: n - 1, acc: acc + n }
@@ -1079,10 +1077,10 @@ run(start: 5): r |> std/io:print.ln("{{ r:d }}")
 // rejected ALL top-level `->` in an invocation line, killing the produce arm.
 import std/io
 
-pub event a { x: i64 } -> i64
+pub tor a { x: i64 } -> i64
 a -> x + 1
 
-pub event combo { x: i64 } -> i64
+pub tor combo { x: i64 } -> i64
 combo = a(x): r -> r
 
 combo(x: 5): out |> std/io:print.ln("{{ out:d }}")
@@ -1107,13 +1105,13 @@ combo(x: 5): out |> std/io:print.ln("{{ out:d }}")
 // PIN: must produce r2 (= a then b: (5+1)+10 = 16).
 import std/io
 
-pub event a { x: i64 } -> i64
+pub tor a { x: i64 } -> i64
 a -> x + 1
 
-pub event b { x: i64 } -> i64
+pub tor b { x: i64 } -> i64
 b -> x + 10
 
-pub event combo { x: i64 } -> i64
+pub tor combo { x: i64 } -> i64
 combo = a(x): r1 |> b(x: r1): r2 -> r2
 
 combo(x: 5): out |> std/io:print.ln("{{ out:d }}")
@@ -1141,14 +1139,14 @@ combo(x: 5): out |> std/io:print.ln("{{ out:d }}")
 ~import std/io
 const std = @import("std");
 
-~pub event start {} -> i64
+~pub tor start {} -> i64
 
 ~proc start|zig { return 5; }
 
-~pub event mk { x: i64 } -> i64
+~pub tor mk { x: i64 } -> i64
 ~mk -> x + 1
 
-~pub event use-it { x: i64 }
+~pub tor use-it { x: i64 }
 ~proc use-it|zig { std.debug.print("got {d}\n", .{x}); }
 
 ~start(): c0 |> mk(x: c0): c1 |> use-it(x: c1)
@@ -1173,7 +1171,7 @@ got 6
 // arms — no union, no tag, no data movement beyond the value itself.
 import std/io
 
-event pick { n: i64 } -> i64
+tor pick { n: i64 } -> i64
 pick = if(n < 10)
 | then -> n
 | else -> n - 10
@@ -1204,7 +1202,7 @@ pick(n: 3): b |> std/io:print.ln("{{ b:d }}")
 // single-variant union carried the ~2.9x-behind-C recursion gap.
 import std/io
 
-event digitsum { n: i64 } -> i64
+tor digitsum { n: i64 } -> i64
 digitsum = if(n < 10)
 | then -> n
 | else |> digitsum(n: @divTrunc(n, 10)): rest -> rest + @mod(n, 10)
@@ -1237,7 +1235,7 @@ digitsum(n: 7): e |> std/io:print.ln("{{ e:d }}")
 
 ~import std/io
 
-~pub event scan-pairs {}
+~pub tor scan-pairs {}
 ! pair { a: i64, b: i64 }
 | done
 
@@ -1281,7 +1279,7 @@ done
 
 ~import std/io
 
-~pub event scan-pairs {}
+~pub tor scan-pairs {}
 ! pair { a: i64, b: i64 }
 | done
 
@@ -1317,7 +1315,7 @@ done
 // The single-line twin is 020_033; this pins the split-line form.
 import std/io
 
-event pick {
+tor pick {
     n: i64
 } -> i64
 
@@ -1346,7 +1344,7 @@ pick(n: 3): b |> std/io:print.ln("{{ b:d }}")
 // and `{{ name:s }}` formatting all work identically.
 ~import std/io
 
-~pub event fetch { id: i64 }
+~pub tor fetch { id: i64 }
 | found { name: string, age: i64 }
 | missing
 
@@ -1386,7 +1384,7 @@ elder lars 44
 import std/io
 import std/fmt
 
-event show { n: i64 }
+tor show { n: i64 }
 show = std/fmt:ln("num {{ n:d }}"): l |> std/io:print.ln(l.text)
 
 show(n: 42)
@@ -1412,7 +1410,7 @@ num 42
 
 const std = @import("std");
 
-~event sum { numbers: []const i32 } -> i32
+~tor sum { numbers: []const i32 } -> i32
 
 ~proc sum|zig {
     var total: i32 = 0;
@@ -1422,7 +1420,7 @@ const std = @import("std");
     return total;
 }
 
-~event check { expected: i32, actual: i32 }
+~tor check { expected: i32, actual: i32 }
 
 ~proc check|zig {
     if (expected != actual) {
@@ -1448,13 +1446,13 @@ const std = @import("std");
 
 const std = @import("std");
 
-~event getValue { id: i32 } -> i32
+~tor getValue { id: i32 } -> i32
 
 ~proc getValue|zig {
     return id * 10;
 }
 
-~event sumAll { values: []const i32 } -> i32
+~tor sumAll { values: []const i32 } -> i32
 
 ~proc sumAll|zig {
     var sum: i32 = 0;
@@ -1464,7 +1462,7 @@ const std = @import("std");
     return sum;
 }
 
-~event check { expected: i32, actual: i32 }
+~tor check { expected: i32, actual: i32 }
 
 ~proc check|zig {
     if (expected != actual) {
@@ -1495,14 +1493,14 @@ pub const Config = struct {
     retries: i32,
 };
 
-~event configure { config: Config } -> i32
+~tor configure { config: Config } -> i32
 
 ~proc configure|zig {
     const total = config.timeout * config.retries;
     return total;
 }
 
-~event check { expected: i32, actual: i32 }
+~tor check { expected: i32, actual: i32 }
 
 ~proc check|zig {
     if (expected != actual) {
@@ -1533,7 +1531,7 @@ pub const Point = struct {
     y: i32,
 };
 
-~event sumPoints { points: []const Point } -> { total_x: i32, total_y: i32 }
+~tor sumPoints { points: []const Point } -> { total_x: i32, total_y: i32 }
 
 ~proc sumPoints|zig {
     var tx: i32 = 0;
@@ -1545,7 +1543,7 @@ pub const Point = struct {
     return .{ .total_x = tx, .total_y = ty };
 }
 
-~event check { expected_x: i32, expected_y: i32, actual_x: i32, actual_y: i32 }
+~tor check { expected_x: i32, expected_y: i32, actual_x: i32, actual_y: i32 }
 
 ~proc check|zig {
     if (expected_x != actual_x or expected_y != actual_y) {
@@ -1578,10 +1576,10 @@ const Context = struct {
 };
 
 // Abstract event with multiple contexts
-~[comptime|abstract] event process { allocator: std.mem.Allocator } -> u32
+~[comptime|abstract] tor process { allocator: std.mem.Allocator } -> u32
 
 // Step 1: Create contexts
-~[comptime] event setup {} -> { c0: Context, c1: Context, c2: Context }
+~[comptime] tor setup {} -> { c0: Context, c1: Context, c2: Context }
 
 ~proc setup|zig {
     return .{ .ready = .{
@@ -1592,7 +1590,7 @@ const Context = struct {
 }
 
 // Step 2: Process array of contexts
-~[comptime] event consume { contexts: []const Context } -> u32
+~[comptime] tor consume { contexts: []const Context } -> u32
 
 ~proc consume|zig {
     std.debug.print("[COMPTIME] Processing {} contexts\n", .{contexts.len});
@@ -1608,7 +1606,7 @@ const Context = struct {
 // Trigger the flow
 ~process(allocator: std.heap.page_allocator): d |> report(count: d)
 
-~[comptime] event report { count: u32 }
+~[comptime] tor report { count: u32 }
 
 ~proc report|zig {
     if (count == 3) {
@@ -1627,7 +1625,7 @@ const Context = struct {
 // Actual injection of host types will be tested in Phase 2
 const std = @import("std");
 
-~event test-pass {}
+~tor test-pass {}
 
 ~proc test-pass|zig {
     std.debug.print("HostTypeDecl infrastructure ready\n", .{});
@@ -1660,7 +1658,7 @@ const std = @import("std");
 
 ~float(Temperature)
 
-~event report-temp { temp: Temperature }
+~tor report-temp { temp: Temperature }
 
 ~proc report-temp|zig {
     std.debug.print("Temperature: {d:.1}\n", .{temp});
@@ -1685,7 +1683,7 @@ const std = @import("std");
 
 ~bool(IsActive)
 
-~event check-status { active: IsActive }
+~tor check-status { active: IsActive }
 | active
 | inactive
 
@@ -1707,9 +1705,7 @@ const std = @import("std");
 ### 030_140_type_with_const
 
 ```koru
-// RED PIN (type-system design walk, 2026-07-06/07). REWRITTEN minus
-// the dead `Config<T>`/`~type` grammar and the dropped `| as` const
-// form. Integration intent kept and sharpened to the registry design:
+// Pins the registry integration for `const`:
 // `const` REGISTERS its symbols (name -> type-ref + comptime value)
 // into the registry's symbols table instead of only splicing text —
 // the "const doesn't store its symbols" gap named by Lars 2026-07-06.
@@ -1733,10 +1729,8 @@ std/io:print.ln("Value: {{ threshold:d }}")
 ### 030_141_type_with_capture
 
 ```koru
-// RED PIN (type-system design walk, 2026-07-06/07). REWRITTEN minus
-// the dead `Acc<T>`/`~type` grammar AND the dead `~capture({...}) | as`
-// form (current idiom: seed block + `! as` effect cell, 320_042). The
-// accumulator is a DECLARED nominal type — the capture cell holds a
+// Pins a DECLARED nominal type as the accumulator of an effect cell
+// (seed block + `! as`, 320_042). The accumulator is a DECLARED nominal type — the capture cell holds a
 // value of a Koru-minted type, so the cell must resolve the declared
 // type's identity, not a pasted Zig string. (The stamped-name variant
 // of this pin is 030_121.)
@@ -1759,10 +1753,9 @@ capture { a: Acc{ .total = 0, .count = 0 } }
 ### 030_142_nominal_in_pipeline
 
 ```koru
-// RED PIN (type-system design walk, 2026-07-06/07). Intent kept
-// (nominal primitive types as event parameters), dead `~const(...) |
-// as` form replaced with the flat const declaration (decls are
-// module-scope, visible to sibling flows). Under the registry design,
+// Pins nominal primitive types as event parameters, declared with the
+// flat const form (decls are module-scope, visible to sibling flows).
+// Under the registry design,
 // Username/UserId are registry entries and the call-site argument
 // types are checked against them at the Koru layer.
 
@@ -1776,7 +1769,7 @@ const std = @import("std");
 ~int(UserId)
 
 // Event that takes nominal types
-~event greet-user { name: Username, id: UserId }
+~tor greet-user { name: Username, id: UserId }
 
 ~proc greet-user|zig {
     std.debug.print("Hello {s} (ID: {d})\n", .{ name, id });
@@ -1822,7 +1815,7 @@ big
 // Tests that events can have multiple branches and procs can return different ones
 const std = @import("std");
 
-~event check { value: i32 }
+~tor check { value: i32 }
 | positive i32
 | zero
 | negative i32
@@ -1833,19 +1826,19 @@ const std = @import("std");
     return .{ .zero = .{} };
 }
 
-~event handle-positive { n: i32 }
+~tor handle-positive { n: i32 }
 
 ~proc handle-positive|zig {
     std.debug.print("Positive branch works: {}\n", .{n});
 }
 
-~event handle-zero {}
+~tor handle-zero {}
 
 ~proc handle-zero|zig {
     std.debug.print("Zero branch works\n", .{});
 }
 
-~event handle-negative { n: i32 }
+~tor handle-negative { n: i32 }
 
 ~proc handle-negative|zig {
     std.debug.print("Negative branch works: {}\n", .{n});
@@ -1890,27 +1883,27 @@ Negative branch works: -7
 const std = @import("std");
 
 // Events for testing scoping
-~event outer { x: i32 } -> i32
+~tor outer { x: i32 } -> i32
 
 ~proc outer|zig {
     // x is accessible here directly
     return x;
 }
 
-~event middle { y: i32 } -> i32
+~tor middle { y: i32 } -> i32
 
 ~proc middle|zig {
     return y * 2;
 }
 
-~event inner { z: i32 } -> i32
+~tor inner { z: i32 } -> i32
 
 ~proc inner|zig {
     return z * 3;
 }
 
 // Event with nested structure for field access testing
-~event nested-data { info: UserInfo } -> i32
+~tor nested-data { info: UserInfo } -> i32
 
 // Define the struct type inline
 const UserInfo = struct {
@@ -1927,7 +1920,7 @@ const UserInfo = struct {
 }
 
 // Event to demonstrate access to outer scope bindings
-~event show-values { a: i32, b: i32, c: i32 }
+~tor show-values { a: i32, b: i32, c: i32 }
 
 ~proc show-values|zig {
     // Should print values showing the scope chain worked
@@ -1961,19 +1954,19 @@ Values from scope chain: 10 20 60
 
 const std = @import("std");
 
-~event first { value: i32 } -> i32
+~tor first { value: i32 } -> i32
 
 ~proc first|zig {
     return value * 2;
 }
 
-~event second { value: i32 } -> i32
+~tor second { value: i32 } -> i32
 
 ~proc second|zig {
     return value * 3;
 }
 
-~event show { outer_val: i32, inner_val: i32 }
+~tor show { outer_val: i32, inner_val: i32 }
 
 ~proc show|zig {
     std.debug.print("Outer: {}, Inner: {}\n", .{outer_val, inner_val});
@@ -2002,7 +1995,7 @@ Outer: 20, Inner: 60
 const std = @import("std");
 
 // Event for counting iteration
-~event count { current: i32, target: i32 }
+~tor count { current: i32, target: i32 }
 | next { value: i32, target: i32 }
 | done i32
 
@@ -2042,7 +2035,7 @@ Count: 5
 const std = @import("std");
 
 // Event with branch name "error" (Zig keyword)
-~event check { value: i32 }
+~tor check { value: i32 }
 | error string
 | ok i32
 
@@ -2072,7 +2065,7 @@ const std = @import("std");
 const std = @import("std");
 
 // Simple counter event
-~event counter { n: i32 }
+~tor counter { n: i32 }
 | next i32
 | done i32
 
@@ -2087,7 +2080,7 @@ const std = @import("std");
 }
 
 // Start event to kick things off
-~event start {}
+~tor start {}
 
 ~proc start|zig {
     std.debug.print("Starting counter...\n", .{});
@@ -2123,7 +2116,7 @@ Count: 5
 const std = @import("std");
 
 // Outer counter event (counts outer iterations)
-~event outer { x: i32, max_inner: i32 }
+~tor outer { x: i32, max_inner: i32 }
 | next-outer { x: i32, max_inner: i32 }
 | done-outer
 
@@ -2138,7 +2131,7 @@ const std = @import("std");
 }
 
 // Inner counter event (counts inner iterations)
-~event inner { x: i32, y: i32, max_inner: i32 }
+~tor inner { x: i32, y: i32, max_inner: i32 }
 | next-inner { x: i32, y: i32, max_inner: i32 }
 | done-inner { x: i32, max_inner: i32 }
 
@@ -2153,7 +2146,7 @@ const std = @import("std");
 }
 
 // Start event
-~event start {}
+~tor start {}
 
 ~proc start|zig {
     std.debug.print("Starting nested loops...\n", .{});
@@ -2194,7 +2187,7 @@ Outer: 3
 const std = @import("std");
 
 // Outer loop event
-~event outer { x: i32, max: i32 }
+~tor outer { x: i32, max: i32 }
 | next-outer { x: i32, max: i32 }
 | done-outer
 
@@ -2208,7 +2201,7 @@ const std = @import("std");
 }
 
 // Inner loop event
-~event inner { x: i32, y: i32, max: i32 }
+~tor inner { x: i32, y: i32, max: i32 }
 | next-inner { x: i32, y: i32, max: i32 }
 | done-inner i32
 
@@ -2222,7 +2215,7 @@ const std = @import("std");
 }
 
 // Start event
-~event start { }
+~tor start { }
 
 ~proc start|zig {
     std.debug.print("Starting nested loops...\n", .{});
@@ -2265,7 +2258,7 @@ Outer: x=3
 const std = @import("std");
 
 // Counter event that can go in both directions
-~event count { n: i32, direction: string }
+~tor count { n: i32, direction: string }
 | next i32
 | done i32
 
@@ -2288,9 +2281,9 @@ const std = @import("std");
 }
 
 // Start events for each flow
-~event start-up {}
+~tor start-up {}
 
-~event start-down {}
+~tor start-down {}
 
 ~proc start-up|zig {
     std.debug.print("Starting count-up flow...\n", .{});
@@ -2342,7 +2335,7 @@ down: 2
 const std = @import("std");
 
 // Server events
-~event listen { port: u16 }
+~tor listen { port: u16 }
 | ready u32
 | failed string
 
@@ -2354,7 +2347,7 @@ const std = @import("std");
     return .{ .ready = port };
 }
 
-~event accept { server: u32 }
+~tor accept { server: u32 }
 | connected { conn: u32, server: u32 }
 | failed u32
 
@@ -2366,7 +2359,7 @@ const std = @import("std");
     return .{ .connected = .{ .conn = server + 1, .server = server } };
 }
 
-~event process { conn: u32 }
+~tor process { conn: u32 }
 | done u32
 | retry u32
 | error { conn: u32, msg: string }
@@ -2382,20 +2375,20 @@ const std = @import("std");
     return .{ .retry = conn };
 }
 
-~event close { conn: u32 }
+~tor close { conn: u32 }
 
 ~proc close|zig {
     std.debug.print("Closed connection {}\n", .{conn});
 }
 
-~event log-error { conn: u32, msg: string } -> u32
+~tor log-error { conn: u32, msg: string } -> u32
 
 ~proc log-error|zig {
     std.debug.print("Error on connection {}: {s}\n", .{conn, msg});
     return conn;
 }
 
-~event cleanup { conn: u32 }
+~tor cleanup { conn: u32 }
 
 ~proc cleanup|zig {
     std.debug.print("Cleaning up connection {}\n", .{conn});
@@ -2425,7 +2418,7 @@ const std = @import("std");
 const std = @import("std");
 
 // Validation events
-~event validate { value: i32 }
+~tor validate { value: i32 }
 | valid i32
 | invalid string
 
@@ -2436,25 +2429,25 @@ const std = @import("std");
     return .{ .invalid = "Value must be positive" };
 }
 
-~event double { value: i32 } -> i32
+~tor double { value: i32 } -> i32
 
 ~proc double|zig {
     return value * 2;
 }
 
-~event triple { value: i32 } -> i32
+~tor triple { value: i32 } -> i32
 
 ~proc triple|zig {
     return value * 3;
 }
 
-~event success { result: i32 }
+~tor success { result: i32 }
 
 ~proc success|zig {
     std.debug.print("Success: {}\n", .{result});
 }
 
-~event failure { msg: string }
+~tor failure { msg: string }
 
 ~proc failure|zig {
     std.debug.print("Failure: {s}\n", .{msg});
@@ -2481,11 +2474,11 @@ const std = @import("std");
 import std/io
 
 // Simple events that add values
-event add-one { value: i32 } -> i32
+tor add-one { value: i32 } -> i32
 
 add-one -> value + 1
 
-event add-two { value: i32 } -> i32
+tor add-two { value: i32 } -> i32
 
 add-two -> value + 2
 
@@ -2509,15 +2502,15 @@ add-one(value: 10): a |> add-two(value: a): b |> std/io:print.ln("{{b:d}}")
 
 import std/io
 
-event add-one { value: i32 } -> i32
+tor add-one { value: i32 } -> i32
 
 add-one -> value + 1
 
-event add-two { value: i32 } -> i32
+tor add-two { value: i32 } -> i32
 
 add-two -> value + 2
 
-event add-three { value: i32 } -> i32
+tor add-three { value: i32 } -> i32
 
 add-three -> value + 3
 
@@ -2533,16 +2526,16 @@ add-one(value: 10): a |> add-two(value: a): b |> add-three(value: b): c |> std/i
 // Depth 4 test: start |> +1 |> +2 |> +3 |> +4 → result (10+1+2+3+4 = 20)
 import std/io
 
-event add-one { value: i32 } -> i32
+tor add-one { value: i32 } -> i32
 add-one -> value + 1
 
-event add-two { value: i32 } -> i32
+tor add-two { value: i32 } -> i32
 add-two -> value + 2
 
-event add-three { value: i32 } -> i32
+tor add-three { value: i32 } -> i32
 add-three -> value + 3
 
-event add-four { value: i32 } -> i32
+tor add-four { value: i32 } -> i32
 add-four -> value + 4
 
 add-one(value: 10): a |> add-two(value: a): b |> add-three(value: b): c |> add-four(value: c): d |> std/io:print.ln("{{d:d}}")
@@ -2554,19 +2547,19 @@ add-one(value: 10): a |> add-two(value: a): b |> add-three(value: b): c |> add-f
 // Depth 5 test: Maximum stress test (10+1+2+3+4+5 = 25)
 import std/io
 
-event add-one { value: i32 } -> i32
+tor add-one { value: i32 } -> i32
 add-one -> value + 1
 
-event add-two { value: i32 } -> i32
+tor add-two { value: i32 } -> i32
 add-two -> value + 2
 
-event add-three { value: i32 } -> i32
+tor add-three { value: i32 } -> i32
 add-three -> value + 3
 
-event add-four { value: i32 } -> i32
+tor add-four { value: i32 } -> i32
 add-four -> value + 4
 
-event add-five { value: i32 } -> i32
+tor add-five { value: i32 } -> i32
 add-five -> value + 5
 
 add-one(value: 10): a |> add-two(value: a): b |> add-three(value: b): c |> add-four(value: c): d |> add-five(value: d): e |> std/io:print.ln("{{e:d}}")
@@ -2587,7 +2580,7 @@ add-one(value: 10): a |> add-two(value: a): b |> add-three(value: b): c |> add-f
 
 ~import std/io
 
-~event validate { value: i32 }
+~tor validate { value: i32 }
 | ok i32
 | failure string
 
@@ -2599,7 +2592,7 @@ add-one(value: 10): a |> add-two(value: a): b |> add-three(value: b): c |> add-f
     }
 }
 
-~event double { value: i32 }
+~tor double { value: i32 }
 | ok i32
 | failure string
 
@@ -2612,7 +2605,7 @@ add-one(value: 10): a |> add-two(value: a): b |> add-three(value: b): c |> add-f
 }
 
 // Chain with failure handling at each level
-~event process { input: i32 }
+~tor process { input: i32 }
 | success i32
 | failed string
 
@@ -2657,7 +2650,7 @@ const std = @import("std");
 
 ~import std/io
 
-~pub event process-file { path: string }
+~pub tor process-file { path: string }
 | success string
 | error string  // "error" is a Zig reserved keyword!
 
@@ -2701,7 +2694,7 @@ const std = @import("std");
 
 ~import std/io
 
-~event greet { id: u32 } -> string
+~tor greet { id: u32 } -> string
 
 ~proc greet|zig {
     return "Alice";
@@ -2738,11 +2731,11 @@ no name given
 const std = @import("std");
 
 // Events with namespace
-~event net.connect { host: string }
+~tor net.connect { host: string }
 | connected u32
 | failed string
 
-~event net.send { id: u32, data: string }
+~tor net.send { id: u32, data: string }
 | sent usize
 | failed string
 
@@ -2783,11 +2776,11 @@ Sending 5 bytes on connection 42
 
 const std = @import("std");
 
-~event outer { count: i32 }
+~tor outer { count: i32 }
 | continue-outer i32
 | done-outer
 
-~event inner { count: i32 }
+~tor inner { count: i32 }
 | continue-inner i32
 | done-inner
 
@@ -2844,7 +2837,7 @@ Outer: 2
 const std = @import("std");
 
 // Stage 1: Parse input
-~event parse { input: string }
+~tor parse { input: string }
 | parsed i32
 | invalid string
 
@@ -2856,7 +2849,7 @@ const std = @import("std");
 }
 
 // Stage 2: Validate
-~event validate { value: i32 }
+~tor validate { value: i32 }
 | valid i32
 | invalid string
 
@@ -2868,14 +2861,14 @@ const std = @import("std");
 }
 
 // Stage 3: Transform
-~event transform { value: i32 } -> i32
+~tor transform { value: i32 } -> i32
 
 ~proc transform|zig {
     return value * 2;
 }
 
 // Stage 4: Format
-~event format { value: i32 } -> string
+~tor format { value: i32 } -> string
 
 ~proc format|zig {
     const allocator = std.heap.page_allocator;
@@ -2886,7 +2879,7 @@ const std = @import("std");
 }
 
 // Stage 5: Display
-~event display { text: string }
+~tor display { text: string }
 
 ~proc display|zig {
     std.debug.print("{s}\n", .{text});
@@ -2913,11 +2906,11 @@ const std = @import("std");
 
 const std = @import("std");
 
-~event server.accept {}
+~tor server.accept {}
 | connection u32
 | stopped
 
-~event server.handle { id: u32 }
+~tor server.handle { id: u32 }
 
 ~proc server.accept|zig {
     std.debug.print("Accept\n", .{});
@@ -2963,7 +2956,7 @@ Accept
 ~import std/io
 
 // Event with two branches, BOTH empty (no payload fields)
-~event check-value { n: i32 }
+~tor check-value { n: i32 }
 | positive
 | non-positive
 
@@ -3011,7 +3004,7 @@ Accept
 const std = @import("std");
 
 // Simulate an imported module with an event
-~event mymodule.tick {}
+~tor mymodule.tick {}
 | next u32
 | done
 
@@ -3061,7 +3054,7 @@ import app/mylib
 
 const std = @import("std");
 
-~event log { n: u32 }
+~tor log { n: u32 }
 ~proc log|zig {
     std.debug.print("tick {}\n", .{n});
 }
@@ -3100,7 +3093,7 @@ tick 5
 import std/io
 
 // Lower-level event: arbitrary outcome names
-pub event step {}
+pub tor step {}
 | return
 | break
 | continue
@@ -3108,7 +3101,7 @@ pub event step {}
 step => continue
 
 // Outer event: its own outcome vocabulary
-pub event run {}
+pub tor run {}
 | stopped
 | iterated
 
@@ -3142,7 +3135,7 @@ Testing subflow-defined semantics:
 // routes `-> {record}` through the shared struct-literal path (parser.zig) for
 // every emitter, and the `: bind` consumption of a bare-return record.
 import std/io
-pub event config { strict: bool } -> { a: i64, b: i64 }
+pub tor config { strict: bool } -> { a: i64, b: i64 }
 config = if(strict)
     | then -> { a: 1, b: 2 }
     | else -> { a: 0, b: 0 }
@@ -3164,7 +3157,7 @@ a=1 b=2
 // piece of the `! config -> { skip, trivia }` grammar-config shape — record
 // produce and `: bind` consumption already hold.
 import std/io
-pub event config { strict: bool } -> { skip: string, trivia: string }
+pub tor config { strict: bool } -> { skip: string, trivia: string }
 config = if(strict)
     | then -> { skip: "WS", trivia: "CMT" }
     | else -> { skip: "NONE", trivia: "NONE" }
@@ -3186,13 +3179,13 @@ skip=WS trivia=CMT
 // MUST_RUN: Verify identity values flow correctly at runtime
 ~import std/io
 
-~pub event get-number {} -> i32
+~pub tor get-number {} -> i32
 
 ~proc get-number|zig {
     return 42;
 }
 
-~pub event get-message {} -> string
+~pub tor get-message {} -> string
 
 ~proc get-message|zig {
     return "Hello from identity branch!";
@@ -3221,7 +3214,7 @@ Hello from identity branch!
 import std/io
 
 // Event with value branch
-pub event value-result {} -> i32
+pub tor value-result {} -> i32
 
 // Subflow impl using braceless syntax with value
 value-result -> 42
@@ -3252,24 +3245,24 @@ Testing value braceless:
 ~import std/io
 
 // Source event
-~pub event compute { x: i32 } -> i32
+~pub tor compute { x: i32 } -> i32
 
 ~proc compute|zig {
     return x * 2;
 }
 
 // Result event with identity branches
-~pub event result {} -> i32
+~pub tor result {} -> i32
 
 // Wrapper that uses braceless constructors in continuations
-~pub event run-test {}
+~pub tor run-test {}
 
 ~proc run-test|zig {
     // This internally tests braceless continuation constructors
 }
 
 // Subflow using braceless identity in continuation
-~event process { input: i32 } -> i32
+~tor process { input: i32 } -> i32
 
 ~process = compute(x: input): v -> v
 
@@ -3338,17 +3331,17 @@ pub fn main() void {
 
 const std = @import("std");
 
-~event double { value: i32 } -> i32
+~tor double { value: i32 } -> i32
 
 ~proc double|zig {
     return value * 2;
 }
 
-~event process { input: i32 } -> i32
+~tor process { input: i32 } -> i32
 
 ~process = double(value: input): r -> { r }
 
-~event print-result { value: i32 }
+~tor print-result { value: i32 }
 
 ~proc print-result|zig {
     std.debug.print("{}\n", .{value});
@@ -3377,13 +3370,13 @@ const std = @import("std");
 
 pub const Point = struct { x: i32, y: i32 };
 
-~event make-point { x: i32, y: i32 } -> Point
+~tor make-point { x: i32, y: i32 } -> Point
 
 ~proc make-point|zig {
     return Point{ .x = x, .y = y };
 }
 
-~event use-point { p: Point } -> { x: i32, y: i32 }
+~tor use-point { p: Point } -> { x: i32, y: i32 }
 
 // Shorthand: { p.x, p.y } should become { x: p.x, y: p.y }
 ~use-point -> { p.x, p.y }
