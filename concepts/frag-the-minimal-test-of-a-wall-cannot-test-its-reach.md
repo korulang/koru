@@ -79,6 +79,23 @@ yield to KORU030 wherever the bind carries an obligation, whose message names th
 resource and its disposer and is strictly the better sentence. Widening a check
 to match its name is not the same as widening it everywhere.
 
+## How this one survived: the rule was implemented twice
+
+Closing KORU022's reach turned up the mechanism that kept the gap invisible.
+The head position was never covered by the coverage checker at all — it was
+covered by a *second, independent* implementation of the same rule living in the
+auto-discharge inserter. So the head worked, the checker's own reach was never
+exercised at the only position anyone tested, and the two halves drifted far
+enough apart to word the same error code differently: the inserter says "branch
+'x' must be handled but no continuation found", the checker says "required
+branch 'x' not handled — event 'e' requires this branch".
+
+The pattern to take from it: **a rule with two implementations has two reaches**,
+and the more prominent one masks whatever the other cannot do. Duplicate
+implementations do not merely risk drift in wording — they hide coverage gaps by
+answering for each other in exactly the cases anyone thinks to check. Finding one
+error code with two sentences is good evidence you are looking at this.
+
 ## Open
 
 Whether this is enforceable rather than remembered. A lint that flags a

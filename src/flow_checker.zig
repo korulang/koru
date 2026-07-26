@@ -228,10 +228,19 @@ pub const FlowChecker = struct {
         }
 
         if (self.mode == .all and !is_transformed) {
-            // Validate branch coverage (KORU021, KORU022)
-            // Only run in 'all' mode - requires transforms to be applied first
-            // Skip for transformed flows - their branch structure has changed
+            // Validate branch coverage (KORU021, KORU022) at the flow head AND
+            // at every mid-chain call site. Only runs in 'all' mode - requires
+            // transforms to be applied first. Skipped for transformed flows -
+            // their branch structure has changed.
             try self.validateBranchCoverage(flow, location);
+            for (flow.body.continuations) |*cont| {
+                try self.validateChainCoverage(cont);
+            }
+
+            // Report every offending call site, then fail once.
+            if (self.reporter.hasErrors()) {
+                return error.FlowValidationFailed;
+            }
         }
     }
 
@@ -1163,8 +1172,42 @@ pub const FlowChecker = struct {
     /// NOTE: This check should only run AFTER transforms are applied (mode == .all)
     /// because transform events replace flows entirely.
     fn validateBranchCoverage(self: *FlowChecker, flow: *const ast.Flow, location: errors.SourceLocation) !void {
-        // Find the event definition for this flow
-        const event_decl = self.findEventDecl(&flow.inv().path) orelse {
+        try self.validateCoverageAt(&flow.inv().path, flow.body.continuations, location);
+    }
+
+    /// Walk the chain. Every continuation whose step is an invocation is itself
+    /// a call site, and owes its callee's required branches exactly as the flow
+    /// head does. Without this walk the coverage wall reaches one invocation
+    /// deep: an unhandled branch anywhere after the head binds the whole branch
+    /// union to a name and rides into emission, where the author meets a Zig
+    /// error about a type they never wrote (510_109).
+    fn validateChainCoverage(self: *FlowChecker, cont: *const ast.Continuation) anyerror!void {
+        // Same short-circuit the other structural checks apply: a grafted
+        // subtree is the transform's own output, not user syntax.
+        if (cont.is_transformed_subtree) return;
+
+        if (cont.node) |n| {
+            if (n == .invocation) {
+                try self.validateCoverageAt(&n.invocation.path, cont.continuations, cont.location);
+            }
+        }
+
+        for (cont.continuations) |*nested| {
+            try self.validateChainCoverage(nested);
+        }
+    }
+
+    /// Coverage for ONE invocation against the continuations that handle it.
+    /// Shared by the flow head and every mid-chain call site — a branching
+    /// callee owes the same arms wherever it is invoked.
+    fn validateCoverageAt(
+        self: *FlowChecker,
+        path: *const ast.DottedPath,
+        continuations: []const ast.Continuation,
+        location: errors.SourceLocation,
+    ) !void {
+        // Find the event definition for this call site
+        const event_decl = self.findEventDecl(path) orelse {
             // Event not found - this is a shape checker error, not flow checker
             // Just skip branch coverage validation
             return;
@@ -1194,11 +1237,11 @@ pub const FlowChecker = struct {
         // Convert continuations to BranchChecker format
         var handled = try std.ArrayList(branch_checker.BranchChecker.HandledBranch).initCapacity(
             self.allocator,
-            flow.body.continuations.len,
+            continuations.len,
         );
         defer handled.deinit(self.allocator);
 
-        for (flow.body.continuations) |*cont| {
+        for (continuations) |*cont| {
             // Skip empty branch names - these are void event chains (|> event())
             // where branches are not explicitly handled
             if (cont.branch.len == 0) continue;
@@ -1253,10 +1296,8 @@ pub const FlowChecker = struct {
             );
         }
 
-        // Fail if any branch coverage errors were found
-        if (self.reporter.hasErrors()) {
-            return error.FlowValidationFailed;
-        }
+        // The head/chain sweep reports every call site before failing, so the
+        // bail-out lives with the caller rather than here.
     }
 
     /// Find an event declaration by path
