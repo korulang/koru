@@ -241,5 +241,8 @@ const std = @import("std");
     return 1;
 }
 
-~seed(): v |> renderHTML { <div>Hello, World!</div> }
+// The bind is spelled `_` because nothing reads it — `seed()` is here only to
+// put `renderHTML` in continuation position, which is what this pin measures.
+// A named bind would now be KORU100 (510_110) and would mask that.
+~seed(): _ |> renderHTML { <div>Hello, World!</div> }
     | rendered h |> std/io:print.ln(h.html)

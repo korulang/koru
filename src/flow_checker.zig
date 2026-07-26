@@ -195,6 +195,11 @@ pub const FlowChecker = struct {
             }
         }
 
+        // The head's plain chain bind (`~f(): x |> ...`) is on flow.body for the
+        // same reason its destructure is, and the continuation loop below never
+        // reaches it either.
+        try self.validateReturnBindingUsage(&flow.body, self.flowRootIsTransform(flow) or self.isDeferredBindingInvocation(&flow.body));
+
         // Recursively validate nested continuations and bindings
         // KORU100 runs even for transformed flows - checks inside ForeachNode etc.
         // A flow whose ROOT invocation is a [transform] event consumes its arm
@@ -627,6 +632,10 @@ pub const FlowChecker = struct {
         // inside a `! draw`/loop body) otherwise loses the deferral and
         // false-positives KORU100 on projection fields that ARE used downstream.
         const child_deferred = root_transform or self.isDeferredBindingInvocation(cont);
+
+        // The bind-position twin of the arm binding checked above.
+        try self.validateReturnBindingUsage(cont, child_deferred);
+
         for (cont.continuations) |*nested| {
             try self.validateBindingUsage(nested, child_deferred);
         }
@@ -829,6 +838,58 @@ pub const FlowChecker = struct {
                     .{},
                 );
             }
+        }
+    }
+
+    /// A chain bind (`event(args): x |> ...`) is the bind-position twin of a
+    /// branch-arm binding, and an unused one means the same thing on either
+    /// side of the pipe. It lives on the invocation as `return_binding`, not on
+    /// `Continuation.binding`, which is why the arm check never saw it — the
+    /// diagnostic's name promised "unused binding" while its implementation
+    /// covered one spelling of it (510_110, 510_111).
+    ///
+    /// One exception, and it is not a softening. A bind carrying an obligation
+    /// belongs to KORU030, whose message names both the resource and its
+    /// disposer and is strictly the better sentence. Such a bind is also not
+    /// dead in the first place: obligation enforcement keys off its presence,
+    /// and stripping "dead" binds is what once switched that enforcement off
+    /// wholesale ([[frag-obligation-enforcement-keys-off-return-binding]]).
+    fn validateReturnBindingUsage(self: *FlowChecker, cont: *const ast.Continuation, deferred: bool) !void {
+        const node = cont.node orelse return;
+        if (node != .invocation) return;
+
+        const binding = node.invocation.return_binding orelse return;
+        // `_` and the auto-discharge synthetics are explicit discards.
+        if (binding.len == 0 or std.mem.startsWith(u8, binding, "_")) return;
+
+        // The obligation owns this one.
+        if (self.findEventDecl(&node.invocation.path)) |event_decl| {
+            if (event_decl.return_phantom != null) return;
+        }
+
+        // A template proc renames its binding during expansion, so the original
+        // name is absent afterwards — the same skip the arm check applies.
+        if (self.invocationResolvesToTemplateProc(&node.invocation.path)) return;
+
+        // Validated in EXACTLY ONE mode, never both — same split as the arm
+        // binding above: frontend owns bindings whose usage is visible on the
+        // unexpanded AST, `all` owns the deferred ones it could not yet see.
+        const skip_check = switch (self.mode) {
+            .frontend => deferred,
+            .all => !deferred,
+        };
+        if (skip_check) return;
+
+        if (!self.isBindingUsed(cont, binding)) {
+            try self.reporter.addErrorWithHint(
+                .KORU100,
+                cont.location.line,
+                cont.location.column,
+                "unused binding '{s}'",
+                .{binding},
+                "discard the binding using `_` if not needed",
+                .{},
+            );
         }
     }
 
