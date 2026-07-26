@@ -1,0 +1,49 @@
+// PINS: a fold preceded by a prefix bind must still thread the effect-branch
+// Handlers type into the folded event.
+//
+// An event carrying `!` arms compiles to a handler taking TWO parameters —
+// the input and the comptime Handlers type that holds the arm bodies:
+//
+//     pub fn handler(__koru_event_input: Input, comptime __H: type) Output
+//
+// With a prefix ahead of the fold head, both the fold's seed call and its
+// back-edge re-invocation are emitted with the input alone, and the arity
+// mismatch surfaces as a raw Zig error naming a `__H` the author never wrote.
+//
+// The isolation, one variable at a time:
+//   `#loop step(n: 0)` + effect arms                  — composes
+//   two effect arms, no prefix                        — composes
+//   `seed(): n0 |> #loop step(n: n0)` + effect arms   — this pin
+//
+// So the fault is the prefix position, the same one 210_166 holds, and a
+// DIFFERENT fault there: 210_166 is the exit arm's capture, this is Handlers
+// threading. Two defects living at one syntactic position, which is why each
+// gets its own pin rather than one test varying both.
+//
+// Why it matters beyond the grammar: this shape IS a blocking `await` — pump a
+// pending operation in a fold, firing progress/completion arms each round,
+// until it drains. The non-fold spelling of the same design already composes.
+~import std/io
+
+~tor seed {} -> i32
+~proc seed|zig { return 0; }
+
+~tor step { n: i32 }
+! tick i32
+| again i32
+| stop i32
+
+~proc step|zig {
+    tick(n);
+    if (n < 3) return .{ .again = n + 1 };
+    return .{ .stop = n };
+}
+
+~tor spin {} -> i32
+
+~spin = seed(): n0 |> #loop step(n: n0)
+! tick t |> std/io:print.ln("  tick {{ t:d }}")
+| again v |> @loop(n: v)
+| stop r -> r
+
+~spin(): f |> std/io:print.ln("done {{ f:d }}")
