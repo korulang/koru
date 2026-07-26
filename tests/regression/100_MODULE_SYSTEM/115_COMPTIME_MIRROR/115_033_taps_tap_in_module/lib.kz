@@ -1,0 +1,12 @@
+~import std/taps
+~import std/io
+
+~tor work {}
+~proc work|zig {
+}
+
+~tap(work -> *)
+| Profile p |> std/io:print.ln("Profile: {{p.source:s}}.{{p.branch:s}}")
+
+~pub tor run {}
+~run = work()

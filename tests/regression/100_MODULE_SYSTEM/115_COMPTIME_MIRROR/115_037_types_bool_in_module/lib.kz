@@ -1,0 +1,24 @@
+~import std/types
+
+const std = @import("std");
+
+~bool(IsActive)
+
+~tor check-status { active: IsActive }
+| active
+| inactive
+
+~proc check-status|zig {
+    if (active) {
+        std.debug.print("User is active\n", .{});
+        return .{ .active = .{} };
+    } else {
+        std.debug.print("User is inactive\n", .{});
+        return .{ .inactive = .{} };
+    }
+}
+
+~pub tor run {}
+~run = check-status(active: true)
+| active |> _
+| inactive |> _

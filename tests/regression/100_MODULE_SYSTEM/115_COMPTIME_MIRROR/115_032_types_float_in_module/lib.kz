@@ -1,0 +1,14 @@
+~import std/types
+
+const std = @import("std");
+
+~float(Temperature)
+
+~tor report-temp { temp: Temperature }
+
+~proc report-temp|zig {
+    std.debug.print("Temperature: {d:.1}\n", .{temp});
+}
+
+~pub tor run {}
+~run = report-temp(temp: 98.6)

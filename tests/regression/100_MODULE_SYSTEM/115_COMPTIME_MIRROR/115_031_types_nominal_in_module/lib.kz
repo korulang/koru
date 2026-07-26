@@ -1,0 +1,17 @@
+~import std/types
+
+const std = @import("std");
+
+~string(Username)
+~int(UserId)
+
+~tor greet-user { name: Username, id: UserId }
+
+~proc greet-user|zig {
+    std.debug.print("Hello {s} (ID: {d})\n", .{ name, id });
+}
+
+~const { user: "alice", uid: 42 }
+
+~pub tor run {}
+~run = greet-user(name: user, id: uid)

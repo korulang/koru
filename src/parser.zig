@@ -4878,6 +4878,32 @@ pub const Parser = struct {
                 }
             }
 
+            // A source block may OPEN on the subflow-definition line and close on
+            // a later one (`run = std/io:print.blk {` … `}`), which leaves the
+            // definition line itself brace-unbalanced. Stitch the following lines
+            // on until the braces close, or parseEventInvocation sees a block that
+            // never terminates and reports PARSE001 against balanced source.
+            //
+            // Newline-joined, not space-joined: the block's content is emitted text
+            // and a multi-line block keeps its line structure. The `=>` constructor
+            // path above space-joins because a constructor's braces carry FIELDS,
+            // where layout is not part of the value.
+            //
+            // Each line is TRIMMED before joining, which is what the statement-level
+            // collectors do and what a top-level multi-line block already emits
+            // (900_HELLO_WORLD dedents both of its lines). Carrying the source
+            // indentation through instead would dedent the first line — it follows
+            // the `{` — while keeping it on every later one.
+            {
+                var block_depth = lexer.countBraceDepthChange(inv_str);
+                while (block_depth > 0 and self.current < self.lines.len) {
+                    const nt = lexer.trim(self.lines[self.current]);
+                    self.current += 1;
+                    inv_str = try std.fmt.allocPrint(self.allocator, "{s}\n{s}", .{ inv_str, nt });
+                    block_depth += lexer.countBraceDepthChange(nt);
+                }
+            }
+
             // Point-free chain over multiple lines: `~head = step` followed by
             // indented `|> step` lines. Stitch those steps onto inv_str so the
             // existing inline-chain machinery (has_inline_chain →
