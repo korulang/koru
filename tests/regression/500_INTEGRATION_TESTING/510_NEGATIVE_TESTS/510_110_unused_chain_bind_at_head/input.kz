@@ -1,0 +1,26 @@
+// PINS: KORU100 covers chain binds, not only branch-arm bindings.
+//
+// Ruled by Lars 2026-07-26. `| arm x |> ...` already reports an unused `x`;
+// `(): x |>` does not, in any position. A binding the author names and never
+// reads is the same mistake either side of the pipe, and it should get the same
+// sentence and the same fix — spell it `_`, or drop it.
+//
+// The head position. 510_111 is the same binding one invocation down the chain,
+// because a wall verified only at a head is verified only where reach cannot
+// matter (frag-the-minimal-test-of-a-wall-cannot-test-its-reach).
+//
+// PRECEDENCE THIS MUST NOT BREAK: when the bind carries an obligation, KORU030
+// already names it precisely — "Resource 'h' carries obligation <owned!> was
+// not discharged. Call: ..." — which is strictly more useful than "unused".
+// Such a binding is also not dead: obligation enforcement keys off the bind's
+// presence, and removing "dead" binds is what silently switched enforcement off
+// for a whole class once already
+// (frag-obligation-enforcement-keys-off-return-binding). So an obligation-
+// carrying bind is NOT what this pin asks to be rejected — 330_025 and the
+// probe behind that belief hold that line.
+~import std/io
+
+~tor seed {} -> i64
+~proc seed|zig { return 7; }
+
+~seed(): n0 |> std/io:print.ln("hi")

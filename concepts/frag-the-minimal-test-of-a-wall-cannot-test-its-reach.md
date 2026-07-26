@@ -54,6 +54,31 @@ one position.
 - Any check whose only coverage is a one-line flow should be read as
   unmeasured past position one until a chained pin says otherwise.
 
+## Reach is not only positional
+
+Position is the obvious axis and not the only one. A check can also cover one
+*syntactic form* of the thing it is named for and no other, which hides even
+better because no amount of moving the fault along a chain reveals it.
+
+KORU100 is the instance. It is called "unused binding" and it reports one:
+`| arm x |> …` with a dead `x` is caught. A chain bind — `(): x |>` — is never
+use-checked, at a head or anywhere after it, so the diagnostic's name promises
+the concept while its implementation covers one spelling of it. Ruled closed by
+Lars 2026-07-26; pinned by `510_110` and `510_111`.
+
+The reflex generalises: read a diagnostic's *name* as a claim, and ask which
+forms of that claim are actually tested. A wall whose pins all use one spelling
+is unmeasured for the others, exactly as a wall whose pins are all one-line
+flows is unmeasured past position one.
+
+There is a real limit on this one. A chain bind is not dead the way an arm
+binding is — obligation enforcement keys off its presence, and stripping "dead"
+binds is what once switched that enforcement off wholesale
+([[frag-obligation-enforcement-keys-off-return-binding]]). So the rule has to
+yield to KORU030 wherever the bind carries an obligation, whose message names the
+resource and its disposer and is strictly the better sentence. Widening a check
+to match its name is not the same as widening it everywhere.
+
 ## Open
 
 Whether this is enforceable rather than remembered. A lint that flags a

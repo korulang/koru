@@ -1,0 +1,22 @@
+// PINS: KORU100 reaches a chain bind that is not the flow head.
+//
+// The mid-chain twin of 510_110. `n0` IS read, so only `m` is dead — the flow
+// head is well-formed and the fault sits one invocation later, which is the
+// position a minimal pin never reaches on its own.
+//
+// Written as a separate test rather than a second case in 510_110 on purpose:
+// the two positions are checked by different reach, and KORU022 is already
+// known to hold at a head and evaporate here (510_109). If one of this pair
+// goes green while the other stays red, that asymmetry is the finding.
+//
+// Same precedence constraint as 510_110: an obligation-carrying bind belongs to
+// KORU030, whose message names the resource and the disposer.
+~import std/io
+
+~tor seed {} -> i64
+~proc seed|zig { return 7; }
+
+~tor bump { n: i64 } -> i64
+~proc bump|zig { return n + 1; }
+
+~seed(): n0 |> bump(n: n0): m |> std/io:print.ln("hi")
