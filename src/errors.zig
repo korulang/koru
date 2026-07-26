@@ -90,6 +90,7 @@ pub const ErrorCode = enum(u16) {
     // Variant errors
     KORU110, // Event call site has only bare ~proc declarations (no variant tag)
     KORU111, // Contract/implementation file split violated (public events live in .k only)
+    KORU112, // Effect-branch proc body reaches its own module by a bare name — the body splices into the CONSUMER's frame, where module scope is gone; use `$mod.` (400_155 holds the contract, 400_157 the wall)
 
     // Template / metaprogramming errors
     KORU120, // Template-asserted contract violation (`{% comp error %}` reached)

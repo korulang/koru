@@ -1,0 +1,32 @@
+// PINS: an effect-branch proc body reaching its own module by a BARE name is
+// refused by koru, naming the `$mod.` spelling.
+//
+// Cut-1 effect inlining splices the proc body into the CONSUMER's frame, where
+// the declaring module's names do not exist. `$mod.` is the sanctioned spelling
+// and 400_155 holds it green. This is the twin: get it wrong, and today the
+// author meets
+//
+//     error: use of undeclared identifier 'BASE'
+//
+// from Zig, pointing into `output_emitted.zig` — a file they did not write,
+// about a rule stated only in a comment inside another library.
+//
+// WHERE THE WALL CANNOT GO, measured: neither frontend checker sees an
+// imported module's declarations. `flow_checker.checkSourceFile` is handed the
+// entry file's items only — in BOTH modes, for a test fixture and for a real
+// package alike — so at check time there is no `proc_decl` to inspect and no
+// host line to compare it against. (`shape_checker.checkSourceFile` has no
+// production caller at all.) The merged program first exists at emission,
+// where `ctx.ast_items` carries everything but there is no reporter.
+//
+// So this is not a missing conditional; it is a pass that does not exist yet.
+// KORU112 is reserved for it.
+//
+// This is the first hour of every library author who writes an effect branch,
+// which is why it is worth a wall rather than a docs line.
+~import std/io
+~import app/lib/gadget
+
+~app/lib/gadget:spin(count: 3)
+! tick w |> std/io:print.ln("tick {{ w.n:d }}")
+| done total |> std/io:print.ln("total {{ total:d }}")
