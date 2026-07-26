@@ -1,0 +1,46 @@
+// PINS: KORU030 must offer only tors that can actually settle the obligation.
+//
+// `step` consumes <!open> and re-issues <open!> on every arm. It is
+// CONSERVING: calling it leaves the author owing exactly what they owed
+// before. There is no disposer for P in this program at all.
+//
+// The compiler already knows this, in one of its two modes. The auto-discharge
+// inserter filters candidates by EFFECT — whether inserting the call settles
+// the debt — and correctly reports:
+//
+//     No tor accepts <!open>.
+//
+// The KORU030 message under `--auto-discharge=disable` builds its candidate
+// list by SIGNATURE — anything whose input accepts <!open> — and so names
+// `step`. Two answers to "what discharges this?" for one program, and the one
+// handed to the author is the wrong one: it sends them to call something that
+// cannot help.
+//
+// What this asks for is agreement, not a new sentence: the disabled-mode
+// diagnostic should reach the conclusion the inserter already reaches.
+//
+// A CONVERTING tor is a different thing and stays a legitimate candidate — one
+// that consumes <!open> and issues an obligation on a DIFFERENT resource has
+// settled this debt, whatever it opened elsewhere. Only same-obligation
+// conservation is disqualifying.
+const std = @import("std");
+const P = struct { n: i32 };
+
+~tor start {} -> *P<open!>
+~proc start|zig {
+    const p = std.heap.page_allocator.create(P) catch unreachable;
+    p.* = .{ .n = 0 };
+    return p;
+}
+
+// Consumes one, issues one, on every arm. Never settles the debt.
+~tor step { p: *P<!open> }
+| again *P<open!>
+| more *P<open!>
+~proc step|zig {
+    p.n += 1;
+    if (p.n < 3) return .{ .again = p };
+    return .{ .more = p };
+}
+
+~start()
