@@ -88,9 +88,16 @@ does not follow — plural inserts mint `lib:__store_insert_*` in the file domai
 and `watch` cannot find a module-declared store AT ALL, on a declaration
 structurally identical to the one 690_079 proves works.
 
-So a library is not "module-safe"; individual paths through it are. The unit of
-the claim is the transform and the shape it is invoked with, never the library,
-and any inventory that counts libraries will read as more finished than it is.
+So a library is not "module-safe"; individual paths through it are. And the
+path is not the transform either — std/kernel's pairwise, self and step all fail
+identically at `init`, their own expansions never reached, while std/field's two
+transforms fail in two different ways. What a red indicts is the FIRST
+synthesized name the chain touches, which may belong to a transform the author
+did not invoke.
+
+That cuts both ways on counting. An inventory by library reads as more finished
+than it is; an inventory by transform overstates the remaining work, because
+several arms often die at one gate. Neither number is the number of bugs.
 
 ## Open
 
