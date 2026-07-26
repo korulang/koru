@@ -58,7 +58,6 @@ pub const ErrorCode = enum(u16) {
     // Argument errors
     KORU080, // Missing required field
     KORU081, // Unknown field
-    KORU082, // Field type mismatch
     KORU083, // [!] annotation on multi-branch event (must be single-outcome)
 
     // Pipeline errors

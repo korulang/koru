@@ -97,7 +97,7 @@ fn collect(a: std.mem.Allocator, map: *CountMap, content: []const u8, mode: Mode
 /// creates and removes per-test scratch directories continuously, so a walk taken
 /// during one races it. All three walks here used `try walker.next()` and died
 /// with FileNotFound — non-deterministically, which is worse than always, because
-/// `confirm KORU082` then succeeds twice and crashes once.
+/// `confirm KORU061` then succeeds twice and crashes once.
 ///
 /// A diagnostic tool must not die because its input moved. Skip the vanished
 /// entry and keep walking. Bounded, so a genuinely broken walk still surfaces
@@ -365,7 +365,7 @@ fn confirm(a: std.mem.Allocator, code: []const u8, lines: *LineMap, descs: *Desc
     out("  POLICY   : {d} doc mention(s) of {s}\n", .{ pol.items.len, code });
     for (pol.items) |loc| out("             {s}:{d}: {s}\n", .{ loc.path, loc.line, loc.text });
 
-    // DUPLICATE — another declared code with the same description (the KORU082≡TYPE003 trap).
+    // DUPLICATE — another declared code with the same description — a redundant declaration masquerading as an unwired check.
     var dups = try std.ArrayList([]const u8).initCapacity(a, 0);
     if (desc.len > 0) {
         var dit = descs.iterator();

@@ -11,7 +11,7 @@ zig build 2>/dev/null || { echo "❌ Build failed"; exit 1; }
 echo ""
 echo "Testing INVALID expressions (should all fail):"
 echo "----------------------------------------------"
-ERROR_COUNT=$(./zig-out/bin/koruc examples/test_invalid_expressions.kz 2>&1 | grep -c "KORU082")
+ERROR_COUNT=$(./zig-out/bin/koruc examples/test_invalid_expressions.kz 2>&1 | grep -c "TYPE003")
 echo "❌ Found $ERROR_COUNT validation errors (expected 15+)"
 
 echo ""

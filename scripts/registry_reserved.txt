@@ -7,21 +7,62 @@
 #
 # Listing a code here is a DECISION, not a default. Empty file = every dead code fires.
 #
-# TRIAGE QUEUE (as of 2026-06-07, surfaced by the first run — each is currently FIRING):
-# Decide per code: (a) wire the emit (it's a real bug the enum promises), or
-#                  (b) move it below the line as genuinely-reserved future semantics.
+# The 2026-06-07 triage queue is DRAINED (2026-07-26). Each code below was dispositioned
+# from the `confirm` battery plus a grep for the SHAPE of the missing detector — never
+# for the code's own name, which proves nothing. Proving RESERVED means proving a
+# negative, so each rationale names what would have to exist and does not.
 #
-#   KORU031  Payload type mismatch                 -> WIRED (point-free choke type-aware claim, 220_025)
-#   KORU042  Duplicate label                       -> bug or reserved?
-#   KORU043  Label shape mismatch                  -> bug or reserved?
-#   KORU052  Proc payload mismatch                 -> bug or reserved?
-#   KORU060  Subflow arity mismatch                -> bug or reserved?
-#   KORU061  Subflow recursion detected            -> NO call-graph/cycle detector exists in src/; whether koru forbids subflow recursion is an unsettled design question (no policy in CLAUDE.md/docs) -> reserved-leaning, confirm in a koru session
-#   KORU070  Cannot determine shape at compile time-> bug or reserved?
-#   KORU082  Field type mismatch                   -> bug or reserved?
-#   KORU090  Unhandled split in pipeline           -> bug or reserved?
-#   KORU091  Invalid use of 'p' symbol             -> bug or reserved?
-#   PARSE002 Invalid indentation                   -> bug or reserved?
+# KORU031 was WIRED (point-free choke type-aware claim, 220_025) and is not listed.
+# KORU082 was RETIRED, not reserved: a byte-identical twin of TYPE003, which is emitted
+# at shape_analyzer.zig and type_inference.zig. A redundant declaration is a consolidation
+# target, never future semantics — so it was deleted from the enum rather than suppressed
+# here.
 #
 # --- reserved codes below this line (uncommented = suppressed) ---
+
+# Nothing checks for a label name already registered: ControlFlow.registerLabel does a
+# bare `labels.put`, so a second label of the same name silently overwrites the first.
+# A detector needs an existence check at that put.
+KORU042
+
+# No comparison of a label's payload shape against anything exists.
+KORU043
+
+# No comparison of a proc's payload against its event declaration exists — the `payload`
+# sites in src/ are the emitter's own construction, not a check.
+KORU052
+
+# No subflow arity check exists, and its whole family (KORU06) is unemitted.
+KORU060
+
+# `is_recursive` exists on EventInfo but is initialised false and never set true; its one
+# reader is `canInline`, an inlining heuristic, not a rejection. A detector needs a
+# visiting/in-progress set over a call graph, which src/ does not build. Whether koru
+# forbids subflow recursion at all is still an unsettled design question.
+KORU061
+
+# Sole member of its family, and the phrase appears nowhere but its own declaration:
+# nothing computes shape-determinability at comptime and reports failure.
+KORU070
+
+# No pipeline-split concept exists in src/ — every `split` is string tokenisation.
+KORU090
+
+# No 'p'-symbol validation exists; the symbol has no representation in src/.
+KORU091
+
+# The `|mlir` path is real — the parser accepts the variant and main.zig synthesises AOT
+# build requirements for it — but nothing asks whether a shape is generatable and rejects
+# it. This is the lone-gap trap the drain playbook warns about: an emitting family
+# (KORU12 has five live siblings) tempts a BUG verdict, while the condition this code
+# names is computed nowhere. Wire it when the walking skeleton grows an admissibility
+# check.
+KORU123
+
+# The parser reads indentation in 41 places, all RELATIVE comparisons that drive
+# structure — is this line a continuation of that one. A validator needs a magnitude
+# check on the indent itself, which does not exist. Not a duplicate of SHAPE002, which is
+# emitted and pins a different condition: duplicate branch handlers at one level.
+PARSE002
+
 KORU140
