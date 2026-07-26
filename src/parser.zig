@@ -7362,9 +7362,11 @@ pub const Parser = struct {
     /// invocation is decided by the DELIMITER, never guessed from content —
     /// that is the whole point of the `=>` design.
     fn parseStepKind(self: *Parser, content: []const u8, force_ctor: bool) anyerror!ast.Step {
-        // Strip comments first (everything after //)
+        // Strip a trailing line comment. String-aware: a step carries invocation
+        // arguments, and an argument carries string literals — a URL truncated
+        // at its scheme separator reports as unbalanced parentheses (210_171).
         var clean_content = content;
-        if (std.mem.indexOf(u8, content, "//")) |comment_idx| {
+        if (lexer.commentStart(content)) |comment_idx| {
             clean_content = content[0..comment_idx];
         }
 
@@ -8470,7 +8472,7 @@ pub const Parser = struct {
             }
 
             var content = lexer.trim(line_trimmed[1..]);
-            if (std.mem.indexOf(u8, content, "//")) |comment_idx| {
+            if (lexer.commentStart(content)) |comment_idx| {
                 content = lexer.trim(content[0..comment_idx]);
             }
             try arms.append(self.allocator, try self.parseResumeArm(content, self.current));
@@ -8597,7 +8599,7 @@ pub const Parser = struct {
 
         // Strip inline comments (// ...) so they don't leak into types or annotations.
         // This must happen before any brace/phantom/annotation parsing.
-        if (std.mem.indexOf(u8, branch_start, "//")) |comment_idx| {
+        if (lexer.commentStart(branch_start)) |comment_idx| {
             branch_start = lexer.trim(branch_start[0..comment_idx]);
         }
 

@@ -291,6 +291,42 @@ pub fn findMatchingBrace(text: []const u8, start: usize) ?usize {
     return null; // Unmatched braces
 }
 
+/// Index at which a line comment begins, or null. `//` inside a string literal
+/// is string content, not a comment.
+///
+/// Use this instead of naive `std.mem.indexOf(u8, text, "//")` anywhere the text
+/// can carry a string literal. The canonical casualty is an invocation argument
+/// holding a URL — `take(n, s: "https://example.com")` truncates at the scheme
+/// separator, and what the author sees is a complaint about unbalanced
+/// parentheses in a line whose parentheses are balanced.
+pub fn commentStart(text: []const u8) ?usize {
+    var in_string = false;
+    var string_char: ?u8 = null;
+    var i: usize = 0;
+
+    while (i < text.len) : (i += 1) {
+        const char = text[i];
+
+        if (!in_string and char == '/' and i + 1 < text.len and text[i + 1] == '/') {
+            return i;
+        }
+
+        if (!in_string and (char == '"' or char == '\'')) {
+            in_string = true;
+            string_char = char;
+        } else if (in_string) {
+            if (char == '\\' and i + 1 < text.len) {
+                i += 1; // escaped character — never closes the literal
+            } else if (char == string_char) {
+                in_string = false;
+                string_char = null;
+            }
+        }
+    }
+
+    return null;
+}
+
 /// Count the net brace depth change in a string, skipping braces inside strings and comments.
 /// Returns positive for net opens, negative for net closes.
 /// Use this instead of naive `for (line) |c| if (c == '{') depth += 1` patterns.
