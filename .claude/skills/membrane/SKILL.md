@@ -144,6 +144,33 @@ the prose with it.
 - Detector at write time: if a sentence would need editing when the code
   changes *without the belief changing*, it is state, not belief — cut it.
 
+## Reading the corpus — `snap`, never the whole thing
+
+The corpus never deletes, so "read the membrane before you start" is an
+instruction whose cost grows without bound. **`snap` is the bounded read**, and
+it is the default way to arrive at the corpus:
+
+```sh
+node <store>/snap.mjs                      # bounded snapshot, ~6 KB
+node <store>/snap.mjs --bytes 16000        # wider — covers every concept
+node <store>/snap.mjs --concept frag-<id>  # drill: full belief + its lineage
+node <store>/snap.mjs --json               # structured, for a renderer
+```
+
+Detail decays with **heat** (git recency, then how often a concept has been
+revised). Hot beliefs arrive whole; below that a concept is its title plus its
+last change; below that the one-line commit subject alone; and the tail is named
+but not described. Every concept lands in exactly one tier, so the corpus's true
+width is always visible even when its contents aren't.
+
+`snap` is **pure-read and fully derived** — git plus the working tree, no index,
+no cache, no state. It never writes and never demands work in return, so call it
+as freely as you like. Run it from a repo carrying a `.membrane` pointer and it
+finds the store on its own; otherwise pass `--store`.
+
+Read the whole corpus only when you have a reason that names it. Reach past
+`snap` with the queries below.
+
 ## Querying through time
 
 - **Current belief** — read the working-tree file.
@@ -235,8 +262,9 @@ tail becomes the bottleneck — and back-fill the whole index then.
 
 ## Optional tooling (benefits split by who it serves)
 
-- **Traversal helper** (`membrane trace/at/suspect`) — encodes the query commands
-  above once. A convenience *for the agent* (consistency, fewer tokens). Not required.
+- **Traversal helper** (`membrane trace/at/suspect`) — encodes the `Parents:` /
+  `Severs:` walks above once. `snap --concept` already covers a single concept's
+  trajectory; what's left is forward smear-tracing. Not required.
 - **Lineage visualizer** — reads `git log`, renders evolutions as continuous lines
   and `correct`/`Severs` as explicit cuts. This is the *human's* transparency plane:
   how the corpus's history and health are seen **without poking**. High value for the
