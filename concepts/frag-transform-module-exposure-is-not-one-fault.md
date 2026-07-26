@@ -79,6 +79,19 @@ So every red on this wall needs its entry-file twin before it counts as a module
 finding. That is not wall bureaucracy — it is the difference between a fault
 list and a list of things that happened to be red at the same time.
 
+## std/store is not the fixed exemplar it reads as
+
+690_079 is green and it is easy to read that as "store crossed the boundary."
+What crossed is the SCALAR path: declare, write, read, all singular, all within
+one module. The 115 store mirrors take the rest of the library across and it
+does not follow — plural inserts mint `lib:__store_insert_*` in the file domain,
+and `watch` cannot find a module-declared store AT ALL, on a declaration
+structurally identical to the one 690_079 proves works.
+
+So a library is not "module-safe"; individual paths through it are. The unit of
+the claim is the transform and the shape it is invoked with, never the library,
+and any inventory that counts libraries will read as more finished than it is.
+
 ## Open
 
 - Whether the appended-declaration-lost class (regex) and the
