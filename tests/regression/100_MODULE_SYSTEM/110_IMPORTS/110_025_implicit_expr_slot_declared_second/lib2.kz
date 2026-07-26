@@ -1,0 +1,61 @@
+const std = @import("std");
+
+~import std/io
+
+// A comptime transform taking the implicit expression slot. It reads the slot
+// back off its own invocation BY NAME — the shape `std/store:new` uses when it
+// locates a store's declaring module — so what this pins is the AST-level
+// binding of the implicit slot, not the positionally-bound proc parameter,
+// which would mask an unbound arg.
+//
+// The transform rewrites its site to `say-<expr>()`, so the text that reached
+// the slot decides which tor runs.
+~[comptime|transform]pub tor echo {
+    invocation: *const Invocation,
+    expr: Expression,
+    item: *const Item,
+    allocator: std.mem.Allocator
+} -> SiteResult
+
+~proc echo|zig {
+    const ast = @import("ast");
+
+    const flow = if (item.* == .flow) &item.flow else @panic("app/lib2:echo: expected a flow site");
+
+    var word: []const u8 = "";
+    for (invocation.args) |a| {
+        if (std.mem.eql(u8, a.name, "expr")) word = a.value;
+    }
+
+    const seg = std.fmt.allocPrint(allocator, "say-{s}", .{std.mem.trim(u8, word, " \t")}) catch unreachable;
+    const new_segments = allocator.alloc([]const u8, 1) catch unreachable;
+    new_segments[0] = seg;
+
+    const new_inv = ast.Invocation{
+        .path = ast.DottedPath{
+            .module_qualifier = if (invocation.path.module_qualifier) |mq| allocator.dupe(u8, mq) catch unreachable else null,
+            .segments = new_segments,
+        },
+        .args = &[_]ast.Arg{},
+    };
+
+    const new_item = ast.Item{
+        .flow = ast.Flow{
+            .body = ast.rootSite(new_inv, flow.body.continuations, flow.location),
+            .pre_label = if (flow.pre_label) |l| allocator.dupe(u8, l) catch unreachable else null,
+            .impl_of = flow.impl_of,
+            .super_shape = null,
+            .inline_body = null,
+            .preamble_code = null,
+            .is_pure = flow.is_pure,
+            .is_transitively_pure = flow.is_transitively_pure,
+            .location = flow.location,
+            .module = allocator.dupe(u8, flow.module) catch unreachable,
+        },
+    };
+
+    return .{ .replacement = new_item };
+}
+
+~pub tor say-hello {}
+~say-hello = std/io:print.ln("hello")
