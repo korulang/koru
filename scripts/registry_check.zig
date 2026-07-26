@@ -293,6 +293,32 @@ fn grepTree(a: std.mem.Allocator, root: []const u8, ext: []const u8, needle: []c
     }
 }
 
+/// A PIN is an assertion in a test's EXPECTATION file — exactly what `collectPins`
+/// counts for the authoritative PINNED set. `confirm` used to grep every file under
+/// tests/regression instead, which sweeps in build residue: each test directory
+/// holds a `backend_output_emitted.zig` and a `program.ast.json` carrying the
+/// compiler's own emitted ErrorCode enum, so EVERY declared code appeared "pinned"
+/// hundreds of times. KORU123 reported 506 references against 0 real ones.
+///
+/// That mattered because the two surfaces then disagreed about the same word, and
+/// the one an operator is told to trust for a disposition was the wrong one:
+/// "PINNED: 506" reads as heavily-depended-upon, which argues for wiring an emit.
+/// The correct evidence — nothing pins this — argues the opposite.
+fn grepPins(a: std.mem.Allocator, root: []const u8, needle: []const u8, list: *std.ArrayList(Loc)) !void {
+    var dir = std.fs.cwd().openDir(root, .{ .iterate = true }) catch return;
+    defer dir.close();
+    var walker = try dir.walk(a);
+    defer walker.deinit();
+    while (try nextTolerant(&walker)) |entry| {
+        if (entry.kind != .file) continue;
+        const b = entry.basename;
+        if (!(std.mem.startsWith(u8, b, "expected") or std.mem.eql(u8, b, "EXPECT"))) continue;
+        const content = dir.readFileAlloc(a, entry.path, 16 * 1024 * 1024) catch continue;
+        const label = try std.fmt.allocPrint(a, "{s}/{s}", .{ root, entry.path });
+        try grepContent(a, label, content, needle, list);
+    }
+}
+
 fn grepFile(a: std.mem.Allocator, path: []const u8, needle: []const u8, list: *std.ArrayList(Loc)) !void {
     const content = std.fs.cwd().readFileAlloc(a, path, 16 * 1024 * 1024) catch return;
     try grepContent(a, path, content, needle, list);
@@ -328,7 +354,7 @@ fn confirm(a: std.mem.Allocator, code: []const u8, lines: *LineMap, descs: *Desc
 
     // PINNED — regression expectations referencing the code.
     var pins = try std.ArrayList(Loc).initCapacity(a, 0);
-    try grepTree(a, "tests/regression", "", lit, &pins);
+    try grepPins(a, "tests/regression", lit, &pins);
     out("  PINNED   : {d} test reference(s)\n", .{pins.items.len});
     for (pins.items) |loc| out("             {s}:{d}\n", .{ loc.path, loc.line });
 
