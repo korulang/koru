@@ -46,6 +46,20 @@ run — and would not have been, since the next full run was going to be paralle
   [[frag-a-red-pin-is-unfalsifiable-documentation]] — an assertion no assertion
   checks. The defence is to run the guard and watch it fail on purpose.
 
+## The same failure one layer in: a guard whose input is not tracked
+
+Check D shipped with its manifest untracked. `tests/regression/.gitignore` is an
+allowlist — `*`, then the kept patterns — and the manifest's extension was not on
+it, so `git add <path>` printed an advisory hint and exited 0. The commit
+succeeded; the lint's only input did not travel with it. For anyone else the check
+would have failed with MISSING-MANIFEST, pointing at the manifest rather than at
+the ignore rule that ate it.
+
+Same shape as the topology defect: logic sound, reach zero. Reaching now means
+being present in the clone, not merely being called. And staging narrowly —
+adopted in that session as protection against a concurrent writer in the same
+checkout — is what removed the `git add -A` whose diff would have shown the gap.
+
 ## Open
 
 Whether the other end-of-run steps that parallel mode skips matter as much. The

@@ -79,23 +79,34 @@ D=$(python3 - <<'PY'
 import re, pathlib, sys
 
 root = pathlib.Path('.')
-manifest = root / 'tests/regression/100_MODULE_SYSTEM/115_COMPTIME_MIRROR/COVERAGE.tsv'
+manifest = root / 'tests/regression/100_MODULE_SYSTEM/115_COMPTIME_MIRROR/COVERAGE.md'
 if not manifest.exists():
     print(f"MISSING-MANIFEST\t{manifest}")
     sys.exit()
 
 REASONS = {'no-green-usage', 'pins-unimplemented-surface', 'tested-in-koru-libs'}
 
+# A markdown table, not a TSV: tests/regression/.gitignore is an explicit
+# allowlist and *.md is on it, so the manifest is readable as a document AND
+# tracked without touching the ignore rules.
 rows = {}
 for line in manifest.read_text().splitlines():
-    line = line.rstrip()
-    if not line or line.lstrip().startswith('#'):
+    line = line.strip()
+    if not line.startswith('|'):
         continue
-    parts = line.split('\t')
-    if len(parts) != 2 or not parts[1].strip():
-        print(f"MALFORMED-ROW\t{line}")
+    cells = [c.strip().strip('`').strip() for c in line.strip('|').split('|')]
+    if len(cells) != 2:
         continue
-    rows[parts[0].strip()] = parts[1].strip()
+    key, val = cells
+    # A transform key is always `lib:name`. That one test skips the header row,
+    # its `---` separator, and the reason-legend table above — whose own rows are
+    # otherwise indistinguishable from data.
+    if ':' not in key:
+        continue
+    if val in REASONS or val.startswith(('115_', '690_')):
+        rows[key] = val
+    else:
+        print(f"MALFORMED-ROW\t{key}\t{val}")
 
 # The declaration form is `~[...comptime|transform...]pub tor NAME {`, with an
 # optional space before `pub`. Commented-out declarations do not count.
@@ -129,7 +140,7 @@ for t, d in sorted(rows.items()):
 PY
 )
 if [ -z "$D" ]; then
-  nD=$(grep -cvE '^\s*(#|$)' tests/regression/100_MODULE_SYSTEM/115_COMPTIME_MIRROR/COVERAGE.tsv)
+  nD=$(grep -cE '^\| `[a-z0-9_]+:' tests/regression/100_MODULE_SYSTEM/115_COMPTIME_MIRROR/COVERAGE.md)
   echo -e "  ${GREEN}✓ D${NC} all koru_std comptime transforms accounted for by the mirror wall (${nD} rows)"
 else
   echo -e "  ${RED}✗ D${NC} the comptime mirror wall is out of date:"
@@ -137,7 +148,7 @@ else
   echo "      UNDECLARED   — a new transform with no row. Add a 115_* mirror, or a reason."
   echo "      STALE        — a row for a transform koru_std no longer declares. Remove it."
   echo "      NO-SUCH-TEST — a row naming a test directory that does not exist."
-  echo "      Manifest: tests/regression/100_MODULE_SYSTEM/115_COMPTIME_MIRROR/COVERAGE.tsv"
+  echo "      Manifest: tests/regression/100_MODULE_SYSTEM/115_COMPTIME_MIRROR/COVERAGE.md"
   fail=1
 fi
 
