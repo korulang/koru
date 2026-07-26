@@ -23,8 +23,13 @@ import { collectPassing, emitTest } from './lib/corpus.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
+// See generate-corpus.js: reads from ROOT, writes to OUT_ROOT so check A can
+// regenerate into a temp dir instead of over the tracked file.
+const OUT_ROOT = process.env.KORU_GEN_OUT_ROOT
+  ? path.resolve(process.env.KORU_GEN_OUT_ROOT)
+  : ROOT;
 const TESTS_DIR = path.join(ROOT, 'tests', 'regression');
-const OUTPUT = path.join(ROOT, 'koru-tutorial.md');
+const OUTPUT = path.join(OUT_ROOT, 'koru-tutorial.md');
 const CONFIG = path.join(ROOT, 'koru-by-example.json');
 
 // ----------------------------------------------------------------------

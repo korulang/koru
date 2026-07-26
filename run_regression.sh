@@ -37,6 +37,11 @@ export KORU_PATH="$PWD"
 #
 # Appends to FAILED_TESTS, which both paths already consult before exiting.
 run_coherence_watchers() {
+    # prose-check's check A reads live test markers, so it has to tell OUR lock
+    # from a foreign suite's. Without this it would see the lock we ourselves
+    # hold and refuse every time.
+    export KORU_SUITE_PID=$$
+
     # Diagnostic-code drift in src/errors.zig — fires when a code is
     # emitted-but-undeclared, declared-but-never-emitted, or pinned-but-undeclared.
     # Cannot lie: it runs the real scan over real source.

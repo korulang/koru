@@ -20,18 +20,68 @@ fail=0
 echo "prose-check — no-prose / pipeline coherence"
 
 # --- A: generated == regeneration -------------------------------------------
+# The generators read which tests pass from live SUCCESS markers, so the corpus
+# they produce is only well defined against a settled marker set. Inside our own
+# suite it is settled — prose-check runs last. A FOREIGN suite mid-run is a
+# different story: `--no-cache` clears markers before rewriting them, so
+# regenerating then yields "0 passing positive tests".
+#
+# Two defects came out of that, and both are fixed here rather than tolerated.
+# Regeneration used to write over the tracked files, making checking and
+# mutating one act — so the emptied corpus was left in the working tree for the
+# next `git add -A` to publish. And the emptied result was reported as an honest
+# "differs", which is a true sentence about nothing.
 GEN_PATHS=(koru-by-example.md koru-tutorial.md docs/by-example \
            skills/koru/SKILL.md skills/koru-templates/SKILL.md skills/koru-metaprogramming/SKILL.md)
-node scripts/generate-skills.js   >/dev/null 2>&1
-node scripts/generate-corpus.js   >/dev/null 2>&1
-node scripts/generate-tutorial.js >/dev/null 2>&1
-if git diff --quiet HEAD -- "${GEN_PATHS[@]}"; then
-  echo -e "  ${GREEN}✓ A${NC} generated artifacts == regeneration"
-else
-  echo -e "  ${RED}✗ A${NC} a generated artifact differs from its regeneration (hand-edited):"
-  git diff --stat HEAD -- "${GEN_PATHS[@]}" | sed 's/^/      /'
-  echo "      Never hand-edit a generated file — edit koru-by-example.json and regenerate."
+
+# A lock held by anyone but our own suite means the corpus is moving underneath
+# us. run_regression.sh exports KORU_SUITE_PID so its own lock is recognised.
+LOCK="${TMPDIR:-/tmp}/koru-regression.lock"; LOCK="${LOCK%/}"
+FOREIGN_SUITE=""
+if [ -d "$LOCK" ]; then
+  lock_pid=$(cat "$LOCK/pid" 2>/dev/null || echo "")
+  if [ -n "$lock_pid" ] && [ "$lock_pid" != "${KORU_SUITE_PID:-}" ]; then
+    FOREIGN_SUITE="$lock_pid ($(cat "$LOCK/checkout" 2>/dev/null || echo 'unknown checkout'))"
+  fi
+fi
+
+if [ -n "$FOREIGN_SUITE" ]; then
+  # Not clean, not differs — unknowable. Saying either would be inventing a
+  # result, and "clean" is the one that would be believed.
+  echo -e "  ${RED}✗ A${NC} CANNOT CHECK — another suite is rewriting the test markers this check reads:"
+  echo "      pid ${FOREIGN_SUITE}"
+  echo "      The corpus is derived from SUCCESS markers, so a regeneration taken now"
+  echo "      describes a half-finished run. Re-run when that suite is done."
   fail=1
+else
+  GEN_TMP=$(mktemp -d "${TMPDIR:-/tmp}/koru-prosecheck.XXXXXX")
+  trap 'rm -rf "$GEN_TMP"' EXIT
+  # Writes land in GEN_TMP; reads still come from the repo.
+  KORU_GEN_OUT_ROOT="$GEN_TMP" node scripts/generate-skills.js   >/dev/null 2>&1
+  KORU_GEN_OUT_ROOT="$GEN_TMP" node scripts/generate-corpus.js   >/dev/null 2>&1
+  KORU_GEN_OUT_ROOT="$GEN_TMP" node scripts/generate-tutorial.js >/dev/null 2>&1
+
+  A_DIFFS=""
+  while IFS= read -r p; do
+    [ -n "$p" ] || continue
+    if [ ! -e "$GEN_TMP/$p" ]; then
+      A_DIFFS="${A_DIFFS}      ${p} — committed but the generators no longer produce it"$'\n'
+      continue
+    fi
+    if ! git show "HEAD:$p" 2>/dev/null | diff -q - "$GEN_TMP/$p" >/dev/null 2>&1; then
+      A_DIFFS="${A_DIFFS}      ${p}"$'\n'
+    fi
+  done < <(git ls-files -- "${GEN_PATHS[@]}")
+
+  if [ -z "$A_DIFFS" ]; then
+    echo -e "  ${GREEN}✓ A${NC} generated artifacts == regeneration (compared out-of-tree)"
+  else
+    echo -e "  ${RED}✗ A${NC} a generated artifact differs from its regeneration (hand-edited):"
+    printf '%s' "$A_DIFFS"
+    echo "      Never hand-edit a generated file — edit koru-by-example.json and regenerate."
+    echo "      The working tree was NOT modified; regenerate for real to see the diff."
+    fail=1
+  fi
 fi
 
 # --- B: the config carries no prose fields ----------------------------------

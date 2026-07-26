@@ -32,8 +32,17 @@ import {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
+// Reads always come from ROOT; writes go to OUT_ROOT, which defaults to it.
+// prose-check's check A points OUT_ROOT at a temp dir so it can compare a
+// regeneration against the committed artifact WITHOUT rewriting the tracked
+// file — regenerating in place made checking and mutating the same act, and a
+// concurrent suite clearing SUCCESS markers mid-run left an emptied corpus in
+// the working tree for the next `git add -A` to publish.
+const OUT_ROOT = process.env.KORU_GEN_OUT_ROOT
+  ? path.resolve(process.env.KORU_GEN_OUT_ROOT)
+  : ROOT;
 const TESTS_DIR = path.join(ROOT, 'tests', 'regression');
-const OUTPUT = path.join(ROOT, 'koru-by-example.md');
+const OUTPUT = path.join(OUT_ROOT, 'koru-by-example.md');
 const CONFIG = path.join(ROOT, 'koru-by-example.json');
 
 // ----------------------------------------------------------------------
