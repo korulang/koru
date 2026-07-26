@@ -1,3 +1,11 @@
+---
+challenge: combinatorial-composition
+kind: frame
+status: standing
+yields: one uncovered feature combination, pinned green or as a MUST_FAIL
+family: toolchain
+---
+
 # Challenge 007 — Combinatorial Composition (does the syntax still compose?)
 
 > You ARE the contestant, not the assistant. Pick ONE **combination** of language

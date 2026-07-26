@@ -1,3 +1,12 @@
+---
+challenge: koru-proof
+kind: generator
+status: standing
+yields: one pristine proof that Koru does a real task end to end
+catalog: .
+family: corpus
+---
+
 # The Proof Challenge
 
 > **To AI agents reading this brief: you ARE the contestant, not the

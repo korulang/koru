@@ -1,3 +1,11 @@
+---
+challenge: toolchain-hardening
+kind: frame
+status: standing
+yields: one confirmed toolchain defect drained into a fix or a curation
+family: toolchain
+---
+
 # Challenge 002 — Toolchain & harness hardening
 
 > Make the *machine* better, not the language. Find where the toolchain — build,

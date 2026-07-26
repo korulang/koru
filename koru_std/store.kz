@@ -67,6 +67,31 @@
 //     shape checker — checkers run after transforms (capture precedent).
 
 const std = @import("std");
+const ast_find = @import("ast");
+
+/// Find a SYNTHESIZED store declaration by its exact generated name, at any
+/// module depth.
+///
+/// A store declared inside an imported module has its units synthesized INTO
+/// that module — that is where they must live for their own paths to resolve —
+/// so a top-level-only lookup reports the store as undeclared while looking
+/// straight at it.
+///
+/// Descending through every module is safe HERE and only here: the name is a
+/// generated `__store_*` symbol that exists nowhere else in the program. A
+/// general scan flattened the same way starts matching ordinary flows inside
+/// `std.compiler` and friends, which is a different and much worse bug.
+fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.EventDecl {
+    for (its) |*pi| {
+        if (pi.* == .event_decl) {
+            const ed = &pi.event_decl;
+            if (ed.path.segments.len == 1 and std.mem.eql(u8, ed.path.segments[0], want)) return ed;
+        } else if (pi.* == .module_decl) {
+            if (findSynthDecl(pi.module_decl.items, want)) |d| return d;
+        }
+    }
+    return null;
+}
 
 // ============================================================================
 // STORE.CREATE — declare + instantiate a store; the (f) coordinator
@@ -106,6 +131,28 @@ const std = @import("std");
         // The module a store was DECLARED in — where its cell and accessors are
         // emitted. Twin of the `stored` transform's helper of the same name;
         // each transform carries its own H, as the rest of this file does.
+        //
+        // The store's home in the FILE-derived domain (`lib`) — the same domain
+        // as `Flow.module`. Use this for any comparison against a flow; use
+        // `storeHomeModule` (import-derived, `app.lib`) for anything that mints
+        // a resolvable path. Mixing the two makes a same-module read look
+        // cross-module, which is what the two names exist to prevent.
+        fn storeHomeFile(prog: *const ast.Program, store: []const u8) ?[]const u8 {
+            const Find = struct {
+                fn newIn(its: []const ast.Item, want: []const u8) ?[]const u8 {
+                    for (its) |pi| {
+                        if (pi == .flow) {
+                            const f = &pi.flow;
+                            if (isStoreInv(f, "new", want)) return f.module;
+                        } else if (pi == .module_decl) {
+                            if (newIn(pi.module_decl.items, want)) |m| return m;
+                        }
+                    }
+                    return null;
+                }
+            };
+            return Find.newIn(prog.items, store);
+        }
         fn storeHomeModule(alloc: std.mem.Allocator, prog: *const ast.Program, store: []const u8) ?[]const u8 {
             const apply_name = std.fmt.allocPrint(alloc, "__store_apply_{s}", .{store}) catch unreachable;
             // Both searches descend into `module_decl`: a store is declared
@@ -3908,7 +3955,8 @@ const std = @import("std");
             fn prefixesFor(alloc: std.mem.Allocator, prog: *const ast.Program, names: []const []const u8, reader: []const u8) []const []const u8 {
                 const px = alloc.alloc([]const u8, names.len) catch unreachable;
                 for (names, 0..) |nm, i| {
-                    const home = H.storeHomeModule(alloc, prog, nm) orelse "";
+                    // FILE-derived: `reader` is a `Flow.module`, same domain.
+                    const home = H.storeHomeFile(prog, nm) orelse "";
                     if (home.len == 0 or std.mem.eql(u8, home, reader)) {
                         px[i] = "";
                         continue;
@@ -4184,14 +4232,10 @@ const std = @import("std");
         // seed block. Deterministic under any transform order.
         fn fieldOrder(alloc: std.mem.Allocator, prog: *const ast.Program, store: []const u8) ?[]const []const u8 {
             const apply_name = std.fmt.allocPrint(alloc, "__store_apply_{s}", .{store}) catch unreachable;
-            for (prog.items) |pi| {
-                if (pi != .event_decl) continue;
-                const ed = &pi.event_decl;
-                if (ed.path.segments.len == 1 and std.mem.eql(u8, ed.path.segments[0], apply_name)) {
-                    const names = alloc.alloc([]const u8, ed.branches.len) catch unreachable;
-                    for (ed.branches, 0..) |b, i| names[i] = b.name;
-                    return names;
-                }
+            if (findSynthDecl(prog.items, apply_name)) |ed| {
+                const names = alloc.alloc([]const u8, ed.branches.len) catch unreachable;
+                for (ed.branches, 0..) |b, i| names[i] = b.name;
+                return names;
             }
             for (prog.items) |pi| {
                 if (pi != .flow) continue;
@@ -5084,14 +5128,10 @@ const std = @import("std");
                 }
             }
             const apply_name = std.fmt.allocPrint(alloc, "__store_apply_{s}", .{store}) catch unreachable;
-            for (prog.items) |pi| {
-                if (pi != .event_decl) continue;
-                const ed = &pi.event_decl;
-                if (ed.path.segments.len == 1 and std.mem.eql(u8, ed.path.segments[0], apply_name)) {
-                    const names = alloc.alloc([]const u8, ed.branches.len) catch unreachable;
-                    for (ed.branches, 0..) |b, i| names[i] = b.name;
-                    return names;
-                }
+            if (findSynthDecl(prog.items, apply_name)) |ed| {
+                const names = alloc.alloc([]const u8, ed.branches.len) catch unreachable;
+                for (ed.branches, 0..) |b, i| names[i] = b.name;
+                return names;
             }
             for (prog.items) |pi| {
                 if (pi != .flow) continue;

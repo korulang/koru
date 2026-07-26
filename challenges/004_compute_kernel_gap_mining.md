@@ -1,3 +1,11 @@
+---
+challenge: kernel-gap-mining
+kind: frame
+status: standing
+yields: one ported compute kernel and the language gap it names, pinned
+family: toolchain
+---
+
 # Challenge 004 — Compute-kernel gap mining
 
 > Exercise the **language** by porting naive compute kernels through `koruc`, faithfully.

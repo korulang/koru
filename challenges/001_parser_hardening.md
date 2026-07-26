@@ -1,3 +1,11 @@
+---
+challenge: parser-hardening
+kind: frame
+status: standing
+yields: fresh parser probes, each confirmed divergence pinned as a test or a parser fix
+family: toolchain
+---
+
 # Challenge 001 — Parser / frontend hardening
 
 > Find inputs where koru's **reality diverges from intent**: a program wrongly accepted,

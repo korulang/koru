@@ -1,3 +1,11 @@
+---
+challenge: board-triage
+kind: frame
+status: standing
+yields: one standing red read in the compiler’s own terms, with a grounded diagnosis
+family: toolchain
+---
+
 # Challenge 005 — Regression-board triage & fix
 
 > The suite is already carrying **166 honest reds**. Each one is a question the language

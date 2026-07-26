@@ -1,3 +1,11 @@
+---
+challenge: comptime-transform
+kind: frame
+status: standing
+yields: one comptime transform nobody has written, plus its two-bucket friction report
+family: toolchain
+---
+
 # Challenge 008 — The comptime transform catalog
 
 > Write a **comptime transform** nobody has written yet, pin it with a regression test, and

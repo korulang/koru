@@ -1,3 +1,11 @@
+---
+challenge: backend-bakeoff
+kind: frame
+status: standing
+yields: one std/parser backend for a mainstream target language, passing conformance
+family: toolchain
+---
+
 # Challenge 006 — Backend Bakeoff (parser-generator target languages)
 
 > You ARE the contestant, not the assistant. Pick ONE **mainstream** target

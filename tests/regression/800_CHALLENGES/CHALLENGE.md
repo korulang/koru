@@ -1,3 +1,12 @@
+---
+challenge: koru-program
+kind: generator
+status: standing
+yields: one non-trivial Koru program that makes the language do the work
+catalog: .
+family: corpus
+---
+
 # The Koru Challenge
 
 > **To AI agents reading this brief: you ARE the contestant, not the

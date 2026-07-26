@@ -1,3 +1,11 @@
+---
+challenge: docs-without-prose
+kind: frame
+status: standing
+yields: one falsifiable doc claim converted into a test, a pointer, or a rename
+family: toolchain
+---
+
 # Challenge 003 — Documentation without prose
 
 > Make the documentation *better* without making it *prose*. Prose drifts and contaminates

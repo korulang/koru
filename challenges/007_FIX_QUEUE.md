@@ -1,3 +1,10 @@
+---
+challenge: obligation-narrowing
+kind: commission
+status: standing
+yields: field-granular obligation narrowing, built to the spec pins
+---
+
 # Challenge 007 — Fable Commission: field-granular obligation narrowing
 
 This supersedes the earlier two-symptom queue. Challenge 007's obligation findings
