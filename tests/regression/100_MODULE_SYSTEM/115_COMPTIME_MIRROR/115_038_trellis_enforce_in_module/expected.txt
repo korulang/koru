@@ -1,0 +1,2 @@
+law armed
+mass[0]=2 mass[1]=4

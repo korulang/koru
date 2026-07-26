@@ -51,6 +51,26 @@ carries no name across a boundary; appending a declaration and referring to it
 does. That is also why the site-local class relocates for free and why
 `liquid_template:emit`, bare keyword and all, was never at risk.
 
+## The failure that does not fail
+
+Every red on this wall is a compile error except one. `std/runtime:register`
+declares a priced scope inside a module; the program then COMPILES, RUNS, and
+takes its `| scope-not-found` branch instead of `| exhausted`. No diagnostic, no
+crash — a different answer, delivered confidently, through a branch the author
+legitimately declared.
+
+That is the failure mode the whole no-fallbacks law exists to hate, arriving
+from a direction nobody was watching: not a swallowed exception or a placeholder
+value, but a comptime registry that came up empty and a well-formed program
+built on the emptiness. A transform whose synthesized name is resolved at RUN
+time rather than at emission has no compile step left to fail in.
+
+It also sets the bar for the wall itself. A mirror that only asserted "compiles
+clean" would have called this one green. Relocation tests have to assert OUTPUT,
+and the pins carrying MUST_RUN without an expected.txt (115_031, 115_032,
+115_034, 115_037) are weaker for exactly this reason — they inherit that
+convention from the originals, and they would not catch this.
+
 ## Why the distinction is load-bearing
 
 The proposed remedy is an authoring surface that makes the namespace

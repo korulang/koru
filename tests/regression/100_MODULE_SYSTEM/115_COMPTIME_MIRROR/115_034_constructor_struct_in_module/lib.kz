@@ -1,0 +1,17 @@
+~import std/constructor
+
+const std = @import("std");
+
+~std/constructor:struct(Vec3)
+! construct |> for(0..3)
+    ! each i |> std/constructor:field(name: "v{i}", type: f64)
+
+~tor emit-vec {}
+
+~proc emit-vec|zig {
+    const p = Vec3{ .v0 = 1.0, .v1 = 2.0, .v2 = 3.0 };
+    std.debug.print("({d:.1}, {d:.1}, {d:.1})\n", .{ p.v0, p.v1, p.v2 });
+}
+
+~pub tor run {}
+~run = emit-vec()
