@@ -1,0 +1,46 @@
+// PINS: a `#loop` fold preceded by a prefix invocation must still bind the
+// EXIT arm's payload capture.
+//
+// 210_123 is this program with the prefix removed (`~spin = #loop step(n: 0)`)
+// and it holds the shape green, so the fold, the `@loop` back-edge and the
+// `| done r -> r` bare-return exit are all individually sound. Adding one bind
+// ahead of the fold head is the entire difference here.
+//
+// What the emitter does with it: the BACK-EDGE arm captures correctly
+// (`.next => |v|`), while the EXIT arm discards its capture and then reads the
+// name it just dropped —
+//
+//     .done => |_| { return r; }
+//
+// — so the failure arrives as a raw Zig "use of undeclared identifier 'r'"
+// rather than a Koru diagnostic. Whatever the fix, the wall belongs at the
+// Koru level; a host-language error reaching the author is the second defect
+// this pin carries.
+//
+// Deliberately obligation-free. 330_074 exercises the same fold carrying a
+// phantom obligation across the back-edge AND spells its back-edge with an
+// inline `: v |>` bind rather than a branch arm; that spelling fails harder
+// still (the branch tag itself is dropped, `while (result_0 == .)`, and the
+// exit arm is absent from the switch). Three variables at once cannot name a
+// cause, so this pin holds exactly one: the prefix.
+~import std/io
+
+~tor seed {} -> i64
+~proc seed|zig { return 0; }
+
+~tor step { n: i64 }
+| next i64
+| done i64
+
+~proc step|zig {
+    if (n < 3) return .{ .next = n + 1 };
+    return .{ .done = n };
+}
+
+~tor spin {} -> i64
+
+~spin = seed(): n0 |> #loop step(n: n0)
+| next v |> @loop(n: v)
+| done r -> r
+
+~spin(): f |> std/io:print.ln("ok {{ f:d }}")
