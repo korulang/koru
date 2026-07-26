@@ -4362,6 +4362,11 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             };
         }
         // Build the chain: envwrite each, then announce each (write order).
+        //
+        // These units were DECLARED by `new` under the store's home module, so
+        // reference them by that same logical name. `flow.module` is the file
+        // the WRITE was written in and names a namespace nothing declared.
+        const env_home = H.storeHomeModule(allocator, program, env_store) orelse flow.module;
         const envw_name = std.fmt.allocPrint(allocator, "__store_envwrite_{s}", .{env_store}) catch unreachable;
         const ann_name = std.fmt.allocPrint(allocator, "__store_announce_{s}", .{env_store}) catch unreachable;
         const total = writes.len * 2;
@@ -4371,13 +4376,13 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             a1[0] = ast.Arg{ .name = allocator.dupe(u8, "field") catch unreachable, .value = std.fmt.allocPrint(allocator, "{d}", .{env_idx[wi]}) catch unreachable };
             a1[1] = ast.Arg{ .name = allocator.dupe(u8, "value") catch unreachable, .value = env_values[wi] };
             invs[wi] = ast.Invocation{
-                .path = H.mkPathH2(allocator, flow.module, envw_name),
+                .path = H.mkPathH2(allocator, env_home, envw_name),
                 .args = a1,
             };
             const a2 = allocator.alloc(ast.Arg, 1) catch unreachable;
             a2[0] = ast.Arg{ .name = allocator.dupe(u8, "field") catch unreachable, .value = std.fmt.allocPrint(allocator, "{d}", .{env_idx[wi]}) catch unreachable };
             invs[writes.len + wi] = ast.Invocation{
-                .path = H.mkPathH2(allocator, flow.module, ann_name),
+                .path = H.mkPathH2(allocator, env_home, ann_name),
                 .args = a2,
             };
         }
