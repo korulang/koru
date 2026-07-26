@@ -92,12 +92,38 @@ fn collect(a: std.mem.Allocator, map: *CountMap, content: []const u8, mode: Mode
     }
 }
 
+/// `walker.next()` fails when a directory is listed and then gone by the time it
+/// is opened. Under `tests/regression` that is not an edge case: a running suite
+/// creates and removes per-test scratch directories continuously, so a walk taken
+/// during one races it. All three walks here used `try walker.next()` and died
+/// with FileNotFound — non-deterministically, which is worse than always, because
+/// `confirm KORU082` then succeeds twice and crashes once.
+///
+/// A diagnostic tool must not die because its input moved. Skip the vanished
+/// entry and keep walking. Bounded, so a genuinely broken walk still surfaces
+/// rather than spinning: the file reads below already use `catch continue` for
+/// the same reason, and only the walk itself was left strict.
+fn nextTolerant(walker: *std.fs.Dir.Walker) !?std.fs.Dir.Walker.Entry {
+    var skipped: usize = 0;
+    while (true) {
+        if (walker.next()) |maybe| {
+            return maybe;
+        } else |err| switch (err) {
+            error.FileNotFound, error.NotDir, error.AccessDenied, error.BadPathName => {
+                skipped += 1;
+                if (skipped > 64) return err;
+            },
+            else => return err,
+        }
+    }
+}
+
 fn collectTree(a: std.mem.Allocator, map: *CountMap, root: []const u8, ext: []const u8, mode: Mode) !void {
     var dir = std.fs.cwd().openDir(root, .{ .iterate = true }) catch return;
     defer dir.close();
     var walker = try dir.walk(a);
     defer walker.deinit();
-    while (try walker.next()) |entry| {
+    while (try nextTolerant(&walker)) |entry| {
         if (entry.kind != .file) continue;
         if (!std.mem.endsWith(u8, entry.basename, ext)) continue;
         const content = dir.readFileAlloc(a, entry.path, 16 * 1024 * 1024) catch continue;
@@ -110,7 +136,7 @@ fn collectPins(a: std.mem.Allocator, map: *CountMap, root: []const u8) !void {
     defer dir.close();
     var walker = try dir.walk(a);
     defer walker.deinit();
-    while (try walker.next()) |entry| {
+    while (try nextTolerant(&walker)) |entry| {
         if (entry.kind != .file) continue;
         const b = entry.basename;
         if (!(std.mem.startsWith(u8, b, "expected") or std.mem.eql(u8, b, "EXPECT"))) continue;
@@ -258,7 +284,7 @@ fn grepTree(a: std.mem.Allocator, root: []const u8, ext: []const u8, needle: []c
     defer dir.close();
     var walker = try dir.walk(a);
     defer walker.deinit();
-    while (try walker.next()) |entry| {
+    while (try nextTolerant(&walker)) |entry| {
         if (entry.kind != .file) continue;
         if (ext.len > 0 and !std.mem.endsWith(u8, entry.basename, ext)) continue;
         const content = dir.readFileAlloc(a, entry.path, 16 * 1024 * 1024) catch continue;

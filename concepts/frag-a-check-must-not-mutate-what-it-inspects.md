@@ -51,9 +51,30 @@ Siblings, same family, different causes: [[frag-a-watcher-off-the-normal-path-is
 match). This one runs, matches, and damages the tree on its way through. All
 three read as careful work.
 
+## Read-only is not the same as robust
+
+The sibling failure needs no write path at all. `registry_check.zig` walks the
+corpus and only reads — and it died with FileNotFound, because an entry was listed
+and then gone by the time it was opened. A running suite creates and removes
+per-test scratch directories continuously, so every walk taken during one races
+it. Non-deterministically, which is worse than always: the same `confirm` invocation
+succeeded, crashed, and succeeded again.
+
+So the rule is not "don't write." It is that a tool reading a corpus another
+process is mutating must hold that condition explicitly — skip what vanished, or
+decline outright — and "it only reads" is not the argument that it does.
+
+**A concurrent suite is a first-class condition, not an anomaly.** Three tools
+failed at that boundary the same afternoon, and the shared cause is not any of
+their logic: it is that two agents now work one checkout, so "between runs" is a
+state neither can assume. Anything walking `tests/regression` or deriving an
+artifact from SUCCESS markers inherits this.
+
 ## Open
 
 Whether anything else in the pipeline regenerates over tracked files to compare
 them. `wm/worldmodel.mjs` and the site's data generators were not audited; the
 ceremony runs several of them in sequence and commits immediately after, which is
-the same arrangement that made this dangerous.
+the same arrangement that made this dangerous. The corpus-walking side is now
+partly measured — prose-check and registry_check are held; the site's generators
+are not.
