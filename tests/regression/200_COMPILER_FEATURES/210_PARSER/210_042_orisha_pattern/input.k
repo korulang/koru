@@ -5,6 +5,6 @@
 
 import std/io
 
-if(cond: true)
+if(true)
   | then |> std/io:print.ln("then branch")
   | else |> std/io:print.ln("else branch")

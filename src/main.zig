@@ -5443,8 +5443,8 @@ fn resolveKeywordsInAST(
 /// Keyword resolution is scoped by HOME, not by entry-file-ness — a `[keyword]`
 /// tor is a keyword everywhere it is imported, and the shadowing rule that lets
 /// a local declaration win has to be read against the same scope (110_021).
-/// `all_items` stays whole-program: `fixupExpressionArgs` resolves the event it
-/// just rewrote TO, which by definition lives in another module.
+/// `all_items` stays whole-program: `bindImplicitExpressionArg` resolves the
+/// callee's declaration, which routinely lives in another module.
 fn resolveKeywordsInItem(
     item: *ast.Item,
     registry: *const keyword_registry.KeywordRegistry,
@@ -5461,17 +5461,14 @@ fn resolveKeywordsInItem(
             // Resolve the main invocation path
             try resolveKeywordInPath(&flow.invMut().path, registry, allocator, home_module, home_items);
 
-            // If keyword resolution happened (qualifier changed), fix up Expression args
-            const qualifier_changed = if (old_qualifier) |old| blk: {
-                if (flow.inv().path.module_qualifier) |new| {
-                    break :blk !std.mem.eql(u8, old, new);
-                }
-                break :blk true;
-            } else flow.inv().path.module_qualifier != null;
+            _ = old_qualifier;
 
-            if (qualifier_changed) {
-                try fixupExpressionArgs(flow.invMut(), allocator, all_items);
-            }
+            // Bind the implicit expression slot. This runs for EVERY flow, not
+            // only ones whose qualifier just changed: an invocation inside an
+            // imported module is parsed before the callee's declaration is
+            // registered, so the parser's own remap never fires there and this
+            // is the only pass that sees both sides.
+            try bindImplicitExpressionArg(flow.invMut(), allocator, all_items);
 
             // Resolve paths in continuations
             for (flow.body.continuations) |*cont| {
@@ -5493,9 +5490,24 @@ fn resolveKeywordsInItem(
     }
 }
 
-/// Fix up Expression args after keyword resolution.
-/// Finds the event definition and sets expression_value on matching args.
-fn fixupExpressionArgs(
+/// Bind the implicit expression slot on an invocation.
+///
+/// The rule: a parameter of type `Expression` named `expr` takes the FIRST
+/// POSITIONAL argument at the call site. Where that parameter sits in the
+/// declaration is irrelevant — the slot is selected by the parameter's type and
+/// name, and the argument by its own position in the invocation.
+///
+/// Two things follow, and both are load-bearing:
+///   * A callee that declares no `expr: Expression` never has an argument
+///     rewritten. Bare arguments there are puns and stay puns (110_026).
+///   * An explicitly labelled argument names its own parameter and is never the
+///     slot, so a write target like `stored { s.v: 42 }` is untouchable.
+///
+/// Resolving by ELIMINATION instead — "the first argument whose name matches no
+/// field" — is what this replaces. It had to consult every field name to decide,
+/// which is why it could only run where the declaration was already registered,
+/// and it reached into callees with no expression slot at all.
+fn bindImplicitExpressionArg(
     invocation: *ast.Invocation,
     allocator: std.mem.Allocator,
     all_items: []const ast.Item,
@@ -5507,7 +5519,8 @@ fn fixupExpressionArgs(
     // Find the event definition in the AST
     const event_decl = findEventDecl(all_items, module_qualifier, event_name) orelse return;
 
-    // Check if event has an 'expr' field with is_expression=true
+    // Does the callee declare the slot? Selected by name AND type, at any
+    // position in the declaration.
     var has_implicit_expr = false;
     for (event_decl.input.fields) |field| {
         if (std.mem.eql(u8, field.name, "expr") and field.is_expression) {
@@ -5517,24 +5530,28 @@ fn fixupExpressionArgs(
     }
 
     if (has_implicit_expr) {
-        // Fix args - if arg name doesn't match any field, remap to 'expr'
         const mutable_args = @constCast(invocation.args);
         for (mutable_args) |*arg| {
-            var matches_field = false;
+            // An explicit `name: value` names its own parameter.
+            if (arg.had_explicit_label) continue;
+
+            // The implicit SOURCE block is a slot fill, not a positional
+            // argument the author wrote. It has its own type-directed rule.
+            var is_source_slot = false;
             for (event_decl.input.fields) |field| {
-                if (std.mem.eql(u8, field.name, arg.name)) {
-                    matches_field = true;
+                if (field.is_source and std.mem.eql(u8, field.name, arg.name)) {
+                    is_source_slot = true;
                     break;
                 }
             }
+            if (is_source_slot) continue;
 
-            if (!matches_field) {
-                // Arg doesn't match any field - this is the expression
-                // For positional/implicit args like ~if(value > 10), the parser
-                // puts the expression in arg.name. We need to fix this up.
-                const expr_text = if (arg.value.len > 0) arg.value else arg.name;
+            // First positional argument — this is the slot. A bare argument
+            // carries its text in `value`; the lexer leaves a speculative pun
+            // name in `name`, which is garbage for anything but a path.
+            const expr_text = if (arg.value.len > 0) arg.value else arg.name;
 
-                // Create expression_value
+            if (arg.expression_value == null) {
                 const expression_value = try allocator.create(ast.CapturedExpression);
                 expression_value.* = ast.CapturedExpression{
                     .text = try allocator.dupe(u8, expr_text),
@@ -5542,12 +5559,11 @@ fn fixupExpressionArgs(
                     .scope = .{ .bindings = &.{} },
                 };
                 arg.expression_value = expression_value;
-
-                // Fix the arg: set name to 'expr' and value to the expression
-                arg.value = try allocator.dupe(u8, expr_text);
-                arg.name = try allocator.dupe(u8, "expr");
-                break; // Only one implicit expr
             }
+
+            arg.value = try allocator.dupe(u8, expr_text);
+            arg.name = try allocator.dupe(u8, "expr");
+            break; // Only one implicit expr
         }
     }
 
@@ -5985,8 +6001,13 @@ fn checkBareArgPunning(
     // `expr: Expression` or `source: Source` param takes a bare expression /
     // source block implicitly (`~if(x > 0)`, `~for(0..n)`) — the arg binds to
     // that param regardless of its own spelling. Such a bare arg is legal even
-    // before the parser's implicit remap has run, so detect the capability
-    // directly here rather than depend on remap timing.
+    // before the implicit slot has been bound, so detect the capability
+    // directly here rather than depend on binding order.
+    //
+    // The exemption covers BARE arguments only. An explicit `label: value` is
+    // the author naming a parameter, and a slot the callee happens to declare
+    // says nothing about whether that name exists — `if(cond: true)` against
+    // `if { expr: Expression }` is an unknown parameter and is reported as one.
     var has_implicit_slot = false;
     for (fields) |field| {
         if ((field.is_expression and std.mem.eql(u8, field.name, "expr")) or
@@ -5996,7 +6017,16 @@ fn checkBareArgPunning(
             break;
         }
     }
-    if (has_implicit_slot) return;
+
+    // Does the callee's handler read its own `invocation.args`? Declaring any
+    // walker machinery is the signal that it does.
+    var has_machinery = false;
+    for (fields) |field| {
+        if (isTransformMachineryType(field.type)) {
+            has_machinery = true;
+            break;
+        }
+    }
 
     // Handler-injection transform exemption. Some `[transform]` events declare
     // ONLY the transform walker's injected machinery as parameters — `*const
@@ -6029,6 +6059,17 @@ fn checkBareArgPunning(
         // Expression/Source args are already resolved to their parameter
         // (implicit `expr`/`source` binding included) — not raw puns to check.
         if (arg.expression_value != null or arg.source_value != null) continue;
+
+        // A bare argument on a callee that declares an implicit slot is absorbed
+        // by that slot whatever it is spelled.
+        if (has_implicit_slot and !arg.had_explicit_label) continue;
+
+        // A callee that declares transform machinery reads `invocation.args` in
+        // its own handler, so its labels are free-form data rather than
+        // parameter names — `liquid_template:emit(tpl, name: "Alice")` passes
+        // template context, and `name` is deliberately not a parameter. Only a
+        // callee with a CLOSED parameter list can have a label be wrong.
+        if (arg.had_explicit_label and has_machinery) continue;
 
         var matches = false;
         for (fields) |field| {
