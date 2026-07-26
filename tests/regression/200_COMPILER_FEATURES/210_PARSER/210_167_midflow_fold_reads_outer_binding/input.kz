@@ -1,0 +1,38 @@
+// PINS (green control): a mid-flow fold keeps bindings made BEFORE the loop
+// live across the back-edge.
+//
+// Ruled by Lars 2026-07-26: a `#loop` head may sit mid-flow, not only at the
+// start of a subflow. The consequence is this test — once the fold is mid-flow,
+// everything bound ahead of it is in scope inside it, and the state-variable
+// lowering has to keep it that way across every iteration.
+//
+// `step` returns `n` unchanged on `next`, so termination depends entirely on
+// `b` being genuinely live: 10 -> 20 -> 30 -> done. A `b` that read as zero
+// would spin forever rather than fail, which is why the loop is written to
+// depend on its value rather than merely mention it.
+//
+// This is the CONTROL for 210_166. That pin is red because the fold's exit arm
+// discards its capture; this one says the harder half — outer-binding
+// liveness — already works. A fix for 210_166 that reddens this has moved the
+// fault rather than closed it. Same role 330_115 plays for the obligation work.
+//
+// The exit arm passes `r` to an invocation instead of returning it bare,
+// deliberately: `| done r -> r` trips 210_166 and would mask what this pin is
+// here to measure.
+~import std/io
+
+~tor base {} -> i64
+~proc base|zig { return 10; }
+
+~tor step { n: i64 }
+| next i64
+| done i64
+
+~proc step|zig {
+    if (n < 30) return .{ .next = n };
+    return .{ .done = n };
+}
+
+~base(): b |> #loop step(n: b)
+| next v |> @loop(n: v + b)
+| done r |> std/io:print.ln("ok {{ r:d }}")
