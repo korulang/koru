@@ -43,6 +43,34 @@ been red, and being red is precisely why nobody caught it.
   comment's account of a bug is true. The defence is procedural, not mechanical —
   which is why it belongs here rather than in the harness.
 
+## A diagnostic is not the compiler's belief
+
+The specific way a wrong explanation gets written: a diagnostic is read as
+evidence of what the compiler thinks, when it is only evidence of what one code
+path prints. The message and the behaviour it describes are separate
+implementations of the same question, and nothing makes them agree.
+
+KORU030 is the worked case. Its candidate list — "Call one of: …" — is built by
+SIGNATURE, naming every tor whose input accepts the obligation. The
+auto-discharge inserter builds its own list by EFFECT, keeping only calls that
+actually settle the debt. For one program the two disagree outright: the
+message offers a conserving tor, the inserter reports that nothing accepts the
+obligation at all. `330_118` was written off the message, and pinned a fault
+that does not exist — auto-discharge had exactly one candidate and inserted it
+correctly.
+
+So a diagnostic is a claim to verify, never a premise to build on. When it says
+what the compiler will do, go make the compiler do it and watch. The cost of
+skipping that is not a wrong sentence in a test comment: the wrong reading here
+survived into a design discussion and shaped it for hours before a question
+about the premise brought it down.
+
+This is the same shape as duplicate implementations concealing a coverage gap
+([[frag-the-minimal-test-of-a-wall-cannot-test-its-reach]]) — two answers to one
+question, with the prominent one wrong. The difference is which one you meet:
+there the working path masks the broken one, here the *printed* path masks the
+working one, and printing is the only face a user ever sees.
+
 ## Open
 
 Whether a red pin should be *required* to carry its minimal reproduction, or
