@@ -1,0 +1,2 @@
+cache=10
+tally=5

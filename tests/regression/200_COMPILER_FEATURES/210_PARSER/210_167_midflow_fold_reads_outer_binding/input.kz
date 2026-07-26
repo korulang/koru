@@ -11,10 +11,10 @@
 // would spin forever rather than fail, which is why the loop is written to
 // depend on its value rather than merely mention it.
 //
-// This is the CONTROL for 210_166. That pin is red because the fold's exit arm
-// discards its capture; this one says the harder half — outer-binding
-// liveness — already works. A fix for 210_166 that reddens this has moved the
-// fault rather than closed it. Same role 330_115 plays for the obligation work.
+// This is the CONTROL for 210_166. That pin constrains the fold's exit arm;
+// this one constrains the harder half — outer-binding liveness — independently.
+// A change to 210_166 that reddens this has moved the fault rather than closed
+// it. Same role 330_115 plays for the obligation work.
 //
 // The exit arm passes `r` to an invocation instead of returning it bare,
 // deliberately: `| done r -> r` trips 210_166 and would mask what this pin is
