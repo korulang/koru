@@ -1,0 +1,40 @@
+// PINS: branch coverage must be checked wherever a branching tor is invoked,
+// not only at a flow head.
+//
+// `step` declares two branches and no return type, so there is no value to
+// bind and `: v` is not a legal spelling for it. Written as a flow HEAD the
+// language says so, once per branch:
+//
+//     ~step(n: 0): v |> ...
+//     error[KORU022]: branch 'again' must be handled but no continuation found
+//     error[KORU022]: branch 'stop' must be handled but no continuation found
+//
+// Move the identical mistake one position down the chain — behind any prefix
+// invocation — and no wall fires. The binding takes the whole branch union and
+// the program reaches emission, where it dies inside Zig's own standard
+// library formatting a `step_event.Output` with `{d}`. A diagnostic from
+// `std/Io/Writer.zig` is as far from the author's mistake as this compiler
+// gets.
+//
+// The head/mid-chain asymmetry is the whole content of this pin: the check
+// exists and is correct, and its reach stops after the first invocation.
+//
+// 330_074 is the same fault behind a `#loop` head, which is why that test
+// emits malformed Zig rather than being rejected — the label is incidental.
+// 210_166 is NOT this: its branches are all handled, and it fails in capture
+// emission for a legal program.
+~import std/io
+
+~tor seed {} -> i64
+~proc seed|zig { return 0; }
+
+~tor step { n: i64 }
+| again i64
+| stop i64
+
+~proc step|zig {
+    if (n < 3) return .{ .again = n + 1 };
+    return .{ .stop = n };
+}
+
+~seed(): n0 |> step(n: n0): v |> std/io:print.ln("bound {{ v:d }}")
