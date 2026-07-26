@@ -197,10 +197,76 @@ fn siteView(allocator: std.mem.Allocator, program: *const Program, holding: *ast
 }
 
 /// Append new top-level items to a program, returning a fresh program.
+/// The module an appended declaration ADDRESSES itself into — its qualified
+/// path, not the file it was synthesized from. A transform firing inside an
+/// imported module mints declarations for that module; dropping them at program
+/// top level leaves every consumer that reads structure disagreeing with every
+/// consumer that reads the path. `shape_checker` registers top-level decls under
+/// the ENTRY file's name, so a declaration qualified `app.lib` sitting at top
+/// level is registered as `input:…` and its own impl flow can never find it
+/// (690_079).
+fn appendedItemModule(item: ast.Item) ?[]const u8 {
+    return switch (item) {
+        .event_decl => |ed| ed.path.module_qualifier,
+        .flow => |f| if (f.impl_of) |io| io.module_qualifier else null,
+        // Host lines carry no path; the module they declare themselves into is
+        // the only signal, and a synthesized cell sets it to the namespace its
+        // accessors were minted under.
+        .host_line => |h| h.module,
+        else => null,
+    };
+}
+
 fn appendItems(allocator: std.mem.Allocator, program: *const Program, extra: []const ast.Item) !*const Program {
-    const new_items = try allocator.alloc(ast.Item, program.items.len + extra.len);
-    @memcpy(new_items[0..program.items.len], program.items);
-    @memcpy(new_items[program.items.len..], extra);
+    // Anything naming a module that exists in this program goes inside it; the
+    // rest keeps top-level placement.
+    var top_level = try std.ArrayList(ast.Item).initCapacity(allocator, extra.len);
+    defer top_level.deinit(allocator);
+
+    var any_routed = false;
+    for (extra) |ai| {
+        var routed = false;
+        if (appendedItemModule(ai)) |mod| {
+            for (program.items) |pit| {
+                if (pit == .module_decl and std.mem.eql(u8, pit.module_decl.logical_name, mod)) {
+                    routed = true;
+                    any_routed = true;
+                    break;
+                }
+            }
+        }
+        if (!routed) try top_level.append(allocator, ai);
+    }
+
+    const new_items = try allocator.alloc(ast.Item, program.items.len + top_level.items.len);
+    for (program.items, 0..) |pit, i| {
+        new_items[i] = pit;
+        if (!any_routed or pit != .module_decl) continue;
+        const mod = pit.module_decl.logical_name;
+
+        var extra_here: usize = 0;
+        for (extra) |ai| {
+            const m = appendedItemModule(ai) orelse continue;
+            if (std.mem.eql(u8, m, mod)) extra_here += 1;
+        }
+        if (extra_here == 0) continue;
+
+        const merged = try allocator.alloc(ast.Item, pit.module_decl.items.len + extra_here);
+        @memcpy(merged[0..pit.module_decl.items.len], pit.module_decl.items);
+        var w = pit.module_decl.items.len;
+        for (extra) |ai| {
+            const m = appendedItemModule(ai) orelse continue;
+            if (std.mem.eql(u8, m, mod)) {
+                merged[w] = ai;
+                w += 1;
+            }
+        }
+        var md = pit.module_decl;
+        md.items = merged;
+        new_items[i] = ast.Item{ .module_decl = md };
+    }
+    @memcpy(new_items[program.items.len..], top_level.items);
+
     const np = try allocator.create(Program);
     np.* = program.*;
     np.items = new_items;

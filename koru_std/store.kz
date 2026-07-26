@@ -108,19 +108,48 @@ const std = @import("std");
         // each transform carries its own H, as the rest of this file does.
         fn storeHomeModule(alloc: std.mem.Allocator, prog: *const ast.Program, store: []const u8) ?[]const u8 {
             const apply_name = std.fmt.allocPrint(alloc, "__store_apply_{s}", .{store}) catch unreachable;
-            for (prog.items) |pi| {
-                if (pi != .event_decl) continue;
-                const ed = &pi.event_decl;
-                if (ed.path.segments.len == 1 and std.mem.eql(u8, ed.path.segments[0], apply_name)) {
-                    return ed.path.module_qualifier;
+            // Both searches descend into `module_decl`: a store is declared
+            // wherever its `new` was written, and a library declaring its own
+            // store puts that `new` inside the module rather than at program
+            // top level. A top-level-only search reports "no home" for exactly
+            // the case where the home is most obvious.
+            const Find = struct {
+                // `??` distinguishes "no such declaration anywhere" (null) from
+                // "found it, and its qualifier is null" (some null).
+                fn applyIn(its: []const ast.Item, want: []const u8) ??[]const u8 {
+                    for (its) |pi| {
+                        if (pi == .event_decl) {
+                            const ed = &pi.event_decl;
+                            if (ed.path.segments.len == 1 and std.mem.eql(u8, ed.path.segments[0], want)) {
+                                return ed.path.module_qualifier;
+                            }
+                        } else if (pi == .module_decl) {
+                            if (applyIn(pi.module_decl.items, want)) |hit| return hit;
+                        }
+                    }
+                    return null;
                 }
-            }
-            for (prog.items) |pi| {
-                if (pi != .flow) continue;
-                const f = &pi.flow;
-                if (isStoreInv(f, "new", store)) return f.module;
-            }
-            return null;
+                // `enclosing` is the containing module's LOGICAL name — the
+                // import-derived one (`app.lib`), not the flow's file-derived
+                // `module` (`lib`). Those are different namespaces: everything
+                // that resolves a cross-module path uses the logical name, so a
+                // unit synthesized under the file name is addressed into a
+                // namespace that does not exist. Top-level flows keep
+                // `f.module`, which is what the entry file is registered under.
+                fn newIn(its: []const ast.Item, want: []const u8, enclosing: ?[]const u8) ?[]const u8 {
+                    for (its) |pi| {
+                        if (pi == .flow) {
+                            const f = &pi.flow;
+                            if (isStoreInv(f, "new", want)) return enclosing orelse f.module;
+                        } else if (pi == .module_decl) {
+                            if (newIn(pi.module_decl.items, want, pi.module_decl.logical_name)) |m| return m;
+                        }
+                    }
+                    return null;
+                }
+            };
+            if (Find.applyIn(prog.items, apply_name)) |hit| return hit;
+            return Find.newIn(prog.items, store, null);
         }
         fn isStoreInv(f: *const ast.Flow, verb: []const u8, want_name: ?[]const u8) bool {
             const inv = f.inv();
@@ -3420,8 +3449,16 @@ const std = @import("std");
         }
     }.call;
 
+    // The namespace synthesized units are ADDRESSED under. `flow.module` is the
+    // file-derived name (`lib`); every cross-module path in the program resolves
+    // through the module's import-derived logical name (`app.lib`). Minting the
+    // paths from the file name puts them in a namespace nothing looks up. The
+    // `.module` FIELDS below stay `flow.module` — that is the emitter's
+    // namespacing and matches every other item parsed from the same file.
+    const home_ns = H.storeHomeModule(allocator, program, store_name) orelse flow.module;
+
     const apply_event_item = ast.Item{ .event_decl = ast.EventDecl{
-        .path = mkPath(allocator, flow.module, apply_name),
+        .path = mkPath(allocator, home_ns, apply_name),
         .input = ast.Shape{ .fields = mkInput(allocator, value_type) },
         .branches = apply_branches,
         .is_public = false,
@@ -3444,7 +3481,7 @@ const std = @import("std");
     const apply_proc_body = pb.toOwnedSlice(allocator) catch unreachable;
 
     const apply_proc_item = ast.Item{ .proc_decl = ast.ProcDecl{
-        .path = mkPath(allocator, flow.module, apply_name),
+        .path = mkPath(allocator, home_ns, apply_name),
         .body = ast.Source{ .text = apply_proc_body, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
         .annotations = &[_][]const u8{},
         .target = allocator.dupe(u8, "zig") catch unreachable,
@@ -3458,7 +3495,7 @@ const std = @import("std");
     // transplanted watch branches. THE (f) CENTRALIZING WRITE-SUBFLOW.
     // ------------------------------------------------------------------
     const write_event_item = ast.Item{ .event_decl = ast.EventDecl{
-        .path = mkPath(allocator, flow.module, write_name),
+        .path = mkPath(allocator, home_ns, write_name),
         .input = ast.Shape{ .fields = mkInput(allocator, value_type) },
         .branches = &[_]ast.Branch{},
         .is_public = false,
@@ -3472,7 +3509,7 @@ const std = @import("std");
     apply_args[0] = ast.Arg{ .name = allocator.dupe(u8, "field") catch unreachable, .value = allocator.dupe(u8, "field") catch unreachable };
     apply_args[1] = ast.Arg{ .name = allocator.dupe(u8, "value") catch unreachable, .value = allocator.dupe(u8, "value") catch unreachable };
     const apply_inv = ast.Invocation{
-        .path = mkPath(allocator, flow.module, apply_name),
+        .path = mkPath(allocator, home_ns, apply_name),
         .args = apply_args,
     };
 
@@ -3549,7 +3586,7 @@ const std = @import("std");
                 .kind = .terminal,
                 .condition = null,
                 .node = .{ .invocation = ast.Invocation{
-                    .path = mkPath(allocator, flow.module, t_announce),
+                    .path = mkPath(allocator, home_ns, t_announce),
                     .args = fg_args,
                 } },
                 .indent = 1,
@@ -3651,7 +3688,7 @@ const std = @import("std");
     const impl_flow_item = ast.Item{ .flow = ast.Flow{
         .body = ast.rootSite(apply_inv, arms.toOwnedSlice(allocator) catch unreachable, flow.location),
         .pre_label = null,
-        .impl_of = mkPath(allocator, flow.module, write_name),
+        .impl_of = mkPath(allocator, home_ns, write_name),
         .super_shape = null,
         .inline_body = null,
         .preamble_code = null,
@@ -3693,7 +3730,7 @@ const std = @import("std");
             break :blk anns;
         };
         stripe_items.append(allocator, ast.Item{ .event_decl = ast.EventDecl{
-            .path = mkPath(allocator, flow.module, peek_name),
+            .path = mkPath(allocator, home_ns, peek_name),
             .input = ast.Shape{ .fields = peek_in },
             .branches = ann_branches,
             .is_public = false,
@@ -3704,7 +3741,7 @@ const std = @import("std");
         } }) catch unreachable;
         // announce: the VOID dispatcher (retained — raw-Zig callers only).
         stripe_items.append(allocator, ast.Item{ .event_decl = ast.EventDecl{
-            .path = mkPath(allocator, flow.module, announce_name),
+            .path = mkPath(allocator, home_ns, announce_name),
             .input = ast.Shape{ .fields = ann_in },
             .branches = &[_]ast.Branch{},
             .is_public = false,
@@ -3723,7 +3760,7 @@ const std = @import("std");
         }
         pk.appendSlice(allocator, "    else => unreachable,\n};") catch unreachable;
         stripe_items.append(allocator, ast.Item{ .proc_decl = ast.ProcDecl{
-            .path = mkPath(allocator, flow.module, peek_name),
+            .path = mkPath(allocator, home_ns, peek_name),
             .body = ast.Source{ .text = pk.toOwnedSlice(allocator) catch unreachable, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
             .annotations = &[_][]const u8{},
             .target = allocator.dupe(u8, "zig") catch unreachable,
@@ -3786,11 +3823,11 @@ const std = @import("std");
         ann_call_args[0] = ast.Arg{ .name = allocator.dupe(u8, "field") catch unreachable, .value = allocator.dupe(u8, "field") catch unreachable };
         stripe_items.append(allocator, ast.Item{ .flow = ast.Flow{
             .body = ast.rootSite(ast.Invocation{
-                .path = mkPath(allocator, flow.module, peek_name),
+                .path = mkPath(allocator, home_ns, peek_name),
                 .args = ann_call_args,
             }, ann_arms.toOwnedSlice(allocator) catch unreachable, flow.location),
             .pre_label = null,
-            .impl_of = mkPath(allocator, flow.module, announce_name),
+            .impl_of = mkPath(allocator, home_ns, announce_name),
             .super_shape = null,
             .inline_body = null,
             .preamble_code = null,
@@ -3808,7 +3845,7 @@ const std = @import("std");
             ew_in[0] = ast.Field{ .name = allocator.dupe(u8, "field") catch unreachable, .type = allocator.dupe(u8, "i64") catch unreachable };
             ew_in[1] = ast.Field{ .name = allocator.dupe(u8, "value") catch unreachable, .type = allocator.dupe(u8, value_type) catch unreachable };
             stripe_items.append(allocator, ast.Item{ .event_decl = ast.EventDecl{
-                .path = mkPath(allocator, flow.module, envw_name),
+                .path = mkPath(allocator, home_ns, envw_name),
                 .input = ast.Shape{ .fields = ew_in },
                 .branches = &[_]ast.Branch{},
                 .is_public = false,
@@ -3825,7 +3862,7 @@ const std = @import("std");
             }
             ew.appendSlice(allocator, "    else => unreachable,\n}\nreturn;") catch unreachable;
             stripe_items.append(allocator, ast.Item{ .proc_decl = ast.ProcDecl{
-                .path = mkPath(allocator, flow.module, envw_name),
+                .path = mkPath(allocator, home_ns, envw_name),
                 .body = ast.Source{ .text = ew.toOwnedSlice(allocator) catch unreachable, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
                 .annotations = &[_][]const u8{},
                 .target = allocator.dupe(u8, "zig") catch unreachable,
@@ -3836,7 +3873,7 @@ const std = @import("std");
 
         // stripe: loop the fields, announcing each.
         stripe_items.append(allocator, ast.Item{ .event_decl = ast.EventDecl{
-            .path = mkPath(allocator, flow.module, stripe_name),
+            .path = mkPath(allocator, home_ns, stripe_name),
             .input = ast.Shape{ .fields = &[_]ast.Field{} },
             .branches = &[_]ast.Branch{},
             .is_public = false,
@@ -3852,7 +3889,7 @@ const std = @import("std");
         }
         sb2.appendSlice(allocator, "return;") catch unreachable;
         stripe_items.append(allocator, ast.Item{ .proc_decl = ast.ProcDecl{
-            .path = mkPath(allocator, flow.module, stripe_name),
+            .path = mkPath(allocator, home_ns, stripe_name),
             .body = ast.Source{ .text = sb2.toOwnedSlice(allocator) catch unreachable, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
             .annotations = &[_][]const u8{},
             .target = allocator.dupe(u8, "zig") catch unreachable,
@@ -3919,10 +3956,14 @@ const std = @import("std");
     } };
 
     const appended = allocator.alloc(ast.Item, 5 + stripe_items.items.len) catch unreachable;
+    // The cell rides the SAME namespace as the accessors that read it. A cell
+    // left in the file-derived module is emitted outside the namespace its own
+    // apply/write units live in, and every `<store>.<field>` reference resolves
+    // to nothing.
     appended[0] = ast.Item{ .host_line = ast.HostLine{
         .content = cell_decl,
         .location = flow.location,
-        .module = allocator.dupe(u8, flow.module) catch unreachable,
+        .module = allocator.dupe(u8, home_ns) catch unreachable,
     } };
     appended[1] = apply_event_item;
     appended[2] = apply_proc_item;
@@ -4092,26 +4133,50 @@ const std = @import("std");
         // shape as `fieldOrder`, so it answers under any transform order.
         fn storeHomeModule(alloc: std.mem.Allocator, prog: *const ast.Program, store: []const u8) ?[]const u8 {
             const apply_name = std.fmt.allocPrint(alloc, "__store_apply_{s}", .{store}) catch unreachable;
-            for (prog.items) |pi| {
-                if (pi != .event_decl) continue;
-                const ed = &pi.event_decl;
-                if (ed.path.segments.len == 1 and std.mem.eql(u8, ed.path.segments[0], apply_name)) {
-                    return ed.path.module_qualifier;
-                }
-            }
-            for (prog.items) |pi| {
-                if (pi != .flow) continue;
-                const f = &pi.flow;
-                const inv = f.inv();
-                if (inv.path.segments.len != 1 or !std.mem.eql(u8, inv.path.segments[0], "new")) continue;
-                const mq = inv.path.module_qualifier orelse continue;
-                if (!std.mem.eql(u8, mq, "std.store")) continue;
-                for (inv.args) |a| {
-                    if (std.mem.eql(u8, a.name, "expr") and std.mem.eql(u8, stripQuotes(a.value), store)) {
-                        return f.module;
+            // Descends into `module_decl` for the same reason as `new`'s twin at
+            // the top of this file: a library declaring its own store writes the
+            // `new` inside the module, and a top-level-only search reports no
+            // home for precisely that case.
+            const Find = struct {
+                fn applyIn(its: []const ast.Item, want: []const u8) ??[]const u8 {
+                    for (its) |pi| {
+                        if (pi == .event_decl) {
+                            const ed = &pi.event_decl;
+                            if (ed.path.segments.len == 1 and std.mem.eql(u8, ed.path.segments[0], want)) {
+                                return ed.path.module_qualifier;
+                            }
+                        } else if (pi == .module_decl) {
+                            if (applyIn(pi.module_decl.items, want)) |hit| return hit;
+                        }
                     }
+                    return null;
                 }
-            }
+                // `enclosing` is the containing module's LOGICAL name — see the
+                // twin of this helper at the top of the file.
+                fn newIn(its: []const ast.Item, want: []const u8, enclosing: ?[]const u8) ?[]const u8 {
+                    for (its) |pi| {
+                        if (pi == .flow) {
+                            const f = &pi.flow;
+                            const inv = f.inv();
+                            if (inv.path.segments.len == 1 and std.mem.eql(u8, inv.path.segments[0], "new")) {
+                                const mq = inv.path.module_qualifier orelse continue;
+                                if (std.mem.eql(u8, mq, "std.store")) {
+                                    for (inv.args) |a| {
+                                        if (std.mem.eql(u8, a.name, "expr") and std.mem.eql(u8, stripQuotes(a.value), want)) {
+                                            return enclosing orelse f.module;
+                                        }
+                                    }
+                                }
+                            }
+                        } else if (pi == .module_decl) {
+                            if (newIn(pi.module_decl.items, want, pi.module_decl.logical_name)) |m| return m;
+                        }
+                    }
+                    return null;
+                }
+            };
+            if (Find.applyIn(prog.items, apply_name)) |hit| return hit;
+            if (Find.newIn(prog.items, store, null)) |m| return m;
             return null;
         }
         // Field order for a store: from the generated apply event if the
