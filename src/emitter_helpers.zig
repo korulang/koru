@@ -10907,6 +10907,18 @@ fn continuationUsesBinding(cont: *const ast.Continuation, binding: []const u8) b
                     return true;
                 }
             },
+            .expression => |expr| {
+                // A bare return in CONTINUATION position (`| done r -> r`) is an
+                // `.expression`, not a `.branch_constructor` — the latter is the
+                // implementation-side spelling (`~tor f -> expr`). Without this
+                // case the arm's own payload reads as unused, the capture is
+                // emitted as `_`, and the body then references the name that was
+                // just discarded (210_166). The flow checker's twin,
+                // `nodeUsesBinding`, has always had this case.
+                if (containsIdentifier(expr, binding)) {
+                    return true;
+                }
+            },
             .foreach => |fe| {
                 // Check if foreach uses the binding in its iterable expression
                 if (containsIdentifier(fe.iterable, binding)) {

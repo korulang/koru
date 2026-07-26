@@ -1247,9 +1247,15 @@ pub const FlowChecker = struct {
         // subtree is the transform's own output, not user syntax.
         if (cont.is_transformed_subtree) return;
 
+        // Both spellings of "a call happens here". A fold head
+        // (`#loop step(...)`) is a call site exactly as much as a bare
+        // invocation is, and checking only the latter would repeat the very
+        // fault this walk exists to fix, one form over.
         if (cont.node) |n| {
-            if (n == .invocation) {
-                try self.validateCoverageAt(&n.invocation.path, cont.continuations, cont.location);
+            switch (n) {
+                .invocation => |inv| try self.validateCoverageAt(&inv.path, cont.continuations, cont.location),
+                .label_with_invocation => |lwi| try self.validateCoverageAt(&lwi.invocation.path, cont.continuations, cont.location),
+                else => {},
             }
         }
 

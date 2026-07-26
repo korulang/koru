@@ -96,6 +96,28 @@ implementations do not merely risk drift in wording — they hide coverage gaps 
 answering for each other in exactly the cases anyone thinks to check. Finding one
 error code with two sentences is good evidence you are looking at this.
 
+## The form axis is not a lesson you learn once
+
+Within an hour of this belief being written down, the fix that closed KORU022's
+reach committed the identical fault one level up: the new chain walk tested
+`node == .invocation`, and a *labelled* invocation — the `#loop` fold head — is
+`.label_with_invocation`. One spelling covered, the other silently skipped, in
+the very code written to stop exactly that. It surfaced only because a prediction
+made from the fix failed.
+
+The same shape appeared a third time the same day in the emitter: a bare return
+in continuation position is an `.expression`, while the `is_bare_return` flag
+lives on `branch_constructor` — the implementation-side spelling. Two different
+node kinds wearing one syntax, and the use-check handled only the one its author
+had in mind.
+
+So the form axis is not a mistake made by inattentive code. It is what happens
+whenever a check enumerates node kinds by hand, which is most of them. Knowing
+about it does not protect you; the enumeration still has to be checked against
+the grammar rather than against what the author pictures the syntax being. The
+practical tell is cheap: when a fix is written, predict a case it should now
+catch and go run it. The prediction failing is how both of these were found.
+
 ## Open
 
 Whether this is enforceable rather than remembered. A lint that flags a

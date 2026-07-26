@@ -1,27 +1,34 @@
-// CORE PROBE: carry an OWNED obligation ACROSS a label-fold back-edge via the
+// PINS: an OWNED obligation carried across a label-fold back-edge, via the
 // consume-in / issue-out (1:1 conserved) shape, with the SEED issued by a leaf.
 //
-// Design hypothesis (Lars's): carrying an obligation through a label-fold is
-// sound IFF each back-edge iteration CONSUMES the carried obligation and ISSUES
-// exactly one to carry forward — net zero inside, one seeded in, one escaping to
-// an outside disposer. This respects directionality: the body event consumes on
-// its INPUT and issues on its OUTPUT; `@loop` routes output -> input.
+// Lars's design hypothesis, which this holds: carrying an obligation through a
+// label-fold is sound IFF each back-edge iteration CONSUMES the carried
+// obligation and ISSUES exactly one to carry forward — net zero inside, one
+// seeded in, one escaping to an outside disposer. That respects directionality:
+// the body event consumes on its INPUT and issues on its OUTPUT, and `@loop`
+// routes output -> input.
 //
-// SEED FIX (vs the failed 330_072): the obligation does NOT enter `spin` through
-// a consuming parameter (consume-on-input discharges at the door — KORU030).
-// Instead an ISSUING leaf `make()` runs INSIDE spin's flow and seeds the loop:
-//   ~spin = make()              make ISSUES <owned!>  (h0)
-//   | made h0 |> #loop step(h: h0)   seed the fold with the owned handle
-//   | again v |> @loop(h: v)    back-edge carries the re-issued handle
-//   | stop  r -> r     escapes the obligation to the outside disposer
-// step CONSUMES <!owned> on input, RE-ISSUES <owned!> on each output branch.
+//   ~spin = make(): h0 |> #loop step(h: h0)   make ISSUES <owned!> (h0), seeds the fold
+//   | again v |> @loop(h: v)                  back-edge carries the re-issued handle
+//   | stop r -> r                             escapes it to the outside disposer
+//
+// step CONSUMES <!owned> on input and RE-ISSUES <owned!> on each output branch;
 // `done` is the single outside disposer.
 //
-// Grammar grounded against:
-//   - 210_123 (#loop step(...) seed + `| again v |> @loop(...)` back-edge + `=> finished`)
-//   - 370_020 (obligation issued INSIDE the loop by an issuing leaf `create()`)
-//   - 330_072 (the consume-in/issue-out `step` proc shape; structure corrected here)
-//   - list.kz directionality (<owned!> issue, <!owned> consume)
+// SEED SHAPE (vs the failed 330_072): the obligation does NOT enter `spin`
+// through a consuming parameter — consume-on-input discharges at the door and
+// raises KORU030. An ISSUING leaf `make()` runs inside spin's flow instead.
+//
+// BOTH ARMS ARE SPELLED AS BRANCHES, and that is load-bearing. `step` is a
+// branching tor, so it has no return value to bind: an inline
+// `#loop step(h: h0): v` binds something that does not exist and owes both
+// arms, which is KORU022 — pinned at 510_109. The two spellings are not
+// synonyms, and only this one is a program.
+//
+// Grammar grounded against 210_123 (`#loop` seed + `@loop` back-edge + a
+// bare-return exit) and 370_020 (obligation issued inside the loop by a leaf).
+// 210_166 covers the prefix-before-fold capture in isolation, obligation-free;
+// this test is the composed case where an obligation rides the same shape.
 const std = @import("std");
 const Handle = struct { n: i32 };
 
@@ -51,7 +58,8 @@ const Handle = struct { n: i32 };
 ~tor spin {} -> *Handle<owned!>
 
 // Seed the fold from an ISSUING leaf, then consume-in/issue-out across @loop.
-~spin = make(): h0 |> #loop step(h: h0): v |> @loop(h: v)
-    | stop r -> r
+~spin = make(): h0 |> #loop step(h: h0)
+| again v |> @loop(h: v)
+| stop r -> r
 
 ~spin(): hf |> done(h: hf)
