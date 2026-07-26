@@ -68,6 +68,25 @@
 
 const std = @import("std");
 const ast_find = @import("ast");
+const codegen_utils_store = @import("codegen_utils");
+
+/// The emitted-Zig namespace a store's units live in, dot-terminated.
+///
+/// The entry module emits as `main_module.`; every other module emits under the
+/// `koru_`-prefixed mangling of its LOGICAL name (`app.lib` → `koru_app.koru_lib.`),
+/// which is the same rule `emitter_helpers.writeModulePath` applies. Hardcoding
+/// `main_module.` — as this file did in fifteen places — addresses a
+/// module-declared store's units into the entry file's namespace, where they do
+/// not exist.
+///
+/// `home` is the LOGICAL name (`storeHomeModule`), and it is compared against
+/// `main_module_name`: for an entry-file store the two coincide, which is why
+/// the hardcoded form worked for every store that lived in the entry file.
+fn storeEmitQualifier(alloc: std.mem.Allocator, home: []const u8, main_module_name: []const u8) []const u8 {
+    if (home.len == 0 or std.mem.eql(u8, home, main_module_name)) return "main_module.";
+    const path = codegen_utils_store.buildKoruModulePath(alloc, home) catch unreachable;
+    return std.fmt.allocPrint(alloc, "{s}.", .{path}) catch unreachable;
+}
 
 /// Find a SYNTHESIZED store declaration by its exact generated name, at any
 /// module depth.
@@ -3197,23 +3216,37 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
     // already-generated apply events — so transplanted bodies get their
     // store reads rewritten to the cells (`game.shield` in a watch body →
     // `__koru_store_game.shield`, including inside `{{ }}` interpolations).
+    // Descends into modules: a store declared in an imported module has both its
+    // `new` and its synthesized `__store_apply_*` INSIDE that module, so a
+    // top-level-only sweep collects nothing and every `<store>.<field>`
+    // reference in the program is left un-lowered. Safe to descend because both
+    // markers are specific — a `std.store:new` invocation and a generated
+    // `__store_apply_` symbol.
     var store_names = std.ArrayList([]const u8).initCapacity(allocator, 4) catch unreachable;
-    for (program.items) |pi| {
-        switch (pi) {
-            .flow => |*f| {
-                if (H.isStoreInv(f, "new", null)) {
-                    for (f.inv().args) |a| {
-                        if (std.mem.eql(u8, a.name, "expr")) store_names.append(allocator, H.stripQuotes(a.value)) catch unreachable;
+    {
+        const Collect = struct {
+            fn go(alloc: std.mem.Allocator, its: []const ast.Item, out: *std.ArrayList([]const u8)) void {
+                for (its) |pi| {
+                    switch (pi) {
+                        .flow => |*f| {
+                            if (H.isStoreInv(f, "new", null)) {
+                                for (f.inv().args) |a| {
+                                    if (std.mem.eql(u8, a.name, "expr")) out.append(alloc, H.stripQuotes(a.value)) catch unreachable;
+                                }
+                            }
+                        },
+                        .event_decl => |*ed| {
+                            if (ed.path.segments.len == 1 and std.mem.startsWith(u8, ed.path.segments[0], "__store_apply_")) {
+                                out.append(alloc, ed.path.segments[0]["__store_apply_".len..]) catch unreachable;
+                            }
+                        },
+                        .module_decl => |*md| go(alloc, md.items, out),
+                        else => {},
                     }
                 }
-            },
-            .event_decl => |*ed| {
-                if (ed.path.segments.len == 1 and std.mem.startsWith(u8, ed.path.segments[0], "__store_apply_")) {
-                    store_names.append(allocator, ed.path.segments[0]["__store_apply_".len..]) catch unreachable;
-                }
-            },
-            else => {},
-        }
+            }
+        };
+        Collect.go(allocator, program.items, &store_names);
     }
 
     const Rewrite = struct {
@@ -3931,7 +3964,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         } }) catch unreachable;
         var sb2 = std.ArrayList(u8).initCapacity(allocator, 128) catch unreachable;
         for (field_names, 0..) |_, i| {
-            const call2 = std.fmt.allocPrint(allocator, "main_module.{s}_event.handler(.{{ .field = {d} }});\n", .{ announce_name, i }) catch unreachable;
+            const call2 = std.fmt.allocPrint(allocator, "{s}{s}_event.handler(.{{ .field = {d} }});\n", .{ storeEmitQualifier(allocator, home_ns, program.main_module_name), announce_name, i }) catch unreachable;
             sb2.appendSlice(allocator, call2) catch unreachable;
         }
         sb2.appendSlice(allocator, "return;") catch unreachable;
@@ -3957,20 +3990,34 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 for (names, 0..) |nm, i| {
                     // FILE-derived: `reader` is a `Flow.module`, same domain.
                     const home = H.storeHomeFile(prog, nm) orelse "";
-                    if (home.len == 0 or std.mem.eql(u8, home, reader)) {
+                    if (home.len == 0) {
+                        px[i] = "";
+                        continue;
+                    }
+                    // A store in the ENTRY module keeps the bare form: that is
+                    // the status quo and `main_module` is the enclosing struct.
+                    //
+                    // A store in an imported module is ALWAYS fully qualified,
+                    // even for a reader in its own module. A same-module read
+                    // looks safe unqualified right up until the emitter INLINES
+                    // that body into a caller elsewhere (`peek -> cache.v` read
+                    // from the entry file), at which point the bare name is in a
+                    // namespace that never declared it. The qualified form is
+                    // valid from both sides, so it is the only one that survives
+                    // inlining.
+                    const home_logical_pre = H.storeHomeModule(alloc, prog, nm) orelse "";
+                    if (std.mem.eql(u8, home_logical_pre, prog.main_module_name) and std.mem.eql(u8, home, reader)) {
                         px[i] = "";
                         continue;
                     }
                     // Only the ENTRY module's emitted namespace has a name this
                     // layer can spell (`main_module`). A store declared in an
-                    // imported module and read from a different one needs the
-                    // emitter's module-path mangling (emitter_helpers
-                    // writeModulePath), which this rewrite does not have —
-                    // refuse rather than emit a name that does not resolve.
-                    if (!std.mem.eql(u8, home, prog.main_module_name)) {
-                        std.debug.panic("std/store: store '{s}' is declared in module '{s}' and read from '{s}' - a cross-module cell read is only lowered for a store declared in the entry file; declare '{s}' in the entry, or read it through an accessor tor in '{s}'", .{ nm, home, reader, nm, home });
-                    }
-                    px[i] = "main_module.";
+                    // imported module and read from another needs the emitter's
+                    // module-path mangling. `storeEmitQualifier` applies the same
+                    // rule as `emitter_helpers.writeModulePath`, so a cross-module
+                    // cell read now lowers for ANY declaring module — it used to
+                    // refuse, because this rewrite could only spell `main_module`.
+                    px[i] = storeEmitQualifier(alloc, home_logical_pre, prog.main_module_name);
                 }
                 return px;
             }

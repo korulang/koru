@@ -208,6 +208,10 @@ fn siteView(allocator: std.mem.Allocator, program: *const Program, holding: *ast
 fn appendedItemModule(item: ast.Item) ?[]const u8 {
     return switch (item) {
         .event_decl => |ed| ed.path.module_qualifier,
+        // A proc is its event's body. Leaving it at top level while the event
+        // moves into the module separates the pair, and the event emits with a
+        // stub handler instead of the proc's code.
+        .proc_decl => |pd| pd.path.module_qualifier,
         .flow => |f| if (f.impl_of) |io| io.module_qualifier else null,
         // Host lines carry no path; the module they declare themselves into is
         // the only signal, and a synthesized cell sets it to the namespace its
