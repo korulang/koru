@@ -3,12 +3,13 @@
 //
 // print.blk carries a SOURCE BLOCK rather than an argument list, so it pins
 // whether a transform whose payload is captured source text survives
-// relocation — a different intake path from 115_001's ordinary call.
+// relocation — a different intake path from 115_001's ordinary call. The block
+// opens on the subflow-definition line, the position 210_166 pins.
 //
-// The one-line block form is deliberate: a source block that OPENS on a
-// subflow-definition line and closes later is refused by the parser regardless
-// of modules, which 115_017 holds. Closing on the same line keeps that gap out
-// of this arm so a failure here means the module boundary.
+// The original's second chained block is left out on purpose: a `|>` tail after
+// a multi-line block on a definition line is dropped, held by 210_167 in the
+// entry file. Riding it here would make this arm red for a reason that is not
+// the module boundary.
 import app/lib
 
 app/lib:run()

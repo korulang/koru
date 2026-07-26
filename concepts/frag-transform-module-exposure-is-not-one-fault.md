@@ -65,10 +65,15 @@ it. Probe, change one variable, and let the diagnostic name the fault class.
 
 Relocating a body is not a semantics-preserving edit, and assuming it was cost
 one wrong reading already: a source-block-carrying transform moved into a tor
-body meets a parser refusal that has nothing to do with the boundary, because a
-subflow-DEFINITION line cannot open a source block anywhere on it. Held by
-115_017 in the entry file, where no module exists to blame. The same construct
-relocates cleanly once the block closes on its line.
+body met a parser refusal that had nothing to do with the boundary, because the
+subflow-DEFINITION path stitched only `|>` lines onto the head and left a block
+that opened there unterminated. Ruled legal and fixed (210_166). A `|>` tail
+after such a block is still dropped in silence — 210_167, entry file, no module
+involved.
+
+That gap was worth more than the mirror that found it: it blocked writing the
+kernel:self mirror at all, so the boundary question for the shape that library
+is actually written for could not be asked until the parser moved.
 
 So every red on this wall needs its entry-file twin before it counts as a module
 finding. That is not wall bureaucracy — it is the difference between a fault
@@ -79,10 +84,9 @@ list and a list of things that happened to be red at the same time.
 - Whether the appended-declaration-lost class (regex) and the
   bookkeeping-not-re-run class (field) are two classes or one seen twice.
   Unknown until both are fixed; the pins hold the question open.
-- Whether a source block may open on a subflow-definition line at all. Unruled,
-  and the reading decides whether 115_017 is a parser gap or a missing negative
-  wall. Under either reading its diagnostic is wrong: it reports a missing
-  closing brace for balanced braces.
+- Why a `|>` tail after a multi-line source block on a definition line is
+  dropped without a diagnostic (210_167). Silent truncation of a written step is
+  worse than the refusal it replaced.
 - Whether any library breaks on the boundary for a reason with no entry-file
   analogue at all — the remaining mirrors decide this, and a further fault class
   would weaken the single-surface remedy again.
