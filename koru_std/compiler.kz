@@ -809,7 +809,7 @@ pub const CompilerContext = struct {
     const backend_output = @import("backend_output_emitted.zig");
     var updated_ctx = ctx;
     if (@hasDecl(backend_output, "run_pass")) {
-        const pre_ast = backend_output.run_pass("pre", ctx.ast, ctx.allocator) catch |err| {
+        const pre_ast = backend_output.run_pass("pre", ctx.ast, ctx.allocator, @ptrCast(&updated_ctx)) catch |err| {
             if (err == error.TransformContinuationPositionUnsupported) {
                 // The runner already emitted a located error[KORU124] koru
                 // diagnostic. evaluate/run-pre have no clean error channel
@@ -1963,7 +1963,11 @@ const joinPathAlloc = struct {
         // DUMP POINT 3: AST before transform handlers
         backend_output.dumpAST(ctx.ast, "3-pre-transform", ctx.allocator);
 
-        const post_transform_ast = backend_output.run_pass("transform", ctx.ast, ctx.allocator) catch |err| {
+        // The ctx handed to the transforms is the one this block returns, so
+        // anything a transform records on it survives the call.
+        var transform_ctx = ctx;
+
+        const post_transform_ast = backend_output.run_pass("transform", ctx.ast, ctx.allocator, @ptrCast(&transform_ctx)) catch |err| {
             if (err == error.TransformContinuationPositionUnsupported) {
                 // The runner already emitted a located error[KORU124] koru
                 // diagnostic. This proc returns a ctx (no clean error channel),
@@ -1982,7 +1986,6 @@ const joinPathAlloc = struct {
         // DUMP POINT 4: AST after transform handlers
         backend_output.dumpAST(post_transform_ast, "4-post-transform", ctx.allocator);
 
-        var transform_ctx = ctx;
         transform_ctx.ast = post_transform_ast;
         break :blk transform_ctx;
     } else ctx;

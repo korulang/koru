@@ -440,7 +440,7 @@ const validateMocks = struct {
     };
 
     const backend_output = @import("backend_output_emitted.zig");
-    const transformed_program = backend_output.run_pass("transform", flow_program, allocator) catch |err| {
+    const transformed_program = backend_output.run_pass("transform", flow_program, allocator, null) catch |err| {
         // Loud failure: continuing with untransformed test flows would emit
         // raw transform invocations into the test block.
         std_import.debug.print("FATAL: transform pass failed in test: {}\n", .{err});

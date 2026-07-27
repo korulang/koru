@@ -76,7 +76,8 @@ fn makeProgramWithNestedInvocation(allocator: std.mem.Allocator) !*ast.Program {
     return program;
 }
 
-fn innerTransform(node: ast.ASTNode, program: *const ast.Program, allocator: std.mem.Allocator) !ast.SiteResult {
+fn innerTransform(node: ast.ASTNode, program: *const ast.Program, allocator: std.mem.Allocator, ctx: ?*anyopaque) !ast.SiteResult {
+    _ = ctx; // these fixtures exercise placement, not the compilation context
     _ = node;
     _ = program;
     recordObservation("inner");
@@ -93,7 +94,8 @@ fn innerTransform(node: ast.ASTNode, program: *const ast.Program, allocator: std
     return .{ .replacement = lowered_item };
 }
 
-fn outerTransform(node: ast.ASTNode, program: *const ast.Program, allocator: std.mem.Allocator) !ast.SiteResult {
+fn outerTransform(node: ast.ASTNode, program: *const ast.Program, allocator: std.mem.Allocator, ctx: ?*anyopaque) !ast.SiteResult {
+    _ = ctx; // these fixtures exercise placement, not the compilation context
     _ = node;
     _ = allocator;
 
@@ -106,7 +108,8 @@ fn outerTransform(node: ast.ASTNode, program: *const ast.Program, allocator: std
     return .{}; // no-op: observe only
 }
 
-fn outerClaimingTransform(node: ast.ASTNode, program: *const ast.Program, allocator: std.mem.Allocator) !ast.SiteResult {
+fn outerClaimingTransform(node: ast.ASTNode, program: *const ast.Program, allocator: std.mem.Allocator, ctx: ?*anyopaque) !ast.SiteResult {
+    _ = ctx; // these fixtures exercise placement, not the compilation context
     _ = node;
     _ = allocator;
 
@@ -133,7 +136,7 @@ test "transform runner prefers nested transform before outer owner candidate" {
         .{ .name = "outer", .handler_fn = outerTransform },
     };
 
-    const transformed = try transform_pass_runner.walkAndTransform(original, &transforms, allocator);
+    const transformed = try transform_pass_runner.walkAndTransform(original, &transforms, allocator, null);
 
     try testing.expectEqual(@as(usize, 2), observed_count);
     try testing.expectEqualStrings("inner", observed_order[0]);
@@ -154,7 +157,7 @@ test "claimed transform checks self before descendants and sees raw child invoca
         .{ .name = "outer", .claims_descendants = true, .handler_fn = outerClaimingTransform },
     };
 
-    const transformed = try transform_pass_runner.walkAndTransform(original, &transforms, allocator);
+    const transformed = try transform_pass_runner.walkAndTransform(original, &transforms, allocator, null);
 
     try testing.expectEqual(@as(usize, 2), observed_count);
     try testing.expectEqualStrings("outer", observed_order[0]);
@@ -182,7 +185,7 @@ test "staged transforms run pre before post, inverting deepest-first tree order"
         .{ .name = "outer", .stage = .pre, .handler_fn = outerTransform },
     };
 
-    const transformed = try transform_pass_runner.walkAndTransform(original, &transforms, allocator);
+    const transformed = try transform_pass_runner.walkAndTransform(original, &transforms, allocator, null);
 
     try testing.expectEqual(@as(usize, 2), observed_count);
     try testing.expectEqualStrings("outer", observed_order[0]);
