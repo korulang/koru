@@ -4,6 +4,7 @@
 ~import std/inter
 ~import std/deps
 ~import std/optimizer
+~import std/rules
 
 // Compiler system dependencies
 ~std/deps:requires.system {
