@@ -1,36 +1,33 @@
-// FRONTIER (pinned RED): effect-branch binding name collides with a
-// continuation-branch capture name when an effect handler body chains into a
-// branched-event dispatch.
+// PINS: an effect payload and a capture nested inside its own handler are
+// real shadowing, and Koru refuses it.
 //
-// Reduced from 800_001_scoreboard. The natural shape — name the effect binding
-// and the branch capture the same thing, because they ARE the same value
-// flowing through (the score goes into `classify` and comes back out) — is
-// rejected by the Zig backend:
+//     ! item x |> classify(v: x)      <- x bound here…
+//         | lo x |> sink(v: x)        <- …still live when this binds
 //
-//   ~run(n: 1)
-//   ! item x |> classify(v: x)   <- effect handler fn param is `x`
-//       | lo x |> sink(v: x)     <- branch capture is ALSO `x`
-//       | hi x |> sink(v: x)
+// The two are NOT siblings. `| lo` hangs off `classify`, which is inside the
+// `! item` handler body, so the payload's `x` is in scope when the capture
+// binds and the inner name hides the outer one. That is nesting, and it is the
+// whole difference from `| lo x` / `| hi x`, which share a name legally because
+// disjoint arms never see each other.
 //
-// The emitter lowers the effect handler to `fn item(x: u64) void { ... }` and
-// then, INSIDE that function, emits `.lo => |x| { ... }` — a switch capture
-// named `x` that shadows the `x` function parameter. Zig rejects this:
+// Ruled by Lars 2026-07-27. This test previously asserted the opposite — that
+// the two names denote one value flowing through, that "Koru has no rule
+// against it", and that the EMITTER should alpha-rename one of them. That
+// reading was wrong: the language forbids shadowing, and the pun machinery
+// rests on it ("no shadowing means the in-scope match is always unique",
+// ast_transform.zig). Allowing it would have meant a scope stack in the
+// desugar, where today a nested duplicate is skipped and a pun inside the inner
+// scope silently resolves to the OUTER binding.
 //
-//   error: capture 'x' shadows function parameter from outer scope
+// What changed is the SENTENCE, not the verdict. This program has always been
+// refused; it was refused by Zig — `capture 'x' shadows function parameter
+// from outer scope` — a host error standing in for a language one, pointing
+// into a file the author never opened. KORU106 names the binding, both sites,
+// and what to do instead.
 //
-// EXPECTED: the effect binding and a branch capture deeper in the same handler
-// should be able to share a name (they denote the same logical value, and Koru
-// has no rule against it). The emitter should alpha-rename one of them — e.g.
-// give switch captures a unique suffix, or rename the effect handler param.
-//
-// ACTUAL: Stage-D zig build of output_emitted.zig fails with the shadow error
-// (see expected_error.txt). 800_001 works ONLY because it sidesteps this by
-// naming the captures `m`/`s`/`b` instead of reusing the effect binding name.
-//
-// FIX SHAPE: in the emitter path that wraps an effect handler around a branched
-// continuation (the Handlers_N struct fn), alpha-rename colliding switch
-// captures (or the effect param) so nested captures never shadow the param.
-
+// The fix an author writes is to rename one of them. Sibling arms are
+// untouched: `| lo x` and `| hi x` still share `x` legally, and this wall does
+// not reach them.
 const std = @import("std");
 
 ~pub tor run { n: u64 }

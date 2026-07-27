@@ -1,1 +1,1 @@
-capture 'x' shadows function parameter from outer scope
+KORU106

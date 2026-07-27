@@ -918,13 +918,24 @@ pub const FlowChecker = struct {
     // on the unexpanded AST, and post-transform trees carry synthesized names
     // this rule has no business judging.
     //
-    // REACH is the CHAIN BIND (`event(args): x`), which is what 210_173 rules
-    // on and what the pun thread makes unnecessary. An ARM binding colliding
-    // with a capture deeper inside its own handler (`! item x |> classify(v: x)`
-    // then `| lo x`) is a different question with a different answer pending —
-    // 800_002 pins that shape and argues the two names denote one value and the
-    // EMITTER should alpha-rename. Until that fork is ruled, this wall does not
-    // reach it.
+    // REACH is every binding an author writes: a CHAIN BIND (`event(args): x`)
+    // and an ARM BINDING alike — a branch payload, an effect payload, a
+    // destructured field.
+    //
+    // Sibling arms sharing a name are NOT shadowing and stay legal. `| lo x`
+    // and `| hi x` are disjoint: only one fires, and neither can see the
+    // other's binding. The depth-restore below is what makes that fall out —
+    // each child recursion shrinks the scope back, so a sibling's bind is gone
+    // before the next sibling's is noted. Nothing special-cases it.
+    //
+    // What this catches is genuine NESTING: `! item x |> classify(v: x)` with
+    // `| lo x` inside that handler. The effect payload is still on the stack
+    // when the capture binds, so the inner name hides the outer one. 800_002
+    // pins that shape and its prose argued the opposite — that the two names
+    // denote one value and the EMITTER should alpha-rename. Lars ruled against
+    // it (2026-07-27): it is real shadowing and is refused. The Zig error it
+    // used to leak — `capture 'x' shadows function parameter` — was a host
+    // sentence standing in for a language one.
     // =========================================================================
 
     /// `reported` keeps one diagnostic per shadowed binding: a name reused three
@@ -937,6 +948,14 @@ pub const FlowChecker = struct {
 
         const depth = scope.items.len;
         defer scope.shrinkRetainingCapacity(depth);
+
+        // An arm's own payload binding — `| ok x`, `! item x`. Noted BEFORE the
+        // node, because the payload is produced upstream and is already live
+        // when this continuation's own work happens. Siblings never collide:
+        // the defer above restores the depth between them.
+        if (cont.binding) |b| {
+            try self.noteBind(scope, b, cont.location);
+        }
 
         if (cont.node) |node| {
             if (node == .invocation) {

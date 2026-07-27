@@ -19,6 +19,17 @@ branches, and a step either names its value or branches on it, never both. The
 program should not run at all. Months of readings, including several this
 session, took the shape as given and asked only why it failed.
 
+**Second instance, same day.** `800_002_effect_branch_capture_shadow` was a
+`MUST_ERROR` pinning Zig's `capture 'x' shadows function parameter`, and its
+prose argued a ruling: that an effect payload and a capture nested inside its
+own handler denote one value, that "Koru has no rule against it", and that the
+emitter should alpha-rename. It was green — refused by the host — so the verdict
+looked settled and the argument underneath went unread. Lars ruled the opposite
+when it finally surfaced: that shape is real nesting, the outer binding is live
+when the inner one binds, and Koru forbids shadowing. A GREEN test can carry an
+unexamined claim too, when what makes it green is a host error rather than a
+wall the language built.
+
 `frag-a-red-pin-is-unfalsifiable-documentation` names the neighbouring hazard —
 prose about a red test that nothing can contradict. This is the sharper one: the
 *test itself* is the unfalsifiable documentation, because its expectation is
