@@ -9,9 +9,9 @@ if [ ! -f "backend.err" ]; then
     exit 1
 fi
 
-# Check for frontend timing
-if ! grep -q "⏱️.*frontend:" backend.err; then
-    echo "❌ Missing frontend timing output"
+# Check for elaborate timing
+if ! grep -q "⏱️.*elaborate:" backend.err; then
+    echo "❌ Missing elaborate timing output"
     exit 1
 fi
 echo "✅ Frontend timing found"

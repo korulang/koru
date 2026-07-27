@@ -14,7 +14,7 @@ if ! grep -q "=== AST DUMP: post-elaborate ===" backend.err; then
     echo "❌ Missing post-elaborate AST dump"
     exit 1
 fi
-echo "✅ Post-frontend AST dump found"
+echo "✅ Post-elaborate AST dump found"
 
 # Check for post-analysis dump
 if ! grep -q "=== AST DUMP: post-analysis ===" backend.err; then
@@ -25,7 +25,7 @@ echo "✅ Post-analysis AST dump found"
 
 # Verify dumps contain JSON (have opening brace after header)
 if ! grep -A1 "post-elaborate" backend.err | grep -q "{"; then
-    echo "❌ Post-frontend dump doesn't look like JSON"
+    echo "❌ Post-elaborate dump doesn't look like JSON"
     exit 1
 fi
 

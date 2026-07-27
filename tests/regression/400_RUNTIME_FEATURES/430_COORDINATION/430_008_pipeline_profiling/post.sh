@@ -1,5 +1,5 @@
 #!/bin/bash
-# Post-validation: Verify frontend timing output
+# Post-validation: Verify elaborate timing output
 
 set -e
 
@@ -8,13 +8,13 @@ if [ ! -f "backend.err" ]; then
     exit 1
 fi
 
-# Check for frontend timing
-if ! grep -q "⏱️  frontend:" backend.err; then
-    echo "❌ FAIL: No frontend timing found"
+# Check for elaborate timing
+if ! grep -q "⏱️  elaborate:" backend.err; then
+    echo "❌ FAIL: No elaborate timing found"
     exit 1
 fi
 
 # Extract and display the timing
-TIMING=$(grep "⏱️  frontend:" backend.err)
-echo "✅ Frontend timing found: $TIMING"
+TIMING=$(grep "⏱️  elaborate:" backend.err)
+echo "✅ Elaborate timing found: $TIMING"
 exit 0
