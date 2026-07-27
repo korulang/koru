@@ -212,10 +212,12 @@ fn hasTopLevelArrow(s: []const u8) bool {
     return indexOfTopLevelArrow(s) != null;
 }
 
-/// First `|>` at paren/brace depth 0 — the point where this line stops being
-/// one call and becomes a chain. Everything after it belongs to a later step
-/// and is parsed by the continuation recursion, not by the head's own scan.
-fn indexOfTopLevelChainPipe(s: []const u8) ?usize {
+/// First BIND colon at paren/brace depth 0 — a `:` whose previous non-blank
+/// character is `)`, i.e. the `event(args): name` form. That is the head scan's
+/// own definition of a bind colon (arg colons live inside the parens; a module
+/// qualifier's colon precedes its `(`), applied to the WHOLE line instead of
+/// only the first call, because in a chain the bind may sit on any step.
+fn indexOfTopLevelBindColon(s: []const u8) ?usize {
     var paren_depth: i32 = 0;
     var brace_depth: i32 = 0;
     var in_string = false;
@@ -234,8 +236,13 @@ fn indexOfTopLevelChainPipe(s: []const u8) ?usize {
         if (c == '{') brace_depth += 1;
         if (c == '}') brace_depth -= 1;
 
-        if (c == '|' and paren_depth == 0 and brace_depth == 0 and i + 1 < s.len and s[i + 1] == '>') {
-            return i;
+        if (c != ':' or paren_depth != 0 or brace_depth != 0) continue;
+        var j = i;
+        while (j > 0) {
+            j -= 1;
+            if (s[j] == ' ' or s[j] == '\t') continue;
+            if (s[j] == ')') return i;
+            break;
         }
     }
 
@@ -4205,17 +4212,19 @@ pub const Parser = struct {
         //
         // `return_binding` is the HEAD call's bind, and the scan above only looks
         // just past the head's `)`. In a chain the bind that owns the arrow may sit
-        // on a LATER step (`a() |> b() |> c(): v -> v`), where the head has none —
-        // so an arrow with a top-level `|>` before it is not this line's business
-        // at all; the continuation recursion parses that step and its bind. Only an
-        // arrow reached before any chain pipe is the stray form.
+        // on a LATER step (`a() |> b() |> c(): v -> v`), where the head has none.
+        // So the question is not whether this line is a chain — it is whether ANY
+        // bind stands between the start of the line and the arrow. A chain with no
+        // bind at all (`a() |> b() -> v`) is the stray form exactly as much as
+        // `a() -> v` is: `v` names nothing either way, and letting it through
+        // hands the host an undeclared identifier in generated code (210_184).
         if (return_binding == null) {
             if (indexOfTopLevelArrow(clean)) |arrow_at| {
-                const chained_before_arrow = if (indexOfTopLevelChainPipe(clean)) |pipe_at|
-                    pipe_at < arrow_at
+                const bound_before_arrow = if (indexOfTopLevelBindColon(clean)) |bind_at|
+                    bind_at < arrow_at
                 else
                     false;
-                if (!chained_before_arrow) {
+                if (!bound_before_arrow) {
                     try self.reporter.addError(
                         .PARSE001,
                         self.current,
