@@ -1130,7 +1130,7 @@ combo(x: 5): out |> std/io:print.ln("{{ out:d }}")
 //   ~start() | created c0 |> mk(x: c0): c1 |> use-it(x: c1)
 // `mk` is `-> i64`; its result is bound `: c1` mid-chain and used downstream.
 // This is the metacircular `coordinate` pipeline's shape — it consumes the
-// bare-return `frontend(ctx): c1 |> analysis(ctx: c1)` inside the `| created`
+// bare-return `elaborate(ctx): c1 |> analysis(ctx: c1)` inside the `| created`
 // handler. Currently the emitter drops the binding: generated Zig references
 // an undeclared `c1` (use of undeclared identifier 'c1').
 //
