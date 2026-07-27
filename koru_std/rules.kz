@@ -1,0 +1,262 @@
+// rules.kz — the CLAIMS REGISTRY for Koru
+//
+// A claim is something an author asserts about a declaration, written in the
+// vertical annotation block where the reader already is:
+//
+//   ~[
+//   - measured no-alloc-in-kernel
+//     This variant compiles the kernel body to a compute shader; the shape is
+//     checked by running it, not by inspection.
+//   ]proc compute|gpu { ... }
+//
+// The entry is the machine's half — a STAMP and an optional RULE NAME. The
+// prose underneath is the reader's half. They live in one block, so they cannot
+// drift apart.
+//
+//   koruc main.k claims          # the census, per stamp
+//   koruc main.k claims json     # the export
+//
+// WHO OWNS WHAT. The compiler carries an opaque entry list and, since the prose
+// change, the prose beside it; it does not know the word "claim". This module
+// defines the vocabulary — which words are stamps, what a key is, what counts
+// as a collision — and it errs loudly AS ITSELF when it evaluates something it
+// cannot (the consumer-relative-rejection rule from
+// frag-annotation-entries-are-expressions). A different module may ship a
+// different vocabulary over the same annotations and get identical support.
+//
+// WHAT THIS DOES NOT DO. It never judges whether a claim is TRUE. `proven` and
+// `measured` are discharged by runners; `inferred` is discharged by whatever
+// external engine the author points at the export. This module only guarantees
+// that every claim has a unique key, so an engine that judges one can say which
+// one it judged.
+
+~import std/compiler
+
+~[comptime]
+
+// ============================================================
+// THE CLAIMS COMMAND
+// ============================================================
+
+~std/compiler:command.declare {
+    "name": "claims",
+    "description": "List every claim in the program and detect duplicate claim keys"
+}
+
+~[comptime|command]pub tor claims {
+    program: *const Program,
+    allocator: __koru_std.mem.Allocator,
+    argv: []const []const u8,
+}
+
+~proc claims|zig {
+    const std = @import("std");
+    const ast = @import("ast");
+
+    var format: []const u8 = "text";
+    if (argv.len > 0) {
+        const fmt = argv[0];
+        if (std.mem.eql(u8, fmt, "text") or std.mem.eql(u8, fmt, "json")) {
+            format = fmt;
+        } else {
+            std.debug.print("claims: unknown format '{s}' — expected text | json\n", .{fmt});
+            std.process.exit(2);
+        }
+    }
+
+    // The stamps THIS module ships. A stamp says how well the claim is
+    // currently known, never whether it holds. The ladder runs proven (the type
+    // system discharged it) → measured (something ran) → inferred (something
+    // declared it) → aspirational (nothing yet — the honest undischarged claim).
+    const STAMPS = [_][]const u8{ "proven", "measured", "inferred", "aspirational" };
+
+    const Claim = struct {
+        kind: []const u8, // "tor" (the contract) or "proc" (one implementation)
+        module: []const u8,
+        subject: []const u8,
+        variant: []const u8, // proc target, e.g. "zig(optimized)"; "" for a tor
+        stamp: []const u8,
+        rule: []const u8, // "" when the stamp names no rule
+        prose: []const u8,
+        file: []const u8,
+        line: usize,
+    };
+
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const arena_alloc = arena.allocator();
+
+    var claims_found = std.ArrayList(Claim){};
+
+    const Collect = struct {
+        /// An entry is a claim when its first word is one of our stamps. Every
+        /// other entry belongs to some other consumer and is passed over in
+        /// silence — the layering forbids this module having an opinion about
+        /// `pure`, `comptime`, or anything else it did not define.
+        fn split(entry: []const u8) ?struct { stamp: []const u8, rule: []const u8 } {
+            const trimmed = std.mem.trim(u8, entry, " \t");
+            const space = std.mem.indexOfAny(u8, trimmed, " \t");
+            const head = if (space) |s| trimmed[0..s] else trimmed;
+            for (STAMPS) |stamp| {
+                if (std.mem.eql(u8, head, stamp)) {
+                    const rule = if (space) |s| std.mem.trim(u8, trimmed[s..], " \t") else "";
+                    return .{ .stamp = stamp, .rule = rule };
+                }
+            }
+            return null;
+        }
+
+        fn path(alloc: std.mem.Allocator, p: *const ast.DottedPath) []const u8 {
+            var buf = std.ArrayList(u8){};
+            for (p.segments, 0..) |seg, i| {
+                if (i > 0) buf.append(alloc, '.') catch unreachable;
+                buf.appendSlice(alloc, seg) catch unreachable;
+            }
+            return buf.items;
+        }
+
+        fn items(
+            alloc: std.mem.Allocator,
+            list: []const ast.Item,
+            out: *std.ArrayList(Claim),
+        ) void {
+            for (list) |*it| switch (it.*) {
+                .module_decl => |m| items(alloc, m.items, out),
+                .event_decl => |e| {
+                    for (e.annotations) |entry| {
+                        const parts = split(entry) orelse continue;
+                        out.append(alloc, .{
+                            .kind = "tor",
+                            .module = e.module,
+                            .subject = path(alloc, &e.path),
+                            .variant = "",
+                            .stamp = parts.stamp,
+                            .rule = parts.rule,
+                            .prose = e.prose,
+                            .file = e.location.file,
+                            .line = e.location.line,
+                        }) catch unreachable;
+                    }
+                },
+                .proc_decl => |p| {
+                    for (p.annotations) |entry| {
+                        const parts = split(entry) orelse continue;
+                        out.append(alloc, .{
+                            .kind = "proc",
+                            .module = p.module,
+                            .subject = path(alloc, &p.path),
+                            .variant = p.target orelse "",
+                            .stamp = parts.stamp,
+                            .rule = parts.rule,
+                            .prose = p.prose,
+                            .file = p.location.file,
+                            .line = p.location.line,
+                        }) catch unreachable;
+                    }
+                },
+                else => {},
+            };
+        }
+    };
+
+    Collect.items(arena_alloc, program.items, &claims_found);
+    const found = claims_found.items;
+
+    // ── the key, and the crash ────────────────────────────────────────────
+    //
+    // The key is kind + module + subject + VARIANT + rule. The variant is not
+    // decoration: `~proc compute|zig` and `~proc compute|gpu` are two different
+    // implementations of one contract (370_VARIANTS/8201_variants_basic
+    // declares three), and each deserves its own claim. Drop the variant from
+    // the key and they collide — which is exactly what this check exists to
+    // catch, including in the design of the key itself.
+    const sameKey = struct {
+        fn call(a: Claim, b: Claim) bool {
+            return std.mem.eql(u8, a.kind, b.kind) and
+                std.mem.eql(u8, a.module, b.module) and
+                std.mem.eql(u8, a.subject, b.subject) and
+                std.mem.eql(u8, a.variant, b.variant) and
+                std.mem.eql(u8, a.rule, b.rule);
+        }
+    }.call;
+
+    var crashes: usize = 0;
+    for (found, 0..) |claim, i| {
+        for (found[0..i]) |earlier| {
+            if (!sameKey(claim, earlier)) continue;
+            crashes += 1;
+            const rule_label = if (claim.rule.len == 0) "<unnamed>" else claim.rule;
+            std.debug.print(
+                "error: duplicate claim key — {s} {s}:{s}{s}{s} already claims rule '{s}'\n" ++
+                    "  first  --> {s}:{d}  [{s}]\n" ++
+                    "  second --> {s}:{d}  [{s}]\n" ++
+                    "  a claim key is kind + module + subject + variant + rule; two claims on one key\n" ++
+                    "  cannot both be answered, and an external judgment could not say which it judged.\n",
+                .{
+                    claim.kind,          claim.module, claim.subject,
+                    if (claim.variant.len > 0) "|" else "",
+                    claim.variant,       rule_label,
+                    earlier.file,        earlier.line, earlier.stamp,
+                    claim.file,          claim.line,   claim.stamp,
+                },
+            );
+        }
+    }
+
+    if (std.mem.eql(u8, format, "json")) {
+        std.debug.print("{{\"claims\":[", .{});
+        for (found, 0..) |c, i| {
+            if (i > 0) std.debug.print(",", .{});
+            std.debug.print(
+                "{{\"kind\":\"{s}\",\"module\":\"{s}\",\"subject\":\"{s}\",\"variant\":\"{s}\"," ++
+                    "\"stamp\":\"{s}\",\"rule\":\"{s}\",\"file\":\"{s}\",\"line\":{d},\"prose\":\"",
+                .{ c.kind, c.module, c.subject, c.variant, c.stamp, c.rule, c.file, c.line },
+            );
+            for (c.prose) |ch| switch (ch) {
+                '"' => std.debug.print("\\\"", .{}),
+                '\\' => std.debug.print("\\\\", .{}),
+                '\n' => std.debug.print("\\n", .{}),
+                '\t' => std.debug.print("\\t", .{}),
+                else => std.debug.print("{c}", .{ch}),
+            };
+            std.debug.print("\"}}", .{});
+        }
+        std.debug.print("],\"key_collisions\":{d}}}\n", .{crashes});
+        if (crashes > 0) std.process.exit(1);
+        return;
+    }
+
+    if (found.len == 0) {
+        std.debug.print("📋 claims — none. Authors make one with a stamp in a vertical annotation block:\n", .{});
+        std.debug.print("   ~[\\n   - aspirational\\n     why this is not discharged yet\\n   ]tor thing {{}}\n", .{});
+        return;
+    }
+
+    std.debug.print("📋 claims — {d} in this program\n\n", .{found.len});
+    for (STAMPS) |stamp| {
+        var count: usize = 0;
+        for (found) |c| {
+            if (std.mem.eql(u8, c.stamp, stamp)) count += 1;
+        }
+        if (count == 0) continue;
+        std.debug.print("{s} ({d})\n", .{ stamp, count });
+        for (found) |c| {
+            if (!std.mem.eql(u8, c.stamp, stamp)) continue;
+            const sep: []const u8 = if (c.variant.len > 0) "|" else "";
+            const rule_label = if (c.rule.len == 0) "" else c.rule;
+            std.debug.print("  {s} {s}:{s}{s}{s}", .{ c.kind, c.module, c.subject, sep, c.variant });
+            if (rule_label.len > 0) std.debug.print("  → {s}", .{rule_label});
+            std.debug.print("\n      {s}:{d}\n", .{ c.file, c.line });
+            if (c.prose.len > 0) {
+                var lines = std.mem.splitScalar(u8, c.prose, '\n');
+                while (lines.next()) |line| std.debug.print("      │ {s}\n", .{line});
+            }
+        }
+        std.debug.print("\n", .{});
+    }
+
+    if (crashes > 0) {
+        std.debug.print("{d} duplicate claim key(s) — the export cannot be trusted until they are distinct.\n", .{crashes});
+        std.process.exit(1);
+    }
+}

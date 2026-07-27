@@ -461,6 +461,12 @@ pub const AstSerializer = struct {
         try self.writeIndent();
         try self.write("},\n");
 
+        // Rationale prose — comptime consumers read it off the backend AST.
+        try self.writeIndent();
+        try self.write(".prose = ");
+        try self.writeString(event.prose);
+        try self.write(",\n");
+
         // Location
         try self.writeIndent();
         try self.write(".location = ");
@@ -518,6 +524,12 @@ pub const AstSerializer = struct {
         self.dedent();
         try self.writeIndent();
         try self.write("},\n");
+
+        // Rationale prose — a claim on a proc is about this implementation.
+        try self.writeIndent();
+        try self.write(".prose = ");
+        try self.writeString(proc.prose);
+        try self.write(",\n");
 
         // Serialize target
         try self.writeIndent();
