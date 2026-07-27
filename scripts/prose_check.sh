@@ -40,7 +40,11 @@ LOCK="${TMPDIR:-/tmp}/koru-regression.lock"; LOCK="${LOCK%/}"
 FOREIGN_SUITE=""
 if [ -d "$LOCK" ]; then
   lock_pid=$(cat "$LOCK/pid" 2>/dev/null || echo "")
-  if [ -n "$lock_pid" ] && [ "$lock_pid" != "${KORU_SUITE_PID:-}" ]; then
+  # A lock file is evidence, not proof: the holder may be long dead. Both
+  # runners already test liveness before honouring a lock; a reader that
+  # doesn't will refuse forever on a corpse. Only a LIVE foreign holder means
+  # the corpus is actually moving.
+  if [ -n "$lock_pid" ] && [ "$lock_pid" != "${KORU_SUITE_PID:-}" ] && kill -0 "$lock_pid" 2>/dev/null; then
     FOREIGN_SUITE="$lock_pid ($(cat "$LOCK/checkout" 2>/dev/null || echo 'unknown checkout'))"
   fi
 fi
