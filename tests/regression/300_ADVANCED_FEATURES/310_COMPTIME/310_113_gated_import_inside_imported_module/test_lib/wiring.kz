@@ -1,0 +1,7 @@
+// The gated import lives HERE — one module below the entry file — which is the
+// whole point of the pin.
+
+~[
+- profile
+Tracing is opt-in; the tracer module only rides along when asked for.
+]import app/test_lib/tracer

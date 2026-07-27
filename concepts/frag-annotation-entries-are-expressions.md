@@ -71,6 +71,17 @@ design night):
   resolve; comparison-RHS is a value position. Rhymes with `~[build(macos)]`
   variant keys, where the parenthesized word is already a value.
 
+**Scope limit discovered 2026-07-27, not yet resolved.** The claim above that
+the import gate "MUST evaluate" its entries assumed the gate evaluates the same
+way everywhere. It does not — only the ENTRY file's gates see the build's
+provider chain, and a gate one import deeper resolves everything to absent.
+`310_113` is the red pin carrying the contradiction, and `310_104` is its green
+entry-file twin; the two differ only in which file holds the annotation. So the
+belief stands as the RULING and fails as a description of the implementation.
+Which way it resolves — thread the flags down, or declare nested gates
+deliberately flag-blind — is unruled, and the pin holds the question open
+rather than a doc sentence.
+
 Still open, deliberately unpinned: brackets vs parens for entry
 parameterization (brackets rhyme with the variant/selection language, parens
 with the call form); whether [[frag-arguments-are-atoms]]'s
