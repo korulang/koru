@@ -280,6 +280,18 @@ pub const CompilerContext = struct {
     flow_checker_module.addImport("annotation_parser", annotation_parser_module);
     flow_checker_module.addImport("expression_parser", expression_parser_module);
 
+    // AST desugars — the point-free pyramid, the bind pun + type thread, and the
+    // flow return terminus. They run in the ELABORATE segment, after
+    // resolve-with-scopes, because every one of them looks a declaration up by
+    // path and a `[with]`-scoped bare name is not resolvable until then.
+    const ast_transform_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/ast_transform.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    ast_transform_module.addImport("ast", ast_module);
+    ast_transform_module.addImport("errors", errors_module);
+
     // Release gate - rejects ~[prototype] modules under --release (the production gate)
     const release_gate_module = b.createModule(.{
         .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/release_gate.zig" },
@@ -550,6 +562,7 @@ pub const CompilerContext = struct {
     backend_output_module.addImport("parser", parser_module);
     backend_output_module.addImport("ast_functional", ast_functional_module);
     backend_output_module.addImport("flow_checker", flow_checker_module);
+    backend_output_module.addImport("ast_transform", ast_transform_module);
     backend_output_module.addImport("shape_checker", shape_checker_module);
     backend_output_module.addImport("release_gate", release_gate_module);
     backend_output_module.addImport("phantom_semantic_checker", phantom_semantic_checker_module);
@@ -598,6 +611,7 @@ pub const CompilerContext = struct {
     exe.root_module.addImport("emit_build_zig", emit_build_zig_module);
     exe.root_module.addImport("shape_checker", shape_checker_module);
     exe.root_module.addImport("flow_checker", flow_checker_module);
+    exe.root_module.addImport("ast_transform", ast_transform_module);
     exe.root_module.addImport("release_gate", release_gate_module);
     exe.root_module.addImport("phantom_semantic_checker", phantom_semantic_checker_module);
     exe.root_module.addImport("auto_discharge_inserter", auto_discharge_inserter_module);
@@ -1034,6 +1048,93 @@ pub const CompilerContext = struct {
     return updated_ctx;
 }
 
+// The AST desugars: the point-free pyramid, the bind pun + type thread, and the
+// flow return terminus.
+//
+// They live HERE, and not in koruc, because each one looks a declaration up BY
+// PATH. Stage-A canonicalize stamps `<main>:` onto every bare name, so a
+// `[with]`-scoped name is not resolvable until `resolve-with-scopes` has run.
+// A desugar running before that found no declaration, silently did nothing, and
+// left the failure to surface passes later wearing a different name — an
+// undischarged obligation, or a KORU100 for a binding whose only use the pun
+// never filled. Ordering, not a lookup bug.
+//
+// Order among the three is load-bearing: the pyramid first, so the canonical
+// explicit-continuation shape exists; then the pun and thread, so every step's
+// args are in place; then the terminus, which needs the last step final.
+~pub tor desugar-chains { ctx: CompilerContext } -> CompilerContext
+
+~proc desugar-chains|zig {
+    const ast_transform = @import("ast_transform");
+    const errors_mod = @import("errors");
+    const ast_mod = @import("ast");
+
+    // Minimal stderr sink — `printErrors` takes anytype and needs only these two.
+    const Out = struct {
+        file: std.fs.File,
+        pub fn print(self: @This(), comptime fmt: []const u8, args: anytype) !void {
+            var buf: [4096]u8 = undefined;
+            const msg = try std.fmt.bufPrint(&buf, fmt, args);
+            try self.file.writeAll(msg);
+        }
+        pub fn writeAll(self: @This(), bytes: []const u8) !void {
+            try self.file.writeAll(bytes);
+        }
+    };
+
+    const S = struct {
+        // The file these diagnostics render previews from: the first location the
+        // AST carries. One reporter renders one file, which is what koruc's did
+        // too — a multi-module program has always previewed the main one only.
+        fn firstFile(p: *const ast_mod.Program) []const u8 {
+            for (p.items) |item| {
+                if (item != .flow) continue;
+                if (item.flow.location.file.len > 0) return item.flow.location.file;
+            }
+            return "";
+        }
+    };
+
+    var updated_ctx = ctx;
+    const program = @constCast(ctx.ast);
+    const path = S.firstFile(ctx.ast);
+    const source = if (path.len > 0)
+        std.fs.cwd().readFileAlloc(ctx.allocator, path, 16 * 1024 * 1024) catch ""
+    else
+        "";
+
+    var reporter = errors_mod.ErrorReporter.init(ctx.allocator, path, source) catch {
+        @panic("desugar-chains: could not initialise the diagnostic reporter");
+    };
+
+    ast_transform.desugarPointfreeChains(ctx.allocator, program, &reporter) catch |err| {
+        log.err("FATAL: point-free desugar failed ({s})\n", .{@errorName(err)});
+        @panic("point-free desugar failed — see error above");
+    };
+    ast_transform.desugarBindingPuns(ctx.allocator, program, &reporter) catch |err| {
+        log.err("FATAL: bind-pun/thread desugar failed ({s})\n", .{@errorName(err)});
+        @panic("bind-pun/thread desugar failed — see error above");
+    };
+    ast_transform.desugarFlowReturnTerminus(ctx.allocator, program, &reporter) catch |err| {
+        log.err("FATAL: return-terminus desugar failed ({s})\n", .{@errorName(err)});
+        @panic("return-terminus desugar failed — see error above");
+    };
+
+    // KORU038 / KORU092 / KORU093 / KORU094 surface here, hints and source
+    // previews intact — the same gate koruc used to hold, one segment later.
+    // Halt rather than hand a half-desugared AST to the rest of the pipeline.
+    if (reporter.hasErrors()) {
+        const out = Out{ .file = std.fs.File.stderr() };
+        reporter.printErrors(out) catch {};
+        std.process.exit(1);
+    }
+
+    updated_ctx.ast = program;
+    updated_ctx.passes_completed += 1;
+    updated_ctx.current_pass = "desugar_chains";
+    return updated_ctx;
+}
+
 // Comptime interpreter fold: partial evaluation of [comptime] flows whose
 // head event has a pure-Koru bare-return impl. The interpreter (comptime_eval)
 // evaluates the head at Stage C and rewrites the flow to its runtime residue
@@ -1074,7 +1175,7 @@ pub const CompilerContext = struct {
 // BACKEND compiler, which is why it can see resolved names at all.
 ~[comptime|abstract] pub tor elaborate { ctx: CompilerContext } -> CompilerContext
 
-~elaborate = process-ccp-commands(ctx) |> resolve-with-scopes() |> run-pre-transforms() |> process-template-procs() |> fold-comptime() |> evaluate-comptime()
+~elaborate = process-ccp-commands(ctx) |> resolve-with-scopes() |> desugar-chains() |> run-pre-transforms() |> process-template-procs() |> fold-comptime() |> evaluate-comptime()
 
 // Analysis segment: Validation passes (abstract, can be overridden)
 ~[comptime|abstract] pub tor analysis { ctx: CompilerContext }
