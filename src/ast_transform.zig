@@ -117,6 +117,7 @@ pub const SymbolTable = struct {
                         .input = event.input,
                         .branches = event.branches,
                         .return_type = event.return_type,
+                        .input_is_compiler_supplied = event.isComptimeOnly() or event.hasAnnotation("transform"),
                         .has_proc = false,
                         .has_subflow = false,
                         .is_recursive = false,
@@ -191,6 +192,15 @@ pub const EventInfo = struct {
     /// RUNTIME value is a result struct the caller must field-access (e.g.
     /// std/fmt:ln's `{ text }`), never punned whole into a scalar param.
     return_type: ?[]const u8 = null,
+    /// This event's INPUT is assembled by the compiler at the call site, not
+    /// written by the author — a `[transform]` receives the site itself
+    /// (`invocation` / `item` / `program` / `allocator`), and a Source or
+    /// Expression parameter is comptime-only for the same reason. Its open
+    /// parameters are therefore not slots: nothing there is a home for a
+    /// runtime thread. `std/fmt:ln` and `std/io:print.ln` are the instances.
+    /// `[comptime]` alone does NOT qualify — `frontend { ctx: CompilerContext }`
+    /// runs at comptime and its `ctx` is an ordinary author-written parameter.
+    input_is_compiler_supplied: bool = false,
     has_proc: bool,
     has_subflow: bool,
     is_recursive: bool,
@@ -1007,6 +1017,7 @@ pub fn desugarBindingPuns(
     var table = try SymbolTable.init(allocator);
     defer table.deinit();
     try table.buildFrom(program);
+    var thread_counter: usize = 0;
 
     // scope maps a live binding NAME -> the `-> T` return type of the event
     // that produced it (null for branch payloads and non-return binds). RULING
@@ -1015,7 +1026,7 @@ pub fn desugarBindingPuns(
     // punned whole into a scalar param.
     var scope = std.StringHashMap(?[]const u8).init(allocator);
     defer scope.deinit();
-    try punItemsBinding(allocator, &table, program.items, &scope, reporter);
+    try punItemsBinding(allocator, &table, program.items, &scope, &thread_counter, reporter);
 }
 
 fn punItemsBinding(
@@ -1023,20 +1034,226 @@ fn punItemsBinding(
     table: *SymbolTable,
     items: []const ast.Item,
     scope: *std.StringHashMap(?[]const u8),
+    counter: *usize,
     reporter: *errors_mod.ErrorReporter,
 ) std.mem.Allocator.Error!void {
     for (@constCast(items)) |*item| {
         switch (item.*) {
-            .flow => |*flow| try punContinuationBinding(allocator, table, &flow.body, scope, reporter),
+            .flow => |*flow| try punContinuationBinding(allocator, table, &flow.body, scope, counter, null, reporter),
             .proc_decl => |*proc| {
                 for (@constCast(proc.inline_flows)) |*flow| {
-                    try punContinuationBinding(allocator, table, &flow.body, scope, reporter);
+                    try punContinuationBinding(allocator, table, &flow.body, scope, counter, null, reporter);
                 }
             },
-            .module_decl => |*module| try punItemsBinding(allocator, table, module.items, scope, reporter),
+            .module_decl => |*module| try punItemsBinding(allocator, table, module.items, scope, counter, reporter),
             else => {},
         }
     }
+}
+
+// ----------------------------------------------------------------------------
+// The point-free thread: a `-> T` stage's value, bound by TYPE
+// ----------------------------------------------------------------------------
+//
+// A `-> T` stage in a `|>` chain hands its value to the next step. That value
+// has no name to bind by — having no name is what `-> T` MEANS — so it binds
+// by TYPE: it fills the one UNFILLED parameter whose type it matches. Written
+// arguments (including the ones the bind-pun above already synthesized) narrow
+// the field first; then the type decides. Exactly one candidate binds; several
+// is KORU093 naming them; none, with the call still incomplete, is KORU092.
+// Pin: 210_176. Belief: `frag-the-thread-binds-by-type`.
+//
+// BASE TYPE ONLY. Phantom state lives on `Field.phantom` and in the decl's
+// `return_phantom`, never inside `Field.type` / `return_type` — so the string
+// compare here IS the base-type compare, and no phantom logic lives in this
+// desugar (the invariant stated at the head of this section holds). A
+// `*Multi<empty!>` thread finds `m: *Multi<!empty|!open>`; the phantom-semantic
+// checker then validates the state exactly as it does for a hand-written arg.
+// Two parameters differing ONLY in phantom state stay ambiguous, which is
+// correct — the thread has no basis to choose.
+//
+// An OPTIONAL parameter (`?T`) is never a candidate, because an optional is
+// never *unfilled*: omitting it is already a complete call. Not an exception —
+// it is what "unfilled" means.
+
+/// The value a bare-return stage hands to the next `|>` step: the invocation
+/// that produced it (so a holder name can be minted on demand) and the base
+/// type it carries.
+const Thread = struct {
+    producer: *ast.Invocation,
+    type: []const u8,
+};
+
+/// An optional input (`?T`) is never *unfilled* — omitting it is already a
+/// complete call — so it is never a thread candidate.
+fn isOptionalInput(f: ast.Field) bool {
+    return f.type.len > 0 and f.type[0] == '?';
+}
+
+/// Compiler-supplied inputs (Source / Expression / File / InvocationMeta) are
+/// never author-written, so they are never a home for the thread either.
+fn isCompilerSuppliedInput(f: ast.Field) bool {
+    return f.is_source or f.is_file or f.is_embed_file or
+        f.is_expression or f.is_invocation_meta;
+}
+
+/// Still open to the thread: not written, not optional, not compiler-supplied.
+fn isOpenThreadSlot(f: ast.Field, args: []const ast.Arg) bool {
+    if (argNamed(args, f.name)) return false;
+    if (isOptionalInput(f)) return false;
+    if (isCompilerSuppliedInput(f)) return false;
+    return true;
+}
+
+/// The name that holds the thread's value. A stage the author already bound
+/// (`stage(): r`) is its own holder; an unbound one gets a synthesized bind —
+/// minted only at the moment a consumer is found, so a thread nobody takes
+/// never invents a dead local for KORU100 to trip over.
+fn threadHolderName(
+    allocator: std.mem.Allocator,
+    inv: *ast.Invocation,
+    counter: *usize,
+) ![]const u8 {
+    if (inv.return_binding) |rb| return rb;
+    const name = try std.fmt.allocPrint(allocator, "__thread{d}", .{counter.*});
+    counter.* += 1;
+    inv.return_binding = name;
+    return name;
+}
+
+/// `'a' (i64), 'b' (string)` — the open slots, for the no-home diagnostic.
+fn formatOpenSlots(
+    allocator: std.mem.Allocator,
+    names: []const []const u8,
+    types: []const []const u8,
+) ![]const u8 {
+    var buf = try std.ArrayList(u8).initCapacity(allocator, 48);
+    errdefer buf.deinit(allocator);
+    for (names, 0..) |nm, i| {
+        if (i > 0) try buf.appendSlice(allocator, ", ");
+        try buf.append(allocator, '\'');
+        try buf.appendSlice(allocator, nm);
+        try buf.appendSlice(allocator, "' (");
+        try buf.appendSlice(allocator, types[i]);
+        try buf.append(allocator, ')');
+    }
+    return try buf.toOwnedSlice(allocator);
+}
+
+/// `'base', 'incoming'` — the tied candidates, for the cannot-elect diagnostic.
+fn formatQuotedNames(allocator: std.mem.Allocator, names: []const []const u8) ![]const u8 {
+    var buf = try std.ArrayList(u8).initCapacity(allocator, 32);
+    errdefer buf.deinit(allocator);
+    for (names, 0..) |nm, i| {
+        if (i > 0) try buf.appendSlice(allocator, ", ");
+        try buf.append(allocator, '\'');
+        try buf.appendSlice(allocator, nm);
+        try buf.append(allocator, '\'');
+    }
+    return try buf.toOwnedSlice(allocator);
+}
+
+/// Fill this step's one type-matched open slot with the thread — or say, in
+/// koru, why the thread has no unambiguous home there.
+fn bindThreadIntoStep(
+    allocator: std.mem.Allocator,
+    node: *ast.Node,
+    info: EventInfo,
+    thread: Thread,
+    counter: *usize,
+    location: errors_mod.SourceLocation,
+    reporter: *errors_mod.ErrorReporter,
+) std.mem.Allocator.Error!void {
+    // A comptime transform's input is assembled by the compiler at the call
+    // site, not written by the author. Its open parameters are not slots.
+    if (info.input_is_compiler_supplied) return;
+
+    var open_names = try std.ArrayList([]const u8).initCapacity(allocator, 4);
+    defer open_names.deinit(allocator);
+    var open_types = try std.ArrayList([]const u8).initCapacity(allocator, 4);
+    defer open_types.deinit(allocator);
+    var matches = try std.ArrayList([]const u8).initCapacity(allocator, 2);
+    defer matches.deinit(allocator);
+
+    for (info.input.fields) |f| {
+        if (!isOpenThreadSlot(f, node.invocation.args)) continue;
+        try open_names.append(allocator, f.name);
+        try open_types.append(allocator, f.type);
+        if (std.mem.eql(u8, f.type, thread.type)) try matches.append(allocator, f.name);
+    }
+
+    // Nothing is unfilled: the call the author wrote is already complete, so
+    // the thread simply is not taken here. Complete is never an error.
+    if (open_names.items.len == 0) return;
+
+    const step = eventLeafName(info);
+
+    if (matches.items.len == 1) {
+        const holder = try threadHolderName(allocator, thread.producer, counter);
+        node.invocation.args = try appendedArgs(
+            allocator,
+            node.invocation.args,
+            matches.items[0],
+            holder,
+            !std.mem.eql(u8, matches.items[0], holder),
+        );
+        return;
+    }
+
+    if (matches.items.len > 1) {
+        const tied = try formatQuotedNames(allocator, matches.items);
+        defer allocator.free(tied);
+        try reporter.addErrorAtLocationWithHint(
+            .KORU093,
+            location,
+            "'{s}' has {d} unfilled parameters accepting a {s}: {s} — the thread cannot elect between them",
+            .{ step, matches.items.len, thread.type, tied },
+            "write one of them at the call site; the thread fills whichever is left open (writing narrows, and what you write binds by name)",
+            .{},
+        );
+        return;
+    }
+
+    if (open_names.items.len == 1) {
+        try reporter.addErrorAtLocationWithHint(
+            .KORU092,
+            location,
+            "nothing in '{s}' accepts a {s} — its parameter '{s}' is a {s}",
+            .{ step, thread.type, open_names.items[0], open_types.items[0] },
+            "a `|>` step takes the previous stage's `-> T` by TYPE into an unfilled parameter. Give '{s}' a {s} parameter, or write '{s}' explicitly and end the thread there.",
+            .{ step, thread.type, open_names.items[0] },
+        );
+        return;
+    }
+
+    const listed = try formatOpenSlots(allocator, open_names.items, open_types.items);
+    defer allocator.free(listed);
+    try reporter.addErrorAtLocationWithHint(
+        .KORU092,
+        location,
+        "nothing in '{s}' accepts a {s} — its unfilled parameters are {s}",
+        .{ step, thread.type, listed },
+        "a `|>` step takes the previous stage's `-> T` by TYPE into an unfilled parameter. Give '{s}' a {s} parameter, or write the remaining ones explicitly and end the thread there.",
+        .{ step, thread.type },
+    );
+}
+
+/// The thread `cont`'s own node hands downstream, if it produces one. Only a
+/// declared `-> T` threads: a branch-carrying stage threads its PAYLOAD through
+/// the point-free desugar above instead, and a `[transform]` result is a struct
+/// the caller must field-access (`l.text`), never a value to pass whole.
+fn threadProducedBy(
+    table: *SymbolTable,
+    node: *ast.Node,
+) ?Thread {
+    if (node.* != .invocation) return null;
+    // A destructured return (`f(): { a, b }`) has no single name to hand on.
+    if (node.invocation.return_destructure.len > 0) return null;
+    const info = table.getEventInfo(node.invocation.path) orelse return null;
+    if (info.input_is_compiler_supplied) return null;
+    const rt = info.return_type orelse return null;
+    if (isTransformResultReturn(rt)) return null;
+    return .{ .producer = &node.invocation, .type = rt };
 }
 
 /// A `[transform]` event's declared single-return type. Its RUNTIME value is a
@@ -1063,6 +1280,8 @@ fn punContinuationBinding(
     table: *SymbolTable,
     cont: *ast.Continuation,
     scope: *std.StringHashMap(?[]const u8),
+    counter: *usize,
+    thread: ?Thread,
     reporter: *errors_mod.ErrorReporter,
 ) std.mem.Allocator.Error!void {
     // The names this continuation introduces into scope are added in two phases
@@ -1133,6 +1352,20 @@ fn punContinuationBinding(
         }
     }
 
+    // 1b. THE THREAD. The upstream `-> T` value lands in the one UNFILLED
+    //    parameter whose type it matches. It runs AFTER the name fill above, so
+    //    a name-punned arg counts as written and narrows the field exactly like
+    //    a hand-written one — the bright line is written versus not written.
+    if (thread) |th| {
+        if (cont.node) |*node| {
+            if (node.* == .invocation) {
+                if (table.getEventInfo(node.invocation.path)) |info| {
+                    try bindThreadIntoStep(allocator, node, info, th, counter, cont.location, reporter);
+                }
+            }
+        }
+    }
+
     // Phase B: return bind (`producer(): x`) and destructured return
     //    (`producer(): { a, b }`) — produced BY cont.node, so added to scope only
     //    AFTER its own fill above, never punning into the very invocation that
@@ -1157,8 +1390,13 @@ fn punContinuationBinding(
         }
     }
 
+    // The thread this node hands on. Only an unnamed `|>` step receives it —
+    // a branch arm, a guarded arm and an effect arm are not the chain.
+    const downstream: ?Thread = if (cont.node) |*node| threadProducedBy(table, node) else null;
+
     for (@constCast(cont.continuations)) |*child| {
-        try punContinuationBinding(allocator, table, child, scope, reporter);
+        const passed: ?Thread = if (downstream != null and isUnnamedStep(child)) downstream else null;
+        try punContinuationBinding(allocator, table, child, scope, counter, passed, reporter);
     }
 
     for (added.items) |b| _ = scope.remove(b);

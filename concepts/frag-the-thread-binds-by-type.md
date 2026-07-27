@@ -86,15 +86,39 @@ name, and position means nothing there, which is what 210_094/095/096 wall.
 The bright line is **written versus not written**: what you write binds by name,
 what you do not write binds by type. Both rules sit on the correct side of it.
 
+## What "type matches" turned out to mean
+
+Identity on the base type, and nothing more. The parser already splits phantom
+state off a `-> T` into `return_phantom` and off a parameter into
+`Field.phantom`, so the two type strings the desugar compares are *already*
+base types — `*Multi<empty!>` finds `m: *Multi<!empty|!open>` with no phantom
+logic in the desugar at all, and the phantom-semantic checker then validates
+the state exactly as it does for a hand-written argument. Two parameters
+differing only in phantom state stay ambiguous, which is right: the thread has
+no basis to choose between them.
+
+The question that looked hard — assignability — never arose, because no
+coercion is attempted. Numeric widening and `string` versus host slice types
+are still unsettled, and they are unsettled in the same way they are everywhere
+else in the language, not specially here.
+
+One boundary had to be drawn that the ruling did not anticipate: a
+`[transform]`'s input is assembled by the compiler at the call site
+(`invocation` / `item` / `program` / `allocator`), so its open parameters are
+not slots and it takes no thread. `[comptime]` alone is NOT that boundary —
+`frontend { ctx: CompilerContext }` runs at comptime and its `ctx` is an
+ordinary author-written parameter.
+
 ## Open
 
-The rule is ruled and pinned; the compiler side is not built. What "type
-matches" means precisely is where the remaining design lives — phantom-state
-requirements (`*Multi<empty!>` arriving at `m: *Multi<!empty|!open>`) are an
-assignability question the obligation checker already answers, but numeric
-coercion and `string` versus host slice types are not yet settled.
-
-Also unruled, and adjacent rather than downstream: whether `|>` on a void step
+Unruled, and adjacent rather than downstream: whether `|>` on a void step
 becomes illegal in favour of statement listing, and whether naming a value
 (`: m`, or destructuring `{ a, b }`) ends the thread. Both were reasoned through
 on the same day and neither was ruled.
+
+Still name-based, and deliberately left so: the *branch* thread of the shipped
+point-free pipeline (`frag-pointfree-threads-the-branch-left`, 210_151/152/153)
+picks its slot as the sole unfilled field, whatever its type. The two
+mechanisms now sit side by side. Whether the branch thread should also narrow
+by type — which would let a stage with several unfilled fields thread where it
+cannot today — is unruled and untried.
