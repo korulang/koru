@@ -1,15 +1,12 @@
-// Design call #2: a REQUIRED param with no same-named binding in scope is a
-// HARD error, never a silent void-fill. `render-at` requires `text`; the only
-// binding in scope is `count` (i64). Nothing named `text` exists => the pun
-// cannot fire => hard koru diagnostic at the boundary (not a Zig leak, not a
-// blank string).
+// PINS: a REQUIRED param that nothing can fill is a HARD KORU error, never a
+// silent void-fill and never a Zig leak. `render-at` requires `text`; the only
+// binding in scope is `count` (i64), and the thread `tick` produces is an i64
+// too. No name matches, no type matches — so the refusal must be a koru
+// sentence naming the parameter and its type (KORU092), at the boundary.
 //
-// DEFERRED (honest red until then): today this is correctly REJECTED, but at
-// the Zig boundary ("missing struct field") rather than with a koru-level
-// diagnostic. The clean rejection is redeemed by the future general
-// arg-validation pass, scoped to pure `.k` files — in `.kz`, host binds can be
-// opaque to Koru, so the full type registry only exists for pure Koru. See the
-// inline-scalar-bind-pun session; this pin turns green when that pass lands.
+// The two implicit fills both have to miss for this to be the pin it is: the
+// bind-pun misses because nothing is NAMED `text`, and the point-free thread
+// misses because nothing in `render-at` is TYPED i64 once `x` is written.
 const std = @import("std");
 
 ~tor tick {} -> i64

@@ -212,6 +212,43 @@ fn hasTopLevelArrow(s: []const u8) bool {
     return indexOfTopLevelArrow(s) != null;
 }
 
+/// First BIND colon at paren/brace depth 0 — a `:` whose previous non-blank
+/// character is `)`, i.e. the `event(args): name` form. That is the head scan's
+/// own definition of a bind colon (arg colons live inside the parens; a module
+/// qualifier's colon precedes its `(`), applied to the WHOLE line instead of
+/// only the first call, because in a chain the bind may sit on any step.
+fn indexOfTopLevelBindColon(s: []const u8) ?usize {
+    var paren_depth: i32 = 0;
+    var brace_depth: i32 = 0;
+    var in_string = false;
+    var i: usize = 0;
+
+    while (i < s.len) : (i += 1) {
+        const c = s[i];
+        if (c == '"' and (i == 0 or s[i - 1] != '\\')) {
+            in_string = !in_string;
+            continue;
+        }
+        if (in_string) continue;
+
+        if (c == '(') paren_depth += 1;
+        if (c == ')') paren_depth -= 1;
+        if (c == '{') brace_depth += 1;
+        if (c == '}') brace_depth -= 1;
+
+        if (c != ':' or paren_depth != 0 or brace_depth != 0) continue;
+        var j = i;
+        while (j > 0) {
+            j -= 1;
+            if (s[j] == ' ' or s[j] == '\t') continue;
+            if (s[j] == ')') return i;
+            break;
+        }
+    }
+
+    return null;
+}
+
 /// Index of the first top-level construct/produce arrow — `=>` (construct) or
 /// `->` (produce) — outside parens, braces, and string literals. An invocation
 /// HEAD ends here: everything after the arrow is a bare-return continuation that
@@ -4172,15 +4209,32 @@ pub const Parser = struct {
         // `: bind` is the produce arm (`event(): v -> expr`), the twin of
         // `: v => construct`; it's handled below as a bare-return continuation, so
         // let it through. (The bind-strip above leaves the `-> expr` on `clean`.)
-        if (return_binding == null and indexOfTopLevelArrow(clean) != null) {
-            try self.reporter.addError(
-                .PARSE001,
-                self.current,
-                0,
-                "bind a result with `:` not `->` (e.g. `~greet(...): result |> ...`) — `->` is the produce glyph",
-                .{},
-            );
-            return error.ParseError;
+        //
+        // `return_binding` is the HEAD call's bind, and the scan above only looks
+        // just past the head's `)`. In a chain the bind that owns the arrow may sit
+        // on a LATER step (`a() |> b() |> c(): v -> v`), where the head has none.
+        // So the question is not whether this line is a chain — it is whether ANY
+        // bind stands between the start of the line and the arrow. A chain with no
+        // bind at all (`a() |> b() -> v`) is the stray form exactly as much as
+        // `a() -> v` is: `v` names nothing either way, and letting it through
+        // hands the host an undeclared identifier in generated code (210_184).
+        if (return_binding == null) {
+            if (indexOfTopLevelArrow(clean)) |arrow_at| {
+                const bound_before_arrow = if (indexOfTopLevelBindColon(clean)) |bind_at|
+                    bind_at < arrow_at
+                else
+                    false;
+                if (!bound_before_arrow) {
+                    try self.reporter.addError(
+                        .PARSE001,
+                        self.current,
+                        0,
+                        "bind a result with `:` not `->` (e.g. `~greet(...): result |> ...`) — `->` is the produce glyph",
+                        .{},
+                    );
+                    return error.ParseError;
+                }
+            }
         }
 
         // Find the first pipe that's not inside parentheses or braces
