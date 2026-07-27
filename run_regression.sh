@@ -778,8 +778,16 @@ if [ "$PARALLEL_JOBS" -gt 1 ]; then
     # Collect test directories
     LIST_FILE=$(mktemp /tmp/koru-parallel-list.XXXXXX)
     FILTERED_LIST=$(mktemp /tmp/koru-parallel-filtered.XXXXXX)
+    # This trap REPLACES the lock-releasing one set above, so it must release
+    # the locks too — a trap that only cleans temp files leaks both locks on
+    # every --parallel run, which is how the suite is normally invoked. The
+    # runners reap a dead holder's lock, so the leak self-heals for them; a
+    # reader that trusts the lock without testing liveness does not.
     cleanup_parallel_files() {
         rm -f "$LIST_FILE" "$FILTERED_LIST"
+        rm -rf "$KORU_RUN_LOCK"
+        [ "$OWNS_MACHINE_LOCK" = true ] && rm -rf "$KORU_MACHINE_LOCK"
+        return 0
     }
     trap cleanup_parallel_files EXIT
 
