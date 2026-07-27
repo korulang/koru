@@ -22,7 +22,7 @@
 // different things, and only the author knows which was meant — so the
 // diagnostic points at the line and offers both spellings.
 //
-// `.kz` twin: 210_178. There the same shape leaks the line to the HOST and
+// `.kz` twin: 210_179. There the same shape leaks the line to the HOST and
 // surfaces as a Zig parse error against generated code. The axis that splits
 // the two symptoms is the file form, not whether the calls cross a module
 // boundary — both forms misbehave with local calls and with `std/io` alike.

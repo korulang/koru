@@ -17,7 +17,7 @@
 //         |> say-b()
 //
 // Both tors here are same-module `~proc`s reached without a module qualifier,
-// which is the point: 210_177 is the same shape in a `.k` with `std/io` calls,
+// which is the point: 210_178 is the same shape in a `.k` with `std/io` calls,
 // and it hoists silently instead of leaking. Vary the file form and the symptom
 // changes; vary local-vs-cross-module and it does not. The file form is the
 // axis.

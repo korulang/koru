@@ -1,7 +1,7 @@
 ---
 type: belief
 id: frag-decline-must-be-terminal
-provenance: three silent subflow-body miscompilations diagnosed together 2026-07-27 (pins 210_176 / 210_177 / 210_178; 210_169 flipped green by the same emitter fix)
+provenance: three silent subflow-body miscompilations diagnosed together 2026-07-27 (pins 210_177 / 210_178 / 210_179; 210_169 flipped green by the same emitter fix)
 ts: 2026-07-27
 ---
 
@@ -43,7 +43,7 @@ Both failure modes produce a program that *works* in every sense a suite can see
 without an exact expected output: exit 0, no diagnostic, no crash. The parser
 version even runs the author's code — just at the wrong time, in the wrong scope.
 That is why the pins for it assert a **count** or an **exact transcript**
-(210_176, 220_021) rather than mere success: nothing weaker separates "the chain
+(210_177, 220_021) rather than mere success: nothing weaker separates "the chain
 ran" from "the chain stopped after its head".
 
 ## The tell to look for
