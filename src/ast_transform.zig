@@ -1256,6 +1256,188 @@ fn threadProducedBy(
     return .{ .producer = &node.invocation, .type = rt };
 }
 
+// ----------------------------------------------------------------------------
+// The flow's return terminus: the last step's `-> T` IS the flow's `-> T`
+// ----------------------------------------------------------------------------
+//
+// A flow declaring `-> T` is done when its chain has produced a `T`. Writing
+// `last-step(): v -> v` names a value for one line in order to hand it straight
+// back — it says nothing the two signatures do not already say — so the
+// terminus is synthesized instead, matched by TYPE.
+//
+// This is the courtesy a BRANCH terminus already gets. `tryDesugarChain` above
+// builds the branch terminus for a branch-carrying chain, which is why
+// `~analysis` ends at its last stage with only a dedented `| failed` choke and
+// no `| ctx c5 => ctx c5`. A bare return had no such path: the value simply
+// went nowhere, and Zig said so ("function with non-void return type 'i64'
+// implicitly returns") in a file the author never opened. Pin: 210_184.
+//
+// The rule reaches a LINEAR chain only — every level exactly one unnamed `|>`
+// step and nothing else, down to a level with none. Any other shape (a branch
+// arm, a choke, an effect arm, a fork) says where the flow's value comes from
+// in a way this rule does not govern, and a single call with no `|>` at all is
+// its own last step.
+
+/// The last step of a flow body that is a linear point-free chain, or null if
+/// the body is any other shape.
+///
+/// EFFECT arms are walked past. An `! arm` is a yield point hanging off a step;
+/// it says nothing about where the flow's VALUE comes from, so a chain wearing
+/// one is still a chain and its last step still produces the flow's output.
+/// Everything else at a level DOES say where the value comes from — a terminal
+/// `| branch` arm, a catch-all, or an already-written `-> v` terminus — and
+/// this rule never overrides an answer the author gave.
+fn linearChainLastStep(body: *ast.Continuation) ?*ast.Continuation {
+    var cur: *ast.Continuation = body;
+    while (true) {
+        var step: ?*ast.Continuation = null;
+        for (@constCast(cur.continuations)) |*child| {
+            if (isUnnamedStep(child)) {
+                if (step != null) return null; // two steps at one level: not linear
+                step = child;
+                continue;
+            }
+            if (child.kind == .effect and !child.is_catchall) continue;
+            return null;
+        }
+        cur = step orelse return cur;
+    }
+}
+
+/// The name holding the value the flow produces. A last step the author already
+/// bound is its own holder; an unbound one gets a synthesized bind — precisely
+/// the `: v` the author would otherwise have had to write.
+fn returnHolderName(
+    allocator: std.mem.Allocator,
+    inv: *ast.Invocation,
+    counter: *usize,
+) ![]const u8 {
+    if (inv.return_binding) |rb| return rb;
+    const name = try std.fmt.allocPrint(allocator, "__ret{d}", .{counter.*});
+    counter.* += 1;
+    inv.return_binding = name;
+    return name;
+}
+
+/// Entry point: give every `-> T` flow whose chain ends without one the
+/// terminus its last step already earned.
+pub fn desugarFlowReturnTerminus(
+    allocator: std.mem.Allocator,
+    program: *ast.Program,
+    reporter: *errors_mod.ErrorReporter,
+) !void {
+    var table = try SymbolTable.init(allocator);
+    defer table.deinit();
+    try table.buildFrom(program);
+    var counter: usize = 0;
+    try terminusItems(allocator, &table, program.items, &counter, reporter);
+}
+
+fn terminusItems(
+    allocator: std.mem.Allocator,
+    table: *SymbolTable,
+    items: []const ast.Item,
+    counter: *usize,
+    reporter: *errors_mod.ErrorReporter,
+) std.mem.Allocator.Error!void {
+    for (@constCast(items)) |*item| {
+        switch (item.*) {
+            .flow => |*flow| try addFlowReturnTerminus(allocator, table, flow, counter, reporter),
+            .proc_decl => |*proc| {
+                for (@constCast(proc.inline_flows)) |*flow| {
+                    try addFlowReturnTerminus(allocator, table, flow, counter, reporter);
+                }
+            },
+            .module_decl => |*module| try terminusItems(allocator, table, module.items, counter, reporter),
+            else => {},
+        }
+    }
+}
+
+fn addFlowReturnTerminus(
+    allocator: std.mem.Allocator,
+    table: *SymbolTable,
+    flow: *ast.Flow,
+    counter: *usize,
+    reporter: *errors_mod.ErrorReporter,
+) std.mem.Allocator.Error!void {
+    // An inline body is emitted verbatim; there is no chain here to read.
+    if (flow.inline_body != null) return;
+
+    // A top-level statement implements nothing and produces nothing.
+    const impl = flow.impl_of orelse return;
+    const encl = table.getEventInfo(impl) orelse return;
+    // A branch-returning flow gets its terminus from the point-free desugar.
+    const want = encl.return_type orelse return;
+    // A `[transform]`'s lowering constructs its own SiteResult.
+    if (isTransformResultReturn(want)) return;
+
+    const last = linearChainLastStep(&flow.body) orelse return;
+    const node = if (last.node) |*n| n else return;
+    if (node.* != .invocation) return;
+
+    const step = table.getEventInfo(node.invocation.path) orelse return;
+
+    // A step with declared TERMINAL branches produces no bare value, and the
+    // branch-coverage wall already has the better sentence for that shape.
+    // Effect branches do not count: an event has EITHER `-> T` OR terminal
+    // branches, but a `-> T` event may still declare `!` arms, and it produces
+    // its value all the same.
+    if (countTerminalBranches(step) > 0) return;
+
+    const flow_name = eventLeafName(encl);
+    const leaf = eventLeafName(step);
+
+    const got = step.return_type orelse {
+        try reporter.addErrorAtLocationWithHint(
+            .KORU094,
+            last.location,
+            "'{s}' declares `-> {s}`, but its chain ends at '{s}', which produces no value",
+            .{ flow_name, want, leaf },
+            "a chain satisfies its flow's `-> {s}` when its LAST step returns one. End on a step that produces a {s}, or drop the `-> {s}` from '{s}'.",
+            .{ want, want, want, flow_name },
+        );
+        return;
+    };
+
+    if (!std.mem.eql(u8, got, want)) {
+        try reporter.addErrorAtLocationWithHint(
+            .KORU094,
+            last.location,
+            "'{s}' declares `-> {s}`, but its chain ends at '{s}', which produces a {s}",
+            .{ flow_name, want, leaf, got },
+            "the last step's return type IS the flow's return — nothing converts between them. End the chain on a step returning {s}.",
+            .{want},
+        );
+        return;
+    }
+
+    // The types agree, so the value the last step produces IS the flow's
+    // output. Synthesize exactly the `-> v` the author would have written.
+    const holder = try returnHolderName(allocator, &node.invocation, counter);
+    // APPEND, never replace: the last step may already carry effect arms, and
+    // they are its handlers. The terminus goes first, matching the chain-then-
+    // arms order `levelContinuations` builds for the branch pyramid.
+    const existing = last.continuations;
+    const conts = try allocator.alloc(ast.Continuation, existing.len + 1);
+    conts[0] = .{
+        .branch = try allocator.dupe(u8, ""),
+        .binding = null,
+        .condition = null,
+        .node = .{ .branch_constructor = .{
+            .branch_name = try allocator.dupe(u8, ""),
+            .fields = &.{},
+            .plain_value = try allocator.dupe(u8, holder),
+            .has_expressions = true,
+            .is_bare_return = true,
+        } },
+        .indent = last.indent,
+        .continuations = &.{},
+    };
+    for (existing, 0..) |c, i| conts[1 + i] = c;
+    last.continuations = conts;
+}
+
 /// A `[transform]` event's declared single-return type. Its RUNTIME value is a
 /// result struct (not the type name itself) that the caller must field-access
 /// (std/fmt:ln → `{ text }`), never pun whole into a scalar param.
