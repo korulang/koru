@@ -1,14 +1,14 @@
 {
-  "timestamp": "2026-07-27T20:21:42.514Z",
+  "timestamp": "2026-07-27T21:23:47.793Z",
   "summary": {
-    "passed": 302,
+    "passed": 299,
     "failed": 0,
     "skipped": 12,
     "leaked": 0,
-    "compileErrors": 0,
-    "total": 314,
+    "compileErrors": 1,
+    "total": 311,
     "suiteCount": 40,
-    "status": "success"
+    "status": "failure"
   },
   "suites": [
     {
@@ -285,11 +285,12 @@
     },
     {
       "name": "transform_pass_runner_tests",
-      "passed": 3,
+      "passed": 0,
       "failed": 0,
       "skipped": 0,
-      "total": 3,
-      "status": "success"
+      "total": 0,
+      "compileErrors": 3,
+      "status": "compile_error"
     },
     {
       "name": "transform_tests",

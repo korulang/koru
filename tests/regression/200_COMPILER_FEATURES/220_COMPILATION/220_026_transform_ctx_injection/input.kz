@@ -45,7 +45,7 @@
     } } };
 }
 
-~probe.run()
+~probe.run("x")
 
 ~tor main {}
 
