@@ -19,7 +19,7 @@
 //
 // Sibling of 210_176 (WHERE the thread lands mid-chain) and 210_182 (an arrow
 // terminus that follows a chain). This one pins the terminus that is not
-// written at all — and it is what `~frontend` wants, since the `: c4 -> c4` it
+// written at all — and it is what `~elaborate` wants, since the `: c4 -> c4` it
 // still carries is the last binder in the pass.
 import std/io
 

@@ -7,7 +7,7 @@
 // rejection. Taint reached the sink during compilation; the build
 // failed after the exfiltration. Checked-but-too-late.
 //
-// The ruled fix: run the SAME phantom checker as a frontend segment
+// The ruled fix: run the SAME phantom checker as an elaborate segment
 // scoped to [comptime]-marked items, BEFORE process-template-procs
 // (compiler.kz:828), with a comptime-scoped auto-discharge run ahead
 // of it. One implementation of obligation semantics, two executions

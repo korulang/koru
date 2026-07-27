@@ -20,9 +20,9 @@
 // FRONTEND PASS TIMING (inner layer - composes with above!)
 // ============================================================================
 
-~std/compiler:frontend = std/time:now()
-| t start |> std/compiler:frontend.default(ctx)
-    | ctx c |> std/time:report(start, label: "  frontend") => ctx c
+~std/compiler:elaborate = std/time:now()
+| t start |> std/compiler:elaborate.default(ctx)
+    | ctx c |> std/time:report(start, label: "  elaborate") => ctx c
 
 // ============================================================================
 // THE PROGRAM

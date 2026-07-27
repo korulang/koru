@@ -83,7 +83,7 @@ const std = @import("std");
 // command contract) with full AST access, reads the grammar
 // region straight out of the program AST, and drives its own
 // target emitter — writing e.g. a self-contained .c/.h with a
-// fixed foreign API. It never enters coordinate/frontend/emission
+// fixed foreign API. It never enters coordinate/elaborate/emission
 // and never consults --lang; the target is the command's own arg.
 //
 //   koruc parser_def.k parser:generate c            # bare positional target

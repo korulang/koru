@@ -5,7 +5,7 @@
 // the loop comptime-Koru → data → Liquid → Koru source → parsed AST.
 //
 // Today this is impossible twice over:
-// 1. PHASE ORDER: templates render in frontend (process-template-procs)
+// 1. PHASE ORDER: templates render in elaborate (process-template-procs)
 //    BEFORE comptime evaluation (fold-comptime/evaluate-comptime), so a
 //    template arg fed from a comptime binding receives raw call-site TEXT
 //    ("v"), never the evaluated value.

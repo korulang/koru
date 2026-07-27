@@ -2,8 +2,8 @@
 // Provides void event for dumping AST state at any pipeline stage
 //
 // Usage with taps:
-// ~* std/compiler:frontend -> ctx
-// |> dump-ast(ctx, "post-frontend")
+// ~* std/compiler:elaborate -> ctx
+// |> dump-ast(ctx, "post-elaborate")
 //
 // ~* std/compiler:optimize -> ctx
 // |> dump-ast(ctx, "post-optimization")  // See IR nodes!

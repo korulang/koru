@@ -701,7 +701,7 @@ pub const CompilerContext = struct {
 // Default implementation of the compiler coordinator
 // Users who don't override get this standard pipeline
 
-~coordinate = context-create(program_ast, allocator): c0 |> frontend(ctx: c0): c1 |> analysis(ctx: c1)
+~coordinate = context-create(program_ast, allocator): c0 |> elaborate(ctx: c0): c1 |> analysis(ctx: c1)
 | ctx c2 |> test-generation(ctx: c2): c3 |> std/optimizer:optimize(ctx: c3): c4 |> emission(ctx: c4): c5 |> metrics-format(c5.ctx.passes_completed, allocator): m |> std/inter:start(contexts: [
       c0,
       c1,
@@ -746,16 +746,16 @@ pub const CompilerContext = struct {
 ~proc metrics-format|zig {
     const metrics = std.fmt.allocPrint(
         allocator,
-        "Passes: {d} (flow-based: frontend, analysis, emission)",
+        "Passes: {d} (flow-based: elaborate, analysis, emission)",
         .{passes_completed}
-    ) catch "Passes: <unknown> (flow-based: frontend, analysis, emission)";
+    ) catch "Passes: <unknown> (flow-based: elaborate, analysis, emission)";
     return metrics;
 }
 
 // Helper: Dump AST as JSON for introspection
 // Usage: Insert at key points in pipeline to inspect AST state
 // Void event - just prints and continues
-// Example: ~ast-dump(ctx: c, flag: "frontend") |> ...
+// Example: ~ast-dump(ctx: c, flag: "elaborate") |> ...
 ~[comptime]pub tor ast-dump {
     ctx: CompilerContext,
     flag: string
@@ -1065,10 +1065,16 @@ pub const CompilerContext = struct {
     return updated_ctx;
 }
 
-// Frontend segment: Early AST processing (abstract, can be overridden)
-~[comptime|abstract] pub tor frontend { ctx: CompilerContext } -> CompilerContext
+// Elaboration segment: resolve names, expand templates, fold comptime — the AST
+// arrives as written and leaves in the core form the later segments validate and
+// emit. Abstract, can be overridden.
+//
+// NOT the frontend: `koruc` (src/main.zig) is the frontend, and it parses and
+// validates before any of this runs. This segment is the first phase of the
+// BACKEND compiler, which is why it can see resolved names at all.
+~[comptime|abstract] pub tor elaborate { ctx: CompilerContext } -> CompilerContext
 
-~frontend = process-ccp-commands(ctx) |> resolve-with-scopes() |> run-pre-transforms() |> process-template-procs() |> fold-comptime() |> evaluate-comptime()
+~elaborate = process-ccp-commands(ctx) |> resolve-with-scopes() |> run-pre-transforms() |> process-template-procs() |> fold-comptime() |> evaluate-comptime()
 
 // Analysis segment: Validation passes (abstract, can be overridden)
 ~[comptime|abstract] pub tor analysis { ctx: CompilerContext }
@@ -2287,12 +2293,12 @@ const joinPathAlloc = struct {
     var mutable_ctx = ctx;
     mutable_ctx.current_pass = "check_structure";
 
-    // Surface any diagnostics a FRONTEND pass already recorded (name resolution
+    // Surface any diagnostics an ELABORATION pass already recorded (name resolution
     // has no `.failed` arm of its own — `resolve-with-scopes` reports the KORU140
     // `[with]` pick-wall into ctx.errors, and analysis is the first boundary that
     // can halt cleanly). Print and fail BEFORE structural checking, so the real
-    // diagnostic wins instead of a downstream "unknown event" for the name the
-    // frontend deliberately left unresolved.
+    // diagnostic wins instead of a downstream "unknown event" for the name
+    // elaboration deliberately left unresolved.
     if (mutable_ctx.errors.items.len > 0) {
         for (mutable_ctx.errors.items) |e| {
             std.debug.print("{s}\n  --> {s}:{}:{}\n\n", .{

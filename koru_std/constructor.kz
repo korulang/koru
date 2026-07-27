@@ -24,7 +24,7 @@ const std = @import("std");
 // keyword (keyword elides the module path; default IS the module path). `expr` is
 // the first-parameter implicit slot: `std/constructor(nums)` lands `expr = "nums"`.
 //
-// `pre` stage: the constructor must DISSOLVE before the frontend template pass
+// `pre` stage: the constructor must DISSOLVE before the elaboration template pass
 // runs, so its grafted `~for(built)` (over the comptime list it defines) is
 // template-processed as ordinary code. The pipeline runs `.pre` transforms via
 // `run-pre-transforms`, ahead of `process-template-procs` (see compiler.kz).

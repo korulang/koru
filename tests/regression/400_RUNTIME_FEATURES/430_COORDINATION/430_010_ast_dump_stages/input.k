@@ -4,7 +4,7 @@
 // Demonstrates introspection into the compiler pipeline.
 //
 // Expected output (to stdout during compilation):
-//   === AST DUMP: post-frontend ===
+//   === AST DUMP: post-elaborate ===
 //   { ... JSON AST ... }
 //   === AST DUMP: post-analysis ===
 //   { ... JSON AST ... }
@@ -16,7 +16,7 @@ import std/io
 // DUMP AST AFTER FRONTEND
 // ============================================================================
 
-std/compiler:frontend = std/compiler:frontend.default(ctx): c |> std/compiler:ast-dump(ctx: c, flag: "post-frontend") -> c
+std/compiler:elaborate = std/compiler:elaborate.default(ctx): c |> std/compiler:ast-dump(ctx: c, flag: "post-elaborate") -> c
 
 // ============================================================================
 // DUMP AST AFTER ANALYSIS

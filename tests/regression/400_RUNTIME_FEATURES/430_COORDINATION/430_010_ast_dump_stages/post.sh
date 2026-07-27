@@ -9,9 +9,9 @@ if [ ! -f "backend.err" ]; then
     exit 1
 fi
 
-# Check for post-frontend dump
-if ! grep -q "=== AST DUMP: post-frontend ===" backend.err; then
-    echo "❌ Missing post-frontend AST dump"
+# Check for post-elaborate dump
+if ! grep -q "=== AST DUMP: post-elaborate ===" backend.err; then
+    echo "❌ Missing post-elaborate AST dump"
     exit 1
 fi
 echo "✅ Post-frontend AST dump found"
@@ -24,7 +24,7 @@ fi
 echo "✅ Post-analysis AST dump found"
 
 # Verify dumps contain JSON (have opening brace after header)
-if ! grep -A1 "post-frontend" backend.err | grep -q "{"; then
+if ! grep -A1 "post-elaborate" backend.err | grep -q "{"; then
     echo "❌ Post-frontend dump doesn't look like JSON"
     exit 1
 fi
