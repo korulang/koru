@@ -5698,8 +5698,15 @@ pub const Parser = struct {
         // `-> produce` arm, that bare-return continuation is the innermost
         // (attached to the final step); otherwise the multi-line nested
         // continuations are.
+        //
+        // A produce is a TERMINUS — nothing continues it — so the multi-line
+        // handler lines that follow (`! warn m |> …`, the last step's effect
+        // arms) are its SIBLINGS on that step, not its children. Nesting them
+        // under the produce hid them from the step's effect wiring, so the
+        // handler was silently dropped and the produce was emitted as a
+        // value-producing step instead of a return (210_189).
         var current_continuations: []ast.Continuation = if (produce_tail) |pt| blk: {
-            const conts = try self.allocator.alloc(ast.Continuation, 1);
+            const conts = try self.allocator.alloc(ast.Continuation, 1 + nested_continuations.len);
             conts[0] = ast.Continuation{
                 .branch = try self.allocator.dupe(u8, ""),
                 .binding = null,
@@ -5714,9 +5721,11 @@ pub const Parser = struct {
                     .is_bare_return = true,
                 } },
                 .indent = indent,
-                .continuations = nested_continuations,
+                .continuations = &.{},
                 .location = self.getCurrentLocation(),
             };
+            @memcpy(conts[1..], nested_continuations);
+            self.allocator.free(nested_continuations);
             break :blk conts;
         } else nested_continuations;
 

@@ -5840,8 +5840,12 @@ fn emitInlineEffectfulCall(
     const labeled = result_name != null or rewritten.has_break;
     try emitter.writeIndent();
     if (result_name) |rn| {
+        // A `-> T` bare-return call binds its result to the call-site `: name`
+        // (return_binding) — the same rule `emitInvocation` follows on the
+        // handler-call path. The splice must not drop it, or the author's own
+        // name reaches Zig as an undeclared identifier (210_189).
         try emitter.write("const ");
-        try emitter.write(rn);
+        try emitter.write(inv.return_binding orelse rn);
         try emitter.write(": ");
         try emitInvocationTarget(emitter, ctx, &inv.path);
         try emitter.write(".Output = ");
@@ -9335,11 +9339,19 @@ pub fn emitContinuationBody(
                 // from terminal-only continuations (cont.continuations still
                 // contains the effect conts that are now folded into Handlers).
                 const needs_result = effective_continuations.len > 0;
-                const current_result = if (needs_result)
-                    try std.fmt.allocPrint(ctx.allocator, "{s}{}", .{ ctx.result_prefix, result_counter.* })
-                else
-                    "_";
-                defer if (needs_result) ctx.allocator.free(current_result);
+                // Same rule as emitPipelineStep: a `-> T` step's result lives
+                // under the call-site `: name` (return_binding), so the call
+                // and its suppression reference ONE name.
+                var alloc_result: ?[]const u8 = null;
+                const current_result = if (!needs_result)
+                    "_"
+                else if (step.invocation.return_binding) |rb|
+                    rb
+                else blk2: {
+                    alloc_result = try std.fmt.allocPrint(ctx.allocator, "{s}{}", .{ ctx.result_prefix, result_counter.* });
+                    break :blk2 alloc_result.?;
+                };
+                defer if (alloc_result) |r| ctx.allocator.free(r);
 
                 if (nested_inline_elig) |elig| {
                     try emitInlineEffectfulCall(
