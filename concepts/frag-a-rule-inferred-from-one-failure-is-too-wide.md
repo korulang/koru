@@ -46,10 +46,26 @@ unknown until the corpus objects, and the objection is the design information.
   generalised the same way. Prose in the corpus carries this error as readily as
   a fresh guess does.
 
+## The deliberate-broad move, tried once
+
+KORU106 was built broad on purpose — every binding form, ancestor scope — and
+run. The corpus objected exactly once, and the objection was better than a
+boundary: `800_002` is a `MUST_ERROR` whose comment *argues the opposite design
+position* for its shape, and argues it against a rule that did not exist when it
+was written. So the red did not say "your edge is here"; it said "there is an
+unruled fork here, and you are about to close it silently."
+
+The narrow rule that shipped is the one 210_173 actually rules on — a chain
+bind — and the fork (arm binding vs. a capture inside its own handler: wall it,
+or alpha-rename in the emitter as 800_002 asks) is left open and named.
+
+That is a second thing green tests carry, beyond scope. **A red raised by a new
+wall can be a design position, not a boundary** — and the two are told apart by
+reading the test's prose, not its verdict. A `MUST_ERROR` pinning a host error
+is a place where nobody has ruled yet; a new wall landing there is a ruling by
+accident.
+
 ## Open
 
-Whether the too-wide version is worth landing *deliberately* — build the broad
-rule, run the suite, and read the reds as the specification, rather than trying
-to reason the boundary out first. It costs one suite run and buys the edge
-exactly. The risk is that a broad rule reddens so much the signal drowns; the
-KORU112 case produced three, which was legible. Untested at larger scale.
+The cost model still holds — one suite run buys the edge exactly, and both
+worked cases (three reds, then one) stayed legible. Untested at larger scale.

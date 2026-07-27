@@ -89,6 +89,7 @@ pub const ErrorCode = enum(u16) {
     KORU103, // `|>` (chain) used to introduce a bare value — `|>` chains steps; produce a value with `->`
     KORU104, // Call inside an expression — calls are not expressions; use event chaining (bind the result first)
     KORU105, // Nested branches under a bodiless `|` branch — nothing picks a branch there; branches continue from an invocation
+    KORU106, // A bind shadows one already in scope on the same path — Koru has no shadowing, and the pun machinery depends on it (210_173)
 
     // Variant errors
     KORU110, // Event call site has only bare ~proc declarations (no variant tag)
@@ -246,6 +247,16 @@ pub const ErrorReporter = struct {
             return .{ .line = 0, .is_bootstrap = true, .bootstrap_line = line };
         }
         return .{ .line = line - self.injection_line_count, .is_bootstrap = false, .bootstrap_line = 0 };
+    }
+
+    /// Translate a parser-coordinate line into the user coordinate the renderer
+    /// shows. A diagnostic that NAMES a second line inside its message text
+    /// (e.g. "already bound at line N") must call this — the location it is
+    /// reported AT goes through `classifyLine`, and an untranslated line in the
+    /// prose would disagree with the caret by exactly the prelude's height.
+    /// Returns 0 for a line inside the auto-injected bootstrap prelude.
+    pub fn userLine(self: *ErrorReporter, line: usize) usize {
+        return self.classifyLine(line).line;
     }
 
     pub fn addError(self: *ErrorReporter, code: ErrorCode, line: usize, column: usize, comptime fmt: []const u8, args: anytype) !void {
