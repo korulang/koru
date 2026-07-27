@@ -543,6 +543,146 @@ pub const AutoDischargeInserter = struct {
         return program;
     }
 
+    /// Names a module declares at host level: `const X`, `pub const X`,
+    /// `fn X`, `pub fn X`, `var X`, `pub var X`. Null when the line declares
+    /// nothing. Also used to spot a body-local of the same name.
+    fn hostDeclName(content: []const u8) ?[]const u8 {
+        var rest = std.mem.trim(u8, content, " \t");
+        if (std.mem.startsWith(u8, rest, "pub ")) rest = std.mem.trim(u8, rest[4..], " \t");
+
+        const kw: []const u8 = for ([_][]const u8{ "const ", "fn ", "var " }) |k| {
+            if (std.mem.startsWith(u8, rest, k)) break k;
+        } else return null;
+
+        rest = std.mem.trim(u8, rest[kw.len..], " \t");
+        var end: usize = 0;
+        while (end < rest.len and (std.ascii.isAlphanumeric(rest[end]) or rest[end] == '_')) end += 1;
+        if (end == 0) return null;
+        return rest[0..end];
+    }
+
+    /// True when `name` occurs in `body` as a bare identifier: at token
+    /// boundaries, never after a `.` (so `$mod.NAME` and `x.NAME` are fine),
+    /// not inside a string or comment, and not shadowed by a body-local of the
+    /// same name.
+    fn bodyUsesBare(body: []const u8, name: []const u8) bool {
+        var lines = std.mem.splitScalar(u8, body, '\n');
+        while (lines.next()) |line| {
+            const decl = hostDeclName(line) orelse continue;
+            if (std.mem.eql(u8, decl, name)) return false; // shadowed locally
+        }
+
+        var in_string = false;
+        var string_char: u8 = 0;
+        var i: usize = 0;
+        while (i < body.len) : (i += 1) {
+            const ch = body[i];
+
+            if (!in_string and ch == '/' and i + 1 < body.len and body[i + 1] == '/') {
+                while (i < body.len and body[i] != '\n') i += 1;
+                continue;
+            }
+            if (!in_string and (ch == '"' or ch == '\'')) {
+                in_string = true;
+                string_char = ch;
+                continue;
+            }
+            if (in_string) {
+                if (ch == '\\') i += 1 else if (ch == string_char) in_string = false;
+                continue;
+            }
+
+            if (!std.ascii.isAlphabetic(ch) and ch != '_') continue;
+            var end = i;
+            while (end < body.len and (std.ascii.isAlphanumeric(body[end]) or body[end] == '_')) end += 1;
+
+            if (std.mem.eql(u8, body[i..end], name) and !(i > 0 and body[i - 1] == '.')) return true;
+            i = end - 1;
+        }
+        return false;
+    }
+
+    /// KORU112 — an effect-branch proc body is spliced into the CONSUMER's
+    /// frame (cut-1 inlining), where the declaring module's names do not
+    /// exist. `$mod.` is the sanctioned spelling for reaching module scope
+    /// from such a body; 400_155 holds it green, 400_157 is this wall.
+    ///
+    /// Without it the mistake arrives as a Zig "use of undeclared identifier"
+    /// pointing into `output_emitted.zig` — a file the author never wrote,
+    /// about a rule stated only in a comment inside another library.
+    ///
+    /// `std` is exempt: the inliner rewrites `std.` to an explicit import, so
+    /// a bare `std` is correct in these bodies.
+    fn checkEffectProcModuleScope(self: *AutoDischargeInserter, program: *const ast.Program) !void {
+        // Only IMPORTED modules. A proc declared in the entry module splices
+        // into a frame that is already in that module's namespace, so its bare
+        // names resolve and `$mod.` is not required there (400_080, 400_105,
+        // 400_108 are all this shape and must stay green).
+        for (program.items) |*it| {
+            if (it.* == .module_decl) try self.checkModuleScope(it.module_decl.items);
+        }
+    }
+
+    /// One module's item scope. An imported module arrives as a `module_decl`
+    /// holding its own items, so membership is structural here rather than a
+    /// `.module` string match — a proc and the host lines it may reach bare are
+    /// exactly the ones in the same slice.
+    fn checkModuleScope(self: *AutoDischargeInserter, items: []const ast.Item) anyerror!void {
+        for (items) |*it| {
+            if (it.* == .module_decl) try self.checkModuleScope(it.module_decl.items);
+        }
+
+        for (items) |*item| {
+            const proc = switch (item.*) {
+                .proc_decl => |*p| p,
+                else => continue,
+            };
+            if (proc.body.text.len == 0) continue;
+
+            var has_effect = false;
+            for (items) |*other| {
+                const ev = switch (other.*) {
+                    .event_decl => |*e| e,
+                    else => continue,
+                };
+                if (ev.path.segments.len != proc.path.segments.len) continue;
+                var same = true;
+                for (ev.path.segments, proc.path.segments) |a, b| {
+                    if (!std.mem.eql(u8, a, b)) {
+                        same = false;
+                        break;
+                    }
+                }
+                if (!same) continue;
+                for (ev.branches) |*b| {
+                    if (b.kind == .effect) {
+                        has_effect = true;
+                        break;
+                    }
+                }
+                break;
+            }
+            if (!has_effect) continue;
+
+            for (items) |*hl_item| {
+                const hl = switch (hl_item.*) {
+                    .host_line => |*h| h,
+                    else => continue,
+                };
+                const name = hostDeclName(hl.content) orelse continue;
+                if (std.mem.eql(u8, name, "std")) continue;
+                if (!bodyUsesBare(proc.body.text, name)) continue;
+
+                try self.reporter.addErrorAtLocation(
+                    .KORU112,
+                    proc.location,
+                    "'{s}' is declared by this module and reached bare from a proc body that carries effect branches — such a body splices into the CALLER, where module scope is gone. Write `$mod.{s}`.",
+                    .{ name, name },
+                );
+            }
+        }
+    }
+
     pub fn run(self: *AutoDischargeInserter, program: *const ast.Program) !*const ast.Program {
         // Step 0: Annotate label loop scopes
         // For #label flows, add @scope to continuations that jump back (@label).
@@ -551,6 +691,12 @@ pub const AutoDischargeInserter = struct {
 
         // Step 1: Build event map
         try self.buildEventMap(annotated_program);
+
+        // Step 1a: KORU112 — decl-level, and it lives here rather than in a
+        // checker because this pass runs AFTER the import fold. The frontend
+        // checkers are handed the entry file's items only, so an imported
+        // module's proc bodies are invisible to them.
+        try self.checkEffectProcModuleScope(annotated_program);
 
         // Check for validation errors (e.g., [!] on branched events)
         if (self.reporter.hasErrors()) {
