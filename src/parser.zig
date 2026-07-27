@@ -4637,6 +4637,59 @@ pub const Parser = struct {
     }
 
     fn parseSubflowImpl(self: *Parser, annotations: [][]const u8) !ast.Item {
+        // Indent of the definition line, captured before the body consumes it.
+        // In a `.k` the top-level loop has already rewritten this line as
+        // `~<trimmed>`, so it reads 0 — which is what a top-level construct's
+        // indent is anyway.
+        const def_indent = if (self.current < self.lines.len)
+            lexer.getIndent(self.lines[self.current])
+        else
+            0;
+        var item = try self.parseSubflowImplBody(annotations);
+        self.rejectStrayIndentedBodyLine(def_indent) catch |err| {
+            item.deinit(self.allocator);
+            return err;
+        };
+        return item;
+    }
+
+    /// The line sitting where a continuation would sit — indented under a
+    /// subflow definition — but carrying no continuation glyph. Koru sequences
+    /// a body with `|>`; listing statements is not a body form, so nothing
+    /// claims this line.
+    ///
+    /// Unclaimed, it is silently REHOMED: a `.k` promotes it to a top-level
+    /// construct (it runs at program start, not when the subflow is called), a
+    /// `.kz` hands it to the host verbatim (it surfaces later as a Zig parse
+    /// error pointing at generated code). Both spellings lose the author's line.
+    /// Refuse it here instead, at the line as written.
+    fn rejectStrayIndentedBodyLine(self: *Parser, def_indent: usize) !void {
+        if (self.current >= self.lines.len) return;
+        const line = self.lines[self.current];
+        const trimmed = lexer.trim(line);
+        // A blank line closes the body; a comment is the chain-comment rule's
+        // business (KORU010, rejectChainSplittingComment).
+        if (trimmed.len == 0) return;
+        if (lexer.isCommentLine(line)) return;
+        // Not indented INTO the body — it is a sibling construct, which is legal.
+        if (lexer.getIndent(line) <= def_indent) return;
+        // `|`, `|>` and `!` are continuation glyphs: parseContinuations took
+        // every one it recognised, and rejects the rest with its own diagnostic.
+        // `~` re-enters Koru explicitly and opens a construct of its own.
+        if (trimmed[0] == '|' or trimmed[0] == '!' or trimmed[0] == '~') return;
+        try self.reporter.addErrorWithHint(
+            .KORU010,
+            self.current + 1,
+            lexer.getIndent(line) + 1,
+            "line is indented into a subflow body but is not a continuation of it",
+            .{},
+            "Koru sequences a body with `|>`, not by listing lines. Chain it onto the step above (`… |> {s}`), or dedent it so it reads as the separate flow it would otherwise silently become.",
+            .{trimmed},
+        );
+        return error.ParseError;
+    }
+
+    fn parseSubflowImplBody(self: *Parser, annotations: [][]const u8) !ast.Item {
         if (self.current >= self.lines.len) {
             try self.reporter.addError(
                 .PARSE001,

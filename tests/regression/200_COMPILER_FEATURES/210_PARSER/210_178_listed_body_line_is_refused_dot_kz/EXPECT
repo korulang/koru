@@ -1,0 +1,4 @@
+FRONTEND_COMPILE_ERROR
+CONTAINS is not a continuation of it
+NOT_CONTAINS expected ',' after field
+ERROR_AT 35

@@ -1,0 +1,37 @@
+// PINS: in a `.kz`, a line indented under a subflow definition belongs to that
+// subflow's body or it is refused — it never falls through to the host.
+//
+// `~` is the host→Koru switch, written once per construct. A body line carries
+// no `~` of its own, so when the subflow grammar declines to claim this one it
+// is not left over as Koru — it is handed to Zig verbatim. The line reappears
+// inside the generated file at struct scope and Zig says
+// `expected ',' after field` about code the author never wrote.
+//
+// That is the shape this pin exists for. A host error naming generated code is
+// the toolchain saying it has no wall here; the wall is a Koru diagnostic that
+// names THIS line in THIS file.
+//
+// The control is the same two steps, chained:
+//
+//     ~run = say-a()
+//         |> say-b()
+//
+// Both tors here are same-module `~proc`s reached without a module qualifier,
+// which is the point: 210_177 is the same shape in a `.k` with `std/io` calls,
+// and it hoists silently instead of leaking. Vary the file form and the symptom
+// changes; vary local-vs-cross-module and it does not. The file form is the
+// axis.
+const std = @import("std");
+
+~tor say-a {}
+~proc say-a|zig { std.debug.print("a\n", .{}); }
+
+~tor say-b {}
+~proc say-b|zig { std.debug.print("b\n", .{}); }
+
+~tor run {}
+
+~run = say-a()
+       say-b()
+
+~run()
