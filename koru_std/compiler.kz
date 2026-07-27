@@ -1068,7 +1068,7 @@ pub const CompilerContext = struct {
 // Frontend segment: Early AST processing (abstract, can be overridden)
 ~[comptime|abstract] pub tor frontend { ctx: CompilerContext } -> CompilerContext
 
-~frontend = process-ccp-commands(ctx) |> resolve-with-scopes() |> run-pre-transforms() |> process-template-procs() |> fold-comptime() |> evaluate-comptime(): c4 -> c4
+~frontend = process-ccp-commands(ctx) |> resolve-with-scopes() |> run-pre-transforms() |> process-template-procs() |> fold-comptime() |> evaluate-comptime()
 
 // Analysis segment: Validation passes (abstract, can be overridden)
 ~[comptime|abstract] pub tor analysis { ctx: CompilerContext }
