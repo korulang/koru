@@ -212,6 +212,36 @@ fn hasTopLevelArrow(s: []const u8) bool {
     return indexOfTopLevelArrow(s) != null;
 }
 
+/// First `|>` at paren/brace depth 0 — the point where this line stops being
+/// one call and becomes a chain. Everything after it belongs to a later step
+/// and is parsed by the continuation recursion, not by the head's own scan.
+fn indexOfTopLevelChainPipe(s: []const u8) ?usize {
+    var paren_depth: i32 = 0;
+    var brace_depth: i32 = 0;
+    var in_string = false;
+    var i: usize = 0;
+
+    while (i < s.len) : (i += 1) {
+        const c = s[i];
+        if (c == '"' and (i == 0 or s[i - 1] != '\\')) {
+            in_string = !in_string;
+            continue;
+        }
+        if (in_string) continue;
+
+        if (c == '(') paren_depth += 1;
+        if (c == ')') paren_depth -= 1;
+        if (c == '{') brace_depth += 1;
+        if (c == '}') brace_depth -= 1;
+
+        if (c == '|' and paren_depth == 0 and brace_depth == 0 and i + 1 < s.len and s[i + 1] == '>') {
+            return i;
+        }
+    }
+
+    return null;
+}
+
 /// Index of the first top-level construct/produce arrow — `=>` (construct) or
 /// `->` (produce) — outside parens, braces, and string literals. An invocation
 /// HEAD ends here: everything after the arrow is a bare-return continuation that
@@ -4172,15 +4202,30 @@ pub const Parser = struct {
         // `: bind` is the produce arm (`event(): v -> expr`), the twin of
         // `: v => construct`; it's handled below as a bare-return continuation, so
         // let it through. (The bind-strip above leaves the `-> expr` on `clean`.)
-        if (return_binding == null and indexOfTopLevelArrow(clean) != null) {
-            try self.reporter.addError(
-                .PARSE001,
-                self.current,
-                0,
-                "bind a result with `:` not `->` (e.g. `~greet(...): result |> ...`) — `->` is the produce glyph",
-                .{},
-            );
-            return error.ParseError;
+        //
+        // `return_binding` is the HEAD call's bind, and the scan above only looks
+        // just past the head's `)`. In a chain the bind that owns the arrow may sit
+        // on a LATER step (`a() |> b() |> c(): v -> v`), where the head has none —
+        // so an arrow with a top-level `|>` before it is not this line's business
+        // at all; the continuation recursion parses that step and its bind. Only an
+        // arrow reached before any chain pipe is the stray form.
+        if (return_binding == null) {
+            if (indexOfTopLevelArrow(clean)) |arrow_at| {
+                const chained_before_arrow = if (indexOfTopLevelChainPipe(clean)) |pipe_at|
+                    pipe_at < arrow_at
+                else
+                    false;
+                if (!chained_before_arrow) {
+                    try self.reporter.addError(
+                        .PARSE001,
+                        self.current,
+                        0,
+                        "bind a result with `:` not `->` (e.g. `~greet(...): result |> ...`) — `->` is the produce glyph",
+                        .{},
+                    );
+                    return error.ParseError;
+                }
+            }
         }
 
         // Find the first pipe that's not inside parentheses or braces
