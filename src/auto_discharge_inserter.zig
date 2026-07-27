@@ -543,6 +543,32 @@ pub const AutoDischargeInserter = struct {
         return program;
     }
 
+    /// Net brace depth change of one host line, ignoring braces inside string
+    /// literals and after a line comment. Local to this module because the
+    /// inserter's module graph does not include the lexer; same rule as
+    /// `lexer.countBraceDepthChange`.
+    fn braceDepthChange(text: []const u8) i32 {
+        var depth: i32 = 0;
+        var in_string = false;
+        var string_char: u8 = 0;
+        var i: usize = 0;
+        while (i < text.len) : (i += 1) {
+            const ch = text[i];
+            if (!in_string and ch == '/' and i + 1 < text.len and text[i + 1] == '/') break;
+            if (!in_string and (ch == '"' or ch == '\'')) {
+                in_string = true;
+                string_char = ch;
+            } else if (in_string) {
+                if (ch == '\\') i += 1 else if (ch == string_char) in_string = false;
+            } else if (ch == '{') {
+                depth += 1;
+            } else if (ch == '}') {
+                depth -= 1;
+            }
+        }
+        return depth;
+    }
+
     /// Names a module declares at host level: `const X`, `pub const X`,
     /// `fn X`, `pub fn X`, `var X`, `pub var X`. Null when the line declares
     /// nothing. Also used to spot a body-local of the same name.
@@ -664,11 +690,20 @@ pub const AutoDischargeInserter = struct {
             }
             if (!has_effect) continue;
 
+            // Host lines include the BODIES of host-level `fn`s, so a local
+            // inside one reads as a module declaration unless depth is tracked.
+            // Only names at brace depth 0 are module scope. (Found by the curl
+            // lift: `const msg` inside `curlError` is not a module name.)
+            var depth: i32 = 0;
             for (items) |*hl_item| {
                 const hl = switch (hl_item.*) {
                     .host_line => |*h| h,
                     else => continue,
                 };
+                const at_module_scope = depth == 0;
+                depth += braceDepthChange(hl.content);
+                if (!at_module_scope) continue;
+
                 const name = hostDeclName(hl.content) orelse continue;
                 if (std.mem.eql(u8, name, "std")) continue;
                 if (!bodyUsesBare(proc.body.text, name)) continue;

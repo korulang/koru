@@ -51,6 +51,26 @@ An app that merely re-plays the corpus's idioms would find nothing.
   faults in one sitting on one construct is the signature of an unexercised
   idiom rather than four coincidences.
 
+## It caught the author of this belief, the same night
+
+KORU112 shipped with a check that read a module's `host_line` items for
+declaration names. Host lines include the BODIES of host-level `fn`s, so a
+local inside one — `const msg` inside `curlError` — read as a module
+declaration, and the curl lift stopped compiling.
+
+The full suite passed clean on that version. Twice. No module in the corpus has
+a host-level `fn` whose locals share a name with anything an effect-branch proc
+mentions; the real library is the only thing that does. It was found by Lars
+running the example by hand, minutes after this belief was written down — and
+after a new wall had been verified entirely against the corpus the belief says
+is silent about consumer idioms.
+
+Which sharpens the practical form. It is not enough to *believe* a corpus is
+idiom-bound. **A new wall must be exercised against something outside the
+corpus before it is trusted** — the lifts, an example, anything with a different
+author. A green suite says the wall does not contradict the idioms already
+present, which is a much weaker statement than it looks.
+
 ## Open
 
 Whether this can be attacked directly — generating spelling variants of existing
