@@ -1279,17 +1279,28 @@ fn threadProducedBy(
 // its own last step.
 
 /// The last step of a flow body that is a linear point-free chain, or null if
-/// the body is any other shape. A body whose last step ALREADY carries a
-/// terminus fails the `isUnnamedStep` test on that child and lands here as
-/// null, which is what keeps a written `-> v` authoritative.
+/// the body is any other shape.
+///
+/// EFFECT arms are walked past. An `! arm` is a yield point hanging off a step;
+/// it says nothing about where the flow's VALUE comes from, so a chain wearing
+/// one is still a chain and its last step still produces the flow's output.
+/// Everything else at a level DOES say where the value comes from — a terminal
+/// `| branch` arm, a catch-all, or an already-written `-> v` terminus — and
+/// this rule never overrides an answer the author gave.
 fn linearChainLastStep(body: *ast.Continuation) ?*ast.Continuation {
     var cur: *ast.Continuation = body;
     while (true) {
-        if (cur.continuations.len == 0) return cur;
-        if (cur.continuations.len != 1) return null;
-        const child = &(@constCast(cur.continuations))[0];
-        if (!isUnnamedStep(child)) return null;
-        cur = child;
+        var step: ?*ast.Continuation = null;
+        for (@constCast(cur.continuations)) |*child| {
+            if (isUnnamedStep(child)) {
+                if (step != null) return null; // two steps at one level: not linear
+                step = child;
+                continue;
+            }
+            if (child.kind == .effect and !child.is_catchall) continue;
+            return null;
+        }
+        cur = step orelse return cur;
     }
 }
 
@@ -1367,9 +1378,12 @@ fn addFlowReturnTerminus(
 
     const step = table.getEventInfo(node.invocation.path) orelse return;
 
-    // A step with declared branches produces no bare value, and the
+    // A step with declared TERMINAL branches produces no bare value, and the
     // branch-coverage wall already has the better sentence for that shape.
-    if (step.branches.len > 0) return;
+    // Effect branches do not count: an event has EITHER `-> T` OR terminal
+    // branches, but a `-> T` event may still declare `!` arms, and it produces
+    // its value all the same.
+    if (countTerminalBranches(step) > 0) return;
 
     const flow_name = eventLeafName(encl);
     const leaf = eventLeafName(step);
@@ -1401,7 +1415,11 @@ fn addFlowReturnTerminus(
     // The types agree, so the value the last step produces IS the flow's
     // output. Synthesize exactly the `-> v` the author would have written.
     const holder = try returnHolderName(allocator, &node.invocation, counter);
-    const conts = try allocator.alloc(ast.Continuation, 1);
+    // APPEND, never replace: the last step may already carry effect arms, and
+    // they are its handlers. The terminus goes first, matching the chain-then-
+    // arms order `levelContinuations` builds for the branch pyramid.
+    const existing = last.continuations;
+    const conts = try allocator.alloc(ast.Continuation, existing.len + 1);
     conts[0] = .{
         .branch = try allocator.dupe(u8, ""),
         .binding = null,
@@ -1416,6 +1434,7 @@ fn addFlowReturnTerminus(
         .indent = last.indent,
         .continuations = &.{},
     };
+    for (existing, 0..) |c, i| conts[1 + i] = c;
     last.continuations = conts;
 }
 
