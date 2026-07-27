@@ -1,0 +1,32 @@
+// Pins that the import gate sees the compiler flags from INSIDE an imported
+// module, not only in the entry file.
+//
+// 310_104 pins `~[profile]import` in the entry file and is green. This moves
+// the SAME gate one module deeper: the entry imports `test_lib/wiring`, and
+// `wiring` is the one carrying the gated `import test_lib/tracer`. Run with
+// --profile (COMPILER_FLAGS), so the gate must KEEP the tracer import and its
+// [TAP] line must appear.
+//
+// If the gate evaluates against an empty provider chain one level down, the
+// import is dropped and the [TAP] line vanishes — a code-membership decision
+// made silently on a flag the build actually passed, which is the exact
+// failure class the gate's loud-evaluation contract exists to prevent.
+
+const std = @import("std");
+
+~import app/test_lib/wiring
+
+~tor compute { x: i32 } -> i32
+
+~proc compute|zig {
+    std.debug.print("compute({d})\n", .{x});
+    return x * 2;
+}
+
+~tor display { value: i32 }
+
+~proc display|zig {
+    std.debug.print("Final: {d}\n", .{value});
+}
+
+~compute(x: 21): r |> display(value: r)
