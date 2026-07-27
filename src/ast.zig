@@ -415,6 +415,11 @@ pub const EventDecl = struct {
     is_public: bool = false,  // Whether this event is public (can be imported)
     is_implicit_flow: bool = false,  // Whether this event uses implicit flow parameter
     annotations: []const []const u8 = &[_][]const u8{},  // Event annotations like [pure|fusible|abstract]
+    /// Rationale prose from a vertical annotation block — the non-bullet lines,
+    /// trimmed and newline-joined. Addressed to the reader, never evaluated by
+    /// the frontend; a consumer that reads it owns what it means. Empty when the
+    /// block was inline or carried bullets only.
+    prose: []const u8 = "",
 
     // Purity tracking (computed from proc implementations)
     is_pure: bool = false,  // True if ALL proc implementations are pure
@@ -466,6 +471,7 @@ pub const EventDecl = struct {
             allocator.free(ann);
         }
         allocator.free(@constCast(self.annotations));
+        if (self.prose.len > 0) allocator.free(self.prose);
         if (self.module.len > 0) allocator.free(self.module);
     }
 };
@@ -487,6 +493,10 @@ pub const ProcDecl = struct {
                   // (e.g. parse_fields) report diagnostics at real .kz line:col and stay target-aware.
     inline_flows: []const Flow = &.{}, // Flows extracted from host-language proc bodies
     annotations: []const []const u8 = &[_][]const u8{}, // Proc annotations like [pure|async]
+    /// Rationale prose from a vertical annotation block. Same contract as
+    /// `EventDecl.prose`: a claim on a proc is about THIS implementation, where
+    /// a claim on the event is about the contract.
+    prose: []const u8 = "",
     target: ?[]const u8 = null, // Language target: "gpu", "js", "python", null = Zig
     is_impl: bool = false,  // True if event_path has module qualifier (cross-module implementation)
     is_public: bool = false, // True if declared with ~pub proc
@@ -513,6 +523,7 @@ pub const ProcDecl = struct {
             allocator.free(ann);
         }
         allocator.free(@constCast(self.annotations));
+        if (self.prose.len > 0) allocator.free(self.prose);
         if (self.target) |t| allocator.free(t);
         if (self.module.len > 0) allocator.free(self.module);
     }

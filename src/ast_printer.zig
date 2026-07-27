@@ -166,16 +166,38 @@ const Printer = struct {
 
     // ── event declarations ───────────────────────────────────────────────
 
-    fn printEventDecl(self: *Printer, ev: *const ast.EventDecl) PrintError!void {
-        try self.write("~");
-        if (ev.annotations.len > 0) {
+    /// Print a declaration's annotation block, choosing the density the tree
+    /// demands: prose can only be written in the vertical form, so a declaration
+    /// carrying rationale prints vertical and every other one prints inline
+    /// exactly as before. Entries come first, prose after — the source may have
+    /// interleaved them, but `--ast-canon` compares trees, and both orders parse
+    /// to the same two lists.
+    fn printAnnotationBlock(
+        self: *Printer,
+        annotations: []const []const u8,
+        prose: []const u8,
+    ) PrintError!void {
+        if (prose.len == 0) {
+            if (annotations.len == 0) return;
             try self.write("[");
-            for (ev.annotations, 0..) |ann, i| {
+            for (annotations, 0..) |ann, i| {
                 if (i > 0) try self.write("|");
                 try self.write(ann);
             }
             try self.write("] ");
+            return;
         }
+
+        try self.write("[\n");
+        for (annotations) |ann| try self.print("- {s}\n", .{ann});
+        var lines = std.mem.splitScalar(u8, prose, '\n');
+        while (lines.next()) |line| try self.print("  {s}\n", .{line});
+        try self.write("]");
+    }
+
+    fn printEventDecl(self: *Printer, ev: *const ast.EventDecl) PrintError!void {
+        try self.write("~");
+        try self.printAnnotationBlock(ev.annotations, ev.prose);
         if (ev.is_public) try self.write("pub ");
         try self.write("tor ");
         try self.writePath(&ev.path);
@@ -277,14 +299,7 @@ const Printer = struct {
 
     fn printProcDecl(self: *Printer, pr: *const ast.ProcDecl) PrintError!void {
         try self.write("~");
-        if (pr.annotations.len > 0) {
-            try self.write("[");
-            for (pr.annotations, 0..) |ann, i| {
-                if (i > 0) try self.write("|");
-                try self.write(ann);
-            }
-            try self.write("] ");
-        }
+        try self.printAnnotationBlock(pr.annotations, pr.prose);
         if (pr.is_public) try self.write("pub ");
         try self.write("proc ");
         try self.writePath(&pr.path);

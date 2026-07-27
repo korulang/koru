@@ -553,6 +553,12 @@ pub const Parser = struct {
     // (`~f(): { x } |>`) binds the return to before emitting per-field consts.
     destructure_ret_counter: u32 = 0,
 
+    // Rationale prose from the vertical annotation block currently being
+    // attached. A vertical block is flattened to a synthetic `~[a|b]construct`
+    // line and re-parsed, so the prose cannot ride the text — it waits here and
+    // the decl constructor takes it. Owned; replaced or freed, never leaked.
+    pending_prose: []const u8 = "",
+
     // Parse mode: false = lenient (continue past errors), true = fail-fast (stop at first error)
     fail_fast: bool,
 
@@ -694,6 +700,7 @@ pub const Parser = struct {
     }
 
     pub fn deinit(self: *Parser) void {
+        if (self.pending_prose.len > 0) self.allocator.free(self.pending_prose);
         if (self.gate_env_map) |*m| m.deinit();
         self.allocator.free(self.lines);
         self.reporter.deinit();
@@ -899,6 +906,10 @@ pub const Parser = struct {
                         continue;
                     };
                     const used_vertical_syntax = (self.current != current_before);
+                    // The block is about to be flattened into a synthetic inline
+                    // line; park its prose so the declaration that comes out the
+                    // other side can claim it.
+                    self.stashProse(result.prose);
 
                     // If there's nothing after the closing bracket, check if the next line has a construct
                     if (result.remaining.len == 0) {
@@ -938,7 +949,9 @@ pub const Parser = struct {
                         } else false;
 
                         if (!has_construct_on_next_line) {
-                            // It's a module-level annotation
+                            // It's a module-level annotation — no declaration to
+                            // own the prose.
+                            self.clearProse();
                             for (result.annotations) |ann| {
                                 try module_annotations.append(self.allocator, try self.allocator.dupe(u8, ann));
                             }
@@ -970,6 +983,7 @@ pub const Parser = struct {
                         // they would inline (they are the same entry list —
                         // bullets and pipes tokenize identically).
                         if (std.mem.startsWith(u8, construct_content, "import ")) {
+                            self.clearProse(); // imports do not carry prose yet
                             const keep = try self.gateImportEntries(result.annotations, construct_content, next_line_idx);
                             for (result.annotations) |ann| {
                                 self.allocator.free(ann);
@@ -1057,6 +1071,7 @@ pub const Parser = struct {
                         // the block's entries before any synthesis.
                         if (std.mem.startsWith(u8, result.remaining, "import ")) {
                             const line_with_bracket = self.current - 1;
+                            self.clearProse(); // imports do not carry prose yet
                             const keep = try self.gateImportEntries(result.annotations, result.remaining, line_with_bracket);
                             for (result.annotations) |ann| {
                                 self.allocator.free(ann);
@@ -1242,7 +1257,44 @@ pub const Parser = struct {
         /// Content after the closing ] (for inline syntax)
         /// For vertical syntax, this is always empty since ] is on its own line or line ending
         remaining: []const u8,
+        /// The block's non-bullet lines — rationale addressed to the reader —
+        /// trimmed and newline-joined. Owned by the caller when non-empty; always
+        /// empty for inline blocks, which have no line to hold prose on.
+        prose: []const u8 = "",
     };
+
+    /// Hand a vertical block's prose to whichever declaration the block attaches
+    /// to.
+    ///
+    /// An EMPTY prose never clears the stash, and that is load-bearing rather
+    /// than sloppy: a vertical block is flattened into a synthetic
+    /// `~[a|b]construct` line and fed back through the dispatcher, so the same
+    /// block gets scanned a second time — inline, where prose cannot exist. If
+    /// that second pass cleared the stash, no vertical block would ever reach
+    /// its declaration. Blocks that end up owning no declaration clear it
+    /// explicitly instead (`clearProse`).
+    fn stashProse(self: *Parser, prose: []const u8) void {
+        if (prose.len == 0) return;
+        if (self.pending_prose.len > 0) self.allocator.free(self.pending_prose);
+        self.pending_prose = prose;
+    }
+
+    /// Drop prose that turned out to have no declaration to attach to — a
+    /// module-level annotation, a gated-out import, a block whose construct
+    /// failed to parse. Without this the orphan would ride forward onto the next
+    /// declaration built, which is worse than losing it.
+    fn clearProse(self: *Parser) void {
+        if (self.pending_prose.len > 0) self.allocator.free(self.pending_prose);
+        self.pending_prose = "";
+    }
+
+    /// Take the stashed prose, transferring ownership to the caller. Empty when
+    /// the declaration carried an inline block or none at all.
+    fn takePendingProse(self: *Parser) []const u8 {
+        const prose = self.pending_prose;
+        self.pending_prose = "";
+        return prose;
+    }
 
     /// Markdown bullet markers — '-', '*', '+' all valid in a vertical
     /// annotation block. Each bullet line is one flag; non-bullet lines are
@@ -1268,6 +1320,13 @@ pub const Parser = struct {
             annotations.deinit(self.allocator);
         }
 
+        // Rationale prose accrues here as the block is scanned. Lines land
+        // trimmed, so the canonical printer can re-indent them and a reparse
+        // yields this exact buffer — that is what keeps the vertical form
+        // round-trippable.
+        var prose_buf = std.ArrayList(u8){};
+        errdefer prose_buf.deinit(self.allocator);
+
         // Check if the block's closing ] is on the same line (inline syntax).
         // Nesting- and string-aware: entries like custom(foo[1]) or doc("a]b")
         // never close the block early, and pipes inside them never delimit.
@@ -1281,6 +1340,7 @@ pub const Parser = struct {
                 try annotations.append(self.allocator, try self.allocator.dupe(u8, entry));
             }
             const remaining = content_with_bracket[close_bracket + 1 ..];
+            prose_buf.deinit(self.allocator); // inline blocks are one line: no room for prose
             return AnnotationBlockResult{
                 .annotations = try annotations.toOwnedSlice(self.allocator),
                 .remaining = remaining,
@@ -1322,13 +1382,14 @@ pub const Parser = struct {
                 return AnnotationBlockResult{
                     .annotations = try annotations.toOwnedSlice(self.allocator),
                     .remaining = remaining,
+                    .prose = try prose_buf.toOwnedSlice(self.allocator),
                 };
             }
 
             // Check if line starts with a markdown bullet marker (-, *, +)
             // — this is a flag entry. Anything else on its own line is prose,
-            // silently discarded by the parser. The annotation block is a
-            // markdown buffer where bullets are canonical flags and prose is
+            // captured onto the declaration as rationale. The annotation block is
+            // a markdown buffer where bullets are canonical flags and prose is
             // human rationale. Discipline (why-not-what, no double-definitions)
             // is held in docs, not enforced by the parser.
             // Bullet content splits through the same tokenizer as inline
@@ -1346,7 +1407,10 @@ pub const Parser = struct {
                 continue;
             }
 
-            // Prose line — silently discarded.
+            // Prose line — the reader's half of the block. Stored trimmed and
+            // newline-joined; the frontend never reads it, consumers do.
+            if (prose_buf.items.len > 0) try prose_buf.append(self.allocator, '\n');
+            try prose_buf.appendSlice(self.allocator, trimmed);
             self.current += 1;
             continue;
         }
@@ -1465,6 +1529,7 @@ pub const Parser = struct {
                 }
                 self.allocator.free(result.annotations);
             }
+            self.stashProse(result.prose);
 
             for (result.annotations) |ann| {
                 try annotations.append(self.allocator, try self.allocator.dupe(u8, ann));
@@ -1823,7 +1888,10 @@ pub const Parser = struct {
                 }
                 self.allocator.free(result.annotations);
             }
-            // We don't need the annotations, just skip past them
+            // We don't need the annotations, just skip past them — but this
+            // re-scan is the only place the prose survives when the block was
+            // written directly above the construct, so it is stashed here.
+            self.stashProse(result.prose);
             remaining = lexer.trim(result.remaining);
         }
 
@@ -2309,6 +2377,7 @@ pub const Parser = struct {
             .is_public = is_public,
             .is_implicit_flow = is_implicit_flow,
             .annotations = annotations_copy,
+            .prose = self.takePendingProse(),
             .location = self.getCurrentLocation(),
             .module = try self.allocator.dupe(u8, self.module_name),
         };
@@ -2377,6 +2446,9 @@ pub const Parser = struct {
                 }
                 self.allocator.free(result.annotations);
             }
+            // Trailing vertical block (`tor foo[\n- tag\n prose\n]`): the prose
+            // belongs to the declaration being built a few lines below.
+            self.stashProse(result.prose);
 
             for (result.annotations) |ann| {
                 try annotations.append(self.allocator, try self.allocator.dupe(u8, ann));
@@ -2475,6 +2547,7 @@ pub const Parser = struct {
             .is_public = is_public,
             .is_implicit_flow = is_implicit_flow,
             .annotations = try annotations.toOwnedSlice(self.allocator),
+            .prose = self.takePendingProse(),
             .location = self.getCurrentLocation(),
             .module = try self.allocator.dupe(u8, self.module_name),
         };
@@ -2519,7 +2592,10 @@ pub const Parser = struct {
                 }
                 self.allocator.free(result.annotations);
             }
-            // We don't need the annotations, just skip past them
+            // We don't need the annotations, just skip past them — but this
+            // re-scan is the only place the prose survives when the block was
+            // written directly above the construct, so it is stashed here.
+            self.stashProse(result.prose);
             remaining = lexer.trim(result.remaining);
         }
 
@@ -2651,6 +2727,7 @@ pub const Parser = struct {
             },
             .inline_flows = extraction_result.flows,
             .annotations = annotations_copy,
+            .prose = self.takePendingProse(),
             .target = target,
             .is_pure = is_pure,
             // is_transitively_pure defaults to false, will be set by purity checker
@@ -2701,6 +2778,9 @@ pub const Parser = struct {
                 }
                 self.allocator.free(result.annotations);
             }
+            // Trailing vertical block (`tor foo[\n- tag\n prose\n]`): the prose
+            // belongs to the declaration being built a few lines below.
+            self.stashProse(result.prose);
 
             for (result.annotations) |ann| {
                 try annotations.append(self.allocator, try self.allocator.dupe(u8, ann));
@@ -2785,6 +2865,7 @@ pub const Parser = struct {
             },
             .inline_flows = extraction_result.flows,
             .annotations = try annotations.toOwnedSlice(self.allocator),
+            .prose = self.takePendingProse(),
             .target = target,
             .location = self.getCurrentLocation(),
             .module = try self.allocator.dupe(u8, self.module_name),
@@ -7514,6 +7595,9 @@ pub const Parser = struct {
                     const block = try self.parseAnnotationBlock(rest, self.current);
                     for (block.annotations) |a| try anns.append(self.allocator, a);
                     self.allocator.free(block.annotations); // strings moved into `anns`; free the slice
+                    // Step annotations are inline by construction, so this is
+                    // empty in practice; freed rather than assumed.
+                    if (block.prose.len > 0) self.allocator.free(block.prose);
                     rest = lexer.trim(block.remaining);
                 }
                 var inner = try self.parseStepKind(rest, force_ctor);
