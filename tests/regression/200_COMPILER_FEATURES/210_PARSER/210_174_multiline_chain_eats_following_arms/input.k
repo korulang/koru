@@ -1,20 +1,31 @@
-// PINS: breaking a pipeline across lines does not change what it means.
+// PINS: arms sit at the level of the step they attach to, and a step that
+// declares no branches cannot take any.
 //
-// A branching invocation in mid-chain takes its arms perfectly well when the
-// chain is written on ONE line. Put a newline before the `|>` and the arms
-// that follow become "stray continuation line without Koru construct" — the
-// multi-line chain swallows them.
+// An arm attaches to the LAST STEP AT ITS OWN INDENTATION LEVEL. Here the only
+// step at column 0 is `seed(): n` — and `seed` is declared `-> i64` with no
+// branches at all, so `| lo` and `| hi` have nothing to attach to. They are
+// reaching past the indented `pick(n)`, which is the step that actually
+// declares them.
 //
-//     seed(): n |> pick(n)     <- arms attach
-//     seed(): n
-//         |> pick(n)           <- arms are stray
+// This is a type fact before it is a layout one. A step either names its value
+// or branches on it, never both: `seed(): n` has already caught what `seed`
+// produced. Indenting the arms to `pick`'s level does not rescue it either —
+// measured, it drops both branches instead of one.
 //
-// Same tors, same arms, same order. Only the line break moves.
+// The legal spelling de-dents the chain so `pick` is the last step at column 0,
+// where the arms already are — pinned green at 210_190.
 //
-// Formatting is not semantics. A long pipeline is exactly where an author
-// reaches for line breaks, so this bites the programs most in need of them —
-// and the diagnostic accuses the arms, which are innocent, rather than the
-// chain that ate them.
+// The rule generalises rather than being special to this shape. In
+// `koru_std/compiler.kz`, `~analysis`'s dedented `| failed` attaches to
+// `check-release-gate` at the same level, and `check-release-gate` DOES declare
+// `| failed`; the desugar then replicates it across every stage. "The choke
+// guards the subtree" describes that replication, not the attachment.
+//
+// The diagnostic below is the one emitted today and it is inadequate: it names
+// a line the parser could not place rather than the fault. What it should say
+// is that these arms are at the level of a step declaring no branches, and name
+// the step that declares them. The code is pinned so the message can improve
+// without breaking this wall.
 import std/io
 
 tor seed {} -> i64
