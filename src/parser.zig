@@ -3616,6 +3616,7 @@ pub const Parser = struct {
 
         const location = self.getLineLocation(self.current, lexer.getIndent(self.lines[self.current]));
         const line = self.lines[self.current];
+        const head_line_idx = self.current;
         self.current += 1;
 
         const trimmed = lexer.trim(line);
@@ -3863,7 +3864,7 @@ pub const Parser = struct {
 
             if (has_inline_continuation) {
                 // Parse inline continuation from the same line
-                continuations = try self.parseInlineContinuation(remaining, lexer.getIndent(line));
+                continuations = try self.parseInlineContinuation(remaining, lexer.getIndent(line), head_line_idx);
             } else {
                 // Parse regular multi-line continuations
                 continuations = try self.parseContinuations(lexer.getIndent(line));
@@ -4756,6 +4757,7 @@ pub const Parser = struct {
         }
 
         const line = self.lines[self.current];
+        const head_line_idx = self.current;
         self.current += 1;
 
         // Parse: ~event.name = ... or ~module:event = ...
@@ -5151,7 +5153,7 @@ pub const Parser = struct {
                 };
                 break :arrow_blk conts;
             } else if (has_inline_chain)
-                try self.parseInlineContinuation(inv_str, lexer.getIndent(line))
+                try self.parseInlineContinuation(inv_str, lexer.getIndent(line), head_line_idx)
             else
                 try self.parseContinuations(lexer.getIndent(line));
 
@@ -5642,7 +5644,7 @@ pub const Parser = struct {
 
     /// Parse inline continuation (same-line |> pattern)
     /// Used for void event chaining: ~void_event() |> another_event()
-    fn parseInlineContinuation(self: *Parser, full_line: []const u8, indent: usize) ![]ast.Continuation {
+    fn parseInlineContinuation(self: *Parser, full_line: []const u8, indent: usize, line_idx: usize) ![]ast.Continuation {
         // Find the first |> that's not inside parentheses
         var pipe_idx: ?usize = null;
         var paren_depth: i32 = 0;
@@ -5661,6 +5663,13 @@ pub const Parser = struct {
             // No inline continuation found
             return &[_]ast.Continuation{};
         }
+
+        // The chain's own source line, from the index the caller read it at —
+        // NOT the cursor, which parseContinuations below walks past the
+        // following handler lines. Every step of an inline chain lives on this
+        // line, and a diagnostic that names a step (KORU100, KORU106) must
+        // point at it, not at wherever the cursor happened to stop.
+        const chain_location = self.getLineLocation(line_idx, indent);
 
         // Extract the continuation part after |>
         var continuation_part = lexer.trim(full_line[pipe_idx.? + 2 ..]);
@@ -5722,7 +5731,7 @@ pub const Parser = struct {
                 } },
                 .indent = indent,
                 .continuations = &.{},
-                .location = self.getCurrentLocation(),
+                .location = chain_location,
             };
             @memcpy(conts[1..], nested_continuations);
             self.allocator.free(nested_continuations);
@@ -5747,7 +5756,7 @@ pub const Parser = struct {
                 .node = step,
                 .indent = indent,
                 .continuations = current_continuations,
-                .location = self.getCurrentLocation(),
+                .location = chain_location,
             });
 
             current_continuations = try cont_list.toOwnedSlice(self.allocator);

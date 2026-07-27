@@ -147,6 +147,15 @@ pub const FlowChecker = struct {
             try self.checkExpressionPurity(&flow.body);
         }
 
+        // KORU106: the no-shadowing wall. Frontend mode only — the shape is
+        // visible on the unexpanded AST, and a transform's lowered output
+        // carries synthesized names this rule has no business judging.
+        if (self.mode == .frontend and !is_transformed and !is_transform_flow) {
+            var scope: std.ArrayList(ScopedBind) = .empty;
+            defer scope.deinit(self.allocator);
+            try self.checkShadowing(&flow.body, &scope);
+        }
+
         // Check for duplicate branch handlers at each level. On a hit the tree
         // is structurally ambiguous — skip the rest of this flow's judgments
         // (when-clause ambiguity, coverage) so one defect yields ONE diagnostic;
@@ -891,6 +900,97 @@ pub const FlowChecker = struct {
                 .{},
             );
         }
+    }
+
+    // =========================================================================
+    // KORU106 — the no-shadowing wall.
+    //
+    // Koru forbids shadowing, and the pun machinery depends on it: "no
+    // shadowing means the in-scope match is always unique — never ambiguous"
+    // (ast_transform.zig). Nothing enforced it at the Koru level, so
+    // `seed(): n |> bump(n): n` reached Zig as `redeclaration of local
+    // constant 'n'` — a host error standing in for a language one, pointing
+    // into a file the author never opened (210_173).
+    //
+    // SCOPE is the path from the flow root to the binding site: an ancestor's
+    // bind is in scope, a SIBLING arm's is not (disjoint arms of the same
+    // switch never see each other). Frontend mode only — the shape is visible
+    // on the unexpanded AST, and post-transform trees carry synthesized names
+    // this rule has no business judging.
+    //
+    // REACH is the CHAIN BIND (`event(args): x`), which is what 210_173 rules
+    // on and what the pun thread makes unnecessary. An ARM binding colliding
+    // with a capture deeper inside its own handler (`! item x |> classify(v: x)`
+    // then `| lo x`) is a different question with a different answer pending —
+    // 800_002 pins that shape and argues the two names denote one value and the
+    // EMITTER should alpha-rename. Until that fork is ruled, this wall does not
+    // reach it.
+    // =========================================================================
+
+    /// `reported` keeps one diagnostic per shadowed binding: a name reused three
+    /// times down one chain is ONE problem the author fixes once, and the second
+    /// and third sites produce a sentence identical to the first.
+    const ScopedBind = struct { name: []const u8, line: usize, reported: bool = false };
+
+    fn checkShadowing(self: *FlowChecker, cont: *const ast.Continuation, scope: *std.ArrayList(ScopedBind)) anyerror!void {
+        if (cont.is_transformed_subtree) return;
+
+        const depth = scope.items.len;
+        defer scope.shrinkRetainingCapacity(depth);
+
+        if (cont.node) |node| {
+            if (node == .invocation) {
+                const inv = node.invocation;
+                // Synthesized call sites (taps, auto-discharge) name their own
+                // temporaries; the author never wrote them.
+                if (!inv.inserted_by_tap and !inv.from_opaque_tap and
+                    !self.invocationResolvesToTemplateProc(&inv.path))
+                {
+                    if (inv.return_binding) |rb| {
+                        try self.noteBind(scope, rb, cont.location);
+                    }
+                    for (inv.return_destructure) |f| {
+                        try self.noteDestructure(scope, f, cont.location);
+                    }
+                }
+            }
+        }
+
+        for (cont.continuations) |*child| {
+            try self.checkShadowing(child, scope);
+        }
+    }
+
+    fn noteDestructure(self: *FlowChecker, scope: *std.ArrayList(ScopedBind), f: ast.DestructureField, location: errors.SourceLocation) anyerror!void {
+        if (f.sub.len > 0) {
+            for (f.sub) |sub| try self.noteDestructure(scope, sub, location);
+            return;
+        }
+        try self.noteBind(scope, f.name, location);
+    }
+
+    fn noteBind(self: *FlowChecker, scope: *std.ArrayList(ScopedBind), name: []const u8, location: errors.SourceLocation) anyerror!void {
+        // `_` discards and the compiler's own synthetics (`__koru_*`, `__thread*`)
+        // are not names an author can collide with.
+        if (name.len == 0 or name[0] == '_') return;
+
+        for (scope.items) |*prior| {
+            if (std.mem.eql(u8, prior.name, name)) {
+                if (prior.reported) return;
+                prior.reported = true;
+                try self.reporter.addErrorWithHint(
+                    .KORU106,
+                    location.line,
+                    location.column,
+                    "'{s}' is already bound at line {d} — this bind would shadow it, and Koru has no shadowing",
+                    .{ name, self.reporter.userLine(prior.line) },
+                    "give the second bind a different name, or drop it and keep using the one already in scope",
+                    .{},
+                );
+                return;
+            }
+        }
+        try scope.append(self.allocator, .{ .name = name, .line = location.line });
     }
 
     fn isBindingUsed(self: *FlowChecker, cont: *const ast.Continuation, binding: []const u8) bool {
