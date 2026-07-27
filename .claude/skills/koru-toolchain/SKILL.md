@@ -42,6 +42,24 @@ artifact disagree, the artifact wins.
 These cost hours if you don't know them. Each is expanded in `CLAUDE.md` /
 `koru-tutorial.md`; here they're just named so you don't trip:
 
+- **`koruc` is a BUILT BINARY, and a git operation does not rebuild it.**
+  `/usr/local/bin/koruc` symlinks into `zig-out/bin/`. `src/*.zig` is compiled
+  *into* that binary; `koru_std/*.kz` is read *at runtime* from the working
+  tree. So a merge, checkout, revert, or branch switch moves both halves on disk
+  and leaves you running an **old compiler against a new standard library**.
+  The symptom is wrong emitted code — indistinguishable from a compiler bug, and
+  it will send you reading passes that are fine. **`zig build` before any hand
+  probe that follows a tree operation**, or run the suite, which builds first and
+  cannot enter this state. One command settles it when in doubt:
+
+  ```bash
+  ls -l zig-out/bin/koruc          # older than your last src/ change? that's your bug
+  ```
+
+  `koru_std/compiler.kz` is where it bites hardest — the one place a rule
+  implemented in `src/` is exercised *solely* through `koru_std/`, so a skew
+  breaks self-hosting while hand-written tests stay green. Belief:
+  `concepts/frag-a-stale-binary-lies-like-a-compiler-bug.md`.
 - **Implement in subflows, not procs.** A tor is implemented by a *subflow* —
   pure Koru. Branch selection (mapping one tor's branches to another's, and
   `when`-guards) is a Koru act. For conditional selection use `~if(cond)
@@ -98,6 +116,30 @@ A test is a directory under `tests/regression/<CLUSTER>/<NNN_name>/` with an
 `input.kz` (and/or `input.k`), plus markers: `MUST_RUN` + `expected.txt`
 (positive) or `MUST_ERROR` + `EXPECT` + `expected_error.txt` (negative).
 `MUST_ERROR` means *negative test*, NOT "a test that is currently failing."
+
+**`--cache` / `--no-cache` is the RESULT cache — it has nothing to do with
+zig's.** It decides whether prior verdicts are reused; it never makes the
+compiler rebuild. After a compiler change use `--no-cache`, and know that the
+rebuild you're relying on comes from the harness's own `zig build` step, not
+from that flag.
+
+**The `EXPECT` marker is matched `^EXACT$`, one bare token per line.** Write
+
+```
+FRONTEND_COMPILE_ERROR
+```
+
+not `EXPECT: FRONTEND_COMPILE_ERROR`. A malformed marker makes the harness read
+a `MUST_ERROR` test as a *positive* one, so its correct refusal is reported as a
+failure — a wall that fails when the thing it guards works.
+
+**Test numbers have no allocator.** Two branches can mint the same `NNN_NNN` and
+neither finds out until merge, because `prose-check` wall C only sees duplicates
+once both trees are present. Before minting, check the remote too:
+
+```bash
+git ls-tree -r --name-only origin/main tests/regression | grep -oE '[0-9]{3}_[0-9]{3}' | sort -u
+```
 
 Pinning a bug as a `MUST_ERROR`: `expected_error.txt` is matched by concatenating
 all its lines (`tr -d '\n\r'`) then `grep -qF` against `backend.err` — so it must
