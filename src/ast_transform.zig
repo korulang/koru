@@ -1039,10 +1039,10 @@ fn punItemsBinding(
 ) std.mem.Allocator.Error!void {
     for (@constCast(items)) |*item| {
         switch (item.*) {
-            .flow => |*flow| try punContinuationBinding(allocator, table, &flow.body, scope, counter, null, reporter),
+            .flow => |*flow| try punContinuationBinding(allocator, table, &flow.body, scope, counter, null, null, reporter),
             .proc_decl => |*proc| {
                 for (@constCast(proc.inline_flows)) |*flow| {
-                    try punContinuationBinding(allocator, table, &flow.body, scope, counter, null, reporter);
+                    try punContinuationBinding(allocator, table, &flow.body, scope, counter, null, null, reporter);
                 }
             },
             .module_decl => |*module| try punItemsBinding(allocator, table, module.items, scope, counter, reporter),
@@ -1076,11 +1076,20 @@ fn punItemsBinding(
 // never *unfilled*: omitting it is already a complete call. Not an exception —
 // it is what "unfilled" means.
 
-/// The value a bare-return stage hands to the next `|>` step: the invocation
-/// that produced it (so a holder name can be minted on demand) and the base
-/// type it carries.
+/// Where a thread's value lives, so a name for it can be minted on demand.
+/// A `-> T` stage holds its value in the producing invocation's return bind; a
+/// branch or effect ARM holds its payload in the continuation's own binding.
+/// Both are the same situation — a value that has arrived with no name — which
+/// is the situation the thread exists to serve.
+const ThreadHolder = union(enum) {
+    ret: *ast.Invocation,
+    payload: *ast.Continuation,
+};
+
+/// The value a stage hands to the next `|>` step: where it lives (so a holder
+/// name can be minted on demand) and the base type it carries.
 const Thread = struct {
-    producer: *ast.Invocation,
+    holder: ThreadHolder,
     type: []const u8,
 };
 
@@ -1105,20 +1114,36 @@ fn isOpenThreadSlot(f: ast.Field, args: []const ast.Arg) bool {
     return true;
 }
 
-/// The name that holds the thread's value. A stage the author already bound
-/// (`stage(): r`) is its own holder; an unbound one gets a synthesized bind —
-/// minted only at the moment a consumer is found, so a thread nobody takes
-/// never invents a dead local for KORU100 to trip over.
+/// The name that holds the thread's value. A stage the author already named
+/// (`stage(): r`, `| ok o`) is its own holder; an unnamed one gets a
+/// synthesized bind — minted only at the moment a consumer is found, so a
+/// thread nobody takes never invents a dead local for KORU100 to trip over.
+///
+/// The payload arm mints into `cont.binding`, which is also what makes the
+/// linearity wall ("branch has payload but no binding") a truthful backstop
+/// rather than an obstacle: a payload the thread carried away HAS a binding by
+/// the time the checker looks, and one nothing consumed still does not.
 fn threadHolderName(
     allocator: std.mem.Allocator,
-    inv: *ast.Invocation,
+    holder: ThreadHolder,
     counter: *usize,
 ) ![]const u8 {
-    if (inv.return_binding) |rb| return rb;
-    const name = try std.fmt.allocPrint(allocator, "__thread{d}", .{counter.*});
-    counter.* += 1;
-    inv.return_binding = name;
-    return name;
+    switch (holder) {
+        .ret => |inv| {
+            if (inv.return_binding) |rb| return rb;
+            const name = try std.fmt.allocPrint(allocator, "__thread{d}", .{counter.*});
+            counter.* += 1;
+            inv.return_binding = name;
+            return name;
+        },
+        .payload => |cont| {
+            if (cont.binding) |b| return b;
+            const name = try std.fmt.allocPrint(allocator, "__payload{d}", .{counter.*});
+            counter.* += 1;
+            cont.binding = name;
+            return name;
+        },
+    }
 }
 
 /// `'a' (i64), 'b' (string)` — the open slots, for the no-home diagnostic.
@@ -1189,7 +1214,7 @@ fn bindThreadIntoStep(
     const step = eventLeafName(info);
 
     if (matches.items.len == 1) {
-        const holder = try threadHolderName(allocator, thread.producer, counter);
+        const holder = try threadHolderName(allocator, thread.holder, counter);
         node.invocation.args = try appendedArgs(
             allocator,
             node.invocation.args,
@@ -1253,7 +1278,26 @@ fn threadProducedBy(
     if (info.input_is_compiler_supplied) return null;
     const rt = info.return_type orelse return null;
     if (isTransformResultReturn(rt)) return null;
-    return .{ .producer = &node.invocation, .type = rt };
+    return .{ .holder = .{ .ret = &node.invocation }, .type = rt };
+}
+
+/// The type an ARM's payload threads as, or null if it does not thread.
+///
+/// A single-field payload (`| lo i64`, `! emit string`) is one value, so it is
+/// exactly the thing a thread carries. Two shapes decline, and both decline for
+/// the same reason — there is no single value to hand on:
+///   - a WILDCARD payload (`| ok *`) has no declared shape to type;
+///   - a MULTI-FIELD payload is a record, which the author reaches by
+///     destructuring (`| ok { a, b }`), never by passing whole.
+fn armPayloadType(info: EventInfo, branch_name: []const u8) ?[]const u8 {
+    if (branch_name.len == 0) return null;
+    for (info.branches) |br| {
+        if (!std.mem.eql(u8, br.name, branch_name)) continue;
+        if (br.payload.is_wildcard) return null;
+        if (br.payload.fields.len != 1) return null;
+        return br.payload.fields[0].type;
+    }
+    return null;
 }
 
 // ----------------------------------------------------------------------------
@@ -1464,6 +1508,7 @@ fn punContinuationBinding(
     scope: *std.StringHashMap(?[]const u8),
     counter: *usize,
     thread: ?Thread,
+    payload_type: ?[]const u8,
     reporter: *errors_mod.ErrorReporter,
 ) std.mem.Allocator.Error!void {
     // The names this continuation introduces into scope are added in two phases
@@ -1538,7 +1583,19 @@ fn punContinuationBinding(
     //    parameter whose type it matches. It runs AFTER the name fill above, so
     //    a name-punned arg counts as written and narrows the field exactly like
     //    a hand-written one — the bright line is written versus not written.
-    if (thread) |th| {
+    //    An ARM's own payload IS the thread when the author wrote no binder for
+    //    it (`| lo |> tally(tag: "abc")`, `! emit |> render-at(x: 5)`). The
+    //    value arrives from upstream and this arm's node is its consumer, so it
+    //    lands by the same TYPE rule as a `-> T` stage's value — one unfilled
+    //    slot of matching type, or KORU092/093 saying why not. An arm the author
+    //    DID bind is untouched: that name entered scope in phase A and fills by
+    //    pun, which is 210_157's spelling. Pins: 210_191, 210_192.
+    const effective_thread: ?Thread = thread orelse blk: {
+        const pt = payload_type orelse break :blk null;
+        if (cont.binding != null or cont.destructure.len > 0) break :blk null;
+        break :blk Thread{ .holder = .{ .payload = cont }, .type = pt };
+    };
+    if (effective_thread) |th| {
         if (cont.node) |*node| {
             if (node.* == .invocation) {
                 if (table.getEventInfo(node.invocation.path)) |info| {
@@ -1576,9 +1633,18 @@ fn punContinuationBinding(
     // a branch arm, a guarded arm and an effect arm are not the chain.
     const downstream: ?Thread = if (cont.node) |*node| threadProducedBy(table, node) else null;
 
+    // The event whose branches this node's children are arms OF — the source of
+    // each child's payload type, resolved here because only the parent knows
+    // which event declared the arm.
+    const arm_source: ?EventInfo = if (cont.node) |*node|
+        (if (node.* == .invocation) table.getEventInfo(node.invocation.path) else null)
+    else
+        null;
+
     for (@constCast(cont.continuations)) |*child| {
         const passed: ?Thread = if (downstream != null and isUnnamedStep(child)) downstream else null;
-        try punContinuationBinding(allocator, table, child, scope, counter, passed, reporter);
+        const child_payload: ?[]const u8 = if (arm_source) |info| armPayloadType(info, child.branch) else null;
+        try punContinuationBinding(allocator, table, child, scope, counter, passed, child_payload, reporter);
     }
 
     for (added.items) |b| _ = scope.remove(b);

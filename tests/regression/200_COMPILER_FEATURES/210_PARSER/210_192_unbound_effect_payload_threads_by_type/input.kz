@@ -1,0 +1,23 @@
+// PINS: an UNBOUND effect payload threads into the next stage by TYPE.
+//
+// `! emit` carries a string and writes no binder. `render-at` has `x` written,
+// so `text` is its only unfilled parameter and the arriving payload is a
+// string — exactly one candidate, so it lands there. The effect is named `emit`
+// and the parameter is named `text`: nothing puns.
+//
+// 210_157 is the BOUND spelling of this same program, where the binder's name
+// and the parameter's name happen to coincide and the payload fills by pun.
+// That test states how a NAMED payload moves; this one states how an unnamed
+// one does. Selection by type needs no such coincidence, which is what makes it
+// the rule that generalises — `emit`/`text` share nothing here.
+//
+// Sibling of 210_191, the obligation-branch twin (`| lo`). One check refuses
+// both positions today, so they move together.
+const std = @import("std");
+~tor render-at { x: i64, text: string }
+~proc render-at|zig { std.debug.print("{d}:{s}\n", .{ x, text }); }
+~tor source {}
+! emit string
+~proc source|zig { emit("punned!"); }
+~source()
+! emit |> render-at(x: 5)
