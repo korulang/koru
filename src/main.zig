@@ -7678,18 +7678,9 @@ pub fn main() !void {
     // a hand-written one. Runs after the point-free rewrite so the canonical
     // pyramid's own explicit args are already in place.
     try ast_transform.desugarBindingPuns(parse_allocator, &source_file, &parser.reporter);
-
-    // Flow return terminus: a `-> T` flow whose chain ends on a step returning
-    // T gets that step's value as its output, with no `: v -> v` written — the
-    // bare-return twin of the branch terminus the point-free desugar already
-    // synthesizes. Runs after the thread pass so every step's args are in place
-    // and the last step is final.
-    try ast_transform.desugarFlowReturnTerminus(parse_allocator, &source_file, &parser.reporter);
-
     // RULING 3: a bare pun of a formatted-result struct into a scalar param
     // (KORU038) is reported here, at the koru level, before it can reach the
-    // emitter and leak a raw Zig type error. KORU092/093 (the thread) and
-    // KORU094 (the terminus) surface at the same gate.
+    // emitter and leak a raw Zig type error.
     if (parser.reporter.hasErrors()) {
         const stderr_writer = FileWriter{ .file = std.fs.File.stderr() };
         try parser.reporter.printErrors(stderr_writer);

@@ -65,7 +65,6 @@ pub const ErrorCode = enum(u16) {
     KORU091, // Invalid use of 'p' symbol
     KORU092, // Point-free thread has no home — the next step is still incomplete and none of its unfilled parameters accepts the `-> T` the previous stage produced (210_176)
     KORU093, // Point-free thread cannot elect — several unfilled parameters of the next step accept its type; write one of them (210_176)
-    KORU094, // A flow's chain does not produce its declared `-> T` — the last step returns a different type, or returns nothing at all (210_184)
 
     // Parser errors
     PARSE001, // Unexpected end of file

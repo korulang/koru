@@ -109,39 +109,12 @@ not slots and it takes no thread. `[comptime]` alone is NOT that boundary —
 `frontend { ctx: CompilerContext }` runs at comptime and its `ctx` is an
 ordinary author-written parameter.
 
-## The same reading ends the chain
-
-Ruled the same day, and it is one rule applied twice rather than two: **the last
-step's `-> T` satisfies the flow's declared `-> T`.** Pin: 210_184.
-
-The asymmetry it closes is the one this belief already names. A branch chain's
-terminus vanishes because the last stage's branch NAME matches the flow's
-declared branch — `~analysis` ends on its last stage with only a dedented
-`| failed` choke, and the compiler self-hosts through that. A bare return had no
-name to match on, so it got no such courtesy: the value went nowhere and Zig
-said so. Reading the TYPE instead is what makes both ends symmetric, exactly as
-it did in the middle of the chain.
-
-Reading the type is also what makes the failures visible, and that is the part
-worth keeping: a synthesized terminus that silently dropped a mismatch would
-make the flow lie about what it returns. A last step of the wrong type, or one
-producing nothing at all, is KORU094 naming both types (210_186, 210_187).
-
-Together with the thread, a `-> T` pipeline now carries no binders at all —
-`~frontend` is six stages, one written argument (`ctx` on the head, which
-nothing else can supply), and nothing else.
-
 ## Open
 
 Unruled, and adjacent rather than downstream: whether `|>` on a void step
 becomes illegal in favour of statement listing, and whether naming a value
 (`: m`, or destructuring `{ a, b }`) ends the thread. Both were reasoned through
 on the same day and neither was ruled.
-
-The terminus rule reaches a LINEAR chain only — every level exactly one unnamed
-`|>` step. A bare-return chain carrying a choke arm falls outside it and keeps
-the old host leak; whether the terminus should see past a choke the way the
-branch desugar does is unruled.
 
 Still name-based, and deliberately left so: the *branch* thread of the shipped
 point-free pipeline (`frag-pointfree-threads-the-branch-left`, 210_151/152/153)
