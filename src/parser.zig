@@ -4217,7 +4217,7 @@ pub const Parser = struct {
         // bind stands between the start of the line and the arrow. A chain with no
         // bind at all (`a() |> b() -> v`) is the stray form exactly as much as
         // `a() -> v` is: `v` names nothing either way, and letting it through
-        // hands the host an undeclared identifier in generated code (210_184).
+        // hands the host an undeclared identifier in generated code (210_185).
         if (return_binding == null) {
             if (indexOfTopLevelArrow(clean)) |arrow_at| {
                 const bound_before_arrow = if (indexOfTopLevelBindColon(clean)) |bind_at|
