@@ -1,12 +1,19 @@
-// FIXED: Void event chaining now generates valid Zig sequential calls
+// PINS: a subflow chaining VOID steps runs every one of them, in order — and
+// the COUNT of them is the assertion.
 //
-// Previously: When chaining void events (work |> work |> destroy), the emitter
-// generated `switch (nested_result_0) { . => || { ... } }` which was invalid:
-//   1. Void types cannot be switched on
-//   2. `. => ||` is invalid syntax
+// `run-one` chains four void steps off one binding, two of which are `work`,
+// and `~for` drives it ten times: exactly twenty `Work` lines. The count is
+// what this test holds, because a chain that silently dropped a step would
+// still compile, still run, and still exit 0 — printing ten. Nothing else
+// distinguishes the two outcomes.
 //
-// Fix: emitSubflowContinuationsWithDepth now detects void continuations
-// (empty branch name) and emits sequential calls without switch.
+// A void step has no result to switch on, so it cannot be lowered the way a
+// branching step is: `switch (nested_result_0) { . => || { … } }` is not Zig,
+// and a void type cannot be switched on at all. The sequential-call lowering
+// that stands in its place is what the twenty lines guard.
+//
+// Sibling: 210_176, the same "every step runs" claim for a chain whose HEAD is
+// a comptime transform rather than a handler call.
 
 ~import std/control
 

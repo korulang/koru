@@ -3116,15 +3116,25 @@ pub const VisitorEmitter = struct {
                                         const source_event_name = try emitter.buildCanonicalEventName(&flow.inv().path, self.allocator, self.main_module_name);
                                         try emitter.emitSubflowContinuations(self.code_emitter, flow.body.continuations, 0, indent_str, items_to_search, self.tap_registry, self.type_registry, self.main_module_name, source_event_name, "main_module", event.return_type != null);
                                       }
-                                    } else if (std.mem.indexOf(u8, inline_code, "__KORU_INLINE__") != null) {
-                                        // Value-producing inline body bound mid-pipe (`sub = fmt:ln(...): l |>
-                                        // use l`): materialising the `break :__KORU_INLINE__` value as
-                                        // `const l = <labeled block>` (so the void steps that follow can read
-                                        // `l.text`) is emitInlineBodyNode's job — the SAME helper the
-                                        // inline_stmt_marker path above and 3ba4d00a's void-continuation bail
-                                        // use. The raw emitReindentedText branch below dumps the block unlabeled
-                                        // with `__KORU_INLINE__` intact (020_061). Bound-value sibling of that
-                                        // void-continuation emitter fix.
+                                    } else {
+                                        // Void/pipeline continuations after an inline-transform head.
+                                        // ONE route: emitInlineBodyNode — the same helper `emitFlow`
+                                        // uses for a top-level inline template, and the same one the
+                                        // inline_stmt_marker path above takes. It emits the rendered
+                                        // head AND walks the void continuations, so every later step
+                                        // of the chain is emitted; a bound value (`sub = fmt:ln(...):
+                                        // l |> use l`) materialises as `const l = <labeled block>`
+                                        // (020_061), and a void `branch_constructor` arm still lowers
+                                        // to `return .{ ... }` through emitPipelineStep's "_" result.
+                                        //
+                                        // Nothing here may hand-roll a second walk over
+                                        // flow.body.continuations. A local walk that lowers only the
+                                        // node kinds it happens to know drops the rest in silence —
+                                        // `sub = std/io:print.ln("a") |> anything()` compiles to the
+                                        // head alone, runs, and exits 0. emitFlow routes every
+                                        // top-level inline body through this one helper for exactly
+                                        // that reason; a subflow body is the same chain and takes the
+                                        // same route. 210_176.
                                         var bound_ctx = emitter.EmissionContext{
                                             .allocator = self.allocator,
                                             .ast_items = self.all_items,
@@ -3142,65 +3152,6 @@ pub const VisitorEmitter = struct {
                                         };
                                         var bound_result_counter: usize = 0;
                                         try emitter.emitInlineBodyNode(self.code_emitter, &bound_ctx, inline_code, flow.body.continuations, &flow.inv().path, &bound_result_counter, flow.inv().return_binding);
-                                    } else {
-                                        // Void/pipeline continuations -- emit inline code + branch constructors
-                                        try self.code_emitter.writeIndent();
-                                        try self.code_emitter.write("// >>> INLINE: transformed subflow  [");
-                                        try self.code_emitter.write(flow.location.file);
-                                        try self.code_emitter.write(":");
-                                        var inline_line_buf: [32]u8 = undefined;
-                                        const inline_line_str = try std.fmt.bufPrint(&inline_line_buf, "{}", .{flow.location.line});
-                                        try self.code_emitter.write(inline_line_str);
-                                        try self.code_emitter.write("]\n");
-
-                                        var indent_buf: [64]u8 = undefined;
-                                        var indent_pos: usize = 0;
-                                        var idx: usize = 0;
-                                        while (idx < self.code_emitter.indent_level) : (idx += 1) {
-                                            @memcpy(indent_buf[indent_pos..indent_pos + 4], "    ");
-                                            indent_pos += 4;
-                                        }
-                                        const indent_str = indent_buf[0..indent_pos];
-                                        _ = indent_str;
-
-                                        try self.code_emitter.emitReindentedText(inline_code, indent_buf[0..indent_pos]);
-                                        try self.code_emitter.write("\n");
-
-                                        for (flow.body.continuations) |cont| {
-                                            if (cont.branch.len == 0) {
-                                                if (cont.node) |step| {
-                                                    if (step == .branch_constructor) {
-                                                        const bc = &step.branch_constructor;
-                                                        var value_ctx = emitter.EmissionContext{
-                                                            .allocator = self.allocator,
-                                                            .main_module_name = self.main_module_name,
-                                                        };
-                                                        try self.code_emitter.writeIndent();
-                                                        try self.code_emitter.write("return .{ .");
-                                                        try emitter.writeBranchName(self.code_emitter, bc.branch_name);
-                                                        try self.code_emitter.write(" = .{");
-                                                        for (bc.fields, 0..) |field, k| {
-                                                            if (k > 0) try self.code_emitter.write(",");
-                                                            try self.code_emitter.write(" .");
-                                                            try emitter.writeBranchName(self.code_emitter, field.name);
-                                                            try self.code_emitter.write(" = ");
-                                                            const value = if (field.expression_str) |expr| expr else field.type;
-                                                            const trimmed = std.mem.trim(u8, value, " \t");
-                                                            if (trimmed.len >= 2 and trimmed[0] == '[' and trimmed[trimmed.len - 1] == ']') {
-                                                                if (self.findBranchField(event, bc.branch_name, field.name)) |branch_field| {
-                                                                    try emitter.emitArrayLiteralForField(self.code_emitter, &value_ctx, branch_field, value);
-                                                                } else {
-                                                                    try emitter.emitValue(self.code_emitter, &value_ctx, value);
-                                                                }
-                                                            } else {
-                                                                try emitter.emitValue(self.code_emitter, &value_ctx, value);
-                                                            }
-                                                        }
-                                                        try self.code_emitter.write(" } };\n");
-                                                    }
-                                                }
-                                            }
-                                        }
                                     }
                                 } else if (flow.pre_label != null) {
                                     // Label fold on the subflow RHS (`~spin = #loop step(...)`):
