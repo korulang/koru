@@ -121,6 +121,7 @@ pub const ErrorCode = enum(u16) {
 
     // Store declaration errors (std/store's comptime transforms)
     KORU160, // A store's owned column cannot be drained as declared — no discharger for its held state, or several with no `! discharge` arm to pick. Emitted by koru_std/store.kz, so the .zig-only registry emit-scan can't see it — reserved in scripts/registry_reserved.txt.
+    KORU161, // A std/store declaration or call site is malformed — the store transforms' refusals (wrong arity, missing name, unknown branch, a column type the store cannot address). One code for the class; the message names the specific fault. Emitted by koru_std/store.kz — reserved in scripts/registry_reserved.txt.
 
     // Module structure errors
     KORU200, // Ambiguous module structure (both foo.kz and foo/ exist)

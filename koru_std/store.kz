@@ -234,7 +234,22 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             }
             return true;
         }
-        fn errItem(alloc: std.mem.Allocator, loc: anytype, module: []const u8, comptime fmt: []const u8, args: anytype) ast.Item {
+        /// A store transform's refusal, said TWICE from ONE string: once to the
+        /// compilation's reporter as a located KORU161 the author reads, and once
+        /// as the injected `@compileError` that stops the build.
+        ///
+        /// Both, not either. The reporter sentence is the message; the injected
+        /// error is the stop signal, and it stays because a refusal must halt
+        /// even on a path the transform-phase drain does not reach. KORU160
+        /// already worked this way — but it wrote its sentence out twice, by
+        /// hand, and the two copies had already drifted. Threading one `fmt`
+        /// through both makes that drift structurally impossible.
+        // `rep`, not `reporter`: the generated transform stub already binds
+        // `const reporter = __koru_event_input.reporter` in the enclosing proc,
+        // and a nested fn cannot capture it, so the parameter must be named
+        // something else or Zig refuses the shadow.
+        fn errItem(alloc: std.mem.Allocator, rep: anytype, loc: anytype, module: []const u8, comptime fmt: []const u8, args: anytype) ast.Item {
+            rep.addErrorAtLocation(.KORU161, loc, fmt, args) catch {};
             const inner = std.fmt.allocPrint(alloc, fmt, args) catch unreachable;
             const msg = std.fmt.allocPrint(alloc, "comptime {{ @compileError(\"{s}\"); }}", .{inner}) catch unreachable;
             return ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = loc, .module = module } };
@@ -343,7 +358,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         }
     }
     if (store_name.len == 0 or seed_text == null) {
-        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new requires a name and a seed block: create(name) {{ field: value[type] }}", .{}) } };
+        return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:new requires a name and a seed block: create(name) {{ field: value[type] }}", .{}) } };
     }
 
     // Per-store disposal contract: `[entity(<name>)]` opts this store into the
@@ -382,7 +397,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
     const expr_braced = std.fmt.allocPrint(allocator, "{{{s}}}", .{seed_text.?}) catch unreachable;
     const cell_fields = struct_literal.parseFields(allocator, expr_braced) catch &[_]struct_literal.StructField{};
     if (cell_fields.len == 0) {
-        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): seed block has no fields", .{store_name}) } };
+        return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:new({s}): seed block has no fields", .{store_name}) } };
     }
 
     // ------------------------------------------------------------------
@@ -584,7 +599,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 msg.appendSlice(allocator, e.to_field) catch unreachable;
             }
             msg.appendSlice(allocator, " - interceptor contracts must be acyclic; a convergent self-write needs @converges (unbuilt, queue (d))") catch unreachable;
-            return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "{s}", .{msg.items}) } };
+            return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "{s}", .{msg.items}) } };
         }
     }
 
@@ -602,10 +617,10 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
     for (invocation.args) |a| {
         if (std.mem.eql(u8, a.name, "capacity")) {
             cap_buf = std.fmt.parseInt(usize, std.mem.trim(u8, a.value, " "), 10) catch {
-                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): capacity must be an integer literal (got '{s}')", .{ store_name, a.value }) } };
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:new({s}): capacity must be an integer literal (got '{s}')", .{ store_name, a.value }) } };
             };
             if (cap_buf == 0) {
-                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): capacity must be >= 1 (capacity 1 is the reactive value shape; capacity > 1 is the container shape)", .{store_name}) } };
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:new({s}): capacity must be >= 1 (capacity 1 is the reactive value shape; capacity > 1 is the container shape)", .{store_name}) } };
             }
         }
     }
@@ -615,7 +630,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
     // [tree] sits on the container substrate — a capacity-1 value has no
     // rows to arrange into a forest.
     if (is_tree and !is_plural) {
-        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): [tree] needs a container store - declare a capacity (`capacity: N`, N > 1); a capacity-1 value has no rows to arrange", .{store_name}) } };
+        return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:new({s}): [tree] needs a container store - declare a capacity (`capacity: N`, N > 1); a capacity-1 value has no rows to arrange", .{store_name}) } };
     }
 
     // TT1: the synthesized `parent` column is INVISIBLE — the user's seed
@@ -692,7 +707,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
     };
     for (cell_fields, 0..) |cf, i| {
         if (is_tree and std.mem.eql(u8, cf.name, "parent")) {
-            return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): [tree] synthesizes the `parent` column itself (TT1, invisible) - drop the explicit `parent` declaration", .{store_name}) } };
+            return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:new({s}): [tree] synthesizes the `parent` column itself (TT1, invisible) - drop the explicit `parent` declaration", .{store_name}) } };
         }
         const peeled = struct_literal.peelBaseType(cf.value);
         const has_default = peeled.type.len != 0;
@@ -702,13 +717,13 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         if (std.mem.startsWith(u8, ftype, "char[") and ftype.len > "char[".len and ftype[ftype.len - 1] == ']') {
             const digits = std.mem.trim(u8, ftype["char[".len .. ftype.len - 1], " ");
             const n = std.fmt.parseInt(usize, digits, 10) catch {
-                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): field '{s}': char[N] needs an integer byte length (got '{s}')", .{ store_name, cf.name, ftype }) } };
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:new({s}): field '{s}': char[N] needs an integer byte length (got '{s}')", .{ store_name, cf.name, ftype }) } };
             };
             if (n == 0) {
-                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): field '{s}': char[N] needs N >= 1 - a zero-length fixed-char column holds nothing", .{ store_name, cf.name }) } };
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:new({s}): field '{s}': char[N] needs N >= 1 - a zero-length fixed-char column holds nothing", .{ store_name, cf.name }) } };
             }
             if (!is_plural) {
-                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): field '{s}' is char[{d}] - fixed-char columns live on the container shape (declare `capacity: N`, N > 1); the capacity-1 value tier is scalar-only this rung", .{ store_name, cf.name, n }) } };
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:new({s}): field '{s}' is char[{d}] - fixed-char columns live on the container shape (declare `capacity: N`, N > 1); the capacity-1 value tier is scalar-only this rung", .{ store_name, cf.name, n }) } };
             }
             char_cap = n;
         }
@@ -722,24 +737,24 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         var owned_info: ?OwnedCol = null;
         if (std.mem.startsWith(u8, ftype, "*") or std.mem.indexOfScalar(u8, ftype, '<') != null) {
             if (!std.mem.startsWith(u8, ftype, "*") or std.mem.indexOfScalar(u8, ftype, '<') == null or ftype[ftype.len - 1] != '>') {
-                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): field '{s}' is {s} - an owned column must be a well-formed `*mod:Type<state!>` (pointer, module-qualified type, held obligation)", .{ store_name, cf.name, ftype }) } };
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:new({s}): field '{s}' is {s} - an owned column must be a well-formed `*mod:Type<state!>` (pointer, module-qualified type, held obligation)", .{ store_name, cf.name, ftype }) } };
             }
             const lt = std.mem.indexOfScalar(u8, ftype, '<').?;
             const type_part = std.mem.trim(u8, ftype[1..lt], " "); // "mod:Type"
             var phantom_part = std.mem.trim(u8, ftype[lt + 1 .. ftype.len - 1], " "); // "mod:state!" | "state!"
             const tcolon = std.mem.lastIndexOfScalar(u8, type_part, ':');
             if (tcolon == null) {
-                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): field '{s}' is {s} - an owned column type must be module-qualified `*mod:Type<state!>` so the store can locate its discharger", .{ store_name, cf.name, ftype }) } };
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:new({s}): field '{s}' is {s} - an owned column type must be module-qualified `*mod:Type<state!>` so the store can locate its discharger", .{ store_name, cf.name, ftype }) } };
             }
             const module_slash = type_part[0..tcolon.?];
             const type_name = type_part[tcolon.? + 1 ..];
             if (phantom_part.len == 0 or phantom_part[phantom_part.len - 1] != '!') {
-                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): field '{s}' is {s} - an owned column must hold a live obligation `<state!>` (a bare `<state>` borrow is not owned; 330_067/069)", .{ store_name, cf.name, ftype }) } };
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:new({s}): field '{s}' is {s} - an owned column must hold a live obligation `<state!>` (a bare `<state>` borrow is not owned; 330_067/069)", .{ store_name, cf.name, ftype }) } };
             }
             phantom_part = phantom_part[0 .. phantom_part.len - 1]; // strip trailing '!'
             const state = if (std.mem.lastIndexOfScalar(u8, phantom_part, ':')) |pc| phantom_part[pc + 1 ..] else phantom_part;
             if (!is_plural) {
-                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): field '{s}' is an owned column - owned columns live on the container shape (declare `capacity: N`, N > 1); the capacity-1 value tier is scalar-only this rung", .{ store_name, cf.name }) } };
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:new({s}): field '{s}' is an owned column - owned columns live on the container shape (declare `capacity: N`, N > 1); the capacity-1 value tier is scalar-only this rung", .{ store_name, cf.name }) } };
             }
             owned_col = true;
             owned_info = OwnedCol{
@@ -760,7 +775,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         const known_scalar = std.mem.eql(u8, ftype, "i64") or std.mem.eql(u8, ftype, "i32") or
             std.mem.eql(u8, ftype, "f64") or std.mem.eql(u8, ftype, "f32");
         if (!known_scalar and char_cap == null and !owned_col) {
-            return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): field '{s}' is {s} — columns are scalars (i64/i32/f64/f32), fixed-char (char[N], 690_052), or owned strings (*std/string:String<std/string:instance!>, 690_053); vec/mat tiers are pinned at 690_020", .{ store_name, cf.name, ftype }) } };
+            return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:new({s}): field '{s}' is {s} — columns are scalars (i64/i32/f64/f32), fixed-char (char[N], 690_052), or owned strings (*std/string:String<std/string:instance!>, 690_053); vec/mat tiers are pinned at 690_020", .{ store_name, cf.name, ftype }) } };
         }
         field_names[i] = cf.name;
         field_types[i] = if (char_cap != null)
@@ -805,14 +820,14 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         // <std/store:taken!> on the whole row; an owned column reissues
         // <std.string:instance!> on a field. Composing both is a later rung.
         if (entity_type != null) {
-            return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): [entity(...)] with an owned-string column - one obligation surface per store this rung (the row's <taken!> and the field's <instance!> compose at a later rung)", .{store_name}) } };
+            return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:new({s}): [entity(...)] with an owned-string column - one obligation surface per store this rung (the row's <taken!> and the field's <instance!> compose at a later rung)", .{store_name}) } };
         }
         if (is_tree) {
-            return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): [tree] with an owned-string column is a later rung", .{store_name}) } };
+            return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:new({s}): [tree] with an owned-string column is a later rung", .{store_name}) } };
         }
         for (field_char_caps) |cc| {
             if (cc != null) {
-                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): fixed-char (char[N]) and owned-string columns in one store are a later rung", .{store_name}) } };
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:new({s}): fixed-char (char[N]) and owned-string columns in one store are a later rung", .{store_name}) } };
             }
         }
         // The canonical-discharge wall (690_035, at the column boundary),
@@ -884,7 +899,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 found_param = p.param;
             }
             if (!saw_module) {
-                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): an owned column of *{s}:{s} needs module {s} in scope - add `import {s}`", .{ store_name, oi.module_slash, oi.type_name, oi.module_slash, oi.module_slash }) } };
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:new({s}): an owned column of *{s}:{s} needs module {s} in scope - add `import {s}`", .{ store_name, oi.module_slash, oi.type_name, oi.module_slash, oi.module_slash }) } };
             }
             if (picked == null) {
                 // The store's question is not how MANY dischargers a column
@@ -974,7 +989,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             for (field_owned_info) |maybe_oi| {
                 const oi = maybe_oi orelse continue;
                 if (oi.disch_event.len != 0) {
-                    return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): mixing a canonical owned column (*{s}:{s}) with an ambiguous one (*{s}:{s}) in one store is a later rung - the drain's `! discharge` payload and auto-discharge compose there", .{ store_name, oi.module_slash, oi.type_name, ambig_module, ambig_type }) } };
+                    return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:new({s}): mixing a canonical owned column (*{s}:{s}) with an ambiguous one (*{s}:{s}) in one store is a later rung - the drain's `! discharge` payload and auto-discharge compose there", .{ store_name, oi.module_slash, oi.type_name, ambig_module, ambig_type }) } };
                 }
             }
         }
@@ -985,7 +1000,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
     if (!is_plural) {
         for (field_types[1..]) |ft| {
             if (!std.mem.eql(u8, ft, field_types[0])) {
-                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): mixed column types in one store are a later slice - all fields must share one scalar type for now", .{store_name}) } };
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:new({s}): mixed column types in one store are a later slice - all fields must share one scalar type for now", .{store_name}) } };
             }
         }
     }
@@ -1100,20 +1115,20 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         for (flow.body.continuations) |*ic| {
             const bname = std.mem.trim(u8, ic.branch, " ");
             if (ic.condition != null) {
-                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): guarded interceptors are a later slice - interceptors are the store's unconditional contract", .{store_name}) } };
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:new({s}): guarded interceptors are a later slice - interceptors are the store's unconditional contract", .{store_name}) } };
             }
             if (std.mem.eql(u8, bname, "discharge")) {
                 if (!drain_required) {
-                    return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): `! discharge` applies only to a store with a column the store cannot discharge unattended - every owned column here has one, so they auto-discharge at teardown and the arm would never fire", .{store_name}) } };
+                    return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:new({s}): `! discharge` applies only to a store with a column the store cannot discharge unattended - every owned column here has one, so they auto-discharge at teardown and the arm would never fire", .{store_name}) } };
                 }
                 if (discharge_arm != null) {
-                    return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): one `! discharge` handler per store - the teardown fires ONE handler per live element", .{store_name}) } };
+                    return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:new({s}): one `! discharge` handler per store - the teardown fires ONE handler per live element", .{store_name}) } };
                 }
                 if (ic.binding == null or ic.destructure.len != 0) {
-                    return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): `! discharge` binds the whole row record - spell it `! discharge item |> ...(item.<field>)`", .{store_name}) } };
+                    return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:new({s}): `! discharge` binds the whole row record - spell it `! discharge item |> ...(item.<field>)`", .{store_name}) } };
                 }
                 if (ic.node == null) {
-                    return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): the `! discharge` handler needs a body that discharges the row's obligations (e.g. `! discharge item |> {s}:commit(item.<field>)`)", .{ store_name, ambig_module }) } };
+                    return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:new({s}): the `! discharge` handler needs a body that discharges the row's obligations (e.g. `! discharge item |> {s}:commit(item.<field>)`)", .{ store_name, ambig_module }) } };
                 }
                 discharge_arm = ast_functional.cloneContinuation(allocator, ic) catch unreachable;
                 continue;
@@ -1122,7 +1137,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             const is_removed = std.mem.eql(u8, bname, "removed");
             const is_updated = std.mem.eql(u8, bname, "updated");
             if (!is_inserted and !is_removed and !is_updated) {
-                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): plural interceptor branch '{s}' - the lifecycle slice wires `inserted`, `removed`, and `updated`; field interceptors on plural rows are a later slice", .{ store_name, bname }) } };
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:new({s}): plural interceptor branch '{s}' - the lifecycle slice wires `inserted`, `removed`, and `updated`; field interceptors on plural rows are a later slice", .{ store_name, bname }) } };
             }
             if (is_updated) {
                 // `updated` carries the write contract — the written field's
@@ -1139,17 +1154,17 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                         if (std.mem.eql(u8, df.name, "new")) has_new = true;
                     }
                     if (!has_old or !has_new or ic.destructure.len != 2) {
-                        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): `! updated` binds the written field's images — destructure exactly {{ old, new }} (row fields ride `inserted`/`removed`)", .{store_name}) } };
+                        return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:new({s}): `! updated` binds the written field's images — destructure exactly {{ old, new }} (row fields ride `inserted`/`removed`)", .{store_name}) } };
                     }
                     if (!types_uniform) {
-                        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): `! updated {{ old, new }}` carries ONE written-field image type, but this store mixes column types - per-field updated deltas are a later rung; the discard form (`! updated _`) stays legal", .{store_name}) } };
+                        return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:new({s}): `! updated {{ old, new }}` carries ONE written-field image type, but this store mixes column types - per-field updated deltas are a later rung; the discard form (`! updated _`) stays legal", .{store_name}) } };
                     }
                 }
                 const ubnode = ic.node orelse {
-                    return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): the `! updated` interceptor needs a body (`|> std/store:stored {{ ... }}`)", .{store_name}) } };
+                    return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:new({s}): the `! updated` interceptor needs a body (`|> std/store:stored {{ ... }}`)", .{store_name}) } };
                 };
                 if (ubnode != .invocation) {
-                    return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): the `! updated` interceptor body must start with an invocation this rung", .{store_name}) } };
+                    return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:new({s}): the `! updated` interceptor body must start with an invocation this rung", .{store_name}) } };
                 }
                 var unames = std.ArrayList([]const u8).initCapacity(allocator, 2) catch unreachable;
                 if (!is_discard) {
@@ -1165,7 +1180,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             var dnames = std.ArrayList([]const u8).initCapacity(allocator, ic.destructure.len) catch unreachable;
             for (ic.destructure) |df| {
                 if (df.type_text != null) {
-                    return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): `! {s}` projects row fields by pun (`{{ {s} }}`); renames are a later slice", .{ store_name, bname, df.name }) } };
+                    return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:new({s}): `! {s}` projects row fields by pun (`{{ {s} }}`); renames are a later slice", .{ store_name, bname, df.name }) } };
                 }
                 const known = blk: {
                     for (field_names) |fn3| {
@@ -1174,19 +1189,19 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                     break :blk false;
                 };
                 if (!known) {
-                    return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): `! {s}` payload field '{s}' is not a field of store '{s}'", .{ store_name, bname, df.name, store_name }) } };
+                    return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:new({s}): `! {s}` payload field '{s}' is not a field of store '{s}'", .{ store_name, bname, df.name, store_name }) } };
                 }
                 dnames.append(allocator, allocator.dupe(u8, df.name) catch unreachable) catch unreachable;
             }
             const bnode = ic.node orelse {
-                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): the `! {s}` interceptor needs a body (`|> std/store:stored {{ ... }}`)", .{ store_name, bname }) } };
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:new({s}): the `! {s}` interceptor needs a body (`|> std/store:stored {{ ... }}`)", .{ store_name, bname }) } };
             };
             if (bnode != .invocation) {
-                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): the `! {s}` interceptor body must start with an invocation this rung", .{ store_name, bname }) } };
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:new({s}): the `! {s}` interceptor body must start with an invocation this rung", .{ store_name, bname }) } };
             }
             for (dnames.items) |fnm| {
                 if (!Usage.inCont(ic, fnm)) {
-                    return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): `! {s}` binds '{s}' but never uses it — discard the payload (`! {s} _`), or use the field in the body", .{ store_name, bname, fnm, bname }) } };
+                    return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:new({s}): `! {s}` binds '{s}' but never uses it — discard the payload (`! {s} _`), or use the field in the body", .{ store_name, bname, fnm, bname }) } };
                 }
             }
             const arm = LifecycleArm{
@@ -1231,7 +1246,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                     .{ambig_module},
                 ) catch {};
             }
-            return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): column *{s}:{s} has {d} dischargers for <!{s}> (ambiguous) - the store cannot pick one, so it must be DRAINED: bolt a `! discharge item |> ...` handler onto the store declaration to discharge each still-live element at teardown", .{ store_name, ambig_module, ambig_type, ambig_count, ambig_state }) } };
+            return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:new({s}): column *{s}:{s} has {d} dischargers for <!{s}> (ambiguous) - the store cannot pick one, so it must be DRAINED: bolt a `! discharge item |> ...` handler onto the store declaration to discharge each still-live element at teardown", .{ store_name, ambig_module, ambig_type, ambig_count, ambig_state }) } };
         }
 
         // ---- collect this store's watch arms (field-granular, plural) ----
@@ -1249,11 +1264,11 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                     for (field_names, 0..) |fname, i| {
                         if (std.mem.eql(u8, std.mem.trim(u8, wc.branch, " "), fname)) break :blk i;
                     }
-                    return .{ .transformed = .{ .replacement = H.errItem(allocator, wf.location, wf.module, "std/store:watch({s}): '{s}' is not a field of store '{s}'", .{ store_name, wc.branch, store_name }) } };
+                    return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, wf.location, wf.module, "std/store:watch({s}): '{s}' is not a field of store '{s}'", .{ store_name, wc.branch, store_name }) } };
                 };
                 for (pwatch_arms.items) |existing| {
                     if (existing.field_idx == fidx) {
-                        return .{ .transformed = .{ .replacement = H.errItem(allocator, wf.location, wf.module, "std/store:watch({s}): field '{s}' is watched more than once - multi-watch sequencing is pinned at 690_010", .{ store_name, wc.branch }) } };
+                        return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, wf.location, wf.module, "std/store:watch({s}): field '{s}' is watched more than once - multi-watch sequencing is pinned at 690_010", .{ store_name, wc.branch }) } };
                     }
                 }
                 // A `when` guard fuses into the write path as an arm condition
@@ -1300,14 +1315,14 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 continue;
             const q_is_preorder = std.mem.eql(u8, q_verb, "preorder");
             if (q_is_preorder and !is_tree) {
-                return .{ .transformed = .{ .replacement = H.errItem(allocator, qf.location, qf.module, "std/store:preorder({s}): preorder needs a [tree] store - '{s}' has no synthesized parent column (declare it as [tree]std/store:new({s}) {{ ... }})", .{ store_name, store_name, store_name }) } };
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, qf.location, qf.module, "std/store:preorder({s}): preorder needs a [tree] store - '{s}' has no synthesized parent column (declare it as [tree]std/store:new({s}) {{ ... }})", .{ store_name, store_name, store_name }) } };
             }
             if (qf.body.continuations.len != 1) {
-                return .{ .transformed = .{ .replacement = H.errItem(allocator, qf.location, qf.module, "std/store:{s}({s}): exactly one `! {s} {{ ... }}` branch per site this rung", .{ q_verb, store_name, q_verb }) } };
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, qf.location, qf.module, "std/store:{s}({s}): exactly one `! {s} {{ ... }}` branch per site this rung", .{ q_verb, store_name, q_verb }) } };
             }
             const qc = &qf.body.continuations[0];
             if (!std.mem.eql(u8, std.mem.trim(u8, qc.branch, " "), q_verb)) {
-                return .{ .transformed = .{ .replacement = H.errItem(allocator, qf.location, qf.module, "std/store:{s}({s}): branch '{s}' - the row branch is spelled `! {s} {{ projection }}` (O1 fire-vocabulary is open)", .{ q_verb, store_name, qc.branch, q_verb }) } };
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, qf.location, qf.module, "std/store:{s}({s}): branch '{s}' - the row branch is spelled `! {s} {{ projection }}` (O1 fire-vocabulary is open)", .{ q_verb, store_name, qc.branch, q_verb }) } };
             }
             // The row branch is an EFFECT arm the site FIRES (`! query`), not an
             // outcome it returns — the continuation marker must be `!`, never `|`.
@@ -1317,10 +1332,10 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             // the phantom checker; query installs a standing rule and never mints a
             // matchable outcome event, so its marker is validated here.)
             if (qc.kind != .effect) {
-                return .{ .transformed = .{ .replacement = H.errItem(allocator, qf.location, qf.module, "std/store:{s}({s}): continuation marker `|` used where an effect branch is required — `{s}` fires the effect arm `! {s}`, not `| {s}`", .{ q_verb, store_name, q_verb, q_verb, q_verb }) } };
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, qf.location, qf.module, "std/store:{s}({s}): continuation marker `|` used where an effect branch is required — `{s}` fires the effect arm `! {s}`, not `| {s}`", .{ q_verb, store_name, q_verb, q_verb, q_verb }) } };
             }
             if (qc.destructure.len == 0) {
-                return .{ .transformed = .{ .replacement = H.errItem(allocator, qf.location, qf.module, "std/store:{s}({s}): the {s} branch needs a projection block: `! {s} {{ entity.field, name: entity.field }}`", .{ q_verb, store_name, q_verb, q_verb }) } };
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, qf.location, qf.module, "std/store:{s}({s}): the {s} branch needs a projection block: `! {s} {{ entity.field, name: entity.field }}`", .{ q_verb, store_name, q_verb, q_verb }) } };
             }
             var pnames = std.ArrayList([]const u8).initCapacity(allocator, qc.destructure.len) catch unreachable;
             var pfields = std.ArrayList(usize).initCapacity(allocator, qc.destructure.len) catch unreachable;
@@ -1338,22 +1353,22 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 } else {
                     path = df.name;
                     const last_dot = std.mem.lastIndexOfScalar(u8, df.name, '.') orelse {
-                        return .{ .transformed = .{ .replacement = H.errItem(allocator, qf.location, qf.module, "std/store:{s}({s}): projection entry '{s}' is not a path - project store fields as `entity.<field>`", .{ q_verb, store_name, df.name }) } };
+                        return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, qf.location, qf.module, "std/store:{s}({s}): projection entry '{s}' is not a path - project store fields as `entity.<field>`", .{ q_verb, store_name, df.name }) } };
                     };
                     bound = df.name[last_dot + 1 ..];
                 }
                 if (!std.mem.startsWith(u8, path, "entity.")) {
-                    return .{ .transformed = .{ .replacement = H.errItem(allocator, qf.location, qf.module, "std/store:{s}({s}): projection path '{s}' must root at `entity.` (the bound row)", .{ q_verb, store_name, path }) } };
+                    return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, qf.location, qf.module, "std/store:{s}({s}): projection path '{s}' must root at `entity.` (the bound row)", .{ q_verb, store_name, path }) } };
                 }
                 const fname = path["entity.".len..];
                 if (df.type_text != null and std.mem.eql(u8, bound, fname)) {
-                    return .{ .transformed = .{ .replacement = H.errItem(allocator, qf.location, qf.module, "std/store:{s}({s}): `{s}: entity.{s}` is a redundant label - punning is mandatory; write `entity.{s}`", .{ q_verb, store_name, bound, fname, fname }) } };
+                    return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, qf.location, qf.module, "std/store:{s}({s}): `{s}: entity.{s}` is a redundant label - punning is mandatory; write `entity.{s}`", .{ q_verb, store_name, bound, fname, fname }) } };
                 }
                 const fidx: usize = blk: {
                     for (field_names, 0..) |fn2, i| {
                         if (std.mem.eql(u8, fn2, fname)) break :blk i;
                     }
-                    return .{ .transformed = .{ .replacement = H.errItem(allocator, qf.location, qf.module, "std/store:{s}({s}): 'entity.{s}' - '{s}' is not a field of store '{s}'", .{ q_verb, store_name, fname, fname, store_name }) } };
+                    return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, qf.location, qf.module, "std/store:{s}({s}): 'entity.{s}' - '{s}' is not a field of store '{s}'", .{ q_verb, store_name, fname, fname, store_name }) } };
                 };
                 pnames.append(allocator, bound) catch unreachable;
                 pfields.append(allocator, fidx) catch unreachable;
@@ -1364,7 +1379,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             var q_rule_name: ?[]const u8 = null;
             if (ann_parser.getCall(allocator, qf.annotations, "name") catch null) |nc| {
                 if (nc.args.len != 1) {
-                    return .{ .transformed = .{ .replacement = H.errItem(allocator, qf.location, qf.module, "std/store:query({s}): [name(...)] takes exactly one identifier — [name(movement)]", .{store_name}) } };
+                    return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, qf.location, qf.module, "std/store:query({s}): [name(...)] takes exactly one identifier — [name(movement)]", .{store_name}) } };
                 }
                 q_rule_name = allocator.dupe(u8, nc.args[0]) catch unreachable;
             }
@@ -1400,7 +1415,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 for (qsites.items[ia + 1 ..]) |qb| {
                     const nb = qb.rule_name orelse continue;
                     if (std.mem.eql(u8, na, nb) and std.mem.eql(u8, qa.rule_module, qb.rule_module)) {
-                        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:query({s}): two rules named [name({s})] in module '{s}' — rule names are unique per module", .{ store_name, na, qa.rule_module }) } };
+                        return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:query({s}): two rules named [name({s})] in module '{s}' — rule names are unique per module", .{ store_name, na, qa.rule_module }) } };
                     }
                 }
             }
@@ -1430,9 +1445,9 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                     }
                     if (found == null) {
                         if (foreign_hit) |fm| {
-                            return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:query({s}): depends_on({s}) — bare rule names resolve in the declaring module only; rule '{s}' lives in module '{s}', write depends_on({s}:{s})", .{ store_name, dep, dep_name, fm, fm, dep_name }) } };
+                            return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:query({s}): depends_on({s}) — bare rule names resolve in the declaring module only; rule '{s}' lives in module '{s}', write depends_on({s}:{s})", .{ store_name, dep, dep_name, fm, fm, dep_name }) } };
                         }
-                        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:query({s}): depends_on({s}) — no rule named [name({s})] on this store in module '{s}'", .{ store_name, dep, dep_name, qs2.rule_module }) } };
+                        return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:query({s}): depends_on({s}) — no rule named [name({s})] on this store in module '{s}'", .{ store_name, dep, dep_name, qs2.rule_module }) } };
                     }
                     row_edges.append(allocator, found.?) catch unreachable;
                 }
@@ -1471,7 +1486,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                             cyc.appendSlice(allocator, rn) catch unreachable;
                         }
                     }
-                    return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:query({s}): depends_on cycle among rules: {s}", .{ store_name, cyc.items }) } };
+                    return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:query({s}): depends_on cycle among rules: {s}", .{ store_name, cyc.items }) } };
                 }
             }
         }
@@ -1636,10 +1651,10 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         // silently never fire).
         if (has_owned) {
             if (drain_required and pwatch_arms.items.len > 0) {
-                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:watch({s}): watch over a DRAIN store (ambiguous discharger) is a later rung - the write surface needs the canonical discharger to evict the old value (690_062), which *{s}:{s} does not have (declare exactly one, or drop the watch)", .{ store_name, ambig_module, ambig_type }) } };
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:watch({s}): watch over a DRAIN store (ambiguous discharger) is a later rung - the write surface needs the canonical discharger to evict the old value (690_062), which *{s}:{s} does not have (declare exactly one, or drop the watch)", .{ store_name, ambig_module, ambig_type }) } };
             }
             if (updated_arms.items.len > 0) {
-                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): the `updated` interceptor over an owned column is a later rung - it carries TWO owned images (old and new) of the written field; `inserted`/`removed`/`watch` over owned are built (690_061/065/063)", .{store_name}) } };
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:new({s}): the `updated` interceptor over an owned column is a later rung - it carries TWO owned images (old and new) of the written field; `inserted`/`removed`/`watch` over owned are built (690_061/065/063)", .{store_name}) } };
             }
         }
 
@@ -2534,10 +2549,10 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             } }) catch unreachable;
 
             const body_node = qs.body.node orelse {
-                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:query({s}): the query branch needs a body (`|> ...`)", .{store_name}) } };
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:query({s}): the query branch needs a body (`|> ...`)", .{store_name}) } };
             };
             if (body_node != .invocation) {
-                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:query({s}): the query body must start with an invocation this rung", .{store_name}) } };
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:query({s}): the query body must start with an invocation this rung", .{store_name}) } };
             }
             appended_items.append(allocator, ast.Item{ .flow = ast.Flow{
                 .body = ast.rootSite(body_node.invocation, qs.body.continuations, flow.location),
@@ -3167,7 +3182,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
     for (flow.body.continuations) |*ic| {
         const bname = std.mem.trim(u8, ic.branch, " ");
         if (ic.condition != null) {
-            return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): guarded interceptors are a later slice - interceptors are the store's unconditional contract", .{store_name}) } };
+            return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:new({s}): guarded interceptors are a later slice - interceptors are the store's unconditional contract", .{store_name}) } };
         }
         if (std.mem.eql(u8, bname, "updated")) {
             var has_old = false;
@@ -3177,7 +3192,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 if (std.mem.eql(u8, df.name, "new")) has_new = true;
             }
             if (!has_old or !has_new or ic.destructure.len != 2) {
-                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): `! updated` must destructure exactly {{ old, new }} this slice", .{store_name}) } };
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:new({s}): `! updated` must destructure exactly {{ old, new }} this slice", .{store_name}) } };
             }
             updated_iceptors.append(allocator, ast_functional.cloneContinuation(allocator, ic) catch unreachable) catch unreachable;
             continue;
@@ -3186,11 +3201,11 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             for (field_names, 0..) |fname, i| {
                 if (std.mem.eql(u8, bname, fname)) break :blk i;
             }
-            return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): interceptor branch '{s}' is neither a field nor `updated` (inserted/removed are rung two)", .{ store_name, bname }) } };
+            return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:new({s}): interceptor branch '{s}' is neither a field nor `updated` (inserted/removed are rung two)", .{ store_name, bname }) } };
         };
         const b = ic.binding orelse "";
         if (!std.mem.eql(u8, b, "_")) {
-            return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): field interceptor `! {s}` must discard its payload (`! {s} _`) this slice - bind values via `updated {{ old, new }}`", .{ store_name, bname, bname }) } };
+            return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:new({s}): field interceptor `! {s}` must discard its payload (`! {s} _`) this slice - bind values via `updated {{ old, new }}`", .{ store_name, bname, bname }) } };
         }
         field_iceptors.append(allocator, .{ .field_idx = fidx, .cont = ast_functional.cloneContinuation(allocator, ic) catch unreachable }) catch unreachable;
     }
@@ -3213,7 +3228,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 for (field_names, 0..) |fname, i| {
                     if (std.mem.eql(u8, std.mem.trim(u8, wc.branch, " "), fname)) break :blk i;
                 }
-                return .{ .transformed = .{ .replacement = H.errItem(allocator, wf.location, wf.module, "std/store:watch({s}): '{s}' is not a field of store '{s}'", .{ store_name, wc.branch, store_name }) } };
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, wf.location, wf.module, "std/store:watch({s}): '{s}' is not a field of store '{s}'", .{ store_name, wc.branch, store_name }) } };
             };
             // Ruling 4: subscriptions are consumer-level and MANY - every
             // watch on a field fires, in source order (690_010).
@@ -3318,7 +3333,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
     // store is a later slice.
     const old_new_mode = updated_iceptors.items.len != 0;
     if (old_new_mode and (watch_arms.items.len != 0 or field_iceptors.items.len != 0)) {
-        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): mixing `updated {{ old, new }}` with field watches/interceptors on one store is a later slice", .{store_name}) } };
+        return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:new({s}): mixing `updated {{ old, new }}` with field watches/interceptors on one store is a later slice", .{store_name}) } };
     }
 
     // All store names visible in the program — untransformed creates plus
@@ -3816,7 +3831,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         }
         const watch_guarded = any_watch_guarded;
         if (watch_guarded and segments.items.len > 1) {
-            return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:new({s}): a guarded watch on a field that also has interceptors or sibling watches is a later slice", .{store_name}) } };
+            return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:new({s}): a guarded watch on a field that also has interceptors or sibling watches is a later slice", .{store_name}) } };
         }
 
         var arm = ast_functional.cloneContinuation(allocator, segments.items[0]) catch unreachable;
@@ -4193,6 +4208,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
     invocation: *const Invocation,
     item: *const Item,
     program: *const Program,
+    reporter: *std/compiler:ErrorReporter,
     allocator: std.mem.Allocator
 } -> SiteResult
 
@@ -4209,7 +4225,22 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             if (n.len >= 2 and n[0] == '"') return n[1 .. n.len - 1];
             return n;
         }
-        fn errItem(alloc: std.mem.Allocator, loc: anytype, module: []const u8, comptime fmt: []const u8, args: anytype) ast.Item {
+        /// A store transform's refusal, said TWICE from ONE string: once to the
+        /// compilation's reporter as a located KORU161 the author reads, and once
+        /// as the injected `@compileError` that stops the build.
+        ///
+        /// Both, not either. The reporter sentence is the message; the injected
+        /// error is the stop signal, and it stays because a refusal must halt
+        /// even on a path the transform-phase drain does not reach. KORU160
+        /// already worked this way — but it wrote its sentence out twice, by
+        /// hand, and the two copies had already drifted. Threading one `fmt`
+        /// through both makes that drift structurally impossible.
+        // `rep`, not `reporter`: the generated transform stub already binds
+        // `const reporter = __koru_event_input.reporter` in the enclosing proc,
+        // and a nested fn cannot capture it, so the parameter must be named
+        // something else or Zig refuses the shadow.
+        fn errItem(alloc: std.mem.Allocator, rep: anytype, loc: anytype, module: []const u8, comptime fmt: []const u8, args: anytype) ast.Item {
+            rep.addErrorAtLocation(.KORU161, loc, fmt, args) catch {};
             const inner = std.fmt.allocPrint(alloc, fmt, args) catch unreachable;
             const msg = std.fmt.allocPrint(alloc, "comptime {{ @compileError(\"{s}\"); }}", .{inner}) catch unreachable;
             return ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = loc, .module = module } };
@@ -4426,15 +4457,15 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         if (std.mem.eql(u8, arg.name, "source")) block_text = arg.value;
     }
     if (block_text == null) {
-        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:stored requires a write block: stored {{ store.field: expr }}", .{}) } };
+        return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:stored requires a write block: stored {{ store.field: expr }}", .{}) } };
     }
 
     const braced = std.fmt.allocPrint(allocator, "{{{s}}}", .{block_text.?}) catch unreachable;
     const writes = struct_literal.parseFields(allocator, braced) catch |err| {
-        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:stored: {s}", .{struct_literal.describeError(err)}) } };
+        return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:stored: {s}", .{struct_literal.describeError(err)}) } };
     };
     if (writes.len == 0) {
-        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:stored: write block is empty", .{}) } };
+        return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:stored: write block is empty", .{}) } };
     }
 
     // THE CHAIN IS THE ENVELOPE ((i) lean, 690_009): a multi-field block
@@ -4447,19 +4478,19 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         const env_values = allocator.alloc([]const u8, writes.len) catch unreachable;
         for (writes, 0..) |wm, wi| {
             const dotm = std.mem.indexOfScalar(u8, wm.name, '.') orelse {
-                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:stored: envelope target '{s}' must be store.field", .{wm.name}) } };
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:stored: envelope target '{s}' must be store.field", .{wm.name}) } };
             };
             const st = wm.name[0..dotm];
             if (env_store.len == 0) {
                 env_store = st;
             } else if (!std.mem.eql(u8, env_store, st)) {
-                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:stored: a multi-field envelope writes ONE store this rung ('{s}' vs '{s}')", .{ env_store, st }) } };
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:stored: a multi-field envelope writes ONE store this rung ('{s}' vs '{s}')", .{ env_store, st }) } };
             }
             env_fields[wi] = wm.name[dotm + 1 ..];
             env_values[wi] = H.storeRefs(allocator, wm.value, st);
         }
         const order_env = H.fieldOrder(allocator, program, env_store) orelse {
-            return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:stored: unknown store '{s}'", .{env_store}) } };
+            return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:stored: unknown store '{s}'", .{env_store}) } };
         };
         const env_idx = allocator.alloc(usize, writes.len) catch unreachable;
         for (env_fields, 0..) |ef, wi| {
@@ -4467,7 +4498,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 for (order_env, 0..) |fname, i| {
                     if (std.mem.eql(u8, fname, ef)) break :blk i;
                 }
-                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:stored: '{s}' is not a field of store '{s}'", .{ ef, env_store }) } };
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:stored: '{s}' is not a field of store '{s}'", .{ ef, env_store }) } };
             };
         }
         // Build the chain: envwrite each, then announce each (write order).
@@ -4542,17 +4573,17 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
     var row_expr: ?[]const u8 = null;
     if (std.mem.indexOfScalar(u8, w.name, '[')) |lb| {
         const rb = std.mem.lastIndexOfScalar(u8, w.name, ']') orelse {
-            return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:stored: malformed addressing head '{s}'", .{w.name}) } };
+            return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:stored: malformed addressing head '{s}'", .{w.name}) } };
         };
         if (rb + 1 >= w.name.len or w.name[rb + 1] != '.') {
-            return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:stored: addressing head '{s}' needs a field: store[handle].field", .{w.name}) } };
+            return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:stored: addressing head '{s}' needs a field: store[handle].field", .{w.name}) } };
         }
         target_store = std.mem.trim(u8, w.name[0..lb], " ");
         row_expr = std.mem.trim(u8, w.name[lb + 1 .. rb], " ");
         target_field = w.name[rb + 2 ..];
     } else {
         const dot = std.mem.indexOfScalar(u8, w.name, '.') orelse {
-            return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:stored target '{s}' must be a dotted store path (store.field)", .{w.name}) } };
+            return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:stored target '{s}' must be a dotted store path (store.field)", .{w.name}) } };
         };
         target_store = w.name[0..dot];
         target_field = w.name[dot + 1 ..];
@@ -4570,10 +4601,10 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         break :blk false;
     };
     if (row_expr == null and is_plural_store) {
-        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:stored: '{s}' is a container store (capacity > 1) - address the row ({s}[handle].{s}, or write through a query branch)", .{ target_store, target_store, target_field }) } };
+        return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:stored: '{s}' is a container store (capacity > 1) - address the row ({s}[handle].{s}, or write through a query branch)", .{ target_store, target_store, target_field }) } };
     }
     if (row_expr != null and !is_plural_store) {
-        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:stored: '{s}' is a capacity-1 value store - write it as {s}.{s}", .{ target_store, target_store, target_field }) } };
+        return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:stored: '{s}' is a capacity-1 value store - write it as {s}.{s}", .{ target_store, target_store, target_field }) } };
     }
 
     // Owned-column stores now generate the write surface (the WRITE rung,
@@ -4595,18 +4626,18 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             if (std.mem.eql(u8, ed.path.segments[0], apply_probe)) has_apply = true;
         }
         if (has_teardown and !has_apply) {
-            return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:stored: store '{s}' is a DRAIN store (ambiguous discharger) - a stored write must evict the old value through the canonical discharger, which its owned column does not have; declare exactly one void discharger for the column type (690_062 pins the write; 690_057/058 pin the drain)", .{target_store}) } };
+            return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:stored: store '{s}' is a DRAIN store (ambiguous discharger) - a stored write must evict the old value through the canonical discharger, which its owned column does not have; declare exactly one void discharger for the column type (690_062 pins the write; 690_057/058 pin the drain)", .{target_store}) } };
         }
     }
 
     const order = H.fieldOrder(allocator, program, target_store) orelse {
-        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:stored: unknown store '{s}' - no std/store:new({s}) found", .{ target_store, target_store }) } };
+        return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:stored: unknown store '{s}' - no std/store:new({s}) found", .{ target_store, target_store }) } };
     };
     const field_idx: usize = blk: {
         for (order, 0..) |fname, i| {
             if (std.mem.eql(u8, fname, target_field)) break :blk i;
         }
-        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:stored: '{s}' is not a field of store '{s}'", .{ target_field, target_store }) } };
+        return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:stored: '{s}' is not a field of store '{s}'", .{ target_field, target_store }) } };
     };
 
     // SELF-FK traversal head: `store[handle.reffield]` addresses the row whose
@@ -4660,13 +4691,13 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             break :blk false;
         };
         if (!store_is_tree) {
-            return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:stored: `| cycle` guards the synthesized parent write of a [tree] store - '{s}' is not a [tree] store", .{target_store}) } };
+            return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:stored: `| cycle` guards the synthesized parent write of a [tree] store - '{s}' is not a [tree] store", .{target_store}) } };
         }
         if (!std.mem.eql(u8, target_field, "parent")) {
-            return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:stored: `| cycle` attaches to the [tree]-synthesized parent write - '{s}.{s}' is not the parent column", .{ target_store, target_field }) } };
+            return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:stored: `| cycle` attaches to the [tree]-synthesized parent write - '{s}.{s}' is not the parent column", .{ target_store, target_field }) } };
         }
         const re = row_expr orelse {
-            return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:stored: `| cycle` needs a row-addressed parent write ({s}[handle].parent)", .{target_store}) } };
+            return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:stored: `| cycle` needs a row-addressed parent write ({s}[handle].parent)", .{target_store}) } };
         };
         var cyc_conts = std.ArrayList(ast.Continuation).initCapacity(allocator, flow.body.continuations.len + 1) catch unreachable;
         var has_ok_cont = false;
@@ -4678,7 +4709,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 cl.branch = allocator.dupe(u8, "ok") catch unreachable;
                 has_ok_cont = true;
             } else if (!std.mem.eql(u8, bname, "cycle")) {
-                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:stored: branch '{s}' - a guarded parent write answers `|>` (ok) and `| cycle` only", .{c.branch}) } };
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:stored: branch '{s}' - a guarded parent write answers `|>` (ok) and `| cycle` only", .{c.branch}) } };
             }
             cyc_conts.append(allocator, cl) catch unreachable;
         }
@@ -4754,7 +4785,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                     break :types_blk types;
                 }
             }
-            return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:stored: internal - plural store '{s}' has no generated apply event (create must have run: inserth exists without apply)", .{target_store}) } };
+            return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:stored: internal - plural store '{s}' has no generated apply event (create must have run: inserth exists without apply)", .{target_store}) } };
         };
         // A write rides ONE typed value slot per column; a slot no arm reads
         // is a typed zero (690_049). An OWNED column has no typed zero — a
@@ -4873,6 +4904,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
     invocation: *const Invocation,
     item: *const Item,
     program: *const Program,
+    reporter: *std/compiler:ErrorReporter,
     allocator: std.mem.Allocator
 } -> SiteResult
 
@@ -4946,6 +4978,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
     invocation: *const Invocation,
     item: *const Item,
     program: *const Program,
+    reporter: *std/compiler:ErrorReporter,
     allocator: std.mem.Allocator
 } -> SiteResult
 
@@ -4959,7 +4992,22 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             if (n.len >= 2 and n[0] == '"') return n[1 .. n.len - 1];
             return n;
         }
-        fn errItem(alloc: std.mem.Allocator, loc: anytype, module: []const u8, comptime fmt: []const u8, args: anytype) ast.Item {
+        /// A store transform's refusal, said TWICE from ONE string: once to the
+        /// compilation's reporter as a located KORU161 the author reads, and once
+        /// as the injected `@compileError` that stops the build.
+        ///
+        /// Both, not either. The reporter sentence is the message; the injected
+        /// error is the stop signal, and it stays because a refusal must halt
+        /// even on a path the transform-phase drain does not reach. KORU160
+        /// already worked this way — but it wrote its sentence out twice, by
+        /// hand, and the two copies had already drifted. Threading one `fmt`
+        /// through both makes that drift structurally impossible.
+        // `rep`, not `reporter`: the generated transform stub already binds
+        // `const reporter = __koru_event_input.reporter` in the enclosing proc,
+        // and a nested fn cannot capture it, so the parameter must be named
+        // something else or Zig refuses the shadow.
+        fn errItem(alloc: std.mem.Allocator, rep: anytype, loc: anytype, module: []const u8, comptime fmt: []const u8, args: anytype) ast.Item {
+            rep.addErrorAtLocation(.KORU161, loc, fmt, args) catch {};
             const inner = std.fmt.allocPrint(alloc, fmt, args) catch unreachable;
             const msg = std.fmt.allocPrint(alloc, "comptime {{ @compileError(\"{s}\"); }}", .{inner}) catch unreachable;
             return ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = loc, .module = module } };
@@ -4971,7 +5019,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         if (std.mem.eql(u8, arg.name, "expr")) store_name = H.stripQuotes(arg.value);
     }
     if (store_name.len == 0) {
-        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:watch requires a store name: watch(name)", .{}) } };
+        return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:watch requires a store name: watch(name)", .{}) } };
     }
 
     // ------------------------------------------------------------------
@@ -5170,7 +5218,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             var pctx = Purity.Ctx{ .scope = &scope, .allocator = allocator, .stores = known_stores.items };
             Purity.scanCont(&pctx, wc);
             if (pctx.violation) |name| {
-                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store: watch body references '{s}', runtime state of the enclosing flow - a watch body executes at '{s}'s write sites, not here; bind it through a store or react at a write site", .{ name, store_name }) } };
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store: watch body references '{s}', runtime state of the enclosing flow - a watch body executes at '{s}'s write sites, not here; bind it through a store or react at a write site", .{ name, store_name }) } };
             }
         }
     }
@@ -5180,7 +5228,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
     // rather than silently dropping the subscription.
     const is_top_level = invocation == flow.inv();
     if (!is_top_level) {
-        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:watch({s}): nested watch splicing is a later slice - place the watch at top level for now", .{store_name}) } };
+        return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:watch({s}): nested watch splicing is a later slice - place the watch at top level for now", .{store_name}) } };
     }
 
     // Did the coordinator already run? Its generated write event is the marker.
@@ -5219,9 +5267,9 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         }
     }
     if (create_exists) {
-        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:watch({s}): the watch precedes its store's create in source - declare the store first (rung-one ordering)", .{store_name}) } };
+        return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:watch({s}): the watch precedes its store's create in source - declare the store first (rung-one ordering)", .{store_name}) } };
     }
-    return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:watch({s}): unknown store - no std/store:new({s}) found", .{ store_name, store_name }) } };
+    return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:watch({s}): unknown store - no std/store:new({s}) found", .{ store_name, store_name }) } };
 }
 
 // ============================================================================
@@ -5242,6 +5290,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
     invocation: *const Invocation,
     item: *const Item,
     program: *const Program,
+    reporter: *std/compiler:ErrorReporter,
     allocator: std.mem.Allocator
 } -> SiteResult
 
@@ -5258,7 +5307,22 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             if (n.len >= 2 and n[0] == '"') return n[1 .. n.len - 1];
             return n;
         }
-        fn errItem(alloc: std.mem.Allocator, loc: anytype, module: []const u8, comptime fmt: []const u8, args: anytype) ast.Item {
+        /// A store transform's refusal, said TWICE from ONE string: once to the
+        /// compilation's reporter as a located KORU161 the author reads, and once
+        /// as the injected `@compileError` that stops the build.
+        ///
+        /// Both, not either. The reporter sentence is the message; the injected
+        /// error is the stop signal, and it stays because a refusal must halt
+        /// even on a path the transform-phase drain does not reach. KORU160
+        /// already worked this way — but it wrote its sentence out twice, by
+        /// hand, and the two copies had already drifted. Threading one `fmt`
+        /// through both makes that drift structurally impossible.
+        // `rep`, not `reporter`: the generated transform stub already binds
+        // `const reporter = __koru_event_input.reporter` in the enclosing proc,
+        // and a nested fn cannot capture it, so the parameter must be named
+        // something else or Zig refuses the shadow.
+        fn errItem(alloc: std.mem.Allocator, rep: anytype, loc: anytype, module: []const u8, comptime fmt: []const u8, args: anytype) ast.Item {
+            rep.addErrorAtLocation(.KORU161, loc, fmt, args) catch {};
             const inner = std.fmt.allocPrint(alloc, fmt, args) catch unreachable;
             const msg = std.fmt.allocPrint(alloc, "comptime {{ @compileError(\"{s}\"); }}", .{inner}) catch unreachable;
             return ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = loc, .module = module } };
@@ -5404,19 +5468,19 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         if (std.mem.eql(u8, arg.name, "source")) block_text = arg.value;
     }
     if (store_name.len == 0 or block_text == null) {
-        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:insert requires a store name and a row block: insert(name) {{ field: value }}", .{}) } };
+        return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:insert requires a store name and a row block: insert(name) {{ field: value }}", .{}) } };
     }
 
     const order = H.fieldOrder(allocator, program, store_name) orelse {
-        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:insert: unknown store '{s}' - no std/store:new({s}) found", .{ store_name, store_name }) } };
+        return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:insert: unknown store '{s}' - no std/store:new({s}) found", .{ store_name, store_name }) } };
     };
 
     const braced = std.fmt.allocPrint(allocator, "{{{s}}}", .{block_text.?}) catch unreachable;
     const row_fields = struct_literal.parseFields(allocator, braced) catch |err| {
-        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:insert({s}): {s}", .{ store_name, struct_literal.describeError(err) }) } };
+        return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:insert({s}): {s}", .{ store_name, struct_literal.describeError(err) }) } };
     };
     if (row_fields.len != order.len) {
-        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:insert({s}): a row block names every column exactly once ({d} given, {d} declared)", .{ store_name, row_fields.len, order.len }) } };
+        return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:insert({s}): a row block names every column exactly once ({d} given, {d} declared)", .{ store_name, row_fields.len, order.len }) } };
     }
 
     // Args in declared column order; every column required.
@@ -5426,7 +5490,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             for (row_fields) |rf| {
                 if (std.mem.eql(u8, rf.name, col)) break :blk rf.value;
             }
-            return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:insert({s}): row block is missing column '{s}'", .{ store_name, col }) } };
+            return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:insert({s}): row block is missing column '{s}'", .{ store_name, col }) } };
         };
         // Fixed-char overflow (690_052): a COMPTIME-KNOWN string literal that
         // exceeds the column's byte length is a compile error naming column +
@@ -5437,7 +5501,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             if (v.len >= 2 and v[0] == '"' and v[v.len - 1] == '"') {
                 const blen = H.literalByteLen(v[1 .. v.len - 1]);
                 if (blen > ncap) {
-                    return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:insert({s}): string literal ({d} bytes) overflows char[{d}] column '{s}' - a fixed-char column holds at most its declared byte length", .{ store_name, blen, ncap, col }) } };
+                    return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:insert({s}): string literal ({d} bytes) overflows char[{d}] column '{s}' - a fixed-char column holds at most its declared byte length", .{ store_name, blen, ncap, col }) } };
                 }
             }
         }
@@ -5464,7 +5528,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             } else if (std.mem.eql(u8, bname, "full")) {
                 has_full_cont = true;
             } else {
-                return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:insert({s}): branch '{s}' - insert answers `| row <binding>` and `| full` only (inserted/removed lifecycle is pinned at 690_016)", .{ store_name, c.branch }) } };
+                return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:insert({s}): branch '{s}' - insert answers `| row <binding>` and `| full` only (inserted/removed lifecycle is pinned at 690_016)", .{ store_name, c.branch }) } };
             }
         }
     }
@@ -5521,6 +5585,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
     invocation: *const Invocation,
     item: *const Item,
     program: *const Program,
+    reporter: *std/compiler:ErrorReporter,
     allocator: std.mem.Allocator
 } -> SiteResult
 
@@ -5535,7 +5600,22 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             if (n.len >= 2 and n[0] == '"') return n[1 .. n.len - 1];
             return n;
         }
-        fn errItem(alloc: std.mem.Allocator, loc: anytype, module: []const u8, comptime fmt: []const u8, args: anytype) ast.Item {
+        /// A store transform's refusal, said TWICE from ONE string: once to the
+        /// compilation's reporter as a located KORU161 the author reads, and once
+        /// as the injected `@compileError` that stops the build.
+        ///
+        /// Both, not either. The reporter sentence is the message; the injected
+        /// error is the stop signal, and it stays because a refusal must halt
+        /// even on a path the transform-phase drain does not reach. KORU160
+        /// already worked this way — but it wrote its sentence out twice, by
+        /// hand, and the two copies had already drifted. Threading one `fmt`
+        /// through both makes that drift structurally impossible.
+        // `rep`, not `reporter`: the generated transform stub already binds
+        // `const reporter = __koru_event_input.reporter` in the enclosing proc,
+        // and a nested fn cannot capture it, so the parameter must be named
+        // something else or Zig refuses the shadow.
+        fn errItem(alloc: std.mem.Allocator, rep: anytype, loc: anytype, module: []const u8, comptime fmt: []const u8, args: anytype) ast.Item {
+            rep.addErrorAtLocation(.KORU161, loc, fmt, args) catch {};
             const inner = std.fmt.allocPrint(alloc, fmt, args) catch unreachable;
             const msg = std.fmt.allocPrint(alloc, "comptime {{ @compileError(\"{s}\"); }}", .{inner}) catch unreachable;
             return ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = loc, .module = module } };
@@ -5552,7 +5632,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         if (std.mem.eql(u8, arg.name, "expr")) store_name = H.stripQuotes(arg.value);
     }
     if (store_name.len == 0) {
-        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:query requires a store name: query(name)", .{}) } };
+        return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:query requires a store name: query(name)", .{}) } };
     }
 
     // The coordinator names this site's units by its source line.
@@ -5580,7 +5660,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             }
         }
         if (create_exists) {
-            return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:query({s}): the query precedes its store's create in source - declare the store first", .{store_name}) } };
+            return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:query({s}): the query precedes its store's create in source - declare the store first", .{store_name}) } };
         }
 
         // The create coordinator, once run, leaves persistent generated units
@@ -5603,10 +5683,10 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             }
         }
         if (store_declared) {
-            return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:query({s}) is top-level-only: it cannot be nested inside a handler or loop body. `query` is a standing-rule installation (comptime-fused into the store's write paths), so a nested body has nothing to install into. The store IS declared - move the query to module (top-level) scope. Momentary verbs (insert/take) DO run in nested bodies.", .{store_name}) } };
+            return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:query({s}) is top-level-only: it cannot be nested inside a handler or loop body. `query` is a standing-rule installation (comptime-fused into the store's write paths), so a nested body has nothing to install into. The store IS declared - move the query to module (top-level) scope. Momentary verbs (insert/take) DO run in nested bodies.", .{store_name}) } };
         }
 
-        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:query({s}): unknown store - no std/store:new({s}) found (or the store is a capacity-1 value - queries need a container, declare `capacity: N` at create)", .{ store_name, store_name }) } };
+        return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:query({s}): unknown store - no std/store:new({s}) found (or the store is a capacity-1 value - queries need a container, declare `capacity: N` at create)", .{ store_name, store_name }) } };
     }
 
     const sweep_inv = ast.Invocation{
@@ -5658,6 +5738,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
     invocation: *const Invocation,
     item: *const Item,
     program: *const Program,
+    reporter: *std/compiler:ErrorReporter,
     allocator: std.mem.Allocator
 } -> SiteResult
 
@@ -5673,7 +5754,22 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             if (n.len >= 2 and n[0] == '"') return n[1 .. n.len - 1];
             return n;
         }
-        fn errItem(alloc: std.mem.Allocator, loc: anytype, module: []const u8, comptime fmt: []const u8, args: anytype) ast.Item {
+        /// A store transform's refusal, said TWICE from ONE string: once to the
+        /// compilation's reporter as a located KORU161 the author reads, and once
+        /// as the injected `@compileError` that stops the build.
+        ///
+        /// Both, not either. The reporter sentence is the message; the injected
+        /// error is the stop signal, and it stays because a refusal must halt
+        /// even on a path the transform-phase drain does not reach. KORU160
+        /// already worked this way — but it wrote its sentence out twice, by
+        /// hand, and the two copies had already drifted. Threading one `fmt`
+        /// through both makes that drift structurally impossible.
+        // `rep`, not `reporter`: the generated transform stub already binds
+        // `const reporter = __koru_event_input.reporter` in the enclosing proc,
+        // and a nested fn cannot capture it, so the parameter must be named
+        // something else or Zig refuses the shadow.
+        fn errItem(alloc: std.mem.Allocator, rep: anytype, loc: anytype, module: []const u8, comptime fmt: []const u8, args: anytype) ast.Item {
+            rep.addErrorAtLocation(.KORU161, loc, fmt, args) catch {};
             const inner = std.fmt.allocPrint(alloc, fmt, args) catch unreachable;
             const msg = std.fmt.allocPrint(alloc, "comptime {{ @compileError(\"{s}\"); }}", .{inner}) catch unreachable;
             return ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = loc, .module = module } };
@@ -5706,7 +5802,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         if (std.mem.eql(u8, arg.name, "expr")) store_name = H.stripQuotes(arg.value);
     }
     if (store_name.len == 0) {
-        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:sweep requires a store name: sweep(name)", .{}) } };
+        return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:sweep requires a store name: sweep(name)", .{}) } };
     }
 
     // --- schema from the persistent __store_insert_<s> event (survives after
@@ -5742,7 +5838,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         }
     }
     if (col_names.len == 0) {
-        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:sweep({s}): unknown plural store - no std/store:new({s}, capacity: N) found (sweep reads a plural container's live rows)", .{ store_name, store_name }) } };
+        return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:sweep({s}): unknown plural store - no std/store:new({s}, capacity: N) found (sweep reads a plural container's live rows)", .{ store_name, store_name }) } };
     }
 
     // --- parse the `! sweep <row> |> body` branch ---
@@ -5755,26 +5851,26 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
     // from those references, not listed by the author: the projection block
     // said the same thing twice and let the two halves disagree.
     if (flow.body.continuations.len != 1) {
-        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:sweep({s}): exactly one `! sweep <row>` branch per site", .{store_name}) } };
+        return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:sweep({s}): exactly one `! sweep <row>` branch per site", .{store_name}) } };
     }
     const sc = &flow.body.continuations[0];
     if (!std.mem.eql(u8, std.mem.trim(u8, sc.branch, " "), "sweep")) {
-        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:sweep({s}): the row branch is spelled `! sweep <row>`", .{store_name}) } };
+        return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:sweep({s}): the row branch is spelled `! sweep <row>`", .{store_name}) } };
     }
     if (sc.destructure.len > 0) {
-        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:sweep({s}): the sweep arm binds its row - write `! sweep <row> |> ... <row>.<field> ...`, not a projection block", .{store_name}) } };
+        return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:sweep({s}): the sweep arm binds its row - write `! sweep <row> |> ... <row>.<field> ...`, not a projection block", .{store_name}) } };
     }
     const row_bind = sc.binding orelse {
-        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:sweep({s}): the sweep arm needs a row binding: `! sweep <row> |> ...`", .{store_name}) } };
+        return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:sweep({s}): the sweep arm needs a row binding: `! sweep <row> |> ...`", .{store_name}) } };
     };
 
     // --- the body: transplanted into a sweepbody impl flow (like query's qbody) ---
     const body_clone = ast_functional.cloneContinuation(allocator, sc) catch unreachable;
     const body_node = body_clone.node orelse {
-        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:sweep({s}): the sweep branch needs a body (`|> ...`)", .{store_name}) } };
+        return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:sweep({s}): the sweep branch needs a body (`|> ...`)", .{store_name}) } };
     };
     if (body_node != .invocation) {
-        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:sweep({s}): the sweep body must start with an invocation this rung", .{store_name}) } };
+        return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:sweep({s}): the sweep body must start with an invocation this rung", .{store_name}) } };
     }
 
     // A sweep arm READS and WRITES the row it is standing on (690_083), and both
@@ -5923,7 +6019,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         null;
 
     if (unknown_field) |uf| {
-        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:sweep({s}): '{s}.{s}' - '{s}' is not a field of store '{s}'", .{ store_name, row_bind, uf, uf, store_name }) } };
+        return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:sweep({s}): '{s}.{s}' - '{s}' is not a field of store '{s}'", .{ store_name, row_bind, uf, uf, store_name }) } };
     }
 
     // The derived projection: every column the arm named, in declaration order.
@@ -6425,6 +6521,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
     invocation: *const Invocation,
     item: *const Item,
     program: *const Program,
+    reporter: *std/compiler:ErrorReporter,
     allocator: std.mem.Allocator
 } -> SiteResult
 
@@ -6439,7 +6536,22 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             if (n.len >= 2 and n[0] == '"') return n[1 .. n.len - 1];
             return n;
         }
-        fn errItem(alloc: std.mem.Allocator, loc: anytype, module: []const u8, comptime fmt: []const u8, args: anytype) ast.Item {
+        /// A store transform's refusal, said TWICE from ONE string: once to the
+        /// compilation's reporter as a located KORU161 the author reads, and once
+        /// as the injected `@compileError` that stops the build.
+        ///
+        /// Both, not either. The reporter sentence is the message; the injected
+        /// error is the stop signal, and it stays because a refusal must halt
+        /// even on a path the transform-phase drain does not reach. KORU160
+        /// already worked this way — but it wrote its sentence out twice, by
+        /// hand, and the two copies had already drifted. Threading one `fmt`
+        /// through both makes that drift structurally impossible.
+        // `rep`, not `reporter`: the generated transform stub already binds
+        // `const reporter = __koru_event_input.reporter` in the enclosing proc,
+        // and a nested fn cannot capture it, so the parameter must be named
+        // something else or Zig refuses the shadow.
+        fn errItem(alloc: std.mem.Allocator, rep: anytype, loc: anytype, module: []const u8, comptime fmt: []const u8, args: anytype) ast.Item {
+            rep.addErrorAtLocation(.KORU161, loc, fmt, args) catch {};
             const inner = std.fmt.allocPrint(alloc, fmt, args) catch unreachable;
             const msg = std.fmt.allocPrint(alloc, "comptime {{ @compileError(\"{s}\"); }}", .{inner}) catch unreachable;
             return ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = loc, .module = module } };
@@ -6456,7 +6568,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         if (std.mem.eql(u8, arg.name, "expr")) store_name = H.stripQuotes(arg.value);
     }
     if (store_name.len == 0) {
-        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:preorder requires a store name: preorder(name)", .{}) } };
+        return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:preorder requires a store name: preorder(name)", .{}) } };
     }
 
     // The coordinator names this site's units by its source line (the same
@@ -6485,9 +6597,9 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             }
         }
         if (create_exists) {
-            return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:preorder({s}): the preorder precedes its store's create in source - declare the store first", .{store_name}) } };
+            return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:preorder({s}): the preorder precedes its store's create in source - declare the store first", .{store_name}) } };
         }
-        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:preorder({s}): unknown store - no std/store:new({s}) found (preorder walks a [tree] container store)", .{ store_name, store_name }) } };
+        return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:preorder({s}): unknown store - no std/store:new({s}) found (preorder walks a [tree] container store)", .{ store_name, store_name }) } };
     }
 
     const sweep_inv = ast.Invocation{
@@ -6524,6 +6636,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
     invocation: *const Invocation,
     item: *const Item,
     program: *const Program,
+    reporter: *std/compiler:ErrorReporter,
     allocator: std.mem.Allocator
 } -> SiteResult
 
@@ -6539,7 +6652,22 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             if (n.len >= 2 and n[0] == '"') return n[1 .. n.len - 1];
             return n;
         }
-        fn errItem(alloc: std.mem.Allocator, loc: anytype, module: []const u8, comptime fmt: []const u8, args: anytype) ast.Item {
+        /// A store transform's refusal, said TWICE from ONE string: once to the
+        /// compilation's reporter as a located KORU161 the author reads, and once
+        /// as the injected `@compileError` that stops the build.
+        ///
+        /// Both, not either. The reporter sentence is the message; the injected
+        /// error is the stop signal, and it stays because a refusal must halt
+        /// even on a path the transform-phase drain does not reach. KORU160
+        /// already worked this way — but it wrote its sentence out twice, by
+        /// hand, and the two copies had already drifted. Threading one `fmt`
+        /// through both makes that drift structurally impossible.
+        // `rep`, not `reporter`: the generated transform stub already binds
+        // `const reporter = __koru_event_input.reporter` in the enclosing proc,
+        // and a nested fn cannot capture it, so the parameter must be named
+        // something else or Zig refuses the shadow.
+        fn errItem(alloc: std.mem.Allocator, rep: anytype, loc: anytype, module: []const u8, comptime fmt: []const u8, args: anytype) ast.Item {
+            rep.addErrorAtLocation(.KORU161, loc, fmt, args) catch {};
             const inner = std.fmt.allocPrint(alloc, fmt, args) catch unreachable;
             const msg = std.fmt.allocPrint(alloc, "comptime {{ @compileError(\"{s}\"); }}", .{inner}) catch unreachable;
             return ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = loc, .module = module } };
@@ -6588,16 +6716,16 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         if (std.mem.eql(u8, arg.name, "expr")) target_text = H.stripQuotes(arg.value);
     }
     const lb = std.mem.indexOfScalar(u8, target_text, '[') orelse {
-        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:take addresses a row: take(store[handle]) - '{s}' has no addressing head", .{target_text}) } };
+        return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:take addresses a row: take(store[handle]) - '{s}' has no addressing head", .{target_text}) } };
     };
     if (target_text.len == 0 or target_text[target_text.len - 1] != ']') {
-        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:take: malformed addressing head '{s}'", .{target_text}) } };
+        return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:take: malformed addressing head '{s}'", .{target_text}) } };
     }
     const store_name = std.mem.trim(u8, target_text[0..lb], " ");
     // Cross-store cell index (`todos[ui.sel]`) must lower like stored (690_075).
     const row_expr = H.storeRefsAll(allocator, program, std.mem.trim(u8, target_text[lb + 1 .. target_text.len - 1], " "));
     if (store_name.len == 0 or row_expr.len == 0) {
-        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:take: malformed addressing head '{s}' - take(store[handle])", .{target_text}) } };
+        return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:take: malformed addressing head '{s}' - take(store[handle])", .{target_text}) } };
     }
 
     const take_name = std.fmt.allocPrint(allocator, "__store_take_{s}", .{store_name}) catch unreachable;
@@ -6611,7 +6739,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         }
     }
     if (!unit_exists) {
-        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:take({s}[...]): unknown or not-yet-created container store '{s}'", .{ store_name, store_name }) } };
+        return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:take({s}[...]): unknown or not-yet-created container store '{s}'", .{ store_name, store_name }) } };
     }
 
     const call_args = allocator.alloc(ast.Arg, 1) catch unreachable;
@@ -6679,6 +6807,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
     invocation: *const Invocation,
     item: *const Item,
     program: *const Program,
+    reporter: *std/compiler:ErrorReporter,
     allocator: std.mem.Allocator
 } -> SiteResult
 
@@ -6693,7 +6822,22 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             if (n.len >= 2 and n[0] == '"') return n[1 .. n.len - 1];
             return n;
         }
-        fn errItem(alloc: std.mem.Allocator, loc: anytype, module: []const u8, comptime fmt: []const u8, args: anytype) ast.Item {
+        /// A store transform's refusal, said TWICE from ONE string: once to the
+        /// compilation's reporter as a located KORU161 the author reads, and once
+        /// as the injected `@compileError` that stops the build.
+        ///
+        /// Both, not either. The reporter sentence is the message; the injected
+        /// error is the stop signal, and it stays because a refusal must halt
+        /// even on a path the transform-phase drain does not reach. KORU160
+        /// already worked this way — but it wrote its sentence out twice, by
+        /// hand, and the two copies had already drifted. Threading one `fmt`
+        /// through both makes that drift structurally impossible.
+        // `rep`, not `reporter`: the generated transform stub already binds
+        // `const reporter = __koru_event_input.reporter` in the enclosing proc,
+        // and a nested fn cannot capture it, so the parameter must be named
+        // something else or Zig refuses the shadow.
+        fn errItem(alloc: std.mem.Allocator, rep: anytype, loc: anytype, module: []const u8, comptime fmt: []const u8, args: anytype) ast.Item {
+            rep.addErrorAtLocation(.KORU161, loc, fmt, args) catch {};
             const inner = std.fmt.allocPrint(alloc, fmt, args) catch unreachable;
             const msg = std.fmt.allocPrint(alloc, "comptime {{ @compileError(\"{s}\"); }}", .{inner}) catch unreachable;
             return ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = loc, .module = module } };
@@ -6710,7 +6854,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         if (std.mem.eql(u8, arg.name, "expr")) store_name = H.stripQuotes(arg.value);
     }
     if (store_name.len == 0) {
-        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:stripe requires a store name: stripe(name)", .{}) } };
+        return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:stripe requires a store name: stripe(name)", .{}) } };
     }
 
     const stripe_name = std.fmt.allocPrint(allocator, "__store_stripe_{s}", .{store_name}) catch unreachable;
@@ -6724,7 +6868,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         }
     }
     if (!unit_exists) {
-        return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:stripe({s}): unknown store, or a store shape without a stripe unit this rung (plural / {{old,new}}-mode stripe is a later slice)", .{store_name}) } };
+        return .{ .transformed = .{ .replacement = H.errItem(allocator, reporter, flow.location, flow.module, "std/store:stripe({s}): unknown store, or a store shape without a stripe unit this rung (plural / {{old,new}}-mode stripe is a later slice)", .{store_name}) } };
     }
 
     const stripe_inv = ast.Invocation{

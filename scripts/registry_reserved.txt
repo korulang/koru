@@ -71,3 +71,4 @@ KORU140
 # emit-scan reads .zig only. Same situation as KORU140 above, and the same
 # disposition: live, not dead.
 KORU160
+KORU161
