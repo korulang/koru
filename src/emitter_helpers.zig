@@ -8110,10 +8110,56 @@ fn emitContinuationList(
         return;
     }
 
+    // How many TERMINALS the callee declares. One handled continuation means
+    // "that branch is certainly active" only when the callee has nowhere else to
+    // go; if it declares several and the author named one, the other outcomes
+    // are still reachable and the payload must be read behind a tag test.
+    //
+    // Sparse dispatch became ordinary when `| row` went optional (690_085): an
+    // insert declares `| row` and `| full`, and handling only `| full` is now a
+    // normal thing to write. Reading `.full` unconditionally then panics on the
+    // common path — `access of union field 'full' while field 'row' is active` —
+    // which a compile cannot see and only a run finds (690_095).
+    const callee_terminals = blk: {
+        if (callee_path) |path| {
+            if (ctx.ast_items) |items| {
+                if (findEventDeclByPath(items, path)) |decl| {
+                    var n: usize = 0;
+                    for (decl.branches) |b| {
+                        if (b.kind == .terminal) n += 1;
+                    }
+                    break :blk n;
+                }
+            }
+        }
+        break :blk 0; // unknown — keep the established shape
+    };
+
     // If only ONE branch, we can access the payload directly without a switch!
     // This is the KEY to making explicit while conditions work with Version 11's pattern
     if (continuations.len == 1) {
         const cont = &continuations[0];
+
+        // An unhandled sibling outcome is a NO-OP at a dispatch site (690_085),
+        // so the guard needs no `else`.
+        const needs_tag_guard = !callee_bare_return and
+            callee_terminals > 1 and
+            !cont.is_catchall and
+            cont.branch.len > 0;
+        if (needs_tag_guard) {
+            try emitter.writeIndent();
+            try emitter.write("if (");
+            try emitter.write(prev_result);
+            try emitter.write(" == .");
+            try writeBranchName(emitter, cont.branch);
+            try emitter.write(") {\n");
+            emitter.indent();
+        }
+        defer if (needs_tag_guard) {
+            emitter.dedent();
+            emitter.writeIndent() catch {};
+            emitter.write("}\n") catch {};
+        };
 
         // Special case: |? catch-all as the sole continuation (all branches optional).
         // There is no "?" field on the union — every result IS an optional branch, so
