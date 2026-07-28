@@ -1,10 +1,15 @@
 const std = @import("std");
-const log = @import("log");
 const ast = @import("ast");
+const errors = @import("errors");
 
+/// The pass still fails with a Zig error so the driver's control flow is
+/// unchanged, but the SENTENCE the user reads is now a koru diagnostic on the
+/// compilation's reporter (KORU113/KORU114). The error value is the signal to
+/// stop, never the message: `main` prints the reporter and exits before the
+/// value can reach stderr as a bare `error: ImplTargetNotAbstract` under a
+/// koruc stack trace.
 pub const ValidationError = error{
     DuplicateImplementation,
-    ImplTargetNotFound,
     ImplTargetNotAbstract,
     OutOfMemory,
 };
@@ -17,6 +22,7 @@ const ImplItem = union(enum) {
 
 pub const AbstractImplValidator = struct {
     allocator: std.mem.Allocator,
+    reporter: *errors.ErrorReporter,
 
     // Map canonical event path -> EventDecl (only abstract events)
     abstract_events: std.StringHashMap(*const ast.EventDecl),
@@ -27,9 +33,10 @@ pub const AbstractImplValidator = struct {
     // Map canonical event path -> ProcDecl (for future delegation validation)
     procs: std.StringHashMap(*const ast.ProcDecl),
 
-    pub fn init(allocator: std.mem.Allocator) AbstractImplValidator {
+    pub fn init(allocator: std.mem.Allocator, reporter: *errors.ErrorReporter) AbstractImplValidator {
         return .{
             .allocator = allocator,
+            .reporter = reporter,
             .abstract_events = std.StringHashMap(*const ast.EventDecl).init(allocator),
             .impls = std.StringHashMap(ImplItem).init(allocator),
             .procs = std.StringHashMap(*const ast.ProcDecl).init(allocator),
@@ -61,12 +68,17 @@ pub const AbstractImplValidator = struct {
 
     /// Validate abstract events and implementations in the AST
     /// MUST be called AFTER canonicalization - uses module_qualifier from paths
-    pub fn validate(allocator: std.mem.Allocator, items: []const ast.Item) !void {
-        var validator = AbstractImplValidator.init(allocator);
+    pub fn validate(allocator: std.mem.Allocator, reporter: *errors.ErrorReporter, items: []const ast.Item) !void {
+        var validator = AbstractImplValidator.init(allocator, reporter);
         defer validator.deinit();
 
-        // First pass: collect abstract events, impls, and procs
-        for (items) |item| {
+        // First pass: collect abstract events, impls, and procs.
+        // BY POINTER, not by value: the maps below store `*const` pointers INTO
+        // these items and read their locations in the second pass. Iterating by
+        // value would capture the loop's own copy, so every stored pointer
+        // would dangle the moment collectFromItem returned — which is exactly
+        // what made this pass's locations read as undefined-memory poison.
+        for (items) |*item| {
             try validator.collectFromItem(item);
         }
 
@@ -74,8 +86,33 @@ pub const AbstractImplValidator = struct {
         try validator.validateImplementations();
     }
 
-    fn collectFromItem(self: *AbstractImplValidator, item: ast.Item) !void {
-        switch (item) {
+    /// The one place a duplicate implementation becomes a sentence. All three
+    /// collection sites (proc, flow, immediate impl) reach the same condition,
+    /// so they report through here rather than each spelling their own prose.
+    ///
+    /// The caret goes on the SECOND implementation — the one the author just
+    /// added — and the prose names the first. That second line number is a
+    /// parser coordinate like any other, so it goes through `userLineIn`; a
+    /// number interpolated straight into the message would disagree with its
+    /// own caret by the height of the injected prelude.
+    fn reportDuplicate(
+        self: *AbstractImplValidator,
+        name: []const u8,
+        first: errors.SourceLocation,
+        second: errors.SourceLocation,
+    ) !void {
+        try self.reporter.addErrorAtLocationWithHint(
+            .KORU113,
+            second,
+            "two implementations claim the tor '{s}' — it was already implemented at {s}:{}",
+            .{ name, first.file, self.reporter.userLineIn(first) },
+            "a tor pairs with exactly one implementation; delete one of them, or give this one its own tor to implement",
+            .{},
+        );
+    }
+
+    fn collectFromItem(self: *AbstractImplValidator, item: *const ast.Item) !void {
+        switch (item.*) {
             .event_decl => |*event| {
                 if (event.hasAnnotation("abstract")) {
                     const canonical_name = try self.buildCanonicalName(&event.path);
@@ -100,17 +137,7 @@ pub const AbstractImplValidator = struct {
                             .immediate_impl => |ii| ii.location,
                             .proc => |p| p.location,
                         };
-                        log.debug("ERROR: Duplicate implementation for '{s}'\n", .{impl_name});
-                        log.debug("  First impl at: {s}:{}:{}\n", .{
-                            existing_location.file,
-                            existing_location.line,
-                            existing_location.column,
-                        });
-                        log.debug("  Second impl at: {s}:{}:{}\n", .{
-                            proc.location.file,
-                            proc.location.line,
-                            proc.location.column,
-                        });
+                        try self.reportDuplicate(impl_name, existing_location, proc.location);
                         self.allocator.free(impl_name);
                         return ValidationError.DuplicateImplementation;
                     }
@@ -132,17 +159,7 @@ pub const AbstractImplValidator = struct {
                                 .immediate_impl => |ii| ii.location,
                                 .proc => |p| p.location,
                             };
-                            log.debug("ERROR: Duplicate implementation for '{s}'\n", .{canonical_name});
-                            log.debug("  First impl at: {s}:{}:{}\n", .{
-                                existing_location.file,
-                                existing_location.line,
-                                existing_location.column,
-                            });
-                            log.debug("  Second impl at: {s}:{}:{}\n", .{
-                                flow.location.file,
-                                flow.location.line,
-                                flow.location.column,
-                            });
+                            try self.reportDuplicate(canonical_name, existing_location, flow.location);
                             self.allocator.free(canonical_name);
                             return ValidationError.DuplicateImplementation;
                         }
@@ -164,17 +181,7 @@ pub const AbstractImplValidator = struct {
                             .immediate_impl => |existing_ii| existing_ii.location,
                             .proc => |p| p.location,
                         };
-                        log.debug("ERROR: Duplicate implementation for '{s}'\n", .{canonical_name});
-                        log.debug("  First impl at: {s}:{}:{}\n", .{
-                            existing_location.file,
-                            existing_location.line,
-                            existing_location.column,
-                        });
-                        log.debug("  Second impl at: {s}:{}:{}\n", .{
-                            ii.location.file,
-                            ii.location.line,
-                            ii.location.column,
-                        });
+                        try self.reportDuplicate(canonical_name, existing_location, ii.location);
                         self.allocator.free(canonical_name);
                         return ValidationError.DuplicateImplementation;
                     }
@@ -184,7 +191,7 @@ pub const AbstractImplValidator = struct {
             },
             .module_decl => |*module| {
                 // Recursively process module items
-                for (module.items) |module_item| {
+                for (module.items) |*module_item| {
                     try self.collectFromItem(module_item);
                 }
             },
@@ -210,12 +217,18 @@ pub const AbstractImplValidator = struct {
             // Check if target exists and is abstract
             const target_event = self.abstract_events.get(target_path);
             if (target_event == null) {
-                log.debug("ERROR: Implementation targets non-existent or non-abstract tor '{s}'\n", .{target_path});
-                log.debug("  Impl at: {s}:{}:{}\n", .{
-                    impl_location.file,
-                    impl_location.line,
-                    impl_location.column,
-                });
+                // `abstract_events` holds ONLY tors annotated `~[abstract]`, so a
+                // miss here cannot distinguish "no such tor" from "that tor is not
+                // abstract". The sentence says both rather than picking one and
+                // being confidently wrong half the time.
+                try self.reporter.addErrorAtLocationWithHint(
+                    .KORU114,
+                    impl_location,
+                    "this implements '{s}', which is not an abstract tor — no `~[abstract]` tor by that name is in scope",
+                    .{target_path},
+                    "only a tor declared `~[abstract]` can be implemented; check the spelling and the module qualifier, or add the annotation to its declaration",
+                    .{},
+                );
                 return ValidationError.ImplTargetNotAbstract;
             }
         }

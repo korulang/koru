@@ -96,6 +96,10 @@ pub const ErrorCode = enum(u16) {
     KORU111, // Contract/implementation file split violated (public events live in .k only)
     KORU112, // Effect-branch proc body reaches its own module by a bare name — the body splices into the CONSUMER's frame, where module scope is gone; use `$mod.` (400_155 holds the contract, 400_157 the wall)
 
+    // Abstract / implementation errors
+    KORU113, // Two implementations claim the same abstract tor — the pairing is one-to-one, so the second is never reachable
+    KORU114, // An implementation targets a tor that is not declared `~[abstract]` (or does not exist at all)
+
     // Template / metaprogramming errors
     KORU120, // Template-asserted contract violation (`{% comp error %}` reached)
     KORU121, // Per-call template construct has no variant for the build target
@@ -260,6 +264,16 @@ pub const ErrorReporter = struct {
     /// Returns 0 for a line inside the auto-injected bootstrap prelude.
     pub fn userLine(self: *ErrorReporter, line: usize) usize {
         return self.classifyLine(line).line;
+    }
+
+    /// `userLine` for a full SourceLocation, applying the SAME file guard
+    /// `addErrorAtLocation` applies: a location in another file is already in
+    /// that file's own user coordinates and must not be shifted. Use this for
+    /// the SECOND position a multi-site diagnostic names in its prose, so the
+    /// number the user reads and the caret they see are translated identically.
+    pub fn userLineIn(self: *ErrorReporter, location: SourceLocation) usize {
+        if (!std.mem.eql(u8, location.file, self.file_name)) return location.line;
+        return self.classifyLine(location.line).line;
     }
 
     pub fn addError(self: *ErrorReporter, code: ErrorCode, line: usize, column: usize, comptime fmt: []const u8, args: anytype) !void {
