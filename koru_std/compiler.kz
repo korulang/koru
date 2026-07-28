@@ -291,6 +291,7 @@ pub const CompilerContext = struct {
     flow_checker_module.addImport("branch_checker", branch_checker_module);
     flow_checker_module.addImport("annotation_parser", annotation_parser_module);
     flow_checker_module.addImport("expression_parser", expression_parser_module);
+    flow_checker_module.addImport("phantom_parser", phantom_parser_module);
 
     // AST desugars — the point-free pyramid, the bind pun + type thread, and the
     // flow return terminus. They run in the ELABORATE segment, after

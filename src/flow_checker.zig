@@ -5,6 +5,7 @@ const errors = @import("errors");
 const branch_checker = @import("branch_checker");
 const annotation_parser = @import("annotation_parser");
 const expression_parser = @import("expression_parser");
+const phantom_parser = @import("phantom_parser");
 
 /// The flow checker validates control flow properties:
 /// 1. When-clause exhaustiveness (exactly one continuation without `when` per branch)
@@ -217,6 +218,12 @@ pub const FlowChecker = struct {
         // runs, so frontend defers them, same doctrine as the per-continuation
         // isDeferredBindingInvocation.
         const root_is_transform = self.flowRootIsTransform(flow);
+        // The flow head is what these top-level branches hang off; its event
+        // decl is where an arm's payload obligation is written.
+        const head_path: ?*const ast.DottedPath = if (flow.body.node) |*hn|
+            (if (hn.* == .invocation) &hn.invocation.path else null)
+        else
+            null;
         for (flow.body.continuations) |*cont| {
             // Nested when-clause ambiguity: post-transform only, same ruling
             // as the top-level check above.
@@ -229,7 +236,7 @@ pub const FlowChecker = struct {
             // KORU100: Unused binding check
             // In frontend mode, skip for [transform] invocations (binding usage not visible until after transform)
             // In backend mode (all), check everything (transforms have run)
-            try self.validateBindingUsage(cont, root_is_transform);
+            try self.validateBindingUsage(cont, root_is_transform, head_path);
         }
 
         // === BACKEND CHECKS (semantic, require event lookups and transforms) ===
@@ -549,7 +556,40 @@ pub const FlowChecker = struct {
         }
     }
 
-    fn validateBindingUsage(self: *FlowChecker, cont: *const ast.Continuation, root_transform: bool) !void {
+    /// Does the branch this continuation handles carry a CLEANUP OBLIGATION
+    /// (`| ok *Handle<open!>`)? `parent_path` is the invocation these branches
+    /// hang off — null where the walk cannot name it, which reads as "no", so
+    /// the check stays on by default.
+    ///
+    /// Unions cannot carry `!` (phantom_parser rejects a union member with the
+    /// production marker), and a state variable never does, so `.concrete` is
+    /// the only prong that can answer yes.
+    fn branchPayloadCarriesObligation(
+        self: *FlowChecker,
+        parent_path: ?*const ast.DottedPath,
+        branch_name: []const u8,
+    ) bool {
+        const path = parent_path orelse return false;
+        const decl = self.findEventDecl(path) orelse return false;
+        for (decl.branches) |branch| {
+            if (!std.mem.eql(u8, branch.name, branch_name)) continue;
+            for (branch.payload.fields) |field| {
+                const phantom_str = field.phantom orelse continue;
+                var phantom = phantom_parser.PhantomState.parse(self.allocator, phantom_str) catch continue;
+                defer phantom.deinit(self.allocator);
+                if (phantom == .concrete and phantom.concrete.requires_cleanup) return true;
+            }
+            return false;
+        }
+        return false;
+    }
+
+    fn validateBindingUsage(
+        self: *FlowChecker,
+        cont: *const ast.Continuation,
+        root_transform: bool,
+        parent_path: ?*const ast.DottedPath,
+    ) !void {
         // A transform-grafted/consumed subtree carries synthesized structure,
         // not user syntax — its bindings were the transform's data and were
         // validated by the transform itself. Same short-circuit the other
@@ -587,8 +627,21 @@ pub const FlowChecker = struct {
                     (n == .invocation and self.invocationResolvesToTemplateProc(&n.invocation.path))
                 else
                     false;
+                // An obligation-carrying payload (`| ok *Handle<open!>`) is
+                // settled by auto-discharge, which INSERTS the disposal call —
+                // and it runs in the BACKEND, while this check runs in the
+                // FRONTEND. So the use KORU100 is hunting for does not exist
+                // yet, and whether you may lean on auto-discharge came to
+                // depend on an unrelated property of the next step: `print.ln`
+                // downstream suppressed the check (its `expr: Expression` is
+                // opaque captured syntax), an ordinary tor did not, and the
+                // same program was legal or refused by that alone.
+                // Skip it in BOTH modes, the way a template-proc binding is
+                // skipped: an obligation that never settles is already KORU030's,
+                // and KORU030 says it better than "unused binding" does.
+                const carries_obligation = self.branchPayloadCarriesObligation(parent_path, cont.branch);
                 const deferred = root_transform or self.isDeferredBindingInvocation(cont);
-                const skip_check = is_template_proc or switch (self.mode) {
+                const skip_check = is_template_proc or carries_obligation or switch (self.mode) {
                     .frontend => deferred,
                     .all => !deferred,
                 };
@@ -645,8 +698,15 @@ pub const FlowChecker = struct {
         // The bind-position twin of the arm binding checked above.
         try self.validateReturnBindingUsage(cont, child_deferred);
 
+        // This continuation's node is what ITS branches hang off — the nested
+        // twin of the flow head above.
+        const own_path: ?*const ast.DottedPath = if (cont.node) |*n|
+            (if (n.* == .invocation) &n.invocation.path else null)
+        else
+            null;
+
         for (cont.continuations) |*nested| {
-            try self.validateBindingUsage(nested, child_deferred);
+            try self.validateBindingUsage(nested, child_deferred, own_path);
         }
 
         // Also check inside ForeachNode and ConditionalNode branches
@@ -654,13 +714,13 @@ pub const FlowChecker = struct {
             if (node == .foreach) {
                 for (node.foreach.branches) |*branch| {
                     for (branch.body) |*body_cont| {
-                        try self.validateBindingUsage(body_cont, child_deferred);
+                        try self.validateBindingUsage(body_cont, child_deferred, null);
                     }
                 }
             } else if (node == .conditional) {
                 for (node.conditional.branches) |*branch| {
                     for (branch.body) |*body_cont| {
-                        try self.validateBindingUsage(body_cont, child_deferred);
+                        try self.validateBindingUsage(body_cont, child_deferred, null);
                     }
                 }
             }

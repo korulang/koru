@@ -191,6 +191,7 @@ pub fn build(b: *std.Build) void {
     flow_checker_module.addImport("errors", errors_module);
     flow_checker_module.addImport("branch_checker", branch_checker_module);
     flow_checker_module.addImport("expression_parser", expression_parser_module);
+    flow_checker_module.addImport("phantom_parser", phantom_parser_module);
 
     // Phantom semantic checker module
     const phantom_semantic_checker_module = b.createModule(.{
