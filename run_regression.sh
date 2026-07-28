@@ -427,6 +427,13 @@ if [ "$1" = "--list" ]; then
     exit 0
 fi
 
+# The invocation's own flags, captured HERE because the parse loop below shifts
+# every argument off — `$*` at snapshot-writing time is empty. That is what the
+# snapshot's commandFlags field is for: a board number is only interpretable
+# next to how it was produced, and --cache after a compiler change can hand back
+# stale passes the number gives no hint of.
+INVOCATION_FLAGS="$*"
+
 # Parse command line arguments for test selection and options
 TEST_FILTERS=()
 SMOKE_MODE=false
@@ -958,7 +965,7 @@ PY
     if [ ${#TEST_FILTERS[@]} -eq 0 ] && [ "$SMOKE_MODE" = false ]; then
         if command -v node >/dev/null 2>&1; then
             GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
-            CMD_FLAGS="$*"
+            CMD_FLAGS="$INVOCATION_FLAGS"
             echo ""
             node scripts/save-snapshot.js \
                 --passed="$PASSED_TESTS" \
@@ -1206,7 +1213,7 @@ if [ ${#TEST_FILTERS[@]} -eq 0 ] && [ "$SMOKE_MODE" = false ]; then
         GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 
         # Capture command flags
-        CMD_FLAGS="$*"
+        CMD_FLAGS="$INVOCATION_FLAGS"
 
         # Save snapshot
         echo ""
