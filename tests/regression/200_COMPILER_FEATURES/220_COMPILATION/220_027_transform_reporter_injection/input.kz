@@ -1,0 +1,70 @@
+// PINS: `reporter` is a transform-injectable machine parameter. A
+// `[comptime|transform]` event may declare `reporter: *std/compiler:ErrorReporter`
+// and receive the LIVE reporter — the one bound to the user's source file, with
+// the full diagnostic API behind it.
+//
+// The sibling of 220_026. That pin gave transforms the compilation context; this
+// one gives them the ability to SAY something about it in koru's own voice.
+// Detected by parameter name exactly the way `ctx`, `program` and `allocator`
+// are, opt-in per declaration, additive alongside all of them.
+//
+// WHY ctx.errors is not already this. `CompilerContext.errors` is
+// `ArrayList(CompilerError)` and `CompilerError` is `{ message, location }` —
+// no code, no hint, no source line. The pipeline prints it as bare text
+// (compiler.kz, check-structure's error drain), which is why KORU140 renders
+// plainer than KORU092 does: same pipeline, two grades of diagnostic, decided
+// by which channel the pass happened to have rather than by what it had to say.
+// `ErrorReporter.addErrorAtLocationWithHint` is the API that closes that gap,
+// and nothing reachable from a transform can call it.
+//
+// The motivating case is in the tree: `desugar-chains` (koru_std/compiler.kz)
+// runs inside the `elaborate` segment and ALREADY receives ctx. It still
+// constructs its own ErrorReporter and reads the source file off
+// `location.file` by hand, because KORU092/093 carry hints and previews that
+// `ctx.errors` would strip. A pass holding the context still cannot emit a
+// first-class diagnostic.
+//
+// Proof of liveness, not typing, in 220_026's manner: the transform reads
+// `file_name` off the injected reporter at comptime and bakes it into the code
+// it emits, so the runtime output can only come from a reporter that actually
+// arrived — and `file_name` specifically, because binding to the user's source
+// is what makes a preview block possible at all.
+
+~[comptime|transform]pub tor probe.* {
+    expr: Expression,
+    reporter: *std/compiler:ErrorReporter,
+    item: *const Item,
+    program: *const Program,
+} -> SiteResult
+
+~proc probe.*|zig {
+    const ast = @import("ast");
+    const std_lib = @import("std");
+    const allocator = std_lib.heap.page_allocator;
+    const flow = if (item.* == .flow) &item.flow else return .{};
+
+    // Read the live reporter and bake the reading into the emitted declaration.
+    const basename = std_lib.fs.path.basename(reporter.file_name);
+    const code = std_lib.fmt.allocPrint(
+        allocator,
+        "pub const __reporter_probe: []const u8 = \"{s}\";",
+        .{basename},
+    ) catch return .{};
+
+    return .{ .replacement = ast.Item{ .inline_code = .{
+        .code = code,
+        .location = flow.location,
+        .module = allocator.dupe(u8, flow.module) catch return .{},
+    } } };
+}
+
+~probe.run("x")
+
+~tor main {}
+
+~proc main|zig {
+    const std_lib = @import("std");
+    std_lib.debug.print("reporter file: {s}\n", .{__reporter_probe});
+}
+
+~main()
