@@ -643,9 +643,83 @@ fn desugarSitePointfree(
 ) std.mem.Allocator.Error!void {
     const transformed = try tryDesugarChain(allocator, table, site, enclosing, counter, reporter);
     if (transformed) return;
+    _ = try reattachArmsToLastStep(allocator, site);
     for (@constCast(site.continuations)) |*child| {
         try desugarSitePointfree(allocator, table, child, null, counter, reporter);
     }
+}
+
+/// A chain written across lines — `A` / `|> B` / `| arm` — parses FLAT: three
+/// siblings of one site. Sibling unnamed steps are already sequential (the
+/// emitter concatenates them, which is what 220_020 pins), so the steps need no
+/// rebuilding. The ARMS do: written at the steps' own level they belong to the
+/// last step there, not to the head.
+///
+/// The rule is 210_174's, stated from the other side: an arm attaches to the
+/// LAST STEP AT ITS OWN INDENTATION LEVEL. So an arm with no step at its level
+/// is left exactly where it is — that is 210_174's wall (arms reaching past an
+/// indented step onto a head that declares no branches), and it must keep
+/// firing. This function moves arms that HAVE a home; it never invents one.
+///
+/// Only reached when `tryDesugarChain` declined. A branch-threading chain
+/// rebuilds its own pyramid and returns before this — that path gates on the
+/// HEAD's branch count, so a chain headed by a bare-return producer
+/// (`seed(): n |> pick(n)`) falls through to here, which is precisely the shape
+/// 210_190 pins.
+fn reattachArmsToLastStep(
+    allocator: std.mem.Allocator,
+    site: *ast.Continuation,
+) std.mem.Allocator.Error!bool {
+    const kids = site.continuations;
+    if (kids.len < 2) return false;
+
+    // The chain's level is its steps' indentation. Steps that disagree are not
+    // one flat chain and this rule does not govern them.
+    var level: ?usize = null;
+    var last_step: ?usize = null;
+    for (kids, 0..) |*k, i| {
+        if (!isUnnamedStep(k)) continue;
+        if (level) |l| {
+            if (k.indent != l) return false;
+        } else level = k.indent;
+        last_step = i;
+    }
+    const lvl = level orelse return false;
+    const tail = last_step orelse return false;
+
+    var moving: usize = 0;
+    for (kids, 0..) |*k, i| {
+        if (i == tail or isUnnamedStep(k)) continue;
+        if (k.branch.len > 0 and k.indent == lvl) moving += 1;
+    }
+    if (moving == 0) return false;
+
+    const isMoving = struct {
+        fn f(k: *const ast.Continuation, i: usize, tail_i: usize, l: usize) bool {
+            return i != tail_i and k.branch.len > 0 and !isUnnamedStep(k) and k.indent == l;
+        }
+    }.f;
+
+    const tail_kid = &@constCast(kids)[tail];
+
+    // The tail's own children first, so the arms land AFTER anything it already
+    // carried, then publish onto the tail BEFORE `kept` copies it — `kept`
+    // holds values, so a copy taken first would keep the stale child list.
+    var arms = try std.ArrayList(ast.Continuation).initCapacity(allocator, tail_kid.continuations.len + moving);
+    defer arms.deinit(allocator);
+    try arms.appendSlice(allocator, tail_kid.continuations);
+    for (kids, 0..) |*k, i| {
+        if (isMoving(k, i, tail, lvl)) try arms.append(allocator, k.*);
+    }
+    tail_kid.continuations = try arms.toOwnedSlice(allocator);
+
+    var kept = try std.ArrayList(ast.Continuation).initCapacity(allocator, kids.len - moving);
+    defer kept.deinit(allocator);
+    for (kids, 0..) |*k, i| {
+        if (!isMoving(k, i, tail, lvl)) try kept.append(allocator, k.*);
+    }
+    site.continuations = try kept.toOwnedSlice(allocator);
+    return true;
 }
 
 /// An unnamed chain step: the `|>` continuation the parser produces for a
