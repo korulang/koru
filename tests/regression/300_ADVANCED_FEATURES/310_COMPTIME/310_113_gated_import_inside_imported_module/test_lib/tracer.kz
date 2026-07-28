@@ -1,0 +1,17 @@
+// Tap module — importing it is what wires the tap (the 310_001 mechanism).
+// The pin's gated import makes that wiring conditional: this module's output
+// appears exactly when the import survives the annotation gate.
+
+const std = @import("std");
+~import std/taps
+
+~pub tor log { event_name: string }
+
+~proc log|zig {
+    std.debug.print("[TAP] {s}\n", .{event_name});
+}
+
+// compute is a bare-return `-> T` event, so the tap binds the produced value
+// with `: r` (call-site bind rule, Lars-ruled 2026-06-25; 310_001 is the green
+// precedent) — a branch tap has no named branch to match on a bare return.
+~tap(input:compute -> input:display): r |> log(event_name: "compute")
