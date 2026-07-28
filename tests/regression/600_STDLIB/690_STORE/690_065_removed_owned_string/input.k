@@ -25,5 +25,5 @@ std/store:new(todos, capacity: 8) { label: *std/string:String<std/string:instanc
 std/string:from-page(text: "task")
 | ok s |> std/string:take(s): owned |> std/store:insert(todos) { label: owned }
     | row r |> std/store:take(todos[r])
-        | item taken |> std/string:free(s: taken.label)
+        | item taken |> std/string:free(s: taken)
 | err _ |> _

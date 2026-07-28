@@ -30,7 +30,7 @@ std/store:new(bin, capacity: 4) { label: *std/string:String<std/string:instance!
 
 std/string:from-page(text: "a")
 | ok a |> std/string:take(s: a): m |> std/store:insert(bin) { label: m }
-    | full f |> std/string:free(s: f.label)
+    | full f |> std/string:free(s: f)
 | err _ |> _
 
 std/io:print.ln("survived")
