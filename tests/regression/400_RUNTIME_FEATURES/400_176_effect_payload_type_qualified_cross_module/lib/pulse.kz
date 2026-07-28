@@ -1,0 +1,19 @@
+// An effect branch whose payload is a POINTER TO A TYPE THIS MODULE OWNS.
+// The consumer lives in another module, so the synthesized Handlers struct in
+// the consumer's scope has to name `Beat` by its emitted host path — the
+// consumer cannot see a bare `Beat`.
+const std = @import("std");
+
+pub const Beat = struct { n: i64 };
+
+~pub tor pulse { k: i64 }
+! tick *Beat
+| done
+~proc pulse|zig {
+    var i: i64 = 0;
+    while (i < k) : (i += 1) {
+        var b = Beat{ .n = i };
+        tick(&b);
+    }
+    return .{ .done = .{} };
+}
