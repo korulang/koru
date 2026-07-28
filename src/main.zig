@@ -355,6 +355,7 @@ fn generateBackendCode(allocator: std.mem.Allocator, input_file: []const u8, sou
             \\    program: *const __koru_ast.Program,
             \\    allocator: *const __koru_std.mem.Allocator,
             \\    out_program: *?*const __koru_ast.Program,
+            \\    ctx: ?*anyopaque, // *CompilerContext, opaque across the unit boundary
             \\) bool;
             \\
             \\
@@ -375,9 +376,10 @@ fn generateBackendCode(allocator: std.mem.Allocator, input_file: []const u8, sou
                 \\    annotation: []const u8,
                 \\    program: *const __koru_ast.Program,
                 \\    allocator: __koru_std.mem.Allocator,
+                \\    ctx: ?*anyopaque,
                 \\) !*const __koru_ast.Program {
                 \\    var out_program: ?*const __koru_ast.Program = null;
-                \\    const ok = koru_run_pass(@ptrCast(&annotation), program, &allocator, &out_program);
+                \\    const ok = koru_run_pass(@ptrCast(&annotation), program, &allocator, &out_program, ctx);
                 \\    if (!ok) return error.TransformFailed;
                 \\    return out_program orelse return error.TransformFailed;
                 \\}
@@ -1526,9 +1528,10 @@ fn generateComptimeBackendEmitted(allocator: std.mem.Allocator, source_file: *as
             \\    program: *const __koru_ast.Program,
             \\    allocator: *const __koru_std.mem.Allocator,
             \\    out_program: *?*const __koru_ast.Program,
+            \\    ctx: ?*anyopaque,
             \\) bool {
             \\    const annotation_typed: *const []const u8 = @ptrCast(@alignCast(annotation));
-            \\    out_program.* = run_pass(annotation_typed.*, program, allocator.*) catch {
+            \\    out_program.* = run_pass(annotation_typed.*, program, allocator.*, ctx) catch {
             \\        return false;
             \\    };
             \\    return true;
@@ -1618,6 +1621,12 @@ const TransformEvent = struct {
     has_item: bool, // Event accepts item: *const Item parameter
     has_program_ast: bool, // Event accepts program: *const Program parameter
     has_allocator: bool, // Event accepts allocator: std.mem.Allocator parameter
+    /// Event accepts ctx: *CompilerContext — the live compilation the
+    /// metacircular passes thread. Reaches the handler as `?*anyopaque` (the
+    /// circular-import dodge `Program.type_registry` already uses) and is cast
+    /// back in the generated stub. A handler declaring it that is reached from
+    /// an entry point carrying no context asserts; it is never synthesized.
+    has_ctx: bool = false,
     has_event_name_field: bool, // Event accepts event_name: []const u8 parameter (for glob patterns)
     returns_program: bool, // Event returns transformed{ program: *const Program }
     // Single-return form (210_131): the decl is `-> SiteResult` and the impl is
@@ -1957,6 +1966,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                 var has_program_ast = false;
                 var has_allocator = false;
                 var has_event_name_field = false;
+                var has_ctx = false;
 
                 for (event_decl.input.fields) |field| {
                     if (std.mem.eql(u8, field.name, "program_ast") or std.mem.eql(u8, field.name, "program")) {
@@ -1965,6 +1975,8 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                         has_allocator = true;
                     } else if (std.mem.eql(u8, field.name, "event_name")) {
                         has_event_name_field = true;
+                    } else if (std.mem.eql(u8, field.name, "ctx")) {
+                        has_ctx = true;
                     }
                 }
 
@@ -2029,6 +2041,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                     .has_event_decl = has_event_decl_param,
                     .has_item = has_item_param,
                     .has_program_ast = has_program_ast,
+                    .has_ctx = has_ctx,
                     .has_allocator = has_allocator,
                     .has_event_name_field = has_event_name_field,
                     .has_compile_error = has_compile_error,
@@ -2141,6 +2154,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                         var has_program_ast = false;
                         var has_allocator = false;
                         var has_event_name_field = false;
+                        var has_ctx = false;
 
                         for (event_decl.input.fields) |field| {
                             if (std.mem.eql(u8, field.name, "program_ast") or std.mem.eql(u8, field.name, "program")) {
@@ -2149,6 +2163,8 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                                 has_allocator = true;
                             } else if (std.mem.eql(u8, field.name, "event_name")) {
                                 has_event_name_field = true;
+                            } else if (std.mem.eql(u8, field.name, "ctx")) {
+                                has_ctx = true;
                             }
                         }
 
@@ -2234,6 +2250,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                             .has_event_decl = has_event_decl_param,
                             .has_item = has_item_param,
                             .has_program_ast = has_program_ast,
+                            .has_ctx = has_ctx,
                             .has_allocator = has_allocator,
                             .has_event_name_field = has_event_name_field,
                             .has_compile_error = has_compile_error,
@@ -2333,7 +2350,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
         // Function signature
         var stub_ident_buf: [256]u8 = undefined;
         const stub_ident = lowerKebabIdent(&stub_ident_buf, event.stub_name);
-        const fn_sig = try std.fmt.bufPrint(&buf, "fn call_handler_{s}(node: __koru_ast.ASTNode, program: *const __koru_ast.Program, allocator: transform_std.mem.Allocator) !__koru_ast.SiteResult {{\n", .{stub_ident});
+        const fn_sig = try std.fmt.bufPrint(&buf, "fn call_handler_{s}(node: __koru_ast.ASTNode, program: *const __koru_ast.Program, allocator: transform_std.mem.Allocator, __koru_ctx: ?*anyopaque) !__koru_ast.SiteResult {{\n", .{stub_ident});
         try code_emitter.write(fn_sig);
 
         // Extract the appropriate data from the node based on handler type
@@ -2359,6 +2376,9 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
 
         if (!event.has_allocator) {
             try code_emitter.write("    _ = allocator;\n");
+        }
+        if (!event.has_ctx) {
+            try code_emitter.write("    _ = __koru_ctx;\n");
         }
         // Only discard program if we don't use it anywhere
         if (!event.has_program_ast and !event.has_source and !event.has_expression and !event.has_item and !event.has_event_decl) {
@@ -2398,6 +2418,10 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
             try code_emitter.write("        .event_decl = event_decl,\n");
             if (event.has_program_ast) {
                 try code_emitter.write("        .program = program,\n");
+            }
+            if (event.has_ctx) {
+                const ctx_line = try std.fmt.bufPrint(&buf, "        .ctx = @ptrCast(@alignCast(__koru_ctx orelse @panic(\"derive '{s}' declares ctx: *CompilerContext but was invoked from a path that carries no compilation context\"))),\n", .{event.match_name});
+                try code_emitter.write(ctx_line);
             }
             if (event.has_allocator) {
                 try code_emitter.write("        .allocator = allocator,\n");
@@ -2487,6 +2511,10 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
             }
             if (event.has_program_ast) {
                 try code_emitter.write("            .program = program,\n");
+            }
+            if (event.has_ctx) {
+                const ctx_line = try std.fmt.bufPrint(&buf, "            .ctx = @ptrCast(@alignCast(__koru_ctx orelse @panic(\"transform '{s}' declares ctx: *CompilerContext but was invoked from a path that carries no compilation context\"))),\n", .{event.match_name});
+                try code_emitter.write(ctx_line);
             }
             if (event.has_allocator) {
                 try code_emitter.write("            .allocator = allocator,\n");
@@ -2670,7 +2698,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
     try code_emitter.write("//\n");
     try code_emitter.write("// This is why binding.type is \"unknown\" at parse time - type resolution happens\n");
     try code_emitter.write("// at transform time via ast_functional.resolveBindingType().\n");
-    try code_emitter.write("pub fn run_pass(annotation: []const u8, program: *const __koru_ast.Program, allocator: transform_std.mem.Allocator) !*__koru_ast.Program {\n");
+    try code_emitter.write("pub fn run_pass(annotation: []const u8, program: *const __koru_ast.Program, allocator: transform_std.mem.Allocator, ctx: ?*anyopaque) !*__koru_ast.Program {\n");
     try code_emitter.write("    // The `annotation` names WHICH transform stage to run, so the pipeline can\n");
     try code_emitter.write("    // sprinkle named stages where they belong: \"pre\" / \"main\" / \"post\" run just\n");
     try code_emitter.write("    // that stage; anything else (e.g. \"transform\") runs all stages in order.\n");
@@ -2714,7 +2742,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
     try code_emitter.write("    };\n");
     try code_emitter.write("    \n");
     try code_emitter.write("    // Use transform_pass_runner for proper recursive AST walking\n");
-    try code_emitter.write("    const result = try transform_pass_runner.walkAndTransformStages(program, transforms, allocator, __only_stage);\n");
+    try code_emitter.write("    const result = try transform_pass_runner.walkAndTransformStages(program, transforms, allocator, __only_stage, ctx);\n");
     try code_emitter.write("    \n");
     try code_emitter.write("    // DUMP POINT 7: AST at run_pass() exit (after all transforms)\n");
     try code_emitter.write("    dumpAST(result, \"7-run-pass-end\", allocator);\n");

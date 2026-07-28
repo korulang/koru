@@ -1,0 +1,57 @@
+// PINS: `ctx` is a transform-injectable machine parameter. A
+// `[comptime|transform]` event may declare `ctx: *std/compiler:CompilerContext`
+// and receive the LIVE compilation context — the same value the metacircular
+// passes take (`~pub tor run-pre-transforms { ctx: CompilerContext }`,
+// compiler.kz:806), carrying the AST, the unfiltered `original_ast` for
+// metadata queries, the accumulated `errors`/`warnings`, and the error policy.
+//
+// The seam this pin guards is compiler.kz:812, where the runner calls
+// `run_pass("pre", ctx.ast, ctx.allocator)` — decomposing the context into two
+// fields one frame before the transforms run. `ctx` must survive that call so a
+// transform can reason about the compilation rather than only about its own
+// invocation.
+//
+// Proof of liveness, not merely of typing: the transform reads a field off the
+// injected value at comptime and BAKES it into the code it emits, so the
+// runtime output can only be produced by a context that actually arrived.
+// `invocation`/`item`/`program`/`allocator` stay injectable alongside it —
+// `ctx` is additive, not a replacement.
+
+~[comptime|transform]pub tor probe.* {
+    expr: Expression,
+    ctx: *std/compiler:CompilerContext,
+    item: *const Item,
+    program: *const Program,
+} -> SiteResult
+
+~proc probe.*|zig {
+    const ast = @import("ast");
+    const std_lib = @import("std");
+    const allocator = std_lib.heap.page_allocator;
+    const flow = if (item.* == .flow) &item.flow else return .{};
+
+    // Read the live context and bake the reading into the emitted declaration.
+    const policy = @tagName(ctx.error_policy);
+    const code = std_lib.fmt.allocPrint(
+        allocator,
+        "pub const __ctx_probe: []const u8 = \"{s}\";",
+        .{policy},
+    ) catch return .{};
+
+    return .{ .replacement = ast.Item{ .inline_code = .{
+        .code = code,
+        .location = flow.location,
+        .module = allocator.dupe(u8, flow.module) catch return .{},
+    } } };
+}
+
+~probe.run("x")
+
+~tor main {}
+
+~proc main|zig {
+    const std_lib = @import("std");
+    std_lib.debug.print("ctx policy: {s}\n", .{__ctx_probe});
+}
+
+~main()

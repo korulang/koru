@@ -641,14 +641,19 @@ pub const TransformEntry = struct {
     /// downstream structure before peer transforms rewrite it.
     claims_descendants: bool = false,
 
-    /// Handler function that takes (node, program, allocator) and returns a
+    /// Handler function that takes (node, program, allocator, ctx) and returns a
     /// SiteResult — the site-local write-back ABI. The handler describes its
     /// change as a value (replace this site / append these items); the RUNNER
     /// owns all placement. Handlers never splice into the whole program.
     /// - node: The ASTNode being transformed (will be .invocation for transforms)
     /// - program: The current program AST (immutable to the handler)
     /// - allocator: For any allocations needed during transformation
-    handler_fn: *const fn (node: ASTNode, program: *const Program, allocator: std.mem.Allocator) anyerror!ast.SiteResult,
+    /// - ctx: The live CompilerContext, opaque here to avoid the circular
+    ///   import (same move as `Program.type_registry`); the generated
+    ///   `call_handler_*` casts it back for handlers that declare it. Null on
+    ///   entry points that carry no context — a handler that declares `ctx`
+    ///   and reaches one asserts rather than receiving a synthesized value.
+    handler_fn: *const fn (node: ASTNode, program: *const Program, allocator: std.mem.Allocator, ctx: ?*anyopaque) anyerror!ast.SiteResult,
 };
 
 /// Walk entire AST and apply transforms using fixed-point iteration
@@ -683,8 +688,9 @@ pub fn walkAndTransform(
     program: *const Program,
     transforms: []const TransformEntry,
     allocator: std.mem.Allocator,
+    ctx: ?*anyopaque,
 ) !*Program {
-    return walkAndTransformStages(program, transforms, allocator, null);
+    return walkAndTransformStages(program, transforms, allocator, null, ctx);
 }
 
 /// As `walkAndTransform`, but runs ONLY the given stage's fixed-point when
@@ -699,6 +705,7 @@ pub fn walkAndTransformStages(
     transforms: []const TransformEntry,
     allocator: std.mem.Allocator,
     only_stage: ?Stage,
+    ctx: ?*anyopaque,
 ) !*Program {
     var current_program = program;
     const MAX_ITERATIONS: usize = 1000; // Circuit breaker to prevent infinite loops
@@ -731,7 +738,7 @@ pub fn walkAndTransformStages(
                 return error.TransformInfiniteLoop;
             }
 
-            const result = try walkOnce(current_program, staged.items, allocator);
+            const result = try walkOnce(current_program, staged.items, allocator, ctx);
 
             if (result.found) {
                 current_program = result.program;
@@ -755,10 +762,11 @@ fn walkOnce(
     program: *const Program,
     transforms: []const TransformEntry,
     allocator: std.mem.Allocator,
+    ctx: ?*anyopaque,
 ) !WalkResult {
     // Start from the program root
     const root = ASTNode{ .program = @constCast(program) };
-    return try walkNode(root, program, transforms, allocator, .none);
+    return try walkNode(root, program, transforms, allocator, .none, ctx);
 }
 
 /// Compute the SitePosition each child of `node` should be walked with.
@@ -811,6 +819,7 @@ fn walkNode(
     transforms: []const TransformEntry,
     allocator: std.mem.Allocator,
     position: SitePosition,
+    ctx: ?*anyopaque,
 ) anyerror!WalkResult {
     // Claimed-region transforms are checked BEFORE children on the nearest
     // lexical container that owns the invocation. This is the one place where
@@ -821,7 +830,7 @@ fn walkNode(
                 if (!transform.claims_descendants) continue;
                 if (!invocationMatchesEntry(candidate.node, &transform, program)) continue;
 
-                const claim_result = try applyTransform(candidate.node, candidate.position, program, transform, allocator);
+                const claim_result = try applyTransform(candidate.node, candidate.position, program, transform, allocator, ctx);
                 if (claim_result.found) {
                     return claim_result;
                 }
@@ -836,7 +845,7 @@ fn walkNode(
     defer allocator.free(children);
 
     for (children) |child| {
-        const result = try walkNode(child, program, transforms, allocator, childPosition(node, child, position));
+        const result = try walkNode(child, program, transforms, allocator, childPosition(node, child, position), ctx);
         if (result.found) {
             return result; // Found deeper transform, use it
         }
@@ -870,7 +879,7 @@ fn walkNode(
         for (transforms) |transform| {
             if (transform.claims_descendants) continue;
             if (invocationMatchesEntry(node, &transform, program)) {
-                return try applyTransform(node, position, program, transform, allocator);
+                return try applyTransform(node, position, program, transform, allocator, ctx);
             }
         }
 
@@ -908,7 +917,7 @@ fn walkNode(
                     for (transforms) |transform| {
                         if (std.mem.eql(u8, transform.name, handler_name)) {
                             // log.debug("[WALK] -> Matched derive handler: {s}\n", .{handler_name});
-                            const result = try transform.handler_fn(node, program, allocator);
+                            const result = try transform.handler_fn(node, program, allocator, ctx);
 
                             if (result.replacement == null and result.replacement_node == null and result.whole_program == null and result.appended.len == 0) {
                                 log.debug("ERROR: Derive handler '{s}' produced an empty SiteResult!\n", .{handler_name});
@@ -998,6 +1007,7 @@ fn applyTransform(
     program: *const Program,
     transform: TransformEntry,
     allocator: std.mem.Allocator,
+    ctx: ?*anyopaque,
 ) !WalkResult {
     // Position-agnostic site contract: the handler sees its invocation and
     // describes its change as a SiteResult; THIS function owns all placement
@@ -1022,7 +1032,7 @@ fn applyTransform(
         handler_program = view.program;
     }
 
-    const result = try transform.handler_fn(handler_node, handler_program, allocator);
+    const result = try transform.handler_fn(handler_node, handler_program, allocator, ctx);
 
     // Empty SiteResult = no-op: the handler declined / already processed this
     // invocation (e.g. inline_body present but not yet @pass_ran-annotated).
