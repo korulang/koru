@@ -17,17 +17,35 @@
 // branch, pinned green at 690_077 — and an unbound arm then drops it on the
 // floor rather than threading it into the one call that would settle it.
 //
-// A SECOND SYMPTOM, same gap, different program: in koru-examples/downloads the
-// batch's `| full` arm is `| full |> koru/curl:cancel()`, and there the thread
-// does not come up empty — it reaches PAST the reissued value to the enclosing
-// `| started p`, already consumed by the insert, and reports
-// `KORU030: Use-after-discharge: binding 'p' was already discharged`. Empty here,
-// wrong-target there; both are the unbound give-back failing to thread.
+// MECHANISM, measured by experiment 2026-07-28 (not inferred):
 //
-// Whichever way it fails, the rule is resolution order, innermost first: an
-// arm's own payload is the innermost thing in scope in its body. Compare
-// 690_090, measured the same day, where a sweep arm's row binding loses to a
-// store name — something resolves outward when it should resolve inward.
+// The payload never threads at all. `ThreadHolder` does cover an arm payload
+// (ast_transform.zig, `payload: *ast.Continuation`), but a `Thread` carries ONE
+// base-type string, and a give-back payload is a named-field record
+// (`{ label: *String<instance!> }`) with no single type. So it is not a
+// candidate, and the slot is left to ordinary NAME PUNNING — which then fills
+// from whatever enclosing binding happens to share the parameter's name.
+//
+// The symptom is therefore decided by a naming coincidence, which is how it was
+// proved: rename the enclosing `take(s: c): p` to `: s`, matching `free`'s
+// parameter `s`, and this exact program stops reporting "not discharged" and
+// reports `Use-after-discharge: binding 's'` instead. That is the symptom
+// koru-examples/downloads shows, where the arm is `| full |> curl:cancel()`,
+// `cancel` takes `p:`, and the enclosing arm bound `p`.
+//
+// So punning is not misbehaving — it does what punning is specified to do. The
+// gap is that the arm's OWN payload is not a candidate for the slot, so the
+// innermost value loses to an outer one by default rather than by rule.
+//
+// NOT the same bug as 690_090, though the shape rhymes: that one is pass order
+// inside store.kz's create Walk. Same "inner loses to outer" silhouette, two
+// unrelated mechanisms — checked, because assuming they were one would have
+// produced a single fix for two defects.
+//
+// DESIGN QUESTION FOR LARS, since a spelling is involved: 210_191 pins that an
+// unbound payload threads BY TYPE, with an identity payload (one `__type_ref`
+// field). Whether a ONE-FIELD RECORD payload threads that field is not covered
+// by that pin or any other.
 import std/io
 import std/string
 import std/store
