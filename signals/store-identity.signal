@@ -1,0 +1,8 @@
+name: store-identity
+kind: inferred
+shape: categorical
+face: in
+membrane: false
+note: fires on the question of what names a row across a mutation. 2026-07-28:
+  position is not identity under swap-remove, and the corpus had never put a
+  stored index and a removal in one program (690_092).

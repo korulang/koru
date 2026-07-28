@@ -1,0 +1,8 @@
+name: language-surface
+kind: inferred
+shape: categorical
+face: in
+membrane: false
+note: fires when a language surface changes shape — a construct gains, loses, or
+  re-spells the thing it binds. 2026-07-28: sweep's ambient `entity` became a
+  row binding (690_086). Watch it for surface that grew without a ruling.
