@@ -9967,22 +9967,10 @@ pub const Parser = struct {
         var import_result = import_parser.parse() catch |err| {
             // Surface the inner parser's errors before propagating
             if (import_parser.reporter.hasErrors()) {
-                // Streaming: the buffer is a window, not a ceiling. `bufPrint`
-                // into a fixed 4096 with `catch return` truncated an imported
-                // file's diagnostic mid-sentence and said nothing about it —
-                // a silent loss in the one place a user most needs the text.
-                const StderrWriter = struct {
-                    pub fn print(_: @This(), comptime fmt: []const u8, args: anytype) !void {
-                        var buf: [4096]u8 = undefined;
-                        var w = std.fs.File.stderr().writerStreaming(&buf);
-                        try w.interface.print(fmt, args);
-                        try w.interface.flush();
-                    }
-                    pub fn writeAll(_: @This(), bytes: []const u8) !void {
-                        std.fs.File.stderr().writeAll(bytes) catch {};
-                    }
-                };
-                import_parser.reporter.printErrors(StderrWriter{}) catch {};
+                // The canonical sink. This site used to hand-roll one with
+                // `bufPrint(...) catch return`, which truncated an imported
+                // file's diagnostic mid-sentence and said nothing about it.
+                import_parser.reporter.printErrors(errors.FileSink.stderr()) catch {};
             }
             return err;
         };

@@ -3408,34 +3408,12 @@ fn printAstParseErrors(source_file: *const ast.Program, writer: anytype) !void {
     }
 }
 
-// A simple writer that wraps a File
-const FileWriter = struct {
-    file: std.fs.File,
-
-    /// Streams through a DRAINING writer rather than formatting into a fixed
-    /// stack buffer. With `bufPrint`, any diagnostic whose rendered chunk
-    /// exceeded 4096 bytes died with a raw Zig `error: NoSpaceLeft` and a koruc
-    /// stack trace — the compiler crashing while printing its own error
-    /// message, the one leak a user can do nothing about. Draining makes the
-    /// buffer a window rather than a ceiling: a long message costs extra
-    /// writes, never a failure.
-    ///
-    /// STREAMING, not positional. `File.writer` tracks its own offset and emits
-    /// positional writes; since this builds a fresh writer per call, every call
-    /// would restart at offset 0 and overwrite the last one whenever stderr is
-    /// a seekable file — which is exactly how the harness captures it. Only a
-    /// terminal, where positional writes degrade to appends, would hide it.
-    pub fn print(self: FileWriter, comptime fmt: []const u8, args: anytype) !void {
-        var buf: [4096]u8 = undefined;
-        var writer = self.file.writerStreaming(&buf);
-        try writer.interface.print(fmt, args);
-        try writer.interface.flush();
-    }
-
-    pub fn writeAll(self: FileWriter, bytes: []const u8) !void {
-        try self.file.writeAll(bytes);
-    }
-};
+// The diagnostic sink. It lives in `errors` beside `printErrors`, which is the
+// only thing that consumes it — four copies of this struct existed and three
+// were wrong, because `printErrors(writer: anytype)` shipped no implementation
+// for anyone to reach for. The name stays local so the 16 call sites below read
+// unchanged; the behaviour and its test live in one place.
+const FileWriter = errors.FileSink;
 
 // Import system - proper module isolation with struct namespaces
 const ImportedModule = struct {

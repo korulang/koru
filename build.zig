@@ -732,6 +732,17 @@ pub fn build(b: *std.Build) void {
         .root_module = ast_json_module,
     });
 
+    // The diagnostic sink lives here, and its test is the only thing standing
+    // between us and a fifth hand-rolled copy of it.
+    const errors_tests = b.addTest(.{
+        .name = "errors_tests",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/errors.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+
     const lexer_tests = b.addTest(.{
         .name = "lexer_tests",
         .root_module = b.createModule(.{
@@ -938,6 +949,7 @@ pub fn build(b: *std.Build) void {
     const run_parser_tests = b.addRunArtifact(parser_tests);
     const run_ast_serializer_tests = b.addRunArtifact(ast_serializer_tests);
     const run_ast_json_tests = b.addRunArtifact(ast_json_tests);
+    const run_errors_tests = b.addRunArtifact(errors_tests);
     const run_lexer_tests = b.addRunArtifact(lexer_tests);
     const run_shape_checker_tests = b.addRunArtifact(shape_checker_tests);
     const run_tap_collector_tests = b.addRunArtifact(tap_collector_tests);
@@ -1388,10 +1400,14 @@ pub fn build(b: *std.Build) void {
     const annotation_parser_test_step = b.step("test-annotation-parser", "Run annotation parser tests");
     annotation_parser_test_step.dependOn(&run_annotation_parser_tests.step);
 
+    const errors_test_step = b.step("test-errors", "Run diagnostic-sink tests");
+    errors_test_step.dependOn(&run_errors_tests.step);
+
     const test_step = b.step("test", "Run all tests");
     test_step.dependOn(&run_annotation_parser_tests.step);
     test_step.dependOn(&run_regex_engine_tests.step);
     test_step.dependOn(&run_flow_parser_tests.step);
+    test_step.dependOn(&run_errors_tests.step);
     test_step.dependOn(&run_lexer_tests.step);
     test_step.dependOn(&run_parser_tests.step);
     test_step.dependOn(&run_ast_serializer_tests.step);

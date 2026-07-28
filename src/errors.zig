@@ -619,3 +619,77 @@ pub fn unknownBranch(reporter: *ErrorReporter, line: usize, column: usize, branc
         .{stream.getWritten()},
     );
 }
+
+/// The canonical sink for `printErrors`.
+///
+/// It exists because `printErrors` takes `anytype`, and an `anytype` with no
+/// shipped implementation is an invitation: four call sites hand-rolled this
+/// struct, three of them were wrong, and they were wrong in TWO different ways —
+/// a fixed-buffer ceiling that killed the compiler mid-diagnostic, and a
+/// positional writer that silently overwrote everything but the last message.
+/// None could be tested, because each was a local struct inside the function
+/// that used it. One sink, one test, one place left to be wrong.
+///
+/// STREAMING, never positional. `File.writer` tracks an offset, and since a
+/// fresh writer is built per call, positional writes restart at 0 and clobber
+/// the previous message whenever stderr is a seekable file — exactly how the
+/// harness captures it, and never how a terminal behaves. The buffer is a
+/// window rather than a ceiling: a long diagnostic costs extra writes, never a
+/// failure.
+pub const FileSink = struct {
+    file: std.fs.File,
+
+    pub fn stderr() FileSink {
+        return .{ .file = std.fs.File.stderr() };
+    }
+
+    pub fn print(self: FileSink, comptime fmt: []const u8, args: anytype) !void {
+        var buf: [4096]u8 = undefined;
+        var w = self.file.writerStreaming(&buf);
+        try w.interface.print(fmt, args);
+        try w.interface.flush();
+    }
+
+    pub fn writeAll(self: FileSink, bytes: []const u8) !void {
+        try self.file.writeAll(bytes);
+    }
+};
+
+test "FileSink survives a diagnostic longer than its buffer, written to a FILE" {
+    // A FILE, not a pipe and not a terminal: positional writes degrade to
+    // appends on a terminal, so a terminal probe certifies a broken sink.
+    // Belief: frag-a-probe-must-match-how-the-artifact-is-consumed.
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const filler = "0123456789" ** 600; // 6000 bytes — well past the 4096 window
+    const between = "----between----\n";
+
+    {
+        const f = try tmp.dir.createFile("sink.txt", .{});
+        defer f.close();
+        const sink = FileSink{ .file = f };
+        // THREE separate print() calls: the sink builds a fresh writer per
+        // call, which is the precise shape that made positional writes clobber
+        // one another. One call would pass even with the bug.
+        try sink.print("AAAA{s}AAAA\n", .{filler});
+        try sink.writeAll(between);
+        try sink.print("BBBB{s}BBBB\n", .{filler});
+        try sink.print("CCCC{s}CCCC\n", .{filler});
+    }
+
+    const content = try tmp.dir.readFileAlloc(std.testing.allocator, "sink.txt", 1 << 20);
+    defer std.testing.allocator.free(content);
+
+    // Exact length catches BOTH historical failures at once: a ceiling writes
+    // nothing (or dies), and an overwrite leaves only the final message.
+    const one_message = 4 + filler.len + 4 + 1;
+    try std.testing.expectEqual(one_message * 3 + between.len, content.len);
+
+    // ...and order, so a sink that emits every byte in the wrong sequence fails.
+    const a = std.mem.indexOf(u8, content, "AAAA").?;
+    const b = std.mem.indexOf(u8, content, between).?;
+    const c = std.mem.indexOf(u8, content, "BBBB").?;
+    const d = std.mem.indexOf(u8, content, "CCCC").?;
+    try std.testing.expect(a < b and b < c and c < d);
+}

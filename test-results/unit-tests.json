@@ -1,13 +1,13 @@
 {
-  "timestamp": "2026-07-28T22:10:53.955Z",
+  "timestamp": "2026-07-28T22:32:02.221Z",
   "summary": {
-    "passed": 302,
+    "passed": 303,
     "failed": 0,
     "skipped": 12,
     "leaked": 0,
     "compileErrors": 0,
-    "total": 314,
-    "suiteCount": 40,
+    "total": 315,
+    "suiteCount": 41,
     "status": "success"
   },
   "suites": [
@@ -81,6 +81,14 @@
       "failed": 0,
       "skipped": 0,
       "total": 6,
+      "status": "success"
+    },
+    {
+      "name": "errors_tests",
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "total": 1,
       "status": "success"
     },
     {
