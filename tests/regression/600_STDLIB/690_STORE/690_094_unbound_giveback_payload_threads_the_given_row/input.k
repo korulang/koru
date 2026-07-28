@@ -17,35 +17,49 @@
 // branch, pinned green at 690_077 — and an unbound arm then drops it on the
 // floor rather than threading it into the one call that would settle it.
 //
-// MECHANISM, measured by experiment 2026-07-28 (not inferred):
+// MECHANISM — measured by experiment, then read in the source. TWO passes are
+// involved and they are not the same thing:
 //
-// The payload never threads at all. `ThreadHolder` does cover an arm payload
-// (ast_transform.zig, `payload: *ast.Continuation`), but a `Thread` carries ONE
-// base-type string, and a give-back payload is a named-field record
-// (`{ label: *String<instance!> }`) with no single type. So it is not a
-// candidate, and the slot is left to ordinary NAME PUNNING — which then fills
-// from whatever enclosing binding happens to share the parameter's name.
+//   THE THREAD  binds by TYPE, and for a branch payload it reaches ONE STEP
+//               only — "branch names are NOT durable symbols (a stage may repeat
+//               `| ctx`), so they thread only one step" (ast_transform.zig:1080).
+//               It declines here anyway: a `Thread` carries ONE base-type string
+//               and a give-back payload is a named-field record with no single
+//               type, so the payload is never a candidate for the slot.
 //
-// The symptom is therefore decided by a naming coincidence, which is how it was
-// proved: rename the enclosing `take(s: c): p` to `: s`, matching `free`'s
-// parameter `s`, and this exact program stops reporting "not discharged" and
-// reports `Use-after-discharge: binding 's'` instead. That is the symptom
-// koru-examples/downloads shows, where the arm is `| full |> curl:cancel()`,
-// `cancel` takes `p:`, and the enclosing arm bound `p`.
+//   THE PUN     binds by NAME, and reaches the FULL SUBTREE — "a `: bind` IS a
+//               durable symbol, so its pun reaches its full subtree"
+//               (ast_transform.zig:1081-1082). It synthesizes `field: field`
+//               "as if the author had typed it" for any unfilled input whose
+//               name matches a live bind.
 //
-// So punning is not misbehaving — it does what punning is specified to do. The
-// gap is that the arm's OWN payload is not a candidate for the slot, so the
-// innermost value loses to an outer one by default rather than by rule.
+// So the arm's own payload never competes, and the pun fills the empty slot from
+// `take(s: c): p` — a bind several arms up the subtree, already consumed by the
+// insert. The pun's own comment predicts this exactly: "the pun only inserts the
+// reference; correctness is the checkers' job." The checker then does its job
+// and reports the use-after-discharge.
+//
+// PROVED BY NAME, NOT BY TYPE, which is what separates the two passes: rename
+// the enclosing bind to `: s`, matching `free`'s parameter, and this same
+// program reports `Use-after-discharge: binding 's'` instead of the
+// not-discharged error above. The TYPE was identical in both runs; only the NAME
+// changed. koru-examples/downloads shows the first form because `cancel` takes
+// `p:` and its enclosing arm bound `p`.
 //
 // NOT the same bug as 690_090, though the shape rhymes: that one is pass order
 // inside store.kz's create Walk. Same "inner loses to outer" silhouette, two
 // unrelated mechanisms — checked, because assuming they were one would have
 // produced a single fix for two defects.
 //
-// DESIGN QUESTION FOR LARS, since a spelling is involved: 210_191 pins that an
-// unbound payload threads BY TYPE, with an identity payload (one `__type_ref`
-// field). Whether a ONE-FIELD RECORD payload threads that field is not covered
-// by that pin or any other.
+// FOR LARS, two design questions this exposes, neither a spelling to invent:
+//   1. 210_191 pins that an unbound payload threads BY TYPE, with an IDENTITY
+//      payload (one `__type_ref` field). Whether a ONE-FIELD RECORD payload
+//      threads its field is unruled.
+//   2. The pun's full-subtree reach is justified by uniqueness — "no shadowing
+//      means the in-scope match is always unique". Uniqueness holds (KORU106
+//      enforces it). But uniqueness is not LIVENESS: a consumed binding stays a
+//      pun candidate arbitrarily deep in the subtree, and fills a slot the
+//      author left empty on purpose.
 import std/io
 import std/string
 import std/store
