@@ -1107,12 +1107,21 @@ pub const CompilerContext = struct {
     const ast_transform = @import("ast_transform");
 
     // Minimal stderr sink — `printErrors` takes anytype and needs only these two.
+    //
+    // STREAMING, and the buffer is a window rather than a ceiling. `bufPrint`
+    // into a fixed 4096 died with NoSpaceLeft on a long diagnostic — the
+    // compiler failing while printing its own error message, the one failure a
+    // user can do nothing about. `writerStreaming` and never `writer`: the
+    // latter tracks an offset and emits positional writes, so a fresh writer
+    // per call overwrites the previous one whenever stderr is a seekable file,
+    // which is exactly how the harness captures it.
     const Out = struct {
         file: std.fs.File,
         pub fn print(self: @This(), comptime fmt: []const u8, args: anytype) !void {
             var buf: [4096]u8 = undefined;
-            const msg = try std.fmt.bufPrint(&buf, fmt, args);
-            try self.file.writeAll(msg);
+            var w = self.file.writerStreaming(&buf);
+            try w.interface.print(fmt, args);
+            try w.interface.flush();
         }
         pub fn writeAll(self: @This(), bytes: []const u8) !void {
             try self.file.writeAll(bytes);
@@ -2120,12 +2129,14 @@ const joinPathAlloc = struct {
         // sentence naming the real fix is never reached at all.
         if (ctx.reporter) |rep| {
             if (rep.hasErrors()) {
+                // Streaming, same reasoning as the desugar-chains gate above.
                 const Out = struct {
                     file: std.fs.File,
                     pub fn print(self: @This(), comptime fmt: []const u8, args: anytype) !void {
                         var buf: [4096]u8 = undefined;
-                        const msg = try std.fmt.bufPrint(&buf, fmt, args);
-                        try self.file.writeAll(msg);
+                        var w = self.file.writerStreaming(&buf);
+                        try w.interface.print(fmt, args);
+                        try w.interface.flush();
                     }
                     pub fn writeAll(self: @This(), bytes: []const u8) !void {
                         try self.file.writeAll(bytes);

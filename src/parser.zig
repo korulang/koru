@@ -9967,11 +9967,16 @@ pub const Parser = struct {
         var import_result = import_parser.parse() catch |err| {
             // Surface the inner parser's errors before propagating
             if (import_parser.reporter.hasErrors()) {
+                // Streaming: the buffer is a window, not a ceiling. `bufPrint`
+                // into a fixed 4096 with `catch return` truncated an imported
+                // file's diagnostic mid-sentence and said nothing about it —
+                // a silent loss in the one place a user most needs the text.
                 const StderrWriter = struct {
                     pub fn print(_: @This(), comptime fmt: []const u8, args: anytype) !void {
                         var buf: [4096]u8 = undefined;
-                        const msg = std.fmt.bufPrint(&buf, fmt, args) catch return;
-                        std.fs.File.stderr().writeAll(msg) catch {};
+                        var w = std.fs.File.stderr().writerStreaming(&buf);
+                        try w.interface.print(fmt, args);
+                        try w.interface.flush();
                     }
                     pub fn writeAll(_: @This(), bytes: []const u8) !void {
                         std.fs.File.stderr().writeAll(bytes) catch {};
