@@ -1,0 +1,41 @@
+// PINS: a SUBFLOW body may call an event that has EFFECT branches.
+//
+// `beats` fires `! beat` k times, then `| done`. Implementing `drive` as a
+// subflow over it emits the call in its no-effect form:
+//
+//     const result = main_module.beats_event.handler(.{ .k = k });
+//     expected 2 argument(s), found 1
+//
+// An event with `!` branches lowers to `handler(input, comptime __H: type)` —
+// the arms ride in as a synthesized Handlers struct passed second. The
+// machinery exists and works at a top-level call site; the subflow-body path
+// never synthesizes one, so the `! beat` arm is parsed, checked, and then
+// dropped before the call is written.
+//
+// The consequence is a composition hole rather than a corner: an event with
+// effect branches cannot be wrapped, renamed, or specialised by a subflow —
+// which is how every other event is composed. `~drive = beats(k)` is the
+// simplest wrapper anyone would write.
+//
+// Reached first through std/store's sweep (690_082), where the arm's callee has
+// effect branches — but the sweep is a bystander. Its body is transplanted into
+// a synthesized subflow (`__store_sweepbody_*`), so it inherits this. The probe
+// that separated them is this file: no store, no sweep, same error.
+const std = @import("std");
+~import std/io
+
+~tor beats { k: i64 }
+! beat i64
+| done
+~proc beats|zig {
+    var i: i64 = 0;
+    while (i < k) : (i += 1) beat(i);
+    return .{ .done = {} };
+}
+
+~tor drive { k: i64 }
+~drive = beats(k)
+! beat b |> std/io:print.ln("beat {{ b:d }}")
+| done |> _
+
+~drive(k: 2)

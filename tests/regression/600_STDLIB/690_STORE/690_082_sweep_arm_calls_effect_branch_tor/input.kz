@@ -6,15 +6,20 @@
 //     const result = main_module.beats_event.handler(.{ .k = n });
 //     expected 2 argument(s), found 1
 //
-// An event with effect branches takes its handler struct as a second argument;
-// the sweepbody emitter builds the call as though the event had none, so the
-// `! beat` arm is dropped on the floor rather than wired. The arm is written,
-// parsed, and checked — it simply never reaches the generated call.
+// The CAUSE is not the sweep — it is 400_175. A sweep body is transplanted into
+// a synthesized subflow (`__store_sweepbody_*`), and a subflow body that calls
+// an effect-branch event emits the call in its no-effect form, dropping the
+// handler struct. The identical error reproduces with no store and no sweep at
+// all; that probe is 400_175, and this test is the store's instance of it.
 //
-// The sweep is CHAINED here on purpose, so this is not 690_081 wearing a
-// different hat: statement position is fixed by putting a step in front, and
-// this program has one and still fails. The variable is the arm's callee having
-// effect branches, nothing else.
+// It earns its own pin anyway: the transplant is the store's, so this shape can
+// break independently of the general case (capture threading, projection binds,
+// the `entity.` rewrite all run here and not there). When 400_175 goes green
+// this should follow — and if it does not, the difference is the store's.
+//
+// The sweep is CHAINED here on purpose so it is not 690_081 wearing a different
+// hat: statement position is fixed by putting a step in front, and this program
+// has one and still fails.
 //
 // Found in koru-examples/downloads, where a `! sweep` arm calls curl's `poll`
 // to advance a borrowed batch — `! progress` and `! finished` are the whole
