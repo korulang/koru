@@ -1,0 +1,55 @@
+// PINS: a store may hold an obligation whose type has MORE THAN ONE disposal
+// event.
+//
+// `insert` takes ownership of `h`. The `| full` arm is where the value comes
+// BACK — a store that refused it hands it over, and the author discharges it
+// there. That hand-off is already understood: the identical program with a
+// column whose type has ONE disposer compiles and runs. Add a second disposer,
+// change nothing else, and it is KORU030 "not discharged. Call one of: shut,
+// drop".
+//
+// The refusal is not about the hand-off, which is unambiguous — the store took
+// the value. It is auto-discharge finding zero AUTO-INSERTABLE disposers and
+// two candidates, and bailing on the ambiguity before it ever credits the
+// store. A check reaching its verdict ahead of the fact that settles it, which
+// is also what 330_119 was about in the other direction.
+//
+// Two disposers is the NORMAL case for a resource with more than one legal
+// exit, not a corner. Found building koru-examples/downloads, where the stored
+// value is curl's `*Pending<open!>` and the two disposers are `cancel` and
+// `await` — abandoning a batch and finishing it are genuinely different acts,
+// which is exactly why the surface names both rather than picking one.
+//
+// `drop` is never called. Its presence alone is the whole difference.
+const std = @import("std");
+~import std/io
+~import std/store
+
+pub const Handle = struct { id: i32 };
+
+~tor make {}
+| ok *Handle<open!>
+| err string
+~proc make|zig {
+    const h = std.heap.page_allocator.create(Handle) catch unreachable;
+    h.* = .{ .id = 1 };
+    return .{ .ok = h };
+}
+
+~tor shut { h: *Handle<!open> }
+~proc shut|zig {
+    std.heap.page_allocator.destroy(h);
+}
+
+~tor drop { h: *Handle<!open> }
+~proc drop|zig {
+    std.heap.page_allocator.destroy(h);
+}
+
+~std/store:new(slots, capacity: 2) { h: *Handle<open!> }
+
+~make()
+| ok h |> std/store:insert(slots) { h }
+    | row _ |> std/io:print.ln("stored")
+    | full f |> shut(f.h)
+| err _ |> std/io:print.ln("no handle")
