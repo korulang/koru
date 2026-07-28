@@ -286,6 +286,56 @@ an imported module (module-qualifier resolution becomes a parse/frontend check, 
 the test assumes) — or is qualifier resolution legitimately a backend/registry
 concern (and the test is wrong about where the error belongs)?
 
+## D7 — What names a row? (the store's identity question)
+**Pins:** `690_092` (red, opened 2026-07-28), `690_018` (TODO since 2026-07-04),
+`690_090`/`690_094` (red, the resolution half). Creditor: koru-examples/downloads.
+**ALREADY RULED (2026-07-04, O2):** one lvalue path grammar, four addressing
+heads, of which (3) is declared keys — `pool[id: 7].hp` — and "the index it needs
+is a DECLARED cost." **NOT ruled: how a key gets MARKED.** 690_018's header says
+so itself: "`key:` marking spelling PROVISIONAL (candidate: an invocation-arg
+directive per ruling 8)." Lars confirmed 2026-07-28 that he never settled it.
+**Grounded root:** `take` is swap-remove (`koru_std/store.kz:2717`), so a row's
+POSITION is not its identity. There is no declaration of a reference anywhere —
+`store.kz:4576-4595` resolves a bracket head by NAME MATCH at the use site
+against the target store's own column list, so any `i64` column resolves
+identically and the store holds no referrer set. 690_092 measures the
+consequence: a stored index survives a removal, the write lands past `len`
+inside capacity, and NOTHING traps — `300, 200`, with the 999 nowhere.
+**Mechanism is SHOWN viable** (2026-07-28, spiked and reverted): the write path
+is one emitted block with the row live throughout and already calls out
+mid-atomic-step (`store.kz:2075`); a probe emitted after the swap fires with both
+ends of the relocation (`from=2 to=0`). The ONE hole is that nothing fires after
+the swap — `removed` fires BEFORE it (`store.kz:2694`) because the slot is about
+to be clobbered. Cascade cycles are already comptime-visible and rejected
+(`690_012`), and a one-directional index is not a cycle.
+**DECISION NEEDED:** (a) how is a key marked at `new`? (b) is the maintained
+index the SAME construct as the declared key, or two? — a key column the store
+indexes would give both addressing and stable identity from one declaration, and
+splitting them buys a second surface. (c) what does a reference to a REMOVED row
+become — a sentinel (the `[tree]` parent column already uses `-1`,
+`store.kz:369`) or a branch the program must handle?
+**Unblocks:** downloads' double sweep (`x.idx == pr.index` is a linear key scan
+standing in for `xfers[idx: pr.index]`), and 690_092 goes green.
+
+## D8 — The sweep row ORDINAL has no spelling
+**Pin:** `690_069` (red since 2026-07-28; was green before).
+**Grounded root:** the 0-based ordinal used to be a reserved bare `row` inside
+the projection block. 690_086's ruleset (ruled 2026-07-28) binds the row and
+routes every reference through `<row>.<field>` — and an ordinal is **not a
+field**; it is a property of the visit, not of the row. The seven rules do not
+mention it, and neither DESIGN.md nor the membrane rules it elsewhere. The pin
+holds the retired projection form on purpose, so the requirement does not leave
+the corpus along with the syntax that carried it.
+**Why it is real:** it is the layout cursor a retained renderer needs —
+`! draw |> sweep(store) ! sweep <row> |> write-at(y: <ordinal>, …)`. What a row's
+fields say is independent of WHERE it sits on screen, and only the sweep knows
+the second thing.
+**No sibling answers it:** `for` binds `! each i` with no counter, so nothing in
+the language currently hands a loop its index.
+**DECISION NEEDED:** the spelling. NOTE the interaction with D7 — an ordinal is a
+POSITION, and under swap-remove position is not identity, so whatever this
+becomes should not read like a handle a program can store.
+
 ---
 
 ## WORK ORDER — phantom state cross-module resolution

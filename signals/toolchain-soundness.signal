@@ -1,0 +1,9 @@
+name: toolchain-soundness
+kind: inferred
+shape: categorical
+face: in
+membrane: false
+note: fires when a program COMPILES and then misbehaves at run time — the
+  class the suite structurally cannot see from a green board. 2026-07-28:
+  a sparse dispatch read a union field the callee had not selected (690_095),
+  found by running the app, not by the suite.
