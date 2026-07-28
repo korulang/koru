@@ -14,7 +14,7 @@
 //
 // It earns its own pin anyway: the transplant is the store's, so this shape can
 // break independently of the general case (capture threading, projection binds,
-// the `entity.` rewrite all run here and not there). When 400_175 goes green
+// the row-binding rewrite all run here and not there). When 400_175 goes green
 // this should follow — and if it does not, the difference is the store's.
 //
 // The sweep is CHAINED here on purpose so it is not 690_081 wearing a different
@@ -44,6 +44,6 @@ const std = @import("std");
 | row _ |> _
 
 ~std/io:print.ln("start") |> std/store:sweep(nums)
-! sweep { n: entity.n } |> beats(k: n)
+! sweep e |> beats(k: e.n)
     ! beat b |> std/io:print.ln("beat {{ b:d }}")
     | done |> _

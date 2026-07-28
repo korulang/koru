@@ -27,4 +27,4 @@ std/store:insert(nums) { n: 1 }
 | row _ |> _
 
 std/store:sweep(nums)
-! sweep { n: entity.n } |> std/io:print.ln("n={{ n:d }}")
+! sweep e |> std/io:print.ln("n={{ e.n:d }}")

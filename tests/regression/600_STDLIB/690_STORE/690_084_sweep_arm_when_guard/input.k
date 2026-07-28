@@ -25,4 +25,4 @@ std/store:insert(rows) { idx: 1, pct: 0 }
 | row _ |> _
 
 std/store:sweep(rows)
-! sweep { entity.idx } when idx == 1 |> std/io:print.ln("hit {{ idx:d }}")
+! sweep e when e.idx == 1 |> std/io:print.ln("hit {{ e.idx:d }}")
