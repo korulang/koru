@@ -5939,7 +5939,19 @@ pub const Parser = struct {
 
             // Ordering rule check. Catch-all (`!?` / `|?`) handlers are exempt
             // — they're symmetric ends for both sides.
-            if (!cont.is_catchall) {
+            //
+            // A `|>` CHAIN STEP is not a terminal handler. It shares the leading
+            // `|` and parses as `.terminal`, but it names no branch — and a
+            // flat multi-line chain puts its steps on continuation lines, so
+            // counting them here made every arm below the first `|>` look like
+            // it came after a terminal. An effect arm then tripped the rule
+            // while sitting first in source order, and the hint told the author
+            // to move it above handlers it was already above (210_193).
+            //
+            // The discriminator is the one `reattachArmsToLastStep` already
+            // uses: an unnamed step is a step, a named branch is an arm
+            // (ast_transform.zig isUnnamedStep).
+            if (!cont.is_catchall and cont.branch.len > 0) {
                 if (cont.kind == .effect and seen_terminal_handler) {
                     try errors.terminalBeforeEffect(&self.reporter, handler_line, indent + 1, cont.branch, .dispatch);
                 }

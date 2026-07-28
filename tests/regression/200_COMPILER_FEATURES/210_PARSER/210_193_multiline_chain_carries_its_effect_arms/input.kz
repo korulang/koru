@@ -1,0 +1,53 @@
+// PINS: a flat multi-line chain carries its EFFECT arms, not only its terminal
+// ones. 210_190 pins the terminal half of exactly this shape; an effect arm at
+// the same level, on the same chain, is rejected.
+//
+// The diagnostic asserts something false. `! pulse` is the FIRST arm in source
+// order — there is no terminal above it — and the checker reports:
+//
+//     KORU023: effect `!` handler 'pulse' appears after a terminal `|` handler
+//     hint: move `! pulse` above any `|` handlers
+//
+// Following the hint is impossible; it is already there.
+//
+// The discriminator is the FLAT MULTI-LINE chain, measured on this exact tor:
+//
+//     sink(n: 3)                      + arms   runs, prints 3 pulses then done
+//     src(): n |> sink(n)             + arms   runs
+//     src() / |> bump() / |> sink()   + arms   THIS — KORU023
+//
+// So the arm-carrying that 210_190 built re-roots terminals to the last step of
+// a flat chain and leaves effect arms behind, which puts them behind the
+// terminals in whatever order the checker reads.
+//
+// Surfaced by koru-examples/downloads: `multi.new |> multi.add ... |>
+// multi.start` wants `! ?started-multi` to seed one store row per transfer, and
+// cannot say it. The alternative is three literal rows hand-counted to agree
+// with three literal URLs — the workaround this pin exists to retire.
+const std = @import("std");
+
+~import std/io
+
+~pub tor src {} -> i64
+~proc src|zig { return 3; }
+
+~pub tor bump { n: i64 } -> i64
+~proc bump|zig { return n; }
+
+~pub tor sink { n: i64 }
+! ?pulse i64
+| done
+| err string
+
+~proc sink|zig {
+    var i: i64 = 0;
+    while (i < n) : (i += 1) { pulse(i); }
+    return .{ .done = .{} };
+}
+
+~src()
+|> bump()
+|> sink()
+! pulse i |> std/io:print.ln("pulse {{ i:d }}")
+| done |> std/io:print.ln("done")
+| err e |> std/io:print.ln("err {{ e:s }}")

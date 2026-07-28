@@ -1,0 +1,4 @@
+pulse 0
+pulse 1
+pulse 2
+done
