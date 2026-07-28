@@ -17,49 +17,37 @@
 // branch, pinned green at 690_077 — and an unbound arm then drops it on the
 // floor rather than threading it into the one call that would settle it.
 //
-// MECHANISM — measured by experiment, then read in the source. TWO passes are
-// involved and they are not the same thing:
+// MECHANISM, after the 2026-07-28 ruling that argument resolution selects by
+// TYPE and never by name (210_194, 210_156):
 //
-//   THE THREAD  binds by TYPE, and for a branch payload it reaches ONE STEP
-//               only — "branch names are NOT durable symbols (a stage may repeat
-//               `| ctx`), so they thread only one step" (ast_transform.zig:1080).
-//               It declines here anyway: a `Thread` carries ONE base-type string
-//               and a give-back payload is a named-field record with no single
-//               type, so the payload is never a candidate for the slot.
+// The arm's payload still never competes. A `Thread` carries ONE base-type
+// string and a give-back payload is a named-field record with no single type,
+// so it is not a candidate for the slot — that half is unchanged by the ruling
+// and is what this pin is actually about.
 //
-//   THE PUN     binds by NAME, and reaches the FULL SUBTREE — "a `: bind` IS a
-//               durable symbol, so its pun reaches its full subtree"
-//               (ast_transform.zig:1081-1082). It synthesizes `field: field`
-//               "as if the author had typed it" for any unfilled input whose
-//               name matches a live bind.
+// What the ruling DID change is which wrong thing fills the slot instead. The
+// nearest in-scope binding of matching type is `take(s: c): p`, a `*String`
+// several arms up and already consumed by the insert, so the fill lands there
+// and the obligation checker says so:
 //
-// So the arm's own payload never competes, and the pun fills the empty slot from
-// `take(s: c): p` — a bind several arms up the subtree, already consumed by the
-// insert. The pun's own comment predicts this exactly: "the pun only inserts the
-// reference; correctness is the checkers' job." The checker then does its job
-// and reports the use-after-discharge.
+//     error[KORU030]: Use-after-discharge: binding 'p' was already discharged
 //
-// PROVED BY NAME, NOT BY TYPE, which is what separates the two passes: rename
-// the enclosing bind to `: s`, matching `free`'s parameter, and this same
-// program reports `Use-after-discharge: binding 's'` instead of the
-// not-discharged error above. The TYPE was identical in both runs; only the NAME
-// changed. koru-examples/downloads shows the first form because `cancel` takes
-// `p:` and its enclosing arm bound `p`.
+// Before the ruling this same program said "Resource 'label' ... was not
+// discharged", because the selector was the NAME and `p` did not match `s`. The
+// bug did not move; the selector did. It now fires predictably instead of on a
+// naming coincidence, and it names the spent binding rather than reporting a
+// vague unsettled obligation — which is the intended consequence of letting the
+// checker own liveness rather than teaching the fill about it.
 //
 // NOT the same bug as 690_090, though the shape rhymes: that one is pass order
-// inside store.kz's create Walk. Same "inner loses to outer" silhouette, two
-// unrelated mechanisms — checked, because assuming they were one would have
-// produced a single fix for two defects.
+// inside store.kz's create Walk.
 //
-// FOR LARS, two design questions this exposes, neither a spelling to invent:
-//   1. 210_191 pins that an unbound payload threads BY TYPE, with an IDENTITY
-//      payload (one `__type_ref` field). Whether a ONE-FIELD RECORD payload
-//      threads its field is unruled.
-//   2. The pun's full-subtree reach is justified by uniqueness — "no shadowing
-//      means the in-scope match is always unique". Uniqueness holds (KORU106
-//      enforces it). But uniqueness is not LIVENESS: a consumed binding stays a
-//      pun candidate arbitrarily deep in the subtree, and fills a slot the
-//      author left empty on purpose.
+// THE DESIGN QUESTION THIS PIN CARRIES, and the only thing between it and green:
+// 210_191 pins that an unbound payload threads BY TYPE with an IDENTITY payload
+// (one `__type_ref` field). Whether a ONE-FIELD RECORD payload offers its field
+// as a candidate is unruled. If it does, the payload is nearer than any
+// enclosing bind and wins on the same nearest-first rule, and this goes green
+// with nothing else changing.
 import std/io
 import std/string
 import std/store

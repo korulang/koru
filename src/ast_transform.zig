@@ -1083,6 +1083,54 @@ fn tryDesugarChain(
 // in-scope match is always unique — never ambiguous.
 
 /// Entry point: synthesize binding-name puns across the program, in place.
+/// One live binding, as the fill sees it.
+///   `type`         — the value's own base type, which is what SELECTS it now.
+///                    null when unknown (a destructured field), and an unknown
+///                    type is never a candidate rather than a wildcard.
+///   `producer_ret` — the declared return of the event that produced it, kept
+///                    only for the KORU038 SiteResult guard below.
+const ScopeEntry = struct {
+    name: []const u8,
+    type: ?[]const u8,
+    producer_ret: ?[]const u8,
+};
+
+/// The nearest live binding whose base type matches `want` — innermost first.
+/// NEAREST, never nearest-LIVE: liveness is not this pass's business. The
+/// reference desugars into the AST before any checker runs, so the obligation
+/// checker sees ordinary code and owns the verdict (KORU030). Skipping a spent
+/// binding to reach a live one further out would make the same source bind
+/// different values as obligations move, which is invisible and unpredictable.
+fn nearestOfType(scope: []const ScopeEntry, want: []const u8) ?ScopeEntry {
+    var i = scope.len;
+    while (i > 0) {
+        i -= 1;
+        const t = scope[i].type orelse continue;
+        if (std.mem.eql(u8, t, want)) return scope[i];
+    }
+    return null;
+}
+
+/// A live binding by NAME. The selector no longer uses this — it exists so a
+/// DIAGNOSTIC can still say "you named something that looks like this slot, and
+/// here is why it does not fit". Name is evidence about intent, never about
+/// binding.
+fn scopeFindByName(scope: []const ScopeEntry, name: []const u8) ?ScopeEntry {
+    var i = scope.len;
+    while (i > 0) {
+        i -= 1;
+        if (std.mem.eql(u8, scope[i].name, name)) return scope[i];
+    }
+    return null;
+}
+
+fn scopeHas(scope: []const ScopeEntry, name: []const u8) bool {
+    for (scope) |e| {
+        if (std.mem.eql(u8, e.name, name)) return true;
+    }
+    return false;
+}
+
 pub fn desugarBindingPuns(
     allocator: std.mem.Allocator,
     program: *ast.Program,
@@ -1093,13 +1141,12 @@ pub fn desugarBindingPuns(
     try table.buildFrom(program);
     var thread_counter: usize = 0;
 
-    // scope maps a live binding NAME -> the `-> T` return type of the event
-    // that produced it (null for branch payloads and non-return binds). RULING
-    // 3 reads this: a bind whose producer returns `SiteResult` (a transform
-    // result struct — e.g. std/fmt:ln's `{ text }`) must be field-accessed, not
-    // punned whole into a scalar param.
-    var scope = std.StringHashMap(?[]const u8).init(allocator);
-    defer scope.deinit();
+    // scope is a STACK of live bindings, innermost last, so "the nearest match"
+    // is a search from the end. It was a name->type map until the selector moved
+    // from NAME to TYPE (2026-07-28): a map has no notion of nearest, and a
+    // branch payload recorded no type at all because nothing needed one.
+    var scope = try std.ArrayList(ScopeEntry).initCapacity(allocator, 8);
+    defer scope.deinit(allocator);
     try punItemsBinding(allocator, &table, program.items, &scope, &thread_counter, reporter);
 }
 
@@ -1107,7 +1154,7 @@ fn punItemsBinding(
     allocator: std.mem.Allocator,
     table: *SymbolTable,
     items: []const ast.Item,
-    scope: *std.StringHashMap(?[]const u8),
+    scope: *std.ArrayList(ScopeEntry),
     counter: *usize,
     reporter: *errors_mod.ErrorReporter,
 ) std.mem.Allocator.Error!void {
@@ -1579,7 +1626,7 @@ fn punContinuationBinding(
     allocator: std.mem.Allocator,
     table: *SymbolTable,
     cont: *ast.Continuation,
-    scope: *std.StringHashMap(?[]const u8),
+    scope: *std.ArrayList(ScopeEntry),
     counter: *usize,
     thread: ?Thread,
     payload_type: ?[]const u8,
@@ -1600,14 +1647,14 @@ fn punContinuationBinding(
     // anyway and only remove names we actually added. A return bind carries its
     // producer's declared return type so a downstream pun can tell a transform
     // result struct (SiteResult) from a plain scalar.
-    var added = try std.ArrayList([]const u8).initCapacity(allocator, 3);
-    defer added.deinit(allocator);
+    const scope_mark = scope.items.len;
 
     // Phase A: branch payload — in scope BEFORE this node's fill (upstream value).
+    // Its TYPE is `payload_type`, which the parent resolved via armPayloadType;
+    // recording it is what lets a payload bind be selected by type at all.
     if (cont.binding) |b| {
-        if (!scope.contains(b)) {
-            try scope.put(b, null); // branch payload — no producer return type
-            try added.append(allocator, b);
+        if (!scopeHas(scope.items, b)) {
+            try scope.append(allocator, .{ .name = b, .type = payload_type, .producer_ret = null });
         }
     }
 
@@ -1619,17 +1666,18 @@ fn punContinuationBinding(
         if (node.* == .invocation) {
             if (table.getEventInfo(node.invocation.path)) |info| {
                 for (info.input.fields) |f| {
-                    if (argNamed(node.invocation.args, f.name)) continue;
-                    if (scope.get(f.name)) |producer_ret| {
-                        // RULING 3: the in-scope binding `f.name` is a whole
-                        // transform result struct (producer returns SiteResult).
-                        // Punning it into this scalar/string param would emit
-                        // invalid Zig (`.text = text` where `text` is a struct).
-                        // Reject at the koru level with a source line that guides
-                        // to the field access, instead of leaking the raw Zig
-                        // type error. (Every passing fmt test field-accesses the
-                        // result — `l.text` — never bare `l`.)
-                        if (isTransformResultReturn(producer_ret) and isStringParamType(f.type)) {
+                    if (!isOpenThreadSlot(f, node.invocation.args)) continue;
+
+                    // TEACHING GUARD (KORU038), kept alive across the selector
+                    // change. A `std/fmt:ln(...): text` bind is a RESULT STRUCT,
+                    // so it can never type-match a `string` slot — the fill below
+                    // simply declines and the call goes out incomplete, which
+                    // reaches the author as a raw host error. The author's intent
+                    // is legible from the NAME they chose, so say the useful
+                    // thing instead: reach the field. Name is evidence about
+                    // intent here, never about binding.
+                    if (scopeFindByName(scope.items, f.name)) |named| {
+                        if (isTransformResultReturn(named.producer_ret) and isStringParamType(f.type)) {
                             try reporter.addErrorAtLocationWithHint(
                                 .KORU038,
                                 cont.location,
@@ -1640,12 +1688,24 @@ fn punContinuationBinding(
                             );
                             continue;
                         }
+                    }
+
+                    if (nearestOfType(scope.items, f.type)) |picked| {
+                        _ = picked.producer_ret;
+                        // RULING 3: the in-scope binding `f.name` is a whole
+                        // transform result struct (producer returns SiteResult).
+                        // Punning it into this scalar/string param would emit
+                        // invalid Zig (`.text = text` where `text` is a struct).
+                        // Reject at the koru level with a source line that guides
+                        // to the field access, instead of leaking the raw Zig
+                        // type error. (Every passing fmt test field-accesses the
+                        // result — `l.text` — never bare `l`.)
                         node.invocation.args = try appendedArgs(
                             allocator,
                             node.invocation.args,
                             f.name,
-                            f.name,
-                            false,
+                            picked.name,
+                            !std.mem.eql(u8, f.name, picked.name),
                         );
                     }
                 }
@@ -1689,15 +1749,15 @@ fn punContinuationBinding(
         if (node == .invocation) {
             const producer_ret: ?[]const u8 = if (table.getEventInfo(node.invocation.path)) |info| info.return_type else null;
             if (node.invocation.return_binding) |rb| {
-                if (!scope.contains(rb)) {
-                    try scope.put(rb, producer_ret);
-                    try added.append(allocator, rb);
+                if (!scopeHas(scope.items, rb)) {
+                    try scope.append(allocator, .{ .name = rb, .type = producer_ret, .producer_ret = producer_ret });
                 }
             }
             for (node.invocation.return_destructure) |df| {
-                if (!scope.contains(df.name)) {
-                    try scope.put(df.name, null);
-                    try added.append(allocator, df.name);
+                if (!scopeHas(scope.items, df.name)) {
+                    // A destructured field's own type is not resolved here, and an
+                    // unknown type is never a candidate.
+                    try scope.append(allocator, .{ .name = df.name, .type = null, .producer_ret = null });
                 }
             }
         }
@@ -1721,7 +1781,7 @@ fn punContinuationBinding(
         try punContinuationBinding(allocator, table, child, scope, counter, passed, child_payload, reporter);
     }
 
-    for (added.items) |b| _ = scope.remove(b);
+    scope.shrinkRetainingCapacity(scope_mark);
 }
 
 /// Replace an event invocation with its proc implementation inline
