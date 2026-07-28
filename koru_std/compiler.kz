@@ -2111,6 +2111,31 @@ const joinPathAlloc = struct {
             @panic("transform pass failed — see error above");
         };
 
+        // A transform that spoke through the compilation's reporter has said
+        // something a later pass must not talk over. Drain HERE, at the end of
+        // the phase that produced it: a store declaring an undrainable column
+        // is a fact about the DECLARATION, and letting the pipeline run on
+        // means the analysis passes report the consequences instead — the
+        // author gets KORU030 at a call site that is perfectly fine, and the
+        // sentence naming the real fix is never reached at all.
+        if (ctx.reporter) |rep| {
+            if (rep.hasErrors()) {
+                const Out = struct {
+                    file: std.fs.File,
+                    pub fn print(self: @This(), comptime fmt: []const u8, args: anytype) !void {
+                        var buf: [4096]u8 = undefined;
+                        const msg = try std.fmt.bufPrint(&buf, fmt, args);
+                        try self.file.writeAll(msg);
+                    }
+                    pub fn writeAll(self: @This(), bytes: []const u8) !void {
+                        try self.file.writeAll(bytes);
+                    }
+                };
+                rep.printErrors(Out{ .file = std.fs.File.stderr() }) catch {};
+                std.process.exit(1);
+            }
+        }
+
         // DUMP POINT 4: AST after transform handlers
         backend_output.dumpAST(post_transform_ast, "4-post-transform", ctx.allocator);
 

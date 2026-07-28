@@ -21,6 +21,53 @@ const ast_functional = @import("ast_functional");
 const errors = @import("errors");
 const phantom_parser = @import("phantom_parser");
 
+/// Does this event carry `[!]`, the preferred-discharge annotation? The way an
+/// author breaks a tie between several legal disposers.
+pub fn hasPreferredDischarge(event_decl: *const ast.EventDecl) bool {
+    for (event_decl.annotations) |ann| {
+        if (std.mem.eql(u8, ann, "!")) return true;
+    }
+    return false;
+}
+
+/// Can this event be called UNATTENDED — appended at a scope exit with no
+/// caller to take a return and no arm to answer a branch? Only a void tor can:
+/// non-void comes in two spellings (named branches, and the single-return
+/// `-> T`), and neither can be spliced as a bare call because the inserter
+/// cannot synthesize the bind either output form requires.
+pub fn isUnattendedDischarge(event_decl: *const ast.EventDecl) bool {
+    return event_decl.branches.len == 0 and event_decl.return_type == null;
+}
+
+/// THE auto-discharge policy, over anything that can name its candidates.
+/// One disposer is the answer; several are settled by `[!]`; zero, or a tie
+/// among defaults, means nobody can act unattended and a human must say what
+/// happens. `null` is therefore not "no disposer" — it is "not auto-
+/// dischargeable", which is the only question a caller ever actually has.
+///
+/// Two callers, one policy: the inserter asks it to pick what to splice at a
+/// scope exit, and std/store asks it to decide whether a column needs a
+/// `! discharge` arm. Re-deriving it on either side is how the two drift.
+pub fn pickUnattendedDischarge(
+    comptime T: type,
+    candidates: []const T,
+    comptime declOf: fn (T) *const ast.EventDecl,
+) ?T {
+    if (candidates.len == 0) return null;
+    if (candidates.len == 1) return candidates[0];
+
+    var default_count: usize = 0;
+    var chosen: ?T = null;
+    for (candidates) |c| {
+        if (hasPreferredDischarge(declOf(c))) {
+            default_count += 1;
+            chosen = c;
+        }
+    }
+    if (default_count == 1) return chosen;
+    return null;
+}
+
 pub const AutoDischargeInserter = struct {
     allocator: std.mem.Allocator,
     reporter: *errors.ErrorReporter,
@@ -2427,24 +2474,11 @@ pub const AutoDischargeInserter = struct {
     ///   - 1 default → use it
     ///   - 0 or >1 defaults → ambiguous (return null)
     fn selectDisposal(disposals: []const DisposalEvent) ?DisposalEvent {
-        if (disposals.len == 0) return null;
-        if (disposals.len == 1) return disposals[0];
-
-        // Multiple disposals - look for [!] default
-        var default_count: usize = 0;
-        var default_disposal: ?DisposalEvent = null;
-        for (disposals) |d| {
-            if (d.is_default) {
-                default_count += 1;
-                default_disposal = d;
+        return pickUnattendedDischarge(DisposalEvent, disposals, struct {
+            fn declOf(d: DisposalEvent) *const ast.EventDecl {
+                return d.event_decl;
             }
-        }
-
-        // Exactly one default among multiple options
-        if (default_count == 1) return default_disposal;
-
-        // 0 or >1 defaults = ambiguous
-        return null;
+        }.declOf);
     }
 
     /// Find all events that can dispose a given phantom state for a given base type

@@ -1525,6 +1525,17 @@ pub const VisitorEmitter = struct {
         }
     }
 
+    /// Does this event declare the `reporter` machine parameter? Detected by
+    /// NAME, the same way `ctx`/`program`/`allocator` are — a proc-transform's
+    /// runtime Input is a fixed machine interface, so the event declaration is
+    /// the only place the opt-in can be written.
+    fn declaresReporter(event: *const ast.EventDecl) bool {
+        for (event.input.fields) |f| {
+            if (std.mem.eql(u8, f.name, "reporter")) return true;
+        }
+        return false;
+    }
+
     /// Emit the event struct for an event implemented by a `~[transform]proc`.
     /// Input/Output are the MACHINE interface (the transform-stub ABI), not the
     /// event's user-surface declaration — the user surface is contract data for
@@ -1553,6 +1564,17 @@ pub const VisitorEmitter = struct {
             try self.code_emitter.write(field_line);
             try self.code_emitter.write("\n");
         }
+        // `reporter` is the one machine parameter a proc-transform OPTS INTO:
+        // the rest of this interface is fixed because every transform needs it,
+        // but a diagnostic channel is only wanted by a transform that has
+        // something to say. Declared on the event, exactly as a flow-implemented
+        // transform declares it (220_027) — the convention here is a floor, not
+        // a ceiling.
+        const wants_reporter = declaresReporter(event);
+        if (wants_reporter) {
+            try self.code_emitter.writeIndent();
+            try self.code_emitter.write("reporter: *koru_std.koru_compiler.ErrorReporter,\n");
+        }
         self.code_emitter.indent_level -= 1;
         try self.code_emitter.writeIndent();
         try self.code_emitter.write("};\n");
@@ -1578,11 +1600,19 @@ pub const VisitorEmitter = struct {
             try self.code_emitter.write(param);
             try self.code_emitter.write(";\n");
         }
+        if (wants_reporter) {
+            try self.code_emitter.writeIndent();
+            try self.code_emitter.write("const reporter = __koru_event_input.reporter;\n");
+        }
         for (machine_params) |param| {
             try self.code_emitter.writeIndent();
             try self.code_emitter.write("_ = &");
             try self.code_emitter.write(param);
             try self.code_emitter.write(";\n");
+        }
+        if (wants_reporter) {
+            try self.code_emitter.writeIndent();
+            try self.code_emitter.write("_ = &reporter;\n");
         }
         try self.code_emitter.writeIndent();
         try self.code_emitter.write("_ = &__koru_event_input;\n");

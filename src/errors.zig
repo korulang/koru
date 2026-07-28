@@ -115,6 +115,9 @@ pub const ErrorCode = enum(u16) {
     // Annotation-entry vocabulary errors (the import gate is the first consumer)
     KORU150, // Conditional-import entry the gate cannot evaluate — an entry deciding AST membership must evaluate; silence is never an option
 
+    // Store declaration errors (std/store's comptime transforms)
+    KORU160, // A store's owned column cannot be drained as declared — no discharger for its held state, or several with no `! discharge` arm to pick. Emitted by koru_std/store.kz, so the .zig-only registry emit-scan can't see it — reserved in scripts/registry_reserved.txt.
+
     // Module structure errors
     KORU200, // Ambiguous module structure (both foo.kz and foo/ exist)
 };
