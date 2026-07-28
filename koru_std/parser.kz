@@ -53,7 +53,7 @@ const std = @import("std");
 // The grammar declaration: a region of `! <rule-name> <cursor>` effect arms.
 // Wildcard arm names (the regex `scan` decl precedent) — the arm name IS the
 // rule name, the binding is the rule's cursor.
-~[comptime|transform]pub tor grammar { expr: Expression }
+~[comptime|transform]pub tor grammar { expr: Expression, reporter: *std/compiler:ErrorReporter }
 ! `*` *
 
 // The common picker: explicit ordered-choice over patterned branches at the
@@ -72,7 +72,7 @@ const std = @import("std");
 ~pub tor lit { expr: Expression }
 
 // The parse site: dispatches on the named top rule's success, or parse-error.
-~[comptime|transform]pub tor parse { expr: Expression, grammar: Expression }
+~[comptime|transform]pub tor parse { expr: Expression, grammar: Expression, reporter: *std/compiler:ErrorReporter }
 | `*` *
 | ?parse-error { line: usize, col: usize, expected: string, found: string }
 
@@ -113,19 +113,16 @@ const std = @import("std");
     const flow = &item.flow;
 
     if (invocation.args.len == 0) {
-        const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"std/parser:grammar requires a name: grammar(<name>)\"); }}", .{}) catch unreachable;
-        return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU163, flow.location, flow.module, "std/parser:grammar requires a name: grammar(<name>)", .{}) } };
     }
 
     // Validate the region: every arm is `! <rule-name> <cursor> |> <picker>`.
     for (flow.body.continuations) |c| {
         if (c.kind != .effect) {
-            const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"std/parser:grammar rules are effect arms: `! <rule-name> <cursor> |> std/parser:match(<cursor>)`, found terminal `{s}`\"); }}", .{c.branch}) catch unreachable;
-            return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU163, flow.location, flow.module, "std/parser:grammar rules are effect arms: `! <rule-name> <cursor> |> std/parser:match(<cursor>)`, found terminal `{s}`", .{c.branch}) } };
         }
         if (c.binding == null) {
-            const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"std/parser:grammar rule `{s}` needs a cursor binding: `! {s} <cursor> |> std/parser:match(<cursor>)`\"); }}", .{ c.branch, c.branch }) catch unreachable;
-            return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU163, flow.location, flow.module, "std/parser:grammar rule `{s}` needs a cursor binding: `! {s} <cursor> |> std/parser:match(<cursor>)`", .{ c.branch, c.branch }) } };
         }
     }
 
@@ -175,7 +172,7 @@ const std = @import("std");
             matchers: *std2.ArrayList(u8), // emitted top-level fns
             pats: *std2.ArrayList([]const u8), // distinct terminal patterns (index = matcher id)
             label_n: *usize, // unique Zig block labels
-            fail: *?[]const u8, // first validation failure, as a @compileError body
+            fail: *?[]const u8, // first validation failure, as a refusal message
             cur_rule: *[]const u8, // name of the rule currently being emitted (the node tag)
         };
 
@@ -512,8 +509,7 @@ const std = @import("std");
 
     // --- Arguments: parse(<input expr>, grammar: <name>) ---
     if (invocation.args.len == 0) {
-        const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"std/parser:parse requires an input: parse(<expression>, grammar: <name>)\"); }}", .{}) catch unreachable;
-        return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU163, flow.location, flow.module, "std/parser:parse requires an input: parse(<expression>, grammar: <name>)", .{}) } };
     }
     const input_expr: []const u8 = invocation.args[0].value;
     var grammar_name: ?[]const u8 = null;
@@ -521,8 +517,7 @@ const std = @import("std");
         if (std.mem.eql(u8, arg.name, "grammar")) grammar_name = std.mem.trim(u8, arg.value, " \t");
     }
     if (grammar_name == null) {
-        const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"std/parser:parse needs its grammar named: parse(<input>, grammar: <name>)\"); }}", .{}) catch unreachable;
-        return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU163, flow.location, flow.module, "std/parser:parse needs its grammar named: parse(<input>, grammar: <name>)", .{}) } };
     }
 
     // --- Locate the grammar region in the program ---
@@ -540,8 +535,7 @@ const std = @import("std");
         break;
     }
     if (rules == null) {
-        const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"std/parser:parse: no grammar named `{s}` in this program — declare it: std/parser:grammar({s}) with `! <rule> <cursor>` arms\"); }}", .{ grammar_name.?, grammar_name.? }) catch unreachable;
-        return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU163, flow.location, flow.module, "std/parser:parse: no grammar named `{s}` in this program — declare it: std/parser:grammar({s}) with `! <rule> <cursor>` arms", .{ grammar_name.?, grammar_name.? }) } };
     }
 
     // --- Parse-site branches: exactly one top rule + optional parse-error ---
@@ -553,27 +547,23 @@ const std = @import("std");
             continue;
         }
         if (top_idx != null) {
-            const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"std/parser:parse dispatches ONE top rule (plus optional parse-error); found a second branch `{s}`\"); }}", .{c.branch}) catch unreachable;
-            return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU163, flow.location, flow.module, "std/parser:parse dispatches ONE top rule (plus optional parse-error); found a second branch `{s}`", .{c.branch}) } };
         }
         top_idx = i;
     }
     if (top_idx == null) {
-        const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"std/parser:parse needs a top-rule branch: `| <rule> <binding> |> ...`\"); }}", .{}) catch unreachable;
-        return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU163, flow.location, flow.module, "std/parser:parse needs a top-rule branch: `| <rule> <binding> |> ...`", .{}) } };
     }
     const top = conts[top_idx.?];
     if (H.findRule(rules.?, top.branch) == null) {
-        const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"std/parser:parse: `{s}` is not a rule of grammar `{s}`\"); }}", .{ top.branch, grammar_name.? }) catch unreachable;
-        return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU163, flow.location, flow.module, "std/parser:parse: `{s}` is not a rule of grammar `{s}`", .{ top.branch, grammar_name.? }) } };
     }
 
     // --- Left recursion: reject loudly, name the fix ---
     for (rules.?) |*r| {
         var visited = std.ArrayList([]const u8){};
         if (H.leftRecurses(rules.?, r, r.branch, &visited, allocator)) {
-            const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"std/parser: rule `{s}` is left-recursive (it can call itself before consuming input) — rewrite right-recursively: put a consuming element (a terminal) first\"); }}", .{r.branch}) catch unreachable;
-            return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU163, flow.location, flow.module, "std/parser: rule `{s}` is left-recursive (it can call itself before consuming input) — rewrite right-recursively: put a consuming element (a terminal) first", .{r.branch}) } };
         }
     }
 
@@ -606,8 +596,7 @@ const std = @import("std");
     for (rules.?) |*r| H.genRuleFn(&ctx, r);
 
     if (fail) |f| {
-        const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"{s}\"); }}", .{f}) catch unreachable;
-        return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU163, flow.location, flow.module, "{s}", .{f}) } };
     }
 
     // --- Dispatch splice ---
