@@ -1,0 +1,36 @@
+// A resource whose only exit RETURNS something — the shape a promise has.
+//
+// `abandon` consumes <!live> and hands back a *Bin<owned!>, so it cannot be
+// called unattended at a store teardown (nobody is there to take the Bin). That
+// makes a *Job<live!> column drain-required: legal to store, but the author has
+// to say how. Modelled on curl's `*Pending<open!>`, whose exits are `drain`,
+// `await` and `cancel` — branches, branches, and a return.
+const std = @import("std");
+
+const Job = struct { id: i32 };
+const Bin = struct { id: i32 };
+
+~pub tor start { } -> *Job<live!>
+~proc start|zig {
+    const j = std.heap.page_allocator.create(Job) catch unreachable;
+    j.* = .{ .id = 7 };
+    return j;
+}
+
+// The ONLY exit from <live!>, and it returns. Not an unattended discharger.
+~pub tor abandon { j: *Job<!live> } -> *Bin<owned!>
+~proc abandon|zig {
+    std.debug.print("abandoned {d}\n", .{j.id});
+    const b = std.heap.page_allocator.create(Bin) catch unreachable;
+    b.* = .{ .id = j.id };
+    std.heap.page_allocator.destroy(j);
+    return b;
+}
+
+// Void terminal for what `abandon` hands back — exactly one, so a Bin settles
+// by ordinary auto-discharge wherever it appears.
+~pub tor bin.close { b: *Bin<!owned> }
+~proc bin.close|zig {
+    std.debug.print("bin closed\n", .{});
+    std.heap.page_allocator.destroy(b);
+}
