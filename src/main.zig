@@ -3419,9 +3419,15 @@ const FileWriter = struct {
     /// message, the one leak a user can do nothing about. Draining makes the
     /// buffer a window rather than a ceiling: a long message costs extra
     /// writes, never a failure.
+    ///
+    /// STREAMING, not positional. `File.writer` tracks its own offset and emits
+    /// positional writes; since this builds a fresh writer per call, every call
+    /// would restart at offset 0 and overwrite the last one whenever stderr is
+    /// a seekable file — which is exactly how the harness captures it. Only a
+    /// terminal, where positional writes degrade to appends, would hide it.
     pub fn print(self: FileWriter, comptime fmt: []const u8, args: anytype) !void {
         var buf: [4096]u8 = undefined;
-        var writer = self.file.writer(&buf);
+        var writer = self.file.writerStreaming(&buf);
         try writer.interface.print(fmt, args);
         try writer.interface.flush();
     }
