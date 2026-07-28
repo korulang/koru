@@ -24,6 +24,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import {
   collectPassing,
+  assertMarkerSetSettled,
   resolveClusters,
   demoteHeadings,
   humanize,
@@ -76,6 +77,10 @@ const config = JSON.parse(fs.readFileSync(CONFIG, 'utf-8'));
 const categories = config.categories ?? [];
 const includedTests = config.includedTests ?? [];
 const excludedTests = new Set(config.excludedTests ?? []);
+
+// A half-written marker set yields a truncated corpus that overwrites the
+// committed one and exits 0. Refuse before reading a single test.
+assertMarkerSetSettled(ROOT, TESTS_DIR);
 
 const { tests: allTests, negativeTests } = collectPassing(TESTS_DIR);
 const byName = new Map(allTests.map((t) => [t.name, t]));

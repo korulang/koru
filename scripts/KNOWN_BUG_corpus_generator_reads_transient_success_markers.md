@@ -1,37 +1,37 @@
-# BUG: corpus/skills generators silently truncate when run mid-suite
+# RESIDUE: the corpus generators derive pass/fail from transient run state
 
-**Defect.** `scripts/generate-corpus.js` (and the sibling `generate-skills.js`)
-resolve "which tests are passing" by scanning each test directory for a
-per-test **`SUCCESS` marker file** — see `scripts/lib/corpus.js` `walk()`
-(`hasSuccess = entries.some(e => e.name === 'SUCCESS')`, ~line 38). Those
-markers are **transient run-state**: a `./run_regression.sh --no-cache` run
-clears them and rewrites them per-test as each test passes. So if a generator
-runs while the marker set is partial — which is exactly what the post-test
-`scripts/prose_check.sh` watcher does (`node scripts/generate-corpus.js`), and
-what any concurrent/interleaved suite run produces — it sees only the handful of
-tests currently marked `SUCCESS`, generates a **truncated corpus**, and
-**overwrites the committed generated docs** with it. There is no guard: the
-generator will happily shrink `koru-by-example.md` from 22 tests to 1 (deleting
-~5000 lines across `docs/by-example/*`, `koru-by-example.md`,
-`skills/*/SKILL.md`) and exit 0. The corruption is silent and looks like a real
-diff.
+**The destructive half is walled.** `scripts/lib/corpus.js`
+`assertMarkerSetSettled()` refuses to generate when the live `SUCCESS` marker
+count is under half of `test-results/latest.json`'s `summary.passed`, and all
+three generators call it before reading a single test. A mid-run invocation
+throws with the reason and exits non-zero instead of publishing a truncated
+corpus. `prose_check.sh` additionally regenerates into a temp root
+(`KORU_GEN_OUT_ROOT`) so its check A cannot write over tracked files at all, and
+refuses outright while a FOREIGN suite holds the lock.
 
-**Observed (2026-07-18).** During a `--no-cache` suite run that briefly overlapped
-a second regression run, the post-test `prose_check` regen collapsed the corpus
-docs to "1 hand-picked test." Re-running `node scripts/generate-corpus.js` after
-the suite fully settled regenerated the correct "22 tests across 9 categories" —
-confirming the script is correct but its **input (the SUCCESS-marker set) is
-unstable**.
+**What is still true.** The generators still answer "which tests pass?" by
+scanning for per-test `SUCCESS` marker files — `corpus.js` `walk()`
+(`hasSuccess = entries.some(e => e.name === 'SUCCESS')`). Those markers are run
+state, not a record: `./run_regression.sh` clears and rewrites them per-test as
+it goes. The guard makes a partial read *loud* rather than *silent*; it does not
+make the input stable.
 
-**Repro.**
-1. `rm tests/regression/**/SUCCESS` (or start a `--no-cache` run and interrupt it
-   partway, or run two suites at once so markers are half-written).
-2. `node scripts/generate-corpus.js`
-3. Observe `koru-by-example.md` header drops to `> N hand-picked tests` for a
-   small N and thousands of lines are deleted — a corrupt corpus, exit 0.
+Two consequences remain, both non-destructive:
 
-**Fix direction (not yet done).** The generator must read a **stable** source of
-truth for pass/fail — the committed `test-results/latest.json` final verdicts,
-not live `SUCCESS` markers — and/or refuse to overwrite when the result is
-obviously degenerate (e.g. corpus shrank by >50% vs the committed version).
-`prose_check.sh` should not regenerate against transient markers at all.
+- A generation attempted mid-run **fails** rather than succeeding. Correct, but
+  that is a wall around the symptom, not a fix for the input.
+- The threshold is a heuristic. A marker set partial by less than half passes
+  it and would yield a corpus quietly missing a few tests. Nothing catches that.
+
+**Fix direction (unchanged).** Read the verdicts from
+`test-results/latest.json` directly rather than from live markers. Then the
+input is a record, the guard becomes unnecessary, and the sub-threshold case
+disappears with it.
+
+**Why the wall exists at all.** On 2026-07-18 a `--no-cache` run briefly
+overlapped a second regression run and the post-test regen collapsed the corpus
+docs to "1 hand-picked test" — roughly 5000 lines deleted across
+`docs/by-example/*`, `koru-by-example.md` and `skills/*/SKILL.md` — silently,
+exit 0, looking like a real diff. Re-running after the suite settled produced
+the correct "22 tests across 9 categories", which is what established that the
+script was right and its input was not.

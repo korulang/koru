@@ -27,7 +27,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { collectPassing, resolveClusters, humanize, emitTest } from './lib/corpus.js';
+import { collectPassing, assertMarkerSetSettled, resolveClusters, humanize, emitTest } from './lib/corpus.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -213,6 +213,10 @@ if (topics.length === 0) {
   console.warn('[warn] no `topics` in koru-by-example.json — nothing to generate.');
   process.exit(0);
 }
+
+// A half-written marker set yields a truncated corpus that overwrites the
+// committed one and exits 0. Refuse before reading a single test.
+assertMarkerSetSettled(ROOT, TESTS_DIR);
 
 const { tests: allTests, negativeTests } = collectPassing(TESTS_DIR);
 const byName = new Map(allTests.map((t) => [t.name, t]));
