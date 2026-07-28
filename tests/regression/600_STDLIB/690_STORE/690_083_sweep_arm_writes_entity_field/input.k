@@ -38,7 +38,7 @@ std/store:insert(rows) { idx: 1, pct: 0 }
 | row _ |> _
 
 std/store:sweep(rows)
-! sweep { entity.idx, entity.pct } |> std/store:stored { entity.pct: entity.idx + 10 }
+! sweep e |> std/store:stored { e.pct: e.idx + 10 }
 
 std/store:sweep(rows)
-! sweep { entity.idx, entity.pct } |> std/io:print.ln("idx {{ idx:d }} pct {{ pct:d }}")
+! sweep e |> std/io:print.ln("idx {{ e.idx:d }} pct {{ e.pct:d }}")

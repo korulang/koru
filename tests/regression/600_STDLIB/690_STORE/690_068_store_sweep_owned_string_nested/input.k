@@ -28,4 +28,4 @@ std/string:from-page(text: "buy milk")
 
 for(0..2)
 ! each _ |> std/store:sweep(todos)
-    ! sweep { entity.label, entity.done } |> std/string:read(s: label): t |> std/io:print.ln("{{ t:s }} [{{ done:d }}]")
+    ! sweep e |> std/string:read(s: e.label): t |> std/io:print.ln("{{ t:s }} [{{ e.done:d }}]")

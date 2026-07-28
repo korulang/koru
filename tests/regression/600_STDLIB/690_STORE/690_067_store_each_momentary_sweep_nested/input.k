@@ -29,4 +29,4 @@ std/store:insert(items) { v: 20 }
 
 for(0..2)
 ! each _ |> std/store:sweep(items)
-    ! sweep { entity.v } |> std/io:print.ln("v {{ v:d }}")
+    ! sweep e |> std/io:print.ln("v {{ e.v:d }}")
