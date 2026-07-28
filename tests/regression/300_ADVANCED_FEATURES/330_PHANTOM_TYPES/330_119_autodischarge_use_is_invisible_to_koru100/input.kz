@@ -1,0 +1,58 @@
+// PINS: a payload used ONLY by the disposal auto-discharge inserts is a USED
+// binding, not an unused one.
+//
+// `h` is named, and nothing the author wrote reads it — but auto-discharge
+// settles its `<open!>` by inserting `shut(h)`, so the program is complete and
+// `h` is read. KORU100 does not see that: it runs in the FRONTEND
+// (src/main.zig, FlowChecker in `.frontend` mode) and the inserter runs in the
+// BACKEND, so the check happens before the use exists.
+//
+// The result is that whether you may LEAN ON auto-discharge depends on an
+// unrelated property of the next step:
+//
+//     | ok h |> shut(h)              legal — the author wrote the use
+//     | ok h |> std/io:print.ln(…)   legal — print.ln is a [transform], and its
+//                                    `expr: Expression` is opaque captured
+//                                    syntax, so KORU100 must assume any binding
+//                                    in scope might be read by an interpolation
+//     | ok h |> say(msg: "…")        REFUSED today, though auto-discharge would
+//                                    have freed it — `say` is an ordinary tor,
+//                                    so nothing suppresses the check
+//
+// Three spellings of one program, and the diagnostic turns on which consumer
+// happens to sit downstream. The middle one is why koru-libs' curl example
+// compiles at all; swap its `print.ln` for any ordinary tor and it stops.
+//
+// This is the second thing found to depend on KORU100 running later than it
+// does. The first: KORU100 needs the bind PUN to have run, which is what makes
+// the desugars unmovable out of koruc. Same cause, opposite direction — a
+// frontend check reaching for backend facts.
+//
+// `| err _` is the control: a discard of a payload carrying no obligation is a
+// genuine discard and stays silent, which it does.
+//
+// Green looks like: `got it` then `shut`.
+const std = @import("std");
+pub const Handle = struct { id: i32 };
+
+~tor acquire {}
+| ok *Handle<open!>
+| err string
+~proc acquire|zig {
+    const h = std.heap.page_allocator.create(Handle) catch unreachable;
+    h.* = .{ .id = 1 };
+    return .{ .ok = h };
+}
+
+~tor shut { h: *Handle<!open> }
+~proc shut|zig {
+    std.debug.print("shut\n", .{});
+    std.heap.page_allocator.destroy(h);
+}
+
+~tor say { msg: string }
+~proc say|zig { std.debug.print("{s}\n", .{msg}); }
+
+~acquire()
+| ok h |> say(msg: "got it")
+| err _ |> say(msg: "no")
