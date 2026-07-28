@@ -1,0 +1,47 @@
+// PINS: a durable `: bind` reaches a later unfilled slot in its subtree BY TYPE,
+// and the parameter's NAME is not what decides it.
+//
+// RULED 2026-07-28. Argument resolution had two passes with different selectors
+// and different reach, which is what made the boundary invisible:
+//
+//   the THREAD  by TYPE, one step only for a branch payload
+//   the PUN     by NAME, reaching the bind's full subtree
+//
+// A name coincidence is not a declaration. `free` happening to call its
+// parameter `s` while some bind three arms up is also called `s` is the same
+// class of coupling as the ambient `entity` retired the same day: two
+// identifiers meet and get wired together by something nobody wrote. Type is
+// what the language already reasons in.
+//
+// So: NAME stops selecting, and the type thread reaches the whole subtree,
+// binding the NEAREST match. Nearest, not nearest-live — if the closest match is
+// spent the program is refused, because skipping a dead binding to reach a live
+// one further away would make the same source bind different values as
+// obligations move, which is invisible and unpredictable. Liveness is not this
+// pass's job: the reference desugars into the AST before any checker runs, so
+// the obligation checker sees ordinary code and owns the verdict (KORU030).
+//
+// Here `v` is a durable bind of type i64 and `show` declares `n: i64` — same
+// type, different name — left unfilled two arms deep. Before the ruling this
+// reached the BACKEND as `error: missing struct field: n`, a host error where a
+// koru one belongs.
+const std = @import("std");
+
+~import std/io
+
+~pub tor mk {} -> i64
+~proc mk|zig { return 7; }
+
+~pub tor gate { x: i64 }
+| lo
+| hi
+~proc gate|zig { if (x < 10) return .{ .lo = .{} }; return .{ .hi = .{} }; }
+
+~pub tor show { n: i64 }
+~proc show|zig {
+    (struct { fn p(v: i64) void { var b:[64]u8=undefined; const s=@import("std").fmt.bufPrint(&b,"n={d}\n",.{v}) catch b[0..0]; @import("std").mem.doNotOptimizeAway(@import("std").posix.write(1,s) catch @as(usize,0)); } }).p(n);
+}
+
+~mk(): v |> gate(x: v)
+| lo |> show()
+| hi |> show()
