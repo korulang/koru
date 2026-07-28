@@ -3412,10 +3412,24 @@ fn printAstParseErrors(source_file: *const ast.Program, writer: anytype) !void {
 const FileWriter = struct {
     file: std.fs.File,
 
+    /// Streams through a DRAINING writer rather than formatting into a fixed
+    /// stack buffer. With `bufPrint`, any diagnostic whose rendered chunk
+    /// exceeded 4096 bytes died with a raw Zig `error: NoSpaceLeft` and a koruc
+    /// stack trace — the compiler crashing while printing its own error
+    /// message, the one leak a user can do nothing about. Draining makes the
+    /// buffer a window rather than a ceiling: a long message costs extra
+    /// writes, never a failure.
+    ///
+    /// STREAMING, not positional. `File.writer` tracks its own offset and emits
+    /// positional writes; since this builds a fresh writer per call, every call
+    /// would restart at offset 0 and overwrite the last one whenever stderr is
+    /// a seekable file — which is exactly how the harness captures it. Only a
+    /// terminal, where positional writes degrade to appends, would hide it.
     pub fn print(self: FileWriter, comptime fmt: []const u8, args: anytype) !void {
         var buf: [4096]u8 = undefined;
-        const msg = try std.fmt.bufPrint(&buf, fmt, args);
-        try self.file.writeAll(msg);
+        var writer = self.file.writerStreaming(&buf);
+        try writer.interface.print(fmt, args);
+        try writer.interface.flush();
     }
 
     pub fn writeAll(self: FileWriter, bytes: []const u8) !void {
@@ -7700,7 +7714,20 @@ pub fn main() !void {
     // Validate abstract events and implementations
     // This must happen AFTER canonicalization so we can match canonical paths
     log.debug("Validating abstract events and implementations...\n", .{});
-    try validate_abstract_impl.AbstractImplValidator.validate(parse_allocator, source_file.items);
+    validate_abstract_impl.AbstractImplValidator.validate(parse_allocator, &parser.reporter, source_file.items) catch |err| {
+        // Same gate the flow checker gets below: the pass raises a koru
+        // diagnostic (KORU113/KORU114) and fails; the failure VALUE is only the
+        // stop signal. Presenting the reporter here is what keeps a bare
+        // `error: ImplTargetNotAbstract` plus a koruc stack trace off the
+        // user's screen. Only a genuine ICE — a failure with nothing said —
+        // propagates raw.
+        if (parser.reporter.hasErrors()) {
+            const stderr_writer = FileWriter{ .file = std.fs.File.stderr() };
+            try parser.reporter.printErrors(stderr_writer);
+            std.process.exit(1);
+        }
+        return err;
+    };
     log.debug("Abstract/impl validation passed\n", .{});
 
     // Resolve abstract/impl: rename defaults to .default when overrides exist

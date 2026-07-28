@@ -16,9 +16,13 @@
 // (verified via `koruc --ast-json` on this exact file). That phantom
 // "implements abstract event `usize`" item then poisons
 // `validate_abstract_impl.zig`'s impl/abstract-event pairing, which is what
-// actually fires below — `ImplTargetNotAbstract`, a raw Zig error with a
-// non-deterministic address-laden stack trace, not a koru-level diagnostic
-// naming the real offending line.
+// actually fires below — KORU114, naming a tor spelled
+// `const SIEVE_BITS: usize` that the author never wrote.
+//
+// So the diagnostic is well-formed and points into this file; it is the
+// SENTENCE that is nonsense, because the item it describes is a mis-parse.
+// That is the wall this pin holds: the day the parser rejects a bare `const`
+// at the `.k` boundary, this stops being an abstract/impl error at all.
 //
 // Found 2026-06-30 while fixing the prime-sieve drag-race `faithful.k` entry
 // (forcing a runtime-sized `std/field:new` allocation rather than a
