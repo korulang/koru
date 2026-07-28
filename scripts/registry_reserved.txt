@@ -72,3 +72,4 @@ KORU140
 # disposition: live, not dead.
 KORU160
 KORU161
+KORU162

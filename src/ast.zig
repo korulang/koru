@@ -626,6 +626,35 @@ pub const ScopeBinding = struct {
     }
 };
 
+/// A comptime transform's refusal, said TWICE from ONE format string: to the
+/// compilation's reporter as a located Koru diagnostic the author reads, and as
+/// the injected `@compileError` that stops the build.
+///
+/// Both, not either. The reporter sentence is the message; the injected error is
+/// the stop signal, and it stays because a refusal must halt even on a path the
+/// transform-phase drain does not reach. Threading one `fmt` through both makes
+/// the two copies impossible to drift apart — which they had already done where
+/// a transform wrote its sentence out by hand twice.
+///
+/// `rep` is `anytype` so this carries no hard dependency on the reporter's type,
+/// and it is named `rep` rather than `reporter` because the generated transform
+/// stub already binds `const reporter = __koru_event_input.reporter` in the
+/// enclosing proc — a parameter of that name shadows it and Zig refuses.
+pub fn refusal(
+    alloc: std.mem.Allocator,
+    rep: anytype,
+    code: errors.ErrorCode,
+    loc: errors.SourceLocation,
+    module: []const u8,
+    comptime fmt: []const u8,
+    args: anytype,
+) Item {
+    rep.addErrorAtLocation(code, loc, fmt, args) catch {};
+    const inner = std.fmt.allocPrint(alloc, fmt, args) catch unreachable;
+    const msg = std.fmt.allocPrint(alloc, "comptime {{ @compileError(\"{s}\"); }}", .{inner}) catch unreachable;
+    return Item{ .inline_code = InlineCode{ .code = msg, .location = loc, .module = module } };
+}
+
 /// Build a flow's root site: one Continuation whose node is the invocation
 /// and whose continuations are the branch handlers. The root is not a branch —
 /// header fields (branch name, binding, guard) are empty and are never read

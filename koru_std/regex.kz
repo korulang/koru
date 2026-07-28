@@ -55,7 +55,7 @@ const std = @import("std");
 // convention, not part of the event. The event keeps `[transform]` too —
 // downstream passes read it as "implemented by a transform" (deferred
 // bindings, comptime-flow skipping, variant emission).
-~[comptime|transform]pub tor match { expr: Expression }
+~[comptime|transform]pub tor match { expr: Expression, reporter: *std/compiler:ErrorReporter }
 | `*` *
 | ?no-match
 
@@ -72,8 +72,7 @@ const std = @import("std");
 
     // The input expression is the match invocation's first argument.
     if (invocation.args.len == 0) {
-        const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"std/regex:match requires an input argument: match(<expression>)\"); }}", .{}) catch unreachable;
-        return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU162, flow.location, flow.module, "std/regex:match requires an input argument: match(<expression>)", .{}) } };
     }
     const input_expr: []const u8 = invocation.args[0].value;
 
@@ -115,8 +114,7 @@ const std = @import("std");
             // unnamed failure used to surface as a bogus KORU100 blaming a
             // binding (640_004's second mode).
             const analysis = regex.analyze(allocator, pattern) catch |err| {
-                const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"regex: cannot compile pattern `{s}`: {s}\"); }}", .{ pattern, @errorName(err) }) catch unreachable;
-                return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+                return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU162, flow.location, flow.module, "regex: cannot compile pattern `{s}`: {s}", .{ pattern, @errorName(err) }) } };
             };
             const groups = analysis.group_names;
             const binding = c.binding orelse "_";
@@ -126,12 +124,10 @@ const std = @import("std");
                 // the matched text (FULL match ⇒ the whole input) through the
                 // splice marker; a destructure has nothing to take apart.
                 if (c.destructure.len > 0) {
-                    const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"regex match: destructure field '{s}' has no named group in pattern `{s}`\"); }}", .{ c.destructure[0].name, pattern }) catch unreachable;
-                    return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+                    return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU162, flow.location, flow.module, "regex match: destructure field '{s}' has no named group in pattern `{s}`", .{ c.destructure[0].name, pattern }) } };
                 }
                 const matcher_src = regex.compileToZig(allocator, pattern, fn_name) catch |err| {
-                    const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"regex: cannot compile pattern `{s}`: {s}\"); }}", .{ pattern, @errorName(err) }) catch unreachable;
-                    return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+                    return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU162, flow.location, flow.module, "regex: cannot compile pattern `{s}`: {s}", .{ pattern, @errorName(err) }) } };
                 };
                 matchers.appendSlice(allocator, matcher_src) catch unreachable;
                 matchers.appendSlice(allocator, "\n") catch unreachable;
@@ -148,22 +144,19 @@ const std = @import("std");
                 // 1:1 both ways — this transform owns pattern AND destructure
                 // at the same site, so the mismatch is its error to raise.
                 if (c.destructure.len == 0 and std.mem.eql(u8, binding, "_")) {
-                    const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"regex match: pattern `{s}` declares named groups but the branch discards the payload — destructure them, bind the payload, or make the unwanted capture non-capturing: spell it (...)\"); }}", .{pattern}) catch unreachable;
-                    return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+                    return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU162, flow.location, flow.module, "regex match: pattern `{s}` declares named groups but the branch discards the payload — destructure them, bind the payload, or make the unwanted capture non-capturing: spell it (...)", .{pattern}) } };
                 }
                 if (c.destructure.len > 0) {
                     for (c.destructure) |f| {
                         if (f.sub.len > 0) {
-                            const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"regex match: nested destructure has no meaning for a text span (field '{s}')\"); }}", .{f.name}) catch unreachable;
-                            return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+                            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU162, flow.location, flow.module, "regex match: nested destructure has no meaning for a text span (field '{s}')", .{f.name}) } };
                         }
                         var found = false;
                         for (groups) |g| {
                             if (std.mem.eql(u8, g, f.name)) found = true;
                         }
                         if (!found) {
-                            const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"regex match: destructure field '{s}' has no named group in pattern `{s}`\"); }}", .{ f.name, pattern }) catch unreachable;
-                            return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+                            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU162, flow.location, flow.module, "regex match: destructure field '{s}' has no named group in pattern `{s}`", .{ f.name, pattern }) } };
                         }
                     }
                     for (groups) |g| {
@@ -172,15 +165,13 @@ const std = @import("std");
                             if (std.mem.eql(u8, f.name, g)) found = true;
                         }
                         if (!found) {
-                            const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"regex match: named group '{s}' has no destructure field — take delivery, or make it non-capturing: spell it (...)\"); }}", .{g}) catch unreachable;
-                            return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+                            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU162, flow.location, flow.module, "regex match: named group '{s}' has no destructure field — take delivery, or make it non-capturing: spell it (...)", .{g}) } };
                         }
                     }
                 }
 
                 const matcher_src = regex.compileCapturesToZig(allocator, pattern, fn_name) catch |err| {
-                    const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"regex: cannot compile pattern `{s}`: {s}\"); }}", .{ pattern, @errorName(err) }) catch unreachable;
-                    return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+                    return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU162, flow.location, flow.module, "regex: cannot compile pattern `{s}`: {s}", .{ pattern, @errorName(err) }) } };
                 };
                 matchers.appendSlice(allocator, matcher_src) catch unreachable;
                 matchers.appendSlice(allocator, "\n") catch unreachable;
@@ -280,7 +271,7 @@ const std = @import("std");
 // therefore runs per match, which is exactly effect-branch semantics. Single
 // pattern for now (multi-pattern scan is pinned as a follow-up); pattern
 // branches MUST be effect `!` (dispatch-into-each-match), mirroring the router.
-~[comptime|transform]pub tor scan { input: string }
+~[comptime|transform]pub tor scan { input: string, reporter: *std/compiler:ErrorReporter }
 ! `*` *
 | ?done
 
@@ -293,8 +284,7 @@ const std = @import("std");
     const conts = flow.body.continuations;
 
     if (invocation.args.len == 0) {
-        const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"std/regex:scan requires an input argument: scan(<expression>)\"); }}", .{}) catch unreachable;
-        return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU162, flow.location, flow.module, "std/regex:scan requires an input argument: scan(<expression>)", .{}) } };
     }
     const input_expr: []const u8 = invocation.args[0].value;
 
@@ -309,19 +299,16 @@ const std = @import("std");
             continue;
         }
         if (c.kind != .effect) {
-            const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"std/regex:scan pattern `{s}` must be an effect branch `!` (it fires once per match), not a terminal `|`\"); }}", .{c.branch}) catch unreachable;
-            return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU162, flow.location, flow.module, "std/regex:scan pattern `{s}` must be an effect branch `!` (it fires once per match), not a terminal `|`", .{c.branch}) } };
         }
         if (pat_idx != null) {
-            const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"std/regex:scan supports a single pattern branch for now; multi-pattern scan (leftmost-across-patterns) is pinned as a follow-up\"); }}", .{}) catch unreachable;
-            return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU162, flow.location, flow.module, "std/regex:scan supports a single pattern branch for now; multi-pattern scan (leftmost-across-patterns) is pinned as a follow-up", .{}) } };
         }
         pat_idx = i;
     }
 
     if (pat_idx == null) {
-        const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"std/regex:scan requires a `!` pattern branch\"); }}", .{}) catch unreachable;
-        return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU162, flow.location, flow.module, "std/regex:scan requires a `!` pattern branch", .{}) } };
     }
 
     const pi = pat_idx.?;
@@ -336,15 +323,13 @@ const std = @import("std");
     const in_name = std.fmt.allocPrint(allocator, "__koru_scan_in_{d}_{d}", .{ flow.location.line, flow.location.column }) catch unreachable;
 
     const analysis = regex.analyze(allocator, pattern) catch |err| {
-        const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"regex: cannot compile pattern `{s}`: {s}\"); }}", .{ pattern, @errorName(err) }) catch unreachable;
-        return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU162, flow.location, flow.module, "regex: cannot compile pattern `{s}`: {s}", .{ pattern, @errorName(err) }) } };
     };
     const groups = analysis.group_names;
 
     // The SEARCH matcher locates each span (unanchored leftmost-longest).
     const search_src = regex.compileSearchToZig(allocator, pattern, search_fn) catch |err| {
-        const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"regex: cannot compile pattern `{s}`: {s}\"); }}", .{ pattern, @errorName(err) }) catch unreachable;
-        return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU162, flow.location, flow.module, "regex: cannot compile pattern `{s}`: {s}", .{ pattern, @errorName(err) }) } };
     };
     matchers.appendSlice(allocator, search_src) catch unreachable;
     matchers.appendSlice(allocator, "\n") catch unreachable;
@@ -355,28 +340,24 @@ const std = @import("std");
     var payload = std.ArrayList(u8){};
     if (groups.len == 0) {
         if (c.destructure.len > 0) {
-            const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"regex scan: destructure field '{s}' has no named group in pattern `{s}`\"); }}", .{ c.destructure[0].name, pattern }) catch unreachable;
-            return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU162, flow.location, flow.module, "regex scan: destructure field '{s}' has no named group in pattern `{s}`", .{ c.destructure[0].name, pattern }) } };
         }
         payload.appendSlice(allocator, "__koru_m") catch unreachable; // the matched span text
     } else {
         if (c.destructure.len == 0 and std.mem.eql(u8, binding, "_")) {
-            const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"regex scan: pattern `{s}` declares named groups but the branch discards the payload — destructure them, bind the payload, or make the unwanted capture non-capturing: spell it (...)\"); }}", .{pattern}) catch unreachable;
-            return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU162, flow.location, flow.module, "regex scan: pattern `{s}` declares named groups but the branch discards the payload — destructure them, bind the payload, or make the unwanted capture non-capturing: spell it (...)", .{pattern}) } };
         }
         if (c.destructure.len > 0) {
             for (c.destructure) |f| {
                 if (f.sub.len > 0) {
-                    const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"regex scan: nested destructure has no meaning for a text span (field '{s}')\"); }}", .{f.name}) catch unreachable;
-                    return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+                    return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU162, flow.location, flow.module, "regex scan: nested destructure has no meaning for a text span (field '{s}')", .{f.name}) } };
                 }
                 var found = false;
                 for (groups) |g| {
                     if (std.mem.eql(u8, g, f.name)) found = true;
                 }
                 if (!found) {
-                    const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"regex scan: destructure field '{s}' has no named group in pattern `{s}`\"); }}", .{ f.name, pattern }) catch unreachable;
-                    return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+                    return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU162, flow.location, flow.module, "regex scan: destructure field '{s}' has no named group in pattern `{s}`", .{ f.name, pattern }) } };
                 }
             }
             for (groups) |g| {
@@ -385,16 +366,14 @@ const std = @import("std");
                     if (std.mem.eql(u8, f.name, g)) found = true;
                 }
                 if (!found) {
-                    const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"regex scan: named group '{s}' has no destructure field — take delivery, or make it non-capturing: spell it (...)\"); }}", .{g}) catch unreachable;
-                    return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+                    return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU162, flow.location, flow.module, "regex scan: named group '{s}' has no destructure field — take delivery, or make it non-capturing: spell it (...)", .{g}) } };
                 }
             }
         }
         const cf = std.fmt.allocPrint(allocator, "__koru_scan_caps_{d}_{d}", .{ flow.location.line, flow.location.column }) catch unreachable;
         caps_fn = cf;
         const caps_src = regex.compileCapturesToZig(allocator, pattern, cf) catch |err| {
-            const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"regex: cannot compile pattern `{s}`: {s}\"); }}", .{ pattern, @errorName(err) }) catch unreachable;
-            return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU162, flow.location, flow.module, "regex: cannot compile pattern `{s}`: {s}", .{ pattern, @errorName(err) }) } };
         };
         matchers.appendSlice(allocator, caps_src) catch unreachable;
         matchers.appendSlice(allocator, "\n") catch unreachable;
