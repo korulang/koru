@@ -40,7 +40,7 @@ fn charLiteral(allocator: std.mem.Allocator, ch: u8) []const u8 {
 // char (bind or discard with `_`), plus an optional void `no-match` fallback.
 // The shape checker enforces this contract; the transform owns pattern parsing
 // and code emission.
-~[comptime|transform]pub tor char { expr: Expression }
+~[comptime|transform]pub tor char { expr: Expression, reporter: *std/compiler:ErrorReporter }
 | `*` *
 | ?no-match
 
@@ -56,8 +56,7 @@ fn charLiteral(allocator: std.mem.Allocator, ch: u8) []const u8 {
 
     // The value expression is the char invocation's first argument.
     if (invocation.args.len == 0) {
-        const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"std/switch:char requires a value argument: char(<expression>)\"); }}", .{}) catch unreachable;
-        return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU167, flow.location, flow.module, "std/switch:char requires a value argument: char(<expression>)", .{}) } };
     }
     const value_expr: []const u8 = invocation.args[0].value;
 
@@ -85,8 +84,7 @@ fn charLiteral(allocator: std.mem.Allocator, ch: u8) []const u8 {
         // Every non-`no-match` branch IS a pattern. The parser stored the INNER
         // content of the backtick string as the branch name.
         if (name.len == 0) {
-            const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"std/switch:char: empty branch pattern\"); }}", .{}) catch unreachable;
-            return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU167, flow.location, flow.module, "std/switch:char: empty branch pattern", .{}) } };
         }
 
         if (name.len == 3 and name[1] == '-') {
@@ -94,8 +92,7 @@ fn charLiteral(allocator: std.mem.Allocator, ch: u8) []const u8 {
             const lo = name[0];
             const hi = name[2];
             if (lo > hi) {
-                const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"std/switch:char: invalid range `{s}` (low > high)\"); }}", .{name}) catch unreachable;
-                return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+                return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU167, flow.location, flow.module, "std/switch:char: invalid range `{s}` (low > high)", .{name}) } };
             }
             const lo_lit = charLiteral(allocator, lo);
             const hi_lit = charLiteral(allocator, hi);

@@ -183,7 +183,7 @@ const std = @import("std");
 // `| captured` after-read. The shape checker enforces this contract with zero
 // capture-specific code. The machine interface (invocation/item/program/
 // allocator → transformed SiteResult) is the proc-return convention.
-~[keyword|comptime|transform]pub tor capture { source: Source }
+~[keyword|comptime|transform]pub tor capture { source: Source, reporter: *std/compiler:ErrorReporter }
 ! as *
 | ?captured *
 
@@ -208,8 +208,7 @@ const std = @import("std");
         if (std.mem.eql(u8, arg.name, "source")) source_text = arg.value;
     }
     if (source_text == null) {
-        const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"~capture requires a seed block: capture {{ field: value }}\"); }}", .{}) catch unreachable;
-        return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU164, flow.location, flow.module, "~capture requires a seed block: capture {{ field: value }}", .{}) } };
     }
 
     // --- Find `! as <cell>` (the mutable cell) and `| captured <result>` (the
@@ -228,8 +227,7 @@ const std = @import("std");
         }
     }
     if (as_cont == null) {
-        const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"~capture requires a `! as <cell>` effect branch\"); }}", .{}) catch unreachable;
-        return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU164, flow.location, flow.module, "~capture requires a `! as <cell>` effect branch", .{}) } };
     }
 
     // `! as _` discards the cell NAME, but the cell IS the accumulator the
@@ -253,8 +251,7 @@ const std = @import("std");
     // is the existing-expression seed carve-out.
     const expr = std.fmt.allocPrint(allocator, "{{{s}}}", .{source_text.?}) catch unreachable;
     const cell_fields = struct_literal.parseFieldsWithOptions(allocator, expr, .{ .allow_singleton_expression = true }) catch |err| {
-        const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"~capture seed: {s}\"); }}", .{struct_literal.describeError(err)}) catch unreachable;
-        return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU164, flow.location, flow.module, "~capture seed: {s}", .{struct_literal.describeError(err)}) } };
     };
 
     // --- Rewrite `captured(...)` invocations into general `.assignment` nodes
@@ -316,8 +313,7 @@ const std = @import("std");
     var rewriter = Rewriter{};
     const rewritten_as = rewriter.rewrite(allocator, as_cont.?, cell_name);
     if (rewriter.err_msg) |em| {
-        const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"{s}\"); }}", .{em}) catch unreachable;
-        return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU164, flow.location, flow.module, "{s}", .{em}) } };
     }
 
     // --- Assemble the new flow continuations: void chains so the REAL ~for / ~if

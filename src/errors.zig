@@ -124,6 +124,10 @@ pub const ErrorCode = enum(u16) {
     KORU161, // A std/store declaration or call site is malformed — the store transforms' refusals (wrong arity, missing name, unknown branch, a column type the store cannot address). One code for the class; the message names the specific fault. Emitted by koru_std/store.kz — reserved in scripts/registry_reserved.txt.
     KORU162, // A std/regex declaration or call site is malformed — the regex transforms' refusals (missing input, uncompilable pattern, a destructure naming no named group). One code for the class; the message names the fault. Emitted by koru_std/regex.kz — reserved in scripts/registry_reserved.txt.
     KORU163, // A std/parser grammar or parse call site is malformed — the parser transforms' refusals (missing name, a rule that is not an effect arm, an unknown grammar or rule, left recursion). One code for the class; the message names the fault. Emitted by koru_std/parser.kz — reserved in scripts/registry_reserved.txt.
+    KORU164, // A std/control:capture call site is malformed — the capture transform's refusals (missing seed block, missing `! as <cell>` arm, an unparseable seed). One code for the class; the message names the fault. Emitted by koru_std/control.kz — reserved in scripts/registry_reserved.txt.
+    KORU165, // A std/trellis:enforce / :check call site is malformed — missing trellis name, or a trellis that is not defined. One code for the class; the message names the fault. Emitted by koru_std/trellis.kz — reserved in scripts/registry_reserved.txt.
+    KORU166, // A std/constructor call site is malformed — missing name, or a missing `! construct` traversal branch. One code for the class; the message names the fault. Emitted by koru_std/constructor.kz — reserved in scripts/registry_reserved.txt.
+    KORU167, // A std/switch:char call site is malformed — missing value argument, an empty branch pattern, or an inverted range. One code for the class; the message names the fault. Emitted by koru_std/switch.kz — reserved in scripts/registry_reserved.txt.
 
     // Module structure errors
     KORU200, // Ambiguous module structure (both foo.kz and foo/ exist)

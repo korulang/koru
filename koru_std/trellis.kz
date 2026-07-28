@@ -65,7 +65,7 @@ const std = @import("std");
 // ENFORCE - program-wide law
 // ============================================================================
 
-~[comptime|transform]pub tor enforce { expr: Expression }
+~[comptime|transform]pub tor enforce { expr: Expression, reporter: *std/compiler:ErrorReporter }
 
 ~[transform]proc enforce|zig {
     const ast = @import("ast");
@@ -75,8 +75,7 @@ const std = @import("std");
     const flow = &item.flow;
 
     if (invocation.args.len == 0) {
-        const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"std/trellis:enforce requires a trellis name: enforce(\\\"<name>\\\")\"); }}", .{}) catch unreachable;
-        return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU165, flow.location, flow.module, "std/trellis:enforce requires a trellis name: enforce(\\\"<name>\\\")", .{}) } };
     }
 
     var name = invocation.args[0].value;
@@ -199,8 +198,7 @@ const std = @import("std");
     };
 
     const arms = collectArms(allocator, program, name) orelse {
-        const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"trellis \\\"{s}\\\" is not defined - expected ~std/trellis:define(\\\"{s}\\\") with pattern arms\"); }}", .{ name, name }) catch unreachable;
-        return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU165, flow.location, flow.module, "trellis \\\"{s}\\\" is not defined - expected ~std/trellis:define(\\\"{s}\\\") with pattern arms", .{ name, name }) } };
     };
 
     var walker = Walker{ .alloc = allocator, .arms = arms };
@@ -224,7 +222,7 @@ const std = @import("std");
 // CHECK - categorization as dispatch
 // ============================================================================
 
-~[comptime|transform]pub tor check { expr: Expression }
+~[comptime|transform]pub tor check { expr: Expression, reporter: *std/compiler:ErrorReporter }
 | ok
 | ?error string
 
@@ -237,8 +235,7 @@ const std = @import("std");
     const conts = flow.body.continuations;
 
     if (invocation.args.len == 0) {
-        const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"std/trellis:check requires a trellis name: check(\\\"<name>\\\")\"); }}", .{}) catch unreachable;
-        return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU165, flow.location, flow.module, "std/trellis:check requires a trellis name: check(\\\"<name>\\\")", .{}) } };
     }
 
     var name = invocation.args[0].value;
@@ -361,8 +358,7 @@ const std = @import("std");
     };
 
     const arms = collectArms(allocator, program, name) orelse {
-        const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"trellis \\\"{s}\\\" is not defined - expected ~std/trellis:define(\\\"{s}\\\") with pattern arms\"); }}", .{ name, name }) catch unreachable;
-        return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU165, flow.location, flow.module, "trellis \\\"{s}\\\" is not defined - expected ~std/trellis:define(\\\"{s}\\\") with pattern arms", .{ name, name }) } };
     };
 
     var walker = Walker{ .alloc = allocator, .arms = arms };

@@ -28,7 +28,7 @@ const std = @import("std");
 // runs, so its grafted `~for(built)` (over the comptime list it defines) is
 // template-processed as ordinary code. The pipeline runs `.pre` transforms via
 // `run-pre-transforms`, ahead of `process-template-procs` (see compiler.kz).
-~[comptime|transform|pre]pub tor default { expr: Expression }
+~[comptime|transform|pre]pub tor default { expr: Expression, reporter: *std/compiler:ErrorReporter }
 ! construct *
 | ?constructed *
 
@@ -40,7 +40,7 @@ const std = @import("std");
 // from field specs collected over a LINQ range. GENERATION only: no existing type
 // is read, so no registry — the lowered `@Type` lives in Zig's own scope. `.pre`
 // keeps it consistent with the value terminal (dissolves before the main passes).
-~[comptime|transform|pre]pub tor struct { expr: Expression }
+~[comptime|transform|pre]pub tor struct { expr: Expression, reporter: *std/compiler:ErrorReporter }
 ! construct *
 
 // The field vocabulary verb (consumed by the struct transform). `name` is a
@@ -62,8 +62,7 @@ const std = @import("std");
 
     // The cell name is the header arg (the implicit `expr` slot).
     if (invocation.args.len == 0) {
-        const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"std/constructor requires a name: std/constructor(nums)\"); }}", .{}) catch unreachable;
-        return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU166, flow.location, flow.module, "std/constructor requires a name: std/constructor(nums)", .{}) } };
     }
     const cell_name = invocation.args[0].value;
 
@@ -80,8 +79,7 @@ const std = @import("std");
         }
     }
     if (construct_cont == null) {
-        const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"std/constructor requires a `! construct` traversal branch\"); }}", .{}) catch unreachable;
-        return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU166, flow.location, flow.module, "std/constructor requires a `! construct` traversal branch", .{}) } };
     }
 
     // The construct branch node is a `for` invocation; read its range. Its nested
@@ -211,8 +209,7 @@ const std = @import("std");
         if (std.mem.eql(u8, cont.branch, "construct")) construct_cont = cont;
     }
     if (construct_cont == null) {
-        const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"std/constructor:struct requires a `! construct` branch\"); }}", .{}) catch unreachable;
-        return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{ .code = msg, .location = flow.location, .module = flow.module } } } };
+        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU166, flow.location, flow.module, "std/constructor:struct requires a `! construct` branch", .{}) } };
     }
     const cc = construct_cont.?;
 
