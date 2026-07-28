@@ -3,6 +3,18 @@
 // at create is addressable as `pool[id: 7].hp`, and the index it needs is
 // a DECLARED cost. `key:` marking spelling PROVISIONAL (candidate: an
 // invocation-arg directive per ruling 8).
+//
+// THE CREDITOR — koru-examples/downloads. It runs today with a linear key scan
+// standing in for this head: an inner `! sweep x when x.idx == pr.index` nested
+// inside the batch sweep, purely to reach the one row a `! progress` names.
+// Three transfers make it cheap and it reads like a workaround because it is
+// one. The scan is the shape this pin retires.
+//
+// Reaching for a POSITION instead is not the shortcut it looks like: the row
+// ordinal is not identity under swap-remove, and a stored position loses its
+// write silently across a removal (690_092, measured). A declared key is the
+// identity that survives, which is why this head and that defect are one piece
+// of work.
 
 ~import std/io
 ~import std/store
