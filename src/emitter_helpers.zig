@@ -6165,7 +6165,7 @@ pub fn emitOptionalArmNullableAlias(emitter: *CodeEmitter, branch: *const ast.Br
 ///       fn BRANCH(BINDING: PAYLOAD) RESUME { <cont body> }
 ///       ...
 ///   };
-fn emitHandlersStruct(
+pub fn emitHandlersStruct(
     emitter: *CodeEmitter,
     ctx: *EmissionContext,
     handlers_name: []const u8,

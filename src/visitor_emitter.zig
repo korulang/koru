@@ -3208,11 +3208,62 @@ pub const VisitorEmitter = struct {
                                     };
                                     try emitter.emitFlow(self.code_emitter, &label_fold_ctx, &flow);
                                 } else {
-                                    // Generate the invocation of the inner event
-                                    try self.code_emitter.writeIndent();
-
                                     // Check if the invoked event has mutable branches
                                     const invoked_event = self.findEventDeclInItems(items_to_search, &flow.inv().path);
+
+                                    // Effect-branches phase 3b, at a SUBFLOW head. An event
+                                    // with `!` branches lowers to
+                                    // `handler(input, comptime __H: type)`, so its arms ride
+                                    // in as a synthesized Handlers struct passed second.
+                                    // emitFlow does this dance at a top-level site and
+                                    // emitContinuationBody does it mid-chain; a subflow body
+                                    // reached neither, so `~drive = beats(k) ! beat …` emitted
+                                    // the no-effect call form and dropped the arm on the floor
+                                    // (400_175). Partition here, emit the struct BEFORE the
+                                    // call line, and switch over terminal arms only.
+                                    var sf_effect_conts: std.ArrayList(ast.Continuation) = .empty;
+                                    defer sf_effect_conts.deinit(self.allocator);
+                                    var sf_terminal_conts: std.ArrayList(ast.Continuation) = .empty;
+                                    defer sf_terminal_conts.deinit(self.allocator);
+                                    var sf_handlers_name: ?[]const u8 = null;
+                                    defer if (sf_handlers_name) |h| self.allocator.free(h);
+
+                                    if (invoked_event) |inv_ed| {
+                                        var inv_has_effect = false;
+                                        for (inv_ed.branches) |b| {
+                                            if (b.kind == .effect) {
+                                                inv_has_effect = true;
+                                                break;
+                                            }
+                                        }
+                                        if (inv_has_effect) {
+                                            for (flow.body.continuations) |c| {
+                                                if (c.kind == .effect) {
+                                                    try sf_effect_conts.append(self.allocator, c);
+                                                } else {
+                                                    try sf_terminal_conts.append(self.allocator, c);
+                                                }
+                                            }
+                                            if (sf_effect_conts.items.len > 0) {
+                                                const hname = try std.fmt.allocPrint(self.allocator, "Handlers_sf", .{});
+                                                sf_handlers_name = hname;
+                                                var h_ctx = emitter.EmissionContext{
+                                                    .allocator = self.allocator,
+                                                    .ast_items = self.all_items,
+                                                    .tap_registry = self.tap_registry,
+                                                    .type_registry = self.type_registry,
+                                                    .main_module_name = self.main_module_name,
+                                                    .is_sync = true,
+                                                    .in_handler = true,
+                                                    .impl_event_decl = event,
+                                                };
+                                                try emitter.emitHandlersStruct(self.code_emitter, &h_ctx, hname, sf_effect_conts.items, inv_ed);
+                                            }
+                                        }
+                                    }
+
+                                    // Generate the invocation of the inner event
+                                    try self.code_emitter.writeIndent();
                                     const needs_mutable = if (invoked_event) |invoked| blk: {
                                         for (invoked.branches) |branch| {
                                             for (branch.annotations) |ann| {
@@ -3319,7 +3370,13 @@ pub const VisitorEmitter = struct {
                                     }
                                     // NOTE: Comptime injection of program/allocator is now handled
                                     // by emitArgs in emitter_helpers.zig
-                                    try self.code_emitter.write(" });\n");
+                                    if (sf_handlers_name) |hname| {
+                                        try self.code_emitter.write(" }, ");
+                                        try self.code_emitter.write(hname);
+                                        try self.code_emitter.write(");\n");
+                                    } else {
+                                        try self.code_emitter.write(" });\n");
+                                    }
 
                                     // A head with no continuations has no switch to
                                     // consume `result` — discard-guard it (same hygiene
@@ -3355,7 +3412,15 @@ pub const VisitorEmitter = struct {
                                     // Build canonical source event name for tap emission
                                     const source_event_name = try emitter.buildCanonicalEventName(&flow.inv().path, self.allocator, self.main_module_name);
 
-                                    try emitter.emitSubflowContinuations(self.code_emitter, flow.body.continuations, 0, indent_str, items_to_search, self.tap_registry, self.type_registry, self.main_module_name, source_event_name, "main_module", event.return_type != null);
+                                    // Terminal arms only when a Handlers struct took the
+                                    // effect arms: those are already emitted as its static
+                                    // fns, and a switch prong for `! beat` would name a
+                                    // branch Output does not carry.
+                                    const sf_switch_conts: []const ast.Continuation = if (sf_handlers_name != null)
+                                        sf_terminal_conts.items
+                                    else
+                                        flow.body.continuations;
+                                    try emitter.emitSubflowContinuations(self.code_emitter, sf_switch_conts, 0, indent_str, items_to_search, self.tap_registry, self.type_registry, self.main_module_name, source_event_name, "main_module", event.return_type != null);
                                 }
                                 // Close the self-loop `while (true)` wrapper opened before the
                                 // body dispatch. The body always exits via `return` (terminal

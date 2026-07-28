@@ -30,7 +30,7 @@ const std = @import("std");
 ~proc beats|zig {
     var i: i64 = 0;
     while (i < k) : (i += 1) beat(i);
-    return .{ .done = {} };
+    return .{ .done = .{} };
 }
 
 ~tor drive { k: i64 }

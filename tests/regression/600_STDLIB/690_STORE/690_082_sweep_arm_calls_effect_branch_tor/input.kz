@@ -37,7 +37,7 @@ const std = @import("std");
 ~proc beats|zig {
     var i: i64 = 0;
     while (i < k) : (i += 1) beat(i);
-    return .{ .done = {} };
+    return .{ .done = .{} };
 }
 
 ~std/store:insert(nums) { n: 2 }
