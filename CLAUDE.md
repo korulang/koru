@@ -3,6 +3,18 @@
 Koru is a compiler, and the toolchain is the product. This file holds only what's
 specific to working *here*; it points rather than encodes.
 
+**Lars designs the language. I do not.** Not the syntax, not a keyword, not an
+ambient name, not "just for now." A construct that compiles is not a construct
+that was decided, and a passing test is not a ruling. When work needs surface
+that does not exist, the deliverable is the question with its evidence — never a
+spelling I invented, even labelled as a proposal.
+
+**Applications here are instruments, not deadlines.** An app exists to point at
+the toolchain. When it hits something undesigned or inconsistent, the app stays
+broken and the finding goes to Lars. Making the app run by growing an unsourced
+construct is the same failure as hacking around a gap, one level deeper and
+harder to see — it ships as a green test with a confident commit message.
+
 **Start with the `koru-toolchain` skill** — how to compile, how to run the suite,
 the four-stage metacircular pipeline, what bites you. Operational how-to lives
 there, never here. For a declaration surface on any file, `koruc <file> glance`

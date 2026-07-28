@@ -1840,6 +1840,14 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 .name = allocator.dupe(u8, "row") catch unreachable,
                 .payload = ast.Shape{ .fields = row_pf },
                 .kind = .terminal,
+                // OPTIONAL. The handle is real information — 690_018 and
+                // 690_059 take it and address the row with it — but the
+                // overwhelming majority of inserts do not want it, and a
+                // required branch made every one of them carry
+                // `| row _ |> _`. A sparse consumer names only what it means.
+                // `| full` stays REQUIRED: it hands a value back, and for an
+                // owned column that value carries an obligation.
+                .is_optional = true,
                 .annotations = &[_][]const u8{},
             };
             appended_items.append(allocator, ast.Item{ .event_decl = ast.EventDecl{
@@ -1878,6 +1886,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 .name = allocator.dupe(u8, "row") catch unreachable,
                 .payload = ast.Shape{ .fields = f_row_pf },
                 .kind = .terminal,
+                .is_optional = true,
                 .annotations = &[_][]const u8{},
             };
             // Give-back payload: mirror take's owned `| item` — reissue

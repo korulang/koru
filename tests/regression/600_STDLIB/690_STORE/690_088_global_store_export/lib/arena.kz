@@ -1,0 +1,7 @@
+// Owns the store and EXPORTS it under a globally unique name.
+~import std/store
+
+~std/store:new(game) { hp: 0[i64] }
+
+~pub tor seed { }
+~seed = std/store:stored { game.hp: 7 }
