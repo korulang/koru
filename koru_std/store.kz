@@ -5960,6 +5960,51 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             const leaf = if (path.segments.len > 0) path.segments[path.segments.len - 1] else return null;
             return lookupReturnIn(items, leaf);
         }
+        // The payload type of one BRANCH — the arm-binding twin of lookupReturn.
+        // `! progress pr` binds the payload of `progress` on the event the arm
+        // hangs off, exactly as `f(): n` binds that event's return.
+        fn lookupBranchIn(its: []const ast.Item, name: []const u8, branch: []const u8) ?RetTy {
+            for (its) |pi| {
+                if (pi == .event_decl) {
+                    const ed = &pi.event_decl;
+                    if (ed.path.segments.len > 0 and std.mem.eql(u8, ed.path.segments[ed.path.segments.len - 1], name)) {
+                        for (ed.branches) |b| {
+                            if (!std.mem.eql(u8, b.name, branch)) continue;
+                            // Identity payload only (`| ok *Response<open!>` /
+                            // `! progress *Progress`): a multi-field payload is
+                            // a record the arm destructures, not a single value
+                            // a name stands for.
+                            if (b.payload.fields.len != 1) return null;
+                            const f = b.payload.fields[0];
+                            if (!std.mem.eql(u8, f.name, "__type_ref")) return null;
+                            if (f.module_path) |mp| return .{ .type = f.type, .module_path = mp };
+                            if (std.mem.indexOfScalar(u8, f.type, ':')) |colon| {
+                                return .{ .type = f.type[colon + 1 ..], .module_path = f.type[0..colon] };
+                            }
+                            // A payload written bare (`! progress *Progress`)
+                            // names a type in the DECLARING module's scope, and
+                            // the capture lands in the consumer's. Pointer
+                            // payloads only: `! beat i64` is a primitive that no
+                            // module declares, and qualifying it invents
+                            // `koru_vaxis.i64`.
+                            if (std.mem.startsWith(u8, f.type, "*")) {
+                                if (ed.path.module_qualifier) |mq| {
+                                    if (mq.len > 0) return .{ .type = f.type, .module_path = mq };
+                                }
+                            }
+                            return .{ .type = f.type, .module_path = null };
+                        }
+                    }
+                } else if (pi == .module_decl) {
+                    if (lookupBranchIn(pi.module_decl.items, name, branch)) |r| return r;
+                }
+            }
+            return null;
+        }
+        fn lookupBranch(items: []const ast.Item, path: ast.DottedPath, branch: []const u8) ?RetTy {
+            const leaf = if (path.segments.len > 0) path.segments[path.segments.len - 1] else return null;
+            return lookupBranchIn(items, leaf, branch);
+        }
         fn collectBindsOnPath(alloc: std.mem.Allocator, items: []const ast.Item, cont: *const ast.Continuation, target: *const ast.Invocation, out: *std.ArrayList(Bind)) bool {
             // Returns true if `target` lives under `cont`. Pushes mid-pipe binds
             // on the path TO the target (ancestors only — not sibling arms or
@@ -5969,6 +6014,33 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             }
             for (cont.continuations) |*c| {
                 if (collectBindsOnPath(alloc, items, c, target, out)) {
+                    // The CHILD's arm binding is in scope for everything under
+                    // it, so a sweep body nested in `! draw w` or `! progress
+                    // pr` reads those names — and until this was recorded, the
+                    // transplanted body got `use of undeclared identifier 'w'`.
+                    // Its type is the branch payload on THIS cont's invocation,
+                    // which is the event whose branches the child arm handles.
+                    //
+                    // gallery works around the gap by binding a sub-window
+                    // mid-pipe first (`sub(parent: win, …): root`), which lands
+                    // in the return_binding case below. That is a fine spelling
+                    // and not the only one: an arm payload has no call to hang
+                    // a mid-pipe bind on.
+                    if (c.binding) |ab| {
+                        if (!std.mem.eql(u8, ab, "_") and !std.mem.startsWith(u8, ab, "_")) {
+                            if (cont.node) |*pn| {
+                                if (pn.* == .invocation) {
+                                    if (lookupBranch(items, pn.invocation.path, std.mem.trim(u8, c.branch, " "))) |bt| {
+                                        out.append(alloc, .{
+                                            .name = ab,
+                                            .type = alloc.dupe(u8, bt.type) catch unreachable,
+                                            .module_path = if (bt.module_path) |mp| alloc.dupe(u8, mp) catch unreachable else null,
+                                        }) catch unreachable;
+                                    }
+                                }
+                            }
+                        }
+                    }
                     // Child path hit — this cont is an ancestor. Record its
                     // mid-pipe bind if any, then bubble up.
                     if (cont.node) |*n| {
@@ -6122,6 +6194,19 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         else
             std.fmt.allocPrint(allocator, "const {s} = __koru_store_{s}.{s}[__koru_si];\n_ = &{s};\n", .{ pn, store_name, col_names[ci], pn }) catch unreachable;
         loop.appendSlice(allocator, bind) catch unreachable;
+    }
+    // The arm's `when` guard, emitted AFTER the projection binds so it can read
+    // them and BEFORE the body call so it can skip it (690_084). Query does the
+    // same thing one line earlier in its own lowering — `if (!(g)) return;`
+    // inside a per-row proc; a sweep is a loop, so the skip is `continue`.
+    //
+    // It used to be parsed, collected for captures, and then dropped: accepted
+    // and silently ignored, so every row ran the body. A guard that is refused
+    // costs one compile; a guard that is ignored reads as working and quietly
+    // widens every write behind it.
+    if (sc.condition) |cond| {
+        const gz = std.fmt.allocPrint(allocator, "if (!({s})) continue;\n", .{cond}) catch unreachable;
+        loop.appendSlice(allocator, gz) catch unreachable;
     }
     loop.appendSlice(allocator, "main_module.") catch unreachable;
     loop.appendSlice(allocator, sbody_name) catch unreachable;

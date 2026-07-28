@@ -1268,13 +1268,19 @@ fn generateComptimeBackendEmitted(allocator: std.mem.Allocator, source_file: *as
     const visitor_emitter_mod = @import("visitor_emitter");
     const tap_registry_module = @import("tap_registry");
 
-    // Create a large buffer for the generated code
-    const MAX_SIZE = 1024 * 1024; // 1MB (increased for complex tap imports)
-    const buffer = try allocator.alloc(u8, MAX_SIZE);
-    // Note: We'll trim it down before returning
-
-    // Create CodeEmitter
-    var code_emitter = emitter_helpers.CodeEmitter.init(buffer);
+    // GROWABLE, not a fixed ceiling. Generated code has no natural size bound —
+    // this is the emitted comptime backend for a whole program, so its size is
+    // the program's, and "1MB is surely enough" was the same bet as every fixed
+    // buffer before it. It ran out on a store sweep nested in an effect arm and
+    // reported `error: BufferOverflow` with a host stack trace and no source
+    // location: the author is told nothing about their program, because nothing
+    // about their program was wrong.
+    //
+    // CodeEmitter documents this contract at its own definition — "emission call
+    // sites should use initGrowable; fixed init remains for callers with
+    // genuinely bounded output" — and this call site is not one of those.
+    const initial_size = 1024 * 1024;
+    var code_emitter = try emitter_helpers.CodeEmitter.initGrowable(allocator, initial_size);
 
     // Write header
     try code_emitter.write("// Koru Comptime Backend Handlers\n");
