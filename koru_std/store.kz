@@ -5753,6 +5753,95 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         return .{ .transformed = .{ .replacement = H.errItem(allocator, flow.location, flow.module, "std/store:sweep({s}): the sweep body must start with an invocation this rung", .{store_name}) } };
     }
 
+    // A sweep arm WRITES the row it is standing on, not only reads it (690_083).
+    // The same rewrite query runs at store.kz:1481, with the sweep's own cursor:
+    // `entity.<f>` becomes the indexed lvalue `<store>[__koru_srow].<f>` in a
+    // `stored` TARGET and a direct column read everywhere else. Without it
+    // `stored` reads the projection name as a store and says
+    // "unknown store 'entity'", which is true and unhelpful.
+    //
+    // Reads mostly do not need this — the projection already binds `pct` — but
+    // running both forms keeps the sweep body's meaning identical to a query
+    // body's, which is the point: sweep is query's nestable twin.
+    const SRewrite = struct {
+        fn isIdentCh(ch: u8) bool {
+            return (ch >= 'a' and ch <= 'z') or (ch >= 'A' and ch <= 'Z') or (ch >= '0' and ch <= '9') or ch == '_' or ch == '-';
+        }
+        fn refs(alloc: std.mem.Allocator, text: []const u8, store: []const u8, fields: []const []const u8, target_form: bool) []const u8 {
+            var out = std.ArrayList(u8).initCapacity(alloc, text.len + 32) catch unreachable;
+            var i: usize = 0;
+            while (i < text.len) {
+                const at_boundary = i == 0 or !isIdentCh(text[i - 1]);
+                if (at_boundary and std.mem.startsWith(u8, text[i..], "entity.")) {
+                    const fstart = i + "entity.".len;
+                    var fend = fstart;
+                    while (fend < text.len and isIdentCh(text[fend])) fend += 1;
+                    const fname = text[fstart..fend];
+                    var known = false;
+                    for (fields) |f| {
+                        if (std.mem.eql(u8, f, fname)) known = true;
+                    }
+                    if (known) {
+                        const t = if (target_form)
+                            std.fmt.allocPrint(alloc, "{s}[__koru_srow].{s}", .{ store, fname }) catch unreachable
+                        else
+                            std.fmt.allocPrint(alloc, "__koru_store_{s}.{s}[@as(usize, @intCast(__koru_srow))]", .{ store, fname }) catch unreachable;
+                        out.appendSlice(alloc, t) catch unreachable;
+                        i = fend;
+                        continue;
+                    }
+                }
+                out.append(alloc, text[i]) catch unreachable;
+                i += 1;
+            }
+            return out.toOwnedSlice(alloc) catch unreachable;
+        }
+        // A stored block is `target: value` pairs — targets keep the indexed
+        // lvalue form, values read columns directly.
+        fn storedBlock(alloc: std.mem.Allocator, text: []const u8, store: []const u8, fields: []const []const u8) []const u8 {
+            const braced = std.fmt.allocPrint(alloc, "{{{s}}}", .{text}) catch unreachable;
+            const struct_literal_s = @import("struct_literal");
+            const pairs = struct_literal_s.parseFields(alloc, braced) catch return text;
+            var out = std.ArrayList(u8).initCapacity(alloc, text.len + 64) catch unreachable;
+            for (pairs, 0..) |pr, i| {
+                if (i > 0) out.appendSlice(alloc, ", ") catch unreachable;
+                out.appendSlice(alloc, refs(alloc, pr.name, store, fields, true)) catch unreachable;
+                out.appendSlice(alloc, ": ") catch unreachable;
+                out.appendSlice(alloc, refs(alloc, pr.value, store, fields, false)) catch unreachable;
+            }
+            return out.toOwnedSlice(alloc) catch unreachable;
+        }
+        fn walkCont(alloc: std.mem.Allocator, cont: *ast.Continuation, store: []const u8, fields: []const []const u8) void {
+            if (cont.node) |*n| {
+                switch (@constCast(n).*) {
+                    .invocation => |*inv| {
+                        const is_stored = blk2: {
+                            if (inv.path.module_qualifier) |mq| {
+                                if (std.mem.eql(u8, mq, "std.store") and inv.path.segments.len == 1 and std.mem.eql(u8, inv.path.segments[0], "stored")) break :blk2 true;
+                            }
+                            break :blk2 false;
+                        };
+                        if (is_stored) {
+                            for (inv.args) |*a| {
+                                if (!std.mem.eql(u8, a.name, "source")) continue;
+                                @constCast(a).value = storedBlock(alloc, a.value, store, fields);
+                                if (a.source_value) |sv| {
+                                    const fresh = alloc.create(ast.Source) catch unreachable;
+                                    fresh.* = sv.*;
+                                    fresh.text = storedBlock(alloc, sv.text, store, fields);
+                                    @constCast(a).source_value = fresh;
+                                }
+                            }
+                        }
+                    },
+                    else => {},
+                }
+            }
+            for (cont.continuations) |*c| walkCont(alloc, @constCast(c), store, fields);
+        }
+    };
+    SRewrite.walkCont(allocator, @constCast(&body_clone), store_name, col_names);
+
     // --- ENCLOSING CAPTURES (690_073 / todo_tui render bridge) ---
     // The sweep loop is site-local Zig (inline where `: n` / `: body` live), but
     // the transplanted sweepbody is a SEPARATE event. Free names from enclosing
@@ -5957,7 +6046,13 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
     }
 
     const sbody_name = std.fmt.allocPrint(allocator, "__store_sweepbody_{s}_L{d}", .{ store_name, flow.location.line }) catch unreachable;
-    const sbody_in = allocator.alloc(ast.Field, proj_names.len + captures.items.len) catch unreachable;
+    // +1 for `__koru_srow`, the row cursor. The projections hand the body
+    // COPIES of the row's values; writing back needs the row itself. Query's
+    // qbody takes `__koru_qrow` for exactly this reason (store.kz:1481).
+    // Always threaded, never conditional on the body writing: an unused event
+    // input lowers to a suppressed `_ = &x;`, so there is nothing to detect and
+    // nothing to get wrong.
+    const sbody_in = allocator.alloc(ast.Field, proj_names.len + captures.items.len + 1) catch unreachable;
     for (proj_names, proj_cols, 0..) |pn, ci, i| {
         // The reserved ordinal is a plain i64 (not a store column).
         if (ci == std.math.maxInt(usize)) {
@@ -5981,6 +6076,10 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             .module_path = c.module_path,
         };
     }
+    sbody_in[proj_names.len + captures.items.len] = ast.Field{
+        .name = allocator.dupe(u8, "__koru_srow") catch unreachable,
+        .type = allocator.dupe(u8, "i64") catch unreachable,
+    };
     const retain_ann = blk: {
         const anns = allocator.alloc([]const u8, 1) catch unreachable;
         anns[0] = allocator.dupe(u8, "retain") catch unreachable;
@@ -6037,6 +6136,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         const a = std.fmt.allocPrint(allocator, ".{s} = {s}", .{ c.name, c.name }) catch unreachable;
         loop.appendSlice(allocator, a) catch unreachable;
     }
+    loop.appendSlice(allocator, ", .__koru_srow = @as(i64, @intCast(__koru_si))") catch unreachable;
     loop.appendSlice(allocator, " });\n}\n}\n") catch unreachable;
 
     // WHERE this replacement lands is the runner's call, and the two placements

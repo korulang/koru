@@ -7,8 +7,10 @@
 //
 //     std/store:stored: unknown store 'entity' - no std/store:new(entity) found
 //
-// The guard is fine: `! sweep { … } when idx == target` parses and is accepted.
-// Only the write is unwired.
+// Unguarded on purpose: a `when` guard on a sweep arm is accepted and silently
+// ignored (690_084), so a guarded write would pass this test for the wrong
+// reason. Each row writes a value derived from its OWN column, which is what
+// proves the write lands on the row the arm is standing on.
 //
 // This is the difference between a store you can render and a store you can
 // MAINTAIN from a running program. `query` is top-level-only by design — it is
@@ -36,7 +38,7 @@ std/store:insert(rows) { idx: 1, pct: 0 }
 | row _ |> _
 
 std/store:sweep(rows)
-! sweep { entity.idx, entity.pct } when idx == 1 |> std/store:stored { entity.pct: 77 }
+! sweep { entity.idx, entity.pct } |> std/store:stored { entity.pct: entity.idx + 10 }
 
 std/store:sweep(rows)
 ! sweep { entity.idx, entity.pct } |> std/io:print.ln("idx {{ idx:d }} pct {{ pct:d }}")
