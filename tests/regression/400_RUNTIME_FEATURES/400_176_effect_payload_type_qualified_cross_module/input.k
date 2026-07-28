@@ -10,10 +10,14 @@
 //
 //     error: use of undeclared identifier 'Beat'
 //
-// Same-module consumers work, which is why every effect-branch test in the
-// corpus passes: 400_105's `*Resource` is declared in the file that handles it.
-// The payload type needs the host path the emitter already computes for every
-// other cross-module reference.
+// The consumer is a SUBFLOW on purpose. A top-level consumer inlines the
+// effectful call and never synthesizes a Handlers struct at all, so it dodges
+// this; a subflow always synthesizes one and reaches it. That is also why every
+// effect-branch test in the corpus passes — 400_105's `*Resource` is declared
+// in the file that handles it, and the top-level sites inline.
+//
+// The payload's home is the module that DECLARES the event: that is where the
+// author wrote the bare name and the only scope it ever resolved in.
 //
 // Found in koru-examples/downloads, where a `! sweep` arm calls curl's `poll`
 // and its `! progress *Progress` / `! finished *Response` arms land in the
@@ -21,6 +25,9 @@
 import std/io
 import app/lib/pulse
 
-app/lib/pulse:pulse(k: 2)
+tor drive { k: i64 }
+drive = app/lib/pulse:pulse(k)
 ! tick b |> std/io:print.ln("tick {{ b.n:d }}")
 | done |> _
+
+drive(k: 2)

@@ -875,6 +875,25 @@ fn phantomModuleIsTypeHome(type_name: []const u8, phantom_mod: []const u8) bool 
     return type_registry_module.moduleNamesMatch(home, phantom_mod);
 }
 
+/// Does `mod` actually DECLARE this type? The strict inverse of
+/// phantomModuleIsTypeHome, which answers "no evidence against" (and so returns
+/// true for `i64`, which no module declares). Qualifying needs evidence FOR:
+/// a registered host type whose home is this module. Used when a payload type
+/// written bare has to be resolved to the module that declared it.
+fn moduleDeclaresType(type_name: []const u8, mod: []const u8) bool {
+    var base = type_name;
+    const prefixes = [_][]const u8{ "[]const ", "?*const ", "*const ", "[]", "?*", "?", "*" };
+    for (prefixes) |prefix| {
+        if (std.mem.startsWith(u8, base, prefix)) {
+            base = base[prefix.len..];
+            break;
+        }
+    }
+    const homes = host_type_homes orelse return false;
+    const home = homes.get(base) orelse return false;
+    return type_registry_module.moduleNamesMatch(home, mod);
+}
+
 /// Helper: Write field type with proper module path handling
 pub fn writeFieldType(emitter: *CodeEmitter, field: ast.Field, main_module_name: ?[]const u8) !void {
     // `string` is the canonical surface text type. The AST carries it verbatim
@@ -6293,7 +6312,32 @@ pub fn emitHandlersStruct(
             // Identity payload (single field named "__type_ref") — emit type directly.
             // Multi-field struct payload — emit anon struct literal type.
             else if (branch.payload.fields.len == 1 and std.mem.eql(u8, branch.payload.fields[0].name, "__type_ref")) {
-                try writeFieldType(emitter, branch.payload.fields[0], ctx.main_module_name);
+                // This struct is emitted in the CONSUMER's scope, which is a
+                // different module from the event whenever the event was
+                // imported. A payload written bare (`! tick *Beat`) carries no
+                // module_path, so it would land as `*Beat` — undeclared there.
+                // Its home is the module that DECLARES the event: that is where
+                // the author wrote the name and the only scope it resolved in.
+                //
+                // Latent until now because the other Handlers sites usually
+                // inline the effectful call instead of synthesizing a struct;
+                // the subflow site cannot, so it reached this first.
+                // The event's own path qualifier is the LOGICAL module
+                // (`app/lib/pulse`), which is what writeFieldType expands into
+                // a host path. `event_decl.module` is the short name and
+                // expands to a namespace that does not exist.
+                var payload_field = branch.payload.fields[0];
+                if (payload_field.module_path == null) {
+                    if (event_decl.path.module_qualifier) |mq| {
+                        // Only when that module genuinely declares the type —
+                        // `! beat i64` must stay `i64`, not become
+                        // `koru_vaxis.i64`.
+                        if (mq.len > 0 and moduleDeclaresType(payload_field.type, mq)) {
+                            payload_field.module_path = mq;
+                        }
+                    }
+                }
+                try writeFieldType(emitter, payload_field, ctx.main_module_name);
             } else {
                 try emitter.write("struct { ");
                 for (branch.payload.fields, 0..) |field, fi| {

@@ -12,7 +12,7 @@ pub const Beat = struct { n: i64 };
 ~proc pulse|zig {
     var i: i64 = 0;
     while (i < k) : (i += 1) {
-        var b = Beat{ .n = i };
+        var b = $mod.Beat{ .n = i };
         tick(&b);
     }
     return .{ .done = .{} };
