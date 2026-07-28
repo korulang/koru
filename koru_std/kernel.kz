@@ -83,6 +83,7 @@ const std = @import("std");
     invocation: *const Invocation,
     item: *const Item,
     program: *const Program,
+    reporter: *std/compiler:ErrorReporter,
     allocator: std.mem.Allocator
 } -> SiteResult
 
@@ -441,6 +442,7 @@ const std = @import("std");
 
     if (has_kernel_continuation) {
         if (validateKernelSubtree(allocator, flow)) |msg| {
+            reporter.addErrorAtLocation(.KORU170, flow.location, "{s}", .{msg}) catch {};
             const compile_error_code = std.fmt.allocPrint(
                 allocator,
                 "comptime {{ @compileError(\"{s}\"); }}",
@@ -471,6 +473,7 @@ const std = @import("std");
     // carves by init form, NEVER by position — position stays irrelevant.
     // Pinned: 390_054 (top level), 390_023 (in pipeline).
     if (has_kernel_continuation and !has_computed_continuation) {
+        reporter.addErrorAtLocation(.KORU170, flow.location, "kernel:init requires | computed |> branch — without it, kernel results are trapped inside the kernel scope", .{}) catch {};
         const computed_error = std.fmt.allocPrint(
             allocator,
             "comptime {{ @compileError(\"kernel:init requires | computed |> branch — without it, kernel results are trapped inside the kernel scope\"); }}",

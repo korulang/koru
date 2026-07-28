@@ -23,6 +23,7 @@ const std = @import("std");
     invocation: *const Invocation,
     item: *const Item,
     program: *const Program,
+    reporter: *std/compiler:ErrorReporter,
     allocator: std.mem.Allocator
 } -> SiteResult
 
@@ -227,6 +228,7 @@ const std = @import("std");
     invocation: *const Invocation,
     item: *const Item,
     program: *const Program,
+    reporter: *std/compiler:ErrorReporter,
     allocator: std.mem.Allocator
 } -> SiteResult
 
@@ -242,6 +244,7 @@ const std = @import("std");
     invocation: *const Invocation,
     item: *const Item,
     program: *const Program,
+    reporter: *std/compiler:ErrorReporter,
     allocator: std.mem.Allocator
 } -> SiteResult
 
@@ -250,6 +253,7 @@ const std = @import("std");
     invocation: *const Invocation,
     item: *const Item,
     program: *const Program,
+    reporter: *std/compiler:ErrorReporter,
     allocator: std.mem.Allocator
 } -> SiteResult
 
@@ -268,6 +272,7 @@ const std = @import("std");
 fn __printInterpolate(
     expr: []const u8,
     item: anytype,
+    rep: anytype,
     allocator: std.mem.Allocator,
     comptime with_newline: bool,
     comptime label: []const u8,
@@ -503,18 +508,22 @@ fn __printInterpolate(
         format_buf.appendSlice(allocator, "\\n") catch unreachable;
     }
 
-    const inline_code = if (function_call_expr) |fn_expr|
-        std.fmt.allocPrint(
+    const inline_code = if (function_call_expr) |fn_expr| kblk1: {
+        rep.addErrorAtLocation(.KORU168, flow.location, "std/io:" ++ label ++ ": '{{{{ {s} }}}}' contains a function call — function calls are not allowed in expressions. Use event chaining instead.", .{fn_expr}) catch {};
+        break :kblk1 std.fmt.allocPrint(
             allocator,
             "@compileError(\"std/io:" ++ label ++ ": '{{{{ {s} }}}}' contains a function call — function calls are not allowed in expressions. Use event chaining instead.\");",
             .{fn_expr}
-        ) catch unreachable
-    else if (missing_spec) |placeholder|
-        std.fmt.allocPrint(
+        ) catch unreachable;
+    }
+    else if (missing_spec) |placeholder| kblk2: {
+        rep.addErrorAtLocation(.KORU168, flow.location, "std/io:" ++ label ++ ": '{{{{ {s} }}}}' requires a format specifier (:d, :s, :f, or :any)", .{placeholder}) catch {};
+        break :kblk2 std.fmt.allocPrint(
             allocator,
             "@compileError(\"std/io:" ++ label ++ ": '{{{{ {s} }}}}' requires a format specifier (:d, :s, :f, or :any)\");",
             .{placeholder}
-        ) catch unreachable
+        ) catch unreachable;
+    }
     else
         // Write to to_fd (1 = stdout for print/print.ln, 2 = stderr for eprint/
         // eprint.ln). Inline (struct { fn w }).w("fmt", .{args}) — the args tuple
@@ -576,13 +585,13 @@ fn __printInterpolate(
 ~proc print.ln|zig {
     _ = invocation;
     _ = program;
-    return __printInterpolate(expr, item, allocator, true, "print.ln", 1);
+    return __printInterpolate(expr, item, reporter, allocator, true, "print.ln", 1);
 }
 
 ~proc print|zig {
     _ = invocation;
     _ = program;
-    return __printInterpolate(expr, item, allocator, false, "print", 1);
+    return __printInterpolate(expr, item, reporter, allocator, false, "print", 1);
 }
 
 // eprint family — same interpolation engine, routed to stderr (fd 2). The
@@ -590,13 +599,13 @@ fn __printInterpolate(
 ~proc eprint.ln|zig {
     _ = invocation;
     _ = program;
-    return __printInterpolate(expr, item, allocator, true, "eprint.ln", 2);
+    return __printInterpolate(expr, item, reporter, allocator, true, "eprint.ln", 2);
 }
 
 ~proc eprint|zig {
     _ = invocation;
     _ = program;
-    return __printInterpolate(expr, item, allocator, false, "eprint", 2);
+    return __printInterpolate(expr, item, reporter, allocator, false, "eprint", 2);
 }
 
 // ============================================================================
@@ -864,6 +873,7 @@ fn __printInterpolateJs(
     invocation: *const Invocation,  // The specific invocation being transformed
     item: *const Item,
     program: *const Program,
+    reporter: *std/compiler:ErrorReporter,
     allocator: std.mem.Allocator
 } -> SiteResult
 
@@ -1170,18 +1180,22 @@ fn __printInterpolateJs(
         format_buf.appendSlice(allocator, "\\n") catch unreachable;
     }
 
-    const inline_code = if (function_call_expr) |fn_expr|
-        std.fmt.allocPrint(
+    const inline_code = if (function_call_expr) |fn_expr| kblk3: {
+        reporter.addErrorAtLocation(.KORU168, flow.location, "std/io:print.blk: '{{{{ {s} }}}}' contains a function call — function calls are not allowed in expressions. Use event chaining instead.", .{fn_expr}) catch {};
+        break :kblk3 std.fmt.allocPrint(
             allocator,
             "@compileError(\"std/io:print.blk: '{{{{ {s} }}}}' contains a function call — function calls are not allowed in expressions. Use event chaining instead.\");",
             .{fn_expr}
-        ) catch unreachable
-    else if (missing_spec) |placeholder|
-        std.fmt.allocPrint(
+        ) catch unreachable;
+    }
+    else if (missing_spec) |placeholder| kblk4: {
+        reporter.addErrorAtLocation(.KORU168, flow.location, "std/io:print.blk: '{{{{ {s} }}}}' requires a format specifier (:d, :s, :f, or :any)", .{placeholder}) catch {};
+        break :kblk4 std.fmt.allocPrint(
             allocator,
             "@compileError(\"std/io:print.blk: '{{{{ {s} }}}}' requires a format specifier (:d, :s, :f, or :any)\");",
             .{placeholder}
-        ) catch unreachable
+        ) catch unreachable;
+    }
     else
         // print.blk -> stdout (fd 1). Labeled-block posix.write of a bufPrint'd
         // slice (std.debug.print is stderr-only). Block (not inline fn) so it can
@@ -1558,12 +1572,14 @@ fn __printInterpolateJs(
         literal_run.appendSlice(allocator, "\\n") catch unreachable;
     }
 
-    const inline_code = if (missing_spec) |placeholder|
-        std.fmt.allocPrint(
+    const inline_code = if (missing_spec) |placeholder| kblk5: {
+        reporter.addErrorAtLocation(.KORU168, flow.location, "std.io:print.blk: '{{{{ {s} }}}}' requires a format specifier (:d, :s, :f, or :any)", .{placeholder}) catch {};
+        break :kblk5 std.fmt.allocPrint(
             allocator,
             "@compileError(\"std.io:print.blk: '{{{{ {s} }}}}' requires a format specifier (:d, :s, :f, or :any)\");",
             .{placeholder}
-        ) catch unreachable
+        ) catch unreachable;
+    }
     else if (needs_fmt)
         // print.blk -> stdout (fd 1), :f/:any fallback. See the |zig site above.
         std.fmt.allocPrint(

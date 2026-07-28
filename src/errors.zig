@@ -128,6 +128,9 @@ pub const ErrorCode = enum(u16) {
     KORU165, // A std/trellis:enforce / :check call site is malformed — missing trellis name, or a trellis that is not defined. One code for the class; the message names the fault. Emitted by koru_std/trellis.kz — reserved in scripts/registry_reserved.txt.
     KORU166, // A std/constructor call site is malformed — missing name, or a missing `! construct` traversal branch. One code for the class; the message names the fault. Emitted by koru_std/constructor.kz — reserved in scripts/registry_reserved.txt.
     KORU167, // A std/switch:char call site is malformed — missing value argument, an empty branch pattern, or an inverted range. One code for the class; the message names the fault. Emitted by koru_std/switch.kz — reserved in scripts/registry_reserved.txt.
+    KORU168, // A std/io interpolation is malformed — `{{ x }}` containing a function call (calls are not expressions), or missing its format specifier (:d/:s/:f/:any). One code for the class; the message names the placeholder. Emitted by koru_std/io.kz — reserved in scripts/registry_reserved.txt.
+    KORU169, // A std/field call site is malformed — `new.on-stack` without (bits), or `mark-multiples` without (f, from, stride, limit). Emitted by koru_std/field.kz — reserved in scripts/registry_reserved.txt.
+    KORU170, // A std/kernel:init call site is malformed — a kernel subtree the walking skeleton rejects, or a missing `| computed |>` branch (without it kernel results are trapped in the kernel scope). Emitted by koru_std/kernel.kz — reserved in scripts/registry_reserved.txt.
 
     // Module structure errors
     KORU200, // Ambiguous module structure (both foo.kz and foo/ exist)

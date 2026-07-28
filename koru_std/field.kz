@@ -266,7 +266,7 @@ var __field_noop_fba = std.heap.FixedBufferAllocator.init(&__field_noop_buf);
 // is inlined at the call site. `bits` must be comptime (Zig errors otherwise —
 // the array size is comptime). `free` rides the no-op allocator, unchanged.
 // Brick 2 will route a provably-local `new` here automatically.
-~[comptime|transform]pub tor new.on-stack { bits: usize } -> *Field<field!>
+~[comptime|transform]pub tor new.on-stack { bits: usize, reporter: *std/compiler:ErrorReporter } -> *Field<field!>
 
 ~[transform]proc new.on-stack|zig {
     const ast = @import("ast");
@@ -274,6 +274,7 @@ var __field_noop_fba = std.heap.FixedBufferAllocator.init(&__field_noop_buf);
     const flow = &item.flow;
 
     if (invocation.args.len < 1) {
+        reporter.addErrorAtLocation(.KORU169, flow.location, "std/field:new.on-stack requires (bits)", .{}) catch {};
         var nf = flow.*;
         nf.inline_body = std.fmt.allocPrint(allocator, "@compileError(\"std/field:new.on-stack requires (bits)\")", .{}) catch unreachable;
         return .{ .transformed = .{ .replacement = ast.Item{ .flow = nf } } };
@@ -514,7 +515,7 @@ var __field_noop_fba = std.heap.FixedBufferAllocator.init(&__field_noop_buf);
 // restricted access pattern compiled to specialized native code. (v1: plumbing
 // proof — emits one simple correct marker; the per-stride unrolled codegen lands
 // next.)
-~[comptime|transform]pub tor mark-multiples { f: *Field<field>, from: usize, stride: usize, limit: usize }
+~[comptime|transform]pub tor mark-multiples { f: *Field<field>, from: usize, stride: usize, limit: usize, reporter: *std/compiler:ErrorReporter }
 
 ~[transform]proc mark-multiples|zig {
     const ast = @import("ast");
@@ -522,6 +523,7 @@ var __field_noop_fba = std.heap.FixedBufferAllocator.init(&__field_noop_buf);
     const flow = &item.flow;
 
     if (invocation.args.len < 4) {
+        reporter.addErrorAtLocation(.KORU169, flow.location, "std/field:mark-multiples requires (f, from, stride, limit)", .{}) catch {};
         const msg = std.fmt.allocPrint(allocator, "comptime {{ @compileError(\"std/field:mark-multiples requires (f, from, stride, limit)\"); }}", .{}) catch unreachable;
         var nf = flow.*;
         nf.inline_body = msg;
