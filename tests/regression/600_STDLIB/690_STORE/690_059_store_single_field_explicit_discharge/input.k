@@ -14,4 +14,4 @@ std/store:new(things, capacity: 8) { r: *app/lib/res:Resource<owned!> }
 
 app/lib/res:new(): res |> std/store:insert(things) { r: res }
     | row row |> std/store:take(things[row])
-        | item it |> app/lib/res:free(it.r) |> std/io:print.ln("explicitly freed")
+        | item it |> app/lib/res:free(r: it) |> std/io:print.ln("explicitly freed")

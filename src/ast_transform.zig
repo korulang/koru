@@ -1662,11 +1662,32 @@ fn punContinuationBinding(
     //    this continuation's own branch payload (phase A), but NOT its return
     //    bind (phase B, added after this), so a value never puns into the very
     //    invocation that produces it.
+    // THIS ARM'S OWN PAYLOAD IS NEARER THAN ANY ENCLOSING BIND. An unbound arm
+    // carries a value that arrived HERE; a bind in scope arrived further out.
+    // The thread below (step 1b) places it, so the scope fill must not claim a
+    // slot the payload is about to take — otherwise the fill wins purely because
+    // it runs first, and nearest-first is decided by pass order rather than by
+    // nearness. Same defect shape as 690_090, and it only became reachable when
+    // the fill'''s selector widened from name to type.
+    //
+    // REACHES USER-DECLARED ARMS ONLY (210_191). This pass is a Stage-A desugar,
+    // so a branch a LATER transform synthesizes — std/store'''s `| full`, `| item`
+    // — does not exist yet and has no payload type to offer. Those arms must
+    // name their payload and pass it explicitly.
+    const own_payload_type: ?[]const u8 = blk: {
+        if (thread != null) break :blk null;
+        if (cont.binding != null or cont.destructure.len > 0) break :blk null;
+        break :blk payload_type;
+    };
+
     if (cont.node) |*node| {
         if (node.* == .invocation) {
             if (table.getEventInfo(node.invocation.path)) |info| {
                 for (info.input.fields) |f| {
                     if (!isOpenThreadSlot(f, node.invocation.args)) continue;
+                    if (own_payload_type) |opt| {
+                        if (std.mem.eql(u8, opt, f.type)) continue; // step 1b takes it
+                    }
 
                     // TEACHING GUARD (KORU038), kept alive across the selector
                     // change. A `std/fmt:ln(...): text` bind is a RESULT STRUCT,

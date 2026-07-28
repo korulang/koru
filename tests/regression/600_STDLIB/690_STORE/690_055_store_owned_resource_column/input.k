@@ -20,7 +20,7 @@ std/store:new(things, capacity: 8) { r: *app/lib/res:Resource<owned!> }
 
 app/lib/res:new(): res |> std/store:insert(things) { r: res }
     | row row |> std/store:take(things[row])
-        | item it |> app/lib/res:tag(it.r): t |> std/io:print.ln("tag {{ t:d }}")
+        | item it |> app/lib/res:tag(r: it): t |> std/io:print.ln("tag {{ t:d }}")
 
 app/lib/res:new(): kept |> std/store:insert(things) { r: kept }
     | row _ |> _

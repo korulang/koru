@@ -12,7 +12,7 @@ std/store:new(files, capacity: 8) { handle: *app/lib/fs:File<opened!> }
 
 app/lib/fs:open(path: "a"): f |> std/store:insert(files) { handle: f }
     | row r |> std/store:take(files[r])
-        | item it |> app/lib/fs:close(file: it.handle) |> std/io:print.ln("took-and-closed")
+        | item it |> app/lib/fs:close(file: it) |> std/io:print.ln("took-and-closed")
 
 app/lib/fs:open(path: "b"): kept |> std/store:insert(files) { handle: kept }
     | row _ |> _

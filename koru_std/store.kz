@@ -1892,7 +1892,20 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             // Give-back payload: mirror take's owned `| item` — reissue
             // obligation on owned columns; scalars ride bare. Empty for a
             // scalar-only store (690_011).
-            const f_full_pf: []ast.Field = if (has_owned) blk: {
+            // Same rule as `| item` above: one owned column means the give-back is
+            // the value itself, never a record wrapping it.
+            const full_identity_owned = has_owned and user_field_count == 1 and field_owned_info[0] != null;
+            const f_full_pf: []ast.Field = if (full_identity_owned) blk: {
+                const oi = field_owned_info[0].?;
+                const pf = allocator.alloc(ast.Field, 1) catch unreachable;
+                pf[0] = ast.Field{
+                    .name = allocator.dupe(u8, "__type_ref") catch unreachable,
+                    .type = allocator.dupe(u8, field_types[0]) catch unreachable,
+                    .module_path = allocator.dupe(u8, oi.module_slash) catch unreachable,
+                    .phantom = std.fmt.allocPrint(allocator, "{s}:{s}!", .{ oi.module_dot, oi.state }) catch unreachable,
+                };
+                break :blk pf;
+            } else if (has_owned) blk: {
                 const pf = allocator.alloc(ast.Field, user_field_count) catch unreachable;
                 for (field_names[0..user_field_count], field_types[0..user_field_count], field_owned_info[0..user_field_count], 0..) |pfname, pftype, pfoi, pfi| {
                     pf[pfi] = ast.Field{
@@ -1922,12 +1935,16 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             } }) catch unreachable;
             const fcheck = if (has_owned) blk: {
                 var fb = std.ArrayList(u8).initCapacity(allocator, 128) catch unreachable;
-                fb.appendSlice(allocator, std.fmt.allocPrint(allocator, "if (__koru_store_{s}.len >= {d}) return .{{ .full = .{{ ", .{ store_name, CAP }) catch unreachable) catch unreachable;
-                for (field_names[0..user_field_count], 0..) |fname, fi| {
-                    if (fi > 0) fb.appendSlice(allocator, ", ") catch unreachable;
-                    fb.appendSlice(allocator, std.fmt.allocPrint(allocator, ".{s} = {s}", .{ fname, fname }) catch unreachable) catch unreachable;
+                if (full_identity_owned) {
+                    fb.appendSlice(allocator, std.fmt.allocPrint(allocator, "if (__koru_store_{s}.len >= {d}) return .{{ .full = {s} }};\n", .{ store_name, CAP, field_names[0] }) catch unreachable) catch unreachable;
+                } else {
+                    fb.appendSlice(allocator, std.fmt.allocPrint(allocator, "if (__koru_store_{s}.len >= {d}) return .{{ .full = .{{ ", .{ store_name, CAP }) catch unreachable) catch unreachable;
+                    for (field_names[0..user_field_count], 0..) |fname, fi| {
+                        if (fi > 0) fb.appendSlice(allocator, ", ") catch unreachable;
+                        fb.appendSlice(allocator, std.fmt.allocPrint(allocator, ".{s} = {s}", .{ fname, fname }) catch unreachable) catch unreachable;
+                    }
+                    fb.appendSlice(allocator, " }};\n") catch unreachable;
                 }
-                fb.appendSlice(allocator, " }};\n") catch unreachable;
                 break :blk fb.toOwnedSlice(allocator) catch unreachable;
             } else
                 std.fmt.allocPrint(allocator, "if (__koru_store_{s}.len >= {d}) return .{{ .full = .{{}} }};\n", .{ store_name, CAP }) catch unreachable;
@@ -2627,7 +2644,29 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             // auto-discharge resolves the canonical discharger
             // (std/string:free) across the module boundary — the record-field
             // seeding both checkers already run on branch payloads.
-            const item_pf = if (has_owned) blk: {
+            // A ONE-COLUMN owned store's row IS its column, so the give-back is an
+            // IDENTITY payload — `| item *T<state!>` — not a record of one field.
+            // Koru forbids a single-field record by construction (the only route
+            // to one is narrowing, which invalidates the record reference), so
+            // synthesizing `{ p: *Pending<open!> }` put a shape on the surface
+            // that no author could have written. The record form exists to
+            // REISSUE one obligation PER COLUMN; at one column there is one
+            // obligation, which is exactly what an identity payload carries.
+            // Auto-discharge is unaffected — an identity branch payload carrying
+            // `<state!>` auto-frees at scope exit like any other (measured
+            // 2026-07-28, and 690_053/055/056/059/065 are the witnesses).
+            const item_identity_owned = has_owned and field_names.len == 1 and field_owned_info[0] != null;
+            const item_pf = if (item_identity_owned) blk: {
+                const oi = field_owned_info[0].?;
+                const pf = allocator.alloc(ast.Field, 1) catch unreachable;
+                pf[0] = ast.Field{
+                    .name = allocator.dupe(u8, "__type_ref") catch unreachable,
+                    .type = allocator.dupe(u8, field_types[0]) catch unreachable,
+                    .module_path = allocator.dupe(u8, oi.module_slash) catch unreachable,
+                    .phantom = std.fmt.allocPrint(allocator, "{s}:{s}!", .{ oi.module_dot, oi.state }) catch unreachable,
+                };
+                break :blk pf;
+            } else if (has_owned) blk: {
                 const pf = allocator.alloc(ast.Field, field_names.len) catch unreachable;
                 for (field_names, field_types, field_owned_info, 0..) |pfname, pftype, pfoi, pfi| {
                     pf[pfi] = ast.Field{
@@ -2722,13 +2761,18 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             }
             const tail = std.fmt.allocPrint(allocator, "}}\n__koru_store_{s}.len = __koru_last;\n", .{store_name}) catch unreachable;
             tb.appendSlice(allocator, tail) catch unreachable;
-            tb.appendSlice(allocator, "return .{ .item = .{ ") catch unreachable;
-            for (field_names, 0..) |fname, i| {
-                if (i > 0) tb.appendSlice(allocator, ", ") catch unreachable;
-                const o = std.fmt.allocPrint(allocator, ".{s} = __koru_out_{s}", .{ fname, fname }) catch unreachable;
+            if (item_identity_owned) {
+                const o = std.fmt.allocPrint(allocator, "return .{{ .item = __koru_out_{s} }};", .{field_names[0]}) catch unreachable;
                 tb.appendSlice(allocator, o) catch unreachable;
+            } else {
+                tb.appendSlice(allocator, "return .{ .item = .{ ") catch unreachable;
+                for (field_names, 0..) |fname, i| {
+                    if (i > 0) tb.appendSlice(allocator, ", ") catch unreachable;
+                    const o = std.fmt.allocPrint(allocator, ".{s} = __koru_out_{s}", .{ fname, fname }) catch unreachable;
+                    tb.appendSlice(allocator, o) catch unreachable;
+                }
+                tb.appendSlice(allocator, " } };") catch unreachable;
             }
-            tb.appendSlice(allocator, " } };") catch unreachable;
             appended_items.append(allocator, ast.Item{ .proc_decl = ast.ProcDecl{
                 .path = H.mkPathH(allocator, flow.module, take_name),
                 .body = ast.Source{ .text = tb.toOwnedSlice(allocator) catch unreachable, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },

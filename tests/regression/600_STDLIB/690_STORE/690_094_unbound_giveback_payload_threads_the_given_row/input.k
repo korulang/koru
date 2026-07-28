@@ -20,10 +20,21 @@
 // MECHANISM, after the 2026-07-28 ruling that argument resolution selects by
 // TYPE and never by name (210_194, 210_156):
 //
-// The arm's payload still never competes. A `Thread` carries ONE base-type
-// string and a give-back payload is a named-field record with no single type,
-// so it is not a candidate for the slot — that half is unchanged by the ruling
-// and is what this pin is actually about.
+// The arm's payload never competes, and there are TWO independent reasons —
+// the second one measured 2026-07-28 and load-bearing:
+//
+//   (a) a `Thread` carries ONE base-type string, and this store has TWO owned
+//       columns, so armPayloadType declines a multi-field payload outright.
+//   (b) more fundamentally, THE BRANCH DOES NOT EXIST YET. Threading is a
+//       Stage-A desugar ("after the point-free rewrite, before every checker");
+//       std/store synthesizes `| full` in the BACKEND. So no store-synthesized
+//       arm can ever offer a payload to the thread, whatever its arity — a
+//       one-column store with an identity payload cannot either, which is why
+//       koru-examples/downloads still writes `| full f |> cancel(p: f)` after
+//       the identity-payload change landed.
+//
+// (b) means this pin is not fixed by making payloads threadable. It needs the
+// arm to exist when threading runs, which is a pass-ordering question.
 //
 // What the ruling DID change is which wrong thing fills the slot instead. The
 // nearest in-scope binding of matching type is `take(s: c): p`, a `*String`
