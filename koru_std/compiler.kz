@@ -22,6 +22,12 @@ const Program = ast.Program;
 const Item = ast.Item;
 const Source = ast.Source;
 
+// The diagnostic channel, re-exported under this module's name so a pass or a
+// `[comptime|transform]` event can spell it `std/compiler:ErrorReporter`.
+// `CompilerError` below is message-plus-location; this carries the code, the
+// hint and the source preview that make a koru diagnostic look like one.
+pub const ErrorReporter = @import("errors").ErrorReporter;
+
 // Compiler backend build requirements are defined below via ~requires
 
 // Simplified Koru Compiler Library
@@ -62,6 +68,12 @@ pub const CompilerContext = struct {
     current_pass: ?[]const u8,
     passes_completed: u32,
     tap_registry: ?*@import("tap_registry").TapRegistry,
+    /// The compilation's ONE diagnostic reporter, bound to the user's source
+    /// file at `context-create` and shared by every pass downstream. A pass
+    /// that wants a code, a hint or a source preview reaches for this rather
+    /// than appending to `errors` — same pipeline, one grade of diagnostic.
+    /// Null only on a context built outside the pipeline head.
+    reporter: ?*ErrorReporter,
 };
 
 
@@ -740,6 +752,31 @@ pub const CompilerContext = struct {
     // writes, auto-discharge binding-annotation stamps) are safe with no clone.
     // (This is why the old rodata-SIGSEGV heap-clone hack is gone: there is no
     // longer a `pub const PROGRAM_AST` in read-only `.rodata` to mutate.)
+
+    // The compilation's one reporter, minted here so every pass downstream —
+    // and every transform that declares `reporter:` — speaks through the SAME
+    // channel, bound to the user's file. The file these diagnostics render
+    // previews from is the first location the AST carries: one reporter renders
+    // one file, which is what koruc has always done — a multi-module program
+    // previews the main one only.
+    const reporter_path = blk: {
+        for (program_ast.items) |item| {
+            if (item != .flow) continue;
+            if (item.flow.location.file.len > 0) break :blk item.flow.location.file;
+        }
+        break :blk "";
+    };
+    const reporter_source = if (reporter_path.len > 0)
+        std.fs.cwd().readFileAlloc(allocator, reporter_path, 16 * 1024 * 1024) catch ""
+    else
+        "";
+    const reporter = allocator.create(ErrorReporter) catch {
+        @panic("context-create: out of memory allocating the compilation's diagnostic reporter");
+    };
+    reporter.* = ErrorReporter.init(allocator, reporter_path, reporter_source) catch {
+        @panic("context-create: could not initialise the compilation's diagnostic reporter");
+    };
+
     const ctx = CompilerContext{
         .ast = program_ast,
         .original_ast = program_ast,  // Initially same as ast, preserved across filtering
@@ -750,6 +787,7 @@ pub const CompilerContext = struct {
         .current_pass = "init",
         .passes_completed = 0,
         .tap_registry = null,
+        .reporter = reporter,
     };
     return ctx;
 }
@@ -1066,8 +1104,6 @@ pub const CompilerContext = struct {
 
 ~proc desugar-chains|zig {
     const ast_transform = @import("ast_transform");
-    const errors_mod = @import("errors");
-    const ast_mod = @import("ast");
 
     // Minimal stderr sink — `printErrors` takes anytype and needs only these two.
     const Out = struct {
@@ -1082,40 +1118,24 @@ pub const CompilerContext = struct {
         }
     };
 
-    const S = struct {
-        // The file these diagnostics render previews from: the first location the
-        // AST carries. One reporter renders one file, which is what koruc's did
-        // too — a multi-module program has always previewed the main one only.
-        fn firstFile(p: *const ast_mod.Program) []const u8 {
-            for (p.items) |item| {
-                if (item != .flow) continue;
-                if (item.flow.location.file.len > 0) return item.flow.location.file;
-            }
-            return "";
-        }
-    };
-
     var updated_ctx = ctx;
     const program = @constCast(ctx.ast);
-    const path = S.firstFile(ctx.ast);
-    const source = if (path.len > 0)
-        std.fs.cwd().readFileAlloc(ctx.allocator, path, 16 * 1024 * 1024) catch ""
-    else
-        "";
 
-    var reporter = errors_mod.ErrorReporter.init(ctx.allocator, path, source) catch {
-        @panic("desugar-chains: could not initialise the diagnostic reporter");
+    // The compilation's reporter, minted at the pipeline head and already bound
+    // to the user's file — KORU092/093's hints and previews ride on it.
+    const reporter = ctx.reporter orelse {
+        @panic("desugar-chains: the compilation carries no diagnostic reporter");
     };
 
-    ast_transform.desugarPointfreeChains(ctx.allocator, program, &reporter) catch |err| {
+    ast_transform.desugarPointfreeChains(ctx.allocator, program, reporter) catch |err| {
         log.err("FATAL: point-free desugar failed ({s})\n", .{@errorName(err)});
         @panic("point-free desugar failed — see error above");
     };
-    ast_transform.desugarBindingPuns(ctx.allocator, program, &reporter) catch |err| {
+    ast_transform.desugarBindingPuns(ctx.allocator, program, reporter) catch |err| {
         log.err("FATAL: bind-pun/thread desugar failed ({s})\n", .{@errorName(err)});
         @panic("bind-pun/thread desugar failed — see error above");
     };
-    ast_transform.desugarFlowReturnTerminus(ctx.allocator, program, &reporter) catch |err| {
+    ast_transform.desugarFlowReturnTerminus(ctx.allocator, program, reporter) catch |err| {
         log.err("FATAL: return-terminus desugar failed ({s})\n", .{@errorName(err)});
         @panic("return-terminus desugar failed — see error above");
     };

@@ -1601,6 +1601,18 @@ fn generateComptimeBackendEmitted(allocator: std.mem.Allocator, source_file: *as
     };
 }
 
+/// The `.reporter = …` line a generated `call_handler_*` writes for a handler
+/// that declares the `reporter` machine parameter. The reporter is not a
+/// separate channel down the ABI: it is the compilation's ONE reporter, read
+/// back off the context that already rides in as `?*anyopaque`. Both hops
+/// assert — no context, or a context carrying no reporter, is a wiring fault in
+/// the caller, never something to paper over with a freshly-built reporter
+/// bound to no file. Args: indent, kind, name, kind, name.
+const reporter_inject_fmt =
+    "{s}.reporter = (@as(*koru_std.koru_compiler.CompilerContext, @ptrCast(@alignCast(__koru_ctx orelse " ++
+    "@panic(\"{s} '{s}' declares reporter: *ErrorReporter but was invoked from a path that carries no compilation context\")))).reporter orelse " ++
+    "@panic(\"{s} '{s}' declares reporter: *ErrorReporter but the compilation carries none\")),\n";
+
 /// TransformEvent stores both the underscore name (for stubs) and dotted name (for matching)
 /// Transforms are compiler passes: Program -> transformed{Program} | failed{error}
 /// Also used for derive handlers which generate new declarations from event declarations
@@ -1627,6 +1639,13 @@ const TransformEvent = struct {
     /// back in the generated stub. A handler declaring it that is reached from
     /// an entry point carrying no context asserts; it is never synthesized.
     has_ctx: bool = false,
+    /// Event accepts reporter: *ErrorReporter — the compilation's ONE
+    /// diagnostic channel, minted at the pipeline head and bound to the user's
+    /// source file. Rides in on the same `?*anyopaque` context as `has_ctx`
+    /// (the stub reads it back off `CompilerContext.reporter`), so a handler
+    /// declaring it on a context-free entry point asserts rather than getting a
+    /// freshly-built reporter pointed at nothing.
+    has_reporter: bool = false,
     has_event_name_field: bool, // Event accepts event_name: []const u8 parameter (for glob patterns)
     returns_program: bool, // Event returns transformed{ program: *const Program }
     // Single-return form (210_131): the decl is `-> SiteResult` and the impl is
@@ -1967,6 +1986,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                 var has_allocator = false;
                 var has_event_name_field = false;
                 var has_ctx = false;
+                var has_reporter = false;
 
                 for (event_decl.input.fields) |field| {
                     if (std.mem.eql(u8, field.name, "program_ast") or std.mem.eql(u8, field.name, "program")) {
@@ -1977,6 +1997,8 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                         has_event_name_field = true;
                     } else if (std.mem.eql(u8, field.name, "ctx")) {
                         has_ctx = true;
+                    } else if (std.mem.eql(u8, field.name, "reporter")) {
+                        has_reporter = true;
                     }
                 }
 
@@ -2042,6 +2064,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                     .has_item = has_item_param,
                     .has_program_ast = has_program_ast,
                     .has_ctx = has_ctx,
+                    .has_reporter = has_reporter,
                     .has_allocator = has_allocator,
                     .has_event_name_field = has_event_name_field,
                     .has_compile_error = has_compile_error,
@@ -2155,6 +2178,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                         var has_allocator = false;
                         var has_event_name_field = false;
                         var has_ctx = false;
+                        var has_reporter = false;
 
                         for (event_decl.input.fields) |field| {
                             if (std.mem.eql(u8, field.name, "program_ast") or std.mem.eql(u8, field.name, "program")) {
@@ -2165,6 +2189,8 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                                 has_event_name_field = true;
                             } else if (std.mem.eql(u8, field.name, "ctx")) {
                                 has_ctx = true;
+                            } else if (std.mem.eql(u8, field.name, "reporter")) {
+                                has_reporter = true;
                             }
                         }
 
@@ -2251,6 +2277,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                             .has_item = has_item_param,
                             .has_program_ast = has_program_ast,
                             .has_ctx = has_ctx,
+                            .has_reporter = has_reporter,
                             .has_allocator = has_allocator,
                             .has_event_name_field = has_event_name_field,
                             .has_compile_error = has_compile_error,
@@ -2377,7 +2404,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
         if (!event.has_allocator) {
             try code_emitter.write("    _ = allocator;\n");
         }
-        if (!event.has_ctx) {
+        if (!event.has_ctx and !event.has_reporter) {
             try code_emitter.write("    _ = __koru_ctx;\n");
         }
         // Only discard program if we don't use it anywhere
@@ -2422,6 +2449,10 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
             if (event.has_ctx) {
                 const ctx_line = try std.fmt.bufPrint(&buf, "        .ctx = @ptrCast(@alignCast(__koru_ctx orelse @panic(\"derive '{s}' declares ctx: *CompilerContext but was invoked from a path that carries no compilation context\"))),\n", .{event.match_name});
                 try code_emitter.write(ctx_line);
+            }
+            if (event.has_reporter) {
+                const reporter_line = try std.fmt.bufPrint(&buf, reporter_inject_fmt, .{ "        ", "derive", event.match_name, "derive", event.match_name });
+                try code_emitter.write(reporter_line);
             }
             if (event.has_allocator) {
                 try code_emitter.write("        .allocator = allocator,\n");
@@ -2515,6 +2546,10 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
             if (event.has_ctx) {
                 const ctx_line = try std.fmt.bufPrint(&buf, "            .ctx = @ptrCast(@alignCast(__koru_ctx orelse @panic(\"transform '{s}' declares ctx: *CompilerContext but was invoked from a path that carries no compilation context\"))),\n", .{event.match_name});
                 try code_emitter.write(ctx_line);
+            }
+            if (event.has_reporter) {
+                const reporter_line = try std.fmt.bufPrint(&buf, reporter_inject_fmt, .{ "            ", "transform", event.match_name, "transform", event.match_name });
+                try code_emitter.write(reporter_line);
             }
             if (event.has_allocator) {
                 try code_emitter.write("            .allocator = allocator,\n");
