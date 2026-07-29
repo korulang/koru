@@ -1,12 +1,11 @@
 // 695_001 — [tree] store: TT1 (parent synthesis is invisible) + TT5 (forest,
-// deterministic preorder). FIRST acceptance red of the tree-store spec.
+// deterministic preorder). The head acceptance pin of the tree-store spec.
 //
-// HONEST FAILING PIN: the `[tree]` annotation and the `preorder` traversal do
-// NOT exist yet. This captures what TT1 must deliver — and it sits directly on
-// the LANDED self-FK substrate (690_048): a row handle IS an i64 row index,
-// -1 = unset/root, and `store[a.next]` follows a handle-carrying column one hop.
+// PINS what `[tree]` delivers, on the self-FK substrate (690_048): a row handle
+// IS an i64 row index, -1 = unset/root, and `store[a.next]` follows a
+// handle-carrying column one hop.
 //
-// What `[tree]` must do (the thin lens, per DESIGN.md):
+// What `[tree]` does (the thin lens, per DESIGN.md):
 //   1. Synthesize an INVISIBLE canonical `parent` column — a self-FK i64,
 //      -1 = root. The user row shape below declares NO parent field (TT1).
 //   2. A node's parent is set by writing the synthesized `parent` via the
@@ -16,7 +15,7 @@
 //      (parent == -1) in insertion order; siblings in insertion order (the
 //      unordered-core default; explicit z/sibling-order is a later thesis).
 //
-// NEW SURFACE pinned here (everything else is grounded koru):
+// The surface this pins:
 //   - [tree]std/store:new(...)            annotation → parent synthesis + traversal
 //   - std/store:preorder(name) / ! preorder { ... }   DFS pre-order arm
 //

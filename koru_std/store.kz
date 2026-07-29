@@ -6393,7 +6393,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
 // Preorder on a non-[tree] store is rejected by the coordinator with a
 // teaching diagnostic (no parent column to walk).
 
-~[keyword|comptime|transform]pub tor preorder {
+~[keyword|comptime|transform|claims_descendants]pub tor preorder {
     expr: Expression,
     invocation: *const Invocation,
     item: *const Item,
