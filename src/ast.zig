@@ -655,6 +655,19 @@ pub fn refusal(
     return Item{ .inline_code = InlineCode{ .code = msg, .location = loc, .module = module } };
 }
 
+/// The column name a one-column store's synthesized single column carries.
+///
+/// A store declaring `{ 0[i64] }` names no field — the store's own name is the
+/// name — but everything downstream (SoA cells, insert params, apply branches,
+/// sweep projections) addresses columns BY name. So the bare form synthesizes
+/// exactly one, under a name no author can write. Unspellable is the point: a
+/// reachable name would put the author right back to writing `counter.v`.
+///
+/// It lives here rather than in one transform's local helper struct because
+/// `new` mints it and `stored`, `insert` and `sweep` all have to recognise it —
+/// four transforms, one spelling, and `ast` is the vocabulary they already share.
+pub const STORE_IDENTITY_COLUMN = "__koru_value";
+
 /// Was a declaration this site depends on ALREADY refused?
 ///
 /// `refusal` above replaces the refused item with inline code, which means the

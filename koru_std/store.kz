@@ -244,16 +244,25 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         }
         // Boundary-aware `<store>.` → `__koru_store_<store>.` rewrite over a
         // continuation tree (transplanted bodies read other stores' cells).
-        fn storeRefsH(alloc: std.mem.Allocator, text: []const u8, name: []const u8) []const u8 {
+        fn storeRefsH(alloc: std.mem.Allocator, text: []const u8, name: []const u8, is_identity: bool) []const u8 {
             var out = std.ArrayList(u8).initCapacity(alloc, text.len + 32) catch unreachable;
             var i: usize = 0;
             while (i < text.len) {
                 const at_boundary = i == 0 or !isIdentChar(text[i - 1]);
-                if (at_boundary and i + name.len < text.len and
-                    std.mem.startsWith(u8, text[i..], name) and text[i + name.len] == '.')
-                {
+                const starts = at_boundary and std.mem.startsWith(u8, text[i..], name);
+                const after = i + name.len;
+                if (starts and after < text.len and text[after] == '.') {
                     out.appendSlice(alloc, "__koru_store_") catch unreachable;
                     out.appendSlice(alloc, name) catch unreachable;
+                    i += name.len;
+                } else if (is_identity and starts and (after >= text.len or !isIdentChar(text[after]))) {
+                    // A ONE-column store has no field to name, so the reference is
+                    // the store itself. It still has to reach a column in the SoA
+                    // cell, so it resolves to the synthesized one.
+                    out.appendSlice(alloc, "__koru_store_") catch unreachable;
+                    out.appendSlice(alloc, name) catch unreachable;
+                    out.append(alloc, '.') catch unreachable;
+                    out.appendSlice(alloc, ast.STORE_IDENTITY_COLUMN) catch unreachable;
                     i += name.len;
                 } else {
                     out.append(alloc, text[i]) catch unreachable;
@@ -262,11 +271,15 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             }
             return out.toOwnedSlice(alloc) catch unreachable;
         }
-        fn storeRefsContH(alloc: std.mem.Allocator, cont: *ast.Continuation, names: []const []const u8) void {
+        fn isIn(names: []const []const u8, n: []const u8) bool {
+            for (names) |x| if (std.mem.eql(u8, x, n)) return true;
+            return false;
+        }
+        fn storeRefsContH(alloc: std.mem.Allocator, cont: *ast.Continuation, names: []const []const u8, ident: []const []const u8) void {
             const ast2 = @import("ast");
             if (cont.condition) |cond| {
                 var cnd = cond;
-                for (names) |nm| cnd = storeRefsH(alloc, cnd, nm);
+                for (names) |nm| cnd = storeRefsH(alloc, cnd, nm, isIn(ident, nm));
                 @constCast(cont).condition = cnd;
             }
             if (cont.node) |*n| {
@@ -286,11 +299,11 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                         if (!skip) {
                             for (inv.args) |*a| {
                                 var v = a.value;
-                                for (names) |nm| v = storeRefsH(alloc, v, nm);
+                                for (names) |nm| v = storeRefsH(alloc, v, nm, isIn(ident, nm));
                                 @constCast(a).value = v;
                                 if (a.expression_value) |ev| {
                                     var t = ev.text;
-                                    for (names) |nm| t = storeRefsH(alloc, t, nm);
+                                    for (names) |nm| t = storeRefsH(alloc, t, nm, isIn(ident, nm));
                                     const fresh = alloc.create(ast2.CapturedExpression) catch unreachable;
                                     fresh.* = ev.*;
                                     fresh.text = t;
@@ -303,25 +316,25 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                         // args alone is too late; the freeze lives here (690_074).
                         if (inv.inline_body) |ib| {
                             var t = ib;
-                            for (names) |nm| t = storeRefsH(alloc, t, nm);
+                            for (names) |nm| t = storeRefsH(alloc, t, nm, isIn(ident, nm));
                             inv.inline_body = t;
                         }
                     },
                     .inline_code => {
                         var t = n.inline_code;
-                        for (names) |nm| t = storeRefsH(alloc, t, nm);
+                        for (names) |nm| t = storeRefsH(alloc, t, nm, isIn(ident, nm));
                         n.* = .{ .inline_code = t };
                     },
                     else => {},
                 }
             }
-            for (cont.continuations) |*c| storeRefsContH(alloc, @constCast(c), names);
+            for (cont.continuations) |*c| storeRefsContH(alloc, @constCast(c), names, ident);
         }
-        fn storeRefsFlowH(alloc: std.mem.Allocator, f: *ast.Flow, names: []const []const u8) void {
-            storeRefsContH(alloc, &f.body, names);
+        fn storeRefsFlowH(alloc: std.mem.Allocator, f: *ast.Flow, names: []const []const u8, ident: []const []const u8) void {
+            storeRefsContH(alloc, &f.body, names, ident);
             if (f.inline_body) |ib| {
                 var t = ib;
-                for (names) |nm| t = storeRefsH(alloc, t, nm);
+                for (names) |nm| t = storeRefsH(alloc, t, nm, isIn(ident, nm));
                 @constCast(f).inline_body = t;
             }
         }
@@ -375,7 +388,30 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
 
     // Seed fields via the projector (capture's path exactly).
     const expr_braced = std.fmt.allocPrint(allocator, "{{{s}}}", .{seed_text.?}) catch unreachable;
-    const cell_fields = struct_literal.parseFields(allocator, expr_braced) catch &[_]struct_literal.StructField{};
+    // ONE column names no field — the store's own name is the name.
+    //
+    // Koru forbids a single-field record by construction and spells the
+    // one-thing case bare everywhere else (`| branch { x: T }` is refused;
+    // `| branch T` is the identity form). A store declaring `{ v: i64 }` writes
+    // exactly the shape the language refuses, and then every hand-back lowers it
+    // away again — `| item`, `| full` and `! discharge` each carry an arity
+    // special-case for it. Declared bare there is no field to reach past and
+    // nothing to lower.
+    //
+    // `allow_singleton_expression` is not new machinery: capture's seed
+    // (`capture { entity }`) already opts into it at control.kz:253. The store
+    // was the outlier for asking every one-column author to invent a field name
+    // — `items.v`, `batch.p`, `names.name` — that carried nothing the store's own
+    // name had not already said.
+    // Whether a NAME WAS WRITTEN decides the shape — not whether the text could
+    // serve as one. `{ i64 }` puns to a column called `i64` under the ordinary
+    // pun law, which is precisely the reading a one-column store must not take.
+    const identity_shaped = struct_literal.isIdentityBlock(expr_braced);
+    const cell_fields: []const struct_literal.StructField = if (identity_shaped) blk: {
+        const one = allocator.alloc(struct_literal.StructField, 1) catch unreachable;
+        one[0] = .{ .name = ast.STORE_IDENTITY_COLUMN, .value = std.mem.trim(u8, seed_text.?, " \t\n\r") };
+        break :blk one;
+    } else struct_literal.parseFields(allocator, expr_braced) catch &[_]struct_literal.StructField{};
     if (cell_fields.len == 0) {
         return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:new({s}): seed block has no fields", .{store_name}) } };
     }
@@ -1605,24 +1641,46 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         // Store-name rewriting for watch bodies (other stores readable —
         // same as rung one).
         var pstore_names = std.ArrayList([]const u8).initCapacity(allocator, 4) catch unreachable;
+        // The subset that names ONE column and no field. A reference to one of
+        // these is BARE — `counter`, not `counter.field` — so the rewriter needs
+        // to know which stores those are before it can resolve them.
+        var pstore_identity = std.ArrayList([]const u8).initCapacity(allocator, 4) catch unreachable;
         for (program.items) |pi| {
             switch (pi) {
                 .flow => |*f| {
                     if (H.isStoreInv(f, "new", null)) {
+                        var nm: ?[]const u8 = null;
+                        var seed: ?[]const u8 = null;
                         for (f.inv().args) |a| {
-                            if (std.mem.eql(u8, a.name, "expr")) pstore_names.append(allocator, H.stripQuotes(a.value)) catch unreachable;
+                            if (std.mem.eql(u8, a.name, "expr")) nm = H.stripQuotes(a.value);
+                            if (std.mem.eql(u8, a.name, "source")) seed = a.value;
+                        }
+                        if (nm) |n| {
+                            pstore_names.append(allocator, n) catch unreachable;
+                            // Read the seed the same way the declaration does, so
+                            // "is this identity-shaped" has ONE answer.
+                            if (seed) |sd| {
+                                const braced = std.fmt.allocPrint(allocator, "{{{s}}}", .{sd}) catch unreachable;
+                                if (struct_literal.isIdentityBlock(braced)) pstore_identity.append(allocator, n) catch unreachable;
+                            }
                         }
                     }
                 },
                 .event_decl => |*ed| {
                     if (ed.path.segments.len == 1 and std.mem.startsWith(u8, ed.path.segments[0], "__store_apply_")) {
-                        pstore_names.append(allocator, ed.path.segments[0]["__store_apply_".len..]) catch unreachable;
+                        const n = ed.path.segments[0]["__store_apply_".len..];
+                        pstore_names.append(allocator, n) catch unreachable;
+                        // An already-coordinated store carries its columns as the
+                        // apply event's branches.
+                        if (ed.branches.len == 1 and std.mem.eql(u8, ed.branches[0].name, ast.STORE_IDENTITY_COLUMN)) {
+                            pstore_identity.append(allocator, n) catch unreachable;
+                        }
                     }
                 },
                 else => {},
             }
         }
-        for (pwatch_arms.items) |*wa| H.storeRefsContH(allocator, &wa.cont, pstore_names.items);
+        for (pwatch_arms.items) |*wa| H.storeRefsContH(allocator, &wa.cont, pstore_names.items, pstore_identity.items);
 
         // Owned-column stores build insert/take/teardown (690_053), the READ
         // surface (query/preorder, 690_060: an owned column projects as a BARE
@@ -2810,6 +2868,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                     arm_owned: []const ?OwnedCol,
                     arm_body: *const ast.Continuation,
                     pnames: []const []const u8,
+                    pident: []const []const u8,
                 ) void {
                     const ev_in = alloc.alloc(ast.Field, arm_fields.len) catch unreachable;
                     for (arm_fields, arm_types, arm_owned, 0..) |fnm, ftp, aoi, fi| {
@@ -2842,7 +2901,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                         .module = alloc.dupe(u8, module) catch unreachable,
                     } }) catch unreachable;
                     var body_clone = ast_functional.cloneContinuation(alloc, arm_body) catch unreachable;
-                    H.storeRefsContH(alloc, &body_clone, pnames);
+                    H.storeRefsContH(alloc, &body_clone, pnames, pident);
                     const lbody_node = body_clone.node.?;
                     items.append(alloc, ast.Item{ .flow = ast.Flow{
                         .body = ast.rootSite(lbody_node.invocation, body_clone.continuations, loc),
@@ -2896,17 +2955,17 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             }.call;
             for (inserted_arms.items, 0..) |*arm, ai| {
                 const ev_name = std.fmt.allocPrint(allocator, "__store_inserted_{s}_{d}", .{ store_name, ai }) catch unreachable;
-                LC.emit(allocator, &appended_items, flow.module, flow.location, ev_name, arm.fields, colTypes(allocator, field_names, field_types, arm.fields), colOwned(allocator, field_names, field_owned_info, arm.fields), &arm.body, pstore_names.items);
+                LC.emit(allocator, &appended_items, flow.module, flow.location, ev_name, arm.fields, colTypes(allocator, field_names, field_types, arm.fields), colOwned(allocator, field_names, field_owned_info, arm.fields), &arm.body, pstore_names.items, pstore_identity.items);
             }
             for (removed_arms.items, 0..) |*arm, ai| {
                 const ev_name = std.fmt.allocPrint(allocator, "__store_removed_{s}_{d}", .{ store_name, ai }) catch unreachable;
-                LC.emit(allocator, &appended_items, flow.module, flow.location, ev_name, arm.fields, colTypes(allocator, field_names, field_types, arm.fields), colOwned(allocator, field_names, field_owned_info, arm.fields), &arm.body, pstore_names.items);
+                LC.emit(allocator, &appended_items, flow.module, flow.location, ev_name, arm.fields, colTypes(allocator, field_names, field_types, arm.fields), colOwned(allocator, field_names, field_owned_info, arm.fields), &arm.body, pstore_names.items, pstore_identity.items);
             }
             for (updated_arms.items, 0..) |*arm, ai| {
                 const ev_name = std.fmt.allocPrint(allocator, "__store_updated_{s}_{d}", .{ store_name, ai }) catch unreachable;
                 const utypes = allocator.alloc([]const u8, arm.fields.len) catch unreachable;
                 for (utypes) |*ut| ut.* = if (field_types.len > 0) field_types[0] else "i64";
-                LC.emit(allocator, &appended_items, flow.module, flow.location, ev_name, arm.fields, utypes, colOwned(allocator, field_names, field_owned_info, arm.fields), &arm.body, pstore_names.items);
+                LC.emit(allocator, &appended_items, flow.module, flow.location, ev_name, arm.fields, utypes, colOwned(allocator, field_names, field_owned_info, arm.fields), &arm.body, pstore_names.items, pstore_identity.items);
             }
         }
 
@@ -3158,19 +3217,19 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         // paths sit past an ident char).
         {
             const Walk = struct {
-                fn items(alloc: std.mem.Allocator, its: []ast.Item, names: []const []const u8) void {
+                fn items(alloc: std.mem.Allocator, its: []ast.Item, names: []const []const u8, ident: []const []const u8) void {
                     for (its) |*pi| {
                         switch (pi.*) {
                             // Must use `&pi.flow` — `|*f|` on a switched copy
                             // mutates a temporary and the live AST stays raw.
-                            .flow => H.storeRefsFlowH(alloc, &pi.flow, names),
-                            .module_decl => items(alloc, @constCast(pi.module_decl.items), names),
+                            .flow => H.storeRefsFlowH(alloc, &pi.flow, names, ident),
+                            .module_decl => items(alloc, @constCast(pi.module_decl.items), names, ident),
                             else => {},
                         }
                     }
                 }
             };
-            Walk.items(allocator, @constCast(program.items), pstore_names.items);
+            Walk.items(allocator, @constCast(program.items), pstore_names.items, pstore_identity.items);
         }
 
         const pconsumed = std.fmt.allocPrint(allocator, "// std/store: plural store '{s}' created (SoA cell + insert/query/write/take/stripe units)", .{store_name}) catch unreachable;
@@ -4451,6 +4510,12 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             }
             return null;
         }
+        /// Does this store name ONE column and no field? Then the store itself
+        /// is the lvalue and the synthesized column takes the value.
+        fn isIdentityStore(alloc: std.mem.Allocator, prog: *const ast.Program, store: []const u8) bool {
+            const order = fieldOrder(alloc, prog, store) orelse return false;
+            return order.len == 1 and std.mem.eql(u8, order[0], ast.STORE_IDENTITY_COLUMN);
+        }
     };
 
     var block_text: ?[]const u8 = null;
@@ -4587,11 +4652,18 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         row_expr = std.mem.trim(u8, w.name[lb + 1 .. rb], " ");
         target_field = w.name[rb + 2 ..];
     } else {
-        const dot = std.mem.indexOfScalar(u8, w.name, '.') orelse {
+        if (std.mem.indexOfScalar(u8, w.name, '.')) |dot| {
+            target_store = w.name[0..dot];
+            target_field = w.name[dot + 1 ..];
+        } else if (H.isIdentityStore(allocator, program, w.name)) {
+            // A ONE-column store names no field, so the store IS the lvalue:
+            // `stored { counter: 5 }`. There is no `.field` to write because
+            // there is no field — the synthesized column takes the value.
+            target_store = w.name;
+            target_field = ast.STORE_IDENTITY_COLUMN;
+        } else {
             return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:stored target '{s}' must be a dotted store path (store.field)", .{w.name}) } };
-        };
-        target_store = w.name[0..dot];
-        target_field = w.name[dot + 1 ..];
+        }
     }
 
     // A plural store's write surface is row-addressed; the elided-singleton
@@ -5450,7 +5522,21 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
     };
 
     const braced = std.fmt.allocPrint(allocator, "{{{s}}}", .{block_text.?}) catch unreachable;
-    const row_fields = struct_literal.parseFields(allocator, braced) catch |err| {
+    // A ONE-column store names no column, so its row block IS the value
+    // expression — `insert(nums) { 7 }`.
+    //
+    // It is NEVER a field list here, and that settles the punning question
+    // rather than leaving it ambiguous: `insert(batch) { p }` today puns to
+    // `{ p: p }` because the column happens to be called `p`. With no column
+    // name there is nothing to pun against, so the block can only mean "insert
+    // this value". One reading, decided by the store's arity, not by whether the
+    // author's binding happens to match a column name.
+    const insert_identity = order.len == 1 and std.mem.eql(u8, order[0], ast.STORE_IDENTITY_COLUMN);
+    const row_fields: []const struct_literal.StructField = if (insert_identity) blk: {
+        const one = allocator.alloc(struct_literal.StructField, 1) catch unreachable;
+        one[0] = .{ .name = ast.STORE_IDENTITY_COLUMN, .value = std.mem.trim(u8, block_text.?, " \t\n\r") };
+        break :blk one;
+    } else struct_literal.parseFields(allocator, braced) catch |err| {
         return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:insert({s}): {s}", .{ store_name, struct_literal.describeError(err) }) } };
     };
     if (row_fields.len != order.len) {
@@ -5844,8 +5930,33 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         fn isIdentCh(ch: u8) bool {
             return (ch >= 'a' and ch <= 'z') or (ch >= 'A' and ch <= 'Z') or (ch >= '0' and ch <= '9') or ch == '_' or ch == '-';
         }
+        /// Which byte positions are EXPRESSION context, not literal prose.
+        ///
+        /// Inside a string, only a `{{ … }}` interpolation is an expression. This
+        /// did not matter while every row reference was dotted — `n.v` seldom
+        /// occurs in a sentence — but a ONE-column row is referenced BARE, and a
+        /// lone `n` occurs in prose constantly. `"n {{ n:d }}"` must rewrite the
+        /// second `n` and leave the first alone.
+        fn exprMask(alloc: std.mem.Allocator, text: []const u8) []bool {
+            const mask = alloc.alloc(bool, text.len) catch unreachable;
+            var in_str = false;
+            var in_interp = false;
+            var i: usize = 0;
+            while (i < text.len) : (i += 1) {
+                if (in_str and !in_interp and text[i] == '{' and i + 1 < text.len and text[i + 1] == '{') in_interp = true;
+                if (in_str and in_interp and text[i] == '}' and i + 1 < text.len and text[i + 1] == '}') in_interp = false;
+                if (text[i] == '"' and (i == 0 or text[i - 1] != '\\') and !in_interp) {
+                    in_str = !in_str;
+                    mask[i] = false;
+                    continue;
+                }
+                mask[i] = !in_str or in_interp;
+            }
+            return mask;
+        }
         fn refs(alloc: std.mem.Allocator, text: []const u8, bind: []const u8, store: []const u8, fields: []const []const u8, form: Form, used: []bool, unknown: *?[]const u8) []const u8 {
             const prefix = std.fmt.allocPrint(alloc, "{s}.", .{bind}) catch unreachable;
+            const expr_ctx = exprMask(alloc, text);
             var out = std.ArrayList(u8).initCapacity(alloc, text.len + 32) catch unreachable;
             var i: usize = 0;
             while (i < text.len) {
@@ -5876,6 +5987,27 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                     // is a typo the store can name, not a free name to pass on to
                     // the host as `undeclared identifier`.
                     if (fend > fstart and unknown.* == null) unknown.* = alloc.dupe(u8, fname) catch unreachable;
+                }
+                // A ONE-column store's row names no field, so the BARE binding is
+                // the value: `! sweep n |> use(v: n)`. Derived from `fields`
+                // rather than threaded — the column list already says it.
+                const row_is_identity = fields.len == 1 and std.mem.eql(u8, fields[0], ast.STORE_IDENTITY_COLUMN);
+                if (row_is_identity and expr_ctx[i] and at_boundary and std.mem.startsWith(u8, text[i..], bind)) {
+                    const after = i + bind.len;
+                    if (after >= text.len or (!isIdentCh(text[after]) and text[after] != '.')) {
+                        const fname = fields[0];
+                        const t = switch (form) {
+                            .target => std.fmt.allocPrint(alloc, "{s}[__koru_srow].{s}", .{ store, fname }) catch unreachable,
+                            .live => std.fmt.allocPrint(alloc, "__koru_store_{s}.{s}[@as(usize, @intCast(__koru_srow))]", .{ store, fname }) catch unreachable,
+                            .input => blk4: {
+                                used[0] = true;
+                                break :blk4 std.fmt.allocPrint(alloc, "__koru_srf_{s}", .{fname}) catch unreachable;
+                            },
+                        };
+                        out.appendSlice(alloc, t) catch unreachable;
+                        i = after;
+                        continue;
+                    }
                 }
                 out.append(alloc, text[i]) catch unreachable;
                 i += 1;

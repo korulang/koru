@@ -303,6 +303,52 @@ pub fn isKoruStructLiteral(value: []const u8) bool {
     return false;
 }
 
+/// `{ i64 }` / `{ 0[i64] }` / `{ *mod:Type<state!> }` — a ONE-slot block whose
+/// single entry carries no `name:` label. The identity form: one thing, unnamed.
+///
+/// Distinct from `isKoruStructLiteral`, which scans for `ident :` ANYWHERE and so
+/// reports true for `{ *koru/curl:Pending<open!> }` on the strength of `curl:`.
+/// A field label is not "a colon somewhere" — it is a colon immediately after the
+/// entry's LEADING identifier, so this check is anchored rather than searching.
+///
+/// Punnability is deliberately not consulted. `{ i64 }` puns to a column called
+/// `i64` under the ordinary pun law, which is exactly the reading a one-column
+/// store must not take; what decides the shape here is whether a name was
+/// WRITTEN, not whether the text could serve as one.
+pub fn isIdentityBlock(value: []const u8) bool {
+    if (value.len < 2) return false;
+    if (value[0] != '{' or value[value.len - 1] != '}') return false;
+    const inner = std.mem.trim(u8, value[1 .. value.len - 1], " \t\n\r");
+    if (inner.len == 0) return false;
+
+    // More than one top-level entry is a field list, whatever it is labelled.
+    var depth: i32 = 0;
+    var k: usize = 0;
+    while (k < inner.len) : (k += 1) {
+        switch (inner[k]) {
+            '"' => {
+                k += 1;
+                while (k < inner.len and inner[k] != '"') : (k += 1) {
+                    if (inner[k] == '\\') k += 1;
+                }
+            },
+            '{', '(', '[', '<' => depth += 1,
+            '}', ')', ']', '>' => depth -= 1,
+            ',' => if (depth == 0) return false,
+            else => {},
+        }
+    }
+
+    // A leading `name:` makes it a named field, not the identity form.
+    if (isIdentStartChar(inner[0])) {
+        var j: usize = 1;
+        while (j < inner.len and isIdentChar(inner[j])) : (j += 1) {}
+        while (j < inner.len and (inner[j] == ' ' or inner[j] == '\t')) : (j += 1) {}
+        if (j < inner.len and inner[j] == ':') return false;
+    }
+    return true;
+}
+
 /// `{ p.x, p.y }` field-punning shorthand — no `field:` labels, dot paths only.
 pub fn isFieldPunningLiteral(value: []const u8) bool {
     if (value.len < 2) return false;
