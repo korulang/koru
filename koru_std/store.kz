@@ -245,6 +245,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         // Boundary-aware `<store>.` → `__koru_store_<store>.` rewrite over a
         // continuation tree (transplanted bodies read other stores' cells).
         fn storeRefsH(alloc: std.mem.Allocator, text: []const u8, name: []const u8, is_identity: bool) []const u8 {
+            const expr_ctx = ast.expressionMask(alloc, text);
             var out = std.ArrayList(u8).initCapacity(alloc, text.len + 32) catch unreachable;
             var i: usize = 0;
             while (i < text.len) {
@@ -255,7 +256,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                     out.appendSlice(alloc, "__koru_store_") catch unreachable;
                     out.appendSlice(alloc, name) catch unreachable;
                     i += name.len;
-                } else if (is_identity and starts and (after >= text.len or !isIdentChar(text[after]))) {
+                } else if (is_identity and expr_ctx[i] and starts and (after >= text.len or !isIdentChar(text[after]))) {
                     // A ONE-column store has no field to name, so the reference is
                     // the store itself. It still has to reach a column in the SoA
                     // cell, so it resolves to the synthesized one.
@@ -1968,15 +1969,20 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             // scalar-only store (690_011).
             // Same rule as `| item` above: one owned column means the give-back is
             // the value itself, never a record wrapping it.
-            const full_identity_owned = has_owned and user_field_count == 1 and field_owned_info[0] != null;
+            const full_identity_owned = (user_field_count == 1 and std.mem.eql(u8, field_names[0], ast.STORE_IDENTITY_COLUMN)) or (has_owned and user_field_count == 1 and field_owned_info[0] != null);
             const f_full_pf: []ast.Field = if (full_identity_owned) blk: {
-                const oi = field_owned_info[0].?;
                 const pf = allocator.alloc(ast.Field, 1) catch unreachable;
-                pf[0] = ast.Field{
+                // A scalar identity column carries no obligation to reissue, so
+                // it rides bare — arity picks the SHAPE, ownership only decides
+                // whether a phantom travels with it.
+                pf[0] = if (field_owned_info[0]) |oi| ast.Field{
                     .name = allocator.dupe(u8, "__type_ref") catch unreachable,
                     .type = allocator.dupe(u8, field_types[0]) catch unreachable,
                     .module_path = allocator.dupe(u8, oi.module_slash) catch unreachable,
                     .phantom = std.fmt.allocPrint(allocator, "{s}:{s}!", .{ oi.module_dot, oi.state }) catch unreachable,
+                } else ast.Field{
+                    .name = allocator.dupe(u8, "__type_ref") catch unreachable,
+                    .type = allocator.dupe(u8, field_types[0]) catch unreachable,
                 };
                 break :blk pf;
             } else if (has_owned) blk: {
@@ -2729,15 +2735,20 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             // Auto-discharge is unaffected — an identity branch payload carrying
             // `<state!>` auto-frees at scope exit like any other (measured
             // 2026-07-28, and 690_053/055/056/059/065 are the witnesses).
-            const item_identity_owned = has_owned and field_names.len == 1 and field_owned_info[0] != null;
+            const item_identity_owned = (field_names.len == 1 and std.mem.eql(u8, field_names[0], ast.STORE_IDENTITY_COLUMN)) or (has_owned and field_names.len == 1 and field_owned_info[0] != null);
             const item_pf = if (item_identity_owned) blk: {
-                const oi = field_owned_info[0].?;
                 const pf = allocator.alloc(ast.Field, 1) catch unreachable;
-                pf[0] = ast.Field{
+                // A scalar identity column carries no obligation to reissue, so
+                // it rides bare — arity picks the SHAPE, ownership only decides
+                // whether a phantom travels with it.
+                pf[0] = if (field_owned_info[0]) |oi| ast.Field{
                     .name = allocator.dupe(u8, "__type_ref") catch unreachable,
                     .type = allocator.dupe(u8, field_types[0]) catch unreachable,
                     .module_path = allocator.dupe(u8, oi.module_slash) catch unreachable,
                     .phantom = std.fmt.allocPrint(allocator, "{s}:{s}!", .{ oi.module_dot, oi.state }) catch unreachable,
+                } else ast.Field{
+                    .name = allocator.dupe(u8, "__type_ref") catch unreachable,
+                    .type = allocator.dupe(u8, field_types[0]) catch unreachable,
                 };
                 break :blk pf;
             } else if (has_owned) blk: {
@@ -3090,7 +3101,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             const td_name = std.fmt.allocPrint(allocator, "__store_teardown_{s}", .{store_name}) catch unreachable;
             // Arity picks the payload shape. Same predicate as `| item`
             // (store.kz:2653): the store's ONLY column, and it owned.
-            const discharge_identity_owned = field_names.len == 1 and field_owned_info[0] != null;
+            const discharge_identity_owned = field_names.len == 1 and (field_owned_info[0] != null or std.mem.eql(u8, field_names[0], ast.STORE_IDENTITY_COLUMN));
             // Drain (690_057): the teardown event declares the `! discharge`
             // EFFECT branch (the 400_105 producer shape). Its payload is the
             // ROW RECORD — every column as a field, the ambiguous owned
@@ -3108,13 +3119,15 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 // written. The per-field reissue reason from 2026-07-21 is real
                 // and survives at two columns — see 690_097, the control.
                 const dpf: []ast.Field = if (discharge_identity_owned) blk: {
-                    const oi = field_owned_info[0].?;
                     const pf = allocator.alloc(ast.Field, 1) catch unreachable;
-                    pf[0] = ast.Field{
+                    pf[0] = if (field_owned_info[0]) |oi| ast.Field{
                         .name = allocator.dupe(u8, "__type_ref") catch unreachable,
                         .type = allocator.dupe(u8, field_types[0]) catch unreachable,
                         .module_path = allocator.dupe(u8, oi.module_slash) catch unreachable,
                         .phantom = std.fmt.allocPrint(allocator, "{s}:{s}!", .{ oi.module_dot, oi.state }) catch unreachable,
+                    } else ast.Field{
+                        .name = allocator.dupe(u8, "__type_ref") catch unreachable,
+                        .type = allocator.dupe(u8, field_types[0]) catch unreachable,
                     };
                     break :blk pf;
                 } else blk: {
