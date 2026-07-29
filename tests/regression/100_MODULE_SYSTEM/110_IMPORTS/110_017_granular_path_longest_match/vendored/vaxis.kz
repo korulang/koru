@@ -1,0 +1,7 @@
+// The vendored copy. Reachable only through the longer `koru/vaxis` key.
+
+~pub tor greet {} -> string
+
+~proc greet|zig {
+    return "VENDORED vaxis";
+}
