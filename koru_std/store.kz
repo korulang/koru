@@ -1291,6 +1291,16 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                     for (field_names, 0..) |fname, i| {
                         if (std.mem.eql(u8, std.mem.trim(u8, wc.branch, " "), fname)) break :blk i;
                     }
+                    // A ONE-column store's column has exactly one name: the
+                    // store's. `watch`'s arm names the thing being watched, and
+                    // it names a COLUMN only because a multi-column store makes
+                    // the author choose. With nothing to choose, the name
+                    // collapses to the store's — the same rule the declaration,
+                    // `stored` and the row bindings already carry.
+                    if (ast.watchesIdentityColumn(field_names, wc.branch, store_name)) break :blk 0;
+                    if (field_names.len == 1 and std.mem.eql(u8, field_names[0], ast.STORE_IDENTITY_COLUMN)) {
+                        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, wf.location, wf.module, "std/store:watch({s}): '{s}' names no column - a one-column store names none, so its watch arm is the store: `! {s} <binding> |> ...`", .{ store_name, wc.branch, store_name }) } };
+                    }
                     return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, wf.location, wf.module, "std/store:watch({s}): '{s}' is not a field of store '{s}'", .{ store_name, wc.branch, store_name }) } };
                 };
                 for (pwatch_arms.items) |existing| {
@@ -3307,6 +3317,11 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             const fidx: usize = blk: {
                 for (field_names, 0..) |fname, i| {
                     if (std.mem.eql(u8, std.mem.trim(u8, wc.branch, " "), fname)) break :blk i;
+                }
+                // See the twin above: one column, one name, and it is the store's.
+                if (ast.watchesIdentityColumn(field_names, wc.branch, store_name)) break :blk 0;
+                if (field_names.len == 1 and std.mem.eql(u8, field_names[0], ast.STORE_IDENTITY_COLUMN)) {
+                    return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, wf.location, wf.module, "std/store:watch({s}): '{s}' names no column - a one-column store names none, so its watch arm is the store: `! {s} <binding> |> ...`", .{ store_name, wc.branch, store_name }) } };
                 }
                 return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, wf.location, wf.module, "std/store:watch({s}): '{s}' is not a field of store '{s}'", .{ store_name, wc.branch, store_name }) } };
             };

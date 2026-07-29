@@ -697,6 +697,21 @@ pub fn expressionMask(alloc: std.mem.Allocator, text: []const u8) []bool {
 /// four transforms, one spelling, and `ast` is the vocabulary they already share.
 pub const STORE_IDENTITY_COLUMN = "__koru_value";
 
+/// Does this watch arm name a ONE-column store's only column?
+///
+/// `watch`'s arm names the thing being watched, and it names a COLUMN only
+/// because a multi-column store forces the author to choose one. With one
+/// column there is nothing to choose, so the name collapses to the store's —
+/// the same rule the declaration, `stored` and the row bindings carry. It is
+/// the only store construct whose arm is a column name rather than a fixed
+/// word (`sweep`, `item`, `full`, `row`, `inserted`, …), which is why it is
+/// the only one that needed teaching.
+pub fn watchesIdentityColumn(field_names: []const []const u8, branch: []const u8, store: []const u8) bool {
+    if (field_names.len != 1) return false;
+    if (!std.mem.eql(u8, field_names[0], STORE_IDENTITY_COLUMN)) return false;
+    return std.mem.eql(u8, std.mem.trim(u8, branch, " "), store);
+}
+
 /// Was a declaration this site depends on ALREADY refused?
 ///
 /// `refusal` above replaces the refused item with inline code, which means the

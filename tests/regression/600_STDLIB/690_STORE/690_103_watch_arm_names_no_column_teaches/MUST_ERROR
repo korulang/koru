@@ -1,0 +1,3 @@
+A one-column store's watch arm is the store, and naming a column instead must say
+so rather than reporting the column "is not a field" — which is true but sends the
+author looking for a field name that no longer exists anywhere in the program.
