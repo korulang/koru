@@ -2708,26 +2708,25 @@ const joinPathAlloc = struct {
     mutable_ctx.current_pass = "check_phantom_args";
 
     const phantom_semantic_checker = @import("phantom_semantic_checker");
-    const errors_mod = @import("errors");
 
-    // Create error reporter
-    var reporter = errors_mod.ErrorReporter.init(
-        std.heap.page_allocator,
-        "phantom_args_check",
-        ""
-    ) catch {
-        mutable_ctx.errors.append(mutable_ctx.allocator, .{
-            .message = "Failed to initialize error reporter",
-            .location = .{ .file = "compiler", .line = 0, .column = 0 },
-        }) catch {};
-        return .{ .ctx = mutable_ctx };
+    // THE COMPILATION'S reporter, minted at context-create and bound to the
+    // user's file AND source. This pass used to mint its own as
+    // `init(alloc, "phantom_args_check", "")` — the pass name where the FILENAME
+    // goes and no source at all, which is why its KORU030 rendered as
+    // `--> phantom_args_check:72:0` with no line and no snippet the author could
+    // act on. The location on the node was fine the whole time; the reporter had
+    // no file to resolve it against.
+    const reporter = mutable_ctx.reporter orelse {
+        @panic("check-phantom-args: the compilation carries no diagnostic reporter");
     };
-    defer reporter.deinit();
+    // Only diagnostics THIS pass adds — the compilation's reporter accumulates,
+    // so a later pass must not re-report an earlier one's errors.
+    const err_base = reporter.errors.items.len;
 
     // Create phantom semantic checker (argument-only entry point)
     var checker = phantom_semantic_checker.PhantomSemanticChecker.init(
         std.heap.page_allocator,
-        &reporter
+        reporter
     ) catch {
         mutable_ctx.errors.append(mutable_ctx.allocator, .{
             .message = "Failed to initialize phantom semantic checker",
@@ -2748,16 +2747,11 @@ const joinPathAlloc = struct {
 
     // Run argument-located validation only — no exit-balance walls here
     checker.checkArguments(mutable_ctx.ast) catch |err| {
-        // Collect errors from reporter into context
-        for (reporter.errors.items) |reporter_err| {
-            // Print to stderr immediately for visibility in regression tests
-            std.debug.print("error[{s}]: {s}\n  --> {s}:{}:{}\n\n", .{
-                @tagName(reporter_err.code),
-                reporter_err.message,
-                reporter_err.location.file,
-                reporter_err.location.line,
-                reporter_err.location.column,
-            });
+        // Render through the reporter itself — it owns the code frame, the hint
+        // and the source preview. Hand-formatting here is what made this pass's
+        // diagnostics render plainer than every other pass's.
+        reporter.printErrors(@import("errors").FileSink.stderr()) catch {};
+        for (reporter.errors.items[err_base..]) |reporter_err| {
 
             mutable_ctx.errors.append(mutable_ctx.allocator, .{
                 .message = mutable_ctx.allocator.dupe(u8, reporter_err.message) catch reporter_err.message,
