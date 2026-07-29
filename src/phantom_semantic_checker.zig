@@ -1,6 +1,7 @@
 // Phantom Semantic Checker - Validates module-qualified phantom states
 const log = @import("log");
 const std = @import("std");
+
 const ast = @import("ast");
 const errors = @import("errors");
 const phantom_parser = @import("phantom_parser");
@@ -1077,15 +1078,6 @@ pub const PhantomSemanticChecker = struct {
         current_module: []const u8,
         implementing_event: ?*const ast.EventDecl, // Event this flow implements (for branch_constructor escape checking)
     ) !bool {
-        // @shape_valid is an EXPLICIT, rare exemption — mirrors the shape
-        // checker's rule. @pass_ran deliberately does NOT exempt: "a pass ran"
-        // is a historical fact, not a validity guarantee.
-        for (flow.inv().annotations) |ann| {
-            if (std.mem.startsWith(u8, ann, "@shape_valid")) {
-                return true;
-            }
-        }
-
         var has_errors = false;
 
         // Get the event name from path segments
