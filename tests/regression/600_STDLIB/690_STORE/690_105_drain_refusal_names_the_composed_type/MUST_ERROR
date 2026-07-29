@@ -1,0 +1,18 @@
+A drain refusal names the type the author has to satisfy, composed.
+
+Today the message factors the base type out of the phantom and puts them in
+separate clauses — "column *app/lib/pend:Pending has 0 dischargers for <!open>".
+
+A phantom on its own names a SIDE of a transition, not a thing. `<open!>` is what
+a producer hands back; `<!open>` is what a consumer takes. Both spellings of the
+same state appear in this program's output one line apart, with the base type
+attached to neither, so the reader cannot tell they are the same state seen from
+two ends.
+
+`*app/lib/pend:Pending<!open>` is the exact string in the signature that would
+satisfy the store — `~pub tor cancel { p: *Pending<!open> }` in lib/pend.kz.
+Composed, it is a thing the author can search the library for. Split, there is
+nothing to match against.
+
+PIN: the composed type appears in the refusal. Where in the sentence, and whether
+the prose clause survives alongside it, is free.

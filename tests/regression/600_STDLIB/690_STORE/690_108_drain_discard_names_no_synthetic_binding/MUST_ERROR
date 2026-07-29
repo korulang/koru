@@ -1,0 +1,19 @@
+A refusal names surface the author wrote.
+
+`! discharge _` discards the element the arm exists to drain. Today that reaches
+the obligation checker and comes back as a complaint about `_auto_N` — a binding
+minted by the compiler, carrying a serial that moves with the shape of the
+program, appearing nowhere in the source. The author's only lever is the `_` they
+typed. The pin matches the prefix for that reason.
+
+Whether `! discharge` may discard at all is an open ruling and this pin does not
+settle it. `! inserted` refuses an unused binding and teaches `_` as the escape
+(690_032); a drain arm discarding its element is the one place that escape may
+have nothing to escape from. Either answer is fine here. What is not fine is a
+serial-numbered name the author cannot act on.
+
+PIN: the refusal names the construct, and no `_auto_N` reaches the author.
+
+DISPOSITION: MUST_ERROR presumes the discard stays refused, which is the current
+behaviour. If the ruling makes it legal, this becomes a run test asserting the
+drain fires — the NOT_CONTAINS survives either way.

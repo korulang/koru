@@ -1,0 +1,25 @@
+One undrainable column is one fault, and the store reports it once.
+
+The declaration draws two refusals. KORU160 explains the fault and hints the fix:
+every exit from the state returns a value, so bolt on `! discharge`. KORU161 then
+states the same refusal again in a sentence that calls a count of ZERO
+"ambiguous" — and an author who reads both is told the store cannot pick from
+nothing.
+
+store.kz states the rule this breaks in its own words, four lines above the site:
+the difference between "your library is missing something" and "pick one" is the
+whole difference, so the sentence has to say which. KORU160 says which. KORU161
+un-says it.
+
+PIN: one diagnostic for one fault, and the surviving one is the one that
+distinguishes the two reasons and carries the hint.
+
+690_058 is the count>1 face of this program and stays green either way, because
+it asserts only what the output CONTAINS and so cannot see a duplicate — which is
+why the pair went unpinned. 11747c79 stopped a refused declaration from
+cascading into ghost errors about a store the author can see; this is the same
+one-mistake-one-error shape one layer in, where both errors are about the mistake
+itself.
+
+Surfaced from koru-examples/downloads/downloads_human_1.k, migrating the batch
+store to the bare one-column form.
