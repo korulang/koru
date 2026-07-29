@@ -1,0 +1,30 @@
+// An owned resource with ZERO dischargers a store can fire: *Pending<open!> is
+// consumed only by `cancel`, and `cancel` hands back a value. A store tears its
+// elements down unattended, where there is nobody to take a return — so the
+// column cannot be auto-discharged at any count, and must be DRAINED by a
+// `! discharge` arm bolted onto the declaration.
+//
+// This is the shape koru/curl:Pending has in koru-examples/downloads, where
+// `~pub tor cancel { p: *Pending<!open> } -> *Multi<owned!>` returns the batch.
+// An i64 return carries the same property without a second obligation.
+//
+// The contrast is app/lib/tx (690_057/058/097): TWO void dischargers, so the
+// store could fire either and refuses because it cannot pick. Here there is
+// nothing to pick from.
+const std = @import("std");
+
+const Pending = struct { id: i32 };
+
+~pub tor start { } -> *Pending<open!>
+~proc start|zig {
+    const p = std.heap.page_allocator.create(Pending) catch unreachable;
+    p.* = .{ .id = 3 };
+    return p;
+}
+
+~pub tor cancel { p: *Pending<!open> } -> i64
+~proc cancel|zig {
+    const id = p.id;
+    std.heap.page_allocator.destroy(p);
+    return id;
+}
