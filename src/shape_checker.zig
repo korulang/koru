@@ -1,4 +1,5 @@
 const std = @import("std");
+
 const log = @import("log");
 const ast = @import("ast");
 const errors = @import("errors");
@@ -1694,17 +1695,6 @@ pub const ShapeChecker = struct {
 
                 // Validate ALL invocations in the pipeline, not just the last one
                 if (step == .invocation) {
-                    // @shape_valid only — mirrors validateFlow's top-level rule.
-                    // @pass_ran does NOT exempt nested invocations from checking:
-                    // a pass having run is not a validity guarantee.
-                    const nested_shape_valid = blk: {
-                        for (step.invocation.annotations) |ann| {
-                            if (std.mem.startsWith(u8, ann, "@shape_valid")) break :blk true;
-                        }
-                        break :blk false;
-                    };
-                    if (nested_shape_valid) continue;
-
                     const nested_event_name = try self.pathToString(step.invocation.path);
                     defer self.allocator.free(nested_event_name);
 
