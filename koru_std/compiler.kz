@@ -2367,32 +2367,24 @@ const joinPathAlloc = struct {
     }
 
     const release_gate = @import("release_gate");
-    const errors_mod = @import("errors");
 
-    var reporter = errors_mod.ErrorReporter.init(
-        std.heap.page_allocator,
-        "release_gate",
-        ""
-    ) catch {
-        mutable_ctx.errors.append(mutable_ctx.allocator, .{
-            .message = "Failed to initialize error reporter",
-            .location = .{ .file = "compiler", .line = 0, .column = 0 },
-        }) catch {};
-        return .{ .ctx = mutable_ctx };
+    // THE COMPILATION'S reporter, bound to the user's file AND source at
+    // context-create. Minting one here as `init(alloc, "release_gate", "")` put
+    // the PASS NAME where the filename goes and left no source to render a
+    // snippet from, so KORU029 could only ever point at `release_gate:<line>`.
+    const reporter = mutable_ctx.reporter orelse {
+        @panic("check-release-gate: the compilation carries no diagnostic reporter");
     };
-    defer reporter.deinit();
+    // Only diagnostics THIS pass adds — the compilation's reporter accumulates,
+    // so a later pass must not re-report an earlier one's errors.
+    const err_base = reporter.errors.items.len;
 
-    var gate = release_gate.ReleaseGate.init(&reporter);
+    var gate = release_gate.ReleaseGate.init(reporter);
     gate.check(mutable_ctx.ast) catch |err| {
-        for (reporter.errors.items) |reporter_err| {
-            std.debug.print("error[{s}]: {s}\n  --> {s}:{}:{}\n\n", .{
-                @tagName(reporter_err.code),
-                reporter_err.message,
-                reporter_err.location.file,
-                reporter_err.location.line,
-                reporter_err.location.column,
-            });
-
+        // Render through the reporter itself — it owns the code frame, the hint
+        // and the source preview.
+        reporter.printErrors(@import("errors").FileSink.stderr()) catch {};
+        for (reporter.errors.items[err_base..]) |reporter_err| {
             mutable_ctx.errors.append(mutable_ctx.allocator, .{
                 .message = mutable_ctx.allocator.dupe(u8, reporter_err.message) catch reporter_err.message,
                 .location = .{
@@ -2440,27 +2432,23 @@ const joinPathAlloc = struct {
 
     // Use the Zig shape_checker library for structural validation
     const shape_checker = @import("shape_checker");
-    const errors_mod = @import("errors");
 
-    // Create error reporter
-    var reporter = errors_mod.ErrorReporter.init(
-        std.heap.page_allocator,
-        "structural_check",
-        ""
-    ) catch {
-        // Report error to context
-        mutable_ctx.errors.append(mutable_ctx.allocator, .{
-            .message = "Failed to initialize error reporter",
-            .location = .{ .file = "compiler", .line = 0, .column = 0 },
-        }) catch {};
-        return .{ .ctx = mutable_ctx };
+    // THE COMPILATION'S reporter, bound to the user's file AND source at
+    // context-create. Minting one here as `init(alloc, "structural_check", "")`
+    // put the PASS NAME where the filename goes and left no source to render a
+    // snippet from — the whole KORU021/022/028/102/130/131 family could only
+    // ever point at `structural_check:<line>`.
+    const reporter = mutable_ctx.reporter orelse {
+        @panic("check-structure: the compilation carries no diagnostic reporter");
     };
-    defer reporter.deinit();
+    // Only diagnostics THIS pass adds — the compilation's reporter accumulates,
+    // so a later pass must not re-report an earlier one's errors.
+    const err_base = reporter.errors.items.len;
 
     // Create shape checker
     var checker = shape_checker.ShapeChecker.init(
         std.heap.page_allocator,
-        &reporter
+        reporter
     ) catch {
         // Report error to context
         mutable_ctx.errors.append(mutable_ctx.allocator, .{
@@ -2481,16 +2469,10 @@ const joinPathAlloc = struct {
 
     // Run structural validation
     checker.checkSourceFile(mutable_ctx.ast) catch |err| {
-        // Print all errors from the reporter for visibility
-        for (reporter.errors.items) |reporter_err| {
-            std.debug.print("error[{s}]: {s}\n  --> {s}:{}:{}\n\n", .{
-                @tagName(reporter_err.code),
-                reporter_err.message,
-                reporter_err.location.file,
-                reporter_err.location.line,
-                reporter_err.location.column,
-            });
-
+        // Render through the reporter itself — it owns the code frame, the hint
+        // and the source preview.
+        reporter.printErrors(@import("errors").FileSink.stderr()) catch {};
+        for (reporter.errors.items[err_base..]) |reporter_err| {
             mutable_ctx.errors.append(mutable_ctx.allocator, .{
                 .message = mutable_ctx.allocator.dupe(u8, reporter_err.message) catch reporter_err.message,
                 .location = .{
@@ -2537,27 +2519,23 @@ const joinPathAlloc = struct {
 
     // Use the Zig flow_checker library for flow validation
     const flow_checker = @import("flow_checker");
-    const errors_mod = @import("errors");
 
-    // Create error reporter
-    var reporter = errors_mod.ErrorReporter.init(
-        std.heap.page_allocator,
-        "flow_check",
-        ""
-    ) catch {
-        // Report error to context
-        mutable_ctx.errors.append(mutable_ctx.allocator, .{
-            .message = "Failed to initialize error reporter",
-            .location = .{ .file = "compiler", .line = 0, .column = 0 },
-        }) catch {};
-        return .{ .ctx = mutable_ctx };
+    // THE COMPILATION'S reporter, bound to the user's file AND source at
+    // context-create. Minting one here as `init(alloc, "flow_check", "")` put
+    // the PASS NAME where the filename goes and left no source to render a
+    // snippet from — a when-clause exhaustiveness rejection could only ever
+    // point at `flow_check:<line>`.
+    const reporter = mutable_ctx.reporter orelse {
+        @panic("check-flow: the compilation carries no diagnostic reporter");
     };
-    defer reporter.deinit();
+    // Only diagnostics THIS pass adds — the compilation's reporter accumulates,
+    // so a later pass must not re-report an earlier one's errors.
+    const err_base = reporter.errors.items.len;
 
     // Create flow checker
     var checker = flow_checker.FlowChecker.init(
         std.heap.page_allocator,
-        &reporter
+        reporter
     ) catch {
         // Report error to context
         mutable_ctx.errors.append(mutable_ctx.allocator, .{
@@ -2579,16 +2557,10 @@ const joinPathAlloc = struct {
 
     // Run flow validation
     checker.checkSourceFile(mutable_ctx.ast) catch |err| {
-        // Print all errors from the reporter for visibility
-        for (reporter.errors.items) |reporter_err| {
-            std.debug.print("error[{s}]: {s}\n  --> {s}:{}:{}\n\n", .{
-                @tagName(reporter_err.code),
-                reporter_err.message,
-                reporter_err.location.file,
-                reporter_err.location.line,
-                reporter_err.location.column,
-            });
-
+        // Render through the reporter itself — it owns the code frame, the hint
+        // and the source preview.
+        reporter.printErrors(@import("errors").FileSink.stderr()) catch {};
+        for (reporter.errors.items[err_base..]) |reporter_err| {
             mutable_ctx.errors.append(mutable_ctx.allocator, .{
                 .message = mutable_ctx.allocator.dupe(u8, reporter_err.message) catch reporter_err.message,
                 .location = .{
@@ -2627,26 +2599,24 @@ const joinPathAlloc = struct {
     mutable_ctx.current_pass = "check_phantom_signatures";
 
     const phantom_semantic_checker = @import("phantom_semantic_checker");
-    const errors_mod = @import("errors");
 
-    // Create error reporter
-    var reporter = errors_mod.ErrorReporter.init(
-        std.heap.page_allocator,
-        "phantom_signature_check",
-        ""
-    ) catch {
-        mutable_ctx.errors.append(mutable_ctx.allocator, .{
-            .message = "Failed to initialize error reporter",
-            .location = .{ .file = "compiler", .line = 0, .column = 0 },
-        }) catch {};
-        return .{ .ctx = mutable_ctx };
+    // THE COMPILATION'S reporter, bound to the user's file AND source at
+    // context-create. Minting one here as
+    // `init(alloc, "phantom_signature_check", "")` put the PASS NAME where the
+    // filename goes and left no source to render a snippet from — an illegal
+    // polarity on an event's own signature (KORU033/KORU040) could only ever
+    // point at `phantom_signature_check:<line>`.
+    const reporter = mutable_ctx.reporter orelse {
+        @panic("check-phantom-signatures: the compilation carries no diagnostic reporter");
     };
-    defer reporter.deinit();
+    // Only diagnostics THIS pass adds — the compilation's reporter accumulates,
+    // so a later pass must not re-report an earlier one's errors.
+    const err_base = reporter.errors.items.len;
 
     // Create phantom semantic checker (signature-only entry point)
     var checker = phantom_semantic_checker.PhantomSemanticChecker.init(
         std.heap.page_allocator,
-        &reporter
+        reporter
     ) catch {
         mutable_ctx.errors.append(mutable_ctx.allocator, .{
             .message = "Failed to initialize phantom semantic checker",
@@ -2658,17 +2628,10 @@ const joinPathAlloc = struct {
 
     // Run signature validation only — no obligation-flow analysis here
     checker.checkSignatures(mutable_ctx.ast) catch |err| {
-        // Collect errors from reporter into context
-        for (reporter.errors.items) |reporter_err| {
-            // Print to stderr immediately for visibility in regression tests
-            std.debug.print("error[{s}]: {s}\n  --> {s}:{}:{}\n\n", .{
-                @tagName(reporter_err.code),
-                reporter_err.message,
-                reporter_err.location.file,
-                reporter_err.location.line,
-                reporter_err.location.column,
-            });
-
+        // Render through the reporter itself — it owns the code frame, the hint
+        // and the source preview.
+        reporter.printErrors(@import("errors").FileSink.stderr()) catch {};
+        for (reporter.errors.items[err_base..]) |reporter_err| {
             mutable_ctx.errors.append(mutable_ctx.allocator, .{
                 .message = mutable_ctx.allocator.dupe(u8, reporter_err.message) catch reporter_err.message,
                 .location = .{
@@ -2846,26 +2809,26 @@ const joinPathAlloc = struct {
     mutable_ctx.current_pass = "auto_discharge";
 
     const auto_discharge_inserter = @import("auto_discharge_inserter");
-    const errors_mod = @import("errors");
 
-    // Create error reporter
-    var reporter = errors_mod.ErrorReporter.init(
-        std.heap.page_allocator,
-        "auto_discharge",
-        ""
-    ) catch {
-        mutable_ctx.errors.append(mutable_ctx.allocator, .{
-            .message = "Failed to initialize error reporter",
-            .location = .{ .file = "compiler", .line = 0, .column = 0 },
-        }) catch {};
-        return .{ .ctx = mutable_ctx };
+    // THE COMPILATION'S reporter, bound to the user's file AND source at
+    // context-create. Minting one here as `init(alloc, "auto_discharge", "")`
+    // put the PASS NAME where the filename goes and left no source to render a
+    // snippet from — "Resource 'x' obligation was not discharged", the single
+    // most common obligation diagnostic, could only ever point at
+    // `auto_discharge:<line>`. The inserter also renders through this reporter
+    // itself (auto_discharge_inserter.zig:787, :834), so those paths gain the
+    // file and the snippet with it.
+    const reporter = mutable_ctx.reporter orelse {
+        @panic("insert-auto-discharge: the compilation carries no diagnostic reporter");
     };
-    defer reporter.deinit();
+    // Only diagnostics THIS pass adds — the compilation's reporter accumulates,
+    // so a later pass must not re-report an earlier one's errors.
+    const err_base = reporter.errors.items.len;
 
     // Create inserter with warn_mode flag
     var inserter = auto_discharge_inserter.AutoDischargeInserter.init(
         std.heap.page_allocator,
-        &reporter,
+        reporter,
         warn_mode,
         strict_panic_branches,
         prototype_mode,
@@ -2885,16 +2848,14 @@ const joinPathAlloc = struct {
     else
         inserter.run(mutable_ctx.ast);
     const new_ast = run_result catch |err| {
-        // Collect errors from reporter into context
-        for (reporter.errors.items) |reporter_err| {
-            std.debug.print("error[{s}]: {s}\n  --> {s}:{}:{}\n\n", .{
-                @tagName(reporter_err.code),
-                reporter_err.message,
-                reporter_err.location.file,
-                reporter_err.location.line,
-                reporter_err.location.column,
-            });
-
+        // Render through the reporter itself — it owns the code frame, the hint
+        // and the source preview. This is the ONLY render for most of the
+        // inserter's failure paths (auto_discharge_inserter.zig:1178, :1764,
+        // :2123, :2267, :2397, :3852 all return without printing); the two that
+        // do print for themselves (:787, :834) double up, exactly as they
+        // already did against the hand-formatted print this replaces.
+        reporter.printErrors(@import("errors").FileSink.stderr()) catch {};
+        for (reporter.errors.items[err_base..]) |reporter_err| {
             mutable_ctx.errors.append(mutable_ctx.allocator, .{
                 .message = mutable_ctx.allocator.dupe(u8, reporter_err.message) catch reporter_err.message,
                 .location = .{
@@ -2929,27 +2890,24 @@ const joinPathAlloc = struct {
 
     // Use the Zig phantom_semantic_checker library for phantom state validation
     const phantom_semantic_checker = @import("phantom_semantic_checker");
-    const errors_mod = @import("errors");
 
-    // Create error reporter
-    var reporter = errors_mod.ErrorReporter.init(
-        std.heap.page_allocator,
-        "phantom_semantic_check",
-        ""
-    ) catch {
-        // Report error to context
-        mutable_ctx.errors.append(mutable_ctx.allocator, .{
-            .message = "Failed to initialize error reporter",
-            .location = .{ .file = "compiler", .line = 0, .column = 0 },
-        }) catch {};
-        return .{ .ctx = mutable_ctx };
+    // THE COMPILATION'S reporter, bound to the user's file AND source at
+    // context-create. Minting one here as
+    // `init(alloc, "phantom_semantic_check", "")` put the PASS NAME where the
+    // filename goes and left no source to render a snippet from — the flow-exit
+    // obligation-balance walls, the diagnostics an author most needs to act on,
+    // could only ever point at `phantom_semantic_check:<line>`.
+    const reporter = mutable_ctx.reporter orelse {
+        @panic("check-phantom-semantic: the compilation carries no diagnostic reporter");
     };
-    defer reporter.deinit();
+    // Only diagnostics THIS pass adds — the compilation's reporter accumulates,
+    // so a later pass must not re-report an earlier one's errors.
+    const err_base = reporter.errors.items.len;
 
     // Create phantom semantic checker
     var checker = phantom_semantic_checker.PhantomSemanticChecker.init(
         std.heap.page_allocator,
-        &reporter
+        reporter
     ) catch {
         // Report error to context
         mutable_ctx.errors.append(mutable_ctx.allocator, .{
@@ -2972,17 +2930,10 @@ const joinPathAlloc = struct {
 
     // Run phantom semantic validation
     checker.check(mutable_ctx.ast) catch |err| {
-        // Collect errors from reporter into context
-        for (reporter.errors.items) |reporter_err| {
-            // Print to stderr immediately for visibility in regression tests
-            std.debug.print("error[{s}]: {s}\n  --> {s}:{}:{}\n\n", .{
-                @tagName(reporter_err.code),
-                reporter_err.message,
-                reporter_err.location.file,
-                reporter_err.location.line,
-                reporter_err.location.column,
-            });
-
+        // Render through the reporter itself — it owns the code frame, the hint
+        // and the source preview.
+        reporter.printErrors(@import("errors").FileSink.stderr()) catch {};
+        for (reporter.errors.items[err_base..]) |reporter_err| {
             mutable_ctx.errors.append(mutable_ctx.allocator, .{
                 .message = mutable_ctx.allocator.dupe(u8, reporter_err.message) catch reporter_err.message,
                 .location = .{
