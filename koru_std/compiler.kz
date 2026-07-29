@@ -1184,7 +1184,14 @@ pub const CompilerContext = struct {
 // BACKEND compiler, which is why it can see resolved names at all.
 ~[comptime|abstract] pub tor elaborate { ctx: CompilerContext } -> CompilerContext
 
-~elaborate = process-ccp-commands(ctx) |> resolve-with-scopes() |> desugar-chains() |> run-pre-transforms() |> process-template-procs() |> fold-comptime() |> evaluate-comptime()
+// `desugar-chains()` runs TWICE, and the second run is the point. The first sits
+// left of every transform stage, so it only ever sees AUTHOR-written arms; a
+// branch a transform synthesizes later — which is every std/store arm — is minted
+// after the thread has gone home and could never offer its payload at any arity.
+// Re-entry is safe because the fill is idempotent: `isOpenThreadSlot`
+// (ast_transform.zig:1232) returns false for any slot already carrying an
+// argument, so the second run can only fill what the first could not see.
+~elaborate = process-ccp-commands(ctx) |> resolve-with-scopes() |> desugar-chains() |> run-pre-transforms() |> process-template-procs() |> fold-comptime() |> evaluate-comptime() |> desugar-chains()
 
 // Analysis segment: Validation passes (abstract, can be overridden)
 ~[comptime|abstract] pub tor analysis { ctx: CompilerContext }
