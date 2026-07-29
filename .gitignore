@@ -47,6 +47,13 @@
 # Corpus curation (generator config; .md is allowed by *.md whitelist)
 !koru-by-example.json
 
+# Visual + sonic identity — the MANIFEST for the face whose matter lives in ./visual/.
+# The root whitelist above had swallowed it, which quietly broke the whole convention:
+# ./visual/ was tracked, so a clone got the ART, while the file DECLARING it was
+# ignored — and a face nobody can read is not a face. It only ever worked locally
+# because consumers were reading it out of this working tree.
+!visual-identity.json
+
 # Git files
 !.gitignore
 !.gitattributes

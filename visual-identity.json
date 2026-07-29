@@ -1,0 +1,29 @@
+{
+  "name": "koru",
+  "palette": {
+    "base": "#0B0F0D",
+    "text": "#E7F1EB",
+    "surface": "#14211B",
+    "accent": "#35E29F"
+  },
+  "background": {
+    "image": "./visual/background.png",
+    "depth": "./visual/background_depth.png",
+    "parallax": 0.15
+  },
+  "sound": "B",
+  "glyph": "🌀",
+  "avatar": {
+    "mark": "./visual/mark.svg",
+    "tile": "./visual/avatar.svg",
+    "raster": {
+      "512": "./visual/avatar-512.png",
+      "256": "./visual/avatar-256.png",
+      "128": "./visual/avatar-128.png",
+      "64": "./visual/avatar-64.png",
+      "32": "./visual/avatar-32.png"
+    },
+    "safe": 0.74,
+    "min": 32
+  }
+}
