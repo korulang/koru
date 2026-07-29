@@ -1104,10 +1104,21 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 if (discharge_arm != null) {
                     return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:new({s}): one `! discharge` handler per store - the teardown fires ONE handler per live element", .{store_name}) } };
                 }
+                // Arity picks the payload shape, so it picks the teaching too:
+                // at ONE owned column the binding IS the value, and telling the
+                // author to write `item.<field>` would send them at a record
+                // that no longer exists.
+                const disch_identity = field_names.len == 1 and field_owned_info[0] != null;
                 if (ic.binding == null or ic.destructure.len != 0) {
+                    if (disch_identity) {
+                        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:new({s}): `! discharge` binds the column itself - spell it `! discharge item |> ...(<param>: item)`", .{store_name}) } };
+                    }
                     return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:new({s}): `! discharge` binds the whole row record - spell it `! discharge item |> ...(item.<field>)`", .{store_name}) } };
                 }
                 if (ic.node == null) {
+                    if (disch_identity) {
+                        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:new({s}): the `! discharge` handler needs a body that discharges the row's obligation (e.g. `! discharge item |> {s}:commit(tx: item)`)", .{ store_name, ambig_module }) } };
+                    }
                     return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:new({s}): the `! discharge` handler needs a body that discharges the row's obligations (e.g. `! discharge item |> {s}:commit(item.<field>)`)", .{ store_name, ambig_module }) } };
                 }
                 discharge_arm = ast_functional.cloneContinuation(allocator, ic) catch unreachable;
@@ -3008,6 +3019,9 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         // user flow — before the emitter's leak check.
         if (has_owned) {
             const td_name = std.fmt.allocPrint(allocator, "__store_teardown_{s}", .{store_name}) catch unreachable;
+            // Arity picks the payload shape. Same predicate as `| item`
+            // (store.kz:2653): the store's ONLY column, and it owned.
+            const discharge_identity_owned = field_names.len == 1 and field_owned_info[0] != null;
             // Drain (690_057): the teardown event declares the `! discharge`
             // EFFECT branch (the 400_105 producer shape). Its payload is the
             // ROW RECORD — every column as a field, the ambiguous owned
@@ -3017,15 +3031,35 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             // enforcement; the store adds no manual check.
             var td_branches: []ast.Branch = &[_]ast.Branch{};
             if (drain_required) {
-                const dpf = allocator.alloc(ast.Field, field_names.len) catch unreachable;
-                for (field_names, field_types, field_owned_info, 0..) |pfname, pftype, pfoi, pfi| {
-                    dpf[pfi] = ast.Field{
-                        .name = allocator.dupe(u8, pfname) catch unreachable,
-                        .type = allocator.dupe(u8, pftype) catch unreachable,
-                        .module_path = if (pfoi) |oi| allocator.dupe(u8, oi.module_slash) catch unreachable else null,
-                        .phantom = if (pfoi) |oi| std.fmt.allocPrint(allocator, "{s}:{s}!", .{ oi.module_dot, oi.state }) catch unreachable else null,
+                // ONE column means the drain payload is the VALUE, not a record
+                // around it — the same arity rule `| item` and `| full` carry
+                // (store.kz:2653, :1892). The loop below reissues one obligation
+                // PER COLUMN; at one column it ran once and produced a
+                // single-field record, which is a shape no author could have
+                // written. The per-field reissue reason from 2026-07-21 is real
+                // and survives at two columns — see 690_097, the control.
+                const dpf: []ast.Field = if (discharge_identity_owned) blk: {
+                    const oi = field_owned_info[0].?;
+                    const pf = allocator.alloc(ast.Field, 1) catch unreachable;
+                    pf[0] = ast.Field{
+                        .name = allocator.dupe(u8, "__type_ref") catch unreachable,
+                        .type = allocator.dupe(u8, field_types[0]) catch unreachable,
+                        .module_path = allocator.dupe(u8, oi.module_slash) catch unreachable,
+                        .phantom = std.fmt.allocPrint(allocator, "{s}:{s}!", .{ oi.module_dot, oi.state }) catch unreachable,
                     };
-                }
+                    break :blk pf;
+                } else blk: {
+                    const pf = allocator.alloc(ast.Field, field_names.len) catch unreachable;
+                    for (field_names, field_types, field_owned_info, 0..) |pfname, pftype, pfoi, pfi| {
+                        pf[pfi] = ast.Field{
+                            .name = allocator.dupe(u8, pfname) catch unreachable,
+                            .type = allocator.dupe(u8, pftype) catch unreachable,
+                            .module_path = if (pfoi) |oi| allocator.dupe(u8, oi.module_slash) catch unreachable else null,
+                            .phantom = if (pfoi) |oi| std.fmt.allocPrint(allocator, "{s}:{s}!", .{ oi.module_dot, oi.state }) catch unreachable else null,
+                        };
+                    }
+                    break :blk pf;
+                };
                 const tdb = allocator.alloc(ast.Branch, 1) catch unreachable;
                 tdb[0] = ast.Branch{
                     .name = allocator.dupe(u8, "discharge") catch unreachable,
@@ -3053,13 +3087,20 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 // 400_079: `discharge(.{ .f = col[i], ... })`. Ownership of
                 // each ambiguous element moves OUT through the payload; the
                 // handler is forced to discharge it within the firing.
-                td.appendSlice(allocator, "    discharge(.{ ") catch unreachable;
-                for (field_names, 0..) |fname, fi| {
-                    if (fi > 0) td.appendSlice(allocator, ", ") catch unreachable;
-                    const p = std.fmt.allocPrint(allocator, ".{s} = __koru_store_{s}.{s}[__koru_i]", .{ fname, store_name, fname }) catch unreachable;
+                if (discharge_identity_owned) {
+                    // The value itself — the payload shape above is the column,
+                    // not a record wrapping it, so the call must match.
+                    const p = std.fmt.allocPrint(allocator, "    discharge(__koru_store_{s}.{s}[__koru_i]);\n", .{ store_name, field_names[0] }) catch unreachable;
                     td.appendSlice(allocator, p) catch unreachable;
+                } else {
+                    td.appendSlice(allocator, "    discharge(.{ ") catch unreachable;
+                    for (field_names, 0..) |fname, fi| {
+                        if (fi > 0) td.appendSlice(allocator, ", ") catch unreachable;
+                        const p = std.fmt.allocPrint(allocator, ".{s} = __koru_store_{s}.{s}[__koru_i]", .{ fname, store_name, fname }) catch unreachable;
+                        td.appendSlice(allocator, p) catch unreachable;
+                    }
+                    td.appendSlice(allocator, " });\n") catch unreachable;
                 }
-                td.appendSlice(allocator, " });\n") catch unreachable;
             } else {
                 for (field_names, field_owned_info) |fname, foi| {
                     const oi = foi orelse continue;
