@@ -1,0 +1,26 @@
+// An AMBIGUOUS owned resource: *Transaction<active!> with TWO void dischargers
+// consuming <!active> — commit AND rollback. The store cannot pick, so an owned
+// column of this type must be DRAINED (caller discharges each element), not
+// auto-torn-down. (Mirrors 690_035's entity ambiguity one level down.)
+const std = @import("std");
+
+const Transaction = struct { id: i32 };
+
+~pub tor begin { } -> *Transaction<active!>
+~proc begin|zig {
+    const t = std.heap.page_allocator.create(Transaction) catch unreachable;
+    t.* = .{ .id = 7 };
+    return t;
+}
+
+~pub tor commit { tx: *Transaction<!active> }
+~proc commit|zig {
+    std.debug.print("commit {d}\n", .{tx.id});
+    std.heap.page_allocator.destroy(tx);
+}
+
+~pub tor rollback { tx: *Transaction<!active> }
+~proc rollback|zig {
+    std.debug.print("rollback {d}\n", .{tx.id});
+    std.heap.page_allocator.destroy(tx);
+}
