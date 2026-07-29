@@ -73,3 +73,10 @@
 # Keep benchmark comparison files
 !**/*.py
 !**/*.lua
+
+# Keep vendored fixtures and their pins (std/vendor tests). A vendored tree is
+# checked-in third-party source — it IS the fixture, and its contents are what
+# the pin is taken over, so every byte has to survive a fresh clone. Scoped to
+# `vendored/` so the blanket `*.zig` artifact ignore above still holds elsewhere.
+!**/vendored/**
+!**/vendor.lock

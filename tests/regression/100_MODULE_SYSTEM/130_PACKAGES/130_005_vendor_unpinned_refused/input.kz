@@ -1,0 +1,17 @@
+// Pins that vendored source with NO lock is refused rather than trusted. An
+// unpinned vendored tree is the failure this module exists to prevent: the code
+// is in the repo, so it looks reviewed, and nothing can detect a later change to
+// it. Absence of a pin is a refusal, not a default.
+
+~import std/vendor
+
+~std/vendor:bindings {
+    koru/vaxis: ./vendored/vaxis
+}
+
+~tor main {}
+
+~proc main|zig {
+}
+
+~main()

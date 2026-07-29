@@ -131,6 +131,7 @@ pub const ErrorCode = enum(u16) {
     KORU168, // A std/io interpolation is malformed — `{{ x }}` containing a function call (calls are not expressions), or missing its format specifier (:d/:s/:f/:any). One code for the class; the message names the placeholder. Emitted by koru_std/io.kz — reserved in scripts/registry_reserved.txt.
     KORU169, // A std/field call site is malformed — `new.on-stack` without (bits), or `mark-multiples` without (f, from, stride, limit). Emitted by koru_std/field.kz — reserved in scripts/registry_reserved.txt.
     KORU170, // A std/kernel:init call site is malformed — a kernel subtree the walking skeleton rejects, or a missing `| computed |>` branch (without it kernel results are trapped in the kernel scope). Emitted by koru_std/kernel.kz — reserved in scripts/registry_reserved.txt.
+    KORU171, // A std/vendor:bindings declaration does not match the tree it pins — unpinned source, a missing vendor.lock entry, an unreadable vendored tree, or a file that drifted from its recorded hash. One code for the class; the message names the binding and the file. Emitted by koru_std/vendor.kz — reserved in scripts/registry_reserved.txt.
 
     // Module structure errors
     KORU200, // Ambiguous module structure (both foo.kz and foo/ exist)
