@@ -35,6 +35,19 @@ pub const ShapeChecker = struct {
     /// exhaustiveness is enforced as usual (400_160/400_161).
     prototype_mode: bool = false,
 
+    /// The flow being validated carries `@shape_valid` — a transform's explicit
+    /// claim about output it produced. MEASURED 2026-07-29: every program that
+    /// depends on that claim depends on exactly ONE thing — branch coverage for
+    /// an arm the transform CONSUMED (`capture` dissolves `! as`, `constructor`
+    /// dissolves `! construct`; the arm is gone on purpose). So the claim
+    /// relaxes coverage and NOTHING else, and every other check runs on the
+    /// transform's output exactly as on hand-written code.
+    ///
+    /// It used to return early from validateFlow, skipping the whole checker —
+    /// never measured, just the widest thing that made the tests pass. Riding
+    /// `prototype_mode`'s channel keeps one relaxation path, not two.
+    vouched_flow: bool = false,
+
     /// Subflow-implemented effects: when validating a flow that implements an
     /// event (`impl_of` set), this holds the implemented event's declaration so
     /// calls to its own effect arms — `ping = pong(x)`, `! each i |> each(i)` —
@@ -544,9 +557,11 @@ pub const ShapeChecker = struct {
         // model (genuinely host-opaque rewrites). @pass_ran deliberately does
         // NOT exempt: "a pass ran" is a historical fact, not a validity
         // guarantee — transform output must be valid like any other AST.
+        const prev_vouched = self.vouched_flow;
+        defer self.vouched_flow = prev_vouched;
         for (flow.inv().annotations) |ann| {
             if (std.mem.startsWith(u8, ann, "@shape_valid")) {
-                return;
+                self.vouched_flow = true;
             }
         }
 
@@ -1363,8 +1378,24 @@ pub const ShapeChecker = struct {
         );
         defer branch_checker.BranchChecker.freeResult(self.allocator, &result);
 
-        // Report errors
+        // Report errors.
+        //
+        // A VOUCHED flow reports no missing branch. That is the whole content of
+        // `@shape_valid`: a transform DISSOLVED the arms — capture turns `! as`
+        // into a cell preamble, constructor turns `! construct` into a comptime
+        // list — so the declaration's arms have no handler ON PURPOSE.
+        //
+        // It is deliberately NOT routed through `prototype_mode`, which reads
+        // adjacent and is the wrong channel: that relaxes TERMINAL coverage
+        // only (:35), and every arm a transform dissolves is an EFFECT arm.
+        // MEASURED by probe 2026-07-29 — the flag was set and KORU022 fired
+        // anyway, because `! as` is not a `|`.
+        //
+        // Everything else in this checker still runs on the transform's output.
+        // The claim buys exactly coverage, which is all any program was ever
+        // measured to need from it.
         for (result.missing_branches) |branch_name| {
+            if (self.vouched_flow) continue;
             // A branch whose handlers are ALL behind `when` guards is not
             // "unhandled" — it is non-exhaustive. Say so (KORU050, the same
             // teaching message the flow checker uses), never the misleading
@@ -1895,9 +1926,11 @@ pub const ShapeChecker = struct {
     fn validateInlineFlow(self: *ShapeChecker, flow: *const ast.Flow, proc_event: ?EventInfo) !void {
         // @shape_valid only — mirrors validateFlow's top-level rule. @pass_ran
         // does NOT exempt: a pass having run is not a validity guarantee.
+        const prev_vouched = self.vouched_flow;
+        defer self.vouched_flow = prev_vouched;
         for (flow.inv().annotations) |ann| {
             if (std.mem.startsWith(u8, ann, "@shape_valid")) {
-                return;
+                self.vouched_flow = true;
             }
         }
 

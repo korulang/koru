@@ -454,19 +454,16 @@ const std = @import("std");
         .from_opaque_tap = flow.inv().from_opaque_tap,
     };
 
-    const transformed_flow = ast.Flow{
-        .body = ast.rootSite(new_invocation, new_conts.toOwnedSlice(allocator) catch unreachable, flow.location),
-        .annotations = flow.annotations,
-        .pre_label = flow.pre_label,
-        .super_shape = flow.super_shape,
-        .inline_body = null,
-        .preamble_code = preamble,
-        .is_pure = flow.is_pure,
-        .is_transitively_pure = flow.is_transitively_pure,
-        .impl_of = flow.impl_of,
-        .location = flow.location,
-        .module = flow.module,
-    };
+    // WHOLE-STRUCT COPY, never a field-list literal. A literal silently drops
+    // every field it does not name, and this one named eleven of them — losing
+    // `is_impl` and `impl_variant`, which decide how a subflow implementation
+    // (`run = capture { … }`) is validated. io.kz carries the same warning at
+    // its own rebuild, written after that exact drop broke variant subflows
+    // whose body is a print. Copy first, then set only what changes.
+    var transformed_flow = flow.*;
+    transformed_flow.body = ast.rootSite(new_invocation, new_conts.toOwnedSlice(allocator) catch unreachable, flow.location);
+    transformed_flow.inline_body = null;
+    transformed_flow.preamble_code = preamble;
 
     const new_item = ast.Item{ .flow = transformed_flow };
     return .{ .transformed = .{ .replacement = new_item } };
