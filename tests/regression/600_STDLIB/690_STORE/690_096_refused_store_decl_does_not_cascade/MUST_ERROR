@@ -1,0 +1,19 @@
+A refused `std/store:new` must not delete the store from everyone else's view.
+
+The `! discharge` arm here is genuinely malformed — this store owns no column it
+cannot discharge unattended, so the arm could never fire, and KORU161 rightly
+refuses it. That refusal is the ONE true error.
+
+But refusing `new(batch)` replaces the declaration node, so `H.fieldOrder` can no
+longer resolve the store, and every later `insert(batch)` / `sweep(batch)` adds
+`unknown store 'batch'` on top — a store the author declared five lines up and
+can see with their own eyes.
+
+PIN: one actionable diagnostic about the discharge arm, not three, two of which
+send the author hunting a declaration that is right there.
+
+The same shape reaches every one of the seven `unknown store` refusal sites in
+store.kz, since they all resolve through `H.fieldOrder`.
+
+Surfaced by iterating koru-examples/downloads/downloads.k toward its ideal
+spelling: dropping the discharge row binding produced 3 errors, 2 of them ghosts.

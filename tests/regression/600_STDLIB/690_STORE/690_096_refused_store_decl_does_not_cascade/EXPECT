@@ -1,0 +1,3 @@
+CONTAINS `! discharge` applies only to a store with a column the store cannot discharge unattended
+NOT_CONTAINS unknown store 'batch'
+NOT_CONTAINS unknown plural store
