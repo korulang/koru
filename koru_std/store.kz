@@ -5497,7 +5497,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
 // rows that exist when its program position executes ((l) lean: the
 // imperative sweep IS the stripe).
 
-~[keyword|comptime|transform]pub tor query {
+~[keyword|comptime|transform|claims_descendants]pub tor query {
     expr: Expression,
     invocation: *const Invocation,
     item: *const Item,
