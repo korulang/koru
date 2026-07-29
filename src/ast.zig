@@ -655,6 +655,59 @@ pub fn refusal(
     return Item{ .inline_code = InlineCode{ .code = msg, .location = loc, .module = module } };
 }
 
+/// Was a declaration this site depends on ALREADY refused?
+///
+/// `refusal` above replaces the refused item with inline code, which means the
+/// declaration it stood for stops existing for every later lookup in the same
+/// pass. Those lookups then refuse too, and the author gets N diagnostics for one
+/// mistake — the true one plus N-1 telling them something they can see in front
+/// of them does not exist. Every transform in a pass runs before the drain checks
+/// the reporter, so nothing stops the pile-up on its own.
+///
+/// The reader lives next to the writer deliberately: `refusal` owns the shape of
+/// the marker, so only this file needs to know it.
+///
+/// Matches PREFIX-ANCHORED on the message, not by substring, and that is
+/// load-bearing. A downstream refusal reads "unknown store 'x' - no
+/// std/store:new(x) found" — it CONTAINS the declaration's own spelling. A
+/// substring test would let one ghost silence the next, and a genuine
+/// unknown-store would go quiet because an unrelated site had already complained.
+/// Scoped to `module`, because a name alone is not an identity. Stores are
+/// module-private by default, so two modules may each declare `items`; matching
+/// on the name across the whole program would let a refusal in one silence
+/// references to the other. A miss fails in the SAFE direction — the caller
+/// simply reports as it does today — so scoping can cost a redundant diagnostic
+/// but can never cost a real one.
+pub fn declarationRefused(
+    alloc: std.mem.Allocator,
+    prog: *const Program,
+    module: []const u8,
+    comptime fmt: []const u8,
+    args: anytype,
+) bool {
+    const prefix = std.fmt.allocPrint(alloc, fmt, args) catch return false;
+    const needle = std.fmt.allocPrint(alloc, "@compileError(\"{s}", .{prefix}) catch return false;
+    return itemsCarryRefusal(prog.items, needle, module);
+}
+
+fn itemsCarryRefusal(items: []const Item, needle: []const u8, module: []const u8) bool {
+    for (items) |it| {
+        switch (it) {
+            .inline_code => |ic| {
+                if (!std.mem.eql(u8, ic.module, module)) continue;
+                if (std.mem.indexOf(u8, ic.code, needle) != null) return true;
+            },
+            // A store may be declared inside a module (115_020), so the refusal
+            // that replaced it sits nested too.
+            .module_decl => |md| {
+                if (itemsCarryRefusal(md.items, needle, module)) return true;
+            },
+            else => {},
+        }
+    }
+    return false;
+}
+
 /// Build a flow's root site: one Continuation whose node is the invocation
 /// and whose continuations are the branch handlers. The root is not a branch —
 /// header fields (branch name, binding, guard) are empty and are never read

@@ -4491,6 +4491,10 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             env_values[wi] = H.storeRefs(allocator, wm.value, st);
         }
         const order_env = H.fieldOrder(allocator, program, env_store) orelse {
+            // The store's OWN declaration was already refused; that diagnostic is the
+            // true one and this lookup can only ever fail. Staying silent here is what
+            // keeps one mistake to one error.
+            if (ast.declarationRefused(allocator, program, flow.module, "std/store:new({s}):", .{env_store})) return .{ .transformed = .{} };
             return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:stored: unknown store '{s}'", .{env_store}) } };
         };
         const env_idx = allocator.alloc(usize, writes.len) catch unreachable;
@@ -4632,6 +4636,10 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
     }
 
     const order = H.fieldOrder(allocator, program, target_store) orelse {
+        // The store's OWN declaration was already refused; that diagnostic is the
+        // true one and this lookup can only ever fail. Staying silent here is what
+        // keeps one mistake to one error.
+        if (ast.declarationRefused(allocator, program, flow.module, "std/store:new({s}):", .{target_store})) return .{ .transformed = .{} };
         return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:stored: unknown store '{s}' - no std/store:new({s}) found", .{ target_store, target_store }) } };
     };
     const field_idx: usize = blk: {
@@ -5247,6 +5255,10 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
     if (create_exists) {
         return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:watch({s}): the watch precedes its store's create in source - declare the store first (rung-one ordering)", .{store_name}) } };
     }
+    // The store's OWN declaration was already refused; that diagnostic is the
+    // true one and this lookup can only ever fail. Staying silent here is what
+    // keeps one mistake to one error.
+    if (ast.declarationRefused(allocator, program, flow.module, "std/store:new({s}):", .{store_name})) return .{ .transformed = .{} };
     return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:watch({s}): unknown store - no std/store:new({s}) found", .{ store_name, store_name }) } };
 }
 
@@ -5430,6 +5442,10 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
     }
 
     const order = H.fieldOrder(allocator, program, store_name) orelse {
+        // The store's OWN declaration was already refused; that diagnostic is the
+        // true one and this lookup can only ever fail. Staying silent here is what
+        // keeps one mistake to one error.
+        if (ast.declarationRefused(allocator, program, flow.module, "std/store:new({s}):", .{store_name})) return .{ .transformed = .{} };
         return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:insert: unknown store '{s}' - no std/store:new({s}) found", .{ store_name, store_name }) } };
     };
 
@@ -5624,6 +5640,10 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:query({s}) is top-level-only: it cannot be nested inside a handler or loop body. `query` is a standing-rule installation (comptime-fused into the store's write paths), so a nested body has nothing to install into. The store IS declared - move the query to module (top-level) scope. Momentary verbs (insert/take) DO run in nested bodies.", .{store_name}) } };
         }
 
+        // The store's OWN declaration was already refused; that diagnostic is the
+        // true one and this lookup can only ever fail. Staying silent here is what
+        // keeps one mistake to one error.
+        if (ast.declarationRefused(allocator, program, flow.module, "std/store:new({s}):", .{store_name})) return .{ .transformed = .{} };
         return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:query({s}): unknown store - no std/store:new({s}) found (or the store is a capacity-1 value - queries need a container, declare `capacity: N` at create)", .{ store_name, store_name }) } };
     }
 
@@ -5756,6 +5776,10 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         }
     }
     if (col_names.len == 0) {
+        // The store's OWN declaration was already refused; that diagnostic is the
+        // true one and this lookup can only ever fail. Staying silent here is what
+        // keeps one mistake to one error.
+        if (ast.declarationRefused(allocator, program, flow.module, "std/store:new({s}):", .{store_name})) return .{ .transformed = .{} };
         return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:sweep({s}): unknown plural store - no std/store:new({s}, capacity: N) found (sweep reads a plural container's live rows)", .{ store_name, store_name }) } };
     }
 
@@ -6497,6 +6521,10 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         if (create_exists) {
             return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:preorder({s}): the preorder precedes its store's create in source - declare the store first", .{store_name}) } };
         }
+        // The store's OWN declaration was already refused; that diagnostic is the
+        // true one and this lookup can only ever fail. Staying silent here is what
+        // keeps one mistake to one error.
+        if (ast.declarationRefused(allocator, program, flow.module, "std/store:new({s}):", .{store_name})) return .{ .transformed = .{} };
         return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:preorder({s}): unknown store - no std/store:new({s}) found (preorder walks a [tree] container store)", .{ store_name, store_name }) } };
     }
 
@@ -6726,6 +6754,10 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         }
     }
     if (!unit_exists) {
+        // The store's OWN declaration was already refused; that diagnostic is the
+        // true one and this lookup can only ever fail. Staying silent here is what
+        // keeps one mistake to one error.
+        if (ast.declarationRefused(allocator, program, flow.module, "std/store:new({s}):", .{store_name})) return .{ .transformed = .{} };
         return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:stripe({s}): unknown store, or a store shape without a stripe unit this rung (plural / {{old,new}}-mode stripe is a later slice)", .{store_name}) } };
     }
 

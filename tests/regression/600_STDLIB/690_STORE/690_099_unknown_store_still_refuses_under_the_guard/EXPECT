@@ -1,0 +1,2 @@
+CONTAINS std/store:insert: unknown store 'typo'
+CONTAINS std/store:sweep(typo): unknown plural store

@@ -1,0 +1,6 @@
+Two independent references to a store that was never declared. Both must refuse.
+
+Guards the narrowness of 690_096's fix. The suppression there keys on the store's
+DECLARATION having been refused, matched prefix-anchored against the refusal
+marker. Loosen it to a substring and this test goes red on the second CONTAINS,
+because the insert refusal's own message names `std/store:new(typo)`.
