@@ -655,6 +655,35 @@ pub fn refusal(
     return Item{ .inline_code = InlineCode{ .code = msg, .location = loc, .module = module } };
 }
 
+/// Which byte positions of `text` are EXPRESSION context rather than literal
+/// prose. Inside a string, only a `{{ … }}` interpolation is an expression.
+///
+/// This did not matter while every store reference was dotted — `n.v` seldom
+/// occurs in a sentence — but a ONE-column store is referenced BARE, and a lone
+/// `n` occurs in prose constantly. `"n {{ n:d }}"` must rewrite the second `n`
+/// and leave the first alone; without this, it printed
+/// `__koru_srf___koru_value 7`.
+///
+/// Shared because both store rewriters need it: the plural row rewriter and the
+/// singleton store-path rewriter.
+pub fn expressionMask(alloc: std.mem.Allocator, text: []const u8) []bool {
+    const mask = alloc.alloc(bool, text.len) catch unreachable;
+    var in_str = false;
+    var in_interp = false;
+    var i: usize = 0;
+    while (i < text.len) : (i += 1) {
+        if (in_str and !in_interp and text[i] == '{' and i + 1 < text.len and text[i + 1] == '{') in_interp = true;
+        if (in_str and in_interp and text[i] == '}' and i + 1 < text.len and text[i + 1] == '}') in_interp = false;
+        if (text[i] == '"' and (i == 0 or text[i - 1] != '\\') and !in_interp) {
+            in_str = !in_str;
+            mask[i] = false;
+            continue;
+        }
+        mask[i] = !in_str or in_interp;
+    }
+    return mask;
+}
+
 /// The column name a one-column store's synthesized single column carries.
 ///
 /// A store declaring `{ 0[i64] }` names no field — the store's own name is the

@@ -3427,30 +3427,49 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
     // markers are specific — a `std.store:new` invocation and a generated
     // `__store_apply_` symbol.
     var store_names = std.ArrayList([]const u8).initCapacity(allocator, 4) catch unreachable;
+    // The subset that names ONE column and no field — referenced BARE.
+    var store_idents = std.ArrayList([]const u8).initCapacity(allocator, 4) catch unreachable;
     {
         const Collect = struct {
-            fn go(alloc: std.mem.Allocator, its: []const ast.Item, out: *std.ArrayList([]const u8)) void {
+            fn go(alloc: std.mem.Allocator, its: []const ast.Item, out: *std.ArrayList([]const u8), ident_out: *std.ArrayList([]const u8)) void {
                 for (its) |pi| {
                     switch (pi) {
                         .flow => |*f| {
                             if (H.isStoreInv(f, "new", null)) {
+                                var nm: ?[]const u8 = null;
+                                var seed: ?[]const u8 = null;
                                 for (f.inv().args) |a| {
-                                    if (std.mem.eql(u8, a.name, "expr")) out.append(alloc, H.stripQuotes(a.value)) catch unreachable;
+                                    if (std.mem.eql(u8, a.name, "expr")) nm = H.stripQuotes(a.value);
+                                    if (std.mem.eql(u8, a.name, "source")) seed = a.value;
+                                }
+                                if (nm) |n| {
+                                    out.append(alloc, n) catch unreachable;
+                                    // Read the seed exactly as the declaration
+                                    // does, so "is this identity-shaped" has ONE
+                                    // answer wherever it is asked.
+                                    if (seed) |sd| {
+                                        const braced = std.fmt.allocPrint(alloc, "{{{s}}}", .{sd}) catch unreachable;
+                                        if (struct_literal.isIdentityBlock(braced)) ident_out.append(alloc, n) catch unreachable;
+                                    }
                                 }
                             }
                         },
                         .event_decl => |*ed| {
                             if (ed.path.segments.len == 1 and std.mem.startsWith(u8, ed.path.segments[0], "__store_apply_")) {
-                                out.append(alloc, ed.path.segments[0]["__store_apply_".len..]) catch unreachable;
+                                const n = ed.path.segments[0]["__store_apply_".len..];
+                                out.append(alloc, n) catch unreachable;
+                                if (ed.branches.len == 1 and std.mem.eql(u8, ed.branches[0].name, ast.STORE_IDENTITY_COLUMN)) {
+                                    ident_out.append(alloc, n) catch unreachable;
+                                }
                             }
                         },
-                        .module_decl => |*md| go(alloc, md.items, out),
+                        .module_decl => |*md| go(alloc, md.items, out, ident_out),
                         else => {},
                     }
                 }
             }
         };
-        Collect.go(allocator, program.items, &store_names);
+        Collect.go(allocator, program.items, &store_names, &store_idents);
     }
 
     const Rewrite = struct {
@@ -3462,17 +3481,28 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         // A reader in a DIFFERENT module has to reach across: the cell is a
         // module-scope var in the declaring module's emitted struct, so a bare
         // `__koru_store_s` there is an undeclared identifier (110_022).
-        fn storeRefs(alloc: std.mem.Allocator, text: []const u8, name: []const u8, prefix: []const u8) []const u8 {
+        fn storeRefs(alloc: std.mem.Allocator, text: []const u8, name: []const u8, prefix: []const u8, is_identity: bool) []const u8 {
+            const expr_ctx = ast.expressionMask(alloc, text);
             var out = std.ArrayList(u8).initCapacity(alloc, text.len + 32) catch unreachable;
             var i: usize = 0;
             while (i < text.len) {
                 const at_boundary = i == 0 or !isIdent(text[i - 1]);
-                if (at_boundary and i + name.len < text.len and
-                    std.mem.startsWith(u8, text[i..], name) and text[i + name.len] == '.')
-                {
+                const starts = at_boundary and std.mem.startsWith(u8, text[i..], name);
+                const after = i + name.len;
+                if (starts and after < text.len and text[after] == '.') {
                     out.appendSlice(alloc, prefix) catch unreachable;
                     out.appendSlice(alloc, "__koru_store_") catch unreachable;
                     out.appendSlice(alloc, name) catch unreachable;
+                    i += name.len;
+                } else if (is_identity and expr_ctx[i] and starts and (after >= text.len or !isIdent(text[after]))) {
+                    // A ONE-column store has no field to name, so the store name
+                    // IS the reference. It still has to reach a column in the
+                    // cell, so it resolves to the synthesized one.
+                    out.appendSlice(alloc, prefix) catch unreachable;
+                    out.appendSlice(alloc, "__koru_store_") catch unreachable;
+                    out.appendSlice(alloc, name) catch unreachable;
+                    out.append(alloc, '.') catch unreachable;
+                    out.appendSlice(alloc, ast.STORE_IDENTITY_COLUMN) catch unreachable;
                     i += name.len;
                 } else {
                     out.append(alloc, text[i]) catch unreachable;
@@ -3480,6 +3510,10 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 }
             }
             return out.toOwnedSlice(alloc) catch unreachable;
+        }
+        fn isIn(xs: []const []const u8, n: []const u8) bool {
+            for (xs) |x| if (std.mem.eql(u8, x, n)) return true;
+            return false;
         }
         // Whole-identifier rewrite (`new` → `__koru_upd.new`), boundary-aware
         // and skipping `.field` accesses. Applied to every arg value in a
@@ -3533,7 +3567,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         // Invocation.inline_body is the FREEZE of an earlier template expand
         // (`if`/`for`) and MUST be rewritten even on std.store sites skipped
         // for args (690_074).
-        fn rewriteNode(alloc: std.mem.Allocator, n: *ast.Node, names: []const []const u8, prefixes: []const []const u8) void {
+        fn rewriteNode(alloc: std.mem.Allocator, n: *ast.Node, names: []const []const u8, prefixes: []const []const u8, idents: []const []const u8) void {
             // Same temporary-capture rule as storeRefsContH: never `|*inv|`
             // on `switch (n.*)`; mutate `n.invocation` in place (690_074).
             switch (n.*) {
@@ -3548,7 +3582,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                     if (!skip_args) {
                         for (inv.args) |*a| {
                             var v = a.value;
-                            for (names, prefixes) |nm, px| v = storeRefs(alloc, v, nm, px);
+                            for (names, prefixes) |nm, px| v = storeRefs(alloc, v, nm, px, isIn(idents, nm));
                             @constCast(a).value = v;
                             // Expression args carry their text separately — the
                             // emitter reads THAT, not .value. cloneContinuation
@@ -3557,7 +3591,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                             // rather than mutating shared state.
                             if (a.expression_value) |ev| {
                                 var t = ev.text;
-                                for (names, prefixes) |nm, px| t = storeRefs(alloc, t, nm, px);
+                                for (names, prefixes) |nm, px| t = storeRefs(alloc, t, nm, px, isIn(idents, nm));
                                 const fresh = alloc.create(ast.CapturedExpression) catch unreachable;
                                 fresh.* = ev.*;
                                 fresh.text = t;
@@ -3567,13 +3601,13 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                     }
                     if (inv.inline_body) |ib| {
                         var t = ib;
-                        for (names, prefixes) |nm, px| t = storeRefs(alloc, t, nm, px);
+                        for (names, prefixes) |nm, px| t = storeRefs(alloc, t, nm, px, isIn(idents, nm));
                         inv.inline_body = t;
                     }
                 },
                 .inline_code => {
                     var t = n.inline_code;
-                    for (names, prefixes) |nm, px| t = storeRefs(alloc, t, nm, px);
+                    for (names, prefixes) |nm, px| t = storeRefs(alloc, t, nm, px, isIn(idents, nm));
                     n.* = .{ .inline_code = t };
                 },
                 // A PRODUCE arm (`peek -> s.v`, `| c _ -> s.v`) is an expression
@@ -3582,28 +3616,28 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 // undeclared identifier in Zig, from valid Koru (110_022).
                 .expression => {
                     var t = n.expression;
-                    for (names, prefixes) |nm, px| t = storeRefs(alloc, t, nm, px);
+                    for (names, prefixes) |nm, px| t = storeRefs(alloc, t, nm, px, isIn(idents, nm));
                     n.* = .{ .expression = t };
                 },
                 else => {},
             }
         }
-        fn rewriteCont(alloc: std.mem.Allocator, cont: *ast.Continuation, names: []const []const u8, prefixes: []const []const u8) void {
+        fn rewriteCont(alloc: std.mem.Allocator, cont: *ast.Continuation, names: []const []const u8, prefixes: []const []const u8, idents: []const []const u8) void {
             // Guards ride as arm conditions at the write site - their
             // cross-store reads rewrite to the cells too (690_013).
             if (cont.condition) |cond| {
                 var cnd = cond;
-                for (names, prefixes) |nm, px| cnd = storeRefs(alloc, cnd, nm, px);
+                for (names, prefixes) |nm, px| cnd = storeRefs(alloc, cnd, nm, px, isIn(idents, nm));
                 @constCast(cont).condition = cnd;
             }
-            if (cont.node) |*n| rewriteNode(alloc, @constCast(n), names, prefixes);
-            for (cont.continuations) |*c| rewriteCont(alloc, @constCast(c), names, prefixes);
+            if (cont.node) |*n| rewriteNode(alloc, @constCast(n), names, prefixes, idents);
+            for (cont.continuations) |*c| rewriteCont(alloc, @constCast(c), names, prefixes, idents);
         }
-        fn rewriteFlow(alloc: std.mem.Allocator, f: *ast.Flow, names: []const []const u8, prefixes: []const []const u8) void {
-            rewriteCont(alloc, &f.body, names, prefixes);
+        fn rewriteFlow(alloc: std.mem.Allocator, f: *ast.Flow, names: []const []const u8, prefixes: []const []const u8, idents: []const []const u8) void {
+            rewriteCont(alloc, &f.body, names, prefixes, idents);
             if (f.inline_body) |ib| {
                 var t = ib;
-                for (names, prefixes) |nm, px| t = storeRefs(alloc, t, nm, px);
+                for (names, prefixes) |nm, px| t = storeRefs(alloc, t, nm, px, isIn(idents, nm));
                 @constCast(f).inline_body = t;
             }
         }
@@ -3612,10 +3646,10 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         // expression. Reading a cell there is as ordinary as reading one in an
         // arg, but the walk used to visit only `.flow`, so the reference went
         // to the host verbatim and Zig reported an undeclared `s` (110_022).
-        fn rewriteImmediateImpl(alloc: std.mem.Allocator, ii: *ast.ImmediateImpl, names: []const []const u8, prefixes: []const []const u8) void {
+        fn rewriteImmediateImpl(alloc: std.mem.Allocator, ii: *ast.ImmediateImpl, names: []const []const u8, prefixes: []const []const u8, idents: []const []const u8) void {
             if (ii.value.plain_value) |pv| {
                 var t = pv;
-                for (names, prefixes) |nm, px| t = storeRefs(alloc, t, nm, px);
+                for (names, prefixes) |nm, px| t = storeRefs(alloc, t, nm, px, isIn(idents, nm));
                 ii.value.plain_value = t;
             }
             // `=> branch { f: <expr> }` keeps each field's value in
@@ -3623,7 +3657,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             for (ii.value.fields) |*fld| {
                 if (fld.expression_str) |es| {
                     var v = es;
-                    for (names, prefixes) |nm, px| v = storeRefs(alloc, v, nm, px);
+                    for (names, prefixes) |nm, px| v = storeRefs(alloc, v, nm, px, isIn(idents, nm));
                     @constCast(fld).expression_str = v;
                 }
             }
@@ -3636,9 +3670,9 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         for (px) |*e| e.* = "";
         break :blk_lp px;
     };
-    for (watch_arms.items) |*wa| Rewrite.rewriteCont(allocator, &wa.cont, store_names.items, local_prefixes);
-    for (field_iceptors.items) |*fi| Rewrite.rewriteCont(allocator, &fi.cont, store_names.items, local_prefixes);
-    for (updated_iceptors.items) |*ui| Rewrite.rewriteCont(allocator, ui, store_names.items, local_prefixes);
+    for (watch_arms.items) |*wa| Rewrite.rewriteCont(allocator, &wa.cont, store_names.items, local_prefixes, store_idents.items);
+    for (field_iceptors.items) |*fi| Rewrite.rewriteCont(allocator, &fi.cont, store_names.items, local_prefixes, store_idents.items);
+    for (updated_iceptors.items) |*ui| Rewrite.rewriteCont(allocator, ui, store_names.items, local_prefixes, store_idents.items);
 
     // ------------------------------------------------------------------
     // Unit 1: the module-scope typed cell (slice one, unchanged).
@@ -4227,20 +4261,20 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             }
             // Each item carries the module it was declared in, so the reader is
             // read off the item rather than threaded down the walk.
-            fn items(alloc: std.mem.Allocator, prog: *const ast.Program, its: []ast.Item, names: []const []const u8) void {
+            fn items(alloc: std.mem.Allocator, prog: *const ast.Program, its: []ast.Item, names: []const []const u8, idents: []const []const u8) void {
                 for (its) |*pi| {
                     switch (pi.*) {
                         // Must use `&pi.flow` — `|*f|` on a switched copy
                         // mutates a temporary and the live AST stays raw.
-                        .flow => Rewrite.rewriteFlow(alloc, &pi.flow, names, prefixesFor(alloc, prog, names, pi.flow.module)),
-                        .immediate_impl => Rewrite.rewriteImmediateImpl(alloc, &pi.immediate_impl, names, prefixesFor(alloc, prog, names, pi.immediate_impl.module)),
-                        .module_decl => items(alloc, prog, @constCast(pi.module_decl.items), names),
+                        .flow => Rewrite.rewriteFlow(alloc, &pi.flow, names, prefixesFor(alloc, prog, names, pi.flow.module), idents),
+                        .immediate_impl => Rewrite.rewriteImmediateImpl(alloc, &pi.immediate_impl, names, prefixesFor(alloc, prog, names, pi.immediate_impl.module), idents),
+                        .module_decl => items(alloc, prog, @constCast(pi.module_decl.items), names, idents),
                         else => {},
                     }
                 }
             }
         };
-        Walk.items(allocator, program, @constCast(program.items), store_names.items);
+        Walk.items(allocator, program, @constCast(program.items), store_names.items, store_idents.items);
     }
 
     // ------------------------------------------------------------------
@@ -4315,16 +4349,28 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         }
         // Boundary-aware store-name rewrite: `game.entities` → the cell path,
         // only where `game` is a whole identifier followed by a dot.
-        fn storeRefs(alloc: std.mem.Allocator, text: []const u8, name: []const u8) []const u8 {
+        fn storeRefs(alloc: std.mem.Allocator, text: []const u8, name: []const u8, is_identity: bool) []const u8 {
+            const expr_ctx = ast.expressionMask(alloc, text);
             var out = std.ArrayList(u8).initCapacity(alloc, text.len + 32) catch unreachable;
             var i: usize = 0;
             while (i < text.len) {
                 const at_boundary = i == 0 or !isIdent(text[i - 1]);
-                if (at_boundary and i + name.len < text.len and
-                    std.mem.startsWith(u8, text[i..], name) and text[i + name.len] == '.')
-                {
+                const starts = at_boundary and std.mem.startsWith(u8, text[i..], name);
+                const after = i + name.len;
+                if (starts and after < text.len and text[after] == '.') {
                     out.appendSlice(alloc, "__koru_store_") catch unreachable;
                     out.appendSlice(alloc, name) catch unreachable;
+                    i += name.len;
+                } else if (is_identity and expr_ctx[i] and starts and
+                    (after >= text.len or (!isIdent(text[after]) and text[after] != '[')))
+                {
+                    // A ONE-column store read on the RHS of its own write:
+                    // `stored { counter: counter + 2 }`. `[` is excluded so a row
+                    // index (`todos[…]`) still takes the indexed path below.
+                    out.appendSlice(alloc, "__koru_store_") catch unreachable;
+                    out.appendSlice(alloc, name) catch unreachable;
+                    out.append(alloc, '.') catch unreachable;
+                    out.appendSlice(alloc, ast.STORE_IDENTITY_COLUMN) catch unreachable;
                     i += name.len;
                 } else {
                     out.append(alloc, text[i]) catch unreachable;
@@ -4366,7 +4412,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         }
         fn storeRefsAll(alloc: std.mem.Allocator, prog: *const ast.Program, text: []const u8) []const u8 {
             var t = text;
-            for (allStoreNames(alloc, prog)) |nm| t = storeRefs(alloc, t, nm);
+            for (allStoreNames(alloc, prog)) |nm| t = storeRefs(alloc, t, nm, isIdentityStore(alloc, prog, nm));
             return t;
         }
         // `store[index].field` → SoA column read (690_076). Runs AFTER
@@ -4553,7 +4599,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:stored: a multi-field envelope writes ONE store this rung ('{s}' vs '{s}')", .{ env_store, st }) } };
             }
             env_fields[wi] = wm.name[dotm + 1 ..];
-            env_values[wi] = H.storeRefs(allocator, wm.value, st);
+            env_values[wi] = H.storeRefs(allocator, wm.value, st, H.isIdentityStore(allocator, program, st));
         }
         const order_env = H.fieldOrder(allocator, program, env_store) orelse {
             // The store's OWN declaration was already refused; that diagnostic is the
@@ -5930,33 +5976,9 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         fn isIdentCh(ch: u8) bool {
             return (ch >= 'a' and ch <= 'z') or (ch >= 'A' and ch <= 'Z') or (ch >= '0' and ch <= '9') or ch == '_' or ch == '-';
         }
-        /// Which byte positions are EXPRESSION context, not literal prose.
-        ///
-        /// Inside a string, only a `{{ … }}` interpolation is an expression. This
-        /// did not matter while every row reference was dotted — `n.v` seldom
-        /// occurs in a sentence — but a ONE-column row is referenced BARE, and a
-        /// lone `n` occurs in prose constantly. `"n {{ n:d }}"` must rewrite the
-        /// second `n` and leave the first alone.
-        fn exprMask(alloc: std.mem.Allocator, text: []const u8) []bool {
-            const mask = alloc.alloc(bool, text.len) catch unreachable;
-            var in_str = false;
-            var in_interp = false;
-            var i: usize = 0;
-            while (i < text.len) : (i += 1) {
-                if (in_str and !in_interp and text[i] == '{' and i + 1 < text.len and text[i + 1] == '{') in_interp = true;
-                if (in_str and in_interp and text[i] == '}' and i + 1 < text.len and text[i + 1] == '}') in_interp = false;
-                if (text[i] == '"' and (i == 0 or text[i - 1] != '\\') and !in_interp) {
-                    in_str = !in_str;
-                    mask[i] = false;
-                    continue;
-                }
-                mask[i] = !in_str or in_interp;
-            }
-            return mask;
-        }
         fn refs(alloc: std.mem.Allocator, text: []const u8, bind: []const u8, store: []const u8, fields: []const []const u8, form: Form, used: []bool, unknown: *?[]const u8) []const u8 {
             const prefix = std.fmt.allocPrint(alloc, "{s}.", .{bind}) catch unreachable;
-            const expr_ctx = exprMask(alloc, text);
+            const expr_ctx = ast.expressionMask(alloc, text);
             var out = std.ArrayList(u8).initCapacity(alloc, text.len + 32) catch unreachable;
             var i: usize = 0;
             while (i < text.len) {
