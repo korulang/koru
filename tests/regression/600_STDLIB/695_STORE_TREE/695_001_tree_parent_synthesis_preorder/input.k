@@ -44,4 +44,4 @@ std/store:insert(tree) { val: 10 }
 
 // Pre-order walk of the forest → deterministic label sequence.
 std/store:preorder(tree)
-! preorder { entity.val } |> std/io:print.ln("{{ val:d }}")
+! preorder e |> std/io:print.ln("{{ e.val:d }}")

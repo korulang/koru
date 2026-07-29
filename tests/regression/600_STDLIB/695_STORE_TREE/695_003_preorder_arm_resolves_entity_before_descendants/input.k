@@ -29,7 +29,7 @@ std/store:insert(tree) { val: 10 }
 // The nested write is the pin: it names `entity.val`, which only means anything
 // once `preorder` has bound the row.
 std/store:preorder(tree)
-! preorder { entity.val } |> std/store:stored { entity.val: entity.val + 1 }
+! preorder e |> std/store:stored { e.val: e.val + 1 }
 
 std/store:preorder(tree)
-! preorder { entity.val } |> std/io:print.ln("{{ val:d }}")
+! preorder e |> std/io:print.ln("{{ e.val:d }}")

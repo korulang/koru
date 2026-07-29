@@ -11,4 +11,4 @@ std/store:insert(todos) { done: 0 }
 | row _ |> std/store:stored { todos[ui.sel].done: 1 - todos[ui.sel].done }
 
 std/store:query(todos)
-! query { entity.done } |> std/io:print.ln("done {{ done:d }}")
+! query e |> std/io:print.ln("done {{ e.done:d }}")

@@ -27,4 +27,4 @@ std/store:insert(items) { v: 20 }
 
 for(0..2)
 ! each _ |> std/store:query(items)
-    ! query { entity.v } |> std/io:print.ln("v {{ v:d }}")
+    ! query e |> std/io:print.ln("v {{ e.v:d }}")

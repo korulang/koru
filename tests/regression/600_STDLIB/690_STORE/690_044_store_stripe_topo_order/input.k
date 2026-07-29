@@ -13,9 +13,9 @@ std/store:insert(game) { hp: 5 }
 | full |> _
 
 [name(second)|depends_on(first)]std/store:query(game)
-! query { entity.hp } |> std/io:print.ln("second {{ hp:d }}")
+! query e |> std/io:print.ln("second {{ e.hp:d }}")
 
 [name(first)]std/store:query(game)
-! query { entity.hp } |> std/io:print.ln("first {{ hp:d }}")
+! query e |> std/io:print.ln("first {{ e.hp:d }}")
 
 std/store:stripe(game)

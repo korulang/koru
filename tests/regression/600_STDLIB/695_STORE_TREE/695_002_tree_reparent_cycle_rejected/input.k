@@ -20,4 +20,4 @@ std/store:insert(tree) { val: 10 }
                 | cycle |> std/io:print.ln("cycle rejected")
 
 std/store:preorder(tree)
-! preorder { entity.val } |> std/io:print.ln("{{ val:d }}")
+! preorder e |> std/io:print.ln("{{ e.val:d }}")

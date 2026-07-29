@@ -25,4 +25,4 @@ std/store:insert(nodes) { val: 100, next: -1 }
         |> std/store:stored { nodes[a.next].val: 777 }
 
 std/store:query(nodes)
-! query { entity.val, entity.next } when val > 0 |> std/io:print.ln("val {{ val:d }} next {{ next:d }}")
+! query e when e.val > 0 |> std/io:print.ln("val {{ e.val:d }} next {{ e.next:d }}")

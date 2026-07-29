@@ -35,4 +35,4 @@ std/store:insert(squad) { hp: 60, kind: 2 }
 std/store:insert(squad) { hp: 80, kind: 1 }
 
 std/store:query(squad)
-! query { entity.hp, entity.kind } when kind == 1 |> std/store:stored { entity.hp: entity.hp - 15 }
+! query e when e.kind == 1 |> std/store:stored { e.hp: e.hp - 15 }

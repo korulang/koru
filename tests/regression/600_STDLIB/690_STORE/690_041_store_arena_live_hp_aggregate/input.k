@@ -42,8 +42,8 @@ std/store:insert(arena) { hp: 40, kind: 2 }
 | full |> _
 
 std/store:query(arena)
-! query { entity.hp, entity.kind } when kind == 1 |> std/store:stored { entity.hp: entity.hp - 20 }
+! query e when e.kind == 1 |> std/store:stored { e.hp: e.hp - 20 }
 
 std/store:query(arena)
-! query { entity.hp } when hp <= 0 |> std/store:take(arena[entity])
+! query e when e.hp <= 0 |> std/store:take(arena[e])
     | item i |> std/io:print.ln("culled a foe at {{ i.hp:d }} hp")

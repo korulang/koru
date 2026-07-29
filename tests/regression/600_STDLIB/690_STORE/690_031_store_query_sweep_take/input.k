@@ -25,5 +25,5 @@ std/store:insert(arena) { hp: 8 }
 | full |> _
 
 std/store:query(arena)
-! query { entity.hp } when hp <= 10 |> std/store:take(arena[entity])
+! query e when e.hp <= 10 |> std/store:take(arena[e])
     | item i |> std/io:print.ln("took {{ i.hp:d }}")

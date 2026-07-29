@@ -25,4 +25,4 @@ std/string:from-page(text: "old")
 | err _ |> _
 
 std/store:query(names)
-! query { entity.label } |> std/string:read(s: label): text |> std/io:print.ln("{{ text:s }}")
+! query e |> std/string:read(s: e.label): text |> std/io:print.ln("{{ text:s }}")

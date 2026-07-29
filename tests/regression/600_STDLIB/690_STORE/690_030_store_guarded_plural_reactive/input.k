@@ -26,4 +26,4 @@ std/store:insert(arena) { hp: 50 }
 | full |> _
 
 std/store:query(arena)
-! query { entity.hp } when hp > 0 |> std/store:stored { entity.hp: entity.hp - 20 }
+! query e when e.hp > 0 |> std/store:stored { e.hp: e.hp - 20 }

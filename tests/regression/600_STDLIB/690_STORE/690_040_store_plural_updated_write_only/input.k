@@ -28,4 +28,4 @@ std/store:insert(crew) { hp: 10 }
             | item i |> std/io:print.ln("took {{ i.hp:d }}")
 
 std/store:query(crew)
-! query { entity.hp } when hp == 30 |> std/store:stored { entity.hp: entity.hp + 1 }
+! query e when e.hp == 30 |> std/store:stored { e.hp: e.hp + 1 }

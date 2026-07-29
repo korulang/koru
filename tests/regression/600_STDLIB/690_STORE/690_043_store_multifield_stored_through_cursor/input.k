@@ -14,7 +14,7 @@ std/store:insert(game) { a: 1, b: 10 }
 | full |> _
 
 std/store:query(game)
-! query { entity.a, entity.b } |> std/store:stored { entity.a: entity.a + 1, entity.b: entity.b + 1 }
+! query e |> std/store:stored { e.a: e.a + 1, e.b: e.b + 1 }
 
 std/store:query(game)
-! query { entity.a, entity.b } |> std/io:print.ln("a {{ a:d }} b {{ b:d }}")
+! query e |> std/io:print.ln("a {{ e.a:d }} b {{ e.b:d }}")

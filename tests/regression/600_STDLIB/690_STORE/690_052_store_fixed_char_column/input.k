@@ -16,4 +16,4 @@ std/store:insert(todos) { done: 0, label: "buy milk" }
     | row _ |> _
 
 std/store:query(todos)
-! query { entity.done, entity.label } |> std/io:print.ln("[{{ done:d }}] {{ label:s }}")
+! query e |> std/io:print.ln("[{{ e.done:d }}] {{ e.label:s }}")

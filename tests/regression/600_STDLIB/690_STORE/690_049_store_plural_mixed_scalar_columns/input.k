@@ -13,4 +13,4 @@ std/store:new(m, capacity: 8) { n: i64, r: f64 }
 std/store:insert(m) { n: 5, r: 2.5 }
 
 std/store:query(m)
-! query { entity.n, entity.r } |> std/io:print.ln("n {{ n:d }} r {{ r:f }}")
+! query e |> std/io:print.ln("n {{ e.n:d }} r {{ e.r:f }}")
