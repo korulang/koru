@@ -6512,7 +6512,15 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         captures.append(allocator, b) catch unreachable;
     }
 
-    const sbody_name = std.fmt.allocPrint(allocator, "__store_sweepbody_{s}_L{d}", .{ store_name, flow.location.line }) catch unreachable;
+    // Keyed on the SWEEP ARM's own line, not the enclosing flow's. Sweep
+    // inherited query's flow-line site key, and that key is only unique because
+    // query is top-level-only — one query is one flow by construction. Sweep
+    // exists precisely to nest, and a sweep transplanted into another sweep's
+    // body carries the parent flow's location, so two sweeps of the SAME store
+    // in one flow minted identical symbols. Two sweeps of DIFFERENT stores were
+    // disambiguated by store_name, which is why 690_087 never caught it.
+    // Pinned: 690_110.
+    const sbody_name = std.fmt.allocPrint(allocator, "__store_sweepbody_{s}_L{d}", .{ store_name, sc.location.line }) catch unreachable;
     // +1 for `__koru_srow`, the row cursor. The projections hand the body
     // COPIES of the row's values; writing back needs the row itself. Query's
     // qbody takes `__koru_qrow` for exactly this reason (store.kz:1481).
@@ -6659,7 +6667,8 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         } };
     }
 
-    const srun_name = std.fmt.allocPrint(allocator, "__store_sweeprun_{s}_L{d}", .{ store_name, flow.location.line }) catch unreachable;
+    // Same arm-line key as sbody_name above — the two must agree.
+    const srun_name = std.fmt.allocPrint(allocator, "__store_sweeprun_{s}_L{d}", .{ store_name, sc.location.line }) catch unreachable;
     appended.append(allocator, ast.Item{ .event_decl = ast.EventDecl{
         .path = H.mkPathH(allocator, flow.module, srun_name),
         .input = ast.Shape{ .fields = &[_]ast.Field{} },
