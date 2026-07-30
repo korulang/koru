@@ -54,6 +54,52 @@ one position.
 - Any check whose only coverage is a one-line flow should be read as
   unmeasured past position one until a chained pin says otherwise.
 
+## KORU047: the same axis, no pin at all, and no crash (2026-07-30)
+
+A second positional instance, found from outside by Lars deleting an
+implementation from a doodle. `KORU047` — "event X is invoked but has no
+implementation" — fires at a flow head and nowhere after it. Declared, invoked,
+unimplemented, one position down the chain: compiles, links, runs, exit 0.
+
+Two things make it worse than the KORU022 instance above.
+
+**It had no pin anywhere.** Not a head pin, not a chained one — `KORU047` appeared
+in no test in the suite while its guarantee was being relied on. The rule stated
+here ("read a check whose only coverage is a one-line flow as unmeasured past
+position one") assumed a head pin exists to be misread. Zero coverage is the
+weaker starting point and is invisible to the same reasoning, because there is no
+green test whose narrowness you could notice. `510_115` is now the head pin, and
+it went green on the first run — which is the whole problem in miniature: it
+proves the sentence exists, and nothing else.
+
+**Its escape does not fail.** Every earlier instance in this belief ends in a
+crash somewhere unhelpful — Zig's formatter, a synthesised union, malformed
+emission. That is bad diagnostics but it is still a stop. This one silently stubs
+the missing event to zero-defaults and hands the result downstream: `-> string`
+yields `""`, `-> i64` yields `0`. An arithmetic pipeline can lose an entire stage
+and report a plausible number, at exit 0. Pinned by `510_116` (does not fire) and
+`510_117` (what it produces instead).
+
+So the practical tell in *What follows* needs its companion clause. "When a Koru
+mistake surfaces as a host-language error, suspect reach" is sound but incomplete:
+it trains attention on crashes, and the more dangerous outcome of an unreached
+wall is a clean run. **A program that runs green and returns a suspiciously plain
+value — empty string, zero, default-everything — is the same symptom with the
+crash removed.**
+
+**And read a diagnostic's text as a specification, not a description.** KORU047's
+message names the exact hazard it fails to prevent: "without one the compiler
+would silently stub it to return zero-defaults." That sentence is a testable claim
+about the whole language, not about position one. Where a wall states what it
+prevents, the statement is the spec and the wall is one implementation of it —
+test the sentence.
+
+This also sharpens the *Open* question below. The proposed lint stalls on deciding
+which walls are legitimately head-only, but that judgement is not needed for the
+strictly weaker rule: **a diagnostic with ZERO pins is a defect regardless of
+which positions it ought to cover.** That fires on no legitimate head-only wall,
+needs no taxonomy, and would have caught this one.
+
 ## Reach is not only positional
 
 Position is the obvious axis and not the only one. A check can also cover one
