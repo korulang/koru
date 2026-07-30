@@ -1,0 +1,65 @@
+{
+  "name": "koru-vscode",
+  "displayName": "Koru",
+  "description": "Koru language support via koru-lsp",
+  "version": "0.0.1",
+  "publisher": "koru",
+  "private": true,
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Programming Languages"],
+  "activationEvents": ["onLanguage:koru"],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "koru.showLog",
+        "title": "Koru: Show Log"
+      }
+    ],
+    "languages": [
+      {
+        "id": "koru",
+        "aliases": ["Koru", "koru"],
+        "extensions": [".k", ".kz", ".kjs"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "koru",
+        "scopeName": "source.koru",
+        "path": "./syntaxes/koru.tmLanguage.json"
+      }
+    ],
+    "configuration": {
+      "title": "Koru",
+      "properties": {
+        "koru.korucPath": {
+          "type": "string",
+          "default": "koruc",
+          "description": "Path to the koruc compiler binary."
+        },
+        "koru.trace.server": {
+          "type": "string",
+          "enum": ["off", "messages", "verbose"],
+          "default": "off",
+          "description": "Traces communication between VS Code/Cursor and koru-lsp."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "watch": "tsc -p tsconfig.json --watch"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.7.2"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  }
+}

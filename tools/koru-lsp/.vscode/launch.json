@@ -1,0 +1,27 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Launch Koru Extension",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}/vscode",
+        "${workspaceFolder}/../../koru-examples"
+      ],
+      "env": {
+        "KORUC_PATH": "${workspaceFolder}/../../koru/zig-out/bin/koruc"
+      },
+      "outFiles": ["${workspaceFolder}/vscode/dist/**/*.js"]
+    },
+    {
+      "name": "Attach to koru-lsp",
+      "type": "node",
+      "request": "attach",
+      "port": 9229,
+      "restart": true,
+      "skipFiles": ["<node_internals>/**"],
+      "outFiles": ["${workspaceFolder}/package/dist/**/*.js"]
+    }
+  ]
+}

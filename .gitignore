@@ -209,10 +209,14 @@ tests/benchmarks/**/actual.txt
 .claude/*
 !.claude/skills/
 package.json
+# ...but the editor tooling under tools/ IS the toolchain — its manifests and
+# debug config ship with the repo.
+!tools/**/package.json
 zig-out/
 .agent/
 temp_build.zig
 .vscode/
+!tools/**/.vscode/
 .idea/
 *.swp
 *.swo
