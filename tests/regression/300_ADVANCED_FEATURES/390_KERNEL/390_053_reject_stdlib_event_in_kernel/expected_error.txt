@@ -1,0 +1,1 @@
+unsupported construct 'std.io:print.ln' inside kernel scope
