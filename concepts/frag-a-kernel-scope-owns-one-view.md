@@ -92,9 +92,25 @@ particle against a neighbour set — and each is the same need. A surface built 
   that is itself an init) or a distinct way to bind a view that does not go
   through `init` at all. The refusal deliberately does not imply an answer.
 - Whether one-view-per-scope should stay the rule with multiple scopes composing,
-  which keeps `claims_descendants` intact and makes `cross` a cross-scope op
-  instead — cheaper to build, and it may be the wrong shape for the same reason
-  the ambient view was.
+  making `cross` a cross-scope op instead. ~~Cheaper to build.~~ **That cost claim
+  is refuted** (commissioned reading, 2026-07-30). It has two variants and neither
+  is cheap. As siblings there is no site where both bindings exist at once — a
+  view leaves its scope only as host data through `| computed` — so it needs views
+  nameable outside their scope, which is a larger surface than multiplicity, not a
+  smaller one. As nesting it is the program 390_055 refuses, refused precisely
+  because `claims_descendants` swallows the inner init, so the claim that it keeps
+  `claims_descendants` intact is false; that has to be re-cut either way. And
+  `collectKernelOps` recurses the whole subtree with no ownership boundary while
+  `KernelOp` carries no binding attribution, so admitting a nested init has the
+  outer plan absorb the inner scope's ops and fuse them against the outer array.
+  Both branches pay the ownership surgery; only this one additionally pays a
+  fusion-across-owners protocol.
+
+  What survives of the original worry is not about cost: multiplicity legalizes
+  the shape whose silent failure this belief is named for, on top of a rewrite
+  with no scopes. It is therefore conditional on a loud same-name refusal existing
+  first — a condition, not an argument for the other branch, since shadowing
+  across nested scopes would need the same rule.
 - Whether the closed allowlist is now too closed. It admits exactly three ops
   because exactly three exist; the next op has to be added in two places, and
   nothing makes the author of that op notice the second one.
