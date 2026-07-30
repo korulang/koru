@@ -1,0 +1,3 @@
+v 1 acc 6
+v 2 acc 6
+v 3 acc 6
