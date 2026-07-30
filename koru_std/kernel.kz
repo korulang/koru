@@ -189,25 +189,72 @@ const std = @import("std");
 
             const ValidationContext = struct {
                 allocator: std.mem.Allocator,
+                // The flow's own module. An invocation resolved to it was written
+                // bare in the file, so the refusal must not grow a qualifier the
+                // author never typed.
+                current_module: []const u8,
                 violation: ?[]const u8 = null,
+
+                // Renders an invocation the way the author spelled it, so the
+                // refusal names a construct they can find in their own file.
+                fn qualifiedName(self: *@This(), inv: *const ast.Invocation) []const u8 {
+                    if (inv.path.segments.len == 0) return "invocation";
+                    var rendered = std.ArrayList(u8).initCapacity(self.allocator, 32) catch
+                        return inv.path.segments[0];
+                    if (inv.path.module_qualifier) |module| {
+                        if (!std.mem.eql(u8, module, self.current_module)) {
+                            rendered.appendSlice(self.allocator, module) catch return inv.path.segments[0];
+                            rendered.append(self.allocator, ':') catch return inv.path.segments[0];
+                        }
+                    }
+                    for (inv.path.segments, 0..) |segment, idx| {
+                        if (idx > 0) rendered.append(self.allocator, '.') catch return inv.path.segments[0];
+                        rendered.appendSlice(self.allocator, segment) catch return inv.path.segments[0];
+                    }
+                    return rendered.items;
+                }
+
+                // A second kernel view is the one refusal that carries a reason
+                // rather than just a name: the author is reaching for cross-set
+                // iteration, which the kernel family does not spell yet.
+                fn isNestedInit(inv: *const ast.Invocation) bool {
+                    return isNamedInvocation(inv, "std.kernel", "init");
+                }
 
                 fn fail(
                     self: *@This(),
                     continuation: ?*const ast.Continuation,
                     construct_name: []const u8,
                 ) ast_functional.LexicalSubtreeWalkControl {
+                    const allowed = "kernel scope currently allows only std.kernel:pairwise, std.kernel:self and std.kernel:step";
                     self.violation = if (continuation) |cont|
                         std.fmt.allocPrint(
                             self.allocator,
-                            "unsupported construct '{s}' inside kernel scope at {s}:{d}:{d}; kernel scope currently allows only std.kernel:pairwise and std.kernel:self",
-                            .{ construct_name, cont.location.file, cont.location.line, cont.location.column },
+                            "unsupported construct '{s}' inside kernel scope at {s}:{d}:{d}; {s}",
+                            .{ construct_name, cont.location.file, cont.location.line, cont.location.column, allowed },
                         ) catch "unsupported construct inside kernel scope"
                     else
                         std.fmt.allocPrint(
                             self.allocator,
-                            "unsupported construct '{s}' inside kernel scope; kernel scope currently allows only std.kernel:pairwise and std.kernel:self",
-                            .{construct_name},
+                            "unsupported construct '{s}' inside kernel scope; {s}",
+                            .{ construct_name, allowed },
                         ) catch "unsupported construct inside kernel scope";
+                    return .stop;
+                }
+
+                fn failNestedInit(
+                    self: *@This(),
+                    continuation: ?*const ast.Continuation,
+                ) ast_functional.LexicalSubtreeWalkControl {
+                    const msg = "std.kernel:init inside a kernel scope declares a second kernel view — one kernel scope owns exactly one view, so the inner init would be claimed by the outer one and its dataset never emitted; give each init its own flow, and note that iteration across two views has no kernel op yet";
+                    self.violation = if (continuation) |cont|
+                        std.fmt.allocPrint(
+                            self.allocator,
+                            "{s} (at {s}:{d}:{d})",
+                            .{ msg, cont.location.file, cont.location.line, cont.location.column },
+                        ) catch msg
+                    else
+                        msg;
                     return .stop;
                 }
 
@@ -219,13 +266,28 @@ const std = @import("std");
                         .continuation => return .continue_walk,
                         .invocation => |info| {
                             const inv = info.invocation;
+                            // ALLOWLIST, closed. The kernel subtree admits exactly the
+                            // three kernel ops; every other invocation is refused by
+                            // name. A fallthrough here is what let a nested
+                            // `std/kernel:init` reach `claims_descendants` and be
+                            // swallowed whole — its dataset never emitted, its binding
+                            // never substituted, the failure surfacing as an undeclared
+                            // host identifier. Pinned: 390_052, 390_053, 390_055.
                             if (
                                 isNamedInvocation(inv, "std.kernel", "pairwise") or
-                                isNamedInvocation(inv, "std.kernel", "self")
+                                isNamedInvocation(inv, "std.kernel", "self") or
+                                isNamedInvocation(inv, "std.kernel", "step")
                             ) {
                                 return .continue_walk;
                             }
 
+                            if (isNestedInit(inv)) {
+                                return self.failNestedInit(info.continuation);
+                            }
+
+                            // The ambient keyword constructs are written bare by
+                            // construction — `for`, not `std.control:for`. Name them
+                            // from the leaf so the refusal quotes the file.
                             if (
                                 isNamedInvocation(inv, null, "for") or
                                 isNamedInvocation(inv, null, "if") or
@@ -239,7 +301,7 @@ const std = @import("std");
                                 return self.fail(info.continuation, inv.path.segments[0]);
                             }
 
-                            return .continue_walk;
+                            return self.fail(info.continuation, self.qualifiedName(inv));
                         },
                         .node => |info| switch (info.node.*) {
                             .branch_constructor => return self.fail(info.continuation, "branch constructor"),
@@ -261,7 +323,7 @@ const std = @import("std");
                 }
             };
 
-            var validation = ValidationContext{ .allocator = alloc };
+            var validation = ValidationContext{ .allocator = alloc, .current_module = flow_internal.module };
             ast_functional.walkLexicalContinuationSubtree(
                 ValidationContext,
                 kernel_cont,

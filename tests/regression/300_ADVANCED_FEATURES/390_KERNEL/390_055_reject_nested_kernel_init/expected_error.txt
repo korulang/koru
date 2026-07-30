@@ -1,0 +1,1 @@
+std.kernel:init inside a kernel scope declares a second kernel view
