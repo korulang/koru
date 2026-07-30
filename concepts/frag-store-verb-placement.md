@@ -76,3 +76,61 @@ instead of checker code. Rule sketch: an arm rejecting
   rules; rule ORDERING under a stripe (move before draw) and the
   cascade-cycle interaction of self-writing movement rules (690_012) are
   unruled design space for the store-as-game-state question.
+
+## Sweep nests structurally; its ROW RESOLUTION does not (2026-07-30)
+
+The claim above — that sweep "nests", proven inside a for-loop body and
+against a second store — is true about *placement* and false about *reference*.
+Two sweeps can sit one inside the other and each will lower; what does not
+survive the nesting is the ability to name the outer row from the inner body.
+
+Measured on a probe with two rows per store, which is the smallest shape that
+can tell the two cursors apart at all: the outer binding read inside the inner
+body resolves to the INNER store's column at the INNER cursor. Not the wrong
+row — the wrong store. No diagnostic. 690_110 pins it.
+
+690_087 is the pin that reads as covering this and does not. Its nested body
+touches only the inner binding, and it holds one row per store, so both a
+cursor collision and a store misresolution are invisible in it twice over. A
+pin whose data cannot distinguish the failure from the success is not evidence,
+however precisely it is worded — and this one is worded very precisely, about
+`entity` versus bound rows. Binding the row removed the token collision it was
+written to remove. It did not introduce a scope, and the belief that it did is
+what this section repudiates.
+
+Underneath sit two independent defects, and treating them as one mis-designs
+the fix:
+
+- The generated symbols are keyed on the enclosing FLOW's line
+  (`__store_sweepbody_<s>_L<n>`). That key is unique only because it was
+  inherited from `query`, which is top-level-only, so one query IS one flow.
+  Sweep exists in order to nest, and a sweep transplanted into another sweep's
+  body carries the parent flow's location — so two sweeps of the same store in
+  one flow mint identical symbols. Two sweeps of different stores are pulled
+  apart by the store name, which is the second reason 690_087 stayed quiet.
+- The row cursor carries a fixed name in every sweepbody event, so an inner
+  sweep's cursor shadows the outer's and the column rewrite has nothing left to
+  tell the two rows apart.
+
+Order matters here in a way that is easy to get backwards. Fixing the key alone
+is tempting — it is two words and it makes the same-store nesting compile. It
+must not land alone: the duplicate-symbol failure is LOUD, and removing it
+without the cursor fix exposes the silent wrong answer beneath. A loud wall
+traded for a quiet miscomputation is a regression even though a compile starts
+succeeding. 690_112 pins the same-store case so the trade is visible either way.
+
+This is the store-is-text lesson arriving one level up. The earlier form was a
+token rewritten across a subtree with no scope; this form is a rewrite that
+correctly distinguishes two BINDINGS and then lowers both onto one cursor. The
+binding was made distinct without making the thing it refers to distinct.
+
+## What this costs the numeric reading
+
+An all-f64 container works — declared, inserted, written through the sweep
+arm's row, read back (690_111, green, and the first pin of that shape). So the
+SoA substrate a numeric consumer wants is real and already emitted. What is not
+reachable is the pair: any computation relating two rows of one corpus needs
+exactly the cross-row read that 690_110 and 690_112 pin red. Elementwise passes
+over a store are available today; pairwise ones are not, and the obstacle is
+not layout, iteration or capacity — it is that a row binding does not survive
+being nested inside another one.
