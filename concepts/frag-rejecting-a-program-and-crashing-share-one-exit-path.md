@@ -75,18 +75,50 @@ non-zero and quietly; if it delivered none, the loud trace is the right output a
 should stay. That reads the existing state rather than adding a field, though a
 kind on the result would be the honest version.
 
-## Closing it is cheap — nothing depends on the leak
+## Closing it was cheap — nothing depended on the leak
 
 Measured 2026-07-30: zero tests assert on `CompilerCoordinationFailed`. The
 category tokens in `EXPECT` (`BACKEND_RUNTIME_ERROR` and siblings, 36 tests) are
 *skipped as informational* by `regression_lib.sh:191` — the real assertions are
-`MUST_ERROR` plus `CONTAINS`/`NOT_CONTAINS`. The single test naming the summary
-line, `430_001_user_coordinator`, asserts a **user-supplied** coordinator message
-and stays green provided the print survives and only the exit path changes.
+`MUST_ERROR` plus `CONTAINS`/`NOT_CONTAINS`.
 
-So the trace has been load-bearing for nothing. It persisted because it is
-downstream of every diagnostic anyone was improving, and because a leak that
-appears *after* a correct error reads as cosmetic.
+One correction to the first version of this belief: `430_001_user_coordinator`,
+the single test naming the summary line, was described as staying green provided
+the print survived. It was never green — it is `config-error` on the 2026-07-29
+board and still is. So the user-coordinator path through this print is currently
+**unpinned**, not protected. That matters more than the original claim did: the
+`❌ Compiler coordination error: {s}` print is a real message surface for
+user-authored coordinators and nothing tests it.
+
+The trace was load-bearing for nothing. It persisted because it sits downstream of
+every diagnostic anyone was improving, and because a leak that appears *after* a
+correct error reads as cosmetic.
+
+## CLOSED (2026-07-30): the exit path is separated, the trace is opt-in
+
+`src/main.zig` now emits, into the generated backend, an `is_error` path that
+prints the coordination message and calls `__koru_std.process.exit(1)` rather than
+returning an error out of `main`. No error escapes `main`, so Zig prints no
+`error.CompilerCoordinationFailed` and no return trace. The status stays non-zero,
+so koruc's `term.Exited != 0` branch still runs `emitDiagnosticsSummary` and still
+reports `✗ Backend execution failed`. Nothing is swallowed — one misleading
+rendering of an already-delivered diagnostic is dropped.
+
+The refusal/crash ambiguity is handed to the operator rather than guessed at:
+`KORU_BACKEND_TRACE=1` restores the old `return error` path verbatim, and the
+default output names the variable. That idiom already existed in the same generated
+file (`KORU_DUMP_AST`), so it is the file's own convention rather than a new one.
+
+This is deliberately **not** the honest fix. The honest fix is a kind on the C-ABI
+result so the compiler can tell "I refused your program" from "I broke" without
+asking a human — `is_error` is still one boolean carrying both. That change reaches
+`compiler.kz`, and therefore the serialized bootstrap snapshot of `compiler.kz`
+inside `koru_std/program_ast.zig`, which is a self-hosting concern
+([[frag-self-hosting-pins-a-pass-to-its-bootstrap-stage]]) and a much larger
+change than the leak justified on its own.
+
+Pinned by `510_118` (`CONTAINS error[KORU030]`,
+`NOT_CONTAINS CompilerCoordinationFailed`), green as of this change.
 
 ## Open
 

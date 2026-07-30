@@ -935,7 +935,29 @@ fn generateBackendCode(allocator: std.mem.Allocator, input_file: []const u8, sou
             \\        if (result.is_error) {
             \\            const e = result.error_ptr[0..result.error_len];
             \\            __koru_std.debug.print("❌ Compiler coordination error: {s}\n", .{e});
-            \\            return error.CompilerCoordinationFailed;
+            \\            // A REFUSAL IS NOT A CRASH. The coordinate flow has already reported its
+            \\            // diagnostic through the reporter by the time we reach here, so returning
+            \\            // an error out of main would make Zig print `error.CompilerCoordinationFailed`
+            \\            // plus a return trace naming THIS generated file — a crash report stapled to
+            \\            // a correct rejection, and the last thing the author reads. Exit
+            \\            // deliberately instead: the status is still non-zero, so koruc's
+            \\            // `term.Exited != 0` path still runs the diagnostics summary and still
+            \\            // reports the failure. Nothing is swallowed; one misleading rendering of an
+            \\            // already-delivered diagnostic is dropped.
+            \\            //
+            \\            // The trace stays REACHABLE on request, because for a genuine INTERNAL
+            \\            // failure it is the useful output, and suppressing it unconditionally would
+            \\            // trade this bug for its mirror — a compiler crash reported as a rejection,
+            \\            // which sends the author hunting through correct code. `is_error` is one
+            \\            // boolean carrying both meanings, so the choice belongs to whoever is
+            \\            // debugging rather than being guessed at here. A kind on the C-ABI result
+            \\            // would let the compiler decide for itself; that is the honest version and
+            \\            // it is not this change.
+            \\            const trace_requested: ?[]const u8 = __koru_std.process.getEnvVarOwned(allocator, "KORU_BACKEND_TRACE") catch null;
+            \\            defer if (trace_requested) |v| allocator.free(v);
+            \\            if (trace_requested != null) return error.CompilerCoordinationFailed;
+            \\            __koru_std.debug.print("   (set KORU_BACKEND_TRACE=1 for the backend return trace)\n", .{});
+            \\            __koru_std.process.exit(1);
             \\        }
             \\        const metrics = result.metrics_ptr[0..result.metrics_len];
             \\        const code = result.code_ptr[0..result.code_len];
