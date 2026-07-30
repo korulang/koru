@@ -112,12 +112,21 @@ the fix:
   sweep's cursor shadows the outer's and the column rewrite has nothing left to
   tell the two rows apart.
 
-Order matters here in a way that is easy to get backwards. Fixing the key alone
-is tempting — it is two words and it makes the same-store nesting compile. It
-must not land alone: the duplicate-symbol failure is LOUD, and removing it
-without the cursor fix exposes the silent wrong answer beneath. A loud wall
-traded for a quiet miscomputation is a regression even though a compile starts
-succeeding. 690_112 pins the same-store case so the trade is visible either way.
+The key was fixed first, and the reasoning that nearly stopped it is worth
+keeping because it was right in general and wrong here. Removing a LOUD wall
+without the cursor fix exposes the silent wrong answer beneath it, and a loud
+wall traded for a quiet miscomputation is a regression even where a compile
+starts succeeding. That rule stands. What it needed was a premise it did not
+have: someone able to be misled. The same-store nested sweep does not compile
+today, so no program can be relying on the wall, and the measured blast radius
+across the store cluster is nil — the identical 16 reds before and after. The
+trade is real but it is a trade against nobody, and 690_112 stays red through it
+either way, so nothing is laundered by making it red for a different reason.
+
+The general shape: "loud beats silent" is a claim about what a user experiences.
+It needs a user. Applied to a surface nothing can reach yet it stops being a
+safety argument and becomes a reason not to make progress, which is the failure
+mode it exists to prevent in the opposite direction.
 
 This is the store-is-text lesson arriving one level up. The earlier form was a
 token rewritten across a subtree with no scope; this form is a rewrite that
