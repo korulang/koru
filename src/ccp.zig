@@ -699,7 +699,7 @@ pub const CcpDaemon = struct {
         defer parse_arena.deinit();
 
         var ctx: frontend_introspect.Context = undefined;
-        frontend_introspect.initContext(self.allocator, file_path, &ctx) catch |err| {
+        frontend_introspect.initContext(self.allocator, file_path, &.{}, &ctx) catch |err| {
             var err_buf: [512]u8 = undefined;
             const err_msg = std.fmt.bufPrint(&err_buf, "Completion failed: {}", .{err}) catch "Completion failed";
             self.writeError(err_msg, cmd.id);

@@ -1,0 +1,8 @@
+// Pins that every line of a `std/compiler:paths` block must be `alias: path`.
+// A line with no separator names nothing, so it is refused rather than skipped.
+
+~std/compiler:paths {
+    domain
+}
+
+const std = @import("std");

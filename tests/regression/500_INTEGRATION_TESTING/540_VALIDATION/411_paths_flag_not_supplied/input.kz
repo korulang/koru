@@ -1,0 +1,9 @@
+// Pins that a `{{ flag:name }}` naming a flag nobody supplied is refused at the
+// DECLARATION. An unsupplied flag never empties the segment and resolves against
+// whatever else happens to sit at that path.
+
+~std/compiler:paths {
+    toolkit: {{ flag:target }}/toolkit
+}
+
+const std = @import("std");

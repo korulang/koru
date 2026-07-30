@@ -6233,7 +6233,7 @@ pub fn main() !void {
 
     // Create module resolver for import resolution
     // Pass project_root for resolving alias paths and entry_dir for {{ ENTRY }} interpolation
-    var resolver = try ModuleResolver.init(allocator, &project_config, project_root, input_dir_absolute);
+    var resolver = try ModuleResolver.init(allocator, &project_config, project_root, input_dir_absolute, compiler_config.flags.items);
     defer resolver.deinit();
 
     // Inject compiler bootstrap import (unless --compiler=disable or user already imported it)

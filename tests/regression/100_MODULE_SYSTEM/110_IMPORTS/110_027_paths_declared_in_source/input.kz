@@ -1,0 +1,29 @@
+// Pins that a program declares its own import aliases, in itself, with no
+// koru.json in the test directory at all.
+//
+// The alias has to exist before `~import domain/user` is read, and parse and
+// import resolution are one pass — so this pins the ordering as much as the
+// spelling: the declaration acts mid-descent, above its first use.
+//
+// The nested module is unreachable without the alias: `test_lib/domain/user` is
+// three segments past the entry, and imports cap at two.
+
+const std = @import("std");
+
+~std/compiler:paths {
+    domain: {{ ENTRY }}/test_lib/domain
+}
+
+~import domain/user
+
+~pub tor grant-access {
+    user_data: domain/user:DomainUser,
+} -> bool
+
+~proc grant-access|zig {
+    std.debug.print("Granting access: {s} as {s} (perms: {d})\n",
+        .{user_data.email, user_data.role, user_data.permissions});
+    return true;
+}
+
+~domain/user:create(email: "admin@example.com", role: "administrator", permissions: 999): c |> grant-access(user_data: c): _

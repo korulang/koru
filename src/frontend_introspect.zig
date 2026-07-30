@@ -61,7 +61,7 @@ pub fn findProjectRoot(gpa: std.mem.Allocator, input_dir_absolute: []const u8) !
     }
 }
 
-pub fn initContext(gpa: std.mem.Allocator, file_path: []const u8, out: *Context) !void {
+pub fn initContext(gpa: std.mem.Allocator, file_path: []const u8, compiler_flags: []const []const u8, out: *Context) !void {
     const input_dir = std.fs.path.dirname(file_path) orelse ".";
     out.entry_dir_absolute = try std.fs.cwd().realpathAlloc(gpa, input_dir);
     errdefer gpa.free(out.entry_dir_absolute);
@@ -73,7 +73,7 @@ pub fn initContext(gpa: std.mem.Allocator, file_path: []const u8, out: *Context)
     out.project_config = try Config.load(gpa, out.project_root) orelse try Config.default(gpa);
     errdefer out.project_config.deinit();
 
-    out.resolver = try ModuleResolver.init(gpa, &out.project_config, out.project_root, out.entry_dir_absolute);
+    out.resolver = try ModuleResolver.init(gpa, &out.project_config, out.project_root, out.entry_dir_absolute, compiler_flags);
 }
 
 fn prepareSourceWithCompilerInject(
@@ -127,7 +127,7 @@ pub fn introspectSource(
     opts: Options,
 ) !Result {
     var ctx: Context = undefined;
-    try initContext(gpa, file_path, &ctx);
+    try initContext(gpa, file_path, opts.compiler_flags, &ctx);
     defer ctx.deinit();
 
     const entry_basename = std.fs.path.basename(file_path);

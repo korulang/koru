@@ -3,5 +3,5 @@ error[KORU002]: module not found: '$std/interceptors'
     |
   8 | ~import "std/interceptors"
     | ^
-  hint: check the import path, koru.json paths, and KORU_STDLIB/KORU_PATH environment variables
+  hint: check the import path, the aliases declared by std/compiler:paths, and KORU_STDLIB/KORU_PATH environment variables
 

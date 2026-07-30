@@ -1,0 +1,25 @@
+// Nested domain user module
+const std = @import("std");
+
+// Define a domain-specific user type
+pub const DomainUser = struct {
+    email: []const u8,
+    role: []const u8,
+    permissions: u32,
+};
+
+// Event that creates a domain user
+~pub tor create {
+    email: string,
+    role: string,
+    permissions: u32,
+} -> DomainUser
+
+~proc create|zig {
+    const new_user = DomainUser{
+        .email = email,
+        .role = role,
+        .permissions = permissions,
+    };
+    return new_user;
+}

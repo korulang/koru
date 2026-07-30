@@ -117,13 +117,17 @@ pub const ModuleResolver = struct {
     allocator: std.mem.Allocator,
     search_paths: std.ArrayList([]const u8),
     stdlib_path: ?[]const u8,
-    config: *const Config,
+    // Mutable: a `std/compiler:paths` declaration adds aliases mid-parse, before
+    // the imports it governs are resolved. Config is something the parse BUILDS,
+    // not something handed to it finished.
+    config: *Config,
     project_root: []const u8,  // Directory containing koru.json (for resolving alias paths)
     entry_dir: []const u8,     // Directory of the entry file being compiled (for {{ ENTRY }} interpolation)
     koru_home: []const u8,     // Directory where koruc is installed (for {{ KORU_HOME }} interpolation)
+    compiler_flags: []const []const u8,  // For {{ flag:name }} interpolation
     parsing_files: std.StringHashMap(void),  // Track files currently being parsed (for cycle detection)
 
-    pub fn init(allocator: std.mem.Allocator, config: *const Config, project_root: []const u8, entry_dir: []const u8) !ModuleResolver {
+    pub fn init(allocator: std.mem.Allocator, config: *Config, project_root: []const u8, entry_dir: []const u8, compiler_flags: []const []const u8) !ModuleResolver {
         // Get KORU_HOME from executable path
         // Development: <project>/zig-out/bin/koruc → koru_home = <project>
         // npm package: <package>/bin/koruc → koru_home = <package>
@@ -157,6 +161,7 @@ pub const ModuleResolver = struct {
             .project_root = project_root,
             .entry_dir = entry_dir,
             .koru_home = koru_home,
+            .compiler_flags = compiler_flags,
             .parsing_files = std.StringHashMap(void).init(allocator),
         };
 
@@ -240,12 +245,68 @@ pub const ModuleResolver = struct {
             changed = true;
         }
 
+        // Process every {{ flag:name }} — unlike ENTRY and KORU_HOME there can be
+        // several distinct ones in a single path, so this loops rather than
+        // substituting a single known string once.
+        while (std.mem.indexOf(u8, result, flag_open)) |pos| {
+            const after = result[pos + flag_open.len ..];
+            const close = std.mem.indexOf(u8, after, " }}") orelse break;
+            const flag_name = after[0..close];
+
+            // An unsupplied flag is left standing, NOT emptied. The parser refuses
+            // the declaration up front (KORU172) precisely so this is unreachable
+            // in a real compile; if it is ever reached, resolution must fail loudly
+            // against the literal text rather than quietly resolve somewhere else.
+            const value = flagValueIn(self.compiler_flags, flag_name) orelse break;
+
+            const new_result = try std.fmt.allocPrint(
+                self.allocator,
+                "{s}{s}{s}",
+                .{ result[0..pos], value, after[close + 3 ..] },
+            );
+            self.allocator.free(result);
+            result = new_result;
+            changed = true;
+        }
+
         if (changed) {
             return result;
         } else {
             self.allocator.free(result);
             return null;
         }
+    }
+
+    const flag_open = "{{ flag:";
+
+    /// Value of `--flag name=value`, or null if the flag was never supplied.
+    /// A bare `--flag name` carries no value, so it cannot fill a path segment.
+    pub fn flagValueIn(flags: []const []const u8, name: []const u8) ?[]const u8 {
+        for (flags) |flag| {
+            const eq = std.mem.indexOfScalar(u8, flag, '=') orelse continue;
+            if (std.mem.eql(u8, flag[0..eq], name)) return flag[eq + 1 ..];
+        }
+        return null;
+    }
+
+    pub fn flagValue(self: *const ModuleResolver, name: []const u8) ?[]const u8 {
+        return flagValueIn(self.compiler_flags, name);
+    }
+
+    /// The `{{ flag:name }}` references in a path, in source order. Used by the
+    /// parser to refuse a declaration naming a flag nobody supplied.
+    pub fn flagRefs(path: []const u8, buf: [][]const u8) [][]const u8 {
+        var count: usize = 0;
+        var rest = path;
+        while (std.mem.indexOf(u8, rest, flag_open)) |pos| {
+            if (count == buf.len) break;
+            const after = rest[pos + flag_open.len ..];
+            const close = std.mem.indexOf(u8, after, " }}") orelse break;
+            buf[count] = after[0..close];
+            count += 1;
+            rest = after[close + 3 ..];
+        }
+        return buf[0..count];
     }
 
     fn initializeSearchPaths(self: *ModuleResolver) !void {

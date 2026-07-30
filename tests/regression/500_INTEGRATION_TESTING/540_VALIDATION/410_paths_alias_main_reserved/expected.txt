@@ -1,0 +1,6 @@
+error[KORU172]: std/compiler:paths - the alias `main` is reserved for the entry module
+  --> tests/regression/500_INTEGRATION_TESTING/540_VALIDATION/410_paths_alias_main_reserved/input.kz:4:1
+    |
+  4 | ~std/compiler:paths {
+    | ^
+

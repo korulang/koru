@@ -1582,7 +1582,14 @@ pub const Parser = struct {
             // Source block detected: ~event { ... } or ~event(args) { ... }
             // Source blocks are opaque - route to flow parsing BEFORE checking for =
             // This prevents `{ a = b }` from being misinterpreted as subflow impl
-            return .{ .flow = try self.parseFlow(annotations.items) };
+            const directive_line = self.current + 1;
+            const flow = try self.parseFlow(annotations.items);
+            // A `std/compiler:paths` block has to act HERE, mid-descent: parse and
+            // resolve are one pass (parseImportDecl resolves inline), so an alias
+            // declared for a later import must land before that import is read.
+            // Unlike flag.declare, this cannot wait for a post-parse harvest.
+            try self.applyPathsDirective(&flow, directive_line);
+            return .{ .flow = flow };
         } else if (findTopLevelEquals(remaining) != null) {
             // Event implementation via subflow: ~event.name = ...
             // NOTE: This only matches = outside of source blocks (checked above)
@@ -3283,6 +3290,97 @@ pub const Parser = struct {
         }
 
         return buf.toOwnedSlice(self.allocator);
+    }
+
+    /// `~` for a host-embedding file, nothing for pure `.k`. A hint that shows a
+    /// spelling has to show the spelling THIS file uses — a `.k` author who copies
+    /// a `~` out of a diagnostic gets a second error for their trouble.
+    fn tilde(self: *const Parser) []const u8 {
+        return if (self.is_k) "" else "~";
+    }
+
+    /// An import alias has to be a bare identifier, because every use site is
+    /// `alias/rest` and the first segment is split on `/`. Same rule the import
+    /// validator applies, so anything declared here is usable there.
+    fn isUsableAlias(alias: []const u8) bool {
+        if (alias.len == 0) return false;
+        if (!std.ascii.isAlphabetic(alias[0]) and alias[0] != '_') return false;
+        for (alias[1..]) |c| {
+            if (!std.ascii.isAlphanumeric(c) and c != '_') return false;
+        }
+        return true;
+    }
+
+    /// Apply a `std/compiler:paths { alias: ./path }` declaration to the live
+    /// resolver config. A no-op for every other invocation.
+    ///
+    /// `../` is deliberately allowed here where imports forbid it: the import
+    /// validator guards USE sites, which are always alias-relative. A declaration
+    /// is where an escape out of the tree gets written down and read, and that is
+    /// exactly the job koru.json used to hold.
+    fn applyPathsDirective(self: *Parser, flow: *const ast.Flow, directive_line: usize) !void {
+        const path = flow.inv().path;
+        if (path.segments.len != 1 or !std.mem.eql(u8, path.segments[0], "paths")) return;
+        const qualifier = path.module_qualifier orelse return;
+        // parseQualifiedPath normalizes `/` to `.`, so the slash and dot spellings
+        // arrive here identically.
+        if (!std.mem.eql(u8, qualifier, "std.compiler")) return;
+
+        var source_text: ?[]const u8 = null;
+        for (flow.inv().args) |arg| {
+            if (std.mem.eql(u8, arg.name, "source")) source_text = arg.value;
+        }
+        const body = source_text orelse {
+            try self.reporter.addError(.KORU172, directive_line, 1, "std/compiler:paths requires a block: {s}std/compiler:paths {{ alias: ./path }}", .{self.tilde()});
+            return error.ParseError;
+        };
+
+        const resolver = self.resolver orelse {
+            try self.reporter.addError(.KORU172, directive_line, 1, "std/compiler:paths declares import aliases, so it needs a module resolver - this parse was started without one", .{});
+            return error.ParseError;
+        };
+
+        var lines = std.mem.tokenizeAny(u8, body, "\n");
+        while (lines.next()) |raw| {
+            var line = lexer.trim(raw);
+            if (std.mem.indexOf(u8, line, "//")) |c| line = lexer.trim(line[0..c]);
+            if (line.len == 0) continue;
+            if (std.mem.endsWith(u8, line, ",")) line = lexer.trim(line[0 .. line.len - 1]);
+            if (line.len == 0) continue;
+
+            const colon = std.mem.indexOfScalar(u8, line, ':') orelse {
+                try self.reporter.addError(.KORU172, directive_line, 1, "std/compiler:paths - each line is `alias: path`, got `{s}`", .{line});
+                return error.ParseError;
+            };
+
+            const alias = lexer.trim(line[0..colon]);
+            const target = lexer.trim(line[colon + 1 ..]);
+
+            if (!isUsableAlias(alias)) {
+                try self.reporter.addError(.KORU172, directive_line, 1, "std/compiler:paths - `{s}` cannot be an import alias; an alias is a bare identifier (letters, digits, `_`), because every use site splits on the first `/`", .{alias});
+                return error.ParseError;
+            }
+            if (std.mem.eql(u8, alias, "main")) {
+                try self.reporter.addError(.KORU172, directive_line, 1, "std/compiler:paths - the alias `main` is reserved for the entry module", .{});
+                return error.ParseError;
+            }
+            if (target.len == 0) {
+                try self.reporter.addError(.KORU172, directive_line, 1, "std/compiler:paths - alias `{s}` has no path", .{alias});
+                return error.ParseError;
+            }
+
+            // A `{{ flag:name }}` naming a flag nobody supplied is refused at the
+            // DECLARATION, not left to resolve into a path that happens to exist.
+            var ref_buf: [8][]const u8 = undefined;
+            for (module_resolver_mod.ModuleResolver.flagRefs(target, &ref_buf)) |ref| {
+                if (resolver.flagValue(ref) == null) {
+                    try self.reporter.addError(.KORU172, directive_line, 1, "std/compiler:paths - alias `{s}` interpolates `{{{{ flag:{s} }}}}` but no `--{s}=<value>` was supplied", .{ alias, ref, ref });
+                    return error.ParseError;
+                }
+            }
+
+            try resolver.config.addPath(alias, target);
+        }
     }
 
     /// Check if an event is an implicit flow event
@@ -9756,8 +9854,8 @@ pub const Parser = struct {
                 .PARSE003,
                 self.current,
                 1,
-                "import paths cannot contain '../' - use path aliases in koru.json instead",
-                .{},
+                "import paths cannot contain '../' - declare an alias for the directory instead: {s}std/compiler:paths {{ name: ../path }}",
+                .{self.tilde()},
             );
             return error.ParseError;
         }
@@ -9783,8 +9881,8 @@ pub const Parser = struct {
                 .PARSE003,
                 self.current,
                 1,
-                "import paths must start with an alias (e.g., 'std/io', 'src/helper') - define aliases in koru.json",
-                .{},
+                "import paths must start with an alias (e.g., 'std/io', 'src/helper') - declare one with {s}std/compiler:paths {{ name: ./path }}",
+                .{self.tilde()},
             );
             return error.ParseError;
         }
@@ -9806,10 +9904,10 @@ pub const Parser = struct {
                     self.current,
                     1,
                     "import path too deep: '{s}' has {d} segments after alias (max: 2)\n" ++
-                        "  To fix: add a new alias to koru.json, e.g.:\n" ++
-                        "    \"paths\": {{ \"mylib\": \"./path/to/lib\" }}\n" ++
-                        "  Then use: ~import \"mylib/...\" (Suggested: extract '{s}' as its own alias)",
-                    .{ path, segment_count, alias },
+                        "  To fix: declare a new alias in the entry file, e.g.:\n" ++
+                        "    {s}std/compiler:paths {{ mylib: ./path/to/lib }}\n" ++
+                        "  Then use: {s}import mylib/... (Suggested: extract '{s}' as its own alias)",
+                    .{ path, segment_count, self.tilde(), self.tilde(), alias },
                 );
                 return error.ParseError;
             }
@@ -9876,8 +9974,8 @@ pub const Parser = struct {
                     1,
                     "unknown import alias: '{s}'",
                     .{alias},
-                    "define alias in koru.json paths, e.g. \"paths\": {{ \"{s}\": \"./path\" }}",
-                    .{alias},
+                    "declare the alias in the entry file, e.g. {s}std/compiler:paths {{ {s}: ./path }}",
+                    .{ self.tilde(), alias },
                 );
             }
             return err;
@@ -9990,6 +10088,43 @@ pub const Parser = struct {
         }
     }
 };
+
+test "flagRefs finds every {{ flag:name }} in a declared path" {
+    const MR = module_resolver_mod.ModuleResolver;
+    var buf: [8][]const u8 = undefined;
+
+    const none = MR.flagRefs("./lib/helpers", &buf);
+    try std.testing.expectEqual(@as(usize, 0), none.len);
+
+    const one = MR.flagRefs("{{ flag:target }}/toolkit", &buf);
+    try std.testing.expectEqual(@as(usize, 1), one.len);
+    try std.testing.expectEqualStrings("target", one[0]);
+
+    // Two distinct references in one path: the reason this loops rather than
+    // substituting a single known string once, the way ENTRY and KORU_HOME do.
+    const two = MR.flagRefs("{{ flag:root }}/x/{{ flag:arch }}", &buf);
+    try std.testing.expectEqual(@as(usize, 2), two.len);
+    try std.testing.expectEqualStrings("root", two[0]);
+    try std.testing.expectEqualStrings("arch", two[1]);
+
+    // An unterminated reference is not a reference. It stays in the path and
+    // fails resolution loudly rather than being read as a flag named `target`.
+    const unterminated = MR.flagRefs("{{ flag:target/toolkit", &buf);
+    try std.testing.expectEqual(@as(usize, 0), unterminated.len);
+}
+
+test "flagValueIn reads only flags that carry a value" {
+    const MR = module_resolver_mod.ModuleResolver;
+    const flags = [_][]const u8{ "ccp", "target=wasm32", "auto-discharge=disable" };
+
+    try std.testing.expectEqualStrings("wasm32", MR.flagValueIn(&flags, "target").?);
+    try std.testing.expectEqualStrings("disable", MR.flagValueIn(&flags, "auto-discharge").?);
+
+    // A bare flag carries nothing to substitute, so it cannot fill a segment —
+    // it must read as absent, not as an empty path.
+    try std.testing.expect(MR.flagValueIn(&flags, "ccp") == null);
+    try std.testing.expect(MR.flagValueIn(&flags, "never-supplied") == null);
+}
 
 // Parser tests - Verifying that parser produces clean AST without validation
 

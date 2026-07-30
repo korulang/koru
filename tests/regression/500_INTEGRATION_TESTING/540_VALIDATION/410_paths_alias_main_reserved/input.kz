@@ -1,0 +1,8 @@
+// Pins that `main` stays reserved for the entry module when the alias is declared
+// in source, the same as it was reserved in koru.json.
+
+~std/compiler:paths {
+    main: {{ ENTRY }}/test_lib
+}
+
+const std = @import("std");

@@ -3,5 +3,5 @@ error[PARSE003]: unknown import alias: 'unknown'
     |
   7 | ~import unknown/module
     | ^
-  hint: define alias in koru.json paths, e.g. "paths": { "unknown": "./path" }
+  hint: declare the alias in the entry file, e.g. ~std/compiler:paths { unknown: ./path }
 

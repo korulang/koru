@@ -35,6 +35,27 @@ pub const Config = struct {
         self.paths.deinit();
     }
 
+    /// Declare a path alias from a `std/compiler:paths` block.
+    ///
+    /// Called by the parser mid-descent, so it mutates a Config the resolver is
+    /// already holding. Redeclaring an alias replaces it: the directive is read
+    /// top-down like every other statement, so the last word wins.
+    pub fn addPath(self: *Config, alias: []const u8, path: []const u8) !void {
+        const path_array = try self.allocator.alloc([]const u8, 1);
+        errdefer self.allocator.free(path_array);
+        path_array[0] = try self.allocator.dupe(u8, path);
+
+        if (self.paths.fetchRemove(alias)) |old| {
+            self.allocator.free(old.key);
+            for (old.value) |p| self.allocator.free(p);
+            self.allocator.free(old.value);
+        }
+
+        const owned_alias = try self.allocator.dupe(u8, alias);
+        errdefer self.allocator.free(owned_alias);
+        try self.paths.put(owned_alias, path_array);
+    }
+
     /// Load koru.json from the project root
     /// Returns null if no koru.json found (use defaults)
     pub fn load(allocator: std.mem.Allocator, project_root: []const u8) !?Config {

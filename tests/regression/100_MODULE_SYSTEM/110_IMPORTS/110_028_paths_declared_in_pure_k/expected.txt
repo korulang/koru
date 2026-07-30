@@ -1,0 +1,1 @@
+alias declared in pure koru

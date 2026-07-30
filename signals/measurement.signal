@@ -1,0 +1,7 @@
+name: measurement
+kind: inferred
+shape: categorical
+face: in
+membrane: false
+note: a belief about scale or proportion was replaced by a count — what something actually costs, covers or contains, measured rather than assumed
+route: surface

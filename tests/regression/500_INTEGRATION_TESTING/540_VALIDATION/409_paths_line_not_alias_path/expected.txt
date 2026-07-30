@@ -1,0 +1,6 @@
+error[KORU172]: std/compiler:paths - each line is `alias: path`, got `domain`
+  --> tests/regression/500_INTEGRATION_TESTING/540_VALIDATION/409_paths_line_not_alias_path/input.kz:4:1
+    |
+  4 | ~std/compiler:paths {
+    | ^
+

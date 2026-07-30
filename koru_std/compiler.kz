@@ -664,6 +664,32 @@ pub const CompilerContext = struct {
 
 ~[comptime|norun]pub tor flag.declare { source: Source }
 
+// ============================================================
+// IMPORT PATH ALIASES - what the program says about where it lives
+// ============================================================
+// A program declares its own import aliases, in itself. In pure `.k` there is no
+// tilde — this is a Koru feature, not a host-embedding one:
+//
+//   std/compiler:paths {
+//       domain: ./test_lib/domain
+//       toolkit: {{ flag:target }}/toolkit
+//   }
+//
+// A host-embedding file (`.kz`, `.kjs`, …) writes the same block as
+// `~std/compiler:paths { .. }`. Diagnostics render whichever spelling the file
+// being compiled actually uses.
+//
+// One `alias: path` per line. `{{ ENTRY }}`, `{{ KORU_HOME }}` and
+// `{{ flag:name }}` interpolate; a flag with no value supplied is refused at the
+// declaration rather than resolved into whatever happens to be on disk.
+//
+// [norun] for the same reason as flag.declare: the declaration never executes.
+// Unlike flag.declare it is not harvested after the parse either — the frontend
+// reads it DURING the parse, because parse and import resolution are one pass and
+// an alias has to exist before the import that uses it is read. That is why this
+// only has effect in the entry file, above its first use.
+~[comptime|norun]pub tor paths { source: Source }
+
 ~flag.declare {
   "name": "ccp",
   "description": "Enable Compiler Communication Protocol for AI observability",
