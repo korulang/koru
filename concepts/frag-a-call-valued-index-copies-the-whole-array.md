@@ -76,8 +76,32 @@ resolve-indexed `parent` read per ancestor step, inside the walk loop), and
 three cross-store/env row-reference rewrites (4846/5115/5337). The corpus had
 seen none of them, as predicted: all correct, none hot in any test.
 
+## Answered — the fix is two fixes, selected by splice context
+
+All nine sites converted; the gate is green. But "bind the index to a const
+first" only *exists* where the emitted text is a statement sequence. The four
+cycle-guard walks are that, and got the literal const-hoist — inside the loop
+body, since the walk cursor changes every step. The other five sites emit
+**expression fragments** spliced into arbitrary surrounding text, including
+`{{ e.val:d }}` string interpolations — and there a hoisted-const labeled
+block is not spellable: the interpolation parser cannot carry the block's
+braces, and the probed emit truncated at the first `{` and failed Stage D.
+The expression-context fix is to name the base through a pointer instead:
+`(&store.col)[store.__koru_resolve(i)]`. The parenthesised `&` turns the
+by-value aggregate into an 8-byte pointer temporary — nothing to materialise,
+identical forced evaluation order (address, then call, then element load
+through the still-valid address), and the whole thing stays a plain suffix
+expression and an lvalue.
+
+This also closes the old Open question about the address-of variant
+(`&store.f[resolve(q)]`): a pointer-valued base cannot pay the copy — which is
+not just the answer but the *mechanism* of the expression-context fix. The
+check's base pattern already rules `)[` bases out as "indexing a temporary,
+not this defect", so the pointer spelling passes the gate on the gate's own
+reasoning, not by dodging it.
+
 ## Open
 
-Whether the address-of variant (`&store.f[resolve(q)]`, site 1574) pays the
-copy at all — it is a pointer computation, not a load, and has not been
-measured. The check flags it anyway; the hoist is correct and at worst neutral.
+None. Behavior pinned by 695_002 (cycle trap) and 690_005 (query read),
+probed before/after with identical output and the defect shape absent from
+both emits.

@@ -1570,10 +1570,17 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 // A char column reads as the string slice up to the first NUL
                 // (the same shape the qrow projection binds); scalars read
                 // their cell slot directly.
+                // The column is named through a POINTER (`&`) before the
+                // call-valued index: a by-value base would force Zig to
+                // materialise the whole column ahead of the resolve call
+                // (frag-a-call-valued-index-copies-the-whole-array); an 8-byte
+                // pointer base costs nothing and stays a plain expression, so
+                // it survives the `{{ ... }}` interpolation contexts a hoisted
+                // const block cannot.
                 if (is_char) {
-                    return std.fmt.allocPrint(alloc, "@import(\"std\").mem.sliceTo(&__koru_store_{s}.{s}[__koru_store_{s}.__koru_resolve(__koru_qrow)], 0)", .{ store, field, store }) catch unreachable;
+                    return std.fmt.allocPrint(alloc, "@import(\"std\").mem.sliceTo(&(&__koru_store_{s}.{s})[__koru_store_{s}.__koru_resolve(__koru_qrow)], 0)", .{ store, field, store }) catch unreachable;
                 }
-                return std.fmt.allocPrint(alloc, "__koru_store_{s}.{s}[__koru_store_{s}.__koru_resolve(__koru_qrow)]", .{ store, field, store }) catch unreachable;
+                return std.fmt.allocPrint(alloc, "(&__koru_store_{s}.{s})[__koru_store_{s}.__koru_resolve(__koru_qrow)]", .{ store, field, store }) catch unreachable;
             }
             fn entityRefs(alloc: std.mem.Allocator, text: []const u8, store: []const u8, fields: []const []const u8, char_caps: []const ?usize, target_form: bool, bind: []const u8) []const u8 {
                 const prefix = std.fmt.allocPrint(alloc, "{s}.", .{bind}) catch unreachable;
@@ -2294,7 +2301,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 if (is_tree and i == user_field_count) {
                     // `row` is dense; the ancestor chain carries HANDLES, so
                     // the self-compare reconstructs this row's handle once.
-                    const guard = std.fmt.allocPrint(allocator, "const __koru_self = __koru_store_{s}.__koru_handle_of(__koru_r); var __koru_cyc = value_{d}; while (__koru_cyc != -1) {{ if (__koru_cyc == __koru_self) @panic(\"std/store:stored: reparent in [tree] store '{s}' would make the row its own ancestor (cycle) - the write is rejected; handle it with a `| cycle` branch (default-on guard and branch are pinned at 695_002)\"); __koru_cyc = __koru_store_{s}.parent[__koru_store_{s}.__koru_resolve(__koru_cyc)]; }} ", .{ store_name, i, store_name, store_name, store_name }) catch unreachable;
+                    const guard = std.fmt.allocPrint(allocator, "const __koru_self = __koru_store_{s}.__koru_handle_of(__koru_r); var __koru_cyc = value_{d}; while (__koru_cyc != -1) {{ if (__koru_cyc == __koru_self) @panic(\"std/store:stored: reparent in [tree] store '{s}' would make the row its own ancestor (cycle) - the write is rejected; handle it with a `| cycle` branch (default-on guard and branch are pinned at 695_002)\"); const __koru_cycr = __koru_store_{s}.__koru_resolve(__koru_cyc); __koru_cyc = __koru_store_{s}.parent[__koru_cycr]; }} ", .{ store_name, i, store_name, store_name, store_name }) catch unreachable;
                     atext.appendSlice(allocator, guard) catch unreachable;
                 }
                 if (updated_needs_old) {
@@ -2491,7 +2498,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                     const fapply_head = allocator.dupe(u8, "const __koru_r = @as(usize, @intCast(row));\n") catch unreachable;
                     fatext.appendSlice(allocator, fapply_head) catch unreachable;
                     if (is_tree and i == user_field_count) {
-                        const fguard = std.fmt.allocPrint(allocator, "const __koru_self = __koru_store_{s}.__koru_handle_of(__koru_r); var __koru_cyc = value; while (__koru_cyc != -1) {{ if (__koru_cyc == __koru_self) @panic(\"std/store:stored: reparent in [tree] store '{s}' would make the row its own ancestor (cycle) - the write is rejected; handle it with a `| cycle` branch (default-on guard and branch are pinned at 695_002)\"); __koru_cyc = __koru_store_{s}.parent[__koru_store_{s}.__koru_resolve(__koru_cyc)]; }} ", .{ store_name, store_name, store_name, store_name }) catch unreachable;
+                        const fguard = std.fmt.allocPrint(allocator, "const __koru_self = __koru_store_{s}.__koru_handle_of(__koru_r); var __koru_cyc = value; while (__koru_cyc != -1) {{ if (__koru_cyc == __koru_self) @panic(\"std/store:stored: reparent in [tree] store '{s}' would make the row its own ancestor (cycle) - the write is rejected; handle it with a `| cycle` branch (default-on guard and branch are pinned at 695_002)\"); const __koru_cycr = __koru_store_{s}.__koru_resolve(__koru_cyc); __koru_cyc = __koru_store_{s}.parent[__koru_cycr]; }} ", .{ store_name, store_name, store_name, store_name }) catch unreachable;
                         fatext.appendSlice(allocator, fguard) catch unreachable;
                     }
                     if (updated_needs_old) {
@@ -2645,7 +2652,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                     // guard, pre-image read, cell write, updated interceptors.
                     // No branch dispatch — that is announce's half.
                     if (is_tree and i == user_field_count) {
-                        const eguard = std.fmt.allocPrint(allocator, "const __koru_self = __koru_store_{s}.__koru_handle_of(__koru_r); var __koru_cyc = value_{d}; while (__koru_cyc != -1) {{ if (__koru_cyc == __koru_self) @panic(\"std/store:stored: reparent in [tree] store '{s}' would make the row its own ancestor (cycle) - the write is rejected; handle it with a `| cycle` branch (default-on guard and branch are pinned at 695_002)\"); __koru_cyc = __koru_store_{s}.parent[__koru_store_{s}.__koru_resolve(__koru_cyc)]; }} ", .{ store_name, i, store_name, store_name, store_name }) catch unreachable;
+                        const eguard = std.fmt.allocPrint(allocator, "const __koru_self = __koru_store_{s}.__koru_handle_of(__koru_r); var __koru_cyc = value_{d}; while (__koru_cyc != -1) {{ if (__koru_cyc == __koru_self) @panic(\"std/store:stored: reparent in [tree] store '{s}' would make the row its own ancestor (cycle) - the write is rejected; handle it with a `| cycle` branch (default-on guard and branch are pinned at 695_002)\"); const __koru_cycr = __koru_store_{s}.__koru_resolve(__koru_cyc); __koru_cyc = __koru_store_{s}.parent[__koru_cycr]; }} ", .{ store_name, i, store_name, store_name, store_name }) catch unreachable;
                         ewb.appendSlice(allocator, eguard) catch unreachable;
                     }
                     if (updated_needs_old) {
@@ -2857,7 +2864,8 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 \\var __koru_cyc = value;
                 \\while (__koru_cyc != -1) {{
                 \\    if (__koru_cyc == __koru_self) return .{{ .cycle = .{{}} }};
-                \\    __koru_cyc = __koru_store_{s}.parent[__koru_store_{s}.__koru_resolve(__koru_cyc)];
+                \\    const __koru_cycr = __koru_store_{s}.__koru_resolve(__koru_cyc);
+                \\    __koru_cyc = __koru_store_{s}.parent[__koru_cycr];
                 \\}}
                 \\main_module.__store_write_{s}_event.handler(.{{ .row = row, .field = field{s} }});
                 \\return .{{ .ok = .{{}} }};
@@ -4841,7 +4849,9 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                             }
                         }
                         if (known and index.len > 0) {
-                            const piece = std.fmt.allocPrint(alloc, "__koru_store_{s}.{s}[__koru_store_{s}.__koru_resolve({s})]", .{ store, fname, store, index }) catch unreachable;
+                            // Pointer-named base (`&`) — see colRead: a by-value
+                            // base copies the whole column before the resolve.
+                            const piece = std.fmt.allocPrint(alloc, "(&__koru_store_{s}.{s})[__koru_store_{s}.__koru_resolve({s})]", .{ store, fname, store, index }) catch unreachable;
                             out.appendSlice(alloc, piece) catch unreachable;
                             i = fend;
                             continue;
@@ -5110,7 +5120,9 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                     }
                 }
                 if (ref_ok) {
-                    env_row = std.fmt.allocPrint(allocator, "__koru_store_{s}.{s}[__koru_store_{s}.__koru_resolve({s})]", .{ env_store, ref_field, env_store, base }) catch unreachable;
+                    // Pointer-named base (`&`) — see colRead: a by-value base
+                    // copies the whole column before the resolve.
+                    env_row = std.fmt.allocPrint(allocator, "(&__koru_store_{s}.{s})[__koru_store_{s}.__koru_resolve({s})]", .{ env_store, ref_field, env_store, base }) catch unreachable;
                 } else {
                     env_row = H.storeRefsAll(allocator, program, re);
                 }
@@ -5332,7 +5344,9 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 }
             }
             if (ref_ok) {
-                row_expr = std.fmt.allocPrint(allocator, "__koru_store_{s}.{s}[__koru_store_{s}.__koru_resolve({s})]", .{ target_store, ref_field, target_store, base }) catch unreachable;
+                // Pointer-named base (`&`) — see colRead: a by-value base
+                // copies the whole column before the resolve.
+                row_expr = std.fmt.allocPrint(allocator, "(&__koru_store_{s}.{s})[__koru_store_{s}.__koru_resolve({s})]", .{ target_store, ref_field, target_store, base }) catch unreachable;
             } else {
                 row_expr = H.storeRefsAll(allocator, program, re);
             }
