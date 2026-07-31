@@ -13,6 +13,14 @@
 - Before writing nontrivial Koru, inspect a passing regression test with the same shape.
 - If no passing example exists for the syntax shape, say so and add or request a minimal repro instead of inventing syntax.
 
+## Find It Before You Build It
+- Before building a check, a wall, a helper, or a shared surface, **find out whether it already exists.** This is a precondition on every task, not a step in one.
+- **A forgotten mechanism is indistinguishable from an absent one until someone counts** — and the count comes back describing a catastrophe the mechanism has been silently preventing. The negative-test corpus was measured as 75% rotten, twice, before the wall holding it at 223/227 was found at `regression_lib.sh:608`.
+- **Count with the enforcer's own predicate, not your reading of the rule.** Enforcement accretes cases; the prose never widens with it. Find the code that enforces the rule and read its condition before you count anything against it.
+- Measured 2026-07-31: five separate tasks that day were "build X" where X already existed in some form — a mirror wall (`prose_check` check D, green, 55 rows), a diagnostic-pin wall, a benchmark-marker handler honoured by one half of the toolchain and unknown to the other, and a type registry that correctly turned out not to be needed.
+- When the thing does exist and is inadequate, **widen it rather than building a second one.** Two walls guarding the same rule differently is how they drift.
+- Say what you found, including "nothing." A search that came back empty is a result worth reporting; it is what tells the next reader the gap is real.
+
 ## Metacircular Safety & Collaboration
 - Assume self-hosting: validate against compiler sources and generated artifacts; avoid speculative changes without tests.
 - Align intent with maintainers/users; prefer short design notes and repros over large diffs.
