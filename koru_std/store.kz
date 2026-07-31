@@ -1832,14 +1832,62 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         }
         pc.appendSlice(allocator, "    len: usize = 0,\n") catch unreachable;
         // The sparse-set half of THE MEMORY CONTRACT (O10.iii/iv, DESIGN.md):
-        // a program-visible row value is a HANDLE — sparse slot in the low 32
-        // bits, that slot's generation in the high 32 — never a dense position.
-        // Dense columns keep swap-remove and 0..len iteration; the handle
-        // indirects through `__koru_hslot_row` so it survives other rows'
-        // removal, and the generation compare (one compare — the O10.iv floor)
-        // traps a handle whose row was taken. Generation 0 handles are
-        // numerically identical to the dense indices the store used to hand
-        // out, so a program that never removes prints the same numbers.
+        // a program-visible row value is a HANDLE — sparse slot in the low 24
+        // bits, the minting store's ordinal in bits 24..31, that slot's
+        // generation in the high 32 — never a dense position. Dense columns
+        // keep swap-remove and 0..len iteration; the handle indirects through
+        // `__koru_hslot_row` so it survives other rows' removal, and the
+        // generation compare (one compare — the O10.iv floor) traps a handle
+        // whose row was taken. The BRAND byte is the other direction of that
+        // trap (690_196): two same-shaped stores filled in the same order mint
+        // identical slot|gen values, so bounds+generation alone cannot tell a
+        // sibling's handle from this store's — the ordinal compare can, and it
+        // refuses with the not-this-store's-handle message. The program's
+        // FIRST store has ordinal 0, so its handles (and every single-store
+        // program's) stay numerically identical to the unbranded encoding:
+        // generation-0 handles equal the dense indices the store used to hand
+        // out, and a program that never removes prints the same numbers.
+        var __brand_names = std.ArrayList([]const u8).initCapacity(allocator, 8) catch unreachable;
+        const Brand = struct {
+            fn add(alloc: std.mem.Allocator, names: *std.ArrayList([]const u8), n: []const u8) void {
+                for (names.items) |e| if (std.mem.eql(u8, e, n)) return;
+                names.append(alloc, n) catch unreachable;
+            }
+            // The ordinal is COORDINATION order, not item position: a
+            // coordinated store's apply event lands at the program's tail, so
+            // positions shuffle as stores coordinate (measured — the second
+            // store's walk saw itself first). What is stable: at this store's
+            // transform, exactly the stores coordinated BEFORE it carry a
+            // `__store_apply_` event, and coordination runs in program order.
+            // So this store's ordinal = the count of sibling apply events.
+            // Recurses into module decls (690_079/080 — a module can own a
+            // store); dedupe by name keeps a store at one ordinal no matter
+            // how many faces of it the walk meets.
+            fn collect(alloc: std.mem.Allocator, items: []const ast.Item, names: *std.ArrayList([]const u8)) void {
+                for (items) |pi| {
+                    switch (pi) {
+                        .event_decl => |*ed2| {
+                            if (ed2.path.segments.len == 1 and std.mem.startsWith(u8, ed2.path.segments[0], "__store_apply_")) {
+                                add(alloc, names, ed2.path.segments[0]["__store_apply_".len..]);
+                            }
+                        },
+                        .module_decl => |*md2| collect(alloc, md2.items, names),
+                        else => {},
+                    }
+                }
+            }
+        };
+        Brand.collect(allocator, program.items, &__brand_names);
+        var store_ordinal: usize = 0;
+        for (__brand_names.items) |bn| {
+            if (!std.mem.eql(u8, bn, store_name)) store_ordinal += 1;
+        }
+        if (CAP > 0xFFFFFF) {
+            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:new({s}): capacity above 16777215 is a later rung - the row handle carries the slot in 24 bits (store brand in bits 24..31, 690_196)", .{store_name}) } };
+        }
+        if (store_ordinal > 0xFF) {
+            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:new({s}): more than 256 stores in one program is a later rung - the row handle carries the minting store's ordinal in 8 bits (690_196)", .{store_name}) } };
+        }
         const hs = std.fmt.allocPrint(allocator,
             \\    __koru_hslot_row: [{d}]usize = undefined,
             \\    __koru_hslot_gen: [{d}]u32 = [_]u32{{0}} ** {d},
@@ -1847,10 +1895,13 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             \\    __koru_hslot_free: [{d}]usize = undefined,
             \\    __koru_hslot_free_len: usize = 0,
             \\    __koru_hslot_next: usize = 0,
+            \\    const __koru_brand: u32 = {d};
             \\    fn __koru_row_of(self: *const @This(), h: i64) ?usize {{
             \\        if (h < 0) return null;
             \\        const u = @as(u64, @bitCast(h));
-            \\        const slot = @as(usize, @intCast(u & 0xFFFFFFFF));
+            \\        const slot32 = @as(u32, @truncate(u));
+            \\        if ((slot32 >> 24) != __koru_brand) return null;
+            \\        const slot = @as(usize, @intCast(slot32 & 0xFFFFFF));
             \\        if (slot >= self.__koru_hslot_next) return null;
             \\        if (@as(u32, @truncate(u >> 32)) != self.__koru_hslot_gen[slot]) return null;
             \\        return self.__koru_hslot_row[slot];
@@ -1858,17 +1909,19 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             \\    fn __koru_resolve(self: *const @This(), h: i64) usize {{
             \\        if (h >= 0) {{
             \\            const u = @as(u64, @bitCast(h));
-            \\            const slot = @as(usize, @intCast(u & 0xFFFFFFFF));
+            \\            const slot32 = @as(u32, @truncate(u));
+            \\            if ((slot32 >> 24) != __koru_brand) @panic("std/store: '{s}[...]' does not address a row - the value is not a handle this store issued (handles come from `| row` and row cursors)");
+            \\            const slot = @as(usize, @intCast(slot32 & 0xFFFFFF));
             \\            if (slot < self.__koru_hslot_next and @as(u32, @truncate(u >> 32)) != self.__koru_hslot_gen[slot]) @panic("std/store: stale row handle into store '{s}' - the row it addressed was removed (stale-handle trap pinned at 690_115)");
             \\        }}
             \\        return self.__koru_row_of(h) orelse @panic("std/store: '{s}[...]' does not address a row - the value is not a handle this store issued (handles come from `| row` and row cursors)");
             \\    }}
             \\    fn __koru_handle_of(self: *const @This(), dense: usize) i64 {{
             \\        const slot = self.__koru_row_hslot[dense];
-            \\        return @as(i64, @intCast(slot)) | (@as(i64, @intCast(self.__koru_hslot_gen[slot])) << 32);
+            \\        return @as(i64, @intCast(slot | (@as(usize, __koru_brand) << 24))) | (@as(i64, @intCast(self.__koru_hslot_gen[slot])) << 32);
             \\    }}
             \\
-        , .{ CAP, CAP, CAP, CAP, CAP, store_name, store_name }) catch unreachable;
+        , .{ CAP, CAP, CAP, CAP, CAP, store_ordinal, store_name, store_name, store_name }) catch unreachable;
         pc.appendSlice(allocator, hs) catch unreachable;
         pc.appendSlice(allocator, "};\n") catch unreachable;
         pc.appendSlice(allocator, "var __koru_store_") catch unreachable;
@@ -6101,6 +6154,54 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             }
             return null;
         }
+        // Is `col` an OWNED column (the store holds `[CAP]*Type` and teardown
+        // frees the live pointers — 690_053's single-ownership contract)?
+        // Sources, mirroring charCap's transform-order tolerance: the
+        // generated SoA cell host_line when create already ran (`<col>:
+        // [CAP]*Type`), else the untransformed create's seed block (`*mod:
+        // Type<state!>` — the leading `*` is the ownership marker).
+        fn ownedCol(alloc: std.mem.Allocator, prog: *const ast.Program, store: []const u8, col: []const u8) bool {
+            const marker = std.fmt.allocPrint(alloc, "const __KoruStoreT_{s} = struct {{", .{store}) catch unreachable;
+            for (prog.items) |pi| {
+                if (pi != .host_line) continue;
+                const t = pi.host_line.content;
+                if (std.mem.indexOf(u8, t, marker) == null) continue;
+                const fkey = std.fmt.allocPrint(alloc, "\n    {s}: [", .{col}) catch unreachable;
+                const fpos = std.mem.indexOf(u8, t, fkey) orelse return false;
+                const rest = t[fpos + fkey.len ..];
+                // scalar: `8]i64`; fixed-char: `8][16]u8`; owned: `8]*koru_std...`
+                const close = std.mem.indexOfScalar(u8, rest, ']') orelse return false;
+                const after = rest[close + 1 ..];
+                return after.len > 0 and after[0] == '*';
+            }
+            // create not yet transformed: read the raw seed block.
+            for (prog.items) |pi| {
+                if (pi != .flow) continue;
+                const f = &pi.flow;
+                const inv = f.inv();
+                if (inv.path.segments.len != 1 or !std.mem.eql(u8, inv.path.segments[0], "new")) continue;
+                const mq = inv.path.module_qualifier orelse continue;
+                if (!std.mem.eql(u8, mq, "std.store")) continue;
+                var name_matches = false;
+                var seed: ?[]const u8 = null;
+                for (inv.args) |a| {
+                    if (std.mem.eql(u8, a.name, "expr")) {
+                        name_matches = std.mem.eql(u8, stripQuotes(a.value), store);
+                    } else if (std.mem.eql(u8, a.name, "source")) {
+                        seed = a.value;
+                    }
+                }
+                if (!name_matches or seed == null) continue;
+                const braced = std.fmt.allocPrint(alloc, "{{{s}}}", .{seed.?}) catch unreachable;
+                const cf = struct_literal.parseFields(alloc, braced) catch return false;
+                for (cf) |c| {
+                    if (!std.mem.eql(u8, c.name, col)) continue;
+                    return std.mem.startsWith(u8, std.mem.trim(u8, c.value, " "), "*");
+                }
+                return false;
+            }
+            return false;
+        }
         // Unescaped byte length of a string literal's inner text: `\n` is one
         // byte, `\x41` is one byte. (`\u{...}` overcounts — acceptable
         // conservatism for a fixed-buffer limit check this rung.)
@@ -6183,6 +6284,35 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 if (blen > ncap) {
                     return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:insert({s}): string literal ({d} bytes) overflows char[{d}] column '{s}' - a fixed-char column holds at most its declared byte length", .{ store_name, blen, ncap, col }) } };
                 }
+            }
+        }
+        // An OWNED column consumes the caller's <instance!> — ownership moves
+        // INTO the store (690_053), and teardown frees every owned pointer. A
+        // row PROJECTION is a BORROW: the source store keeps its live
+        // <state!> (690_060). Feeding a projection into an owned insert would
+        // put one pointer under two stores' teardowns — both free it — so the
+        // write site refuses (pinned at 690_195). Three faces of the same
+        // borrow, by transform order: `r.name` (the authored projection, not
+        // yet rewritten), `__koru_srf_*` (a sweep arm's projected parameter),
+        // `__koru_store_*` (a query/cell read already lowered to the column).
+        if (H.ownedCol(allocator, program, store_name, col)) {
+            const ov = std.mem.trim(u8, val, " \t\n\r");
+            const is_sweep_proj = std.mem.indexOf(u8, ov, "__koru_srf_") != null;
+            const is_cell_read = std.mem.indexOf(u8, ov, "__koru_store_") != null;
+            const is_dotted_proj = blk: {
+                if (ov.len == 0) break :blk false;
+                const c0 = ov[0];
+                if (!((c0 >= 'a' and c0 <= 'z') or (c0 >= 'A' and c0 <= 'Z') or c0 == '_')) break :blk false;
+                var saw_dot = false;
+                for (ov) |ch| {
+                    const ok = (ch >= 'a' and ch <= 'z') or (ch >= 'A' and ch <= 'Z') or (ch >= '0' and ch <= '9') or ch == '_' or ch == '.';
+                    if (!ok) break :blk false;
+                    if (ch == '.') saw_dot = true;
+                }
+                break :blk saw_dot;
+            };
+            if (is_sweep_proj or is_cell_read or is_dotted_proj) {
+                return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:insert({s}): column '{s}' is owned - its value must be an instance the caller gives up (single ownership, 690_053); a row projection is a borrow the source store still owns, and accepting it would put one pointer under two teardowns. Take or build a fresh instance for this row instead.", .{ store_name, col }) } };
             }
         }
         call_args[i] = ast.Arg{
