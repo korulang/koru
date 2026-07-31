@@ -217,8 +217,53 @@ fn appendedItemModule(item: ast.Item) ?[]const u8 {
         // the only signal, and a synthesized cell sets it to the namespace its
         // accessors were minted under.
         .host_line => |h| h.module,
+        // Inline code is the same signal one item type over: a synthesized Zig
+        // unit (regex's automaton, field's dispatch table) whose call site is
+        // emitted inside the module struct. Zig gives a sibling struct no path
+        // to the entry struct, so an unrouted unit is emitted where nothing can
+        // reach it.
+        .inline_code => |ic| ic.module,
         else => null,
     };
+}
+
+/// Where an appended item was SYNTHESIZED — the file the transform ran over.
+/// A file path belongs to no naming domain, so it settles the question
+/// `appendedItemModule` cannot.
+fn appendedItemFile(item: ast.Item) ?[]const u8 {
+    return switch (item) {
+        .event_decl => |ed| ed.location.file,
+        .proc_decl => |pd| pd.location.file,
+        .flow => |f| f.location.file,
+        .host_line => |h| h.location.file,
+        .inline_code => |ic| ic.location.file,
+        else => null,
+    };
+}
+
+/// The module an appended item belongs inside, as a `logical_name` the rest of
+/// the program agrees on.
+///
+/// A transform names its home with `flow.module`, and that is the FILE-derived
+/// name — `lib` for `lib.k`. Every routing and resolution key in the program is
+/// the IMPORT-derived logical name — `app.lib`. In the entry file the two words
+/// coincide, which is why nothing diverged until a transform's subject lived in
+/// a module. So the name a transform hands us is a HINT: honour it when it
+/// names a module that exists, and otherwise ask the item which FILE it was
+/// synthesized at and match that against the module's canonical path.
+fn appendedItemHome(program: *const Program, item: ast.Item) ?[]const u8 {
+    if (appendedItemModule(item)) |named| {
+        for (program.items) |pit| {
+            if (pit == .module_decl and std.mem.eql(u8, pit.module_decl.logical_name, named)) return named;
+        }
+    }
+    const file = appendedItemFile(item) orelse return null;
+    if (file.len == 0) return null;
+    for (program.items) |pit| {
+        if (pit != .module_decl) continue;
+        if (std.mem.eql(u8, pit.module_decl.canonical_path, file)) return pit.module_decl.logical_name;
+    }
+    return null;
 }
 
 fn appendItems(allocator: std.mem.Allocator, program: *const Program, extra: []const ast.Item) !*const Program {
@@ -230,14 +275,9 @@ fn appendItems(allocator: std.mem.Allocator, program: *const Program, extra: []c
     var any_routed = false;
     for (extra) |ai| {
         var routed = false;
-        if (appendedItemModule(ai)) |mod| {
-            for (program.items) |pit| {
-                if (pit == .module_decl and std.mem.eql(u8, pit.module_decl.logical_name, mod)) {
-                    routed = true;
-                    any_routed = true;
-                    break;
-                }
-            }
+        if (appendedItemHome(program, ai) != null) {
+            routed = true;
+            any_routed = true;
         }
         if (!routed) try top_level.append(allocator, ai);
     }
@@ -250,7 +290,7 @@ fn appendItems(allocator: std.mem.Allocator, program: *const Program, extra: []c
 
         var extra_here: usize = 0;
         for (extra) |ai| {
-            const m = appendedItemModule(ai) orelse continue;
+            const m = appendedItemHome(program, ai) orelse continue;
             if (std.mem.eql(u8, m, mod)) extra_here += 1;
         }
         if (extra_here == 0) continue;
@@ -259,7 +299,7 @@ fn appendItems(allocator: std.mem.Allocator, program: *const Program, extra: []c
         @memcpy(merged[0..pit.module_decl.items.len], pit.module_decl.items);
         var w = pit.module_decl.items.len;
         for (extra) |ai| {
-            const m = appendedItemModule(ai) orelse continue;
+            const m = appendedItemHome(program, ai) orelse continue;
             if (std.mem.eql(u8, m, mod)) {
                 merged[w] = ai;
                 w += 1;

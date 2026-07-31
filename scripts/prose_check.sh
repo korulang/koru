@@ -162,35 +162,64 @@ for line in manifest.read_text().splitlines():
     else:
         print(f"MALFORMED-ROW\t{key}\t{val}")
 
-# The declaration form is `~[...comptime|transform...]pub tor NAME {`, with an
+# The declaration form is `~[...comptime|transform...]pub KIND NAME`, with an
 # optional space before `pub`. Commented-out declarations do not count.
-decl = re.compile(r'^~\[[^\]]*\bcomptime\|transform\b[^\]]*\]\s*pub\s+tor\s+([A-Za-z0-9_.-]+)')
+#
+# KIND is tor, event or proc: a wall that only reads `pub tor` sees exactly the
+# forms already written, so it can never notice the first transform someone
+# spells another way. Same reason the source glob is recursive and covers every
+# Koru file form — a transform under `koru_std/optimizations/` or in a `.k`
+# would otherwise ship with no row and no complaint.
+decl = re.compile(r'^~\[([^\]]*\bcomptime\|transform\b[^\]]*)\]\s*pub\s+(?:tor|event|proc)\s+([A-Za-z0-9_.-]+)')
+SRC = sorted(
+    p for pat in ('**/*.kz', '**/*.k', '**/*.kjs')
+    for p in (root / 'koru_std').glob(pat)
+)
 declared = set()
-for f in sorted((root / 'koru_std').glob('*.kz')):
+keyworded = set()
+for f in SRC:
     lib = f.stem
     for line in f.read_text(errors='replace').splitlines():
         m = decl.match(line.strip())
         if m:
-            declared.add(f"{lib}:{m.group(1)}")
+            declared.add(f"{lib}:{m.group(2)}")
+            if 'keyword' in m.group(1).split('|'):
+                keyworded.add(f"{lib}:{m.group(2)}")
 
 for t in sorted(declared - rows.keys()):
     print(f"UNDECLARED\t{t}")
 
 # A row naming a koru_std lib that no longer declares it is a stale row. Rows for
 # other libs (vaxis, sqlite3) are out of scope and skipped.
-std_libs = {f.stem for f in (root / 'koru_std').glob('*.kz')}
+std_libs = {f.stem for f in SRC}
 for t in sorted(rows.keys() - declared):
     if t.split(':', 1)[0] in std_libs:
         print(f"STALE\t{t}")
 
 # A mirror must name a test directory that exists, anywhere in the corpus — the
 # store pair points at 690_079, outside the cluster.
-dirs = {p.name for p in root.glob('tests/regression/**/') if p.is_dir()}
+dirs = {p.name: p for p in root.glob('tests/regression/**/') if p.is_dir()}
 for t, d in sorted(rows.items()):
     if d in REASONS:
         continue
     if d not in dirs:
         print(f"NO-SUCH-TEST\t{t}\t{d}")
+        continue
+    # …and it must USE the transform it claims to mirror. A row survives a test
+    # being rewritten to something else, and a row pointing at a test that no
+    # longer touches the transform is a mirror on paper only.
+    lib, name = t.split(':', 1)
+    body = ''
+    for src in sorted(dirs[d].glob('*')):
+        if src.suffix in ('.k', '.kz', '.kjs'):
+            body += src.read_text(errors='replace')
+    # A `keyword` transform is invoked bare — `bool(IsActive)`, `capture { … }`
+    # — so the qualified spelling is the wrong thing to look for there.
+    spellings = [f"std/{lib}:{name}"]
+    if t in keyworded:
+        spellings += [f"{name}(", f"{name} {{"]
+    if not any(s in body for s in spellings):
+        print(f"MIRROR-DOES-NOT-USE\t{t}\t{d}")
 PY
 )
 if [ -z "$D" ]; then
