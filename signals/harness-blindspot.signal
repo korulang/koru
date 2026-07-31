@@ -1,0 +1,26 @@
+name: harness-blindspot
+kind: inferred
+shape: categorical
+face: in
+membrane: false
+note: |
+  Fires when a marker/status type is recognized by one part of the test
+  harness (run_regression.sh / regression_lib.sh actually gating what runs, or
+  generate-test-index.js's status vocabulary) but invisible to the ONE script
+  that backs the published board (scripts/save-snapshot.js). A test opted out
+  by the recognized half silently rots into 'untested' in the published half
+  — no reason, still counted against the rate.
+
+  Caught this once for BENCHMARK (420_PERFORMANCE/BENCHMARK swallowed 14 real
+  MUST_RUN tests with zero record — 016_the_honest_board). The category-level
+  SKIP path had the identical shape (a synthesised 'Category skipped' string
+  instead of the authored reason in the SKIP file) even with no live instance
+  to expose it.
+
+  Value is the count of marker types with this recognized/unrecognized split
+  across the three status-computing scripts (save-snapshot.js,
+  generate-status.js's fallback, generate-test-index.js) at time of check.
+
+  Detector: for each of TODO/SKIP/BROKEN/BENCHMARK, confirm all three scripts
+  read it, propagate it category-wise the same way, and thread an authored
+  reason rather than a synthesized placeholder.
