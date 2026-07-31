@@ -7137,7 +7137,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
     //     projected fields per row, calls the transplanted body event — plus any
     //     enclosing captures (names already live in this Zig scope). ---
     var loop = std.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
-    const hdr = std.fmt.allocPrint(allocator, "{{\nvar __koru_si: usize = 0;\nwhile (__koru_si < __koru_store_{s}.len) : (__koru_si += 1) {{\n", .{store_name}) catch unreachable;
+    const hdr = std.fmt.allocPrint(allocator, "{{\nfor (0..__koru_store_{s}.len) |__koru_si| {{\n", .{store_name}) catch unreachable;
     loop.appendSlice(allocator, hdr) catch unreachable;
     for (proj_names, proj_cols) |pn, ci| {
         const bind = std.fmt.allocPrint(allocator, "const {s} = __koru_store_{s}.{s}[__koru_si];\n_ = &{s};\n", .{ pn, store_name, col_names[ci], pn }) catch unreachable;
