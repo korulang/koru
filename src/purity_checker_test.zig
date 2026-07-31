@@ -216,7 +216,7 @@ test "module-level pure proc is marked transitively pure" {
     ;
 
     var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
-    var parse_result = try parser.parse();
+    const parse_result = try parser.parse();
 
     // Wrap the parsed items in a module, the shape combineImports produces
     const items = try allocator.alloc(ast.Item, 1);

@@ -1,12 +1,12 @@
 {
-  "timestamp": "2026-07-31T19:44:04.597Z",
+  "timestamp": "2026-07-31T20:19:03.707Z",
   "summary": {
-    "passed": 305,
+    "passed": 308,
     "failed": 0,
     "skipped": 12,
     "leaked": 0,
     "compileErrors": 0,
-    "total": 317,
+    "total": 320,
     "suiteCount": 41,
     "status": "success"
   },
@@ -221,10 +221,10 @@
     },
     {
       "name": "purity_checker_tests",
-      "passed": 3,
+      "passed": 6,
       "failed": 0,
       "skipped": 0,
-      "total": 3,
+      "total": 6,
       "status": "success"
     },
     {
