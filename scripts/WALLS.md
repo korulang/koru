@@ -88,6 +88,7 @@ stopping on any unexplained flip.
 | --- | --- | --- | --- |
 | anchor:cfg-both-expectations | scripts/regression_lib.sh | has both expected.txt and expected_patterns.txt | exactly one output-expectation form per test |
 | anchor:cfg-expected-output-no-runner | scripts/regression_lib.sh | expected output but no MUST_RUN or EXPECT marker | an expectation implies running. MIRROR, unbuilt: MUST_RUN with no readable expectation passes on exit 0 — including tests carrying an `expected_output.txt`, a filename nothing reads; and `expected_error.txt` with no MUST_ERROR/EXPECT makes the rejection optional (acceptance also passes) |
+| anchor:cfg-comptime-requires-mustrun | scripts/regression_lib.sh | expected_comptime.txt but no MUST_RUN | the comptime channel's copy of cfg-expected-output-no-runner: the gate only runs under MUST_RUN, so the expectation would never be read |
 | anchor:cfg-must-error-and-must-run | scripts/regression_lib.sh | carries both MUST_ERROR and MUST_RUN | a test cannot demand both a clean run and a rejection |
 | anchor:cfg-must-error-unpinned | scripts/regression_lib.sh | MUST_ERROR test pins no diagnostic | a negative test names WHICH rejection it pins. MIRROR, unbuilt: an EXPECT line that is neither a known stage marker nor a recognized assertion is silently ignored — a misspelled assertion is silently no assertion |
 | anchor:backend-koru-diag-pin | scripts/regression_lib.sh | Backend error has no pin | the backend twin of no-error-pin |

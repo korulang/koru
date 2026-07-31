@@ -587,6 +587,20 @@ regression_run_one_test() {
         FAILED_TESTS="$FAILED_TESTS $TEST_NAME(config-error)"
         return 0
     fi
+    # The comptime channel's copy of the same rule: expected_comptime.txt is
+    # only ever read inside the MUST_RUN branch (the folded residue must still
+    # build and run — see check_expected_comptime). Without MUST_RUN the file is
+    # never opened, so the test would pass while its comptime expectation
+    # asserts nothing.
+    if [ -f "$test_dir/expected_comptime.txt" ] && [ ! -f "$test_dir/MUST_RUN" ]; then
+        echo -e "${RED}❌ Test has expected_comptime.txt but no MUST_RUN marker${NC}"
+        echo "  The comptime gate only runs for MUST_RUN tests, so this expectation is never read."
+        echo "  Add MUST_RUN, or remove the expected_comptime.txt"
+        rm -f "$test_dir/SUCCESS" "$test_dir/FAILURE"
+        echo "config-error" > "$test_dir/FAILURE"
+        FAILED_TESTS="$FAILED_TESTS $TEST_NAME(config-error)"
+        return 0
+    fi
     # A test cannot both demand a clean run and demand a rejection.
     if [ -f "$test_dir/MUST_ERROR" ] && [ -f "$test_dir/MUST_RUN" ]; then
         echo -e "${RED}❌ Test carries both MUST_ERROR and MUST_RUN${NC}"
