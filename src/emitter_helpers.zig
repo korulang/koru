@@ -5140,7 +5140,7 @@ pub fn emitFlow(
                 ctx.label_result_var = null;
 
                 // Emit all continuations as a regular switch (no loop)
-                try emitContinuationList(emitter, ctx, conts, first_result, &result_counter, false, &flow.inv().path, false);
+                try emitContinuationList(emitter, ctx, conts, first_result, &result_counter, false, &flow.inv().path, true);
             } else {
                 // ONLY emit looping branches inside the while loop
                 // Build list of looping continuations
@@ -5204,7 +5204,7 @@ pub fn emitFlow(
             }
         } else {
             // No pre_label - emit all continuations normally
-            try emitContinuationList(emitter, ctx, conts, first_result, &result_counter, false, &flow.inv().path, false);
+            try emitContinuationList(emitter, ctx, conts, first_result, &result_counter, false, &flow.inv().path, true);
         }
     } else {
         // Zero continuations — use comptime_result_binding if set (for program return)
@@ -8056,13 +8056,25 @@ fn emitContinuationList(
     result_counter: *usize,
     is_partial_switch: bool,
     callee_path: ?*const ast.DottedPath,
-    /// True when `continuations_in` is one side of the pre-label LOOP SPLIT
-    /// (looping arms inside the while / non-looping arms after it). Each side
-    /// arrives as a single-continuation list even though the flow handles every
-    /// branch, so the sparse-dispatch tag guard below must not fire: the while
-    /// condition already discriminates, and for a `-> T` subflow the post-loop
-    /// terminal read must stay unconditional or Zig sees an implicit return.
-    partitioned_dispatch: bool,
+    /// True when the sparse-dispatch tag guard below must NOT fire. Two cases,
+    /// both FLOW-HEAD emission (every emitFlow site passes true):
+    ///
+    /// 1. The pre-label LOOP SPLIT: looping arms inside the while / non-looping
+    ///    arms after it each arrive as a single-continuation list even though
+    ///    the flow handles every branch. The while condition already
+    ///    discriminates, and for a `-> T` subflow the post-loop terminal read
+    ///    must stay unconditional or Zig sees an implicit return
+    ///    (330_073/074/083, 810_041-family).
+    /// 2. Plain head dispatch: heads have always emitted the unguarded union
+    ///    read, and the test framework's unexpected-branch wall is BUILT on the
+    ///    panic that read produces — a mock returning an unhandled branch must
+    ///    fail the test, not no-op (395_010). Guarding a head converts that
+    ///    failure into silence.
+    ///
+    /// Nested chain sites pass false and keep the guard: sparse dispatch there
+    /// is a normal program shape and the unguarded read is a runtime panic on
+    /// the common path (690_085/095).
+    suppress_tag_guard: bool,
 ) anyerror!void {
     const callee_bare_return = blk: {
         if (callee_path) |path| {
@@ -8150,7 +8162,7 @@ fn emitContinuationList(
         // An unhandled sibling outcome is a NO-OP at a dispatch site (690_085),
         // so the guard needs no `else`.
         const needs_tag_guard = !callee_bare_return and
-            !partitioned_dispatch and
+            !suppress_tag_guard and
             callee_terminals > 1 and
             !cont.is_catchall and
             cont.branch.len > 0;
