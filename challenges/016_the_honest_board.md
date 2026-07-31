@@ -73,6 +73,36 @@ configuration before diagnosing fourteen tests individually.
 and the perf boards depend on this category meaning something. Right now it means
 nothing, silently.
 
+## ⭐ WHAT THE FOURTEEN TURNED OUT TO BE — closed 2026-07-31
+
+One cause, not fourteen. `400_RUNTIME_FEATURES/420_PERFORMANCE/BENCHMARK` was a
+**category-level** marker: `regression_lib.sh` honours it and skips every test
+beneath it before `koruc` is ever invoked, while `save-snapshot.js` had **no
+recognition of `BENCHMARK` at all** and defaulted them to `untested`. Silent
+since the marker landed in January, and in the published denominator the whole
+time.
+
+The marker was also over-broad — only 4 of the 25 entries in that directory are
+real benchmark drivers, and those carry `input_taps*.kz` rather than a canonical
+`input.kz`, so the corpus never counted them anyway. The rest are ordinary
+feature tests: generic ring types, taps, when-at-callsite, array-by-reference.
+
+Verdicts now: **2 pass, 12 fail loudly.** `untested` is 0 board-wide.
+
+⭐ **What the twelve reds actually are, and it is not what it looks like.** Eight
+fail on **pre-bare-return syntax** — *"single continuation branch carrying a
+payload is a one-variant tag union — declare the single output as a bare return
+instead: `-> <type>`"*. Three are a backend codegen mismatch on `.result`/
+`.output` field access against a value a bare-return tor now hands back
+unwrapped. One fails its `post.sh`.
+
+So the concurrency corpus is **stale, not broken**. The language moved under it
+during the bare-return migration and nobody migrated it, because the gate meant
+nobody could see it. That is migration debt with a known cause and a diagnostic
+that names the fix — a cheap, mechanical job, and explicitly **not** a
+concurrency investigation. Anyone reading "ring tests are red" as "threading is
+broken" has the wrong end of it.
+
 ## The 44 identical todos
 
 ```

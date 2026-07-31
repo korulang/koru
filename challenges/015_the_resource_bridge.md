@@ -1,7 +1,7 @@
 ---
 challenge: resource-bridge
 kind: frame
-status: standing
+status: held
 yields: an honest account of what cross-session resource safety already does, and the smallest real thing built on top of it
 family: runtime
 ---
@@ -51,6 +51,30 @@ stating that the test fails at codegen.*
 archaeology: did cross-session discharge ever run, or has it been
 green-and-broken since `d7e2eae9` ("440_RESOURCE_BRIDGE goes green") landed on
 2026-07-25, a claim the board had no way to check?*
+
+---
+
+## ⛔ HELD (Lars, 2026-07-31) — do not commission this frame yet
+
+*"Let's just WAIT with the bridge. Anything to get us closer to it."*
+
+**Held, not parked.** The difference matters: work that moves toward it is
+wanted, the frame itself is not to be fired. Two things already in flight move
+toward it and should be understood as bridge work under another name:
+
+- **`013` the store↔kernel seam** — the store is where a container owning
+  obligations and discharging them by discovered type already works
+  (`690_056`). The bridge is that, one lifetime domain up.
+- **D7, "what names a row?"** — identical to the bridge's "what names a handle
+  across turns." Finishing D7 hands the bridge its identity model rather than
+  requiring a second one. Blocked on one spelling: how a key gets MARKED.
+
+So the honest order is: **identity → real discharge → shell → wire**, and the
+first two are reachable through the store without opening this frame at all.
+
+⛔ Do not fire this as a commission. Do not design the shell. Do not touch
+`std/bridge`. Two rulings are outstanding and both are Lars's — bridge-minted
+versus type-minted hash, and whether the shell must be a *system* shell.
 
 ---
 
