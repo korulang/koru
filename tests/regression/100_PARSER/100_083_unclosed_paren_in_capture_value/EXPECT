@@ -1,1 +1,2 @@
-FRONTEND_COMPILE_ERROR
+CONTAINS error[KORU164]
+CONTAINS unterminated struct literal

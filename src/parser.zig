@@ -375,6 +375,32 @@ fn splitTrailingReturnArrow(self: *Parser, s: []const u8, decl_line: usize) !Ret
 
     const head = lexer.trim(s[0..arrow_at.?]);
     var rt = lexer.trim(s[arrow_at.? + 2 ..]);
+    // A trailing line comment is not part of the type. Branch payloads have
+    // always dropped theirs; the bare-return suffix did not, so
+    // `-> *Data<gc>  // GC-managed` carried the prose into the emitted Zig as
+    // `pub const Output = *Data  // GC-managed;` (524). Scan at depth 0 and
+    // outside strings so a `//` inside `{ ... }` or a literal survives.
+    {
+        var cdepth: i32 = 0;
+        var cin_str = false;
+        var k: usize = 0;
+        while (k + 1 < rt.len) : (k += 1) {
+            const c = rt[k];
+            if (c == '"' and (k == 0 or rt[k - 1] != '\\')) {
+                cin_str = !cin_str;
+                continue;
+            }
+            if (cin_str) continue;
+            if (c == '(' or c == '{' or c == '[' or c == '<') {
+                cdepth += 1;
+            } else if (c == ')' or c == '}' or c == ']' or c == '>') {
+                cdepth -= 1;
+            } else if (cdepth == 0 and c == '/' and rt[k + 1] == '/') {
+                rt = lexer.trim(rt[0..k]);
+                break;
+            }
+        }
+    }
     var return_phantom: ?[]const u8 = null;
     // Capture a trailing `<phantom>` on the return type, mirroring the
     // effect-branch resume-type phantom capture at the `| !` parser.

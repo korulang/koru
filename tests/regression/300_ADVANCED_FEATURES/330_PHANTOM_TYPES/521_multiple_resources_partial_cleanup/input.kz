@@ -1,3 +1,5 @@
+// PINS: settling ONE of two obligations issued by one exit is not settling
+// both. `open-two` hands back `file1` and `file2`, each owing <opened!>;
+// closing `file1` alone must be refused, naming the field still owed.
 ~import app/fs
-~app/fs:open-two(path1: "test1.txt", path2: "test2.txt")
-| opened f |> app/fs:close(file: f.file1)  // Close first file only
+~app/fs:open-two(path1: "test1.txt", path2: "test2.txt"): f |> app/fs:close(file: f.file1)

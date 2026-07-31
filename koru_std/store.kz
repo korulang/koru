@@ -1255,26 +1255,35 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             // One requirement, two reasons — and the reason is the whole
             // difference between "your library is missing something" and "pick
             // one", so the sentence has to say which.
+            // ONE diagnostic, not two (690_104). The abort node and the
+            // sentence the author reads are the same refusal, so they are the
+            // same call — and the sentence names the type the way the author
+            // wrote it, composed with the state a discharger would consume
+            // (690_105: `*mod:Type<!state>`), not the two halves apart.
             if (ambig_count == 0) {
-                reporter.addErrorAtLocationWithHint(
+                return .{ .transformed = .{ .replacement = ast.refusalWithHint(
+                    allocator,
+                    reporter,
                     .KORU160,
                     flow.location,
-                    "store '{s}': column *{s}:{s} cannot be auto-discharged — every exit from <{s}!> in {s} returns a value or carries branches",
-                    .{ store_name, ambig_module, ambig_type, ambig_state, ambig_module },
+                    flow.module,
+                    "std/store:new({s}): no tor accepts *{s}:{s}<!{s}>, so the column cannot be auto-discharged — every exit from <{s}!> in {s} returns a value or carries branches",
+                    .{ store_name, ambig_module, ambig_type, ambig_state, ambig_state, ambig_module },
                     "a store disposes elements unattended at teardown, where there is nobody to take a return value or answer a branch — so drain it by hand: bolt `! discharge item |> {s}:<exit>(item.<field>)` onto the declaration. The arm is ordinary Koru, so pipe whatever sequence the type needs and its own obligations settle normally",
                     .{ambig_module},
-                ) catch {};
-            } else {
-                reporter.addErrorAtLocationWithHint(
-                    .KORU160,
-                    flow.location,
-                    "store '{s}': column *{s}:{s} has {d} ways to discharge <{s}!> and the store cannot pick one for you",
-                    .{ store_name, ambig_module, ambig_type, ambig_count, ambig_state },
-                    "say which at the store, where it is static for the program's lifetime: bolt `! discharge item |> {s}:<discharger>(item.<field>)` onto the declaration and teardown fires it per still-live element",
-                    .{ambig_module},
-                ) catch {};
+                ) } };
             }
-            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:new({s}): column *{s}:{s} has {d} dischargers for <!{s}> (ambiguous) - the store cannot pick one, so it must be DRAINED: bolt a `! discharge item |> ...` handler onto the store declaration to discharge each still-live element at teardown", .{ store_name, ambig_module, ambig_type, ambig_count, ambig_state }) } };
+            return .{ .transformed = .{ .replacement = ast.refusalWithHint(
+                allocator,
+                reporter,
+                .KORU160,
+                flow.location,
+                flow.module,
+                "std/store:new({s}): column *{s}:{s}<!{s}> has {d} ways to discharge and the store cannot pick one for you",
+                .{ store_name, ambig_module, ambig_type, ambig_state, ambig_count },
+                "say which at the store, where it is static for the program's lifetime: bolt `! discharge item |> {s}:<discharger>(item.<field>)` onto the declaration and teardown fires it per still-live element",
+                .{ambig_module},
+            ) } };
         }
 
         // ---- collect this store's watch arms (field-granular, plural) ----

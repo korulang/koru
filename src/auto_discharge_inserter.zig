@@ -1118,7 +1118,7 @@ pub const AutoDischargeInserter = struct {
                             defer self.allocator.free(disposals);
 
                             const disposal = selectDisposal(disposals) orelse {
-                                const display_name = formatBindingForError(binding_name, info.field_name);
+                                const display_name = formatBindingForError(binding_name, info.field_name, info.base_type);
                                 const display_state = formatStateForError(info.phantom_state);
                                 if (disposals.len == 0) {
                                     // Check for multi-branch events that could dispose this
@@ -1706,7 +1706,7 @@ pub const AutoDischargeInserter = struct {
                             defer self.allocator.free(disposals);
 
                             const disposal = selectDisposal(disposals) orelse {
-                                const display_name = formatBindingForError(binding_name, info.field_name);
+                                const display_name = formatBindingForError(binding_name, info.field_name, info.base_type);
                                 const display_state = formatStateForError(info.phantom_state);
                                 if (disposals.len == 0) {
                                     // Check for multi-branch events that could dispose this
@@ -2064,7 +2064,7 @@ pub const AutoDischargeInserter = struct {
                 // Use selectDisposal to handle [!] default annotation
                 const disposal = selectDisposal(disposals) orelse {
                     // Ambiguous or no disposal found
-                    const display_name = formatBindingForError(binding_path, info.field_name);
+                    const display_name = formatBindingForError(binding_path, info.field_name, info.base_type);
                     const display_state = formatStateForError(info.phantom_state);
                     if (disposals.len == 0) {
                         // Check for multi-branch events that could dispose this
@@ -2332,7 +2332,7 @@ pub const AutoDischargeInserter = struct {
             // Use selectDisposal to handle [!] default annotation
             const disposal = selectDisposal(disposals) orelse {
                 // Ambiguous or no disposal found
-                const display_name = formatBindingForError(binding_path, info.field_name);
+                const display_name = formatBindingForError(binding_path, info.field_name, info.base_type);
                 const display_state = formatStateForError(info.phantom_state);
                 if (disposals.len == 0) {
                     // No auto-dischargeable events - check if there are multi-branch events that accept this state
@@ -3642,7 +3642,12 @@ pub const AutoDischargeInserter = struct {
     /// Format a binding name for display in error messages.
     /// Converts synthetic names like "_auto_0.conn" to cleaner forms like "conn"
     /// and extracts just the field name when available.
-    fn formatBindingForError(binding_name: []const u8, field_name: []const u8) []const u8 {
+    ///
+    /// `_auto_N` is a name the compiler minted for a value the author
+    /// discarded; quoting it back asks them to look for something they never
+    /// wrote (690_108). When nothing authored survives, the resource's TYPE is
+    /// the thing they DID write, so that is what the sentence names.
+    fn formatBindingForError(binding_name: []const u8, field_name: []const u8, base_type: []const u8) []const u8 {
         // For identity branches, field_name is "__type_ref" - use binding_name instead
         if (field_name.len > 0 and !std.mem.eql(u8, field_name, "__type_ref")) {
             return field_name;
@@ -3652,6 +3657,7 @@ pub const AutoDischargeInserter = struct {
             if (std.mem.indexOf(u8, binding_name, ".")) |dot_idx| {
                 return binding_name[dot_idx + 1 ..];
             }
+            if (base_type.len > 0) return base_type;
         }
         // Otherwise use the binding name as-is
         return binding_name;

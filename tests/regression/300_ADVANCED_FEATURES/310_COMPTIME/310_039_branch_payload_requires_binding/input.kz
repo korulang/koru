@@ -1,24 +1,23 @@
-// Test: Branch with payload requires binding or explicit discard
+// PINS: a branch that carries a payload must be bound or explicitly discarded.
 //
-// When a branch has a payload (e.g., `result { value: i32 }`), the branch
-// handler MUST either bind it or explicitly discard with `_`:
+//   | result r |>    binds the payload to 'r'
+//   | result _ |>    explicitly discards it
+//   | result |>      names the branch and drops the payload on the floor
 //
-//   | result r |>    // LEGAL - binds payload to 'r'
-//   | result _ |>    // LEGAL - explicitly discards payload
-//   | result |>      // ILLEGAL - payload exists but no binding
+// The third form is the one refused, and the refusal must name the branch.
 //
-// This test verifies the compiler catches the illegal case.
-
+// Two branches, not one: a lone payload-carrying branch is refused at the
+// DECLARATION by PARSE003 ("declare the single output as a bare return
+// instead"), which masks this case entirely at one branch.
 const std = @import("std");
+~import std/io
 
-~tor compute { x: i32 } -> i32
+~tor compute { x: i32 }
+| result i32
+| skipped
 
-~proc compute|zig {
-    return x * 2;
-}
+~compute => result x * 2
 
-// BUG: This should be a compile error!
-// The `result` branch has payload `{ value: i32 }` but no binding.
-// Correct syntax would be: `| result _ |>` or `| result r |>` (if `r` is used)
 ~compute(x: 42)
 | result |> std/io:print.ln("done")
+| skipped |> _

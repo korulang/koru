@@ -686,6 +686,29 @@ pub fn refusal(
     return Item{ .inline_code = InlineCode{ .code = msg, .location = loc, .module = module } };
 }
 
+/// `refusal` with the teaching half attached. A transform that refuses AND has
+/// somewhere to send the author had to make two calls before this existed —
+/// one to `addErrorAtLocationWithHint` for the sentence, one to `refusal` for
+/// the abort node — and the author read the same fault twice, in two wordings
+/// that could drift apart (690_104: "cannot be auto-discharged" beside "has 0
+/// dischargers (ambiguous)").
+pub fn refusalWithHint(
+    alloc: std.mem.Allocator,
+    rep: anytype,
+    code: errors.ErrorCode,
+    loc: errors.SourceLocation,
+    module: []const u8,
+    comptime fmt: []const u8,
+    args: anytype,
+    comptime hint_fmt: []const u8,
+    hint_args: anytype,
+) Item {
+    rep.addErrorAtLocationWithHint(code, loc, fmt, args, hint_fmt, hint_args) catch {};
+    const inner = std.fmt.allocPrint(alloc, fmt, args) catch unreachable;
+    const msg = std.fmt.allocPrint(alloc, "comptime {{ @compileError(\"{s}\"); }}", .{inner}) catch unreachable;
+    return Item{ .inline_code = InlineCode{ .code = msg, .location = loc, .module = module } };
+}
+
 /// Which byte positions of `text` are EXPRESSION context rather than literal
 /// prose. Inside a string, only a `{{ … }}` interpolation is an expression.
 ///

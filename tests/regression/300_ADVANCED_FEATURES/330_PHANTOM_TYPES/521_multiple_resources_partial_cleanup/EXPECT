@@ -1,0 +1,3 @@
+CONTAINS error[KORU030]
+CONTAINS file2
+CONTAINS <opened!> was not discharged
