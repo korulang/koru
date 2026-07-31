@@ -1354,8 +1354,7 @@ fn __printInterpolateJs(
         "} else { _v = @intCast(__kz_v); } " ++
         "if (_v == 0) { _buf[0] = '0'; _n = 1; } else { " ++
         "while (_v > 0) : (_n += 1) { _buf[_n] = @intCast('0' + _v % 10); _v /= 10; } " ++
-        "var _lo: usize = 0; var _hi = _n - 1; " ++
-        "while (_lo < _hi) { const _t = _buf[_lo]; _buf[_lo] = _buf[_hi]; _buf[_hi] = _t; _lo += 1; _hi -= 1; } " ++
+        "for (0.._n / 2) |_i| { const _t = _buf[_i]; _buf[_i] = _buf[_n - 1 - _i]; _buf[_n - 1 - _i] = _t; } " ++
         "} __kz_w(_buf[0.._n]); } }; ";
 
     const content = source.text;
