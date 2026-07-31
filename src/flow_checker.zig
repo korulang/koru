@@ -83,6 +83,7 @@ pub const FlowChecker = struct {
                 .immediate_impl => |*ii| {
                     if (self.mode == .frontend) {
                         try self.checkBranchConstructorPurity(&ii.value, ii.location);
+                        try self.checkImplMatchesDecl(ii);
                     }
                 },
                 .module_decl => |*module| {
@@ -114,6 +115,7 @@ pub const FlowChecker = struct {
                             .immediate_impl => |*ii| {
                                 if (self.mode == .frontend) {
                                     try self.checkBranchConstructorPurity(&ii.value, ii.location);
+                                    try self.checkImplMatchesDecl(ii);
                                 }
                             },
                             else => {},
@@ -362,6 +364,89 @@ pub const FlowChecker = struct {
             // expression text.
             else => {},
         }
+    }
+
+    /// KORU021: the impl FORM must be the form the declaration declared, and a
+    /// branch it constructs must be one the declaration declares.
+    ///
+    /// `-> expr` (bare return) pairs with `EventDecl.return_type`;
+    /// `=> <branch> <value>` pairs with `EventDecl.branches`. Get it wrong and
+    /// the frontend used to accept both halves and hand the disagreement to
+    /// Zig, which reports it against `output_emitted.zig` — a file the author
+    /// never opened — in Zig's vocabulary about a union Zig synthesised
+    /// (510_112 / 510_113 / 510_114 carry the three raw messages verbatim).
+    ///
+    /// Every fact needed is present at parse time and in ONE file: the AST
+    /// holds `is_bare_return` and `branch_name` on the impl, and `branches` /
+    /// `return_type` on the decl. No flow analysis, no inference, no
+    /// cross-module reach — so when `findEventDecl` cannot see the decl
+    /// (one-file visibility) this says nothing at all rather than guessing.
+    fn checkImplMatchesDecl(self: *FlowChecker, ii: *const ast.ImmediateImpl) anyerror!void {
+        const decl = self.findEventDecl(&ii.event_path) orelse return;
+        // A `~[prototype]` module opts out of branch-shape strictness the same
+        // way it opts out of terminal coverage.
+        if (self.prototype_mode) return;
+
+        const name = if (ii.event_path.segments.len > 0)
+            ii.event_path.segments[ii.event_path.segments.len - 1]
+        else
+            "?";
+
+        var names_buf: [512]u8 = undefined;
+
+        if (ii.value.is_bare_return) {
+            if (decl.branches.len > 0) {
+                try self.reporter.addErrorAtLocationWithHint(
+                    .KORU021,
+                    ii.location,
+                    "tor '{s}' declares branches, so its implementation constructs one — a bare return (`->`) produces no branch tag",
+                    .{name},
+                    "implement it with the branch constructor instead: `~{s} => <branch> <value>`, naming one of: {s}",
+                    .{ name, branchNameList(&names_buf, decl) },
+                );
+            }
+            return;
+        }
+
+        // Branch-constructor form (`=> <branch> <value>`).
+        if (ii.value.branch_name.len == 0) return;
+        if (decl.branches.len == 0) {
+            try self.reporter.addErrorAtLocationWithHint(
+                .KORU021,
+                ii.location,
+                "tor '{s}' declares no branches, so it has no branch '{s}' to construct",
+                .{ name, ii.value.branch_name },
+                "it produces a bare return, so implement it that way: `~{s} -> <value>`",
+                .{name},
+            );
+            return;
+        }
+        for (decl.branches) |b| {
+            if (std.mem.eql(u8, b.name, ii.value.branch_name)) return;
+            if (std.mem.eql(u8, b.name, "*")) return;
+        }
+        try self.reporter.addErrorAtLocationWithHint(
+            .KORU021,
+            ii.location,
+            "tor '{s}' has no branch '{s}'",
+            .{ name, ii.value.branch_name },
+            "declared branches are: {s}",
+            .{branchNameList(&names_buf, decl)},
+        );
+    }
+
+    /// Comma-joined declared branch names, into a caller-owned stack buffer —
+    /// this runs only on the refusal path, where an allocation would have to be
+    /// freed by a caller that is about to return an error.
+    fn branchNameList(buf: []u8, decl: *const ast.EventDecl) []const u8 {
+        var fbs = std.io.fixedBufferStream(buf);
+        const w = fbs.writer();
+        for (decl.branches, 0..) |b, i| {
+            if (i > 0) w.writeAll(", ") catch break;
+            w.writeAll(b.name) catch break;
+        }
+        if (fbs.getWritten().len == 0) return "(none)";
+        return fbs.getWritten();
     }
 
     /// Shared by flow-nested branch constructors AND `immediate_impl` items
