@@ -117,9 +117,8 @@ pub const Grid_i64 = struct {
 
 ~proc count-zeros|zig {
     var n: i64 = 0;
-    var i: usize = lo;
-    while (i < hi) : (i += 1) {
-        if (g.data[i] == 0) n += 1;
+    for (g.data[lo..hi]) |c| {
+        if (c == 0) n += 1;
     }
     return n;
 }

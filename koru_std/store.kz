@@ -3015,9 +3015,8 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             const sweep_body = if (qs.is_preorder) std.fmt.allocPrint(allocator,
                 \\var __koru_stack: [{d}]usize = undefined;
                 \\var __koru_sp: usize = 0;
-                \\var __koru_i: usize = __koru_store_{s}.len;
-                \\while (__koru_i > 0) {{
-                \\    __koru_i -= 1;
+                \\for (0..__koru_store_{s}.len) |__koru_ri| {{
+                \\    const __koru_i = __koru_store_{s}.len - 1 - __koru_ri;
                 \\    if (__koru_store_{s}.parent[__koru_i] == -1) {{
                 \\        __koru_stack[__koru_sp] = __koru_i;
                 \\        __koru_sp += 1;
@@ -3027,9 +3026,8 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 \\    __koru_sp -= 1;
                 \\    const __koru_cur = __koru_stack[__koru_sp];
                 \\    main_module.{s}_event.handler(.{{ .row = @as(i64, @intCast(__koru_cur)) }});
-                \\    var __koru_j: usize = __koru_store_{s}.len;
-                \\    while (__koru_j > 0) {{
-                \\        __koru_j -= 1;
+                \\    for (0..__koru_store_{s}.len) |__koru_rj| {{
+                \\        const __koru_j = __koru_store_{s}.len - 1 - __koru_rj;
                 \\        if (__koru_store_{s}.parent[__koru_j] == __koru_store_{s}.__koru_handle_of(__koru_cur)) {{
                 \\            __koru_stack[__koru_sp] = __koru_j;
                 \\            __koru_sp += 1;
@@ -3037,7 +3035,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 \\    }}
                 \\}}
                 \\return;
-            , .{ CAP, store_name, store_name, qrow_name, store_name, store_name, store_name }) catch unreachable else std.fmt.allocPrint(allocator,
+            , .{ CAP, store_name, store_name, store_name, qrow_name, store_name, store_name, store_name, store_name }) catch unreachable else std.fmt.allocPrint(allocator,
                 \\var __koru_i: usize = 0;
                 \\while (__koru_i < __koru_store_{s}.len) {{
                 \\    const __koru_len_before = __koru_store_{s}.len;
@@ -7137,7 +7135,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
     //     projected fields per row, calls the transplanted body event — plus any
     //     enclosing captures (names already live in this Zig scope). ---
     var loop = std.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
-    const hdr = std.fmt.allocPrint(allocator, "{{\nvar __koru_si: usize = 0;\nwhile (__koru_si < __koru_store_{s}.len) : (__koru_si += 1) {{\n", .{store_name}) catch unreachable;
+    const hdr = std.fmt.allocPrint(allocator, "{{\nfor (0..__koru_store_{s}.len) |__koru_si| {{\n", .{store_name}) catch unreachable;
     loop.appendSlice(allocator, hdr) catch unreachable;
     for (proj_names, proj_cols) |pn, ci| {
         const bind = std.fmt.allocPrint(allocator, "const {s} = __koru_store_{s}.{s}[__koru_si];\n_ = &{s};\n", .{ pn, store_name, col_names[ci], pn }) catch unreachable;
