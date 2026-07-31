@@ -248,25 +248,29 @@ ruling ("capture may BE the app store").
   declaration only. (ii) EXHAUSTION IS A BRANCH: fixed-mode insert grows
   a `| full` sibling (or panic-branch `| ?!full`, optional-but-loud) —
   handled or explicitly declined, never a hidden grow, never a bare
-  crash. (iii) THE MEMORY CONTRACT is ruled, the mechanism is the
-  planner's: dense iteration, O(1) insert/take, handles stable across
-  other rows' removal (sparse-set vs slot-freelist = planner per
-  workload; swap-remove legal because positional index is not identity).
-  (iv) HANDLE-SAFETY FLOOR: generational check per access (one compare)
-  as the safe default; phantom-proven elision where the checker
-  establishes no-stale — THESIS, same floor-then-prove-away arc as the
-  concurrency lock and escape-driven stack alloc. Owned (`take`) handles
-  are fully compiler-tracked; the generation guard covers plain handles
-  that outlive another's take. REFINEMENT (adversary 1b, adopted): the
-  true silent-wrong-answer risk is the ELISION thesis (a wrong no-stale
-  proof skips the generation compare → silently returns another row's
-  data), not the loud panic path; the panic path still needs its
-  failure-mode spelling (`| stale` branch vs `?!`-panic). GAUNTLET 2:
-  handle stability across GROWTH (realloc moves SoA columns) is unruled,
-  and growth is unclassified w.r.t. the atomicity unit — the web case's
-  escape valve is named but not designed. CONVERGENCE NOTE:
-  declared-capacity SoA store + delta maintenance = the std/field
-  "castles" dense-buffer initiative growing its reactive half.
+  crash. (iii) THE MEMORY CONTRACT — **BUILT 2026-07-31, the tests are
+  the ruling's normative text; this entry only routes to them.** The
+  mechanism chosen (planner's call): a per-store SPARSE SET — a
+  program-visible row value is slot|generation packed in the existing
+  i64, indirecting into dense SoA columns that keep swap-remove and
+  0..len iteration. Pinned by: `690_092` (a stored handle survives
+  another row's removal — the write lands on the relocated row),
+  `690_117` (the self-FK follow after a swap), `695_004` (tree parent
+  handles across a take), `690_031` (swap-remove revisit mid-sweep).
+  (iv) HANDLE-SAFETY FLOOR — **BUILT: a stale handle access TRAPS**
+  (Lars 2026-07-31, explicitly provisional — "try with trap and see if
+  it holds"). Pinned by `690_115` (write half) and `690_116` (read
+  half); `take`'s not-a-live-row family instead answers its existing
+  `| empty` arm, `690_070`. That disposes of the old `| stale` vs
+  `?!`-panic spelling question unless the trap fails a test. STILL
+  OPEN, and prose because no test can yet assert them: phantom-proven
+  ELISION of the compare (the adversary-1b silent-wrong-answer risk
+  lives exactly there — a wrong no-stale proof reads another row's
+  data); GAUNTLET 2: handle stability across GROWTH (realloc moves SoA
+  columns), growth unclassified w.r.t. the atomicity unit.
+  CONVERGENCE NOTE: declared-capacity SoA store + delta maintenance =
+  the std/field "castles" dense-buffer initiative growing its reactive
+  half.
 
 ## Adversary verdicts (2026-07-04 — three sealed reviews, captain-verified)
 
