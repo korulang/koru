@@ -284,10 +284,16 @@
         }
     }.check;
 
-    // Scan program items for additional project dependencies
-    for (program.items) |item| {
-        if (item == .flow) {
-            const flow = item.flow;
+    // Scan for project dependencies — including those declared by IMPORTED
+    // LIBRARIES. `program.items` is one level deep, so walking it directly sees
+    // only the entry file: `koru/curl` declaring `requires.system` in its own
+    // index.kz was invisible, and `deps` reported one dependency for a program
+    // that links libcurl. `ast.allFlows` descends through `.module_decl`.
+    const ast_dep = @import("ast");
+    const all_flows = ast_dep.allFlows(allocator, program);
+    defer allocator.free(all_flows);
+    for (all_flows) |flow| {
+        {
             if (flow.inv().path.module_qualifier) |mq| {
                 if (std.mem.eql(u8, mq, "std.deps") and
                     flow.inv().path.segments.len == 2 and
@@ -344,6 +350,23 @@
                 }
             }
         }
+    }
+
+    // Dedupe by name, first occurrence wins. Two libraries may each require
+    // curl, and now that the walk reaches imported modules that is the common
+    // case rather than the exception — a project should be told about curl once.
+    // It also absorbs `koru_std/compiler.kz`'s own `zig` declaration, which the
+    // recursive walk now reaches and which the seeded entry above already states.
+    {
+        var deduped = std.ArrayListUnmanaged(SystemDep){};
+        outer: for (deps_list.items) |d| {
+            for (deduped.items) |seen| {
+                if (std.mem.eql(u8, seen.name, d.name)) continue :outer;
+            }
+            deduped.append(allocator, d) catch break;
+        }
+        deps_list.deinit(allocator);
+        deps_list = deduped;
     }
 
     if (deps_list.items.len == 0 and zig_deps_list.items.len == 0) {

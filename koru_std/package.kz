@@ -51,9 +51,14 @@
     var npm_packages = std.ArrayListUnmanaged([]const u8){};
     defer npm_packages.deinit(allocator);
 
-    for (program.items) |item| {
-        if (item == .flow) {
-            const flow = item.flow;
+    // Imported libraries declare their own npm packages, so this must reach
+    // through `.module_decl` — `program.items` alone is only the entry file.
+    // Same defect `std/deps` had: a library's declaration was never collected.
+    const ast_pkg = @import("ast");
+    const pkg_flows = ast_pkg.allFlows(allocator, program);
+    defer allocator.free(pkg_flows);
+    for (pkg_flows) |flow| {
+        {
             if (flow.inv().path.module_qualifier) |mq| {
                 // Check for std.package:requires.npm
                 if (std.mem.eql(u8, mq, "std.package") and

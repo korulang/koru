@@ -1,0 +1,28 @@
+// Pins that `deps` reports system dependencies declared by IMPORTED LIBRARIES,
+// not only by the entry file.
+//
+// `program.items` is one level deep: an imported module arrives as a single
+// `.module_decl` carrying its own items. A scan that walks `program.items` and
+// matches `.flow` sees the entry file and nothing else — so a program linking a
+// library reported none of that library's requirements.
+//
+// The entry file declares one dependency and the imported module declares
+// another; both must be reported.
+//
+// Run: koruc input.kz deps
+
+~import std/deps
+~import app/mylib
+
+~std/deps:requires.system {
+    "name": "libfromentry",
+    "check": "nonexistent-check-command2 --version",
+    "brew": "libfromentry-brew"
+}
+
+~tor main {}
+
+~proc main|zig {
+}
+
+~main()
