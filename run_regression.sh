@@ -63,6 +63,19 @@ run_coherence_watchers() {
         FAILED_TESTS="$FAILED_TESTS prose-check"
         echo -e "${RED}❌ prose-check fired — see the failing check above${NC}"
     fi
+
+    # Wall census: the harness's guard surface must match its register
+    # (scripts/WALLS.md). Fires when a guard is added without a row
+    # (UNREGISTERED), a row's guard leaves the harness (STALE), or an anchored
+    # wall's identifying text is gone (MISSING-ANCHOR). A forgotten wall gets
+    # measured against with the wrong predicate, rebuilt, or bypassed — this
+    # keeps the inventory derived instead of remembered.
+    echo ""
+    echo -e "${BLUE}Running wall-check (guard surface vs scripts/WALLS.md)...${NC}"
+    if ! bash "$SCRIPT_DIR/scripts/wall_check.sh"; then
+        FAILED_TESTS="$FAILED_TESTS wall-check"
+        echo -e "${RED}❌ wall-check fired — the guard surface drifted from its register${NC}"
+    fi
 }
 
 # Initialize counters
