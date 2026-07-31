@@ -7733,7 +7733,7 @@ pub fn main() !void {
         // is preserved; the summary appears at the end of the output.
         var child = std.process.Child.init(backend_args_list.items, allocator);
         child.cwd = output_dir_for_build;
-        child.stdin_behavior = .Inherit; // Allow interactive stdin for --inter REPL
+        child.stdin_behavior = .Inherit; // Allow interactive stdin for the --inter TUI
         child.stdout_behavior = .Inherit; // Stream output directly
         child.stderr_behavior = .Pipe;    // Capture for filtering on failure
 
