@@ -451,6 +451,13 @@ INVOCATION_FLAGS="$*"
 TEST_FILTERS=()
 SMOKE_MODE=false
 
+# Filter REQUESTS, for the partial-match guard below. One row per thing the
+# caller asked for: a numeric shortcut is ONE request even when it expands to
+# two patterns (its patterns joined by tab), while each curated smoke pattern
+# is its own request (each was chosen to match something). A request whose
+# every pattern matches nothing is a question that was never asked.
+FILTER_REQUESTS=()
+
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --ignore-leaks)
@@ -533,14 +540,18 @@ while [[ $# -gt 0 ]]; do
         smoke)
             SMOKE_MODE=true
             TEST_FILTERS+=(
-                "102_*" "205_*" "302_*" "401_*" "501_*" 
-                "603_*" "609_*" "701_*" "801_*" "831_*" "916_*" 
+                "205_*" "302_*" "401_*" "501_*"
+                "701_*" "831_*" "916_*"
             )
+            for _p in "205_*" "302_*" "401_*" "501_*" "701_*" "831_*" "916_*"; do
+                FILTER_REQUESTS+=("$_p")
+            done
             shift
             ;;
         --filter)
             if [[ -n "$2" ]]; then
                 TEST_FILTERS+=("*$2*")
+                FILTER_REQUESTS+=("*$2*")
                 shift 2
             else
                 echo -e "${RED}❌ Error: --filter requires an argument${NC}"
@@ -563,24 +574,72 @@ while [[ $# -gt 0 ]]; do
             if [[ "$arg" =~ ^[0-9]+$ ]]; then
                 # Numeric shortcut
                 if [ ${#arg} -eq 1 ]; then
-                    # 1 -> 100-199 and 1000-1999
+                    # 1 -> 100-199 and 1000-1999: ONE request, two patterns
                     TEST_FILTERS+=("${arg}[0-9][0-9]_*")
                     TEST_FILTERS+=("${arg}[0-9][0-9][0-9]_*")
+                    FILTER_REQUESTS+=("${arg}[0-9][0-9]_*"$'\t'"${arg}[0-9][0-9][0-9]_*")
                 elif [ ${#arg} -eq 2 ]; then
                     # 83 -> 830-839
                     TEST_FILTERS+=("${arg}[0-9]_*")
+                    FILTER_REQUESTS+=("${arg}[0-9]_*")
                 else
                     # 320 -> 320_*
                     TEST_FILTERS+=("${arg}_*")
+                    FILTER_REQUESTS+=("${arg}_*")
                 fi
             else
                 # Arbitrary substring search
                 TEST_FILTERS+=("*${arg}*")
+                FILTER_REQUESTS+=("*${arg}*")
             fi
             shift
             ;;
     esac
 done
+
+# A filter that matches SOME tests must not silently drop the rest. The zero-
+# total case is refused at the end of the run (f1a74bd1); this is the same rule
+# per request: six names in, two matched, "ALL TESTS PASSED" is an answer to a
+# question that was never asked about the other four. Checked upfront so a
+# typo'd control set refuses in milliseconds, not after the matched half ran.
+# A request passes if ANY of its patterns matches an actual test directory
+# (same predicate as the collectors below: name shape + input/marker file).
+if [ ${#FILTER_REQUESTS[@]} -gt 0 ]; then
+    UNMATCHED_REQUESTS=()
+    for req in "${FILTER_REQUESTS[@]}"; do
+        req_matched=false
+        while IFS= read -r -d '' dir; do
+            TN=$(basename "$dir")
+            [[ "$TN" =~ ^[0-9]+[a-z]?_ ]] || continue
+            if [ -f "$dir/input.kz" ] || [ -f "$dir/input.k" ] || [ -f "$dir/TODO" ] \
+               || [ -f "$dir/SKIP" ] || [ -f "$dir/BROKEN" ] || [ -f "$dir/BENCHMARK" ]; then
+                req_matched=true
+                break
+            fi
+        done < <(
+            IFS=$'\t' read -r -a req_pats <<< "$req"
+            find_args=(tests/regression -mindepth 1 -type d "(")
+            for i in "${!req_pats[@]}"; do
+                if [ "$i" -gt 0 ]; then find_args+=("-or"); fi
+                find_args+=("-name" "${req_pats[$i]}")
+            done
+            find_args+=(")" "-print0")
+            find "${find_args[@]}" 2>/dev/null
+        )
+        if [ "$req_matched" = false ]; then
+            UNMATCHED_REQUESTS+=("$(echo "$req" | tr '\t' ' ')")
+        fi
+    done
+    if [ ${#UNMATCHED_REQUESTS[@]} -gt 0 ]; then
+        echo -e "${RED}❌ Filter(s) matched no tests:${NC}"
+        for req in "${UNMATCHED_REQUESTS[@]}"; do
+            echo "   $req"
+        done
+        echo "   Running the rest anyway would silently answer only the names spelled right."
+        echo "   Fix the name(s), or drop them from the invocation."
+        exit 1
+    fi
+fi
 
 # One suite run per MACHINE (perf, not correctness): separate worktrees don't
 # corrupt each other's artifacts, but two `--parallel N` suites thrash the same

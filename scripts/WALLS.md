@@ -91,7 +91,8 @@ stopping on any unexplained flip.
 | anchor:cfg-must-error-and-must-run | scripts/regression_lib.sh | carries both MUST_ERROR and MUST_RUN | a test cannot demand both a clean run and a rejection |
 | anchor:cfg-must-error-unpinned | scripts/regression_lib.sh | MUST_ERROR test pins no diagnostic | a negative test names WHICH rejection it pins. MIRROR, unbuilt: an EXPECT line that is neither a known stage marker nor a recognized assertion is silently ignored — a misspelled assertion is silently no assertion |
 | anchor:backend-koru-diag-pin | scripts/regression_lib.sh | Backend error has no pin | the backend twin of no-error-pin |
-| anchor:zero-match-refuse | run_regression.sh | No tests matched: | a filter matching zero tests refuses instead of printing green. MIRROR, unbuilt: a PARTIAL match silently drops the unmatched names and reports ALL TESTS PASSED |
+| anchor:zero-match-refuse | run_regression.sh | No tests matched: | a filter matching zero tests refuses instead of printing green |
+| anchor:partial-match-refuse | run_regression.sh | Filter(s) matched no tests: | the mirror of zero-match: a request whose every pattern matches nothing refuses the whole run upfront, instead of silently answering only the names spelled right |
 | anchor:machine-lock | run_regression.sh | already running on this machine | one suite per machine unless overridden |
 | anchor:checkout-lock | run_regression.sh | is already active in this checkout | artifact corruption guard, no override |
 | anchor:untested-fails-the-run | run_regression.sh | NO_MARKER_COUNT | a test that produced no marker fails the run rather than vanishing |
