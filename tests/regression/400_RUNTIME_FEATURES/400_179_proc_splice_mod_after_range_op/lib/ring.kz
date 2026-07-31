@@ -25,7 +25,7 @@ var len: usize = 0;
         $mod.len += 1;
     }
     for ($mod.ring[0..$mod.len]) |v| {
-        saw(@intCast(v));
+        saw(@as(i64, @intCast(v)));
     }
     return .{ .count = @intCast($mod.len) };
 }
