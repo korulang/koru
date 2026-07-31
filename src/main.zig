@@ -7622,24 +7622,13 @@ pub fn main() !void {
         const is_js_target = std.mem.eql(u8, compiler_config.lang, "js");
         if (is_js_target) {
             try printStdout(allocator, "✓ Generated output_emitted.js (run with: node output_emitted.js)\n", .{});
+        } else if (detected_comptime_command) |cmd| {
+            // A command run ends with the command, not with Stage D. Report the
+            // command that ran.
+            try printStdout(allocator, "✓ {s}\n", .{cmd});
         } else if (std.fs.cwd().access(exe_name, .{})) |_| {
             try printStdout(allocator, "✓ Built executable: {s}\n", .{exe_name});
-        } else |_| {
-            // The backend exited 0 without producing a binary. That is the normal
-            // shape of a COMMAND run (`koruc app.k deps`): the command does its
-            // work inside the backend and Stage D never runs.
-            //
-            // Claiming a build here is not a cosmetic slip. `downloads.k` does not
-            // currently compile — a plain build fails on KORU161 — and yet
-            // `koruc downloads.k deps` printed "✓ Built executable: a.out" and
-            // exited 0. The surface asserted, in one line, that a broken program
-            // had built. The JS branch directly above already refuses to claim a
-            // binary that was never built; this is the same refusal for the case
-            // where the reason is a command rather than a target.
-            //
-            // Derived from the filesystem, so it cannot drift from what happened.
-            try printStdout(allocator, "✓ Command finished (no executable built)\n", .{});
-        }
+        } else |_| {}
 
         // If run command, execute the binary
         if (run_after_build and !is_js_target) {
