@@ -1,0 +1,26 @@
+// std/invariants: a rule declared in the AST via [norun] mechanics surfaces
+// through the module's own reader. Pins the declaration surface — both
+// dispositions — and the `invariants` command listing them with name,
+// disposition, and rule text.
+//
+// Run: koruc input.kz invariants
+
+~import std/invariants
+
+~std/invariants:inferred {
+    "name": "comment-language",
+    "tags": ["git-gate"],
+    "rule": "Comments are written in English, not Norwegian."
+}
+
+~std/invariants:aspirational {
+    "name": "store-sweep-vectorizes",
+    "rule": "The store sweep loop compiles to vectorized code."
+}
+
+~tor main {}
+
+~proc main|zig {
+}
+
+~main()

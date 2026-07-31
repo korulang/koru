@@ -1,0 +1,258 @@
+// invariants.kz - Declared invariants: rules a program states about itself
+//
+// An invariant is a rule that lives in the AST as data, declared with the same
+// [norun] mechanics as std/compiler:flag.declare. The declaration and its
+// reader ship together: this module also provides the `invariants` command
+// that lists the declared rules and gates on them.
+//
+// Two dispositions, named by the event you invoke:
+//
+//   ~std/invariants:inferred { ... }      permanent by nature — growth is good
+//   ~std/invariants:aspirational { ... }  debt by construction — growth is a smell
+//
+// Usage in a program (or a repo's invariants manifest):
+//
+//   ~import std/invariants
+//
+//   ~std/invariants:inferred {
+//       "name": "comment-language",
+//       "tags": ["git-gate"],
+//       "rule": "Comments are written in English, not Norwegian."
+//   }
+//
+// A declaration may carry a "check": a shell command run from the compilation
+// root; exit 0 means the invariant holds, non-zero means it is violated, and
+// the command's output is the evidence. A declaration without a "check" is an
+// inference rule: the gate prints its rule text for the reviewer — human or
+// agent — because no algorithm can decide it.
+//
+// Then:
+//   koruc main.kz invariants          # List declared invariants
+//   koruc main.kz invariants gate     # Check "git-gate"-tagged invariants;
+//                                     # exits non-zero if any check fails
+
+~import std/compiler
+
+~[comptime]
+
+// ============================================================
+// INVARIANTS COMMAND - List and gate declared invariants
+// ============================================================
+
+~std/compiler:command.declare {
+    "name": "invariants",
+    "description": "List and gate declared invariants",
+    "subcommands": [
+        { "name": "list", "description": "List declared invariants (default)" },
+        { "name": "gate", "description": "Run git-gate invariants; exit non-zero on violation" }
+    ]
+}
+
+~[comptime|command]pub tor invariants {
+    program: *const Program,
+    allocator: __koru_std.mem.Allocator,
+    argv: []const []const u8,
+}
+
+~proc invariants|zig {
+    const std = @import("std");
+
+    const Invariant = struct {
+        name: []const u8 = "",
+        disposition: []const u8 = "",
+        rule: []const u8 = "",
+        check: []const u8 = "",
+        git_gate: bool = false,
+    };
+
+    const helpers = struct {
+        // Extract "field": "value" from a Source block's JSON text.
+        // Handles \" and \\ escapes inside the value (a rule is natural
+        // language; a check is a shell command — both want quotes).
+        fn extractField(alloc: std.mem.Allocator, source: []const u8, field: []const u8) []const u8 {
+            var search_buf: [64]u8 = undefined;
+            const pat = std.fmt.bufPrint(&search_buf, "\"{s}\":", .{field}) catch return "";
+            const start = std.mem.indexOf(u8, source, pat) orelse return "";
+            var i = start + pat.len;
+            while (i < source.len and (source[i] == ' ' or source[i] == '\t' or source[i] == '\n')) : (i += 1) {}
+            if (i >= source.len or source[i] != '"') return "";
+            i += 1;
+            var out = std.ArrayListUnmanaged(u8){};
+            while (i < source.len) : (i += 1) {
+                const ch = source[i];
+                if (ch == '\\' and i + 1 < source.len) {
+                    i += 1;
+                    const esc = source[i];
+                    const decoded: u8 = switch (esc) {
+                        'n' => '\n',
+                        't' => '\t',
+                        else => esc,
+                    };
+                    out.append(alloc, decoded) catch return "";
+                    continue;
+                }
+                if (ch == '"') break;
+                out.append(alloc, ch) catch return "";
+            }
+            return out.toOwnedSlice(alloc) catch "";
+        }
+
+        fn hasTag(source: []const u8, tag: []const u8) bool {
+            const key = std.mem.indexOf(u8, source, "\"tags\"") orelse return false;
+            const after = source[key + 6 ..];
+            const open = std.mem.indexOf(u8, after, "[") orelse return false;
+            const close = std.mem.indexOf(u8, after[open..], "]") orelse return false;
+            const body = after[open .. open + close];
+            var buf: [64]u8 = undefined;
+            const quoted = std.fmt.bufPrint(&buf, "\"{s}\"", .{tag}) catch return false;
+            return std.mem.indexOf(u8, body, quoted) != null;
+        }
+    };
+
+    // Subcommand: default is list; "gate" runs the git-gate.
+    var do_gate = false;
+    for (argv) |arg| {
+        if (std.mem.eql(u8, arg, "gate")) do_gate = true;
+    }
+
+    // Checks run from the COMPILATION ROOT — the directory of the entry file,
+    // never the directory of the file that happens to carry a declaration.
+    // The command backend already executes with that directory as its working
+    // directory (koruc emits and runs the backend next to the entry file), so
+    // checks inherit it.
+
+    // Collect declarations — including those made by imported libraries.
+    const ast_dep = @import("ast");
+    const all_flows = ast_dep.allFlows(allocator, program);
+    defer allocator.free(all_flows);
+
+    var invariants_list = std.ArrayListUnmanaged(Invariant){};
+    defer {
+        for (invariants_list.items) |inv| {
+            if (inv.name.len > 0) allocator.free(inv.name);
+            if (inv.rule.len > 0) allocator.free(inv.rule);
+            if (inv.check.len > 0) allocator.free(inv.check);
+        }
+        invariants_list.deinit(allocator);
+    }
+
+    for (all_flows) |flow| {
+        const mq = flow.inv().path.module_qualifier orelse continue;
+        if (!std.mem.eql(u8, mq, "std.invariants")) continue;
+        if (flow.inv().path.segments.len != 1) continue;
+        const disposition = flow.inv().path.segments[0];
+        if (!std.mem.eql(u8, disposition, "inferred") and
+            !std.mem.eql(u8, disposition, "aspirational")) continue;
+
+        for (flow.inv().args) |arg| {
+            if (!std.mem.eql(u8, arg.name, "source")) continue;
+            var inv = Invariant{};
+            inv.name = helpers.extractField(allocator, arg.value, "name");
+            if (inv.name.len == 0) continue;
+            inv.rule = helpers.extractField(allocator, arg.value, "rule");
+            inv.check = helpers.extractField(allocator, arg.value, "check");
+            inv.disposition = disposition;
+            inv.git_gate = helpers.hasTag(arg.value, "git-gate");
+            invariants_list.append(allocator, inv) catch {
+                std.debug.print("Out of memory\n", .{});
+                return;
+            };
+        }
+    }
+
+    if (invariants_list.items.len == 0) {
+        std.debug.print("No invariants declared.\n", .{});
+        std.debug.print("Use: ~std/invariants:inferred {{ \"name\": \"...\", \"tags\": [\"git-gate\"], \"rule\": \"...\" }}\n", .{});
+        std.debug.print("     ~std/invariants:aspirational {{ \"name\": \"...\", \"rule\": \"...\" }}\n", .{});
+        return;
+    }
+
+    if (!do_gate) {
+        std.debug.print("\nDeclared invariants:\n\n", .{});
+        for (invariants_list.items) |inv| {
+            std.debug.print("  {s} ({s})", .{ inv.name, inv.disposition });
+            if (inv.git_gate) std.debug.print(" [git-gate]", .{});
+            if (inv.check.len > 0) std.debug.print(" [check]", .{});
+            std.debug.print("\n", .{});
+            if (inv.rule.len > 0) {
+                std.debug.print("      rule: {s}\n", .{inv.rule});
+            }
+        }
+        std.debug.print("\n", .{});
+        return;
+    }
+
+    // ============================================================
+    // GATE — run every "git-gate"-tagged invariant.
+    // A check decides mechanically. A rule without a check is decided by
+    // inference: the gate prints it for the reviewer and moves on.
+    // ============================================================
+
+    var held: usize = 0;
+    var violated: usize = 0;
+    var inference: usize = 0;
+
+    for (invariants_list.items) |inv| {
+        if (!inv.git_gate) continue;
+
+        if (inv.check.len == 0) {
+            inference += 1;
+            std.debug.print("  {s} \x1b[36m∴ inference\x1b[0m\n", .{inv.name});
+            std.debug.print("      {s}\n", .{inv.rule});
+            continue;
+        }
+
+        const result = std.process.Child.run(.{
+            .allocator = allocator,
+            .argv = &[_][]const u8{ "sh", "-c", inv.check },
+        }) catch {
+            violated += 1;
+            std.debug.print("  {s} \x1b[31m✗ VIOLATED\x1b[0m (check could not run)\n", .{inv.name});
+            continue;
+        };
+        defer allocator.free(result.stdout);
+        defer allocator.free(result.stderr);
+
+        const passed = result.term == .Exited and result.term.Exited == 0;
+        if (passed) {
+            held += 1;
+            std.debug.print("  {s} \x1b[32m✓ holds\x1b[0m\n", .{inv.name});
+        } else {
+            violated += 1;
+            std.debug.print("  {s} \x1b[31m✗ VIOLATED\x1b[0m\n", .{inv.name});
+            std.debug.print("      {s}\n", .{inv.rule});
+        }
+        if (result.stdout.len > 0) {
+            std.debug.print("      {s}\n", .{std.mem.trim(u8, result.stdout, " \t\n\r")});
+        }
+        if (result.stderr.len > 0) {
+            std.debug.print("      {s}\n", .{std.mem.trim(u8, result.stderr, " \t\n\r")});
+        }
+    }
+
+    std.debug.print("\ngate: {d} held, {d} violated, {d} by inference\n", .{ held, violated, inference });
+
+    if (violated > 0) {
+        std.process.exit(1);
+    }
+}
+
+// ============================================================
+// INFERRED EVENT - Declare a permanent invariant
+// ============================================================
+
+~[comptime|norun]pub tor inferred { source: Source }
+
+~proc inferred|zig {
+    // Void event - collected during AST walking
+}
+
+// ============================================================
+// ASPIRATIONAL EVENT - Declare an invariant that is debt
+// ============================================================
+
+~[comptime|norun]pub tor aspirational { source: Source }
+
+~proc aspirational|zig {
+    // Void event - collected during AST walking
+}

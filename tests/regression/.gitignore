@@ -63,6 +63,7 @@
 
 # Keep baseline files for performance tests (at any depth)
 !**/baseline.zig
+!**/fixture.zig
 !**/baseline.go
 !**/*.go
 !**/baseline.rs
