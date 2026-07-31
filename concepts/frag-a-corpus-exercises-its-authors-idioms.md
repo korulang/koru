@@ -118,3 +118,30 @@ the suite still passes. It would have caught at least two of the four
 mechanically. The risk is a pile of generated tests nobody can read, which is its
 own kind of rot; a generator that produces *failures* to triage, rather than
 tests to keep, may be the better shape.
+
+## A gap named inside a report decays the same way (third sitting)
+
+The second sitting recorded that a gap BOARD decays toward ABSENT while the
+compiler moves under it. The same decay happens one level down, faster, and
+with less to catch it: a gap named inside an agent's report, repeated into a
+design conversation, and treated as a premise before anyone probed it.
+
+The `heavy_compute` lane listed "no local scalars in a sweep arm" among its
+gaps — accurately, for what it had tried. That got restated here as "the
+language has no local binding, so every intermediate must become a store
+column", which made a temporary column look structurally forced and turned a
+~17% per-column cost into an apparent language limitation. Lars pushed back on
+the framing rather than the cost, and the probe took twenty minutes: a sweep arm
+chains and binds today, and the bind reaches a `stored` write (690_130/131).
+Nothing was missing.
+
+The tell was available the whole time and nobody read it as one: **138 `stored`
+sites in the corpus and zero took a value from a chain binding.** That is the
+signature of an unexercised composition, which this belief already says to read
+as "untested", not "unsupported". It was read as the latter.
+
+- **A gap in a report is a hypothesis with a citation, not a finding.** It
+  reports what one agent tried, and its silence is about that attempt.
+- **Zero-of-N is the strongest available prompt to probe**, and it is cheap to
+  compute. Where a construct is used N times and a neighbouring composition
+  appears zero times, that is the experiment, not the conclusion.
