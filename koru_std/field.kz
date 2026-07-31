@@ -585,7 +585,7 @@ var __field_noop_fba = std.heap.FixedBufferAllocator.init(&__field_noop_buf);
             const ln = std.fmt.allocPrint(allocator, "        data[w + {d}] |= 0x{x};\n", .{ c, WM.mask(p, rc) }) catch unreachable;
             code.appendSlice(allocator, ln) catch unreachable;
         }
-        const tl = std.fmt.allocPrint(allocator, "        w += {d};\n    }}\n    var r: usize = (w * {d}) % {d};\n    while (w < fullWords) : (w += 1) {{ data[w] |= wm[r]; r = (r + {d}) % {d}; }}\n    if (tailBits > 0) data[fullWords] |= wm[r] & ((@as(u64, 1) << @as(u6, @intCast(tailBits))) - 1);\n    data[{d}] &= ~(@as(u64, 1) << {d});\n}}\n\n", .{ p, rstep, p, rstep, p, i >> 6, i & 63 }) catch unreachable;
+        const tl = std.fmt.allocPrint(allocator, "        w += {d};\n    }}\n    var r: usize = (w * {d}) % {d};\n    for (w..fullWords) |wi| {{ data[wi] |= wm[r]; r = (r + {d}) % {d}; }}\n    if (tailBits > 0) data[fullWords] |= wm[r] & ((@as(u64, 1) << @as(u6, @intCast(tailBits))) - 1);\n    data[{d}] &= ~(@as(u64, 1) << {d});\n}}\n\n", .{ p, rstep, p, rstep, p, i >> 6, i & 63 }) catch unreachable;
         code.appendSlice(allocator, tl) catch unreachable;
     }
     // sparse path (stride >= 64): 8-way byte scatter
@@ -709,15 +709,21 @@ var __field_noop_fba = std.heap.FixedBufferAllocator.init(&__field_noop_buf);
 ~proc count-zeros|zig {
     const total_bits: i64 = @intCast(hi - lo);
     var set_bits: i64 = 0;
-    var i: usize = lo;
-    while (i < hi and (i & 63) != 0) : (i += 1) {
+    // Head: bits up to the first 64-aligned index (or hi, whichever is first).
+    const head_end = @min(hi, (lo + 63) & ~@as(usize, 63));
+    for (lo..head_end) |i| {
         set_bits += @as(i64, @intCast((f.data[i >> 6] >> @as(u6, @intCast(i & 63))) & 1));
     }
-    while (i + 64 <= hi) : (i += 64) {
-        set_bits += @as(i64, @intCast(@popCount(f.data[i >> 6])));
-    }
-    while (i < hi) : (i += 1) {
-        set_bits += @as(i64, @intCast((f.data[i >> 6] >> @as(u6, @intCast(i & 63))) & 1));
+    if (head_end < hi) {
+        // Aligned middle: whole words, @popCount each. head_end is 64-aligned here.
+        const w1 = hi >> 6;
+        for (f.data[head_end >> 6 .. w1]) |word| {
+            set_bits += @as(i64, @intCast(@popCount(word)));
+        }
+        // Tail: the partial word past the last full one.
+        for (w1 << 6 .. hi) |i| {
+            set_bits += @as(i64, @intCast((f.data[i >> 6] >> @as(u6, @intCast(i & 63))) & 1));
+        }
     }
     return total_bits - set_bits;
 }
