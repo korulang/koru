@@ -1,0 +1,17 @@
+// A library that declares its own system dependency, the way koru/curl does.
+// The declaration lives HERE, not in the program that imports it.
+
+~import std/deps
+
+~std/deps:requires.system {
+    "name": "libfromimport",
+    "check": "nonexistent-check-command --version",
+    "brew": "libfromimport-brew",
+    "apt": "libfromimport-apt"
+}
+
+~pub tor ping {} -> string
+
+~proc ping|zig {
+    return "pong";
+}

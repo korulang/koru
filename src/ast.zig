@@ -640,6 +640,37 @@ pub const ScopeBinding = struct {
 /// and it is named `rep` rather than `reporter` because the generated transform
 /// stub already binds `const reporter = __koru_event_input.reporter` in the
 /// enclosing proc — a parameter of that name shadows it and Zig refuses.
+/// Every flow in the program, including flows inside IMPORTED modules.
+///
+/// `program.items` is one level deep: an imported module arrives as a single
+/// `.module_decl` item carrying its own `items`. A pass that writes the obvious
+/// `for (program.items) |item| if (item == .flow)` therefore sees only the entry
+/// file and silently ignores every library the program imports.
+///
+/// That is not a hypothetical. It is what made `koruc downloads.k deps` list one
+/// dependency: `koru/curl` declares `requires.system` in `curl/index.kz`, and the
+/// declaration was never reachable. Any pass that collects top-level declarations
+/// — `std/deps`, `std/package`, `std/vendor` — wants THIS, not `program.items`.
+///
+/// System modules are included: `koru_std/compiler.kz` declares the `zig` system
+/// dependency, and a caller that wants only user libraries should filter on
+/// `is_system` itself rather than have the walk decide.
+pub fn allFlows(alloc: std.mem.Allocator, program: *const Program) []const Flow {
+    var out = std.ArrayListUnmanaged(Flow){};
+    collectFlows(alloc, program.items, &out);
+    return out.toOwnedSlice(alloc) catch &.{};
+}
+
+fn collectFlows(alloc: std.mem.Allocator, items: []const Item, out: *std.ArrayListUnmanaged(Flow)) void {
+    for (items) |item| {
+        switch (item) {
+            .flow => |f| out.append(alloc, f) catch return,
+            .module_decl => |m| collectFlows(alloc, m.items, out),
+            else => {},
+        }
+    }
+}
+
 pub fn refusal(
     alloc: std.mem.Allocator,
     rep: anytype,
