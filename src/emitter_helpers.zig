@@ -5546,7 +5546,11 @@ fn rewriteEffectfulProcBody(
             continue;
         }
 
-        const boundary_before = i == 0 or !(std.ascii.isAlphanumeric(clean_body[i - 1]) or clean_body[i - 1] == '_' or clean_body[i - 1] == '.');
+        // A preceding '.' blocks the rewrite (member chains: `x.std.`) —
+        // UNLESS it is the second dot of the range operator (`[0..$mod.len]`,
+        // 400_179), which is a boundary, not member access.
+        const after_range_op = i >= 2 and clean_body[i - 1] == '.' and clean_body[i - 2] == '.';
+        const boundary_before = i == 0 or after_range_op or !(std.ascii.isAlphanumeric(clean_body[i - 1]) or clean_body[i - 1] == '_' or clean_body[i - 1] == '.');
         if (boundary_before) {
             // `return` → labeled break (any depth: every return is a proc exit).
             if (std.mem.startsWith(u8, clean_body[i..], "return")) {
@@ -5657,7 +5661,10 @@ fn rewriteReturnsAndStd(
             continue;
         }
 
-        const boundary_before = i == 0 or !(std.ascii.isAlphanumeric(body[i - 1]) or body[i - 1] == '_' or body[i - 1] == '.');
+        // Second dot of a range operator is a boundary, not member access
+        // (`[0..$mod.len]`, 400_179) — same exception as the proc-body scan.
+        const after_range_op = i >= 2 and body[i - 1] == '.' and body[i - 2] == '.';
+        const boundary_before = i == 0 or after_range_op or !(std.ascii.isAlphanumeric(body[i - 1]) or body[i - 1] == '_' or body[i - 1] == '.');
         if (boundary_before) {
             // `return` → labeled break (any depth: every return is an exit).
             if (std.mem.startsWith(u8, body[i..], "return")) {
@@ -5775,7 +5782,9 @@ pub fn rewriteModToBare(allocator: std.mem.Allocator, body: []const u8) ![]u8 {
             while (i < body.len and body[i] != '\n') : (i += 1) try out.append(allocator, body[i]);
             continue;
         }
-        const boundary_before = i == 0 or !(std.ascii.isAlphanumeric(body[i - 1]) or body[i - 1] == '_' or body[i - 1] == '.');
+        // Range-operator exception (`[0..$mod.len]`, 400_179), as above.
+        const after_range_op = i >= 2 and body[i - 1] == '.' and body[i - 2] == '.';
+        const boundary_before = i == 0 or after_range_op or !(std.ascii.isAlphanumeric(body[i - 1]) or body[i - 1] == '_' or body[i - 1] == '.');
         if (boundary_before and std.mem.startsWith(u8, body[i..], "$mod.")) {
             i += "$mod.".len;
             continue;

@@ -1,0 +1,31 @@
+// A zig proc slicing its own module state with `[0..$mod.len]` — the `$mod.`
+// spelling the KORU112 rule sanctions, in the one position the rewriter's
+// boundary check used to miss: directly after the range operator. The check
+// excludes a preceding '.' to protect member chains (`x.std.`), but `..` is
+// not member access — it is the range operator, and `$` can never continue a
+// member chain in Zig anyway. Before the fix the emitted text kept `$mod.`
+// verbatim inside the slice:
+//   error: expected ']', found invalid bytes
+//
+// Found in koru-examples/kopium's SSE framing buffer
+// (`sse_buf[0..$mod.sse_len]`). Reproduced here with no curl, no SSE.
+
+const std = @import("std");
+
+var ring: [8]u8 = undefined;
+var len: usize = 0;
+
+~pub tor push { b: i64 }
+! saw i64
+| count i64
+
+~proc push|zig {
+    if ($mod.len < $mod.ring.len) {
+        $mod.ring[$mod.len] = @intCast(b);
+        $mod.len += 1;
+    }
+    for ($mod.ring[0..$mod.len]) |v| {
+        saw(@intCast(v));
+    }
+    return .{ .count = @intCast($mod.len) };
+}

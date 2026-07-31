@@ -1,0 +1,5 @@
+saw 7
+count 1
+saw 7
+saw 9
+count 2
