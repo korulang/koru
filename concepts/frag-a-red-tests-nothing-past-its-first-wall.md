@@ -40,5 +40,18 @@ suite's reds meaning anything. An unmigrated MUST_ERROR is the worst case: it
 "passes" its expectation of failure for the wrong reason, or flips to
 must-error-passed noise, and either way the diagnostic it pins goes unguarded.
 
+## The private-harness variant
+
+The wall is not always a compiler ruling. 430_020 ("parked green→red
+regression, interpreter if e2e" — carried in the cluster TODO as the one real
+regression in the family) reproduced its red through a 150-line private
+`runInterpreter` in the test body, reaching into parser internals. Respelled
+through the public surface (`std/runtime:run` on the same if-source), both
+directions dispatched correctly on the first try — the machinery was green all
+along; what broke at the blamed commit was the test's own plumbing. A red that
+pins internals through a private harness is evidence about the harness first
+and the system second, and it can park as "regression" for weeks on the
+strength of that confusion.
+
 Related: [[frag-a-failure-that-looks-like-success-is-unfalsifiable]] — the
 mirror case, where a green means nothing; here a red means nothing.
