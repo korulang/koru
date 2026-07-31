@@ -1,0 +1,30 @@
+// A `~proc |zig` with a VOID optional arm whose body probes presence via
+// `@hasDecl(__H, "<arm>")` — the proc-side presence spelling vaxis:run's
+// tick gate uses. Sound on the Handlers-fn path, where `__H` is the
+// synthesized comptime type. A TOP-LEVEL cross-module consumer takes the
+// inline-splice path instead (400_176's note), where no `__H` exists — the
+// splice must rewrite the probe to a literal true/false from the caller's
+// installed arms, exactly as rewriteInlineHasDeclPresence already does for
+// template-baked flow bodies (400_154 × 833). Before that rewrite reached
+// proc bodies, this file's probe surfaced verbatim at the splice site:
+//   error: use of undeclared identifier '__H'
+//
+// Found in koru-libs/curl: `poll`/`await` gained a `! ?chunk` streaming arm
+// whose drain must run ONLY when someone is listening (an unheard drain
+// discards response bytes). Reproduced here with no curl.
+
+~pub tor drip { n: i64 }
+! ?note i64
+| done i64
+
+~proc drip|zig {
+    var total: i64 = 0;
+    var i: i64 = 0;
+    while (i < n) : (i += 1) {
+        if (@hasDecl(__H, "note")) {
+            note(i);
+        }
+        total += i;
+    }
+    return .{ .done = total };
+}

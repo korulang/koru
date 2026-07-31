@@ -5584,17 +5584,21 @@ fn rewriteEffectfulProcBody(
                     try out.appendSlice(allocator, std.fmt.bufPrint(&nb, "{d}", .{ci}) catch unreachable);
                     i = j; // resume at '(' — the resolver reads the args
                 } else {
-                    // Unhandled optional effect: evaluate the payload, drop it.
-                    // A VOID arm (`focus_in()`) has no payload to evaluate, and
-                    // `_ = ()` is invalid Zig — discard a void block instead and
-                    // consume the empty `()`.
+                    // Unhandled optional effect: the fire folds away and the
+                    // payload is NEVER evaluated (the 400_145 ruling). `@TypeOf`
+                    // is the spelling: it marks the payload identifiers used
+                    // without evaluating them — where the old `_ = (payload)`
+                    // both evaluated it AND tripped Zig's pointless-discard on
+                    // a payload also used elsewhere (400_178). A VOID arm
+                    // (`focus_in()`) has no payload, and `@TypeOf()` is invalid
+                    // Zig — discard a void block instead and consume the `()`.
                     var k = j + 1; // past '('
                     while (k < clean_body.len and (clean_body[k] == ' ' or clean_body[k] == '\t' or clean_body[k] == '\n' or clean_body[k] == '\r')) k += 1;
                     if (k < clean_body.len and clean_body[k] == ')') {
                         try out.appendSlice(allocator, "_ = {}");
                         i = k + 1; // resume past ')'
                     } else {
-                        try out.appendSlice(allocator, "_ = ");
+                        try out.appendSlice(allocator, "_ = @TypeOf");
                         i = j; // resume at '(' — Zig reads the args
                     }
                 }
@@ -5844,10 +5848,17 @@ fn emitInlineEffectfulCall(
     const mod_prefix = try renderSelfPrefix(ctx, &inv.path);
     defer ctx.allocator.free(mod_prefix);
 
-    const rewritten = if (elig.proc) |p|
-        try rewriteEffectfulProcBody(ctx.allocator, p.body.text, elig.event_decl, conts, label, mod_prefix)
-    else
-        try renderEffectfulFlowBody(ctx, elig.event_decl, elig.flow.?, conts, label, mod_prefix);
+    const rewritten = if (elig.proc) |p| blk: {
+        // Proc-authored presence probes (`@hasDecl(__H, "<arm>")` — the
+        // vaxis:run tick gate, curl's `! ?chunk` drain) name `__H`, which
+        // the inline splice has no. Resolve them to comptime true/false
+        // from the caller's conts before the arm-call rewrite, exactly as
+        // renderEffectfulFlowBody does for template-baked probes
+        // (400_177/178 × 400_154 × 833).
+        const presence_resolved = try rewriteInlineHasDeclPresence(ctx.allocator, p.body.text, conts);
+        defer ctx.allocator.free(presence_resolved);
+        break :blk try rewriteEffectfulProcBody(ctx.allocator, presence_resolved, elig.event_decl, conts, label, mod_prefix);
+    } else try renderEffectfulFlowBody(ctx, elig.event_decl, elig.flow.?, conts, label, mod_prefix);
     defer ctx.allocator.free(rewritten.text);
 
     // A label is only legal if something breaks to it; a statement block
