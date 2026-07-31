@@ -54,6 +54,119 @@ green-and-broken since `d7e2eae9` ("440_RESOURCE_BRIDGE goes green") landed on
 
 ---
 
+## ⭐ THE VISION, as Lars stated it 2026-07-31 — read this before the brief
+
+The brief below was written thinking this was a session-storage feature. It is
+not. **The point of the resource bridge is to kill the idea of an application.**
+
+In the age of AI, an application — a bundle of UI, logic and resource lifetimes
+shipped as one unit — has no reason to exist. What replaces it: **Koru as the
+primary interface for driving system-level things, with the resources living on
+a bridge**, picked up conversationally as the session moves on. Not
+request/response. The reference model is **COM** — a uniform interface for
+driving system objects — *except that COM's `AddRef`/`Release` was a discipline
+you could violate, and `<!session>` is a refusal.* COM with the leak made
+unspellable.
+
+And because the resources sit on a bridge rather than inside a process, **Koru
+can be passed over the wire from one instance to another carrying a reference to
+the bridge** — which is how the work distributes. The resource never moves. The
+code moves.
+
+### The handle is a hashed capability, and it carries its own vocabulary
+
+Lars's shape: `std/io:file.open` hands back a short hash — `542fab`. You pass
+that on. **And you can ask it back what it affords** — `542fab`, "call
+`std/io:file.read`".
+
+Two things follow, and both matter:
+
+- **A hash is unguessable, so possession of the name IS the authority.** That is
+  what makes passing a bridge reference over a wire safe at all, and it is the
+  same move as semi-stable node identity in the medium bed: replace a pointer
+  with a name that survives transport. ⭐ It is also the answer to
+  **D7 — "what names a row?"** The bridge's "what names a handle" and the store's
+  "what names a row" are ONE question, and D7 is already half-ruled (declared
+  keys, `pool[id: 7].hp`, *"the index it needs is a DECLARED cost"*). What is
+  unruled there is how a key gets MARKED — a spelling, and Lars's.
+- **The vocabulary is computable from the phantom state.** The tors that can act
+  on `542fab` are exactly those accepting its current state; after `close` the
+  vocabulary is empty. This is not new machinery — it is **discharger discovery**,
+  which already works (`690_056` closes a still-live file at store teardown via a
+  DISCOVERED discharger, resource-agnostic). It has simply never been exposed as
+  a runtime question.
+
+**The bridge is therefore the execution context**, not a store: it holds the
+resources *and* the vocabulary, and the vocabulary narrows itself as obligations
+discharge. A per-handle history falls out for free — the phantom transition log
+IS the audit trail, which is what an agent resuming a session needs in order to
+know what it already did.
+
+### The runtime-typing tension, and why it does not force an interpreter
+
+Lars: partial evaluation — the conversational part — *"literally NEEDS to store
+the obligations and types fully at runtime."* True. But **typed at runtime is not
+the same as interpreted**, and conflating them is what makes this look like it
+costs systems-level speed.
+
+- **The resource's state** — type, current phantom, outstanding obligations —
+  must be live at runtime. Unavoidable.
+- **The code acting on it** need not be. A fragment arriving at the bridge can be
+  typechecked against a **manifest** and compiled to native.
+
+That is a manifest, not an evaluator. Koru is well placed for it: the compiler is
+metacircular, so it is already present wherever Koru is, and `--ccp` exists to
+answer compiler questions to a non-human consumer.
+
+And the cost lands correctly: **you pay per handle parked on the bridge, not per
+value in the program.** Ten million values and three handles costs three — the
+same "declared cost" bargain D7 already ruled, rather than an exception to it.
+
+⚠️ Everything in this subsection past the `--ccp` check is design reasoning, not
+measurement. No manifest exists and none has been built.
+
+### ⛔ RULED 2026-07-31: metering is PARKED
+
+Budget-metering was premature. **It only really makes sense on a public-facing
+API, not on an internal resource bridge.** Park it.
+
+This matters structurally, because metering was the one requirement that argued
+for the interpreter as *architecture* rather than as fallback — you cannot cheaply
+meter native code. With metering parked, the interpreter's honest remaining role
+is the fallback for when there is no toolchain at the far end.
+
+⛔ Do not design metering into this. Do not treat `410_BUDGETED_INTERPRETER` as
+in scope.
+
+### Open, and Lars's to rule
+
+- Is the hash minted by the **bridge** (one namespace, easy revocation) or by the
+  **resource's own type** (a name that means something without a bridge to ask —
+  which matters the moment two bridges talk)?
+- `shm` was floated for the co-located fast path. It solves *access*, not
+  *permission* — the manifest is still what says a fragment may act. And for the
+  remote case the resource should not move at all. So: is `shm` a same-machine
+  optimisation, or load-bearing?
+- **Does the shell need to be a *system* shell** — real processes, files,
+  devices — or is a Koru-native shell over Koru-native resources enough to prove
+  it? (Asked, not yet answered.)
+
+### The test vehicle: a Koru-native shell
+
+Lars's proposal, and it is on-thesis rather than merely convenient: **a shell is
+already the thing everyone accepts is not an application.** It is the smallest
+artifact with all three properties at once — persistent resources (cwd, env,
+jobs, connections), turns, and a natural reason to act on something from three
+turns ago.
+
+⚖️ **It is a test only if it can fail in a way that teaches.** The failure it must
+be able to produce on day one: *"I opened a file on turn 3, the session ended,
+and nothing made me close it."* Today it would **pass while leaking** — see
+`dischargeAll` below. The shell's first job is not to work; it is to make that
+lie visible.
+
+---
+
 ## The brief (sealed — you are the contestant)
 
 Establish **exactly what already works** at this seam, and then build the
@@ -79,6 +192,31 @@ since at least 2026-07-25.
 "440_RESOURCE_BRIDGE goes green" — check whether the program's *output* was ever
 right, or whether only the marker was. `git log -p` on the two test directories
 and on `koru_std/bridge.kz` is the fastest route.
+
+**`dischargeAll` is a stub, and it is the safety property.** `bridge.kz:51-60`:
+
+```zig
+// TODO: Call discharge events for all undischarged handles
+std.debug.print("[BRIDGE] Auto-discharging handle: {s}\n", ...);
+// Would call dispatcher here with discharge event
+h.discharged = true;
+```
+
+It prints, sets a boolean, and **calls nothing**. The resource is never
+released; the *counter* is satisfied. That is why `440_002` could report
+handle counts going 1 → 0 while doing nothing at all. SCENE.md's promise is
+*"obligations your compiler will not let you abandon"* — this is exactly the
+line where that becomes false.
+
+⭐ It has a working reference implementation one directory over: `690_056`,
+where store teardown closes a still-live file via a **discovered** discharger,
+resource-agnostic and honestly asserted. `dischargeAll` is that, unbuilt.
+
+**`std/bridge` is imported by nothing.** Zero tests. The two `440` tests bypass
+it entirely — they hand-roll `HandlePool.init` in raw Zig and never touch
+`create` or `close`. So `*Bridge<session!>` — *"you cannot forget to hang up"*,
+the most vision-load-bearing construct in the whole idea — **has never been
+compiled.**
 
 **Read `koru_std/bridge.kz` in full.** It is 147 lines. It claims:
 
