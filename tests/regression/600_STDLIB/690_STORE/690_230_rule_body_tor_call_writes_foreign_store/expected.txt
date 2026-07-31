@@ -1,0 +1,2 @@
+callee wrote b
+b has 10

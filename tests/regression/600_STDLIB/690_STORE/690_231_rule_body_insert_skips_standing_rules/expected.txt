@@ -1,0 +1,3 @@
+b sees 77
+b has 10
+b has 77
