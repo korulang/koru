@@ -1,0 +1,36 @@
+// Pins: a named-label binding on a phantom-minting bare-return HEAD is refused
+// when the obligation it carries is never discharged — and the refusal names
+// the AUTHOR'S binding (`c`), not the resource's type. The label spelling
+// `create(...) | made c |>` must enforce exactly what `create(...): c |>`
+// enforces (330_113 is that spelling's pin); the two are one program.
+//
+// Auto-discharge is disabled so the wall is under test rather than the LIFO
+// insertion — with the flag on, insertion emits the cleanup and the question
+// never reaches the checker.
+const std = @import("std");
+
+const Resource = struct { value: i32 };
+
+~pub tor create { value: i32 } -> *Resource<state_a!>
+
+~proc create|zig {
+    const r = std.heap.page_allocator.create(Resource) catch unreachable;
+    r.* = Resource{ .value = value };
+    return r;
+}
+
+~pub tor cleanup { r: *Resource<!state_a> }
+
+~proc cleanup|zig {
+    std.debug.print("cleaned {d}\n", .{r.value});
+    std.heap.page_allocator.destroy(r);
+}
+
+~pub tor peek { r: i32 }
+
+~proc peek|zig {
+    std.debug.print("peek {d}\n", .{r});
+}
+
+~create(value: 7)
+| made c |> peek(r: c.value)

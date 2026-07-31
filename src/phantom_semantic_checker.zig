@@ -1305,6 +1305,26 @@ pub const PhantomSemanticChecker = struct {
         context: *BindingContext,
     ) anyerror!void {
         const rb = inv.return_binding orelse return;
+        try self.recordReturnObligationAs(rb, inv.return_destructure, step_decl, step_module, step_qualified, context);
+    }
+
+    /// Record a bare-return call's `-> T<phantom>` obligation against an
+    /// arbitrary binding NAME. `recordBareReturnBind` routes the `: name`
+    /// spelling here; the named-label spelling (`| made c |>` on a bare-return
+    /// callee) routes here from validateContinuation's 0-branch path, because
+    /// the emitter lowers both spellings to the same direct bind — the label is
+    /// binding sugar, and the checker must credit whichever name the author
+    /// chose, or the obligation detaches from every name the flow can discharge
+    /// through.
+    fn recordReturnObligationAs(
+        self: *PhantomSemanticChecker,
+        rb: []const u8,
+        destructure: []const ast.DestructureField,
+        step_decl: *const ast.EventDecl,
+        step_module: []const u8,
+        step_qualified: []const u8,
+        context: *BindingContext,
+    ) anyerror!void {
         if (step_decl.return_phantom) |rp| {
             const canonical_phantom = try self.canonicalizePhantomState(rp, step_module);
             defer self.allocator.free(canonical_phantom);
@@ -1331,7 +1351,7 @@ pub const PhantomSemanticChecker = struct {
             // seeding would silently credit a discharge against a debt the
             // value does not hold (330_100).
             if (!self.subflow_impl_map.contains(step_qualified)) {
-                try self.seedRecordFieldObligations(rb, rt, step_module, inv.return_destructure, context);
+                try self.seedRecordFieldObligations(rb, rt, step_module, destructure, context);
             }
         }
     }
@@ -1554,6 +1574,25 @@ pub const PhantomSemanticChecker = struct {
             else
                 BindingContext.init(self.allocator);
             defer void_context.deinit();
+
+            // A NAMED LABEL with a binding on a bare-return callee
+            // (`create(...) | made c |> ...`) is binding sugar for `: c` — the
+            // emitter lowers both to the same direct bind. Credit the label's
+            // binding with the callee's return obligation, exactly as the
+            // `: name` head bind (validateEventFlow) and the mid-chain bind
+            // (recordBareReturnBind) do, so a downstream discharge through the
+            // label's name is seen and an undischarged one is reported against
+            // the name the author wrote.
+            if (cont.branch.len > 0) {
+                if (cont.binding) |cb| {
+                    if (!std.mem.eql(u8, cb, "_")) {
+                        const callee_module = event_module orelse flow_module;
+                        const callee_qualified = try std.fmt.allocPrint(self.allocator, "{s}:{s}", .{ callee_module, event_path });
+                        defer self.allocator.free(callee_qualified);
+                        try self.recordReturnObligationAs(cb, cont.destructure, event_decl, callee_module, callee_qualified, &void_context);
+                    }
+                }
+            }
 
             // Still validate the step if present
             if (cont.node) |*step| {
