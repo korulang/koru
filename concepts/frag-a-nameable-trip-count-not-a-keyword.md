@@ -84,10 +84,26 @@ somewhere else entirely.
   multiply, and whether the multiply costs more than the vectorization buys is
   a measurement, not an assertion.
 
-## Open
+## The stronger half, measured: worth nothing where the columns are globals
 
-Whether the same is true of the rule's stronger half. `for (xs, ys) |*x, y|`
-proves non-aliasing in a way `for (0..n) |i|` does not, and the conversions done
-so far mostly produced the weaker form. Nobody has measured the gap between the
-two on a store sweep, and the sweep binds its columns by index today — so the
-slice form is a further change, not a spelling of the same one.
+The open question — does `for (xs, ys) |*x, y|` beat `for (0..n) |i|` on a
+store sweep — is answered by measurement (the simple_iter slice-form probe,
+2026-07-31): **no gap, f64 or f32, both directions inside noise.** The reason
+is structural, not luck: store columns are distinct fields of one global
+struct with inline arrays, so their addresses are statically known and
+disjoint — LLVM already holds the non-aliasing proof the slice form would
+supply, and the emitted index form already vectorizes. The slice form's extra
+guarantee is redundant *on this representation*.
+
+Two boundaries keep the belief honest:
+
+- **The proof rides on the representation.** If columns ever become heap
+  slices or pointers (any indirection), the static-disjointness proof
+  evaporates and the slice form becomes load-bearing — re-measure at that
+  moment, not before.
+- **The fence that actually remains is FP reduction order, and no loop
+  spelling crosses it.** A strict-order f64 fold through the sweep stays
+  scalar and latency-bound; reassociating the same sum runs at memory speed
+  (the fold probe, same day: ~4x). That license is semantic — a summation
+  order the surface would have to grant — not an aliasing fact any `for`
+  form can assert.
