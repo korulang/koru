@@ -91,6 +91,25 @@ still, because its workloads were fixed before we existed and cannot drift
 toward what we find convenient. Its value here was never the number — the number
 is still unmeasurable — it was the idioms.
 
+## The instrument points both ways (second sitting)
+
+Replaying the six remaining ecs_bench_suite workloads (690_119–125) taught the
+inverse lesson. A corpus is silent about spellings its authors never wrote — and
+a GAP BOARD is silent about rungs that have landed since it was written. The
+ecs-store README declared every workload absent; most of their shapes compile
+today, because rungs land against the corpus's own tests and nobody re-runs the
+prose. A prose capability claim decays toward ABSENT exactly as prose coverage
+claims decay toward PRESENT; the pin is the only instrument that moves with the
+compiler in both directions. So when a board says "can't", the first move is to
+point the workload at the compiler anyway — the pin either flips the board or
+lands the gap in the suite where it stops rotting.
+
+The sitting also sharpened the original finding: the green region around a
+refusal is exactly as wide as the test that pins it. A moved line break, a third
+field, a parenthesis — each is a different program to the compiler and the same
+program to its author (690_125 against 690_118). Pinning the consumer's layout
+of a shape, not only its minimal spelling, is the cheap defence.
+
 ## Open
 
 Whether this can be attacked directly — generating spelling variants of existing
