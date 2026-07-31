@@ -1,15 +1,12 @@
-// TEST: an UNCLOSED paren in a capture-write field value must be rejected LOUDLY
-//       at the parser. Sibling of 100_081/082 (stray CLOSERS in call args), but a
-//       different path: parseBranchConstructor's field-value handling. Here the
+// PINS: an UNCLOSED paren in a capture-write field value is refused, at the
+//       author's own line. Sibling of 100_081/082 (stray CLOSERS in call args)
+//       on a different path — the capture-family field-value scan. Here the
 //       `@as(...` is never closed.
 //
-// MUST_ERROR: unbalanced
-//
-// Currently the imbalance is SWALLOWED — koruc exits 0, emits no diagnostic, and
-// the malformed value produces an EMPTY program (no output) instead of a parse
-// error. This cost real debugging time (a missing paren in an AoC conway
-// expression read as a phantom "emission emits empty" bug). Reject it at the
-// parser, located at the user's source.
+// The guarded property is that the imbalance is NAMED. The failure mode this
+// pin exists against is silent absorption: a malformed field value that
+// produces an empty program and exits 0 reads as "emission emits empty", and
+// cost real debugging time on an AoC conway expression.
 import std/io
 
 capture { x: 0[i64] }

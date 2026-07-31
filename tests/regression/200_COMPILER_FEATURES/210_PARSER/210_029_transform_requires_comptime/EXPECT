@@ -1,0 +1,3 @@
+FRONTEND_COMPILE_ERROR
+CONTAINS error[PARSE003]
+CONTAINS has [transform] but is missing [comptime]

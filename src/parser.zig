@@ -375,6 +375,32 @@ fn splitTrailingReturnArrow(self: *Parser, s: []const u8, decl_line: usize) !Ret
 
     const head = lexer.trim(s[0..arrow_at.?]);
     var rt = lexer.trim(s[arrow_at.? + 2 ..]);
+    // A trailing line comment is not part of the type. Branch payloads have
+    // always dropped theirs; the bare-return suffix did not, so
+    // `-> *Data<gc>  // GC-managed` carried the prose into the emitted Zig as
+    // `pub const Output = *Data  // GC-managed;` (524). Scan at depth 0 and
+    // outside strings so a `//` inside `{ ... }` or a literal survives.
+    {
+        var cdepth: i32 = 0;
+        var cin_str = false;
+        var k: usize = 0;
+        while (k + 1 < rt.len) : (k += 1) {
+            const c = rt[k];
+            if (c == '"' and (k == 0 or rt[k - 1] != '\\')) {
+                cin_str = !cin_str;
+                continue;
+            }
+            if (cin_str) continue;
+            if (c == '(' or c == '{' or c == '[' or c == '<') {
+                cdepth += 1;
+            } else if (c == ')' or c == '}' or c == ']' or c == '>') {
+                cdepth -= 1;
+            } else if (cdepth == 0 and c == '/' and rt[k + 1] == '/') {
+                rt = lexer.trim(rt[0..k]);
+                break;
+            }
+        }
+    }
     var return_phantom: ?[]const u8 = null;
     // Capture a trailing `<phantom>` on the return type, mirroring the
     // effect-branch resume-type phantom capture at the `| !` parser.
@@ -2367,6 +2393,28 @@ pub const Parser = struct {
                 );
                 return error.ParseError;
             }
+        }
+
+        // `[transform]` declares WHAT (a transformation intent); `[comptime]`
+        // declares WHERE (it emits into the backend). A transform tor without
+        // `[comptime]` is never registered as a pass, so it silently does
+        // nothing at every call site — the author's mistake is invisible.
+        //
+        // The invariant is universal and was, until now, unenforced: MEASURED
+        // 2026-07-31, every `[transform]` tor declaration in koru_std/ and
+        // tests/ carries `[comptime]`. The lone exception is 210_029, the test
+        // that exists to have this refused.
+        if (annotation_parser.hasPart(all_annotations.items, "transform") and
+            !annotation_parser.hasPart(all_annotations.items, "comptime"))
+        {
+            try self.reporter.addError(
+                .PARSE003,
+                event_line_index + 1,
+                1,
+                "tor '{s}' has [transform] but is missing [comptime] — [transform] declares the intent, [comptime] is what emits the pass; without both the transform is never registered and every call site silently does nothing",
+                .{if (path.segments.len > 0) path.segments[path.segments.len - 1] else "?"},
+            );
+            return error.ParseError;
         }
 
         // Copy annotations verbatim — comptime is explicit, never synthesized.

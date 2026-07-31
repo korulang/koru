@@ -281,6 +281,63 @@ pub const PhantomSemanticChecker = struct {
         return false;
     }
 
+    /// A tor that consumes <!state> on `base_type` but hands the SAME obligation
+    /// back on an exit has settled nothing — calling it leaves the author owing
+    /// exactly what they owed before. It is not a disposal candidate, and the
+    /// auto-discharge inserter has always known that (`eventReIssuesObligation`,
+    /// auto_discharge_inserter.zig:2597). This is the same predicate, so the
+    /// disabled-mode KORU030 message reaches the same conclusion the inserter
+    /// reaches — the disagreement 330_118 pins is two answers to one question,
+    /// not a missing sentence.
+    ///
+    /// A CONVERTING tor stays a candidate: one that consumes <!open> on P and
+    /// issues an obligation on a DIFFERENT base type has settled this debt,
+    /// whatever it opened elsewhere. Hence the `base_type` guard on every arm.
+    fn eventReIssuesObligation(
+        self: *PhantomSemanticChecker,
+        event_decl: *const ast.EventDecl,
+        base_state: []const u8,
+        obligation_base_type: []const u8,
+    ) bool {
+        const base_state_name = if (std.mem.lastIndexOfScalar(u8, base_state, ':')) |idx|
+            base_state[idx + 1 ..]
+        else
+            base_state;
+
+        const Reissues = struct {
+            fn check(alloc: std.mem.Allocator, phantom_text: []const u8, want: []const u8) bool {
+                var parsed = phantom_parser.PhantomState.parse(alloc, phantom_text) catch return false;
+                defer parsed.deinit(alloc);
+                switch (parsed) {
+                    .concrete => |c| return c.requires_cleanup and std.mem.eql(u8, c.name, want),
+                    .state_union => |u| {
+                        for (u.members) |m| {
+                            if (m.requires_cleanup and std.mem.eql(u8, m.name, want)) return true;
+                        }
+                        return false;
+                    },
+                    .variable => return false,
+                }
+            }
+        };
+
+        if (event_decl.return_type) |rt| {
+            if (obligationBaseTypeMatchesField(obligation_base_type, rt)) {
+                if (event_decl.return_phantom) |rp| {
+                    if (Reissues.check(self.allocator, rp, base_state_name)) return true;
+                }
+            }
+        }
+        for (event_decl.branches) |branch| {
+            for (branch.payload.fields) |field| {
+                if (!obligationBaseTypeMatchesField(obligation_base_type, field.type)) continue;
+                const fp = field.phantom orelse continue;
+                if (Reissues.check(self.allocator, fp, base_state_name)) return true;
+            }
+        }
+        return false;
+    }
+
     /// Find events that can discharge a given phantom state obligation
     /// Returns a list of event names that consume the given phantom state
     fn findDisposalEventsForState(self: *PhantomSemanticChecker, phantom_state: []const u8, obligation_base_type: []const u8) !std.ArrayList([]const u8) {
@@ -296,6 +353,8 @@ pub const PhantomSemanticChecker = struct {
         var iter = self.disposal_event_map.iterator();
         while (iter.next()) |entry| {
             const event_decl = entry.value_ptr.decl;
+
+            if (self.eventReIssuesObligation(event_decl, base_state, obligation_base_type)) continue;
 
             for (event_decl.input.fields) |field| {
                 if (field.phantom) |field_phantom| {
@@ -1393,8 +1452,13 @@ pub const PhantomSemanticChecker = struct {
             const binding_info = context.getInfo(resource) orelse continue;
             const phantom_state = binding_info.phantom_state;
 
+            // `_auto_N` is a name the compiler minted for a value the author
+            // discarded; quoting it back asks them to look for something they
+            // never wrote. The resource's TYPE is what they DID write.
             const display_name = if (std.mem.indexOf(u8, resource, ".")) |dot_idx|
                 resource[dot_idx + 1 ..]
+            else if (std.mem.startsWith(u8, resource, "_auto_") and binding_info.base_type.len > 0)
+                binding_info.base_type
             else
                 resource;
             const display_state = if (std.mem.lastIndexOf(u8, phantom_state, ":")) |colon_idx|
@@ -1419,7 +1483,7 @@ pub const PhantomSemanticChecker = struct {
                     .KORU030,
                     location.line,
                     location.column,
-                    "Resource '{s}' carries obligation <{s}> was not discharged. No event accepts <!{s}>.",
+                    "Resource '{s}' carries obligation <{s}> was not discharged. No tor accepts <!{s}>.",
                     .{ display_name, display_state, state_without_bang },
                 );
             } else if (disposal_events.items.len == 1) {
@@ -2175,7 +2239,7 @@ pub const PhantomSemanticChecker = struct {
                                 .KORU030,
                                 location.line,
                                 location.column,
-                                "Resource '{s}' carries obligation <{s}> was not discharged. No event accepts <!{s}>.",
+                                "Resource '{s}' carries obligation <{s}> was not discharged. No tor accepts <!{s}>.",
                                 .{ display_name, display_state, state_without_bang },
                             );
                         } else if (disposal_events.items.len == 1) {

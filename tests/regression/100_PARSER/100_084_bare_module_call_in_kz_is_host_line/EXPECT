@@ -1,1 +1,4 @@
 BACKEND_COMPILE_ERROR
+CONTAINS output_emitted.zig
+CONTAINS std/io:print.ln("hi")
+NOT_CONTAINS error[KORU
