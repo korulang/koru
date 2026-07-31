@@ -44,17 +44,45 @@ guarantee lying**, which is the worst failure available in this language.
 
 ## Evidence, not inference, is what licenses a synthesis
 
-The *existing* auto-proc exemption (`350_001`, green) is not a counterexample —
-it is the rule stated correctly. It fires only when input and output fields match
-by **name and type**. The author naming the output after the input **is** the
-evidence that passthrough was meant. It is an author signal, read, not a shape
-the compiler inferred.
+The rule the exemption *encodes* is the right one: synthesize only when input and
+output fields match by **name and type**, because the author naming the output
+after the input **is** the evidence that passthrough was meant. That is an author
+signal, read — not a shape the compiler inferred.
 
 A bare return has no field name. So that evidence cannot exist, and the rule
 would degrade to "one input whose base type equals the return's" — a coincidence
 of types rather than a statement of intent. `350_004` marks the other edge: an
 **uncalled** tor needs no proc at all, because nothing depends on what it would
 have done.
+
+### ⛔ CORRECTION, same day — the exemption is DEAD CODE, and I cited it wrongly
+
+I first wrote this section citing `350_001` as the green proof that the exemption
+works. **It is not.** Measured:
+
+- `350_001`'s `EXPECT` holds the bare line `42` — one of the census's
+  unrecognized-`EXPECT` files — with no `MUST_RUN` and no `expected.txt`. Its
+  `passthrough` is never called and the `verify` it names does not exist. It is
+  green because **nothing is checked**, under `350_004`'s uncalled-tor rule.
+- The exemption at `shape_checker.zig:829-841` fires only when `return_type ==
+  null`, exactly one terminal branch, and that branch **carries payload fields**.
+  `PARSE003` now refuses precisely that shape — *"single continuation branch
+  carrying a payload is a one-variant tag union — declare the single output as a
+  bare return instead"*. The single-return migration made its only trigger
+  unspellable.
+
+So the "existing feature" this belief was contrasted against **fires never**, and
+the whole `350_AUTO_PROC` category exercises the two *narrowings* (`350_002`
+spelled, `350_004` uncalled) and not the feature.
+
+**The conclusion is unchanged and arguably stronger.** Extending synthesis to
+bare returns was never "extending a working feature" — it would be reviving a
+dead one in its weakest form, the form with no name-match evidence at all. And
+the load-bearing argument never depended on the exemption: `validate { t:
+*Token<!raw> } -> *Token<checked!>` stands on its own.
+
+What this does add is a live question: the dead exemption should either be
+deleted or given a reachable trigger, and nothing currently tells us which.
 
 ## Why "it's only one line" is not an argument for removing the line
 
