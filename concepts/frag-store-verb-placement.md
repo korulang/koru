@@ -133,13 +133,43 @@ token rewritten across a subtree with no scope; this form is a rewrite that
 correctly distinguishes two BINDINGS and then lowers both onto one cursor. The
 binding was made distinct without making the thing it refers to distinct.
 
-## What this costs the numeric reading
+## The row binding survives nesting (2026-07-31)
+
+The cursor defect above is closed, and the shape of the closure is the belief
+worth keeping — three moves, each one the row-flavored twin of a rule the store
+already had for values:
+
+- **A row's lowered names are keyed on the ARM** — binding and line — never on
+  the bare field name. The old field-keyed mangle was the whole silent path:
+  transplant a body into another sweepbody's scope and the inner arm mints the
+  identical name for its own row, so the inner column claims the outer
+  binding's reads without a diagnostic. A name that says WHOSE row it is
+  cannot be claimed by the wrong row.
+- **Nesting is capture.** The outer row's keyed projections and cursor are
+  event inputs of the outer sweepbody, and an inner sweep reads them as free
+  names threaded in — the exact road 690_073 built for enclosing value binds.
+  Rows took the rewrite road while values took the capture road, and that
+  split, not layout or iteration, was the seam's blocker. Now both take the
+  capture road.
+- **Rule 4 of 690_086 is implemented, not designed:** the rewriter refuses to
+  descend past a nested sweep arm that rebinds its name. Innermost-first is a
+  property of the walk, no longer an accident of pass order.
+
+One placement fact came with it: a site that is the HEAD of an impl flow and
+depends on enclosing scope can neither be lifted (scope lost) nor spliced
+(there is no function body — the flow item IS the site). The answer is that
+the flow becomes a proc implementing the same event, because a proc impl binds
+every event input by construction. That is the third placement road beside
+inline splice and the lifted run unit.
+
+## What this bought the numeric reading
 
 An all-f64 container works — declared, inserted, written through the sweep
 arm's row, read back (690_111, green, and the first pin of that shape). So the
-SoA substrate a numeric consumer wants is real and already emitted. What is not
-reachable is the pair: any computation relating two rows of one corpus needs
-exactly the cross-row read that 690_110 and 690_112 pin red. Elementwise passes
-over a store are available today; pairwise ones are not, and the obstacle is
-not layout, iteration or capacity — it is that a row binding does not survive
-being nested inside another one.
+SoA substrate a numeric consumer wants is real and already emitted. With
+690_110 and 690_112 green, the pair is reachable too: `sweep`-in-`sweep` over
+two named stores IS `cross(A,B)` for runtime corpora, and the same-store twin
+is the N² pairwise shape, self-pair included. Elementwise AND pairwise passes
+over a store are available; what remains for the kernel side is the comptime-
+bounded / fused / triangular variant of the same shape, which is its own
+frame.
