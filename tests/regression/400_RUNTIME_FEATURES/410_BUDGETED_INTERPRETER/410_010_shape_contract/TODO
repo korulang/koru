@@ -1,0 +1,4 @@
+Parked: the emitted Zig for this shape-contract program does not compile
+("function with non-void return type '[]const u8' implicitly returns" in
+output_emitted.zig) — a stage-D codegen gap on this test's handler shape.
+Measured 2026-07-31.

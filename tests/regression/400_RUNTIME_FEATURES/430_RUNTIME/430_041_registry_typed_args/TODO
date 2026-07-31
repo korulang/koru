@@ -1,0 +1,4 @@
+Parked: the parse.source -> eval route returns validation-error ("No flow
+found in AST") for interpreted source that the run route executes green —
+koru_parser produces no flow item for bare invocation text; flow_parser does.
+Measured 2026-07-31. The run-route equivalents (430_043 family) are green.

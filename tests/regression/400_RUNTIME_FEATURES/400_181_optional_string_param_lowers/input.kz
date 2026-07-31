@@ -1,0 +1,22 @@
+// PINS: `?string` in a tor parameter lowers to `?[]const u8` — the optional
+// wrapper goes through the same lowering door as bare `string`. Before the
+// fix, `?string` leaked verbatim into the emitted Input struct:
+//   error: use of undeclared identifier 'string'
+// Found by koru-libs/ai's `system: ?string` after its []const-u8 → string
+// dialect migration.
+
+~import std/io
+
+~pub tor greet { name: string, title: ?string } -> string
+
+~proc greet|zig {
+    _ = name;
+    if (title) |t| {
+        return t;
+    }
+    return "untitled";
+}
+
+~greet(name: "ada", title: null): t |> std/io:print.ln("first: {{ t:s }}")
+
+~greet(name: "ada", title: "countess"): u |> std/io:print.ln("second: {{ u:s }}")

@@ -6,8 +6,11 @@
 
 const std = @import("std");
 
+// Two branches: a lone branch is outlawed (PARSE003), and the interpreted
+// chain below needs the branch name to continue on.
 ~pub tor expensive { data: string }
 | processed
+| failed
 
 ~proc expensive|zig {
     _ = data;

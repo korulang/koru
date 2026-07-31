@@ -7,12 +7,16 @@
 
 const std = @import("std");
 
-// Open creates an obligation
-~pub tor open { path: string } -> string<opened!>
+// Open creates an obligation on the branch payload. Two branches: a lone
+// payload branch is a bare return by ruling, and a bare return's obligation
+// is not seen by the registry's obligation extraction today.
+~pub tor open { path: string }
+| opened string<opened!>
+| missing
 
 ~proc open|zig {
     _ = path;
-    return "file_1";
+    return .{ .opened = "file_1" };
 }
 
 // Close discharges the obligation

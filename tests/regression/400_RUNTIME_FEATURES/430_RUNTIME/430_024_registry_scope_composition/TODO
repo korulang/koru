@@ -1,0 +1,5 @@
+Aspirational design sketch: scope composition (scope(other)), globs (users:*),
+conditional registration ([debug]debug:*), and the ~[registry:scope(name)]
+annotation form. None of that surface exists; the test also predates the
+bare-return migration and the tilde-in-interpreter-source wall. Keep as the
+written design or retire when the registry design is ruled.

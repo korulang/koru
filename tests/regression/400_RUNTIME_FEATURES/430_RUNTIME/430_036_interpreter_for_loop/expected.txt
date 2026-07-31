@@ -1,0 +1,4 @@
+[print_num] n = 0
+[print_num] n = 1
+[print_num] n = 2
+Result: result

@@ -1,0 +1,4 @@
+Parked: pins userland linking of the compiler's parser modules, and its
+hand-copied build-requires graph has drifted from build.zig (missing
+comptime_eval import for parser). The runtime family's build graphs duplicate
+build.zig by hand — see concepts/frag-runtime-build-graph-duplicates-build-zig.

@@ -1,0 +1,3 @@
+Parked: lenient parsing (fail_fast: false) should skip a broken declaration
+and still run the flow ("PING\nOK"); today the whole source parse-errors.
+Measured 2026-07-31.

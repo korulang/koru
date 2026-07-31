@@ -1,1 +1,6 @@
-Parked: runtime/interpreter bug family deferred (2026-05-15). Interpreter FieldValue propagation — v.num reads 0 instead of int_val. Unpark with rest of std.runtime / std.interpreter work.
+Parked: runtime/interpreter bug family deferred (2026-05-15). Two walls, both
+measured 2026-07-31: (1) this source shape reaches "No flow found in source" —
+the flow_parser fast path refuses the nested if and the koru_parser fallback
+produces no flow item for bare interpreted source; (2) behind that, field
+access on a scalar payload (v.num) is not propagated into expr bindings.
+Plain binding evaluation (n: v) works — pinned green by 430_035.

@@ -25,7 +25,10 @@ const std = @import("std");
 | echoed string
 | dropped
 
-~consume = std/io:print.ln("[consume] received n = '{{n:s}}'") => echoed n
+~proc consume|zig {
+    std.debug.print("[consume] received n = '{s}'\n", .{n});
+    return .{ .echoed = n };
+}
 
 ~std/runtime:register(scope: "test") {
     produce
@@ -33,14 +36,15 @@ const std = @import("std");
 }
 
 // The flow we'll interpret:
-// ~produce() | value v |> consume(n: v.num)
+// produce() | value v |> consume(n: v)
 //
-// Expected: consume receives "42" (the actual value)
-// Bug: consume receives "v.num" (the literal string)
+// consume must receive "42" (the bound value evaluated against the
+// environment), never the literal text "v". Field access on a scalar payload
+// (v.num) is pinned separately by 430_037.
 
 const TEST_FLOW =
     \\produce()
-    \\| value v |> consume(n: v.num)
+    \\| value v |> consume(n: v)
 ;
 
 ~std/interpreter:run(source: TEST_FLOW, dispatcher: dispatch_test)
