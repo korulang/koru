@@ -1325,10 +1325,17 @@ pub const AutoDischargeInserter = struct {
                             const inv_mod = node.invocation.path.module_qualifier orelse module_name;
                             const inv_qual = try std.fmt.allocPrint(self.allocator, "{s}:{s}", .{ inv_mod, inv_name });
                             defer self.allocator.free(inv_qual);
-                            const carries_obligation = if (self.event_map.get(inv_qual)) |info|
-                                info.decl.return_phantom != null
-                            else
-                                false;
+                            // Obligation means a trailing `!` — a plain state
+                            // (`<closed>`) or a state variable (`<M'_>`) owes
+                            // nothing, so its `: _` stays a genuine discard.
+                            // Treating every phantom as owing minted an
+                            // `_auto_N` no disposal ever used (525's unused
+                            // local constant). Mirrors the unbound-return
+                            // seeding's `endsWith "!"` check below.
+                            const carries_obligation = if (self.event_map.get(inv_qual)) |info| blk: {
+                                const rp = info.decl.return_phantom orelse break :blk false;
+                                break :blk std.mem.endsWith(u8, std.mem.trim(u8, rp, " \t"), "!");
+                            } else false;
                             if (carries_obligation) {
                                 const synthetic_name = try self.generateSyntheticBinding();
                                 const new_cont = try self.cloneContinuationWithReturnBinding(cont, synthetic_name);

@@ -9,18 +9,16 @@ const std = @import("std");
 
 const Digest = struct { n: i64 };
 
-~pub tor open {}
-| ctx *Digest<hashing!>
+~pub tor open {} -> *Digest<hashing!>
 
 ~proc open|zig {
     const d = std.heap.page_allocator.create(Digest) catch unreachable;
     d.* = Digest{ .n = 0 };
-    return .{ .ctx = d };
+    return d;
 }
 
 // Feed a chunk. BORROWS the handle (bare <hashing>): the obligation stays with
 // the caller, so `d` is still live (and still owing <hashing!>) after this call.
-// This borrow is the trigger for the bug the sibling input.kz pins.
 ~pub tor update { d: *Digest<hashing>, n: i64 }
 
 ~proc update|zig {
@@ -28,18 +26,16 @@ const Digest = struct { n: i64 };
 }
 
 // Discharge the obligation. Two options, neither a `[!]` default — same as evp.
-~pub tor final.hex { d: *Digest<!hashing> }
-| digest string
+~pub tor final.hex { d: *Digest<!hashing> } -> string
 
 ~proc final.hex|zig {
     std.heap.page_allocator.destroy(d);
-    return .{ .digest = "hex" };
+    return "hex";
 }
 
-~pub tor final.bytes { d: *Digest<!hashing> }
-| digest string
+~pub tor final.bytes { d: *Digest<!hashing> } -> string
 
 ~proc final.bytes|zig {
     std.heap.page_allocator.destroy(d);
-    return .{ .digest = "bytes" };
+    return "bytes";
 }

@@ -1,7 +1,13 @@
-// Library: DB with explicit rollback-needs-connection constraint.
-// Same fixture as 335_022/db.kz — rollback mirrors commit (both need conn live).
+// Library: DB with explicit commit-needs-connection constraint.
 //
-// Grounding: same as 335_022/db.kz
+// connect → query → (commit | rollback) → disconnect
+//
+// commit and rollback both require conn: *Connection<connected> (not consuming
+// it — phantom annotation <connected> without ! means "must be in this state,
+// but don't consume the obligation"). This encodes the real-world invariant:
+// committing a transaction requires the connection to still be open.
+//
+// Grounding: 330_027/db.kz — same lifecycle, bare-return spellings.
 
 const std = @import("std");
 
@@ -13,36 +19,37 @@ const Transaction = struct {
     id: i32,
 };
 
-~pub tor connect { url: string }
-| connected *Connection<connected!>
+~pub tor connect { url: string } -> *Connection<connected!>
 
 ~proc connect|zig {
     const c = std.heap.page_allocator.create(Connection) catch unreachable;
     c.* = Connection{ .id = 1 };
-    return .{ .connected = c };
+    return c;
 }
 
-~pub tor query { conn: *Connection<connected> }
-| started *Transaction<transaction!>
+~pub tor query { conn: *Connection<connected> } -> *Transaction<transaction!>
 
 ~proc query|zig {
     const t = std.heap.page_allocator.create(Transaction) catch unreachable;
     t.* = Transaction{ .id = 1 };
-    return .{ .started = t };
+    return t;
 }
 
+// commit requires conn in <connected> (non-consuming read) and consumes tx
 ~pub tor commit { tx: *Transaction<!transaction>, conn: *Connection<connected> }
 
 ~proc commit|zig {
     std.debug.print("Committing\n", .{});
 }
 
+// rollback requires conn in <connected> (non-consuming read) and consumes tx
 ~pub tor rollback { tx: *Transaction<!transaction>, conn: *Connection<connected> }
 
 ~proc rollback|zig {
     std.debug.print("Rolling back\n", .{});
 }
 
+// disconnect consumes connected! — after this conn is dead
 ~pub tor disconnect { conn: *Connection<!connected> }
 
 ~proc disconnect|zig {

@@ -1,10 +1,13 @@
-// PROBE for Limitation 1 (held-across, same scope): an obligation OWNED in the
-// same scope as a label-fold back-edge, the fold runs over a SCALAR (never
-// touches the handle), and the handle is escaped on the exit branch. h0 is live
-// (uncleaned) at `@loop(c: v)` but is NOT the loop's to consume — it is held
-// across and escaped on `fin`. If conservation is held-across-aware this is
-// sound; if not, the back-edge check false-flags h0 as a dropped obligation.
-// Mirrors 330_074 exactly, but the carried slot is a scalar and h0 is held.
+// PINS (held-across): an obligation OWNED in the same scope as a label-fold is
+// NOT the loop's to consume — the fold runs over a SCALAR (never touches the
+// handle), and the handle is escaped on the exit branch's bare return. h0 is
+// live (uncleaned) at `@loop(c: c2)` but is held across and escaped on `fin`;
+// the escape `-> h0` re-issues it through spin's `-> *Handle<owned!>` return,
+// so the caller's dispose is the one discharge. No disposal belongs inside the
+// fold's exit arm.
+//
+// Spelled with branch arms per 510_109's ruling (an inline `: v` on a branching
+// tor is KORU022); the carry shape mirrors green 330_074.
 const std = @import("std");
 const Handle = struct { n: i32 };
 
@@ -31,7 +34,8 @@ const Handle = struct { n: i32 };
 
 ~tor spin {} -> *Handle<owned!>
 
-~spin = make(): h0 |> #loop icount(c: 0): v |> @loop(c: v)
+~spin = make(): h0 |> #loop icount(c: 0)
+    | more c2 |> @loop(c: c2)
     | fin _ -> h0
 
 ~spin(): hf |> dispose(h: hf)
