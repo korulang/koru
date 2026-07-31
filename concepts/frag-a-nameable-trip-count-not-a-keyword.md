@@ -25,12 +25,30 @@ list or a string comparison. And many emitted `while`s are correct: a loop is
 honestly a `while` when the trip count is not knowable before entry.
 
 Of 21 genuinely emitted loops in the stdlib, **fourteen were left alone with
-reasons**: strided loops (Zig's `for` has no stride, and forcing one adds a
-multiply per iteration), the query loop that is *pinned* removal-aware at
-690_031 because `take` swap-removes and the loop must revisit the same index,
-ancestor walks and stack-driven DFS, early-breaking init searches that run once.
+reasons**: the query loop that is *pinned* removal-aware at 690_031 because
+`take` swap-removes and the loop must revisit the same index, ancestor walks
+and stack-driven DFS, early-breaking init searches that run once.
 
 Converting those would be worse code justified by a rule.
+
+## A stride is not an exemption — measured
+
+The "strided loops" reason that once sat in the list above did not survive
+measurement. "Zig's `for` has no stride, and forcing one adds a multiply per
+iteration" conflates two spellings: the *computed-index* form
+(`for (0..n) |k| { i = base + k * stride; }`) really does pay the multiply —
+measured 16% slower on the sparse marker's 8-way main loop, LLVM does not
+strength-reduce it there — but the *additive* form keeps the induction
+variable and the increment inside a counted `for`
+(`var i = base; for (0..n) |_| { ...; i += stride; }`) and pays nothing. The
+trip count costs one up-front division when the stride is runtime; on the
+per-bit tail loop that division plus the known count measured 15% *faster*
+than the `while` it replaced, and everywhere else it measured neutral. All
+three strided marker loops converted; the gate needed zero stride exemptions.
+
+The general shape: a stride never makes the end unnameable — it only decides
+which `for` spelling to emit. Reach for computed-index only when the body
+needs the index; otherwise emit additive.
 
 ## It under-counts
 
