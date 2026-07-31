@@ -903,6 +903,12 @@ pub fn writeFieldType(emitter: *CodeEmitter, field: ast.Field, main_module_name:
     if (std.mem.eql(u8, field.type, "string")) {
         try emitter.write("[]const u8");
         return;
+    } else if (std.mem.eql(u8, field.type, "?string")) {
+        // The optional wrapper goes through the same lowering door — a
+        // `?string` param must not leak `string` into Zig (400_181, found
+        // by ai's `system: ?string`).
+        try emitter.write("?[]const u8");
+        return;
     } else if (std.mem.startsWith(u8, field.type, "string ") or std.mem.startsWith(u8, field.type, "string=")) {
         // `string = "default"` (field default) -> `[]const u8 = "default"`
         try emitter.write("[]const u8");
@@ -4229,7 +4235,7 @@ pub fn emitDestructureConsts(
         if (f.type_text) |t| {
             try emitter.write(": ");
             // Lower the canonical `string` to its Zig slice at emission.
-            try emitter.write(if (std.mem.eql(u8, t, "string")) "[]const u8" else t);
+            try emitter.write(lowerZigType(t));
         }
         try emitter.write(" = ");
         try emitter.write(prefix);
@@ -6158,7 +6164,13 @@ fn branchHasPayloadFieldsSearchAll(
 /// site that writes a bare payload/return/resume/arm type to Zig routes through
 /// here so `string` never leaks into generated code. Other types pass through.
 pub fn lowerZigType(t: []const u8) []const u8 {
-    return if (std.mem.eql(u8, t, "string")) "[]const u8" else t;
+    if (std.mem.eql(u8, t, "string")) return "[]const u8";
+    // `?string` lowers through the same door — an optional param spelled
+    // with the canonical text type must not leak `?string` into Zig
+    // ('use of undeclared identifier', 400_181, found by ai's
+    // `system: ?string`).
+    if (std.mem.eql(u8, t, "?string")) return "?[]const u8";
+    return t;
 }
 
 fn writeEffectResumeType(emitter: *CodeEmitter, branch: *const ast.Branch) !void {
