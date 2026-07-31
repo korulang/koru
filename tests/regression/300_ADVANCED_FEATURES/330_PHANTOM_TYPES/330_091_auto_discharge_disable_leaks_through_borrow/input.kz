@@ -1,31 +1,20 @@
-// PIN (RED) — `--auto-discharge=disable` fails to enforce an obligation that
-// has passed through a bare-borrow.
+// PIN: `--auto-discharge=disable` must still enforce an obligation that has
+// passed through a bare-borrow.
 //
 // `open` grants <hashing!>. `update` BORROWS it (bare <hashing>), so `d` is
 // still live and still owing after the call. We then FORGET to finalize `d`.
-//
-//   default `koruc build`      → REJECTED: KORU030 "Resource 'd' <hashing!> was
-//                                not discharged. Call one of: final.hex, final.bytes"
-//   --auto-discharge=disable   → currently COMPILES CLEAN  ← THE BUG
-//
-// `koruc --help` promises the opposite for disable: "Disable automatic disposal
-// insertion — phantom errors WILL fire for unsatisfied obligations." The
-// trigger is specifically the bare-borrow: WITHOUT the `update` line, disable
-// correctly rejects (via the phantom-semantic-checker). WITH it, the obligation
-// is dropped from tracking and the leak slips through. The number of discharge
-// events is irrelevant; the borrow is what blinds the check.
+// `koruc --help` promises: "Disable automatic disposal insertion — phantom
+// errors WILL fire for unsatisfied obligations." So disable must reject this
+// with "was not discharged", borrow or no borrow.
 //
 // Enforcement under disable lives in a different pass (phantom-semantic-checker)
-// than under default (auto-discharge-inserter); the two disagree on whether an
-// obligation survives a bare-borrow. Control test: the green sibling
-// 2104_21_open_tx_forgot_close is the same forgotten-discharge WITHOUT a borrow,
-// and disable rejects it correctly.
+// than under default (auto-discharge-inserter); this pins that the two agree on
+// whether an obligation survives a bare-borrow. Control: the green sibling
+// 2104_21_open_tx_forgot_close is the same forgotten-discharge WITHOUT a borrow.
 //
-// MUST_ERROR under --auto-discharge=disable (see COMPILER_FLAGS). RED until the
-// disable-path obligation check tracks obligations through a bare-borrow.
+// MUST_ERROR under --auto-discharge=disable (see COMPILER_FLAGS).
 
 ~import app/digest
 ~import std/io
 
-~app/digest:open()
-| ctx d |> app/digest:update(d, n: 1) |> std/io:print.ln("BUG: forgot to finalize d after a borrow, but disable compiled it clean")
+~app/digest:open(): d |> app/digest:update(d, n: 1) |> std/io:print.ln("forgot to finalize d after a borrow")

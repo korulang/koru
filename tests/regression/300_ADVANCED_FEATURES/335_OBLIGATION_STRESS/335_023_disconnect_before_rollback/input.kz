@@ -3,19 +3,17 @@
 // both commit AND rollback require the connection still live (conn: <connected>).
 // Disconnecting first in the error path is as wrong as in the happy path.
 //
-// Legal order (330_027/input.kz:8): rollback(tx) |> disconnect(conn: c)
+// Legal order (330_027/input.kz): rollback(tx) |> disconnect(conn: c)
 // This test inverts that order.
 //
 // Grounding:
-//   - error-branch rollback pattern: 330_027/input.kz:8 (| else |> rollback(tx) |> disconnect)
-//   - rollback requiring conn:       ./db.kz:40 (conn: *Connection<connected>)
-//   - disconnect consuming conn:     ./db.kz:46 (~pub event disconnect { conn: *Connection<!connected> })
+//   - error-branch rollback pattern: 330_027/input.kz (| else |> rollback(tx) |> disconnect)
+//   - rollback requiring conn:       ./db.kz (conn: *Connection<connected>)
+//   - disconnect consuming conn:     ./db.kz (~pub tor disconnect { conn: *Connection<!connected> })
 ~import app/db
 ~import std/control
 
 const error_occurred = true;
-~app/db:connect(url: "postgres://localhost/test")
-| connected c |> app/db:query(conn: c)
-    | started tx |> if(error_occurred)
-        | then |> app/db:disconnect(conn: c) |> app/db:rollback(tx: tx, conn: c)
-        | else |> app/db:commit(tx: tx, conn: c) |> app/db:disconnect(conn: c)
+~app/db:connect(url: "postgres://localhost/test"): c |> app/db:query(conn: c): tx |> if(error_occurred)
+        | then |> app/db:disconnect(conn: c) |> app/db:rollback(tx, conn: c)
+        | else |> app/db:commit(tx, conn: c) |> app/db:disconnect(conn: c)

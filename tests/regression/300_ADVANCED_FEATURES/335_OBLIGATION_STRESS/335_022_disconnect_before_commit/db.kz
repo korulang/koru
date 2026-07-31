@@ -7,11 +7,7 @@
 // but don't consume the obligation"). This encodes the real-world invariant:
 // committing a transaction requires the connection to still be open.
 //
-// Grounding:
-//   - struct field phantom pattern: 330_027/db.kz:11-13 (Connection struct)
-//   - event with non-consuming phantom req: 330_027/db.kz:34 (query takes conn: *Connection<connected>)
-//   - obligation consume marker <!state>: 330_027/db.kz:46 (commit consumes <!transaction>)
-//   - disconnect consuming <!connected>: 330_027/db.kz:60
+// Grounding: 330_027/db.kz — same lifecycle, bare-return spellings.
 
 const std = @import("std");
 
@@ -23,22 +19,20 @@ const Transaction = struct {
     id: i32,
 };
 
-~pub tor connect { url: string }
-| connected *Connection<connected!>
+~pub tor connect { url: string } -> *Connection<connected!>
 
 ~proc connect|zig {
     const c = std.heap.page_allocator.create(Connection) catch unreachable;
     c.* = Connection{ .id = 1 };
-    return .{ .connected = c };
+    return c;
 }
 
-~pub tor query { conn: *Connection<connected> }
-| started *Transaction<transaction!>
+~pub tor query { conn: *Connection<connected> } -> *Transaction<transaction!>
 
 ~proc query|zig {
     const t = std.heap.page_allocator.create(Transaction) catch unreachable;
     t.* = Transaction{ .id = 1 };
-    return .{ .started = t };
+    return t;
 }
 
 // commit requires conn in <connected> (non-consuming read) and consumes tx
