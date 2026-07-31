@@ -26,6 +26,16 @@ apart.
   the same observation
   ([[frag-a-transforms-filesystem-anchor-is-the-compilation-root]]).
 
+The sharpest instance is the one found last, because there the surface does not
+merely fail to reveal a problem — it **asserts the opposite**. `downloads.k` does
+not compile; a plain build fails on KORU161 and produces nothing. Yet
+`koruc downloads.k deps` printed `✓ Built executable: a.out` and exited 0. The
+line was emitted whenever the backend exited cleanly, with no check that any
+executable existed, so a command run — which legitimately never reaches Stage D —
+reported a successful build of a broken program. Three untruths in one line: it
+built nothing, the thing it named does not exist, and the program cannot build at
+all.
+
 ## Why this is the useful frame
 
 "Is it tested?" and "did I check it?" are both answerable yes while the property
