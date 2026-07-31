@@ -1,8 +1,30 @@
-// TEST: Auto-synthesized proc for phantom state transitions
+// PINS: a phantom-only transition is SPELLED, not inferred.
 //
-// The core use case: state transitions where only the phantom type changes.
-// The proc just passes through the pointer - zero runtime cost.
-
+// `transition { r: *Resource<!state_a> } -> *Resource<state_b!>` consumes one
+// phantom and issues another on the same base type. Its implementation is one
+// line — `transition -> r` — and that line is the point: it is where the author
+// says identity is what they meant.
+//
+// RULED (Lars, 2026-07-31): auto-proc synthesis is NOT extended to bare
+// returns. The existing exemption (350_001, green) fires only when input and
+// output fields match by NAME and type — the author naming the output after the
+// input is the evidence that passthrough was intended. A bare return has no
+// field name, so that evidence cannot exist, and the rule would collapse to
+// "one input whose base type equals the return's".
+//
+// The phantom pair does not rescue it. `validate { t: *Token<!raw> } ->
+// *Token<checked!>` has the identical signature shape — consumes one phantom,
+// issues another, same base type. Synthesizing identity there hands back a token
+// marked `checked!` that nothing checked. A phantom claiming a property no code
+// established is the guarantee lying, which is the worst failure this language
+// has.
+//
+// Contrast the auto-discharge ruling made the same day (330_097/330_120), which
+// went the other way for a reason that holds in both directions: auto-discharge
+// synthesizes a NAME for a value that already exists, inventing no information.
+// Auto-proc here would synthesize an IMPLEMENTATION, inventing all of it.
+//
+// 350_004 pins the other narrowing: an UNCALLED tor needs no proc at all.
 const std = @import("std");
 
 const Resource = struct { value: i32 };
@@ -16,10 +38,8 @@ const Resource = struct { value: i32 };
     return r;
 }
 
-// Transition from state_a to state_b - NO PROC NEEDED
-// Input and output have same shape (r: *Resource), just different phantom
-// Compiler should synthesize: return r;
 ~pub tor transition { r: *Resource<!state_a> } -> *Resource<state_b!>
+~transition -> r
 
 // Cleanup state_b - has a proc (does real work)
 ~pub tor cleanup { r: *Resource<!state_b> }
