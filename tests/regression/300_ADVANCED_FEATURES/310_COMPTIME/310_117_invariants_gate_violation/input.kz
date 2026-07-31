@@ -1,0 +1,31 @@
+// The git-gate refuses: a "git-gate"-tagged invariant whose check exits
+// non-zero makes `invariants gate` exit non-zero, name the violated
+// invariant, and print the check's output as evidence. An invariant NOT
+// tagged "git-gate" stays out of the gate even when its check would fail.
+//
+// fixture.zig carries three `while (` sites against a declared ceiling of
+// two — the ratchet shape the emit-for-not-while citizen uses.
+//
+// Run: koruc input.kz invariants gate
+
+~import std/invariants
+
+~std/invariants:inferred {
+    "name": "counted-loops-are-for",
+    "tags": ["git-gate"],
+    "rule": "A counted loop is a for; a while is legitimate only where the trip count is not known up front.",
+    "check": "c=$(grep -c 'while (' fixture.zig); echo while sites: $c of 2; [ $c -le 2 ]"
+}
+
+~std/invariants:inferred {
+    "name": "not-gated",
+    "rule": "This invariant is declared but not tagged for the gate.",
+    "check": "false"
+}
+
+~tor main {}
+
+~proc main|zig {
+}
+
+~main()
