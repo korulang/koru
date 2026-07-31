@@ -1,0 +1,145 @@
+---
+challenge: resource-bridge
+kind: frame
+status: standing
+yields: an honest account of what cross-session resource safety already does, and the smallest real thing built on top of it
+family: runtime
+---
+
+*Walker context — the recurrence that earned this frame. Buried in a parked
+subsystem, at 147 lines, sits `koru_std/bridge.kz`. Its header calls the idea
+**"Hollywood OS mode"**. Its second test calls the pattern this:*
+
+> *"state persists across turns, human or AI can act on resources created in
+> previous turns."*
+
+*`440_RESOURCE_BRIDGE` is **2 tests and both are green**. `440_002` opens a file
+in one interpreted session, ends that session, and **discharges the obligation in
+a second one**. The obligation outlives the run that issued it.*
+
+*That is not a small thing wearing a big name. A resource obligation that
+survives a turn boundary is the shape an agent needs: the AI opens something on
+turn 3, the human closes it on turn 9, and the compiler still knows. Nobody has
+looked at it since 2026-07-25, and the board reports it as two passing tests in a
+subsystem marked parked.*
+
+---
+
+## The brief (sealed — you are the contestant)
+
+Establish **exactly what already works** at this seam, and then build the
+**smallest thing that could not exist without it.**
+
+Not a shell. Not a REPL. The smallest artifact that demonstrates a resource
+obligation crossing a session boundary and being enforced — and, just as
+importantly, an artifact that demonstrates the enforcement **failing loudly** when
+the obligation is dropped.
+
+## Ground yourself FIRST
+
+**Run the two tests and read the emitted Zig, not just the verdict.**
+`440_001_bridge_basic` and `440_002_cross_session_discharge`. Two green tests is
+a beachhead, not a feature — the first job is finding out how wide the beach is.
+
+**Read `koru_std/bridge.kz` in full.** It is 147 lines. It claims:
+
+```
+- Bridge holds a HandlePool with persistent allocation
+- Multiple interpreter runs share the same bridge
+- Per-handle locking for concurrent access
+- No return values from runs — side effects accumulate on bridge
+- Session end triggers discharge_all
+```
+
+**Verify each of those five claims against a test that runs.** Per-handle locking
+and `discharge_all` in particular have no test in `440_` at all — two tests cannot
+cover five claims. Anything unbacked is a **documentation claim, not a feature**,
+and saying so is a finding.
+
+**Note what the tests are made of.** Both reach directly into Zig:
+
+```
+const HandlePool = @import("root").koru_std.koru_interpreter.HandlePool;
+var bridge_pool = HandlePool.init(std.heap.page_allocator);
+```
+
+The mechanism is real; the **Koru surface over it does not exist**. A user cannot
+spell "give me a bridge" in Koru today — they hand-write a Zig pointer and pass
+it as an argument to `std/runtime:run`. That is a library-boundary Zig leak of
+exactly the kind `baton_library_boundary_zig_leaks_commission` describes, and it
+is probably the highest-value thing to close here.
+
+**Respect the park.** `project_runtime_interpreter_parked` covers
+`std/runtime:run` and the interpreter family. This frame touches the same code.
+So: **440 and the bridge surface are in scope; the 430/410 bug family is not.**
+If a bridge finding requires fixing an interpreter bug, write it down and stop —
+that belongs to challenge `014`, which is a survey, not a fix.
+
+## The question worth answering
+
+Cross-session discharge is interesting only if it is **enforced**. So:
+
+1. What happens today when session 2 **never** discharges the handle? Is it
+   caught at session end, at process exit, or not at all?
+2. Is the obligation checked by the **phantom checker** — the real one, the same
+   machinery that refuses `2104_05` — or by a runtime handle count that merely
+   resembles it?
+3. Can a session **discharge something it never opened**? `440_002` passes a
+   string literal `"file_1"` as the handle in session 2. If any string works,
+   the identity is nominal and the guarantee is thinner than it reads.
+
+Question 3 is the sharp one. **Test it before you build anything.** If forging a
+handle works, that is the finding, it outranks every feature idea in this file,
+and it should be pinned as a red `MUST_ERROR` with a named diagnostic the same
+day.
+
+## ⚖️ What this is not
+
+**It is not a shell yet, and you should not build one.** "Hollywood OS" is a
+sketch in a file header, not a ruled design. A REPL, a session protocol, a
+command surface — every one of those needs spellings, and **syntax is Lars's**.
+
+What you may build without a ruling: a **test**, a **wall**, a **measurement**, or
+a **worked example** using only spellings that already pass in the suite. That is
+a wide space. Use it.
+
+If the work makes a spelling necessary — and it probably will, around naming a
+bridge or scoping a session — that is the frame succeeding. Bring the question
+with the evidence that raised it.
+
+## The pre-garden
+
+- **Two tests, five claims.** Enumerate which of `bridge.kz`'s promises are
+  actually pinned. Every unpinned one is either a test to write or a claim to
+  delete. Both are landable today.
+- **Is `440` in the right place?** It sits under `400_RUNTIME_FEATURES` alongside
+  parked subsystems, which is why nobody has looked at it. If cross-session
+  resource safety is a first-class idea, its tests are filed where first-class
+  ideas go.
+- **Do the two tests pin behaviour or internals?** They construct a `HandlePool`
+  by hand. A test that cannot survive the Koru surface being added is a test that
+  will block the surface being added.
+- **`EXPECT` is empty in both.** Check how they are actually asserting — via
+  `expected.txt`, `post.sh`, or stdout comparison — and whether the assertion
+  distinguishes "the handle was discharged" from "the program didn't crash."
+
+## What "done" looks like
+
+- The five claims, each marked backed / unbacked, with the test that decides it.
+- Answers to the three enforcement questions, demonstrated by programs that ran.
+- If handles can be forged: a red pin with a named diagnostic, and the fix if it
+  is small.
+- The tests that were missing, written — particularly `discharge_all` at session
+  end and the negative case where session 2 never discharges.
+- **One worked artifact** showing an obligation crossing a session boundary and
+  being enforced, using only existing spellings.
+- A short written account of what a Koru shell would need that does not exist —
+  as questions for Lars, not as a design.
+
+## Failure modes
+
+- **Building a REPL.** Not the brief, and it needs rulings you do not have.
+- **Taking the header's five claims as features.** Two tests, five claims.
+- **Wandering into the 430 bug family.** Parked; that is challenge `014`.
+- **Treating green as proof.** `440_002` passes. Whether it passes *for the right
+  reason* is the actual question, and question 3 is how you find out.
