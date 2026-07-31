@@ -112,6 +112,25 @@ pub const AutoDischargeInserter = struct {
         return false;
     }
 
+    /// A NAMED LABEL continuation with a real binding on a bare-return head
+    /// (`create() | made c |> ...`) binds the head result — the label is
+    /// binding sugar for `: c`, and the emitter lowers both spellings to the
+    /// same direct bind. Returns that binding, or null when no continuation
+    /// binds the result (a `_`-bound label stays a discard and keeps the
+    /// unbound-head discard materialization).
+    fn headLabelBinding(flow: *const ast.Flow) ?[]const u8 {
+        if (flow.inv().return_binding != null) return null;
+        for (flow.body.continuations) |*cont| {
+            if (cont.kind == .effect) continue;
+            if (cont.is_catchall) continue;
+            if (cont.branch.len == 0) continue;
+            if (cont.binding) |b| {
+                if (!std.mem.eql(u8, b, "_")) return b;
+            }
+        }
+        return null;
+    }
+
     /// Check if a NamedBranch has @scope annotation (marks scope boundary)
     fn branchHasScope(branch: *const ast.NamedBranch) bool {
         for (branch.annotations) |ann| {
@@ -1015,8 +1034,15 @@ pub const AutoDischargeInserter = struct {
         // minted and enforcement is silently OFF for the whole bare-call shape
         // (330_011/025/028/036/043/070). Runs in normalize_only too — that is
         // the entire point of that mode.
+        // …except when a NAMED LABEL continuation binds the head result
+        // (`create() | made c |> ...` on a bare-return callee): the label is
+        // binding sugar for `: c` — the emitter lowers both spellings to the
+        // same direct bind — so the head is BOUND, not discarded. The binding
+        // is seeded per-continuation in checkContinuation (the label twin of
+        // the `: name` seeding below); materializing `: _` here would mint a
+        // second, anonymous obligation for the same value.
         if (mode != .scope_exit_only and flow.inv().return_binding == null and
-            event_info.decl.return_phantom != null)
+            event_info.decl.return_phantom != null and headLabelBinding(flow) == null)
         {
             const rebuilt = try self.materializeHeadDiscardBind(flow);
             const new_program = try ast_functional.replaceFlowRecursive(
@@ -1099,7 +1125,7 @@ pub const AutoDischargeInserter = struct {
                 defer scoped_context.deinit();
                 scoped_context.enterScope(true); // @scope means we're in a scoped boundary
 
-                const result = try self.checkContinuation(cont, event_info.decl, module_name, &scoped_context, program, flow, mode);
+                const result = try self.checkContinuation(cont, event_info.decl, module_name, &scoped_context, program, flow, mode, true);
                 if (result.transformed) return result;
 
                 if (mode == .scope_exit_only) {
@@ -1195,7 +1221,7 @@ pub const AutoDischargeInserter = struct {
                 defer seq_context.deinit();
                 if (seq_prefix) seq_context.in_sequential_prefix = true;
 
-                const result = try self.checkContinuation(cont, event_info.decl, module_name, &seq_context, program, flow, mode);
+                const result = try self.checkContinuation(cont, event_info.decl, module_name, &seq_context, program, flow, mode, true);
                 if (result.transformed) return result;
             }
         }
@@ -1235,6 +1261,14 @@ pub const AutoDischargeInserter = struct {
         program: *const ast.Program,
         flow: *const ast.Flow,
         mode: TransformMode,
+        /// True when `event_decl` is KNOWN to be the event this continuation's
+        /// branch/label attaches to (the flow head, or a resolved step
+        /// invocation). The nested loop falls back to the PARENT decl when the
+        /// step is not a plain invocation (label folds, foreach, inline code)
+        /// — in that fallback the label-sugar registration below must not
+        /// fire, or a fold arm like `| stop r` gets credited with the parent
+        /// bare-return's obligation it never bound (330_074).
+        event_is_direct_callee: bool,
     ) !TransformResult {
         // Clone context for this branch
         var context = try parent_context.clone(self.allocator);
@@ -1319,6 +1353,21 @@ pub const AutoDischargeInserter = struct {
 
         // Add bindings from this branch
         if (cont.binding) |binding_name| {
+            // NAMED LABEL on a bare-return callee (`create() | made c |> ...`):
+            // the callee declares no branches, so the branch walk below finds
+            // nothing — the label is binding sugar for `: c` (the emitter lowers
+            // both spellings to the same direct bind). Credit the binding with
+            // the callee's return obligation, the label twin of the mid-chain
+            // `: name` recording further down.
+            if (event_is_direct_callee and event_decl.branches.len == 0 and
+                cont.branch.len > 0 and !std.mem.eql(u8, binding_name, "_"))
+            {
+                if (event_decl.return_phantom) |rp| {
+                    const canonical = try self.canonicalizePhantom(rp, module_name);
+                    defer self.allocator.free(canonical);
+                    try context.addBinding(binding_name, canonical, "__type_ref", event_decl.return_type orelse "", self.nextAcqSeq());
+                }
+            }
             // Find the branch in the event declaration
             for (event_decl.branches) |branch| {
                 if (std.mem.eql(u8, branch.name, cont.branch)) {
@@ -1552,6 +1601,7 @@ pub const AutoDischargeInserter = struct {
             // This requires looking at the node in cont (if it's an invocation)
             var nested_event = event_decl;
             var nested_module = module_name;
+            var nested_event_resolved = false;
 
             // Multiple unnamed (`branch=''`) siblings are SEQUENTIAL steps under one
             // site (the capture lowering's body chain + after-read chain). All but
@@ -1569,6 +1619,7 @@ pub const AutoDischargeInserter = struct {
                     if (self.event_map.get(inv_qualified)) |info| {
                         nested_event = info.decl;
                         nested_module = info.module_name;
+                        nested_event_resolved = true;
                     }
                 }
             }
@@ -1591,14 +1642,14 @@ pub const AutoDischargeInserter = struct {
                 defer scoped_context.deinit();
                 scoped_context.enterScope(true); // @scope or effect branch = repeating scope boundary
 
-                const result = try self.checkContinuation(nested, nested_event, nested_module, &scoped_context, program, flow, mode);
+                const result = try self.checkContinuation(nested, nested_event, nested_module, &scoped_context, program, flow, mode, nested_event_resolved);
                 if (result.transformed) return result;
             } else {
                 var seq_context = try context.clone(self.allocator);
                 defer seq_context.deinit();
                 if (seq_prefix) seq_context.in_sequential_prefix = true;
 
-                const result = try self.checkContinuation(nested, nested_event, nested_module, &seq_context, program, flow, mode);
+                const result = try self.checkContinuation(nested, nested_event, nested_module, &seq_context, program, flow, mode, nested_event_resolved);
                 if (result.transformed) return result;
             }
         }

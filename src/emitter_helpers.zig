@@ -5140,7 +5140,7 @@ pub fn emitFlow(
                 ctx.label_result_var = null;
 
                 // Emit all continuations as a regular switch (no loop)
-                try emitContinuationList(emitter, ctx, conts, first_result, &result_counter, false, null);
+                try emitContinuationList(emitter, ctx, conts, first_result, &result_counter, false, &flow.inv().path, false);
             } else {
                 // ONLY emit looping branches inside the while loop
                 // Build list of looping continuations
@@ -5160,7 +5160,7 @@ pub fn emitFlow(
                 // Emit switch with only looping branches
                 // Looping switches don't need else (they're inside the while condition)
                 if (looping_conts.items.len > 0) {
-                    try emitContinuationList(emitter, ctx, looping_conts.items, first_result, &result_counter, false, null);
+                    try emitContinuationList(emitter, ctx, looping_conts.items, first_result, &result_counter, false, &flow.inv().path, true);
                 }
 
                 // Clear label context after looping continuations
@@ -5198,13 +5198,13 @@ pub fn emitFlow(
                     // Zig 0.15+ knows this and considers the switch exhaustive, so we must NOT
                     // emit else => unreachable (it would be "unreachable else prong; all cases handled")
                     if (non_looping_conts.items.len > 0) {
-                        try emitContinuationList(emitter, ctx, non_looping_conts.items, first_result, &result_counter, false, null);
+                        try emitContinuationList(emitter, ctx, non_looping_conts.items, first_result, &result_counter, false, &flow.inv().path, true);
                     }
                 }
             }
         } else {
             // No pre_label - emit all continuations normally
-            try emitContinuationList(emitter, ctx, conts, first_result, &result_counter, false, null);
+            try emitContinuationList(emitter, ctx, conts, first_result, &result_counter, false, &flow.inv().path, false);
         }
     } else {
         // Zero continuations — use comptime_result_binding if set (for program return)
@@ -8056,6 +8056,13 @@ fn emitContinuationList(
     result_counter: *usize,
     is_partial_switch: bool,
     callee_path: ?*const ast.DottedPath,
+    /// True when `continuations_in` is one side of the pre-label LOOP SPLIT
+    /// (looping arms inside the while / non-looping arms after it). Each side
+    /// arrives as a single-continuation list even though the flow handles every
+    /// branch, so the sparse-dispatch tag guard below must not fire: the while
+    /// condition already discriminates, and for a `-> T` subflow the post-loop
+    /// terminal read must stay unconditional or Zig sees an implicit return.
+    partitioned_dispatch: bool,
 ) anyerror!void {
     const callee_bare_return = blk: {
         if (callee_path) |path| {
@@ -8143,6 +8150,7 @@ fn emitContinuationList(
         // An unhandled sibling outcome is a NO-OP at a dispatch site (690_085),
         // so the guard needs no `else`.
         const needs_tag_guard = !callee_bare_return and
+            !partitioned_dispatch and
             callee_terminals > 1 and
             !cont.is_catchall and
             cont.branch.len > 0;
@@ -9523,10 +9531,10 @@ pub fn emitContinuationBody(
                         ctx.current_source_event = saved_source;
                     }
 
-                    try emitContinuationList(emitter, ctx, effective_continuations, last_result, result_counter, false, &inv.path);
+                    try emitContinuationList(emitter, ctx, effective_continuations, last_result, result_counter, false, &inv.path, false);
                 } else {
                     // No invocation in step, keep current source
-                    try emitContinuationList(emitter, ctx, effective_continuations, last_result, result_counter, false, null);
+                    try emitContinuationList(emitter, ctx, effective_continuations, last_result, result_counter, false, null, false);
                 }
             }
         }
@@ -9982,7 +9990,7 @@ fn emitStep(
 
                         // Handle nested continuations (e.g., | result r |> ...)
                         if (cont.continuations.len > 0) {
-                            try emitContinuationList(emitter, ctx, cont.continuations, inner_result, &step_idx, false, &node.invocation.path);
+                            try emitContinuationList(emitter, ctx, cont.continuations, inner_result, &step_idx, false, &node.invocation.path, false);
                         }
                     }
                 }
@@ -10018,7 +10026,7 @@ fn emitStep(
                         step_idx += 1;
 
                         if (cont.continuations.len > 0) {
-                            try emitContinuationList(emitter, ctx, cont.continuations, inner_result, &step_idx, false, &node.invocation.path);
+                            try emitContinuationList(emitter, ctx, cont.continuations, inner_result, &step_idx, false, &node.invocation.path, false);
                         }
                     }
                 }
@@ -10066,7 +10074,7 @@ fn emitStep(
                     step_idx += 1;
 
                     if (cont.continuations.len > 0) {
-                        try emitContinuationList(emitter, ctx, cont.continuations, inner_result, &step_idx, false, if (node == .invocation) &node.invocation.path else null);
+                        try emitContinuationList(emitter, ctx, cont.continuations, inner_result, &step_idx, false, if (node == .invocation) &node.invocation.path else null, false);
                     }
                 }
             }
@@ -10096,7 +10104,7 @@ fn emitStep(
                         step_idx += 1;
 
                         if (cont.continuations.len > 0) {
-                            try emitContinuationList(emitter, ctx, cont.continuations, inner_result, &step_idx, false, &node.invocation.path);
+                            try emitContinuationList(emitter, ctx, cont.continuations, inner_result, &step_idx, false, &node.invocation.path, false);
                         }
                     }
                 }
@@ -10159,7 +10167,7 @@ fn emitStep(
                         step_idx += 1;
 
                         if (cont.continuations.len > 0) {
-                            try emitContinuationList(emitter, ctx, cont.continuations, inner_result, &step_idx, false, &node.invocation.path);
+                            try emitContinuationList(emitter, ctx, cont.continuations, inner_result, &step_idx, false, &node.invocation.path, false);
                         }
                     }
                 }

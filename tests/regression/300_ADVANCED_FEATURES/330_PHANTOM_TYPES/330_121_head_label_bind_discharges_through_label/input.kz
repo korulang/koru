@@ -1,0 +1,30 @@
+// Pins: a named-label binding on a phantom-minting bare-return HEAD carries
+// the obligation, and a discharge THROUGH that binding is credited.
+// `create(...) | made c |> cleanup(r: c)` is the label spelling of
+// `create(...): c |> cleanup(r: c)` — the emitter lowers both to the same
+// direct bind, so the phantom checker and the auto-discharge inserter must
+// track `c` identically in both. 330_122 is the undischarged half.
+//
+// Auto-discharge is disabled so the crediting is under test, not the LIFO
+// insertion.
+const std = @import("std");
+
+const Resource = struct { value: i32 };
+
+~pub tor create { value: i32 } -> *Resource<state_a!>
+
+~proc create|zig {
+    const r = std.heap.page_allocator.create(Resource) catch unreachable;
+    r.* = Resource{ .value = value };
+    return r;
+}
+
+~pub tor cleanup { r: *Resource<!state_a> }
+
+~proc cleanup|zig {
+    std.debug.print("cleaned {d}\n", .{r.value});
+    std.heap.page_allocator.destroy(r);
+}
+
+~create(value: 7)
+| made c |> cleanup(r: c)
