@@ -16,6 +16,7 @@ same shape.
 | `regression_lib.sh` honours a `BENCHMARK` marker | `save-snapshot.js` had never heard of it → 14 tests `untested` since January |
 | a filter matching **zero** tests refuses (`f1a74bd1`) | a filter matching **some** silently drops the rest |
 | the mirror wall reads `pub tor` in `koru_std/*.kz` | the same transform as `pub event`, or in a `.k`, ships unwatched |
+| a duplicate `NNN_NNN` test id is refused (`prose-check` C) | an *orphan* test dir — build artifacts, no source — is invisible until it happens to acquire a twin |
 
 In every case the guarded direction is the one that had already caused visible
 pain. `regression_lib.sh:581` even records its own motive in the source —
@@ -55,6 +56,25 @@ prerequisite, not a side quest.** Two of the four were walls nobody remembered
 existed — see [[frag-compliance-is-counted-with-the-enforcers-predicate]], where
 a forgotten wall caused the same corpus to be measured as 75% rotten when it was
 98% sound.
+
+## The fifth instance shows the failure mode from the other side
+
+`git mv` on a test directory is half an operation: the tracked files move, the
+untracked build artifacts stay, and the leftover directory keeps the old name.
+When `335_020` was renamed, the orphan kept the same `NNN_NNN`, and
+`prose-check` C refused the board on the duplicate — **the wall worked, on the
+first run after the merge.**
+
+But four *other* orphan directories were sitting in the corpus at that moment,
+stranded by older deletions, causing nothing. They had no twin, so no rule
+noticed them. The guarded case is "two dirs, one id"; the unguarded mirror is
+"a dir with no source at all," which is the more common outcome of the same
+mistake.
+
+That is worth recording because it is the pattern seen from the *good* side: a
+wall firing correctly is not evidence its mirror is covered, and the noisy case
+is usually the rarer one. What made the four orphans harmless was luck about
+numbering, not a rule.
 
 ## Open
 
