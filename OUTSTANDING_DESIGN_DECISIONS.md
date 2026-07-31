@@ -286,36 +286,78 @@ an imported module (module-qualifier resolution becomes a parse/frontend check, 
 the test assumes) — or is qualifier resolution legitimately a backend/registry
 concern (and the test is wrong about where the error belongs)?
 
-## D7 — What names a row? (the store's identity question)
-**Pins:** `690_092` (red, opened 2026-07-28), `690_018` (TODO since 2026-07-04),
-`690_090`/`690_094` (red, the resolution half). Creditor: koru-examples/downloads.
-**ALREADY RULED (2026-07-04, O2):** one lvalue path grammar, four addressing
-heads, of which (3) is declared keys — `pool[id: 7].hp` — and "the index it needs
-is a DECLARED cost." **NOT ruled: how a key gets MARKED.** 690_018's header says
-so itself: "`key:` marking spelling PROVISIONAL (candidate: an invocation-arg
-directive per ruling 8)." Lars confirmed 2026-07-28 that he never settled it.
-**Grounded root:** `take` is swap-remove (`koru_std/store.kz:2717`), so a row's
-POSITION is not its identity. There is no declaration of a reference anywhere —
-`store.kz:4576-4595` resolves a bracket head by NAME MATCH at the use site
-against the target store's own column list, so any `i64` column resolves
-identically and the store holds no referrer set. 690_092 measures the
-consequence: a stored index survives a removal, the write lands past `len`
-inside capacity, and NOTHING traps — `300, 200`, with the 999 nowhere.
-**Mechanism is SHOWN viable** (2026-07-28, spiked and reverted): the write path
-is one emitted block with the row live throughout and already calls out
-mid-atomic-step (`store.kz:2075`); a probe emitted after the swap fires with both
-ends of the relocation (`from=2 to=0`). The ONE hole is that nothing fires after
-the swap — `removed` fires BEFORE it (`store.kz:2694`) because the slot is about
-to be clobbered. Cascade cycles are already comptime-visible and rejected
-(`690_012`), and a one-directional index is not a cycle.
-**DECISION NEEDED:** (a) how is a key marked at `new`? (b) is the maintained
-index the SAME construct as the declared key, or two? — a key column the store
-indexes would give both addressing and stable identity from one declaration, and
-splitting them buys a second surface. (c) what does a reference to a REMOVED row
-become — a sentinel (the `[tree]` parent column already uses `-1`,
-`store.kz:369`) or a branch the program must handle?
-**Unblocks:** downloads' double sweep (`x.idx == pr.index` is a linear key scan
-standing in for `xfers[idx: pr.index]`), and 690_092 goes green.
+## D7 — Row identity: the ruling EXISTS (O10). It is a handle, not a key.
+**Rewritten 2026-07-31.** The previous framing asked "how is a key marked at
+`new`?" and treated identity as an open design question. It is not. It was ruled
+in `690_STORE/DESIGN.md` O10, and it is a MEMORY CONTRACT, not a user surface:
+
+> (iii) THE MEMORY CONTRACT is ruled, the mechanism is the planner's: dense
+> iteration, O(1) insert/take, **handles stable across other rows' removal**
+> (sparse-set vs slot-freelist = planner per workload; **swap-remove legal
+> because positional index is not identity**).
+> (iv) **HANDLE-SAFETY FLOOR: generational check per access (one compare)** as
+> the safe default; phantom-proven elision where the checker establishes
+> no-stale — THESIS, same floor-then-prove-away arc as the concurrency lock and
+> escape-driven stack alloc.
+
+**So a store needs NO key for identity.** It needs its handle to BE a handle —
+slot plus generation — instead of the raw `i64` position it hands out today.
+`690_092` corrupts silently because the ruled design was never built: `| row a`
+yields a bare position, and `[tree]`'s synthesized `parent` is documented as an
+"i64 row handle, -1 = root", which is a position wearing the word handle.
+
+**This also disposes of `! moved`.** An effect branch firing on relocation exists
+to let an outsider fix up stored positions. Under O10 no outsider holds a
+position, so there is nothing to fix and nothing to notify. The arm was killed
+2026-07-28; that is the reason, and it was recorded as a conclusion without it.
+
+### What the CORE surface needs: nothing
+`insert`, `sweep`, `query`, `preorder`, `take`, `stored`, `watch` and the
+lifecycle arms are all "you have the row right now". Measured: **no test holds a
+row handle across a remove** — all 18 `| row X` + removal co-occurrences are
+bind-then-consume. Stored positions are exactly 5 tests (`695_001/002` tree
+parent, `690_048` self-FK `next`, `690_075/076` `todos[ui.sel]`), **none of which
+removes a row** — the sole reason `690_092` never surfaced.
+
+### FEASIBILITY (assessed 2026-07-31) — buildable, one ruling short
+- **No new type spelling is needed.** Pack slot+generation into the existing
+  `i64`. `next: i64`, `ui.sel`, and `[tree]`'s `parent` all keep working
+  unchanged; only the meaning of the bits changes. This matters because
+  DESIGN.md's own HANDLE GAPS note says a plain handle has **no type spelling**
+  for leaving its chain — packing sidesteps that rather than waiting on it.
+- **The lowering site is centralized**: `indexedFieldRefs` (`store.kz:4534`) is
+  the single function every `<store>[expr].<field>` passes through. ⚠️ It is a
+  TEXTUAL rewrite, so it carries the standing store-is-text hazard.
+- **The swap already has both ends live** — `__koru_r` and `__koru_last`,
+  `store.kz:2717-2722` — and the write path already calls out mid-atomic-step
+  (`store.kz:2075`). A post-swap emission point was spiked and SHOWN to fire with
+  both ends (`from=2 to=0`).
+
+### ⛔ THE ONE RULING THAT BLOCKS THE BUILD
+**What does a stale handle access DO?** O10 rules that the check happens; it does
+not say what failing it means.
+- **(a) Trap.** Matches "safety FLOOR" and the loud-failure doctrine, needs NO
+  surface change, and every existing use site keeps compiling. Phantom-proven
+  elision then removes the check where the checker establishes no-stale.
+- **(b) A branch the program handles.** Precedent exists — `take` already offers
+  `| item` / `| empty` (690_075). But it changes EVERY bracket use site, which is
+  a large surface change for a case the corpus says is rare.
+
+### Still open, and genuinely separate from identity
+- **Addressing by value** — `pool[id: 7].hp`, one of O2's four heads. THIS is
+  where the `key:` spelling lives, and it is a query convenience, not identity.
+  It carries its own unsolved problem, flagged in DESIGN.md as **KEY COLLISION**:
+  map precedent (silent overwrite) would invalidate the prior row's handle
+  through ordinary control flow — manufactured staleness — so `key`'s SQL
+  connotation demands reject-or-branch.
+- **ITERATION CONTRACT** — DESIGN.md flags that DELETE WHERE (O2) and
+  swap-remove (O10.iii) were never checked against each other; that is the
+  classic iterate-and-remove bug, needing deferred compaction or
+  removes-apply-after-scan.
+
+**Unblocks:** `690_092` goes green; `downloads`' double sweep; and the resource
+bridge's "what names a handle across turns", which is this question one lifetime
+domain up.
 
 ## D8 — The sweep row ORDINAL has no spelling
 **Pin:** `690_069` (red since 2026-07-28; was green before).
