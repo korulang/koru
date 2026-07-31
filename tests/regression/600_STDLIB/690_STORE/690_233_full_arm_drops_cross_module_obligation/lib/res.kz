@@ -1,0 +1,19 @@
+const std = @import("std");
+
+pub const Thing = struct {
+    v: i64,
+};
+
+~pub tor mk {} -> *Thing<held!>
+
+~proc mk|zig {
+    const t = std.heap.page_allocator.create(Thing) catch @panic("OOM");
+    t.* = .{ .v = 7 };
+    return t;
+}
+
+~pub tor drop { t: *Thing<!held> }
+
+~proc drop|zig {
+    std.heap.page_allocator.destroy(t);
+}
