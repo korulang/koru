@@ -1,23 +1,11 @@
-// PIN (RED — waiting on a spelling, not on a fix): the stdin twin of 335_042.
-// `std/io:read-stdin` allocates with `koru_allocator()` (io.kz:157,
-// `readToEndAlloc`) and returns a bare `| ok string` (io.kz:151). The caller
-// prints it and drops it; the buffer lives until process exit and no pass says
-// anything, because the payload carries no phantom.
-//
-// The pair matters because it shows the hole is the SURFACE, not one tor:
-// every `readToEndAlloc` path in io.kz (read-stdin:157, read-file:189,
-// read-line:129) hands back an allocation the obligation system cannot see.
-//
-// The spelling question lives in 335_042's header — the label, its disposer, and
-// whether one label covers the whole IO read surface. Bring it; do not invent it.
-//
-// Grounding (verified 2026-07-31):
-//   read-stdin decl  — koru_std/io.kz:150, `| ok string` at 151
-//   the allocation   — koru_std/io.kz:157
+// NEGATIVE (under --auto-discharge=disable): read-stdin's twin of 335_042.
+// The buffer carries `allocated!` and must reach `std/io:free` — see
+// 335_042's header for the 2026-07-31 ruling (one label, one disposer).
 
 ~import std/io
 
-// Read all of stdin, use the content, drop it — no disposer exists to call.
+// Read all of stdin, use the content, drop it — the disposer exists now,
+// and with the net disabled the drop is a loud refusal.
 ~std/io:read-stdin()
 | ok content |> std/io:print.ln("{{ content:s }}")
 | eof |> _

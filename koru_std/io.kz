@@ -146,9 +146,14 @@ const std = @import("std");
     return .{ .done = __koru_rl_n };
 }
 
-// Read entire stdin as text
+// Read entire stdin as text. The buffer is allocator-owned and carries the
+// `allocated!` obligation: hand it to `std/io:free` (auto-discharge inserts
+// the call when the trace is unambiguous — most callers never write it).
+// Ruled 2026-07-31 (the 335_042/043 question): one label, `allocated`, for
+// every allocator-owned buffer an io tor hands back; `std/io:free` is the
+// one disposer.
 ~pub tor read-stdin {}
-| ok string
+| ok string<allocated!>
 | eof
 | failed string
 
@@ -169,9 +174,10 @@ const std = @import("std");
     return .{ .ok = content };
 }
 
-// Read entire file as text
+// Read entire file as text. `ok` carries the `allocated!` obligation — see
+// read-stdin's header; `std/io:free` discharges it.
 ~pub tor read-file { path: string }
-| ok string
+| ok string<allocated!>
 | not-found
 | failed string
 
@@ -195,6 +201,14 @@ const std = @import("std");
     };
 
     return .{ .ok = content };
+}
+
+// Discharge the `allocated!` obligation on a buffer an io tor handed back
+// (read-file, read-stdin). The one disposer for the one label.
+~pub tor free { content: string<!allocated> }
+
+~proc free|zig {
+    koru_allocator().free(content);
 }
 
 // Get command line arguments

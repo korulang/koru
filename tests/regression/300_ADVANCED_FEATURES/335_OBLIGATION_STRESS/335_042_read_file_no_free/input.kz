@@ -1,38 +1,21 @@
-// PIN (RED — waiting on a spelling, not on a fix): `std/io:read-file` allocates
-// its result with `koru_allocator()` (io.kz:189, `file.readToEndAlloc`) and hands
-// it back as a bare `| ok string` (io.kz:174). The caller below prints it and
-// drops it. The buffer lives until process exit and no pass says a word, because
-// the branch payload carries no phantom for the checker to hold on to.
+// NEGATIVE (under --auto-discharge=disable): `std/io:read-file`'s buffer
+// carries `allocated!` and MUST reach `std/io:free`.
 //
-// The machinery is NOT missing. An obligation on a primitive `string` already
-// works — 335_047 declares `-> string<tainted!>` and the checker tracks it
-// through a discharge and now through a stale read. What is missing is the
-// SPELLING on the IO surface: what the allocation label is called, and what the
-// disposer that consumes it is called.
+// RULED 2026-07-31 (this file used to be the open question): one label —
+// `allocated` — for every allocator-owned buffer an io tor hands back
+// (read-file here, read-stdin in 335_043), and one disposer, `std/io:free`.
+// The phantom machinery was never missing (335_047 tracked `tainted` on a
+// bare string); this was the spelling landing on the IO surface.
 //
-// THE QUESTION FOR LARS (do not answer it by inventing one):
-//   1. `~pub tor read-file { path: string } | ok string<???!> | …`
-//      — what is the label? `allocated`, `owned`, something else?
-//   2. What consumes it? A new `std/io` tor taking `<!???>`, or does
-//      `std/string:free`-shaped ownership already own this and IO should hand
-//      back a `*String<view!>` instead of a bare `string`?
-//   3. `read-stdin`, `read-line`, and every other `readToEndAlloc` path in
-//      io.kz have the same hole (335_043 is the stdin twin) — one label for all
-//      of them, or per-tor?
-//
-// EXPECT stays `CONTAINS allocated` as the provisional pin. It moves to whatever
-// Lars spells, and only then.
-//
-// Grounding (verified 2026-07-31):
-//   read-stdin decl      — koru_std/io.kz:150
-//   read-file decl       — koru_std/io.kz:173, `| ok string` at 174
-//   the allocation       — koru_std/io.kz:189
-//   obligation on a bare `string` works — 335_047/input.k:39
+// Under DEFAULT settings auto-discharge inserts the free (the same
+// convenience curl/yyjson/sse lean on) and this file compiles and runs
+// clean — proven the day of the ruling by koru-examples/kopium's leak
+// check going green. With the net disabled, the leak is a loud refusal:
+//   error[KORU030]: Resource 'content' carries obligation <allocated!>
+//   was not discharged. Call: std.io:free
 
 ~import std/io
 
-// Read a file and use its content, then drop it. The allocator-owned buffer
-// leaks; no phantom exists on the payload, so nothing refuses.
 ~std/io:read-file(path: "data.txt")
 | ok content |> std/io:print.ln("{{ content:s }}")
 | not-found |> _
