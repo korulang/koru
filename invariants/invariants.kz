@@ -24,6 +24,13 @@
     "check": "python3 checks/check_call_valued_index.py ../koru_std checks/call-valued-index.allow"
 }
 
+~std/invariants:inferred {
+    "name": "every-emitted-variant-has-a-witness",
+    "tags": ["post-full-run"],
+    "rule": "Every variant an emitter can produce must appear in at least one test's emitted output; a variant appearing in zero is invisible surface — it ships, no test has ever run it, and a green board says nothing about it (__kz_wd, the raw_posix integer digit writer, was found by hand this way). This is a different axis from the two checks above: they are static over emitter source (what the emitter COULD write); this one is dynamic over emitted artifacts (what the corpus actually MADE it write), so it runs in the post-full-run slot beside the wall census, where artifacts exist for the whole board. The variant set is DERIVED, never hand-listed: a variant is identified by its marker, a __-prefixed symbol in the emitted-string content of the koru_std transforms (same extraction as the sibling checks), with template placeholders as wildcards and concatenation-head fragments folded into their templated duals. Coverage reads each test's output_emitted.zig and counts a marker only where it appears as BARE code — emitted text lives inside string literals at the emitter and materialises as bare code in the artifact, while emitter source embedded in an artifact keeps its markers inside strings, so the bare/quoted inversion is what makes a witness a witness. Artifacts are ephemeral: below half the test dirs carrying one (a full board measures ~65%, a filtered run ~1%) the check reports BROKEN and voids its verdict, never clean. The claim is deliberately narrow and named: a variant that emits only anonymous code shares its witness with every sibling using the same helper symbols; the |js variant (console.log into output_emitted.js), src/ emitter templates, prose-quoted symbols, and variants reachable only under another --build host are out of reach — an uncovered symbol whose invisibility is understood gets a reasoned exemption in checks/variant-coverage.allow, and a stale exemption fails. The check self-tests derivation and artifact scanning against must-match and must-not-match fixtures before judging.",
+    "check": "python3 checks/check_variant_coverage.py ../koru_std ../tests/regression checks/variant-coverage.allow"
+}
+
 ~tor main {}
 
 ~proc main|zig {
