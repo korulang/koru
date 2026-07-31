@@ -6052,6 +6052,24 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:sweep({s}): the sweep arm needs a row binding: `! sweep <row> |> ...`", .{store_name}) } };
     };
 
+    // The row's projected fields and its cursor are keyed on the ARM — binding
+    // and line — never on the bare field name. This body may be transplanted
+    // into ANOTHER sweepbody's scope (a nested sweep), and a field-keyed name
+    // minted there is the same name the inner arm mints for its own row: the
+    // inner store's column claims the outer binding's reads, silently, at the
+    // inner cursor (690_110). The binding says WHOSE row a reference is; the
+    // line splits arms that share a spelling. `-` is not a Zig identifier
+    // character, so a kebab binding is folded before it reaches emitted code.
+    const bind_key = blk: {
+        const k = allocator.dupe(u8, row_bind) catch unreachable;
+        for (k) |*ch| {
+            if (ch.* == '-') ch.* = '_';
+        }
+        break :blk k;
+    };
+    const srf_prefix = std.fmt.allocPrint(allocator, "__koru_srf_{s}_L{d}_", .{ bind_key, sc.location.line }) catch unreachable;
+    const srow_name = std.fmt.allocPrint(allocator, "__koru_srow_{s}_L{d}", .{ bind_key, sc.location.line }) catch unreachable;
+
     // --- the body: transplanted into a sweepbody impl flow (like query's qbody) ---
     const body_clone = ast_functional.cloneContinuation(allocator, sc) catch unreachable;
     const body_node = body_clone.node orelse {
@@ -6064,13 +6082,13 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
     // A sweep arm READS and WRITES the row it is standing on (690_083), and both
     // are spelled `<row>.<field>`. Three lowered forms, chosen by position:
     //
-    //   .target — a `stored` LHS   → `<store>[__koru_srow].<f>`, the indexed
+    //   .target — a `stored` LHS   → `<store>[<cursor>].<f>`, the indexed
     //             lvalue the `stored` transform expects to be handed.
     //   .live   — a `stored` RHS   → a direct column read at the cursor, so a
     //             block that writes one field and reads another sees the row as
     //             it is NOW, not as it was when the loop iteration began.
-    //   .input  — everywhere else  → `__koru_srf_<f>`, the per-row value handed
-    //             to the transplanted body as an event input.
+    //   .input  — everywhere else  → `<srf_prefix><f>`, the per-row value
+    //             handed to the transplanted body as an event input.
     //
     // The `.input` name is MANGLED rather than the bare field name, and that is
     // what makes rule 5 (shadowing is allowed) free: `<row>.v` and an enclosing
@@ -6090,7 +6108,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         fn isIdentCh(ch: u8) bool {
             return (ch >= 'a' and ch <= 'z') or (ch >= 'A' and ch <= 'Z') or (ch >= '0' and ch <= '9') or ch == '_' or ch == '-';
         }
-        fn refs(alloc: std.mem.Allocator, text: []const u8, bind: []const u8, store: []const u8, fields: []const []const u8, form: Form, used: []bool, unknown: *?[]const u8) []const u8 {
+        fn refs(alloc: std.mem.Allocator, text: []const u8, bind: []const u8, store: []const u8, fields: []const []const u8, srf: []const u8, cursor: []const u8, form: Form, used: []bool, unknown: *?[]const u8) []const u8 {
             const prefix = std.fmt.allocPrint(alloc, "{s}.", .{bind}) catch unreachable;
             const expr_ctx = ast.expressionMask(alloc, text);
             var out = std.ArrayList(u8).initCapacity(alloc, text.len + 32) catch unreachable;
@@ -6108,11 +6126,11 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                     }
                     if (cidx) |ci| {
                         const t = switch (form) {
-                            .target => std.fmt.allocPrint(alloc, "{s}[__koru_srow].{s}", .{ store, fname }) catch unreachable,
-                            .live => std.fmt.allocPrint(alloc, "__koru_store_{s}.{s}[@as(usize, @intCast(__koru_srow))]", .{ store, fname }) catch unreachable,
+                            .target => std.fmt.allocPrint(alloc, "{s}[{s}].{s}", .{ store, cursor, fname }) catch unreachable,
+                            .live => std.fmt.allocPrint(alloc, "__koru_store_{s}.{s}[@as(usize, @intCast({s}))]", .{ store, fname, cursor }) catch unreachable,
                             .input => blk3: {
                                 used[ci] = true;
-                                break :blk3 std.fmt.allocPrint(alloc, "__koru_srf_{s}", .{fname}) catch unreachable;
+                                break :blk3 std.fmt.allocPrint(alloc, "{s}{s}", .{ srf, fname }) catch unreachable;
                             },
                         };
                         out.appendSlice(alloc, t) catch unreachable;
@@ -6133,11 +6151,11 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                     if (after >= text.len or (!isIdentCh(text[after]) and text[after] != '.')) {
                         const fname = fields[0];
                         const t = switch (form) {
-                            .target => std.fmt.allocPrint(alloc, "{s}[__koru_srow].{s}", .{ store, fname }) catch unreachable,
-                            .live => std.fmt.allocPrint(alloc, "__koru_store_{s}.{s}[@as(usize, @intCast(__koru_srow))]", .{ store, fname }) catch unreachable,
+                            .target => std.fmt.allocPrint(alloc, "{s}[{s}].{s}", .{ store, cursor, fname }) catch unreachable,
+                            .live => std.fmt.allocPrint(alloc, "__koru_store_{s}.{s}[@as(usize, @intCast({s}))]", .{ store, fname, cursor }) catch unreachable,
                             .input => blk4: {
                                 used[0] = true;
-                                break :blk4 std.fmt.allocPrint(alloc, "__koru_srf_{s}", .{fname}) catch unreachable;
+                                break :blk4 std.fmt.allocPrint(alloc, "{s}{s}", .{ srf, fname }) catch unreachable;
                             },
                         };
                         out.appendSlice(alloc, t) catch unreachable;
@@ -6152,24 +6170,24 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         }
         // A stored block is `target: value` pairs — targets take the indexed
         // lvalue, values read the live column.
-        fn storedBlock(alloc: std.mem.Allocator, text: []const u8, bind: []const u8, store: []const u8, fields: []const []const u8, used: []bool, unknown: *?[]const u8) []const u8 {
+        fn storedBlock(alloc: std.mem.Allocator, text: []const u8, bind: []const u8, store: []const u8, fields: []const []const u8, srf: []const u8, cursor: []const u8, used: []bool, unknown: *?[]const u8) []const u8 {
             const braced = std.fmt.allocPrint(alloc, "{{{s}}}", .{text}) catch unreachable;
             const struct_literal_s = @import("struct_literal");
             const pairs = struct_literal_s.parseFields(alloc, braced) catch return text;
             var out = std.ArrayList(u8).initCapacity(alloc, text.len + 64) catch unreachable;
             for (pairs, 0..) |pr, i| {
                 if (i > 0) out.appendSlice(alloc, ", ") catch unreachable;
-                out.appendSlice(alloc, refs(alloc, pr.name, bind, store, fields, .target, used, unknown)) catch unreachable;
+                out.appendSlice(alloc, refs(alloc, pr.name, bind, store, fields, srf, cursor, .target, used, unknown)) catch unreachable;
                 out.appendSlice(alloc, ": ") catch unreachable;
-                out.appendSlice(alloc, refs(alloc, pr.value, bind, store, fields, .live, used, unknown)) catch unreachable;
+                out.appendSlice(alloc, refs(alloc, pr.value, bind, store, fields, srf, cursor, .live, used, unknown)) catch unreachable;
             }
             return out.toOwnedSlice(alloc) catch unreachable;
         }
-        fn walkCont(alloc: std.mem.Allocator, cont: *ast.Continuation, bind: []const u8, store: []const u8, fields: []const []const u8, used: []bool, unknown: *?[]const u8) void {
+        fn walkCont(alloc: std.mem.Allocator, cont: *ast.Continuation, bind: []const u8, store: []const u8, fields: []const []const u8, srf: []const u8, cursor: []const u8, used: []bool, unknown: *?[]const u8) void {
             // A nested arm's `when` guard runs inside the body event, so it reads
             // the threaded inputs like any other body expression.
             if (cont.condition) |c| {
-                @constCast(cont).condition = refs(alloc, c, bind, store, fields, .input, used, unknown);
+                @constCast(cont).condition = refs(alloc, c, bind, store, fields, srf, cursor, .input, used, unknown);
             }
             if (cont.node) |*n| {
                 switch (@constCast(n).*) {
@@ -6189,25 +6207,25 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                         for (inv.args) |*a| {
                             const is_source_block = is_stored and std.mem.eql(u8, a.name, "source");
                             @constCast(a).value = if (is_source_block)
-                                storedBlock(alloc, a.value, bind, store, fields, used, unknown)
+                                storedBlock(alloc, a.value, bind, store, fields, srf, cursor, used, unknown)
                             else
-                                refs(alloc, a.value, bind, store, fields, .input, used, unknown);
+                                refs(alloc, a.value, bind, store, fields, srf, cursor, .input, used, unknown);
                             if (a.expression_value) |ev| {
                                 const fresh = alloc.create(ast.CapturedExpression) catch unreachable;
                                 fresh.* = ev.*;
                                 fresh.text = if (is_source_block)
-                                    storedBlock(alloc, ev.text, bind, store, fields, used, unknown)
+                                    storedBlock(alloc, ev.text, bind, store, fields, srf, cursor, used, unknown)
                                 else
-                                    refs(alloc, ev.text, bind, store, fields, .input, used, unknown);
+                                    refs(alloc, ev.text, bind, store, fields, srf, cursor, .input, used, unknown);
                                 @constCast(a).expression_value = fresh;
                             }
                             if (a.source_value) |sv| {
                                 const fresh = alloc.create(ast.Source) catch unreachable;
                                 fresh.* = sv.*;
                                 fresh.text = if (is_source_block)
-                                    storedBlock(alloc, sv.text, bind, store, fields, used, unknown)
+                                    storedBlock(alloc, sv.text, bind, store, fields, srf, cursor, used, unknown)
                                 else
-                                    refs(alloc, sv.text, bind, store, fields, .input, used, unknown);
+                                    refs(alloc, sv.text, bind, store, fields, srf, cursor, .input, used, unknown);
                                 @constCast(a).source_value = fresh;
                             }
                         }
@@ -6215,16 +6233,39 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                     else => {},
                 }
             }
-            for (cont.continuations) |*c| walkCont(alloc, @constCast(c), bind, store, fields, used, unknown);
+            // Rule 4 of 690_086 — bindings resolve innermost first. A nested
+            // sweep arm that REBINDS this name shadows it (rule 5): everything
+            // under that arm reads the INNER row, and the inner site's own
+            // transform claims those references. Descending past the rebind
+            // would hand them to the outer row — a resolution decided by pass
+            // order instead of by the rule.
+            const node_is_sweep = blk5: {
+                if (cont.node) |*n| {
+                    if (n.* == .invocation) {
+                        if (n.invocation.path.module_qualifier) |mq| {
+                            if (std.mem.eql(u8, mq, "std.store") and n.invocation.path.segments.len == 1 and std.mem.eql(u8, n.invocation.path.segments[0], "sweep")) break :blk5 true;
+                        }
+                    }
+                }
+                break :blk5 false;
+            };
+            for (cont.continuations) |*c| {
+                if (node_is_sweep and std.mem.eql(u8, std.mem.trim(u8, c.branch, " "), "sweep")) {
+                    if (c.binding) |cb| {
+                        if (std.mem.eql(u8, cb, bind)) continue;
+                    }
+                }
+                walkCont(alloc, @constCast(c), bind, store, fields, srf, cursor, used, unknown);
+            }
         }
     };
-    SRewrite.walkCont(allocator, @constCast(&body_clone), row_bind, store_name, col_names, used_cols, &unknown_field);
+    SRewrite.walkCont(allocator, @constCast(&body_clone), row_bind, store_name, col_names, srf_prefix, srow_name, used_cols, &unknown_field);
 
     // The arm's own `when` guard is emitted in the LOOP, not the body event —
-    // but it reads the same `__koru_srf_<f>` consts, which the loop binds just
+    // but it reads the same `<srf_prefix><f>` consts, which the loop binds just
     // above it. One spelling, two scopes, no second rule.
     const guard_z: ?[]const u8 = if (sc.condition) |c|
-        SRewrite.refs(allocator, c, row_bind, store_name, col_names, .input, used_cols, &unknown_field)
+        SRewrite.refs(allocator, c, row_bind, store_name, col_names, srf_prefix, srow_name, .input, used_cols, &unknown_field)
     else
         null;
 
@@ -6237,7 +6278,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
     var pcols = std.ArrayList(usize).initCapacity(allocator, col_names.len) catch unreachable;
     for (col_names, 0..) |cn, ci| {
         if (!used_cols[ci]) continue;
-        pnames.append(allocator, std.fmt.allocPrint(allocator, "__koru_srf_{s}", .{cn}) catch unreachable) catch unreachable;
+        pnames.append(allocator, std.fmt.allocPrint(allocator, "{s}{s}", .{ srf_prefix, cn }) catch unreachable) catch unreachable;
         pcols.append(allocator, ci) catch unreachable;
     }
     const proj_names = pnames.toOwnedSlice(allocator) catch unreachable;
@@ -6254,6 +6295,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             name: []const u8,
             type: []const u8,
             module_path: ?[]const u8 = null,
+            phantom: ?[]const u8 = null,
         };
         fn isIdentStart(ch: u8) bool {
             return (ch >= 'a' and ch <= 'z') or (ch >= 'A' and ch <= 'Z') or ch == '_';
@@ -6406,6 +6448,40 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             const leaf = if (path.segments.len > 0) path.segments[path.segments.len - 1] else return null;
             return lookupBranchIn(items, leaf, branch);
         }
+        // A sweepbody impl flow's OWN event inputs are in scope for its body —
+        // the outer sweep's projected row fields and cursor arrive as inputs,
+        // keyed on the outer arm. A sweep transplanted INTO that body reads
+        // them as free names, so they join `avail` and take the capture road
+        // (690_073's `n`), which is what lets a row binding survive nesting
+        // (690_110, 690_112).
+        fn eventInputsIn(alloc: std.mem.Allocator, its: []const ast.Item, leaf: []const u8, mq: ?[]const u8, out: *std.ArrayList(Bind)) void {
+            for (its) |pi| {
+                if (pi == .event_decl) {
+                    const ed = &pi.event_decl;
+                    if (ed.path.segments.len == 0) continue;
+                    if (!std.mem.eql(u8, ed.path.segments[ed.path.segments.len - 1], leaf)) continue;
+                    if (mq) |m| {
+                        if (ed.path.module_qualifier) |em| {
+                            if (!std.mem.eql(u8, em, m)) continue;
+                        }
+                    }
+                    for (ed.input.fields) |f| {
+                        out.append(alloc, .{
+                            .name = f.name,
+                            .type = f.type,
+                            .module_path = f.module_path,
+                            .phantom = f.phantom,
+                        }) catch unreachable;
+                    }
+                } else if (pi == .module_decl) {
+                    eventInputsIn(alloc, pi.module_decl.items, leaf, mq, out);
+                }
+            }
+        }
+        fn collectEventInputs(alloc: std.mem.Allocator, items: []const ast.Item, path: ast.DottedPath, out: *std.ArrayList(Bind)) void {
+            if (path.segments.len == 0) return;
+            eventInputsIn(alloc, items, path.segments[path.segments.len - 1], path.module_qualifier, out);
+        }
         fn collectBindsOnPath(alloc: std.mem.Allocator, items: []const ast.Item, cont: *const ast.Continuation, target: *const ast.Invocation, out: *std.ArrayList(Bind)) bool {
             // Returns true if `target` lives under `cont`. Pushes mid-pipe binds
             // on the path TO the target (ancestors only — not sibling arms or
@@ -6481,6 +6557,17 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             if (hn.* == .invocation) {
                 if (Cap.findHostFlow(program.items, holding)) |host| {
                     _ = Cap.collectBindsOnPath(allocator, program.items, &host.body, &hn.invocation, &avail);
+                    // Nested sweep: this site's host flow is another sweep's
+                    // transplanted body, and that flow's event inputs — the
+                    // OUTER row's keyed projections and cursor — are in scope
+                    // for it. Scoped to sweepbody hosts: their inputs are all
+                    // arm-keyed mangles, so a name matches only when the text
+                    // really references the outer row.
+                    if (host.impl_of) |iof| {
+                        if (iof.segments.len > 0 and std.mem.startsWith(u8, iof.segments[iof.segments.len - 1], "__store_sweepbody_")) {
+                            Cap.collectEventInputs(allocator, program.items, iof, &avail);
+                        }
+                    }
                 }
             }
         }
@@ -6530,7 +6617,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
     // disambiguated by store_name, which is why 690_087 never caught it.
     // Pinned: 690_110.
     const sbody_name = std.fmt.allocPrint(allocator, "__store_sweepbody_{s}_L{d}", .{ store_name, sc.location.line }) catch unreachable;
-    // +1 for `__koru_srow`, the row cursor. The projections hand the body
+    // +1 for the arm-keyed row cursor. The projections hand the body
     // COPIES of the row's values; writing back needs the row itself. Query's
     // qbody takes `__koru_qrow` for exactly this reason (store.kz:1481).
     // Always threaded, never conditional on the body writing: an unused event
@@ -6553,10 +6640,11 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             .name = allocator.dupe(u8, c.name) catch unreachable,
             .type = c.type,
             .module_path = c.module_path,
+            .phantom = c.phantom,
         };
     }
     sbody_in[proj_names.len + captures.items.len] = ast.Field{
-        .name = allocator.dupe(u8, "__koru_srow") catch unreachable,
+        .name = allocator.dupe(u8, srow_name) catch unreachable,
         .type = allocator.dupe(u8, "i64") catch unreachable,
     };
     const retain_ann = blk: {
@@ -6627,7 +6715,8 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         const a = std.fmt.allocPrint(allocator, " .{s} = {s},", .{ c.name, c.name }) catch unreachable;
         loop.appendSlice(allocator, a) catch unreachable;
     }
-    loop.appendSlice(allocator, " .__koru_srow = @as(i64, @intCast(__koru_si))") catch unreachable;
+    const srow_arg = std.fmt.allocPrint(allocator, " .{s} = @as(i64, @intCast(__koru_si))", .{srow_name}) catch unreachable;
+    loop.appendSlice(allocator, srow_arg) catch unreachable;
     loop.appendSlice(allocator, " });\n}\n}\n") catch unreachable;
 
     // WHERE this replacement lands is the runner's call, and the two placements
@@ -6660,14 +6749,39 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
     // no captures reads nothing but the store globals and its own projections,
     // so it can be lifted anywhere. A top-level statement has no enclosing
     // frame to capture from, which is exactly the case that needs lifting.
-    const is_head_site = blk: {
-        if (captures.items.len > 0) break :blk false;
+    const is_head = blk: {
         if (flow.body.node) |*hn| {
             if (hn.* != .invocation) break :blk false;
             break :blk &hn.invocation == invocation;
         }
         break :blk false;
     };
+
+    // The head of an IMPL flow, with captures — the nested-sweep shape: this
+    // site is the whole body of another sweep's transplanted sweepbody, and
+    // its captures are that event's inputs (the outer row). The srun road
+    // lifts the loop out of their scope; the inline road has no function body
+    // to splice into, because the flow item IS the site. Third road: the flow
+    // becomes a PROC implementing the same event. A proc impl binds every
+    // event input as a const, so the captures are in scope by construction.
+    if (is_head and captures.items.len > 0) {
+        if (flow.impl_of) |iof| {
+            const pbody = std.fmt.allocPrint(allocator, "{s}return;", .{loop.items}) catch unreachable;
+            return .{ .transformed = .{
+                .replacement = ast.Item{ .proc_decl = ast.ProcDecl{
+                    .path = iof,
+                    .body = ast.Source{ .text = pbody, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
+                    .annotations = &[_][]const u8{},
+                    .target = allocator.dupe(u8, "zig") catch unreachable,
+                    .location = flow.location,
+                    .module = allocator.dupe(u8, flow.module) catch unreachable,
+                } },
+                .appended = appended.toOwnedSlice(allocator) catch unreachable,
+            } };
+        }
+    }
+
+    const is_head_site = is_head and captures.items.len == 0;
 
     if (!is_head_site) {
         return .{ .transformed = .{
