@@ -56,6 +56,15 @@ somewhere else entirely.
 - **Exemptions must be declared and must rot loudly.** Fourteen honest `while`s
   need somewhere to say so that is not a comment nobody reads; a stale
   exemption should fail the check rather than quietly persist.
+- **A classification is per site, never per batch.** The "strided, and Zig's
+  `for` has no stride" reasoning was applied to four sites as a group, and one
+  of them (the io digit reverse) was a constant-step two-pointer loop with a
+  trip count of `_n / 2` — not strided at all. A reason written once and
+  stamped across a batch smears onto sites it never described; each site's
+  exemption must be re-derived from that site's own loop. And "Zig's `for` has
+  no stride" is not itself a ruling — the stride makes the conversion cost a
+  multiply, and whether the multiply costs more than the vectorization buys is
+  a measurement, not an assertion.
 
 ## Open
 
