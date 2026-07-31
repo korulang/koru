@@ -1,0 +1,15 @@
+# Declared exemptions for the variant-coverage check
+# (every-emitted-variant-has-a-witness).
+#
+# Format: file | symbol | reason
+#   file   — basename of the koru_std source whose emitted-string content
+#            first carries the symbol (as the check derives it)
+#   symbol — the derived marker, placeholders as {} (e.g. __store_write_{})
+#   reason — why NO test on this host can witness the symbol, or why the
+#            symbol is not really emitted surface (e.g. a startsWith
+#            predicate quoted in a string). Mandatory. An entry matching
+#            no uncovered symbol is stale and FAILS the check.
+#
+# An exemption is a ruling that this symbol's invisibility is understood
+# and accepted. Everything not listed here is invisible surface: emitter
+# code that ships with zero executions behind it.

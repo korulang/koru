@@ -101,6 +101,7 @@ stopping on any unexplained flip.
 | anchor:cache-parity | run_regression.sh | PARITY VIOLATION | --verify-cache asserts cached and uncached verdicts agree |
 | anchor:watchdog-process-group | scripts/regression_lib.sh | run_one_test_watched | a hung test is killed as a whole process group and recorded loudly |
 | anchor:snapshot-knows-benchmark | scripts/save-snapshot.js | BENCHMARK | the snapshot writer honours the marker the runner honours (the gap once produced months of `untested`) |
+| anchor:variant-coverage-watcher | run_regression.sh | check_variant_coverage.py | every emittable koru_std helper symbol has a witness in some test's output_emitted.zig; covers only `__`-symbol-bearing variants — anonymous-code variants, the \|js target, src/ emitter templates, and other-host `--build` variants are out of its reach (invariants/checks/check_variant_coverage.py states each) |
 | anchor:std-compiles-lint | scripts/std_compiles.sh | EXISTS | the koru_std rot lint — manual invocation only (`--std-compiles`), so it is itself a wall that must be remembered |
 | anchor:test-wall-690_099 | tests/regression/600_STDLIB/690_STORE/690_099_unknown_store_still_refuses_under_the_guard | EXISTS | a wall spelled as a test: goes red if the store-name guard loosens from prefix-anchored to substring |
 | anchor:test-wall-110_029 | tests/regression/100_MODULE_SYSTEM/110_IMPORTS/110_029_koru_alias_is_a_default | EXISTS | a wall spelled as a test: imports a module that cannot exist, so it asserts the alias rather than the author's machine |

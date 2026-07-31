@@ -76,6 +76,22 @@ run_coherence_watchers() {
         FAILED_TESTS="$FAILED_TESTS wall-check"
         echo -e "${RED}❌ wall-check fired — the guard surface drifted from its register${NC}"
     fi
+
+    # Variant coverage: every emittable stdlib helper symbol must appear as
+    # bare code in at least one test's output_emitted.zig. A variant no test
+    # produces is invisible surface — it ships with zero executions behind it
+    # (__kz_wd was found by hand exactly there). Runs here, after a full
+    # board, because the artifacts it reads are ephemeral; on a thin artifact
+    # set the check voids its own verdict rather than reporting the emitter
+    # uncovered.
+    echo ""
+    echo -e "${BLUE}Running variant-coverage (emitter variants vs emitted artifacts)...${NC}"
+    if ! python3 "$SCRIPT_DIR/invariants/checks/check_variant_coverage.py" \
+            "$SCRIPT_DIR/koru_std" "$SCRIPT_DIR/tests/regression" \
+            "$SCRIPT_DIR/invariants/checks/variant-coverage.allow"; then
+        FAILED_TESTS="$FAILED_TESTS variant-coverage"
+        echo -e "${RED}❌ variant-coverage fired — emitter surface no test has ever produced (see above)${NC}"
+    fi
 }
 
 # Initialize counters
