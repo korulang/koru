@@ -1252,6 +1252,8 @@ pub fn build(b: *std.Build) void {
     purity_checker_tests.root_module.addImport("parser", parser_module);
     purity_checker_tests.root_module.addImport("ast", ast_module);
     const run_purity_checker_tests = b.addRunArtifact(purity_checker_tests);
+    const purity_checker_test_step = b.step("test-purity-checker", "Run purity checker tests");
+    purity_checker_test_step.dependOn(&run_purity_checker_tests.step);
 
     // Tap transformer tests - AST transformation for zero-cost taps
     const tap_transformer_tests = b.addTest(.{

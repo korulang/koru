@@ -104,12 +104,21 @@ pub const PurityChecker = struct {
     }
 
     /// Helper: Build call graph recursively, including in modules
+    ///
+    /// A proc's Koru-visible dispatches are its inline flows — the only path
+    /// from a proc body back into the event system that the analysis can see.
+    /// The rest of a `|zig` body is an opaque host-language string (ast.Source);
+    /// purity across that boundary is exactly what the `[pure]` annotation
+    /// asserts and the compiler trusts (Layer 3 in PURITY-TRACKING.md).
     fn buildCallGraphRecursive(self: *PurityChecker, items: []const ast.Item) !void {
         for (items) |*item| {
             switch (item.*) {
                 .proc_decl => |*proc| {
                     const proc_name = try self.pathToString(proc.path);
-                    const call_info = try CallInfo.init(self.allocator);
+                    var call_info = try CallInfo.init(self.allocator);
+                    for (proc.inline_flows) |*flow| {
+                        try self.collectFlowInvocations(flow, &call_info.calls);
+                    }
                     try self.call_graph.put(proc_name, call_info);
                 },
                 .module_decl => |*module| {
@@ -161,84 +170,94 @@ pub const PurityChecker = struct {
             // Update event purity from procs each iteration
             try self.updateEventPurityFromProcs(source);
 
-            // Check each proc and flow
-            for (source.items) |*item| {
-                if (item.* == .proc_decl) {
-                    const proc = &item.proc_decl;
+            // Check each proc and flow, recursing into modules — imported
+            // modules are merged as module_decl items before this pass runs
+            // (import_pipeline.combineImports), so their procs and flows
+            // participate in the same fixed point as top-level ones.
+            try self.propagateItems(source.items, &changed);
+        }
+    }
 
-                    // Skip if already transitively pure
-                    if (proc.is_transitively_pure) continue;
+    /// Helper: One fixed-point sweep over a list of items, recursing into modules
+    fn propagateItems(self: *PurityChecker, items: []const ast.Item, changed: *bool) !void {
+        for (items) |*item| {
+            if (item.* == .proc_decl) {
+                const proc = &item.proc_decl;
 
-                    // Can only be transitively pure if locally pure
-                    if (!proc.is_pure) continue;
+                // Skip if already transitively pure
+                if (proc.is_transitively_pure) continue;
 
-                    // Check if all called events are transitively pure
-                    const proc_name = try self.pathToString(proc.path);
-                    defer self.allocator.free(proc_name);
-                    if (self.call_graph.get(proc_name)) |call_info| {
-                        var all_calls_pure = true;
+                // Can only be transitively pure if locally pure
+                if (!proc.is_pure) continue;
 
-                        for (call_info.calls.items) |called_event_name| {
-                            // Find the called event
-                            if (self.events.get(called_event_name)) |called_event| {
-                                if (!called_event.is_transitively_pure) {
-                                    all_calls_pure = false;
-                                    break;
-                                }
-                            }
-                        }
-
-                        // If calls nothing OR all calls are pure, mark as transitively pure
-                        if (call_info.calls.items.len == 0 or all_calls_pure) {
-                            var mutable_proc = @constCast(proc);
-                            mutable_proc.is_transitively_pure = true;
-                            changed = true;
-                        }
-                    } else {
-                        // No calls found - mark as transitively pure
-                        var mutable_proc = @constCast(proc);
-                        mutable_proc.is_transitively_pure = true;
-                        changed = true;
-                    }
-                } else if (item.* == .flow) {
-                    const flow = &item.flow;
-
-                    // Skip if already transitively pure
-                    if (flow.is_transitively_pure) continue;
-
-                    // Flows are always locally pure (is_pure = true by default)
-                    // Check if ALL invoked events are transitively pure
-                    var invocations = try std.ArrayList([]const u8).initCapacity(self.allocator, 0);
-                    defer {
-                        for (invocations.items) |inv| {
-                            self.allocator.free(inv);
-                        }
-                        invocations.deinit(self.allocator);
-                    }
-
-                    try self.collectFlowInvocations(flow, &invocations);
-
-                    // Check if all invoked events are transitively pure
-                    var all_pure = true;
-                    for (invocations.items) |event_name| {
-                        if (self.events.get(event_name)) |event| {
-                            if (!event.is_transitively_pure) {
-                                all_pure = false;
+                // Check if all called events are transitively pure
+                const proc_name = try self.pathToString(proc.path);
+                defer self.allocator.free(proc_name);
+                var all_calls_pure = true;
+                if (self.call_graph.get(proc_name)) |call_info| {
+                    for (call_info.calls.items) |called_event_name| {
+                        // Find the called event
+                        if (self.events.get(called_event_name)) |called_event| {
+                            if (!called_event.is_transitively_pure) {
+                                all_calls_pure = false;
                                 break;
                             }
                         } else {
-                            // Event not found - assume impure
-                            all_pure = false;
+                            // Callee not in the event table - assume impure,
+                            // mirroring the flow arm below
+                            all_calls_pure = false;
                             break;
                         }
                     }
+                }
 
-                    if (all_pure) {
-                        var mutable_flow = @constCast(flow);
-                        mutable_flow.is_transitively_pure = true;
-                        changed = true;
+                // A proc with no Koru-visible dispatches is a leaf: its
+                // transitive purity IS its local (asserted) purity
+                if (all_calls_pure) {
+                    var mutable_proc = @constCast(proc);
+                    mutable_proc.is_transitively_pure = true;
+                    changed.* = true;
+                }
+            } else if (item.* == .flow) {
+                const flow = &item.flow;
+
+                // Skip if already transitively pure
+                if (flow.is_transitively_pure) continue;
+
+                // Flows are always locally pure (is_pure = true by default)
+                // Check if ALL invoked events are transitively pure
+                var invocations = try std.ArrayList([]const u8).initCapacity(self.allocator, 0);
+                defer {
+                    for (invocations.items) |inv| {
+                        self.allocator.free(inv);
+                    }
+                    invocations.deinit(self.allocator);
+                }
+
+                try self.collectFlowInvocations(flow, &invocations);
+
+                // Check if all invoked events are transitively pure
+                var all_pure = true;
+                for (invocations.items) |event_name| {
+                    if (self.events.get(event_name)) |event| {
+                        if (!event.is_transitively_pure) {
+                            all_pure = false;
+                            break;
+                        }
+                    } else {
+                        // Event not found - assume impure
+                        all_pure = false;
+                        break;
                     }
                 }
+
+                if (all_pure) {
+                    var mutable_flow = @constCast(flow);
+                    mutable_flow.is_transitively_pure = true;
+                    changed.* = true;
+                }
+            } else if (item.* == .module_decl) {
+                try self.propagateItems(item.module_decl.items, changed);
             }
         }
     }
