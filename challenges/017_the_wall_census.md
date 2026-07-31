@@ -60,6 +60,57 @@ Known, verified 2026-07-31:
 Sweep `scripts/` and `run_regression.sh` for others. **Report the full list** —
 that list alone has value, because a forgotten wall gets rebuilt or bypassed.
 
+## ⭐ The wall this frame should probably build — found 2026-07-31
+
+A candidate that already meets all four bars, discovered while probing challenge
+`015`. **You may build this one without further argument; the count is done.**
+
+The harness compares `expected.txt` (`regression_lib.sh:1490`). A `MUST_RUN` test
+carrying only **`expected_output.txt`** — a filename nothing reads — **asserts
+nothing** and passes if the program merely exits 0.
+
+The inverse wall already exists: expected output with no `MUST_RUN` is a
+`config-error` at `regression_lib.sh:581`, with the reasoning in the source —
+*"Otherwise they dishonestly pass by claiming compile-only when they should
+verify output."* The symmetric case was never built.
+
+Measured across the corpus:
+
+```
+35   tests carry expected_output.txt
+29   of those have NO expected.txt and NO expected_patterns.txt  → assert nothing
+ 4   are marked SUCCESS while actual.txt contradicts expected_output.txt
+```
+
+The four:
+
+```
+440_001_bridge_basic                actual: "FAIL: dispatch_error"
+440_002_cross_session_discharge     actual: "FAIL: session 1 dispatch_error"
+220_005_cross_module_type_nullable  expects "done", produces nothing
+321_nested_recursive_label          "expected output" is a placeholder comment
+```
+
+`321`'s expected file reads *"// Expected output placeholder - test currently
+fails at codegen stage"* — which is also a `feedback_no_state_prose_in_tests`
+violation sitting inside an assertion file, so it fails two rules at once.
+
+⚖️ Against the four-point bar: the rule is already believed (the inverse is
+enforced and the source states why); violations are mechanically detectable
+(`MUST_RUN` present, no readable expectation); it fails loudly and locally as
+`config-error`; and **the corpus can pass it** — 4 tests go red, and those four
+are *already broken and lying*, which is the wall working, not a regression.
+
+⚠️ Two of the four are the entire evidence base for challenge `015`. Landing this
+wall is what makes that frame honest, so **coordinate**: the wall belongs here,
+the `dispatch_error` diagnosis belongs to `015`.
+
+⛔ Do not rename the 29 files as a bulk fix. A file named `expected_output.txt`
+beside a `MUST_RUN` means *somebody wrote an expectation and it was never
+checked* — each one needs its output verified before its assertion is switched
+on. Renaming them all at once would turn 29 unchecked assumptions into 29 claims
+the board now makes.
+
 ## The rules that are still prose
 
 Each of these is written down and believed. For each: does anything check it?

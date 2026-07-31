@@ -13,15 +13,44 @@ subsystem, at 147 lines, sits `koru_std/bridge.kz`. Its header calls the idea
 > *"state persists across turns, human or AI can act on resources created in
 > previous turns."*
 
-*`440_RESOURCE_BRIDGE` is **2 tests and both are green**. `440_002` opens a file
-in one interpreted session, ends that session, and **discharges the obligation in
-a second one**. The obligation outlives the run that issued it.*
+*A resource obligation that survives a turn boundary is the shape an agent needs:
+the AI opens something on turn 3, the human closes it on turn 9, and the compiler
+still knows. `440_002` claims exactly that — open in session 1, discharge in
+session 2.*
 
-*That is not a small thing wearing a big name. A resource obligation that
-survives a turn boundary is the shape an agent needs: the AI opens something on
-turn 3, the human closes it on turn 9, and the compiler still knows. Nobody has
-looked at it since 2026-07-25, and the board reports it as two passing tests in a
-subsystem marked parked.*
+## ⛔ It does not work. Measured 2026-07-31, before you start.
+
+*`440_RESOURCE_BRIDGE` is 2 tests and the board reports both green.* ***Both print
+`FAIL` when you run them.***
+
+```
+440_001_bridge_basic              actual.txt:  FAIL: dispatch_error
+440_002_cross_session_discharge   actual.txt:  FAIL: session 1 dispatch_error
+```
+
+*Reproduced by hand with the shipped `koruc` — session 1 does not even reach
+session 2.* ***Cross-session discharge is not a beachhead. It is broken or
+unimplemented, and nothing said so.***
+
+*The mechanism: the harness compares `expected.txt` (`regression_lib.sh:1490`).
+Both tests carry* ***`expected_output.txt`*** *— a filename the harness never
+reads. A `MUST_RUN` test with no readable expectation* ***asserts nothing*** *and
+passes if the program exits 0. There is a wall for the inverse case — expected
+output with no `MUST_RUN` is a `config-error` at `regression_lib.sh:581` — and*
+***no wall for this direction.***
+
+*Corpus-wide:* ***29 tests*** *carry `expected_output.txt` with no `expected.txt`
+and no `expected_patterns.txt`.* ***4 are green while their own captured output
+contradicts what they claim to expect*** *— the two bridge tests,
+`220_005_cross_module_type_nullable` (expects `done`, produces nothing), and
+`321_nested_recursive_label`, whose "expected output" is a placeholder comment
+stating that the test fails at codegen.*
+
+*So this frame changes shape. It is no longer "build on a working seam." It is*
+***find out whether the seam ever worked*** *— and the first question is
+archaeology: did cross-session discharge ever run, or has it been
+green-and-broken since `d7e2eae9` ("440_RESOURCE_BRIDGE goes green") landed on
+2026-07-25, a claim the board had no way to check?*
 
 ---
 
@@ -37,9 +66,19 @@ the obligation is dropped.
 
 ## Ground yourself FIRST
 
-**Run the two tests and read the emitted Zig, not just the verdict.**
-`440_001_bridge_basic` and `440_002_cross_session_discharge`. Two green tests is
-a beachhead, not a feature — the first job is finding out how wide the beach is.
+**Start at `dispatch_error`.** Both tests reach it and stop, and session 1 never
+reaches session 2. `~std/runtime:register(scope: "files") { open(10) close(1) }`
+declares the scope; the run then fails to dispatch into it. The seam is failing
+at its first joint. Until that is understood, everything else here is
+speculation.
+
+**Then read the emitted Zig, never the verdict.** The verdict has been wrong
+since at least 2026-07-25.
+
+**Then answer the archaeology question:** did this ever work? `d7e2eae9` claims
+"440_RESOURCE_BRIDGE goes green" — check whether the program's *output* was ever
+right, or whether only the marker was. `git log -p` on the two test directories
+and on `koru_std/bridge.kz` is the fastest route.
 
 **Read `koru_std/bridge.kz` in full.** It is 147 lines. It claims:
 
@@ -75,7 +114,13 @@ So: **440 and the bridge surface are in scope; the 430/410 bug family is not.**
 If a bridge finding requires fixing an interpreter bug, write it down and stop —
 that belongs to challenge `014`, which is a survey, not a fix.
 
-## The question worth answering
+## The questions worth answering — once it runs at all
+
+⚠️ These were the frame's original questions, written when the two tests were
+believed green. **The 2026-07-31 probe could not reach any of them** — session 1
+fails before session 2 is entered. They stay here because they are the right
+questions the moment `dispatch_error` is understood, and because question 3 may
+turn out to explain the whole thing.
 
 Cross-session discharge is interesting only if it is **enforced**. So:
 
