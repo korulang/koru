@@ -13,3 +13,16 @@
 # An exemption is a ruling that this symbol's invisibility is understood
 # and accepted. Everything not listed here is invisible surface: emitter
 # code that ships with zero executions behind it.
+
+# --- Not emitted Zig code: markers the scan cannot see by construction ---
+types.kz       | __GENERIC__                       | comment-carried marker (`// __GENERIC__:Name<Params>:Body`, parsed later by ~type); the bare-code scan strips comments by design. Raw grep 2026-07-31: zero artifacts carry it even as a comment, so the generic-definition path is also corpus-unwitnessed — but this check can never say so
+runtime.kz     | __KORU_RUNTIME_REGISTRY_HELPERS__ | comment-carried dedup sentinel (runtime.kz:731 emits it as `// marker`); raw grep 2026-07-31 finds it in 3 artifacts, always inside a comment the scan strips
+fmt.kz         | __KORU_INLINE__                   | label placeholder, substituted with a unique per-site label by src/emitter_helpers.zig:4438 before anything is written; it can never reach an artifact verbatim
+compiler.kz    | __test__                          | a synthetic filename handed to Parser.init during test generation (compiler.kz:1431), quoted in a string the extractor reads as emitted text; not emitted code
+interpreter.kz | __type_ref                        | field-name sentinel compared and serialised in interpreter AST-JSON output; JSON data, not emitted Zig, and the interpreter surface is parked
+
+# --- JS-target output: lands in output_emitted.js, which this check does not scan ---
+parser.kz      | __he{}                            | std/parser JS-target generator (`===` in the template); its output is output_emitted.js, outside the Zig artifact scan
+parser.kz      | __hv{}                            | std/parser JS-target generator; same site family as __he{}
+parser.kz      | __koru_lit_eq                     | std/parser JS-target literal comparator (parser.kz:868, JS `===` template); the Zig dual __koru_lit_eq_{} is covered
+parser.kz      | __koru_main_{}                    | std/parser JS-target entrypoint (`function __koru_main_{s}()`, process.argv); JS output only
