@@ -5,13 +5,12 @@
 ~import std/interpreter
 ~import std/io
 
-~pub tor greet { name: string }
-| greeted string
+~pub tor greet { name: string } -> string
 
 ~proc greet|zig {
     const std = @import("std");
     std.debug.print("GREET: Hello, {s}!\n", .{name});
-    return .{ .greeted = "Hello!" };
+    return "Hello!";
 }
 
 ~std/runtime:register(scope: "test") {

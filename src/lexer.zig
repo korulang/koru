@@ -555,7 +555,15 @@ pub fn parseArgs(allocator: std.mem.Allocator, args_str: []const u8) ![]ArgPair 
         const at_end = i == content.len;
         const char = if (!at_end) content[i] else ',';
 
-        // Track string boundaries
+        // Track string boundaries. Inside a string, a backslash escapes the
+        // next char: `\"` is DATA, not a closing quote — without the skip, an
+        // escaped quote flipped in_string off and every comma in the quoted
+        // text split the argument list (210_196, found by kopium's request
+        // body carrying prose with commas).
+        if (in_string and char == '\\' and !at_end) {
+            i += 2;
+            continue;
+        }
         if (!in_string and !in_braces and (char == '"' or char == '\'')) {
             in_string = true;
             string_char = char;

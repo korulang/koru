@@ -12,16 +12,18 @@
 
 const std = @import("std");
 
-// Event that produces a value
-~pub tor produce {} -> string
+// Event that produces a value. Two branches: a lone payload branch is a bare
+// return by ruling, and the interpreted chain below needs the branch name.
+~pub tor produce {}
+| value string
+| empty
 
-~proc produce|zig {
-    return "42";
-}
+~produce => value "42"
 
 // Event that consumes a value and echoes it
 ~pub tor consume { n: string }
 | echoed string
+| dropped
 
 ~consume = std/io:print.ln("[consume] received n = '{{n:s}}'") => echoed n
 
@@ -37,7 +39,7 @@ const std = @import("std");
 // Bug: consume receives "v.num" (the literal string)
 
 const TEST_FLOW =
-    \\~produce()
+    \\produce()
     \\| value v |> consume(n: v.num)
 ;
 

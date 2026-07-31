@@ -7,12 +7,13 @@
 
 const std = @import("std");
 
-// Event producing an integer field
-~pub tor produce-int {} -> i32
+// Event producing an integer field. Two branches: a lone payload branch is a
+// bare return by ruling, and the interpreted chain below needs the name.
+~pub tor produce-int {}
+| value i32
+| none
 
-~proc produce-int|zig {
-    return 12;
-}
+~produce-int => value 12
 
 // Register scope
 ~std/runtime:register(scope: "test") {
@@ -20,13 +21,13 @@ const std = @import("std");
 }
 
 const TEST_SOURCE =
-    \\~produce_int()
+    \\produce_int()
     \\| value v |> if(v.num > 10)
     \\    | then |> gt {}
     \\    | else |> lte {}
 ;
 
-~std/runtime:get_scope(name: "test")
+~std/runtime:get-scope(name: "test")
 | scope s |> std/interpreter:run(source: TEST_SOURCE, s.dispatcher)
     | result r |> std/io:print.ln("SUCCESS branch={{ r.value.branch:s }}")
     | exhausted e |> std/io:print.ln("EXHAUSTED: {{ e.last_event:s }}")

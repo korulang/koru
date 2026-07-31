@@ -6,9 +6,11 @@
 
 const std = @import("std");
 
-// Event with identity branch payload
+// Event with identity branch payload. Two branches: a lone payload branch is
+// a bare return by ruling, and the interpreted chains below need the name.
 ~pub tor add { a: i64, b: i64 }
 | sum i64
+| overflow
 
 ~add => sum a + b
 

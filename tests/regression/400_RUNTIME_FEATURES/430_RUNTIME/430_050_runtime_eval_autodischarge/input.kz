@@ -6,12 +6,11 @@
 
 const std = @import("std");
 
-~pub tor open-handle {}
-| opened []const u8<opened!>
+~pub tor open-handle {} -> string<opened!>
 
 ~proc open-handle|zig {
     std.debug.print("OPEN\n", .{});
-    return .{ .opened = "h1" };
+    return "h1";
 }
 
 ~pub tor close-handle { handle: string<!opened> }

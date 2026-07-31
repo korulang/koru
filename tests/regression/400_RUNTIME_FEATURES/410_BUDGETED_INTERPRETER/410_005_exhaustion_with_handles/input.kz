@@ -7,8 +7,11 @@
 
 const std = @import("std");
 
+// Two branches: a lone payload branch is a bare return by ruling, and the
+// interpreted chain below needs the branch name to continue on.
 ~pub tor open { path: string }
-| opened []const u8<opened!>
+| opened string<opened!>
+| missing
 
 ~proc open|zig {
     std.debug.print("opened {s}\n", .{path});
@@ -21,11 +24,11 @@ const std = @import("std");
     std.debug.print("auto-closing file\n", .{});
 }
 
-~pub tor expensive-read { handle: string<opened> }
-| read string
+~pub tor expensive-read { handle: string<opened> } -> string
 
 ~proc expensive-read|zig {
-    return .{ .read = "file contents" };
+    _ = handle;
+    return "file contents";
 }
 
 ~std/runtime:register(scope: "test") {
@@ -34,7 +37,7 @@ const std = @import("std");
     expensive-read(100)  // Very expensive!
 }
 
-const TEST_SOURCE = "open(path: \"x.txt\")\n| opened f |> expensive-read(handle: f.handle)\n| read r |> result { r.data }";
+const TEST_SOURCE = "open(path: \"x.txt\")\n| opened f |> expensive-read(handle: f.handle)";
 
 // Open file (10), then try expensive read (100) with only 50 budget
 // Should exhaust, but still auto-discharge the open file

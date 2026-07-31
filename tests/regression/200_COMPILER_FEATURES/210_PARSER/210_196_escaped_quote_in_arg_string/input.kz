@@ -1,0 +1,22 @@
+// PINS: an escaped quote inside a string argument is DATA — the argument
+// splitter must not treat `\"` as a closing quote. Two scanners had the
+// bug two ways: lexer.parseArgs tracked strings with no backslash handling
+// at all (so `\"` flipped in_string off and every comma in the quoted text
+// split the arg list), and flow_parser.findTopLevelParen spelled the skip
+// as a bare `continue`, which does not skip the escaped char.
+//
+// The msg below carries both hazards at once: escaped quotes AND commas
+// inside them, followed by a second argument that must survive the split.
+// Found by kopium's request body — a JSON string full of \" and prose
+// commas (koru-examples/kopium/c_chat_pane.k).
+
+~import std/io
+
+~pub tor first { msg: string, tail: string } -> string
+
+~proc first|zig {
+    _ = tail;
+    return msg;
+}
+
+~first(msg: "one \"two, three\" four", tail: "unsplit"): out |> std/io:print.ln("{{ out:s }}")

@@ -6,8 +6,11 @@
 
 const std = @import("std");
 
+// Two branches: a lone payload branch is a bare return by ruling, and the
+// interpreted chain below needs the branch name to continue on.
 ~pub tor open-handle {}
-| opened []const u8<opened!>
+| opened string<opened!>
+| missing
 
 ~proc open-handle|zig {
     std.debug.print("OPEN\n", .{});

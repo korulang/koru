@@ -11,18 +11,9 @@ const std = @import("std");
     ratio: f64,
     count: i64,
 }
-| ok {
-    enabled: bool,
-    ratio: f64,
-    count: i64,
-}
 
 ~proc set-config|zig {
-    return .{ .ok = .{
-        .enabled = enabled,
-        .ratio = ratio,
-        .count = count,
-    } };
+    std.debug.print("enabled={} ratio={d} count={d}\n", .{ enabled, ratio, count });
 }
 
 ~std/runtime:register(scope: "config") {

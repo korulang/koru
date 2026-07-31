@@ -281,13 +281,24 @@ fn findTopLevelParen(text: []const u8) ?usize {
     var bracket_depth: usize = 0;
     var in_string = false;
     var string_char: ?u8 = null;
+    var skip_escaped = false;
 
     for (text, 0..) |c, i| {
+        if (skip_escaped) {
+            // Previous char was a backslash inside a string: this char is
+            // escaped data, never a delimiter. (`continue` alone does NOT
+            // skip it — the old spelling let `\"` close the string, 210_196.)
+            skip_escaped = false;
+            continue;
+        }
         if (!in_string and (c == '"' or c == '\'')) {
             in_string = true;
             string_char = c;
         } else if (in_string) {
-            if (c == '\\') continue; // skip escape (next char handled by loop)
+            if (c == '\\') {
+                skip_escaped = true;
+                continue;
+            }
             if (c == string_char) {
                 in_string = false;
                 string_char = null;
