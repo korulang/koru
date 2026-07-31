@@ -162,6 +162,42 @@ of the four above were found by asking that, and none by surveying doctrine.
 Two of the four were also walls **nobody remembered existed** — see
 [[frag-compliance-is-counted-with-the-enforcers-predicate]]. Inventory first.
 
+## ⭐ A THIRD SPECIES, found 2026-07-31 — it breaks the census's obvious method
+
+The natural audit question is *"does this test assert something?"* It is not
+sufficient, and `395_010_unexpected_branch_fails` is why.
+
+That test pins that a mock returning an unhandled branch must FAIL. It had been
+green for a long time. **Nobody had written its assertion.** The emitted body
+carried an unguarded union read, so the wrong branch *panicked*, `zig test`
+exited non-zero, and its `post.sh` passed on that exit. The crash WAS the
+assertion — an artifact of how the emitter happened to lower a head-position
+branch read, not a mechanism anyone chose.
+
+An ordinary, correct improvement then made that read safe. The panic became a
+silent no-op and the harness reported **2/2 passed over an unexpected branch**.
+
+So there are three distinct species, and they need different detection:
+
+| species | assertion | detectable by |
+|---|---|---|
+| **never read** — `expected_output.txt` beside a `MUST_RUN` | absent | grep; mechanical |
+| **one-sided wall** — enforced in one direction, not its mirror | present, partial | asking each wall what mirror it misses |
+| **accidental** — `395_010` | present, works, **unowned** | ⚠️ nothing yet |
+
+⚠️ **The third has no bulk detector and you should not pretend otherwise.** You
+cannot grep for "this green depends on a crash." Do not spend the census
+inventing one; **report the species and say plainly that it is undetected.** The
+only handle that has worked is a full board after every merge plus treating one
+unexplained flip as worth stopping for.
+
+⚖️ The consequence for THIS frame: a wall you find may be accidental too. Before
+recording something as a wall, establish **what specifically fails when it
+fires**, and whether that mechanism is the one the wall names. A wall riding a
+coincidence belongs in the census flagged as such — it is the most fragile kind,
+because **hardening is what disarms it**, and hardening always arrives looking
+like an improvement.
+
 ## The rules that are still prose
 
 Each of these is written down and believed. For each: does anything check it?
