@@ -2596,6 +2596,191 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                     } }) catch unreachable;
                 }
             }
+
+            // ---- unit 4d: the row-addressed chain-envelope halves ----
+            // A multi-field `stored` block is ONE atomic unit (the (i) lean,
+            // 690_009): every write lands (write-only envwrite), THEN watch
+            // dispatch runs in write order (announce, reading settled state).
+            // These are the plural mirrors of the singleton envelope units —
+            // row-addressed, one typed slot per column like the bundled
+            // write. `updated` interceptors are the store's per-write
+            // contract, not a subscription, so they fire inside envwrite's
+            // atomic step (the (i) lean: cascades per-write, dispatch
+            // deferred). An OWNED column has no typed zero for a dead slot
+            // (690_064), so an owned-containing store gets no bundled
+            // envelope; its multi-field block is refused toward chained
+            // single-field writes.
+            if (!has_owned) {
+                const penvw_name = std.fmt.allocPrint(allocator, "__store_envwrite_{s}", .{store_name}) catch unreachable;
+                const ppeek_name = std.fmt.allocPrint(allocator, "__store_peek_{s}", .{store_name}) catch unreachable;
+                const pann_name = std.fmt.allocPrint(allocator, "__store_announce_{s}", .{store_name}) catch unreachable;
+
+                // envwrite: row + field selector + per-column typed slots.
+                appended_items.append(allocator, ast.Item{ .event_decl = ast.EventDecl{
+                    .path = H.mkPathH(allocator, flow.module, penvw_name),
+                    .input = ast.Shape{ .fields = mkWriteInput(allocator, field_types, field_owned_info, false) },
+                    .branches = &[_]ast.Branch{},
+                    .is_public = false,
+                    .is_implicit_flow = false,
+                    .annotations = &[_][]const u8{},
+                    .location = flow.location,
+                    .module = allocator.dupe(u8, flow.module) catch unreachable,
+                } }) catch unreachable;
+                var ewb = std.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
+                const ew_head = std.fmt.allocPrint(allocator, "const __koru_r = __koru_store_{s}.__koru_resolve(row);\nswitch (field) {{\n", .{store_name}) catch unreachable;
+                ewb.appendSlice(allocator, ew_head) catch unreachable;
+                for (field_names, 0..) |fname, i| {
+                    const arm_open = std.fmt.allocPrint(allocator, "    {d} => {{ ", .{i}) catch unreachable;
+                    ewb.appendSlice(allocator, arm_open) catch unreachable;
+                    // The write half of the bundled apply arm, verbatim: tree
+                    // guard, pre-image read, cell write, updated interceptors.
+                    // No branch dispatch — that is announce's half.
+                    if (is_tree and i == user_field_count) {
+                        const eguard = std.fmt.allocPrint(allocator, "var __koru_cyc = value_{d}; while (__koru_cyc != -1) {{ if (__koru_cyc == row) @panic(\"std/store:stored: reparent in [tree] store '{s}' would make the row its own ancestor (cycle) - the write is rejected; handle it with a `| cycle` branch (default-on guard and branch are pinned at 695_002)\"); __koru_cyc = __koru_store_{s}.parent[__koru_store_{s}.__koru_resolve(__koru_cyc)]; }} ", .{ i, store_name, store_name, store_name }) catch unreachable;
+                        ewb.appendSlice(allocator, eguard) catch unreachable;
+                    }
+                    if (updated_needs_old) {
+                        const eoldr = if (field_char_caps[i] != null)
+                            std.fmt.allocPrint(allocator, "const __koru_oldbuf = __koru_store_{s}.{s}[__koru_r]; const __koru_old = @import(\"std\").mem.sliceTo(&__koru_oldbuf, 0); ", .{ store_name, fname }) catch unreachable
+                        else
+                            std.fmt.allocPrint(allocator, "const __koru_old = __koru_store_{s}.{s}[__koru_r]; ", .{ store_name, fname }) catch unreachable;
+                        ewb.appendSlice(allocator, eoldr) catch unreachable;
+                    }
+                    const ewr = if (field_char_caps[i]) |n|
+                        std.fmt.allocPrint(allocator, "__koru_store_{s}.{s}[__koru_r] = @import(\"std\").mem.zeroes([{d}]u8); const __koru_wl = @min(value_{d}.len, {d}); @memcpy(__koru_store_{s}.{s}[__koru_r][0..__koru_wl], value_{d}[0..__koru_wl]); ", .{ store_name, fname, n, i, n, store_name, fname, i }) catch unreachable
+                    else
+                        std.fmt.allocPrint(allocator, "__koru_store_{s}.{s}[__koru_r] = value_{d}; ", .{ store_name, fname, i }) catch unreachable;
+                    ewb.appendSlice(allocator, ewr) catch unreachable;
+                    for (updated_arms.items, 0..) |ua, ai| {
+                        const ecall = if (ua.fields.len != 0)
+                            std.fmt.allocPrint(allocator, "main_module.__store_updated_{s}_{d}_event.handler(.{{ .old = __koru_old, .new = value_{d} }}); ", .{ store_name, ai, i }) catch unreachable
+                        else
+                            std.fmt.allocPrint(allocator, "main_module.__store_updated_{s}_{d}_event.handler(.{{}}); ", .{ store_name, ai }) catch unreachable;
+                        ewb.appendSlice(allocator, ecall) catch unreachable;
+                    }
+                    ewb.appendSlice(allocator, "},\n") catch unreachable;
+                }
+                ewb.appendSlice(allocator, "    else => unreachable,\n}\nreturn;") catch unreachable;
+                appended_items.append(allocator, ast.Item{ .proc_decl = ast.ProcDecl{
+                    .path = H.mkPathH(allocator, flow.module, penvw_name),
+                    .body = ast.Source{ .text = ewb.toOwnedSlice(allocator) catch unreachable, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
+                    .annotations = &[_][]const u8{},
+                    .target = allocator.dupe(u8, "zig") catch unreachable,
+                    .location = flow.location,
+                    .module = allocator.dupe(u8, flow.module) catch unreachable,
+                } }) catch unreachable;
+
+                // peek: read the CURRENT value at the row, answer the field
+                // branch — announce's read half (the singleton peek, rowed).
+                const ppk_in = allocator.alloc(ast.Field, 2) catch unreachable;
+                ppk_in[0] = ast.Field{ .name = allocator.dupe(u8, "row") catch unreachable, .type = allocator.dupe(u8, "i64") catch unreachable };
+                ppk_in[1] = ast.Field{ .name = allocator.dupe(u8, "field") catch unreachable, .type = allocator.dupe(u8, "i64") catch unreachable };
+                const ppk_branches = allocator.alloc(ast.Branch, field_names.len) catch unreachable;
+                for (field_names, 0..) |fname, i| {
+                    const pkf = allocator.alloc(ast.Field, 1) catch unreachable;
+                    pkf[0] = ast.Field{ .name = allocator.dupe(u8, "__type_ref") catch unreachable, .type = allocator.dupe(u8, field_types[i]) catch unreachable };
+                    ppk_branches[i] = ast.Branch{
+                        .name = allocator.dupe(u8, fname) catch unreachable,
+                        .payload = ast.Shape{ .fields = pkf },
+                        .kind = .terminal,
+                        .annotations = &[_][]const u8{},
+                    };
+                }
+                appended_items.append(allocator, ast.Item{ .event_decl = ast.EventDecl{
+                    .path = H.mkPathH(allocator, flow.module, ppeek_name),
+                    .input = ast.Shape{ .fields = ppk_in },
+                    .branches = ppk_branches,
+                    .is_public = false,
+                    .is_implicit_flow = false,
+                    .annotations = &[_][]const u8{},
+                    .location = flow.location,
+                    .module = allocator.dupe(u8, flow.module) catch unreachable,
+                } }) catch unreachable;
+                var pkb = std.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
+                const pk_head = std.fmt.allocPrint(allocator, "const __koru_r = __koru_store_{s}.__koru_resolve(row);\nreturn switch (field) {{\n", .{store_name}) catch unreachable;
+                pkb.appendSlice(allocator, pk_head) catch unreachable;
+                for (field_names, 0..) |fname, i| {
+                    const rd = if (field_char_caps[i] != null)
+                        std.fmt.allocPrint(allocator, "    {d} => .{{ .{s} = @import(\"std\").mem.sliceTo(&__koru_store_{s}.{s}[__koru_r], 0) }},\n", .{ i, fname, store_name, fname }) catch unreachable
+                    else
+                        std.fmt.allocPrint(allocator, "    {d} => .{{ .{s} = __koru_store_{s}.{s}[__koru_r] }},\n", .{ i, fname, store_name, fname }) catch unreachable;
+                    pkb.appendSlice(allocator, rd) catch unreachable;
+                }
+                pkb.appendSlice(allocator, "    else => unreachable,\n};") catch unreachable;
+                appended_items.append(allocator, ast.Item{ .proc_decl = ast.ProcDecl{
+                    .path = H.mkPathH(allocator, flow.module, ppeek_name),
+                    .body = ast.Source{ .text = pkb.toOwnedSlice(allocator) catch unreachable, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
+                    .annotations = &[_][]const u8{},
+                    .target = allocator.dupe(u8, "zig") catch unreachable,
+                    .location = flow.location,
+                    .module = allocator.dupe(u8, flow.module) catch unreachable,
+                } }) catch unreachable;
+
+                // announce: the dispatch-only re-fire of the SAME watch arms
+                // (fresh clones — the shared-pointer footgun is real), off the
+                // peek read. Mirrors the bundled write's warms loop.
+                const pann_in = allocator.alloc(ast.Field, 2) catch unreachable;
+                pann_in[0] = ast.Field{ .name = allocator.dupe(u8, "row") catch unreachable, .type = allocator.dupe(u8, "i64") catch unreachable };
+                pann_in[1] = ast.Field{ .name = allocator.dupe(u8, "field") catch unreachable, .type = allocator.dupe(u8, "i64") catch unreachable };
+                appended_items.append(allocator, ast.Item{ .event_decl = ast.EventDecl{
+                    .path = H.mkPathH(allocator, flow.module, pann_name),
+                    .input = ast.Shape{ .fields = pann_in },
+                    .branches = &[_]ast.Branch{},
+                    .is_public = false,
+                    .is_implicit_flow = false,
+                    .annotations = &[_][]const u8{},
+                    .location = flow.location,
+                    .module = allocator.dupe(u8, flow.module) catch unreachable,
+                } }) catch unreachable;
+                const pann_args = allocator.alloc(ast.Arg, 2) catch unreachable;
+                pann_args[0] = ast.Arg{ .name = allocator.dupe(u8, "row") catch unreachable, .value = allocator.dupe(u8, "row") catch unreachable };
+                pann_args[1] = ast.Arg{ .name = allocator.dupe(u8, "field") catch unreachable, .value = allocator.dupe(u8, "field") catch unreachable };
+                const pann_inv = ast.Invocation{
+                    .path = H.mkPathH(allocator, flow.module, ppeek_name),
+                    .args = pann_args,
+                };
+                var aarms = std.ArrayList(ast.Continuation).initCapacity(allocator, field_names.len) catch unreachable;
+                for (field_names, 0..) |fname, i| {
+                    var aarm_body: ?ast.Continuation = null;
+                    for (pwatch_arms.items) |*wa| {
+                        if (wa.field_idx == i) {
+                            var a = ast_functional.cloneContinuation(allocator, &wa.cont) catch unreachable;
+                            a.branch = allocator.dupe(u8, fname) catch unreachable;
+                            a.kind = .terminal;
+                            a.binding = if (wa.cont.binding) |b| allocator.dupe(u8, b) catch unreachable else allocator.dupe(u8, "_") catch unreachable;
+                            aarm_body = a;
+                        }
+                    }
+                    const anoop_arm = ast.Continuation{
+                        .branch = allocator.dupe(u8, fname) catch unreachable,
+                        .binding = allocator.dupe(u8, "_") catch unreachable,
+                        .kind = .terminal,
+                        .condition = null,
+                        .node = .terminal,
+                        .indent = 1,
+                        .continuations = &[_]ast.Continuation{},
+                        .location = flow.location,
+                    };
+                    if (aarm_body) |a| {
+                        aarms.append(allocator, a) catch unreachable;
+                        if (a.condition != null) aarms.append(allocator, anoop_arm) catch unreachable;
+                    } else {
+                        aarms.append(allocator, anoop_arm) catch unreachable;
+                    }
+                }
+                appended_items.append(allocator, ast.Item{ .flow = ast.Flow{
+                    .body = ast.rootSite(pann_inv, aarms.toOwnedSlice(allocator) catch unreachable, flow.location),
+                    .pre_label = null,
+                    .impl_of = H.mkPathH(allocator, flow.module, pann_name),
+                    .super_shape = null,
+                    .inline_body = null,
+                    .preamble_code = null,
+                    .is_pure = false,
+                    .is_transitively_pure = false,
+                    .location = flow.location,
+                    .module = allocator.dupe(u8, flow.module) catch unreachable,
+                } }) catch unreachable;
+            }
         }
 
         // ---- unit 4b ([tree] only): the cycle-guarded parent write ----
@@ -4777,22 +4962,88 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
     // is ONE atomic unit - every write lands (write-only envwrite), THEN
     // dispatch runs in write order (announce, which reads settled state).
     if (writes.len > 1) {
-        // All targets must be the same singleton store this rung.
+        // All targets must be the same store — and, row-addressed, the same
+        // row — this rung. Each target parses through the same head grammar
+        // as the single-write path below: the dotted singleton head
+        // (`store.field`) or the bracket row head (`store[handle].field`,
+        // which is also what a sweep arm's row binding lowers to, 690_118).
         var env_store: []const u8 = "";
+        var env_row: ?[]const u8 = null;
         const env_fields = allocator.alloc([]const u8, writes.len) catch unreachable;
-        const env_values = allocator.alloc([]const u8, writes.len) catch unreachable;
+        const env_raw_values = allocator.alloc([]const u8, writes.len) catch unreachable;
         for (writes, 0..) |wm, wi| {
-            const dotm = std.mem.indexOfScalar(u8, wm.name, '.') orelse {
-                return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:stored: envelope target '{s}' must be store.field", .{wm.name}) } };
-            };
-            const st = wm.name[0..dotm];
-            if (env_store.len == 0) {
-                env_store = st;
-            } else if (!std.mem.eql(u8, env_store, st)) {
-                return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:stored: a multi-field envelope writes ONE store this rung ('{s}' vs '{s}')", .{ env_store, st }) } };
+            var st: []const u8 = undefined;
+            var fld: []const u8 = undefined;
+            var wrow: ?[]const u8 = null;
+            if (std.mem.indexOfScalar(u8, wm.name, '[')) |lb| {
+                const rb = std.mem.lastIndexOfScalar(u8, wm.name, ']') orelse {
+                    return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:stored: malformed addressing head '{s}'", .{wm.name}) } };
+                };
+                if (rb + 1 >= wm.name.len or wm.name[rb + 1] != '.') {
+                    return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:stored: addressing head '{s}' needs a field: store[handle].field", .{wm.name}) } };
+                }
+                st = std.mem.trim(u8, wm.name[0..lb], " ");
+                wrow = std.mem.trim(u8, wm.name[lb + 1 .. rb], " ");
+                fld = wm.name[rb + 2 ..];
+            } else {
+                const dotm = std.mem.indexOfScalar(u8, wm.name, '.') orelse {
+                    return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:stored: envelope target '{s}' must be store.field", .{wm.name}) } };
+                };
+                st = wm.name[0..dotm];
+                fld = wm.name[dotm + 1 ..];
             }
-            env_fields[wi] = wm.name[dotm + 1 ..];
-            env_values[wi] = H.storeRefs(allocator, wm.value, st, H.isIdentityStore(allocator, program, st));
+            if (wi == 0) {
+                env_store = st;
+                env_row = wrow;
+            } else {
+                if (!std.mem.eql(u8, env_store, st)) {
+                    return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:stored: a multi-field envelope writes ONE store this rung ('{s}' vs '{s}')", .{ env_store, st }) } };
+                }
+                const rows_agree = if (env_row) |er|
+                    (if (wrow) |wr| std.mem.eql(u8, er, wr) else false)
+                else
+                    wrow == null;
+                if (!rows_agree) {
+                    return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:stored: a multi-field envelope addresses ONE row this rung - every target must spell the same row ('{s}')", .{wm.name}) } };
+                }
+            }
+            env_fields[wi] = fld;
+            env_raw_values[wi] = wm.value;
+        }
+        // The head form must match the store's shape — the same two walls as
+        // the single-write path.
+        const env_is_plural = blk: {
+            const inserth_probe = std.fmt.allocPrint(allocator, "__store_inserth_{s}", .{env_store}) catch unreachable;
+            for (program.items) |pi| {
+                if (pi != .event_decl) continue;
+                const ed = &pi.event_decl;
+                if (ed.path.segments.len == 1 and std.mem.eql(u8, ed.path.segments[0], inserth_probe)) break :blk true;
+            }
+            break :blk false;
+        };
+        if (env_row == null and env_is_plural) {
+            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:stored: '{s}' is a container store (capacity > 1) - address the row ({s}[handle].{s}, or write through a query branch)", .{ env_store, env_store, env_fields[0] }) } };
+        }
+        if (env_row != null and !env_is_plural) {
+            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:stored: '{s}' is a capacity-1 value store - write it as {s}.{s}", .{ env_store, env_store, env_fields[0] }) } };
+        }
+        // A DRAIN store's write surface is gated off entirely (690_057/058) —
+        // name the real rung before fieldOrder can leak "unknown store".
+        if (env_row != null) {
+            const td_probe = std.fmt.allocPrint(allocator, "__store_teardown_{s}", .{env_store}) catch unreachable;
+            const apply_probe = std.fmt.allocPrint(allocator, "__store_apply_{s}", .{env_store}) catch unreachable;
+            var has_teardown = false;
+            var has_apply = false;
+            for (program.items) |pi| {
+                if (pi != .event_decl) continue;
+                const ed = &pi.event_decl;
+                if (ed.path.segments.len != 1) continue;
+                if (std.mem.eql(u8, ed.path.segments[0], td_probe)) has_teardown = true;
+                if (std.mem.eql(u8, ed.path.segments[0], apply_probe)) has_apply = true;
+            }
+            if (has_teardown and !has_apply) {
+                return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:stored: store '{s}' is a DRAIN store (ambiguous discharger) - a stored write must evict the old value through the canonical discharger, which its owned column does not have; declare exactly one void discharger for the column type (690_062 pins the write; 690_057/058 pin the drain)", .{env_store}) } };
+            }
         }
         const order_env = H.fieldOrder(allocator, program, env_store) orelse {
             // The store's OWN declaration was already refused; that diagnostic is the
@@ -4810,6 +5061,57 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:stored: '{s}' is not a field of store '{s}'", .{ ef, env_store }) } };
             };
         }
+        // The plural envelope rides typed per-column slots (the bundled-write
+        // shape, 690_049) — read the column types off the generated apply
+        // event. An owned-containing store has no bundled envelope (a dead
+        // owned slot has no typed zero, 690_064): chain single-field writes.
+        var env_col_types: []const []const u8 = &[_][]const u8{};
+        if (env_row != null) {
+            const apply_name2 = std.fmt.allocPrint(allocator, "__store_apply_{s}", .{env_store}) catch unreachable;
+            for (program.items) |pi| {
+                if (pi != .event_decl) continue;
+                const ed = &pi.event_decl;
+                if (ed.path.segments.len == 1 and std.mem.eql(u8, ed.path.segments[0], apply_name2)) {
+                    const types = allocator.alloc([]const u8, ed.branches.len) catch unreachable;
+                    for (ed.branches, 0..) |b, bi| {
+                        if (b.payload.fields.len > 0 and b.payload.fields[0].phantom != null) {
+                            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:stored: store '{s}' holds an owned column - a multi-field envelope has no typed zero for its slot (690_064); chain single-field writes instead ({s}[handle].{s}: ... |> stored {{ ... }})", .{ env_store, env_store, env_fields[0] }) } };
+                        }
+                        types[bi] = if (b.payload.fields.len > 0) b.payload.fields[0].type else "i64";
+                    }
+                    env_col_types = types;
+                }
+            }
+        }
+        // SELF-FK traversal / cross-store cell heads in the shared row
+        // expression — the same rewrite the single-write path applies.
+        if (env_row) |re| {
+            if (std.mem.indexOfScalar(u8, re, '.')) |dp| {
+                const base = std.mem.trim(u8, re[0..dp], " ");
+                const ref_field = std.mem.trim(u8, re[dp + 1 ..], " ");
+                var ref_ok = false;
+                for (order_env) |fname| {
+                    if (std.mem.eql(u8, fname, ref_field)) {
+                        ref_ok = true;
+                        break;
+                    }
+                }
+                if (ref_ok) {
+                    env_row = std.fmt.allocPrint(allocator, "__koru_store_{s}.{s}[__koru_store_{s}.__koru_resolve({s})]", .{ env_store, ref_field, env_store, base }) catch unreachable;
+                } else {
+                    env_row = H.storeRefsAll(allocator, program, re);
+                }
+            } else {
+                env_row = H.storeRefsAll(allocator, program, re);
+            }
+        }
+        const env_values = allocator.alloc([]const u8, writes.len) catch unreachable;
+        for (env_raw_values, 0..) |rv, wi| {
+            env_values[wi] = if (env_row != null)
+                H.lowerStoreExprs(allocator, program, rv)
+            else
+                H.storeRefs(allocator, rv, env_store, H.isIdentityStore(allocator, program, env_store));
+        }
         // Build the chain: envwrite each, then announce each (write order).
         //
         // These units were DECLARED by `new` under the store's home module, so
@@ -4821,19 +5123,50 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         const total = writes.len * 2;
         var invs = allocator.alloc(ast.Invocation, total) catch unreachable;
         for (writes, 0..) |_, wi| {
-            const a1 = allocator.alloc(ast.Arg, 2) catch unreachable;
-            a1[0] = ast.Arg{ .name = allocator.dupe(u8, "field") catch unreachable, .value = std.fmt.allocPrint(allocator, "{d}", .{env_idx[wi]}) catch unreachable };
-            a1[1] = ast.Arg{ .name = allocator.dupe(u8, "value") catch unreachable, .value = env_values[wi] };
-            invs[wi] = ast.Invocation{
-                .path = H.mkPathH2(allocator, env_home, envw_name),
-                .args = a1,
-            };
-            const a2 = allocator.alloc(ast.Arg, 1) catch unreachable;
-            a2[0] = ast.Arg{ .name = allocator.dupe(u8, "field") catch unreachable, .value = std.fmt.allocPrint(allocator, "{d}", .{env_idx[wi]}) catch unreachable };
-            invs[writes.len + wi] = ast.Invocation{
-                .path = H.mkPathH2(allocator, env_home, ann_name),
-                .args = a2,
-            };
+            if (env_row) |re| {
+                // Row-addressed plural envelope: row + field + typed slots
+                // (written slot carries the value, the rest ride typed zeros
+                // no arm reads — the bundled-write convention).
+                const a1 = allocator.alloc(ast.Arg, env_col_types.len + 2) catch unreachable;
+                a1[0] = ast.Arg{ .name = allocator.dupe(u8, "row") catch unreachable, .value = allocator.dupe(u8, re) catch unreachable };
+                a1[1] = ast.Arg{ .name = allocator.dupe(u8, "field") catch unreachable, .value = std.fmt.allocPrint(allocator, "{d}", .{env_idx[wi]}) catch unreachable };
+                for (env_col_types, 0..) |ct, ci| {
+                    const is_float = std.mem.eql(u8, ct, "f64") or std.mem.eql(u8, ct, "f32");
+                    const is_string = std.mem.eql(u8, ct, "string") or std.mem.eql(u8, ct, "[]const u8");
+                    a1[2 + ci] = ast.Arg{
+                        .name = std.fmt.allocPrint(allocator, "value_{d}", .{ci}) catch unreachable,
+                        .value = if (ci == env_idx[wi])
+                            env_values[wi]
+                        else
+                            allocator.dupe(u8, if (is_string) "\"\"" else if (is_float) "0.0" else "0") catch unreachable,
+                    };
+                }
+                invs[wi] = ast.Invocation{
+                    .path = H.mkPathH2(allocator, env_home, envw_name),
+                    .args = a1,
+                };
+                const a2 = allocator.alloc(ast.Arg, 2) catch unreachable;
+                a2[0] = ast.Arg{ .name = allocator.dupe(u8, "row") catch unreachable, .value = allocator.dupe(u8, re) catch unreachable };
+                a2[1] = ast.Arg{ .name = allocator.dupe(u8, "field") catch unreachable, .value = std.fmt.allocPrint(allocator, "{d}", .{env_idx[wi]}) catch unreachable };
+                invs[writes.len + wi] = ast.Invocation{
+                    .path = H.mkPathH2(allocator, env_home, ann_name),
+                    .args = a2,
+                };
+            } else {
+                const a1 = allocator.alloc(ast.Arg, 2) catch unreachable;
+                a1[0] = ast.Arg{ .name = allocator.dupe(u8, "field") catch unreachable, .value = std.fmt.allocPrint(allocator, "{d}", .{env_idx[wi]}) catch unreachable };
+                a1[1] = ast.Arg{ .name = allocator.dupe(u8, "value") catch unreachable, .value = env_values[wi] };
+                invs[wi] = ast.Invocation{
+                    .path = H.mkPathH2(allocator, env_home, envw_name),
+                    .args = a1,
+                };
+                const a2 = allocator.alloc(ast.Arg, 1) catch unreachable;
+                a2[0] = ast.Arg{ .name = allocator.dupe(u8, "field") catch unreachable, .value = std.fmt.allocPrint(allocator, "{d}", .{env_idx[wi]}) catch unreachable };
+                invs[writes.len + wi] = ast.Invocation{
+                    .path = H.mkPathH2(allocator, env_home, ann_name),
+                    .args = a2,
+                };
+            }
         }
         // Nested void chain, last step innermost. The chain BOTTOMS OUT in the
         // containing flow's original continuations (the `stored{…} |> next`
