@@ -1,10 +1,29 @@
-// Mid-chain unbound obligation leak — the continuation-level twin flagged OPEN in
-// frag-obligation-enforcement-keys-off-return-binding. `bump` returns a fresh
-// <owned!>, but the chain `make(): h |> bump(h)` ends UNBOUND. Enforcement mints
-// and checks an obligation only when the invocation carries a return_binding, so a
-// dangling obligation on an unbound continuation is neither discharged nor flagged.
-// It must be caught (KORU030 "was not discharged"), never leak silently at exit 0.
-// The head-only discard-materialization does not reach this continuation-level case.
+// PINS: a terminal unbound obligation auto-discharges — the mid-chain twin of
+// the unbound flow head.
+//
+// `make(): h |> bump(h)` — bump consumes h and hands back a fresh <owned!> that
+// nobody binds. `dispose` is its one void disposer, so there is nothing to
+// decide, and the compiler proves it knows: before this pin was inverted it
+// REFUSED while naming the very call it declined to make.
+//
+// RULED (Lars, 2026-07-31) after the case against was argued and did not
+// survive. Every condition auto-discharge states is met — an obligation, no
+// discharge by the author, exactly one void disposer, a compiler that knows
+// which. The only thing absent is a NAME for the value, and a name is not one
+// of those conditions.
+//
+// This test was minted RED on 2026-07-18 against a real leak (the obligation
+// vanished silently at exit 0) and went green on the first remedy that landed:
+// refuse it. The remedy nobody compared it to was auto-discharge, which also
+// eliminates the leak and additionally runs the program. Its 07-19 ground —
+// "an unbound value has no name to dispose" — was already false when written:
+// `generateSyntheticBinding` had minted names for the `: _` case since 07-12.
+// What did not exist yet was the TERMINUS framing (07-24) under which a
+// zero-continuation mid-chain call and a bare head are the same position.
+//
+// 330_120 is the cross-module twin. 330_041/330_094 are the head references.
+// ⚠️ The refusal under `--auto-discharge=disable` does NOT fire for this shape
+// and did not before this change either — pinned red as 330_123.
 const std = @import("std");
 const Handle = struct { n: i32 };
 ~tor make {} -> *Handle<owned!>

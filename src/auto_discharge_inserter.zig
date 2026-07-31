@@ -1358,6 +1358,64 @@ pub const AutoDischargeInserter = struct {
             }
         }
 
+        // A TERMINAL invocation with NO bind at all — `make(): h |> bump(h)`,
+        // where `bump` hands back a fresh obligation the chain drops. Same
+        // position as an unbound flow head (`cont.continuations.len == 0` IS the
+        // flow exit), and the head has materialized its implicit discard since
+        // 2026-07-12. Mint the name here too, and the ordinary return_binding
+        // path takes it from there — including auto-discharge.
+        //
+        // This inverts the 2026-07-19 mid-chain ruling, whose stated ground was
+        // "an unbound value has no name to dispose, so it is NOT
+        // auto-dischargeable". That ground was already false when written: this
+        // is the same `generateSyntheticBinding` the `: _` case above has used
+        // since a week earlier. What did NOT exist on 07-19 was the terminus
+        // framing (established 07-24) under which a zero-continuation mid-chain
+        // call and a bare head are the same position — so the two were ruled
+        // apart by accident of sequence, not by a distinction anyone defended.
+        // Every condition auto-discharge states is met here: an obligation, no
+        // discharge by the author, exactly one void disposer, and a compiler
+        // that proves it knows which by NAMING it in the refusal it declines to
+        // replace. A name is not one of those conditions.
+        //
+        // Gated on `.full` deliberately: `--auto-discharge=disable` and
+        // `~[strict]` opt out of INSERTING a discharger, never out of the
+        // obligation being VISIBLE to enforcement. Under normalize-only the
+        // seeding below still runs and KORU030 still walls it.
+        if (mode == .full) {
+            if (cont.continuations.len == 0) {
+                if (cont.node) |node| {
+                    if (node == .invocation and node.invocation.return_binding == null) {
+                        const inv_name = try self.pathToString(node.invocation.path);
+                        defer self.allocator.free(inv_name);
+                        const inv_mod = node.invocation.path.module_qualifier orelse module_name;
+                        const inv_qual = try std.fmt.allocPrint(self.allocator, "{s}:{s}", .{ inv_mod, inv_name });
+                        defer self.allocator.free(inv_qual);
+                        const carries_obligation = if (self.event_map.get(inv_qual)) |info| blk: {
+                            const rp = info.decl.return_phantom orelse break :blk false;
+                            break :blk std.mem.endsWith(u8, std.mem.trim(u8, rp, " \t"), "!");
+                        } else false;
+                        if (carries_obligation) {
+                            const synthetic_name = try self.generateSyntheticBinding();
+                            const new_cont = try self.cloneContinuationWithReturnBinding(cont, synthetic_name);
+                            const new_flow = try self.replaceContinuationAnywhere(flow, cont, new_cont.*);
+                            const new_program = try ast_functional.replaceFlowRecursive(
+                                self.allocator,
+                                program,
+                                flow,
+                                .{ .flow = new_flow },
+                            ) orelse {
+                                return .{ .transformed = false, .program = program };
+                            };
+                            const result_ptr = try self.allocator.create(ast.Program);
+                            result_ptr.* = new_program;
+                            return .{ .transformed = true, .program = result_ptr };
+                        }
+                    }
+                }
+            }
+        }
+
         // Add bindings from this branch
         if (cont.binding) |binding_name| {
             // NAMED LABEL on a bare-return callee (`create() | made c |> ...`):

@@ -71,7 +71,59 @@ Full parity (phantom-checker descent into record-return fields, which would make
 the field auto-dischargeable) is deliberately NOT built — the pin rules manual
 discharge, and the checker-descent is a larger mirror of the input-side tracking.
 
-## The mid-chain-unbound frontier is CLOSED (2026-07-19)
+## ⚠️ SUPERSEDED 2026-07-31 — the mid-chain frontier closed on the WRONG REMEDY
+
+The section immediately below is kept because its diagnosis was right and its
+remedy was not. Read it as history.
+
+`330_097` was minted RED against a real defect: the obligation vanished silently
+at exit 0. Two remedies eliminate that leak — **refuse it**, or **auto-discharge
+it**. Refusal landed first, the test went green on it, and the pin thereafter
+read as a ruling that mid-chain *must* refuse. Nobody compared the two.
+
+The stated ground below — *"an unbound value has no name to `dispose(...)`, so it
+is NOT auto-dischargeable"* — **was already false when written.**
+`generateSyntheticBinding` and `cloneContinuationWithReturnBinding` had been
+minting names for the `: _` case since 2026-07-12, a week earlier, and the
+unbound-flow-head rule at the top of this very document says to *materialize the
+implicit discard*. Same situation, opposite conclusion, two paragraphs apart.
+
+What genuinely did not exist on 07-19 was the **terminus framing** — established
+07-24, in the seam analysis further down — under which a zero-continuation
+mid-chain call and a bare flow head are *the same position*. So the two cases
+were ruled apart by accident of sequence rather than by any distinction someone
+defended. That is the honest account: not carelessness, a ruling made before the
+frame existed to see it.
+
+**Ruled by Lars, 2026-07-31**, after the case against was argued at length and
+did not survive. Auto-discharge's contract is: an obligation, undischarged by the
+author, with exactly one void disposer, gets its disposer inserted. The mid-chain
+case meets every clause — and the compiler proved it knew, because its refusal
+**named the very call it declined to make** (`Call: bin.close`). A name for the
+value is not one of the conditions; requiring one made the definition read
+*"settles obligations you did not write down, provided you wrote down a name for
+them."*
+
+Every distinction offered in defence of the refusal — authorship, visibility,
+library drift — applies identically to the unbound head, which auto-discharges
+uncontroversially. The one precedent that looked contrary, the record field, is
+refused for a **mechanical** reason that does not transfer: an inserted
+`dispose(r.h)` fails phantom validation, so there is genuinely no candidate.
+
+Now: the terminal-unbound path mints a synthetic binding under `mode == .full`
+and the ordinary `return_binding` machinery takes over. `330_097` is inverted to
+a positive (`disposed n=6`); `330_120` is green.
+
+⛔ **AND IT EXPOSED A HOLE, pinned red as `330_123`.** Under
+`--auto-discharge=disable` this shape has **never** been walled — measured both
+before and after the change: it compiles clean, exit 0, prints nothing. The
+normalize-only pass materializes the discard for an unbound HEAD (which is why
+`330_025` walls) and does not reach a zero-continuation mid-chain call. Default
+mode was masking it. That violates this document's own standing rule — *disable
+opts out of INSERTING, never out of the obligation being VISIBLE to enforcement*
+— and it is the next thing to fix here.
+
+## The mid-chain-unbound frontier is CLOSED (2026-07-19) — HISTORY, see above
 
 Mid-chain unbound obligation calls (`make(): h |> bump(h)` where `bump` returns an
 obligation and the chain ends unbound) — the continuation-level twin of this root —

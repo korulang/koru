@@ -1,0 +1,25 @@
+// PINS (RED — the hole 330_097's inversion exposed): under
+// `--auto-discharge=disable` a terminal unbound obligation must still be
+// REFUSED. Disable opts out of INSERTING a discharger, never out of the
+// obligation being VISIBLE to enforcement — that rule is the standing one in
+// frag-obligation-enforcement-keys-off-return-binding.
+//
+// Measured 2026-07-31, BOTH before and after 330_097 was inverted: this program
+// compiles clean under disable, exit 0, and prints nothing. The obligation
+// vanishes. So the mid-chain shape has never had a wall in this mode — the
+// normalize-only pass materializes the discard for an unbound HEAD and does not
+// reach a zero-continuation mid-chain call.
+//
+// Before the inversion this was masked: default mode refused, so the shape was
+// walled somewhere. It no longer is anywhere, which is why this pin exists.
+//
+// The head reference that DOES wall under disable is 330_025.
+const std = @import("std");
+const Handle = struct { n: i32 };
+~tor make {} -> *Handle<owned!>
+~proc make|zig { const h = std.heap.page_allocator.create(Handle) catch unreachable; h.* = .{ .n = 5 }; return h; }
+~tor bump { h: *Handle<!owned> } -> *Handle<owned!>
+~proc bump|zig { h.n += 1; return h; }
+~tor dispose { h: *Handle<!owned> }
+~proc dispose|zig { std.debug.print("disposed n={}\n", .{h.n}); std.heap.page_allocator.destroy(h); }
+~make(): h |> bump(h)
