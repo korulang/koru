@@ -1,24 +1,33 @@
-// ============================================================================
-// Test 305: Subflow with Invalid Branch Reference
-// ============================================================================
-// Tests that the shape checker validates subflow continuations
-// A subflow that references a non-existent branch should fail shape checking
-// ============================================================================
-
+// PINS: a subflow continuation naming a branch the invoked tor does not declare
+// is rejected (KORU021), in SUBFLOW position — the flow head is `~process = …`,
+// not a top-level call.
+//
+// `double` declares `doubled` and `refused`. The third arm names `tripled`,
+// which is neither.
+//
+// The callee must be a BRANCHED tor for this pin to mean anything: a bare-return
+// `-> T` tor carries no branch tags at all, so `| <label>` on one is binding
+// sugar and "has no branch" is not a claim the language makes about it
+// (flow_checker.zig:1462). This file spelled `double` as a one-branch tor until
+// the lone-payload burn-down (3c77223f) rewrote every such tor into a bare
+// return — which moved the program off the shape the pin names. Two branches,
+// so the shape is expressible under the current rule.
 const std = @import("std");
 
-// Event with only ONE branch
-~tor double { value: i32 } -> i32
+~tor double { value: i32 }
+| doubled i32
+| refused string
 
 ~proc double|zig {
-    return value * 2;
+    if (value < 0) return .{ .refused = "negative" };
+    return .{ .doubled = value * 2 };
 }
 
-// Event to test
-~tor process { input: i32 } -> i32
+~tor process { input: i32 }
+| final i32
+| stopped string
 
-// INVALID subflow: references 'tripled' branch but double event has no such branch!
-// This should fail shape checking with "Event 'double' has no branch 'tripled'"
 ~process = double(value: input)
-| doubled d -> { output: d.value }
-| tripled t -> { output: t.value }  // ERROR: 'tripled' doesn't exist!
+| doubled d => final d
+| refused r => stopped r
+| tripled t => final t

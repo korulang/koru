@@ -1,9 +1,33 @@
-// RED PIN (design gap): read's `| slice` payload BORROWS s.data through a
-// terminal branch, and nothing links its lifetime to s — freeing s before
-// using the slice compiles today and SIGSEGVs at runtime (exit 139).
-// The ratified borrow model (2026-06-11) says terminal payloads must OWN
-// what they carry or carry an obligation; this test goes green when that
-// rule (or a read-scope design) lands and rejects this program.
+// PIN (RED — waiting on a spelling, not on a fix): `std/string:read` is
+// `{ s: *String<view|instance> } -> string` (string.kz:100) and its body is
+// `~read -> s.data` (string.kz:101). The returned `string` BORROWS s's buffer,
+// and nothing ties its lifetime to `s`. Freeing `s` and then reading the borrow
+// compiles and SIGSEGVs (exit 139).
+//
+// This is NOT use-after-discharge, and the fix for 335_047/048 deliberately does
+// not reach it: `free(s)` discharges `s`, and the print reads `text`. `text` was
+// never discharged — it was never tracked. Two different holes; one binding
+// each.
+//
+// THE QUESTION FOR LARS (do not answer it by inventing one):
+//   `read`'s return type has no way to say "this value lives as long as `s`".
+//   The ratified borrow model (2026-06-11) says a terminal payload must OWN what
+//   it carries or carry an obligation, and string.kz:110-113 already writes that
+//   rule down for the query/transform family — `substring` allocates a fresh
+//   copy precisely so it needs no borrow machinery, and the comment says
+//   "cheap views wait on the borrow-obligation surface."
+//
+//   So: what is the borrow surface spelled? Options seen in the corpus but never
+//   ruled — a phantom on the returned `string` tied to `s`'s identity, a
+//   read-scope construct that bounds where the borrow may travel, or making
+//   `read` allocate like `substring` does and dropping borrows entirely.
+//
+// EXPECT stays `CONTAINS borrow` as the provisional pin.
+//
+// Grounding (verified 2026-07-31):
+//   read decl + body   — koru_std/string.kz:100-101
+//   free decl          — koru_std/string.kz:89
+//   the ratified rule, written down — koru_std/string.kz:106-113
 ~import std/string
 ~import std/io
 

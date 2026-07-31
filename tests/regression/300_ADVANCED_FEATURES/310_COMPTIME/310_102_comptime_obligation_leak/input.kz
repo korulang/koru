@@ -1,25 +1,41 @@
-// NEGATIVE TEST (designed rejection ORDERING — comptime obligation
-// checking, ruled 2026-07-06). The gap is sharper than "comptime is
-// unchecked": the analysis-time checker DOES see comptime flows and
-// DOES reject this leak (KORU030) — but only AFTER evaluate-comptime
-// has already RUN the flow. Observed 2026-07-06: the sink printed
-// "comptime input" (twice — fold + evaluate both walk it) BEFORE the
-// rejection. Taint reached the sink during compilation; the build
-// failed after the exfiltration. Checked-but-too-late.
+// PINS: an obligation raised inside comptime code is checked. Today it is not —
+// it is ERASED before any checker looks.
 //
-// The ruled fix: run the SAME phantom checker as an elaborate segment
-// scoped to [comptime]-marked items, BEFORE process-template-procs
-// (compiler.kz:828), with a comptime-scoped auto-discharge run ahead
-// of it. One implementation of obligation semantics, two executions
-// disciplined — and comptime side effects can never precede their own
-// rejection.
+// MEASURED 2026-07-31, and this is not what the pin said before. The old reading
+// was "checked but too late" (rejected after the sink had already printed during
+// compilation). That is no longer the behavior. Today:
 //
-// This is 330_069's taint shape, comptime-marked. The NOT_CONTAINS
-// assertion is the pin's point: rejection must fire before the sink
-// can produce output. Also wanted from the fix: the diagnostic names
-// the comptime context and the real source location (today it points
-// at auto_discharge:33:0). Double-evaluation is a separate observation
-// to investigate.
+//   - the compile succeeds, silently;
+//   - nothing is printed during compilation;
+//   - `./a.out` prints "comptime input" at RUNTIME.
+//
+// The mechanism, isolated by probe:
+//
+//   1. Drop `~[comptime]` from the tor DECL and the identical program IS
+//      refused — "error[KORU030]: Resource 's' obligation <unsanitized!> was not
+//      discharged. No tor accepts <!unsanitized>." So the checker works.
+//   2. With `~[comptime]` on the decl, `comptime_eval.flowIsFoldable`
+//      (comptime_eval.zig:851) matches this flow: a `[comptime]` head with a
+//      bare-return impl. `Folder.foldFlow` (comptime_eval.zig:717) evaluates
+//      `get-input` to the literal, SUBSTITUTES it into the residue continuation,
+//      and promotes that continuation to the flow root.
+//   3. The binding `s` — the thing that carried `<unsanitized!>` — no longer
+//      exists. What survives is `print.ln("comptime input")`, an ordinary
+//      runtime flow with no obligation in it.
+//   4. `fold-comptime` runs inside `elaborate` (compiler.kz:1220), and every
+//      obligation pass runs inside `analysis` (compiler.kz:1226), which is
+//      strictly after. There is nothing left for them to check.
+//
+// So the ruled fix still stands and is now better motivated: run the SAME
+// obligation passes as an elaborate segment scoped to `[comptime]` items BEFORE
+// the fold, with a comptime-scoped auto-discharge ahead of them. One
+// implementation of obligation semantics, two executions — and constant folding
+// can never delete a debt on its way past.
+//
+// The NOT_CONTAINS assertion is kept: whatever rejects this must reject it
+// before the sink can produce output. It passes vacuously today (the print is
+// residue, emitted rather than run), and it must keep passing once the check
+// moves ahead of evaluation.
 
 ~import std/io
 
