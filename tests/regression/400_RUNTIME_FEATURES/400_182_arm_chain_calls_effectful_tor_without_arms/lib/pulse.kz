@@ -1,0 +1,32 @@
+// For 400_182: an effect-carrying tor (optional arm) with an optional
+// param, called from an ARM-NESTED chain that installs neither. The
+// raw-call writers on that path must (a) fill the omitted `?T` with null
+// and (b) pass the empty Handlers type — an effectful handler's signature
+// is `(Input, comptime __H)` even when every arm is optional.
+//
+// Found by kopium's `| row _ |> multi.new() |> … |> multi.start()` chain:
+// 'missing struct field: allocator', then 'expected 2 argument(s), found
+// 1'. The registry grew `has_effect_branches` so cross-module call sites
+// can tell (ast branch kinds don't survive into BranchType).
+
+const std = @import("std");
+
+~pub tor gate {}
+| yes
+| no
+
+~proc gate|zig {
+    return .{ .yes = .{} };
+}
+
+~pub tor pulse { n: i64, scale: ?i64 }
+! ?note i64
+| done i64
+
+~proc pulse|zig {
+    const s: i64 = scale orelse 10;
+    if (@hasDecl(__H, "note")) {
+        note(n);
+    }
+    return .{ .done = n * s };
+}

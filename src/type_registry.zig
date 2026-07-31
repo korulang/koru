@@ -101,6 +101,7 @@ pub const TypeRegistry = struct {
             const cloned_event = EventType{
                 .input_shape = try new_registry.duplicateShape(event_type.input_shape),
                 .branches = try new_registry.duplicateBranches(event_type.branches),
+                .has_effect_branches = event_type.has_effect_branches,
                 .is_public = event_type.is_public,
                 .is_implicit_flow = event_type.is_implicit_flow,
                 .return_type = if (event_type.return_type) |rt| try new_registry.allocator.dupe(u8, rt) else null,
@@ -190,9 +191,17 @@ pub const TypeRegistry = struct {
         // Check if this is an implicit flow event
         const is_implicit_flow = self.checkImplicitFlowEvent(&event_decl.input);
         
+        var has_effect = false;
+        for (event_decl.branches) |*b| {
+            if (b.kind == .effect) {
+                has_effect = true;
+                break;
+            }
+        }
         var event_type = EventType{
             .input_shape = try self.duplicateShape(event_decl.input),
             .branches = try self.allocator.alloc(BranchType, event_decl.branches.len),
+            .has_effect_branches = has_effect,
             .is_public = event_decl.is_public,
             .is_implicit_flow = is_implicit_flow,
             .return_type = if (event_decl.return_type) |rt| try self.allocator.dupe(u8, rt) else null,
@@ -454,6 +463,12 @@ pub const TypeRegistry = struct {
 pub const EventType = struct {
     input_shape: ?ast.Shape,
     branches: []BranchType,
+    // True when the event declares any `!` effect branch — its emitted
+    // handler then takes `(Input, comptime __H: type)`, and every call
+    // site must pass a Handlers type (empty `struct {}` when no arms are
+    // installed). Recorded here because cross-module call sites resolve
+    // through the registry, where ast branch kinds are otherwise lost.
+    has_effect_branches: bool = false,
     is_public: bool = false,
     is_implicit_flow: bool = false,  // True for events with single Source param
     return_type: ?[]const u8 = null,  // `-> T` bare return type (mirrors ast.EventDecl.return_type); null = branch-based event

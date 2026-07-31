@@ -2271,32 +2271,13 @@ fn resolveTargetInputFields(
     main_module_name: ?[]const u8,
 ) ?[]const ast.Field {
     if (findEventDeclByPath(all_items, &inv.path)) |target_decl| return target_decl.input.fields;
-    var name_buf: [512]u8 = undefined;
-    var pos: usize = 0;
-    if (inv.path.module_qualifier) |mq| {
-        if (mq.len + 1 > name_buf.len) return null;
-        @memcpy(name_buf[pos .. pos + mq.len], mq);
-        pos += mq.len;
-        name_buf[pos] = ':';
-        pos += 1;
-    } else if (main_module_name) |mmn| {
-        if (mmn.len + 1 > name_buf.len) return null;
-        @memcpy(name_buf[pos .. pos + mmn.len], mmn);
-        pos += mmn.len;
-        name_buf[pos] = ':';
-        pos += 1;
-    }
-    for (inv.path.segments, 0..) |seg, seg_i| {
-        if (seg_i > 0) {
-            if (pos + 1 > name_buf.len) return null;
-            name_buf[pos] = '.';
-            pos += 1;
-        }
-        if (pos + seg.len > name_buf.len) return null;
-        @memcpy(name_buf[pos .. pos + seg.len], seg);
-        pos += seg.len;
-    }
-    if (type_registry.getEventType(name_buf[0..pos])) |et| {
+    // Registry fallback keys MUST come from buildCanonicalEventName — a
+    // hand-rolled join misses its normalizations and silently resolves
+    // nothing (the first spelling of this fn did exactly that, and the
+    // injection quietly skipped: kopium's `multi.new()` in a `| row` arm).
+    const key = buildCanonicalEventName(&inv.path, std.heap.page_allocator, main_module_name) catch return null;
+    defer std.heap.page_allocator.free(key);
+    if (type_registry.getEventType(key)) |et| {
         if (et.input_shape) |shape| return shape.fields;
     }
     return null;
@@ -2597,7 +2578,27 @@ fn emitSubflowContinuationsWithDepth(
                             emitted_so_far += 1;
                         }
                     }
-                    try emitter.write(" });\n");
+                    // An effect-carrying target's handler takes `(Input,
+                    // comptime __H)` — pass the empty Handlers type when this
+                    // raw-call site installs no arms (optional arms fold to
+                    // noops; a mandatory arm was refused upstream, KORU022).
+                    const target_takes_handlers = blk: {
+                        if (findEventDeclByPath(all_items, &inv.path)) |td| {
+                            for (td.branches) |*b| {
+                                if (b.kind == .effect) break :blk true;
+                            }
+                            break :blk false;
+                        }
+                        const key = buildCanonicalEventName(&inv.path, std.heap.page_allocator, main_module_name) catch break :blk false;
+                        defer std.heap.page_allocator.free(key);
+                        if (type_registry.getEventType(key)) |et| break :blk et.has_effect_branches;
+                        break :blk false;
+                    };
+                    if (target_takes_handlers) {
+                        try emitter.write(" }, struct {});\n");
+                    } else {
+                        try emitter.write(" });\n");
+                    }
                 },
                 .branch_constructor => |bc| {
                     // Terminal - emit return
@@ -3285,7 +3286,51 @@ fn emitSubflowContinuationsWithDepth(
                                     try emitter.write(arg.value);
                                 }
                             }
-                            try emitter.write(" });\n");
+                            // OPTIONAL PARAMETER INJECTION — the third copy of
+                            // emitArgs's rule (400_180): omitted `?T` params
+                            // fill with null on the arm-step path too.
+                            if (event_type) |et| {
+                                if (et.input_shape) |shape| {
+                                    var emitted_so_far = inv.args.len;
+                                    for (shape.fields) |field| {
+                                        if (!(field.type.len > 0 and field.type[0] == '?')) continue;
+                                        var already_provided = false;
+                                        for (inv.args) |arg| {
+                                            if (std.mem.eql(u8, arg.name, field.name)) {
+                                                already_provided = true;
+                                                break;
+                                            }
+                                        }
+                                        if (already_provided) continue;
+                                        if (emitted_so_far > 0) try emitter.write(",");
+                                        try emitter.write(" .");
+                                        try emitter.write(field.name);
+                                        try emitter.write(" = null");
+                                        emitted_so_far += 1;
+                                    }
+                                }
+                            }
+                            // An effect-carrying target's handler takes
+                            // `(Input, comptime __H)`. This raw-call path
+                            // installs no effect arms, so an empty struct is
+                            // the honest __H: optional arms fold to noops and
+                            // a mandatory arm was already refused upstream
+                            // (KORU022) before emission.
+                            const target_takes_handlers = blk: {
+                                if (findEventDeclByPath(all_items, &inv.path)) |td| {
+                                    for (td.branches) |*b| {
+                                        if (b.kind == .effect) break :blk true;
+                                    }
+                                    break :blk false;
+                                }
+                                if (event_type) |et| break :blk et.has_effect_branches;
+                                break :blk false;
+                            };
+                            if (target_takes_handlers) {
+                                try emitter.write(" }, struct {});\n");
+                            } else {
+                                try emitter.write(" });\n");
+                            }
 
                             // Suppress unused variable warning (result might not be used, e.g., for taps)
                             try emitter.write(indent);
@@ -5990,6 +6035,29 @@ fn emitInlineEffectfulCall(
         try emitter.write(arg.value);
         try emitter.write("); _ = &");
         try writeBranchName(emitter, arg.name);
+        try emitter.write(";\n");
+    }
+
+    // OPTIONAL PARAMETER INJECTION, splice flavor (400_182): an omitted
+    // `?T` param binds to a typed null so the spliced body's references
+    // resolve — the fourth home of the one rule (see 400_180).
+    for (elig.event_decl.input.fields) |field| {
+        if (!(field.type.len > 0 and field.type[0] == '?')) continue;
+        var provided = false;
+        for (inv.args) |arg| {
+            if (std.mem.eql(u8, arg.name, field.name)) {
+                provided = true;
+                break;
+            }
+        }
+        if (provided) continue;
+        try emitter.writeIndent();
+        try emitter.write("const ");
+        try writeBranchName(emitter, field.name);
+        try emitter.write(": ");
+        try emitter.write(lowerZigType(field.type));
+        try emitter.write(" = null; _ = &");
+        try writeBranchName(emitter, field.name);
         try emitter.write(";\n");
     }
 
