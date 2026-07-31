@@ -1,0 +1,1 @@
+Stack-buffer overflow in [expand] template-expansion path: four unguarded @memcpy sites into fixed [256]u8 buffers in transform_pass_runner.zig's handleExpandIfMatches (see input.kz for exact lines and the fix). Parked because [expand] is the legacy template mechanism, superseded by inline |template| procs.

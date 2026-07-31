@@ -66,7 +66,7 @@ async function hasInputFile(dir) {
 		(await fileExists(join(dir, 'input.kjs')));
 }
 
-async function findAllTestDirs(basePath, categoryPath = null, categorySkipped = false, categoryTodo = false, categoryTodoDesc = '') {
+async function findAllTestDirs(basePath, categoryPath = null, categorySkipped = false, categoryTodo = false, categoryTodoDesc = '', categoryBenchmark = false, categoryBenchmarkDesc = '', categorySkippedDesc = '') {
 	const tests = [];
 	const entries = await readdir(basePath);
 
@@ -77,6 +77,29 @@ async function findAllTestDirs(basePath, categoryPath = null, categorySkipped = 
 	const ownTodoDesc = ownTodoIsCategory ? await readFirstLine(join(basePath, 'TODO')) : '';
 	const effectiveCategoryTodo = categoryTodo || ownTodoIsCategory;
 	const effectiveCategoryTodoDesc = categoryTodoDesc || ownTodoDesc;
+
+	// Category-level SKIP marker on this dir (propagates to all tests below).
+	// Previously this only tracked a boolean and reported every inherited skip
+	// as the synthesised literal 'Category skipped' — never reading whatever
+	// authored reason actually sat in the category's own SKIP file. Mirrors the
+	// TODO/BENCHMARK propagation above so a real reason, if written, is used.
+	const ownSkip = await fileExists(join(basePath, 'SKIP'));
+	const ownSkipIsCategory = ownSkip && !ownInput;
+	const ownSkipDesc = ownSkipIsCategory ? await readFirstLine(join(basePath, 'SKIP')) : '';
+	const effectiveCategorySkipped = categorySkipped || ownSkipIsCategory;
+	const effectiveCategorySkippedDesc = categorySkippedDesc || ownSkipDesc;
+
+	// Category-level BENCHMARK marker (propagates to all tests below) — mirrors
+	// run_single_test.sh / regression_lib.sh, which treat a BENCHMARK file on the
+	// category dir as opting EVERY test beneath it out of the standard run (no
+	// koruc invocation, no SUCCESS/FAILURE ever written). Without this mirror, a
+	// category-wide BENCHMARK silently produced 14 'untested' tests instead of a
+	// 'benchmark' verdict — the harness's own exclusion was invisible here.
+	const ownBenchmark = await fileExists(join(basePath, 'BENCHMARK'));
+	const ownBenchmarkIsCategory = ownBenchmark && !ownInput;
+	const ownBenchmarkDesc = ownBenchmarkIsCategory ? await readFirstLine(join(basePath, 'BENCHMARK')) : '';
+	const effectiveCategoryBenchmark = categoryBenchmark || ownBenchmarkIsCategory;
+	const effectiveCategoryBenchmarkDesc = categoryBenchmarkDesc || ownBenchmarkDesc;
 
 	for (const entry of entries) {
 		if (entry === '_archive') continue;
@@ -93,21 +116,22 @@ async function findAllTestDirs(basePath, categoryPath = null, categorySkipped = 
 		const todo = await fileExists(join(fullPath, 'TODO'));
 		const skip = await fileExists(join(fullPath, 'SKIP'));
 		const broken = await fileExists(join(fullPath, 'BROKEN'));
+		const benchmark = await fileExists(join(fullPath, 'BENCHMARK'));
 
-		// A TEST has input.kz (or, for stub tests, only TODO/SKIP/BROKEN markers
-		// next to no input.kz). A CATEGORY has no input.kz and may carry a
-		// category-level TODO/SKIP marker for its children. We disambiguate by
-		// checking whether this dir contains any test-pattern children — if it
-		// does, the TODO/SKIP here is category-level, not test-level.
+		// A TEST has input.kz (or, for stub tests, only TODO/SKIP/BROKEN/BENCHMARK
+		// markers next to no input.kz). A CATEGORY has no input.kz and may carry a
+		// category-level TODO/SKIP/BENCHMARK marker for its children. We
+		// disambiguate by checking whether this dir contains any test-pattern
+		// children — if it does, the marker here is category-level, not test-level.
 		let hasTestPatternChild = false;
-		if (!hasInput && (todo || skip || broken)) {
+		if (!hasInput && (todo || skip || broken || benchmark)) {
 			try {
 				const children = await readdir(fullPath);
 				hasTestPatternChild = children.some(c => /^\d+[a-z]?_/.test(c));
 			} catch {}
 		}
-		const isCategoryMarker = !hasInput && (todo || skip || broken) && hasTestPatternChild;
-		const isValidTest = isTestDir && (hasInput || ((todo || skip || broken) && !isCategoryMarker));
+		const isCategoryMarker = !hasInput && (todo || skip || broken || benchmark) && hasTestPatternChild;
+		const isValidTest = isTestDir && (hasInput || ((todo || skip || broken || benchmark) && !isCategoryMarker));
 
 		if (isValidTest) {
 			// This is a test directory!
@@ -126,14 +150,25 @@ async function findAllTestDirs(basePath, categoryPath = null, categorySkipped = 
 				: (effectiveCategoryTodo ? effectiveCategoryTodoDesc : '');
 			const skipReason = skip ? await readFirstLine(join(fullPath, 'SKIP')) : '';
 			const brokenReason = broken ? await readFirstLine(join(fullPath, 'BROKEN')) : '';
+			const benchmarkReason = benchmark
+				? await readFirstLine(join(fullPath, 'BENCHMARK'))
+				: (effectiveCategoryBenchmark ? effectiveCategoryBenchmarkDesc : '');
 
-			// Determine status with proper precedence (matching bash script)
+			// Determine status with proper precedence. BENCHMARK sits above
+			// TODO/SKIP/BROKEN because that's the harness's own precedence
+			// (regression_lib.sh checks BENCHMARK before TODO/SKIP): a test under a
+			// benchmark category never gets a koruc invocation at all, so it can
+			// never validly resolve to any of the other statuses.
 			let status = 'untested';
-			if (todo) {
+			if (benchmark) {
+				status = 'benchmark';
+			} else if (effectiveCategoryBenchmark) {
+				status = 'benchmark';
+			} else if (todo) {
 				status = 'todo';
 			} else if (effectiveCategoryTodo) {
 				status = 'todo';
-			} else if (categorySkipped) {
+			} else if (effectiveCategorySkipped) {
 				status = 'skipped';
 			} else if (skip) {
 				status = 'skipped';
@@ -155,24 +190,33 @@ async function findAllTestDirs(basePath, categoryPath = null, categorySkipped = 
 				status,
 				failureReason,
 				todoDesc,
-				skipReason: categorySkipped && !skip ? 'Category skipped' : skipReason,
-				brokenReason
+				skipReason: effectiveCategorySkipped && !skip
+					? (effectiveCategorySkippedDesc || 'Category skipped')
+					: skipReason,
+				// Distinct from skipReason's text (which may now carry an authored
+				// reason instead of the literal 'Category skipped') — this is what
+				// the category summary below actually needs to know.
+				categoryLevelSkip: effectiveCategorySkipped && !skip,
+				brokenReason,
+				benchmarkReason
 			});
 		}
 
 		// Recurse into subdirectories (matching bash recursive behavior)
 		// Build full category path when entering a category directory
 		const isCategoryDir = /^\d+_/.test(entry);
-		const subCategorySkipped = categorySkipped || await fileExists(join(fullPath, 'SKIP'));
 		const subCategoryPath = isCategoryDir
 			? (categoryPath ? `${categoryPath}/${entry}` : entry)
 			: categoryPath;
 		const subTests = await findAllTestDirs(
 			fullPath,
 			subCategoryPath,
-			subCategorySkipped,
+			effectiveCategorySkipped,
 			effectiveCategoryTodo,
-			effectiveCategoryTodoDesc
+			effectiveCategoryTodoDesc,
+			effectiveCategoryBenchmark,
+			effectiveCategoryBenchmarkDesc,
+			effectiveCategorySkippedDesc
 		);
 		tests.push(...subTests);
 	}
@@ -232,7 +276,7 @@ async function saveSnapshot() {
 				.map(([slug, tests]) => ({
 				name: slug.replace(/^\d+_/, '').replace(/_/g, ' '),
 				slug,
-			categorySkipped: tests.some(t => t.skipReason === 'Category skipped'),
+			categorySkipped: tests.some(t => t.categoryLevelSkip),
 			tests
 		}));
 
@@ -244,12 +288,15 @@ async function saveSnapshot() {
 		const todoTests = allTests.filter(t => t.status === 'todo').length;
 		const skippedTests = allTests.filter(t => t.status === 'skipped').length;
 		const brokenTests = allTests.filter(t => t.status === 'broken').length;
+		const benchmarkTests = allTests.filter(t => t.status === 'benchmark').length;
 		const untestedTests = allTests.filter(t => t.status === 'untested').length;
 		const totalTests = allTests.length;
 		// inScope: tests that should be executed and contribute to pass rate.
-		// Excludes TODO/SKIP/BROKEN (explicitly sidelined). Includes untested
-		// (those *should* have run — if they didn't it's a real gap).
-		const inScopeTests = totalTests - todoTests - skippedTests - brokenTests;
+		// Excludes TODO/SKIP/BROKEN/BENCHMARK (explicitly sidelined — a benchmark
+		// never gets a koruc invocation, so it can never carry a pass/fail verdict
+		// either). Includes untested (those *should* have run — if they didn't
+		// it's a real gap).
+		const inScopeTests = totalTests - todoTests - skippedTests - brokenTests - benchmarkTests;
 
 		// Create snapshot
 		const timestamp = new Date().toISOString();
@@ -265,6 +312,7 @@ async function saveSnapshot() {
 				todo: todoTests,
 				skipped: skippedTests,
 				broken: brokenTests,
+				benchmark: benchmarkTests,
 				untested: untestedTests,
 				passRate: inScopeTests > 0 ? ((passedTests / inScopeTests) * 100).toFixed(1) : '0.0'
 			},
@@ -292,7 +340,7 @@ async function saveSnapshot() {
 
 		console.log(`✓ Saved test snapshot: ${filename}`);
 		console.log(`  Regression: ${passedTests}/${inScopeTests} in-scope passed (${snapshot.summary.passRate}%)  [${totalTests} total on disk]`);
-		console.log(`  Failed: ${failedTests}, TODO: ${todoTests}, Skipped: ${skippedTests}, Broken: ${brokenTests}`);
+		console.log(`  Failed: ${failedTests}, TODO: ${todoTests}, Skipped: ${skippedTests}, Broken: ${brokenTests}, Benchmark: ${benchmarkTests}`);
 		if (unitTests) {
 			const us = unitTests.summary;
 			const skipPart = us.skipped > 0 ? `, ${us.skipped} skipped` : '';
