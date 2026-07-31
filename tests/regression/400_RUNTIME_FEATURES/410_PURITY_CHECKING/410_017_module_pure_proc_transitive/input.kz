@@ -1,0 +1,23 @@
+// Layer 2 over module boundaries: a [pure] proc living inside an imported
+// module (std/testing's assert.fail) reaches the same transitive fixed point
+// as a top-level one. Imported modules are merged as module_decl items before
+// the purity pass runs, so their procs participate in Phase 3 and the flags
+// land in the serialized AST the backend loads.
+//
+// The top-level pure chain mirrors 410_014 as an in-file control.
+
+~import std/testing
+
+const std = @import("std");
+
+// Pure operation, top-level control
+~tor compute { x: i32 } -> i32
+
+~[pure] proc compute|zig {
+    return x * 2;
+}
+
+~tor main {}
+
+// Subflow dispatching the pure event
+~compute(x: 21)

@@ -91,6 +91,163 @@ test "proc without pure annotation is not pure" {
 // Phase 3 & 4: Transitive Purity (Requires purity checker implementation)
 // ════════════════════════════════════════
 
+// ════════════════════════════════════════
+// Phase 2: Call graph population (proc → inline-flow dispatches)
+//
+// The parser's inline-flow extraction is feature-gated off (KORU003 in
+// extractInlineFlows), so no parseable program carries proc.inline_flows
+// today. These tests graft a parsed flow into a proc to pin the mechanism:
+// the call graph must be populated from inline flows, and a [pure] proc
+// whose visible dispatches reach an impure event must NOT be marked
+// transitively pure. This is the machinery the feature gate will land on.
+// ════════════════════════════════════════
+
+/// Helper: parse a program and graft its top-level flow into the named proc's
+/// inline_flows. Uses an arena via the caller so shared ownership is safe.
+fn graftFlowIntoProc(allocator: std.mem.Allocator, source_file: *ast.Program, proc_name: []const u8) !*ast.ProcDecl {
+    const proc = findProc(source_file, proc_name) orelse return error.ProcNotFound;
+    const flows = try allocator.alloc(ast.Flow, 1);
+    var found = false;
+    for (source_file.items) |*item| {
+        if (item.* == .flow) {
+            flows[0] = item.flow;
+            found = true;
+        }
+    }
+    if (!found) return error.FlowNotFound;
+    proc.inline_flows = flows;
+    return proc;
+}
+
+test "pure proc whose inline flow dispatches an impure event is not transitively pure" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const allocator = arena_state.allocator();
+
+    const source =
+        \\~tor log { msg: string }
+        \\| done {}
+        \\
+        \\~proc log {
+        \\    std.debug.print("{s}", .{msg});
+        \\    return .{ .done = .{} };
+        \\}
+        \\
+        \\~tor wrap { x: i32 } -> i32
+        \\
+        \\~[pure]proc wrap {
+        \\    return x;
+        \\}
+        \\
+        \\~log(msg: "side effect")
+    ;
+
+    var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
+    var parse_result = try parser.parse();
+
+    const wrap = try graftFlowIntoProc(allocator, &parse_result.source_file, "wrap");
+
+    var checker = PurityChecker.init(allocator);
+    try checker.check(&parse_result.source_file);
+
+    // Locally pure by annotation — but its visible dispatch reaches the
+    // impure log event, so transitive purity must be refused
+    try std.testing.expect(wrap.is_pure == true);
+    try std.testing.expect(wrap.is_transitively_pure == false);
+
+    // And the event it implements must not aggregate to transitively pure
+    const wrap_event = findEvent(&parse_result.source_file, "wrap") orelse return error.EventNotFound;
+    try std.testing.expect(wrap_event.is_transitively_pure == false);
+}
+
+test "pure proc whose inline flow dispatches a pure event is transitively pure" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const allocator = arena_state.allocator();
+
+    const source =
+        \\~tor double { x: i32 } -> i32
+        \\
+        \\~[pure]proc double {
+        \\    return x * 2;
+        \\}
+        \\
+        \\~tor wrap { x: i32 } -> i32
+        \\
+        \\~[pure]proc wrap {
+        \\    return x;
+        \\}
+        \\
+        \\~double(x: 21)
+    ;
+
+    var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
+    var parse_result = try parser.parse();
+
+    const wrap = try graftFlowIntoProc(allocator, &parse_result.source_file, "wrap");
+
+    var checker = PurityChecker.init(allocator);
+    try checker.check(&parse_result.source_file);
+
+    // The populated call graph must not refuse a genuinely pure chain
+    try std.testing.expect(wrap.is_pure == true);
+    try std.testing.expect(wrap.is_transitively_pure == true);
+}
+
+// ════════════════════════════════════════
+// Phase 3: Fixed point recurses into modules
+//
+// Imported modules are merged as module_decl items before the purity pass
+// runs (import_pipeline.combineImports), so a [pure] proc living inside a
+// module must reach the same fixed point as a top-level one.
+// ════════════════════════════════════════
+
+test "module-level pure proc is marked transitively pure" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const allocator = arena_state.allocator();
+
+    const source =
+        \\~tor compute { x: i32 } -> i32
+        \\
+        \\~[pure]proc compute {
+        \\    return x * 2;
+        \\}
+    ;
+
+    var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
+    const parse_result = try parser.parse();
+
+    // Wrap the parsed items in a module, the shape combineImports produces
+    const items = try allocator.alloc(ast.Item, 1);
+    items[0] = .{ .module_decl = .{
+        .logical_name = "m",
+        .canonical_path = "m",
+        .items = parse_result.source_file.items,
+        .is_system = false,
+    } };
+    var program = ast.Program{ .items = items, .allocator = allocator };
+
+    var checker = PurityChecker.init(allocator);
+    try checker.check(&program);
+
+    var module_proc: ?*ast.ProcDecl = null;
+    var module_event: ?*ast.EventDecl = null;
+    for (items[0].module_decl.items) |*item| {
+        switch (item.*) {
+            .proc_decl => |*p| module_proc = @constCast(p),
+            .event_decl => |*e| module_event = @constCast(e),
+            else => {},
+        }
+    }
+
+    const proc = module_proc orelse return error.ProcNotFound;
+    const event = module_event orelse return error.EventNotFound;
+    try std.testing.expect(proc.is_pure == true);
+    try std.testing.expect(proc.is_transitively_pure == true);
+    try std.testing.expect(event.is_transitively_pure == true);
+}
+
 test "pure proc calling no events is transitively pure" {
     const allocator = std.testing.allocator;
 
