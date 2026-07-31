@@ -1,0 +1,11 @@
+# Declared exemptions for the call-valued-index check.
+#
+# Format: file | fingerprint | reason
+#   fingerprint — the normalized `base[index]` as the check extracts it,
+#                 placeholders ({s}, {d}) included.
+#   reason      — why this call-in-index cannot force the copy (mandatory).
+#                 An entry matching no site fails the check.
+#
+# Empty today on purpose: every site the check flags is the defect shape,
+# and the fix (bind the call's result to a const, then index) is uniformly
+# correct — prefer converting a site over exempting it.

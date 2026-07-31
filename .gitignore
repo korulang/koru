@@ -270,3 +270,4 @@ invariants/output_emitted.zig
 invariants/a.out
 invariants/zig-out/
 invariants/.zig-cache/
+invariants/checks/__pycache__/

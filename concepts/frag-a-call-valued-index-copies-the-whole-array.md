@@ -64,11 +64,20 @@ staring at the emit could not have answered at all.
   where one hoists and one does not is a stronger lead than any reasoning about
   what an optimiser might manage.
 
+## Answered — the shape appears at nine more sites
+
+The mechanical check was built (`invariants/checks/check_call_valued_index.py`,
+wired as the `call-valued-index` citizen of `std/invariants`) and run over the
+emitted-string content of `koru_std/*.kz` at `a2d4411a`: **nine live sites, all
+in store.kz**, every one `__koru_resolve` in index position against a store
+column — the query-projection read (1574 address-of variant, 1576 load), the
+cycle-guard ancestor walk in all four write paths (2297/2494/2648/2860, one
+resolve-indexed `parent` read per ancestor step, inside the walk loop), and
+three cross-store/env row-reference rewrites (4846/5115/5337). The corpus had
+seen none of them, as predicted: all correct, none hot in any test.
+
 ## Open
 
-Whether this shape appears elsewhere. Any emitter that puts a call in index
-position against a by-value aggregate has the same defect, and the corpus cannot
-see it — every such site is correct, and only becomes expensive at a row count
-no test uses. A mechanical check over emitted Zig (call-expression in index
-position, aggregate operand) would find them all; that is a candidate first
-citizen for `std/invariants` alongside for-over-while.
+Whether the address-of variant (`&store.f[resolve(q)]`, site 1574) pays the
+copy at all — it is a pointer computation, not a load, and has not been
+measured. The check flags it anyway; the hoist is correct and at worst neutral.

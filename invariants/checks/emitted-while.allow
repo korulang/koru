@@ -1,0 +1,20 @@
+# Declared exemptions for the emitted-while check (emit-for-not-while).
+#
+# Format: file | fingerprint | reason
+#   file        — basename of the koru_std source carrying the emitting site
+#   fingerprint — the normalized `while (condition)` as the check extracts it,
+#                 placeholders ({s}, {d}) included; stable across line churn
+#   reason      — why the trip count genuinely is not nameable before the loop
+#                 starts. Mandatory. An entry matching no site fails the check.
+#
+# An exemption is a ruling that this while is NOT a counted loop. Everything
+# not listed here is a violation until converted to `for`.
+
+io.kz     | while (_v > 0)                    | digit-extraction loop; the trip count is the digit count of a runtime value, unknowable before the divisions run
+kernel.kz | while (i < nqf)                   | find-first search over queue families; breaks at the first compute-capable family
+kernel.kz | while (m < mp.memoryTypeCount)    | find-first search over memory types; breaks at the first host-visible+coherent type
+parser.kz | while (c.kids.len > 0)            | descent to the leaf of a parse tree; depth is a property of the parsed input
+regex.kz  | while (__koru_pos <= {s}.len)     | scanner: the cursor advances by match length, one byte on an empty match, and breaks on no-match; trip count is match-dependent
+store.kz  | while (__koru_cyc != -1)          | ancestor-chain walk by handles; chain length is data, not a nameable bound (covers all four write-path emissions of the cycle guard)
+store.kz  | while (__koru_sp > 0)             | explicit work-stack pop for preorder traversal; the stack grows while it drains
+store.kz  | while (__koru_i < __koru_store_{s}.len) | mutation-aware sweep: the store may shrink or grow mid-sweep, len is re-read every iteration and the cursor advances only when no removal occurred — the trip count does not exist before the loop runs
