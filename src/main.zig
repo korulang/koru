@@ -119,6 +119,80 @@ fn printStderr(allocator: std.mem.Allocator, comptime fmt: []const u8, args: any
     try stderr.writeAll(msg);
 }
 
+// ============================================================================
+// Subprocess termination — the full Term union, every time.
+//
+// `result.term.Exited` is a union field access: when the child was killed by
+// a signal (the OOM killer under memory pressure, an external `kill`), the
+// active field is `.Signal` and the access PANICS — koruc dies with
+// "access of union field 'Exited' while field 'Signal' is active", which
+// reads exactly like a compiler crash and gets diagnosed as one (it did,
+// 2026-07-31: a signal-killed backend build was recorded as "BUILD FAILED"
+// with an empty diagnostic). Every site that inspects a child's termination
+// goes through these helpers or through an explicit switch over all four
+// variants.
+// ============================================================================
+
+/// Name the signals a build subprocess plausibly dies by. Numbers-only for
+/// the rest — the number is always printed alongside.
+fn signalName(sig: u32) []const u8 {
+    const SIG = std.posix.SIG;
+    return switch (sig) {
+        SIG.KILL => "SIGKILL",
+        SIG.TERM => "SIGTERM",
+        SIG.INT => "SIGINT",
+        SIG.HUP => "SIGHUP",
+        SIG.QUIT => "SIGQUIT",
+        SIG.SEGV => "SIGSEGV",
+        SIG.ABRT => "SIGABRT",
+        SIG.BUS => "SIGBUS",
+        SIG.FPE => "SIGFPE",
+        SIG.ILL => "SIGILL",
+        SIG.PIPE => "SIGPIPE",
+        SIG.TRAP => "SIGTRAP",
+        else => "unnamed signal",
+    };
+}
+
+/// Did the child exit on its own with code 0? The safe fold for sites whose
+/// only question is success/failure.
+fn termIsClean(term: std.process.Child.Term) bool {
+    return switch (term) {
+        .Exited => |code| code == 0,
+        else => false,
+    };
+}
+
+/// Render a termination for a diagnostic, into a caller buffer (64 bytes is
+/// ample). Infallible so it can be used on error paths.
+fn describeTerm(buf: []u8, term: std.process.Child.Term) []const u8 {
+    return switch (term) {
+        .Exited => |code| std.fmt.bufPrint(buf, "exited with code {d}", .{code}) catch "exited",
+        .Signal => |sig| std.fmt.bufPrint(buf, "was killed by signal {d} ({s})", .{ sig, signalName(sig) }) catch "was killed by a signal",
+        .Stopped => |sig| std.fmt.bufPrint(buf, "was stopped by signal {d}", .{sig}) catch "was stopped by a signal",
+        .Unknown => |status| std.fmt.bufPrint(buf, "ended in an unknown state (status {d})", .{status}) catch "ended in an unknown state",
+    };
+}
+
+/// The teaching for a PIPELINE subprocess (backend build, backend run) that
+/// never got to exit. A signal here is a fact about the machine, not about
+/// the program being compiled — say which subprocess, what ended it, where
+/// that usually comes from, and what to do. Not for running the USER's own
+/// binary: a SIGSEGV there is the program's own crash and must not be
+/// blamed on the machine.
+fn reportAbnormalTerm(allocator: std.mem.Allocator, what: []const u8, term: std.process.Child.Term) !void {
+    switch (term) {
+        .Exited => |code| try printStderr(allocator, "✗ {s} failed (exit code {d})\n", .{ what, code }),
+        .Signal => |sig| try printStderr(allocator, "✗ {s} was killed by signal {d} ({s}) — ended from outside, before it could finish.\n" ++
+            "  This usually means the machine ran out of memory (the OS kills the biggest\n" ++
+            "  process under pressure), or something killed it externally. Check memory and\n" ++
+            "  load, then rerun the same command. The source program was never judged —\n" ++
+            "  there is no compiler diagnostic to fix here.\n", .{ what, sig, signalName(sig) }),
+        .Stopped => |sig| try printStderr(allocator, "✗ {s} was stopped by signal {d} and never resumed — resume or kill it, then rerun.\n", .{ what, sig }),
+        .Unknown => |status| try printStderr(allocator, "✗ {s} ended in a state the OS did not classify (status {d}) — rerun; if it repeats, the machine is the suspect, not the source program.\n", .{ what, status }),
+    }
+}
+
 /// Scan a captured stderr buffer for compiler-diagnostic lines (Zig's
 /// `path:line:col: error:` / `path:line:col: note:` format, plus Koru's
 /// own `error[KORUxxx]:` lines) and re-emit them in a clean summary block.
@@ -941,7 +1015,7 @@ fn generateBackendCode(allocator: std.mem.Allocator, input_file: []const u8, sou
             \\            // plus a return trace naming THIS generated file — a crash report stapled to
             \\            // a correct rejection, and the last thing the author reads. Exit
             \\            // deliberately instead: the status is still non-zero, so koruc's
-            \\            // `term.Exited != 0` path still runs the diagnostics summary and still
+            \\            // non-zero-exit path still runs the diagnostics summary and still
             \\            // reports the failure. Nothing is swallowed; one misleading rendering of an
             \\            // already-delivered diagnostic is dropped.
             \\            //
@@ -1189,24 +1263,44 @@ fn generateBackendCode(allocator: std.mem.Allocator, input_file: []const u8, sou
             \\
             \\        const stdout2 = __koru_std.fs.File.stdout();
             \\        var buf2: [512]u8 = undefined;
-            \\        if (result.term.Exited == 0) {
-            \\            // Copy from zig-out/bin/output to the requested output name
-            \\            __koru_std.fs.cwd().copyFile("zig-out/bin/output", __koru_std.fs.cwd(), output_exe, .{}) catch |copy_err| {
-            \\                const msg2 = try __koru_std.fmt.bufPrint(&buf2, "✗ Failed to copy output: {}\n", .{copy_err});
+            \\        // Full Term union — a bare `.Exited` access panics when the zig
+            \\        // build was signal-killed (OOM killer under memory pressure),
+            \\        // and that panic reads as a compiler crash.
+            \\        switch (result.term) {
+            \\            .Exited => |exit_code| if (exit_code == 0) {
+            \\                // Copy from zig-out/bin/output to the requested output name
+            \\                __koru_std.fs.cwd().copyFile("zig-out/bin/output", __koru_std.fs.cwd(), output_exe, .{}) catch |copy_err| {
+            \\                    const msg2 = try __koru_std.fmt.bufPrint(&buf2, "✗ Failed to copy output: {}\n", .{copy_err});
+            \\                    try __koru_std.fs.File.stderr().writeAll(msg2);
+            \\                    __koru_std.process.exit(1);
+            \\                };
+            \\                const msg2 = try __koru_std.fmt.bufPrint(&buf2, "✓ Compiled to {s}\n", .{output_exe});
+            \\                try stdout2.writeAll(msg2);
+            \\            } else {
+            \\                const msg2 = try __koru_std.fmt.bufPrint(&buf2, "✗ Compilation failed\n", .{});
+            \\                try stdout2.writeAll(msg2);
+            \\                if (result.stderr.len > 0) {
+            \\                    var err_buf2: [65536]u8 = undefined;
+            \\                    const err_msg2 = try __koru_std.fmt.bufPrint(&err_buf2, "Error: {s}\n", .{result.stderr});
+            \\                    try __koru_std.fs.File.stderr().writeAll(err_msg2);
+            \\                }
+            \\                __koru_std.process.exit(1);
+            \\            },
+            \\            .Signal => |sig| {
+            \\                const msg2 = try __koru_std.fmt.bufPrint(&buf2, "✗ zig build was killed by signal {d} — ended from outside, before it could finish. This usually means the machine ran out of memory, or something killed it externally. Check memory and load, then rerun. The source program was never judged.\n", .{sig});
             \\                try __koru_std.fs.File.stderr().writeAll(msg2);
             \\                __koru_std.process.exit(1);
-            \\            };
-            \\            const msg2 = try __koru_std.fmt.bufPrint(&buf2, "✓ Compiled to {s}\n", .{output_exe});
-            \\            try stdout2.writeAll(msg2);
-            \\        } else {
-            \\            const msg2 = try __koru_std.fmt.bufPrint(&buf2, "✗ Compilation failed\n", .{});
-            \\            try stdout2.writeAll(msg2);
-            \\            if (result.stderr.len > 0) {
-            \\                var err_buf2: [65536]u8 = undefined;
-            \\                const err_msg2 = try __koru_std.fmt.bufPrint(&err_buf2, "Error: {s}\n", .{result.stderr});
-            \\                try __koru_std.fs.File.stderr().writeAll(err_msg2);
-            \\            }
-            \\            __koru_std.process.exit(1);
+            \\            },
+            \\            .Stopped => |sig| {
+            \\                const msg2 = try __koru_std.fmt.bufPrint(&buf2, "✗ zig build was stopped by signal {d} and never resumed — resume or kill it, then rerun\n", .{sig});
+            \\                try __koru_std.fs.File.stderr().writeAll(msg2);
+            \\                __koru_std.process.exit(1);
+            \\            },
+            \\            .Unknown => |status| {
+            \\                const msg2 = try __koru_std.fmt.bufPrint(&buf2, "✗ zig build ended in an unknown state (status {d}) — rerun; if it repeats, the machine is the suspect\n", .{status});
+            \\                try __koru_std.fs.File.stderr().writeAll(msg2);
+            \\                __koru_std.process.exit(1);
+            \\            },
             \\        }
             \\    } else {
             \\        // Fall back to direct zig build-exe (no user dependencies)
@@ -1252,18 +1346,36 @@ fn generateBackendCode(allocator: std.mem.Allocator, input_file: []const u8, sou
             \\
             \\        const stdout2 = __koru_std.fs.File.stdout();
             \\        var buf2: [512]u8 = undefined;
-            \\        if (result.term.Exited == 0) {
-            \\            const msg2 = try __koru_std.fmt.bufPrint(&buf2, "✓ Compiled to {s}\n", .{output_exe});
-            \\            try stdout2.writeAll(msg2);
-            \\        } else {
-            \\            const msg2 = try __koru_std.fmt.bufPrint(&buf2, "✗ Compilation failed\n", .{});
-            \\            try stdout2.writeAll(msg2);
-            \\            if (result.stderr.len > 0) {
-            \\                var err_buf2: [65536]u8 = undefined;
-            \\                const err_msg2 = try __koru_std.fmt.bufPrint(&err_buf2, "Error: {s}\n", .{result.stderr});
-            \\                try __koru_std.fs.File.stderr().writeAll(err_msg2);
-            \\            }
-            \\            __koru_std.process.exit(1);
+            \\        // Full Term union — same contract as the build-file path above.
+            \\        switch (result.term) {
+            \\            .Exited => |exit_code| if (exit_code == 0) {
+            \\                const msg2 = try __koru_std.fmt.bufPrint(&buf2, "✓ Compiled to {s}\n", .{output_exe});
+            \\                try stdout2.writeAll(msg2);
+            \\            } else {
+            \\                const msg2 = try __koru_std.fmt.bufPrint(&buf2, "✗ Compilation failed\n", .{});
+            \\                try stdout2.writeAll(msg2);
+            \\                if (result.stderr.len > 0) {
+            \\                    var err_buf2: [65536]u8 = undefined;
+            \\                    const err_msg2 = try __koru_std.fmt.bufPrint(&err_buf2, "Error: {s}\n", .{result.stderr});
+            \\                    try __koru_std.fs.File.stderr().writeAll(err_msg2);
+            \\                }
+            \\                __koru_std.process.exit(1);
+            \\            },
+            \\            .Signal => |sig| {
+            \\                const msg2 = try __koru_std.fmt.bufPrint(&buf2, "✗ zig build-exe was killed by signal {d} — ended from outside, before it could finish. This usually means the machine ran out of memory, or something killed it externally. Check memory and load, then rerun. The source program was never judged.\n", .{sig});
+            \\                try __koru_std.fs.File.stderr().writeAll(msg2);
+            \\                __koru_std.process.exit(1);
+            \\            },
+            \\            .Stopped => |sig| {
+            \\                const msg2 = try __koru_std.fmt.bufPrint(&buf2, "✗ zig build-exe was stopped by signal {d} and never resumed — resume or kill it, then rerun\n", .{sig});
+            \\                try __koru_std.fs.File.stderr().writeAll(msg2);
+            \\                __koru_std.process.exit(1);
+            \\            },
+            \\            .Unknown => |status| {
+            \\                const msg2 = try __koru_std.fmt.bufPrint(&buf2, "✗ zig build-exe ended in an unknown state (status {d}) — rerun; if it repeats, the machine is the suspect\n", .{status});
+            \\                try __koru_std.fs.File.stderr().writeAll(msg2);
+            \\                __koru_std.process.exit(1);
+            \\            },
             \\        }
             \\    }
             \\}
@@ -3265,7 +3377,7 @@ fn installZig(allocator: std.mem.Allocator) !void {
         defer allocator.free(check_result.stdout);
         defer allocator.free(check_result.stderr);
 
-        if (check_result.term.Exited == 0) {
+        if (termIsClean(check_result.term)) {
             std.debug.print("  Detected brew, running: brew install zig\n", .{});
             const install_result = std.process.Child.run(.{
                 .allocator = allocator,
@@ -3277,10 +3389,12 @@ fn installZig(allocator: std.mem.Allocator) !void {
             defer allocator.free(install_result.stdout);
             defer allocator.free(install_result.stderr);
 
-            if (install_result.term.Exited == 0) {
+            if (termIsClean(install_result.term)) {
                 std.debug.print("  \x1b[32m✓\x1b[0m Zig installed successfully!\n", .{});
                 return;
             }
+            var term_buf: [64]u8 = undefined;
+            std.debug.print("  \x1b[31m✗\x1b[0m brew install {s}, trying direct download...\n", .{describeTerm(&term_buf, install_result.term)});
         }
         return installZigDirect(allocator);
     }
@@ -3296,7 +3410,7 @@ fn installZig(allocator: std.mem.Allocator) !void {
         defer allocator.free(check_result.stdout);
         defer allocator.free(check_result.stderr);
 
-        if (check_result.term.Exited == 0) {
+        if (termIsClean(check_result.term)) {
             std.debug.print("  Detected pacman, running: sudo pacman -S zig\n", .{});
             const install_result = std.process.Child.run(.{
                 .allocator = allocator,
@@ -3308,10 +3422,12 @@ fn installZig(allocator: std.mem.Allocator) !void {
             defer allocator.free(install_result.stdout);
             defer allocator.free(install_result.stderr);
 
-            if (install_result.term.Exited == 0) {
+            if (termIsClean(install_result.term)) {
                 std.debug.print("  \x1b[32m✓\x1b[0m Zig installed successfully!\n", .{});
                 return;
             }
+            var term_buf: [64]u8 = undefined;
+            std.debug.print("  \x1b[31m✗\x1b[0m pacman install {s}, trying direct download...\n", .{describeTerm(&term_buf, install_result.term)});
         }
         return installZigDirect(allocator);
     }
@@ -3414,8 +3530,9 @@ fn installZigDirect(allocator: std.mem.Allocator) !void {
     defer allocator.free(result.stdout);
     defer allocator.free(result.stderr);
 
-    if (result.term.Exited != 0) {
-        std.debug.print("  \x1b[31m✗\x1b[0m Download/extract failed\n", .{});
+    if (!termIsClean(result.term)) {
+        var term_buf: [64]u8 = undefined;
+        std.debug.print("  \x1b[31m✗\x1b[0m Download/extract failed ({s})\n", .{describeTerm(&term_buf, result.term)});
         if (result.stderr.len > 0) {
             std.debug.print("  {s}\n", .{result.stderr});
         }
@@ -4883,7 +5000,11 @@ fn executeBuildSteps(allocator: std.mem.Allocator, steps: []const BuildStep) !vo
                 log.debug("✓ Step '{s}' completed successfully\n", .{step.name});
             },
             else => {
-                log.debug("✗ Step '{s}' terminated abnormally\n", .{step.name});
+                // A step that never got to exit is a machine event, not a script
+                // failure — name what ended it (signal-killed usually means the OS
+                // ran out of memory, or an external kill).
+                var term_buf: [64]u8 = undefined;
+                try printStderr(allocator, "✗ Build step '{s}' {s} — ended from outside; check memory pressure and load, then rerun.\n", .{ step.name, describeTerm(&term_buf, result.term) });
                 return error.BuildStepFailed;
             },
         }
@@ -6663,10 +6784,20 @@ pub fn main() !void {
                             try printStderr(allocator, "{s}", .{result.stderr});
                         }
 
-                        // Exit with command's exit code
+                        // Exit with command's exit code. A command that did not
+                        // exit gets said out loud — a signal folded into a bare
+                        // exit 1 hides that the machine (not the command) ended it.
                         switch (result.term) {
                             .Exited => |code| std.process.exit(code),
-                            else => std.process.exit(1),
+                            .Signal => |sig| {
+                                try printStderr(allocator, "✗ Command '{s}' was killed by signal {d} ({s})\n", .{ cmd.name, sig, signalName(sig) });
+                                std.process.exit(@intCast(128 + (sig & 0x7f)));
+                            },
+                            else => {
+                                var term_buf: [64]u8 = undefined;
+                                try printStderr(allocator, "✗ Command '{s}' {s}\n", .{ cmd.name, describeTerm(&term_buf, result.term) });
+                                std.process.exit(1);
+                            },
                         }
                     }
                 }
@@ -6766,10 +6897,20 @@ pub fn main() !void {
                             try printStderr(allocator, "{s}", .{result.stderr});
                         }
 
-                        // Exit with command's exit code
+                        // Exit with command's exit code. Same contract as the
+                        // shell-command path above: a non-exit termination is
+                        // reported, never folded into a silent exit 1.
                         switch (result.term) {
                             .Exited => |code| std.process.exit(code),
-                            else => std.process.exit(1),
+                            .Signal => |sig| {
+                                try printStderr(allocator, "✗ Command '{s}' was killed by signal {d} ({s})\n", .{ cmd.name, sig, signalName(sig) });
+                                std.process.exit(@intCast(128 + (sig & 0x7f)));
+                            },
+                            else => {
+                                var term_buf: [64]u8 = undefined;
+                                try printStderr(allocator, "✗ Command '{s}' {s}\n", .{ cmd.name, describeTerm(&term_buf, result.term) });
+                                std.process.exit(1);
+                            },
                         }
                     }
                 }
@@ -7421,8 +7562,9 @@ pub fn main() !void {
                 defer allocator.free(npm_result.stdout);
                 defer allocator.free(npm_result.stderr);
 
-                if (npm_result.term.Exited != 0) {
-                    try printStderr(allocator, "✗ npm install failed:\n{s}\n", .{npm_result.stderr});
+                if (!termIsClean(npm_result.term)) {
+                    var term_buf: [64]u8 = undefined;
+                    try printStderr(allocator, "✗ npm install failed ({s}):\n{s}\n", .{ describeTerm(&term_buf, npm_result.term), npm_result.stderr });
                 } else {
                     try printStdout(allocator, "  ✓ npm packages installed\n", .{});
                 }
@@ -7437,8 +7579,9 @@ pub fn main() !void {
                 defer allocator.free(cargo_result.stdout);
                 defer allocator.free(cargo_result.stderr);
 
-                if (cargo_result.term.Exited != 0) {
-                    try printStderr(allocator, "✗ cargo fetch failed:\n{s}\n", .{cargo_result.stderr});
+                if (!termIsClean(cargo_result.term)) {
+                    var term_buf: [64]u8 = undefined;
+                    try printStderr(allocator, "✗ cargo fetch failed ({s}):\n{s}\n", .{ describeTerm(&term_buf, cargo_result.term), cargo_result.stderr });
                 } else {
                     try printStdout(allocator, "  ✓ cargo packages fetched\n", .{});
                 }
@@ -7454,8 +7597,9 @@ pub fn main() !void {
                 defer allocator.free(go_result.stdout);
                 defer allocator.free(go_result.stderr);
 
-                if (go_result.term.Exited != 0) {
-                    try printStderr(allocator, "✗ go mod download failed:\n{s}\n", .{go_result.stderr});
+                if (!termIsClean(go_result.term)) {
+                    var term_buf: [64]u8 = undefined;
+                    try printStderr(allocator, "✗ go mod download failed ({s}):\n{s}\n", .{ describeTerm(&term_buf, go_result.term), go_result.stderr });
                 } else {
                     try printStdout(allocator, "  ✓ go modules downloaded\n", .{});
                 }
@@ -7470,8 +7614,9 @@ pub fn main() !void {
                 defer allocator.free(pip_result.stdout);
                 defer allocator.free(pip_result.stderr);
 
-                if (pip_result.term.Exited != 0) {
-                    try printStderr(allocator, "✗ pip install failed:\n{s}\n", .{pip_result.stderr});
+                if (!termIsClean(pip_result.term)) {
+                    var term_buf: [64]u8 = undefined;
+                    try printStderr(allocator, "✗ pip install failed ({s}):\n{s}\n", .{ describeTerm(&term_buf, pip_result.term), pip_result.stderr });
                 } else {
                     try printStdout(allocator, "  ✓ pip packages installed\n", .{});
                 }
@@ -7539,9 +7684,19 @@ pub fn main() !void {
         defer allocator.free(compile_result.stdout);
         defer allocator.free(compile_result.stderr);
 
-        if (compile_result.term.Exited != 0) {
-            try printStderr(allocator, "✗ Failed to compile backend:\n{s}\n", .{compile_result.stderr});
-            std.process.exit(1);
+        // The full Term union, not a bare `.Exited` access — this is the exact
+        // site that panicked under memory pressure (2026-07-31): `zig build`
+        // was OOM-killed, the active field was `.Signal`, and the union access
+        // took koruc down in a way that read as a compiler crash.
+        switch (compile_result.term) {
+            .Exited => |code| if (code != 0) {
+                try printStderr(allocator, "✗ Failed to compile backend:\n{s}\n", .{compile_result.stderr});
+                std.process.exit(1);
+            },
+            else => {
+                try reportAbnormalTerm(allocator, "The backend build (zig build)", compile_result.term);
+                std.process.exit(1);
+            },
         }
 
         // Backend is now at zig-out/bin/backend (from zig build)
@@ -7607,10 +7762,19 @@ pub fn main() !void {
 
         const term = try child.wait();
 
-        if (term.Exited != 0) {
-            try emitDiagnosticsSummary(allocator, stderr_buf.items);
-            try printStderr(allocator, "✗ Backend execution failed\n", .{});
-            std.process.exit(1);
+        switch (term) {
+            .Exited => |code| if (code != 0) {
+                try emitDiagnosticsSummary(allocator, stderr_buf.items);
+                try printStderr(allocator, "✗ Backend execution failed\n", .{});
+                std.process.exit(1);
+            },
+            else => {
+                // No diagnostics summary here: a backend that never got to exit
+                // produced no verdict to summarize (its streamed stderr, if any,
+                // was already mirrored live above).
+                try reportAbnormalTerm(allocator, "The backend (the compiled compiler pipeline)", term);
+                std.process.exit(1);
+            },
         }
 
         // Backend is in zig-out/bin/main - no cleanup needed
@@ -7653,8 +7817,20 @@ pub fn main() !void {
                 try printStdout(allocator, "{s}", .{run_result.stderr});
             }
 
-            if (run_result.term.Exited != 0) {
-                std.process.exit(run_result.term.Exited);
+            // This is the USER's program: a signal here is the program's own
+            // termination (a SIGSEGV is its crash, not the machine's fault), so
+            // report the fact plainly and forward the shell convention 128+sig.
+            switch (run_result.term) {
+                .Exited => |code| if (code != 0) std.process.exit(code),
+                .Signal => |sig| {
+                    try printStderr(allocator, "✗ {s} was killed by signal {d} ({s})\n", .{ exe_name, sig, signalName(sig) });
+                    std.process.exit(@intCast(128 + (sig & 0x7f)));
+                },
+                else => {
+                    var term_buf: [64]u8 = undefined;
+                    try printStderr(allocator, "✗ {s} {s}\n", .{ exe_name, describeTerm(&term_buf, run_result.term) });
+                    std.process.exit(1);
+                },
             }
         }
     }

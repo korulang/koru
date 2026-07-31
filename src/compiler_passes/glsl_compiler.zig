@@ -117,9 +117,26 @@ fn compileGLSLToSPIRV(
     defer allocator.free(result.stdout);
     defer allocator.free(result.stderr);
 
-    if (result.term.Exited != 0) {
-        std.debug.print("GLSL compilation failed:\n{s}\n", .{result.stderr});
-        return error.GLSLCompilationFailed;
+    // Full Term union — a bare `.Exited` access panics when the child was
+    // signal-killed (OOM killer, external kill), and that panic reads as a
+    // koruc crash instead of the machine event it is.
+    switch (result.term) {
+        .Exited => |code| if (code != 0) {
+            std.debug.print("GLSL compilation failed (exit code {d}):\n{s}\n", .{ code, result.stderr });
+            return error.GLSLCompilationFailed;
+        },
+        .Signal => |sig| {
+            std.debug.print("glslangValidator was killed by signal {d} — ended from outside, before it could finish. This usually means the machine ran out of memory, or something killed it externally. Check memory and load, then rerun. The GLSL source was never judged.\n", .{sig});
+            return error.GLSLCompilationFailed;
+        },
+        .Stopped => |sig| {
+            std.debug.print("glslangValidator was stopped by signal {d} and never resumed — resume or kill it, then rerun.\n", .{sig});
+            return error.GLSLCompilationFailed;
+        },
+        .Unknown => |status| {
+            std.debug.print("glslangValidator ended in an unknown state (status {d}) — rerun; if it repeats, the machine is the suspect, not the GLSL source.\n", .{status});
+            return error.GLSLCompilationFailed;
+        },
     }
 
     return try allocator.dupe(u8, spv_path);
