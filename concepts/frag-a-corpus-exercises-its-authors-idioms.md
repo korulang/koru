@@ -71,6 +71,26 @@ corpus before it is trusted** — the lifts, an example, anything with a differe
 author. A green suite says the wall does not contradict the idioms already
 present, which is a much weaker statement than it looks.
 
+## A workload someone else designed is an idiom generator we do not control
+
+The sharpest instance so far came from `ecs_bench_suite`'s `simple_iter` —
+`pos += vel` over 10k rows, rust-gamedev's program, not ours. Twenty minutes of
+pointing it at `std/store` surfaced four faults behind a 1203-test green board,
+the first of which is a plain spelling gap: **every `stored` site in the corpus
+writes exactly one column.** 690_111 advances `b.x` alone across an all-f64
+container; 695_001 chains single-field writes with `|>`. A compiler author
+demonstrating write-back writes one field, because one field demonstrates it.
+
+An ECS integration step is three fields under one arm. The plural block —
+`stored { e.px: …, e.py: … }` — had never been asked for, and it refuses with
+KORU161 quoting a mangled internal name (pin 690_118).
+
+This upgrades the practical form again. Application clusters are instruments
+because the app author writes differently; a **borrowed benchmark** is stronger
+still, because its workloads were fixed before we existed and cannot drift
+toward what we find convenient. Its value here was never the number — the number
+is still unmeasurable — it was the idioms.
+
 ## Open
 
 Whether this can be attacked directly — generating spelling variants of existing
