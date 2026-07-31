@@ -46,6 +46,23 @@ matches refuses (`f1a74bd1`); a *partial* match does not. So a control set
 verifies only the names that happened to be spelled right — check the
 `Running N tests` line against the number you asked for.
 
+## Emit `for`, never `while` — it is measurable performance
+
+**Any emitter that produces a counted Zig loop emits `for`, not `while`.** This
+is not style. `while (i < len) : (i += 1)` hands the optimizer a mutable
+induction variable and a loop-carried condition; `for (0..len) |i|` hands it a
+known trip count, and `for (xs, ys) |*x, y|` additionally proves non-aliasing and
+removes bounds checks. That is the difference between a vectorized loop and a
+scalar one.
+
+Measured 2026-07-31: a trivial two-store program emits **19 `while` against 5
+`for`**, and `koru_std/store.kz` carries **34 `while` sites** — including the
+sweep loop, the hottest loop the language has.
+
+A `while` is correct only where the trip count genuinely is not known up front
+(a parser scan, a freelist walk). If you can name the end before you start, it
+is a `for`.
+
 ## Test comments
 
 Write what the test *pins* — the shape it guards. Not its red/green state, not
