@@ -1,0 +1,19 @@
+// Pins that `koruc deps <module>` — the arguments swapped — is REFUSED.
+//
+// `deps` in the input-file position is intercepted as the builtin toolchain
+// check before input resolution runs, so a trailing module used to be discarded
+// in silence: it printed a clean toolchain report and exited 0, which reads as
+// "this project's dependencies are fine" while naming no project at all.
+//
+// Every other verb already refuses this, because an unresolvable module in the
+// input position is an ordinary error. This pins that `deps` agrees with them,
+// and that bare `koruc deps` still works.
+
+~import std/deps
+
+~tor main {}
+
+~proc main|zig {
+}
+
+~main()

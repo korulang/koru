@@ -3203,6 +3203,23 @@ fn runBuiltinDeps(allocator: std.mem.Allocator, args: []const []const u8) !void 
     std.debug.print("\n\x1b[32mReady!\x1b[0m\n", .{});
 }
 
+/// Would `name` resolve as something to compile — a directory, a Koru file, or a
+/// bare stem with a Koru facet next to it? Used to tell a swapped-argument
+/// mistake ("koruc deps downloads") apart from a plain typo, so the diagnostic
+/// can quote the command the user actually meant.
+fn koruModuleExists(allocator: std.mem.Allocator, name: []const u8) bool {
+    if (ModuleResolver.isDirectory(name)) return true;
+    if (std.fs.cwd().access(name, .{})) |_| {
+        if (file_types.isKoruFile(name)) return true;
+    } else |_| {}
+    for (file_types.koru_extensions) |ext| {
+        const candidate = std.fmt.allocPrint(allocator, "{s}{s}", .{ name, ext }) catch continue;
+        defer allocator.free(candidate);
+        if (std.fs.cwd().access(candidate, .{})) |_| return true else |_| {}
+    }
+    return false;
+}
+
 fn parseVersion(s: []const u8) ?struct { major: u32, minor: u32, patch: u32 } {
     var i: usize = 0;
     // Skip non-digit prefix
@@ -6123,6 +6140,40 @@ pub fn main() !void {
     // Handle built-in frontend commands that don't require compilation
     if (input_file) |maybe_cmd| {
         if (std.mem.eql(u8, maybe_cmd, "deps")) {
+            // `koruc deps <module>` is the ARGUMENTS SWAPPED. The command form is
+            // `koruc <module> deps` — module first, verb second — and every other
+            // verb already says so, because an unresolvable module in the input
+            // position is a plain error. `deps` alone is intercepted here before
+            // input resolution ever runs, so the extra argument used to be
+            // discarded in silence: it printed a clean toolchain report and
+            // exited 0, which reads as "your project's dependencies are fine".
+            //
+            // Refuse instead, and when the stray token IS a module, say the line
+            // the user meant to type.
+            for (args) |arg| {
+                if (std.mem.eql(u8, arg, "deps")) continue;
+                if (std.mem.startsWith(u8, arg, "-")) continue;
+                if (std.mem.eql(u8, arg, "install")) continue;
+                if (std.mem.endsWith(u8, arg, "koruc")) continue;
+
+                if (koruModuleExists(allocator, arg)) {
+                    try printStderr(allocator,
+                        "error: `koruc deps {s}` has the arguments the wrong way round\n\n" ++
+                        "  `deps` is a command ON a module, so the module comes first:\n" ++
+                        "      koruc {s} deps\n\n" ++
+                        "  Bare `koruc deps` checks the toolchain itself and takes no module.\n",
+                        .{ arg, arg });
+                } else {
+                    try printStderr(allocator,
+                        "error: `koruc deps` does not take an argument `{s}`\n\n" ++
+                        "  Bare `koruc deps` checks the toolchain; `koruc deps install` upgrades it.\n" ++
+                        "  To inspect a project's dependencies, name the module first:\n" ++
+                        "      koruc <module> deps\n",
+                        .{arg});
+                }
+                std.process.exit(1);
+            }
+
             // deps runs directly in frontend - no compilation needed
             try runBuiltinDeps(allocator, args);
             return;
