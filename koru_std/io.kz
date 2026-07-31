@@ -462,12 +462,15 @@ fn __printInterpolate(
                     has_spec = true;
                 }
 
-                // Function call check: parse the expression and check for function calls
+                // Function call check: parse the expression and check for
+                // USER function calls. The store rewriters splice their
+                // synthesized `__koru_resolve` handle deref into hole text
+                // after admission; that machinery call is not the user's.
                 if (function_call_expr == null) {
                     var parser = expr_parser.ExpressionParser.init(allocator, var_name);
                     defer parser.deinit();
                     if (parser.parse()) |parsed_expr| {
-                        if (expr_parser.containsFunctionCall(parsed_expr)) {
+                        if (expr_parser.containsUserFunctionCall(parsed_expr)) {
                             function_call_expr = var_name;
                         }
                     } else |_| {
@@ -1096,12 +1099,15 @@ fn __printInterpolateJs(
                     has_spec = true;
                 }
 
-                // Function call check: parse the expression and check for function calls
+                // Function call check: parse the expression and check for
+                // USER function calls. The store rewriters splice their
+                // synthesized `__koru_resolve` handle deref into hole text
+                // after admission; that machinery call is not the user's.
                 if (function_call_expr == null) {
                     var parser = expr_parser.ExpressionParser.init(allocator, var_name);
                     defer parser.deinit();
                     if (parser.parse()) |parsed_expr| {
-                        if (expr_parser.containsFunctionCall(parsed_expr)) {
+                        if (expr_parser.containsUserFunctionCall(parsed_expr)) {
                             function_call_expr = var_name;
                         }
                     } else |_| {

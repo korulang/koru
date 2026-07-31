@@ -1,26 +1,17 @@
-// PINS: a row index parked in a store cell must not be silently invalidated by
-// a removal elsewhere in the store.
+// PINS O10.iii (690_STORE/DESIGN.md): a row handle parked in a store cell
+// keeps naming its row across another row's removal — the stable-handle
+// reading, ruled 2026-07-31.
 //
-// MEASURED 2026-07-28 — the write below goes NOWHERE, with no diagnostic:
+// The adversarial shape: `sel.at` remembers row c (300); `take(nodes[a])`
+// swap-removes, relocating c into a's old dense position; the write through
+// `sel.at` must land on c WHEREVER IT NOW SITS — the sweep prints 999 where
+// 300 was, then 200. A raw-position reading writes past len instead, silently
+// (that corruption is what this test surfaced, 2026-07-28).
 //
-//   rows are [100@0, 200@1, 300@2]; `sel.at` remembers row c (index 2)
-//   `take(nodes[a])` removes index 0, and take is SWAP-REMOVE (store.kz:2717),
-//   so row 2 moves into slot 0 and len becomes 2
-//   `stored { nodes[sel.at].val: 999 }` writes through index 2 — now past the
-//   live length, inside capacity, so nothing traps
-//   the sweep then prints `300, 200`. The 999 is not in the store, and no
-//   error was raised.
-//
-// This is the first program in the corpus to combine a STORED row index with a
-// REMOVAL. Both halves are separately pinned and green — `todos[ui.sel]` at
-// 690_075/076, `nodes[a].next` at 690_048, the synthesized `[tree]` parent
-// column at 695_001/002, and take at 690_016 — and no test had ever put the two
-// in one program, which is why this has never surfaced.
-//
-// DISPOSITION IS OPEN. This pin encodes the stable-handle reading: the row that
-// held 300 receives the write. If the ruling is instead that a stored index is
-// not a thing a program may hold, this becomes a MUST_ERROR naming the refusal,
-// and the expectation below is wrong on purpose until then.
+// This was the first program in the corpus to combine a STORED row handle with
+// a REMOVAL — the no-removal halves are 690_075/076, 690_048, 695_001/002 and
+// 690_016; the removal halves of those are 690_117 and 695_004, and the
+// stale-handle traps are 690_115/116.
 import std/io
 import std/store
 

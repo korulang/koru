@@ -286,7 +286,7 @@ an imported module (module-qualifier resolution becomes a parse/frontend check, 
 the test assumes) — or is qualifier resolution legitimately a backend/registry
 concern (and the test is wrong about where the error belongs)?
 
-## D7 — Row identity: the ruling EXISTS (O10). It is a handle, not a key.
+## D7 — Row identity: RULED (O10) and BUILT (2026-07-31). A handle, not a key.
 **Rewritten 2026-07-31.** The previous framing asked "how is a key marked at
 `new`?" and treated identity as an open design question. It is not. It was ruled
 in `690_STORE/DESIGN.md` O10, and it is a MEMORY CONTRACT, not a user surface:
@@ -301,10 +301,10 @@ in `690_STORE/DESIGN.md` O10, and it is a MEMORY CONTRACT, not a user surface:
 > escape-driven stack alloc.
 
 **So a store needs NO key for identity.** It needs its handle to BE a handle —
-slot plus generation — instead of the raw `i64` position it hands out today.
-`690_092` corrupts silently because the ruled design was never built: `| row a`
-yields a bare position, and `[tree]`'s synthesized `parent` is documented as an
-"i64 row handle, -1 = root", which is a position wearing the word handle.
+slot plus generation — and since 2026-07-31 it is: `| row a`, the query/sweep
+cursors, self-FK columns and `[tree]`'s synthesized `parent` all carry the
+packed handle. `690_092` — which corrupted silently while the handle was a raw
+position — is green on the stable-handle reading it pins.
 
 **This also disposes of `! moved`.** An effect branch firing on relocation exists
 to let an outsider fix up stored positions. Under O10 no outsider holds a
@@ -314,10 +314,11 @@ position, so there is nothing to fix and nothing to notify. The arm was killed
 ### What the CORE surface needs: nothing
 `insert`, `sweep`, `query`, `preorder`, `take`, `stored`, `watch` and the
 lifecycle arms are all "you have the row right now". Measured: **no test holds a
-row handle across a remove** — all 18 `| row X` + removal co-occurrences are
-bind-then-consume. Stored positions are exactly 5 tests (`695_001/002` tree
+row handle across a remove** — all 18 `| row X` + removal co-occurrences were
+bind-then-consume. Stored positions were exactly 5 tests (`695_001/002` tree
 parent, `690_048` self-FK `next`, `690_075/076` `todos[ui.sel]`), **none of which
-removes a row** — the sole reason `690_092` never surfaced.
+removed a row** — the sole reason `690_092` never surfaced. That blind spot is
+closed: `690_117` and `695_004` are those tests' removal halves.
 
 ### FEASIBILITY (assessed 2026-07-31) — buildable, one ruling short
 - **No new type spelling is needed.** Pack slot+generation into the existing
@@ -333,15 +334,18 @@ removes a row** — the sole reason `690_092` never surfaced.
   (`store.kz:2075`). A post-swap emission point was spiked and SHOWN to fire with
   both ends (`from=2 to=0`).
 
-### ⛔ THE ONE RULING THAT BLOCKS THE BUILD
-**What does a stale handle access DO?** O10 rules that the check happens; it does
-not say what failing it means.
-- **(a) Trap.** Matches "safety FLOOR" and the loud-failure doctrine, needs NO
-  surface change, and every existing use site keeps compiling. Phantom-proven
-  elision then removes the check where the checker establishes no-stale.
-- **(b) A branch the program handles.** Precedent exists — `take` already offers
-  `| item` / `| empty` (690_075). But it changes EVERY bracket use site, which is
-  a large surface change for a case the corpus says is rare.
+### The ruling landed, and so did the build (2026-07-31)
+**A stale handle access TRAPS** — ruled (a), explicitly provisional ("try with
+trap and see if it holds"). Built as a per-store sparse set: slot|generation
+packed in the existing `i64`, dense columns keep swap-remove. The tests are the
+normative record — `690_092` and `690_117` (a handle survives another row's
+removal), `695_004` (tree parents across a take), `690_115`/`690_116` (a stale
+write/read traps), `690_070` (take's not-a-live-row family answers `| empty`,
+`is_panic` default). DESIGN.md O10 (iii)/(iv) now routes to the same pins.
+Generation-0 handles are numerically the old dense indices, so removal-free
+programs are unchanged. Rejected alongside: **(b) a `| stale` branch on every
+bracket site** — a large surface change for a case the corpus says is rare;
+reopen only if the trap fails a test.
 
 ### Still open, and genuinely separate from identity
 - **Addressing by value** — `pool[id: 7].hp`, one of O2's four heads. THIS is

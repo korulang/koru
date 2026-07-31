@@ -721,6 +721,45 @@ pub fn containsFunctionCall(expr: *const Expression) bool {
     }
 }
 
+/// containsFunctionCall minus the store rewriter's own machinery: a call whose
+/// callee is the field `__koru_resolve` (`__koru_store_x.__koru_resolve(h)`) is
+/// the synthesized generational handle deref, spliced into the text AFTER
+/// admission by std/store's lowering — not a user-authored call. Its receiver
+/// and arguments are still walked, so a user call smuggled inside one is
+/// still refused.
+pub fn containsUserFunctionCall(expr: *const Expression) bool {
+    switch (expr.node) {
+        .function_call => |fc| {
+            const machinery = switch (fc.callee.node) {
+                .field_access => |fa| std.mem.eql(u8, fa.field, "__koru_resolve"),
+                else => false,
+            };
+            if (!machinery) return true;
+            if (containsUserFunctionCall(fc.callee)) return true;
+            for (fc.args) |arg| {
+                if (containsUserFunctionCall(arg)) return true;
+            }
+            return false;
+        },
+        .literal => return false,
+        .identifier => return false,
+        .binary => |bin| return containsUserFunctionCall(bin.left) or containsUserFunctionCall(bin.right),
+        .unary => |un| return containsUserFunctionCall(un.operand),
+        .field_access => |fa| return containsUserFunctionCall(fa.object),
+        .grouped => |g| return containsUserFunctionCall(g),
+        .builtin_call => |bc| {
+            for (bc.args) |arg| {
+                if (containsUserFunctionCall(arg)) return true;
+            }
+            return false;
+        },
+        .array_index => |ai| return containsUserFunctionCall(ai.object) or containsUserFunctionCall(ai.index),
+        .conditional => |c| return containsUserFunctionCall(c.condition) or
+            containsUserFunctionCall(c.then_expr) or
+            containsUserFunctionCall(c.else_expr),
+    }
+}
+
 /// THE expression-admission predicate: does this raw expression text contain
 /// a (non-builtin) call? An expression admits atoms, operators, and builtins —
 /// never a call. Every surface that accepts an expression (invocation

@@ -1,0 +1,2 @@
+took 100
+std/store: stale row handle into store 'nodes' - the row it addressed was removed

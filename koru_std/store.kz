@@ -1571,9 +1571,9 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 // (the same shape the qrow projection binds); scalars read
                 // their cell slot directly.
                 if (is_char) {
-                    return std.fmt.allocPrint(alloc, "@import(\"std\").mem.sliceTo(&__koru_store_{s}.{s}[@as(usize, @intCast(__koru_qrow))], 0)", .{ store, field }) catch unreachable;
+                    return std.fmt.allocPrint(alloc, "@import(\"std\").mem.sliceTo(&__koru_store_{s}.{s}[__koru_store_{s}.__koru_resolve(__koru_qrow)], 0)", .{ store, field, store }) catch unreachable;
                 }
-                return std.fmt.allocPrint(alloc, "__koru_store_{s}.{s}[@as(usize, @intCast(__koru_qrow))]", .{ store, field }) catch unreachable;
+                return std.fmt.allocPrint(alloc, "__koru_store_{s}.{s}[__koru_store_{s}.__koru_resolve(__koru_qrow)]", .{ store, field, store }) catch unreachable;
             }
             fn entityRefs(alloc: std.mem.Allocator, text: []const u8, store: []const u8, fields: []const []const u8, char_caps: []const ?usize, target_form: bool, bind: []const u8) []const u8 {
                 const prefix = std.fmt.allocPrint(alloc, "{s}.", .{bind}) catch unreachable;
@@ -1823,7 +1823,47 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 std.fmt.allocPrint(allocator, "    {s}: [{d}]{s} = undefined,\n", .{ fname, CAP, ftype }) catch unreachable;
             pc.appendSlice(allocator, col) catch unreachable;
         }
-        pc.appendSlice(allocator, "    len: usize = 0,\n};\n") catch unreachable;
+        pc.appendSlice(allocator, "    len: usize = 0,\n") catch unreachable;
+        // The sparse-set half of THE MEMORY CONTRACT (O10.iii/iv, DESIGN.md):
+        // a program-visible row value is a HANDLE — sparse slot in the low 32
+        // bits, that slot's generation in the high 32 — never a dense position.
+        // Dense columns keep swap-remove and 0..len iteration; the handle
+        // indirects through `__koru_hslot_row` so it survives other rows'
+        // removal, and the generation compare (one compare — the O10.iv floor)
+        // traps a handle whose row was taken. Generation 0 handles are
+        // numerically identical to the dense indices the store used to hand
+        // out, so a program that never removes prints the same numbers.
+        const hs = std.fmt.allocPrint(allocator,
+            \\    __koru_hslot_row: [{d}]usize = undefined,
+            \\    __koru_hslot_gen: [{d}]u32 = [_]u32{{0}} ** {d},
+            \\    __koru_row_hslot: [{d}]usize = undefined,
+            \\    __koru_hslot_free: [{d}]usize = undefined,
+            \\    __koru_hslot_free_len: usize = 0,
+            \\    __koru_hslot_next: usize = 0,
+            \\    fn __koru_row_of(self: *const @This(), h: i64) ?usize {{
+            \\        if (h < 0) return null;
+            \\        const u = @as(u64, @bitCast(h));
+            \\        const slot = @as(usize, @intCast(u & 0xFFFFFFFF));
+            \\        if (slot >= self.__koru_hslot_next) return null;
+            \\        if (@as(u32, @truncate(u >> 32)) != self.__koru_hslot_gen[slot]) return null;
+            \\        return self.__koru_hslot_row[slot];
+            \\    }}
+            \\    fn __koru_resolve(self: *const @This(), h: i64) usize {{
+            \\        if (h >= 0) {{
+            \\            const u = @as(u64, @bitCast(h));
+            \\            const slot = @as(usize, @intCast(u & 0xFFFFFFFF));
+            \\            if (slot < self.__koru_hslot_next and @as(u32, @truncate(u >> 32)) != self.__koru_hslot_gen[slot]) @panic("std/store: stale row handle into store '{s}' - the row it addressed was removed (stale-handle trap pinned at 690_115)");
+            \\        }}
+            \\        return self.__koru_row_of(h) orelse @panic("std/store: '{s}[...]' does not address a row - the value is not a handle this store issued (handles come from `| row` and row cursors)");
+            \\    }}
+            \\    fn __koru_handle_of(self: *const @This(), dense: usize) i64 {{
+            \\        const slot = self.__koru_row_hslot[dense];
+            \\        return @as(i64, @intCast(slot)) | (@as(i64, @intCast(self.__koru_hslot_gen[slot])) << 32);
+            \\    }}
+            \\
+        , .{ CAP, CAP, CAP, CAP, CAP, store_name, store_name }) catch unreachable;
+        pc.appendSlice(allocator, hs) catch unreachable;
+        pc.appendSlice(allocator, "};\n") catch unreachable;
         pc.appendSlice(allocator, "var __koru_store_") catch unreachable;
         pc.appendSlice(allocator, store_name) catch unreachable;
         pc.appendSlice(allocator, ": __KoruStoreT_") catch unreachable;
@@ -1878,6 +1918,24 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 \\
             , .{ store_name, CAP, store_name, CAP, store_name }) catch unreachable;
             ap.appendSlice(allocator, grow) catch unreachable;
+            // Mint the row's handle slot: reuse a freed slot (its generation
+            // was bumped at free, so the dead handle stays dead) else bump-
+            // allocate — which keeps slot == dense index for a store that
+            // never removes.
+            const mint = std.fmt.allocPrint(allocator,
+                \\const __koru_hslot = if (__koru_store_{s}.__koru_hslot_free_len > 0) blk_hs: {{
+                \\    __koru_store_{s}.__koru_hslot_free_len -= 1;
+                \\    break :blk_hs __koru_store_{s}.__koru_hslot_free[__koru_store_{s}.__koru_hslot_free_len];
+                \\}} else blk_hs: {{
+                \\    const __koru_hn = __koru_store_{s}.__koru_hslot_next;
+                \\    __koru_store_{s}.__koru_hslot_next += 1;
+                \\    break :blk_hs __koru_hn;
+                \\}};
+                \\__koru_store_{s}.__koru_hslot_row[__koru_hslot] = __koru_new_row;
+                \\__koru_store_{s}.__koru_row_hslot[__koru_new_row] = __koru_hslot;
+                \\
+            , .{ store_name, store_name, store_name, store_name, store_name, store_name, store_name, store_name }) catch unreachable;
+            ap.appendSlice(allocator, mint) catch unreachable;
             // User columns write their insert bindings; the [tree]-synthesized
             // `parent` has NO user binding (TT1 — invisible): every new row is
             // born a root (-1) and is attached by the self-FK stored write.
@@ -2021,7 +2079,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 .location = flow.location,
                 .module = allocator.dupe(u8, flow.module) catch unreachable,
             } }) catch unreachable;
-            const hbody = std.fmt.allocPrint(allocator, "{s}return .{{ .row = @as(i64, @intCast(__koru_new_row)) }};", .{append_text}) catch unreachable;
+            const hbody = std.fmt.allocPrint(allocator, "{s}return .{{ .row = __koru_store_{s}.__koru_handle_of(__koru_new_row) }};", .{ append_text, store_name }) catch unreachable;
             appended_items.append(allocator, ast.Item{ .proc_decl = ast.ProcDecl{
                 .path = H.mkPathH(allocator, flow.module, inserth_name),
                 .body = ast.Source{ .text = hbody, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
@@ -2114,7 +2172,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 break :blk fb.toOwnedSlice(allocator) catch unreachable;
             } else
                 std.fmt.allocPrint(allocator, "if (__koru_store_{s}.len >= {d}) return .{{ .full = .{{}} }};\n", .{ store_name, CAP }) catch unreachable;
-            const fbody = std.fmt.allocPrint(allocator, "{s}{s}return .{{ .row = @as(i64, @intCast(__koru_new_row)) }};", .{ fcheck, append_text }) catch unreachable;
+            const fbody = std.fmt.allocPrint(allocator, "{s}{s}return .{{ .row = __koru_store_{s}.__koru_handle_of(__koru_new_row) }};", .{ fcheck, append_text, store_name }) catch unreachable;
             appended_items.append(allocator, ast.Item{ .proc_decl = ast.ProcDecl{
                 .path = H.mkPathH(allocator, flow.module, insertf_name),
                 .body = ast.Source{ .text = fbody, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
@@ -2202,7 +2260,9 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             } }) catch unreachable;
 
             var pbody = std.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
-            pbody.appendSlice(allocator, "const __koru_r = @as(usize, @intCast(row));\nreturn switch (field) {\n") catch unreachable;
+            const papply_head = std.fmt.allocPrint(allocator, "const __koru_r = __koru_store_{s}.__koru_resolve(row);\n", .{store_name}) catch unreachable;
+            pbody.appendSlice(allocator, papply_head) catch unreachable;
+            pbody.appendSlice(allocator, "return switch (field) {\n") catch unreachable;
             // `updated` lifecycle interceptors fire inside the write's atomic
             // step — after the cell write, before the field arm dispatches to
             // subscriptions — so no watch ever observes a row whose contract
@@ -2227,7 +2287,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 // `| cycle` routes through __store_writec_*, which refuses the
                 // write BEFORE this arm — a cycle can never reach here from it.
                 if (is_tree and i == user_field_count) {
-                    const guard = std.fmt.allocPrint(allocator, "var __koru_cyc = value_{d}; while (__koru_cyc != -1) {{ if (__koru_cyc == row) @panic(\"std/store:stored: reparent in [tree] store '{s}' would make the row its own ancestor (cycle) - the write is rejected; handle it with a `| cycle` branch (default-on guard and branch are pinned at 695_002)\"); __koru_cyc = __koru_store_{s}.parent[@as(usize, @intCast(__koru_cyc))]; }} ", .{ i, store_name, store_name }) catch unreachable;
+                    const guard = std.fmt.allocPrint(allocator, "var __koru_cyc = value_{d}; while (__koru_cyc != -1) {{ if (__koru_cyc == row) @panic(\"std/store:stored: reparent in [tree] store '{s}' would make the row its own ancestor (cycle) - the write is rejected; handle it with a `| cycle` branch (default-on guard and branch are pinned at 695_002)\"); __koru_cyc = __koru_store_{s}.parent[__koru_store_{s}.__koru_resolve(__koru_cyc)]; }} ", .{ i, store_name, store_name, store_name }) catch unreachable;
                     atext.appendSlice(allocator, guard) catch unreachable;
                 }
                 if (updated_needs_old) {
@@ -2420,9 +2480,10 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                     // The proc body is the bundled switch's arm for field i,
                     // straight-lined: `value` in place of `value_<i>`.
                     var fatext = std.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
-                    fatext.appendSlice(allocator, "const __koru_r = @as(usize, @intCast(row));\n") catch unreachable;
+                    const fapply_head = std.fmt.allocPrint(allocator, "const __koru_r = __koru_store_{s}.__koru_resolve(row);\n", .{store_name}) catch unreachable;
+                    fatext.appendSlice(allocator, fapply_head) catch unreachable;
                     if (is_tree and i == user_field_count) {
-                        const fguard = std.fmt.allocPrint(allocator, "var __koru_cyc = value; while (__koru_cyc != -1) {{ if (__koru_cyc == row) @panic(\"std/store:stored: reparent in [tree] store '{s}' would make the row its own ancestor (cycle) - the write is rejected; handle it with a `| cycle` branch (default-on guard and branch are pinned at 695_002)\"); __koru_cyc = __koru_store_{s}.parent[@as(usize, @intCast(__koru_cyc))]; }} ", .{ store_name, store_name }) catch unreachable;
+                        const fguard = std.fmt.allocPrint(allocator, "var __koru_cyc = value; while (__koru_cyc != -1) {{ if (__koru_cyc == row) @panic(\"std/store:stored: reparent in [tree] store '{s}' would make the row its own ancestor (cycle) - the write is rejected; handle it with a `| cycle` branch (default-on guard and branch are pinned at 695_002)\"); __koru_cyc = __koru_store_{s}.parent[__koru_store_{s}.__koru_resolve(__koru_cyc)]; }} ", .{ store_name, store_name, store_name }) catch unreachable;
                         fatext.appendSlice(allocator, fguard) catch unreachable;
                     }
                     if (updated_needs_old) {
@@ -2596,11 +2657,11 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 \\var __koru_cyc = value;
                 \\while (__koru_cyc != -1) {{
                 \\    if (__koru_cyc == row) return .{{ .cycle = .{{}} }};
-                \\    __koru_cyc = __koru_store_{s}.parent[@as(usize, @intCast(__koru_cyc))];
+                \\    __koru_cyc = __koru_store_{s}.parent[__koru_store_{s}.__koru_resolve(__koru_cyc)];
                 \\}}
                 \\main_module.__store_write_{s}_event.handler(.{{ .row = row, .field = field{s} }});
                 \\return .{{ .ok = .{{}} }};
-            , .{ store_name, store_name, cw_slots.items }) catch unreachable;
+            , .{ store_name, store_name, store_name, cw_slots.items }) catch unreachable;
             appended_items.append(allocator, ast.Item{ .proc_decl = ast.ProcDecl{
                 .path = H.mkPathH(allocator, flow.module, pwritec_name),
                 .body = ast.Source{ .text = cbody, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
@@ -2661,7 +2722,13 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 qr.appendSlice(allocator, p) catch unreachable;
             }
             if (qs.proj_names.len > 0) qr.appendSlice(allocator, ", ") catch unreachable;
-            qr.appendSlice(allocator, ".__koru_qrow = row });\nreturn;") catch unreachable;
+            // The body's row cursor is a HANDLE (the same value `| row` mints),
+            // so a take/stored head addressing `store[cursor]` resolves it like
+            // any other handle — and it stays correct across the swap-removes a
+            // taking body performs (690_031).
+            const qrow_cursor = std.fmt.allocPrint(allocator, ".__koru_qrow = __koru_store_{s}.__koru_handle_of(__koru_r) ", .{store_name}) catch unreachable;
+            qr.appendSlice(allocator, qrow_cursor) catch unreachable;
+            qr.appendSlice(allocator, "});\nreturn;") catch unreachable;
             appended_items.append(allocator, ast.Item{ .proc_decl = ast.ProcDecl{
                 .path = H.mkPathH(allocator, flow.module, qrow_name),
                 .body = ast.Source{ .text = qr.toOwnedSlice(allocator) catch unreachable, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
@@ -2763,14 +2830,14 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 \\    var __koru_j: usize = __koru_store_{s}.len;
                 \\    while (__koru_j > 0) {{
                 \\        __koru_j -= 1;
-                \\        if (__koru_store_{s}.parent[__koru_j] == @as(i64, @intCast(__koru_cur))) {{
+                \\        if (__koru_store_{s}.parent[__koru_j] == __koru_store_{s}.__koru_handle_of(__koru_cur)) {{
                 \\            __koru_stack[__koru_sp] = __koru_j;
                 \\            __koru_sp += 1;
                 \\        }}
                 \\    }}
                 \\}}
                 \\return;
-            , .{ CAP, store_name, store_name, qrow_name, store_name, store_name }) catch unreachable else std.fmt.allocPrint(allocator,
+            , .{ CAP, store_name, store_name, qrow_name, store_name, store_name, store_name }) catch unreachable else std.fmt.allocPrint(allocator,
                 \\var __koru_i: usize = 0;
                 \\while (__koru_i < __koru_store_{s}.len) {{
                 \\    const __koru_len_before = __koru_store_{s}.len;
@@ -2890,11 +2957,17 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             } }) catch unreachable;
 
             var tb = std.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
+            // `| empty` covers the whole is-not-a-live-row family — never
+            // inserted, already taken, the -1 sentinel — because take ALREADY
+            // has a branch surface for "the row is not there" (is_panic
+            // default, graceful when handled — 690_070 pins a re-take of the
+            // same address answering `| empty`). Reads and writes have no such
+            // branch, which is why their stale path traps instead.
             const thead = std.fmt.allocPrint(allocator,
-                \\const __koru_r = @as(usize, @intCast(row));
-                \\if (__koru_r >= __koru_store_{s}.len) return .{{ .empty = .{{}} }};
+                \\const __koru_r = __koru_store_{s}.__koru_row_of(row) orelse return .{{ .empty = .{{}} }};
+                \\const __koru_gone_slot = __koru_store_{s}.__koru_row_hslot[__koru_r];
                 \\
-            , .{store_name}) catch unreachable;
+            , .{ store_name, store_name }) catch unreachable;
             tb.appendSlice(allocator, thead) catch unreachable;
             for (field_names) |fname| {
                 const ld = std.fmt.allocPrint(allocator, "const __koru_out_{s} = __koru_store_{s}.{s}[__koru_r];\n", .{ fname, store_name, fname }) catch unreachable;
@@ -2930,7 +3003,13 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 const mv = std.fmt.allocPrint(allocator, "    __koru_store_{s}.{s}[__koru_r] = __koru_store_{s}.{s}[__koru_last];\n", .{ store_name, fname, store_name, fname }) catch unreachable;
                 tb.appendSlice(allocator, mv) catch unreachable;
             }
-            const tail = std.fmt.allocPrint(allocator, "}}\n__koru_store_{s}.len = __koru_last;\n", .{store_name}) catch unreachable;
+            // The moved row's handle follows it: its sparse slot re-points at
+            // the dense position it just landed in (O10.iii — handles stable
+            // across other rows' removal), then the taken row's slot dies (one
+            // generation bump) and returns to the freelist.
+            const mvfix = std.fmt.allocPrint(allocator, "    const __koru_mv_slot = __koru_store_{s}.__koru_row_hslot[__koru_last];\n    __koru_store_{s}.__koru_hslot_row[__koru_mv_slot] = __koru_r;\n    __koru_store_{s}.__koru_row_hslot[__koru_r] = __koru_mv_slot;\n", .{ store_name, store_name, store_name }) catch unreachable;
+            tb.appendSlice(allocator, mvfix) catch unreachable;
+            const tail = std.fmt.allocPrint(allocator, "}}\n__koru_store_{s}.len = __koru_last;\n__koru_store_{s}.__koru_hslot_gen[__koru_gone_slot] +%= 1;\n__koru_store_{s}.__koru_hslot_free[__koru_store_{s}.__koru_hslot_free_len] = __koru_gone_slot;\n__koru_store_{s}.__koru_hslot_free_len += 1;\n", .{ store_name, store_name, store_name, store_name, store_name }) catch unreachable;
             tb.appendSlice(allocator, tail) catch unreachable;
             if (item_identity_owned) {
                 const o = std.fmt.allocPrint(allocator, "return .{{ .item = __koru_out_{s} }};", .{field_names[0]}) catch unreachable;
@@ -4564,7 +4643,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                             }
                         }
                         if (known and index.len > 0) {
-                            const piece = std.fmt.allocPrint(alloc, "__koru_store_{s}.{s}[@as(usize, @intCast({s}))]", .{ store, fname, index }) catch unreachable;
+                            const piece = std.fmt.allocPrint(alloc, "__koru_store_{s}.{s}[__koru_store_{s}.__koru_resolve({s})]", .{ store, fname, store, index }) catch unreachable;
                             out.appendSlice(alloc, piece) catch unreachable;
                             i = fend;
                             continue;
@@ -4901,7 +4980,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 }
             }
             if (ref_ok) {
-                row_expr = std.fmt.allocPrint(allocator, "__koru_store_{s}.{s}[@as(usize, @intCast({s}))]", .{ target_store, ref_field, base }) catch unreachable;
+                row_expr = std.fmt.allocPrint(allocator, "__koru_store_{s}.{s}[__koru_store_{s}.__koru_resolve({s})]", .{ target_store, ref_field, target_store, base }) catch unreachable;
             } else {
                 row_expr = H.storeRefsAll(allocator, program, re);
             }
@@ -6127,7 +6206,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                     if (cidx) |ci| {
                         const t = switch (form) {
                             .target => std.fmt.allocPrint(alloc, "{s}[{s}].{s}", .{ store, cursor, fname }) catch unreachable,
-                            .live => std.fmt.allocPrint(alloc, "__koru_store_{s}.{s}[@as(usize, @intCast({s}))]", .{ store, fname, cursor }) catch unreachable,
+                            .live => std.fmt.allocPrint(alloc, "__koru_store_{s}.{s}[__koru_store_{s}.__koru_resolve({s})]", .{ store, fname, store, cursor }) catch unreachable,
                             .input => blk3: {
                                 used[ci] = true;
                                 break :blk3 std.fmt.allocPrint(alloc, "{s}{s}", .{ srf, fname }) catch unreachable;
@@ -6152,7 +6231,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                         const fname = fields[0];
                         const t = switch (form) {
                             .target => std.fmt.allocPrint(alloc, "{s}[{s}].{s}", .{ store, cursor, fname }) catch unreachable,
-                            .live => std.fmt.allocPrint(alloc, "__koru_store_{s}.{s}[@as(usize, @intCast({s}))]", .{ store, fname, cursor }) catch unreachable,
+                            .live => std.fmt.allocPrint(alloc, "__koru_store_{s}.{s}[__koru_store_{s}.__koru_resolve({s})]", .{ store, fname, store, cursor }) catch unreachable,
                             .input => blk4: {
                                 used[0] = true;
                                 break :blk4 std.fmt.allocPrint(alloc, "{s}{s}", .{ srf, fname }) catch unreachable;
@@ -6715,7 +6794,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         const a = std.fmt.allocPrint(allocator, " .{s} = {s},", .{ c.name, c.name }) catch unreachable;
         loop.appendSlice(allocator, a) catch unreachable;
     }
-    const srow_arg = std.fmt.allocPrint(allocator, " .{s} = @as(i64, @intCast(__koru_si))", .{srow_name}) catch unreachable;
+    const srow_arg = std.fmt.allocPrint(allocator, " .{s} = __koru_store_{s}.__koru_handle_of(__koru_si)", .{ srow_name, store_name }) catch unreachable;
     loop.appendSlice(allocator, srow_arg) catch unreachable;
     loop.appendSlice(allocator, " });\n}\n}\n") catch unreachable;
 
