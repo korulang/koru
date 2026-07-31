@@ -111,6 +111,57 @@ checked* — each one needs its output verified before its assertion is switched
 on. Renaming them all at once would turn 29 unchecked assumptions into 29 claims
 the board now makes.
 
+## ⭐ A second wall, found the same day — the partial-match drop
+
+`f1a74bd1` made a filter that matches **zero** tests a failure, with the reason
+recorded in its own commit message: it had printed `Running 0 tests... ✅ ALL
+TESTS PASSED` and exited 0.
+
+**A filter that matches *some* tests still drops the rest in silence.** Measured
+2026-07-31:
+
+```
+./run_regression.sh 115_006_field_new_in_entry_tor definitely_not_a_test_xyz
+  → Running 1 tests... RESULTS: 1 passed, 0 failed
+  → ✅ ALL TESTS PASSED!    exit 0
+```
+
+Two names in, one test run, no mention of the other. The damage is specific and
+it happened during this frame's own scoping: a control set run to prove "no
+regressions" silently verified only the names that were spelled right. Six names
+were passed, two matched, and the board said everything passed.
+
+Fix shape: report the count asked for against the count matched, and refuse (or
+at minimum name them) when they differ. The zero case already has the message —
+this is the same message with a different predicate.
+
+⚖️ Against the four-point bar: the rule is believed (the zero case is already
+enforced, by Lars, that morning); violations are mechanically detectable
+(requested names vs matched dirs); it fails loudly and locally; and no test in
+the corpus can fail it, because it changes only the runner's own verdict.
+
+## ⚖️ The pattern these three share — read this before adding a fourth
+
+Three walls found on 2026-07-31, and **all three are the same defect**: a rule
+enforced in one direction of a symmetry and not the other.
+
+| enforced | not enforced |
+|---|---|
+| expected output with no `MUST_RUN` → `config-error` (`regression_lib.sh:581`) | `MUST_RUN` with no readable expectation → silent pass |
+| `regression_lib.sh` honours `BENCHMARK` | `save-snapshot.js` had never heard of it → 14 tests `untested` since January |
+| zero filter matches → refuse (`f1a74bd1`) | partial filter match → silent drop |
+
+Plus a fourth of the same family, from challenge `011`: the mirror wall
+(`prose_check.sh` check D) read `pub tor` in `koru_std/*.kz` only, so the same
+transform declared as `pub event`, or living in a `.k`, shipped unwatched.
+
+**So the census's highest-yield question is not "what rule has no wall."** It is:
+**for every wall that exists, what is the mirror case it does not cover?** Three
+of the four above were found by asking that, and none by surveying doctrine.
+
+Two of the four were also walls **nobody remembered existed** — see
+[[frag-compliance-is-counted-with-the-enforcers-predicate]]. Inventory first.
+
 ## The rules that are still prose
 
 Each of these is written down and believed. For each: does anything check it?

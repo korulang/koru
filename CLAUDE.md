@@ -33,8 +33,18 @@ tests plus controls:
     ./run_regression.sh <full_test_name> <full_test_name> ...
 
 Filtered runs write no snapshot, so they can't clobber `latest.json`. The full
-board is for publishing. Never `zig build` or edit `koru_std/` while a suite is
-live.
+board is for publishing.
+
+**Never `zig build`, or edit `koru_std/` *or* `src/`, while a suite is live.**
+Each test's backend build compiles its emitted Zig against the **live** `src/`
+tree, so a half-written file there turns into reds that name your own edit —
+33 of them in one measured case, all reported as `backend`, none real.
+
+**A filter that matches nothing is dropped in silence.** `./run_regression.sh
+<real_name> <typo>` runs one test and prints `ALL TESTS PASSED`, exit 0. Zero
+matches refuses (`f1a74bd1`); a *partial* match does not. So a control set
+verifies only the names that happened to be spelled right — check the
+`Running N tests` line against the number you asked for.
 
 ## Test comments
 
