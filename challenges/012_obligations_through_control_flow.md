@@ -18,14 +18,53 @@ Straight-line obligations work. Bent ones are where the system runs out.*
 
 ---
 
+## ⚖️ RULED BY LARS 2026-07-31 — THIS IS A "GO SLOW IF NOT 100% SURE" PASTURE
+
+*"`012` is OBVIOUSLY the most important thing here — phantom types MUST run
+green at some point. This feels like a 'go slow if not 100% sure' pasture."*
+
+That is a instruction about **method**, and it inverts the usual scoring:
+
+- **A located cause with no fix is a SUCCESS.** Write it, with the evidence, and
+  move on. You are not behind.
+- **A green test you cannot fully explain is a FAILURE**, even though the board
+  went up. If you cannot say *why* it went green, you have not finished — say so.
+- **Diagnose all 24 BEFORE fixing any.** The cluster map is the deliverable. A
+  fix landed early distorts the evidence for every test still undiagnosed.
+- **When unsure, STOP and write.** Do not try it and see. This subsystem is where
+  a plausible-looking patch does damage that stays hidden — the whole thesis
+  rests on obligations being airtight, and a wrong fix here is worse than a red
+  test because it converts a loud failure into a silent one.
+
+⛔ Explicitly do NOT optimise for count. Twenty-four diagnosed and four fixed
+beats twelve greened and twelve disturbed.
+
 ## The brief (sealed — you are the contestant)
 
-Establish the **cluster map**: which of the 34 share a mechanism, and what that
-mechanism is. Close the clusters whose cause is already located. For the rest,
-produce the diagnosis, not the fix.
+Establish the **cluster map**: which of the 24 share a mechanism, and what that
+mechanism is. Close **only** the clusters whose cause you can prove. For the
+rest, produce the diagnosis.
 
 One cluster closed with its mechanism named beats six tests greened by six
 unrelated patches.
+
+### ⚠️ The list, refreshed 2026-07-31 — the older list below is stale
+
+`010` closed five of the six state-variable tests, so the advice further down to
+"start with the state-variable cluster" no longer applies — only `525` remains.
+Current, from board `ed9c75a0`:
+
+**Loops and back edges** — `330_084`, `330_085`, `330_086`
+**Borrow** — `330_091`, `335_046`
+**Error branches leak what the happy path frees** — `335_006`, `335_007`,
+`335_022`, `335_023`
+**Taps** — `330_030`, `330_031`
+**Wildcard metatypes** — `330_009`, `330_010`
+**Singles** — `330_019`, `330_050`, `330_060`, `330_076`, `330_078`, `525`,
+`910_phantom_state_valid`, `335_044`
+**Design pins, spelling-blocked, DO NOT FIX** — `335_042`, `335_043` (the IO
+allocation-label question is already written and belongs to Lars)
+**Cause already in its own header** — `330_120` (see below)
 
 ## Ground yourself FIRST — three of these are already diagnosed
 
