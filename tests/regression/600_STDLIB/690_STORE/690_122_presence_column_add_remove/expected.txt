@@ -1,0 +1,4 @@
+frozen 10
+frozen 20
+alive 10
+alive 20
