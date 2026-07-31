@@ -3368,6 +3368,32 @@ pub const VisitorEmitter = struct {
                                             try emitter.emitValue(self.code_emitter, &value_ctx, arg.value);
                                         }
                                     }
+                                    // OPTIONAL PARAMETER INJECTION — the twin of
+                                    // emitArgs's block on the top-level path (400_180):
+                                    // an omitted `?T` parameter fills with null here
+                                    // too, or the input struct literal is missing a
+                                    // field entirely.
+                                    if (event_type) |et| {
+                                        if (et.input_shape) |shape| {
+                                            var emitted_so_far = flow.inv().args.len;
+                                            for (shape.fields) |field| {
+                                                if (!(field.type.len > 0 and field.type[0] == '?')) continue;
+                                                var already_provided = false;
+                                                for (flow.inv().args) |arg| {
+                                                    if (std.mem.eql(u8, arg.name, field.name)) {
+                                                        already_provided = true;
+                                                        break;
+                                                    }
+                                                }
+                                                if (already_provided) continue;
+                                                if (emitted_so_far > 0) try self.code_emitter.write(",");
+                                                try self.code_emitter.write(" .");
+                                                try self.code_emitter.write(field.name);
+                                                try self.code_emitter.write(" = null");
+                                                emitted_so_far += 1;
+                                            }
+                                        }
+                                    }
                                     // NOTE: Comptime injection of program/allocator is now handled
                                     // by emitArgs in emitter_helpers.zig
                                     if (sf_handlers_name) |hname| {

@@ -2254,6 +2254,48 @@ fn emitSubflowCatchallOptionalArms(
     }
 }
 
+/// The target event's input fields, resolved the way the subflow arg writer
+/// resolves them: module-scoped AST first, then the global type registry for
+/// cross-module targets (all_items may be module-scoped here). Null when
+/// neither route knows the event.
+fn resolveTargetInputFields(
+    all_items: []const ast.Item,
+    inv: *const ast.Invocation,
+    type_registry: *type_registry_module.TypeRegistry,
+    main_module_name: ?[]const u8,
+) ?[]const ast.Field {
+    if (findEventDeclByPath(all_items, &inv.path)) |target_decl| return target_decl.input.fields;
+    var name_buf: [512]u8 = undefined;
+    var pos: usize = 0;
+    if (inv.path.module_qualifier) |mq| {
+        if (mq.len + 1 > name_buf.len) return null;
+        @memcpy(name_buf[pos .. pos + mq.len], mq);
+        pos += mq.len;
+        name_buf[pos] = ':';
+        pos += 1;
+    } else if (main_module_name) |mmn| {
+        if (mmn.len + 1 > name_buf.len) return null;
+        @memcpy(name_buf[pos .. pos + mmn.len], mmn);
+        pos += mmn.len;
+        name_buf[pos] = ':';
+        pos += 1;
+    }
+    for (inv.path.segments, 0..) |seg, seg_i| {
+        if (seg_i > 0) {
+            if (pos + 1 > name_buf.len) return null;
+            name_buf[pos] = '.';
+            pos += 1;
+        }
+        if (pos + seg.len > name_buf.len) return null;
+        @memcpy(name_buf[pos .. pos + seg.len], seg);
+        pos += seg.len;
+    }
+    if (type_registry.getEventType(name_buf[0..pos])) |et| {
+        if (et.input_shape) |shape| return shape.fields;
+    }
+    return null;
+}
+
 fn emitSubflowContinuationsWithDepth(
     emitter: *CodeEmitter,
     continuations: []const ast.Continuation,
@@ -2524,6 +2566,29 @@ fn emitSubflowContinuationsWithDepth(
                             try emitArrayLiteralForField(emitter, &lit_ctx, field, av);
                         } else {
                             try emitter.write(arg.value);
+                        }
+                    }
+                    // OPTIONAL PARAMETER INJECTION — the twin of emitArgs's
+                    // block on the top-level path (400_180): an omitted `?T`
+                    // parameter fills with null here too, or the target's
+                    // input struct is missing a field entirely.
+                    if (resolveTargetInputFields(all_items, &inv, type_registry, main_module_name)) |target_fields| {
+                        var emitted_so_far = inv.args.len;
+                        for (target_fields) |field| {
+                            if (!(field.type.len > 0 and field.type[0] == '?')) continue;
+                            var already_provided = false;
+                            for (inv.args) |arg| {
+                                if (std.mem.eql(u8, arg.name, field.name)) {
+                                    already_provided = true;
+                                    break;
+                                }
+                            }
+                            if (already_provided) continue;
+                            if (emitted_so_far > 0) try emitter.write(", ");
+                            try emitter.write(".");
+                            try emitter.write(field.name);
+                            try emitter.write(" = null");
+                            emitted_so_far += 1;
                         }
                     }
                     try emitter.write(" });\n");

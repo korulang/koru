@@ -1,0 +1,18 @@
+// A tor with an optional parameter (`scale: ?i64`), for 400_180: the
+// OPTIONAL PARAMETER INJECTION rule (omitted `?T` fills with null) must
+// hold on EVERY emission path. The top-level path (emitArgs) always had it;
+// the subflow/impl-flow raw handler-call writer emitted `.{ }` verbatim —
+// 'error: missing struct field: scale' — until the twin injection landed.
+//
+// Found in koru-examples/kopium: `koru/curl:multi.new()` (allocator
+// omitted, exactly as downloads.k spells it at top level) inside a
+// `tor stream` impl flow. Reproduced here with no curl.
+
+const std = @import("std");
+
+~pub tor make { tag: i64, scale: ?i64 } -> i64
+
+~proc make|zig {
+    const s: i64 = scale orelse 10;
+    return tag * s;
+}
