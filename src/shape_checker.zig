@@ -681,7 +681,7 @@ pub const ShapeChecker = struct {
             return error.IncompleteBranchCoverage;
         }
 
-        try self.checkInvokedEventImplemented(final_event_info, flow, location);
+        try self.checkInvokedEventImplemented(final_event_info, flow.inv(), flow.impl_of != null, location);
     }
 
     /// Mark the event targeted by an implementation item. Tries the impl's own
@@ -739,7 +739,11 @@ pub const ShapeChecker = struct {
     fn checkInvokedEventImplemented(
         self: *ShapeChecker,
         event_info: EventInfo,
-        flow: *const ast.Flow,
+        inv: *const ast.Invocation,
+        /// True only for the HEAD of a subflow-implementation flow — that head
+        /// IS the implementation, not a call. A step further down the same
+        /// flow's chain is an ordinary call and must be checked.
+        is_impl_head: bool,
         location: errors.SourceLocation,
     ) !void {
         const event = event_info.decl;
@@ -748,7 +752,7 @@ pub const ShapeChecker = struct {
         if (event_info.has_impl) return;
 
         // A subflow-implementation head is the implementation, not a call.
-        if (flow.impl_of != null) return;
+        if (is_impl_head) return;
 
         // Never-emitted / never-run events cannot reach a live stub.
         if (event.hasAnnotation("norun")) return;
@@ -805,9 +809,9 @@ pub const ShapeChecker = struct {
         };
         if (!needs_impl) return;
 
-        const inv_name = try self.pathToString(flow.inv().path);
+        const inv_name = try self.pathToString(inv.path);
         defer self.allocator.free(inv_name);
-        const short_name = flow.inv().path.segments[flow.inv().path.segments.len - 1];
+        const short_name = inv.path.segments[inv.path.segments.len - 1];
         try self.reporter.addErrorAtLocation(
             .KORU047,
             location,
@@ -1251,8 +1255,12 @@ pub const ShapeChecker = struct {
         bare_return: bool,
     ) !bool {
         // Bare-return events (`-> T`) have no branch tags — continuations use
-        // produce syntax (`| _ v -> expr`); the label is binding sugar only.
-        if (bare_return) return true;
+        // produce syntax (`| _ v -> expr`); the label is binding sugar only. So
+        // the TAG rules skip. The chain hanging off the head does NOT: it is an
+        // ordinary pipeline and its steps get the same walk as anyone else's.
+        if (bare_return) {
+            return try self.validatePipelineSteps(event_branches, continuations, location, parent_inv);
+        }
 
         // Track if we found any errors (but continue checking to find all of them)
         var has_errors = false;
@@ -1512,6 +1520,36 @@ pub const ShapeChecker = struct {
             }
         }
 
+        // The pipeline walk is not tag validation: a chain step must resolve,
+        // be implemented, and have its own branches covered no matter what the
+        // HEAD returns.
+        if (!try self.validatePipelineSteps(event_branches, continuations, location, parent_inv)) {
+            has_errors = true;
+        }
+
+        // Return false if we found any errors during validation
+        return !has_errors;
+    }
+
+    /// The per-continuation STEP walk: label registration/jumps, glyph
+    /// discipline, branch constructors, and every invocation in the pipeline
+    /// (resolution, implementation, nested branch coverage).
+    ///
+    /// Split out of checkBranchCoverageWithTerminals because it is orthogonal to
+    /// branch TAGS. A bare-return head (`-> T`) has no tags, so the tag rules are
+    /// skipped — but the chain hanging off it is an ordinary pipeline. Folding
+    /// the two together meant one `if (bare_return) return true` silenced the
+    /// whole walk, and an unknown tor or an unimplemented one mid-chain reached
+    /// codegen (510_116/117, and a raw Zig "has no member named" for KORU040).
+    fn validatePipelineSteps(
+        self: *ShapeChecker,
+        event_branches: []const ast.Branch,
+        continuations: []const ast.Continuation,
+        location: errors.SourceLocation,
+        parent_inv: ?*const ast.Invocation,
+    ) anyerror!bool {
+        var has_errors = false;
+
         // Pre-pass: Register all label declarations from continuation pipelines
         for (continuations) |cont| {
             try self.registerContinuationLabels(&cont);
@@ -1725,6 +1763,12 @@ pub const ShapeChecker = struct {
                             "unknown tor '{s}' in pipeline", .{nested_event_name});
                         return error.UnknownEvent;
                     };
+
+                    // KORU047 at every chain position, not just position one.
+                    // The emitter stubs an unimplemented event wherever it is
+                    // called, so the wall has to reach wherever a call can sit
+                    // (510_116, and 510_117 for what the stub produces).
+                    try self.checkInvokedEventImplemented(nested_event_info, &step.invocation, false, location);
 
                     // This is the only step, check nested continuations
                     if (cont.continuations.len == 0 and nested_event_info.decl.branches.len > 0) {

@@ -2786,6 +2786,90 @@ pub const PhantomSemanticChecker = struct {
         return has_open and has_close;
     }
 
+    fn isIdentChar(c: u8) bool {
+        return std.ascii.isAlphanumeric(c) or c == '_' or c == '-';
+    }
+
+    /// The format specifier of an interpolation slot (`:d`, `:s`, `:f`, `:any`)
+    /// is grammar, not a binding read — `{{ text:s }}` must never be read as a
+    /// use of a binding called `s`. Returns the expression half of the slot.
+    fn slotExpression(slot: []const u8) []const u8 {
+        const body = std.mem.trim(u8, slot, " \t");
+        const colon = std.mem.lastIndexOfScalar(u8, body, ':') orelse return body;
+        const spec = body[colon + 1 ..];
+        for ([_][]const u8{ "d", "s", "f", "any" }) |known| {
+            if (std.mem.eql(u8, spec, known)) return std.mem.trim(u8, body[0..colon], " \t");
+        }
+        return body;
+    }
+
+    /// Report every DISCHARGED binding this argument reads.
+    ///
+    /// Two read shapes reach a plain-typed consumer: the argument value IS the
+    /// binding (`print.ln(response)`), or the binding is read from inside a
+    /// `{{ … }}` interpolation slot of a string literal
+    /// (`print.ln("got {{response:s}}")`). The second is the one that mattered —
+    /// the argument's own text is a literal, so a name comparison on it sees
+    /// nothing. Only the HEAD of a dotted path counts (`{{ r.sum:d }}` reads
+    /// `r`); a trailing `.field` names a field, not a binding.
+    fn reportStaleReads(
+        self: *PhantomSemanticChecker,
+        arg: ast.Arg,
+        context: *BindingContext,
+        location: errors.SourceLocation,
+    ) !bool {
+        var found = false;
+
+        if (context.isDisposed(arg.value)) {
+            try self.reporter.addError(
+                .KORU030,
+                location.line,
+                location.column,
+                "Use-after-discharge: binding '{s}' was already discharged and cannot be used",
+                .{arg.value},
+            );
+            found = true;
+        }
+
+        const texts = [_][]const u8{
+            arg.value,
+            if (arg.expression_value) |ev| ev.text else "",
+        };
+        for (texts) |text| {
+            var cursor: usize = 0;
+            while (std.mem.indexOfPos(u8, text, cursor, "{{")) |open| {
+                const close = std.mem.indexOfPos(u8, text, open + 2, "}}") orelse break;
+                const expr = slotExpression(text[open + 2 .. close]);
+                cursor = close + 2;
+
+                var i: usize = 0;
+                while (i < expr.len) {
+                    if (!isIdentChar(expr[i])) {
+                        i += 1;
+                        continue;
+                    }
+                    const start = i;
+                    while (i < expr.len and isIdentChar(expr[i])) i += 1;
+                    // `.field` reads a field of the head binding, not a binding.
+                    if (start > 0 and expr[start - 1] == '.') continue;
+                    const name = expr[start..i];
+                    if (context.isDisposed(name)) {
+                        try self.reporter.addError(
+                            .KORU030,
+                            location.line,
+                            location.column,
+                            "Use-after-discharge: binding '{s}' was already discharged and cannot be used",
+                            .{name},
+                        );
+                        found = true;
+                    }
+                }
+            }
+        }
+
+        return found;
+    }
+
     fn validateArgument(
         self: *PhantomSemanticChecker,
         arg: ast.Arg,
@@ -2825,8 +2909,19 @@ pub const PhantomSemanticChecker = struct {
         }
 
         if (expected_phantom == null) {
-            // No phantom state expected for this field
-            return true;
+            // No phantom state expected for this field — but disposal is a
+            // property of the BINDING, not of what the consumer wants. A
+            // discharged binding is stale everywhere, and the plain-typed sink
+            // (`std/io:print.ln`) is precisely where a stale taint does its
+            // damage. Returning unconditionally here made use-after-discharge
+            // fire only when the stale value flowed into ANOTHER phantom-aware
+            // tor — blind at the sink the tracking exists to guard
+            // (335_047/335_048).
+            //
+            // A no-phantom param can never BE the disposing site (disposal is
+            // marked only where a `<!state>` param consumes), so the
+            // re-validation exemption the consuming path needs does not apply.
+            return !try self.reportStaleReads(arg, context, location);
         }
 
         // Canonicalize expected base type

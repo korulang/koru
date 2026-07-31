@@ -1,20 +1,18 @@
-// PIN: an <instance!> resource in an error branch is also subject to KORU030 —
-// the auto-discharger does not distinguish happy vs error paths. When `append`
-// fails (| err), `owned` is still <instance!> at that branch's scope exit, and
-// both `free` and `release` match. KORU030 fires on the error branch.
+// PINS: the two arms settle the same `<instance!>` obligation differently and
+// both are legal — the `| ok` arm calls `std/string:free` explicitly, the
+// `| err` arm leaves `owned` undischarged and auto-discharge inserts the same
+// `free` there.
 //
-// Grounding:
-//   - from-page return:      koru_std/string.kz:51 (| ok *String<view!>)
-//   - take signature:        koru_std/string.kz:74 (~pub event take { s: *String<!view> })
-//   - take return:           koru_std/string.kz:75 (| instance *String<instance!>)
-//   - free signature:        koru_std/string.kz:94 (~pub event free { s: *String<!view|instance> })
-//   - release signature:     koru_std/string.kz:82 (~pub event release { s: *String<!instance> })
-//   - append in error branch: 610_002_string_ownership/input.kz:10 (| err _ |> std/string:free(...))
-//     that test fixes the error branch explicitly; we omit the fix here
+// The sibling half of 335_020: `free` is the only discharger `<instance!>` has,
+// because `std/string:release` is a bare-return transfer that re-issues an
+// obligation on the same resource and so is filtered out of the candidate set
+// (auto_discharge_inserter.zig:2511). One candidate means no ambiguity to
+// report — on either arm, happy or error.
 ~import std/string
+~import std/io
 
 ~std/string:from-page(text: "hello")
 | ok s |> std/string:take(s): owned |> std/string:append(s: owned, text: " world")
-        | ok |> std/string:free(s: owned)
+        | ok |> std/string:read(s: owned): text |> std/io:print.ln(text) |> std/string:free(s: owned)
         | err _ |> _
 | err _ |> _
