@@ -207,6 +207,27 @@ pub const Config = struct {
         try paths.put(try allocator.dupe(u8, "root"), try makePath(allocator, "."));
         try paths.put(try allocator.dupe(u8, "app"), try makePath(allocator, "{{ ENTRY }}"));
 
+        // `koru` is the ecosystem's libraries, and it is a DEFAULT for the same
+        // reason `std` is: a program that imports `koru/vaxis` is naming a known
+        // location, not making a claim about this machine's directory layout.
+        // Requiring every consumer to say where koru-libs lives — in a koru.json
+        // or in a `std/compiler:paths` block — is boilerplate repeated by everyone
+        // and owned by no one. Nine of the examples carried a koru.json whose
+        // entire content was this one alias.
+        //
+        // Two candidates, tried in order: vendored beside koru_std (an installed
+        // toolchain), then a sibling checkout (a development tree). This is a
+        // probe for where ONE library set is installed, not a substitute for a
+        // path that failed — both candidates are the same libraries in different
+        // install layouts, and when neither exists the import fails loudly as
+        // "module not found" rather than resolving to something else.
+        {
+            var koru_paths = try allocator.alloc([]const u8, 2);
+            koru_paths[0] = try allocator.dupe(u8, "{{ KORU_HOME }}/koru-libs");
+            koru_paths[1] = try allocator.dupe(u8, "{{ KORU_HOME }}/../koru-libs");
+            try paths.put(try allocator.dupe(u8, "koru"), koru_paths);
+        }
+
         return Config{
             .name = try allocator.dupe(u8, "unnamed"),
             .version = try allocator.dupe(u8, "0.0.0"),
