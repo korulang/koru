@@ -48,6 +48,24 @@ and however carefully the code was read. That question is cheap, it can be asked
 of a test, a diagnostic, a probe, or a CLI surface, and it is the only one of
 these that would have caught all four.
 
+## It does not only hide bugs — it manufactures false beliefs
+
+The harness printed `Running 0 tests... ✅ ALL TESTS PASSED` and exited 0 when a
+filter matched nothing. Chasing that, I concluded the harness silently dropped
+filtered runs of three or more tests, reported it as the highest-priority
+toolchain defect, and repeated it across several messages.
+
+It was not true. zsh does not word-split unquoted parameter expansions, so a list
+in `$VAR` arrived as one filter matching nothing. The harness matched correctly.
+The green verdict over zero tests was the only thing standing between me and that
+explanation — had it said "no tests matched", the shell mistake would have been
+obvious in seconds.
+
+So the cost of an unfalsifiable success is not bounded by the bug it conceals. It
+also produces confident wrong diagnoses in whoever reads it, which then get
+reported, prioritised, and acted on. A surface that cannot look broken will
+eventually make someone describe a defect that does not exist.
+
 ## Where the shape comes from
 
 It is not carelessness — each individual decision was reasonable. It arises where

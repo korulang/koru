@@ -1007,6 +1007,17 @@ PY
         run_coherence_watchers
     fi
 
+    # A filter that matched nothing is a MISTAKE, not a pass. Zero tests run
+    # means the question was never asked, and green is the worst possible answer
+    # to a question nobody asked — it is indistinguishable from a real pass.
+    if [ ${#TEST_FILTERS[@]} -gt 0 ] && [ "$TOTAL_TESTS" -eq 0 ]; then
+        echo -e "${RED}❌ No tests matched:${NC} $DISPLAY_FILTERS"
+        echo "   Nothing ran, so nothing passed."
+        echo "   Note: in a shell that does not word-split unquoted variables (zsh),"
+        echo "   a list in \$VAR arrives as ONE filter. Use \"\${ARR[@]}\" or literal names."
+        exit 1
+    fi
+
     if [ "$FAILED_COUNT" -gt 0 ] || [ "$BROKEN_TESTS" -gt 0 ] || [ "$NO_MARKER_COUNT" -gt 0 ] || [ -n "$FAILED_TESTS" ]; then
         echo -e "${RED}❌ Some tests failed${NC}"
         exit 1
@@ -1238,6 +1249,18 @@ fi
 if [ ${#TEST_FILTERS[@]} -eq 0 ] && [ "$SMOKE_MODE" = false ]; then
     run_coherence_watchers
 fi
+# A filter that matched nothing is a MISTAKE, not a pass. Zero tests run
+# means the question was never asked, and green is the worst possible answer
+# to a question nobody asked — it is indistinguishable from a real pass.
+if [ ${#TEST_FILTERS[@]} -gt 0 ] && [ "$TOTAL_TESTS" -eq 0 ]; then
+    echo -e "${RED}❌ No tests matched:${NC} $DISPLAY_FILTERS"
+    echo "   Nothing ran, so nothing passed."
+    echo "   Note: in a shell that does not word-split unquoted variables (zsh),"
+    echo "   a list in \$VAR arrives as ONE filter. Use \"\${ARR[@]}\" or literal names."
+    exit 1
+fi
+
+
 # Exit with appropriate code
 # Success = all regression tests passed AND (unit tests passed OR skipped)
 if [ -z "$FAILED_TESTS" ]; then
