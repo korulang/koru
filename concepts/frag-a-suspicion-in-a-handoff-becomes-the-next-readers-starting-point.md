@@ -57,6 +57,46 @@ first hour.
 Best of all, prefer the question to the answer: *"find out why the guard fires
 here"* points at the same place without pre-committing what will be found.
 
+## It happened again, four hours after this was written
+
+The `012` commission carried this, from me, in the brief:
+
+> *⭐ THE ASYMMETRY THAT IS PROBABLY THE DIAGNOSIS: in the loop cluster, the
+> rejections pass while the carries fail… Refusing to carry works; carrying does
+> not. Read that before designing anything.*
+
+The agent's finding: **it is a spelling artifact, not a conservation gap.** The
+rejections happen to use branch arms; the legal carry (`330_074`) is green. The
+asymmetry was an accident of which spellings the tests were authored in, and I
+had promoted it to "probably the diagnosis" and told the agent to read it
+*first*.
+
+The same brief also asserted `330_120` "needs no ruling — cause is already in
+its own header." It pin-conflicts with **green** `330_097`, a `MUST_ERROR`
+demanding the opposite verdict for the identical shape. Closing one inverts the
+other. That is a ruling, and I had explicitly written that it was not.
+
+## The part that matters: writing it down did not help
+
+This concept existed, in the corpus, when I wrote that brief. I had authored it
+that morning, from the same failure, and its rule is explicit — *mark a
+suspicion as costing nothing to discard, put it after the evidence, prefer the
+question to the answer.*
+
+I then wrote the guess **into the evidence**, decorated with a ⭐, phrased as an
+instruction to read before designing.
+
+So: **a belief recorded in the corpus does not self-apply at the moment it is
+needed.** The failure is not ignorance of the rule. It is that a suspicion, at
+the moment of writing, does not *feel* like a claim — it feels like context, like
+being helpful, like handing over what you noticed. The rule is about a category
+the writer does not experience themselves as being in.
+
+That suggests the correction has to live at the point of writing rather than in
+a document to be recalled. Something structural: suspicions confined to a
+labelled section at the end of a brief, so the act of placing one requires
+naming it as one. Not tested.
+
 ## Open
 
 - This is adjacent to the standing correction that the stamp covers design
