@@ -89,3 +89,33 @@ numbering, not a rule.
 - [[frag-a-misnamed-assertion-is-silently-no-assertion]] is the first instance,
   written before the pattern was visible. It states the rule in one line near the
   end; this concept is that line, promoted, once three more instances arrived.
+
+## The sharpest instance: the wall's own message describes what it cannot see
+
+`std/store` traps a STALE row handle — one whose row was removed — and pins it
+both directions, write (690_115) and read (690_116). The resolve that does the
+trapping also carries a second refusal, verbatim at `koru_std/store.kz:1864`:
+
+> the value is not a handle this store issued (handles come from `| row` and
+> row cursors)
+
+That message has never been able to fire. `__koru_resolve` checks slot bounds
+and generation and nothing store-specific, so two stores of the same shape
+filled in the same order mint identical `slot|gen` values and each other's
+handles resolve cleanly. Measured: a handle from `src` addressing `dst[r]`
+writes dst's row and prints the wrong value, silently (690_196).
+
+So the symmetry here is not stale-vs-fresh, it is **wrong-row vs wrong-store**,
+and only the first half was ever built. What makes this the sharpest instance
+in this belief is that no inference was required to notice it: **the guard
+states the guarantee it does not provide, in its own error text.** Anyone
+reading the resolve would come away believing foreign handles are caught.
+
+- **A diagnostic is not evidence of a check.** An error message is a claim
+  about the code's intent, and intent is exactly what rots. Grep the message,
+  then find the branch that raises it, then ask what reaches that branch.
+- **Where a wall traps a value's staleness, ask what traps its provenance.**
+  Those are different questions and the first does not imply the second.
+
+It was found by pointing a borrowed workload at the store, not by review — see
+`frag-a-corpus-exercises-its-authors-idioms`.
