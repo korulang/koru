@@ -1,14 +1,11 @@
-// Test 110: Transform Annotation Requires Comptime (MUST_ERROR)
-// Tests that [transform] annotation without [comptime] fails compilation
+// PINS: `[transform]` without `[comptime]` is refused at the declaration.
 //
-// Expected Error: "Event 'badTransform' has [transform] annotation but is missing [comptime]"
+// - [comptime] declares WHERE: the tor emits into the backend.
+// - [transform] declares WHAT: a transformation intent.
 //
-// Design Rationale:
-// - [comptime] controls WHERE (emits to backend_output_emitted.zig)
-// - [transform] controls WHAT (declares transformation intent)
-// - BOTH are required for transforms to work
-// - Without [comptime], the transform won't be available and will fail silently
-// - This validation catches the mistake immediately
+// Both are required. With only [transform], the tor is never registered as a
+// pass, so every call site silently does nothing — the shape this wall exists
+// to make loud.
 
 ~[transform]tor badTransform { count: i32 } -> (result: i32)
 

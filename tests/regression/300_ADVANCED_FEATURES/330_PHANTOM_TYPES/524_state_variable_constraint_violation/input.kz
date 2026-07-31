@@ -1,2 +1,6 @@
+// PINS: a state VARIABLE constraint is checked against the concrete state.
+// `process` accepts `*Data<M'owned|borrowed>`; `gc-alloc` hands back
+// `*Data<gc>`, which is neither member, so the call is refused and the
+// diagnostic names both the constraint and the state that failed it.
 ~import app/data
-~app/data:gc-alloc(): a |> app/data:process(d: a)  // ❌ ERROR: [gc] doesn't satisfy M'owned|borrowed
+~app/data:gc-alloc(): a |> app/data:process(d: a)

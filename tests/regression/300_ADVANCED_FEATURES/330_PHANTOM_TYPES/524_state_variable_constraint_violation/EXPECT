@@ -1,1 +1,4 @@
-CONTAINS branches are not handled
+CONTAINS error[KORU030]
+CONTAINS Phantom state mismatch
+CONTAINS M'owned|borrowed
+CONTAINS app.data:gc

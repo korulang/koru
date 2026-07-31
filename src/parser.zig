@@ -2395,6 +2395,28 @@ pub const Parser = struct {
             }
         }
 
+        // `[transform]` declares WHAT (a transformation intent); `[comptime]`
+        // declares WHERE (it emits into the backend). A transform tor without
+        // `[comptime]` is never registered as a pass, so it silently does
+        // nothing at every call site — the author's mistake is invisible.
+        //
+        // The invariant is universal and was, until now, unenforced: MEASURED
+        // 2026-07-31, every `[transform]` tor declaration in koru_std/ and
+        // tests/ carries `[comptime]`. The lone exception is 210_029, the test
+        // that exists to have this refused.
+        if (annotation_parser.hasPart(all_annotations.items, "transform") and
+            !annotation_parser.hasPart(all_annotations.items, "comptime"))
+        {
+            try self.reporter.addError(
+                .PARSE003,
+                event_line_index + 1,
+                1,
+                "tor '{s}' has [transform] but is missing [comptime] — [transform] declares the intent, [comptime] is what emits the pass; without both the transform is never registered and every call site silently does nothing",
+                .{if (path.segments.len > 0) path.segments[path.segments.len - 1] else "?"},
+            );
+            return error.ParseError;
+        }
+
         // Copy annotations verbatim — comptime is explicit, never synthesized.
         var annotations_copy = try self.allocator.alloc([]const u8, all_annotations.items.len);
         for (all_annotations.items, 0..) |ann, i| {
