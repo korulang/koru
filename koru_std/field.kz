@@ -577,7 +577,7 @@ var __field_noop_fba = std.heap.FixedBufferAllocator.init(&__field_noop_buf);
             const lit = std.fmt.allocPrint(allocator, "0x{x}, ", .{WM.mask(p, r)}) catch unreachable;
             code.appendSlice(allocator, lit) catch unreachable;
         }
-        const mid = std.fmt.allocPrint(allocator, "}};\n    var w: usize = 0;\n    while (w + {d} <= fullWords) {{\n", .{p}) catch unreachable;
+        const mid = std.fmt.allocPrint(allocator, "}};\n    const kb = fullWords / {d};\n    for (0..kb) |kbi| {{\n        const w = kbi * {d};\n", .{ p, p }) catch unreachable;
         code.appendSlice(allocator, mid) catch unreachable;
         var c: usize = 0;
         while (c < p) : (c += 1) {
@@ -585,7 +585,7 @@ var __field_noop_fba = std.heap.FixedBufferAllocator.init(&__field_noop_buf);
             const ln = std.fmt.allocPrint(allocator, "        data[w + {d}] |= 0x{x};\n", .{ c, WM.mask(p, rc) }) catch unreachable;
             code.appendSlice(allocator, ln) catch unreachable;
         }
-        const tl = std.fmt.allocPrint(allocator, "        w += {d};\n    }}\n    var r: usize = (w * {d}) % {d};\n    for (w..fullWords) |wi| {{ data[wi] |= wm[r]; r = (r + {d}) % {d}; }}\n    if (tailBits > 0) data[fullWords] |= wm[r] & ((@as(u64, 1) << @as(u6, @intCast(tailBits))) - 1);\n    data[{d}] &= ~(@as(u64, 1) << {d});\n}}\n\n", .{ p, rstep, p, rstep, p, i >> 6, i & 63 }) catch unreachable;
+        const tl = std.fmt.allocPrint(allocator, "    }}\n    const w = kb * {d};\n    var r: usize = (w * {d}) % {d};\n    for (w..fullWords) |wi| {{ data[wi] |= wm[r]; r = (r + {d}) % {d}; }}\n    if (tailBits > 0) data[fullWords] |= wm[r] & ((@as(u64, 1) << @as(u6, @intCast(tailBits))) - 1);\n    data[{d}] &= ~(@as(u64, 1) << {d});\n}}\n\n", .{ p, rstep, p, rstep, p, i >> 6, i & 63 }) catch unreachable;
         code.appendSlice(allocator, tl) catch unreachable;
     }
     // sparse path (stride >= 64): 8-way byte scatter
@@ -612,7 +612,7 @@ var __field_noop_fba = std.heap.FixedBufferAllocator.init(&__field_noop_buf);
                 const ol = std.fmt.allocPrint(allocator, "    const o{d} = ((bi + stride * {d}) >> 3) - base;\n", .{ n, n }) catch unreachable;
                 code.appendSlice(allocator, ol) catch unreachable;
             }
-            code.appendSlice(allocator, "    var byteIdx = base; const ge = if (bitCount > stride * 7) bitCount - stride * 7 else 0;\n    while (bi < ge) {\n") catch unreachable;
+            code.appendSlice(allocator, "    const ge = if (bitCount > stride * 7) bitCount - stride * 7 else 0;\n    const kn = if (ge > bi) (ge - bi + step8 - 1) / step8 else 0;\n    var byteIdx = base;\n    for (0..kn) |_| {\n") catch unreachable;
             n = 0;
             while (n < 8) : (n += 1) {
                 const bit = (fr + n * st) & 7;
@@ -620,7 +620,7 @@ var __field_noop_fba = std.heap.FixedBufferAllocator.init(&__field_noop_buf);
                 const sl = std.fmt.allocPrint(allocator, "        bytes[byteIdx + o{d}] |= 0x{x};\n", .{ n, mask }) catch unreachable;
                 code.appendSlice(allocator, sl) catch unreachable;
             }
-            code.appendSlice(allocator, "        byteIdx += stride; bi += step8;\n    }\n    while (bi < bitCount) : (bi += stride) bytes[bi >> 3] |= @as(u8, 1) << @as(u3, @intCast(bi & 7));\n}\n\n") catch unreachable;
+            code.appendSlice(allocator, "        byteIdx += stride;\n    }\n    bi += kn * step8;\n    const kt = if (bitCount > bi) (bitCount - bi + stride - 1) / stride else 0;\n    for (0..kt) |_| { bytes[bi >> 3] |= @as(u8, 1) << @as(u3, @intCast(bi & 7)); bi += stride; }\n}\n\n") catch unreachable;
         }
     }
     // sparse dispatch LUT: 64 fn pointers indexed by (from&7)*8 + (stride&7).
