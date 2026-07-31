@@ -1,33 +1,38 @@
-// PIN (design gap — RED): std/io:read-file allocates a []const u8 via
-// koru_allocator() (io.kz line 185: file.readToEndAlloc) and returns it
-// in the `| ok []const u8` branch. The caller uses the content and then
-// drops it — no free call, no phantom obligation, no checker warning.
+// PIN (RED — waiting on a spelling, not on a fix): `std/io:read-file` allocates
+// its result with `koru_allocator()` (io.kz:189, `file.readToEndAlloc`) and hands
+// it back as a bare `| ok string` (io.kz:174). The caller below prints it and
+// drops it. The buffer lives until process exit and no pass says a word, because
+// the branch payload carries no phantom for the checker to hold on to.
 //
-// The leak is REAL at the allocator level: the `content` slice lives until
-// process exit. But Koru's obligation system has no handle on it because
-// `[]const u8` carries no phantom state (unlike *String<view!> from std/string).
+// The machinery is NOT missing. An obligation on a primitive `string` already
+// works — 335_047 declares `-> string<tainted!>` and the checker tracks it
+// through a discharge and now through a stale read. What is missing is the
+// SPELLING on the IO surface: what the allocation label is called, and what the
+// disposer that consumes it is called.
 //
-// This pin documents the TYPE SYSTEM GAP: the bare-slice IO surface is
-// invisible to the phantom checker. The compiler accepts this program today.
-// When a `[]const u8<allocated!>` surface is added to io.kz, this test
-// becomes green-reject and the design gap is closed.
+// THE QUESTION FOR LARS (do not answer it by inventing one):
+//   1. `~pub tor read-file { path: string } | ok string<???!> | …`
+//      — what is the label? `allocated`, `owned`, something else?
+//   2. What consumes it? A new `std/io` tor taking `<!???>`, or does
+//      `std/string:free`-shaped ownership already own this and IO should hand
+//      back a `*String<view!>` instead of a bare `string`?
+//   3. `read-stdin`, `read-line`, and every other `readToEndAlloc` path in
+//      io.kz have the same hole (335_043 is the stdin twin) — one label for all
+//      of them, or per-tor?
 //
-// PREDICTION: RED PIN (compiler accepts; no phantom = no check).
-// The expected error below is what SHOULD fire after the gap is closed.
+// EXPECT stays `CONTAINS allocated` as the provisional pin. It moves to whatever
+// Lars spells, and only then.
 //
-// Grounding:
-//   ~import syntax             — 330_007/input.kz line 1
-//   std/io:read-file event     — koru_std/io.kz line 169: event read-file { path }
-//   | ok []const u8 branch     — koru_std/io.kz line 170
-//   | not-found branch         — koru_std/io.kz line 171
-//   | failed branch            — koru_std/io.kz line 172
-//   std/io:print.ln usage      — 330_068/input.kz line 26 (positive test)
+// Grounding (verified 2026-07-31):
+//   read-stdin decl      — koru_std/io.kz:150
+//   read-file decl       — koru_std/io.kz:173, `| ok string` at 174
+//   the allocation       — koru_std/io.kz:189
+//   obligation on a bare `string` works — 335_047/input.k:39
 
 ~import std/io
 
-// Read a file and use its content — then drop the slice without freeing.
-// The allocator-owned []const u8 leaks. No phantom obligation exists to
-// force a free() call, so the phantom checker is blind.
+// Read a file and use its content, then drop it. The allocator-owned buffer
+// leaks; no phantom exists on the payload, so nothing refuses.
 ~std/io:read-file(path: "data.txt")
 | ok content |> std/io:print.ln("{{ content:s }}")
 | not-found |> _

@@ -56,6 +56,15 @@ pub const ShapeChecker = struct {
     /// (ruled 2026-07-02); only the declaring event's impl may fire its arms.
     current_impl_event: ?*const ast.EventDecl = null,
 
+    /// The program carries `~test(...)` blocks. A test body reaches this pass as
+    /// an UNPARSED `Source` string — std/testing lowers it at test-generation,
+    /// which runs AFTER check-structure (compiler.kz:757). The mocks inside it
+    /// (`~payment.charge => success "tx123"`) ARE implementations, and no walk of
+    /// this AST can find them. So while test blocks are present, "invoked but has
+    /// no implementation ANYWHERE" is not a claim this pass is in a position to
+    /// make, and KORU047 stands down (395_008).
+    program_has_test_blocks: bool = false,
+
     /// PRESENCE (`if(arm)` / `when arm`, ruled 2026-07-03): optional-arm names
     /// whose presence is established on the current walk path — pushed entering
     /// the `| then` of `if(<arm>)` and any continuation guarded `when <arm>`,
@@ -217,9 +226,30 @@ pub const ShapeChecker = struct {
         return true;
     }
     
+    /// A lowered `~test(...)` block. std/testing's `test` keyword is a
+    /// TRANSFORM: by the time check-structure runs, each test body has already
+    /// become an `inline_code` item spelling
+    /// `const test_<name>_module = struct { ... }` (koru_std/testing.kz:313
+    /// mints that name). The mocks the body declared —
+    /// `~payment.charge => success "tx123"` — live inside that generated module
+    /// and ARE implementations, but they are TEXT here, not items this pass can
+    /// resolve. See `program_has_test_blocks`.
+    fn itemIsLoweredTestModule(item: *const ast.Item) bool {
+        if (item.* != .inline_code) return false;
+        const code = item.inline_code.code;
+        return std.mem.startsWith(u8, code, "const test_") and
+            std.mem.indexOf(u8, code, "_module = struct") != null;
+    }
+
     /// Check an entire source file for shape consistency
     pub fn checkSourceFile(self: *ShapeChecker, source_file: *const ast.Program) !void {
         self.main_module_name = source_file.main_module_name;
+        for (source_file.items) |*item| {
+            if (itemIsLoweredTestModule(item)) {
+                self.program_has_test_blocks = true;
+                break;
+            }
+        }
         // First pass: collect all events, procs, labels, subflows
         for (source_file.items) |*item| {  // Changed to pointer iteration!
             switch (item.*) {
@@ -753,6 +783,9 @@ pub const ShapeChecker = struct {
 
         // A subflow-implementation head is the implementation, not a call.
         if (is_impl_head) return;
+
+        // An implementation may be sitting in an unparsed `~test` body.
+        if (self.program_has_test_blocks) return;
 
         // Never-emitted / never-run events cannot reach a live stub.
         if (event.hasAnnotation("norun")) return;
