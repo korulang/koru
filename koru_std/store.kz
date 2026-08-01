@@ -276,11 +276,45 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             for (names) |x| if (std.mem.eql(u8, x, n)) return true;
             return false;
         }
-        fn storeRefsContH(alloc: std.mem.Allocator, cont: *ast.Continuation, names: []const []const u8, ident: []const []const u8) void {
+        fn storeRefsContH(alloc: std.mem.Allocator, cont: *ast.Continuation, names: []const []const u8, ident: []const []const u8, bound: []const []const u8) void {
             const ast2 = @import("ast");
+            // A continuation's OWN bindings shadow store names (690_090): a
+            // row binding (`! query items`) or shape-destructure makes
+            // `<store>.<field>` mean THE ROW for everything under the arm. The
+            // Walk runs before the site transform, so without the skip the
+            // binding loses its name to the cell rewrite and the body reads the
+            // whole column array where the row's value belongs.
+            var own_buf: [16][]const u8 = undefined;
+            var own_len: usize = 0;
+            if (cont.binding) |b| {
+                own_buf[own_len] = b;
+                own_len += 1;
+            }
+            for (cont.destructure) |df| {
+                own_buf[own_len] = df.name;
+                own_len += 1;
+            }
+            const own = own_buf[0..own_len];
+            const bound_all: []const []const u8 = if (own_len == 0)
+                bound
+            else blk: {
+                const all = alloc.alloc([]const u8, bound.len + own_len) catch unreachable;
+                @memcpy(all[0..bound.len], bound);
+                @memcpy(all[bound.len..], own);
+                break :blk all;
+            };
+            const hit = struct {
+                fn inSet(xs: []const []const u8, n: []const u8) bool {
+                    for (xs) |x| if (std.mem.eql(u8, x, n)) return true;
+                    return false;
+                }
+            };
             if (cont.condition) |cond| {
                 var cnd = cond;
-                for (names) |nm| cnd = storeRefsH(alloc, cnd, nm, isIn(ident, nm));
+                for (names) |nm| {
+                    if (hit.inSet(bound_all, nm)) continue;
+                    cnd = storeRefsH(alloc, cnd, nm, isIn(ident, nm));
+                }
                 @constCast(cont).condition = cnd;
             }
             if (cont.node) |*n| {
@@ -300,11 +334,17 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                         if (!skip) {
                             for (inv.args) |*a| {
                                 var v = a.value;
-                                for (names) |nm| v = storeRefsH(alloc, v, nm, isIn(ident, nm));
+                                for (names) |nm| {
+                                    if (hit.inSet(bound_all, nm)) continue;
+                                    v = storeRefsH(alloc, v, nm, isIn(ident, nm));
+                                }
                                 @constCast(a).value = v;
                                 if (a.expression_value) |ev| {
                                     var t = ev.text;
-                                    for (names) |nm| t = storeRefsH(alloc, t, nm, isIn(ident, nm));
+                                    for (names) |nm| {
+                                        if (hit.inSet(bound_all, nm)) continue;
+                                        t = storeRefsH(alloc, t, nm, isIn(ident, nm));
+                                    }
                                     const fresh = alloc.create(ast2.CapturedExpression) catch unreachable;
                                     fresh.* = ev.*;
                                     fresh.text = t;
@@ -317,22 +357,28 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                         // args alone is too late; the freeze lives here (690_074).
                         if (inv.inline_body) |ib| {
                             var t = ib;
-                            for (names) |nm| t = storeRefsH(alloc, t, nm, isIn(ident, nm));
+                            for (names) |nm| {
+                                if (hit.inSet(bound_all, nm)) continue;
+                                t = storeRefsH(alloc, t, nm, isIn(ident, nm));
+                            }
                             inv.inline_body = t;
                         }
                     },
                     .inline_code => {
                         var t = n.inline_code;
-                        for (names) |nm| t = storeRefsH(alloc, t, nm, isIn(ident, nm));
+                        for (names) |nm| {
+                            if (hit.inSet(bound_all, nm)) continue;
+                            t = storeRefsH(alloc, t, nm, isIn(ident, nm));
+                        }
                         n.* = .{ .inline_code = t };
                     },
                     else => {},
                 }
             }
-            for (cont.continuations) |*c| storeRefsContH(alloc, @constCast(c), names, ident);
+            for (cont.continuations) |*c| storeRefsContH(alloc, @constCast(c), names, ident, bound_all);
         }
         fn storeRefsFlowH(alloc: std.mem.Allocator, f: *ast.Flow, names: []const []const u8, ident: []const []const u8) void {
-            storeRefsContH(alloc, &f.body, names, ident);
+            storeRefsContH(alloc, &f.body, names, ident, &[_][]const u8{});
             if (f.inline_body) |ib| {
                 var t = ib;
                 for (names) |nm| t = storeRefsH(alloc, t, nm, isIn(ident, nm));
@@ -1808,7 +1854,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 else => {},
             }
         }
-        for (pwatch_arms.items) |*wa| H.storeRefsContH(allocator, &wa.cont, pstore_names.items, pstore_identity.items);
+        for (pwatch_arms.items) |*wa| H.storeRefsContH(allocator, &wa.cont, pstore_names.items, pstore_identity.items, &[_][]const u8{});
 
         // Owned-column stores build insert/take/teardown (690_053), the READ
         // surface (query/preorder, 690_060: an owned column projects as a BARE
@@ -3382,7 +3428,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                         .module = alloc.dupe(u8, module) catch unreachable,
                     } }) catch unreachable;
                     var body_clone = ast_functional.cloneContinuation(alloc, arm_body) catch unreachable;
-                    H.storeRefsContH(alloc, &body_clone, pnames, pident);
+                    H.storeRefsContH(alloc, &body_clone, pnames, pident, &[_][]const u8{});
                     const lbody_node = body_clone.node.?;
                     items.append(alloc, ast.Item{ .flow = ast.Flow{
                         .body = ast.rootSite(lbody_node.invocation, body_clone.continuations, loc),
@@ -4055,7 +4101,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         // Invocation.inline_body is the FREEZE of an earlier template expand
         // (`if`/`for`) and MUST be rewritten even on std.store sites skipped
         // for args (690_074).
-        fn rewriteNode(alloc: std.mem.Allocator, n: *ast.Node, names: []const []const u8, prefixes: []const []const u8, idents: []const []const u8) void {
+        fn rewriteNode(alloc: std.mem.Allocator, n: *ast.Node, names: []const []const u8, prefixes: []const []const u8, idents: []const []const u8, bound: []const []const u8) void {
             // Same temporary-capture rule as storeRefsContH: never `|*inv|`
             // on `switch (n.*)`; mutate `n.invocation` in place (690_074).
             switch (n.*) {
@@ -4070,7 +4116,10 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                     if (!skip_args) {
                         for (inv.args) |*a| {
                             var v = a.value;
-                            for (names, prefixes) |nm, px| v = storeRefs(alloc, v, nm, px, isIn(idents, nm));
+                            for (names, prefixes) |nm, px| {
+                                if (isIn(bound, nm)) continue;
+                                v = storeRefs(alloc, v, nm, px, isIn(idents, nm));
+                            }
                             @constCast(a).value = v;
                             // Expression args carry their text separately — the
                             // emitter reads THAT, not .value. cloneContinuation
@@ -4079,7 +4128,10 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                             // rather than mutating shared state.
                             if (a.expression_value) |ev| {
                                 var t = ev.text;
-                                for (names, prefixes) |nm, px| t = storeRefs(alloc, t, nm, px, isIn(idents, nm));
+                                for (names, prefixes) |nm, px| {
+                                    if (isIn(bound, nm)) continue;
+                                    t = storeRefs(alloc, t, nm, px, isIn(idents, nm));
+                                }
                                 const fresh = alloc.create(ast.CapturedExpression) catch unreachable;
                                 fresh.* = ev.*;
                                 fresh.text = t;
@@ -4089,13 +4141,19 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                     }
                     if (inv.inline_body) |ib| {
                         var t = ib;
-                        for (names, prefixes) |nm, px| t = storeRefs(alloc, t, nm, px, isIn(idents, nm));
+                        for (names, prefixes) |nm, px| {
+                            if (isIn(bound, nm)) continue;
+                            t = storeRefs(alloc, t, nm, px, isIn(idents, nm));
+                        }
                         inv.inline_body = t;
                     }
                 },
                 .inline_code => {
                     var t = n.inline_code;
-                    for (names, prefixes) |nm, px| t = storeRefs(alloc, t, nm, px, isIn(idents, nm));
+                    for (names, prefixes) |nm, px| {
+                        if (isIn(bound, nm)) continue;
+                        t = storeRefs(alloc, t, nm, px, isIn(idents, nm));
+                    }
                     n.* = .{ .inline_code = t };
                 },
                 // A PRODUCE arm (`peek -> s.v`, `| c _ -> s.v`) is an expression
@@ -4104,25 +4162,54 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 // undeclared identifier in Zig, from valid Koru (110_022).
                 .expression => {
                     var t = n.expression;
-                    for (names, prefixes) |nm, px| t = storeRefs(alloc, t, nm, px, isIn(idents, nm));
+                    for (names, prefixes) |nm, px| {
+                        if (isIn(bound, nm)) continue;
+                        t = storeRefs(alloc, t, nm, px, isIn(idents, nm));
+                    }
                     n.* = .{ .expression = t };
                 },
                 else => {},
             }
         }
-        fn rewriteCont(alloc: std.mem.Allocator, cont: *ast.Continuation, names: []const []const u8, prefixes: []const []const u8, idents: []const []const u8) void {
+        fn rewriteCont(alloc: std.mem.Allocator, cont: *ast.Continuation, names: []const []const u8, prefixes: []const []const u8, idents: []const []const u8, bound: []const []const u8) void {
+            // A continuation's OWN bindings shadow store names (690_090) — the
+            // singleton twin of the plural walk's skip. A row binding or
+            // shape-destructure makes `<store>.<field>` mean the row, so the
+            // cell rewrite must not reach it.
+            var own_buf: [16][]const u8 = undefined;
+            var own_len: usize = 0;
+            if (cont.binding) |b| {
+                own_buf[own_len] = b;
+                own_len += 1;
+            }
+            for (cont.destructure) |df| {
+                own_buf[own_len] = df.name;
+                own_len += 1;
+            }
+            const own = own_buf[0..own_len];
+            const bound_all: []const []const u8 = if (own_len == 0)
+                bound
+            else blk: {
+                const all = alloc.alloc([]const u8, bound.len + own_len) catch unreachable;
+                @memcpy(all[0..bound.len], bound);
+                @memcpy(all[bound.len..], own);
+                break :blk all;
+            };
             // Guards ride as arm conditions at the write site - their
             // cross-store reads rewrite to the cells too (690_013).
             if (cont.condition) |cond| {
                 var cnd = cond;
-                for (names, prefixes) |nm, px| cnd = storeRefs(alloc, cnd, nm, px, isIn(idents, nm));
+                for (names, prefixes) |nm, px| {
+                    if (isIn(bound_all, nm)) continue;
+                    cnd = storeRefs(alloc, cnd, nm, px, isIn(idents, nm));
+                }
                 @constCast(cont).condition = cnd;
             }
-            if (cont.node) |*n| rewriteNode(alloc, @constCast(n), names, prefixes, idents);
-            for (cont.continuations) |*c| rewriteCont(alloc, @constCast(c), names, prefixes, idents);
+            if (cont.node) |*n| rewriteNode(alloc, @constCast(n), names, prefixes, idents, bound_all);
+            for (cont.continuations) |*c| rewriteCont(alloc, @constCast(c), names, prefixes, idents, bound_all);
         }
         fn rewriteFlow(alloc: std.mem.Allocator, f: *ast.Flow, names: []const []const u8, prefixes: []const []const u8, idents: []const []const u8) void {
-            rewriteCont(alloc, &f.body, names, prefixes, idents);
+            rewriteCont(alloc, &f.body, names, prefixes, idents, &[_][]const u8{});
             if (f.inline_body) |ib| {
                 var t = ib;
                 for (names, prefixes) |nm, px| t = storeRefs(alloc, t, nm, px, isIn(idents, nm));
@@ -4158,9 +4245,9 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         for (px) |*e| e.* = "";
         break :blk_lp px;
     };
-    for (watch_arms.items) |*wa| Rewrite.rewriteCont(allocator, &wa.cont, store_names.items, local_prefixes, store_idents.items);
-    for (field_iceptors.items) |*fi| Rewrite.rewriteCont(allocator, &fi.cont, store_names.items, local_prefixes, store_idents.items);
-    for (updated_iceptors.items) |*ui| Rewrite.rewriteCont(allocator, ui, store_names.items, local_prefixes, store_idents.items);
+    for (watch_arms.items) |*wa| Rewrite.rewriteCont(allocator, &wa.cont, store_names.items, local_prefixes, store_idents.items, &[_][]const u8{});
+    for (field_iceptors.items) |*fi| Rewrite.rewriteCont(allocator, &fi.cont, store_names.items, local_prefixes, store_idents.items, &[_][]const u8{});
+    for (updated_iceptors.items) |*ui| Rewrite.rewriteCont(allocator, ui, store_names.items, local_prefixes, store_idents.items, &[_][]const u8{});
 
     // ------------------------------------------------------------------
     // Unit 1: the module-scope typed cell (slice one, unchanged).
