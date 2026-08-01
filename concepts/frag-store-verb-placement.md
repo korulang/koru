@@ -162,6 +162,55 @@ the flow becomes a proc implementing the same event, because a proc impl binds
 every event input by construction. That is the third placement road beside
 inline splice and the lifted run unit.
 
+## The split is two AXES, and the vocabulary fused a corner (2026-08-01)
+
+The opening section reads the verb surface as one line — comptime installation
+versus runtime act — and placement follows from it. That line is real, but it is
+one of **two** independent axes, and reading it as the whole story is what let
+the vocabulary end up backwards:
+
+|              | standing subscription | sweeps at its site |
+|--------------|-----------------------|--------------------|
+| `query`      | yes                   | yes (linear)       |
+| `preorder`   | no                    | yes (DFS)          |
+| `watch !row` | yes                   | no                 |
+
+`query` occupies a **fused** corner: it installs a standing rule *and* reads the
+rows present at its program position. That fusion is the reason the surface
+teaches the wrong thing in both directions at once. The verb that sounds like a
+read is the one that cannot sit in a nested position — because of the half of it
+nobody names — while the momentary read that *can* nest is called `sweep`, which
+sounds like it consumes and does not. Neither name is wrong about the thing it
+does; each is wrong about the thing it also does, or doesn't.
+
+The corner nothing could spell was standing-WITHOUT-sweep. `watch ! row`
+(690_236) is that corner, and once it exists the fusion is decomposable: the
+standing half moves to `watch`, where every other reactive rule already lives,
+and `query` is free to name the read.
+
+**The implementation had encoded the fusion as a single boolean.** `is_preorder`
+stood in for both axes and gave the right answer at every existing call site,
+because no corner had yet made the two disagree. It was not untidy — it was a
+live defect in waiting: the stripe filtered on `!is_preorder`, and the stripe
+drives whole passes by *chaining each rule's qsweep*, so the first standing-only
+rule to exist walked into that chain and emitted a call to a unit nobody built.
+A boolean covering two axes is not a simplification; it is a coincidence holding
+until the space is fully populated.
+
+**The general form, and why it took an app to see it.** A vocabulary that grew
+one verb at a time will name the corners that were *reached*, not the corners
+that *exist* — and the gap is invisible from inside, because every existing
+program type-checks and every existing name is locally defensible. What surfaced
+it was a user reading `std/store:query` in a design conversation and saying it
+sounded like the wrong thing. The compiler had been describing the split
+correctly in its own comments for weeks (`store.kz`: "the MOMENTARY twin of
+query… `sweep` is a RUNTIME read") while the surface said the opposite.
+
+**Open:** the rename itself — today's read-only `query` sites become the new
+`query` (renamed from `sweep`), reactive ones become `watch ! row`, and fused
+ones become two explicit lines. Fusing them was the defect; preserving the
+fusion under a new name would only move it.
+
 ## What this bought the numeric reading
 
 An all-f64 container works — declared, inserted, written through the sweep

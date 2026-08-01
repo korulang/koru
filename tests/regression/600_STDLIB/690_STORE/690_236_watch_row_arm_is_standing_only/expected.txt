@@ -1,0 +1,2 @@
+reacted n=2
+reacted n=3

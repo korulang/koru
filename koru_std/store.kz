@@ -234,6 +234,16 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             }
             return true;
         }
+        /// Is this watch arm the ROW-scoped one — `! row <bind>` — rather than
+        /// a per-column arm? A column actually named `row` wins: the arm names
+        /// what you are watching, and a real column is the more specific claim.
+        fn isRowArm(field_names: []const []const u8, branch: []const u8) bool {
+            if (!std.mem.eql(u8, std.mem.trim(u8, branch, " "), "row")) return false;
+            for (field_names) |fnm| {
+                if (std.mem.eql(u8, fnm, "row")) return false;
+            }
+            return true;
+        }
         fn isIdentChar(ch: u8) bool {
             return (ch >= 'a' and ch <= 'z') or (ch >= 'A' and ch <= 'Z') or (ch >= '0' and ch <= '9') or ch == '_' or ch == '-';
         }
@@ -1297,6 +1307,13 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             const wf = &pi.flow;
             if (!H.isStoreInv(wf, "watch", store_name)) continue;
             for (wf.body.continuations) |*wc| {
+                // `! row <bind>` is the ROW-scoped reactive arm: it names no
+                // column, so it is collected as a standing query site further
+                // down rather than as a per-field watch arm. A store that
+                // genuinely HAS a column called `row` keeps it — the field
+                // lookup is what decides, so no existing program changes
+                // meaning.
+                if (H.isRowArm(field_names, wc.branch)) continue;
                 const fidx: usize = blk: {
                     for (field_names, 0..) |fname, i| {
                         if (std.mem.eql(u8, std.mem.trim(u8, wc.branch, " "), fname)) break :blk i;
@@ -1353,6 +1370,20 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             // row scan. Preorder is a program-position walk: it takes no
             // standing insert subscription and joins no stripe.
             is_preorder: bool,
+            /// Does this site sweep the rows present at its program position?
+            ///
+            /// Row-scoped sites vary on TWO independent axes and the verb name
+            /// picks a corner:
+            ///
+            ///              | standing subscription | sweeps at site
+            ///   `query`    |          yes          |      yes  (linear)
+            ///   `preorder` |          no           |      yes  (DFS)
+            ///   `watch !row|          yes          |      no
+            ///
+            /// `is_preorder` alone conflated the two — it happened to work
+            /// only because no corner needed "subscribes but doesn't sweep"
+            /// until `watch ! row` did.
+            sweeps_at_site: bool,
         };
         var qsites = std.ArrayList(QuerySite).initCapacity(allocator, 4) catch unreachable;
         for (program.items) |pi| {
@@ -1464,7 +1495,70 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 .deps = q_deps.toOwnedSlice(allocator) catch unreachable,
                 .rule_module = allocator.dupe(u8, qf.module) catch unreachable,
                 .is_preorder = q_is_preorder,
+                .sweeps_at_site = true,
             }) catch unreachable;
+        }
+
+        // ---- collect this store's `watch ! row` sites ----
+        //
+        // The standing-ONLY corner. Same qrow/qbody units as `query`, same
+        // stripe membership, same insert subscription — it differs in exactly
+        // one thing: no sweep at the site, because a `watch` has no program
+        // position to read FROM. It only reacts.
+        //
+        // This is where the surface stopped lying. `query` used to be both
+        // halves fused — read the rows here AND keep reacting after — so the
+        // verb that sounded like a read was the one you could not put in a
+        // nested position, and the momentary read was called `sweep`. Splitting
+        // the standing half out under `watch` frees `query` to mean the read.
+        for (program.items) |pi| {
+            if (pi != .flow) continue;
+            const wf = &pi.flow;
+            if (!H.isStoreInv(wf, "watch", store_name)) continue;
+            for (wf.body.continuations) |*wc| {
+                if (!H.isRowArm(field_names, wc.branch)) continue;
+                if (wc.kind != .effect) {
+                    return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, wf.location, wf.module, "std/store:watch({s}): continuation marker `|` used where an effect branch is required — a row rule fires the effect arm `! row`, not `| row`", .{store_name}) } };
+                }
+                if (wc.destructure.len != 0) {
+                    return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, wf.location, wf.module, "std/store:watch({s}): the projection block is retired - bind the row instead: `! row <row> |> ... <row>.<field> ...`", .{store_name}) } };
+                }
+                const w_row_bind = wc.binding orelse {
+                    return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, wf.location, wf.module, "std/store:watch({s}): the row arm needs a row binding: `! row <row> |> ...`", .{store_name}) } };
+                };
+                var wpnames = std.ArrayList([]const u8).initCapacity(allocator, user_field_count) catch unreachable;
+                var wpfields = std.ArrayList(usize).initCapacity(allocator, user_field_count) catch unreachable;
+                for (field_names[0..user_field_count], 0..) |fnm, fi| {
+                    wpnames.append(allocator, allocator.dupe(u8, fnm) catch unreachable) catch unreachable;
+                    wpfields.append(allocator, fi) catch unreachable;
+                }
+                const w_body_clone = ast_functional.cloneContinuation(allocator, wc) catch unreachable;
+                const w_ann_parser = @import("annotation_parser");
+                var w_rule_name: ?[]const u8 = null;
+                if (w_ann_parser.getCall(allocator, wf.annotations, "name") catch null) |nc| {
+                    if (nc.args.len != 1) {
+                        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, wf.location, wf.module, "std/store:watch({s}): [name(...)] takes exactly one identifier — [name(movement)]", .{store_name}) } };
+                    }
+                    w_rule_name = allocator.dupe(u8, nc.args[0]) catch unreachable;
+                }
+                var w_deps = std.ArrayList([]const u8).initCapacity(allocator, 2) catch unreachable;
+                if (w_ann_parser.getCall(allocator, wf.annotations, "depends_on") catch null) |dc| {
+                    for (dc.args) |da| w_deps.append(allocator, allocator.dupe(u8, da) catch unreachable) catch unreachable;
+                }
+                qsites.append(allocator, .{
+                    .line = wf.location.line,
+                    .proj_names = wpnames.toOwnedSlice(allocator) catch unreachable,
+                    .proj_fields = wpfields.toOwnedSlice(allocator) catch unreachable,
+                    .row_bind = allocator.dupe(u8, std.mem.trim(u8, w_row_bind, " ")) catch unreachable,
+                    .guard = if (wc.condition) |c| allocator.dupe(u8, c) catch unreachable else null,
+                    .body = w_body_clone,
+                    .rule_name = w_rule_name,
+                    .deps = w_deps.toOwnedSlice(allocator) catch unreachable,
+                    .rule_module = allocator.dupe(u8, wf.module) catch unreachable,
+                    .is_preorder = false,
+                    .sweeps_at_site = false,
+                }) catch unreachable;
+            }
         }
 
         // ---- [name]/[depends_on] rule scheduling ----
@@ -3048,6 +3142,11 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
 
             // qsweep: the imperative sweep over the rows that exist when
             // the query's program position executes.
+            //
+            // A `watch ! row` site has no program position to sweep FROM — it
+            // is a standing rule and nothing else, so it skips this unit
+            // entirely and keeps only the qrow/qbody subscription above.
+            if (qs.sweeps_at_site) {
             appended_items.append(allocator, ast.Item{ .event_decl = ast.EventDecl{
                 .path = H.mkPathH(allocator, flow.module, qsweep_name),
                 .input = ast.Shape{ .fields = &[_]ast.Field{} },
@@ -3113,6 +3212,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 .location = flow.location,
                 .module = allocator.dupe(u8, flow.module) catch unreachable,
             } }) catch unreachable;
+            } // end: sweeps_at_site
         }
 
         // ---- unit 5: take — swap-remove through the handle head ----
@@ -3440,12 +3540,21 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 .location = flow.location,
                 .module = allocator.dupe(u8, flow.module) catch unreachable,
             } }) catch unreachable;
-            // Preorder walks are program-position traversals, never standing
-            // rules — they do not join the stripe.
+            // The stripe schedules WHOLE PASSES, and it drives them by chaining
+            // each rule's qsweep. So membership is exactly "has a qsweep to
+            // chain", which excludes both non-sweeping corners for their own
+            // reasons: a preorder walk is a program-position traversal and
+            // never a standing rule, and a `watch ! row` rule is standing but
+            // has no whole-pass form at all — it fires from the insert path's
+            // standing enter, one row at a time, and there is nothing to
+            // schedule. Filtering on `is_preorder` alone left `watch ! row` in
+            // the chain and emitted a call to a qsweep unit that was never
+            // built.
             {
                 var filtered = std.ArrayList(usize).initCapacity(allocator, stripe_order.items.len) catch unreachable;
                 for (stripe_order.items) |qi| {
-                    if (!qsites.items[qi].is_preorder) filtered.append(allocator, qi) catch unreachable;
+                    const qsi = qsites.items[qi];
+                    if (!qsi.is_preorder and qsi.sweeps_at_site) filtered.append(allocator, qi) catch unreachable;
                 }
                 stripe_order = filtered;
             }
