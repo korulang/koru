@@ -1,0 +1,3 @@
+FRONTEND_COMPILE_ERROR
+CONTAINS no stage in this chain declares branch 'out-of-rang'
+NOT_CONTAINS declares branch 'not-found'

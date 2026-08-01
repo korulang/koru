@@ -38,6 +38,30 @@ produced branch is a dead claim, rejected). This is bind generalized over polari
 `Result`'s `>>=` freezes which branch threads into the type; here the caller's
 claims decide, so the thread can carry what another language would call the error.
 
+**A choke claims over the CHAIN, and lands per STAGE.** These are two different
+scopes, and collapsing them into one was a real defect — worth stating as a
+belief because the wrong answer is the intuitive one. A ladder does not have to
+re-raise the same branch at every rung: the honest shape of a result API is
+heterogeneous (`| not-found` from an object lookup, `| out-of-range` from an
+index, `| wrong-type` from a cast), and a chain over such stages threads
+perfectly well, because "sole survivor" is computed *per stage* against whatever
+claims that stage happens to declare. So a choke must **replicate onto the
+stages that declare it**, not onto all of them — an arm cloned onto a stage that
+never produces that branch is a dead arm the coverage wall rightly refuses.
+
+Exactness then has to move up, or it disappears: with per-stage filtering a
+mistyped claim would be filtered out everywhere and silently dropped. So the
+dead-claim wall lives at the **chain** — a claim must land on at least one
+stage, refused at the choke, naming the word that was got wrong. Chain for
+exactness, stage for replication; neither scope substitutes for the other.
+
+Corollary worth keeping: **uniform-branch ladders are the degenerate case, not
+the representative one.** `analysis` in `compiler.kz` is `| failed` six times,
+so the ladder that proved the feature was the one shape that could not expose
+the limit. A feature validated against its most favourable case reads as
+universal until something outside asks it a different question — here, an app in
+koru-examples with three duplicate `close(doc)` arms a reader noticed by eye.
+
 **How it is realized (see, do not restate — code moves):** the parser accepts the
 surface (leading-`|>`, bare-identifier stages, multi-line stitch) and a desugar
 pass rewrites the point-free AST into the canonical continuation pyramid before any

@@ -616,12 +616,12 @@ fn desugarItemsPointfree(
         switch (item.*) {
             .flow => |*flow| {
                 const enclosing: ?EventInfo = if (flow.impl_of) |p| table.getEventInfo(p) else null;
-                try desugarSitePointfree(allocator, table, &flow.body, enclosing, counter, reporter);
+                try desugarSitePointfree(allocator, table, &flow.body, enclosing, counter, reporter, false);
             },
             .proc_decl => |*proc| {
                 for (@constCast(proc.inline_flows)) |*flow| {
                     const enclosing: ?EventInfo = if (flow.impl_of) |p| table.getEventInfo(p) else null;
-                    try desugarSitePointfree(allocator, table, &flow.body, enclosing, counter, reporter);
+                    try desugarSitePointfree(allocator, table, &flow.body, enclosing, counter, reporter, false);
                 }
             },
             .module_decl => |*module| try desugarItemsPointfree(allocator, table, module.items, counter, reporter),
@@ -633,6 +633,16 @@ fn desugarItemsPointfree(
 /// Desugar one invocation site (a flow body or any continuation) and recurse.
 /// `enclosing` is the declared event this flow implements — only set at the
 /// flow root, where it supplies the bare head's punned input.
+///
+/// `claims_owned` says an ANCESTOR attempt already took responsibility for this
+/// choke set — it reached choke collection and judged the claims against the
+/// whole chain. When a chain declines, the recursion below re-enters at its
+/// inner steps, and a suffix sees the same chokes over fewer stages: claims
+/// that land on a stage the suffix dropped look dead from there. Only the
+/// attempt that owns the claims may judge them. An ancestor that bailed at the
+/// branch-count gate (a bare-return head, `root(doc): r |> object.get(…)`)
+/// never collected them, so ownership passes down to the first attempt that
+/// does — the wall follows the chokes, not the nesting.
 fn desugarSitePointfree(
     allocator: std.mem.Allocator,
     table: *SymbolTable,
@@ -640,12 +650,14 @@ fn desugarSitePointfree(
     enclosing: ?EventInfo,
     counter: *usize,
     reporter: *errors_mod.ErrorReporter,
+    claims_owned: bool,
 ) std.mem.Allocator.Error!void {
-    const transformed = try tryDesugarChain(allocator, table, site, enclosing, counter, reporter);
+    var collected_here = false;
+    const transformed = try tryDesugarChain(allocator, table, site, enclosing, counter, reporter, claims_owned, &collected_here);
     if (transformed) return;
     _ = try reattachArmsToLastStep(allocator, site);
     for (@constCast(site.continuations)) |*child| {
-        try desugarSitePointfree(allocator, table, child, null, counter, reporter);
+        try desugarSitePointfree(allocator, table, child, null, counter, reporter, claims_owned or collected_here);
     }
 }
 
@@ -859,17 +871,42 @@ fn appendedArgs(
     return new_args;
 }
 
-/// `[first] ++ clones-of-chokes`, every element stamped with `indent`.
+/// Does this choke belong on a stage producing `info`?
+///
+/// A choke claims BY NAME, and a stage can only be handled for a branch it
+/// actually declares — a heterogeneous ladder (`| not-found` on `object.get`,
+/// `| out-of-range` on `array.get`) is the normal case, not the exception.
+/// This is the same name-match `soleSurvivor` already applies when it works
+/// out what threads; replication without it clones dead arms onto stages that
+/// never declare them, and the coverage wall rightly refuses them (KORU021).
+///
+/// `!` effect arms and catch-alls carry no terminal-branch name to match, so
+/// they clone through to every stage unchanged.
+fn chokeBelongsOn(info: EventInfo, choke: ast.Continuation) bool {
+    if (choke.kind != .terminal) return true;
+    if (choke.is_catchall or choke.branch.len == 0) return true;
+    return branchNamed(info, choke.branch) != null;
+}
+
+/// `[first] ++ clones-of-the-chokes-this-stage-declares`, every element
+/// stamped with `indent`.
 fn levelContinuations(
     allocator: std.mem.Allocator,
     first: ast.Continuation,
     chokes: []const ast.Continuation,
+    stage: EventInfo,
     indent: usize,
 ) ![]ast.Continuation {
-    var list = try allocator.alloc(ast.Continuation, 1 + chokes.len);
+    var mine = try std.ArrayList(ast.Continuation).initCapacity(allocator, chokes.len);
+    defer mine.deinit(allocator);
+    for (chokes) |c| {
+        if (chokeBelongsOn(stage, c)) try mine.append(allocator, c);
+    }
+
+    var list = try allocator.alloc(ast.Continuation, 1 + mine.items.len);
     list[0] = first;
     list[0].indent = indent;
-    const cloned = try cloneContinuations(allocator, chokes);
+    const cloned = try cloneContinuations(allocator, mine.items);
     for (cloned, 0..) |c, i| {
         list[1 + i] = c;
         list[1 + i].indent = indent;
@@ -888,6 +925,8 @@ fn tryDesugarChain(
     enclosing: ?EventInfo,
     counter: *usize,
     reporter: *errors_mod.ErrorReporter,
+    claims_owned: bool,
+    collected_here: *bool,
 ) std.mem.Allocator.Error!bool {
     const site_node = if (site.node) |*n| n else return false;
     if (site_node.* != .invocation) return false;
@@ -901,6 +940,9 @@ fn tryDesugarChain(
 
     const head_info = table.getEventInfo(site_node.invocation.path) orelse return false;
     if (countTerminalBranches(head_info) == 0) return false; // void chain — not ours
+
+    // Past the gate: this attempt collects the chokes, so it owns judging them.
+    collected_here.* = true;
 
     // ---- Collect the chain: stages, steps, choke handlers ----
     var stage_infos = try std.ArrayList(EventInfo).initCapacity(allocator, 4);
@@ -922,7 +964,7 @@ fn tryDesugarChain(
             } else {
                 // Choke handler. Desugar its own subtree first (it may host a
                 // nested chain), then record it for replication.
-                try desugarSitePointfree(allocator, table, child, null, counter, reporter);
+                try desugarSitePointfree(allocator, table, child, null, counter, reporter, false);
                 try chokes.append(allocator, child.*);
             }
         }
@@ -982,6 +1024,36 @@ fn tryDesugarChain(
     }
     if (type_mismatch) return false;
 
+    // DEAD CLAIM (KORU021): a choke replicates only onto the stages that
+    // declare it, so a claim no stage declares would be filtered away
+    // everywhere and vanish — a mistyped `| faild` silently dropped, with the
+    // real `| failed` failing coverage somewhere else entirely. The exactness
+    // check therefore lives at the CHAIN, which is the scope a choke claims
+    // over: every claim must land on at least one stage.
+    var dead_claim = false;
+    for (chokes.items) |choke| {
+        if (claims_owned) break; // an ancestor already judged this choke set
+        if (choke.kind != .terminal or choke.is_catchall or choke.branch.len == 0) continue;
+        var lands = false;
+        for (stage_infos.items) |info| {
+            if (branchNamed(info, choke.branch) != null) {
+                lands = true;
+                break;
+            }
+        }
+        if (lands) continue;
+        try reporter.addErrorAtLocationWithHint(
+            .KORU021,
+            choke.location,
+            "no stage in this chain declares branch '{s}'",
+            .{choke.branch},
+            "a point-free choke claims by name over the whole chain — check the spelling against the stages it should catch",
+            .{},
+        );
+        dead_claim = true;
+    }
+    if (dead_claim) return false;
+
     var survivors = try std.ArrayList([]const u8).initCapacity(allocator, n + 1);
     defer survivors.deinit(allocator);
     for (stage_infos.items) |info| {
@@ -1032,7 +1104,7 @@ fn tryDesugarChain(
         .continuations = &.{},
     };
 
-    var inner: []ast.Continuation = try levelContinuations(allocator, terminus, chokes.items, n * 4);
+    var inner: []ast.Continuation = try levelContinuations(allocator, terminus, chokes.items, stage_infos.items[n], n * 4);
 
     var i: usize = n;
     while (i > 0) {
@@ -1050,7 +1122,7 @@ fn tryDesugarChain(
             .indent = 0,
             .continuations = inner,
         };
-        inner = try levelContinuations(allocator, chain_cont, chokes.items, i * 4);
+        inner = try levelContinuations(allocator, chain_cont, chokes.items, stage_infos.items[i], i * 4);
     }
 
     // Fill the bare head's punned input args, then swap in the new subtree.

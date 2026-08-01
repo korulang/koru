@@ -1,0 +1,43 @@
+// The wall that keeps 210_197's per-stage choke filter honest.
+//
+// 210_197 lets a choke replicate only onto the stages that DECLARE it — which
+// is what a heterogeneous ladder needs, and which on its own would let a
+// MISTYPED choke vanish: filtered out at every stage, silently dropped, and
+// the branch it meant to claim left to fail a few lines away as "unhandled".
+//
+// So the exactness check moves up a level, to where it always belonged: a
+// choke must be claimed by AT LEAST ONE stage of the chain. `| out-of-rang`
+// below names nothing in `obj.get`, `arr.get` or `as.string`, and is refused
+// AT THE CHOKE — not as a distant KORU022 about `out-of-range`.
+//
+// Pins KORU021 with a chain-scoped message.
+~import std/io
+
+~pub tor obj.get { doc: i64, v: i64, key: string }
+| found i64
+| not-found
+~proc obj.get|zig { _ = doc; _ = key; return .{ .found = v + 1 }; }
+
+~pub tor arr.get { doc: i64, v: i64, index: i64 }
+| found i64
+| out-of-range
+~proc arr.get|zig { _ = doc; _ = index; return .{ .found = v + 1 }; }
+
+~pub tor as.string { doc: i64, v: i64 }
+| ok string
+| wrong-type
+~proc as.string|zig { _ = doc; _ = v; return .{ .ok = "deep" }; }
+
+~pub tor ladder { doc: i64, r: i64 }
+| ok string
+| gone
+~ladder = obj.get(doc, v: r, key: "choices")
+  |> arr.get(doc, index: 0)
+  |> as.string(doc)
+| not-found => gone
+| out-of-rang => gone
+| wrong-type => gone
+
+~ladder(doc: 1, r: 2)
+| ok s |> std/io:print.ln("{{ s:s }}")
+| gone |> std/io:print.ln("gone")

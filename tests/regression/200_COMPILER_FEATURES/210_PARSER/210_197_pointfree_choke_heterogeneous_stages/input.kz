@@ -1,0 +1,56 @@
+// Pins the point-free choke across a HETEROGENEOUS ladder — the shape every
+// real result API has, and the one `analysis` in compiler.kz never exercises
+// because it re-raises `| failed` at all six rungs.
+//
+// Each stage here leaves a DIFFERENT branch unclaimed: obj.get has
+// `| not-found`, arr.get has `| out-of-range`, as.string has `| wrong-type`.
+// Three dedented chokes claim them; every stage is still left with exactly one
+// survivor, so the thread runs the whole ladder.
+//
+// The rule this pins: a choke replicates onto the stages that DECLARE it, not
+// onto every stage. Before the fix, `| out-of-range` was cloned onto obj.get
+// and `| not-found` onto arr.get, and the chain died with 8x KORU021 dead
+// claims — a chain the survivor logic had already resolved correctly.
+//
+// Found from the outside: kopium's yyjson delta ladder (koru-examples,
+// holes/2_pointfree_choke_replicates_dead_claims) is exactly this shape.
+//
+// obj.get(2) => 3, arr.get(3) => 4, obj.get(4) => 5, as.string(5) => "deep 5"
+~import std/io
+
+~pub tor obj.get { doc: i64, v: i64, key: string }
+| found i64
+| not-found
+~proc obj.get|zig { _ = doc; _ = key; return .{ .found = v + 1 }; }
+
+~pub tor arr.get { doc: i64, v: i64, index: i64 }
+| found i64
+| out-of-range
+~proc arr.get|zig { _ = doc; _ = index; return .{ .found = v + 1 }; }
+
+~pub tor as.string { doc: i64, v: i64 }
+| ok string
+| wrong-type
+// v == 5 only if all three preceding stages actually ran and threaded — the
+// whole ladder is under test, not just that it compiled.
+~proc as.string|zig {
+    _ = doc;
+    return .{ .ok = if (v == 5) "deep 5" else "wrong depth" };
+}
+
+// `doc` rides every stage explicitly (a value the thread can't carry), so no
+// stage goes bare — the collapse is per-stage, exactly as documented.
+~pub tor ladder { doc: i64, r: i64 }
+| ok string
+| gone
+~ladder = obj.get(doc, v: r, key: "choices")
+  |> arr.get(doc, index: 0)
+  |> obj.get(doc, key: "delta")
+  |> as.string(doc)
+| not-found => gone
+| out-of-range => gone
+| wrong-type => gone
+
+~ladder(doc: 1, r: 2)
+| ok s |> std/io:print.ln("{{ s:s }}")
+| gone |> std/io:print.ln("gone")
