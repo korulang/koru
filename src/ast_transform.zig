@@ -326,12 +326,19 @@ fn cloneFlow(allocator: std.mem.Allocator, flow: ast.Flow) !ast.Flow {
     };
 }
 
+/// A path clone MUST carry `module_qualifier`. Dropping it silently relocates
+/// the call to the CURRENT module: `std/io:print.ln` becomes a local
+/// `print.ln`, which then misresolves against whatever is nearby and reports a
+/// tor nobody wrote. Pinned by 210_199.
 fn clonePath(allocator: std.mem.Allocator, path: ast.DottedPath) !ast.DottedPath {
     var segments = try allocator.alloc([]const u8, path.segments.len);
     for (path.segments, 0..) |segment, i| {
         segments[i] = try allocator.dupe(u8, segment);
     }
-    return .{ .segments = segments };
+    return .{
+        .module_qualifier = if (path.module_qualifier) |mq| try allocator.dupe(u8, mq) else null,
+        .segments = segments,
+    };
 }
 
 fn cloneShape(allocator: std.mem.Allocator, shape: ast.Shape) !ast.Shape {

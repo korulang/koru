@@ -1,0 +1,44 @@
+// Pins that a CLONED choke body keeps its module qualifier.
+//
+// The choke replicates across every stage of a point-free chain, and the
+// replication clones the arm. `clonePath` copied the segments and dropped
+// `module_qualifier`, so a choke body that calls ACROSS a module —
+// `std/io:print.ln(…)` — was relocated into the current module on the way in.
+// It then misresolved against whatever was nearby, and the diagnostic named a
+// tor nobody wrote:
+//
+//     error[KORU040]: unknown tor 'print.impl' in pipeline
+//
+// A choke body doing real work is the normal case, not an exotic one: a
+// heterogeneous ladder (210_197) closes a handle or logs a reason per branch,
+// and those calls live in the library that produced the branch. Found chasing
+// kopium's `| not-found |> koru/yyjson:close(doc) => gone`.
+//
+// stage-a(-5) fails → the choke catches at the first stage, PRINTS from the
+// other module, and re-raises. Both lines must appear, in order: the print
+// proves the cloned call resolved AND ran, not merely that it compiled.
+~import std/io
+
+~pub tor stage-a { ctx: i64 }
+| ctx i64
+| failed string
+~proc stage-a|zig {
+    if (ctx < 0) return .{ .failed = "negative" };
+    return .{ .ctx = ctx + 1 };
+}
+
+~pub tor stage-b { ctx: i64 }
+| ctx i64
+| failed string
+~proc stage-b|zig { return .{ .ctx = ctx * 2 }; }
+
+~pub tor run { ctx: i64 }
+| ctx i64
+| failed string
+~run = stage-a
+  |> stage-b
+| failed f |> std/io:print.ln("choke saw: {{ f:s }}") => failed f
+
+~run(ctx: -5)
+| ctx c |> std/io:print.ln("ok {{ c:d }}")
+| failed f |> std/io:print.ln("caught: {{ f:s }}")
