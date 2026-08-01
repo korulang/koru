@@ -18,13 +18,13 @@ std/store:insert(game) { hp: 100 }
 | row _ |> _
 | full |> _
 
-std/store:query(game)
-! query a |> std/store:stored { a.hp: a.hp + 1 }
+std/store:rule(game)
+! row a |> std/store:stored { a.hp: a.hp + 1 }
 
-std/store:query(game)
-! query b |> std/store:stored { b.hp: b.hp + 10 }
+std/store:rule(game)
+! row b |> std/store:stored { b.hp: b.hp + 10 }
 
 std/store:stripe(game)
 
-std/store:sweep(game)
-! sweep r |> std/io:print.ln("hp {{ r.hp:d }}")
+std/store:query(game)
+! query r |> std/io:print.ln("hp {{ r.hp:d }}")

@@ -29,7 +29,7 @@ std/store:insert(ents) { x: 1.0 }
 std/store:insert(ents) { x: -10000000000000000.0 }
 std/store:insert(ents) { x: 1.0 }
 
-std/store:sweep(ents)
-! sweep e |> std/store:stored { check.sum: check.sum + e.x }
+std/store:query(ents)
+! query e |> std/store:stored { check.sum: check.sum + e.x }
 
 std/store:stored { out.v: check.sum }

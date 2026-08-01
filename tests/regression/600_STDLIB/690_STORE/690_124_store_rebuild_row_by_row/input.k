@@ -18,11 +18,11 @@ std/store:new(dst, capacity: 4) { id: i64, hp: i64 }
 std/store:insert(src) { id: 1, hp: 10 }
 std/store:insert(src) { id: 2, hp: 20 }
 
-std/store:sweep(src)
-! sweep r |> std/io:print.ln("row {{ r.id:d }} {{ r.hp:d }}")
+std/store:query(src)
+! query r |> std/io:print.ln("row {{ r.id:d }} {{ r.hp:d }}")
 
-std/store:sweep(src)
-! sweep s |> std/store:insert(dst) { id: s.id, hp: s.hp }
+std/store:query(src)
+! query s |> std/store:insert(dst) { id: s.id, hp: s.hp }
 
-std/store:sweep(dst)
-! sweep d |> std/io:print.ln("copy {{ d.id:d }} {{ d.hp:d }}")
+std/store:query(dst)
+! query d |> std/io:print.ln("copy {{ d.id:d }} {{ d.hp:d }}")

@@ -27,5 +27,5 @@ std/store:new(items, capacity: 4) { v: i64 }
 std/store:insert(items) { v: 10 }
 std/store:insert(items) { v: 20 }
 
-std/store:sweep(items)
-! sweep items |> std/io:print.ln("v {{ items.v:d }}")
+std/store:query(items)
+! query items |> std/io:print.ln("v {{ items.v:d }}")

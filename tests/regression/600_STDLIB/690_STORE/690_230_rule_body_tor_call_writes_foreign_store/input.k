@@ -18,12 +18,12 @@ bump = std/store:insert(b) { y: n * 2 }
 | row _ |> std/io:print.ln("callee wrote b")
 | full |> _
 
-std/store:query(a)
-! query e |> bump(n: e.x)
+std/store:rule(a)
+! row e |> bump(n: e.x)
 
 std/store:insert(a) { x: 5 }
 | row _ |> _
 | full |> _
 
-std/store:sweep(b)
-! sweep r |> std/io:print.ln("b has {{ r.y:d }}")
+std/store:query(b)
+! query r |> std/io:print.ln("b has {{ r.y:d }}")

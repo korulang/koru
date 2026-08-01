@@ -27,5 +27,5 @@ std/string:from-page(text: "buy milk")
 | err _ |> _
 
 for(0..2)
-! each _ |> std/store:sweep(todos)
-    ! sweep e |> std/string:read(s: e.label): t |> std/io:print.ln("{{ t:s }} [{{ e.done:d }}]")
+! each _ |> std/store:query(todos)
+    ! query e |> std/string:read(s: e.label): t |> std/io:print.ln("{{ t:s }} [{{ e.done:d }}]")

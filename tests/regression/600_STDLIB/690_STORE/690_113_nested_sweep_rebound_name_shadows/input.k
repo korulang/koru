@@ -17,6 +17,6 @@ std/store:insert(outer) { v: 20 }
 std/store:insert(inner) { v: 1 }
 std/store:insert(inner) { v: 2 }
 
-std/store:sweep(outer)
-! sweep k |> std/store:sweep(inner)
-    ! sweep k |> std/io:print.ln("k {{ k.v:d }}")
+std/store:query(outer)
+! query k |> std/store:query(inner)
+    ! query k |> std/io:print.ln("k {{ k.v:d }}")

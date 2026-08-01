@@ -26,5 +26,5 @@ std/store:insert(nodes) { val: 100 }
                 | item _ |> std/store:stored { nodes[sel.at].val: 999 }
                 | empty |> std/io:print.ln("empty")
 
-std/store:sweep(nodes)
-! sweep n |> std/io:print.ln("row val {{ n.val:d }}")
+std/store:query(nodes)
+! query n |> std/io:print.ln("row val {{ n.val:d }}")

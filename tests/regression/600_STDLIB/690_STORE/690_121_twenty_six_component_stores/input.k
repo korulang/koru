@@ -66,158 +66,158 @@ std/store:insert(cx) { data: 24.0 }
 std/store:insert(cy) { data: 25.0 }
 std/store:insert(cz) { data: 26.0 }
 
-std/store:sweep(ca)
-! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+std/store:query(ca)
+! query e |> std/store:stored { e.data: e.data * 2.0 }
 
-std/store:sweep(cb)
-! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+std/store:query(cb)
+! query e |> std/store:stored { e.data: e.data * 2.0 }
 
-std/store:sweep(cc)
-! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+std/store:query(cc)
+! query e |> std/store:stored { e.data: e.data * 2.0 }
 
-std/store:sweep(cd)
-! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+std/store:query(cd)
+! query e |> std/store:stored { e.data: e.data * 2.0 }
 
-std/store:sweep(ce)
-! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+std/store:query(ce)
+! query e |> std/store:stored { e.data: e.data * 2.0 }
 
-std/store:sweep(cf)
-! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+std/store:query(cf)
+! query e |> std/store:stored { e.data: e.data * 2.0 }
 
-std/store:sweep(cg)
-! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+std/store:query(cg)
+! query e |> std/store:stored { e.data: e.data * 2.0 }
 
-std/store:sweep(ch)
-! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+std/store:query(ch)
+! query e |> std/store:stored { e.data: e.data * 2.0 }
 
-std/store:sweep(ci)
-! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+std/store:query(ci)
+! query e |> std/store:stored { e.data: e.data * 2.0 }
 
-std/store:sweep(cj)
-! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+std/store:query(cj)
+! query e |> std/store:stored { e.data: e.data * 2.0 }
 
-std/store:sweep(ck)
-! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+std/store:query(ck)
+! query e |> std/store:stored { e.data: e.data * 2.0 }
 
-std/store:sweep(cl)
-! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+std/store:query(cl)
+! query e |> std/store:stored { e.data: e.data * 2.0 }
 
-std/store:sweep(cm)
-! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+std/store:query(cm)
+! query e |> std/store:stored { e.data: e.data * 2.0 }
 
-std/store:sweep(cn)
-! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+std/store:query(cn)
+! query e |> std/store:stored { e.data: e.data * 2.0 }
 
-std/store:sweep(co)
-! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+std/store:query(co)
+! query e |> std/store:stored { e.data: e.data * 2.0 }
 
-std/store:sweep(cp)
-! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+std/store:query(cp)
+! query e |> std/store:stored { e.data: e.data * 2.0 }
 
-std/store:sweep(cq)
-! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+std/store:query(cq)
+! query e |> std/store:stored { e.data: e.data * 2.0 }
 
-std/store:sweep(cr)
-! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+std/store:query(cr)
+! query e |> std/store:stored { e.data: e.data * 2.0 }
 
-std/store:sweep(cs)
-! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+std/store:query(cs)
+! query e |> std/store:stored { e.data: e.data * 2.0 }
 
-std/store:sweep(ct)
-! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+std/store:query(ct)
+! query e |> std/store:stored { e.data: e.data * 2.0 }
 
-std/store:sweep(cu)
-! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+std/store:query(cu)
+! query e |> std/store:stored { e.data: e.data * 2.0 }
 
-std/store:sweep(cv)
-! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+std/store:query(cv)
+! query e |> std/store:stored { e.data: e.data * 2.0 }
 
-std/store:sweep(cw)
-! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+std/store:query(cw)
+! query e |> std/store:stored { e.data: e.data * 2.0 }
 
-std/store:sweep(cx)
-! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+std/store:query(cx)
+! query e |> std/store:stored { e.data: e.data * 2.0 }
 
-std/store:sweep(cy)
-! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+std/store:query(cy)
+! query e |> std/store:stored { e.data: e.data * 2.0 }
 
-std/store:sweep(cz)
-! sweep e |> std/store:stored { e.data: e.data * 2.0 }
+std/store:query(cz)
+! query e |> std/store:stored { e.data: e.data * 2.0 }
 
-std/store:sweep(ca)
-! sweep r |> std/io:print.ln("ca {{ r.data:f }}")
+std/store:query(ca)
+! query r |> std/io:print.ln("ca {{ r.data:f }}")
 
-std/store:sweep(cb)
-! sweep r |> std/io:print.ln("cb {{ r.data:f }}")
+std/store:query(cb)
+! query r |> std/io:print.ln("cb {{ r.data:f }}")
 
-std/store:sweep(cc)
-! sweep r |> std/io:print.ln("cc {{ r.data:f }}")
+std/store:query(cc)
+! query r |> std/io:print.ln("cc {{ r.data:f }}")
 
-std/store:sweep(cd)
-! sweep r |> std/io:print.ln("cd {{ r.data:f }}")
+std/store:query(cd)
+! query r |> std/io:print.ln("cd {{ r.data:f }}")
 
-std/store:sweep(ce)
-! sweep r |> std/io:print.ln("ce {{ r.data:f }}")
+std/store:query(ce)
+! query r |> std/io:print.ln("ce {{ r.data:f }}")
 
-std/store:sweep(cf)
-! sweep r |> std/io:print.ln("cf {{ r.data:f }}")
+std/store:query(cf)
+! query r |> std/io:print.ln("cf {{ r.data:f }}")
 
-std/store:sweep(cg)
-! sweep r |> std/io:print.ln("cg {{ r.data:f }}")
+std/store:query(cg)
+! query r |> std/io:print.ln("cg {{ r.data:f }}")
 
-std/store:sweep(ch)
-! sweep r |> std/io:print.ln("ch {{ r.data:f }}")
+std/store:query(ch)
+! query r |> std/io:print.ln("ch {{ r.data:f }}")
 
-std/store:sweep(ci)
-! sweep r |> std/io:print.ln("ci {{ r.data:f }}")
+std/store:query(ci)
+! query r |> std/io:print.ln("ci {{ r.data:f }}")
 
-std/store:sweep(cj)
-! sweep r |> std/io:print.ln("cj {{ r.data:f }}")
+std/store:query(cj)
+! query r |> std/io:print.ln("cj {{ r.data:f }}")
 
-std/store:sweep(ck)
-! sweep r |> std/io:print.ln("ck {{ r.data:f }}")
+std/store:query(ck)
+! query r |> std/io:print.ln("ck {{ r.data:f }}")
 
-std/store:sweep(cl)
-! sweep r |> std/io:print.ln("cl {{ r.data:f }}")
+std/store:query(cl)
+! query r |> std/io:print.ln("cl {{ r.data:f }}")
 
-std/store:sweep(cm)
-! sweep r |> std/io:print.ln("cm {{ r.data:f }}")
+std/store:query(cm)
+! query r |> std/io:print.ln("cm {{ r.data:f }}")
 
-std/store:sweep(cn)
-! sweep r |> std/io:print.ln("cn {{ r.data:f }}")
+std/store:query(cn)
+! query r |> std/io:print.ln("cn {{ r.data:f }}")
 
-std/store:sweep(co)
-! sweep r |> std/io:print.ln("co {{ r.data:f }}")
+std/store:query(co)
+! query r |> std/io:print.ln("co {{ r.data:f }}")
 
-std/store:sweep(cp)
-! sweep r |> std/io:print.ln("cp {{ r.data:f }}")
+std/store:query(cp)
+! query r |> std/io:print.ln("cp {{ r.data:f }}")
 
-std/store:sweep(cq)
-! sweep r |> std/io:print.ln("cq {{ r.data:f }}")
+std/store:query(cq)
+! query r |> std/io:print.ln("cq {{ r.data:f }}")
 
-std/store:sweep(cr)
-! sweep r |> std/io:print.ln("cr {{ r.data:f }}")
+std/store:query(cr)
+! query r |> std/io:print.ln("cr {{ r.data:f }}")
 
-std/store:sweep(cs)
-! sweep r |> std/io:print.ln("cs {{ r.data:f }}")
+std/store:query(cs)
+! query r |> std/io:print.ln("cs {{ r.data:f }}")
 
-std/store:sweep(ct)
-! sweep r |> std/io:print.ln("ct {{ r.data:f }}")
+std/store:query(ct)
+! query r |> std/io:print.ln("ct {{ r.data:f }}")
 
-std/store:sweep(cu)
-! sweep r |> std/io:print.ln("cu {{ r.data:f }}")
+std/store:query(cu)
+! query r |> std/io:print.ln("cu {{ r.data:f }}")
 
-std/store:sweep(cv)
-! sweep r |> std/io:print.ln("cv {{ r.data:f }}")
+std/store:query(cv)
+! query r |> std/io:print.ln("cv {{ r.data:f }}")
 
-std/store:sweep(cw)
-! sweep r |> std/io:print.ln("cw {{ r.data:f }}")
+std/store:query(cw)
+! query r |> std/io:print.ln("cw {{ r.data:f }}")
 
-std/store:sweep(cx)
-! sweep r |> std/io:print.ln("cx {{ r.data:f }}")
+std/store:query(cx)
+! query r |> std/io:print.ln("cx {{ r.data:f }}")
 
-std/store:sweep(cy)
-! sweep r |> std/io:print.ln("cy {{ r.data:f }}")
+std/store:query(cy)
+! query r |> std/io:print.ln("cy {{ r.data:f }}")
 
-std/store:sweep(cz)
-! sweep r |> std/io:print.ln("cz {{ r.data:f }}")
+std/store:query(cz)
+! query r |> std/io:print.ln("cz {{ r.data:f }}")

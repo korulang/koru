@@ -24,10 +24,10 @@ for(0..10000)
 ! each _ |> std/store:insert(cells) { a: 1.0, b: 2.0 }
 
 for(0..3)
-! each _ |> std/store:sweep(cells)
-    ! sweep e |> echo(v: e.a): t |> std/store:stored { e.a: e.b, e.b: t }
+! each _ |> std/store:query(cells)
+    ! query e |> echo(v: e.a): t |> std/store:stored { e.a: e.b, e.b: t }
 
-std/store:sweep(cells)
-! sweep e |> std/store:stored { check.sum: check.sum + e.a }
+std/store:query(cells)
+! query e |> std/store:stored { check.sum: check.sum + e.a }
 
 std/store:stored { out.v: check.sum }

@@ -21,8 +21,8 @@ std/string:from-page(text: "x")
     | row _ |> _
 | err _ |> _
 
-std/store:sweep(a)
-! sweep r |> std/store:insert(b) { name: r.name }
+std/store:query(a)
+! query r |> std/store:insert(b) { name: r.name }
 
-std/store:sweep(b)
-! sweep w |> std/string:read(s: w.name): t |> std/io:print.ln("b {{ t:s }}")
+std/store:query(b)
+! query w |> std/string:read(s: w.name): t |> std/io:print.ln("b {{ t:s }}")

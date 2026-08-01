@@ -10,8 +10,8 @@ std/store:insert(game) { hp: 3 }
 | row _ |> _
 | full |> _
 
-[name(report)]std/store:query(game)
-! query e |> std/io:print.ln("hp {{ e.hp:d }}")
+[name(report)]std/store:rule(game)
+! row e |> std/io:print.ln("hp {{ e.hp:d }}")
 
 pub tor beat { x: i64 }
 ! tick i64

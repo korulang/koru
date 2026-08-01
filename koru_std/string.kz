@@ -262,16 +262,39 @@ pub const String = struct {
     return .ok;
 }
 
+// A String's `data` slice IS its allocation record — there is no capacity
+// field, which is why every mutator above reallocs. The two shrinking tors
+// below must respect that too: editing `len` behind the allocator's back
+// orphans the block, because std.mem.Allocator refuses to act on a
+// zero-length slice in BOTH directions —
+//
+//   free(s.data)        -> `if (bytes_len == 0) return;`   frees nothing
+//   realloc(s.data, n)  -> `if (old_mem.len == 0)` allocates fresh and
+//                          never releases the old pointer
+//
+// so a shrink-to-zero loses the buffer whether it is disposed or appended
+// to next. Pinned as 610_023 (clear) and 610_024 (pop-char). Found by
+// kopium's chat pane leaking one draft line per message sent.
+
 // Drop the last byte (backspace). Empty stays empty — `| ok` either way so
 // a held key doesn't force an err arm.
 ~pub tor pop-char { s: *String<instance> }
 
 ~proc pop-char|zig {
-    if (s.data.len > 0) s.data.len -= 1;
+    if (s.data.len == 0) return;
+    if (s.data.len == 1) {
+        s.allocator.free(s.data);
+        s.data = &.{};
+        return;
+    }
+    // Shrink the allocation, not just the view. A failed shrink leaves the
+    // string exactly as it was — pop-char declares no err arm.
+    s.data = s.allocator.realloc(s.data, s.data.len - 1) catch return;
 }
 
 ~pub tor clear { s: *String<instance> }
 
 ~proc clear|zig {
-    s.data.len = 0;
+    s.allocator.free(s.data);
+    s.data = &.{};
 }

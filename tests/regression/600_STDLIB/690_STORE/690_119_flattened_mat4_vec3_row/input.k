@@ -43,5 +43,5 @@ std/store:insert(ents) {
     vx: 5.0, vy: 2.5, vz: 1.25
 }
 
-std/store:sweep(ents)
-! sweep e |> std/io:print.ln("t00 {{ e.t00:f }} t33 {{ e.t33:f }} px {{ e.px:f }} rz {{ e.rz:f }} vz {{ e.vz:f }}")
+std/store:query(ents)
+! query e |> std/io:print.ln("t00 {{ e.t00:f }} t33 {{ e.t33:f }} px {{ e.px:f }} rz {{ e.rz:f }} vz {{ e.vz:f }}")
