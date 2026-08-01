@@ -1196,6 +1196,18 @@ fn phantomStateName(phantom: []const u8) []const u8 {
     return s;
 }
 
+/// Phantom compatibility under the checker's areCompatible: the required
+/// phantom may be a state UNION (`<!view|!instance>` — free accepts either),
+/// and the provided concrete state matches when it is one of the members.
+fn phantomCompatible(param_phantom: []const u8, binding_phantom: []const u8) bool {
+    const b = phantomStateName(binding_phantom);
+    var p_it = std.mem.splitScalar(u8, param_phantom, '|');
+    while (p_it.next()) |p_member| {
+        if (std.mem.eql(u8, phantomStateName(p_member), b)) return true;
+    }
+    return false;
+}
+
 /// Can a binding of type `binding` fill a parameter of type `param`, under
 /// the phantom system's OWN compatibility rule? The checker matches base
 /// types lazily (Zig owns the verdict) and phantom states by name via
@@ -1219,7 +1231,7 @@ fn typeCanFill(binding: []const u8, param: []const u8) bool {
     // No param phantom = any state accepted (areCompatible(null, x) == true).
     const p_ph = p.phantom orelse return true;
     const b_ph = b.phantom orelse return false;
-    return std.mem.eql(u8, phantomStateName(p_ph), phantomStateName(b_ph));
+    return phantomCompatible(p_ph, b_ph);
 }
 
 /// The nearest live binding that can fill `want` — innermost first.
@@ -1287,10 +1299,10 @@ fn punItemsBinding(
 ) std.mem.Allocator.Error!void {
     for (@constCast(items)) |*item| {
         switch (item.*) {
-            .flow => |*flow| try punContinuationBinding(allocator, table, &flow.body, scope, counter, null, null, reporter),
+            .flow => |*flow| try punContinuationBinding(allocator, table, items, &flow.body, scope, counter, null, null, null, reporter),
             .proc_decl => |*proc| {
                 for (@constCast(proc.inline_flows)) |*flow| {
-                    try punContinuationBinding(allocator, table, &flow.body, scope, counter, null, null, reporter);
+                    try punContinuationBinding(allocator, table, items, &flow.body, scope, counter, null, null, null, reporter);
                 }
             },
             .module_decl => |*module| try punItemsBinding(allocator, table, module.items, scope, counter, reporter),
@@ -1338,6 +1350,18 @@ const ThreadHolder = union(enum) {
 /// name can be minted on demand) and the base type it carries.
 const Thread = struct {
     holder: ThreadHolder,
+    /// The single value the thread carries (`-> T` stage, identity payload).
+    type: []const u8,
+    /// A RECORD payload's fields, when the thread carries a record and its
+    /// consumer takes one field (the store give-back, 690_094). Mutually
+    /// exclusive with `type` in practice: a record has no single type to
+    /// thread, so `type` is left empty when `fields` is set.
+    fields: ?[]const PayloadField = null,
+};
+
+/// A named payload field: the give-back record's `label: *String<...>`, etc.
+const PayloadField = struct {
+    name: []const u8,
     type: []const u8,
 };
 
@@ -1457,6 +1481,23 @@ fn bindThreadIntoStep(
         // (`*Pending<open!>`) fills a consume parameter (`*Pending<!open>`)
         // because they are the same state, carry vs consume (690_107/109).
         if (typeCanFill(thread.type, f.type)) try matches.append(allocator, f.name);
+    }
+
+    // A RECORD payload (the store give-back, 690_094): match each open slot
+    // against the record's fields by the same rule, filling the slot with the
+    // field path off the minted record binding.
+    if (thread.fields) |flds| {
+        for (info.input.fields) |f| {
+            if (!isOpenThreadSlot(f, node.invocation.args)) continue;
+            for (flds) |fld| {
+                if (!typeCanFill(fld.type, f.type)) continue;
+                const holder = try threadHolderName(allocator, thread.holder, counter);
+                const path = try std.fmt.allocPrint(allocator, "{s}.{s}", .{ holder, fld.name });
+                node.invocation.args = try appendedArgs(allocator, node.invocation.args, f.name, path, true);
+                break;
+            }
+        }
+        return;
     }
 
     // Nothing is unfilled: the call the author wrote is already complete, so
@@ -1591,6 +1632,99 @@ fn storeSynthPayloadType(allocator: std.mem.Allocator, inv: *const ast.Invocatio
         mod_dot.append(allocator, if (ch == '/') '.' else ch) catch return null;
     }
     return std.fmt.allocPrint(allocator, "*{s}<{s}:{s}!>", .{ type_name, mod_dot.items, state }) catch return null;
+}
+
+/// Normalize a seed column type for the give-back field list: an owned column
+/// `*mod:Type<state!>` becomes `*Type<mod:state!>` (base without the module
+/// qualifier, phantom with it — the store's own field_types normalization
+/// plus the phantom), so its base can meet a consumer's `*Type` parameter.
+/// Scalars pass through unchanged.
+fn normalizeColumnType(allocator: std.mem.Allocator, ftype: []const u8) []const u8 {
+    const t = std.mem.trim(u8, ftype, " \t\n\r");
+    if (t.len == 0 or t[0] != '*') return allocator.dupe(u8, t) catch unreachable;
+    const lt = std.mem.lastIndexOfScalar(u8, t, '<') orelse return allocator.dupe(u8, t) catch unreachable;
+    if (t[t.len - 1] != '>') return allocator.dupe(u8, t) catch unreachable;
+    const type_part = t[1..lt];
+    const phantom_part = t[lt + 1 .. t.len - 1];
+    const tcolon = std.mem.lastIndexOfScalar(u8, type_part, ':') orelse return allocator.dupe(u8, t) catch unreachable;
+    const type_name = type_part[tcolon + 1 ..];
+    const module_slash = type_part[0..tcolon];
+    var st = phantom_part;
+    if (st.len > 0 and st[st.len - 1] == '!') st = st[0 .. st.len - 1];
+    const state = if (std.mem.lastIndexOfScalar(u8, st, ':')) |pc| st[pc + 1 ..] else st;
+    var mod_dot = std.ArrayList(u8).initCapacity(allocator, module_slash.len) catch unreachable;
+    for (module_slash) |ch| {
+        mod_dot.append(allocator, if (ch == '/') '.' else ch) catch unreachable;
+    }
+    return std.fmt.allocPrint(allocator, "*{s}<{s}:{s}!>", .{ type_name, mod_dot.items, state }) catch unreachable;
+}
+
+/// The give-back `| full` payload's fields (690_094): the row record the
+/// store reissues on a full insert — every user column, owned columns with
+/// their `<state!>` phantom. Resolved from the store declaration's seed, like
+/// the drain payload. Returns null for anything without named fields.
+fn storeSynthPayloadFields(allocator: std.mem.Allocator, items: []const ast.Item, inv: *const ast.Invocation, branch: []const u8) ?[]const PayloadField {
+    const is_insert = blk: {
+        if (inv.path.module_qualifier) |mq| {
+            if (std.mem.eql(u8, mq, "std.store") and inv.path.segments.len == 1 and std.mem.eql(u8, inv.path.segments[0], "insert")) break :blk true;
+        }
+        break :blk false;
+    };
+    if (!is_insert) return null;
+    if (!std.mem.eql(u8, branch, "full")) return null;
+    var store_name: ?[]const u8 = null;
+    for (inv.args) |a| {
+        if (std.mem.eql(u8, a.name, "expr")) store_name = a.value;
+    }
+    const sname = store_name orelse return null;
+    // Find the store's `new` declaration and read its seed.
+    for (items) |pi| {
+        if (pi != .flow) continue;
+        const f = &pi.flow;
+        if (f.body.node == null) continue;
+        if (f.body.node.? != .invocation) continue;
+        const ninv = &f.body.node.?.invocation;
+        const is_new = blk: {
+            if (ninv.path.module_qualifier) |mq| {
+                if (std.mem.eql(u8, mq, "std.store") and ninv.path.segments.len == 1 and std.mem.eql(u8, ninv.path.segments[0], "new")) break :blk true;
+            }
+            break :blk false;
+        };
+        if (!is_new) continue;
+        var nm: ?[]const u8 = null;
+        var seed: ?[]const u8 = null;
+        for (ninv.args) |a| {
+            if (std.mem.eql(u8, a.name, "expr")) nm = a.value;
+            if (std.mem.eql(u8, a.name, "source")) seed = a.value;
+        }
+        if (nm == null or !std.mem.eql(u8, nm.?, sname)) continue;
+        const sd = seed orelse return null;
+        // Parse `name: type, name: type` — commas at top level (types carry
+        // `<...>` but never a comma).
+        var out = std.ArrayList(PayloadField).initCapacity(allocator, 4) catch return null;
+        var depth: usize = 0;
+        var start: usize = 0;
+        var i: usize = 0;
+        while (i <= sd.len) : (i += 1) {
+            if (i < sd.len) {
+                if (sd[i] == '<') depth += 1 else if (sd[i] == '>') depth -= 1;
+            }
+            if (i == sd.len or (depth == 0 and sd[i] == ',')) {
+                const part = std.mem.trim(u8, sd[start..i], " \t\n\r");
+                if (part.len > 0) {
+                    if (std.mem.indexOfScalar(u8, part, ':')) |colon| {
+                        const pname = std.mem.trim(u8, part[0..colon], " \t");
+                        const ptype = normalizeColumnType(allocator, part[colon + 1 ..]);
+                        out.append(allocator, .{ .name = allocator.dupe(u8, pname) catch unreachable, .type = ptype }) catch unreachable;
+                    }
+                }
+                start = i + 1;
+            }
+        }
+        if (out.items.len == 0) return null;
+        return out.toOwnedSlice(allocator) catch null;
+    }
+    return null;
 }
 
 // ----------------------------------------------------------------------------
@@ -1797,11 +1931,13 @@ fn isStringParamType(type_str: []const u8) bool {
 fn punContinuationBinding(
     allocator: std.mem.Allocator,
     table: *SymbolTable,
+    items: []const ast.Item,
     cont: *ast.Continuation,
     scope: *std.ArrayList(ScopeEntry),
     counter: *usize,
     thread: ?Thread,
     payload_type: ?[]const u8,
+    payload_fields: ?[]const PayloadField,
     reporter: *errors_mod.ErrorReporter,
 ) std.mem.Allocator.Error!void {
     // The names this continuation introduces into scope are added in two phases
@@ -1859,6 +1995,21 @@ fn punContinuationBinding(
                     if (!isOpenThreadSlot(f, node.invocation.args)) continue;
                     if (own_payload_type) |opt| {
                         if (std.mem.eql(u8, opt, f.type)) continue; // step 1b takes it
+                    }
+                    // A RECORD payload (the store give-back, 690_094) claims the
+                    // slots its fields match — the record-thread in step 1b
+                    // places them, and an ENCLOSING bind must not win a slot the
+                    // nearer payload field is about to take (the same
+                    // nearest-first rule own_payload_type rides).
+                    if (payload_fields) |flds| {
+                        var claimed = false;
+                        for (flds) |fld| {
+                            if (typeCanFill(fld.type, f.type)) {
+                                claimed = true;
+                                break;
+                            }
+                        }
+                        if (claimed) continue;
                     }
 
                     // TEACHING GUARD (KORU038), kept alive across the selector
@@ -1918,7 +2069,15 @@ fn punContinuationBinding(
     //    DID bind is untouched: that name entered scope in phase A and fills by
     //    pun, which is 210_157's spelling. Pins: 210_191, 210_192.
     const effective_thread: ?Thread = thread orelse blk: {
-        const pt = payload_type orelse break :blk null;
+        const pt = payload_type orelse {
+            // A RECORD payload has no single type to thread, but a consumer
+            // may take one of its fields by type — the store give-back
+            // (690_094): `| full |> free()` threads `label` when free's
+            // parameter is a string and the give-back record carries one.
+            if (cont.binding != null or cont.destructure.len > 0) break :blk null;
+            const flds = payload_fields orelse break :blk null;
+            break :blk Thread{ .holder = .{ .payload = cont }, .type = "", .fields = flds };
+        };
         if (cont.binding != null or cont.destructure.len > 0) break :blk null;
         break :blk Thread{ .holder = .{ .payload = cont }, .type = pt };
     };
@@ -1985,7 +2144,19 @@ fn punContinuationBinding(
             }
             break :blk null;
         };
-        try punContinuationBinding(allocator, table, child, scope, counter, passed, child_payload, reporter);
+        // A RECORD payload's fields (690_094): the give-back `| full` on an
+        // owned store carries the row record, and an unbound arm threads the
+        // field a consumer's parameter matches.
+        const child_fields: ?[]const PayloadField = blk: {
+            if (child_payload != null) break :blk null;
+            if (cont.node) |*node| {
+                if (node.* == .invocation) {
+                    if (storeSynthPayloadFields(allocator, items, &node.invocation, child.branch)) |flds| break :blk flds;
+                }
+            }
+            break :blk null;
+        };
+        try punContinuationBinding(allocator, table, items, child, scope, counter, passed, child_payload, child_fields, reporter);
     }
 
     scope.shrinkRetainingCapacity(scope_mark);
