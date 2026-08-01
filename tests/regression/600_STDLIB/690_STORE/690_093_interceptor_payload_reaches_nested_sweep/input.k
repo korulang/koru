@@ -31,8 +31,8 @@ std/store:new(nodes, capacity: 8) { id: i64, val: i64 }
 std/store:insert(idx) { id: 10, live: 1 }
 | row _ |> std/store:insert(idx) { id: 20, live: 1 }
     | row _ |> _
-    | full _ |> _
-| full _ |> _
+    | full |> _
+| full |> _
 
 std/store:insert(nodes) { id: 10, val: 100 }
 | row a |> std/store:take(nodes[a])

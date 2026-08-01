@@ -1152,25 +1152,65 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 }
                 return false;
             }
-            fn inCont(cont: *const ast.Continuation, name: []const u8) bool {
-                if (cont.condition) |c| {
-                    if (inText(c, name)) return true;
-                }
-                if (cont.node) |n| {
-                    if (n == .invocation) {
-                        for (n.invocation.args) |a| {
-                            if (inText(a.value, name)) return true;
-                            if (a.expression_value) |ev| {
-                                if (inText(ev.text, name)) return true;
-                            }
-                            if (a.source_value) |sv| {
-                                if (inText(sv.text, name)) return true;
+            // A store-read site nested in the interceptor body transplants its
+            // body into a `__store_sweepbody_<s>_L<n>` / `__store_qbody_<s>_L<n>`
+            // event whose INPUTS carry the captures the body references. The
+            // interceptor body at create time holds only the spliced loop, so a
+            // body-only use of the payload lives here — the field name shows up
+            // as an event input, which is exactly the thread that makes it
+            // compile (690_093).
+            fn readBodyEventUses(prog: *const ast.Program, text: []const u8, name: []const u8) bool {
+                const markers = [_][]const u8{ "__store_sweepbody_", "__store_qbody_" };
+                for (markers) |m| {
+                    var pos: usize = 0;
+                    while (std.mem.indexOfPos(u8, text, pos, m)) |at| {
+                        var i = at + m.len;
+                        while (i < text.len and (std.ascii.isAlphanumeric(text[i]) or text[i] == '_')) i += 1;
+                        const ev_name = text[at .. i];
+                        pos = i;
+                        for (prog.items) |pi| {
+                            if (pi != .event_decl) continue;
+                            const ed = &pi.event_decl;
+                            if (ed.path.segments.len == 1 and std.mem.eql(u8, ed.path.segments[0], ev_name)) {
+                                for (ed.input.fields) |f2| {
+                                    if (std.mem.eql(u8, f2.name, name)) return true;
+                                }
                             }
                         }
                     }
                 }
+                return false;
+            }
+            fn inCont(cont: *const ast.Continuation, name: []const u8, prog: *const ast.Program) bool {
+                if (cont.condition) |c| {
+                    if (inText(c, name)) return true;
+                }
+                if (cont.node) |n| {
+                    switch (n) {
+                        .invocation => {
+                            for (n.invocation.args) |a| {
+                                if (inText(a.value, name)) return true;
+                                if (a.expression_value) |ev| {
+                                    if (inText(ev.text, name)) return true;
+                                }
+                                if (a.source_value) |sv| {
+                                    if (inText(sv.text, name)) return true;
+                                }
+                            }
+                        },
+                        .inline_code => {
+                            // The spliced loop a nested read site leaves behind
+                            // (690_093): its relocated guard carries the payload
+                            // name in the text, and its body call names the
+                            // transplanted event whose inputs carry the capture.
+                            if (inText(n.inline_code, name)) return true;
+                            if (readBodyEventUses(prog, n.inline_code, name)) return true;
+                        },
+                        else => {},
+                    }
+                }
                 for (cont.continuations) |*c| {
-                    if (inCont(c, name)) return true;
+                    if (inCont(c, name, prog)) return true;
                 }
                 return false;
             }
@@ -1271,10 +1311,16 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:new({s}): the `! {s}` interceptor needs a body (`|> std/store:stored {{ ... }}`)", .{ store_name, bname }) } };
             };
             if (bnode != .invocation) {
-                return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:new({s}): the `! {s}` interceptor body must start with an invocation this rung", .{ store_name, bname }) } };
+                // A nested store-read site (query/rule/sweep) splices its loop
+                // here as inline_code BEFORE create runs (depth-first runner) —
+                // the interceptor body's real head is that loop, not an
+                // authored invocation (690_093).
+                if (bnode != .inline_code) {
+                    return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:new({s}): the `! {s}` interceptor body must start with an invocation this rung", .{ store_name, bname }) } };
+                }
             }
             for (dnames.items) |fnm| {
-                if (!Usage.inCont(ic, fnm)) {
+                if (!Usage.inCont(ic, fnm, program)) {
                     return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:new({s}): `! {s}` binds '{s}' but never uses it — discard the payload (`! {s} _`), or use the field in the body", .{ store_name, bname, fnm, bname }) } };
                 }
             }
@@ -3430,8 +3476,27 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                     var body_clone = ast_functional.cloneContinuation(alloc, arm_body) catch unreachable;
                     H.storeRefsContH(alloc, &body_clone, pnames, pident, &[_][]const u8{});
                     const lbody_node = body_clone.node.?;
+                    if (lbody_node == .inline_code) {
+                        // A nested store-read site (query/rule/sweep) spliced
+                        // its loop here BEFORE create ran (depth-first runner) —
+                        // 690_093. The emitter's flow path assumes an
+                        // invocation head, so this impl is a PROC: a proc impl
+                        // binds every event input as a const, which is exactly
+                        // how the loop's captures (the interceptor payload
+                        // fields) resolve.
+                        items.append(alloc, ast.Item{ .proc_decl = ast.ProcDecl{
+                            .path = H.mkPathH(alloc, module, ev_name),
+                            .body = ast.Source{ .text = lbody_node.inline_code, .location = loc, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
+                            .annotations = &[_][]const u8{},
+                            .target = alloc.dupe(u8, "zig") catch unreachable,
+                            .location = loc,
+                            .module = alloc.dupe(u8, module) catch unreachable,
+                        } }) catch unreachable;
+                        return;
+                    }
+                    const body_cont: ast.Continuation = ast.rootSite(lbody_node.invocation, body_clone.continuations, loc);
                     items.append(alloc, ast.Item{ .flow = ast.Flow{
-                        .body = ast.rootSite(lbody_node.invocation, body_clone.continuations, loc),
+                        .body = body_cont,
                         .pre_label = null,
                         .impl_of = H.mkPathH(alloc, module, ev_name),
                         .super_shape = null,
@@ -7104,6 +7169,24 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             module_path: ?[]const u8 = null,
             phantom: ?[]const u8 = null,
         };
+        // The column type of a `std.store:new(...)` seed field — the type an
+        // interceptor destructure field binds (690_093). Reads the seed block
+        // the same way the create transform does; null when the field is not a
+        // declared column.
+        fn storeColumnType(alloc: std.mem.Allocator, inv: *const ast.Invocation, want: []const u8) ?[]const u8 {
+            var seed: ?[]const u8 = null;
+            for (inv.args) |a| {
+                if (std.mem.eql(u8, a.name, "source")) seed = a.value;
+            }
+            const s = seed orelse return null;
+            const struct_literal = @import("struct_literal");
+            const braced = std.fmt.allocPrint(alloc, "{{{s}}}", .{s}) catch return null;
+            const cf = struct_literal.parseFields(alloc, braced) catch return null;
+            for (cf) |c| {
+                if (std.mem.eql(u8, c.name, want)) return alloc.dupe(u8, std.mem.trim(u8, c.value, " \t\n\r")) catch return null;
+            }
+            return null;
+        }
         fn isIdentStart(ch: u8) bool {
             return (ch >= 'a' and ch <= 'z') or (ch >= 'A' and ch <= 'Z') or ch == '_';
         }
@@ -7320,6 +7403,34 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                                             .type = alloc.dupe(u8, bt.type) catch unreachable,
                                             .module_path = if (bt.module_path) |mp| alloc.dupe(u8, mp) catch unreachable else null,
                                         }) catch unreachable;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    // A DESTRUCTURE arm (`! removed { id }`) binds its fields
+                    // the same way — the interceptor-payload threading
+                    // (690_093). The fields are the create's store columns, so
+                    // the type resolves from the parent invocation's seed
+                    // block, not lookupBranch (a record payload has no single
+                    // type to return). Skipped when the parent is not a
+                    // std.store:new — a generic destructure's field types are
+                    // a record lookup this pass does not do, and an untyped
+                    // capture is worse than none.
+                    if (c.destructure.len > 0) {
+                        if (cont.node) |*pn| {
+                            if (pn.* == .invocation) {
+                                const is_create = blk: {
+                                    if (pn.invocation.path.module_qualifier) |mq| {
+                                        if (std.mem.eql(u8, mq, "std.store") and pn.invocation.path.segments.len == 1 and std.mem.eql(u8, pn.invocation.path.segments[0], "new")) break :blk true;
+                                    }
+                                    break :blk false;
+                                };
+                                if (is_create) {
+                                    for (c.destructure) |df| {
+                                        if (storeColumnType(alloc, &pn.invocation, df.name)) |ft| {
+                                            out.append(alloc, .{ .name = alloc.dupe(u8, df.name) catch unreachable, .type = ft }) catch unreachable;
+                                        }
                                     }
                                 }
                             }
