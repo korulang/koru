@@ -76,8 +76,46 @@ wall firing correctly is not evidence its mirror is covered, and the noisy case
 is usually the rarer one. What made the four orphans harmless was luck about
 numbering, not a rule.
 
+## A blank mirror cell is an unasked question, not an absent one
+
+`scripts/WALLS.md` now has a **mirror column**, written because of this belief,
+and its header says an empty cell "means none is known, not that none exists."
+On 2026-08-01 that turned out to be understating it. The row for
+`verdict:runtime` read:
+
+> a non-zero exit with no expectation declared is a failure — *(mirror: blank)*
+
+The mirror of "no expectation declared" is "an expectation declared", and in
+that case the harness graded `actual.txt` and never looked at the exit code at
+all. A `MUST_RUN` binary could print the right bytes, segfault, and pass. The
+defect was not hiding somewhere the register did not reach — **it was the blank
+cell in the row that described it**, and reading the row and asking its own
+column's question is the entire derivation.
+
+Two more instances the same day, both cheap to find once asked:
+
+| enforced | not enforced |
+|---|---|
+| the JS equivalence path checks node's exit code (`regression_lib.sh:345`) | the Zig path never read `RUN_EXIT` in any expectation branch |
+| `.gitignore` allowlists `EXPECT_TIMEOUT` against a blanket `*` | its sibling marker was ignored, so the fix's own markers would not have committed |
+
+The `.gitignore` one is worth keeping because the asymmetry was created *by the
+fix for this belief* and would have shipped inside it: a new marker file,
+allowlisted nowhere, silently dropped, turning four tests red for everyone but
+the author. **Writing the mirror wall is itself an operation that can create a
+new unguarded direction.**
+
+So the practice hardens by one step. It is not enough to ask the mirror question
+when auditing; the register's blank cells are a **worklist**, and they should be
+swept rather than waited on. Three of the four instances in the original table
+were found by asking the question of a wall someone happened to be reading. The
+column exists so that stops being luck.
+
 ## Open
 
+- The blank mirror cells in `scripts/WALLS.md` have never been swept as a set.
+  That sweep is now the cheapest known source of defects in the harness, and
+  `verdict:runtime` is evidence the yield is real rather than theoretical.
 - No inventory exists. Known so far: `regression_lib.sh:581` and `:608`,
   `f1a74bd1`, `prose_check.sh` check D, `scripts/registry_check.zig`, and the
   test-shaped walls `690_099` and `110_029`. Certainly incomplete.
