@@ -34,5 +34,5 @@ std/store:insert(squad) { hp: 40, kind: 1 }
 std/store:insert(squad) { hp: 60, kind: 2 }
 std/store:insert(squad) { hp: 80, kind: 1 }
 
-std/store:sweep(squad)
-! sweep e when e.kind == 1 |> std/store:stored { e.hp: e.hp - 15 }
+std/store:query(squad)
+! query e when e.kind == 1 |> std/store:stored { e.hp: e.hp - 15 }

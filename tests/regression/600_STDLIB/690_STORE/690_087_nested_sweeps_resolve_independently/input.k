@@ -26,12 +26,12 @@ std/store:new(inner, capacity: 4) { v: i64 }
 std/store:insert(outer) { v: 1 }
 std/store:insert(inner) { v: 100 }
 
-std/store:sweep(outer)
-! sweep o |> std/store:sweep(inner)
-    ! sweep i |> std/store:stored { i.v: 777 }
+std/store:query(outer)
+! query o |> std/store:query(inner)
+    ! query i |> std/store:stored { i.v: 777 }
 
-std/store:sweep(outer)
-! sweep o |> std/io:print.ln("outer {{ o.v:d }}")
+std/store:query(outer)
+! query o |> std/io:print.ln("outer {{ o.v:d }}")
 
-std/store:sweep(inner)
-! sweep i |> std/io:print.ln("inner {{ i.v:d }}")
+std/store:query(inner)
+! query i |> std/io:print.ln("inner {{ i.v:d }}")

@@ -18,9 +18,9 @@ std/store:insert(vals) { v: 1, acc: 0 }
 std/store:insert(vals) { v: 2, acc: 0 }
 std/store:insert(vals) { v: 3, acc: 0 }
 
-std/store:sweep(vals)
-! sweep a |> std/store:sweep(vals)
-    ! sweep b |> std/store:stored { a.acc: a.acc + b.v }
+std/store:query(vals)
+! query a |> std/store:query(vals)
+    ! query b |> std/store:stored { a.acc: a.acc + b.v }
 
-std/store:sweep(vals)
-! sweep r |> std/io:print.ln("v {{ r.v:d }} acc {{ r.acc:d }}")
+std/store:query(vals)
+! query r |> std/io:print.ln("v {{ r.v:d }} acc {{ r.acc:d }}")

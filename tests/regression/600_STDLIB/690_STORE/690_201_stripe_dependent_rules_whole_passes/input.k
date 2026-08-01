@@ -19,10 +19,10 @@ std/store:insert(game) { hp: 2 }
 | row _ |> _
 | full |> _
 
-[name(alpha)]std/store:query(game)
-! query a |> std/io:print.ln("A {{ a.hp:d }}")
+[name(alpha)]std/store:rule(game)
+! row a |> std/io:print.ln("A {{ a.hp:d }}")
 
-[name(beta)|depends_on(alpha)]std/store:query(game)
-! query b |> std/io:print.ln("B {{ b.hp:d }}")
+[name(beta)|depends_on(alpha)]std/store:rule(game)
+! row b |> std/io:print.ln("B {{ b.hp:d }}")
 
 std/store:stripe(game)

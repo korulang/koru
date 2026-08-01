@@ -27,5 +27,5 @@ std/store:insert(nums) { 7 }
 std/store:insert(nums) { 9 }
 | row _ |> _
 
-std/store:sweep(nums)
-! sweep n |> std/io:print.ln("n {{ n:d }}")
+std/store:query(nums)
+! query n |> std/io:print.ln("n {{ n:d }}")

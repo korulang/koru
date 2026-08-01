@@ -14,5 +14,5 @@ seed-c = std/store:insert(items) { v: 30 }
 
 pub tor draw {}
 draw = for(0..1)
-! each _ |> std/store:sweep(items)
-    ! sweep { entity.v, row } |> std/io:print.ln("row {{ row:d }} = {{ v:d }}")
+! each _ |> std/store:query(items)
+    ! query { entity.v, row } |> std/io:print.ln("row {{ row:d }} = {{ v:d }}")

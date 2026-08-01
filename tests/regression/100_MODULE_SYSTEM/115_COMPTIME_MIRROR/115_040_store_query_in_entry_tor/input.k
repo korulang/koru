@@ -14,7 +14,7 @@ run = std/store:insert(todos) { done: 0 }
 | row _ |> std/store:stored { todos[ui.sel].done: 1 - todos[ui.sel].done }
 
 pub tor show {}
-show = std/store:sweep(todos)
-! sweep e |> std/io:print.ln("done {{ e.done:d }}")
+show = std/store:query(todos)
+! query e |> std/io:print.ln("done {{ e.done:d }}")
 
 run() |> show()

@@ -18,9 +18,9 @@ std/store:insert(pts) { x: 0.5, acc: 0.0 }
 std/store:insert(pts) { x: 1.0, acc: 0.0 }
 std/store:insert(pts) { x: 2.25, acc: 0.0 }
 
-std/store:sweep(pts)
-! sweep a |> std/store:sweep(pts)
-    ! sweep b |> std/store:stored { a.acc: a.acc + (b.x - a.x) }
+std/store:query(pts)
+! query a |> std/store:query(pts)
+    ! query b |> std/store:stored { a.acc: a.acc + (b.x - a.x) }
 
-std/store:sweep(pts)
-! sweep r |> std/io:print.ln("x {{ r.x:f }} acc {{ r.acc:f }}")
+std/store:query(pts)
+! query r |> std/io:print.ln("x {{ r.x:f }} acc {{ r.acc:f }}")

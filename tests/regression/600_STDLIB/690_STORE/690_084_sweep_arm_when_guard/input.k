@@ -6,7 +6,7 @@
 // Silence is what makes this worth a pin of its own. A rejected guard would
 // send the author to a different spelling in one compile; an ignored one reads
 // as working and quietly widens every write behind it. The sibling verb honours
-// its guard — 690_008 is `! query { … } when kind == 1 |> …` and only the
+// its guard — 690_008 is `! row { … } when kind == 1 |> …` and only the
 // matching rows are written — so the shape is established and sweep is the one
 // that drops it.
 //
@@ -24,5 +24,5 @@ std/store:insert(rows) { idx: 0, pct: 0 }
 std/store:insert(rows) { idx: 1, pct: 0 }
 | row _ |> _
 
-std/store:sweep(rows)
-! sweep e when e.idx == 1 |> std/io:print.ln("hit {{ e.idx:d }}")
+std/store:query(rows)
+! query e when e.idx == 1 |> std/io:print.ln("hit {{ e.idx:d }}")

@@ -9,5 +9,5 @@ import std/store
 std/store:new(items, capacity: 4) { v: i64 }
 std/store:insert(items) { v: 10 }
 
-std/store:sweep(items)
-! sweep { entity.v } |> std/io:print.ln("v {{ v:d }}")
+std/store:query(items)
+! query { entity.v } |> std/io:print.ln("v {{ v:d }}")

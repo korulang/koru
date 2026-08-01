@@ -32,5 +32,5 @@ std/store:insert(game) { hp: 80, kind: 1 }
 
 // (@divTrunc, not `/`: integer-division LOWERING is the expression-layer
 // gap pinned at 010_063 — this pin tests the addressing head, not division.)
-std/store:sweep(game)
-! sweep e when e.kind == 1 |> std/store:stored { e.hp: @divTrunc(e.hp, 2) }
+std/store:query(game)
+! query e when e.kind == 1 |> std/store:stored { e.hp: @divTrunc(e.hp, 2) }

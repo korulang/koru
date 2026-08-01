@@ -20,16 +20,16 @@ std/store:insert(world) { px: 100, vx: 10, ax: 1 }
 | row _ |> _
 | full |> _
 
-[name(integrate)]std/store:query(world)
-! query s1 |> std/store:stored { s1.vx: s1.vx + s1.ax }
+[name(integrate)]std/store:rule(world)
+! row s1 |> std/store:stored { s1.vx: s1.vx + s1.ax }
 
-[name(advance)|depends_on(integrate)]std/store:query(world)
-! query s2 |> std/store:stored { s2.px: s2.px + s2.vx }
+[name(advance)|depends_on(integrate)]std/store:rule(world)
+! row s2 |> std/store:stored { s2.px: s2.px + s2.vx }
 
-[name(damp)|depends_on(advance)]std/store:query(world)
-! query s3 |> std/store:stored { s3.vx: s3.vx * 2 }
+[name(damp)|depends_on(advance)]std/store:rule(world)
+! row s3 |> std/store:stored { s3.vx: s3.vx * 2 }
 
 std/store:stripe(world)
 
-std/store:sweep(world)
-! sweep r |> std/io:print.ln("p {{ r.px:d }} v {{ r.vx:d }}")
+std/store:query(world)
+! query r |> std/io:print.ln("p {{ r.px:d }} v {{ r.vx:d }}")

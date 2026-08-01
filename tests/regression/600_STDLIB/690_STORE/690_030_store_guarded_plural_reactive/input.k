@@ -25,5 +25,5 @@ std/store:insert(arena) { hp: 50 }
 | row _ |> _
 | full |> _
 
-std/store:sweep(arena)
-! sweep e when e.hp > 0 |> std/store:stored { e.hp: e.hp - 20 }
+std/store:query(arena)
+! query e when e.hp > 0 |> std/store:stored { e.hp: e.hp - 20 }

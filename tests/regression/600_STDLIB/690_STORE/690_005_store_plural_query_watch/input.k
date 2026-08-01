@@ -23,7 +23,7 @@ import std/store
 
 std/store:new(game, capacity: 64) { hp: i64, kind: i64 }
 
-std/store:watch(game)
+std/store:rule(game)
 ! row e when e.hp > 40 and e.kind == 1 |> std/io:print.ln("enemy hp {{ e.hp:d }}")
 
 std/store:insert(game) { hp: 30, kind: 1 }

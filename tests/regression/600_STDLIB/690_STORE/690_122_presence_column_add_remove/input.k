@@ -16,17 +16,17 @@ std/store:new(ents, capacity: 8) { hp: i64, frozen: i64 }
 std/store:insert(ents) { hp: 10, frozen: 0 }
 std/store:insert(ents) { hp: 20, frozen: 0 }
 
-std/store:sweep(ents)
-! sweep a |> std/store:stored { a.frozen: 1 }
+std/store:query(ents)
+! query a |> std/store:stored { a.frozen: 1 }
 
-std/store:sweep(ents)
-! sweep b when b.frozen == 1 |> std/io:print.ln("frozen {{ b.hp:d }}")
+std/store:query(ents)
+! query b when b.frozen == 1 |> std/io:print.ln("frozen {{ b.hp:d }}")
 
-std/store:sweep(ents)
-! sweep c |> std/store:stored { c.frozen: 0 }
+std/store:query(ents)
+! query c |> std/store:stored { c.frozen: 0 }
 
-std/store:sweep(ents)
-! sweep d when d.frozen == 1 |> std/io:print.ln("still frozen {{ d.hp:d }}")
+std/store:query(ents)
+! query d when d.frozen == 1 |> std/io:print.ln("still frozen {{ d.hp:d }}")
 
-std/store:sweep(ents)
-! sweep e |> std/io:print.ln("alive {{ e.hp:d }}")
+std/store:query(ents)
+! query e |> std/io:print.ln("alive {{ e.hp:d }}")

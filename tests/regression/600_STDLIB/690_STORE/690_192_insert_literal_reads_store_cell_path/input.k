@@ -12,5 +12,5 @@ std/store:new(dst, capacity: 2) { id: i64 }
 
 std/store:insert(dst) { id: cfg.base }
 
-std/store:sweep(dst)
-! sweep d |> std/io:print.ln("row {{ d.id:d }}")
+std/store:query(dst)
+! query d |> std/io:print.ln("row {{ d.id:d }}")

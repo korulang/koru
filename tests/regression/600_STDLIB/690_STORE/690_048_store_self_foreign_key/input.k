@@ -24,5 +24,5 @@ std/store:insert(nodes) { val: 100, next: -1 }
     | row b |> std/store:stored { nodes[a].next: b }
         |> std/store:stored { nodes[a.next].val: 777 }
 
-std/store:sweep(nodes)
-! sweep e when e.val > 0 |> std/io:print.ln("val {{ e.val:d }} next {{ e.next:d }}")
+std/store:query(nodes)
+! query e when e.val > 0 |> std/io:print.ln("val {{ e.val:d }} next {{ e.next:d }}")

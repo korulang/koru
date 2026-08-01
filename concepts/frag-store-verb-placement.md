@@ -249,10 +249,61 @@ inferred from the docs — including docs written by the people who built both.
 Here the corpus disagreed with the comment, and only because 22 sites were
 actually moved and run.
 
-**Open:** closing the `sweep` gaps (guards, row-binding writes, char columns) is
-the precondition for the rename. Separately, `watch ! row` is incomplete on the
-watch side — the transplant-purity check and the nested-installation diagnostic
-were written against field arms and do not know a row arm exists.
+## The fusion was the MEANING; only the name was wrong (2026-08-01, landed)
+
+Everything above treats the fused corner as a defect to be decomposed. That was
+wrong, and the thing that showed it was trying to migrate the five sites that
+resisted — the stripe rules, which want all three faces at once and cannot be
+written as two lines without duplicating a body.
+
+The question that settles it: **is a row-scoped site a statement about the
+CORPUS, or about WRITES?** The asymmetry already inside `watch` answers it. A
+`! hp h` arm fires per *write* — it is about events, and backfill is meaningless
+for it because there are no past writes to replay. A row arm is about *rows*,
+and rows are things that exist rather than events that happened. "Every foe at
+hp ≤ 0 is culled" is not a claim about future foes; a rule that leaves the
+existing ones standing is a lie about the corpus.
+
+So the root-position sweep is not an implementation accident. It is what makes
+the rule **total at its point of installation** — rows before the line get the
+backfill, rows after get the subscription, and together they cover everything.
+That is a coherent and usually-wanted meaning, and the old surface simply had no
+word for it.
+
+The landed vocabulary:
+
+| form | meaning |
+|---|---|
+| `std/store:query(s) ! query e` | read the corpus **now** (was `sweep`) |
+| `std/store:watch(s) ! hp h` | react to writes on a **column** |
+| `std/store:rule(s) ! row e` | a standing statement over **rows** (was `query`) |
+| `std/store(s) ! hp h` | bare reference form → `watch` |
+
+`rule` because the codebase had been calling them that in every comment for
+months — `stripe` schedules *rules*, `create` splices *standing rules*. The word
+was load-bearing everywhere except on the surface. `[name(alpha)]` and
+`[depends_on(alpha)]` read as rule metadata because that is exactly what they
+are. One consequence worth noting: arm name and verb name are no longer the same
+string. A rule's arm names what the body RECEIVES (`! row`), not the verb.
+
+**What this cost, and it is worth recording.** A `watch ! row` form was built
+first, on the theory that the fusion should be split — two commits, two pins, and
+a self-inflicted bug where killing the rule's whole-pass form silently made it
+unschedulable. All of it reverted. The design was reached by *attempting the
+migration*, not by reasoning about it: 27 of 32 sites sorting cleanly said the
+fusion was not load-bearing for ordinary sites, and the 5 that refused said it
+was load-bearing for rules. Neither half was visible from the armchair, and the
+half that survived is the one the armchair had dismissed.
+
+**Still open:** the `sweep`-side gaps are now `query`-side gaps and no longer
+block anything, because the sites that needed them were rules all along. `query`
+still cannot lower a `when` guard on its arm, a write through the row binding,
+or a `char[N]` column — real limits on the READ, to close on their own merits.
+
+Also unresolved, and the more principled end state: a rule is currently total
+*at its installation point*, so where it sits in the program matters. Total over
+the corpus *period* — position irrelevant — is the version a DBSP reading
+actually implies. Not this rung.
 
 ## What this bought the numeric reading
 

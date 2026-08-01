@@ -16,8 +16,8 @@ std/store:new(ents, capacity: 4) { px: i64, vx: i64, py: i64, vy: i64 }
 std/store:insert(ents) { px: 0, vx: 1, py: 0, vy: 2 }
 std/store:insert(ents) { px: 10, vx: 3, py: 20, vy: 4 }
 
-std/store:sweep(ents)
-! sweep e |> std/store:stored { e.px: e.px + e.vx, e.py: e.py + e.vy }
+std/store:query(ents)
+! query e |> std/store:stored { e.px: e.px + e.vx, e.py: e.py + e.vy }
 
-std/store:sweep(ents)
-! sweep r |> std/io:print.ln("p {{ r.px:d }} {{ r.py:d }}")
+std/store:query(ents)
+! query r |> std/io:print.ln("p {{ r.px:d }} {{ r.py:d }}")

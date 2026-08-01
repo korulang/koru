@@ -25,5 +25,5 @@ std/store:insert(items) { v: 10 }
 std/store:insert(items) { v: 20 }
 | row _ |> _
 
-std/store:sweep(items)
-! sweep e |> std/io:print.ln("v {{ e.v:d }}")
+std/store:query(items)
+! query e |> std/io:print.ln("v {{ e.v:d }}")

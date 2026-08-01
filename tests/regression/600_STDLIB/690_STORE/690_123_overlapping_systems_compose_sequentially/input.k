@@ -17,14 +17,14 @@ std/store:new(world, capacity: 8) { px: i64, vx: i64, ax: i64 }
 std/store:insert(world) { px: 0, vx: 1, ax: 2 }
 std/store:insert(world) { px: 100, vx: 10, ax: 1 }
 
-std/store:sweep(world)
-! sweep s1 |> std/store:stored { s1.vx: s1.vx + s1.ax }
+std/store:query(world)
+! query s1 |> std/store:stored { s1.vx: s1.vx + s1.ax }
 
-std/store:sweep(world)
-! sweep s2 |> std/store:stored { s2.px: s2.px + s2.vx }
+std/store:query(world)
+! query s2 |> std/store:stored { s2.px: s2.px + s2.vx }
 
-std/store:sweep(world)
-! sweep s3 |> std/store:stored { s3.vx: s3.vx * 2 }
+std/store:query(world)
+! query s3 |> std/store:stored { s3.vx: s3.vx * 2 }
 
-std/store:sweep(world)
-! sweep r |> std/io:print.ln("p {{ r.px:d }} v {{ r.vx:d }}")
+std/store:query(world)
+! query r |> std/io:print.ln("p {{ r.px:d }} v {{ r.vx:d }}")

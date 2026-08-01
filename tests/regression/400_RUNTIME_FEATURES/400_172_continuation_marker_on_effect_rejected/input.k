@@ -7,6 +7,6 @@
 import std/io
 import std/store
 std/store:new(game, capacity: 8) { hp: i64 }
-std/store:query(game)
-| query { entity.hp } |> std/io:print.ln("hp {{ hp:d }}")
+std/store:rule(game)
+| row { entity.hp } |> std/io:print.ln("hp {{ hp:d }}")
 std/store:insert(game) { hp: 5 }

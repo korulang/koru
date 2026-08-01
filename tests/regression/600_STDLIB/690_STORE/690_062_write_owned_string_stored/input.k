@@ -24,5 +24,5 @@ std/string:from-page(text: "old")
         | err _ |> _
 | err _ |> _
 
-std/store:sweep(names)
-! sweep e |> std/string:read(s: e.label): text |> std/io:print.ln("{{ text:s }}")
+std/store:query(names)
+! query e |> std/string:read(s: e.label): text |> std/io:print.ln("{{ text:s }}")

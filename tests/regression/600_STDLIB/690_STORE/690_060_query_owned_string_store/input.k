@@ -17,7 +17,7 @@ import std/store
 
 std/store:new(names, capacity: 8) { name: *std/string:String<std/string:instance!> }
 
-std/store:watch(names)
+std/store:rule(names)
 ! row e |> std/string:read(s: e.name): text |> std/io:print.ln("{{ text:s }}")
 
 std/string:from-page(text: "hello")

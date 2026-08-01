@@ -1,5 +1,5 @@
 // PINS: a sweep arm can reach the 0-based ROW ORDINAL — the layout cursor a
-// retained renderer needs. `! draw |> sweep(store) ! sweep <row> |>
+// retained renderer needs. `! draw |> sweep(store) ! query <row> |>
 // write-at(y: <ordinal>, …)` is the render-bridge shape: what a row's fields
 // say is independent of WHERE it sits on screen, and only the sweep knows the
 // second thing.
@@ -22,5 +22,5 @@ std/store:insert(items) { v: 10 }
 std/store:insert(items) { v: 20 }
 std/store:insert(items) { v: 30 }
 for(0..1)
-! each _ |> std/store:sweep(items)
-    ! sweep { entity.v, row } |> std/io:print.ln("row {{ row:d }} = {{ v:d }}")
+! each _ |> std/store:query(items)
+    ! query { entity.v, row } |> std/io:print.ln("row {{ row:d }} = {{ v:d }}")

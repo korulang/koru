@@ -13,8 +13,8 @@ std/store:insert(game) { a: 1, b: 10 }
 | row _ |> _
 | full |> _
 
-std/store:sweep(game)
-! sweep e |> std/store:stored { e.a: e.a + 1, e.b: e.b + 1 }
+std/store:query(game)
+! query e |> std/store:stored { e.a: e.a + 1, e.b: e.b + 1 }
 
-std/store:sweep(game)
-! sweep e |> std/io:print.ln("a {{ e.a:d }} b {{ e.b:d }}")
+std/store:query(game)
+! query e |> std/io:print.ln("a {{ e.a:d }} b {{ e.b:d }}")

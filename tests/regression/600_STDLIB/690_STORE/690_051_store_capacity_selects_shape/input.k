@@ -11,7 +11,7 @@ import std/store
 
 std/store:new(items, capacity: 8) { n: i64 }
 
-std/store:watch(items)
+std/store:rule(items)
 ! row e |> std/io:print.ln("item {{ e.n:d }}")
 
 std/store:new(tally) { count: 0[i64] }

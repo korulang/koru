@@ -16,10 +16,10 @@ import std/store
 std/store:new(a, capacity: 4) { x: i64 }
 std/store:new(b, capacity: 8) { y: i64 }
 
-std/store:watch(b)
+std/store:rule(b)
 ! row q |> std/io:print.ln("b sees {{ q.y:d }}")
 
-std/store:watch(a)
+std/store:rule(a)
 ! row e |> std/store:insert(b) { y: e.x * 2 }
     | row _ |> _
     | full |> _
@@ -32,5 +32,5 @@ std/store:insert(b) { y: 77 }
 | row _ |> _
 | full |> _
 
-std/store:sweep(b)
-! sweep r |> std/io:print.ln("b has {{ r.y:d }}")
+std/store:query(b)
+! query r |> std/io:print.ln("b has {{ r.y:d }}")

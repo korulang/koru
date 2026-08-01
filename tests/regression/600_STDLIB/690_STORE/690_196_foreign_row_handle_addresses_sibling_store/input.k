@@ -24,5 +24,5 @@ std/store:insert(src) { v: 1 }
 | row r |> std/store:stored { dst[r].v: 999 }
 | full |> _
 
-std/store:sweep(dst)
-! sweep b |> std/io:print.ln("dst {{ b.v:d }}")
+std/store:query(dst)
+! query b |> std/io:print.ln("dst {{ b.v:d }}")

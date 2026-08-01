@@ -20,8 +20,8 @@ std/store:new(bodies, capacity: 4) { x: f32, big: f64 }
 
 std/store:insert(bodies) { x: 1.5, big: 2.25 }
 
-std/store:sweep(bodies)
-! sweep b |> std/store:stored { b.x: b.x + b.big }
+std/store:query(bodies)
+! query b |> std/store:stored { b.x: b.x + b.big }
 
-std/store:sweep(bodies)
-! sweep r |> std/io:print.ln("x {{ r.x:f }}")
+std/store:query(bodies)
+! query r |> std/io:print.ln("x {{ r.x:f }}")

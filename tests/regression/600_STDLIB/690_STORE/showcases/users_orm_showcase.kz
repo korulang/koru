@@ -172,8 +172,8 @@
 // what the backend underneath is.
 // ---------------------------------------------------------------------------
 
-~std/store:query(users)
-! query e when e.id > 0 |> std/io:print.ln("live: user {{ e.id:d }} is now {{ e.name:s }}")
+~std/store:rule(users)
+! row e when e.id > 0 |> std/io:print.ln("live: user {{ e.id:d }} is now {{ e.name:s }}")
 
 // ---------------------------------------------------------------------------
 // STEP 3 — application code. ONLY store constructs from here down:
@@ -194,8 +194,8 @@
 // the query selects, the `stored` block under it writes through the bound
 // row. Rewrites Alice's display name; the watch above fires again for id 1,
 // and `persist` above upserts the change back to users.db.
-~std/store:query(users)
-! query e when e.id == 1 |> std/store:stored { e.name: "Alice Cooper" }
+~std/store:rule(users)
+! row e when e.id == 1 |> std/store:stored { e.name: "Alice Cooper" }
 
 // DELETE — insert-returned handle (GROUNDED, 690_007) into `take` (GROUNDED
 // call shape, 690_007: `std/store:take(game[r])`). `discard` is INVENTED:

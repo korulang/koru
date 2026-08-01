@@ -30,5 +30,5 @@ std/string:from-page(text: "task")
     | row r |> std/store:stored { todos[r].done: 1 }
 | err _ |> _
 
-std/store:sweep(todos)
-! sweep e |> std/string:read(s: e.label): text |> std/io:print.ln("{{ text:s }} done={{ e.done:d }}")
+std/store:query(todos)
+! query e |> std/string:read(s: e.label): text |> std/io:print.ln("{{ text:s }} done={{ e.done:d }}")

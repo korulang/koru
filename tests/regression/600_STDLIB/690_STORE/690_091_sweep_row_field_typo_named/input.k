@@ -11,5 +11,5 @@ import std/store
 std/store:new(items, capacity: 4) { v: i64 }
 std/store:insert(items) { v: 10 }
 
-std/store:sweep(items)
-! sweep e |> std/io:print.ln("w {{ e.w:d }}")
+std/store:query(items)
+! query e |> std/io:print.ln("w {{ e.w:d }}")

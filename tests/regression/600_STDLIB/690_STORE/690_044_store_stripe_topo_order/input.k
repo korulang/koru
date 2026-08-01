@@ -12,10 +12,10 @@ std/store:insert(game) { hp: 5 }
 | row _ |> _
 | full |> _
 
-[name(second)|depends_on(first)]std/store:query(game)
-! query e |> std/io:print.ln("second {{ e.hp:d }}")
+[name(second)|depends_on(first)]std/store:rule(game)
+! row e |> std/io:print.ln("second {{ e.hp:d }}")
 
-[name(first)]std/store:query(game)
-! query e |> std/io:print.ln("first {{ e.hp:d }}")
+[name(first)]std/store:rule(game)
+! row e |> std/io:print.ln("first {{ e.hp:d }}")
 
 std/store:stripe(game)

@@ -18,5 +18,5 @@ std/store:new(real, capacity: 2) { v: i64 }
 std/store:insert(typo) { v: 1 }
 | row _ |> _
 
-std/store:sweep(typo)
-! sweep r |> std/io:print.ln("v {{ r.v:d }}")
+std/store:query(typo)
+! query r |> std/io:print.ln("v {{ r.v:d }}")

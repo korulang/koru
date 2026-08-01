@@ -6,11 +6,11 @@
 // `expected type expression, found '{'`. Put anything in front of it so it
 // becomes a chain step and the identical sweep compiles and runs:
 //
-//     std/store:sweep(nums)                          <- refused (this test)
-//     std/io:print.ln("start") |> std/store:sweep(nums)   <- compiles, prints
+//     std/store:query(nums)                          <- refused (this test)
+//     std/io:print.ln("start") |> std/store:query(nums)   <- compiles, prints
 //
 // The discriminator is POSITION and nothing else: same store, same arm, same
-// projection. It is not about subflows (a `scan = std/store:sweep(nums)` head
+// projection. It is not about subflows (a `scan = std/store:query(nums)` head
 // fails identically), not about obligations, and not about what the arm calls.
 // Every sweep in the corpus and in koru-examples/gallery happens to be chained,
 // which is why a statement-position sweep had never been emitted.
@@ -26,5 +26,5 @@ std/store:new(nums, capacity: 4) { n: i64 }
 std/store:insert(nums) { n: 1 }
 | row _ |> _
 
-std/store:sweep(nums)
-! sweep e |> std/io:print.ln("n={{ e.n:d }}")
+std/store:query(nums)
+! query e |> std/io:print.ln("n={{ e.n:d }}")

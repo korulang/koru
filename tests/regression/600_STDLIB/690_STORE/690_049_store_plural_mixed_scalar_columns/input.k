@@ -12,5 +12,5 @@ std/store:new(m, capacity: 8) { n: i64, r: f64 }
 
 std/store:insert(m) { n: 5, r: 2.5 }
 
-std/store:sweep(m)
-! sweep e |> std/io:print.ln("n {{ e.n:d }} r {{ e.r:f }}")
+std/store:query(m)
+! query e |> std/io:print.ln("n {{ e.n:d }} r {{ e.r:f }}")

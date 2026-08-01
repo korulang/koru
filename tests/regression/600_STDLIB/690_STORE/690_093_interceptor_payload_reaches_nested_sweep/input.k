@@ -5,9 +5,9 @@
 // invalidate it. Each half is green on its own and only the combination fails —
 // measured 2026-07-28:
 //
-//   ! removed _     |> sweep(idx) ! sweep e when e.live == 1 |> stored {...}   compiles
+//   ! removed _     |> sweep(idx) ! query e when e.live == 1 |> stored {...}   compiles
 //   ! removed { id } |> stored { idx[0].live: id }                             compiles
-//   ! removed { id } |> sweep(idx) ! sweep e when e.id == id  |> stored {...}  THIS
+//   ! removed { id } |> sweep(idx) ! query e when e.id == id  |> stored {...}  THIS
 //
 // Two checkers go blind on the same fact. The backend reports `use of
 // undeclared identifier 'id'` from the sweep's `when` guard, and KORU100
@@ -25,8 +25,8 @@ import std/store
 std/store:new(idx, capacity: 8) { id: i64, live: i64 }
 
 std/store:new(nodes, capacity: 8) { id: i64, val: i64 }
-! removed { id } |> std/store:sweep(idx)
-    ! sweep e when e.id == id |> std/store:stored { e.live: 0 }
+! removed { id } |> std/store:query(idx)
+    ! query e when e.id == id |> std/store:stored { e.live: 0 }
 
 std/store:insert(idx) { id: 10, live: 1 }
 | row _ |> std/store:insert(idx) { id: 20, live: 1 }
@@ -39,5 +39,5 @@ std/store:insert(nodes) { id: 10, val: 100 }
     | item _ |> _
     | empty |> _
 
-std/store:sweep(idx)
-! sweep e |> std/io:print.ln("id {{ e.id:d }} live {{ e.live:d }}")
+std/store:query(idx)
+! query e |> std/io:print.ln("id {{ e.id:d }} live {{ e.live:d }}")
