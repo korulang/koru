@@ -39,19 +39,31 @@ teardown flow as an ordinary flow item with no `impl_of`. The lifecycle arms go
 through a shared emitter that appends a `retain`ed event declaration plus a flow
 that IS its implementation — `impl_of` set.
 
-But that is a correlation and not yet the cause, because the arm path is **not
-simply broken**. 690_016 is green, and its `! inserted` body is a comptime
-transform too — a store write. So a transform does expand inside `! inserted`.
-What fails is a particular transform in that position, and what survives is
-another. The defect is an interaction between the arm's lowering and something
-about the transform that meets it, and until that something is named, any patch
-is a guess with a green test in front of it.
+But that is a correlation, not the cause, and chasing it further would have been
+wrong. What the measurements actually converge on is **position plus kind**: the
+transform at the arm body's ROOT does not expand when it takes an
+`expr: Expression`, and does when it takes a `source: Source`. Chained positions
+expand either way. So the arm path is not broken and the transform is not broken;
+one shape of transform in one position is.
 
-This is the third time the scope has shrunk under measurement: from "the
-interceptor class", to "inserted/removed but not discharge", to "some transforms
-but not others, in inserted". Each step came from running a control rather than
-from reading more code, and each previous claim would have justified a different
-and wrong fix.
+Where it lands when it fails is the tell: `std/io`'s print family declares a
+reroute to `print.impl` for shape checking, and an unexpanded call arrives
+*there* — a real event, a real handler, no output. That is why nothing reports.
+The failure has somewhere plausible to go.
+
+Why nobody found it: **no green test in the corpus puts an Expression-taking
+transform at an interceptor arm's root.** The green interceptor tests root their
+arms at a store write or at an ordinary tor with the print chained behind. The
+corner is uncovered, not contested — which is a different and cheaper problem
+than a contested one.
+
+This is the fourth narrowing under measurement: from "the interceptor class", to
+"inserted/removed but not discharge", to "some transforms but not others", to
+"Expression-taking transforms in root position". Every step came from running a
+control, never from reading more code, and each earlier claim would have bought a
+different and wrong patch. The lesson is cheaper than the bug: when a defect's
+scope keeps shrinking, the scope was an assumption, and the next control is worth
+more than the next hour of reading.
 
 So this stays adjacent to **authored surface is normalized, synthesized surface
 never is** without collapsing into it — that shape predicts far more failure

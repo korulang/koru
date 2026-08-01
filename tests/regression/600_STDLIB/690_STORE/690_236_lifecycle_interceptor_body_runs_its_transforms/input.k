@@ -1,26 +1,23 @@
-// PINS: every interceptor body on a store declaration is ordinary Koru, so a
-// comptime transform inside one expands the way it does anywhere else.
+// PINS: the ROOT invocation of a store lifecycle arm body expands its comptime
+// transform, the way every other position in the body already does.
 //
-// `! discharge` is the IN-FILE CONTROL —
-// its body is the same shape as the other two and its `print.ln` does expand,
-// interpolation and all. That is what makes this a pin on an ASYMMETRY rather
-// than on a missing feature: the declaration site already knows how to run an
-// arm body, and two of its arms do not get it.
+// `! discharge` is the IN-FILE CONTROL. Its `print.ln` sits one link down a
+// chain and prints, interpolation and all; the `! inserted` arm's `print.ln`
+// sits at the body's root and vanishes. `std/io:print`/`print.ln` are
+// `~[keyword|comptime|transform]` taking `expr: Expression` (io.kz:21/240), and
+// where the rewrite does not happen the call lowers to the `print.impl` reroute
+// those transforms declare for shape checking — silent, and indistinguishable at
+// the source from an arm that ran.
 //
-// `std/io:print.ln` is `~[keyword|comptime|transform]` (io.kz:240) — a call site
-// the compiler REWRITES into inline Zig. Where the rewrite does not happen the
-// call survives as a plain event taking the raw template as `expr`, whose result
-// is discarded: silent, and indistinguishable at the source from a wired arm.
+// The boundary measured around this pin: a `source: Source` transform
+// (`std/store:stored`) DOES expand at an arm root, and both kinds expand when
+// chained. So this is not "interceptor bodies don't normalize" and not "root
+// position is dead" — it is an Expression-taking transform in root position.
 //
-// The mechanism the two paths differ by: `! discharge` rides the teardown flow
-// as an ordinary appended flow (store.kz:3646, `impl_of = null`), while
-// inserted/removed/updated go through `LC.emit` (store.kz:3304), which appends a
-// `retain`ed event_decl plus its implementing subflow. The bodies that expand
-// are the ones on the first path.
-//
-// This is the store's face of frag-two-lowerings-share-one-contract, and of the
-// standing question whether synthesized surface re-enters normalization. A
-// lifecycle arm is authored surface by every measure its author can see.
+// Why it survived: no green interceptor test puts one there. 690_016/003/033
+// root their arms at `std/store:stored`; 690_061/065 root theirs at an ordinary
+// tor and chain the print behind it. This file is the uncovered corner.
+
 import std/io
 import std/store
 import app/lib/src
