@@ -1,4 +1,4 @@
-before
-inserted 7
-removed 7
-took it
+start
+arm inserted
+inserted
+arm discharge 9

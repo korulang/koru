@@ -25,16 +25,26 @@ compiles, runs, prints nothing, and reports nothing. The first reading — "the
 arm never fires" — is wrong. It fires; the store calls the handler, and the
 handler is emitted. What does not happen is the body's **comptime transform**:
 `print.ln` is `~[keyword|comptime|transform]`, a call site rewritten into inline
-Zig, and inside a synthesized interceptor body it survives unexpanded as a
-`print_impl` call carrying the raw template string, whose result is discarded.
-Both `inserted` and `removed` behave this way, so it is the class and not a
-single arm. 690_236 pins it.
+Zig, and inside such a body it survives unexpanded as a call carrying the raw
+template string, whose result is discarded.
 
-That places the defect where it belongs: this is the store's instance of
-**authored surface is normalized, synthesized surface never is** — an
-interceptor body is cloned into a synthesized item and never re-enters the
-normalization that would expand it. The store did not grow its own bug; it
-inherited a general one, and it is the first place where the consequence is
+And the arms **disagree with each other**, which is the finding. `! discharge`
+expands its body, interpolation and all; `! inserted` and `! removed`, on the
+same declaration, do not. So this is not "synthesized bodies don't normalize" as
+a flat rule — the declaration site already knows how to run an arm body, and two
+of its arms don't get it. 690_236 pins the asymmetry, control in the same file.
+
+The two paths differ in how the body is appended. `! discharge` rides the
+teardown flow as an ordinary flow item with no `impl_of`. The lifecycle arms go
+through a shared emitter that appends a `retain`ed event declaration plus a flow
+that IS its implementation — `impl_of` set. The bodies that expand are the ones
+on the first path. Whatever the second path is missing, the first one has, and
+the fix is a comparison rather than a search.
+
+That keeps this adjacent to **authored surface is normalized, synthesized
+surface never is** without collapsing into it: the general shape predicts both
+arms failing, and only one does. The general question is still live; this is a
+narrower, cheaper instance of it — and the first where the consequence is
 *silence* rather than a diagnostic.
 
 So the standing open question — should transform output re-enter normalization?
