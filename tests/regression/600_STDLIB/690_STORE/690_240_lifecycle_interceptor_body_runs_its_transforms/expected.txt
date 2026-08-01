@@ -1,0 +1,4 @@
+start
+arm inserted
+inserted
+arm discharge 9

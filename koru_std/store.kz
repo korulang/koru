@@ -3494,14 +3494,30 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                         } }) catch unreachable;
                         return;
                     }
+                    // The arm body is walked DEPTH-FIRST, so a transform at its
+                    // root has already fired by the time the store declaration
+                    // transforms — and it left its expansion on the INVOCATION
+                    // (`Invocation.inline_body`, the canonical slot). A flow
+                    // root is emitted from `Flow.inline_body` instead
+                    // (emitter_helpers.zig:4946); only a NESTED continuation is
+                    // emitted from the invocation's slot (:9189). Rebuilding the
+                    // arm as a flow root without carrying the expansion up drops
+                    // it between the two, and the emitter falls through to a
+                    // plain handler call — for `std/io:print` that is the
+                    // shape-check reroute, a real handler that prints nothing.
+                    // Silent, and indistinguishable from an arm that ran.
+                    //
+                    // This is the mirror of the migration the runner already
+                    // does in the other direction when it grafts a flow into a
+                    // nested site (transform_pass_runner.zig itemToNode).
                     const body_cont: ast.Continuation = ast.rootSite(lbody_node.invocation, body_clone.continuations, loc);
                     items.append(alloc, ast.Item{ .flow = ast.Flow{
                         .body = body_cont,
                         .pre_label = null,
                         .impl_of = H.mkPathH(alloc, module, ev_name),
                         .super_shape = null,
-                        .inline_body = null,
-                        .preamble_code = null,
+                        .inline_body = lbody_node.invocation.inline_body,
+                        .preamble_code = lbody_node.invocation.preamble_code,
                         .is_pure = false,
                         .is_transitively_pure = false,
                         .location = loc,

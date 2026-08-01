@@ -1,0 +1,40 @@
+// A synthetic PARTICIPANT with curl's exact contract, so the pump shape can be
+// probed without libcurl or a terminal.
+//
+//   open  → mints *Src<live!>          (curl: multi.start | started)
+//   step  → BORROWS <live>, `| running` / `| complete`   (curl: poll)
+//   close → CONSUMES <!live>, hands a value back          (curl: finish/cancel)
+//
+// close returning a value is the load-bearing detail: it leaves the column with
+// ZERO void dischargers, so a store holding one must be drained by an explicit
+// `! discharge` arm rather than auto-discharged (690_109's shape).
+const std = @import("std");
+
+pub const Src = struct { id: i64, left: i64 };
+
+~pub tor open { id: i64, work: i64 } -> *Src<live!>
+~proc open|zig {
+    const s = std.heap.page_allocator.create($mod.Src) catch unreachable;
+    s.* = .{ .id = id, .left = work };
+    return s;
+}
+
+~pub tor step { s: *Src<live> }
+! ?moved i64
+| running
+| complete
+
+~proc step|zig {
+    if (s.left <= 0) return .{ .complete = .{} };
+    s.left -= 1;
+    moved(s.id);
+    if (s.left == 0) return .{ .complete = .{} };
+    return .{ .running = .{} };
+}
+
+~pub tor close { s: *Src<!live> } -> i64
+~proc close|zig {
+    const id = s.id;
+    std.heap.page_allocator.destroy(s);
+    return id;
+}
