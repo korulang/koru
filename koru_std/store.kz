@@ -6222,6 +6222,87 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             }
             return blen;
         }
+        // Cell-path rewrite for seed values (690_192): `cfg.base` in an insert
+        // literal must lower to the SoA cell like it does in if/when exprs
+        // (690_074) and stored rhs. The insert site is a std.store invocation,
+        // so create's whole-program walk SKIPS its args — the seed is the one
+        // write-envelope position the walk never reaches. Mirrors the stored
+        // transform's rewrite (transforms own the rewriting at their own sites).
+        fn isIdent(ch: u8) bool {
+            return (ch >= 'a' and ch <= 'z') or (ch >= 'A' and ch <= 'Z') or (ch >= '0' and ch <= '9') or ch == '_' or ch == '-';
+        }
+        fn storeRefs(alloc: std.mem.Allocator, text: []const u8, name: []const u8, is_identity: bool) []const u8 {
+            const expr_ctx = ast.expressionMask(alloc, text);
+            var out = std.ArrayList(u8).initCapacity(alloc, text.len + 32) catch unreachable;
+            var i: usize = 0;
+            while (i < text.len) {
+                const at_boundary = i == 0 or !isIdent(text[i - 1]);
+                const starts = at_boundary and std.mem.startsWith(u8, text[i..], name);
+                const after = i + name.len;
+                if (starts and after < text.len and text[after] == '.') {
+                    out.appendSlice(alloc, "__koru_store_") catch unreachable;
+                    out.appendSlice(alloc, name) catch unreachable;
+                    i += name.len;
+                } else if (is_identity and expr_ctx[i] and starts and
+                    (after >= text.len or (!isIdent(text[after]) and text[after] != '[')))
+                {
+                    // A ONE-column store read in a seed (`insert(counter) { counter }`)
+                    // still has to reach a column in the SoA cell, so it resolves to
+                    // the synthesized one. `[` is excluded so a row index
+                    // (`todos[…]`) still takes the indexed path elsewhere.
+                    out.appendSlice(alloc, "__koru_store_") catch unreachable;
+                    out.appendSlice(alloc, name) catch unreachable;
+                    out.append(alloc, '.') catch unreachable;
+                    out.appendSlice(alloc, ast.STORE_IDENTITY_COLUMN) catch unreachable;
+                    i += name.len;
+                } else {
+                    out.append(alloc, text[i]) catch unreachable;
+                    i += 1;
+                }
+            }
+            return out.toOwnedSlice(alloc) catch unreachable;
+        }
+        // Every store name visible in the program — untransformed creates plus
+        // generated apply events — so a seed value can reference a cell from
+        // any store, under any transform order (same two-source shape as
+        // fieldOrder above).
+        fn allStoreNames(alloc: std.mem.Allocator, prog: *const ast.Program) []const []const u8 {
+            var names = std.ArrayList([]const u8).initCapacity(alloc, 4) catch unreachable;
+            for (prog.items) |pi| {
+                switch (pi) {
+                    .flow => |*f| {
+                        if (f.body.node) |*n| {
+                            if (n.* == .invocation) {
+                                const inv = &n.invocation;
+                                if (inv.path.module_qualifier) |mq| {
+                                    if (std.mem.eql(u8, mq, "std.store") and inv.path.segments.len == 1 and std.mem.eql(u8, inv.path.segments[0], "new")) {
+                                        for (inv.args) |a| {
+                                            if (std.mem.eql(u8, a.name, "expr")) names.append(alloc, stripQuotes(a.value)) catch unreachable;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    .event_decl => |*ed| {
+                        if (ed.path.segments.len == 1 and std.mem.startsWith(u8, ed.path.segments[0], "__store_apply_")) {
+                            names.append(alloc, ed.path.segments[0]["__store_apply_".len..]) catch unreachable;
+                        }
+                    },
+                    else => {},
+                }
+            }
+            return names.toOwnedSlice(alloc) catch unreachable;
+        }
+        fn isIdentityStore(alloc: std.mem.Allocator, prog: *const ast.Program, store: []const u8) bool {
+            const order = fieldOrder(alloc, prog, store) orelse return false;
+            return order.len == 1 and std.mem.eql(u8, order[0], ast.STORE_IDENTITY_COLUMN);
+        }
+        fn storeRefsAll(alloc: std.mem.Allocator, prog: *const ast.Program, text: []const u8) []const u8 {
+            var t = text;
+            for (allStoreNames(alloc, prog)) |nm| t = storeRefs(alloc, t, nm, isIdentityStore(alloc, prog, nm));
+            return t;
+        }
     };
 
     var store_name: []const u8 = "";
@@ -6273,6 +6354,11 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             }
             return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:insert({s}): row block is missing column '{s}'", .{ store_name, col }) } };
         };
+        // Cell reads in the seed lower to the SoA cell (690_192) — the same
+        // rewrite the stored RHS gets. The insert site is a std.store
+        // invocation, so create's whole-program walk skips its args; this is
+        // the only position the seed's cell paths ever lower.
+        const seed_val: []const u8 = H.storeRefsAll(allocator, program, val);
         // Fixed-char overflow (690_052): a COMPTIME-KNOWN string literal that
         // exceeds the column's byte length is a compile error naming column +
         // limit. Runtime values truncate in the insert proc (the `| toolong`
@@ -6296,7 +6382,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         // yet rewritten), `__koru_srf_*` (a sweep arm's projected parameter),
         // `__koru_store_*` (a query/cell read already lowered to the column).
         if (H.ownedCol(allocator, program, store_name, col)) {
-            const ov = std.mem.trim(u8, val, " \t\n\r");
+            const ov = std.mem.trim(u8, seed_val, " \t\n\r");
             const is_sweep_proj = std.mem.indexOf(u8, ov, "__koru_srf_") != null;
             const is_cell_read = std.mem.indexOf(u8, ov, "__koru_store_") != null;
             const is_dotted_proj = blk: {
@@ -6317,7 +6403,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         }
         call_args[i] = ast.Arg{
             .name = allocator.dupe(u8, col) catch unreachable,
-            .value = allocator.dupe(u8, val) catch unreachable,
+            .value = allocator.dupe(u8, seed_val) catch unreachable,
         };
     }
     call_args[order.len] = ast.Arg{
