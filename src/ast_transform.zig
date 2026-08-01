@@ -1174,7 +1174,55 @@ const ScopeEntry = struct {
     producer_ret: ?[]const u8,
 };
 
-/// The nearest live binding whose base type matches `want` — innermost first.
+/// The phantom part of a type text, or null: the LAST `<...>` group.
+/// `*Pending<!open>` → `!open`; `i64` → null. Phantom states do not nest.
+fn splitType(text: []const u8) struct { base: []const u8, phantom: ?[]const u8 } {
+    if (text.len > 0 and text[text.len - 1] == '>') {
+        if (std.mem.lastIndexOfScalar(u8, text, '<')) |lt| {
+            return .{ .base = text[0..lt], .phantom = text[lt + 1 .. text.len - 1] };
+        }
+    }
+    return .{ .base = text, .phantom = null };
+}
+
+/// The STATE NAME of a phantom: module qualifier and `!` markers stripped.
+/// `<app/lib/pend:open!>` and `<!open>` both name `open` — the checker's
+/// areCompatible compares names, not the carry/consume position.
+fn phantomStateName(phantom: []const u8) []const u8 {
+    var s = phantom;
+    if (std.mem.lastIndexOfScalar(u8, s, ':')) |pc| s = s[pc + 1 ..];
+    while (s.len > 0 and s[0] == '!') s = s[1..];
+    while (s.len > 0 and s[s.len - 1] == '!') s = s[0 .. s.len - 1];
+    return s;
+}
+
+/// Can a binding of type `binding` fill a parameter of type `param`, under
+/// the phantom system's OWN compatibility rule? The checker matches base
+/// types lazily (Zig owns the verdict) and phantom states by name via
+/// phantom_parser.areCompatible — `open!` and `!open` are the same state
+/// (carry vs consume), which is precisely the discharge pairing the drain
+/// and give-back arms depend on. Exact-string equality is the degenerate
+/// case of this rule, so every fill the old selector made still makes.
+///
+/// The obligation LAYER stays the checker's: this predicate only decides
+/// whether the SHAPE fits, exactly as areCompatible does. A fill that the
+/// checker then rejects on liveness errors loudly at the checker — never
+/// silently — which is the guarantee the phantom system needs from a desugar.
+fn typeCanFill(binding: []const u8, param: []const u8) bool {
+    const b = splitType(binding);
+    const p = splitType(param);
+    // Base must agree after the phantom is stripped. The store normalizes
+    // owned columns to `*Type` (no module), and the phantom's module is
+    // stripped in name comparison, so `*Pending<app/lib/pend:open!>` and
+    // `*Pending<!open>` meet here.
+    if (!std.mem.eql(u8, b.base, p.base)) return false;
+    // No param phantom = any state accepted (areCompatible(null, x) == true).
+    const p_ph = p.phantom orelse return true;
+    const b_ph = b.phantom orelse return false;
+    return std.mem.eql(u8, phantomStateName(p_ph), phantomStateName(b_ph));
+}
+
+/// The nearest live binding that can fill `want` — innermost first.
 /// NEAREST, never nearest-LIVE: liveness is not this pass's business. The
 /// reference desugars into the AST before any checker runs, so the obligation
 /// checker sees ordinary code and owns the verdict (KORU030). Skipping a spent
@@ -1185,7 +1233,7 @@ fn nearestOfType(scope: []const ScopeEntry, want: []const u8) ?ScopeEntry {
     while (i > 0) {
         i -= 1;
         const t = scope[i].type orelse continue;
-        if (std.mem.eql(u8, t, want)) return scope[i];
+        if (typeCanFill(t, want)) return scope[i];
     }
     return null;
 }
@@ -1404,7 +1452,11 @@ fn bindThreadIntoStep(
         if (!isOpenThreadSlot(f, node.invocation.args)) continue;
         try open_names.append(allocator, f.name);
         try open_types.append(allocator, f.type);
-        if (std.mem.eql(u8, f.type, thread.type)) try matches.append(allocator, f.name);
+        // The thread lands by the phantom system's own compatibility rule
+        // (typeCanFill), not exact-string: the drain's owned payload
+        // (`*Pending<open!>`) fills a consume parameter (`*Pending<!open>`)
+        // because they are the same state, carry vs consume (690_107/109).
+        if (typeCanFill(thread.type, f.type)) try matches.append(allocator, f.name);
     }
 
     // Nothing is unfilled: the call the author wrote is already complete, so
@@ -1498,6 +1550,47 @@ fn armPayloadType(info: EventInfo, branch_name: []const u8) ?[]const u8 {
         return br.payload.fields[0].type;
     }
     return null;
+}
+
+/// The payload type of a STORE-SYNTHESIZED arm (690_107/109): the drain
+/// (`! discharge`) branch lives on the teardown event `create` synthesizes
+/// AFTER the Stage-A fill runs, so the event table cannot type it. The seed
+/// block on the `std/store:new(...)` invocation carries the column type —
+/// resolve it the way the store does: a single owned column is
+/// `*mod:Type<state!>`, normalized to `*Type<mod:state!>` (base without the
+/// module qualifier, phantom with it), which is what the synthesized
+/// teardown payload declares. Returns null for anything without a single
+/// by-type candidate (a record payload — the give-back's multi-field shape).
+fn storeSynthPayloadType(allocator: std.mem.Allocator, inv: *const ast.Invocation, branch: []const u8) ?[]const u8 {
+    const is_new = blk: {
+        if (inv.path.module_qualifier) |mq| {
+            if (std.mem.eql(u8, mq, "std.store") and inv.path.segments.len == 1 and std.mem.eql(u8, inv.path.segments[0], "new")) break :blk true;
+        }
+        break :blk false;
+    };
+    if (!is_new) return null;
+    if (!std.mem.eql(u8, branch, "discharge")) return null;
+    var seed: ?[]const u8 = null;
+    for (inv.args) |a| {
+        if (std.mem.eql(u8, a.name, "source")) seed = a.value;
+    }
+    const s = std.mem.trim(u8, seed orelse return null, " \t\n\r");
+    if (s.len == 0 or s[0] != '*') return null;
+    const lt = std.mem.lastIndexOfScalar(u8, s, '<') orelse return null;
+    if (s[s.len - 1] != '>') return null;
+    const type_part = s[1..lt];
+    const phantom_part = s[lt + 1 .. s.len - 1];
+    const tcolon = std.mem.lastIndexOfScalar(u8, type_part, ':') orelse return null;
+    const type_name = type_part[tcolon + 1 ..];
+    const module_slash = type_part[0..tcolon];
+    var st = phantom_part;
+    if (st.len > 0 and st[st.len - 1] == '!') st = st[0 .. st.len - 1];
+    const state = if (std.mem.lastIndexOfScalar(u8, st, ':')) |pc| st[pc + 1 ..] else st;
+    var mod_dot = std.ArrayList(u8).initCapacity(allocator, module_slash.len) catch return null;
+    for (module_slash) |ch| {
+        mod_dot.append(allocator, if (ch == '/') '.' else ch) catch return null;
+    }
+    return std.fmt.allocPrint(allocator, "*{s}<{s}:{s}!>", .{ type_name, mod_dot.items, state }) catch return null;
 }
 
 // ----------------------------------------------------------------------------
@@ -1877,7 +1970,21 @@ fn punContinuationBinding(
 
     for (@constCast(cont.continuations)) |*child| {
         const passed: ?Thread = if (downstream != null and isUnnamedStep(child)) downstream else null;
-        const child_payload: ?[]const u8 = if (arm_source) |info| armPayloadType(info, child.branch) else null;
+        const child_payload: ?[]const u8 = blk: {
+            if (arm_source) |info| {
+                if (armPayloadType(info, child.branch)) |pt| break :blk pt;
+            }
+            // A STORE-SYNTHESIZED arm (690_107/109): its branch lives on an
+            // event `create` synthesizes after this Stage-A pass, so the event
+            // table cannot type it — but the store declaration the invocation
+            // carries can (the drain's single owned column).
+            if (cont.node) |*node| {
+                if (node.* == .invocation) {
+                    if (storeSynthPayloadType(allocator, &node.invocation, child.branch)) |pt| break :blk pt;
+                }
+            }
+            break :blk null;
+        };
         try punContinuationBinding(allocator, table, child, scope, counter, passed, child_payload, reporter);
     }
 
