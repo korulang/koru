@@ -37,15 +37,27 @@ of its arms don't get it. 690_236 pins the asymmetry, control in the same file.
 The two paths differ in how the body is appended. `! discharge` rides the
 teardown flow as an ordinary flow item with no `impl_of`. The lifecycle arms go
 through a shared emitter that appends a `retain`ed event declaration plus a flow
-that IS its implementation — `impl_of` set. The bodies that expand are the ones
-on the first path. Whatever the second path is missing, the first one has, and
-the fix is a comparison rather than a search.
+that IS its implementation — `impl_of` set.
 
-That keeps this adjacent to **authored surface is normalized, synthesized
-surface never is** without collapsing into it: the general shape predicts both
-arms failing, and only one does. The general question is still live; this is a
-narrower, cheaper instance of it — and the first where the consequence is
-*silence* rather than a diagnostic.
+But that is a correlation and not yet the cause, because the arm path is **not
+simply broken**. 690_016 is green, and its `! inserted` body is a comptime
+transform too — a store write. So a transform does expand inside `! inserted`.
+What fails is a particular transform in that position, and what survives is
+another. The defect is an interaction between the arm's lowering and something
+about the transform that meets it, and until that something is named, any patch
+is a guess with a green test in front of it.
+
+This is the third time the scope has shrunk under measurement: from "the
+interceptor class", to "inserted/removed but not discharge", to "some transforms
+but not others, in inserted". Each step came from running a control rather than
+from reading more code, and each previous claim would have justified a different
+and wrong fix.
+
+So this stays adjacent to **authored surface is normalized, synthesized surface
+never is** without collapsing into it — that shape predicts far more failure
+than is observed. What it is: the first place where a store declaration accepts
+surface it silently does not run, and the pin for it (690_236) carries a control
+that passes in the same file.
 
 So the standing open question — should transform output re-enter normalization?
 — now has a case that answers it. A lifecycle arm is authored surface by every

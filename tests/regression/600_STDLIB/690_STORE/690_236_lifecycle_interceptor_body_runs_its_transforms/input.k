@@ -23,13 +23,13 @@
 // lifecycle arm is authored surface by every measure its author can see.
 import std/io
 import std/store
-import lib/src
+import app/lib/src
 
-std/store:new(batch, capacity: 2) { *lib/src:Src<live!> }
+std/store:new(batch, capacity: 2) { *app/lib/src:Src<live!> }
 ! inserted _ |> std/io:print.ln("arm inserted")
-! discharge s |> lib/src:close(s): id |> std/io:print.ln("arm discharge {{ id:d }}")
+! discharge s |> app/lib/src:close(s): id |> std/io:print.ln("arm discharge {{ id:d }}")
 
 std/io:print.ln("start")
-lib/src:open(id: 9, work: 1): a |> std/store:insert(batch) { a }
+app/lib/src:open(id: 9, work: 1): a |> std/store:insert(batch) { a }
 | row _ |> std/io:print.ln("inserted")
-| full f |> lib/src:close(s: f): id |> std/io:print.ln("full {{ id:d }}")
+| full f |> app/lib/src:close(s: f): id |> std/io:print.ln("full {{ id:d }}")
