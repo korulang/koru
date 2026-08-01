@@ -276,6 +276,10 @@ regression_check_js_equivalence() {
     grep -qiw 'js' "$test_dir/LANGUAGES" || return 0
     [ -f "$test_dir/SUCCESS" ] && [ ! -f "$test_dir/FAILURE" ] || return 0
     [ -f "$test_dir/MUST_RUN" ] && [ -f "$test_dir/expected.txt" ] || return 0
+    # An EXPECT_TRAP test pins a Zig-side death by exit code. node's exit code
+    # for the same refusal is a separate contract nothing has spelled, and the
+    # js-runtime check below would read the pinned trap as a failure.
+    [ -f "$test_dir/EXPECT_TRAP" ] && return 0
 
     local flags=""
     [ -f "$test_dir/COMPILER_FLAGS" ] && flags=$(tr '\n' ' ' < "$test_dir/COMPILER_FLAGS")
@@ -1448,6 +1452,24 @@ EOF
             timeout "$TEST_TIMEOUT" "$test_dir/output" "${RUN_ARGS[@]}" < /dev/null > "$test_dir/actual.txt" 2>&1
         fi
         RUN_EXIT=$?
+
+        # A trap names the message it dies with. Without that it pins only
+        # "something went wrong" and stays green through a different death —
+        # the bare-MUST_ERROR pathology, one organ over. Judged before the exit
+        # code is dispatched on, because a trap test carrying no message pin is
+        # misconfigured whichever way its binary ends.
+        if [ -f "$test_dir/EXPECT_TRAP" ] \
+           && [ ! -f "$test_dir/expected.txt" ] && [ ! -f "$test_dir/expected_patterns.txt" ] \
+           && [ ! -f "$test_dir/post.sh" ] \
+           && ! { [ -f "$test_dir/EXPECT" ] && expect_has_assertions "$test_dir/EXPECT"; }; then
+            echo -e "${RED}❌ EXPECT_TRAP with no output expectation — a trap must pin the message it dies with${NC}"
+            echo "  Add expected_patterns.txt (or expected.txt / EXPECT assertions / post.sh)"
+            echo "  naming the refusal, so the pin survives the trap being replaced."
+            echo "trap-without-message-pin" > "$test_dir/FAILURE"
+            FAILED_TESTS="$FAILED_TESTS $TEST_NAME(trap-without-message-pin)"
+            return 0
+        fi
+
         if [ $RUN_EXIT -eq 0 ]; then
             if [ -f "$test_dir/EXPECT_TIMEOUT" ]; then
                 # The binary was SUPPOSED to hang but finished — a real infinite
@@ -1455,6 +1477,15 @@ EOF
                 echo -e "${RED}❌ EXPECT_TIMEOUT but the binary finished in <${TEST_TIMEOUT}s — the timeout net would not catch a hang${NC}"
                 echo "expect-timeout-but-finished" > "$test_dir/FAILURE"
                 FAILED_TESTS="$FAILED_TESTS $TEST_NAME(expect-timeout-but-finished)"
+                return 0
+            fi
+            if [ -f "$test_dir/EXPECT_TRAP" ]; then
+                # The binary was SUPPOSED to die and came back clean. Named here
+                # so a trap that stopped firing reads as a trap that stopped
+                # firing, rather than as whatever the output diff happens to say.
+                echo -e "${RED}❌ EXPECT_TRAP but the binary exited 0 — the pinned trap did not fire${NC}"
+                echo "expect-trap-but-exited-clean" > "$test_dir/FAILURE"
+                FAILED_TESTS="$FAILED_TESTS $TEST_NAME(expect-trap-but-exited-clean)"
                 return 0
             fi
             RUN_SUCCESS=true
@@ -1487,7 +1518,42 @@ EOF
             LEAKED_TESTS=$((LEAKED_TESTS + 1))
             return 0
         fi
-        
+
+        # TRAP-vs-CRASH GATE: the exit code is part of the verdict, not only the
+        # output. A binary that prints exactly the right thing and then dies —
+        # 139 on a double free, 134 on a panic nobody asked for — passed here
+        # until 2026-08-01, because the three expectation branches below grade
+        # actual.txt and never read RUN_EXIT; only the no-expectation fallback
+        # did, and almost every MUST_RUN test carries an expectation. A segfault
+        # writes nothing to actual.txt, so the artifact does not show it either.
+        #
+        # A designed death is declared with an EXPECT_TRAP marker — empty for
+        # "any non-zero exit", or carrying the exit codes it pins, one per line.
+        # That marker is the whole of the difference between a pinned trap and
+        # an unpinned crash; nothing is inferred from the message text, because
+        # inferring intent from output is what opened this hole.
+        if [ -f "$test_dir/EXPECT_TRAP" ]; then
+            TRAP_WANT=$(grep -vE '^[[:space:]]*(#|$)' "$test_dir/EXPECT_TRAP" 2>/dev/null | tr -d '[:space:]')
+            if [ -n "$TRAP_WANT" ] && ! printf '%s\n' "$TRAP_WANT" | grep -qx "$RUN_EXIT"; then
+                echo -e "${RED}❌ Trap exited $RUN_EXIT; EXPECT_TRAP pins $(printf '%s' "$TRAP_WANT" | tr '\n' ' ')${NC}"
+                echo "  The program died the wrong way — a pinned panic that became"
+                echo "  a segfault still prints the panic line it printed before."
+                echo "trap-exit-$RUN_EXIT" > "$test_dir/FAILURE"
+                FAILED_TESTS="$FAILED_TESTS $TEST_NAME(trap-exit-$RUN_EXIT)"
+                return 0
+            fi
+            echo -e "${GREEN}  ✓ trap fired (exit $RUN_EXIT)${NC}"
+        elif [ "$RUN_SUCCESS" = false ]; then
+            echo -e "${RED}❌ Binary exited $RUN_EXIT${NC}"
+            echo "  Output is not graded: an abnormal exit no test pinned is the failure."
+            echo "  If this death is the behaviour under test, pin it with an EXPECT_TRAP"
+            echo "  marker in the test dir (empty, or the exit codes it pins, one per line)."
+            echo "  Output the program did produce: $test_dir/actual.txt"
+            echo "crash-$RUN_EXIT" > "$test_dir/FAILURE"
+            FAILED_TESTS="$FAILED_TESTS $TEST_NAME(crash-$RUN_EXIT)"
+            return 0
+        fi
+
         # COMPTIME-OUTPUT GATE: what the program printed DURING compilation
         # (the comptime interpreter's thunked effects, captured in
         # backend.out/backend.err). A gate, not a branch: it composes with

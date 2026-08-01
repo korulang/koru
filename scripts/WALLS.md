@@ -46,6 +46,10 @@ stopping on any unexplained flip.
 | verdict:broken-test | regression_lib.sh | a BROKEN marker fails the test instead of hiding it | |
 | verdict:compile-only-lazy | regression_lib.sh | `input.kz` with runtime indicators must not pass as compile-only without MUST_RUN | reads `input.kz` only — a pure `.k` with runtime I/O and no MUST_RUN passes as compile-only |
 | verdict:comptime-output | regression_lib.sh | expected_comptime.txt lines must appear, in order, in Stage C output | the gate lives inside the MUST_RUN branch; `expected_comptime.txt` on a non-MUST_RUN test is never read, though its own comment says it requires MUST_RUN |
+| verdict:crash-* | regression_lib.sh | a MUST_RUN binary that exits abnormally fails even when its output matches — the exit code is graded alongside actual.txt | reads the exit code only; a program that returns 0 after corrupting state, or one killed by a signal its runtime swallows, is still invisible here |
+| verdict:trap-exit-* | regression_lib.sh | an EXPECT_TRAP naming exit codes must die with one of them, so a pinned panic that becomes a segfault fails | the codes are authored per test; nothing checks that a declared code is one this platform can produce |
+| verdict:trap-without-message-pin | regression_lib.sh | EXPECT_TRAP requires an output expectation, so a trap pins the message it dies with and not merely "something went wrong" | requires *an* expectation, not that the expectation names the trap — a trap test pinning only its pre-trap output satisfies this |
+| verdict:expect-trap-but-exited-clean | regression_lib.sh | an EXPECT_TRAP test that exits 0 proves the pinned trap stopped firing | mirror of verdict:expect-timeout-but-finished; both cover a declared abnormal end that stopped happening, neither covers an undeclared one that started |
 | verdict:config-error | regression_lib.sh | a self-contradictory or unpinned test configuration refuses to run — four sub-walls, anchored individually below | see the `anchor:cfg-*` rows |
 | verdict:error-output | regression_lib.sh | an expected frontend error must match its pin | |
 | verdict:expect-timeout-but-finished | regression_lib.sh | an EXPECT_TIMEOUT test that finishes proves the watchdog net broken | |
@@ -65,7 +69,7 @@ stopping on any unexplained flip.
 | verdict:no-input | regression_lib.sh | a test dir with no input.kz/input.k fails | fires only for dirs already recognized as tests — an orphan `NNN_` dir with no input and no marker is invisible to the whole harness (mirror of prose-check:C) |
 | verdict:output | regression_lib.sh | actual output must match expected.txt / patterns / EXPECT assertions | only expectations spelled in filenames the harness reads count — see anchor:cfg-expected-output-no-runner's mirror |
 | verdict:post-validation | regression_lib.sh | post.sh exiting non-zero fails the test | |
-| verdict:runtime | regression_lib.sh | a non-zero exit with no expectation declared is a failure | |
+| verdict:runtime | regression_lib.sh | a non-zero exit with no expectation declared is a failure | the mirror — a non-zero exit *with* an expectation declared — went ungraded from this wall's authoring until 2026-08-01, and is now verdict:crash-* |
 | verdict:TIMEOUT after * | regression_lib.sh | the per-test watchdog SIGKILLs the whole process group on a compile hang | parallel path only; the serial path is deliberately unwatched (reasoned at its site) |
 | verdict:timeout-* | regression_lib.sh | the run-phase timeout net catches a runaway binary | |
 | verdict:wrong-error | regression_lib.sh | MUST_ERROR failed, but not with the pinned error | |

@@ -35,6 +35,7 @@
 !**/expected.json
 !**/EXPECT
 !**/EXPECT_TIMEOUT
+!**/EXPECT_TRAP
 !**/COMPILE_ONLY
 !**/SKIP
 !**/MUST_*
