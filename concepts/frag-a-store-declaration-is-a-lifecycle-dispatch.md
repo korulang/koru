@@ -39,31 +39,40 @@ teardown flow as an ordinary flow item with no `impl_of`. The lifecycle arms go
 through a shared emitter that appends a `retain`ed event declaration plus a flow
 that IS its implementation — `impl_of` set.
 
-But that is a correlation, not the cause, and chasing it further would have been
-wrong. What the measurements actually converge on is **position plus kind**: the
-transform at the arm body's ROOT does not expand when it takes an
-`expr: Expression`, and does when it takes a `source: Source`. Chained positions
-expand either way. So the arm path is not broken and the transform is not broken;
-one shape of transform in one position is.
+The cause, once instrumented, is none of the four things it looked like. It is
+**two slots for one fact**.
 
-Where it lands when it fails is the tell: `std/io`'s print family declares a
-reroute to `print.impl` for shape checking, and an unexpanded call arrives
-*there* — a real event, a real handler, no output. That is why nothing reports.
-The failure has somewhere plausible to go.
+An expansion produced by a transform is stored on the invocation
+(`Invocation.inline_body`). The emitter reads it from *two different places*
+depending on position: a flow ROOT is emitted from `Flow.inline_body`, a nested
+continuation from the invocation's own slot. The runner already knows this and
+migrates between them when it grafts a flow into a nested site. The store's arm
+emitter did the same rebuild in the opposite direction and did not migrate — so
+a body whose root had already expanded arrived with the code on the invocation
+and the flow slot empty, and fell between the two readers.
 
-Why nobody found it: **no green test in the corpus puts an Expression-taking
-transform at an interceptor arm's root.** The green interceptor tests root their
-arms at a store write or at an ordinary tor with the print chained behind. The
-corner is uncovered, not contested — which is a different and cheaper problem
-than a contested one.
+The depth-first walk is why it is the ROOT that suffers. An arm body's own
+transforms fire before the declaration around them does, so by the time the
+store rebuilds the body, the root has already been rewritten. Nested positions
+were never at risk; they are read from the slot the transform actually wrote.
 
-This is the fourth narrowing under measurement: from "the interceptor class", to
-"inserted/removed but not discharge", to "some transforms but not others", to
-"Expression-taking transforms in root position". Every step came from running a
-control, never from reading more code, and each earlier claim would have bought a
-different and wrong patch. The lesson is cheaper than the bug: when a defect's
-scope keeps shrinking, the scope was an assumption, and the next control is worth
-more than the next hour of reading.
+That also explains the sibling behaviour that made the earlier readings look
+sound. `! discharge` clones its continuation whole and never rebuilds a root, so
+it never lost anything. A transform whose output is an ordinary invocation
+rather than an expansion had nothing in the slot to lose. Neither is a different
+rule — both are the same rule, not exercised.
+
+Why nobody found it: **no green test puts an expanding transform at an
+interceptor arm's root.** The green interceptor tests root their arms elsewhere
+and chain the expanding call behind. Uncovered, not contested.
+
+The method note is worth more than the bug. The scope shrank four times under
+measurement — the interceptor class, then inserted-not-discharge, then
+some-transforms-not-others, then Expression-in-root-position — and every one of
+those would have bought a different and wrong patch. None of them survived
+instrumentation. Reading produced four plausible stories; one print statement in
+the walker ended it. When a defect's scope keeps moving, the scope is a guess,
+and the instrument is cheaper than the next hour of reading.
 
 So this stays adjacent to **authored surface is normalized, synthesized surface
 never is** without collapsing into it — that shape predicts far more failure
