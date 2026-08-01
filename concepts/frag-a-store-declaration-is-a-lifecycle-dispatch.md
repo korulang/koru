@@ -97,3 +97,31 @@ states which lifecycle moments a store owes an arm for, so each addition is
 argued on its own. A rule — every transition a row can make is nameable, or
 these four are the transitions and the list is complete — has never been
 written down.
+
+## The rebuild is a dispatch on the body's shape, not one repair
+
+Merging this lane against the threading lane put a second fix on the same
+block, and the two turn out to be halves of one thing rather than rivals.
+
+Above, the arm body is assumed to still be an **invocation** — a head the
+emitter can root a flow at — and the repair is to carry its expansion up so the
+flow-root reader can see it. That assumption does not always hold. A nested
+store-read (query, rule, sweep) sitting inside the arm splices its whole loop
+into the body during the same depth-first walk, and what the rebuild then finds
+is not an invocation at all but raw `.inline_code`. There is no head to root a
+flow at, so the carry-up has nothing to carry and the flow path has nothing to
+build from. That body has to become a **proc** impl instead — a proc binds every
+event input as a const, which is exactly how the spliced loop's captures resolve
+back to the interceptor payload fields. 690_093 pins that shape; 690_240 pins
+the invocation shape.
+
+So the belief above is narrower than it read: the arm rebuild is not "migrate
+between two slots", it is a dispatch on what the depth-first walk left behind.
+Two outcomes, two lowerings, and the choice between them is forced by the body's
+node kind. That the same walk causes both — the transform that expands a root,
+and the store-read that replaces one — is why they landed on one block from two
+lanes on the same day.
+
+This sharpens the load-bearing claim rather than softening it. A fifth
+interceptor is still born into this lowering; it is now born into a lowering
+with a branch, and a new arm has to be correct on both sides of it.
