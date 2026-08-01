@@ -1571,6 +1571,15 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         //     query-row head), the VALUE side to a direct fresh column read.
         //   - anywhere else: direct fresh column read.
         const PRewrite = struct {
+            // An OWNED column's value is a pointer that carries a phantom
+            // (`*String<std.string:instance>`), and the phantom only travels
+            // through the qbody's projected input — a raw cell read has none,
+            // and the checker refuses it (690_238). The input is MANGLED so a
+            // body binding of the field's own name cannot claim it (the same
+            // reservation the read path's srf_* names make).
+            fn projName(alloc: std.mem.Allocator, field: []const u8) []const u8 {
+                return std.fmt.allocPrint(alloc, "__koru_qproj_{s}", .{field}) catch unreachable;
+            }
             fn colRead(alloc: std.mem.Allocator, store: []const u8, field: []const u8, is_char: bool) []const u8 {
                 // A char column reads as the string slice up to the first NUL
                 // (the same shape the qrow projection binds); scalars read
@@ -1587,7 +1596,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 }
                 return std.fmt.allocPrint(alloc, "(&__koru_store_{s}.{s})[__koru_store_{s}.__koru_resolve(__koru_qrow)]", .{ store, field, store }) catch unreachable;
             }
-            fn entityRefs(alloc: std.mem.Allocator, text: []const u8, store: []const u8, fields: []const []const u8, char_caps: []const ?usize, target_form: bool, bind: []const u8) []const u8 {
+            fn entityRefs(alloc: std.mem.Allocator, text: []const u8, store: []const u8, fields: []const []const u8, char_caps: []const ?usize, owned: []const bool, target_form: bool, use_owned_param: bool, bind: []const u8) []const u8 {
                 const prefix = std.fmt.allocPrint(alloc, "{s}.", .{bind}) catch unreachable;
                 const expr_ctx = ast.expressionMask(alloc, text);
                 var out = std.ArrayList(u8).initCapacity(alloc, text.len + 32) catch unreachable;
@@ -1607,6 +1616,8 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                             if (target_form) {
                                 const t = std.fmt.allocPrint(alloc, "{s}[__koru_qrow].{s}", .{ store, fname }) catch unreachable;
                                 out.appendSlice(alloc, t) catch unreachable;
+                            } else if (use_owned_param and owned[kidx]) {
+                                out.appendSlice(alloc, projName(alloc, fname)) catch unreachable;
                             } else {
                                 out.appendSlice(alloc, colRead(alloc, store, fname, char_caps[kidx] != null)) catch unreachable;
                             }
@@ -1633,6 +1644,8 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                                 if (target_form) {
                                     const t = std.fmt.allocPrint(alloc, "{s}[__koru_qrow].{s}", .{ store, fields[0] }) catch unreachable;
                                     out.appendSlice(alloc, t) catch unreachable;
+                                } else if (use_owned_param and owned[0]) {
+                                    out.appendSlice(alloc, projName(alloc, fields[0])) catch unreachable;
                                 } else {
                                     out.appendSlice(alloc, colRead(alloc, store, fields[0], char_caps[0] != null)) catch unreachable;
                                 }
@@ -1649,17 +1662,19 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 return out.toOwnedSlice(alloc) catch unreachable;
             }
             // A stored block is `target: value` pairs — target keys keep the
-            // indexed-lvalue form, values read columns directly.
-            fn storedBlock(alloc: std.mem.Allocator, text: []const u8, store: []const u8, fields: []const []const u8, char_caps: []const ?usize, bind: []const u8) []const u8 {
+            // indexed-lvalue form, values read columns directly. Values never
+            // take the owned projection: the write path reads the cell at write
+            // time (690_083), same as the read path's .live form.
+            fn storedBlock(alloc: std.mem.Allocator, text: []const u8, store: []const u8, fields: []const []const u8, char_caps: []const ?usize, owned: []const bool, bind: []const u8) []const u8 {
                 const braced2 = std.fmt.allocPrint(alloc, "{{{s}}}", .{text}) catch unreachable;
                 const struct_literal2 = @import("struct_literal");
                 const pairs = struct_literal2.parseFields(alloc, braced2) catch return text;
                 var out = std.ArrayList(u8).initCapacity(alloc, text.len + 64) catch unreachable;
                 for (pairs, 0..) |pr, i| {
                     if (i > 0) out.appendSlice(alloc, ", ") catch unreachable;
-                    out.appendSlice(alloc, entityRefs(alloc, pr.name, store, fields, char_caps, true, bind)) catch unreachable;
+                    out.appendSlice(alloc, entityRefs(alloc, pr.name, store, fields, char_caps, owned, true, false, bind)) catch unreachable;
                     out.appendSlice(alloc, ": ") catch unreachable;
-                    out.appendSlice(alloc, entityRefs(alloc, pr.value, store, fields, char_caps, false, bind)) catch unreachable;
+                    out.appendSlice(alloc, entityRefs(alloc, pr.value, store, fields, char_caps, owned, false, false, bind)) catch unreachable;
                 }
                 return out.toOwnedSlice(alloc) catch unreachable;
             }
@@ -1692,7 +1707,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 }
                 return out.toOwnedSlice(alloc) catch unreachable;
             }
-            fn walkCont(alloc: std.mem.Allocator, cont: *ast.Continuation, store: []const u8, fields: []const []const u8, char_caps: []const ?usize, bind: []const u8) void {
+            fn walkCont(alloc: std.mem.Allocator, cont: *ast.Continuation, store: []const u8, fields: []const []const u8, char_caps: []const ?usize, owned: []const bool, bind: []const u8) void {
                 if (cont.node) |*n| {
                     switch (@constCast(n).*) {
                         .invocation => |*inv| {
@@ -1704,25 +1719,25 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                             };
                             for (inv.args) |*a| {
                                 if (is_stored and std.mem.eql(u8, a.name, "source")) {
-                                    @constCast(a).value = storedBlock(alloc, a.value, store, fields, char_caps, bind);
+                                    @constCast(a).value = storedBlock(alloc, a.value, store, fields, char_caps, owned, bind);
                                     if (a.source_value) |sv| {
                                         const fresh = alloc.create(ast.Source) catch unreachable;
                                         fresh.* = sv.*;
-                                        fresh.text = storedBlock(alloc, sv.text, store, fields, char_caps, bind);
+                                        fresh.text = storedBlock(alloc, sv.text, store, fields, char_caps, owned, bind);
                                         @constCast(a).source_value = fresh;
                                     }
                                 } else {
-                                    @constCast(a).value = entityRefs(alloc, a.value, store, fields, char_caps, false, bind);
+                                    @constCast(a).value = entityRefs(alloc, a.value, store, fields, char_caps, owned, false, true, bind);
                                     if (a.expression_value) |ev| {
                                         const fresh = alloc.create(ast.CapturedExpression) catch unreachable;
                                         fresh.* = ev.*;
-                                        fresh.text = entityRefs(alloc, ev.text, store, fields, char_caps, false, bind);
+                                        fresh.text = entityRefs(alloc, ev.text, store, fields, char_caps, owned, false, true, bind);
                                         @constCast(a).expression_value = fresh;
                                     }
                                     if (a.source_value) |sv| {
                                         const fresh = alloc.create(ast.Source) catch unreachable;
                                         fresh.* = sv.*;
-                                        fresh.text = entityRefs(alloc, sv.text, store, fields, char_caps, false, bind);
+                                        fresh.text = entityRefs(alloc, sv.text, store, fields, char_caps, owned, false, true, bind);
                                         @constCast(a).source_value = fresh;
                                     }
                                 }
@@ -1731,11 +1746,15 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                         else => {},
                     }
                 }
-                for (cont.continuations) |*c| walkCont(alloc, @constCast(c), store, fields, char_caps, bind);
+                for (cont.continuations) |*c| walkCont(alloc, @constCast(c), store, fields, char_caps, owned, bind);
             }
         };
         for (qsites.items) |*qs| {
-            PRewrite.walkCont(allocator, &qs.body, store_name, field_names, field_char_caps, qs.row_bind);
+            // Aligned with field_names: owned[i] is true exactly where
+            // field_owned_info[i] names a column.
+            const owned_flags = allocator.alloc(bool, field_names.len) catch unreachable;
+            for (field_names, 0..) |_, i| owned_flags[i] = (i < field_owned_info.len) and field_owned_info[i] != null;
+            PRewrite.walkCont(allocator, &qs.body, store_name, field_names, field_char_caps, owned_flags, qs.row_bind);
             // The `when` guard is held beside the body, not inside it, so the
             // body walk never reached it. It sees the row through the binding
             // like everything else does.
@@ -2982,9 +3001,17 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             qr.appendSlice(allocator, "main_module.") catch unreachable;
             qr.appendSlice(allocator, qbody_name) catch unreachable;
             qr.appendSlice(allocator, "_event.handler(.{ ") catch unreachable;
-            for (qs.proj_names, 0..) |pname, i| {
+            for (qs.proj_names, qs.proj_fields, 0..) |pname, pfidx, i| {
                 if (i > 0) qr.appendSlice(allocator, ", ") catch unreachable;
-                const p = std.fmt.allocPrint(allocator, ".{s} = {s}", .{ pname, pname }) catch unreachable;
+                // The qbody input an OWNED column projects to is mangled
+                // (__koru_qproj_*) — the call key must match the event's input
+                // name while the value is the qrow-local cell read the guard
+                // sees by its bare name.
+                const key = if (pfidx < field_owned_info.len and field_owned_info[pfidx] != null)
+                    std.fmt.allocPrint(allocator, "__koru_qproj_{s}", .{pname}) catch unreachable
+                else
+                    pname;
+                const p = std.fmt.allocPrint(allocator, ".{s} = {s}", .{ key, pname }) catch unreachable;
                 qr.appendSlice(allocator, p) catch unreachable;
             }
             if (qs.proj_names.len > 0) qr.appendSlice(allocator, ", ") catch unreachable;
@@ -3014,7 +3041,11 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 // the live `<state!>` it frees at teardown. Scalars/char project
                 // their value type directly.
                 qbody_in[i] = if (field_owned_info[pfidx]) |oi| ast.Field{
-                    .name = allocator.dupe(u8, pname) catch unreachable,
+                    // The input is MANGLED (__koru_qproj_) so the body can
+                    // reference the phantom-carrying borrow without a body
+                    // binding of the field's own name claiming it (the read
+                    // path's srf_* reservation).
+                    .name = std.fmt.allocPrint(allocator, "__koru_qproj_{s}", .{pname}) catch unreachable,
                     .type = allocator.dupe(u8, field_types[pfidx]) catch unreachable,
                     .module_path = allocator.dupe(u8, oi.module_slash) catch unreachable,
                     .phantom = std.fmt.allocPrint(allocator, "{s}:{s}", .{ oi.module_dot, oi.state }) catch unreachable,
