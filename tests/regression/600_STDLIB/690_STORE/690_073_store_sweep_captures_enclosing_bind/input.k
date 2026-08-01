@@ -18,5 +18,5 @@ std/store:insert(items) { v: 10 }
 std/store:insert(items) { v: 20 }
 
 make(): n |> for(0..1)
-! each _ |> std/store:sweep(items)
-    ! sweep e |> std/io:print.ln("n {{ n:d }} v {{ e.v:d }}")
+! each _ |> std/store:query(items)
+    ! query e |> std/io:print.ln("n {{ n:d }} v {{ e.v:d }}")

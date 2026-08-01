@@ -43,7 +43,7 @@ const std = @import("std");
 ~std/store:insert(nums) { n: 2 }
 | row _ |> _
 
-~std/io:print.ln("start") |> std/store:sweep(nums)
-! sweep e |> beats(k: e.n)
+~std/io:print.ln("start") |> std/store:query(nums)
+! query e |> beats(k: e.n)
     ! beat b |> std/io:print.ln("beat {{ b:d }}")
     | done |> _

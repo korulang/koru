@@ -22,7 +22,7 @@ std/store:insert(box) { n: 7 }
 | full |> _
 
 tor shout { d: i64 }
-shout = std/store:sweep(box)
-! sweep r |> std/io:print.ln("{{ r.n:d }} {{ d:d }}")
+shout = std/store:query(box)
+! query r |> std/io:print.ln("{{ r.n:d }} {{ d:d }}")
 
 shout(d: 5)

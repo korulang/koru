@@ -38,9 +38,9 @@ std/string:from-page(text: "")
     | row _ |> _
 | err _ |> _
 
-std/store:sweep(src)
-! sweep r |> std/store:sweep(buf)
-    ! sweep b |> std/string:from-int(n: r.id)
+std/store:query(src)
+! query r |> std/store:query(buf)
+    ! query b |> std/string:from-int(n: r.id)
         | ok t1 |> std/string:read(s: t1): x1 |> std/string:append(s: b.text, text: x1)
             | ok |> std/string:append(s: b.text, text: " ")
                 | ok |> std/string:from-int(n: r.hp)
@@ -54,11 +54,11 @@ std/store:sweep(src)
             | err _ |> _
         | err _ |> _
 
-std/store:sweep(buf)
-! sweep b |> std/string:len(s: b.text): n |> std/io:print.ln("dump bytes {{ n:d }}")
+std/store:query(buf)
+! query b |> std/string:len(s: b.text): n |> std/io:print.ln("dump bytes {{ n:d }}")
 
-std/store:sweep(buf)
-! sweep b |> std/string:read(s: b.text): dump |> std/string:split(s: dump, sep: " ")
+std/store:query(buf)
+! query b |> std/string:read(s: b.text): dump |> std/string:split(s: dump, sep: " ")
     ! piece tok |> std/string:from-page(text: tok)
         | ok h |> std/string:parse-int(s: h)
             | ok n |> if(pstate.have == 0)
@@ -69,8 +69,8 @@ std/store:sweep(buf)
         | err _ |> _
     | done _ |> _
 
-std/store:sweep(dst)
-! sweep d |> std/store:stored { check.rows: check.rows + 1, check.ids: check.ids + d.id, check.hps: check.hps + d.hp, check.pair: check.pair + d.id * d.hp }
+std/store:query(dst)
+! query d |> std/store:stored { check.rows: check.rows + 1, check.ids: check.ids + d.id, check.hps: check.hps + d.hp, check.pair: check.pair + d.id * d.hp }
 
 if(check.rows > 0)
 | then |> std/io:print.ln("rows {{ check.rows:d }} ids {{ check.ids:d }} hps {{ check.hps:d }} pair {{ check.pair:d }}")

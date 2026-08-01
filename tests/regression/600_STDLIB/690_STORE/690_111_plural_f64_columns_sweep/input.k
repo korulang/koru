@@ -16,8 +16,8 @@ std/store:insert(bodies) { x: 0.0, y: 0.0, vx: 1.0, vy: 0.0, mass: 10.0 }
 std/store:insert(bodies) { x: 1.0, y: 0.0, vx: 0.0, vy: 0.5, mass: 1.0 }
 std/store:insert(bodies) { x: 0.0, y: 2.0, vx: -0.5, vy: 0.25, mass: 2.0 }
 
-std/store:sweep(bodies)
-! sweep b |> std/store:stored { b.x: b.x + b.vx }
+std/store:query(bodies)
+! query b |> std/store:stored { b.x: b.x + b.vx }
 
-std/store:sweep(bodies)
-! sweep r |> std/io:print.ln("x {{ r.x:f }} y {{ r.y:f }} m {{ r.mass:f }}")
+std/store:query(bodies)
+! query r |> std/io:print.ln("x {{ r.x:f }} y {{ r.y:f }} m {{ r.mass:f }}")

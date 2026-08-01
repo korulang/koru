@@ -12,5 +12,5 @@ std/store:new(acc) { t: 0.0[f64] }
 
 std/store:insert(cells) { x: 1.0 }
 
-std/store:sweep(cells)
-! sweep e |> std/store:stored { e.x: acc.t, acc.t: acc.t + 0.5 }
+std/store:query(cells)
+! query e |> std/store:stored { e.x: acc.t, acc.t: acc.t + 0.5 }

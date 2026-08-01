@@ -162,6 +162,149 @@ the flow becomes a proc implementing the same event, because a proc impl binds
 every event input by construction. That is the third placement road beside
 inline splice and the lifted run unit.
 
+## The split is two AXES, and the vocabulary fused a corner (2026-08-01)
+
+The opening section reads the verb surface as one line — comptime installation
+versus runtime act — and placement follows from it. That line is real, but it is
+one of **two** independent axes, and reading it as the whole story is what let
+the vocabulary end up backwards:
+
+|              | standing subscription | sweeps at its site |
+|--------------|-----------------------|--------------------|
+| `query`      | yes                   | yes (linear)       |
+| `preorder`   | no                    | yes (DFS)          |
+| `watch !row` | yes                   | no                 |
+
+`query` occupies a **fused** corner: it installs a standing rule *and* reads the
+rows present at its program position. That fusion is the reason the surface
+teaches the wrong thing in both directions at once. The verb that sounds like a
+read is the one that cannot sit in a nested position — because of the half of it
+nobody names — while the momentary read that *can* nest is called `sweep`, which
+sounds like it consumes and does not. Neither name is wrong about the thing it
+does; each is wrong about the thing it also does, or doesn't.
+
+The corner nothing could spell was standing-WITHOUT-sweep. `watch ! row`
+(690_236) is that corner, and once it exists the fusion is decomposable: the
+standing half moves to `watch`, where every other reactive rule already lives,
+and `query` is free to name the read.
+
+**The axis is who CALLS the whole pass, not who has one.** This section first
+claimed the axis was "does this site sweep at all", and that reading is wrong in
+a way worth recording, because it survived a green test. Every row-scoped site
+gets the same three units — qrow, qbody, qsweep — and the qsweep IS the rule's
+whole-pass form. What a verb picks is where that pass is called from:
+
+|               | root-position sweep | stripe | standing enter |
+|---------------|---------------------|--------|----------------|
+| `query`       | yes                 | yes    | yes            |
+| `preorder`    | yes (DFS)           | no     | no             |
+| `watch ! row` | **no**              | yes    | yes            |
+
+Implementing "a watch does not read at its own position" as "a watch has no
+whole-pass form" passes 690_236 and silently removes the rule's ability to be
+SCHEDULED, because `stripe` is a *second caller* of that same form. "Does not
+read HERE" and "has no way to read at all" are different claims; collapsing them
+costs a capability that no existing test was watching. 690_237 is the pin that
+now watches it.
+
+The tell was available and I walked past it: the change forced the stripe's
+membership filter to grow a second clause. That filter had exactly one clean
+reason to exist — a preorder walk is a program-position traversal, not a
+standing rule — and **needing to widen a filter to accommodate a change is
+evidence the change is wrong, not that the filter was.** A fix shaped like the
+bug it is covering.
+
+**The general form, and why it took an app to see it.** A vocabulary that grew
+one verb at a time will name the corners that were *reached*, not the corners
+that *exist* — and the gap is invisible from inside, because every existing
+program type-checks and every existing name is locally defensible. What surfaced
+it was a user reading `std/store:query` in a design conversation and saying it
+sounded like the wrong thing. The compiler had been describing the split
+correctly in its own comments for weeks (`store.kz`: "the MOMENTARY twin of
+query… `sweep` is a RUNTIME read") while the surface said the opposite.
+
+**The fusion was not load-bearing, and the migration is the evidence.** Sorting
+the corpus by what each site actually depends on — writes before it versus after
+— 27 of 32 fall onto exactly ONE face with no judgement calls. A read-only site
+written as `query` had been installing a standing rule that could never fire; a
+reactive one had been sweeping an empty corpus. Both halves were dead weight the
+fused verb made invisible. If the fusion served anyone, sites would not sort
+this cleanly.
+
+The five that resist are the informative ones, and they resist for two different
+reasons. The **stripe** sites genuinely want all three faces at once — read now,
+react later, be schedulable — so "what do you call a rule that backfills" is a
+real design question and not a migration. The rest exposed a **capability gap**:
+`sweep` is not the superset of `query`'s read half that the rename assumes. It
+cannot lower a `when` guard on the row arm, nor a write through the row binding
+(`take(arena[e])`, `stored { e.hp: … }`), nor a `char[N]` column. The two verbs
+were never one read wearing two placements — which is worth stating plainly,
+because "momentary twin" (the phrasing this file has carried since 2026-07-23,
+and which `store.kz` still uses) implies exactly that equivalence, and a rename
+justified on it would have shipped the gap silently.
+
+**The rule that falls out:** a rename premised on "these are the same thing in
+different clothes" is a claim that has to be MEASURED against the corpus, not
+inferred from the docs — including docs written by the people who built both.
+Here the corpus disagreed with the comment, and only because 22 sites were
+actually moved and run.
+
+## The fusion was the MEANING; only the name was wrong (2026-08-01, landed)
+
+Everything above treats the fused corner as a defect to be decomposed. That was
+wrong, and the thing that showed it was trying to migrate the five sites that
+resisted — the stripe rules, which want all three faces at once and cannot be
+written as two lines without duplicating a body.
+
+The question that settles it: **is a row-scoped site a statement about the
+CORPUS, or about WRITES?** The asymmetry already inside `watch` answers it. A
+`! hp h` arm fires per *write* — it is about events, and backfill is meaningless
+for it because there are no past writes to replay. A row arm is about *rows*,
+and rows are things that exist rather than events that happened. "Every foe at
+hp ≤ 0 is culled" is not a claim about future foes; a rule that leaves the
+existing ones standing is a lie about the corpus.
+
+So the root-position sweep is not an implementation accident. It is what makes
+the rule **total at its point of installation** — rows before the line get the
+backfill, rows after get the subscription, and together they cover everything.
+That is a coherent and usually-wanted meaning, and the old surface simply had no
+word for it.
+
+The landed vocabulary:
+
+| form | meaning |
+|---|---|
+| `std/store:query(s) ! query e` | read the corpus **now** (was `sweep`) |
+| `std/store:watch(s) ! hp h` | react to writes on a **column** |
+| `std/store:rule(s) ! row e` | a standing statement over **rows** (was `query`) |
+| `std/store(s) ! hp h` | bare reference form → `watch` |
+
+`rule` because the codebase had been calling them that in every comment for
+months — `stripe` schedules *rules*, `create` splices *standing rules*. The word
+was load-bearing everywhere except on the surface. `[name(alpha)]` and
+`[depends_on(alpha)]` read as rule metadata because that is exactly what they
+are. One consequence worth noting: arm name and verb name are no longer the same
+string. A rule's arm names what the body RECEIVES (`! row`), not the verb.
+
+**What this cost, and it is worth recording.** A `watch ! row` form was built
+first, on the theory that the fusion should be split — two commits, two pins, and
+a self-inflicted bug where killing the rule's whole-pass form silently made it
+unschedulable. All of it reverted. The design was reached by *attempting the
+migration*, not by reasoning about it: 27 of 32 sites sorting cleanly said the
+fusion was not load-bearing for ordinary sites, and the 5 that refused said it
+was load-bearing for rules. Neither half was visible from the armchair, and the
+half that survived is the one the armchair had dismissed.
+
+**Still open:** the `sweep`-side gaps are now `query`-side gaps and no longer
+block anything, because the sites that needed them were rules all along. `query`
+still cannot lower a `when` guard on its arm, a write through the row binding,
+or a `char[N]` column — real limits on the READ, to close on their own merits.
+
+Also unresolved, and the more principled end state: a rule is currently total
+*at its installation point*, so where it sits in the program matters. Total over
+the corpus *period* — position irrelevant — is the version a DBSP reading
+actually implies. Not this rung.
+
 ## What this bought the numeric reading
 
 An all-f64 container works — declared, inserted, written through the sweep

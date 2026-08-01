@@ -11,8 +11,8 @@ import std/store
 
 std/store:new(a, capacity: 8) { x: i64 }
 
-std/store:query(a)
-! query e |> std/store:insert(a) { x: e.x + 1 }
+std/store:rule(a)
+! row e |> std/store:insert(a) { x: e.x + 1 }
     | row _ |> std/io:print.ln("rule inserted {{ e.x:d }} plus one")
     | full |> _
 
@@ -20,5 +20,5 @@ std/store:insert(a) { x: 5 }
 | row _ |> _
 | full |> _
 
-std/store:sweep(a)
-! sweep r |> std/io:print.ln("a has {{ r.x:d }}")
+std/store:query(a)
+! query r |> std/io:print.ln("a has {{ r.x:d }}")

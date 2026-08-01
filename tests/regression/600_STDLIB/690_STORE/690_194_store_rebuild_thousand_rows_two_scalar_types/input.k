@@ -25,14 +25,14 @@ std/store:new(checkx) { xs: 0.0[f64] }
 for(0..1000)
 ! each i |> std/store:insert(cells) { id: @as(i64, @intCast(i)), hp: 1000 + @as(i64, @intCast(i)), x: 0.25 }
 
-std/store:sweep(cells)
-! sweep e |> std/store:stored { e.x: acc.t } |> std/store:stored { acc.t: acc.t + 0.5 }
+std/store:query(cells)
+! query e |> std/store:stored { e.x: acc.t } |> std/store:stored { acc.t: acc.t + 0.5 }
 
-std/store:sweep(cells)
-! sweep s |> std/store:insert(copy) { id: s.id, hp: s.hp, x: s.x }
+std/store:query(cells)
+! query s |> std/store:insert(copy) { id: s.id, hp: s.hp, x: s.x }
 
-std/store:sweep(copy)
-! sweep c |> std/store:stored { check.rows: check.rows + 1, check.ids: check.ids + c.id, check.hps: check.hps + c.hp } |> std/store:stored { checkx.xs: checkx.xs + c.x }
+std/store:query(copy)
+! query c |> std/store:stored { check.rows: check.rows + 1, check.ids: check.ids + c.id, check.hps: check.hps + c.hp } |> std/store:stored { checkx.xs: checkx.xs + c.x }
 
 if(check.rows > 0)
 | then |> std/io:print.ln("rows {{ check.rows:d }} ids {{ check.ids:d }} hps {{ check.hps:d }} xs {{ checkx.xs:f }}")

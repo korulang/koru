@@ -20,5 +20,5 @@ std/string:from-page(text: "alpha")
     | row _ |> _
 | err _ |> _
 
-std/store:sweep(buf)
-! sweep r |> std/string:read(s: r.text): t |> std/io:print.ln("row {{ t:s }}")
+std/store:query(buf)
+! query r |> std/string:read(s: r.text): t |> std/io:print.ln("row {{ t:s }}")

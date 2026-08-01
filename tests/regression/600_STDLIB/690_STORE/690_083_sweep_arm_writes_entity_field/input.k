@@ -1,7 +1,7 @@
 // PINS: a `! sweep` arm can WRITE the row it is standing on, not only read it.
 //
 // `query` already does this — 690_008 is
-// `! query { entity.hp, … } when kind == 1 |> std/store:stored { entity.hp: … }`
+// `! row { entity.hp, … } when kind == 1 |> std/store:stored { entity.hp: … }`
 // — and sweep is query's momentary, nestable twin. The same write in a sweep
 // arm is refused, and the diagnostic reads the projection name as a store:
 //
@@ -37,8 +37,8 @@ std/store:insert(rows) { idx: 0, pct: 0 }
 std/store:insert(rows) { idx: 1, pct: 0 }
 | row _ |> _
 
-std/store:sweep(rows)
-! sweep e |> std/store:stored { e.pct: e.idx + 10 }
+std/store:query(rows)
+! query e |> std/store:stored { e.pct: e.idx + 10 }
 
-std/store:sweep(rows)
-! sweep e |> std/io:print.ln("idx {{ e.idx:d }} pct {{ e.pct:d }}")
+std/store:query(rows)
+! query e |> std/io:print.ln("idx {{ e.idx:d }} pct {{ e.pct:d }}")

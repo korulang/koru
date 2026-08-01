@@ -17,12 +17,12 @@ std/store:new(mats, capacity: 4) { a: f64, b: f64, c: f64, d: f64 }
 
 std/store:insert(mats) { a: 4.0, b: 7.0, c: 2.0, d: 6.0 }
 
-std/store:sweep(mats)
-! sweep m |> std/store:stored { m.a: m.d / (m.a * m.d - m.b * m.c) }
+std/store:query(mats)
+! query m |> std/store:stored { m.a: m.d / (m.a * m.d - m.b * m.c) }
 
 for(0..3)
-! each _ |> std/store:sweep(mats)
-    ! sweep n |> std/store:stored { n.b: n.b / 2.0 }
+! each _ |> std/store:query(mats)
+    ! query n |> std/store:stored { n.b: n.b / 2.0 }
 
-std/store:sweep(mats)
-! sweep r |> std/io:print.ln("a {{ r.a:f }} b {{ r.b:f }} c {{ r.c:f }} d {{ r.d:f }}")
+std/store:query(mats)
+! query r |> std/io:print.ln("a {{ r.a:f }} b {{ r.b:f }} c {{ r.c:f }} d {{ r.d:f }}")

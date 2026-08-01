@@ -82,8 +82,8 @@
 // above 50 hp takes immediate chip damage. Grounded shape: 690_005's
 // projection+pun+compound `when`, 690_008's `stored { entity.field: ... }`
 // write head.
-~std/store:query(game)
-! query e when e.kind == 1 and e.hp > 50 |> std/store:stored { e.hp: e.hp - 5 }
+~std/store:rule(game)
+! row e when e.kind == 1 and e.hp > 50 |> std/store:stored { e.hp: e.hp - 5 }
 
 // --- Roster + combat. Row handles have no grounded top-level/module-scope
 // binding form (every pin uses a handle only inside the SAME chain that

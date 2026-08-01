@@ -25,8 +25,8 @@ std/store:new(cells, capacity: 4) { a: i64, b: i64 }
 std/store:insert(cells) { a: 3, b: 7 }
 std/store:insert(cells) { a: 10, b: 20 }
 
-std/store:sweep(cells)
-! sweep e |> echo(v: e.a): t |> std/store:stored { e.a: e.b, e.b: t }
+std/store:query(cells)
+! query e |> echo(v: e.a): t |> std/store:stored { e.a: e.b, e.b: t }
 
-std/store:sweep(cells)
-! sweep r |> std/io:print.ln("a {{ r.a:d }} b {{ r.b:d }}")
+std/store:query(cells)
+! query r |> std/io:print.ln("a {{ r.a:d }} b {{ r.b:d }}")

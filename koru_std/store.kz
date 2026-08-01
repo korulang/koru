@@ -1358,22 +1358,27 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         for (program.items) |pi| {
             if (pi != .flow) continue;
             const qf = &pi.flow;
-            const q_verb: []const u8 = if (H.isStoreInv(qf, "query", store_name))
-                "query"
+            const q_verb: []const u8 = if (H.isStoreInv(qf, "rule", store_name))
+                "rule"
             else if (H.isStoreInv(qf, "preorder", store_name))
                 "preorder"
             else
                 continue;
             const q_is_preorder = std.mem.eql(u8, q_verb, "preorder");
+            // The arm names what the body RECEIVES, and a rule's body receives a
+            // row: `rule(s) ! row e`. `preorder` still echoes its verb because
+            // there the arm names the WALK rather than the payload. So arm and
+            // verb are no longer the same string by construction.
+            const q_arm: []const u8 = if (q_is_preorder) "preorder" else "row";
             if (q_is_preorder and !is_tree) {
                 return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, qf.location, qf.module, "std/store:preorder({s}): preorder needs a [tree] store - '{s}' has no synthesized parent column (declare it as [tree]std/store:new({s}) {{ ... }})", .{ store_name, store_name, store_name }) } };
             }
             if (qf.body.continuations.len != 1) {
-                return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, qf.location, qf.module, "std/store:{s}({s}): exactly one `! {s} {{ ... }}` branch per site this rung", .{ q_verb, store_name, q_verb }) } };
+                return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, qf.location, qf.module, "std/store:{s}({s}): exactly one `! {s} {{ ... }}` branch per site this rung", .{ q_verb, store_name, q_arm }) } };
             }
             const qc = &qf.body.continuations[0];
-            if (!std.mem.eql(u8, std.mem.trim(u8, qc.branch, " "), q_verb)) {
-                return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, qf.location, qf.module, "std/store:{s}({s}): branch '{s}' - the row branch is spelled `! {s} {{ projection }}` (O1 fire-vocabulary is open)", .{ q_verb, store_name, qc.branch, q_verb }) } };
+            if (!std.mem.eql(u8, std.mem.trim(u8, qc.branch, " "), q_arm)) {
+                return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, qf.location, qf.module, "std/store:{s}({s}): branch '{s}' - the row branch is spelled `! {s} <row>`", .{ q_verb, store_name, qc.branch, q_arm }) } };
             }
             // The row branch is an EFFECT arm the site FIRES (`! query`), not an
             // outcome it returns — the continuation marker must be `!`, never `|`.
@@ -1383,17 +1388,17 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             // the phantom checker; query installs a standing rule and never mints a
             // matchable outcome event, so its marker is validated here.)
             if (qc.kind != .effect) {
-                return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, qf.location, qf.module, "std/store:{s}({s}): continuation marker `|` used where an effect branch is required — `{s}` fires the effect arm `! {s}`, not `| {s}`", .{ q_verb, store_name, q_verb, q_verb, q_verb }) } };
+                return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, qf.location, qf.module, "std/store:{s}({s}): continuation marker `|` used where an effect branch is required — `{s}` fires the effect arm `! {s}`, not `| {s}`", .{ q_verb, store_name, q_verb, q_arm, q_arm }) } };
             }
             // The projection block is RETIRED — a wall, not prose, for exactly
             // the reason 690_089 gives for sweep: `{ entity.v }` bound `v` into
             // the body's scope, so a program left un-migrated keeps compiling
             // and silently means something else.
             if (qc.destructure.len != 0) {
-                return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, qf.location, qf.module, "std/store:{s}({s}): the projection block is retired - bind the row instead: `! {s} <row> |> ... <row>.<field> ...` (rule 7 of 690_086: `entity` stops existing)", .{ q_verb, store_name, q_verb }) } };
+                return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, qf.location, qf.module, "std/store:{s}({s}): the projection block is retired - bind the row instead: `! {s} <row> |> ... <row>.<field> ...` (rule 7 of 690_086: `entity` stops existing)", .{ q_verb, store_name, q_arm }) } };
             }
             const q_row_bind = qc.binding orelse {
-                return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, qf.location, qf.module, "std/store:{s}({s}): the {s} arm needs a row binding: `! {s} <row> |> ...`", .{ q_verb, store_name, q_verb, q_verb }) } };
+                return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, qf.location, qf.module, "std/store:{s}({s}): the {s} arm needs a row binding: `! {s} <row> |> ...`", .{ q_verb, store_name, q_arm, q_arm }) } };
             };
             // Project every USER column and let the binding address them. The
             // synthesized `parent` of a [tree] store is not the author's to see.
@@ -1445,7 +1450,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             var q_rule_name: ?[]const u8 = null;
             if (ann_parser.getCall(allocator, qf.annotations, "name") catch null) |nc| {
                 if (nc.args.len != 1) {
-                    return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, qf.location, qf.module, "std/store:query({s}): [name(...)] takes exactly one identifier — [name(movement)]", .{store_name}) } };
+                    return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, qf.location, qf.module, "std/store:rule({s}): [name(...)] takes exactly one identifier — [name(movement)]", .{store_name}) } };
                 }
                 q_rule_name = allocator.dupe(u8, nc.args[0]) catch unreachable;
             }
@@ -1482,7 +1487,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 for (qsites.items[ia + 1 ..]) |qb| {
                     const nb = qb.rule_name orelse continue;
                     if (std.mem.eql(u8, na, nb) and std.mem.eql(u8, qa.rule_module, qb.rule_module)) {
-                        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:query({s}): two rules named [name({s})] in module '{s}' — rule names are unique per module", .{ store_name, na, qa.rule_module }) } };
+                        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:rule({s}): two rules named [name({s})] in module '{s}' — rule names are unique per module", .{ store_name, na, qa.rule_module }) } };
                     }
                 }
             }
@@ -1512,9 +1517,9 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                     }
                     if (found == null) {
                         if (foreign_hit) |fm| {
-                            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:query({s}): depends_on({s}) — bare rule names resolve in the declaring module only; rule '{s}' lives in module '{s}', write depends_on({s}:{s})", .{ store_name, dep, dep_name, fm, fm, dep_name }) } };
+                            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:rule({s}): depends_on({s}) — bare rule names resolve in the declaring module only; rule '{s}' lives in module '{s}', write depends_on({s}:{s})", .{ store_name, dep, dep_name, fm, fm, dep_name }) } };
                         }
-                        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:query({s}): depends_on({s}) — no rule named [name({s})] on this store in module '{s}'", .{ store_name, dep, dep_name, qs2.rule_module }) } };
+                        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:rule({s}): depends_on({s}) — no rule named [name({s})] on this store in module '{s}'", .{ store_name, dep, dep_name, qs2.rule_module }) } };
                     }
                     row_edges.append(allocator, found.?) catch unreachable;
                 }
@@ -1553,7 +1558,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                             cyc.appendSlice(allocator, rn) catch unreachable;
                         }
                     }
-                    return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:query({s}): depends_on cycle among rules: {s}", .{ store_name, cyc.items }) } };
+                    return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:rule({s}): depends_on cycle among rules: {s}", .{ store_name, cyc.items }) } };
                 }
             }
         }
@@ -3028,10 +3033,10 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             } }) catch unreachable;
 
             const body_node = qs.body.node orelse {
-                return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:query({s}): the query branch needs a body (`|> ...`)", .{store_name}) } };
+                return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:rule({s}): the query branch needs a body (`|> ...`)", .{store_name}) } };
             };
             if (body_node != .invocation) {
-                return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:query({s}): the query body must start with an invocation this rung", .{store_name}) } };
+                return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:rule({s}): the query body must start with an invocation this rung", .{store_name}) } };
             }
             appended_items.append(allocator, ast.Item{ .flow = ast.Flow{
                 .body = ast.rootSite(body_node.invocation, qs.body.continuations, flow.location),
@@ -6476,7 +6481,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
 // rows that exist when its program position executes ((l) lean: the
 // imperative sweep IS the stripe).
 
-~[keyword|comptime|transform|claims_descendants]pub tor query {
+~[keyword|comptime|transform|claims_descendants]pub tor rule {
     expr: Expression,
     invocation: *const Invocation,
     item: *const Item,
@@ -6485,10 +6490,10 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
     allocator: std.mem.Allocator
 } -> SiteResult
 
-~[transform]proc query|zig {
+~[transform]proc rule|zig {
     const ast = @import("ast");
 
-    if (item.* != .flow) @panic("store:query transform: containing item is not a flow - walker dispatch contract broken");
+    if (item.* != .flow) @panic("store:rule transform: containing item is not a flow - walker dispatch contract broken");
     const flow = &item.flow;
 
     const H = struct {
@@ -6508,7 +6513,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         if (std.mem.eql(u8, arg.name, "expr")) store_name = H.stripQuotes(arg.value);
     }
     if (store_name.len == 0) {
-        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:query requires a store name: query(name)", .{}) } };
+        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:rule requires a store name: query(name)", .{}) } };
     }
 
     // The coordinator names this site's units by its source line.
@@ -6536,7 +6541,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             }
         }
         if (create_exists) {
-            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:query({s}): the query precedes its store's create in source - declare the store first", .{store_name}) } };
+            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:rule({s}): the query precedes its store's create in source - declare the store first", .{store_name}) } };
         }
 
         // The create coordinator, once run, leaves persistent generated units
@@ -6559,14 +6564,14 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             }
         }
         if (store_declared) {
-            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:query({s}) is top-level-only: it cannot be nested inside a handler or loop body. `query` is a standing-rule installation (comptime-fused into the store's write paths), so a nested body has nothing to install into. The store IS declared - move the query to module (top-level) scope. Momentary verbs (insert/take) DO run in nested bodies.", .{store_name}) } };
+            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:rule({s}) is top-level-only: it cannot be nested inside a handler or loop body. `query` is a standing-rule installation (comptime-fused into the store's write paths), so a nested body has nothing to install into. The store IS declared - move the query to module (top-level) scope. Momentary verbs (insert/take) DO run in nested bodies.", .{store_name}) } };
         }
 
         // The store's OWN declaration was already refused; that diagnostic is the
         // true one and this lookup can only ever fail. Staying silent here is what
         // keeps one mistake to one error.
         if (ast.declarationRefused(allocator, program, flow.module, "std/store:new({s}):", .{store_name})) return .{ .transformed = .{} };
-        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:query({s}): unknown store - no std/store:new({s}) found (or the store is a capacity-1 value - queries need a container, declare `capacity: N` at create)", .{ store_name, store_name }) } };
+        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:rule({s}): unknown store - no std/store:new({s}) found (or the store is a capacity-1 value - queries need a container, declare `capacity: N` at create)", .{ store_name, store_name }) } };
     }
 
     const sweep_inv = ast.Invocation{
@@ -6591,7 +6596,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
 // STORE.SWEEP — momentary on-demand read of all live rows
 // ============================================================================
 //
-//   std/store:sweep(items)
+//   std/store:query(items)
 //   ! sweep e |> body(v: e.v)
 //
 // The MOMENTARY twin of query. query is a STANDING-RULE installation
@@ -6607,13 +6612,13 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
 // retained-mode renderer (vaxis `! draw`, fires on mount + resize with no store
 // write) sweeps the live rows to repaint. See concept: frag-store-verb-placement.
 
-// `claims_descendants`: sweep MUST fire before its own `! sweep <row> |> body`
+// `claims_descendants`: query MUST fire before its own `! query <row> |> body`
 // branch is walked. Otherwise print.ln (deeper, so depth-first-first) resolves
 // the body's `{{ field }}` holes while the row binding isn't in scope yet
 // (pre-transplant), leaving a raw template. query dodges this by having `create`
 // drive the transplant early (on `new`); sweep drives its OWN transplant at the
 // site, so it must claim its descendants to win the same race.
-~[keyword|comptime|transform|claims_descendants]pub tor sweep {
+~[keyword|comptime|transform|claims_descendants]pub tor query {
     expr: Expression,
     invocation: *const Invocation,
     item: *const Item,
@@ -6622,11 +6627,11 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
     allocator: std.mem.Allocator
 } -> SiteResult
 
-~[transform]proc sweep|zig {
+~[transform]proc query|zig {
     const ast = @import("ast");
     const ast_functional = @import("ast_functional");
 
-    if (item.* != .flow) @panic("store:sweep transform: containing item is not a flow - walker dispatch contract broken");
+    if (item.* != .flow) @panic("store:query transform: containing item is not a flow - walker dispatch contract broken");
     const flow = &item.flow;
 
     const H = struct {
@@ -6662,7 +6667,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         if (std.mem.eql(u8, arg.name, "expr")) store_name = H.stripQuotes(arg.value);
     }
     if (store_name.len == 0) {
-        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:sweep requires a store name: sweep(name)", .{}) } };
+        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:query requires a store name: query(name)", .{}) } };
     }
 
     // --- schema from the persistent __store_insert_<s> event (survives after
@@ -6702,10 +6707,10 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         // true one and this lookup can only ever fail. Staying silent here is what
         // keeps one mistake to one error.
         if (ast.declarationRefused(allocator, program, flow.module, "std/store:new({s}):", .{store_name})) return .{ .transformed = .{} };
-        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:sweep({s}): unknown plural store - no std/store:new({s}, capacity: N) found (sweep reads a plural container's live rows)", .{ store_name, store_name }) } };
+        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:query({s}): unknown plural store - no std/store:new({s}, capacity: N) found (query reads a plural container's live rows)", .{ store_name, store_name }) } };
     }
 
-    // --- parse the `! sweep <row> |> body` branch ---
+    // --- parse the `! query <row> |> body` branch ---
     //
     // The arm BINDS the row it visits, the way `! as acc` binds capture's cell
     // and `! each i` binds for's item (control.kz:120/189 declare `! each *`
@@ -6715,17 +6720,17 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
     // from those references, not listed by the author: the projection block
     // said the same thing twice and let the two halves disagree.
     if (flow.body.continuations.len != 1) {
-        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:sweep({s}): exactly one `! sweep <row>` branch per site", .{store_name}) } };
+        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:query({s}): exactly one `! query <row>` branch per site", .{store_name}) } };
     }
     const sc = &flow.body.continuations[0];
-    if (!std.mem.eql(u8, std.mem.trim(u8, sc.branch, " "), "sweep")) {
-        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:sweep({s}): the row branch is spelled `! sweep <row>`", .{store_name}) } };
+    if (!std.mem.eql(u8, std.mem.trim(u8, sc.branch, " "), "query")) {
+        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:query({s}): the row branch is spelled `! query <row>`", .{store_name}) } };
     }
     if (sc.destructure.len > 0) {
-        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:sweep({s}): the sweep arm binds its row - write `! sweep <row> |> ... <row>.<field> ...`, not a projection block", .{store_name}) } };
+        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:query({s}): the query arm binds its row - write `! query <row> |> ... <row>.<field> ...`, not a projection block", .{store_name}) } };
     }
     const row_bind = sc.binding orelse {
-        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:sweep({s}): the sweep arm needs a row binding: `! sweep <row> |> ...`", .{store_name}) } };
+        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:query({s}): the query arm needs a row binding: `! query <row> |> ...`", .{store_name}) } };
     };
 
     // The row's projected fields and its cursor are keyed on the ARM — binding
@@ -6755,10 +6760,10 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
     // --- the body: transplanted into a sweepbody impl flow (like query's qbody) ---
     const body_clone = ast_functional.cloneContinuation(allocator, sc) catch unreachable;
     const body_node = body_clone.node orelse {
-        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:sweep({s}): the sweep branch needs a body (`|> ...`)", .{store_name}) } };
+        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:query({s}): the sweep branch needs a body (`|> ...`)", .{store_name}) } };
     };
     if (body_node != .invocation) {
-        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:sweep({s}): the sweep body must start with an invocation this rung", .{store_name}) } };
+        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:query({s}): the sweep body must start with an invocation this rung", .{store_name}) } };
     }
 
     // A sweep arm READS and WRITES the row it is standing on (690_083), and both
@@ -6827,7 +6832,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                     if (fend > fstart and unknown.* == null) unknown.* = alloc.dupe(u8, fname) catch unreachable;
                 }
                 // A ONE-column store's row names no field, so the BARE binding is
-                // the value: `! sweep n |> use(v: n)`. Derived from `fields`
+                // the value: `! query n |> use(v: n)`. Derived from `fields`
                 // rather than threaded — the column list already says it.
                 const row_is_identity = fields.len == 1 and std.mem.eql(u8, fields[0], ast.STORE_IDENTITY_COLUMN);
                 if (row_is_identity and expr_ctx[i] and at_boundary and std.mem.startsWith(u8, text[i..], bind)) {
@@ -6927,14 +6932,14 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 if (cont.node) |*n| {
                     if (n.* == .invocation) {
                         if (n.invocation.path.module_qualifier) |mq| {
-                            if (std.mem.eql(u8, mq, "std.store") and n.invocation.path.segments.len == 1 and std.mem.eql(u8, n.invocation.path.segments[0], "sweep")) break :blk5 true;
+                            if (std.mem.eql(u8, mq, "std.store") and n.invocation.path.segments.len == 1 and std.mem.eql(u8, n.invocation.path.segments[0], "query")) break :blk5 true;
                         }
                     }
                 }
                 break :blk5 false;
             };
             for (cont.continuations) |*c| {
-                if (node_is_sweep and std.mem.eql(u8, std.mem.trim(u8, c.branch, " "), "sweep")) {
+                if (node_is_sweep and std.mem.eql(u8, std.mem.trim(u8, c.branch, " "), "query")) {
                     if (c.binding) |cb| {
                         if (std.mem.eql(u8, cb, bind)) continue;
                     }
@@ -6954,7 +6959,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         null;
 
     if (unknown_field) |uf| {
-        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:sweep({s}): '{s}.{s}' - '{s}' is not a field of store '{s}'", .{ store_name, row_bind, uf, uf, store_name }) } };
+        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:query({s}): '{s}.{s}' - '{s}' is not a field of store '{s}'", .{ store_name, row_bind, uf, uf, store_name }) } };
     }
 
     // The derived projection: every column the arm named, in declaration order.
@@ -7410,8 +7415,8 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
     // `expected type expression, found '{'` (690_081).
     //
     // Head means: this invocation IS the containing flow's head. That covers a
-    // top-level statement (`std/store:sweep(s)` alone on a line) and a subflow
-    // head (`scan = std/store:sweep(s)`) alike. A CHAINED sweep is not a head —
+    // top-level statement (`std/store:query(s)` alone on a line) and a subflow
+    // head (`scan = std/store:query(s)`) alike. A CHAINED sweep is not a head —
     // desugar-chains re-roots it into its own nested site before transforms
     // run, so the outer flow's head is still whatever preceded the `|>`.
     //
