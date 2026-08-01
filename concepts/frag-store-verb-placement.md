@@ -188,14 +188,31 @@ The corner nothing could spell was standing-WITHOUT-sweep. `watch ! row`
 standing half moves to `watch`, where every other reactive rule already lives,
 and `query` is free to name the read.
 
-**The implementation had encoded the fusion as a single boolean.** `is_preorder`
-stood in for both axes and gave the right answer at every existing call site,
-because no corner had yet made the two disagree. It was not untidy — it was a
-live defect in waiting: the stripe filtered on `!is_preorder`, and the stripe
-drives whole passes by *chaining each rule's qsweep*, so the first standing-only
-rule to exist walked into that chain and emitted a call to a unit nobody built.
-A boolean covering two axes is not a simplification; it is a coincidence holding
-until the space is fully populated.
+**The axis is who CALLS the whole pass, not who has one.** This section first
+claimed the axis was "does this site sweep at all", and that reading is wrong in
+a way worth recording, because it survived a green test. Every row-scoped site
+gets the same three units — qrow, qbody, qsweep — and the qsweep IS the rule's
+whole-pass form. What a verb picks is where that pass is called from:
+
+|               | root-position sweep | stripe | standing enter |
+|---------------|---------------------|--------|----------------|
+| `query`       | yes                 | yes    | yes            |
+| `preorder`    | yes (DFS)           | no     | no             |
+| `watch ! row` | **no**              | yes    | yes            |
+
+Implementing "a watch does not read at its own position" as "a watch has no
+whole-pass form" passes 690_236 and silently removes the rule's ability to be
+SCHEDULED, because `stripe` is a *second caller* of that same form. "Does not
+read HERE" and "has no way to read at all" are different claims; collapsing them
+costs a capability that no existing test was watching. 690_237 is the pin that
+now watches it.
+
+The tell was available and I walked past it: the change forced the stripe's
+membership filter to grow a second clause. That filter had exactly one clean
+reason to exist — a preorder walk is a program-position traversal, not a
+standing rule — and **needing to widen a filter to accommodate a change is
+evidence the change is wrong, not that the filter was.** A fix shaped like the
+bug it is covering.
 
 **The general form, and why it took an app to see it.** A vocabulary that grew
 one verb at a time will name the corners that were *reached*, not the corners

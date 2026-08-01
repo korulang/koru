@@ -1370,19 +1370,23 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             // row scan. Preorder is a program-position walk: it takes no
             // standing insert subscription and joins no stripe.
             is_preorder: bool,
-            /// Does this site sweep the rows present at its program position?
+            /// Does this site sweep the corpus at its OWN program position?
             ///
-            /// Row-scoped sites vary on TWO independent axes and the verb name
-            /// picks a corner:
+            /// Every row-scoped site gets the same three units (qrow, qbody,
+            /// qsweep) and the same standing subscription; what a verb picks is
+            /// where that whole-pass form gets CALLED from:
             ///
-            ///              | standing subscription | sweeps at site
-            ///   `query`    |          yes          |      yes  (linear)
-            ///   `preorder` |          no           |      yes  (DFS)
-            ///   `watch !row|          yes          |      no
+            ///                | root-position sweep | stripe | standing enter
+            ///   `query`      |        yes          |  yes   |     yes
+            ///   `preorder`   |        yes (DFS)    |  no    |     no
+            ///   `watch ! row`|        NO           |  yes   |     yes
             ///
-            /// `is_preorder` alone conflated the two — it happened to work
-            /// only because no corner needed "subscribes but doesn't sweep"
-            /// until `watch ! row` did.
+            /// So `watch ! row` is a rule in every respect except that it does
+            /// not read at the point you wrote it — which is the whole content
+            /// of "a watch reacts, it does not read". Kept as its own field
+            /// rather than derived, because the site call is emitted by the
+            /// site's own transform and this is the only place the three
+            /// corners are visible together.
             sweeps_at_site: bool,
         };
         var qsites = std.ArrayList(QuerySite).initCapacity(allocator, 4) catch unreachable;
@@ -3140,13 +3144,16 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 .module = allocator.dupe(u8, flow.module) catch unreachable,
             } }) catch unreachable;
 
-            // qsweep: the imperative sweep over the rows that exist when
-            // the query's program position executes.
+            // qsweep: a rule's WHOLE-PASS form — the sweep over every live row.
             //
-            // A `watch ! row` site has no program position to sweep FROM — it
-            // is a standing rule and nothing else, so it skips this unit
-            // entirely and keeps only the qrow/qbody subscription above.
-            if (qs.sweeps_at_site) {
+            // Emitted for every row-scoped site, including `watch ! row`, and
+            // the distinction that matters is who CALLS it. The site's own
+            // transform decides: `query` replaces its site with a call (its
+            // root-position sweep), `preorder` likewise with the DFS walk, and
+            // `watch` self-erases and calls nothing. The unit still has to
+            // EXIST for a standing rule either way, because `stripe` schedules
+            // whole passes by chaining exactly these — a rule with no qsweep
+            // cannot be scheduled at all.
             appended_items.append(allocator, ast.Item{ .event_decl = ast.EventDecl{
                 .path = H.mkPathH(allocator, flow.module, qsweep_name),
                 .input = ast.Shape{ .fields = &[_]ast.Field{} },
@@ -3212,7 +3219,6 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 .location = flow.location,
                 .module = allocator.dupe(u8, flow.module) catch unreachable,
             } }) catch unreachable;
-            } // end: sweeps_at_site
         }
 
         // ---- unit 5: take — swap-remove through the handle head ----
@@ -3540,21 +3546,14 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 .location = flow.location,
                 .module = allocator.dupe(u8, flow.module) catch unreachable,
             } }) catch unreachable;
-            // The stripe schedules WHOLE PASSES, and it drives them by chaining
-            // each rule's qsweep. So membership is exactly "has a qsweep to
-            // chain", which excludes both non-sweeping corners for their own
-            // reasons: a preorder walk is a program-position traversal and
-            // never a standing rule, and a `watch ! row` rule is standing but
-            // has no whole-pass form at all — it fires from the insert path's
-            // standing enter, one row at a time, and there is nothing to
-            // schedule. Filtering on `is_preorder` alone left `watch ! row` in
-            // the chain and emitted a call to a qsweep unit that was never
-            // built.
+            // Preorder walks are program-position traversals, never standing
+            // rules — they do not join the stripe. A `watch ! row` rule DOES:
+            // it is a standing rule with a whole-pass form like any other, and
+            // the only thing it lacks is a root-position sweep of its own.
             {
                 var filtered = std.ArrayList(usize).initCapacity(allocator, stripe_order.items.len) catch unreachable;
                 for (stripe_order.items) |qi| {
-                    const qsi = qsites.items[qi];
-                    if (!qsi.is_preorder and qsi.sweeps_at_site) filtered.append(allocator, qi) catch unreachable;
+                    if (!qsites.items[qi].is_preorder) filtered.append(allocator, qi) catch unreachable;
                 }
                 stripe_order = filtered;
             }
