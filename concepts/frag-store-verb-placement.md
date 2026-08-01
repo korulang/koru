@@ -223,10 +223,36 @@ sounded like the wrong thing. The compiler had been describing the split
 correctly in its own comments for weeks (`store.kz`: "the MOMENTARY twin of
 query… `sweep` is a RUNTIME read") while the surface said the opposite.
 
-**Open:** the rename itself — today's read-only `query` sites become the new
-`query` (renamed from `sweep`), reactive ones become `watch ! row`, and fused
-ones become two explicit lines. Fusing them was the defect; preserving the
-fusion under a new name would only move it.
+**The fusion was not load-bearing, and the migration is the evidence.** Sorting
+the corpus by what each site actually depends on — writes before it versus after
+— 27 of 32 fall onto exactly ONE face with no judgement calls. A read-only site
+written as `query` had been installing a standing rule that could never fire; a
+reactive one had been sweeping an empty corpus. Both halves were dead weight the
+fused verb made invisible. If the fusion served anyone, sites would not sort
+this cleanly.
+
+The five that resist are the informative ones, and they resist for two different
+reasons. The **stripe** sites genuinely want all three faces at once — read now,
+react later, be schedulable — so "what do you call a rule that backfills" is a
+real design question and not a migration. The rest exposed a **capability gap**:
+`sweep` is not the superset of `query`'s read half that the rename assumes. It
+cannot lower a `when` guard on the row arm, nor a write through the row binding
+(`take(arena[e])`, `stored { e.hp: … }`), nor a `char[N]` column. The two verbs
+were never one read wearing two placements — which is worth stating plainly,
+because "momentary twin" (the phrasing this file has carried since 2026-07-23,
+and which `store.kz` still uses) implies exactly that equivalence, and a rename
+justified on it would have shipped the gap silently.
+
+**The rule that falls out:** a rename premised on "these are the same thing in
+different clothes" is a claim that has to be MEASURED against the corpus, not
+inferred from the docs — including docs written by the people who built both.
+Here the corpus disagreed with the comment, and only because 22 sites were
+actually moved and run.
+
+**Open:** closing the `sweep` gaps (guards, row-binding writes, char columns) is
+the precondition for the rename. Separately, `watch ! row` is incomplete on the
+watch side — the transplant-purity check and the nested-installation diagnostic
+were written against field arms and do not know a row arm exists.
 
 ## What this bought the numeric reading
 

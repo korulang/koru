@@ -27,5 +27,5 @@ std/store:insert(crew) { hp: 10 }
         | row _ |> std/store:take(crew[a])
             | item i |> std/io:print.ln("took {{ i.hp:d }}")
 
-std/store:query(crew)
-! query e when e.hp == 30 |> std/store:stored { e.hp: e.hp + 1 }
+std/store:sweep(crew)
+! sweep e when e.hp == 30 |> std/store:stored { e.hp: e.hp + 1 }

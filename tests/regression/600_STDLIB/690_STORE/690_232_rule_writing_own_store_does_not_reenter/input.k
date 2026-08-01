@@ -11,8 +11,8 @@ import std/store
 
 std/store:new(a, capacity: 8) { x: i64 }
 
-std/store:query(a)
-! query e |> std/store:insert(a) { x: e.x + 1 }
+std/store:watch(a)
+! row e |> std/store:insert(a) { x: e.x + 1 }
     | row _ |> std/io:print.ln("rule inserted {{ e.x:d }} plus one")
     | full |> _
 

@@ -36,5 +36,5 @@ beat(x: 7)
     | row _ |> _
     | full |> _
 
-std/store:query(game)
-! query e |> std/io:print.ln("hp {{ e.hp:d }}")
+std/store:sweep(game)
+! sweep e |> std/io:print.ln("hp {{ e.hp:d }}")

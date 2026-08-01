@@ -16,11 +16,11 @@ import std/store
 std/store:new(a, capacity: 4) { x: i64 }
 std/store:new(b, capacity: 8) { y: i64 }
 
-std/store:query(b)
-! query q |> std/io:print.ln("b sees {{ q.y:d }}")
+std/store:watch(b)
+! row q |> std/io:print.ln("b sees {{ q.y:d }}")
 
-std/store:query(a)
-! query e |> std/store:insert(b) { y: e.x * 2 }
+std/store:watch(a)
+! row e |> std/store:insert(b) { y: e.x * 2 }
     | row _ |> _
     | full |> _
 

@@ -20,5 +20,5 @@ std/store:insert(nodes) { val: 100, next: -1 }
                 | item gone |> std/io:print.ln("took {{ gone.val:d }}")
                     |> std/store:stored { nodes[a.next].val: 777 }
 
-std/store:query(nodes)
-! query e |> std/io:print.ln("val {{ e.val:d }}")
+std/store:sweep(nodes)
+! sweep e |> std/io:print.ln("val {{ e.val:d }}")
