@@ -266,6 +266,7 @@ pub const EmissionContext = struct {
     capture_counter: usize = 0, // Counter for unique capture type names (nested captures)
     for_counter: usize = 0, // Counter for unique for loop binding names (nested loops)
     inline_label_counter: usize = 0, // Counter for unique __KORU_INLINE__ label substitution at depth
+    proc_label_counter: usize = 0, // Counter for unique __koru_proc_/__koru_eff_disc_ labels (nested inline effectful calls)
     result_prefix: []const u8 = "result_", // Prefix for result variable names (changes to "loop_result_" inside loops)
     // InvocationMeta support - set when emitting a flow
     current_flow_annotations: ?[]const []const u8 = null, // Flow annotations like ["release", "debug"]
@@ -5213,7 +5214,7 @@ pub fn emitFlow(
             ctx.label_result_var = first_result;
         } else {
             if (inline_elig) |elig| {
-                try emitInlineEffectfulCall(emitter, ctx, flow.inv(), flow.body.continuations, elig, first_result, result_counter);
+                try emitInlineEffectfulCall(emitter, ctx, flow.inv(), flow.body.continuations, elig, first_result);
             } else {
                 try emitInvocation(emitter, ctx, flow.inv(), first_result);
                 // A bare-return head bind (`~e(...): name |> ...`) creates `name`
@@ -5326,7 +5327,7 @@ pub fn emitFlow(
         // Zero continuations — use comptime_result_binding if set (for program return)
         const binding = if (ctx.comptime_result_binding) |b| b else "_";
         if (inline_elig != null and ctx.comptime_result_binding == null) {
-            try emitInlineEffectfulCall(emitter, ctx, flow.inv(), flow.body.continuations, inline_elig.?, null, 0);
+            try emitInlineEffectfulCall(emitter, ctx, flow.inv(), flow.body.continuations, inline_elig.?, null);
         } else {
             try emitInvocation(emitter, ctx, flow.inv(), binding);
         }
@@ -5963,10 +5964,16 @@ fn emitInlineEffectfulCall(
     conts: []const ast.Continuation,
     elig: InlineEligibility,
     result_name: ?[]const u8,
-    uniq: usize,
 ) anyerror!void {
+    // The label must be unique across NESTED inline splices too: the inner
+    // call is emitted while the outer's body renders, so a per-step counter
+    // (result_counter) hands the same number to both — `split` nested inside
+    // `split`'s own piece arm redefined `__koru_proc_0` (690_191). A
+    // monotonic per-call counter on the context has no such nesting collision.
+    const proc_uniq = ctx.proc_label_counter;
+    ctx.proc_label_counter += 1;
     var label_buf: [64]u8 = undefined;
-    const label = std.fmt.bufPrint(&label_buf, "__koru_proc_{d}", .{uniq}) catch "__koru_proc";
+    const label = std.fmt.bufPrint(&label_buf, "__koru_proc_{d}", .{proc_uniq}) catch "__koru_proc";
 
     // The `$mod.` rewrite target: the declaring module's emitted namespace,
     // resolved from the invocation path exactly as the call target would be.
@@ -5991,7 +5998,7 @@ fn emitInlineEffectfulCall(
     // eligibility requires a `return` when terminals exist.)
     const typed_discard = result_name == null and rewritten.has_break;
     var disc_buf: [64]u8 = undefined;
-    const disc_name = std.fmt.bufPrint(&disc_buf, "__koru_eff_disc_{d}", .{uniq}) catch "__koru_eff_disc";
+    const disc_name = std.fmt.bufPrint(&disc_buf, "__koru_eff_disc_{d}", .{proc_uniq}) catch "__koru_eff_disc";
     const labeled = result_name != null or rewritten.has_break;
     try emitter.writeIndent();
     if (result_name) |rn| {
@@ -9636,7 +9643,6 @@ pub fn emitContinuationBody(
                         cont.continuations,
                         elig,
                         if (needs_result) current_result else null,
-                        result_counter.*,
                     );
                 } else {
                     try emitStep(emitter, ctx, step, current_result);
