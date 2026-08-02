@@ -45,6 +45,10 @@ run — and would not have been, since the next full run was going to be paralle
   the same class of thing as a red pin's title — see
   [[frag-a-red-pin-is-unfalsifiable-documentation]] — an assertion no assertion
   checks. The defence is to run the guard and watch it fail on purpose.
+- **Reach is necessary and not sufficient: a wall also needs a CONSUMER.** A
+  guard that runs, fails, and prints into a log nothing downstream reads is
+  back where it started. The question has two halves — does the normal path
+  reach it, and does anything act on the answer.
 
 ## The same failure one layer in: a guard whose input is not tracked
 
@@ -59,6 +63,30 @@ Same shape as the topology defect: logic sound, reach zero. Reaching now means
 being present in the clone, not merely being called. And staging narrowly —
 adopted in that session as protection against a concurrent writer in the same
 checkout — is what removed the `git add -A` whose diff would have shown the gap.
+
+## The third rung: reached, fired, and published over anyway
+
+Reach was fixed and the belief still had a hole. Check D now runs — and on
+2026-08-02 it fired, correctly, on the `sweep`→`query`/`query`→`rule` rename:
+a stale row for a transform `koru_std` no longer declares, and no row at all
+for the one the rename created. It had been firing since the rename landed.
+
+A full board was published over it in between. The status ceremony reads
+`test-results/latest.json`, whose schema carries a pass count, categories and
+unit tests — **and no wall verdicts at all**. So the suite says ❌ at the end
+of a run whose snapshot says 1294/1451, and every consumer downstream of the
+snapshot sees only the number. Nothing in the publish path can even ask
+whether a coherence wall was red.
+
+This is the same defect one layer out, and it is the more dangerous layer:
+the topology bug hid a wall from the runner, this one hides it from the
+*record*. A wall that fires into a transcript a human may or may not scroll
+to is a watcher again, and the fix is the same shape — the verdict has to
+travel in the artifact the consumers actually read, not in the log of the run
+that computed it. Neighbour on the artifact side:
+[[frag-a-verdict-read-from-an-artifact-does-not-cover-the-run]], where the
+artifact could not show the failure; here the artifact simply never carries
+it.
 
 ## Open
 

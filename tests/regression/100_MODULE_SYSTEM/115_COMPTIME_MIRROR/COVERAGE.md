@@ -49,9 +49,9 @@ because "no mirror" is exactly the state this file exists to make expensive.
 | `store:new` | `690_079_store_declared_in_imported_module` |
 | `store:preorder` | pins-unimplemented-surface |
 | `store:query` | `115_019_store_query_in_module` |
+| `store:rule` | `115_042_store_rule_in_module` |
 | `store:stored` | `690_079_store_declared_in_imported_module` |
 | `store:stripe` | `115_022_store_stripe_in_module` |
-| `store:sweep` | `115_020_store_sweep_in_module` |
 | `store:take` | `115_023_store_take_in_module` |
 | `store:watch` | `115_021_store_watch_in_module` |
 | `switch:char` | `115_002_switch_char_in_module` |
