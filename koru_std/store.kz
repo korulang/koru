@@ -112,6 +112,87 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
     return null;
 }
 
+/// Every item in the program, flattened through `.module_decl`, in tree order,
+/// as POINTERS into the program's own arrays.
+///
+/// `program.items` is one level deep: an imported module arrives as a single
+/// `.module_decl` carrying its own items. Every scan in this file that reads
+/// `program.items` directly is therefore blind to a store declared, watched,
+/// queried or written inside a library — and the failure is not a miss, it is a
+/// diagnostic pointing at the author: "unknown store — no std/store:new(c)
+/// found", with the `new` sitting four lines above the `watch`.
+///
+/// The caveat `findSynthDecl` carries still applies and is the reason this
+/// returns items rather than flows: flattening is safe for a predicate that
+/// names something only the store machinery mints (a `__store_*` symbol, a
+/// `std/store:<verb>` invocation) and UNSAFE for a general `.flow` scan, which
+/// would start matching ordinary flows inside `std.compiler` and friends. Every
+/// caller here is predicate-guarded; a new one must be too.
+///
+/// Pointers, not copies, so a site may take `&pi.flow` and keep it, and so the
+/// two mutating walks can `@constCast` a real program node rather than a
+/// temporary.
+fn flatItems(alloc: std.mem.Allocator, items: []const ast_find.Item) []const *const ast_find.Item {
+    var out = std.ArrayList(*const ast_find.Item){};
+    collectFlat(alloc, items, &out);
+    return out.items;
+}
+
+fn collectFlat(alloc: std.mem.Allocator, items: []const ast_find.Item, out: *std.ArrayList(*const ast_find.Item)) void {
+    for (items) |*it| {
+        out.append(alloc, it) catch return;
+        if (it.* == .module_decl) collectFlat(alloc, it.module_decl.items, out);
+    }
+}
+
+/// The module a store was DECLARED in, as the IMPORT-DERIVED logical name
+/// (`app.lib`) — the domain every resolvable path is spelled in.
+///
+/// The other domain is FILE-derived (`lib`, from `lib.k`), which is what
+/// `Flow.module` carries. Use the file-derived name only to compare two flows;
+/// use THIS for anything that mints a name something else has to resolve. A
+/// unit minted under the file name is addressed into a namespace nobody
+/// registered, and the program reports `unknown tor 'lib:__store_inserth_todos'`
+/// with the declaration sitting inside `app.lib` (115_018).
+///
+/// Two sources, because a store is visible in two states depending on transform
+/// order: already-coordinated (its generated apply event carries the answer as
+/// its own qualifier) or still an untransformed `std/store:new` (the answer is
+/// the enclosing module's logical name). Null only when there is no such store.
+fn storeHome(alloc: std.mem.Allocator, prog: *const ast_find.Program, store: []const u8) ?[]const u8 {
+    const apply_name = std.fmt.allocPrint(alloc, "__store_apply_{s}", .{store}) catch unreachable;
+    if (findSynthDecl(prog.items, apply_name)) |ed| return ed.path.module_qualifier;
+    return storeNewHomeIn(prog.items, store, null);
+}
+
+/// `enclosing` is the containing module's logical name; top-level flows keep
+/// `f.module`, which is what the entry file is registered under.
+fn storeNewHomeIn(its: []const ast_find.Item, want: []const u8, enclosing: ?[]const u8) ?[]const u8 {
+    for (its) |*pi| {
+        if (pi.* == .flow) {
+            if (isStoreNewFor(&pi.flow, want)) return enclosing orelse pi.flow.module;
+        } else if (pi.* == .module_decl) {
+            if (storeNewHomeIn(pi.module_decl.items, want, pi.module_decl.logical_name)) |m| return m;
+        }
+    }
+    return null;
+}
+
+fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
+    const inv = f.inv();
+    if (inv.path.segments.len != 1 or !std.mem.eql(u8, inv.path.segments[0], "new")) return false;
+    const mq = inv.path.module_qualifier orelse return false;
+    if (!std.mem.eql(u8, mq, "std.store")) return false;
+    for (inv.args) |a| {
+        if (std.mem.eql(u8, a.name, "expr")) {
+            var v = a.value;
+            if (v.len >= 2 and v[0] == '"') v = v[1 .. v.len - 1];
+            return std.mem.eql(u8, v, want);
+        }
+    }
+    return false;
+}
+
 // ============================================================================
 // STORE.CREATE — declare + instantiate a store; the (f) coordinator
 // ============================================================================
@@ -401,6 +482,25 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:new requires a name and a seed block: create(name) {{ field: value[type] }}", .{}) } };
     }
 
+    // The namespace synthesized units are ADDRESSED under. `flow.module` is the
+    // file-derived name (`lib`); every cross-module path in the program resolves
+    // through the module's import-derived logical name (`app.lib`). Minting the
+    // paths from the file name puts them in a namespace nothing looks up. The
+    // `.module` FIELDS below stay `flow.module` — that is the emitter's
+    // namespacing and matches every other item parsed from the same file.
+    //
+    // The scalar path had this right and the plural path did not: it minted
+    // forty-odd paths off `flow.module`, and every reader that resolved one
+    // reported `unknown tor 'lib:__store_inserth_todos'` (115_018).
+    const home_ns = storeHome(allocator, program, store_name) orelse flow.module;
+
+    // The same home, spelled as the EMITTED Zig namespace (`main_module.` for
+    // the entry file, `koru_app.koru_lib.` for a module). Generated proc bodies
+    // are raw Zig, so they must name the struct their sibling units emitted
+    // into; a hardcoded `main_module.` reaches for a namespace the units are
+    // not in.
+    const emit_ns = storeEmitQualifier(allocator, home_ns, program.main_module_name);
+
     // Per-store disposal contract: `[entity(<name>)]` opts this store into the
     // taken-obligation discipline. Its rows are named ENTITIES — `take` mints
     // `<std/store:taken!>` on a synthesized type (the arg capitalized, `enemy`
@@ -493,8 +593,8 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             fn fieldNameByIndex(alloc: std.mem.Allocator, prog: *const ast.Program, store: []const u8, idx: usize) []const u8 {
                 const struct_literal2 = @import("struct_literal");
                 const apply_name2 = std.fmt.allocPrint(alloc, "__store_apply_{s}", .{store}) catch unreachable;
-                for (prog.items) |pi2| {
-                    switch (pi2) {
+                for (flatItems(alloc, prog.items)) |pi2| {
+                    switch (pi2.*) {
                         .event_decl => |*ed2| {
                             if (ed2.path.segments.len == 1 and std.mem.eql(u8, ed2.path.segments[0], apply_name2)) {
                                 if (idx < ed2.branches.len) return ed2.branches[idx].name;
@@ -593,8 +693,8 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 for (cont.continuations) |*c| scanCont(alloc, prog, c, from, from_field, list);
             }
         };
-        for (program.items) |pi| {
-            if (pi != .flow) continue;
+        for (flatItems(allocator, program.items)) |pi| {
+            if (pi.* != .flow) continue;
             const cfp = &pi.flow;
             if (!H.isStoreInv(cfp, "new", null)) continue;
             var cname: []const u8 = "";
@@ -1168,13 +1268,9 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                         while (i < text.len and (std.ascii.isAlphanumeric(text[i]) or text[i] == '_')) i += 1;
                         const ev_name = text[at .. i];
                         pos = i;
-                        for (prog.items) |pi| {
-                            if (pi != .event_decl) continue;
-                            const ed = &pi.event_decl;
-                            if (ed.path.segments.len == 1 and std.mem.eql(u8, ed.path.segments[0], ev_name)) {
-                                for (ed.input.fields) |f2| {
-                                    if (std.mem.eql(u8, f2.name, name)) return true;
-                                }
+                        if (findSynthDecl(prog.items, ev_name)) |ed| {
+                            for (ed.input.fields) |f2| {
+                                if (std.mem.eql(u8, f2.name, name)) return true;
                             }
                         }
                     }
@@ -1384,8 +1480,8 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             cont: ast.Continuation,
         };
         var pwatch_arms = std.ArrayList(WatchArmP).initCapacity(allocator, 4) catch unreachable;
-        for (program.items) |pi| {
-            if (pi != .flow) continue;
+        for (flatItems(allocator, program.items)) |pi| {
+            if (pi.* != .flow) continue;
             const wf = &pi.flow;
             if (!H.isStoreInv(wf, "watch", store_name)) continue;
             for (wf.body.continuations) |*wc| {
@@ -1505,15 +1601,15 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             }
         };
         const program_may_remove = blk_pmr: {
-            for (program.items) |pi2| {
-                if (pi2 != .flow) continue;
+            for (flatItems(allocator, program.items)) |pi2| {
+                if (pi2.* != .flow) continue;
                 if (TakeScan.cont(&pi2.flow.body)) break :blk_pmr true;
             }
             break :blk_pmr false;
         };
         var qsites = std.ArrayList(QuerySite).initCapacity(allocator, 4) catch unreachable;
-        for (program.items) |pi| {
-            if (pi != .flow) continue;
+        for (flatItems(allocator, program.items)) |pi| {
+            if (pi.* != .flow) continue;
             const qf = &pi.flow;
             const q_verb: []const u8 = if (H.isStoreInv(qf, "rule", store_name))
                 "rule"
@@ -1977,8 +2073,8 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         // these is BARE — `counter`, not `counter.field` — so the rewriter needs
         // to know which stores those are before it can resolve them.
         var pstore_identity = std.ArrayList([]const u8).initCapacity(allocator, 4) catch unreachable;
-        for (program.items) |pi| {
-            switch (pi) {
+        for (flatItems(allocator, program.items)) |pi| {
+            switch (pi.*) {
                 .flow => |*f| {
                     if (H.isStoreInv(f, "new", null)) {
                         var nm: ?[]const u8 = null;
@@ -2269,7 +2365,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             // state ((h)). The destructured fields are in scope as insert
             // proc inputs.
             for (inserted_arms.items, 0..) |arm, ai| {
-                const head = std.fmt.allocPrint(allocator, "main_module.__store_inserted_{s}_{d}_event.handler(.{{ ", .{ store_name, ai }) catch unreachable;
+                const head = std.fmt.allocPrint(allocator, "{s}__store_inserted_{s}_{d}_event.handler(.{{ ", .{ emit_ns, store_name, ai }) catch unreachable;
                 ap.appendSlice(allocator, head) catch unreachable;
                 for (arm.fields, 0..) |fnm, fi| {
                     if (fi > 0) ap.appendSlice(allocator, ", ") catch unreachable;
@@ -2300,10 +2396,10 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 if (qs.is_preorder) continue;
                 const call = std.fmt.allocPrint(allocator,
                     \\if (__site_line > {d}) {{
-                    \\    main_module.__store_qrow_{s}_L{d}_event.handler(.{{ .row = @as(i64, @intCast(__koru_new_row)) }});
+                    \\    {s}__store_qrow_{s}_L{d}_event.handler(.{{ .row = @as(i64, @intCast(__koru_new_row)) }});
                     \\}}
                     \\
-                , .{ qs.line, store_name, qs.line }) catch unreachable;
+                , .{ qs.line, emit_ns, store_name, qs.line }) catch unreachable;
                 ap.appendSlice(allocator, call) catch unreachable;
             }
         }
@@ -2334,7 +2430,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         {
             const insert_name = std.fmt.allocPrint(allocator, "__store_insert_{s}", .{store_name}) catch unreachable;
             appended_items.append(allocator, ast.Item{ .event_decl = ast.EventDecl{
-                .path = H.mkPathH(allocator, flow.module, insert_name),
+                .path = H.mkPathH(allocator, home_ns, insert_name),
                 .input = ast.Shape{ .fields = mkInsertInput(allocator, field_names[0..user_field_count], field_types[0..user_field_count], field_owned_info[0..user_field_count]) },
                 .branches = &[_]ast.Branch{},
                 .is_public = false,
@@ -2345,7 +2441,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             } }) catch unreachable;
             const body = std.fmt.allocPrint(allocator, "{s}return;", .{append_text}) catch unreachable;
             appended_items.append(allocator, ast.Item{ .proc_decl = ast.ProcDecl{
-                .path = H.mkPathH(allocator, flow.module, insert_name),
+                .path = H.mkPathH(allocator, home_ns, insert_name),
                 .body = ast.Source{ .text = body, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
                 .annotations = &[_][]const u8{},
                 .target = allocator.dupe(u8, "zig") catch unreachable,
@@ -2372,7 +2468,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 .annotations = &[_][]const u8{},
             };
             appended_items.append(allocator, ast.Item{ .event_decl = ast.EventDecl{
-                .path = H.mkPathH(allocator, flow.module, inserth_name),
+                .path = H.mkPathH(allocator, home_ns, inserth_name),
                 .input = ast.Shape{ .fields = mkInsertInput(allocator, field_names[0..user_field_count], field_types[0..user_field_count], field_owned_info[0..user_field_count]) },
                 .branches = row_branches,
                 .is_public = false,
@@ -2383,7 +2479,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             } }) catch unreachable;
             const hbody = std.fmt.allocPrint(allocator, "{s}return .{{ .row = __koru_store_{s}.__koru_handle_of(__koru_new_row) }};", .{ append_text, store_name }) catch unreachable;
             appended_items.append(allocator, ast.Item{ .proc_decl = ast.ProcDecl{
-                .path = H.mkPathH(allocator, flow.module, inserth_name),
+                .path = H.mkPathH(allocator, home_ns, inserth_name),
                 .body = ast.Source{ .text = hbody, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
                 .annotations = &[_][]const u8{},
                 .target = allocator.dupe(u8, "zig") catch unreachable,
@@ -2450,7 +2546,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 .annotations = &[_][]const u8{},
             };
             appended_items.append(allocator, ast.Item{ .event_decl = ast.EventDecl{
-                .path = H.mkPathH(allocator, flow.module, insertf_name),
+                .path = H.mkPathH(allocator, home_ns, insertf_name),
                 .input = ast.Shape{ .fields = mkInsertInput(allocator, field_names[0..user_field_count], field_types[0..user_field_count], field_owned_info[0..user_field_count]) },
                 .branches = f_branches,
                 .is_public = false,
@@ -2476,7 +2572,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 std.fmt.allocPrint(allocator, "if (__koru_store_{s}.len >= {d}) return .{{ .full = .{{}} }};\n", .{ store_name, CAP }) catch unreachable;
             const fbody = std.fmt.allocPrint(allocator, "{s}{s}return .{{ .row = __koru_store_{s}.__koru_handle_of(__koru_new_row) }};", .{ fcheck, append_text, store_name }) catch unreachable;
             appended_items.append(allocator, ast.Item{ .proc_decl = ast.ProcDecl{
-                .path = H.mkPathH(allocator, flow.module, insertf_name),
+                .path = H.mkPathH(allocator, home_ns, insertf_name),
                 .body = ast.Source{ .text = fbody, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
                 .annotations = &[_][]const u8{},
                 .target = allocator.dupe(u8, "zig") catch unreachable,
@@ -2551,7 +2647,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 };
             }
             appended_items.append(allocator, ast.Item{ .event_decl = ast.EventDecl{
-                .path = H.mkPathH(allocator, flow.module, papply_name),
+                .path = H.mkPathH(allocator, home_ns, papply_name),
                 .input = ast.Shape{ .fields = in_fields },
                 .branches = papply_branches,
                 .is_public = false,
@@ -2626,9 +2722,9 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 atext.appendSlice(allocator, wr) catch unreachable;
                 for (updated_arms.items, 0..) |ua, ai| {
                     const call = if (ua.fields.len != 0)
-                        std.fmt.allocPrint(allocator, "main_module.__store_updated_{s}_{d}_event.handler(.{{ .old = __koru_old, .new = value_{d} }}); ", .{ store_name, ai, i }) catch unreachable
+                        std.fmt.allocPrint(allocator, "{s}__store_updated_{s}_{d}_event.handler(.{{ .old = __koru_old, .new = value_{d} }}); ", .{ emit_ns, store_name, ai, i }) catch unreachable
                     else
-                        std.fmt.allocPrint(allocator, "main_module.__store_updated_{s}_{d}_event.handler(.{{}}); ", .{ store_name, ai }) catch unreachable;
+                        std.fmt.allocPrint(allocator, "{s}__store_updated_{s}_{d}_event.handler(.{{}}); ", .{ emit_ns, store_name, ai }) catch unreachable;
                     atext.appendSlice(allocator, call) catch unreachable;
                 }
                 // An owned arm dispatches the FRESH cell read, not the consumed
@@ -2643,7 +2739,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             }
             pbody.appendSlice(allocator, "    else => unreachable,\n};") catch unreachable;
             appended_items.append(allocator, ast.Item{ .proc_decl = ast.ProcDecl{
-                .path = H.mkPathH(allocator, flow.module, papply_name),
+                .path = H.mkPathH(allocator, home_ns, papply_name),
                 .body = ast.Source{ .text = pbody.toOwnedSlice(allocator) catch unreachable, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
                 .annotations = &[_][]const u8{},
                 .target = allocator.dupe(u8, "zig") catch unreachable,
@@ -2653,7 +2749,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
 
             const win_fields = mkWriteInput(allocator, field_types, field_owned_info, true);
             appended_items.append(allocator, ast.Item{ .event_decl = ast.EventDecl{
-                .path = H.mkPathH(allocator, flow.module, pwrite_name),
+                .path = H.mkPathH(allocator, home_ns, pwrite_name),
                 .input = ast.Shape{ .fields = win_fields },
                 .branches = &[_]ast.Branch{},
                 .is_public = false,
@@ -2671,7 +2767,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 wapply_args[2 + i] = ast.Arg{ .name = vn, .value = allocator.dupe(u8, vn) catch unreachable };
             }
             const wapply_inv = ast.Invocation{
-                .path = H.mkPathH(allocator, flow.module, papply_name),
+                .path = H.mkPathH(allocator, home_ns, papply_name),
                 .args = wapply_args,
             };
 
@@ -2712,7 +2808,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             appended_items.append(allocator, ast.Item{ .flow = ast.Flow{
                 .body = ast.rootSite(wapply_inv, warms.toOwnedSlice(allocator) catch unreachable, flow.location),
                 .pre_label = null,
-                .impl_of = H.mkPathH(allocator, flow.module, pwrite_name),
+                .impl_of = H.mkPathH(allocator, home_ns, pwrite_name),
                 .super_shape = null,
                 .inline_body = null,
                 .preamble_code = null,
@@ -2776,7 +2872,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                         .annotations = &[_][]const u8{},
                     };
                     appended_items.append(allocator, ast.Item{ .event_decl = ast.EventDecl{
-                        .path = H.mkPathH(allocator, flow.module, fapply_name),
+                        .path = H.mkPathH(allocator, home_ns, fapply_name),
                         .input = ast.Shape{ .fields = fa_in },
                         .branches = fa_branches,
                         .is_public = false,
@@ -2814,9 +2910,9 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                     fatext.appendSlice(allocator, fwr) catch unreachable;
                     for (updated_arms.items, 0..) |ua, ai| {
                         const fcall = if (ua.fields.len != 0)
-                            std.fmt.allocPrint(allocator, "main_module.__store_updated_{s}_{d}_event.handler(.{{ .old = __koru_old, .new = value }}); ", .{ store_name, ai }) catch unreachable
+                            std.fmt.allocPrint(allocator, "{s}__store_updated_{s}_{d}_event.handler(.{{ .old = __koru_old, .new = value }}); ", .{ emit_ns, store_name, ai }) catch unreachable
                         else
-                            std.fmt.allocPrint(allocator, "main_module.__store_updated_{s}_{d}_event.handler(.{{}}); ", .{ store_name, ai }) catch unreachable;
+                            std.fmt.allocPrint(allocator, "{s}__store_updated_{s}_{d}_event.handler(.{{}}); ", .{ emit_ns, store_name, ai }) catch unreachable;
                         fatext.appendSlice(allocator, fcall) catch unreachable;
                     }
                     // An owned arm dispatches the FRESH cell read (690_061/063).
@@ -2826,7 +2922,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                         std.fmt.allocPrint(allocator, "return .{{ .{s} = value }};", .{fname}) catch unreachable;
                     fatext.appendSlice(allocator, ftail) catch unreachable;
                     appended_items.append(allocator, ast.Item{ .proc_decl = ast.ProcDecl{
-                        .path = H.mkPathH(allocator, flow.module, fapply_name),
+                        .path = H.mkPathH(allocator, home_ns, fapply_name),
                         .body = ast.Source{ .text = fatext.toOwnedSlice(allocator) catch unreachable, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
                         .annotations = &[_][]const u8{},
                         .target = allocator.dupe(u8, "zig") catch unreachable,
@@ -2845,7 +2941,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                         .phantom = if (field_owned_info[i]) |oi| std.fmt.allocPrint(allocator, "{s}:!{s}", .{ oi.module_dot, oi.state }) catch unreachable else null,
                     };
                     appended_items.append(allocator, ast.Item{ .event_decl = ast.EventDecl{
-                        .path = H.mkPathH(allocator, flow.module, fwrite_name),
+                        .path = H.mkPathH(allocator, home_ns, fwrite_name),
                         .input = ast.Shape{ .fields = fw_in },
                         .branches = &[_]ast.Branch{},
                         .is_public = false,
@@ -2862,7 +2958,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                     fap_args[0] = ast.Arg{ .name = allocator.dupe(u8, "row") catch unreachable, .value = allocator.dupe(u8, "row") catch unreachable };
                     fap_args[1] = ast.Arg{ .name = allocator.dupe(u8, "value") catch unreachable, .value = allocator.dupe(u8, "value") catch unreachable };
                     const fap_inv = ast.Invocation{
-                        .path = H.mkPathH(allocator, flow.module, fapply_name),
+                        .path = H.mkPathH(allocator, home_ns, fapply_name),
                         .args = fap_args,
                     };
                     var fwarms = std.ArrayList(ast.Continuation).initCapacity(allocator, 2) catch unreachable;
@@ -2895,7 +2991,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                     appended_items.append(allocator, ast.Item{ .flow = ast.Flow{
                         .body = ast.rootSite(fap_inv, fwarms.toOwnedSlice(allocator) catch unreachable, flow.location),
                         .pre_label = null,
-                        .impl_of = H.mkPathH(allocator, flow.module, fwrite_name),
+                        .impl_of = H.mkPathH(allocator, home_ns, fwrite_name),
                         .super_shape = null,
                         .inline_body = null,
                         .preamble_code = null,
@@ -2927,7 +3023,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
 
                 // envwrite: row + field selector + per-column typed slots.
                 appended_items.append(allocator, ast.Item{ .event_decl = ast.EventDecl{
-                    .path = H.mkPathH(allocator, flow.module, penvw_name),
+                    .path = H.mkPathH(allocator, home_ns, penvw_name),
                     .input = ast.Shape{ .fields = mkWriteInput(allocator, field_types, field_owned_info, false) },
                     .branches = &[_]ast.Branch{},
                     .is_public = false,
@@ -2964,16 +3060,16 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                     ewb.appendSlice(allocator, ewr) catch unreachable;
                     for (updated_arms.items, 0..) |ua, ai| {
                         const ecall = if (ua.fields.len != 0)
-                            std.fmt.allocPrint(allocator, "main_module.__store_updated_{s}_{d}_event.handler(.{{ .old = __koru_old, .new = value_{d} }}); ", .{ store_name, ai, i }) catch unreachable
+                            std.fmt.allocPrint(allocator, "{s}__store_updated_{s}_{d}_event.handler(.{{ .old = __koru_old, .new = value_{d} }}); ", .{ emit_ns, store_name, ai, i }) catch unreachable
                         else
-                            std.fmt.allocPrint(allocator, "main_module.__store_updated_{s}_{d}_event.handler(.{{}}); ", .{ store_name, ai }) catch unreachable;
+                            std.fmt.allocPrint(allocator, "{s}__store_updated_{s}_{d}_event.handler(.{{}}); ", .{ emit_ns, store_name, ai }) catch unreachable;
                         ewb.appendSlice(allocator, ecall) catch unreachable;
                     }
                     ewb.appendSlice(allocator, "},\n") catch unreachable;
                 }
                 ewb.appendSlice(allocator, "    else => unreachable,\n}\nreturn;") catch unreachable;
                 appended_items.append(allocator, ast.Item{ .proc_decl = ast.ProcDecl{
-                    .path = H.mkPathH(allocator, flow.module, penvw_name),
+                    .path = H.mkPathH(allocator, home_ns, penvw_name),
                     .body = ast.Source{ .text = ewb.toOwnedSlice(allocator) catch unreachable, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
                     .annotations = &[_][]const u8{},
                     .target = allocator.dupe(u8, "zig") catch unreachable,
@@ -2998,7 +3094,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                     };
                 }
                 appended_items.append(allocator, ast.Item{ .event_decl = ast.EventDecl{
-                    .path = H.mkPathH(allocator, flow.module, ppeek_name),
+                    .path = H.mkPathH(allocator, home_ns, ppeek_name),
                     .input = ast.Shape{ .fields = ppk_in },
                     .branches = ppk_branches,
                     .is_public = false,
@@ -3020,7 +3116,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 }
                 pkb.appendSlice(allocator, "    else => unreachable,\n};") catch unreachable;
                 appended_items.append(allocator, ast.Item{ .proc_decl = ast.ProcDecl{
-                    .path = H.mkPathH(allocator, flow.module, ppeek_name),
+                    .path = H.mkPathH(allocator, home_ns, ppeek_name),
                     .body = ast.Source{ .text = pkb.toOwnedSlice(allocator) catch unreachable, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
                     .annotations = &[_][]const u8{},
                     .target = allocator.dupe(u8, "zig") catch unreachable,
@@ -3035,7 +3131,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 pann_in[0] = ast.Field{ .name = allocator.dupe(u8, "row") catch unreachable, .type = allocator.dupe(u8, "i64") catch unreachable };
                 pann_in[1] = ast.Field{ .name = allocator.dupe(u8, "field") catch unreachable, .type = allocator.dupe(u8, "i64") catch unreachable };
                 appended_items.append(allocator, ast.Item{ .event_decl = ast.EventDecl{
-                    .path = H.mkPathH(allocator, flow.module, pann_name),
+                    .path = H.mkPathH(allocator, home_ns, pann_name),
                     .input = ast.Shape{ .fields = pann_in },
                     .branches = &[_]ast.Branch{},
                     .is_public = false,
@@ -3048,7 +3144,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 pann_args[0] = ast.Arg{ .name = allocator.dupe(u8, "row") catch unreachable, .value = allocator.dupe(u8, "row") catch unreachable };
                 pann_args[1] = ast.Arg{ .name = allocator.dupe(u8, "field") catch unreachable, .value = allocator.dupe(u8, "field") catch unreachable };
                 const pann_inv = ast.Invocation{
-                    .path = H.mkPathH(allocator, flow.module, ppeek_name),
+                    .path = H.mkPathH(allocator, home_ns, ppeek_name),
                     .args = pann_args,
                 };
                 var aarms = std.ArrayList(ast.Continuation).initCapacity(allocator, field_names.len) catch unreachable;
@@ -3083,7 +3179,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 appended_items.append(allocator, ast.Item{ .flow = ast.Flow{
                     .body = ast.rootSite(pann_inv, aarms.toOwnedSlice(allocator) catch unreachable, flow.location),
                     .pre_label = null,
-                    .impl_of = H.mkPathH(allocator, flow.module, pann_name),
+                    .impl_of = H.mkPathH(allocator, home_ns, pann_name),
                     .super_shape = null,
                     .inline_body = null,
                     .preamble_code = null,
@@ -3122,7 +3218,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 .annotations = &[_][]const u8{},
             };
             appended_items.append(allocator, ast.Item{ .event_decl = ast.EventDecl{
-                .path = H.mkPathH(allocator, flow.module, pwritec_name),
+                .path = H.mkPathH(allocator, home_ns, pwritec_name),
                 .input = ast.Shape{ .fields = cin_fields },
                 .branches = c_branches,
                 .is_public = false,
@@ -3162,11 +3258,11 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 \\    const __koru_cycr = __koru_store_{s}.__koru_resolve(__koru_cyc);
                 \\    __koru_cyc = __koru_store_{s}.parent[__koru_cycr];
                 \\}}
-                \\main_module.__store_write_{s}_event.handler(.{{ .row = row, .field = field{s} }});
+                \\{s}__store_write_{s}_event.handler(.{{ .row = row, .field = field{s} }});
                 \\return .{{ .ok = .{{}} }};
-            , .{ store_name, store_name, store_name, store_name, cw_slots.items }) catch unreachable;
+            , .{ store_name, store_name, store_name, emit_ns, store_name, cw_slots.items }) catch unreachable;
             appended_items.append(allocator, ast.Item{ .proc_decl = ast.ProcDecl{
-                .path = H.mkPathH(allocator, flow.module, pwritec_name),
+                .path = H.mkPathH(allocator, home_ns, pwritec_name),
                 .body = ast.Source{ .text = cbody, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
                 .annotations = &[_][]const u8{},
                 .target = allocator.dupe(u8, "zig") catch unreachable,
@@ -3190,7 +3286,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 break :blk anns;
             };
             appended_items.append(allocator, ast.Item{ .event_decl = ast.EventDecl{
-                .path = H.mkPathH(allocator, flow.module, qrow_name),
+                .path = H.mkPathH(allocator, home_ns, qrow_name),
                 .input = ast.Shape{ .fields = qrow_in },
                 .branches = &[_]ast.Branch{},
                 .is_public = false,
@@ -3216,7 +3312,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 const gz = std.fmt.allocPrint(allocator, "if (!({s})) return;\n", .{g}) catch unreachable;
                 qr.appendSlice(allocator, gz) catch unreachable;
             }
-            qr.appendSlice(allocator, "main_module.") catch unreachable;
+            qr.appendSlice(allocator, emit_ns) catch unreachable;
             qr.appendSlice(allocator, qbody_name) catch unreachable;
             qr.appendSlice(allocator, "_event.handler(.{ ") catch unreachable;
             for (qs.proj_names, qs.proj_fields, 0..) |pname, pfidx, i| {
@@ -3247,7 +3343,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             qr.appendSlice(allocator, qrow_cursor) catch unreachable;
             qr.appendSlice(allocator, "});\nreturn;") catch unreachable;
             appended_items.append(allocator, ast.Item{ .proc_decl = ast.ProcDecl{
-                .path = H.mkPathH(allocator, flow.module, qrow_name),
+                .path = H.mkPathH(allocator, home_ns, qrow_name),
                 .body = ast.Source{ .text = qr.toOwnedSlice(allocator) catch unreachable, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
                 .annotations = &[_][]const u8{},
                 .target = allocator.dupe(u8, "zig") catch unreachable,
@@ -3277,7 +3373,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             }
             qbody_in[qs.proj_names.len] = ast.Field{ .name = allocator.dupe(u8, qs.cursor) catch unreachable, .type = allocator.dupe(u8, "i64") catch unreachable };
             appended_items.append(allocator, ast.Item{ .event_decl = ast.EventDecl{
-                .path = H.mkPathH(allocator, flow.module, qbody_name),
+                .path = H.mkPathH(allocator, home_ns, qbody_name),
                 .input = ast.Shape{ .fields = qbody_in },
                 .branches = &[_]ast.Branch{},
                 .is_public = false,
@@ -3296,7 +3392,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             appended_items.append(allocator, ast.Item{ .flow = ast.Flow{
                 .body = ast.rootSite(body_node.invocation, qs.body.continuations, flow.location),
                 .pre_label = null,
-                .impl_of = H.mkPathH(allocator, flow.module, qbody_name),
+                .impl_of = H.mkPathH(allocator, home_ns, qbody_name),
                 .super_shape = null,
                 .inline_body = null,
                 .preamble_code = null,
@@ -3309,7 +3405,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             // qsweep: the imperative sweep over the rows that exist when
             // the query's program position executes.
             appended_items.append(allocator, ast.Item{ .event_decl = ast.EventDecl{
-                .path = H.mkPathH(allocator, flow.module, qsweep_name),
+                .path = H.mkPathH(allocator, home_ns, qsweep_name),
                 .input = ast.Shape{ .fields = &[_]ast.Field{} },
                 .branches = &[_]ast.Branch{},
                 .is_public = false,
@@ -3346,7 +3442,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 \\while (__koru_sp > 0) {{
                 \\    __koru_sp -= 1;
                 \\    const __koru_cur = __koru_stack[__koru_sp];
-                \\    main_module.{s}_event.handler(.{{ .row = @as(i64, @intCast(__koru_cur)) }});
+                \\    {s}{s}_event.handler(.{{ .row = @as(i64, @intCast(__koru_cur)) }});
                 \\    for (0..__koru_store_{s}.len) |__koru_rj| {{
                 \\        const __koru_j = __koru_store_{s}.len - 1 - __koru_rj;
                 \\        if (__koru_store_{s}.parent[__koru_j] == __koru_store_{s}.__koru_handle_of(__koru_cur)) {{
@@ -3356,26 +3452,26 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 \\    }}
                 \\}}
                 \\return;
-            , .{ CAP, store_name, store_name, store_name, qrow_name, store_name, store_name, store_name, store_name }) catch unreachable else if (qs.may_remove) std.fmt.allocPrint(allocator,
+            , .{ CAP, store_name, store_name, store_name, emit_ns, qrow_name, store_name, store_name, store_name, store_name }) catch unreachable else if (qs.may_remove) std.fmt.allocPrint(allocator,
                 \\var __koru_i: usize = 0;
                 \\while (__koru_i < __koru_store_{s}.len) {{
                 \\    const __koru_len_before = __koru_store_{s}.len;
-                \\    main_module.{s}_event.handler(.{{ .row = @as(i64, @intCast(__koru_i)) }});
+                \\    {s}{s}_event.handler(.{{ .row = @as(i64, @intCast(__koru_i)) }});
                 \\    if (__koru_store_{s}.len >= __koru_len_before) __koru_i += 1;
                 \\}}
                 \\return;
-            , .{ store_name, store_name, qrow_name, store_name }) catch unreachable else std.fmt.allocPrint(allocator,
+            , .{ store_name, store_name, emit_ns, qrow_name, store_name }) catch unreachable else std.fmt.allocPrint(allocator,
                 // A rule that cannot remove a row needs no removal tolerance,
                 // so it gets the query path's loop: the trip count is read
                 // once and the induction variable carries no dependency on a
                 // load, which is what lets the pass vectorise at all.
                 \\for (0..__koru_store_{s}.len) |__koru_i| {{
-                \\    main_module.{s}_event.handler(.{{ .row = @as(i64, @intCast(__koru_i)) }});
+                \\    {s}{s}_event.handler(.{{ .row = @as(i64, @intCast(__koru_i)) }});
                 \\}}
                 \\return;
-            , .{ store_name, qrow_name }) catch unreachable;
+            , .{ store_name, emit_ns, qrow_name }) catch unreachable;
             appended_items.append(allocator, ast.Item{ .proc_decl = ast.ProcDecl{
-                .path = H.mkPathH(allocator, flow.module, qsweep_name),
+                .path = H.mkPathH(allocator, home_ns, qsweep_name),
                 .body = ast.Source{ .text = sweep_body, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
                 .annotations = &[_][]const u8{},
                 .target = allocator.dupe(u8, "zig") catch unreachable,
@@ -3474,7 +3570,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 .annotations = &[_][]const u8{},
             };
             appended_items.append(allocator, ast.Item{ .event_decl = ast.EventDecl{
-                .path = H.mkPathH(allocator, flow.module, take_name),
+                .path = H.mkPathH(allocator, home_ns, take_name),
                 .input = ast.Shape{ .fields = take_in },
                 .branches = take_branches,
                 .is_public = false,
@@ -3504,7 +3600,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             // `removed` lifecycle interceptors fire before the swap-remove, with
             // the row's outgoing values (the qbody pattern, take side).
             for (removed_arms.items, 0..) |arm, ai| {
-                const head = std.fmt.allocPrint(allocator, "main_module.__store_removed_{s}_{d}_event.handler(.{{ ", .{ store_name, ai }) catch unreachable;
+                const head = std.fmt.allocPrint(allocator, "{s}__store_removed_{s}_{d}_event.handler(.{{ ", .{ emit_ns, store_name, ai }) catch unreachable;
                 tb.appendSlice(allocator, head) catch unreachable;
                 for (arm.fields, 0..) |fnm, fi| {
                     if (fi > 0) tb.appendSlice(allocator, ", ") catch unreachable;
@@ -3552,7 +3648,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 tb.appendSlice(allocator, " } };") catch unreachable;
             }
             appended_items.append(allocator, ast.Item{ .proc_decl = ast.ProcDecl{
-                .path = H.mkPathH(allocator, flow.module, take_name),
+                .path = H.mkPathH(allocator, home_ns, take_name),
                 .body = ast.Source{ .text = tb.toOwnedSlice(allocator) catch unreachable, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
                 .annotations = &[_][]const u8{},
                 .target = allocator.dupe(u8, "zig") catch unreachable,
@@ -3735,7 +3831,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         {
             const pstripe_name = std.fmt.allocPrint(allocator, "__store_stripe_{s}", .{store_name}) catch unreachable;
             appended_items.append(allocator, ast.Item{ .event_decl = ast.EventDecl{
-                .path = H.mkPathH(allocator, flow.module, pstripe_name),
+                .path = H.mkPathH(allocator, home_ns, pstripe_name),
                 .input = ast.Shape{ .fields = &[_]ast.Field{} },
                 .branches = &[_]ast.Branch{},
                 .is_public = false,
@@ -3755,7 +3851,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             }
             if (stripe_order.items.len == 0) {
                 appended_items.append(allocator, ast.Item{ .proc_decl = ast.ProcDecl{
-                    .path = H.mkPathH(allocator, flow.module, pstripe_name),
+                    .path = H.mkPathH(allocator, home_ns, pstripe_name),
                     .body = ast.Source{ .text = allocator.dupe(u8, "return;") catch unreachable, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
                     .annotations = &[_][]const u8{},
                     .target = allocator.dupe(u8, "zig") catch unreachable,
@@ -3776,7 +3872,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                         .kind = .terminal,
                         .condition = null,
                         .node = .{ .invocation = ast.Invocation{
-                            .path = H.mkPathH(allocator, flow.module, qn),
+                            .path = H.mkPathH(allocator, home_ns, qn),
                             .args = &[_]ast.Arg{},
                         } },
                         .indent = 1,
@@ -3793,7 +3889,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 }
                 const head_name = std.fmt.allocPrint(allocator, "__store_qsweep_{s}_L{d}", .{ store_name, qsites.items[stripe_order.items[0]].line }) catch unreachable;
                 const head_inv = ast.Invocation{
-                    .path = H.mkPathH(allocator, flow.module, head_name),
+                    .path = H.mkPathH(allocator, home_ns, head_name),
                     .args = &[_]ast.Arg{},
                 };
                 var head_conts: []ast.Continuation = &[_]ast.Continuation{};
@@ -3805,7 +3901,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 appended_items.append(allocator, ast.Item{ .flow = ast.Flow{
                     .body = ast.rootSite(head_inv, head_conts, flow.location),
                     .pre_label = null,
-                    .impl_of = H.mkPathH(allocator, flow.module, pstripe_name),
+                    .impl_of = H.mkPathH(allocator, home_ns, pstripe_name),
                     .super_shape = null,
                     .inline_body = null,
                     .preamble_code = null,
@@ -3879,7 +3975,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 td_branches = tdb;
             }
             appended_items.append(allocator, ast.Item{ .event_decl = ast.EventDecl{
-                .path = H.mkPathH(allocator, flow.module, td_name),
+                .path = H.mkPathH(allocator, home_ns, td_name),
                 .input = ast.Shape{ .fields = &[_]ast.Field{} },
                 .branches = td_branches,
                 .is_public = false,
@@ -3926,7 +4022,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             const td_tail = std.fmt.allocPrint(allocator, "}}\n__koru_store_{s}.len = 0;\nreturn;", .{store_name}) catch unreachable;
             td.appendSlice(allocator, td_tail) catch unreachable;
             appended_items.append(allocator, ast.Item{ .proc_decl = ast.ProcDecl{
-                .path = H.mkPathH(allocator, flow.module, td_name),
+                .path = H.mkPathH(allocator, home_ns, td_name),
                 .body = ast.Source{ .text = td.toOwnedSlice(allocator) catch unreachable, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
                 .annotations = &[_][]const u8{},
                 .target = allocator.dupe(u8, "zig") catch unreachable,
@@ -3934,7 +4030,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 .module = allocator.dupe(u8, flow.module) catch unreachable,
             } }) catch unreachable;
             const td_inv = ast.Invocation{
-                .path = H.mkPathH(allocator, flow.module, td_name),
+                .path = H.mkPathH(allocator, home_ns, td_name),
                 .args = &[_]ast.Arg{},
             };
             // The user's `! discharge item |> ...` continuation rides the
@@ -4050,8 +4146,8 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         cont: ast.Continuation,
     };
     var watch_arms = std.ArrayList(WatchArm).initCapacity(allocator, 4) catch unreachable;
-    for (program.items) |pi| {
-        if (pi != .flow) continue;
+    for (flatItems(allocator, program.items)) |pi| {
+        if (pi.* != .flow) continue;
         const wf = &pi.flow;
         if (!H.isStoreInv(wf, "watch", store_name)) continue;
         for (wf.body.continuations) |*wc| {
@@ -4092,8 +4188,8 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 const struct_literal2 = @import("struct_literal");
                 // Already-coordinated stores: read the apply event's branches.
                 const apply_name2 = std.fmt.allocPrint(alloc, "__store_apply_{s}", .{store}) catch unreachable;
-                for (prog.items) |pi2| {
-                    if (pi2 != .event_decl) continue;
+                for (flatItems(alloc, prog.items)) |pi2| {
+                    if (pi2.* != .event_decl) continue;
                     const ed2 = &pi2.event_decl;
                     if (ed2.path.segments.len == 1 and std.mem.eql(u8, ed2.path.segments[0], apply_name2)) {
                         const names2b = alloc.alloc([]const u8, ed2.branches.len) catch unreachable;
@@ -4101,8 +4197,8 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                         return names2b;
                     }
                 }
-                for (prog.items) |pi2| {
-                    if (pi2 != .flow) continue;
+                for (flatItems(alloc, prog.items)) |pi2| {
+                    if (pi2.* != .flow) continue;
                     const f2 = &pi2.flow;
                     const inv2 = f2.inv();
                     if (inv2.path.segments.len != 1 or !std.mem.eql(u8, inv2.path.segments[0], "new")) continue;
@@ -4129,8 +4225,8 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 return null;
             }
         };
-        for (program.items) |pi| {
-            if (pi != .flow) continue;
+        for (flatItems(allocator, program.items)) |pi| {
+            if (pi.* != .flow) continue;
             const wfg = &pi.flow;
             if (!H.isStoreInv(wfg, "watch", null)) continue;
             var target_store: []const u8 = "";
@@ -4563,14 +4659,6 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             return ast.DottedPath{ .module_qualifier = alloc.dupe(u8, module) catch unreachable, .segments = segs };
         }
     }.call;
-
-    // The namespace synthesized units are ADDRESSED under. `flow.module` is the
-    // file-derived name (`lib`); every cross-module path in the program resolves
-    // through the module's import-derived logical name (`app.lib`). Minting the
-    // paths from the file name puts them in a namespace nothing looks up. The
-    // `.module` FIELDS below stay `flow.module` — that is the emitter's
-    // namespacing and matches every other item parsed from the same file.
-    const home_ns = H.storeHomeModule(allocator, program, store_name) orelse flow.module;
 
     const apply_event_item = ast.Item{ .event_decl = ast.EventDecl{
         .path = mkPath(allocator, home_ns, apply_name),
@@ -5181,8 +5269,8 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         // singleton cell (`todos[ui.sel]` → `__koru_store_ui.sel`, 690_075).
         fn allStoreNames(alloc: std.mem.Allocator, prog: *const ast.Program) []const []const u8 {
             var names = std.ArrayList([]const u8).initCapacity(alloc, 4) catch unreachable;
-            for (prog.items) |pi| {
-                switch (pi) {
+            for (flatItems(alloc, prog.items)) |pi| {
+                switch (pi.*) {
                     .flow => |*f| {
                         if (f.body.node) |*n| {
                             if (n.* == .invocation) {
@@ -5329,8 +5417,8 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 for (ed.branches, 0..) |b, i| names[i] = b.name;
                 return names;
             }
-            for (prog.items) |pi| {
-                if (pi != .flow) continue;
+            for (flatItems(alloc, prog.items)) |pi| {
+                if (pi.* != .flow) continue;
                 const f = &pi.flow;
                 const inv = f.inv();
                 if (inv.path.segments.len != 1 or !std.mem.eql(u8, inv.path.segments[0], "new")) continue;
@@ -5435,8 +5523,8 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         // the single-write path.
         const env_is_plural = blk: {
             const inserth_probe = std.fmt.allocPrint(allocator, "__store_inserth_{s}", .{env_store}) catch unreachable;
-            for (program.items) |pi| {
-                if (pi != .event_decl) continue;
+            for (flatItems(allocator, program.items)) |pi| {
+                if (pi.* != .event_decl) continue;
                 const ed = &pi.event_decl;
                 if (ed.path.segments.len == 1 and std.mem.eql(u8, ed.path.segments[0], inserth_probe)) break :blk true;
             }
@@ -5455,8 +5543,8 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             const apply_probe = std.fmt.allocPrint(allocator, "__store_apply_{s}", .{env_store}) catch unreachable;
             var has_teardown = false;
             var has_apply = false;
-            for (program.items) |pi| {
-                if (pi != .event_decl) continue;
+            for (flatItems(allocator, program.items)) |pi| {
+                if (pi.* != .event_decl) continue;
                 const ed = &pi.event_decl;
                 if (ed.path.segments.len != 1) continue;
                 if (std.mem.eql(u8, ed.path.segments[0], td_probe)) has_teardown = true;
@@ -5489,8 +5577,8 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         var env_col_types: []const []const u8 = &[_][]const u8{};
         if (env_row != null) {
             const apply_name2 = std.fmt.allocPrint(allocator, "__store_apply_{s}", .{env_store}) catch unreachable;
-            for (program.items) |pi| {
-                if (pi != .event_decl) continue;
+            for (flatItems(allocator, program.items)) |pi| {
+                if (pi.* != .event_decl) continue;
                 const ed = &pi.event_decl;
                 if (ed.path.segments.len == 1 and std.mem.eql(u8, ed.path.segments[0], apply_name2)) {
                     const types = allocator.alloc([]const u8, ed.branches.len) catch unreachable;
@@ -5671,8 +5759,8 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
     // head on it has no row to mean.
     const is_plural_store = blk: {
         const inserth_name = std.fmt.allocPrint(allocator, "__store_inserth_{s}", .{target_store}) catch unreachable;
-        for (program.items) |pi| {
-            if (pi != .event_decl) continue;
+        for (flatItems(allocator, program.items)) |pi| {
+            if (pi.* != .event_decl) continue;
             const ed = &pi.event_decl;
             if (ed.path.segments.len == 1 and std.mem.eql(u8, ed.path.segments[0], inserth_name)) break :blk true;
         }
@@ -5696,8 +5784,8 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         const apply_probe = std.fmt.allocPrint(allocator, "__store_apply_{s}", .{target_store}) catch unreachable;
         var has_teardown = false;
         var has_apply = false;
-        for (program.items) |pi| {
-            if (pi != .event_decl) continue;
+        for (flatItems(allocator, program.items)) |pi| {
+            if (pi.* != .event_decl) continue;
             const ed = &pi.event_decl;
             if (ed.path.segments.len != 1) continue;
             if (std.mem.eql(u8, ed.path.segments[0], td_probe)) has_teardown = true;
@@ -5781,8 +5869,8 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
     if (has_cycle_cont) {
         const writec_name = std.fmt.allocPrint(allocator, "__store_writec_{s}", .{target_store}) catch unreachable;
         const store_is_tree = blk: {
-            for (program.items) |pi| {
-                if (pi != .event_decl) continue;
+            for (flatItems(allocator, program.items)) |pi| {
+                if (pi.* != .event_decl) continue;
                 const ed = &pi.event_decl;
                 if (ed.path.segments.len == 1 and std.mem.eql(u8, ed.path.segments[0], writec_name)) break :blk true;
             }
@@ -5870,8 +5958,8 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         var col_owned: []const bool = &[_]bool{};
         const col_types: []const []const u8 = types_blk: {
             const apply_name = std.fmt.allocPrint(allocator, "__store_apply_{s}", .{target_store}) catch unreachable;
-            for (program.items) |pi| {
-                if (pi != .event_decl) continue;
+            for (flatItems(allocator, program.items)) |pi| {
+                if (pi.* != .event_decl) continue;
                 const ed = &pi.event_decl;
                 if (ed.path.segments.len == 1 and std.mem.eql(u8, ed.path.segments[0], apply_name)) {
                     const types = allocator.alloc([]const u8, ed.branches.len) catch unreachable;
@@ -6247,8 +6335,8 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
     // All store names in the program (untransformed creates + generated
     // apply events) — comptime-known, always legal in a watch body.
     var known_stores = std.ArrayList([]const u8).initCapacity(allocator, 4) catch unreachable;
-    for (program.items) |pi| {
-        switch (pi) {
+    for (flatItems(allocator, program.items)) |pi| {
+        switch (pi.*) {
             .flow => |*f| {
                 const finv = f.inv();
                 if (finv.path.segments.len == 1 and std.mem.eql(u8, finv.path.segments[0], "new")) {
@@ -6310,8 +6398,8 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
     // Did the coordinator already run? Its generated write event is the marker.
     const write_name = std.fmt.allocPrint(allocator, "__store_write_{s}", .{store_name}) catch unreachable;
     var spliced = false;
-    for (program.items) |pi| {
-        if (pi != .event_decl) continue;
+    for (flatItems(allocator, program.items)) |pi| {
+        if (pi.* != .event_decl) continue;
         const ed = &pi.event_decl;
         if (ed.path.segments.len == 1 and std.mem.eql(u8, ed.path.segments[0], write_name)) {
             spliced = true;
@@ -6329,8 +6417,8 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
 
     // Not spliced: is there an untransformed create later in the program?
     var create_exists = false;
-    for (program.items) |pi| {
-        if (pi != .flow) continue;
+    for (flatItems(allocator, program.items)) |pi| {
+        if (pi.* != .flow) continue;
         const f = &pi.flow;
         const inv = f.inv();
         if (inv.path.segments.len != 1 or !std.mem.eql(u8, inv.path.segments[0], "new")) continue;
@@ -6400,8 +6488,8 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         // the untransformed create's seed block.
         fn fieldOrder(alloc: std.mem.Allocator, prog: *const ast.Program, store: []const u8) ?[]const []const u8 {
             const insert_ev_name = std.fmt.allocPrint(alloc, "__store_insert_{s}", .{store}) catch unreachable;
-            for (prog.items) |pi| {
-                if (pi != .event_decl) continue;
+            for (flatItems(alloc, prog.items)) |pi| {
+                if (pi.* != .event_decl) continue;
                 const ed = &pi.event_decl;
                 if (ed.path.segments.len == 1 and std.mem.eql(u8, ed.path.segments[0], insert_ev_name)) {
                     const flds = ed.input.fields;
@@ -6418,8 +6506,8 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 for (ed.branches, 0..) |b, i| names[i] = b.name;
                 return names;
             }
-            for (prog.items) |pi| {
-                if (pi != .flow) continue;
+            for (flatItems(alloc, prog.items)) |pi| {
+                if (pi.* != .flow) continue;
                 const f = &pi.flow;
                 const inv = f.inv();
                 if (inv.path.segments.len != 1 or !std.mem.eql(u8, inv.path.segments[0], "new")) continue;
@@ -6452,8 +6540,8 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         // reader), else the untransformed create's seed block (`char[N]`).
         fn charCap(alloc: std.mem.Allocator, prog: *const ast.Program, store: []const u8, col: []const u8) ?usize {
             const marker = std.fmt.allocPrint(alloc, "const __KoruStoreT_{s} = struct {{", .{store}) catch unreachable;
-            for (prog.items) |pi| {
-                if (pi != .host_line) continue;
+            for (flatItems(alloc, prog.items)) |pi| {
+                if (pi.* != .host_line) continue;
                 const t = pi.host_line.content;
                 if (std.mem.indexOf(u8, t, marker) == null) continue;
                 const fkey = std.fmt.allocPrint(alloc, "\n    {s}: [", .{col}) catch unreachable;
@@ -6468,8 +6556,8 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 return std.fmt.parseInt(usize, after[1..close2], 10) catch null;
             }
             // create not yet transformed: read the raw seed block.
-            for (prog.items) |pi| {
-                if (pi != .flow) continue;
+            for (flatItems(alloc, prog.items)) |pi| {
+                if (pi.* != .flow) continue;
                 const f = &pi.flow;
                 const inv = f.inv();
                 if (inv.path.segments.len != 1 or !std.mem.eql(u8, inv.path.segments[0], "new")) continue;
@@ -6507,8 +6595,8 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         // Type<state!>` — the leading `*` is the ownership marker).
         fn ownedCol(alloc: std.mem.Allocator, prog: *const ast.Program, store: []const u8, col: []const u8) bool {
             const marker = std.fmt.allocPrint(alloc, "const __KoruStoreT_{s} = struct {{", .{store}) catch unreachable;
-            for (prog.items) |pi| {
-                if (pi != .host_line) continue;
+            for (flatItems(alloc, prog.items)) |pi| {
+                if (pi.* != .host_line) continue;
                 const t = pi.host_line.content;
                 if (std.mem.indexOf(u8, t, marker) == null) continue;
                 const fkey = std.fmt.allocPrint(alloc, "\n    {s}: [", .{col}) catch unreachable;
@@ -6520,8 +6608,8 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 return after.len > 0 and after[0] == '*';
             }
             // create not yet transformed: read the raw seed block.
-            for (prog.items) |pi| {
-                if (pi != .flow) continue;
+            for (flatItems(alloc, prog.items)) |pi| {
+                if (pi.* != .flow) continue;
                 const f = &pi.flow;
                 const inv = f.inv();
                 if (inv.path.segments.len != 1 or !std.mem.eql(u8, inv.path.segments[0], "new")) continue;
@@ -6613,8 +6701,8 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         // fieldOrder above).
         fn allStoreNames(alloc: std.mem.Allocator, prog: *const ast.Program) []const []const u8 {
             var names = std.ArrayList([]const u8).initCapacity(alloc, 4) catch unreachable;
-            for (prog.items) |pi| {
-                switch (pi) {
+            for (flatItems(alloc, prog.items)) |pi| {
+                switch (pi.*) {
                     .flow => |*f| {
                         if (f.body.node) |*n| {
                             if (n.* == .invocation) {
@@ -6659,6 +6747,11 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
     if (store_name.len == 0 or block_text == null) {
         return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:insert requires a store name and a row block: insert(name) {{ field: value }}", .{}) } };
     }
+
+    // The generated units live in the STORE's home namespace, which is the
+    // import-derived `app.lib` — not this flow's file-derived `lib`. They
+    // coincide in the entry file and diverge inside a library (115_018).
+    const home_ns = storeHome(allocator, program, store_name) orelse flow.module;
 
     const order = H.fieldOrder(allocator, program, store_name) orelse {
         // The store's OWN declaration was already refused; that diagnostic is the
@@ -6785,7 +6878,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         std.fmt.allocPrint(allocator, "__store_insert_{s}", .{store_name}) catch unreachable;
 
     const call_inv = ast.Invocation{
-        .path = H.mkPathH(allocator, flow.module, target),
+        .path = H.mkPathH(allocator, home_ns, target),
         .args = call_args,
     };
 
@@ -6856,11 +6949,15 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:rule requires a store name: query(name)", .{}) } };
     }
 
+    // The generated units live in the STORE's home namespace, which is the
+    // import-derived `app.lib` — not this flow's file-derived `lib`. They
+    // coincide in the entry file and diverge inside a library (115_018).
+    const home_ns = storeHome(allocator, program, store_name) orelse flow.module;
     // The coordinator names this site's units by its source line.
     const qsweep_name = std.fmt.allocPrint(allocator, "__store_qsweep_{s}_L{d}", .{ store_name, flow.location.line }) catch unreachable;
     var unit_exists = false;
-    for (program.items) |pi| {
-        if (pi != .event_decl) continue;
+    for (flatItems(allocator, program.items)) |pi| {
+        if (pi.* != .event_decl) continue;
         const ed = &pi.event_decl;
         if (ed.path.segments.len == 1 and std.mem.eql(u8, ed.path.segments[0], qsweep_name)) {
             unit_exists = true;
@@ -6869,8 +6966,8 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
     }
     if (!unit_exists) {
         var create_exists = false;
-        for (program.items) |pi| {
-            if (pi != .flow) continue;
+        for (flatItems(allocator, program.items)) |pi| {
+            if (pi.* != .flow) continue;
             const f = &pi.flow;
             const inv = f.inv();
             if (inv.path.segments.len != 1 or !std.mem.eql(u8, inv.path.segments[0], "new")) continue;
@@ -6895,8 +6992,8 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         // store" when the store is right there.
         const insert_unit = std.fmt.allocPrint(allocator, "__store_insert_{s}", .{store_name}) catch unreachable;
         var store_declared = false;
-        for (program.items) |pi| {
-            if (pi != .event_decl) continue;
+        for (flatItems(allocator, program.items)) |pi| {
+            if (pi.* != .event_decl) continue;
             const ed = &pi.event_decl;
             if (ed.path.segments.len == 1 and std.mem.eql(u8, ed.path.segments[0], insert_unit)) {
                 store_declared = true;
@@ -6915,7 +7012,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
     }
 
     const sweep_inv = ast.Invocation{
-        .path = H.mkPathH(allocator, flow.module, qsweep_name),
+        .path = H.mkPathH(allocator, home_ns, qsweep_name),
         .args = &[_]ast.Arg{},
     };
     return .{ .transformed = .{ .replacement = ast.Item{ .flow = ast.Flow{
@@ -7010,6 +7107,10 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:query requires a store name: query(name)", .{}) } };
     }
 
+    // The generated units live in the STORE's home namespace, which is the
+    // import-derived `app.lib` — not this flow's file-derived `lib`. They
+    // coincide in the entry file and diverge inside a library (115_018).
+    const home_ns = storeHome(allocator, program, store_name) orelse flow.module;
     // --- schema from the persistent __store_insert_<s> event (survives after
     //     the raw `new` flow lowers — the same source insert.fieldOrder reads).
     //     Its input fields ARE the columns; the trailing field is the synthetic
@@ -7019,8 +7120,8 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
     var col_types: []const []const u8 = &[_][]const u8{};
     var col_mods: []const ?[]const u8 = &[_]?[]const u8{};
     var col_phantoms: []const ?[]const u8 = &[_]?[]const u8{};
-    for (program.items) |pi| {
-        if (pi != .event_decl) continue;
+    for (flatItems(allocator, program.items)) |pi| {
+        if (pi.* != .event_decl) continue;
         const ed = &pi.event_decl;
         if (ed.path.segments.len == 1 and std.mem.eql(u8, ed.path.segments[0], insert_ev_name)) {
             const flds = ed.input.fields;
@@ -7729,7 +7830,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
     };
     var appended = std.ArrayList(ast.Item).initCapacity(allocator, 2) catch unreachable;
     appended.append(allocator, ast.Item{ .event_decl = ast.EventDecl{
-        .path = H.mkPathH(allocator, flow.module, sbody_name),
+        .path = H.mkPathH(allocator, home_ns, sbody_name),
         .input = ast.Shape{ .fields = sbody_in },
         .branches = &[_]ast.Branch{},
         .is_public = false,
@@ -7741,7 +7842,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
     appended.append(allocator, ast.Item{ .flow = ast.Flow{
         .body = ast.rootSite(body_node.invocation, body_clone.continuations, flow.location),
         .pre_label = null,
-        .impl_of = H.mkPathH(allocator, flow.module, sbody_name),
+        .impl_of = H.mkPathH(allocator, home_ns, sbody_name),
         .super_shape = null,
         .inline_body = null,
         .preamble_code = null,
@@ -7775,7 +7876,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         const gz = std.fmt.allocPrint(allocator, "if (!({s})) continue;\n", .{cond}) catch unreachable;
         loop.appendSlice(allocator, gz) catch unreachable;
     }
-    loop.appendSlice(allocator, "main_module.") catch unreachable;
+    loop.appendSlice(allocator, storeEmitQualifier(allocator, home_ns, program.main_module_name)) catch unreachable;
     loop.appendSlice(allocator, sbody_name) catch unreachable;
     // A derived projection can be EMPTY — an arm that never names a field of the
     // row it stands on (690_087's outer sweep only nests another sweep). The
@@ -7868,7 +7969,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
     // Same arm-line key as sbody_name above — the two must agree.
     const srun_name = std.fmt.allocPrint(allocator, "__store_sweeprun_{s}_L{d}", .{ store_name, sc.location.line }) catch unreachable;
     appended.append(allocator, ast.Item{ .event_decl = ast.EventDecl{
-        .path = H.mkPathH(allocator, flow.module, srun_name),
+        .path = H.mkPathH(allocator, home_ns, srun_name),
         .input = ast.Shape{ .fields = &[_]ast.Field{} },
         .branches = &[_]ast.Branch{},
         .is_public = false,
@@ -7879,7 +7980,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
     } }) catch unreachable;
     const srun_body = std.fmt.allocPrint(allocator, "{s}return;", .{loop.items}) catch unreachable;
     appended.append(allocator, ast.Item{ .proc_decl = ast.ProcDecl{
-        .path = H.mkPathH(allocator, flow.module, srun_name),
+        .path = H.mkPathH(allocator, home_ns, srun_name),
         .body = ast.Source{ .text = srun_body, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
         .annotations = &[_][]const u8{},
         .target = allocator.dupe(u8, "zig") catch unreachable,
@@ -7888,7 +7989,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
     } }) catch unreachable;
 
     const srun_inv = ast.Invocation{
-        .path = H.mkPathH(allocator, flow.module, srun_name),
+        .path = H.mkPathH(allocator, home_ns, srun_name),
         .args = &[_]ast.Arg{},
         .source_module = allocator.dupe(u8, flow.module) catch unreachable,
     };
@@ -7959,12 +8060,16 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:preorder requires a store name: preorder(name)", .{}) } };
     }
 
+    // The generated units live in the STORE's home namespace, which is the
+    // import-derived `app.lib` — not this flow's file-derived `lib`. They
+    // coincide in the entry file and diverge inside a library (115_018).
+    const home_ns = storeHome(allocator, program, store_name) orelse flow.module;
     // The coordinator names this site's units by its source line (the same
     // qsweep scheme as query — only the emitted sweep body differs).
     const qsweep_name = std.fmt.allocPrint(allocator, "__store_qsweep_{s}_L{d}", .{ store_name, flow.location.line }) catch unreachable;
     var unit_exists = false;
-    for (program.items) |pi| {
-        if (pi != .event_decl) continue;
+    for (flatItems(allocator, program.items)) |pi| {
+        if (pi.* != .event_decl) continue;
         const ed = &pi.event_decl;
         if (ed.path.segments.len == 1 and std.mem.eql(u8, ed.path.segments[0], qsweep_name)) {
             unit_exists = true;
@@ -7973,8 +8078,8 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
     }
     if (!unit_exists) {
         var create_exists = false;
-        for (program.items) |pi| {
-            if (pi != .flow) continue;
+        for (flatItems(allocator, program.items)) |pi| {
+            if (pi.* != .flow) continue;
             const f = &pi.flow;
             const inv = f.inv();
             if (inv.path.segments.len != 1 or !std.mem.eql(u8, inv.path.segments[0], "new")) continue;
@@ -7995,7 +8100,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
     }
 
     const sweep_inv = ast.Invocation{
-        .path = H.mkPathH(allocator, flow.module, qsweep_name),
+        .path = H.mkPathH(allocator, home_ns, qsweep_name),
         .args = &[_]ast.Arg{},
     };
     return .{ .transformed = .{ .replacement = ast.Item{ .flow = ast.Flow{
@@ -8072,8 +8177,8 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         }
         fn storeRefsAll(alloc: std.mem.Allocator, prog: *const ast.Program, text: []const u8) []const u8 {
             var t = text;
-            for (prog.items) |pi| {
-                if (pi != .event_decl) continue;
+            for (flatItems(alloc, prog.items)) |pi| {
+                if (pi.* != .event_decl) continue;
                 const ed = &pi.event_decl;
                 if (ed.path.segments.len == 1 and std.mem.startsWith(u8, ed.path.segments[0], "__store_apply_")) {
                     t = storeRefs(alloc, t, ed.path.segments[0]["__store_apply_".len..]);
@@ -8100,10 +8205,14 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:take: malformed addressing head '{s}' - take(store[handle])", .{target_text}) } };
     }
 
+    // The generated units live in the STORE's home namespace, which is the
+    // import-derived `app.lib` — not this flow's file-derived `lib`. They
+    // coincide in the entry file and diverge inside a library (115_018).
+    const home_ns = storeHome(allocator, program, store_name) orelse flow.module;
     const take_name = std.fmt.allocPrint(allocator, "__store_take_{s}", .{store_name}) catch unreachable;
     var unit_exists = false;
-    for (program.items) |pi| {
-        if (pi != .event_decl) continue;
+    for (flatItems(allocator, program.items)) |pi| {
+        if (pi.* != .event_decl) continue;
         const ed = &pi.event_decl;
         if (ed.path.segments.len == 1 and std.mem.eql(u8, ed.path.segments[0], take_name)) {
             unit_exists = true;
@@ -8120,7 +8229,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         .value = allocator.dupe(u8, row_expr) catch unreachable,
     };
     const call_inv = ast.Invocation{
-        .path = H.mkPathH(allocator, flow.module, take_name),
+        .path = H.mkPathH(allocator, home_ns, take_name),
         .args = call_args,
     };
 
@@ -8209,10 +8318,14 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
         return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:stripe requires a store name: stripe(name)", .{}) } };
     }
 
+    // The generated units live in the STORE's home namespace, which is the
+    // import-derived `app.lib` — not this flow's file-derived `lib`. They
+    // coincide in the entry file and diverge inside a library (115_018).
+    const home_ns = storeHome(allocator, program, store_name) orelse flow.module;
     const stripe_name = std.fmt.allocPrint(allocator, "__store_stripe_{s}", .{store_name}) catch unreachable;
     var unit_exists = false;
-    for (program.items) |pi| {
-        if (pi != .event_decl) continue;
+    for (flatItems(allocator, program.items)) |pi| {
+        if (pi.* != .event_decl) continue;
         const ed = &pi.event_decl;
         if (ed.path.segments.len == 1 and std.mem.eql(u8, ed.path.segments[0], stripe_name)) {
             unit_exists = true;
@@ -8228,7 +8341,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
     }
 
     const stripe_inv = ast.Invocation{
-        .path = H.mkPathH(allocator, flow.module, stripe_name),
+        .path = H.mkPathH(allocator, home_ns, stripe_name),
         .args = &[_]ast.Arg{},
     };
     return .{ .transformed = .{ .replacement = ast.Item{ .flow = ast.Flow{

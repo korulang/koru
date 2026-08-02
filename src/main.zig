@@ -5109,7 +5109,7 @@ fn resolveKeywordsInItem(
 
             // Resolve paths in continuations
             for (flow.body.continuations) |*cont| {
-                try resolveKeywordsInContinuation(@constCast(cont), registry, allocator, home_module, home_items);
+                try resolveKeywordsInContinuation(@constCast(cont), registry, allocator, home_module, home_items, all_items);
             }
         },
         .module_decl => |*module| {
@@ -5261,19 +5261,30 @@ fn findEventDecl(
     return null;
 }
 
+/// `all_items` is threaded down so a mid-chain step can bind its implicit
+/// expression slot too. The flow HEAD has always done this here; a step relied
+/// on the parser's own remap, which needs the callee's declaration to be
+/// REGISTERED at parse time. Inside an imported module it is not — the module
+/// is parsed before its imports are folded in — so `|> std/store:insert(todos)
+/// { label }` kept the lexer's speculative pun name `todos` where the transform
+/// reads `expr`, and refused its own call site as "requires a store name"
+/// (115_018). Head and step now answer the slot question the same way.
 fn resolveKeywordsInStep(
     step: *ast.Step,
     registry: *const keyword_registry.KeywordRegistry,
     allocator: std.mem.Allocator,
     home_module: []const u8,
     home_items: []const ast.Item,
+    all_items: []const ast.Item,
 ) !void {
     switch (step.*) {
         .invocation => |*inv| {
             try resolveKeywordInPath(&inv.path, registry, allocator, home_module, home_items);
+            try bindImplicitExpressionArg(@constCast(inv), allocator, all_items);
         },
         .label_with_invocation => |*lwi| {
             try resolveKeywordInPath(&lwi.invocation.path, registry, allocator, home_module, home_items);
+            try bindImplicitExpressionArg(@constCast(&lwi.invocation), allocator, all_items);
         },
         else => {},
     }
@@ -5285,15 +5296,16 @@ fn resolveKeywordsInContinuation(
     allocator: std.mem.Allocator,
     home_module: []const u8,
     home_items: []const ast.Item,
+    all_items: []const ast.Item,
 ) !void {
     // Resolve paths in step
     if (cont.node) |*step| {
-        try resolveKeywordsInStep(@constCast(step), registry, allocator, home_module, home_items);
+        try resolveKeywordsInStep(@constCast(step), registry, allocator, home_module, home_items, all_items);
     }
 
     // Recursively process nested continuations
     for (cont.continuations) |*nested| {
-        try resolveKeywordsInContinuation(@constCast(nested), registry, allocator, home_module, home_items);
+        try resolveKeywordsInContinuation(@constCast(nested), registry, allocator, home_module, home_items, all_items);
     }
 }
 
