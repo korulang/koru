@@ -1,0 +1,7 @@
+name: measurement-artifact
+kind: inferred
+shape: categorical
+face: in
+membrane: false
+note: a reported number was a property of the instrument or the machine, not of the thing measured — a control that moved with the treatment, a mock that manufactured a cost, a run whose drift exceeded its effect
+route: surface
