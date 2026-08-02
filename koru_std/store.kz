@@ -2061,7 +2061,21 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             }
         };
         Brand.collect(allocator, program.items, &__brand_names);
-        var store_ordinal: usize = 0;
+        // The brand is the store's ordinal PLUS ONE, and the +1 is the whole
+        // guard. A handle packs `slot | (brand << 24)`, and `__koru_resolve`
+        // refuses any address whose top byte is not this store's brand — that
+        // refusal is what 690_115 and 690_196 pin. At brand 0 the check
+        // `(slot32 >> 24) != 0` is FALSE for every small integer, so the wall
+        // was off for whichever store happened to be declared first: measured
+        // 2026-08-02, a plain `0` in an i64 column addressed row 0 of the
+        // first store and wrote to it, while the identical program trapped
+        // correctly on the second store. A wall that guards every case but one
+        // reads as a wall.
+        //
+        // Reserving 0 also makes the DENSE row index and the HANDLE disjoint
+        // as values, which is what lets a dense cursor be passed where a
+        // handle is expected and fail loudly instead of silently.
+        var store_ordinal: usize = 1;
         for (__brand_names.items) |bn| {
             if (!std.mem.eql(u8, bn, store_name)) store_ordinal += 1;
         }
@@ -2069,7 +2083,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:new({s}): capacity above 16777215 is a later rung - the row handle carries the slot in 24 bits (store brand in bits 24..31, 690_196)", .{store_name}) } };
         }
         if (store_ordinal > 0xFF) {
-            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:new({s}): more than 256 stores in one program is a later rung - the row handle carries the minting store's ordinal in 8 bits (690_196)", .{store_name}) } };
+            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:new({s}): more than 255 stores in one program is a later rung - the row handle carries the minting store's brand in 8 bits, and brand 0 is reserved so a non-handle integer cannot pass as an address (690_196)", .{store_name}) } };
         }
         const hs = std.fmt.allocPrint(allocator,
             \\    __koru_hslot_row: [{d}]usize = undefined,
