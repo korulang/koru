@@ -1230,6 +1230,7 @@ fn cloneHostTypeDecl(allocator: std.mem.Allocator, host_type: *const ast.HostTyp
     return .{
         .name = try allocator.dupe(u8, host_type.name),
         .shape = try cloneShape(allocator, &host_type.shape),
+        .module = try allocator.dupe(u8, host_type.module),
     };
 }
 

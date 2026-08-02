@@ -223,6 +223,11 @@ fn appendedItemModule(item: ast.Item) ?[]const u8 {
         // to the entry struct, so an unrouted unit is emitted where nothing can
         // reach it.
         .inline_code => |ic| ic.module,
+        // A host type is a declaration like any other: it must sit in the same
+        // struct as the code that names it, because Zig gives a sibling struct
+        // no path to the entry struct. It carries no path and no location, so
+        // `module` is the ONLY signal it has (115_005).
+        .host_type_decl => |h| h.module,
         else => null,
     };
 }

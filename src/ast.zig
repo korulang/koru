@@ -480,9 +480,23 @@ pub const HostTypeDecl = struct {
     name: []const u8,              // e.g., "Transition", "CustomMetrics"
     shape: Shape,                  // Fields of the type
 
+    /// The module this type declares itself INTO, as the import-derived
+    /// `logical_name` (`app.lib`). Empty means the program's own top level.
+    ///
+    /// Every other appendable item carries this, and it is what the transform
+    /// runner routes on: a synthesized declaration with no module lands at
+    /// program top level, and position in the item tree is what the emitter
+    /// and the host-type-home registry both read. A type synthesized for a
+    /// flow inside a library therefore emitted into `main_module` while the
+    /// code referring to it emitted into the library's struct — Zig gives a
+    /// sibling struct no path to the entry struct, so the reference simply
+    /// did not resolve (115_005).
+    module: []const u8 = "",
+
     pub fn deinit(self: *HostTypeDecl, allocator: std.mem.Allocator) void {
         allocator.free(self.name);
         self.shape.deinit(allocator);
+        if (self.module.len > 0) allocator.free(self.module);
     }
 };
 
@@ -669,6 +683,40 @@ fn collectFlows(alloc: std.mem.Allocator, items: []const Item, out: *std.ArrayLi
             else => {},
         }
     }
+}
+
+/// The IMPORT-DERIVED logical name of the module an item lives in — `app.lib`
+/// — or null when the item is a top-level item of the entry file.
+///
+/// A program carries TWO names for the same library and they are not
+/// interchangeable. `Flow.module` / `EventDecl.module` is FILE-DERIVED: `lib`,
+/// from `lib.k`. The `.module_decl` wrapping that flow carries the
+/// IMPORT-DERIVED `logical_name`: `app.lib`, from `import app/lib`. Every path
+/// that has to RESOLVE across a module boundary is spelled in the second
+/// domain; the first is only ever a comparison key against another flow.
+///
+/// In the entry file the two collapse into one word, so a transform that mints
+/// a name out of `flow.module` works for months and then addresses its own
+/// synthesized declaration into a namespace that does not exist the first time
+/// its subject is declared inside a library (115_005: `unknown tor
+/// 'lib:kernel_init_…'`, with the declaration sitting right there under
+/// `app.lib`).
+///
+/// Identity is by POINTER: `item` must be a pointer into the program's own
+/// item arrays, which is what a transform's `item: *const Item` parameter is.
+/// A transform that has rebuilt its item first has nothing to look up.
+pub fn homeModule(program: *const Program, item: *const Item) ?[]const u8 {
+    return homeModuleIn(program.items, item, null);
+}
+
+fn homeModuleIn(items: []const Item, needle: *const Item, enclosing: ?[]const u8) ?[]const u8 {
+    for (items) |*it| {
+        if (it == needle) return enclosing;
+        if (it.* == .module_decl) {
+            if (homeModuleIn(it.module_decl.items, needle, it.module_decl.logical_name)) |m| return m;
+        }
+    }
+    return null;
 }
 
 pub fn refusal(

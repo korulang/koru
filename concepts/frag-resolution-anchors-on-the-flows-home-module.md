@@ -56,6 +56,34 @@ author's code for a fault in the machinery
 worth suspecting the phrasing of any wall that fires only when the subject
 moves into a module.
 
+## The same shape one layer over: routing by item kind fails OPEN
+
+`std/kernel:init` had the identical anchor bug — it minted its synthesized init
+tor under `flow.module` and the program went looking for `lib:kernel_init_…`
+with the declaration sitting in plain sight under `app.lib`. Fixing the anchor
+made the name resolve and the build still failed, because a NAME resolving and
+a DECLARATION being reachable are two different things.
+
+The transform runner routes appended declarations into the module they address
+themselves into. It reads that address off the item, and the reader is a switch
+over item kinds with `else => null`. A kind absent from that switch is not an
+error and not a refusal: it silently keeps top-level placement. `host_type_decl`
+was the absent kind, and it was absent for a reason that reads as a decision —
+it was the one appendable item carrying no path, no location, and no module, so
+there was nothing to route it ON.
+
+So the type emitted into the entry struct while the code naming it emitted into
+the library's struct, and Zig gives a sibling struct no path to the entry
+struct. Position in the item tree is what the emitter and the host-type-home
+registry both read; the item had no way to earn a position.
+
+**A dispatch table over a closed set of kinds is a wall with a default-allow.**
+Every kind it does handle is evidence someone hit that case in production; the
+kinds it does not handle are not "cases that cannot arise" — they are cases
+nobody has hit yet, wearing the same silence. Adding the field the item was
+missing is the fix; the durable part is knowing that the `else` arm of a routing
+switch is a placement decision, not a no-op.
+
 ## Open
 
 - Whether other passes carry `main_module_name` as a stand-in for "here". The

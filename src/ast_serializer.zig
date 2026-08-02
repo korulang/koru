@@ -805,6 +805,12 @@ pub const AstSerializer = struct {
         try self.serializeShape(&host_type.shape);
         try self.write(",\n");
 
+        // Module
+        try self.writeIndent();
+        try self.write(".module = ");
+        try self.writeString(host_type.module);
+        try self.write(",\n");
+
         self.dedent();
         try self.writeIndent();
         try self.write("}");
@@ -2633,6 +2639,11 @@ pub const AstSerializer = struct {
         try self.writeIndent();
         try self.write("\"name\": ");
         try self.writeString(host_type.name);
+        try self.write(",\n");
+
+        try self.writeIndent();
+        try self.write("\"module\": ");
+        try self.writeString(host_type.module);
         try self.write(",\n");
 
         try self.writeIndent();
