@@ -1143,6 +1143,21 @@ pub const Field = struct {
     expression_str: ?[]const u8 = null, // Raw expression string (before parsing)
     owns_expression: bool = false, // Whether this field owns and should free the expression
 
+    /// The `= <expr>` tail of a shape field, as written, with the `=` and the
+    /// surrounding space stripped: `b: i32 = 5` gives `type = "i32"`,
+    /// `default = "5"`.
+    ///
+    /// It has to be split off, not left on the type, and that is the whole
+    /// reason this field exists. The surface parsed before it did — `Field.type`
+    /// was literally `"i32 = 5"` — and it appeared to WORK, because the emitter
+    /// pastes the type verbatim into the generated Zig `Input` struct and Zig
+    /// applies the default itself. Everything else that reads `field.type`
+    /// (optionality via a leading `?`, phantom parsing, the type registry, the
+    /// inline binder) was handed a string that is not a type. A bare-return
+    /// subflow, which never builds an Input struct, dropped the default
+    /// entirely (400_185).
+    default: ?[]const u8 = null,
+
     pub fn deinit(self: *Field, allocator: std.mem.Allocator) void {
         allocator.free(self.name);
         allocator.free(self.type);
@@ -1155,6 +1170,7 @@ pub const Field = struct {
             }
         }
         if (self.expression_str) |expr_str| allocator.free(expr_str);
+        if (self.default) |d| allocator.free(d);
     }
 };
 

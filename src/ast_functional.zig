@@ -1400,6 +1400,10 @@ fn cloneField(allocator: std.mem.Allocator, field: *const ast.Field) !ast.Field 
         .expression = field.expression, // Pointer copy - original persists
         .expression_str = if (field.expression_str) |e| try allocator.dupe(u8, e) else null,
         .owns_expression = false, // Cloned fields don't own the expression
+        .default = if (field.default) |d| try allocator.dupe(u8, d) else null,
+        // Restored: dropped on every clone until 2026-08-02, so a cloned
+        // comptime shape silently lost its InvocationMeta marker.
+        .is_invocation_meta = field.is_invocation_meta,
     };
 }
 

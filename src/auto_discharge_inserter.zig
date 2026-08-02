@@ -715,6 +715,118 @@ pub const AutoDischargeInserter = struct {
         }
     }
 
+    /// KORU080 — every REQUIRED input of a callee is supplied at the call site.
+    ///
+    /// Ten months without this. What stood in for it was ZIG: an omitted
+    /// argument the impl reads becomes `use of undeclared identifier` in
+    /// generated code, and on the proc path `missing struct field`. Both are
+    /// loud, neither is ours, and neither fires when the parameter is declared
+    /// and never read — which compiled clean and RAN (400_183). An `Expression`
+    /// param was more silent still: captured source text is not a struct field,
+    /// so the host had nothing to miss (400_184).
+    ///
+    /// It lives here, beside KORU112, for the same reason: this pass runs AFTER
+    /// the import fold and has a reporter. A frontend checker is handed the
+    /// entry file's items only, and a callee's declaration routinely lives in
+    /// another module.
+    fn checkCallSiteArity(self: *AutoDischargeInserter, items: []const ast.Item, home: []const u8) anyerror!void {
+        for (items) |*it| {
+            switch (it.*) {
+                .module_decl => |*m| try self.checkCallSiteArity(m.items, m.logical_name),
+                .flow => |*f| {
+                    const mod = if (f.module.len > 0) f.module else home;
+                    try self.checkArityInInvocation(f.inv(), f.location, mod);
+                    for (f.body.continuations) |*c| try self.checkArityInContinuation(c, f.location, mod);
+                },
+                else => {},
+            }
+        }
+    }
+
+    fn checkArityInContinuation(self: *AutoDischargeInserter, cont: *const ast.Continuation, loc: errors.SourceLocation, home: []const u8) anyerror!void {
+        if (cont.node) |*n| {
+            if (n.* == .invocation) {
+                const at = if (cont.location.line > 0) cont.location else loc;
+                try self.checkArityInInvocation(&n.invocation, at, home);
+            }
+        }
+        for (cont.continuations) |*c| try self.checkArityInContinuation(c, loc, home);
+    }
+
+    fn checkArityInInvocation(self: *AutoDischargeInserter, inv: *const ast.Invocation, loc: errors.SourceLocation, home: []const u8) !void {
+        if (inv.path.segments.len == 0) return;
+        // A site carrying `inline_body` is NOT a call. Its transform already
+        // lowered the whole thing into the enclosing scope and left the
+        // invocation behind as a path the emitter reads — with the ORIGINAL
+        // args, which do not match the `.impl` shape it now points at
+        // (`std/io:print.blk` → `print.blk.impl { text: string }`, never
+        // supplied because nothing ever calls it). The return-switch fast path
+        // bails on exactly this condition for the same reason.
+        if (inv.inline_body != null) return;
+        const name = try self.pathToString(inv.path);
+        defer self.allocator.free(name);
+        const mod = inv.path.module_qualifier orelse home;
+        const qualified = try std.fmt.allocPrint(self.allocator, "{s}:{s}", .{ mod, name });
+        defer self.allocator.free(qualified);
+        const info = self.event_map.get(qualified) orelse return;
+
+        // A `[norun]` tor is a SHAPE, not something anyone calls: the vocabulary
+        // verbs a transform reads off the tree (`std/parser:match`,
+        // `std/trellis:define`) and the `.impl` residues transforms point their
+        // consumed sites at. Nothing supplies their inputs because nothing
+        // invokes them.
+        for (info.decl.annotations) |ann| {
+            if (std.mem.eql(u8, ann, "norun")) return;
+        }
+
+        for (info.decl.input.fields) |field| {
+            if (!callSiteMustSupply(field)) continue;
+            var supplied = false;
+            for (inv.args, 0..) |arg, i| {
+                const resolved = if (std.mem.eql(u8, arg.name, arg.value) and i < info.decl.input.fields.len)
+                    info.decl.input.fields[i].name
+                else
+                    arg.name;
+                if (std.mem.eql(u8, resolved, field.name)) {
+                    supplied = true;
+                    break;
+                }
+            }
+            if (supplied) continue;
+            try self.reporter.addErrorAtLocation(.KORU080, loc, "'{s}' requires input '{s}' — it is declared with no default and no `?`, and this call does not supply it", .{ name, field.name });
+        }
+    }
+
+    /// Is this an input the AUTHOR writes at the call site?
+    ///
+    /// The exemptions are the risky half of this wall, not the check: a comptime
+    /// transform's shape declares parameters the COMPILER injects — the
+    /// invocation, the containing item, the program, an allocator, a reporter —
+    /// and the author writes none of them. Getting the list wrong turns one
+    /// diagnostic into a flood across the whole stdlib, so this errs toward
+    /// silence: anything not recognisably an ordinary value parameter is exempt.
+    fn callSiteMustSupply(field: ast.Field) bool {
+        if (field.default != null) return false;
+        if (field.type.len > 0 and field.type[0] == '?') return false;
+        // A source BLOCK is written as `{ ... }` after the args, never as an arg.
+        if (field.is_source) return false;
+        // Call-site metadata the compiler synthesizes.
+        if (field.is_invocation_meta) return false;
+        // Comptime-transform machinery, recognised by type. These are the
+        // parameters `~[comptime|transform]` shapes declare and the walker fills.
+        const injected = [_][]const u8{
+            "*const Invocation", "*const Item",       "*const Program",
+            "Invocation",        "Item",              "Program",
+            "ErrorReporter",     "*ErrorReporter",    "Allocator",
+        };
+        for (injected) |t| {
+            if (std.mem.eql(u8, field.type, t)) return false;
+        }
+        if (std.mem.endsWith(u8, field.type, "ErrorReporter")) return false;
+        if (std.mem.endsWith(u8, field.type, "mem.Allocator")) return false;
+        return true;
+    }
+
     /// One module's item scope. An imported module arrives as a `module_decl`
     /// holding its own items, so membership is structural here rather than a
     /// `.module` string match — a proc and the host lines it may reach bare are
@@ -798,6 +910,9 @@ pub const AutoDischargeInserter = struct {
         // checkers are handed the entry file's items only, so an imported
         // module's proc bodies are invisible to them.
         try self.checkEffectProcModuleScope(annotated_program);
+
+        // Step 1b: KORU080 — call-site arity, same home and the same reason.
+        try self.checkCallSiteArity(annotated_program.items, annotated_program.main_module_name);
 
         // Check for validation errors (e.g., [!] on branched events)
         if (self.reporter.hasErrors()) {
@@ -2779,7 +2894,9 @@ pub const AutoDischargeInserter = struct {
     fn inputFieldAutoFillableAtScopeExit(field: ast.Field) bool {
         // Optional event inputs (?T) need no call-site value.
         if (field.type.len > 0 and field.type[0] == '?') return true;
-        // TODO: event-input defaults when the surface supports them on shapes
+        // Nor does one carrying a default — the surface supports them on shapes
+        // now, as a parsed `Field.default` rather than a tail left on the type.
+        if (field.default != null) return true;
         return false;
     }
 

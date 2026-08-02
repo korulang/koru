@@ -1,1 +1,1 @@
-missing struct field: y
+requires input 'y'

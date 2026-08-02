@@ -9638,6 +9638,45 @@ pub const Parser = struct {
 
             var field_type = lexer.trim(trimmed_field[colon_idx + 1 ..]);
 
+            // Split the `= <expr>` DEFAULT off the type before anything reads
+            // the type. Zig type syntax contains no top-level `=`, so the first
+            // one outside brackets is unambiguously the separator; `==`/`!=`/
+            // `<=`/`>=` inside a default value all sit after it.
+            //
+            // Leaving it attached is what shipped: `field.type` came out as
+            // `"i32 = 5"`, which the emitter pasted verbatim into the generated
+            // Zig `Input` struct — so Zig applied the default and the surface
+            // looked implemented, while every Koru pass that reads `field.type`
+            // was handed a string that is not a type (400_185, 400_186).
+            var field_default: ?[]const u8 = null;
+            {
+                var depth: i32 = 0;
+                var k: usize = 0;
+                while (k < field_type.len) : (k += 1) {
+                    const ch = field_type[k];
+                    switch (ch) {
+                        '[', '(', '{' => depth += 1,
+                        ']', ')', '}' => depth -= 1,
+                        '=' => {
+                            if (depth != 0) continue;
+                            if (k + 1 < field_type.len and field_type[k + 1] == '=') {
+                                k += 1;
+                                continue;
+                            }
+                            if (k > 0) {
+                                const prev = field_type[k - 1];
+                                if (prev == '!' or prev == '<' or prev == '>' or prev == '=') continue;
+                            }
+                            const rhs = lexer.trim(field_type[k + 1 ..]);
+                            if (rhs.len > 0) field_default = try self.allocator.dupe(u8, rhs);
+                            field_type = lexer.trim(field_type[0..k]);
+                            break;
+                        },
+                        else => {},
+                    }
+                }
+            }
+
             // Check for special types: Source, File, EmbedFile, Expression, and InvocationMeta
             // Source can have scope type: Source<HTML>, Source<SQL>, etc.
             // Expression captures Zig expressions verbatim as strings
@@ -9660,6 +9699,28 @@ pub const Parser = struct {
             } else if (std.mem.eql(u8, field_type, "InvocationMeta")) {
                 is_invocation_meta = true;
             }
+
+            // `expr: ?Expression` is LEGAL, and the corpus is why.
+            //
+            // It was ruled nonsensical on 2026-08-02 and a refusal was written
+            // here, on the argument that `expr` is a syntactic role rather than
+            // a parameter and that optionality on it is unreachable — there is
+            // no syntax for "skip the positional but keep the later ones", so
+            // the only call it could enable is the bare `f()`.
+            //
+            // The argument is wrong, and `std/kernel:pairwise` is the
+            // counterexample: `expr` is its ONLY positional, so "omit it
+            // entirely" is an ordinary call and not a gap to skip over. It
+            // reads `expr != null` to tell `pairwise { … }` (iterate every
+            // pair) from `pairwise(0..n) { … }` (an explicit outer range), and
+            // both forms are green in 390. The refusal turned 18 kernel tests
+            // red instantly, which is the corpus answering the design question.
+            //
+            // So `expr` is required-or-optional exactly like any other input.
+            // The magic is only in WHICH argument fills it (the first
+            // positional), never in whether it must be there. A REQUIRED `expr`
+            // with no positional at the call site is KORU080's business, and
+            // that is the wall that was actually missing (400_183/184/187).
 
             // Phantom labels: Type<tag>. Angle brackets have no Zig
             // type-position meaning, so any `<...>` at type end is
@@ -9767,6 +9828,7 @@ pub const Parser = struct {
                 .is_embed_file = is_embed_file,
                 .is_expression = is_expression,
                 .is_invocation_meta = is_invocation_meta,
+                .default = field_default,
             };
 
             try fields.append(self.allocator, field);

@@ -1,1 +1,1 @@
-required input 'b'
+requires input 'b'

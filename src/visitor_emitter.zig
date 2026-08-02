@@ -1821,6 +1821,12 @@ pub const VisitorEmitter = struct {
             } else {
                 try emitter.writeFieldType(self.code_emitter, field, self.main_module_name);
             }
+            // The default used to ride into Zig inside `field.type` — now that
+            // it is split off, it has to be written back deliberately.
+            if (field.default) |d| {
+                try self.code_emitter.write(" = ");
+                try self.code_emitter.write(d);
+            }
             try self.code_emitter.write(",\n");
         }
 

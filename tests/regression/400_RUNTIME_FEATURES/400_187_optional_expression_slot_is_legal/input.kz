@@ -1,0 +1,31 @@
+// PIN — `expr: ?Expression` is LEGAL: the positional slot may be optional, and
+// a verb that declares it that way is callable BOTH ways.
+//
+// This test was minted on 2026-08-02 to pin the opposite. `expr: ?Expression`
+// was ruled nonsensical on the reasoning that `expr` is a syntactic role rather
+// than a parameter, and that optionality on it is unreachable — there is no
+// syntax for "skip the positional but keep the later ones", so the only call it
+// could enable is the bare `f()`.
+//
+// The corpus refused the ruling within one build. `std/kernel:pairwise`
+// declares `expr: ?Expression` and reads `expr != null` to tell
+// `pairwise { … }` (every pair) from `pairwise(0..n) { … }` (an explicit outer
+// range). `expr` is its ONLY positional, so "omit it entirely" is an ordinary
+// call, not a gap to skip over. The refusal turned 18 green kernel tests red on
+// the spot.
+//
+// So the rule is simpler than the ruling: `expr` is required-or-optional like
+// any other input. The magic is only in WHICH argument fills it — the first
+// positional — never in whether it has to be there. A REQUIRED `expr` with no
+// positional is KORU080's business (400_183, 400_184).
+const std = @import("std");
+~import std/io
+
+~[expand]pub tor shout { expr: ?Expression }
+
+~proc shout|template|zig {
+{% if expr %}std.debug.print("{s}\n", .{ {{ expr }} });{% else %}std.debug.print("silent\n", .{});{% endif %}
+}
+
+~shout("\"loud\"")
+~shout()

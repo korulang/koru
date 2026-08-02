@@ -1,7 +1,24 @@
-// Test: Event call missing required parameter
-// ACCEPTABLE: Backend Zig error "missing struct field: y"
-// (We don't re-implement Zig's type system)
-
+// Test: Event call missing a required parameter.
+//
+// REVERSED 2026-08-02. This test used to read:
+//
+//     // ACCEPTABLE: Backend Zig error "missing struct field: y"
+//     // (We don't re-implement Zig's type system)
+//
+// and it pinned Zig's `missing struct field: y` as the expected outcome. So the
+// gap was not an oversight — it was seen, reasoned about, and written down as a
+// deliberate decision, in the negative-test cluster, ten months ago.
+//
+// The reasoning does not survive contact with the other three cells. Arity is
+// not Zig's type system, it is Koru's calling convention, and delegating it
+// meant inheriting the host's blind spot: an omitted argument the impl never
+// READS produced no error from anyone. That program compiled and RAN
+// (400_183). An omitted `Expression` param was quieter still — captured source
+// text is not a struct field, so the host had nothing to miss (400_184).
+//
+// Zig covered the two cells where the parameter is used, loudly enough that
+// nobody counted the two where it is not. KORU080 now covers all four, and this
+// test pins the Koru diagnostic instead of the borrowed one.
 ~tor foo { x: i32, y: i32 }
 
 ~foo(x: 1)

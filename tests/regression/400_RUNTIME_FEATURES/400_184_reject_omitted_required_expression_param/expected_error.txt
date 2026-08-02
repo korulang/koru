@@ -1,1 +1,1 @@
-required input 'suffix'
+requires input 'suffix'

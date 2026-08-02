@@ -1,0 +1,26 @@
+// PIN (aspirational) — `std/array:sort` lowers and sorts.
+//
+// The slot rename that makes this test WRITEABLE landed with it: the tor
+// declared `arr: Expression`, and only a parameter named `expr` receives the
+// bare first positional, so `sort(xs)` could never have filled it. Renamed to
+// `expr` (Lars's ruling), which is necessary and not sufficient.
+//
+// It still does not lower, and the reason is one layer down: `std/array` is the
+// ONLY consumer of `std/template:define`'s `${...}` interpolation, nothing in
+// the corpus exercises either, and the `${expr}` markers reach the generated
+// Zig verbatim — `error: expected expression, found 'invalid token'`.
+//
+// So the whole library is unwitnessed surface that has never worked. Zero call
+// sites in the corpus, in koru_std, or anywhere on disk (measured 2026-08-02),
+// which is exactly why ten months passed without anyone finding out. Left RED
+// on purpose rather than deleted: the decision between repairing
+// `std/template:define` and retiring both is Lars's, and a red on the board is
+// how it stays askable.
+const std = @import("std");
+~import std/io
+~import std/array
+
+var xs = [_]i32{ 3, 1, 2 };
+
+~std/array:sort(xs[0..])
+~std/io:print.ln("{{ xs[0]:d }} {{ xs[1]:d }} {{ xs[2]:d }}")

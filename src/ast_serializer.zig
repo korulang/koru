@@ -1636,6 +1636,13 @@ pub const AstSerializer = struct {
         try self.write(", .owns_expression = ");
         try self.write(if (field.owns_expression) "true" else "false");
 
+        try self.write(", .default = ");
+        if (field.default) |d| {
+            try self.writeString(d);
+        } else {
+            try self.write("null");
+        }
+
         try self.write(" }");
     }
 

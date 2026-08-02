@@ -10,9 +10,14 @@ const std = @import("std");
 // Sort template - uses Zig's @TypeOf for element type inference
 // Template name must match event name (module prefix comes from import path)
 ~std/template:define(name: "sort") {
-    std.mem.sort(@TypeOf(${arr}[0]), ${arr}, {}, std.sort.asc(@TypeOf(${arr}[0])));
+    std.mem.sort(@TypeOf(${expr}[0]), ${expr}, {}, std.sort.asc(@TypeOf(${expr}[0])));
 }
 
 // Sort an array in-place (ascending order)
-// arr: Expression - any slice, Zig figures out the element type
-~[norun|expand]pub tor sort { arr: Expression }
+//
+// The slot is `expr`, not `arr`: `expr` is the name that receives the first
+// POSITIONAL argument, so `sort(xs)` only lowers when the parameter is called
+// that. Declared `arr` it could never be filled by the bare call the surface
+// advertises — and nothing caught it because the whole library has zero call
+// sites, in the corpus or anywhere else (measured 2026-08-02).
+~[norun|expand]pub tor sort { expr: Expression }

@@ -7119,6 +7119,44 @@ fn emitInvocation(
                 try emitter.write(";\n");
             }
 
+            // DEFAULT INJECTION. The struct-literal paths get defaults for free
+            // — the generated `Input` struct carries `= <default>` and Zig
+            // applies it. An INLINED call has no Input struct: it binds each
+            // parameter from the call site's own args, so a parameter the
+            // author omitted simply never comes into scope and the default
+            // vanishes (400_185, green twin 400_186 on the proc path).
+            //
+            // Presence is read off `invocation.args`, not off what the loop
+            // above emitted: a pass-through or aliased argument is supplied and
+            // deliberately NOT rebound.
+            if (event_decl) |ev| {
+                for (ev.input.fields) |field| {
+                    const dflt = field.default orelse continue;
+                    var supplied = false;
+                    for (invocation.args, 0..) |arg, i| {
+                        const resolved = if (std.mem.eql(u8, arg.name, arg.value) and i < ev.input.fields.len)
+                            ev.input.fields[i].name
+                        else
+                            arg.name;
+                        if (std.mem.eql(u8, resolved, field.name)) {
+                            supplied = true;
+                            break;
+                        }
+                    }
+                    if (supplied) continue;
+                    try emitter.writeIndent();
+                    try emitter.write("const ");
+                    try writeBranchName(emitter, field.name);
+                    try emitter.write(" = ");
+                    try emitter.write(dflt);
+                    try emitter.write(";\n");
+                    try emitter.writeIndent();
+                    try emitter.write("_ = &");
+                    try writeBranchName(emitter, field.name);
+                    try emitter.write(";\n");
+                }
+            }
+
             // Emit the break with the branch constructor (or the bare value).
             try emitter.writeIndent();
             try emitter.write("break :blk ");
@@ -11921,6 +11959,10 @@ fn emitEventDeclForModule(
         try writeBranchName(code_emitter, field.name);
         try code_emitter.write(": ");
         try writeFieldType(code_emitter, field, ctx.main_module_name);
+        if (field.default) |d| {
+            try code_emitter.write(" = ");
+            try code_emitter.write(d);
+        }
         try code_emitter.write(",\n");
     }
     code_emitter.indent_level -= 1;

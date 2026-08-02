@@ -38,6 +38,33 @@ site.** Not the failing test — the failing test may be failing for the host's
 reasons. A rule with a registry entry, a name, and no emission site is a rule
 you are borrowing.
 
+## It was not an oversight — it was written down as ACCEPTABLE
+
+The strongest evidence turned up last, when the new wall turned a green test
+red. `510_063_missing_event_param`, in the negative-test cluster, pinned exactly
+this program and carried this header:
+
+> `// ACCEPTABLE: Backend Zig error "missing struct field: y"`
+> `// (We don't re-implement Zig's type system)`
+
+So someone saw the gap, reasoned about it, decided, and recorded the decision as
+a passing test. For ten months the corpus asserted that Koru *should* borrow
+this diagnostic.
+
+The reasoning is the interesting part, because it is nearly right. Re-deriving
+Zig's type system would be foolish. **But arity is not the host's type system —
+it is Koru's own calling convention**, and the two are easy to conflate at the
+moment the host happens to catch your case. Delegating it meant inheriting the
+host's blind spot along with its coverage, and the blind spot is not a corner:
+it is every parameter the impl declares and does not read.
+
+A pinned "acceptable" is a much stronger form of this belief than a missing
+check. A missing check is an absence and absences get found. **A documented
+decision to borrow is load-bearing: it answers the question in advance, so
+nobody asks it again.**
+
+## The libraries had already built it, privately, five times
+
 The corroborating evidence was in plain sight and read as diligence: `std/parser:parse`
 hand-rolls *"needs its grammar named"*, `std/store:insert` hand-rolls *"requires a
 store name and a row block"*, `std/kernel:init` falls back to a hardcoded shape.
