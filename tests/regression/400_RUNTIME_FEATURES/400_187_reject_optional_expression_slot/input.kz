@@ -1,0 +1,27 @@
+// PIN — `expr: ?Expression` is refused AT THE DECLARATION.
+//
+// `expr` is not a parameter name, it is a syntactic ROLE: the binding site for
+// the argument the author writes without a label. Optionality means "omit the
+// label and get null", and for `expr` omitting the label is the normal case —
+// so `?` would have to mean something different there than it means on every
+// other field of the same shape.
+//
+// It is also unreachable. Under the first-positional rule there is no syntax
+// for "skip the positional but keep the later ones" (`f(, n: 1)` is not a
+// thing), so the only call an optional `expr` could ever enable is the bare
+// `f()` — and a tor whose expression may simply be absent wants a named
+// parameter, not the slot.
+//
+// Measured 2026-08-02: this was accepted and the `?` was silently DROPPED — the
+// emitted Input carried `expr: []const u8`, not `?[]const u8`. Ruled a
+// declaration-time refusal (Lars) so it fires on the library author rather than
+// on their users. A named `<other>: ?Expression` stays legal — see 400_184.
+~import std/io
+
+~[expand]pub tor shout { expr: ?Expression }
+
+~proc shout|template|zig {
+{{ expr }}
+}
+
+~shout("hi")

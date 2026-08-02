@@ -1,0 +1,21 @@
+// PIN — an `Expression` input is a parameter like any other: omit a required
+// one and the call is refused.
+//
+// The twin of 400_183 for the comptime side, and it was MORE silent: an omitted
+// required `Expression` param built clean with no Zig error at all, because an
+// Expression's value is captured source text rather than a struct field, so
+// there is nothing for the host compiler to miss.
+//
+// `expr` is exempt from nothing here — it is required (400_187 pins that it
+// cannot be optional) and it is filled by the first positional. `suffix` is an
+// ordinary named parameter that happens to carry an expression, and must be
+// labelled.
+~import std/io
+
+~[expand]pub tor shout { expr: Expression, suffix: Expression }
+
+~proc shout|template|zig {
+{{ expr }}
+}
+
+~shout("hi")

@@ -1,0 +1,16 @@
+// CONTROL for 400_185 — the same default, same call, PROC impl instead of a
+// subflow. Green before the default was a real concept and green after, which
+// is what makes 400_185 attributable to the emission path rather than to
+// defaults being unimplemented in general.
+//
+// Hold this one: if a proper default implementation ever regresses it, the
+// accident it replaced was load-bearing and that is worth knowing.
+~import std/io
+
+~tor add { a: i32, b: i32 = 5 } -> i32
+
+~proc add|zig {
+    return a + b;
+}
+
+~add(a: 1): r |> std/io:print.ln("{{ r:d }}")

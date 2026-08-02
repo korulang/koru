@@ -1,0 +1,20 @@
+// PIN (aspirational) — an input DEFAULT holds on the inlined subflow path.
+//
+// `b: i32 = 5` works today only on the proc path (400_186) and only by
+// accident: the default was never parsed as a concept. It rides along inside
+// the field's TYPE STRING — `field.type` is literally `"i32 = 5"` — which the
+// emitter pastes verbatim into the generated Zig `Input` struct, where ZIG
+// applies it. A bare-return subflow has no Input struct: args bind straight
+// from the call site, the type string is never used, and the default
+// evaporates into `use of undeclared identifier 'b'`.
+//
+// `src/auto_discharge_inserter.zig` carries the honest note next to its
+// auto-fill classifier: `TODO: event-input defaults when the surface supports
+// them on shapes`. It does not support them; it leaks them.
+~import std/io
+
+~tor add { a: i32, b: i32 = 5 } -> i32
+
+~add -> a + b
+
+~add(a: 1): r |> std/io:print.ln("{{ r:d }}")

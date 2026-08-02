@@ -1,0 +1,24 @@
+// PIN — omitting a REQUIRED tor input at the call site is a refusal, not a
+// silent hole.
+//
+// Measured 2026-08-02, ten months into the language: this exact program
+// compiled clean and RAN, printing `1`. `b` is declared, never supplied, and
+// nothing said so. Make the impl actually USE `b` and it becomes
+// `output_emitted.zig:51: error: use of undeclared identifier 'b'` — a raw Zig
+// error in generated code, at a line number that means nothing to the author.
+//
+// KORU080 ("missing required field") was declared in the registry the whole
+// time and emitted from exactly ONE place: koru_std/testing.kz, for mock
+// branches. Every library author who cared hand-rolled their own wall instead
+// (std/parser:parse's "needs its grammar named", std/store:insert's "requires a
+// store name") — which is what a missing general wall looks like from outside.
+//
+// The silent variant is pinned deliberately: an omitted argument the impl never
+// reads is the one a raw Zig error can never catch.
+~import std/io
+
+~tor add { a: i32, b: i32 } -> i32
+
+~add -> a
+
+~add(a: 1): r |> std/io:print.ln("{{ r:d }}")
