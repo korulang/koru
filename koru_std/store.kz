@@ -1456,6 +1456,12 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             // Detection is deliberately CONSERVATIVE: any mention of take
             // anywhere under the arm keeps the tolerant form.
             may_remove: bool,
+            /// The row cursor's emitted NAME and what it holds. Decided by the
+            /// body walk (`may_remove` picks it) and read back by the qrow /
+            /// qbody emission, so the three sites cannot disagree about
+            /// whether the pass is carrying a dense index or a handle.
+            cursor: []const u8 = "__koru_qrow",
+            cursor_dense: bool = false,
         };
         // Can ANY row of this store be removed while a rule pass is running?
         // Only a `take` can remove one, and a take reached through a CALLED
@@ -1702,23 +1708,46 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             fn projName(alloc: std.mem.Allocator, field: []const u8) []const u8 {
                 return std.fmt.allocPrint(alloc, "__koru_qproj_{s}", .{field}) catch unreachable;
             }
-            fn colRead(alloc: std.mem.Allocator, store: []const u8, field: []const u8, is_char: bool) []const u8 {
-                // A char column reads as the string slice up to the first NUL
-                // (the same shape the qrow projection binds); scalars read
-                // their cell slot directly.
-                // The column is named through a POINTER (`&`) before the
-                // call-valued index: a by-value base would force Zig to
-                // materialise the whole column ahead of the resolve call
+            // `cur` is the row cursor's NAME and `dense` says what it holds.
+            //
+            // A rule whose program can never remove a row gets the DENSE loop
+            // index, the same cursor the query path has carried since the
+            // O10.iv elision, and it is spelled `__koru_sdix_*` so the write
+            // family passes it through untouched (store.kz:5698 keys on that
+            // prefix). Otherwise the cursor is a generational HANDLE and every
+            // access resolves it: `handle -> hslot_gen -> hslot_row -> column`
+            // is a four-deep chain of dependent loads behind four panic
+            // branches, in the hottest loop the language has, and no part of
+            // it can be vectorised or hoisted because each address depends on
+            // the previous load.
+            //
+            // The elision is safe rather than merely fast because the surface
+            // no longer admits a raw row index anywhere: `store[cell]` names a
+            // row by handle, so a dense cursor is INTERNAL to this lowering
+            // and there is nothing user-written for it to leak into. Reserving
+            // brand 0 (690_242) is the second half — a dense index in a handle
+            // position now traps instead of addressing an unrelated slot.
+            fn colRead(alloc: std.mem.Allocator, store: []const u8, field: []const u8, is_char: bool, cur: []const u8, dense: bool) []const u8 {
+                // The column is named through a POINTER (`&`) before the index:
+                // a by-value base would force Zig to materialise the whole
+                // column ahead of a call-valued index
                 // (frag-a-call-valued-index-copies-the-whole-array); an 8-byte
                 // pointer base costs nothing and stays a plain expression, so
                 // it survives the `{{ ... }}` interpolation contexts a hoisted
                 // const block cannot.
+                const idx = if (dense)
+                    std.fmt.allocPrint(alloc, "@as(usize, @intCast({s}))", .{cur}) catch unreachable
+                else
+                    std.fmt.allocPrint(alloc, "__koru_store_{s}.__koru_resolve({s})", .{ store, cur }) catch unreachable;
+                // A char column reads as the string slice up to the first NUL
+                // (the same shape the qrow projection binds); scalars read
+                // their cell slot directly.
                 if (is_char) {
-                    return std.fmt.allocPrint(alloc, "@import(\"std\").mem.sliceTo(&(&__koru_store_{s}.{s})[__koru_store_{s}.__koru_resolve(__koru_qrow)], 0)", .{ store, field, store }) catch unreachable;
+                    return std.fmt.allocPrint(alloc, "@import(\"std\").mem.sliceTo(&(&__koru_store_{s}.{s})[{s}], 0)", .{ store, field, idx }) catch unreachable;
                 }
-                return std.fmt.allocPrint(alloc, "(&__koru_store_{s}.{s})[__koru_store_{s}.__koru_resolve(__koru_qrow)]", .{ store, field, store }) catch unreachable;
+                return std.fmt.allocPrint(alloc, "(&__koru_store_{s}.{s})[{s}]", .{ store, field, idx }) catch unreachable;
             }
-            fn entityRefs(alloc: std.mem.Allocator, text: []const u8, store: []const u8, fields: []const []const u8, char_caps: []const ?usize, owned: []const bool, target_form: bool, use_owned_param: bool, bind: []const u8, used: []bool) []const u8 {
+            fn entityRefs(alloc: std.mem.Allocator, text: []const u8, store: []const u8, fields: []const []const u8, char_caps: []const ?usize, owned: []const bool, target_form: bool, use_owned_param: bool, bind: []const u8, used: []bool, cur: []const u8, dense: bool) []const u8 {
                 const prefix = std.fmt.allocPrint(alloc, "{s}.", .{bind}) catch unreachable;
                 const expr_ctx = ast.expressionMask(alloc, text);
                 var out = std.ArrayList(u8).initCapacity(alloc, text.len + 32) catch unreachable;
@@ -1736,7 +1765,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                         }
                         if (known) |kidx| {
                             if (target_form) {
-                                const t = std.fmt.allocPrint(alloc, "{s}[__koru_qrow].{s}", .{ store, fname }) catch unreachable;
+                                const t = std.fmt.allocPrint(alloc, "{s}[{s}].{s}", .{ store, cur, fname }) catch unreachable;
                                 out.appendSlice(alloc, t) catch unreachable;
                             } else if (use_owned_param and owned[kidx]) {
                                 // The ONLY body reference that needs a
@@ -1747,7 +1776,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                                 used[kidx] = true;
                                 out.appendSlice(alloc, projName(alloc, fname)) catch unreachable;
                             } else {
-                                out.appendSlice(alloc, colRead(alloc, store, fname, char_caps[kidx] != null)) catch unreachable;
+                                out.appendSlice(alloc, colRead(alloc, store, fname, char_caps[kidx] != null, cur, dense)) catch unreachable;
                             }
                             i = fend;
                             continue;
@@ -1770,16 +1799,16 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                         if (!next_is_ident and !next_is_dot) {
                             if (fields.len == 1 and std.mem.eql(u8, fields[0], ast.STORE_IDENTITY_COLUMN) and expr_ctx[i]) {
                                 if (target_form) {
-                                    const t = std.fmt.allocPrint(alloc, "{s}[__koru_qrow].{s}", .{ store, fields[0] }) catch unreachable;
+                                    const t = std.fmt.allocPrint(alloc, "{s}[{s}].{s}", .{ store, cur, fields[0] }) catch unreachable;
                                     out.appendSlice(alloc, t) catch unreachable;
                                 } else if (use_owned_param and owned[0]) {
                                     used[0] = true;
                                     out.appendSlice(alloc, projName(alloc, fields[0])) catch unreachable;
                                 } else {
-                                    out.appendSlice(alloc, colRead(alloc, store, fields[0], char_caps[0] != null)) catch unreachable;
+                                    out.appendSlice(alloc, colRead(alloc, store, fields[0], char_caps[0] != null, cur, dense)) catch unreachable;
                                 }
                             } else {
-                                out.appendSlice(alloc, "__koru_qrow") catch unreachable;
+                                out.appendSlice(alloc, cur) catch unreachable;
                             }
                             i = after;
                             continue;
@@ -1794,16 +1823,16 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             // indexed-lvalue form, values read columns directly. Values never
             // take the owned projection: the write path reads the cell at write
             // time (690_083), same as the read path's .live form.
-            fn storedBlock(alloc: std.mem.Allocator, text: []const u8, store: []const u8, fields: []const []const u8, char_caps: []const ?usize, owned: []const bool, bind: []const u8, used: []bool) []const u8 {
+            fn storedBlock(alloc: std.mem.Allocator, text: []const u8, store: []const u8, fields: []const []const u8, char_caps: []const ?usize, owned: []const bool, bind: []const u8, used: []bool, cur: []const u8, dense: bool) []const u8 {
                 const braced2 = std.fmt.allocPrint(alloc, "{{{s}}}", .{text}) catch unreachable;
                 const struct_literal2 = @import("struct_literal");
                 const pairs = struct_literal2.parseFields(alloc, braced2) catch return text;
                 var out = std.ArrayList(u8).initCapacity(alloc, text.len + 64) catch unreachable;
                 for (pairs, 0..) |pr, i| {
                     if (i > 0) out.appendSlice(alloc, ", ") catch unreachable;
-                    out.appendSlice(alloc, entityRefs(alloc, pr.name, store, fields, char_caps, owned, true, false, bind, used)) catch unreachable;
+                    out.appendSlice(alloc, entityRefs(alloc, pr.name, store, fields, char_caps, owned, true, false, bind, used, cur, dense)) catch unreachable;
                     out.appendSlice(alloc, ": ") catch unreachable;
-                    out.appendSlice(alloc, entityRefs(alloc, pr.value, store, fields, char_caps, owned, false, false, bind, used)) catch unreachable;
+                    out.appendSlice(alloc, entityRefs(alloc, pr.value, store, fields, char_caps, owned, false, false, bind, used, cur, dense)) catch unreachable;
                 }
                 return out.toOwnedSlice(alloc) catch unreachable;
             }
@@ -1846,7 +1875,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 }
                 return out.toOwnedSlice(alloc) catch unreachable;
             }
-            fn walkCont(alloc: std.mem.Allocator, cont: *ast.Continuation, store: []const u8, fields: []const []const u8, char_caps: []const ?usize, owned: []const bool, bind: []const u8, used: []bool) void {
+            fn walkCont(alloc: std.mem.Allocator, cont: *ast.Continuation, store: []const u8, fields: []const []const u8, char_caps: []const ?usize, owned: []const bool, bind: []const u8, used: []bool, cur: []const u8, dense: bool) void {
                 if (cont.node) |*n| {
                     switch (@constCast(n).*) {
                         .invocation => |*inv| {
@@ -1858,25 +1887,25 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                             };
                             for (inv.args) |*a| {
                                 if (is_stored and std.mem.eql(u8, a.name, "source")) {
-                                    @constCast(a).value = storedBlock(alloc, a.value, store, fields, char_caps, owned, bind, used);
+                                    @constCast(a).value = storedBlock(alloc, a.value, store, fields, char_caps, owned, bind, used, cur, dense);
                                     if (a.source_value) |sv| {
                                         const fresh = alloc.create(ast.Source) catch unreachable;
                                         fresh.* = sv.*;
-                                        fresh.text = storedBlock(alloc, sv.text, store, fields, char_caps, owned, bind, used);
+                                        fresh.text = storedBlock(alloc, sv.text, store, fields, char_caps, owned, bind, used, cur, dense);
                                         @constCast(a).source_value = fresh;
                                     }
                                 } else {
-                                    @constCast(a).value = entityRefs(alloc, a.value, store, fields, char_caps, owned, false, true, bind, used);
+                                    @constCast(a).value = entityRefs(alloc, a.value, store, fields, char_caps, owned, false, true, bind, used, cur, dense);
                                     if (a.expression_value) |ev| {
                                         const fresh = alloc.create(ast.CapturedExpression) catch unreachable;
                                         fresh.* = ev.*;
-                                        fresh.text = entityRefs(alloc, ev.text, store, fields, char_caps, owned, false, true, bind, used);
+                                        fresh.text = entityRefs(alloc, ev.text, store, fields, char_caps, owned, false, true, bind, used, cur, dense);
                                         @constCast(a).expression_value = fresh;
                                     }
                                     if (a.source_value) |sv| {
                                         const fresh = alloc.create(ast.Source) catch unreachable;
                                         fresh.* = sv.*;
-                                        fresh.text = entityRefs(alloc, sv.text, store, fields, char_caps, owned, false, true, bind, used);
+                                        fresh.text = entityRefs(alloc, sv.text, store, fields, char_caps, owned, false, true, bind, used, cur, dense);
                                         @constCast(a).source_value = fresh;
                                     }
                                 }
@@ -1885,7 +1914,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                         else => {},
                     }
                 }
-                for (cont.continuations) |*c| walkCont(alloc, @constCast(c), store, fields, char_caps, owned, bind, used);
+                for (cont.continuations) |*c| walkCont(alloc, @constCast(c), store, fields, char_caps, owned, bind, used, cur, dense);
             }
         };
         for (qsites.items) |*qs| {
@@ -1901,7 +1930,23 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             // pure tax.
             const used = allocator.alloc(bool, field_names.len) catch unreachable;
             for (used) |*u| u.* = false;
-            PRewrite.walkCont(allocator, &qs.body, store_name, field_names, field_char_caps, owned_flags, qs.row_bind, used);
+            // THE CURSOR. A rule whose program can never remove a row carries
+            // the DENSE loop index under an `__koru_sdix_` name, which is the
+            // marker the write family already pass-throughs (store.kz:5698) —
+            // the same cursor the query path has carried since the O10.iv
+            // elision. A program that mentions take anywhere keeps the
+            // generational handle, because a swap-remove can move the row out
+            // from under a dense index mid-pass. The predicate is the whole-
+            // program one already computed for the loop form; keyed on the
+            // ARM's line so two rules over one store never share a name.
+            const cursor = if (qs.may_remove)
+                allocator.dupe(u8, "__koru_qrow") catch unreachable
+            else
+                std.fmt.allocPrint(allocator, "__koru_sdix_rule_L{d}", .{qs.line}) catch unreachable;
+            const cursor_dense = !qs.may_remove;
+            qs.cursor = cursor;
+            qs.cursor_dense = cursor_dense;
+            PRewrite.walkCont(allocator, &qs.body, store_name, field_names, field_char_caps, owned_flags, qs.row_bind, used, cursor, cursor_dense);
             // The `when` guard is held beside the body, not inside it, so the
             // body walk never reached it. It sees the row through the binding
             // like everything else does.
@@ -3188,11 +3233,17 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 qr.appendSlice(allocator, p) catch unreachable;
             }
             if (qs.proj_names.len > 0) qr.appendSlice(allocator, ", ") catch unreachable;
-            // The body's row cursor is a HANDLE (the same value `| row` mints),
-            // so a take/stored head addressing `store[cursor]` resolves it like
-            // any other handle — and it stays correct across the swap-removes a
-            // taking body performs (690_031).
-            const qrow_cursor = std.fmt.allocPrint(allocator, ".__koru_qrow = __koru_store_{s}.__koru_handle_of(__koru_r) ", .{store_name}) catch unreachable;
+            // The cursor the body receives. A taking pass gets a HANDLE (the
+            // same value `| row` mints), so a take/stored head addressing
+            // `store[cursor]` resolves it like any other handle and stays
+            // correct across the swap-removes the body performs (690_031).
+            // A pass that cannot remove gets the DENSE index straight — no
+            // `handle_of` on the way in and no `__koru_resolve` on the way out,
+            // which is the whole four-deep dependent-load chain gone.
+            const qrow_cursor = if (qs.cursor_dense)
+                std.fmt.allocPrint(allocator, ".{s} = @as(i64, @intCast(__koru_r)) ", .{qs.cursor}) catch unreachable
+            else
+                std.fmt.allocPrint(allocator, ".{s} = __koru_store_{s}.__koru_handle_of(__koru_r) ", .{ qs.cursor, store_name }) catch unreachable;
             qr.appendSlice(allocator, qrow_cursor) catch unreachable;
             qr.appendSlice(allocator, "});\nreturn;") catch unreachable;
             appended_items.append(allocator, ast.Item{ .proc_decl = ast.ProcDecl{
@@ -3224,7 +3275,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                     .phantom = std.fmt.allocPrint(allocator, "{s}:{s}", .{ oi.module_dot, oi.state }) catch unreachable,
                 } else ast.Field{ .name = allocator.dupe(u8, pname) catch unreachable, .type = allocator.dupe(u8, field_types[pfidx]) catch unreachable };
             }
-            qbody_in[qs.proj_names.len] = ast.Field{ .name = allocator.dupe(u8, "__koru_qrow") catch unreachable, .type = allocator.dupe(u8, "i64") catch unreachable };
+            qbody_in[qs.proj_names.len] = ast.Field{ .name = allocator.dupe(u8, qs.cursor) catch unreachable, .type = allocator.dupe(u8, "i64") catch unreachable };
             appended_items.append(allocator, ast.Item{ .event_decl = ast.EventDecl{
                 .path = H.mkPathH(allocator, flow.module, qbody_name),
                 .input = ast.Shape{ .fields = qbody_in },

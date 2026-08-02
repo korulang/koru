@@ -46,13 +46,34 @@ largest scheduled prize and stayed there for a day.
 - **Ordering a work list by mock-derived numbers orders it by an artifact.**
   Size the rung against the real compiler before it becomes "the prize".
 
+## Closed, same day: the ordering WAS exactly backwards
+
+The handle rung landed and measures **5.70x** and **5.77x** on the interleaved
+instrument, with the query-path controls byte-identical. The mock priced it at
+**1.22x**. Set against the projection it priced at 3.91x and which is worth
+nothing, the decomposition was not merely imprecise — it was inverted. Its
+smallest term was the whole prize and its largest term did not exist.
+
+So the answer to the question above is the uncomfortable one: **the mock's
+error was the method, not one bad variant.** A mock reproduces the shape of
+emitted code and never its context, and the two failures have one root seen
+from opposite sides. It kept dead loads the optimizer deletes — inventing the
+projection cost — and it modelled the handle round-trip as arithmetic when in
+the real store it is a four-deep chain of dependent loads behind four panic
+branches, which does not merely cost cycles but makes the loop
+**unvectorisable**. That is not a quantity a mock gets wrong by a factor. It is
+a property of the surrounding code that a mock does not have.
+
+**The tell was available before any of the measurements**, and it is cheap
+enough to make routine: four instructions of `fadd.2d` against twenty scalar
+ones. Instruction SHAPE separated the terms correctly where the mock's timings
+ranked them backwards. Read the two loops before modelling either.
+
 ## Open
 
-Whether the same reasoning retires the rest of that decomposition. The loop-form
-rung survived the same scrutiny — its codegen genuinely changed, and interleaved
-it measures what it claimed. The handle rung has not been re-sized, and the
-disassembly suggests the mock understated it as badly as it overstated the
-projection: the rule loop is a scalar dependent-load chain behind four panic
-branches where the query loop is two-wide SIMD. The decomposition's *ordering*
-may be exactly backwards, which would mean the mock's error was not one bad
-variant but the method.
+Whether anything else on that board rests on a mock. The decomposition is now
+fully re-derived, but it was not the only probe written in Zig against a
+hand-modelled store, and the ones that produced retractions — prefetch, the
+capacity lever — were believed for a while first. A mock that KILLED a
+hypothesis is safe; a mock that ESTABLISHED a number is suspect until the
+codegen agrees.
