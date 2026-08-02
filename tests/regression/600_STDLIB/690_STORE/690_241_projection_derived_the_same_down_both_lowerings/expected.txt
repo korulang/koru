@@ -1,0 +1,2 @@
+rule 30
+query 30
