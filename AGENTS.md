@@ -69,3 +69,29 @@
 - PRs should state what changed, why, how to reproduce/verify (commands), and link issues.
 - Show test evidence (`zig build test`, `./run_regression.sh …`), note skips, and call out doc updates tied to tests.
 - Follow `CONTRIBUTING.md` for the regression-first workflow and documentation truth hierarchy.
+
+### Two commit hooks will reject you — plan the message before you write it
+`.git/hooks/commit-msg` enforces a discipline that is not visible from the diff,
+so a first commit in a fresh session usually bounces. Both sections go in the
+commit message body:
+
+- **`## World Model`** — every commit answers "did a belief about the system
+  change here?" Either `Signal: <type> — <what flipped, against which prior
+  belief>`, or an explicit `Signals: acknowledged-none`. Silence is rejected;
+  "nothing to report" is a conscious declaration, not an omission.
+- **`## Membrane`** — if a belief-class signal fired, the concept must be
+  gardened **in the same commit**, never queued. Stage `concepts/frag-<id>.md`
+  and declare `Action:` (`create` | `evolve` | `merge` | `split` | `correct`)
+  plus `Concept:`, with `Occludes:` on evolve, `Parents:` on merge/split, and
+  `Severs:` + `Reason:` on correct. Nothing belief-worthy → `Evolution:
+  acknowledged-none`.
+
+Concepts live in-repo under `concepts/` (109 of them at time of writing) — one
+belief per file, prose body, stable opaque id. **Survey before you create**: the
+belief you are about to write down usually already exists and wants `evolve`,
+and the hard call is evolve-versus-correct (`correct` means "was NEVER right";
+when unsure it is `evolve`). Read `skill://membrane` for the full discipline,
+and write the belief — the ruling, the why, the open questions — never a prose
+restatement of code, line numbers, or probe results the repo already holds.
+
+`--no-verify` exists and is the wrong answer; the hook is the discipline.
