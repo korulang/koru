@@ -4610,6 +4610,21 @@ pub fn emitInlineBodyNode(
         inline_code = inline_code[marker_idx + inline_stmt_marker.len ..];
     }
 
+    // Give this rendered body its own `for` capture BEFORE any branch below
+    // decides how to emit it. It used to be done inside the effect-branch
+    // branch alone, so which of the three exits a body took decided whether it
+    // was safe — and the exit is chosen by inline eligibility, not by the
+    // source. The same nested-`for` program was therefore safe from the entry
+    // file and a Zig shadowing error from inside a module (115_004 against its
+    // green original 2106). Uniquifying at the entry makes the property belong
+    // to the BODY, which is where it always belonged.
+    var inline_code_uniq: ?[]u8 = null;
+    defer if (inline_code_uniq) |owned| ctx.allocator.free(owned);
+    if (try uniquifyForCapture(ctx, inline_code)) |uniq| {
+        inline_code_uniq = uniq;
+        inline_code = uniq;
+    }
+
     const trimmed_inline = std.mem.trimRight(u8, inline_code, " \t\r\n");
     // Check if inline code is already a statement (ends with ;) or is comment-only (no ; needed)
     const is_comment_only = blk: {
@@ -4676,31 +4691,6 @@ pub fn emitInlineBodyNode(
                 } else {
                     try inline_terminal_conts.append(ctx.allocator, cont);
                 }
-            }
-
-            // Uniquify the `for`-template loop capture. The `~for` template
-            // (koru_std/control.kz) renders a hardcoded `for (..) |__koru_item|`
-            // capture and passes `__koru_item` as the splice arg. When one `for`
-            // splices another (`for(..) ! each i |> for(..) ! each j |> …`), both
-            // instances land in the SAME Zig function with the same capture name,
-            // and Zig rejects `capture '__koru_item' shadows capture from outer
-            // scope`. Give each template instance a unique capture by rewriting
-            // the bare `__koru_item` token to `__koru_item_<for_id>` throughout
-            // this rendered body (both the `|capture|` site and the splice arg).
-            // Mirrors the `__for_item_<id>` uniquification on the legacy foreach
-            // path. We rewrite a private copy; the original AST string is left
-            // untouched.
-            const KORU_ITEM = "__koru_item";
-            var inline_code_owned: ?[]u8 = null;
-            defer if (inline_code_owned) |owned| ctx.allocator.free(owned);
-            if (std.mem.indexOf(u8, inline_code, KORU_ITEM) != null) {
-                const for_id = ctx.for_counter;
-                ctx.for_counter += 1;
-                var unique_buf: [64]u8 = undefined;
-                const unique_item = std.fmt.bufPrint(&unique_buf, "__koru_item_{d}", .{for_id}) catch KORU_ITEM;
-                const rewritten = try std.mem.replaceOwned(u8, ctx.allocator, inline_code, KORU_ITEM, unique_item);
-                inline_code_owned = rewritten;
-                inline_code = rewritten;
             }
 
             // SPLICE path: a template can request a handler body be inlined
@@ -5955,6 +5945,32 @@ fn rewriteInlineHasDeclPresence(
     return try out.toOwnedSlice(allocator);
 }
 
+/// Give this rendered template body its own `for` loop capture, or null when it
+/// carries none. Returns an OWNED copy; the caller frees it.
+///
+/// The `~for` template (koru_std/control.kz) renders a hardcoded
+/// `for (..) |__koru_item|` and passes `__koru_item` as the splice arg, so two
+/// instances in one Zig function collide: `capture '__koru_item' shadows
+/// capture from outer scope`.
+///
+/// TWO emit paths render a template body into the enclosing scope — the
+/// site-local inline splice and the effect-INLINING splice below — and only the
+/// first did this. Which path a nested `for` takes is decided by inline
+/// eligibility, not by the source, so the SAME program compiled from the entry
+/// file and from an imported module took different paths and only one of them
+/// was safe (115_004 against its green original 2106). One implementation, two
+/// call sites, so the next path to render a template inherits the fix rather
+/// than the bug.
+fn uniquifyForCapture(ctx: *EmissionContext, code: []const u8) !?[]u8 {
+    const KORU_ITEM = "__koru_item";
+    if (std.mem.indexOf(u8, code, KORU_ITEM) == null) return null;
+    const for_id = ctx.for_counter;
+    ctx.for_counter += 1;
+    var unique_buf: [64]u8 = undefined;
+    const unique_item = std.fmt.bufPrint(&unique_buf, "__koru_item_{d}", .{for_id}) catch KORU_ITEM;
+    return try std.mem.replaceOwned(u8, ctx.allocator, code, KORU_ITEM, unique_item);
+}
+
 /// Emit the inline lowering at the invocation site. `result_name` is null
 /// for the zero-terminal (statement) shape.
 fn emitInlineEffectfulCall(
@@ -5992,6 +6008,17 @@ fn emitInlineEffectfulCall(
         break :blk try rewriteEffectfulProcBody(ctx.allocator, presence_resolved, elig.event_decl, conts, label, mod_prefix);
     } else try renderEffectfulFlowBody(ctx, elig.event_decl, elig.flow.?, conts, label, mod_prefix);
     defer ctx.allocator.free(rewritten.text);
+
+    // This path renders a template body into the ENCLOSING scope too, so it
+    // needs its own `for` capture for the same reason the site-local splice
+    // does — see `uniquifyForCapture`.
+    var spliced_text: []const u8 = rewritten.text;
+    var spliced_owned: ?[]u8 = null;
+    defer if (spliced_owned) |owned| ctx.allocator.free(owned);
+    if (try uniquifyForCapture(ctx, rewritten.text)) |uniq| {
+        spliced_owned = uniq;
+        spliced_text = uniq;
+    }
 
     // A label is only legal if something breaks to it; a statement block
     // takes no trailing semicolon. (The const form always has breaks —
@@ -6069,7 +6096,7 @@ fn emitInlineEffectfulCall(
     }
 
     try emitter.writeIndent();
-    try emitInlineCodeResolvingSplices(emitter, ctx, rewritten.text, conts);
+    try emitInlineCodeResolvingSplices(emitter, ctx, spliced_text, conts);
     try emitter.write("\n");
 
     emitter.dedent();

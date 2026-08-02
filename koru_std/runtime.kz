@@ -243,6 +243,15 @@ const koru_parser = @import("koru_parser");
         name: []const u8,
         source_text: []const u8,
         annotations: []const []const u8,
+        /// The module the `register` block was WRITTEN in, as its
+        /// import-derived logical name (`app.lib`), or null at program top
+        /// level. A scope entry names a tor the way the author writes it in the
+        /// interpreted source — bare `expensive` — while the event registers
+        /// under `app.lib:expensive`, so the lookup needs the home to close the
+        /// gap. Without it the entry resolved to nothing, the registry came up
+        /// with zero events, and the program COMPILED and took its
+        /// `| scope-not-found` arm at run time (115_036).
+        home_module: ?[]const u8,
     };
 
     const EventInfo = struct {
@@ -264,6 +273,8 @@ const koru_parser = @import("koru_parser");
         name: []const u8,
         internal_name: ?[]const u8,
         cost: u64,
+        /// The home of the scope that named this event — see `ScopeDef`.
+        home: ?[]const u8,
     };
 
     const RegistryHelper = struct {
@@ -305,7 +316,7 @@ const koru_parser = @import("koru_parser");
                 switch (prog_item) {
                     .flow => |flow_item| {
                         if (isRegisterFlow(flow_item.inv())) {
-                            addScopeDef(alloc, &defs, flow_item.inv(), flow_item.annotations);
+                            addScopeDef(alloc, &defs, flow_item.inv(), flow_item.annotations, null);
                         }
                     },
                     .module_decl => |mod| {
@@ -313,7 +324,7 @@ const koru_parser = @import("koru_parser");
                             if (mod_item == .flow) {
                                 const flow_item = mod_item.flow;
                                 if (isRegisterFlow(flow_item.inv())) {
-                                    addScopeDef(alloc, &defs, flow_item.inv(), flow_item.annotations);
+                                    addScopeDef(alloc, &defs, flow_item.inv(), flow_item.annotations, mod.logical_name);
                                 }
                             }
                         }
@@ -339,6 +350,7 @@ const koru_parser = @import("koru_parser");
             defs: *std.ArrayList(ScopeDef),
             inv: *const ast_reg.Invocation,
             annotations: []const []const u8,
+            home: ?[]const u8,
         ) void {
             var source_text: []const u8 = "";
             for (inv.args) |arg| {
@@ -353,6 +365,7 @@ const koru_parser = @import("koru_parser");
                 .name = alloc.dupe(u8, name) catch name,
                 .source_text = alloc.dupe(u8, source_text) catch source_text,
                 .annotations = annotations,
+                .home_module = if (home) |h| (alloc.dupe(u8, h) catch h) else null,
             }) catch {};
         }
 
@@ -431,11 +444,29 @@ const koru_parser = @import("koru_parser");
             return null;
         }
 
-        fn appendUnique(events: *std.ArrayList(ResolvedEvent), alloc: std.mem.Allocator, name: []const u8, internal_name: ?[]const u8, cost: u64) void {
+        /// A scope entry names an event the way the interpreted source will:
+        /// bare `expensive`. An event declared inside a module registers as
+        /// `app.lib:expensive`. Try the bare name first — a top-level event
+        /// wins its own name — then the scope's own home. Two lookups, not a
+        /// substring match, so a scope can never silently reach into a module
+        /// it was not written in.
+        fn findEventInfoHomed(
+            alloc: std.mem.Allocator,
+            event_infos: []const EventInfo,
+            name: []const u8,
+            home: ?[]const u8,
+        ) ?*const EventInfo {
+            if (findEventInfo(event_infos, name)) |info| return info;
+            const h = home orelse return null;
+            const qualified = std.fmt.allocPrint(alloc, "{s}:{s}", .{ h, name }) catch return null;
+            return findEventInfo(event_infos, qualified);
+        }
+
+        fn appendUnique(events: *std.ArrayList(ResolvedEvent), alloc: std.mem.Allocator, name: []const u8, internal_name: ?[]const u8, cost: u64, home: ?[]const u8) void {
             for (events.items) |existing| {
                 if (std.mem.eql(u8, existing.name, name)) return;
             }
-            events.append(alloc, .{ .name = name, .internal_name = internal_name, .cost = cost }) catch {};
+            events.append(alloc, .{ .name = name, .internal_name = internal_name, .cost = cost, .home = home }) catch {};
         }
 
         fn resolveScope(
@@ -455,11 +486,11 @@ const koru_parser = @import("koru_parser");
 
             for (entries) |entry| {
                 switch (entry.kind) {
-                    .event => appendUnique(out_events, alloc, entry.name, entry.internal_name, entry.cost),
+                    .event => appendUnique(out_events, alloc, entry.name, entry.internal_name, entry.cost, scope_def.home_module),
                     .glob => {
                         for (event_infos) |info| {
                             if (Helpers.matchGlob(entry.name, info.name)) {
-                                appendUnique(out_events, alloc, info.name, null, entry.cost);
+                                appendUnique(out_events, alloc, info.name, null, entry.cost, null);
                             }
                         }
                     },
@@ -678,7 +709,7 @@ const koru_parser = @import("koru_parser");
     // them, carrying the annotations into the new program.
     for (resolved_events.items) |resolved| {
         const lookup_name = resolved.internal_name orelse resolved.name;
-        const info = RegistryHelper.findEventInfo(event_infos, lookup_name) orelse continue;
+        const info = RegistryHelper.findEventInfoHomed(allocator, event_infos, lookup_name, resolved.home) orelse continue;
         // Retain the event_decl
         const mutable_decl = @constCast(info.event_decl);
         const new_anns = allocator.alloc([]const u8, mutable_decl.annotations.len + 1) catch continue;
@@ -695,7 +726,7 @@ const koru_parser = @import("koru_parser");
     var events_list = std.ArrayList(EventEntry){ .items = &.{}, .capacity = 0 };
     for (resolved_events.items) |resolved| {
         const lookup_name = resolved.internal_name orelse resolved.name;
-        const info = RegistryHelper.findEventInfo(event_infos, lookup_name) orelse continue;
+        const info = RegistryHelper.findEventInfoHomed(allocator, event_infos, lookup_name, resolved.home) orelse continue;
         const obligations = extractObligations(allocator, info.event_decl, info.module_name);
         const branches = extractBranches(allocator, info.event_decl);
         const symbol = Helpers.buildEventSymbol(allocator, info.module_name, info.event_decl.path.segments, program.main_module_name);
@@ -1211,53 +1242,82 @@ fn mangleScopeName(comptime name: []const u8) []const u8 {
     return buf[0..];
 }
 
-fn buildScopeTable() []const ScopeRuntime {
-    const root = @import("root");
-    const decls = std.meta.declarations(root.main_module);
+/// Every namespace a generated scope registry can live in: the root itself,
+/// its struct declarations, and theirs — `main_module`, `koru_app`, and
+/// `koru_app.koru_lib`, two levels being exactly the depth the emitter nests
+/// a dotted module name to.
+///
+/// A `register` written inside a library emits its descriptor and dispatcher
+/// BESIDE the events they name, which is the only place they can be: Zig gives
+/// a sibling struct no path to the entry struct, so the dispatcher has to sit
+/// where it can reach `koru_app.koru_lib.expensive_event`. A table built from
+/// `main_module` alone therefore found nothing — and found nothing SILENTLY.
+/// The program compiled, ran, and took its `| scope-not-found` arm: a
+/// well-formed answer built on an empty registry, which is the one failure
+/// shape on this boundary with no compile step left to fail in (115_036).
+fn scopeNamespaces() []const type {
+    return collectNamespaces(@import("root"), 2, &[_]type{});
+}
 
+fn collectNamespaces(comptime C: type, comptime depth: usize, comptime acc: []const type) []const type {
+    comptime var out: []const type = acc ++ &[_]type{C};
+    if (depth == 0) return out;
+    inline for (std.meta.declarations(C)) |d| {
+        const V = @field(C, d.name);
+        if (@TypeOf(V) != type) continue;
+        if (@typeInfo(V) != .@"struct") continue;
+        out = collectNamespaces(V, depth - 1, out);
+    }
+    return out;
+}
+
+fn buildScopeTable() []const ScopeRuntime {
     comptime var count: usize = 0;
-    inline for (decls) |decl| {
-        if (!std.mem.endsWith(u8, decl.name, "_descriptor")) continue;
-        const decl_value = @field(root.main_module, decl.name);
-        if (@TypeOf(decl_value) != ScopeDescriptor) continue;
-        const desc = decl_value;
-        const scope_ident = mangleScopeName(desc.name);
-        const dispatch_name = std.fmt.comptimePrint("dispatch_{s}", .{scope_ident});
-        if (!@hasDecl(root.main_module, dispatch_name)) continue;
-        count += 1;
+    inline for (comptime scopeNamespaces()) |NS| {
+        inline for (std.meta.declarations(NS)) |decl| {
+            if (!std.mem.endsWith(u8, decl.name, "_descriptor")) continue;
+            const decl_value = @field(NS, decl.name);
+            if (@TypeOf(decl_value) != ScopeDescriptor) continue;
+            const scope_ident = mangleScopeName(decl_value.name);
+            const dispatch_name = std.fmt.comptimePrint("dispatch_{s}", .{scope_ident});
+            if (!@hasDecl(NS, dispatch_name)) continue;
+            count += 1;
+        }
     }
 
     var table: [count]ScopeRuntime = undefined;
     comptime var i: usize = 0;
-    inline for (decls) |decl| {
-        if (!std.mem.endsWith(u8, decl.name, "_descriptor")) continue;
-        const decl_value = @field(root.main_module, decl.name);
-        if (@TypeOf(decl_value) != ScopeDescriptor) continue;
-        const desc = decl_value;
-        const scope_ident = mangleScopeName(desc.name);
-        const dispatch_name = std.fmt.comptimePrint("dispatch_{s}", .{scope_ident});
-        if (!@hasDecl(root.main_module, dispatch_name)) continue;
+    inline for (comptime scopeNamespaces()) |NS| {
+        inline for (std.meta.declarations(NS)) |decl| {
+            if (!std.mem.endsWith(u8, decl.name, "_descriptor")) continue;
+            const decl_value = @field(NS, decl.name);
+            if (@TypeOf(decl_value) != ScopeDescriptor) continue;
+            const desc = decl_value;
+            const scope_ident = mangleScopeName(desc.name);
+            const dispatch_name = std.fmt.comptimePrint("dispatch_{s}", .{scope_ident});
+            if (!@hasDecl(NS, dispatch_name)) continue;
 
-        const cost_name = std.fmt.comptimePrint("get_event_cost_{s}", .{scope_ident});
-        const creates_name = std.fmt.comptimePrint("get_creates_obligations_{s}", .{scope_ident});
-        const discharges_name = std.fmt.comptimePrint("get_discharges_obligations_{s}", .{scope_ident});
-        const discharge_event_name = std.fmt.comptimePrint("get_discharge_event_{s}", .{scope_ident});
-        const creates_spec_name = std.fmt.comptimePrint("get_creates_spec_{s}", .{scope_ident});
-        const discharges_spec_name = std.fmt.comptimePrint("get_discharges_spec_{s}", .{scope_ident});
-        const branches_name = std.fmt.comptimePrint("get_event_branches_{s}", .{scope_ident});
+            const cost_name = std.fmt.comptimePrint("get_event_cost_{s}", .{scope_ident});
+            const creates_name = std.fmt.comptimePrint("get_creates_obligations_{s}", .{scope_ident});
+            const discharges_name = std.fmt.comptimePrint("get_discharges_obligations_{s}", .{scope_ident});
+            const discharge_event_name = std.fmt.comptimePrint("get_discharge_event_{s}", .{scope_ident});
+            const creates_spec_name = std.fmt.comptimePrint("get_creates_spec_{s}", .{scope_ident});
+            const discharges_spec_name = std.fmt.comptimePrint("get_discharges_spec_{s}", .{scope_ident});
+            const branches_name = std.fmt.comptimePrint("get_event_branches_{s}", .{scope_ident});
 
-        table[i] = .{
-            .name = desc.name,
-            .dispatcher = &@field(root.main_module, dispatch_name),
-            .cost_fn = if (@hasDecl(root.main_module, cost_name)) &@field(root.main_module, cost_name) else null,
-            .creates_obligations_fn = if (@hasDecl(root.main_module, creates_name)) &@field(root.main_module, creates_name) else null,
-            .discharges_obligations_fn = if (@hasDecl(root.main_module, discharges_name)) &@field(root.main_module, discharges_name) else null,
-            .discharge_event_fn = if (@hasDecl(root.main_module, discharge_event_name)) &@field(root.main_module, discharge_event_name) else null,
-            .creates_spec_fn = if (@hasDecl(root.main_module, creates_spec_name)) &@field(root.main_module, creates_spec_name) else null,
-            .discharges_spec_fn = if (@hasDecl(root.main_module, discharges_spec_name)) &@field(root.main_module, discharges_spec_name) else null,
-            .branches_fn = if (@hasDecl(root.main_module, branches_name)) &@field(root.main_module, branches_name) else null,
-        };
-        i += 1;
+            table[i] = .{
+                .name = desc.name,
+                .dispatcher = &@field(NS, dispatch_name),
+                .cost_fn = if (@hasDecl(NS, cost_name)) &@field(NS, cost_name) else null,
+                .creates_obligations_fn = if (@hasDecl(NS, creates_name)) &@field(NS, creates_name) else null,
+                .discharges_obligations_fn = if (@hasDecl(NS, discharges_name)) &@field(NS, discharges_name) else null,
+                .discharge_event_fn = if (@hasDecl(NS, discharge_event_name)) &@field(NS, discharge_event_name) else null,
+                .creates_spec_fn = if (@hasDecl(NS, creates_spec_name)) &@field(NS, creates_spec_name) else null,
+                .discharges_spec_fn = if (@hasDecl(NS, discharges_spec_name)) &@field(NS, discharges_spec_name) else null,
+                .branches_fn = if (@hasDecl(NS, branches_name)) &@field(NS, branches_name) else null,
+            };
+            i += 1;
+        }
     }
 
     return table[0..];
