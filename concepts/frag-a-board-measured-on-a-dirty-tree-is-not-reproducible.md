@@ -43,6 +43,34 @@ why. Committing it separately also *fixes the reproducibility*, since the number
 then genuinely follows from the tree. That is the move: commit, attribute, then
 publish.
 
+**The tree is one input the commit does not name; MACHINE LOAD is another.**
+2026-08-02, the same failure through a different door. A full board published
+`210_034_parser_wrapper` as a regression. The test completes cold in ~9s and had
+been green in the twelve preceding snapshots; it blew the harness's 300s budget
+because the machine was at load average 51–78 and the run starved it. Nothing
+was wrong with the tree, the commit, or the compiler.
+
+That budget is WALL CLOCK inside a parallel run, so a timeout is the one verdict
+the harness can reach without learning anything about the code — and it was
+recorded identically to a real failure. Downstream, the snapshot-to-snapshot diff
+turned it into an `activity: regression` entry and the Discord post announced
+"❌ 1 regressed" against the compiler. **That is the wrong-cause failure this
+concept already calls the worse one, arrived at with a perfectly clean tree.**
+
+So the claim generalises: *a published board is only checkable if every input
+that can move it is named by the commit.* The tree is one such input. Machine
+load is another, and there will be more. The fix that landed is narrow and it is
+the right shape — never believe a first timeout; retry once and record the
+failure only when the second attempt agrees, because a genuine hang reproduces
+deterministically and a starved test does not.
+
+**And do not repair the record by editing the measurement.** The honest
+correction is forward: the next board shows it green, and the trail reads flake
+then green. Rewriting a committed snapshot so an old post looks right is editing
+a measurement to match a conclusion — see
+[[frag-a-cost-the-optimizer-deletes-was-never-there]], which was retracted the
+same day for that exact class of error.
+
 **Open:** the harness could refuse, or annotate. A snapshot could carry a
 `dirty: [paths]` field and the site could show a board measured on an unclean
 tree differently from one that is reproducible. Today the only thing standing

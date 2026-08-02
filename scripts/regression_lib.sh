@@ -1843,13 +1843,15 @@ EOF
 # on expiry we SIGKILL the whole group (`kill -- -PGID`), tearing down the entire
 # koruc→zig→backend tree. Killing only the parent — the default — is exactly why
 # orphans survived. A fired watchdog is recorded as a loud FAILURE, never a silent
-# stall. Default 300s ≫ the slowest legit test (no false positives); tune via
+# stall — but only after a SECOND attempt agrees (see run_one_test_watched).
+# Default 300s ≫ the slowest legit test (no false positives); tune via
 # KORU_TEST_TIMEOUT.
 : "${KORU_TEST_TIMEOUT:=300}"
 
-run_one_test_watched() {
+# One attempt under the watchdog. Returns 137 iff the watchdog fired.
+_run_one_test_attempt() {
     local tdir="$1"
-    local quiet="${2:-false}"
+    local quiet="$2"
     set -m  # job control → the backgrounded job becomes its own process-group leader
     if [ "$quiet" = "true" ]; then
         regression_run_one_test "$tdir" >/dev/null 2>&1 &
@@ -1869,12 +1871,38 @@ run_one_test_watched() {
     local rc=$?
     kill "$watchdog" 2>/dev/null; wait "$watchdog" 2>/dev/null
     set +m
+    return "$rc"
+}
+
+run_one_test_watched() {
+    local tdir="$1"
+    local quiet="${2:-false}"
+    _run_one_test_attempt "$tdir" "$quiet"
+    local rc=$?
     # rc 137 = 128 + SIGKILL(9): the watchdog fired (a koruc/zig-build compile hang —
     # the inner binary run already has its own `timeout`). The killed test wrote no
-    # SUCCESS/FAILURE, so classify it as a hang here.
+    # SUCCESS/FAILURE.
+    #
+    # A timeout is the ONE failure mode that does not distinguish "the code is
+    # broken" from "the instrument did not get an answer", because the budget is
+    # WALL CLOCK inside a parallel run. A genuine hang blows it again,
+    # deterministically; a test merely starved of CPU does not. Measured
+    # 2026-08-02: 210_034 and 670_021 both blew the 300s budget on a machine at
+    # load average 51–78, and both complete cold in ~9s — so a single attempt makes
+    # the board's pass count a function of who else was compiling at the time, and
+    # publishes the spike as a regression against the compiler.
+    #
+    # So: never believe the first timeout. Retry once, and only record the failure
+    # when the second attempt agrees. A real hang costs one extra budget on the
+    # slowest path there is; a starved test costs nothing and stops lying.
+    if [ "$rc" -eq 137 ]; then
+        rm -f "$tdir/SUCCESS" "$tdir/FAILURE"
+        _run_one_test_attempt "$tdir" "$quiet"
+        rc=$?
+    fi
     if [ "$rc" -eq 137 ]; then
         rm -f "$tdir/SUCCESS"
-        echo "TIMEOUT after ${KORU_TEST_TIMEOUT}s — possible infinite loop / hang in compile (koruc or zig build)" > "$tdir/FAILURE"
+        echo "TIMEOUT after ${KORU_TEST_TIMEOUT}s on TWO attempts — infinite loop / hang in compile (koruc or zig build)" > "$tdir/FAILURE"
     fi
     return "$rc"
 }
