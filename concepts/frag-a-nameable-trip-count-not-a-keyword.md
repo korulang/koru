@@ -107,3 +107,44 @@ Two boundaries keep the belief honest:
   (the fold probe, same day: ~4x). That license is semantic — a summation
   order the surface would have to grant — not an aliasing fact any `for`
   form can assert.
+
+## An exemption can be conditional on a whole-program fact
+
+The removal-aware rule loop is listed among the fourteen honest `while`s above,
+and the reason given was sound: a `take` under a rule swap-removes, so the pass
+must revisit the slot the moved row landed in. `690_031` is adversarial about
+exactly that and is the wall which keeps it honest.
+
+That classification was right about the **site** and wrong about its **scope**.
+The loop needs removal tolerance only when a row can actually be removed — and
+whether one can is not a property of the loop at all. It is a property of the
+program the loop runs in. A program that never takes cannot remove a row from
+anywhere, so every rule pass in it can name its end before it begins, and the
+exemption simply is not in force.
+
+So the question this belief turns on — *can I name the end before I begin?* —
+has a third answer besides yes and no: **yes, for this program.** An exemption
+register that admits only yes and no will hold a loop at its tolerant form
+forever on the strength of a possibility that never arises in the program being
+compiled. Exemptions want a condition, not just a reason.
+
+Two things keep this from becoming a licence:
+
+- **Ask the question of the widest scope that can answer it.** Asked of the
+  arm, the answer is unsound — a `take` reached through a called flow is
+  invisible there, and the loop would silently drop tolerance it needed. Asked
+  of the program, the answer is sound by construction. When a cheap wide
+  question and an expensive narrow one disagree on soundness, the wide one is
+  not the approximation — it is the correct one, and the narrow one is the
+  optimisation to earn later.
+- **A conditional exemption must fail toward the slow form.** Being wrong about
+  "this program never removes" produces a pass that skips rows; being wrong the
+  other way produces a pass that is merely slower. The condition is written so
+  that any doubt — one mention of the removing verb anywhere — keeps the
+  tolerant loop.
+
+The prize was also smaller than the isolated measurement promised, and that is
+the ordinary shape of a loop-form win rather than a disappointment. The tolerant
+form's cost is real, but a pass carrying other per-row waste dilutes it; the
+loop form is worth what Amdahl leaves it. Fix the largest term first and the
+loop form's share grows.

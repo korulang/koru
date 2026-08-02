@@ -1445,6 +1445,65 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             // row scan. Preorder is a program-position walk: it takes no
             // standing insert subscription and joins no stripe.
             is_preorder: bool,
+            // Does this rule's body REMOVE rows? Only a `take` on this store
+            // can, and only then does the pass need the row-removal-tolerant
+            // `while` form (690_031: swap-remove drops the last row into the
+            // freed slot, so a shrinking len must re-check the SAME index).
+            // The tolerant form's conditional increment is a loop-carried
+            // dependency on a LOAD of `len`, which costs the pass its
+            // vectorisation — measured at 1.45x on a 10k-row rule. Rules that
+            // cannot remove get the same `for (0..len)` the query path uses.
+            // Detection is deliberately CONSERVATIVE: any mention of take
+            // anywhere under the arm keeps the tolerant form.
+            may_remove: bool,
+        };
+        // Can ANY row of this store be removed while a rule pass is running?
+        // Only a `take` can remove one, and a take reached through a CALLED
+        // flow is invisible to a scan of the rule's own arm — so the question
+        // is asked of the WHOLE PROGRAM, not of the arm. A program that never
+        // mentions take cannot remove a row from anywhere, by construction,
+        // and every one of its rule passes can use the query path's
+        // `for (0..len)` instead of the removal-tolerant `while`.
+        //
+        // Deliberately blunt: one mention of take anywhere keeps every rule in
+        // the program on the tolerant form. That is the safe direction, and a
+        // per-store reachability analysis is the refinement, not the rung.
+        const TakeScan = struct {
+            fn textHas(t: []const u8) bool {
+                return std.mem.indexOf(u8, t, "take") != null;
+            }
+            fn cont(c: *const ast.Continuation) bool {
+                if (c.condition) |cd| {
+                    if (textHas(cd)) return true;
+                }
+                if (c.node) |n| {
+                    if (n == .invocation) {
+                        for (n.invocation.path.segments) |sg| {
+                            if (textHas(sg)) return true;
+                        }
+                        for (n.invocation.args) |a| {
+                            if (textHas(a.value)) return true;
+                            if (a.expression_value) |ev| {
+                                if (textHas(ev.text)) return true;
+                            }
+                            if (a.source_value) |sv| {
+                                if (textHas(sv.text)) return true;
+                            }
+                        }
+                    }
+                }
+                for (c.continuations) |*k| {
+                    if (cont(k)) return true;
+                }
+                return false;
+            }
+        };
+        const program_may_remove = blk_pmr: {
+            for (program.items) |pi2| {
+                if (pi2 != .flow) continue;
+                if (TakeScan.cont(&pi2.flow.body)) break :blk_pmr true;
+            }
+            break :blk_pmr false;
         };
         var qsites = std.ArrayList(QuerySite).initCapacity(allocator, 4) catch unreachable;
         for (program.items) |pi| {
@@ -1550,6 +1609,9 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
             if (ann_parser.getCall(allocator, qf.annotations, "depends_on") catch null) |dc| {
                 for (dc.args) |da| q_deps.append(allocator, allocator.dupe(u8, da) catch unreachable) catch unreachable;
             }
+            // Whole-program answer, computed once above: a take reached through
+            // a called flow is invisible to a scan of this arm.
+            const q_may_remove = program_may_remove;
             qsites.append(allocator, .{
                 .line = qf.location.line,
                 .proj_names = pnames.toOwnedSlice(allocator) catch unreachable,
@@ -1561,6 +1623,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 .deps = q_deps.toOwnedSlice(allocator) catch unreachable,
                 .rule_module = allocator.dupe(u8, qf.module) catch unreachable,
                 .is_preorder = q_is_preorder,
+                .may_remove = q_may_remove,
             }) catch unreachable;
         }
 
@@ -3224,7 +3287,7 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 \\    }}
                 \\}}
                 \\return;
-            , .{ CAP, store_name, store_name, store_name, qrow_name, store_name, store_name, store_name, store_name }) catch unreachable else std.fmt.allocPrint(allocator,
+            , .{ CAP, store_name, store_name, store_name, qrow_name, store_name, store_name, store_name, store_name }) catch unreachable else if (qs.may_remove) std.fmt.allocPrint(allocator,
                 \\var __koru_i: usize = 0;
                 \\while (__koru_i < __koru_store_{s}.len) {{
                 \\    const __koru_len_before = __koru_store_{s}.len;
@@ -3232,7 +3295,16 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
                 \\    if (__koru_store_{s}.len >= __koru_len_before) __koru_i += 1;
                 \\}}
                 \\return;
-            , .{ store_name, store_name, qrow_name, store_name }) catch unreachable;
+            , .{ store_name, store_name, qrow_name, store_name }) catch unreachable else std.fmt.allocPrint(allocator,
+                // A rule that cannot remove a row needs no removal tolerance,
+                // so it gets the query path's loop: the trip count is read
+                // once and the induction variable carries no dependency on a
+                // load, which is what lets the pass vectorise at all.
+                \\for (0..__koru_store_{s}.len) |__koru_i| {{
+                \\    main_module.{s}_event.handler(.{{ .row = @as(i64, @intCast(__koru_i)) }});
+                \\}}
+                \\return;
+            , .{ store_name, qrow_name }) catch unreachable;
             appended_items.append(allocator, ast.Item{ .proc_decl = ast.ProcDecl{
                 .path = H.mkPathH(allocator, flow.module, qsweep_name),
                 .body = ast.Source{ .text = sweep_body, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
