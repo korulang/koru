@@ -60,12 +60,43 @@ the feature was never real, and what the fix broke was an illusion.
   a handle is not an index — and a surface that accepts either, silently, has
   already conceded the point.
 
+## Ruled, same day: `store[cell]` addresses by HANDLE
+
+Lars ruled it on a general principle rather than on the case: **almost nothing
+in Koru is positional, and `stored`/`captured` must not be where that gets
+introduced.** That is stronger than arguing the UI case, and it decided a
+question the case itself is genuinely ambiguous about — a list cursor really is
+positional in most languages.
+
+The programs then agreed. 690_075 writes through `ui.sel` and TAKES through
+`ui.sel`, meaning the same row both times; under the positional reading a take
+swap-removes the last row into the freed slot, so the two uses can name
+different rows. Every migrated test kept its expected output byte-for-byte,
+including 690_070's — the intent was identity all along and only the spelling
+was positional.
+
+**The migration cost less than the surface it was standing on suggested**, and
+that is worth remembering when the next disabled guard turns tests red. The
+scariest-looking casualty, `take`'s `| empty` branch, appeared to lose its only
+trigger with out-of-range addressing gone. It had not: `take` resolves through
+the NON-panicking lookup precisely so absence is a branch, and its own comment
+already listed the family — never inserted, already taken, the -1 sentinel. A
+stale handle reaches `| empty` on identity grounds, which is a better trigger
+than an out-of-bounds offset ever was. The answer was in the code before the
+question was asked.
+
+**What the ruling unlocks is larger than what it cost.** With no user-facing
+surface accepting a raw row index, a dense cursor becomes purely internal to a
+lowering. The rule path can then carry one with nothing to leak into, so the
+handle-elision rung is unconditionally safe rather than safe-if-we-can-prove-
+the-body-never-observes-it. Ruling out a positional surface made a positional
+*optimisation* legal.
+
 ## Open
 
-Whether `store[cell]` should address by dense index or by handle is a genuine
-semantic choice and is NOT settled by closing the guard. Both readings are
-defensible: a UI's "selected row" is honestly positional, while everything the
-handle machinery exists for is identity. What is not defensible is the status
-quo ante, where it was whichever one the brand happened to permit. The three
-tests that went red name the decision; they should not be migrated until it is
-made.
+Whether the reserved `row` ordinal a sweep arm can bind (690_069, red) survives
+this principle. It hands the body a row's POSITION, which is the same thing the
+ruling just refused at the addressing surface. It may be that the ordinal is
+fine because it is read-only and never round-trips into an address — or it may
+be the last positional surface, still open only because it was never finished.
+Not examined.

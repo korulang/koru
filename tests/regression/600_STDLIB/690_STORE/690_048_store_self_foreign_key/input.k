@@ -24,5 +24,12 @@ std/store:insert(nodes) { val: 100, next: -1 }
     | row b |> std/store:stored { nodes[a].next: b }
         |> std/store:stored { nodes[a.next].val: 777 }
 
+// THE PRINTED `next` IS THE HANDLE'S RAW ENCODING, and pinning it is deliberate
+// as of 2026-08-02. A handle is `slot | (brand << 24) | (gen << 32)`; row b is
+// slot 1 of a store whose brand is 1, so it reads 16777217. This is the only
+// test in the corpus that notices the encoding changing, and it earned the job
+// by catching brands going 1-based (690_242, which closed a wall that was off
+// for the first store declared). If this number moves, the layout moved —
+// establish that on purpose before updating it.
 std/store:query(nodes)
 ! query e when e.val > 0 |> std/io:print.ln("val {{ e.val:d }} next {{ e.next:d }}")
