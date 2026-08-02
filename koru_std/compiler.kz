@@ -1089,24 +1089,53 @@ pub const CompilerContext = struct {
     var set = std.StringHashMap(void).init(alloc);
     S.collect(ctx.original_ast.items, &set, alloc);
 
-    for (updated_ctx.ast.items) |*item| {
-        if (item.* != .flow) continue;
-        const flow: *const ast_mod.Flow = &item.flow;
+    // Flows live at TWO depths. The entry file's are top-level items; an
+    // imported module's arrive wrapped in a single `.module_decl` carrying its
+    // own items. The flat walk this replaced resolved `[with]` for the entry
+    // file alone, so a vocabulary opened inside a library never restamped and
+    // its bare names kept the library's own qualifier — `std/parser:parse` then
+    // refused the grammar's `match(l)` picker as "not the static shape" while
+    // looking straight at it (115_012).
+    //
+    // The stamp to resolve against is the flow's HOME MODULE, not the program's
+    // main module. Stage-A canonicalize stamps a bare name with the module it
+    // was written in; for a library flow that is the library's logical name, so
+    // passing `main_module_name` down made every restamp bail as "already
+    // qualified — not ours". Home is `main_mod` at top level and the enclosing
+    // `.module_decl`'s logical name below it.
+    const Walk = struct {
+        fn items(
+            its: []const ast_mod.Item,
+            home: []const u8,
+            set2: *std.StringHashMap(void),
+            a: std.mem.Allocator,
+            errs: anytype,
+        ) void {
+            for (its) |*item| {
+                switch (item.*) {
+                    .module_decl => |*m| items(m.items, m.logical_name, set2, a, errs),
+                    .flow => |*flow| {
+                        // Collect the vocabularies this flow opens: a flow-head
+                        // `[with]` (the annotation may live on the flow itself)
+                        // plus every mid-chain opener.
+                        var targets = std.ArrayList([]const u8){};
+                        var seen = std.StringHashMap(void).init(a);
+                        for (flow.annotations) |ann| {
+                            if (std.mem.eql(u8, ann, "with")) {
+                                S.addTarget(flow.inv().path.module_qualifier, &targets, &seen, a);
+                            }
+                        }
+                        S.gatherCont(&flow.body, &targets, &seen, a);
+                        if (targets.items.len == 0) continue;
 
-        // Collect the vocabularies this flow opens: a flow-head `[with]` (the
-        // annotation may live on the flow itself) plus every mid-chain opener.
-        var targets = std.ArrayList([]const u8){};
-        var seen = std.StringHashMap(void).init(alloc);
-        for (flow.annotations) |ann| {
-            if (std.mem.eql(u8, ann, "with")) {
-                S.addTarget(flow.inv().path.module_qualifier, &targets, &seen, alloc);
+                        S.walkCont(@constCast(&flow.body), targets.items, home, set2, a, errs, flow.location);
+                    },
+                    else => {},
+                }
             }
         }
-        S.gatherCont(&flow.body, &targets, &seen, alloc);
-        if (targets.items.len == 0) continue;
-
-        S.walkCont(@constCast(&flow.body), targets.items, main_mod, &set, alloc, &updated_ctx.errors, flow.location);
-    }
+    };
+    Walk.items(updated_ctx.ast.items, main_mod, &set, alloc, &updated_ctx.errors);
 
     updated_ctx.passes_completed += 1;
     updated_ctx.current_pass = "resolve_with_scopes";

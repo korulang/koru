@@ -521,10 +521,15 @@ const std = @import("std");
     }
 
     // --- Locate the grammar region in the program ---
+    //
+    // `program.items` is ONE LEVEL DEEP: an imported module arrives as a single
+    // `.module_decl` carrying its own items, so a flat walk cannot see a grammar
+    // declared in a library (115_012). `ast.allFlows` descends. Flattening is
+    // safe for THIS predicate and not in general: the match is on a
+    // `std/parser:grammar(<name>)` invocation, a shape no ordinary flow wears.
     var rules: ?[]const ast.Continuation = null;
-    for (program.items) |*it| {
-        if (it.* != .flow) continue;
-        const g = &it.flow;
+    const grammar_flows = ast.allFlows(allocator, program);
+    for (grammar_flows) |*g| {
         const p = g.inv().path;
         if (p.segments.len != 1 or !std.mem.eql(u8, p.segments[0], "grammar")) continue;
         const q = p.module_qualifier orelse continue;
@@ -669,11 +674,11 @@ const std = @import("std");
     }
 
     // --- Find the first grammar region in the program (mirror parse's walk) ---
+    // Descends through `.module_decl` for the same reason `parse` does: a
+    // grammar declared in an imported library is invisible to a flat walk.
     var found_rules: ?[]const ast.Continuation = null;
     var gname: []const u8 = "";
-    for (program.items) |*it| {
-        if (it.* != .flow) continue;
-        const g = &it.flow;
+    for (ast.allFlows(allocator, program)) |*g| {
         const p = g.inv().path;
         if (p.segments.len != 1 or !std.mem.eql(u8, p.segments[0], "grammar")) continue;
         const q = p.module_qualifier orelse continue;

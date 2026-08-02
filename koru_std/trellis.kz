@@ -84,9 +84,22 @@ const std = @import("std");
     const Arm = struct { pattern: []const u8, ok: bool, message: []const u8 };
     const Violation = struct { message: []const u8, file: []const u8, line: usize, column: usize };
 
+    // The DEFINITION may live in an imported module while the law it arms
+    // governs the whole program — `Walker.walkItems` below already descends
+    // through `.module_decl`, and the lookup that finds the arms had not
+    // (115_038, 115_039). Flattening is safe for THIS predicate: the match is a
+    // `std/trellis:define("<name>")` invocation, a shape no ordinary flow wears.
     const collectArms = struct {
         fn call(alloc: std.mem.Allocator, prog: *const ast.Program, target: []const u8) ?[]Arm {
-            for (prog.items) |*it| {
+            return scan(alloc, prog.items, target);
+        }
+
+        fn scan(alloc: std.mem.Allocator, items: []const ast.Item, target: []const u8) ?[]Arm {
+            for (items) |*it| {
+                if (it.* == .module_decl) {
+                    if (scan(alloc, it.module_decl.items, target)) |a| return a;
+                    continue;
+                }
                 if (it.* != .flow) continue;
                 const f = &it.flow;
                 const inv = f.inv();
@@ -244,9 +257,19 @@ const std = @import("std");
     const Arm = struct { pattern: []const u8, ok: bool, message: []const u8 };
     const Violation = struct { message: []const u8, file: []const u8, line: usize, column: usize };
 
+    // Descends through `.module_decl` — same reason as `enforce` above: the
+    // definition may live in an imported module while the check sits elsewhere.
     const collectArms = struct {
         fn call(alloc: std.mem.Allocator, prog: *const ast.Program, target: []const u8) ?[]Arm {
-            for (prog.items) |*it| {
+            return scan(alloc, prog.items, target);
+        }
+
+        fn scan(alloc: std.mem.Allocator, items: []const ast.Item, target: []const u8) ?[]Arm {
+            for (items) |*it| {
+                if (it.* == .module_decl) {
+                    if (scan(alloc, it.module_decl.items, target)) |a| return a;
+                    continue;
+                }
                 if (it.* != .flow) continue;
                 const f = &it.flow;
                 const inv = f.inv();
