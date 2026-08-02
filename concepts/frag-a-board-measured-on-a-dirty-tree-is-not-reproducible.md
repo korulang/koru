@@ -71,6 +71,29 @@ a measurement to match a conclusion — see
 [[frag-a-cost-the-optimizer-deletes-was-never-there]], which was retracted the
 same day for that exact class of error.
 
+**Third input, and the easiest one to walk into: the tree moving AFTER the
+measurement.** 2026-08-02, same day, third time. The board was measured at
+`94ae27eb` and correctly caught two tests going red. They were fixed in the
+next commit, and the ceremony published from there — so the site read live
+markers and said 1296 while the snapshot's own commit measured 1294, and the
+activity stream announced two regressions that no longer existed.
+
+Nothing here was wrong, exactly: the board was accurate about `94ae27eb`, the
+page was accurate about now, and the fix was real. But the published number no
+longer follows from the commit the snapshot names, which is the whole property
+this concept exists to protect — and it happened without a dirty tree, without
+a foreign session, and without machine load. Simply landing a commit between
+measuring and publishing is enough.
+
+So the rule the ceremony was missing is procedural and narrow: **between the
+board and the publish, the tree does not move.** Fix something in that window
+and you owe either a re-measure or an explicit note that the number and the
+snapshot's commit have parted company. The three inputs found in one day —
+someone else's uncommitted work, machine load, and your own next commit — are
+different doors into the same room, and the general form is the one to hold:
+*a published board is checkable only if every input that can move it is named
+by the commit it cites.*
+
 **Open:** the harness could refuse, or annotate. A snapshot could carry a
 `dirty: [paths]` field and the site could show a board measured on an unclean
 tree differently from one that is reproducible. Today the only thing standing
