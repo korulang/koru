@@ -2,15 +2,23 @@
 // but left in the ENTRY file. Holds the module constant so tor-wrapping and
 // module placement separate as causes for the empty addressing head `take`
 // reports for `todos[ui.sel]`.
+//
+// `ui.sel` HOLDS A HANDLE, not a row position — ruled 2026-08-02. It was the
+// literal 0 until then, which only addressed a row because the handle-validity
+// wall was off for the first store declared (690_242). Position is not identity
+// (O10.iii): a take swap-removes the last row into the freed slot, so an offset
+// names a different row afterwards while a handle names the same one or traps.
+// The handle comes from `| row`, the only place one is minted.
 import std/io
 import std/store
 
 std/store:new(todos, capacity: 8) { done: i64 }
-std/store:new(ui) { sel: 0[i64] }
+std/store:new(ui) { sel: -1[i64] }
 
 pub tor run {}
 run = std/store:insert(todos) { done: 0 }
-| row _ |> std/store:stored { todos[ui.sel].done: 1 }
+| row r |> std/store:stored { ui.sel: r }
+    |> std/store:stored { todos[ui.sel].done: 1 }
     |> std/store:take(todos[ui.sel])
         | item gone |> std/io:print.ln("done {{ gone.done:d }}")
         | empty |> std/io:print.ln("empty")

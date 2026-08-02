@@ -2,6 +2,13 @@
 // keeps naming its row across another row's removal — the stable-handle
 // reading, ruled 2026-07-31.
 //
+// The DIRECTORY NAME says "row index" and the test does not: `sel.at` is
+// loaded from `| row c`, a handle. That is not an accident of wording — an
+// index provably does NOT survive a remove, which is why the corpus's own
+// survival test never used one. The name is positional residue from before
+// the 2026-08-02 ruling that a cell naming a row names it by handle; the id
+// is kept because renaming a test dir breaks every reference to it.
+//
 // The adversarial shape: `sel.at` remembers row c (300); `take(nodes[a])`
 // swap-removes, relocating c into a's old dense position; the write through
 // `sel.at` must land on c WHEREVER IT NOW SITS — the sweep prints 999 where
