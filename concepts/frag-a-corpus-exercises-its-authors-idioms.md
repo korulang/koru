@@ -188,3 +188,34 @@ What follows, and it is cheap:
 - **Pin the value, never the diagnostic, when the tree is in question.** 210_200
   asserts 12 and 8. Had it asserted "no KORU100", the fix that deleted the
   false diagnostic without restoring the dropped call would have passed it.
+
+## The break was at the program's EDGES, not in the workload (fifth sitting)
+
+Every sitting so far read this belief as being about the construct under test:
+the consumer spells the *feature* differently. Pointing the borrowed ECS
+harness at Koru broke something the workload never touches.
+
+A foreign harness does not only hand you a workload. It hands you a **contract
+at the program's edges** — a flag grammar to accept, one machine-readable line
+to emit, a checksum whose only job is to be read by something that is not a
+human. The Koru entry's first failure was not in a sweep. It was that
+`print.ln` cannot print a literal `{`: the message reaches the host's formatter
+AS a format string, so the program's own braces were read as placeholders, and
+no Koru program could emit a JSON line at all (630_006 pins it).
+
+The zero-of-N was available the whole time and costs seconds to compute:
+**1716 print messages in the corpus and not one carries a literal brace.**
+Every one is prose addressed to a human, because every one was written to
+demonstrate something to a human. A compiler author printing "added 3 rows" has
+no reason to type a brace, ever.
+
+So the sharpening is about *which* surfaces a foreign harness reaches:
+
+- **The edges are the least-tested part of a language and the only part every
+  foreign harness touches.** Argument grammar, machine-readable output, exit
+  discipline — a corpus needs none of them, because it supplies its own inputs
+  and reads its own outputs through a diff.
+- **"Point the workload at the compiler" is not enough — ship it under the
+  harness's own contract.** Re-spelling the hot loop in a scratch file would
+  have found nothing here; the break lives only on the path from the program to
+  the results file, which is the one part a scratch file gets to skip.

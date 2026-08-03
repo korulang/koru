@@ -283,6 +283,19 @@ const std = @import("std");
 // if it rides along into runtime emission units where @import("ast") does
 // not exist — Zig only analyzes referenced declarations.
 // ============================================================================
+// A literal `{` or `}` from the user's message has to reach Zig's `std.fmt`
+// DOUBLED, or the message's own braces are read as format placeholders.
+// `{{ … }}` is the interpolation opener and is consumed before a byte ever
+// gets here, so every brace that arrives IS the user's own text.
+//
+// Found by the ECS benchmark: without this no Koru program could print a JSON
+// line — `print.ln("{\"a\":1}")` died inside std.fmt at comptime, in the
+// STDLIB's format string, with no source location the author could act on.
+fn __appendFmtLiteralByte(buf: *std.ArrayList(u8), allocator: std.mem.Allocator, byte: u8) void {
+    if (byte == '{' or byte == '}') buf.append(allocator, byte) catch unreachable;
+    buf.append(allocator, byte) catch unreachable;
+}
+
 fn __printInterpolate(
     expr: []const u8,
     item: anytype,
@@ -445,7 +458,7 @@ fn __printInterpolate(
                 }
             }
             // Not a recognized tag, treat as literal
-            format_buf.append(allocator, content[i]) catch unreachable;
+            __appendFmtLiteralByte(&format_buf, allocator, content[i]);
             i += 1;
         }
         // Look for {{ ... }} placeholders (Liquid-style syntax)
@@ -512,11 +525,11 @@ fn __printInterpolate(
 
                 i = j + 2; // Skip past }}
             } else {
-                format_buf.append(allocator, content[i]) catch unreachable;
+                __appendFmtLiteralByte(&format_buf, allocator, content[i]);
                 i += 1;
             }
         } else {
-            format_buf.append(allocator, content[i]) catch unreachable;
+            __appendFmtLiteralByte(&format_buf, allocator, content[i]);
             i += 1;
         }
     }
@@ -1081,7 +1094,7 @@ fn __printInterpolateJs(
                 '\t' => {
                     format_buf.appendSlice(allocator, "\\t") catch unreachable;
                 },
-                else => format_buf.append(allocator, content[i]) catch unreachable,
+                else => __appendFmtLiteralByte(&format_buf, allocator, content[i]),
             }
             i += 1;
         }
@@ -1164,7 +1177,7 @@ fn __printInterpolateJs(
                     '\t' => {
                         format_buf.appendSlice(allocator, "\\t") catch unreachable;
                     },
-                    else => format_buf.append(allocator, content[i]) catch unreachable,
+                    else => __appendFmtLiteralByte(&format_buf, allocator, content[i]),
                 }
                 i += 1;
             }
@@ -1186,7 +1199,7 @@ fn __printInterpolateJs(
                 '\t' => {
                     format_buf.appendSlice(allocator, "\\t") catch unreachable;
                 },
-                else => format_buf.append(allocator, content[i]) catch unreachable,
+                else => __appendFmtLiteralByte(&format_buf, allocator, content[i]),
             }
             i += 1;
         }
@@ -1462,7 +1475,7 @@ fn __printInterpolateJs(
                     literal_run.appendSlice(allocator, "\\t") catch unreachable;
                 },
                 else => {
-                    format_buf.append(allocator, content[i]) catch unreachable;
+                    __appendFmtLiteralByte(&format_buf, allocator, content[i]);
                     literal_run.append(allocator, content[i]) catch unreachable;
                 },
             }
@@ -1546,7 +1559,7 @@ fn __printInterpolateJs(
                         literal_run.appendSlice(allocator, "\\t") catch unreachable;
                     },
                     else => {
-                        format_buf.append(allocator, content[i]) catch unreachable;
+                        __appendFmtLiteralByte(&format_buf, allocator, content[i]);
                         literal_run.append(allocator, content[i]) catch unreachable;
                     },
                 }
@@ -1575,7 +1588,7 @@ fn __printInterpolateJs(
                     literal_run.appendSlice(allocator, "\\t") catch unreachable;
                 },
                 else => {
-                    format_buf.append(allocator, content[i]) catch unreachable;
+                    __appendFmtLiteralByte(&format_buf, allocator, content[i]);
                     literal_run.append(allocator, content[i]) catch unreachable;
                 },
             }
