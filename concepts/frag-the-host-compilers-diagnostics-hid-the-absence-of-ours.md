@@ -107,3 +107,32 @@ field that other passes read.
 Related: [[frag-a-fix-installed-at-the-site-that-needed-it]] — same week, same
 shape one turn over: there the property existed and was installed too narrowly;
 here the property was never installed and the host covered for it.
+
+## The host also hides a DEFECT, not only a missing check
+
+Every case above is a rule Koru does not enforce and Zig does. There is a
+second shape that reads identically from the author's chair: a rule Koru does
+own, implemented wrongly, whose failure is reported in the host's vocabulary at
+a host location.
+
+`std/io:print.ln` lowers its message to a Zig format string, and passed the
+author's own braces through unescaped. The build failed inside the host's
+`std/fmt.zig` at comptime — in the *standard library's* source, several frames
+below any file the Koru author wrote. The defect is entirely Koru's; the
+diagnostic is entirely Zig's.
+
+What makes this belong here rather than in a file of its own is that the tell
+is unchanged and is still the only one that works: **look at where the
+diagnostic came from.** A Koru surface whose misuse is reported at a host
+location has either delegated a rule or broken one, and the author cannot tell
+those apart — both arrive as an error they cannot act on, about code they did
+not write.
+
+The new part is a defect class rather than an enforcement gap:
+
+- **A surface that lowers to a host construct owes the host's metacharacters an
+  escape.** Whatever the surface accepts as *data* it must be able to carry, or
+  the host's syntax is leaking into the surface's value space. Format strings
+  are the first instance found, not the only one available — every place Koru
+  splices user text into generated host source is the same question, and each
+  one answers it separately today.
