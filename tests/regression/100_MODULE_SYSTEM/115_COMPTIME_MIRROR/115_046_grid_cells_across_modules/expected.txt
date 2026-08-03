@@ -1,0 +1,2 @@
+cross-module read ok
+swept 42

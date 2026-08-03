@@ -1,0 +1,4 @@
+under-loop guard sees the write
+top-level guard ok
+cells[1].on reads 2
+sum 12

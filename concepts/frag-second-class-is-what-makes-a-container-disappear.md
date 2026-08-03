@@ -45,6 +45,33 @@ an implementation detail of the structure; it is the axis the design lives on.
   one at runtime. Check the callers before assuming any does — the ones here all
   declared literal dimensions and never passed the container anywhere.
 
+## The bill second-class-ness sends, which we did not see coming
+
+Removing first-class-ness removes the handle, and removing the handle removes
+the READ VERB along with it. That second deletion is the one that is easy to
+miss, because nothing announces it: a first-class container is read by calling
+something (`get(g, x, y): v`), and a call is resolved, typed and flowed by
+machinery the language already owns, at every position an expression may stand.
+A comptime-named container has no call to make. Its read is a piece of text that
+has to be rewritten into an address, and the language will not do that for a
+construct it has never heard of.
+
+So the declaration has to own a whole-program rewrite: every guard, every
+argument, every interpolation, everywhere. That is a strictly larger surface
+than the verb it replaced, and it does not arrive with the write — the grid
+shipped able to write cells and unable to ask what one held, which reads as an
+oversight and is actually the shape of the trade. `std/store:new` already
+carried exactly this pass for singleton cell paths, which is the tell: the first
+second-class container in the language paid this bill too, and nobody wrote down
+that it was a bill rather than an implementation detail of stores.
+
+The consequence for the ledger above: second-class-ness is cheaper at RUNTIME
+and dearer in the COMPILER, and the compiler cost is not proportional to the
+construct — it is proportional to the number of syntactic positions the language
+admits an expression in. That is a cost that grows with the language rather than
+with the feature, which is an argument for the two containers sharing one
+rewriter rather than each owning a lookalike.
+
 ## Open
 
 Where the line falls when dimensions are genuinely runtime. Nothing in the
