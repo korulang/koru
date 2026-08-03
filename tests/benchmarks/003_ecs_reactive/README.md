@@ -153,22 +153,43 @@ own constants unscaled (CellRadius 8, weights 1/1/2, ObstacleAversionDistance
 30, MoveSpeed 25), so the arithmetic is somebody else's design and not one
 chosen here to flatter anything.
 
-Two things about that number are worth more than the number.
+Two things about that number are worth more than the number, and the first one
+is a claim this README made an hour earlier and got backwards.
 
-*Koru walks the flock seven times where Zig walks it once.* The steering is one
-expression in C#, Zig and Rust, holding its intermediates — alignment,
-separation, target heading, the avoidance vector — in registers. The store has
-no expression-local binding, so each of those has to be a COLUMN, and the pass
-splits into seven chained writes over 100_000 rows. That is 700_000 row visits
-per frame against the baseline's 100_000, and it still comes within 1.21x.
-Whatever else is true, the SoA layout is carrying the extra traffic well. It is
-also the clearest candidate yet for a real optimisation with a name: an
-expression-local binding would collapse seven passes into one.
+*Splitting the steering into seven passes is FASTER than fusing it into one.*
+The steering holds four intermediate vectors, and the store has no
+expression-local binding, so each becomes a column. It was tempting — and this
+file briefly said so — to conclude that the language therefore FORCES seven
+traversals where C#, Zig and Rust each do one. That is wrong twice over. One
+pass was always available (chained writes inside a single query arm run per
+row, which is what `step-dyn` has always done), and it is about 1.5x slower.
 
-*The steering is 12.7k characters of Koru from about 40 lines of C#.* Not a
-style problem — the same missing binding, seen from the source side. A shared
-subexpression is written out once per component and left to LLVM to CSE, and
-the file says so where it does it.
+`boids_f2`, `boids_f4` and `boids_fused` are the same steering with the first
+two, first four, and all seven stages fused into one traversal. Every one
+produces the identical checksum, so shape is the only variable:
+
+| steering shape | koru_store |
+|---|---:|
+| seven passes (`boids`) | 265 ms |
+| first two fused (`boids_f2`) | 263 ms |
+| first four fused (`boids_f4`) | 281 ms |
+| all seven fused (`boids_fused`) | 395 ms |
+
+Flat, then a cliff. The mechanism is visible in the emitted code: **a
+multi-field write emits one write-path call per FIELD, and every call carries
+the whole row's worth of value slots** — all thirteen columns, zeros in the ones
+it is not writing. That is free only while the call inlines and the field
+selector folds away; a body big enough to defeat that pays for all of it. WHY
+the fused body crosses the line is not established — inlining budget, register
+pressure, and lost auto-vectorization are all live candidates and the ladder is
+the instrument that would tell them apart. These variants are Koru-only and are
+not in `run.sh`'s scenario list; run them by hand against `koru_store/a.out`.
+
+*The steering is 12.7k characters of Koru from about 40 lines of C#.* This one
+is the missing binding seen from the source side, and it stands: a shared
+subexpression is written out once per component and left to LLVM to CSE. The
+verbosity argument for an expression-local binding survives; the PERFORMANCE
+argument that was originally attached to it does not.
 
 Two deviations from the sample are recorded in `koru_store/main.k` and hold for
 all three arms: a dense bounded grid instead of DOTS' sparse hash map (so

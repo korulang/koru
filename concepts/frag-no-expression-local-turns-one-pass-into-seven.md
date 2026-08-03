@@ -1,64 +1,69 @@
 ---
 type: belief
 id: frag-no-expression-local-turns-one-pass-into-seven
-provenance: porting Unity DOTS BoidSystem.cs into the ECS surface benchmark 2026-08-03; the steering pass came out as seven chained writes over the flock where the C#, Zig and Rust arms each hold one expression, and the three arms still agree bit-for-bit
+provenance: written 2026-08-03 from the boids port and CORRECTED the same day when Lars challenged the claim and the measurement went the other way; the id keeps the original (wrong) name because ids are opaque and never renamed
 ts: 2026-08-03
 ---
 
-# A missing expression-local binding is not verbosity, it is a different algorithm (belief)
+# Splitting a fat per-element computation into several passes is FASTER than fusing it, and the first explanation was backwards (belief)
 
-The store has no way to name an intermediate inside an expression. The obvious
-reading of that is a readability complaint — you repeat a subexpression, the
-optimizer commons it, move on. That reading is wrong, and the boids port is
-where it broke.
+## What this file said before, and why it was wrong
 
-A steering step computes four vectors, sums three of them, branches on the
-fourth, and normalizes twice. In C#, Zig and Rust that is ONE pass over the
-population: the intermediates live in registers and never have a name outside
-the loop body. In Koru they cannot live in registers, because there is nowhere
-to put them, so each one becomes a COLUMN and the pass splits into seven chained
-writes over the whole flock.
+It claimed that the store's missing expression-local binding *forces* a
+one-pass algorithm to become a seven-pass one, and that Koru pays for the extra
+traversals. Both halves were false.
 
-**The shape of the computation changed, not its spelling.** Seven traversals
-where the borrowed algorithm has one is an algorithmic difference that any
-profiler would report as a memory-traffic problem and no reader of the source
-would recognise as caused by a missing binding form.
+**A single pass was always available.** Chained writes inside one query arm run
+per ROW, and each write sees the previous one's value for that row — `step-dyn`
+in the same benchmark has been written that way since before boids existed. The
+seven traversals were a structure I chose and then read back as a property of
+the language.
 
-## Why this is worth believing rather than just fixing
+**And the seven passes are the FAST shape.** Fusing them into one pass, same
+arithmetic and same bit-identical checksum, is about 1.5x SLOWER. So the
+supposed cost was not merely unforced, it was pointing the wrong way.
 
-Two things followed that were not predictable from "we lack local bindings".
+This was caught by being challenged, not by being tested, which is the part
+worth keeping: the claim was assembled out of a structure I had authored, and I
+never ran the alternative before generalising about the language from it.
 
-**It was survivable.** Seven passes came within 1.21x of the hand-written
-striped baseline that does one. The columns are hot, the layout is dense, and
-the extra traversals are close to free next to the arithmetic. So the missing
-binding is not an emergency — which is exactly why it could sit unnoticed until
-a workload with a genuinely fat per-element expression arrived. Every scenario
-before boids had a body small enough to inline without noticing.
+## What is actually true
 
-**It has a name now.** Before this the store's known costs were about row access
-— handles, resolves, guards. This is a cost about EXPRESSIONS, and it is the
-first optimisation in this area with an obvious mechanism attached: an
-expression-local binding collapses the seven passes into one, and nothing about
-the store's design forbids one.
+The benchmark now carries a fusion ladder — the same steering as seven passes,
+as two-fused, as four-fused, and as one — all with the same checksum, so the
+only variable is the shape. Cost is flat from seven passes to four, then rises
+sharply when the whole body is fused. The degradation is NONLINEAR in body size,
+not proportional to the number of traversals.
 
-## The general form
+The mechanism is visible in the emitted code and is the durable finding: **a
+multi-field write emits one write-path call per FIELD, and each call carries the
+whole row's worth of value slots** — every column, with zeros in the slots it is
+not writing. That is only free because the call inlines and the field selector
+folds, at which point the dead slots vanish. A body small enough to inline pays
+nothing; a body large enough to defeat whatever budget governs it pays for all
+of them at once.
 
-When a language omits a way to name something, look for what the omission does
-to the STRUCTURE of programs written in it, not to their length. The workloads
-that reveal it are the borrowed ones: code written by people who had the feature
-and used it without thinking, so the shape of their solution encodes the
-assumption. A workload written natively would have been designed around the
-absence and would never have shown it.
+So the store's write path has a cost that is invisible at every size anyone has
+tried and then arrives all at once. Which side of the line a program lands on is
+not visible in its source.
 
-This is the second time the benchmark has produced a finding of that kind — the
-first was a spatial index, which the store also could not express and which
-turned out to want a second table rather than a bigger store.
+## What remains open, and it is the interesting part
 
-## Open
+Why the fused body crosses the line is NOT established. Candidates, none tested:
+an inlining budget; register pressure across a long live range; or the loss of
+auto-vectorization once the body contains store-to-load dependencies through
+columns. The ladder is the instrument that would separate them, and it exists
+now.
 
-- Whether an expression-local binding is a store feature or a language one. It
-  reads like a language one, which makes it larger than it first appears.
-- Whether the seven-pass shape is even the right thing to optimise. The
-  alternative reading is that a fat per-element expression wants the kernel,
-  not the store, and this workload is evidence about where that boundary should
-  fall. Nothing here settles it.
+Also unresolved: whether the expression-local binding is worth having at all.
+The verbosity argument for it stands on its own — 12.7k characters of Koru from
+about 40 lines of C# — but the PERFORMANCE argument that was originally attached
+to it is dead, and it should not be revived without a measurement.
+
+## The methodological residue
+
+When a language lacks a way to say something, the temptation is to conclude that
+the workaround you reached for is what the language forces. It is not: it is
+what you reached for. The check is cheap and I skipped it — write the other
+shape and time it. Both shapes belong in the repo afterwards, which is why the
+ladder is committed rather than deleted once it had made its point.
