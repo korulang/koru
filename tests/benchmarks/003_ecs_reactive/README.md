@@ -122,7 +122,7 @@ the multipliers below have equivalence evidence behind them everywhere except
 | fanout | 8543 | 25452 | 14260 | 1.8x | ✗ |
 | bevy_strength_world | 21076 | 65322 | 16627 | 3.9x | = |
 | combat_world | 3560 | 9832 | — | — | — |
-| boids | 220362 | 314533 | 137792 | 2.3x | = |
+| boids | 220362 | 314533 | 190383 | 1.7x | = |
 
 Three of these are worth naming.
 
@@ -163,12 +163,18 @@ effect arm, and a store query arm is one.
 Every variant below computes identical arithmetic and produces the identical
 checksum, so the shape is the only variable:
 
-| steering shape | before the write-path fix | after |
-|---|---:|---:|
-| `boids_split` — columns, seven passes | 261 ms | **137 ms** |
-| `boids_f4` — columns, first four fused | 279 ms | 142 ms |
-| `boids` — capture slots, one pass | 243 ms | 238 ms |
-| `boids_fused` — columns, one pass | 400 ms | 260 ms |
+| steering shape | before the write-path fix | after | with a returning trap edge |
+|---|---:|---:|---:|
+| `boids` — capture slots, one pass | 243 ms | 190 ms | **101 ms** |
+| `boids_fused` — columns, one pass | 400 ms | 193 ms | 113 ms |
+| `boids_split` — columns, seven passes | 261 ms | 136 ms | 123 ms |
+| `boids_f4` — columns, four fused | 279 ms | 141 ms | 144 ms |
+
+(The third column also carries a fix to the benchmark's own Koru source: the
+position clamp was written as nested `if`s where the baseline uses `@min/@max`,
+which was a defect in the port, not the language, and cost the capture variant
+48 ms. The fourth column is a MEASUREMENT ONLY — a patched emitted file, not a
+language change; see below.)
 
 THE SECOND COLUMN IS THE STORE'S WRITE-PATH FIX, and it is the whole story.
 A multi-field `stored` block used to emit one write call PER FIELD, in order,
@@ -181,12 +187,31 @@ disappear. Column-routed writes roughly halved.
 The correctness bug and the performance bug were the same bug. Nothing in the
 benchmark changed between the two columns.
 
-What did NOT move is the capture version, 243 -> 238 ms, which says its cost was
-never in the store write — and it is now the SLOWEST of the four, having been
-the fastest before. Why a capture slot is dearer than a column is open. So is
-the residual fused-vs-split gap (260 vs 137): halving both did not close it, so
-whatever makes a fat per-row body fall off a cliff is still unexplained and is
-not the write path.
+THE FOURTH COLUMN IS THE SECOND DEFECT, and together they explain everything
+this scenario has done. `std/grid`'s bounds check traps with `@panic`, which is
+`noreturn`, which gives the loop a side-exit that LLVM's vectoriser refuses. The
+compare itself is nearly free — LLVM commons 198 of them down to one per boid —
+so the cost is the EDGE, not the test: replacing `@panic` with a returning
+branch that keeps the same compare is as fast as deleting the check entirely.
+
+Its cost is not uniform, and the shape of the non-uniformity is the finding: it
+lands on the FAT single-loop bodies (-46%, -41%) and barely touches the thin
+multi-pass ones (-9%, 0%). A fat body is exactly what a vectoriser wants, so the
+trap edge takes away precisely the loop that had the most to gain.
+
+That retires the last open question here. The "more passes is faster" inversion
+that this README recorded twice was never a property of Koru — it was two
+implementation defects stacked, the sequential write path and the noreturn trap
+edge. With both addressed the ordering is what intuition said at the start: one
+fat pass (101 ms) beats seven thin ones (123 ms), and Koru runs the workload at
+2.2x the speed of the hand-written striped baseline.
+
+The trap edge is NOT fixed here. Making it a returning edge means the grid stops
+trapping on an out-of-range index, and "fail loud, never silently address a
+neighbour" is the ruling that put the trap there. Deferring the panic to the end
+of the sweep, or clamping-and-flagging, would keep the loudness and the
+vectorisation both — that is a design question with a real tradeoff and it is
+open.
 
 The mechanism behind the cliff is visible in the emitted code: **a multi-field
 store write emits one write-path call per FIELD, and every call carries the
