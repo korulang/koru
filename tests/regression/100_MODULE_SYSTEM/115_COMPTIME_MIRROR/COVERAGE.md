@@ -47,6 +47,8 @@ because "no mirror" is exactly the state this file exists to make expensive.
 | `store:default` | no-green-usage |
 | `store:insert` | `115_018_store_insert_in_module` |
 | `store:new` | `690_079_store_declared_in_imported_module` |
+| `grid:new` | `115_045_grid_in_module` |
+| `grid:stored` | `115_045_grid_in_module` |
 | `store:preorder` | pins-unimplemented-surface |
 | `store:query` | `115_019_store_query_in_module` |
 | `store:rule` | `115_042_store_rule_in_module` |

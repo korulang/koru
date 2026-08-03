@@ -1,145 +1,470 @@
-// std/grid — a dense 2D i64 grid over a row-major flat buffer, with the same
-// owned-handle ownership model as std/list. First cut: i64 cells, hand-
-// monomorphized; genericity over the cell type lands later by replication (the
-// container-generating [transform] from the collections design), exactly as for
-// std/list. The flat `data[y*cols + x]` layout is deliberately the SAME
-// representation hand-written Zig/C/Rust use — so grid-backed workloads are
-// apples-to-apples benchmarkable and the only perf debt is the handle box below.
+// Koru Standard Library: Grid — a fixed, positionally-addressed table
+// =====================================================================
 //
-// Ownership states (phantom on *Grid_i64):
-//   <grid!>  - new issues the obligation: this grid must be freed.
-//   <grid>   - borrowed: read/mutate in place (set, get, count), obligation kept.
-//   <!grid>  - consumed: free discharges the obligation.
+// A grid is the OTHER kind of table, and the distinction is one question:
+// CAN A ROW MOVE?
+//
+//   std/store — yes. `take` swap-removes, so position is not identity, so a
+//               row is named by a generational HANDLE and every access pays a
+//               brand + bounds + generation check. The store earns that
+//               machinery by supporting removal.
+//
+//   std/grid  — no. Every cell exists from declaration and none is ever
+//               inserted, removed or relocated, so POSITION IS IDENTITY. A
+//               grid pays nothing: no handles, no generation word, no sparse
+//               indirection, no freelist, no `len`.
+//
+// A grid is therefore the degenerate, fastest table in the language, and it
+// gets there by forbidding something rather than by optimising.
+//
+// USAGE:
+//   ~import std/grid
+//
+//   std/grid:new(cells, size: 4096) { count: 0[i64], sx: 0.0[f32] }
+//   std/grid:stored { cells[h].count: cells[h].count + 1 }
+//
+// SIZE, not capacity. `capacity: N` means "up to N, currently `len`". A grid
+// is EXACTLY N cells, all live from the moment it is declared. Different
+// contract, different word, so the two declarations cannot be misread.
+//
+// OUT OF RANGE TRAPS (ruled 2026-08-03). An index outside `0..size` is a
+// panic naming the grid, matching the store's stale-handle floor: fail loud,
+// never silently address a neighbour. Wrapping is the PROGRAM's decision and
+// belongs in the source as an explicit `% size` where a reader can see it — a
+// spatial hash wants exactly that and should say so.
+//
+// The check is a floor, not a tax to be paid forever: an index the compiler
+// can prove in range needs none, and a `! sweep` arm over a grid is precisely
+// that case — the loop constructs the index from `0..size`, so validating it
+// would be validating a fact established one line above. That is the same
+// floor-then-prove-away arc the store's handle check follows.
+//
+// NOT REACTIVE, deliberately, and the seam is left open. Nothing about a grid
+// forbids watches or interceptors — reactivity in Koru is spliced at comptime
+// and costs nothing when nobody listens. But every reactive surface has to
+// answer what it FIRES, and a whole-grid clear firing four thousand times is a
+// question no workload has asked yet. It gets designed when one does.
 
 const std = @import("std");
 
-pub const Grid_i64 = struct {
-    data: []i64,
-    cols: usize,
-    allocator: std.mem.Allocator,
+// ============================================================================
+// GRID.NEW — declare a fixed, positionally-addressed table
+// ============================================================================
 
-    // Package-private — only free/auto-discharge calls this.
-    fn deinit(self: *Grid_i64) void {
-        self.allocator.free(self.data);
-        self.allocator.destroy(self);
-    }
-};
+~[keyword|comptime|transform]pub tor new {
+    expr: Expression,
+    source: Source,
+    invocation: *const Invocation,
+    item: *const Item,
+    program: *const Program,
+    reporter: *std/compiler:ErrorReporter,
+    allocator: std.mem.Allocator
+} -> SiteResult
 
-// ============================================
-// Construction
-// ============================================
+~[transform]proc new|zig {
+    const ast = @import("ast");
+    const struct_literal = @import("struct_literal");
 
-~[
-- aspirational
-  The grid HANDLE is heap-boxed (allocator.create(Grid_i64)) — escape-driven
-  local allocation (the no-silent-degradation doctrine: stack when the
-  obligation proves no-escape, heap only on explicit escape, error on ambiguity)
-  is NOT built yet, so this boxes the handle unconditionally. The rows*cols
-  backing buffer is heap regardless. Marked so the box debt is explicit and
-  greppable, not hidden behind a clean API; closes when the escape-allocation
-  model lands (shared with std/list and std/string). The `| err` branch is the
-  proven shape; upgrading allocation failure to a `| ?!oom` panic branch is the
-  immediate follow-up (panic-branches' first real collection customer).
-]pub tor new { rows: usize, cols: usize }
-| grid *Grid_i64<grid!>
-| err string
+    if (item.* != .flow) @panic("grid:new transform: containing item is not a flow - walker dispatch contract broken");
+    const flow = &item.flow;
 
-~proc new|zig {
-    const allocator = koru_allocator();
-    const self = allocator.create(Grid_i64) catch {
-        return .{ .err = "allocation failed" };
+    const H = struct {
+        fn stripQuotes(n: []const u8) []const u8 {
+            if (n.len >= 2 and n[0] == '"') return n[1 .. n.len - 1];
+            return n;
+        }
     };
-    const data = allocator.alloc(i64, rows * cols) catch {
-        allocator.destroy(self);
-        return .{ .err = "allocation failed" };
+
+    var grid_name: []const u8 = "";
+    var seed_text: ?[]const u8 = null;
+    var size_text: ?[]const u8 = null;
+    var dims_text: ?[]const u8 = null;
+    for (invocation.args) |arg| {
+        if (std.mem.eql(u8, arg.name, "expr")) {
+            grid_name = H.stripQuotes(arg.value);
+        } else if (std.mem.eql(u8, arg.name, "source")) {
+            seed_text = arg.value;
+        } else if (std.mem.eql(u8, arg.name, "size")) {
+            size_text = std.mem.trim(u8, arg.value, " ");
+        } else if (std.mem.eql(u8, arg.name, "dimensions")) {
+            dims_text = std.mem.trim(u8, arg.value, " ");
+        }
+    }
+    if (grid_name.len == 0 or seed_text == null) {
+        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/grid:new requires a name and a cell block: new(name, size: N) {{ field: default[type] }}", .{}) } };
+    }
+    // TWO DECLARATION FORMS, one construct.
+    //
+    //   size: N          a flat run of N cells. The index is the program's own
+    //                    business — a spatial hash wants exactly this and writes
+    //                    its own `% N`.
+    //   dimensions: RxC  a bounded field of R rows by C columns, addressed
+    //                    `g[x, y]`. The linearisation is ROW-MAJOR, `y*C + x`,
+    //                    the same layout the heap grid this replaces used and the
+    //                    same one hand-written Zig/C/Rust use — so a grid-backed
+    //                    workload stays apples-to-apples benchmarkable.
+    //
+    // `RxC` needs no lexer support: an invocation argument arrives as raw source
+    // text, so `64x64` is delivered whole and parsed here, exactly as `size: N`
+    // is parsed here rather than by the grammar. It cannot collide with an
+    // identifier because an identifier may not begin with a digit.
+    var SIZE: usize = 0;
+    var COLS: usize = 0;
+    var ROWS: usize = 0;
+    if (dims_text) |dt| {
+        if (size_text != null) {
+            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/grid:new({s}): `size:` and `dimensions:` are two spellings of the same thing - give one", .{grid_name}) } };
+        }
+        const xat = std.mem.indexOfScalar(u8, dt, 'x') orelse {
+            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/grid:new({s}): dimensions are `RxC` (got '{s}')", .{ grid_name, dt }) } };
+        };
+        ROWS = std.fmt.parseInt(usize, std.mem.trim(u8, dt[0..xat], " "), 10) catch {
+            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/grid:new({s}): dimensions are `RxC` with integer literals (got '{s}')", .{ grid_name, dt }) } };
+        };
+        COLS = std.fmt.parseInt(usize, std.mem.trim(u8, dt[xat + 1 ..], " "), 10) catch {
+            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/grid:new({s}): dimensions are `RxC` with integer literals (got '{s}')", .{ grid_name, dt }) } };
+        };
+        SIZE = ROWS * COLS;
+    } else {
+        const st = size_text orelse {
+            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/grid:new({s}): a grid needs `size: N` or `dimensions: RxC` - every cell exists from declaration, so the count is not a capacity to grow into", .{grid_name}) } };
+        };
+        SIZE = std.fmt.parseInt(usize, st, 10) catch {
+            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/grid:new({s}): size must be an integer literal (got '{s}')", .{ grid_name, st }) } };
+        };
+    }
+    if (SIZE == 0) {
+        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/grid:new({s}): a grid needs at least one cell", .{grid_name}) } };
+    }
+
+    // Cells are declared `field: default[type]` — SEEDED, always. A store
+    // column may be bare (`hp: i64`) because a row is born at insert and the
+    // seed is the inserter's business. A grid has no insert: every cell is
+    // live from declaration, so every column must say what it starts as.
+    const braced = std.fmt.allocPrint(allocator, "{{{s}}}", .{seed_text.?}) catch unreachable;
+    const cells = struct_literal.parseFields(allocator, braced) catch {
+        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/grid:new({s}): malformed cell block", .{grid_name}) } };
     };
-    @memset(data, 0);
-    self.* = .{ .data = data, .cols = cols, .allocator = allocator };
-    return .{ .grid = self };
-}
-
-// ============================================
-// Mutation (borrow — obligation untouched)
-// ============================================
-
-// Set the cell at (x = column, y = row) to v. Void, chains with `|>`.
-~pub tor set { g: *Grid_i64<grid>, x: usize, y: usize, v: i64 }
-
-~proc set|zig {
-    g.data[y * g.cols + x] = v;
-}
-
-// Reset every cell to 0 in place (borrow). Lets a caller reuse one grid across
-// many logical passes instead of new/free-ing each time — the construct owning
-// the buffer lifecycle, which kills the per-pass alloc/fault tax.
-~pub tor clear { g: *Grid_i64<grid> }
-
-~proc clear|zig {
-    @memset(g.data, 0);
-}
-
-// Set every flat-index cell in the AP {from, from+stride, ...} <= limit to 1.
-// Incremental (m += stride), matching C's strided marking — no per-mark multiply.
-~pub tor strike { g: *Grid_i64<grid>, from: usize, stride: usize, limit: usize }
-
-~proc strike|zig {
-    var m: usize = from;
-    while (m <= limit) : (m += stride) {
-        g.data[m] = 1;
+    if (cells.len == 0) {
+        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/grid:new({s}): a grid needs at least one column", .{grid_name}) } };
     }
-}
 
-// ============================================
-// Read (borrow)
-// ============================================
+    var g = std.ArrayList(u8).initCapacity(allocator, 512) catch unreachable;
+    const head = std.fmt.allocPrint(allocator, "const __KoruGridT_{s} = struct {{\n", .{grid_name}) catch unreachable;
+    g.appendSlice(allocator, head) catch unreachable;
 
-// Cell value at (x, y).
-~pub tor get { g: *Grid_i64<grid>, x: usize, y: usize } -> i64
-
-~proc get|zig {
-    return g.data[y * g.cols + x];
-}
-
-// Count of nonzero cells across the whole grid.
-~pub tor count-nonzero { g: *Grid_i64<grid> } -> i64
-
-~proc count-nonzero|zig {
-    var n: i64 = 0;
-    for (g.data) |c| {
-        if (c != 0) n += 1;
+    for (cells) |c| {
+        // `count: 0[i64]` — the default is the value, the type rides in the
+        // brackets, exactly as a seeded store column spells it.
+        const v = std.mem.trim(u8, c.value, " ");
+        const lb = std.mem.indexOfScalar(u8, v, '[') orelse {
+            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/grid:new({s}): column '{s}' needs a default and a type - `{s}: 0[i64]`. A grid has no insert, so every cell is live from declaration and must say what it starts as", .{ grid_name, c.name, c.name }) } };
+        };
+        if (v.len == 0 or v[v.len - 1] != ']') {
+            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/grid:new({s}): column '{s}' has a malformed type - `{s}: 0[i64]`", .{ grid_name, c.name, c.name }) } };
+        }
+        const dflt = std.mem.trim(u8, v[0..lb], " ");
+        const ty = std.mem.trim(u8, v[lb + 1 .. v.len - 1], " ");
+        const col = std.fmt.allocPrint(allocator, "    {s}: [{d}]{s} = [_]{s}{{{s}}} ** {d},\n", .{ c.name, SIZE, ty, ty, dflt, SIZE }) catch unreachable;
+        g.appendSlice(allocator, col) catch unreachable;
     }
-    return n;
-}
 
-// Count of zero cells in the flat index range [lo, hi). A tight reduction (the
-// IR's reduce field) — replaces a per-cell capture-fold count in callers.
-~pub tor count-zeros { g: *Grid_i64<grid>, lo: usize, hi: usize } -> i64
-
-~proc count-zeros|zig {
-    var n: i64 = 0;
-    for (g.data[lo..hi]) |c| {
-        if (c == 0) n += 1;
+    // The bounds floor. `size` is comptime-known, so an index the optimizer can
+    // range-prove costs nothing; anything else traps naming the grid rather
+    // than silently addressing a neighbouring cell.
+    // NOTE the shape of this block: every `\\` multiline literal in a `|zig`
+    // proc must be brace-BALANCED on its own, because the Koru parser counts
+    // braces across the proc body and does not exempt multiline literals. The
+    // struct's closing `}` therefore rides in a quoted string below, the way
+    // store.kz does it, not at the end of this literal.
+    const at = std.fmt.allocPrint(allocator,
+        \\    const __koru_size: usize = {d};
+        \\    fn __koru_at(i: i64) usize {{
+        \\        if (i < 0 or @as(usize, @intCast(i)) >= {d}) @panic("std/grid: index out of range for grid '{s}' (size {d}) - a grid is addressed by position, and wrapping is the program's to write as `% {d}`");
+        \\        return @as(usize, @intCast(i));
+        \\    }}
+        \\
+    , .{ SIZE, SIZE, grid_name, SIZE, SIZE }) catch unreachable;
+    g.appendSlice(allocator, at) catch unreachable;
+    if (dims_text != null) {
+        // Row-major `y*C + x`, bounds-checked per AXIS so the diagnostic can say
+        // WHICH axis escaped — `[x, y]` with a good x and a bad y is the common
+        // slip and "index out of range" alone would not locate it.
+        const at2 = std.fmt.allocPrint(allocator,
+            \\    const __koru_rows: usize = {d};
+            \\    const __koru_cols: usize = {d};
+            \\    fn __koru_at2(x: i64, y: i64) usize {{
+            \\        if (x < 0 or @as(usize, @intCast(x)) >= {d}) @panic("std/grid: x out of range for grid '{s}' (cols {d})");
+            \\        if (y < 0 or @as(usize, @intCast(y)) >= {d}) @panic("std/grid: y out of range for grid '{s}' (rows {d})");
+            \\        return @as(usize, @intCast(y)) * {d} + @as(usize, @intCast(x));
+            \\    }}
+            \\
+        , .{ ROWS, COLS, COLS, grid_name, COLS, ROWS, grid_name, ROWS, COLS }) catch unreachable;
+        g.appendSlice(allocator, at2) catch unreachable;
     }
-    return n;
+    g.appendSlice(allocator, "};\n") catch unreachable;
+
+    const inst = std.fmt.allocPrint(allocator, "var __koru_grid_{s}: __KoruGridT_{s} = .{{}};", .{ grid_name, grid_name }) catch unreachable;
+    g.appendSlice(allocator, inst) catch unreachable;
+
+    return .{ .transformed = .{ .replacement = ast.Item{ .host_line = ast.HostLine{
+        .content = g.toOwnedSlice(allocator) catch unreachable,
+        .location = flow.location,
+        .module = allocator.dupe(u8, flow.module) catch unreachable,
+    } } } };
 }
 
-// Sum of all cell values across the whole grid.
-~pub tor sum { g: *Grid_i64<grid> } -> i64
+// ============================================================================
+// GRID.STORED — positional write, and positional reads in the values
+// ============================================================================
+//
+//   std/grid:stored { cells[h].count: cells[h].count + 1 }
+//
+// There is no write EVENT and no envelope. The store routes every write through
+// one centralizing subflow because that is where reactivity splices; a grid has
+// nothing to splice, so a write is a write and lowers to an assignment.
 
-~proc sum|zig {
-    var t: i64 = 0;
-    for (g.data) |c| {
-        t += c;
+~[keyword|comptime|transform]pub tor stored {
+    source: Source,
+    invocation: *const Invocation,
+    item: *const Item,
+    program: *const Program,
+    reporter: *std/compiler:ErrorReporter,
+    allocator: std.mem.Allocator
+} -> SiteResult
+
+~[transform]proc stored|zig {
+    const ast = @import("ast");
+    const struct_literal = @import("struct_literal");
+
+    if (item.* != .flow) @panic("grid:stored transform: containing item is not a flow - walker dispatch contract broken");
+    const flow = &item.flow;
+
+    const G = struct {
+        fn isIdentCh(ch: u8) bool {
+            return (ch >= 'a' and ch <= 'z') or (ch >= 'A' and ch <= 'Z') or (ch >= '0' and ch <= '9') or ch == '_' or ch == '-';
+        }
+        // Every grid declared anywhere in the program. `new` may or may not have
+        // lowered yet depending on site order, so both spellings count: the raw
+        // `std/grid:new` flow and the host line it becomes.
+        fn collect(alloc: std.mem.Allocator, its: []const ast.Item, out: *std.ArrayList([]const u8)) void {
+            for (its) |pi| {
+                switch (pi) {
+                    .flow => |f| {
+                        const inv = f.inv();
+                        if (inv.path.module_qualifier) |mq| {
+                            if (std.mem.eql(u8, mq, "std.grid") and inv.path.segments.len == 1 and std.mem.eql(u8, inv.path.segments[0], "new")) {
+                                for (inv.args) |a| {
+                                    if (std.mem.eql(u8, a.name, "expr")) {
+                                        var n = a.value;
+                                        if (n.len >= 2 and n[0] == '"') n = n[1 .. n.len - 1];
+                                        out.append(alloc, n) catch unreachable;
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    .host_line => |hl| {
+                        const needle = "const __KoruGridT_";
+                        var i: usize = 0;
+                        while (std.mem.indexOfPos(u8, hl.content, i, needle)) |at| {
+                            const s = at + needle.len;
+                            var e = s;
+                            while (e < hl.content.len and isIdentCh(hl.content[e])) e += 1;
+                            out.append(alloc, hl.content[s..e]) catch unreachable;
+                            i = e;
+                        }
+                    },
+                    .module_decl => |m| collect(alloc, m.items, out),
+                    else => {},
+                }
+            }
+        }
+        fn known(names: []const []const u8, n: []const u8) bool {
+            for (names) |k| {
+                if (std.mem.eql(u8, k, n)) return true;
+            }
+            return false;
+        }
+        // Rewrite every `<grid>[<expr>].<field>` in `text` to its lowered form.
+        // The column is named through a POINTER before the index: a by-value
+        // base makes Zig materialise the whole column ahead of a call-valued
+        // index, which cost 1750x on the store's read path
+        // (frag-a-call-valued-index-copies-the-whole-array).
+        fn lower(alloc: std.mem.Allocator, text: []const u8, names: []const []const u8) []const u8 {
+            var out = std.ArrayList(u8).initCapacity(alloc, text.len + 64) catch unreachable;
+            var i: usize = 0;
+            while (i < text.len) {
+                const boundary = i == 0 or !isIdentCh(text[i - 1]);
+                var matched = false;
+                if (boundary) {
+                    var e = i;
+                    while (e < text.len and isIdentCh(text[e])) e += 1;
+                    if (e > i and e < text.len and text[e] == '[' and known(names, text[i..e])) {
+                        // Depth-aware scan so a nested subscript in the index
+                        // survives: `cells[other[k].h].count`.
+                        var depth: usize = 0;
+                        var j = e;
+                        while (j < text.len) {
+                            if (text[j] == '[') depth += 1;
+                            if (text[j] == ']') {
+                                depth -= 1;
+                                if (depth == 0) break;
+                            }
+                            j += 1;
+                        }
+                        if (j < text.len and j + 1 < text.len and text[j + 1] == '.') {
+                            const gname = text[i..e];
+                            const idx_raw = text[e + 1 .. j];
+                            var fe = j + 2;
+                            while (fe < text.len and isIdentCh(text[fe])) fe += 1;
+                            const fname = text[j + 2 .. fe];
+                            // The index may itself contain grid reads.
+                            // A TOP-LEVEL comma in the subscript means the 2-D
+                            // form `g[x, y]`. Depth matters: a comma inside a
+                            // nested subscript belongs to that subscript.
+                            var comma: ?usize = null;
+                            var d2: usize = 0;
+                            var k: usize = 0;
+                            while (k < idx_raw.len) : (k += 1) {
+                                if (idx_raw[k] == '[' or idx_raw[k] == '(') d2 += 1;
+                                if (idx_raw[k] == ']' or idx_raw[k] == ')') d2 -= 1;
+                                if (idx_raw[k] == ',' and d2 == 0) {
+                                    comma = k;
+                                    break;
+                                }
+                            }
+                            const piece = if (comma) |cm| blk_two: {
+                                const xs = lower(alloc, std.mem.trim(u8, idx_raw[0..cm], " "), names);
+                                const ys = lower(alloc, std.mem.trim(u8, idx_raw[cm + 1 ..], " "), names);
+                                break :blk_two std.fmt.allocPrint(alloc, "(&__koru_grid_{s}.{s})[__KoruGridT_{s}.__koru_at2({s}, {s})]", .{ gname, fname, gname, xs, ys }) catch unreachable;
+                            } else blk_one: {
+                                const idx = lower(alloc, idx_raw, names);
+                                break :blk_one std.fmt.allocPrint(alloc, "(&__koru_grid_{s}.{s})[__KoruGridT_{s}.__koru_at({s})]", .{ gname, fname, gname, idx }) catch unreachable;
+                            };
+                            out.appendSlice(alloc, piece) catch unreachable;
+                            i = fe;
+                            matched = true;
+                        }
+                    }
+                }
+                if (!matched) {
+                    out.append(alloc, text[i]) catch unreachable;
+                    i += 1;
+                }
+            }
+            return out.toOwnedSlice(alloc) catch unreachable;
+        }
+    };
+
+    var block: ?[]const u8 = null;
+    for (invocation.args) |arg| {
+        if (std.mem.eql(u8, arg.name, "source")) block = arg.value;
     }
-    return t;
-}
+    const btext = block orelse {
+        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/grid:stored requires a write block: stored {{ grid[index].field: expr }}", .{}) } };
+    };
 
-// ============================================
-// Teardown (consume — discharges <!grid>)
-// ============================================
+    var names = std.ArrayList([]const u8).initCapacity(allocator, 4) catch unreachable;
+    G.collect(allocator, program.items, &names);
+    if (names.items.len == 0) {
+        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/grid:stored: no grid is declared in this program - declare one with `std/grid:new(name, size: N) {{ ... }}`", .{}) } };
+    }
 
-~pub tor free { g: *Grid_i64<!grid> }
+    const braced = std.fmt.allocPrint(allocator, "{{{s}}}", .{btext}) catch unreachable;
+    const pairs = struct_literal.parseFields(allocator, braced) catch {
+        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/grid:stored: malformed write block", .{}) } };
+    };
 
-~proc free|zig {
-    g.deinit();
+    var body = std.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
+    for (pairs) |pr| {
+        const tgt = G.lower(allocator, std.mem.trim(u8, pr.name, " "), names.items);
+        // A target that did not lower names no grid — the commonest cause is a
+        // store row address reaching for `std/grid:stored`, so name both.
+        if (std.mem.eql(u8, tgt, std.mem.trim(u8, pr.name, " "))) {
+            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/grid:stored: '{s}' does not address a grid cell - the target is `<grid>[<index>].<field>`, and a store row is written with std/store:stored instead", .{pr.name}) } };
+        }
+        const val = G.lower(allocator, pr.value, names.items);
+        const line = std.fmt.allocPrint(allocator, "{s} = {s};\n", .{ tgt, val }) catch unreachable;
+        body.appendSlice(allocator, line) catch unreachable;
+    }
+
+    // A top-level write is a STATEMENT in the program's flow, so the replacement
+    // has to be executable — raw code, whether host_line or inline_code, lands at
+    // module scope where an assignment is not a legal declaration.
+    //
+    // The callable is an EVENT plus a same-named `|zig` proc that implements it;
+    // a proc on its own is not invocable and resolves as an unknown tor. This is
+    // the store's own unit shape, minus everything a grid does not need: no
+    // inputs, no branches, no row argument, no envelope. Keyed on the site LINE
+    // so two writes in one program never collide.
+    const unit = std.fmt.allocPrint(allocator, "__grid_write_L{d}", .{flow.location.line}) catch unreachable;
+
+    // THE NAMESPACE IS IMPORT-DERIVED, NOT FILE-DERIVED. `flow.module` is the
+    // file name (`lib`); every cross-module path in the program resolves through
+    // the module's logical name (`app.lib`). Minting the unit off `flow.module`
+    // puts it in a namespace nothing looks up, and the failure is
+    // `unknown tor 'lib:__grid_write_L8'` — the same fault 115_018 recorded for
+    // the store's forty-odd paths. The entry file collapses the two names into
+    // one, so only a cross-module mirror (115_045) can tell a correct qualifier
+    // from a lucky one.
+    const home_ns = blk_home: {
+        const Find = struct {
+            fn in(its: []const ast.Item, want: []const u8, enclosing: ?[]const u8) ?[]const u8 {
+                for (its) |pi| {
+                    switch (pi) {
+                        .flow => |f| {
+                            if (std.mem.eql(u8, f.module, want)) return enclosing;
+                        },
+                        .module_decl => |m| {
+                            if (in(m.items, want, m.logical_name)) |hit| return hit;
+                        },
+                        else => {},
+                    }
+                }
+                return null;
+            }
+        };
+        break :blk_home Find.in(program.items, flow.module, null) orelse flow.module;
+    };
+    const mk = struct {
+        fn path(alloc: std.mem.Allocator, module: []const u8, name: []const u8) ast.DottedPath {
+            const segs = alloc.alloc([]const u8, 1) catch unreachable;
+            segs[0] = alloc.dupe(u8, name) catch unreachable;
+            return ast.DottedPath{ .module_qualifier = alloc.dupe(u8, module) catch unreachable, .segments = segs };
+        }
+    };
+
+    const appended = allocator.alloc(ast.Item, 2) catch unreachable;
+    appended[0] = ast.Item{ .event_decl = ast.EventDecl{
+        .path = mk.path(allocator, home_ns, unit),
+        .input = ast.Shape{ .fields = &[_]ast.Field{} },
+        .branches = &[_]ast.Branch{},
+        .is_public = false,
+        .is_implicit_flow = false,
+        .annotations = &[_][]const u8{},
+        .location = flow.location,
+        .module = allocator.dupe(u8, flow.module) catch unreachable,
+    } };
+    appended[1] = ast.Item{ .proc_decl = ast.ProcDecl{
+        .path = mk.path(allocator, home_ns, unit),
+        .body = ast.Source{ .text = body.toOwnedSlice(allocator) catch unreachable, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
+        .annotations = &[_][]const u8{},
+        .target = allocator.dupe(u8, "zig") catch unreachable,
+        .location = flow.location,
+        .module = allocator.dupe(u8, flow.module) catch unreachable,
+    } };
+
+    const call = ast.Invocation{ .path = mk.path(allocator, home_ns, unit), .args = &[_]ast.Arg{} };
+    return .{ .transformed = .{
+        .replacement = ast.Item{ .flow = ast.Flow{
+            .body = ast.rootSite(call, &[_]ast.Continuation{}, flow.location),
+            .pre_label = null,
+            .impl_of = flow.impl_of,
+            .annotations = &[_][]const u8{},
+            .location = flow.location,
+            .module = allocator.dupe(u8, flow.module) catch unreachable,
+        } },
+        .appended = appended,
+    } };
 }
