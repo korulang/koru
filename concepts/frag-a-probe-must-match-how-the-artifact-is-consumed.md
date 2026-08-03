@@ -51,3 +51,33 @@ foot-gun structurally instead of by remembering which constructor to call —
 the same shape of argument as the compilation owning ONE `ErrorReporter`. Not
 attempted here; the twin cliff at `koru_std/compiler.kz:2121` builds its own
 writer too, so there is more than one consumer to reconcile.
+
+## The instrument's RESOLUTION is part of the configuration, and it signs the data
+
+The original sitting was about the consumer's configuration. There is a second
+configuration a measurement never states and always has: **what the instrument
+can resolve.**
+
+`std/time` was built on a wall clock, and on darwin that clock ticks in whole
+MICROSECONDS — every pair of distinct readings is exactly 1000 ns apart. So
+every duration Koru had ever reported was quantised to 1 us, and anything
+faster reported ZERO. Two separate defects in one choice: a wall clock can also
+step sideways under a duration, which is the wrong KIND of instrument for the
+question, not merely a coarse one.
+
+The tell was in the data and had been for as long as the file existed. Every
+`elapsed_ns` in the ECS benchmark's results ended in three zeros; the Rust
+entry's, measured with a monotonic ns clock, did not. **A quantised instrument
+signs its own output in the digits**, and the signature sat in a committed
+results file that several sessions had read for the numbers and never for the
+shape.
+
+- **State the resolution beside the number, or the number is a claim about the
+  instrument.** A 2.5 ms measurement on a 1 us clock is fine and a 200 ns one is
+  noise, and nothing in the reading distinguishes them.
+- **Read the DIGITS of a measurement before its magnitude.** Trailing zeros,
+  repeated values, and suspiciously round deltas are free evidence about the
+  instrument, available without running anything.
+- **A duration wants a monotonic clock, not a timestamp difference.** These are
+  different instruments that happen to share a unit; picking by unit is how the
+  wrong one gets installed and stays.
