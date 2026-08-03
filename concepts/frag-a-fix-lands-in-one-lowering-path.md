@@ -70,3 +70,36 @@ two paths' obligations really are the same. They may not be: the rule path is
 scheduled, joins a stripe, and carries a cursor the query path does not need.
 Until someone establishes that the obligations coincide, the differential pin is
 the mitigation and convergence is the ambition, not the plan.
+
+## The same shape without lowerings: N hand-rolled scanners for one rule
+
+"Two lowerings" turned out to be the narrow case. The general one is **a rule
+with no single implementation site**, and it is worse, because there is no
+boundary to count across — nothing tells you how many sites exist.
+
+"Inside a string, `\` escapes the next byte" is such a rule. Three scanners in
+the compiler implement it independently, each spelled differently, and each was
+found by a different program: the argument comma-splitter, the paren-finder,
+and the colon scanner that decides `name: value` (210_196 now carries all
+three).
+
+What makes this instance worth keeping is that the second fix **already knew
+about the first**. 210_196's header names two scanners and describes how each
+got the rule wrong. The author saw a duplicated rule, fixed both known sites,
+and pinned one program — and the third site survived, for months, in the
+function that decides what an argument's NAME is.
+
+So knowing about duplication does not, on its own, produce a search. What
+follows:
+
+- **The moment you find a rule implemented twice, the deliverable is the
+  COUNT, not the second fix.** "Two scanners had this bug" is a sentence that
+  should not be written until someone has grepped for the third. It is cheap;
+  nobody did it, twice.
+- **A pin written at the fix covers the spelling that found the bug.** The
+  escape rule fails on a PARITY property — an even number of escaped quotes
+  lands a broken tracker back inside the string by accident, so it behaves
+  correctly. 210_196's original program had an even count. It was a true pin
+  of a real bug and it was structurally incapable of catching the third site.
+  When a defect has a parity or counting character, the pin must carry both
+  parities or it pins a coincidence.

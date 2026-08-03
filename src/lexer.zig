@@ -379,15 +379,29 @@ pub fn indexOfAtDepthZero(text: []const u8, needle: u8) ?usize {
     var in_string = false;
     var string_char: ?u8 = null;
 
-    for (text, 0..) |char, i| {
-        // Handle string literals
+    // A `while` with an explicit cursor, NOT `for (text, 0..)`: inside a string
+    // a backslash escapes the NEXT byte, and skipping it means advancing the
+    // cursor by two. A `for` loop's `continue` cannot do that — it steps by one
+    // — so `\"` closed the string and every following `:` read as an argument
+    // label separator. With an ODD number of escaped quotes ahead of it, a
+    // colon inside a string literal became a label: `print.ln("\",\"n\":{{ x:d }}")`
+    // split into name `"\",\"n\"` and value `{{ x:d }}"`. The comma splitter in
+    // parseArgs already advances by two for exactly this reason (210_196).
+    var i: usize = 0;
+    while (i < text.len) : (i += 1) {
+        const char = text[i];
+
         if (!in_string and (char == '"' or char == '\'')) {
             in_string = true;
             string_char = char;
-        } else if (in_string) {
+            continue;
+        }
+        if (in_string) {
             if (char == '\\' and i + 1 < text.len) {
-                continue; // Skip next iteration for escaped char
-            } else if (char == string_char) {
+                i += 1;
+                continue;
+            }
+            if (char == string_char) {
                 in_string = false;
                 string_char = null;
             }

@@ -1,14 +1,32 @@
-// PINS: an escaped quote inside a string argument is DATA — the argument
-// splitter must not treat `\"` as a closing quote. Two scanners had the
-// bug two ways: lexer.parseArgs tracked strings with no backslash handling
-// at all (so `\"` flipped in_string off and every comma in the quoted text
-// split the arg list), and flow_parser.findTopLevelParen spelled the skip
-// as a bare `continue`, which does not skip the escaped char.
+// PINS: an escaped quote inside a string argument is DATA — an argument
+// scanner must not treat `\"` as a closing quote. THREE scanners had this
+// bug, each spelled differently, and each was found by a different program:
 //
-// The msg below carries both hazards at once: escaped quotes AND commas
-// inside them, followed by a second argument that must survive the split.
-// Found by kopium's request body — a JSON string full of \" and prose
-// commas (koru-examples/kopium/c_chat_pane.k).
+//   - lexer.parseArgs tracked strings with no backslash handling at all, so
+//     `\"` flipped in_string off and every comma in the quoted text split the
+//     arg list;
+//   - flow_parser.findTopLevelParen spelled the skip as a bare `continue`,
+//     which does not skip the escaped char;
+//   - lexer.indexOfAtDepthZero — the COLON scanner that decides `name: value`
+//     — spelled it as `continue` inside a `for (text, 0..)`, where skipping a
+//     byte is not even expressible. Its comment claimed the skip the loop
+//     shape forbids.
+//
+// The three cases below are separate programs to the compiler and the same
+// program to their author, which is why fixing two of them left the third.
+//
+//   1. commas inside escaped quotes, plus a second argument that must
+//      survive the split (kopium's request body — a JSON string full of \"
+//      and prose commas, koru-examples/kopium/c_chat_pane.k);
+//   2. an ODD number of escaped quotes ahead of a colon INSIDE the string.
+//      Parity is the whole trigger: with an even count the broken tracker
+//      lands back inside the string by accident and the colon is skipped
+//      correctly, which is why case 1 passed for months while this failed.
+//      Here the string's own `:` was read as an argument label, splitting
+//      `print.ln`'s one Expression into a name and a value;
+//   3. the same shape with an interpolation after the colon, which is what a
+//      program emitting JSON actually writes (the ECS benchmark entry,
+//      tests/benchmarks/003_ecs_reactive).
 
 ~import std/io
 
@@ -20,3 +38,7 @@
 }
 
 ~first(msg: "one \"two, three\" four", tail: "unsplit"): out |> std/io:print.ln("{{ out:s }}")
+
+~std/io:print.ln("\",\"n\": three escaped quotes and a colon")
+
+~std/io:print.ln("{\"scenario\":\"dense\",\"frames\":{{ 100:d }}}")
