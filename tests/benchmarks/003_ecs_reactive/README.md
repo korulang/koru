@@ -122,7 +122,7 @@ the multipliers below have equivalence evidence behind them everywhere except
 | fanout | 8543 | 25452 | 14260 | 1.8x | ✗ |
 | bevy_strength_world | 21076 | 65322 | 16627 | 3.9x | = |
 | combat_world | 3560 | 9832 | — | — | — |
-| boids | 217899 | 333430 | 264473 | 1.3x | = |
+| boids | 220876 | 304962 | 242944 | 1.26x | = |
 
 Three of these are worth naming.
 
@@ -145,51 +145,55 @@ only readable at all because `std/time` was moved onto a monotonic nanosecond
 clock while writing this entry — on the previous wall clock, which ticks in
 whole microseconds on darwin, it reported zero.
 
-**`boids` is the borrowed workload, and Koru lands between the two** — 1.26x
-faster than bevy_ecs, 1.21x slower than the hand-written striped Zig baseline,
-with a `592303452` checksum that is bit-identical across all three arms over
-fifteen interleaved runs. It is a port of Unity DOTS `BoidSystem.cs` with DOTS'
-own constants unscaled (CellRadius 8, weights 1/1/2, ObstacleAversionDistance
-30, MoveSpeed 25), so the arithmetic is somebody else's design and not one
-chosen here to flatter anything.
+**`boids` is the borrowed workload, and Koru lands 1.10x off hand-written Zig**
+— 243 ms against the striped baseline's 221 ms, and 1.26x faster than
+bevy_ecs's 305 ms, with a `592303452` checksum bit-identical across all three
+arms in every run. It is a port of Unity DOTS `BoidSystem.cs` with DOTS' own
+constants unscaled (CellRadius 8, weights 1/1/2, ObstacleAversionDistance 30,
+MoveSpeed 25), so the arithmetic is somebody else's design and not one chosen
+here to flatter anything.
 
-Two things about that number are worth more than the number, and the first one
-is a claim this README made an hour earlier and got backwards.
+**WHERE THE INTERMEDIATES LIVE IS THE WHOLE STORY, and this README got it wrong
+twice before getting it right.** The steering holds four intermediate vectors.
+In C#, Zig and Rust they sit in registers. In Koru they can sit in a `capture`
+block — which is an expression-local binding, and the thing two earlier drafts
+of this section asserted the language did not have. It does; it nests under an
+effect arm, and a store query arm is one.
 
-*Splitting the steering into seven passes is FASTER than fusing it into one.*
-The steering holds four intermediate vectors, and the store has no
-expression-local binding, so each becomes a column. It was tempting — and this
-file briefly said so — to conclude that the language therefore FORCES seven
-traversals where C#, Zig and Rust each do one. That is wrong twice over. One
-pass was always available (chained writes inside a single query arm run per
-row, which is what `step-dyn` has always done), and it is about 1.5x slower.
-
-`boids_f2`, `boids_f4` and `boids_fused` are the same steering with the first
-two, first four, and all seven stages fused into one traversal. Every one
-produces the identical checksum, so shape is the only variable:
+Every variant below computes identical arithmetic and produces the identical
+checksum, so the shape is the only variable:
 
 | steering shape | koru_store |
 |---|---:|
-| seven passes (`boids`) | 265 ms |
-| first two fused (`boids_f2`) | 263 ms |
-| first four fused (`boids_f4`) | 281 ms |
-| all seven fused (`boids_fused`) | 395 ms |
+| `boids` — capture slots, one pass | 243 ms |
+| `boids_split` — columns, seven passes | 261 ms |
+| `boids_f2` — columns, first two fused | 265 ms |
+| `boids_f4` — columns, first four fused | 279 ms |
+| `boids_fused` — columns, one pass | 400 ms |
 
-Flat, then a cliff. The mechanism is visible in the emitted code: **a
-multi-field write emits one write-path call per FIELD, and every call carries
-the whole row's worth of value slots** — all thirteen columns, zeros in the ones
-it is not writing. That is free only while the call inlines and the field
-selector folds away; a body big enough to defeat that pays for all of it. WHY
-the fused body crosses the line is not established — inlining budget, register
-pressure, and lost auto-vectorization are all live candidates and the ladder is
-the instrument that would tell them apart. These variants are Koru-only and are
-not in `run.sh`'s scenario list; run them by hand against `koru_store/a.out`.
+Read the bottom four as one curve: routing intermediates through store COLUMNS
+is flat while the per-row body stays small and then falls off a cliff, and
+fusing the column-routed version into a single traversal — the shape a reader
+would expect to be fastest — is the worst of all by 1.6x. Locals beat every
+column-routed shape, which is the unsurprising conclusion the two wrong drafts
+were reaching past.
 
-*The steering is 12.7k characters of Koru from about 40 lines of C#.* This one
-is the missing binding seen from the source side, and it stands: a shared
-subexpression is written out once per component and left to LLVM to CSE. The
-verbosity argument for an expression-local binding survives; the PERFORMANCE
-argument that was originally attached to it does not.
+The mechanism behind the cliff is visible in the emitted code: **a multi-field
+store write emits one write-path call per FIELD, and every call carries the
+whole row's worth of value slots** — all thirteen columns, zeros in the ones it
+is not writing. That is free only while the call inlines and the field selector
+folds away; a body big enough to defeat that pays for all of them at once. WHY
+the fused body crosses the line is NOT established — inlining budget, register
+pressure, and lost auto-vectorization are all live candidates, and the ladder is
+the instrument that would tell them apart. The variants are Koru-only and are
+deliberately not in `run.sh`'s scenario list (the other arms would refuse them
+and `set -eu` would abort the run); run them by hand against `koru_store/a.out`.
+
+*The steering is still 12.7k characters of Koru from about 40 lines of C#.* A
+`capture` names the intermediates but nothing names a subexpression WITHIN one,
+so each shared term is written out once per component and left to LLVM to CSE.
+That is the verbosity finding, and unlike the performance claim it survived
+contact with the measurements.
 
 Two deviations from the sample are recorded in `koru_store/main.k` and hold for
 all three arms: a dense bounded grid instead of DOTS' sparse hash map (so

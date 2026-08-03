@@ -1,69 +1,72 @@
 ---
 type: belief
 id: frag-no-expression-local-turns-one-pass-into-seven
-provenance: written 2026-08-03 from the boids port and CORRECTED the same day when Lars challenged the claim and the measurement went the other way; the id keeps the original (wrong) name because ids are opaque and never renamed
+provenance: boids port 2026-08-03. Written wrong, corrected once when the measurement inverted, then corrected again when Lars asked "did you consider using capture?" — the construct the whole belief assumed was absent. The id keeps its original wrong name because ids are opaque and never renamed.
 ts: 2026-08-03
 ---
 
-# Splitting a fat per-element computation into several passes is FASTER than fusing it, and the first explanation was backwards (belief)
+# Where a per-element intermediate LIVES is the cost, and Koru has locals — I twice reasoned about the language from a structure I had chosen myself (belief)
 
-## What this file said before, and why it was wrong
+## The premise was false
 
-It claimed that the store's missing expression-local binding *forces* a
-one-pass algorithm to become a seven-pass one, and that Koru pays for the extra
-traversals. Both halves were false.
+Koru has an expression-local binding. It is `capture`, it nests under an effect
+arm, and a store query arm is an effect arm — so a per-row computation can hold
+its intermediates in named local slots and never touch a store column. Both
+earlier versions of this belief were built on the assumption that no such thing
+existed. I never looked; the corpus has had `capture` under every other nesting
+position for as long as the nesting sweep has existed.
 
-**A single pass was always available.** Chained writes inside one query arm run
-per ROW, and each write sees the previous one's value for that row — `step-dyn`
-in the same benchmark has been written that way since before boids existed. The
-seven traversals were a structure I chose and then read back as a property of
-the language.
+## What is actually true, measured
 
-**And the seven passes are the FAST shape.** Fusing them into one pass, same
-arithmetic and same bit-identical checksum, is about 1.5x SLOWER. So the
-supposed cost was not merely unforced, it was pointing the wrong way.
+The steering holds four intermediate vectors. Same arithmetic, same
+bit-identical checksum, five shapes, one variable — where the intermediates sit:
 
-This was caught by being challenged, not by being tested, which is the part
-worth keeping: the claim was assembled out of a structure I had authored, and I
-never ran the alternative before generalising about the language from it.
+- locals in a `capture`, one traversal — **fastest**
+- store columns, seven traversals — ~7% slower
+- store columns, progressively fused — degrades slowly
+- store columns, one traversal — **~1.6x slower than locals**
 
-## What is actually true
+Two facts fall out. **Locals beat columns**, which is unsurprising and is what
+the whole detour was reaching past. And **routing intermediates through columns
+gets WORSE as you fuse the passes**, which is the opposite of what anyone would
+predict, and is the finding worth keeping.
 
-The benchmark now carries a fusion ladder — the same steering as seven passes,
-as two-fused, as four-fused, and as one — all with the same checksum, so the
-only variable is the shape. Cost is flat from seven passes to four, then rises
-sharply when the whole body is fused. The degradation is NONLINEAR in body size,
-not proportional to the number of traversals.
+The mechanism behind that inversion is in the emitted code: a multi-field store
+write emits one write-path call per FIELD, and each call carries the entire
+row's value slots, zeros included. It is free only while the call inlines and
+the field selector folds. A body small enough to inline pays nothing; a body
+large enough to defeat the budget pays for every slot at once. So the store's
+write path has a cost that is invisible at every size anyone has tried and then
+arrives all at once, and which side of the line a program is on is not visible
+in its source. Why the fused body crosses it — inlining budget, register
+pressure, lost vectorization — is untested, and the ladder in the benchmark is
+the instrument that would separate them.
 
-The mechanism is visible in the emitted code and is the durable finding: **a
-multi-field write emits one write-path call per FIELD, and each call carries the
-whole row's worth of value slots** — every column, with zeros in the slots it is
-not writing. That is only free because the call inlines and the field selector
-folds, at which point the dead slots vanish. A body small enough to inline pays
-nothing; a body large enough to defeat whatever budget governs it pays for all
-of them at once.
+## The methodological residue, which is the real content
 
-So the store's write path has a cost that is invisible at every size anyone has
-tried and then arrives all at once. Which side of the line a program lands on is
-not visible in its source.
+Twice in one session I generalised about the LANGUAGE from a structure I had
+authored, and twice the generalisation was wrong in a way that flattered the
+narrative: first "the language forces multiple passes" (it does not), then
+"multiple passes are therefore the fast shape" (true only among the shapes I had
+tried). Both survived my own review because the code in front of me really did
+have the property I was describing — I just had no evidence it was the
+language's property rather than mine.
 
-## What remains open, and it is the interesting part
+The check that would have caught both is the same one and it is cheap: **before
+concluding a language lacks something, search the corpus for the thing.** Not
+the docs — the corpus. `capture` appears in a dozen nesting-sweep tests. A grep
+would have ended this before the first wrong sentence was written.
 
-Why the fused body crosses the line is NOT established. Candidates, none tested:
-an inlining budget; register pressure across a long live range; or the loss of
-auto-vectorization once the body contains store-to-load dependencies through
-columns. The ladder is the instrument that would separate them, and it exists
-now.
+The second-order lesson is about who caught it. Both corrections came from being
+challenged by someone who knew the language, not from any test — every variant
+was green and produced identical checksums the whole way through. A green board
+has no opinion about whether your explanation is the right one.
 
-Also unresolved: whether the expression-local binding is worth having at all.
-The verbosity argument for it stands on its own — 12.7k characters of Koru from
-about 40 lines of C# — but the PERFORMANCE argument that was originally attached
-to it is dead, and it should not be revived without a measurement.
+## Open
 
-## The methodological residue
-
-When a language lacks a way to say something, the temptation is to conclude that
-the workaround you reached for is what the language forces. It is not: it is
-what you reached for. The check is cheap and I skipped it — write the other
-shape and time it. Both shapes belong in the repo afterwards, which is why the
-ladder is committed rather than deleted once it had made its point.
+- Why the column-routed fused body falls off the cliff. Three candidates named
+  above; the ladder is committed and can settle it.
+- Whether the remaining verbosity wants anything. `capture` names an
+  intermediate but nothing names a subexpression WITHIN one, which is why the
+  steering is still ~12.7k characters from about 40 lines of C#. That is a real
+  gap and it is a smaller one than the belief originally claimed.
