@@ -51,6 +51,46 @@ carries no name across a boundary; appending a declaration and referring to it
 does. That is also why the site-local class relocates for free and why
 `liquid_template:emit`, bare keyword and all, was never at risk.
 
+### The name can be in the HOST namespace, and then it is not a name at all
+
+"Rewriting in place carries no name across a boundary" is true only while the
+rewrite's output is Koru. A rewrite that emits a reference to the declaration's
+own EMITTED STORAGE carries a name across the boundary in Zig — the cell struct
+and its backing var are members of the module that declared them, and text
+rewritten into a sibling module names them into a namespace that has never
+heard of them. The grid's cells did exactly this, in every position its
+whole-program read pass could reach.
+
+Two things follow, and neither was visible from the Koru-name story.
+
+**The diagnostic is worse, not better.** A misminted tor path at least fails as
+`unknown tor 'lib:__store_insert_x'`, which names the domain and the culprit. A
+misqualified host member fails as `use of undeclared identifier
+'__koru_grid_cells'` from the Zig backend — no Koru construct named, no site,
+no library. The Koru resolver never sees the reference, so none of the checking
+that exists for names applies to it.
+
+**Exposure now DOES scale with reach.** The original claim's counter-example was
+`std/taps:tap`, which rewrites everywhere and mints nothing; that remains true
+of rewrites that only move Koru around. But once a rewrite can emit a host
+member reference, the number of program positions it reaches is exactly the
+number of places the boundary can break — a guard, an argument, an
+interpolation, a loop body. The grid's read pass went from two sites to
+every-expression-in-the-program in one commit, and the cross-module hole went
+from theoretical to certain in the same commit.
+
+So the predicate wants restating: it is whether a transform emits a reference
+something else must RESOLVE — in either language. Koru resolution and Zig scope
+are two namespaces with one boundary between them, and only one of them has
+diagnostics that mention Koru.
+
+There is a second, quieter half. Being non-`pub` is NOT part of this fault, and
+it looks like it is: every Koru module lands in one emitted file as a nested
+namespace, and `pub` governs `@import` boundaries, not namespaces within a
+file. A `pub` sprinkle passes the mirror, looks like half the fix forever, and
+is measurable as unnecessary in about a minute. The general form: when a fix has
+two plausible halves, break each one separately and see which the wall notices.
+
 ## The failure that does not fail
 
 Every red on this wall is a compile error except one. `std/runtime:register`
