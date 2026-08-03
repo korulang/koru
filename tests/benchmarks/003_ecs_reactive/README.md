@@ -24,7 +24,7 @@ intentionally plain: each binary emits one JSON line per run.
   archetypes during the workload: `Idle`, `Seeking`, `Attacking`, `Stunned`,
   and `Dead`. It uses `Commands` for component insert/remove, real queries over
   changing marker/component sets, health changes, and a deterministic checksum.
-- `boids`: Unity DOTS `BoidSystem.cs`, ported. 100_000 flocking boids over a
+- `boids`: Unity DOTS `BoidSystem.cs`, ported. Four arms — the only scenario with a legion entry. 100_000 flocking boids over a
   32³ spatial grid: quantize, scatter heading and position into cells, resolve
   each occupied cell's nearest target and obstacle, then steer every boid from
   its cell's aggregate. DOTS' own constants, unscaled. This is the first
@@ -122,7 +122,7 @@ the multipliers below have equivalence evidence behind them everywhere except
 | fanout | 8543 | 25452 | 14260 | 1.8x | ✗ |
 | bevy_strength_world | 21076 | 65322 | 16627 | 3.9x | = |
 | combat_world | 3560 | 9832 | — | — | — |
-| boids | 220409 | 318551 | 100857 | 3.2x | = |
+| boids | 217432 | 314904 | 98350 | 3.2x | = |
 
 Three of these are worth naming.
 
@@ -145,9 +145,9 @@ only readable at all because `std/time` was moved onto a monotonic nanosecond
 clock while writing this entry — on the previous wall clock, which ticks in
 whole microseconds on darwin, it reported zero.
 
-**`boids` is the borrowed workload, and Koru is 2.19x FASTER than hand-written
-striped Zig** — 101 ms against the baseline's 220 ms, and 3.1x faster than
-bevy_ecs's 318 ms, with a `592303452` checksum bit-identical across all three
+**`boids` is the borrowed workload, and Koru is 2.2x FASTER than hand-written
+striped Zig** — 98 ms against the baseline's 217 ms, 2.5x faster than legion's
+242 ms and 3.2x faster than bevy_ecs's 315 ms, with a `592303452` checksum bit-identical across all three
 arms in every run and across every variant below. It is a port of Unity DOTS `BoidSystem.cs` with DOTS' own
 constants unscaled (CellRadius 8, weights 1/1/2, ObstacleAversionDistance 30,
 MoveSpeed 25), so the arithmetic is somebody else's design and not one chosen
@@ -210,6 +210,35 @@ implementation defects stacked, the sequential write path and the noreturn trap
 edge. With both addressed the ordering is what intuition said at the start: one
 fat pass (101 ms) beats seven thin ones (123 ms), and Koru runs the workload at
 2.2x the speed of the hand-written striped baseline.
+
+**A LEGION ARM EXISTS FOR THIS SCENARIO ONLY, and it is here to answer one
+question.** On the separate `ecs_bench_suite` port (`koru-benchmarks/suites/
+ecs-store`) legion beats Koru by ~1.3x on `simple_iter`, and the reason is
+understood: legion's query touches two components as 12-byte vec3s — two
+contiguous streams — where the Koru port declares six scalar f32 columns, six
+streams. That is archetype PACKING paying off on a pure contiguous sweep.
+
+boids is the workload where packing has little to work with: most of the traffic
+is scatter/gather into a side grid at a computed cell index, and the frame is
+dominated by the steering body rather than by iteration. Five interleaved
+rounds, every arm on checksum 592303452:
+
+| arm | boids |
+|---|---:|
+| koru_store | 98 ms |
+| zig_striped | 217 ms |
+| legion | 242 ms |
+| bevy_ecs | 315 ms |
+
+**The advantage does not generalise.** legion is 1.3x ahead of Koru on
+`simple_iter` and 2.5x behind on boids, and it is behind the hand-written
+striped baseline here too. Two caveats stated rather than buried: legion is
+pinned at 0.3.1 because that is the version the reference suite uses and the
+version that wins `simple_iter`, so it is the right one for consistency but it
+is not current; and the arm carries a struct-of-arrays grid behind
+`--features soa_grid` as a layout control, which also matches the checksum and
+is slower (268 ms), so the array-of-structs default is legion's better showing,
+not a handicap. `./run_legion_anchor.sh` runs it.
 
 LOUD-AND-FAST WAS TRIED AND DOES NOT EXIST, which is why the escape hatch is
 spelled rather than inferred. Clamping the index and recording the violation in

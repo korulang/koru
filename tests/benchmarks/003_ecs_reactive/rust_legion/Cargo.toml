@@ -1,0 +1,27 @@
+[package]
+name = "legion_ecs_reactive_bench"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# default-features = false drops `parallel` (rayon), `serialize` and
+# `crossbeam-events`. Dropping `parallel` is the important one: with it,
+# `Schedule::execute` routes through `rayon::join` and `Executor::run_systems`
+# schedules systems concurrently. Every arm of this scenario is single-threaded,
+# so the sequential executor is the only correct one here. `codegen` is kept for
+# the `#[system]` attribute, which is how a legion author writes a system.
+[dependencies]
+legion = { version = "0.3", default-features = false, features = ["codegen"] }
+
+# No [profile.release] on purpose: the bevy arm has none either, so both Rust
+# arms compile under identical rustc settings (opt-level 3, no LTO,
+# codegen-units 16). Tuning one and not the other would measure cargo, not ECS.
+
+[features]
+# Layout control, not a shipping mode. The dense grid is a plain resource, so
+# its layout is a property of this file rather than of legion; building with
+# `--features soa_grid` swaps the array-of-structs grid for the
+# struct-of-arrays one the bevy arm uses, which is how much of any
+# legion-vs-bevy delta is attributable to the grid rather than to the ECS.
+# Both variants share ONE copy of the arithmetic, so they cannot diverge.
+soa_grid = []
