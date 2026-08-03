@@ -1,0 +1,2 @@
+interp 7
+indexed guard ok

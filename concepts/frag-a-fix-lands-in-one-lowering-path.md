@@ -134,3 +134,36 @@ honest about the feature and silent about its coverage.
 - **Converge rather than patch.** The fix here deleted the branch — both arms
   now call the same lowering — because a second copy that merely agrees today
   is the same bug waiting.
+
+## The second tell is SCOPE, and it is why the same feature can be missing entirely
+
+The two tells above — a speed gap, an arity gap — both assume the second
+lowering *does* the thing, worse or narrower. There is a blunter case, found
+closing the grid's read surface on 2026-08-03 and pinned aspirationally as
+690_250: the second path does not do it at all, because the function that does
+it is **out of its scope**.
+
+`indexedFieldRefs` is complete. It recurses, it handles nested indices, it is
+the subject of its own pin. It also lives inside the helper struct scoped to
+the `stored` transform, and the whole-program walk that `std/store:new` runs
+carries a *different* helper struct — one holding only the singleton-path
+rewriter. So a handle-addressed read lowers in a write block and nowhere else,
+not because anyone decided that, but because the two walks were written in two
+places and each grew the rewriters its author needed. store.kz holds four
+separate `storeRefs` copies in four scopes; that number is the mechanism.
+
+What this adds to the belief: the drift is not only in what a lowering DOES,
+it is in what a lowering can REACH. And the capability form is in one way worse
+than the cost form this concept was written about — a silent 6x at least runs.
+A missing rewriter produces a backend error in a program position that has
+nothing to do with the duplication, so the author reads it as "this expression
+is unsupported" rather than "this path never got the fix", and files it as a
+language limitation. That is exactly how it was recorded the first time it was
+seen.
+
+- **A private helper struct inside a transform is a lowering boundary**, even
+  though it looks like ordinary code organisation. Anything defined there is
+  invisible to every other pass in the same file.
+- **Count the copies before believing a rewriter is the rewriter.** `grep` for
+  the function name; if it appears in more than one scope, the feature is
+  present in some of them.
