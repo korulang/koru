@@ -69,7 +69,67 @@ AST-consuming command inherits it.
 
 Landed C-first on the `parser-generate-c` worktree: `koruc <grammar>.k generate c`
 writes a standalone C parser; the SHOWN correctness battery and the details live
-in the commit, not here. Open (Lars to steer): how to pin a C-emitting command as
-a regression test — a NEW test kind (emit → `cc` → run → diff), which the harness
-has no shape for yet — and the next target (js as another vocabulary table) vs
-deepening grammar features first.
+in the commit, not here.
+
+## The vocabulary table's unlisted entry: the artifact's PUBLIC ABI
+
+A target's per-target decisions were listed above as *how do I spell this
+construct*, then widened to *what will this host reject that C tolerated*. Both are
+about the emitted CODE. The entry neither names is about the emitted ARTIFACT:
+**what must a consumer read in order to link against it?**
+
+An artifact whose types are declared only inside its own generated body is a
+PROGRAM wearing a library's description. It does link — by the consumer
+hand-retyping the ABI, which is failure disguised as success, because that copy is
+correct exactly once. Emitting the boundary as its own file is the whole difference
+between "the artifact compiles" and "the artifact is consumable", and only the
+second is what the word library means.
+
+Two guards, not one — and this only shows up when a SECOND grammar arrives. The
+scalar types are shared by every generated parser while the entry point is
+per-grammar; guard them together and two parsers cannot inhabit one translation
+unit, a restriction with no reason behind it and invisible to any test that emits a
+single artifact. **The unit of an export catalog is not one artifact; it is any set
+of them a consumer might combine.**
+
+## What can leave Koru at all: the hand-back has to DISSOLVE
+
+The dissolution named above as the reason C was reachable with no whole-program
+emitter is not a fact about parsers. It is the general **export predicate**, and it
+sorts the standard library:
+
+- Where a surface is a pure function over a buffer — bytes in, verdict out — it
+  dissolves and can leave. `std/regex` is that shape, and its terminal engine
+  already lives inside the parser's own emitter.
+- `std/kernel` already exports by construction: its host-buffer calling convention
+  IS a foreign API, arrived at for reasons having nothing to do with export.
+- For `std/store` and `std/grid` the DATA dissolves and the REACTIVITY does not. A
+  standing rule firing is an effect, and an effect has no foreign spelling — so the
+  exportable half of a store is the half that isn't why anyone wants a store.
+- **A signature carrying a phantom obligation cannot export honestly.** The
+  discharge is a compile-time guarantee and a foreign caller is not compiled by us.
+  Exporting one is not a missing feature; it is a promise made to someone we have
+  no way to hold to it.
+
+That last point is the real residue of the hesitancy about libraries, and it is a
+GUARANTEE gap, not a capability gap. It wants a refusal at the export site rather
+than a note here.
+
+## What emitted-code quality does and does not buy
+
+Quality of the emitted artifact is the argument for VENDORING — a dependency-free
+unit a consumer commits, reads and reviews without ever installing our toolchain,
+which is how every parser generator that won, won. It is not an argument for
+BREADTH. The backend-bakeoff frame is paused on the value model, and a beautiful
+recognizer is still a recognizer; multiplying it across mainstream targets
+multiplies precisely the thing the pause is about. Quality answers "would anyone
+accept this into their tree" and is silent on "is this worth having a dozen of."
+
+Open (Lars to steer): the frame's own retained goal — Koru's grammar as the
+artifact, generating a parser for the language that hosts the compiler, with the
+walls it hits becoming the measured work list for the typed-value cut — needs no
+un-pause and looks like the highest-leverage move available. And superseding the
+earlier Open about pinning a C-emitting command: that test kind is no longer
+missing. It exists as the bakeoff conformance runner and passes for both shipped
+targets. What remains is that nothing wires it to the regression board, so the
+export path carries no coverage there, over a stub fixture corpus.
