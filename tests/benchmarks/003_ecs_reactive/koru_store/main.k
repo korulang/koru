@@ -112,6 +112,7 @@ set-scenario = std/regex:match(a)
 | `boids_f4` _ |> std/store:stored { cfg.scenario: 14, cfg.which: 0 }
 | `boids_split` _ |> std/store:stored { cfg.scenario: 15, cfg.which: 0 }
 | `boids_helpers` _ |> std/store:stored { cfg.scenario: 23, cfg.which: 0 }
+| `boids_fold` _ |> std/store:stored { cfg.scenario: 24, cfg.which: 0 }
 | `boids_phase` _ |> std/store:stored { cfg.scenario: 16, cfg.which: 0 }
 | no-match |> std/store:stored { cfg.scenario: 0, cfg.which: 0 }
 
@@ -411,6 +412,43 @@ steer-capture = std/store:query(flock)
     | captured r |> std/store:stored { b.fx: r.tfx, b.fy: r.tfy, b.fz: r.tfz, b.px: b.px + r.tfx * (25.0 * @as(f32, 1.0 / 60.0)), b.py: b.py + r.tfy * (25.0 * @as(f32, 1.0 / 60.0)), b.pz: b.pz + r.tfz * (25.0 * @as(f32, 1.0 / 60.0)) }
         |> std/store:stored { b.px: @min(@max(b.px, 0.0), 255.999), b.py: @min(@max(b.py, 0.0), 255.999), b.pz: @min(@max(b.pz, 0.0), 255.999) }
 
+// RED HERRING, PINNED. Identical arithmetic to `steer-capture`, but the clamp
+// is folded into the SAME block instead of a second chained one.
+//
+// The reasoning that produced this variant: two chained `stored`s are two
+// transactions, so px/py/pz are written unclamped, made observable, then
+// written again -- three stores the emitted code does not need. Nothing in
+// this program watches them (zero `watch`, zero `intercept`), and subscriptions
+// are compiled into the write path, so the compiler KNOWS the observer set is
+// empty at comptime and could fuse the two transactions itself. That is the
+// fusion argument the atomicity ruling licenses.
+//
+// IT IS 2 ms SLOWER. 99.8 against 97.6, seven interleaved rounds, same
+// checksum. The store-count gap to clang (14 vector stores per four boids in
+// `steer_capture_event.handler` against clang's 6) is real and is NOT
+// collectible this way: removing the second transaction makes the single body
+// fatter, and this workload punishes fat bodies -- the same direction the
+// fusion ladder shows, where `boids_f4` is last.
+//
+// So compiler-side transaction fusion is CONTRAINDICATED here, and this
+// scenario exists to stop it being built on the strength of a store count.
+// Unexplained, and deliberately not guessed at: the likely reading is that the
+// extra stores are capture-slot SPILLS rather than column writes, which would
+// make body size the cause and the store count a symptom.
+tor steer-fold {}
+steer-fold = std/store:query(flock)
+! query b |> capture { tfx: 0.0[f32], tfy: 0.0[f32], tfz: 0.0[f32], nhx: 0.0[f32], nhy: 0.0[f32], nhz: 0.0[f32] }
+    ! as s |> captured { tfx: 1.0 * (if (((cells[b.cell].ax / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fx) * (cells[b.cell].ax / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fx) + (cells[b.cell].ay / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fy) * (cells[b.cell].ay / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fy) + (cells[b.cell].az / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fz) * (cells[b.cell].az / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fz)) > 1.1754944e-38) (cells[b.cell].ax / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fx) * (1.0 / @sqrt(((cells[b.cell].ax / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fx) * (cells[b.cell].ax / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fx) + (cells[b.cell].ay / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fy) * (cells[b.cell].ay / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fy) + (cells[b.cell].az / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fz) * (cells[b.cell].az / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fz)))) else 0.0), tfy: 1.0 * (if (((cells[b.cell].ax / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fx) * (cells[b.cell].ax / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fx) + (cells[b.cell].ay / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fy) * (cells[b.cell].ay / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fy) + (cells[b.cell].az / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fz) * (cells[b.cell].az / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fz)) > 1.1754944e-38) (cells[b.cell].ay / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fy) * (1.0 / @sqrt(((cells[b.cell].ax / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fx) * (cells[b.cell].ax / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fx) + (cells[b.cell].ay / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fy) * (cells[b.cell].ay / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fy) + (cells[b.cell].az / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fz) * (cells[b.cell].az / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fz)))) else 0.0), tfz: 1.0 * (if (((cells[b.cell].ax / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fx) * (cells[b.cell].ax / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fx) + (cells[b.cell].ay / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fy) * (cells[b.cell].ay / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fy) + (cells[b.cell].az / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fz) * (cells[b.cell].az / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fz)) > 1.1754944e-38) (cells[b.cell].az / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fz) * (1.0 / @sqrt(((cells[b.cell].ax / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fx) * (cells[b.cell].ax / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fx) + (cells[b.cell].ay / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fy) * (cells[b.cell].ay / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fy) + (cells[b.cell].az / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fz) * (cells[b.cell].az / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fz)))) else 0.0) }
+        |> captured { tfx: s.tfx + 1.0 * (if (((b.px * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sx) * (b.px * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sx) + (b.py * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sy) * (b.py * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sy) + (b.pz * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sz) * (b.pz * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sz)) > 1.1754944e-38) (b.px * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sx) * (1.0 / @sqrt(((b.px * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sx) * (b.px * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sx) + (b.py * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sy) * (b.py * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sy) + (b.pz * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sz) * (b.pz * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sz)))) else 0.0), tfy: s.tfy + 1.0 * (if (((b.px * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sx) * (b.px * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sx) + (b.py * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sy) * (b.py * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sy) + (b.pz * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sz) * (b.pz * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sz)) > 1.1754944e-38) (b.py * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sy) * (1.0 / @sqrt(((b.px * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sx) * (b.px * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sx) + (b.py * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sy) * (b.py * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sy) + (b.pz * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sz) * (b.pz * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sz)))) else 0.0), tfz: s.tfz + 1.0 * (if (((b.px * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sx) * (b.px * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sx) + (b.py * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sy) * (b.py * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sy) + (b.pz * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sz) * (b.pz * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sz)) > 1.1754944e-38) (b.pz * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sz) * (1.0 / @sqrt(((b.px * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sx) * (b.px * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sx) + (b.py * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sy) * (b.py * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sy) + (b.pz * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sz) * (b.pz * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sz)))) else 0.0) }
+        |> captured { tfx: s.tfx + 2.0 * (if ((((if (cells[b.cell].ti == 0) fr.t0x else fr.t1x) - b.px) * ((if (cells[b.cell].ti == 0) fr.t0x else fr.t1x) - b.px) + ((if (cells[b.cell].ti == 0) fr.t0y else fr.t1y) - b.py) * ((if (cells[b.cell].ti == 0) fr.t0y else fr.t1y) - b.py) + ((if (cells[b.cell].ti == 0) fr.t0z else fr.t1z) - b.pz) * ((if (cells[b.cell].ti == 0) fr.t0z else fr.t1z) - b.pz)) > 1.1754944e-38) ((if (cells[b.cell].ti == 0) fr.t0x else fr.t1x) - b.px) * (1.0 / @sqrt((((if (cells[b.cell].ti == 0) fr.t0x else fr.t1x) - b.px) * ((if (cells[b.cell].ti == 0) fr.t0x else fr.t1x) - b.px) + ((if (cells[b.cell].ti == 0) fr.t0y else fr.t1y) - b.py) * ((if (cells[b.cell].ti == 0) fr.t0y else fr.t1y) - b.py) + ((if (cells[b.cell].ti == 0) fr.t0z else fr.t1z) - b.pz) * ((if (cells[b.cell].ti == 0) fr.t0z else fr.t1z) - b.pz)))) else 0.0), tfy: s.tfy + 2.0 * (if ((((if (cells[b.cell].ti == 0) fr.t0x else fr.t1x) - b.px) * ((if (cells[b.cell].ti == 0) fr.t0x else fr.t1x) - b.px) + ((if (cells[b.cell].ti == 0) fr.t0y else fr.t1y) - b.py) * ((if (cells[b.cell].ti == 0) fr.t0y else fr.t1y) - b.py) + ((if (cells[b.cell].ti == 0) fr.t0z else fr.t1z) - b.pz) * ((if (cells[b.cell].ti == 0) fr.t0z else fr.t1z) - b.pz)) > 1.1754944e-38) ((if (cells[b.cell].ti == 0) fr.t0y else fr.t1y) - b.py) * (1.0 / @sqrt((((if (cells[b.cell].ti == 0) fr.t0x else fr.t1x) - b.px) * ((if (cells[b.cell].ti == 0) fr.t0x else fr.t1x) - b.px) + ((if (cells[b.cell].ti == 0) fr.t0y else fr.t1y) - b.py) * ((if (cells[b.cell].ti == 0) fr.t0y else fr.t1y) - b.py) + ((if (cells[b.cell].ti == 0) fr.t0z else fr.t1z) - b.pz) * ((if (cells[b.cell].ti == 0) fr.t0z else fr.t1z) - b.pz)))) else 0.0), tfz: s.tfz + 2.0 * (if ((((if (cells[b.cell].ti == 0) fr.t0x else fr.t1x) - b.px) * ((if (cells[b.cell].ti == 0) fr.t0x else fr.t1x) - b.px) + ((if (cells[b.cell].ti == 0) fr.t0y else fr.t1y) - b.py) * ((if (cells[b.cell].ti == 0) fr.t0y else fr.t1y) - b.py) + ((if (cells[b.cell].ti == 0) fr.t0z else fr.t1z) - b.pz) * ((if (cells[b.cell].ti == 0) fr.t0z else fr.t1z) - b.pz)) > 1.1754944e-38) ((if (cells[b.cell].ti == 0) fr.t0z else fr.t1z) - b.pz) * (1.0 / @sqrt((((if (cells[b.cell].ti == 0) fr.t0x else fr.t1x) - b.px) * ((if (cells[b.cell].ti == 0) fr.t0x else fr.t1x) - b.px) + ((if (cells[b.cell].ti == 0) fr.t0y else fr.t1y) - b.py) * ((if (cells[b.cell].ti == 0) fr.t0y else fr.t1y) - b.py) + ((if (cells[b.cell].ti == 0) fr.t0z else fr.t1z) - b.pz) * ((if (cells[b.cell].ti == 0) fr.t0z else fr.t1z) - b.pz)))) else 0.0) }
+        |> captured { nhx: if ((cells[b.cell].od - 30.0) < 0.0) ((fr.obx + (if (((b.px - fr.obx) * (b.px - fr.obx) + (b.py - fr.oby) * (b.py - fr.oby) + (b.pz - fr.obz) * (b.pz - fr.obz)) > 1.1754944e-38) (b.px - fr.obx) * (1.0 / @sqrt(((b.px - fr.obx) * (b.px - fr.obx) + (b.py - fr.oby) * (b.py - fr.oby) + (b.pz - fr.obz) * (b.pz - fr.obz)))) else 0.0) * 30.0) - b.px) else (if ((s.tfx * s.tfx + s.tfy * s.tfy + s.tfz * s.tfz) > 1.1754944e-38) s.tfx * (1.0 / @sqrt((s.tfx * s.tfx + s.tfy * s.tfy + s.tfz * s.tfz))) else 0.0), nhy: if ((cells[b.cell].od - 30.0) < 0.0) ((fr.oby + (if (((b.px - fr.obx) * (b.px - fr.obx) + (b.py - fr.oby) * (b.py - fr.oby) + (b.pz - fr.obz) * (b.pz - fr.obz)) > 1.1754944e-38) (b.py - fr.oby) * (1.0 / @sqrt(((b.px - fr.obx) * (b.px - fr.obx) + (b.py - fr.oby) * (b.py - fr.oby) + (b.pz - fr.obz) * (b.pz - fr.obz)))) else 0.0) * 30.0) - b.py) else (if ((s.tfx * s.tfx + s.tfy * s.tfy + s.tfz * s.tfz) > 1.1754944e-38) s.tfy * (1.0 / @sqrt((s.tfx * s.tfx + s.tfy * s.tfy + s.tfz * s.tfz))) else 0.0), nhz: if ((cells[b.cell].od - 30.0) < 0.0) ((fr.obz + (if (((b.px - fr.obx) * (b.px - fr.obx) + (b.py - fr.oby) * (b.py - fr.oby) + (b.pz - fr.obz) * (b.pz - fr.obz)) > 1.1754944e-38) (b.pz - fr.obz) * (1.0 / @sqrt(((b.px - fr.obx) * (b.px - fr.obx) + (b.py - fr.oby) * (b.py - fr.oby) + (b.pz - fr.obz) * (b.pz - fr.obz)))) else 0.0) * 30.0) - b.pz) else (if ((s.tfx * s.tfx + s.tfy * s.tfy + s.tfz * s.tfz) > 1.1754944e-38) s.tfz * (1.0 / @sqrt((s.tfx * s.tfx + s.tfy * s.tfy + s.tfz * s.tfz))) else 0.0) }
+        |> captured { tfx: (if (((b.fx + @as(f32, 1.0 / 60.0) * (s.nhx - b.fx)) * (b.fx + @as(f32, 1.0 / 60.0) * (s.nhx - b.fx)) + (b.fy + @as(f32, 1.0 / 60.0) * (s.nhy - b.fy)) * (b.fy + @as(f32, 1.0 / 60.0) * (s.nhy - b.fy)) + (b.fz + @as(f32, 1.0 / 60.0) * (s.nhz - b.fz)) * (b.fz + @as(f32, 1.0 / 60.0) * (s.nhz - b.fz))) > 1.1754944e-38) (b.fx + @as(f32, 1.0 / 60.0) * (s.nhx - b.fx)) * (1.0 / @sqrt(((b.fx + @as(f32, 1.0 / 60.0) * (s.nhx - b.fx)) * (b.fx + @as(f32, 1.0 / 60.0) * (s.nhx - b.fx)) + (b.fy + @as(f32, 1.0 / 60.0) * (s.nhy - b.fy)) * (b.fy + @as(f32, 1.0 / 60.0) * (s.nhy - b.fy)) + (b.fz + @as(f32, 1.0 / 60.0) * (s.nhz - b.fz)) * (b.fz + @as(f32, 1.0 / 60.0) * (s.nhz - b.fz))))) else 0.0), tfy: (if (((b.fx + @as(f32, 1.0 / 60.0) * (s.nhx - b.fx)) * (b.fx + @as(f32, 1.0 / 60.0) * (s.nhx - b.fx)) + (b.fy + @as(f32, 1.0 / 60.0) * (s.nhy - b.fy)) * (b.fy + @as(f32, 1.0 / 60.0) * (s.nhy - b.fy)) + (b.fz + @as(f32, 1.0 / 60.0) * (s.nhz - b.fz)) * (b.fz + @as(f32, 1.0 / 60.0) * (s.nhz - b.fz))) > 1.1754944e-38) (b.fy + @as(f32, 1.0 / 60.0) * (s.nhy - b.fy)) * (1.0 / @sqrt(((b.fx + @as(f32, 1.0 / 60.0) * (s.nhx - b.fx)) * (b.fx + @as(f32, 1.0 / 60.0) * (s.nhx - b.fx)) + (b.fy + @as(f32, 1.0 / 60.0) * (s.nhy - b.fy)) * (b.fy + @as(f32, 1.0 / 60.0) * (s.nhy - b.fy)) + (b.fz + @as(f32, 1.0 / 60.0) * (s.nhz - b.fz)) * (b.fz + @as(f32, 1.0 / 60.0) * (s.nhz - b.fz))))) else 0.0), tfz: (if (((b.fx + @as(f32, 1.0 / 60.0) * (s.nhx - b.fx)) * (b.fx + @as(f32, 1.0 / 60.0) * (s.nhx - b.fx)) + (b.fy + @as(f32, 1.0 / 60.0) * (s.nhy - b.fy)) * (b.fy + @as(f32, 1.0 / 60.0) * (s.nhy - b.fy)) + (b.fz + @as(f32, 1.0 / 60.0) * (s.nhz - b.fz)) * (b.fz + @as(f32, 1.0 / 60.0) * (s.nhz - b.fz))) > 1.1754944e-38) (b.fz + @as(f32, 1.0 / 60.0) * (s.nhz - b.fz)) * (1.0 / @sqrt(((b.fx + @as(f32, 1.0 / 60.0) * (s.nhx - b.fx)) * (b.fx + @as(f32, 1.0 / 60.0) * (s.nhx - b.fx)) + (b.fy + @as(f32, 1.0 / 60.0) * (s.nhy - b.fy)) * (b.fy + @as(f32, 1.0 / 60.0) * (s.nhy - b.fy)) + (b.fz + @as(f32, 1.0 / 60.0) * (s.nhz - b.fz)) * (b.fz + @as(f32, 1.0 / 60.0) * (s.nhz - b.fz))))) else 0.0) }
+    | captured r |> std/store:stored { b.fx: r.tfx, b.fy: r.tfy, b.fz: r.tfz, b.px: @min(@max(b.px + r.tfx * (25.0 * @as(f32, 1.0 / 60.0)), 0.0), 255.999), b.py: @min(@max(b.py + r.tfy * (25.0 * @as(f32, 1.0 / 60.0)), 0.0), 255.999), b.pz: @min(@max(b.pz + r.tfz * (25.0 * @as(f32, 1.0 / 60.0)), 0.0), 255.999) }
+
+tor boid-frame-fold {}
+boid-frame-fold = frame-actors() |> grid-clear() |> hash-boids() |> scatter() |> cell-resolve()
+    |> steer-fold()
+
 tor boid-frame-capture {}
 boid-frame-capture = frame-actors() |> grid-clear() |> hash-boids() |> scatter() |> cell-resolve()
     |> steer-capture()
@@ -589,6 +627,10 @@ s-boids-phase = for(0..@as(usize, @intCast(cfg.frames)))
 
 
 
+tor s-boids-fold {}
+s-boids-fold = for(0..@as(usize, @intCast(cfg.frames)))
+    ! each _ |> boid-frame-fold()
+
 tor s-boids-helpers {}
 s-boids-helpers = for(0..@as(usize, @intCast(cfg.frames)))
     ! each _ |> boid-frame-helpers()
@@ -680,6 +722,11 @@ run-boids-phase = if(cfg.scenario == 16)
 
 
 
+tor run-boids-fold {}
+run-boids-fold = if(cfg.scenario == 24)
+| then |> s-boids-fold()
+| else |> _
+
 tor run-boids-helpers {}
 run-boids-helpers = if(cfg.scenario == 23)
 | then |> s-boids-helpers()
@@ -688,7 +735,7 @@ run-boids-helpers = if(cfg.scenario == 23)
 tor run {}
 run = run-dense() |> run-sparse() |> run-query-get() |> run-schedule-empty()
     |> run-spawn() |> run-spawn-batch() |> run-despawn() |> run-add-remove()
-    |> run-fanout() |> run-bevy-strength() |> run-boids() |> run-boids-fused() |> run-boids-f2() |> run-boids-f4() |> run-boids-split() |> run-boids-helpers() |> run-boids-phase()
+    |> run-fanout() |> run-bevy-strength() |> run-boids() |> run-boids-fused() |> run-boids-f2() |> run-boids-f4() |> run-boids-split() |> run-boids-helpers() |> run-boids-fold() |> run-boids-phase()
 
 // -------------------------------------------------------------- the checksum
 //
@@ -699,7 +746,7 @@ run = run-dense() |> run-sparse() |> run-query-get() |> run-schedule-empty()
 // it; the older rows deliberately keep their construction inside the timed
 // region and the README says so.
 tor prep {}
-prep = if(cfg.scenario >= 11 and cfg.scenario <= 23)
+prep = if(cfg.scenario >= 11 and cfg.scenario <= 24)
 | then |> flock-init() |> flock-normalize()
 | else |> _
 
@@ -729,7 +776,7 @@ fin-add-remove = if(cfg.scenario == 8)
 | else |> _
 
 tor fin-boids {}
-fin-boids = if(cfg.scenario >= 11 and cfg.scenario <= 23)
+fin-boids = if(cfg.scenario >= 11 and cfg.scenario <= 24)
 | then |> read-flock()
 | else |> _
 
@@ -817,6 +864,11 @@ name-boids-split = if(cfg.scenario == 15)
 | then |> std/io:print("boids_split")
 | else |> _
 
+tor name-boids-fold {}
+name-boids-fold = if(cfg.scenario == 24)
+| then |> std/io:print("boids_fold")
+| else |> _
+
 tor name-boids-helpers {}
 name-boids-helpers = if(cfg.scenario == 23)
 | then |> std/io:print("boids_helpers")
@@ -837,7 +889,7 @@ tor emit { ns: i64 }
 emit = std/io:print("{\"impl\":\"koru_store\",\"scenario\":\"")
     |> name-dense() |> name-sparse() |> name-query-get() |> name-schedule-empty()
     |> name-spawn() |> name-spawn-batch() |> name-despawn() |> name-add-remove()
-    |> name-fanout() |> name-bevy-strength() |> name-boids() |> name-boids-fused() |> name-boids-f2() |> name-boids-f4() |> name-boids-split() |> name-boids-helpers() |> name-boids-phase()
+    |> name-fanout() |> name-bevy-strength() |> name-boids() |> name-boids-fused() |> name-boids-f2() |> name-boids-f4() |> name-boids-split() |> name-boids-helpers() |> name-boids-fold() |> name-boids-phase()
     |> std/io:print.ln("\",\"entities\":{{ cfg.entities:d }},\"frames\":{{ cfg.frames:d }},\"observers\":{{ cfg.observers:d }},\"elapsed_ns\":{{ ns:d }},\"sink\":{{ acc.sink:d }}}")
 
 // -------------------------------------------------------------------- driver

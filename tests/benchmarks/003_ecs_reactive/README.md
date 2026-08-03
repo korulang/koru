@@ -220,11 +220,22 @@ and both clangs, at the same width, with no explicit SIMD anywhere in the
 emitted Zig (zero `@Vector`/`@splat`/`@reduce`). Steer phase: koru 58.8 ms,
 repaired Zig 58.2, forced Rust 63.1. There is no headroom in the arithmetic.
 
-The one live codegen item is the store count: `boids` stores 15 times per four
-boids where clang stores 6, materialising steering intermediates into store
-columns instead of registers. Worth ~1.5 ms, and **Koru already emits the better
-shape elsewhere** — `steer_capture_best` hits 6 stores at 259 instructions. The
-emitter is capable of it; the fused sweep does not do it.
+The store count is the one place Koru is behind and it is **not collectible**.
+`steer_capture_event.handler` emits 14 vector stores per four boids against
+clang's 6, because the steer ends in two chained `stored` blocks — the move,
+then the clamp — and two chained blocks are two transactions, so px/py/pz are
+written unclamped and then written again.
+
+Nothing in the program watches them (zero `watch`, zero `intercept`), and
+subscriptions are compiled into the write path, so the compiler knows the
+observer set is empty at comptime and could fuse the two transactions itself.
+**Tested by hand and it is 2 ms SLOWER** — `boids_fold`, 99.8 against 97.6 over
+seven interleaved rounds, same checksum. Fusing makes the single body fatter and
+this workload punishes fat bodies, the same direction the ladder shows. The
+scenario is kept as a falsifier so compiler-side transaction fusion is not built
+on the strength of a store count. Likely reading, not verified: the extra stores
+are capture-slot spills, which would make body size the cause and the store
+count a symptom.
 
 ### Three claims this README used to make, all retired
 
