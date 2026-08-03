@@ -7875,10 +7875,26 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
     //     projected fields per row, calls the transplanted body event — plus any
     //     enclosing captures (names already live in this Zig scope). ---
     var loop = std.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
-    const hdr = std.fmt.allocPrint(allocator, "{{\nfor (0..__koru_store_{s}.len) |__koru_si| {{\n", .{store_name}) catch unreachable;
+    // The SoA cell is declared in the STORE'S OWN module, so every reference to
+    // it needs the SAME qualifier the body call below already uses — both name
+    // things living in `home_ns`.
+    //
+    // Emitting it bare was correct only by coincidence of placement. With no
+    // capture this loop is lifted into a `__store_sweeprun_*` event that is
+    // PLACED IN the store's module, so a bare `__koru_store_<s>` resolved
+    // because it happened to be emitted next to the cell it names. A capture
+    // keeps the loop INLINE at the sweep site to hold the captured value in
+    // lexical scope — the CALLER's namespace — and the coincidence ends: one
+    // emitted statement then qualified the body call and not the cell, three
+    // tokens apart (115_043).
+    //
+    // Entry-file programs are unaffected: the qualifier is `main_module.` there
+    // and the cell is declared inside `main_module`.
+    const cellq = storeEmitQualifier(allocator, home_ns, program.main_module_name);
+    const hdr = std.fmt.allocPrint(allocator, "{{\nfor (0..{s}__koru_store_{s}.len) |__koru_si| {{\n", .{ cellq, store_name }) catch unreachable;
     loop.appendSlice(allocator, hdr) catch unreachable;
     for (proj_names, proj_cols) |pn, ci| {
-        const bind = std.fmt.allocPrint(allocator, "const {s} = __koru_store_{s}.{s}[__koru_si];\n_ = &{s};\n", .{ pn, store_name, col_names[ci], pn }) catch unreachable;
+        const bind = std.fmt.allocPrint(allocator, "const {s} = {s}__koru_store_{s}.{s}[__koru_si];\n_ = &{s};\n", .{ pn, cellq, store_name, col_names[ci], pn }) catch unreachable;
         loop.appendSlice(allocator, bind) catch unreachable;
     }
     // The arm's `when` guard, emitted AFTER the projection binds so it can read
