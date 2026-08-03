@@ -13,6 +13,12 @@ const Scenario = enum {
     combat_world,
     bevy_strength_world,
     boids,
+    // Instrumented twin of `boids`: identical arithmetic, identical checksum,
+    // plus a per-phase nanosecond breakdown on stderr. Not in run.sh.
+    boids_phase,
+    // Same again, but with hash and scatter as two passes instead of one --
+    // the shape the Koru arm is forced into. Same checksum.
+    boids_split_hs,
 };
 
 const Config = struct {
@@ -550,8 +556,25 @@ const BoidWorld = struct {
         allocator.free(self.cell_obstacle_dist);
     }
 
-    fn run(self: *BoidWorld, frames: usize) void {
+    // Per-phase accumulator for the `boids_phase` twin. `timed` is comptime,
+    // so the `boids` instantiation is the original loop with no clock in it.
+    const PhaseTimer = struct {
+        ph: [5]u64 = .{0} ** 5,
+        prev: std.time.Instant = undefined,
+        fn begin(pt: *PhaseTimer, comptime timed: bool) void {
+            if (timed) pt.prev = std.time.Instant.now() catch unreachable;
+        }
+        fn mark(pt: *PhaseTimer, comptime timed: bool, comptime slot: usize) void {
+            if (!timed) return;
+            const now = std.time.Instant.now() catch unreachable;
+            pt.ph[slot] += now.since(pt.prev);
+            pt.prev = now;
+        }
+    };
+
+    fn run(self: *BoidWorld, frames: usize, comptime timed: bool, comptime split_hs: bool, pt: *PhaseTimer) void {
         for (0..frames) |frame| {
+            pt.begin(timed);
             // Sawtooth target and obstacle motion -- no trigonometry, because
             // libm sin/cos differ in the last ulp between toolchains.
             const targets = [n_targets]Vec3{
@@ -561,6 +584,7 @@ const BoidWorld = struct {
             const obstacles = [n_obstacles]Vec3{
                 .{ .x = @floatFromInt((frame * 13) % 256), .y = 128.0, .z = @floatFromInt((frame * 17) % 256) },
             };
+            pt.mark(timed, 0);
 
             // Phase 1: clear. Every cell, unconditionally. DOTS reallocates a
             // sparse hash map per frame instead; we hold a dense 32^3 grid.
@@ -575,10 +599,30 @@ const BoidWorld = struct {
                 self.cell_target[c] = 0;
                 self.cell_obstacle_dist[c] = 0;
             }
+            pt.mark(timed, 1);
 
             // Phase 2: hash + scatter, in boid insertion order. Sequential
             // accumulation -- a different order is a different checksum.
-            for (0..self.pos_x.len) |i| {
+            if (split_hs) {
+                // The Koru arm spells these as two store sweeps rather than one.
+                // Same visit order, same accumulation order, same checksum.
+                for (0..self.pos_x.len) |i| {
+                    const cx = std.math.clamp(@as(i64, @intFromFloat(self.pos_x[i] / cell_radius)), 0, axis_cells - 1);
+                    const cy = std.math.clamp(@as(i64, @intFromFloat(self.pos_y[i] / cell_radius)), 0, axis_cells - 1);
+                    const cz = std.math.clamp(@as(i64, @intFromFloat(self.pos_z[i] / cell_radius)), 0, axis_cells - 1);
+                    self.cell[i] = @intCast((cz * axis_cells + cy) * axis_cells + cx);
+                }
+                for (0..self.pos_x.len) |i| {
+                    const idx = self.cell[i];
+                    self.cell_count[idx] += 1;
+                    self.cell_a_x[idx] += self.fwd_x[i];
+                    self.cell_a_y[idx] += self.fwd_y[i];
+                    self.cell_a_z[idx] += self.fwd_z[i];
+                    self.cell_s_x[idx] += self.pos_x[i];
+                    self.cell_s_y[idx] += self.pos_y[i];
+                    self.cell_s_z[idx] += self.pos_z[i];
+                }
+            } else for (0..self.pos_x.len) |i| {
                 const cx = std.math.clamp(@as(i64, @intFromFloat(self.pos_x[i] / cell_radius)), 0, axis_cells - 1);
                 const cy = std.math.clamp(@as(i64, @intFromFloat(self.pos_y[i] / cell_radius)), 0, axis_cells - 1);
                 const cz = std.math.clamp(@as(i64, @intFromFloat(self.pos_z[i] / cell_radius)), 0, axis_cells - 1);
@@ -592,6 +636,7 @@ const BoidWorld = struct {
                 self.cell_s_y[idx] += self.pos_y[i];
                 self.cell_s_z[idx] += self.pos_z[i];
             }
+            pt.mark(timed, 2);
 
             // Phase 3: cell resolve (DOTS' MergeCells) -- per cell, not per
             // boid. argmin ties go to the lower index.
@@ -622,6 +667,7 @@ const BoidWorld = struct {
                 self.cell_target[c] = nearest_target;
                 self.cell_obstacle_dist[c] = @sqrt(nearest_obstacle_dist);
             }
+            pt.mark(timed, 3);
 
             // Phase 4: steer, in boid insertion order. The cell index comes
             // from phase 2 -- nothing has moved since.
@@ -677,6 +723,7 @@ const BoidWorld = struct {
                 self.pos_y[i] = std.math.clamp(pos_y + next.y * move_dist, 0.0, pos_max);
                 self.pos_z[i] = std.math.clamp(pos_z + next.z * move_dist, 0.0, pos_max);
             }
+            pt.mark(timed, 4);
         }
     }
 
@@ -691,12 +738,22 @@ const BoidWorld = struct {
     }
 };
 
-fn boids(allocator: std.mem.Allocator, entities: usize, frames: usize, elapsed_ns: *u64) !u64 {
+fn boids(allocator: std.mem.Allocator, entities: usize, frames: usize, elapsed_ns: *u64, comptime timed: bool, comptime split_hs: bool) !u64 {
     var world = try BoidWorld.init(allocator, entities);
     defer world.deinit(allocator);
+    var pt = BoidWorld.PhaseTimer{};
     const start = std.time.nanoTimestamp();
-    world.run(frames);
+    world.run(frames, timed, split_hs, &pt);
     elapsed_ns.* = @intCast(std.time.nanoTimestamp() - start);
+    if (timed) {
+        const names = [_][]const u8{ "actors", "clear", "hash+scatter", "resolve", "steer" };
+        var total: u64 = 0;
+        for (pt.ph) |v| total += v;
+        for (names, pt.ph) |nm, v| {
+            std.debug.print("zig_striped boids_phase {s}: {d} ns ({d:.3} ms)\n", .{ nm, v, @as(f64, @floatFromInt(v)) / 1_000_000.0 });
+        }
+        std.debug.print("zig_striped boids_phase phase_total: {d} ns ({d:.3} ms)\n", .{ total, @as(f64, @floatFromInt(total)) / 1_000_000.0 });
+    }
     return world.checksum();
 }
 
@@ -709,6 +766,15 @@ fn parseArgs(allocator: std.mem.Allocator) !Config {
     while (args.next()) |arg| {
         if (std.mem.eql(u8, arg, "--scenario")) {
             const value = args.next() orelse return error.MissingScenario;
+            // Checked ahead of the chain below so that line stays untouched.
+            if (std.mem.eql(u8, value, "boids_phase")) {
+                config.scenario = .boids_phase;
+                continue;
+            }
+            if (std.mem.eql(u8, value, "boids_split_hs")) {
+                config.scenario = .boids_split_hs;
+                continue;
+            }
             if (std.mem.eql(u8, value, "dense")) config.scenario = .dense else if (std.mem.eql(u8, value, "sparse")) config.scenario = .sparse else if (std.mem.eql(u8, value, "fanout")) config.scenario = .fanout else if (std.mem.eql(u8, value, "spawn")) config.scenario = .spawn else if (std.mem.eql(u8, value, "spawn_batch")) config.scenario = .spawn_batch else if (std.mem.eql(u8, value, "despawn")) config.scenario = .despawn else if (std.mem.eql(u8, value, "add_remove")) config.scenario = .add_remove else if (std.mem.eql(u8, value, "query_get")) config.scenario = .query_get else if (std.mem.eql(u8, value, "schedule_empty")) config.scenario = .schedule_empty else if (std.mem.eql(u8, value, "combat_world")) config.scenario = .combat_world else if (std.mem.eql(u8, value, "bevy_strength_world")) config.scenario = .bevy_strength_world else if (std.mem.eql(u8, value, "boids")) config.scenario = .boids else return error.UnknownScenario;
         } else if (std.mem.eql(u8, arg, "--entities")) {
             config.entities = try std.fmt.parseInt(usize, args.next() orelse return error.MissingEntities, 10);
@@ -752,9 +818,14 @@ pub fn main() !void {
         .schedule_empty => scheduleEmpty(config.frames),
         .combat_world => try combatWorld(allocator, config.entities, config.frames, config.observers),
         .bevy_strength_world => try bevyStrengthWorld(allocator, config.entities, config.frames),
-        .boids => try boids(allocator, config.entities, config.frames, &boids_elapsed_ns),
+        .boids => try boids(allocator, config.entities, config.frames, &boids_elapsed_ns, false, false),
+        .boids_phase => try boids(allocator, config.entities, config.frames, &boids_elapsed_ns, true, false),
+        .boids_split_hs => try boids(allocator, config.entities, config.frames, &boids_elapsed_ns, true, true),
     };
-    const elapsed: u64 = if (config.scenario == .boids) boids_elapsed_ns else @intCast(std.time.nanoTimestamp() - start);
+    const elapsed: u64 = switch (config.scenario) {
+        .boids, .boids_phase, .boids_split_hs => boids_elapsed_ns,
+        else => @intCast(std.time.nanoTimestamp() - start),
+    };
 
     const scenario_name = switch (config.scenario) {
         .dense => "dense",
@@ -769,6 +840,8 @@ pub fn main() !void {
         .combat_world => "combat_world",
         .bevy_strength_world => "bevy_strength_world",
         .boids => "boids",
+        .boids_phase => "boids_phase",
+        .boids_split_hs => "boids_split_hs",
     };
     var stdout_buffer: [1024]u8 = undefined;
     var stdout_file = std.fs.File.stdout().writerStreaming(&stdout_buffer);

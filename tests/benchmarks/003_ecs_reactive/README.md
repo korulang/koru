@@ -122,7 +122,7 @@ the multipliers below have equivalence evidence behind them everywhere except
 | fanout | 8543 | 25452 | 14260 | 1.8x | ✗ |
 | bevy_strength_world | 21076 | 65322 | 16627 | 3.9x | = |
 | combat_world | 3560 | 9832 | — | — | — |
-| boids | 220876 | 304962 | 242944 | 1.26x | = |
+| boids | 220362 | 314533 | 137792 | 2.3x | = |
 
 Three of these are worth naming.
 
@@ -145,10 +145,10 @@ only readable at all because `std/time` was moved onto a monotonic nanosecond
 clock while writing this entry — on the previous wall clock, which ticks in
 whole microseconds on darwin, it reported zero.
 
-**`boids` is the borrowed workload, and Koru lands 1.10x off hand-written Zig**
-— 243 ms against the striped baseline's 221 ms, and 1.26x faster than
-bevy_ecs's 305 ms, with a `592303452` checksum bit-identical across all three
-arms in every run. It is a port of Unity DOTS `BoidSystem.cs` with DOTS' own
+**`boids` is the borrowed workload, and Koru is 1.60x FASTER than hand-written
+striped Zig** — 137 ms against the baseline's 220 ms, and 2.3x faster than
+bevy_ecs's 314 ms, with a `592303452` checksum bit-identical across all three
+arms in every run and across every variant below. It is a port of Unity DOTS `BoidSystem.cs` with DOTS' own
 constants unscaled (CellRadius 8, weights 1/1/2, ObstacleAversionDistance 30,
 MoveSpeed 25), so the arithmetic is somebody else's design and not one chosen
 here to flatter anything.
@@ -163,20 +163,30 @@ effect arm, and a store query arm is one.
 Every variant below computes identical arithmetic and produces the identical
 checksum, so the shape is the only variable:
 
-| steering shape | koru_store |
-|---|---:|
-| `boids` — capture slots, one pass | 243 ms |
-| `boids_split` — columns, seven passes | 261 ms |
-| `boids_f2` — columns, first two fused | 265 ms |
-| `boids_f4` — columns, first four fused | 279 ms |
-| `boids_fused` — columns, one pass | 400 ms |
+| steering shape | before the write-path fix | after |
+|---|---:|---:|
+| `boids_split` — columns, seven passes | 261 ms | **137 ms** |
+| `boids_f4` — columns, first four fused | 279 ms | 142 ms |
+| `boids` — capture slots, one pass | 243 ms | 238 ms |
+| `boids_fused` — columns, one pass | 400 ms | 260 ms |
 
-Read the bottom four as one curve: routing intermediates through store COLUMNS
-is flat while the per-row body stays small and then falls off a cliff, and
-fusing the column-routed version into a single traversal — the shape a reader
-would expect to be fastest — is the worst of all by 1.6x. Locals beat every
-column-routed shape, which is the unsurprising conclusion the two wrong drafts
-were reaching past.
+THE SECOND COLUMN IS THE STORE'S WRITE-PATH FIX, and it is the whole story.
+A multi-field `stored` block used to emit one write call PER FIELD, in order,
+each carrying the whole row's payload — which is why a later entry could read an
+earlier entry's result (690_126) and why column-routed steering was slow. The
+block is ONE write by design, so it is now one call: every rhs is an argument,
+arguments evaluate before the call, pre-state falls out, and N-1 calls per block
+disappear. Column-routed writes roughly halved.
+
+The correctness bug and the performance bug were the same bug. Nothing in the
+benchmark changed between the two columns.
+
+What did NOT move is the capture version, 243 -> 238 ms, which says its cost was
+never in the store write — and it is now the SLOWEST of the four, having been
+the fastest before. Why a capture slot is dearer than a column is open. So is
+the residual fused-vs-split gap (260 vs 137): halving both did not close it, so
+whatever makes a fat per-row body fall off a cliff is still unexplained and is
+not the write path.
 
 The mechanism behind the cliff is visible in the emitted code: **a multi-field
 store write emits one write-path call per FIELD, and every call carries the

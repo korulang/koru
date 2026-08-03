@@ -3117,10 +3117,20 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
                 } }) catch unreachable;
                 var ewb = std.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
                 // Dense row, same convention as the bundled apply above.
-                const ew_head = allocator.dupe(u8, "const __koru_r = @as(usize, @intCast(row));\nswitch (field) {\n") catch unreachable;
+                // `field` CARRIES A BITMASK, not an index. The envelope is one
+                // write (`frag-std-store-design`: "Writes interleave, never
+                // overlap"), so the whole block lands in ONE call: every rhs is
+                // an argument, all arguments are evaluated before the call, and
+                // therefore every rhs reads PRE-STATE. Emitting a call per field
+                // is what made a later entry read an earlier entry's result —
+                // 690_126 pins that as red.
+                //
+                // It also deletes N-1 calls per block, each of which carried a
+                // full-width payload of typed zeros.
+                const ew_head = allocator.dupe(u8, "const __koru_r = @as(usize, @intCast(row));\nconst __koru_mask = @as(u64, @bitCast(field));\n") catch unreachable;
                 ewb.appendSlice(allocator, ew_head) catch unreachable;
                 for (field_names, 0..) |fname, i| {
-                    const arm_open = std.fmt.allocPrint(allocator, "    {d} => {{ ", .{i}) catch unreachable;
+                    const arm_open = std.fmt.allocPrint(allocator, "if (__koru_mask & (@as(u64, 1) << {d}) != 0) {{ ", .{i}) catch unreachable;
                     ewb.appendSlice(allocator, arm_open) catch unreachable;
                     // The write half of the bundled apply arm, verbatim: tree
                     // guard, pre-image read, cell write, updated interceptors.
@@ -3148,9 +3158,9 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
                             std.fmt.allocPrint(allocator, "{s}__store_updated_{s}_{d}_event.handler(.{{}}); ", .{ emit_ns, store_name, ai }) catch unreachable;
                         ewb.appendSlice(allocator, ecall) catch unreachable;
                     }
-                    ewb.appendSlice(allocator, "},\n") catch unreachable;
+                    ewb.appendSlice(allocator, "}\n") catch unreachable;
                 }
-                ewb.appendSlice(allocator, "    else => unreachable,\n}\nreturn;") catch unreachable;
+                ewb.appendSlice(allocator, "return;") catch unreachable;
                 appended_items.append(allocator, ast.Item{ .proc_decl = ast.ProcDecl{
                     .path = H.mkPathH(allocator, home_ns, penvw_name),
                     .body = ast.Source{ .text = ewb.toOwnedSlice(allocator) catch unreachable, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
@@ -5155,13 +5165,18 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
                 .location = flow.location,
                 .module = allocator.dupe(u8, flow.module) catch unreachable,
             } }) catch unreachable;
+            // `field` carries a BITMASK — see the plural envwrite. A singleton
+            // envelope has one value slot rather than one per column, so every
+            // masked field takes the same `value`; the envelope only ever sets
+            // one bit here, and the mask keeps the two units' contracts the
+            // same shape.
             var ew = std.ArrayList(u8).initCapacity(allocator, 128) catch unreachable;
-            ew.appendSlice(allocator, "switch (field) {\n") catch unreachable;
+            ew.appendSlice(allocator, "const __koru_mask = @as(u64, @bitCast(field));\n") catch unreachable;
             for (field_names, 0..) |fname, i| {
-                const arm3 = std.fmt.allocPrint(allocator, "    {d} => __koru_store_{s}.{s} = value,\n", .{ i, store_name, fname }) catch unreachable;
+                const arm3 = std.fmt.allocPrint(allocator, "if (__koru_mask & (@as(u64, 1) << {d}) != 0) __koru_store_{s}.{s} = value;\n", .{ i, store_name, fname }) catch unreachable;
                 ew.appendSlice(allocator, arm3) catch unreachable;
             }
-            ew.appendSlice(allocator, "    else => unreachable,\n}\nreturn;") catch unreachable;
+            ew.appendSlice(allocator, "return;") catch unreachable;
             stripe_items.append(allocator, ast.Item{ .proc_decl = ast.ProcDecl{
                 .path = mkPath(allocator, home_ns, envw_name),
                 .body = ast.Source{ .text = ew.toOwnedSlice(allocator) catch unreachable, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
@@ -5745,47 +5760,72 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
         const env_home = H.storeHomeModule(allocator, program, env_store) orelse flow.module;
         const envw_name = std.fmt.allocPrint(allocator, "__store_envwrite_{s}", .{env_store}) catch unreachable;
         const ann_name = std.fmt.allocPrint(allocator, "__store_announce_{s}", .{env_store}) catch unreachable;
-        const total = writes.len * 2;
-        var invs = allocator.alloc(ast.Invocation, total) catch unreachable;
-        for (writes, 0..) |_, wi| {
-            if (env_row) |re| {
-                // Row-addressed plural envelope: row + field + typed slots
-                // (written slot carries the value, the rest ride typed zeros
-                // no arm reads — the bundled-write convention). THE ROW ARG
-                // IS DENSE: a handle resolves here (the stale trap fires at
-                // the write site); a sweep cursor passes through untouched.
-                const env_row_arg = if (std.mem.startsWith(u8, re, "__koru_sdix_"))
-                    re
-                else
-                    std.fmt.allocPrint(allocator, "@as(i64, @intCast(__koru_store_{s}.__koru_resolve({s})))", .{ env_store, re }) catch unreachable;
-                const a1 = allocator.alloc(ast.Arg, env_col_types.len + 2) catch unreachable;
-                a1[0] = ast.Arg{ .name = allocator.dupe(u8, "row") catch unreachable, .value = allocator.dupe(u8, env_row_arg) catch unreachable };
-                a1[1] = ast.Arg{ .name = allocator.dupe(u8, "field") catch unreachable, .value = std.fmt.allocPrint(allocator, "{d}", .{env_idx[wi]}) catch unreachable };
-                for (env_col_types, 0..) |ct, ci| {
-                    const is_float = std.mem.eql(u8, ct, "f64") or std.mem.eql(u8, ct, "f32");
-                    const is_string = std.mem.eql(u8, ct, "string") or std.mem.eql(u8, ct, "[]const u8");
-                    a1[2 + ci] = ast.Arg{
-                        .name = std.fmt.allocPrint(allocator, "value_{d}", .{ci}) catch unreachable,
-                        .value = if (ci == env_idx[wi])
-                            env_values[wi]
-                        else
-                            allocator.dupe(u8, if (is_string) "\"\"" else if (is_float) "0.0" else "0") catch unreachable,
-                    };
+        // ONE envwrite for the whole block, then one announce per field.
+        //
+        // The envelope used to emit a write PER FIELD, which is what made it a
+        // sequence: entry 2's arguments were evaluated after entry 1's write had
+        // landed, so a rhs could read a sibling's result. A block is one write
+        // (`frag-std-store-design`), so it is one call — every rhs is an
+        // argument, arguments are evaluated before the call, and pre-state falls
+        // out with no analysis. 690_126 and 690_251 pin it.
+        //
+        // Announce still runs per field, after, in written order: dispatch reads
+        // settled state, which is the half of the (i) lean that was always right.
+        const row_addressed = env_row != null;
+        const n_writes: usize = if (row_addressed) 1 else writes.len;
+        var invs = allocator.alloc(ast.Invocation, n_writes + writes.len) catch unreachable;
+        if (row_addressed) {
+            // A u64 mask names the written columns; a store wide enough to
+            // overflow it cannot spell a multi-field block, and says so rather
+            // than quietly dropping the high columns.
+            for (env_idx) |ix| {
+                if (ix >= 64) {
+                    return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:stored: a multi-field block addresses columns by a 64-bit mask, and '{s}' has more than 64 columns - write this as chained single-field writes", .{env_store}) } };
                 }
-                invs[wi] = ast.Invocation{
-                    .path = H.mkPathH2(allocator, env_home, envw_name),
-                    .args = a1,
+            }
+            var mask: u64 = 0;
+            for (env_idx) |ix| mask |= (@as(u64, 1) << @intCast(ix));
+            const re = env_row.?;
+            const env_row_arg = if (std.mem.startsWith(u8, re, "__koru_sdix_"))
+                re
+            else
+                std.fmt.allocPrint(allocator, "@as(i64, @intCast(__koru_store_{s}.__koru_resolve({s})))", .{ env_store, re }) catch unreachable;
+            const a1 = allocator.alloc(ast.Arg, env_col_types.len + 2) catch unreachable;
+            a1[0] = ast.Arg{ .name = allocator.dupe(u8, "row") catch unreachable, .value = allocator.dupe(u8, env_row_arg) catch unreachable };
+            a1[1] = ast.Arg{ .name = allocator.dupe(u8, "field") catch unreachable, .value = std.fmt.allocPrint(allocator, "@as(i64, @bitCast(@as(u64, {d})))", .{mask}) catch unreachable };
+            for (env_col_types, 0..) |ct, ci| {
+                const is_float = std.mem.eql(u8, ct, "f64") or std.mem.eql(u8, ct, "f32");
+                const is_string = std.mem.eql(u8, ct, "string") or std.mem.eql(u8, ct, "[]const u8");
+                var slot: []const u8 = allocator.dupe(u8, if (is_string) "\"\"" else if (is_float) "0.0" else "0") catch unreachable;
+                for (env_idx, 0..) |ix, wi| {
+                    if (ix == ci) slot = env_values[wi];
+                }
+                a1[2 + ci] = ast.Arg{
+                    .name = std.fmt.allocPrint(allocator, "value_{d}", .{ci}) catch unreachable,
+                    .value = slot,
                 };
+            }
+            invs[0] = ast.Invocation{ .path = H.mkPathH2(allocator, env_home, envw_name), .args = a1 };
+            for (writes, 0..) |_, wi| {
                 const a2 = allocator.alloc(ast.Arg, 2) catch unreachable;
                 a2[0] = ast.Arg{ .name = allocator.dupe(u8, "row") catch unreachable, .value = allocator.dupe(u8, env_row_arg) catch unreachable };
                 a2[1] = ast.Arg{ .name = allocator.dupe(u8, "field") catch unreachable, .value = std.fmt.allocPrint(allocator, "{d}", .{env_idx[wi]}) catch unreachable };
-                invs[writes.len + wi] = ast.Invocation{
-                    .path = H.mkPathH2(allocator, env_home, ann_name),
-                    .args = a2,
-                };
-            } else {
+                invs[1 + wi] = ast.Invocation{ .path = H.mkPathH2(allocator, env_home, ann_name), .args = a2 };
+            }
+        }
+        // The singleton envelope still emits one call per field: its
+        // envwrite carries a single `value` slot rather than one per
+        // column, so it cannot take the whole block at once. A singleton
+        // store's columns all share one scalar type, so widening it is
+        // possible and is the next rung — until then a multi-field
+        // singleton block keeps the old ordering and 690_126 covers only
+        // the plural path.
+        if (!row_addressed) {
+            for (writes, 0..) |_, wi| {
                 const a1 = allocator.alloc(ast.Arg, 2) catch unreachable;
-                a1[0] = ast.Arg{ .name = allocator.dupe(u8, "field") catch unreachable, .value = std.fmt.allocPrint(allocator, "{d}", .{env_idx[wi]}) catch unreachable };
+                // A BIT, not an index — the singleton envwrite reads `field` as
+                // a mask, same contract as the plural one.
+                a1[0] = ast.Arg{ .name = allocator.dupe(u8, "field") catch unreachable, .value = std.fmt.allocPrint(allocator, "@as(i64, @bitCast(@as(u64, 1) << {d}))", .{env_idx[wi]}) catch unreachable };
                 a1[1] = ast.Arg{ .name = allocator.dupe(u8, "value") catch unreachable, .value = env_values[wi] };
                 invs[wi] = ast.Invocation{
                     .path = H.mkPathH2(allocator, env_home, envw_name),
@@ -5806,7 +5846,7 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
         // `is_transformed_subtree` (they must not re-fire); only the user tail
         // beneath them is walked again. Empty here dropped the tail (690_028).
         var chain: []const ast.Continuation = flow.body.continuations;
-        var k: usize = total;
+        var k: usize = n_writes + writes.len;
         while (k > 1) {
             k -= 1;
             const one = allocator.alloc(ast.Continuation, 1) catch unreachable;

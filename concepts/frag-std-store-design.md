@@ -29,6 +29,28 @@ and three hostile showcase programs, that this spine holds:
 - Writes interleave, never overlap: write + full cascade is the atomicity
   unit; the chain is the envelope lean covers multi-write grouping.
 
+**That line was not implemented, and the gap cost 2x (2026-08-03).** The
+multi-field envelope emitted one write call PER FIELD, in written order, each
+carrying the whole row's payload with typed zeros in the slots it was not
+writing. So the block was a sequence, not a transaction: a later entry read what
+an earlier one had already landed, which is writes overlapping — the exact thing
+the line forbids. It had been pinned GREEN as though it were the ruling, and a
+second test was then written to exploit it.
+
+The fix is to make the envelope what its name says: ONE call carrying every
+value. Arguments are evaluated before a call, so pre-state semantics falls out
+with no analysis, and N-1 calls per block disappear.
+
+**The correctness bug and the performance bug were the same bug.** Column-routed
+per-row work in the ECS benchmark roughly halved on the fix alone — boids went
+from 1.2x slower than a hand-written striped Zig baseline to 1.6x faster, with a
+bit-identical checksum before and after. That is the durable part: the design's
+atomicity requirement was not a constraint the implementation was paying for, it
+was the faster implementation, and diverging from it was the tax. When a spine
+line looks like it costs something, check whether it has been implemented before
+believing the cost is real.
+
+
 **Rung one is BUILT and green (2026-07-05, branch `store`):** the (f)
 subflow is real — `create` coordinates, appending per store the typed
 cell, an apply event/proc announcing the written field as a terminal

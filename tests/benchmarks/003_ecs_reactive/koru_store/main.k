@@ -79,6 +79,10 @@ std/store:new(frn) { n: 0[i64] }
 std/store:new(cfg) { which: 0[i64], scenario: 0[i64], entities: 100000[i64], frames: 100[i64], observers: 25[i64] }
 std/store:new(acc) { sink: 0[i64] }
 
+// Per-phase accumulators for `boids_phase`, the instrumented twin of `boids`.
+// Nanoseconds, summed over frames. Written only by that scenario.
+std/store:new(ph) { pact: 0[i64], pclr: 0[i64], phsh: 0[i64], psct: 0[i64], pres: 0[i64], pstg: 0[i64] }
+
 // ---------------------------------------------------------------- flag parse
 
 tor store-num { v: i64 }
@@ -107,6 +111,13 @@ set-scenario = std/regex:match(a)
 | `boids_f2` _ |> std/store:stored { cfg.scenario: 13, cfg.which: 0 }
 | `boids_f4` _ |> std/store:stored { cfg.scenario: 14, cfg.which: 0 }
 | `boids_split` _ |> std/store:stored { cfg.scenario: 15, cfg.which: 0 }
+| `boids_phase` _ |> std/store:stored { cfg.scenario: 16, cfg.which: 0 }
+| `boids_mask` _ |> std/store:stored { cfg.scenario: 17, cfg.which: 0 }
+| `boids_mask_phase` _ |> std/store:stored { cfg.scenario: 18, cfg.which: 0 }
+| `boids_clamp` _ |> std/store:stored { cfg.scenario: 19, cfg.which: 0 }
+| `boids_clamp_phase` _ |> std/store:stored { cfg.scenario: 20, cfg.which: 0 }
+| `boids_best` _ |> std/store:stored { cfg.scenario: 21, cfg.which: 0 }
+| `boids_best_phase` _ |> std/store:stored { cfg.scenario: 22, cfg.which: 0 }
 | no-match |> std/store:stored { cfg.scenario: 0, cfg.which: 0 }
 
 tor take-value { a: string }
@@ -421,6 +432,112 @@ boid-frame-split = frame-actors() |> grid-clear() |> hash-boids() |> scatter() |
     |> steer-align() |> steer-separate() |> steer-target() |> steer-avoid()
     |> steer-heading() |> steer-move() |> steer-clamp()
 
+// `boids_phase` is `boids` with a monotonic read between every stage: the same
+// six stages in the same order, the same arithmetic, the same checksum. The
+// breakdown goes to stderr; the JSON line is unchanged in shape.
+tor tp-actors {}
+tp-actors = std/time:now(): t |> frame-actors() |> std/time:elapsed(start: t): d
+    |> std/store:stored { ph.pact: ph.pact + @as(i64, @intCast(d.ns)) }
+
+tor tp-clear {}
+tp-clear = std/time:now(): t |> grid-clear() |> std/time:elapsed(start: t): d
+    |> std/store:stored { ph.pclr: ph.pclr + @as(i64, @intCast(d.ns)) }
+
+tor tp-hash {}
+tp-hash = std/time:now(): t |> hash-boids() |> std/time:elapsed(start: t): d
+    |> std/store:stored { ph.phsh: ph.phsh + @as(i64, @intCast(d.ns)) }
+
+tor tp-scatter {}
+tp-scatter = std/time:now(): t |> scatter() |> std/time:elapsed(start: t): d
+    |> std/store:stored { ph.psct: ph.psct + @as(i64, @intCast(d.ns)) }
+
+tor tp-resolve {}
+tp-resolve = std/time:now(): t |> cell-resolve() |> std/time:elapsed(start: t): d
+    |> std/store:stored { ph.pres: ph.pres + @as(i64, @intCast(d.ns)) }
+
+tor tp-steer {}
+tp-steer = std/time:now(): t |> steer-capture() |> std/time:elapsed(start: t): d
+    |> std/store:stored { ph.pstg: ph.pstg + @as(i64, @intCast(d.ns)) }
+
+tor boid-frame-phase {}
+boid-frame-phase = tp-actors() |> tp-clear() |> tp-hash() |> tp-scatter() |> tp-resolve() |> tp-steer()
+
+// `boids_mask` is `boids` with every grid read written `cells[@mod(b.cell, 32768)]`
+// instead of `cells[b.cell]`. Identical arithmetic (the cell index is already in
+// [0,32767] because positions clamp), identical checksum — the only difference is
+// that the index is PROVABLY in range at the Zig level, so std/grid's `__koru_at`
+// bounds check folds away instead of leaving a trap edge in the loop.
+tor steer-capture-mask {}
+steer-capture-mask = std/store:query(flock)
+! query b |> capture { tfx: 0.0[f32], tfy: 0.0[f32], tfz: 0.0[f32], nhx: 0.0[f32], nhy: 0.0[f32], nhz: 0.0[f32] }
+    ! as s |> captured { tfx: 1.0 * (if (((cells[@mod(b.cell, 32768)].ax / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fx) * (cells[@mod(b.cell, 32768)].ax / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fx) + (cells[@mod(b.cell, 32768)].ay / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fy) * (cells[@mod(b.cell, 32768)].ay / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fy) + (cells[@mod(b.cell, 32768)].az / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fz) * (cells[@mod(b.cell, 32768)].az / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fz)) > 1.1754944e-38) (cells[@mod(b.cell, 32768)].ax / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fx) * (1.0 / @sqrt(((cells[@mod(b.cell, 32768)].ax / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fx) * (cells[@mod(b.cell, 32768)].ax / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fx) + (cells[@mod(b.cell, 32768)].ay / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fy) * (cells[@mod(b.cell, 32768)].ay / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fy) + (cells[@mod(b.cell, 32768)].az / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fz) * (cells[@mod(b.cell, 32768)].az / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fz)))) else 0.0), tfy: 1.0 * (if (((cells[@mod(b.cell, 32768)].ax / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fx) * (cells[@mod(b.cell, 32768)].ax / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fx) + (cells[@mod(b.cell, 32768)].ay / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fy) * (cells[@mod(b.cell, 32768)].ay / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fy) + (cells[@mod(b.cell, 32768)].az / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fz) * (cells[@mod(b.cell, 32768)].az / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fz)) > 1.1754944e-38) (cells[@mod(b.cell, 32768)].ay / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fy) * (1.0 / @sqrt(((cells[@mod(b.cell, 32768)].ax / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fx) * (cells[@mod(b.cell, 32768)].ax / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fx) + (cells[@mod(b.cell, 32768)].ay / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fy) * (cells[@mod(b.cell, 32768)].ay / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fy) + (cells[@mod(b.cell, 32768)].az / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fz) * (cells[@mod(b.cell, 32768)].az / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fz)))) else 0.0), tfz: 1.0 * (if (((cells[@mod(b.cell, 32768)].ax / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fx) * (cells[@mod(b.cell, 32768)].ax / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fx) + (cells[@mod(b.cell, 32768)].ay / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fy) * (cells[@mod(b.cell, 32768)].ay / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fy) + (cells[@mod(b.cell, 32768)].az / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fz) * (cells[@mod(b.cell, 32768)].az / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fz)) > 1.1754944e-38) (cells[@mod(b.cell, 32768)].az / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fz) * (1.0 / @sqrt(((cells[@mod(b.cell, 32768)].ax / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fx) * (cells[@mod(b.cell, 32768)].ax / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fx) + (cells[@mod(b.cell, 32768)].ay / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fy) * (cells[@mod(b.cell, 32768)].ay / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fy) + (cells[@mod(b.cell, 32768)].az / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fz) * (cells[@mod(b.cell, 32768)].az / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fz)))) else 0.0) }
+        |> captured { tfx: s.tfx + 1.0 * (if (((b.px * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sx) * (b.px * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sx) + (b.py * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sy) * (b.py * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sy) + (b.pz * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sz) * (b.pz * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sz)) > 1.1754944e-38) (b.px * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sx) * (1.0 / @sqrt(((b.px * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sx) * (b.px * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sx) + (b.py * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sy) * (b.py * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sy) + (b.pz * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sz) * (b.pz * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sz)))) else 0.0), tfy: s.tfy + 1.0 * (if (((b.px * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sx) * (b.px * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sx) + (b.py * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sy) * (b.py * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sy) + (b.pz * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sz) * (b.pz * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sz)) > 1.1754944e-38) (b.py * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sy) * (1.0 / @sqrt(((b.px * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sx) * (b.px * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sx) + (b.py * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sy) * (b.py * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sy) + (b.pz * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sz) * (b.pz * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sz)))) else 0.0), tfz: s.tfz + 1.0 * (if (((b.px * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sx) * (b.px * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sx) + (b.py * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sy) * (b.py * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sy) + (b.pz * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sz) * (b.pz * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sz)) > 1.1754944e-38) (b.pz * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sz) * (1.0 / @sqrt(((b.px * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sx) * (b.px * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sx) + (b.py * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sy) * (b.py * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sy) + (b.pz * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sz) * (b.pz * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sz)))) else 0.0) }
+        |> captured { tfx: s.tfx + 2.0 * (if ((((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0x else fr.t1x) - b.px) * ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0x else fr.t1x) - b.px) + ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0y else fr.t1y) - b.py) * ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0y else fr.t1y) - b.py) + ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0z else fr.t1z) - b.pz) * ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0z else fr.t1z) - b.pz)) > 1.1754944e-38) ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0x else fr.t1x) - b.px) * (1.0 / @sqrt((((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0x else fr.t1x) - b.px) * ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0x else fr.t1x) - b.px) + ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0y else fr.t1y) - b.py) * ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0y else fr.t1y) - b.py) + ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0z else fr.t1z) - b.pz) * ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0z else fr.t1z) - b.pz)))) else 0.0), tfy: s.tfy + 2.0 * (if ((((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0x else fr.t1x) - b.px) * ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0x else fr.t1x) - b.px) + ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0y else fr.t1y) - b.py) * ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0y else fr.t1y) - b.py) + ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0z else fr.t1z) - b.pz) * ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0z else fr.t1z) - b.pz)) > 1.1754944e-38) ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0y else fr.t1y) - b.py) * (1.0 / @sqrt((((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0x else fr.t1x) - b.px) * ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0x else fr.t1x) - b.px) + ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0y else fr.t1y) - b.py) * ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0y else fr.t1y) - b.py) + ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0z else fr.t1z) - b.pz) * ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0z else fr.t1z) - b.pz)))) else 0.0), tfz: s.tfz + 2.0 * (if ((((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0x else fr.t1x) - b.px) * ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0x else fr.t1x) - b.px) + ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0y else fr.t1y) - b.py) * ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0y else fr.t1y) - b.py) + ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0z else fr.t1z) - b.pz) * ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0z else fr.t1z) - b.pz)) > 1.1754944e-38) ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0z else fr.t1z) - b.pz) * (1.0 / @sqrt((((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0x else fr.t1x) - b.px) * ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0x else fr.t1x) - b.px) + ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0y else fr.t1y) - b.py) * ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0y else fr.t1y) - b.py) + ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0z else fr.t1z) - b.pz) * ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0z else fr.t1z) - b.pz)))) else 0.0) }
+        |> captured { nhx: if ((cells[@mod(b.cell, 32768)].od - 30.0) < 0.0) ((fr.obx + (if (((b.px - fr.obx) * (b.px - fr.obx) + (b.py - fr.oby) * (b.py - fr.oby) + (b.pz - fr.obz) * (b.pz - fr.obz)) > 1.1754944e-38) (b.px - fr.obx) * (1.0 / @sqrt(((b.px - fr.obx) * (b.px - fr.obx) + (b.py - fr.oby) * (b.py - fr.oby) + (b.pz - fr.obz) * (b.pz - fr.obz)))) else 0.0) * 30.0) - b.px) else (if ((s.tfx * s.tfx + s.tfy * s.tfy + s.tfz * s.tfz) > 1.1754944e-38) s.tfx * (1.0 / @sqrt((s.tfx * s.tfx + s.tfy * s.tfy + s.tfz * s.tfz))) else 0.0), nhy: if ((cells[@mod(b.cell, 32768)].od - 30.0) < 0.0) ((fr.oby + (if (((b.px - fr.obx) * (b.px - fr.obx) + (b.py - fr.oby) * (b.py - fr.oby) + (b.pz - fr.obz) * (b.pz - fr.obz)) > 1.1754944e-38) (b.py - fr.oby) * (1.0 / @sqrt(((b.px - fr.obx) * (b.px - fr.obx) + (b.py - fr.oby) * (b.py - fr.oby) + (b.pz - fr.obz) * (b.pz - fr.obz)))) else 0.0) * 30.0) - b.py) else (if ((s.tfx * s.tfx + s.tfy * s.tfy + s.tfz * s.tfz) > 1.1754944e-38) s.tfy * (1.0 / @sqrt((s.tfx * s.tfx + s.tfy * s.tfy + s.tfz * s.tfz))) else 0.0), nhz: if ((cells[@mod(b.cell, 32768)].od - 30.0) < 0.0) ((fr.obz + (if (((b.px - fr.obx) * (b.px - fr.obx) + (b.py - fr.oby) * (b.py - fr.oby) + (b.pz - fr.obz) * (b.pz - fr.obz)) > 1.1754944e-38) (b.pz - fr.obz) * (1.0 / @sqrt(((b.px - fr.obx) * (b.px - fr.obx) + (b.py - fr.oby) * (b.py - fr.oby) + (b.pz - fr.obz) * (b.pz - fr.obz)))) else 0.0) * 30.0) - b.pz) else (if ((s.tfx * s.tfx + s.tfy * s.tfy + s.tfz * s.tfz) > 1.1754944e-38) s.tfz * (1.0 / @sqrt((s.tfx * s.tfx + s.tfy * s.tfy + s.tfz * s.tfz))) else 0.0) }
+        |> captured { tfx: (if (((b.fx + @as(f32, 1.0 / 60.0) * (s.nhx - b.fx)) * (b.fx + @as(f32, 1.0 / 60.0) * (s.nhx - b.fx)) + (b.fy + @as(f32, 1.0 / 60.0) * (s.nhy - b.fy)) * (b.fy + @as(f32, 1.0 / 60.0) * (s.nhy - b.fy)) + (b.fz + @as(f32, 1.0 / 60.0) * (s.nhz - b.fz)) * (b.fz + @as(f32, 1.0 / 60.0) * (s.nhz - b.fz))) > 1.1754944e-38) (b.fx + @as(f32, 1.0 / 60.0) * (s.nhx - b.fx)) * (1.0 / @sqrt(((b.fx + @as(f32, 1.0 / 60.0) * (s.nhx - b.fx)) * (b.fx + @as(f32, 1.0 / 60.0) * (s.nhx - b.fx)) + (b.fy + @as(f32, 1.0 / 60.0) * (s.nhy - b.fy)) * (b.fy + @as(f32, 1.0 / 60.0) * (s.nhy - b.fy)) + (b.fz + @as(f32, 1.0 / 60.0) * (s.nhz - b.fz)) * (b.fz + @as(f32, 1.0 / 60.0) * (s.nhz - b.fz))))) else 0.0), tfy: (if (((b.fx + @as(f32, 1.0 / 60.0) * (s.nhx - b.fx)) * (b.fx + @as(f32, 1.0 / 60.0) * (s.nhx - b.fx)) + (b.fy + @as(f32, 1.0 / 60.0) * (s.nhy - b.fy)) * (b.fy + @as(f32, 1.0 / 60.0) * (s.nhy - b.fy)) + (b.fz + @as(f32, 1.0 / 60.0) * (s.nhz - b.fz)) * (b.fz + @as(f32, 1.0 / 60.0) * (s.nhz - b.fz))) > 1.1754944e-38) (b.fy + @as(f32, 1.0 / 60.0) * (s.nhy - b.fy)) * (1.0 / @sqrt(((b.fx + @as(f32, 1.0 / 60.0) * (s.nhx - b.fx)) * (b.fx + @as(f32, 1.0 / 60.0) * (s.nhx - b.fx)) + (b.fy + @as(f32, 1.0 / 60.0) * (s.nhy - b.fy)) * (b.fy + @as(f32, 1.0 / 60.0) * (s.nhy - b.fy)) + (b.fz + @as(f32, 1.0 / 60.0) * (s.nhz - b.fz)) * (b.fz + @as(f32, 1.0 / 60.0) * (s.nhz - b.fz))))) else 0.0), tfz: (if (((b.fx + @as(f32, 1.0 / 60.0) * (s.nhx - b.fx)) * (b.fx + @as(f32, 1.0 / 60.0) * (s.nhx - b.fx)) + (b.fy + @as(f32, 1.0 / 60.0) * (s.nhy - b.fy)) * (b.fy + @as(f32, 1.0 / 60.0) * (s.nhy - b.fy)) + (b.fz + @as(f32, 1.0 / 60.0) * (s.nhz - b.fz)) * (b.fz + @as(f32, 1.0 / 60.0) * (s.nhz - b.fz))) > 1.1754944e-38) (b.fz + @as(f32, 1.0 / 60.0) * (s.nhz - b.fz)) * (1.0 / @sqrt(((b.fx + @as(f32, 1.0 / 60.0) * (s.nhx - b.fx)) * (b.fx + @as(f32, 1.0 / 60.0) * (s.nhx - b.fx)) + (b.fy + @as(f32, 1.0 / 60.0) * (s.nhy - b.fy)) * (b.fy + @as(f32, 1.0 / 60.0) * (s.nhy - b.fy)) + (b.fz + @as(f32, 1.0 / 60.0) * (s.nhz - b.fz)) * (b.fz + @as(f32, 1.0 / 60.0) * (s.nhz - b.fz))))) else 0.0) }
+    | captured r |> std/store:stored { b.fx: r.tfx, b.fy: r.tfy, b.fz: r.tfz, b.px: b.px + r.tfx * (25.0 * @as(f32, 1.0 / 60.0)), b.py: b.py + r.tfy * (25.0 * @as(f32, 1.0 / 60.0)), b.pz: b.pz + r.tfz * (25.0 * @as(f32, 1.0 / 60.0)) }
+        |> std/store:stored { b.px: if (b.px < 0.0) 0.0 else (if (b.px > 255.999) 255.999 else b.px), b.py: if (b.py < 0.0) 0.0 else (if (b.py > 255.999) 255.999 else b.py), b.pz: if (b.pz < 0.0) 0.0 else (if (b.pz > 255.999) 255.999 else b.pz) }
+
+tor boid-frame-mask {}
+boid-frame-mask = frame-actors() |> grid-clear() |> hash-boids() |> scatter() |> cell-resolve()
+    |> steer-capture-mask()
+
+tor tp-steer-mask {}
+tp-steer-mask = std/time:now(): t |> steer-capture-mask() |> std/time:elapsed(start: t): d
+    |> std/store:stored { ph.pstg: ph.pstg + @as(i64, @intCast(d.ns)) }
+
+tor boid-frame-mask-phase {}
+boid-frame-mask-phase = tp-actors() |> tp-clear() |> tp-hash() |> tp-scatter() |> tp-resolve() |> tp-steer-mask()
+
+// `boids_clamp` is `boids` with the position clamp written `@min(@max(v, 0.0), 255.999)`
+// instead of a two-armed `if`. Same value for every non-NaN input, same checksum; the
+// difference is that Zig lowers it to branchless `fmaxnm`/`fminnm`, which is what the
+// striped baseline's `std.math.clamp` emits.
+tor steer-capture-clamp {}
+steer-capture-clamp = std/store:query(flock)
+! query b |> capture { tfx: 0.0[f32], tfy: 0.0[f32], tfz: 0.0[f32], nhx: 0.0[f32], nhy: 0.0[f32], nhz: 0.0[f32] }
+    ! as s |> captured { tfx: 1.0 * (if (((cells[b.cell].ax / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fx) * (cells[b.cell].ax / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fx) + (cells[b.cell].ay / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fy) * (cells[b.cell].ay / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fy) + (cells[b.cell].az / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fz) * (cells[b.cell].az / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fz)) > 1.1754944e-38) (cells[b.cell].ax / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fx) * (1.0 / @sqrt(((cells[b.cell].ax / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fx) * (cells[b.cell].ax / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fx) + (cells[b.cell].ay / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fy) * (cells[b.cell].ay / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fy) + (cells[b.cell].az / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fz) * (cells[b.cell].az / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fz)))) else 0.0), tfy: 1.0 * (if (((cells[b.cell].ax / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fx) * (cells[b.cell].ax / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fx) + (cells[b.cell].ay / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fy) * (cells[b.cell].ay / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fy) + (cells[b.cell].az / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fz) * (cells[b.cell].az / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fz)) > 1.1754944e-38) (cells[b.cell].ay / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fy) * (1.0 / @sqrt(((cells[b.cell].ax / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fx) * (cells[b.cell].ax / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fx) + (cells[b.cell].ay / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fy) * (cells[b.cell].ay / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fy) + (cells[b.cell].az / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fz) * (cells[b.cell].az / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fz)))) else 0.0), tfz: 1.0 * (if (((cells[b.cell].ax / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fx) * (cells[b.cell].ax / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fx) + (cells[b.cell].ay / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fy) * (cells[b.cell].ay / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fy) + (cells[b.cell].az / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fz) * (cells[b.cell].az / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fz)) > 1.1754944e-38) (cells[b.cell].az / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fz) * (1.0 / @sqrt(((cells[b.cell].ax / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fx) * (cells[b.cell].ax / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fx) + (cells[b.cell].ay / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fy) * (cells[b.cell].ay / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fy) + (cells[b.cell].az / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fz) * (cells[b.cell].az / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fz)))) else 0.0) }
+        |> captured { tfx: s.tfx + 1.0 * (if (((b.px * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sx) * (b.px * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sx) + (b.py * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sy) * (b.py * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sy) + (b.pz * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sz) * (b.pz * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sz)) > 1.1754944e-38) (b.px * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sx) * (1.0 / @sqrt(((b.px * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sx) * (b.px * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sx) + (b.py * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sy) * (b.py * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sy) + (b.pz * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sz) * (b.pz * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sz)))) else 0.0), tfy: s.tfy + 1.0 * (if (((b.px * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sx) * (b.px * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sx) + (b.py * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sy) * (b.py * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sy) + (b.pz * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sz) * (b.pz * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sz)) > 1.1754944e-38) (b.py * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sy) * (1.0 / @sqrt(((b.px * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sx) * (b.px * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sx) + (b.py * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sy) * (b.py * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sy) + (b.pz * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sz) * (b.pz * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sz)))) else 0.0), tfz: s.tfz + 1.0 * (if (((b.px * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sx) * (b.px * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sx) + (b.py * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sy) * (b.py * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sy) + (b.pz * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sz) * (b.pz * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sz)) > 1.1754944e-38) (b.pz * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sz) * (1.0 / @sqrt(((b.px * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sx) * (b.px * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sx) + (b.py * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sy) * (b.py * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sy) + (b.pz * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sz) * (b.pz * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sz)))) else 0.0) }
+        |> captured { tfx: s.tfx + 2.0 * (if ((((if (cells[b.cell].ti == 0) fr.t0x else fr.t1x) - b.px) * ((if (cells[b.cell].ti == 0) fr.t0x else fr.t1x) - b.px) + ((if (cells[b.cell].ti == 0) fr.t0y else fr.t1y) - b.py) * ((if (cells[b.cell].ti == 0) fr.t0y else fr.t1y) - b.py) + ((if (cells[b.cell].ti == 0) fr.t0z else fr.t1z) - b.pz) * ((if (cells[b.cell].ti == 0) fr.t0z else fr.t1z) - b.pz)) > 1.1754944e-38) ((if (cells[b.cell].ti == 0) fr.t0x else fr.t1x) - b.px) * (1.0 / @sqrt((((if (cells[b.cell].ti == 0) fr.t0x else fr.t1x) - b.px) * ((if (cells[b.cell].ti == 0) fr.t0x else fr.t1x) - b.px) + ((if (cells[b.cell].ti == 0) fr.t0y else fr.t1y) - b.py) * ((if (cells[b.cell].ti == 0) fr.t0y else fr.t1y) - b.py) + ((if (cells[b.cell].ti == 0) fr.t0z else fr.t1z) - b.pz) * ((if (cells[b.cell].ti == 0) fr.t0z else fr.t1z) - b.pz)))) else 0.0), tfy: s.tfy + 2.0 * (if ((((if (cells[b.cell].ti == 0) fr.t0x else fr.t1x) - b.px) * ((if (cells[b.cell].ti == 0) fr.t0x else fr.t1x) - b.px) + ((if (cells[b.cell].ti == 0) fr.t0y else fr.t1y) - b.py) * ((if (cells[b.cell].ti == 0) fr.t0y else fr.t1y) - b.py) + ((if (cells[b.cell].ti == 0) fr.t0z else fr.t1z) - b.pz) * ((if (cells[b.cell].ti == 0) fr.t0z else fr.t1z) - b.pz)) > 1.1754944e-38) ((if (cells[b.cell].ti == 0) fr.t0y else fr.t1y) - b.py) * (1.0 / @sqrt((((if (cells[b.cell].ti == 0) fr.t0x else fr.t1x) - b.px) * ((if (cells[b.cell].ti == 0) fr.t0x else fr.t1x) - b.px) + ((if (cells[b.cell].ti == 0) fr.t0y else fr.t1y) - b.py) * ((if (cells[b.cell].ti == 0) fr.t0y else fr.t1y) - b.py) + ((if (cells[b.cell].ti == 0) fr.t0z else fr.t1z) - b.pz) * ((if (cells[b.cell].ti == 0) fr.t0z else fr.t1z) - b.pz)))) else 0.0), tfz: s.tfz + 2.0 * (if ((((if (cells[b.cell].ti == 0) fr.t0x else fr.t1x) - b.px) * ((if (cells[b.cell].ti == 0) fr.t0x else fr.t1x) - b.px) + ((if (cells[b.cell].ti == 0) fr.t0y else fr.t1y) - b.py) * ((if (cells[b.cell].ti == 0) fr.t0y else fr.t1y) - b.py) + ((if (cells[b.cell].ti == 0) fr.t0z else fr.t1z) - b.pz) * ((if (cells[b.cell].ti == 0) fr.t0z else fr.t1z) - b.pz)) > 1.1754944e-38) ((if (cells[b.cell].ti == 0) fr.t0z else fr.t1z) - b.pz) * (1.0 / @sqrt((((if (cells[b.cell].ti == 0) fr.t0x else fr.t1x) - b.px) * ((if (cells[b.cell].ti == 0) fr.t0x else fr.t1x) - b.px) + ((if (cells[b.cell].ti == 0) fr.t0y else fr.t1y) - b.py) * ((if (cells[b.cell].ti == 0) fr.t0y else fr.t1y) - b.py) + ((if (cells[b.cell].ti == 0) fr.t0z else fr.t1z) - b.pz) * ((if (cells[b.cell].ti == 0) fr.t0z else fr.t1z) - b.pz)))) else 0.0) }
+        |> captured { nhx: if ((cells[b.cell].od - 30.0) < 0.0) ((fr.obx + (if (((b.px - fr.obx) * (b.px - fr.obx) + (b.py - fr.oby) * (b.py - fr.oby) + (b.pz - fr.obz) * (b.pz - fr.obz)) > 1.1754944e-38) (b.px - fr.obx) * (1.0 / @sqrt(((b.px - fr.obx) * (b.px - fr.obx) + (b.py - fr.oby) * (b.py - fr.oby) + (b.pz - fr.obz) * (b.pz - fr.obz)))) else 0.0) * 30.0) - b.px) else (if ((s.tfx * s.tfx + s.tfy * s.tfy + s.tfz * s.tfz) > 1.1754944e-38) s.tfx * (1.0 / @sqrt((s.tfx * s.tfx + s.tfy * s.tfy + s.tfz * s.tfz))) else 0.0), nhy: if ((cells[b.cell].od - 30.0) < 0.0) ((fr.oby + (if (((b.px - fr.obx) * (b.px - fr.obx) + (b.py - fr.oby) * (b.py - fr.oby) + (b.pz - fr.obz) * (b.pz - fr.obz)) > 1.1754944e-38) (b.py - fr.oby) * (1.0 / @sqrt(((b.px - fr.obx) * (b.px - fr.obx) + (b.py - fr.oby) * (b.py - fr.oby) + (b.pz - fr.obz) * (b.pz - fr.obz)))) else 0.0) * 30.0) - b.py) else (if ((s.tfx * s.tfx + s.tfy * s.tfy + s.tfz * s.tfz) > 1.1754944e-38) s.tfy * (1.0 / @sqrt((s.tfx * s.tfx + s.tfy * s.tfy + s.tfz * s.tfz))) else 0.0), nhz: if ((cells[b.cell].od - 30.0) < 0.0) ((fr.obz + (if (((b.px - fr.obx) * (b.px - fr.obx) + (b.py - fr.oby) * (b.py - fr.oby) + (b.pz - fr.obz) * (b.pz - fr.obz)) > 1.1754944e-38) (b.pz - fr.obz) * (1.0 / @sqrt(((b.px - fr.obx) * (b.px - fr.obx) + (b.py - fr.oby) * (b.py - fr.oby) + (b.pz - fr.obz) * (b.pz - fr.obz)))) else 0.0) * 30.0) - b.pz) else (if ((s.tfx * s.tfx + s.tfy * s.tfy + s.tfz * s.tfz) > 1.1754944e-38) s.tfz * (1.0 / @sqrt((s.tfx * s.tfx + s.tfy * s.tfy + s.tfz * s.tfz))) else 0.0) }
+        |> captured { tfx: (if (((b.fx + @as(f32, 1.0 / 60.0) * (s.nhx - b.fx)) * (b.fx + @as(f32, 1.0 / 60.0) * (s.nhx - b.fx)) + (b.fy + @as(f32, 1.0 / 60.0) * (s.nhy - b.fy)) * (b.fy + @as(f32, 1.0 / 60.0) * (s.nhy - b.fy)) + (b.fz + @as(f32, 1.0 / 60.0) * (s.nhz - b.fz)) * (b.fz + @as(f32, 1.0 / 60.0) * (s.nhz - b.fz))) > 1.1754944e-38) (b.fx + @as(f32, 1.0 / 60.0) * (s.nhx - b.fx)) * (1.0 / @sqrt(((b.fx + @as(f32, 1.0 / 60.0) * (s.nhx - b.fx)) * (b.fx + @as(f32, 1.0 / 60.0) * (s.nhx - b.fx)) + (b.fy + @as(f32, 1.0 / 60.0) * (s.nhy - b.fy)) * (b.fy + @as(f32, 1.0 / 60.0) * (s.nhy - b.fy)) + (b.fz + @as(f32, 1.0 / 60.0) * (s.nhz - b.fz)) * (b.fz + @as(f32, 1.0 / 60.0) * (s.nhz - b.fz))))) else 0.0), tfy: (if (((b.fx + @as(f32, 1.0 / 60.0) * (s.nhx - b.fx)) * (b.fx + @as(f32, 1.0 / 60.0) * (s.nhx - b.fx)) + (b.fy + @as(f32, 1.0 / 60.0) * (s.nhy - b.fy)) * (b.fy + @as(f32, 1.0 / 60.0) * (s.nhy - b.fy)) + (b.fz + @as(f32, 1.0 / 60.0) * (s.nhz - b.fz)) * (b.fz + @as(f32, 1.0 / 60.0) * (s.nhz - b.fz))) > 1.1754944e-38) (b.fy + @as(f32, 1.0 / 60.0) * (s.nhy - b.fy)) * (1.0 / @sqrt(((b.fx + @as(f32, 1.0 / 60.0) * (s.nhx - b.fx)) * (b.fx + @as(f32, 1.0 / 60.0) * (s.nhx - b.fx)) + (b.fy + @as(f32, 1.0 / 60.0) * (s.nhy - b.fy)) * (b.fy + @as(f32, 1.0 / 60.0) * (s.nhy - b.fy)) + (b.fz + @as(f32, 1.0 / 60.0) * (s.nhz - b.fz)) * (b.fz + @as(f32, 1.0 / 60.0) * (s.nhz - b.fz))))) else 0.0), tfz: (if (((b.fx + @as(f32, 1.0 / 60.0) * (s.nhx - b.fx)) * (b.fx + @as(f32, 1.0 / 60.0) * (s.nhx - b.fx)) + (b.fy + @as(f32, 1.0 / 60.0) * (s.nhy - b.fy)) * (b.fy + @as(f32, 1.0 / 60.0) * (s.nhy - b.fy)) + (b.fz + @as(f32, 1.0 / 60.0) * (s.nhz - b.fz)) * (b.fz + @as(f32, 1.0 / 60.0) * (s.nhz - b.fz))) > 1.1754944e-38) (b.fz + @as(f32, 1.0 / 60.0) * (s.nhz - b.fz)) * (1.0 / @sqrt(((b.fx + @as(f32, 1.0 / 60.0) * (s.nhx - b.fx)) * (b.fx + @as(f32, 1.0 / 60.0) * (s.nhx - b.fx)) + (b.fy + @as(f32, 1.0 / 60.0) * (s.nhy - b.fy)) * (b.fy + @as(f32, 1.0 / 60.0) * (s.nhy - b.fy)) + (b.fz + @as(f32, 1.0 / 60.0) * (s.nhz - b.fz)) * (b.fz + @as(f32, 1.0 / 60.0) * (s.nhz - b.fz))))) else 0.0) }
+    | captured r |> std/store:stored { b.fx: r.tfx, b.fy: r.tfy, b.fz: r.tfz, b.px: b.px + r.tfx * (25.0 * @as(f32, 1.0 / 60.0)), b.py: b.py + r.tfy * (25.0 * @as(f32, 1.0 / 60.0)), b.pz: b.pz + r.tfz * (25.0 * @as(f32, 1.0 / 60.0)) }
+        |> std/store:stored { b.px: @min(@max(b.px, 0.0), 255.999), b.py: @min(@max(b.py, 0.0), 255.999), b.pz: @min(@max(b.pz, 0.0), 255.999) }
+
+tor boid-frame-clamp {}
+boid-frame-clamp = frame-actors() |> grid-clear() |> hash-boids() |> scatter() |> cell-resolve()
+    |> steer-capture-clamp()
+
+tor tp-steer-clamp {}
+tp-steer-clamp = std/time:now(): t |> steer-capture-clamp() |> std/time:elapsed(start: t): d
+    |> std/store:stored { ph.pstg: ph.pstg + @as(i64, @intCast(d.ns)) }
+
+tor boid-frame-clamp-phase {}
+boid-frame-clamp-phase = tp-actors() |> tp-clear() |> tp-hash() |> tp-scatter() |> tp-resolve() |> tp-steer-clamp()
+
+// `boids_best` is both source-level fixes at once: masked grid index AND branchless clamp.
+tor steer-capture-best {}
+steer-capture-best = std/store:query(flock)
+! query b |> capture { tfx: 0.0[f32], tfy: 0.0[f32], tfz: 0.0[f32], nhx: 0.0[f32], nhy: 0.0[f32], nhz: 0.0[f32] }
+    ! as s |> captured { tfx: 1.0 * (if (((cells[@mod(b.cell, 32768)].ax / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fx) * (cells[@mod(b.cell, 32768)].ax / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fx) + (cells[@mod(b.cell, 32768)].ay / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fy) * (cells[@mod(b.cell, 32768)].ay / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fy) + (cells[@mod(b.cell, 32768)].az / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fz) * (cells[@mod(b.cell, 32768)].az / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fz)) > 1.1754944e-38) (cells[@mod(b.cell, 32768)].ax / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fx) * (1.0 / @sqrt(((cells[@mod(b.cell, 32768)].ax / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fx) * (cells[@mod(b.cell, 32768)].ax / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fx) + (cells[@mod(b.cell, 32768)].ay / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fy) * (cells[@mod(b.cell, 32768)].ay / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fy) + (cells[@mod(b.cell, 32768)].az / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fz) * (cells[@mod(b.cell, 32768)].az / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fz)))) else 0.0), tfy: 1.0 * (if (((cells[@mod(b.cell, 32768)].ax / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fx) * (cells[@mod(b.cell, 32768)].ax / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fx) + (cells[@mod(b.cell, 32768)].ay / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fy) * (cells[@mod(b.cell, 32768)].ay / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fy) + (cells[@mod(b.cell, 32768)].az / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fz) * (cells[@mod(b.cell, 32768)].az / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fz)) > 1.1754944e-38) (cells[@mod(b.cell, 32768)].ay / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fy) * (1.0 / @sqrt(((cells[@mod(b.cell, 32768)].ax / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fx) * (cells[@mod(b.cell, 32768)].ax / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fx) + (cells[@mod(b.cell, 32768)].ay / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fy) * (cells[@mod(b.cell, 32768)].ay / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fy) + (cells[@mod(b.cell, 32768)].az / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fz) * (cells[@mod(b.cell, 32768)].az / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fz)))) else 0.0), tfz: 1.0 * (if (((cells[@mod(b.cell, 32768)].ax / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fx) * (cells[@mod(b.cell, 32768)].ax / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fx) + (cells[@mod(b.cell, 32768)].ay / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fy) * (cells[@mod(b.cell, 32768)].ay / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fy) + (cells[@mod(b.cell, 32768)].az / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fz) * (cells[@mod(b.cell, 32768)].az / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fz)) > 1.1754944e-38) (cells[@mod(b.cell, 32768)].az / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fz) * (1.0 / @sqrt(((cells[@mod(b.cell, 32768)].ax / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fx) * (cells[@mod(b.cell, 32768)].ax / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fx) + (cells[@mod(b.cell, 32768)].ay / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fy) * (cells[@mod(b.cell, 32768)].ay / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fy) + (cells[@mod(b.cell, 32768)].az / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fz) * (cells[@mod(b.cell, 32768)].az / @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - b.fz)))) else 0.0) }
+        |> captured { tfx: s.tfx + 1.0 * (if (((b.px * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sx) * (b.px * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sx) + (b.py * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sy) * (b.py * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sy) + (b.pz * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sz) * (b.pz * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sz)) > 1.1754944e-38) (b.px * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sx) * (1.0 / @sqrt(((b.px * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sx) * (b.px * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sx) + (b.py * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sy) * (b.py * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sy) + (b.pz * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sz) * (b.pz * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sz)))) else 0.0), tfy: s.tfy + 1.0 * (if (((b.px * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sx) * (b.px * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sx) + (b.py * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sy) * (b.py * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sy) + (b.pz * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sz) * (b.pz * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sz)) > 1.1754944e-38) (b.py * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sy) * (1.0 / @sqrt(((b.px * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sx) * (b.px * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sx) + (b.py * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sy) * (b.py * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sy) + (b.pz * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sz) * (b.pz * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sz)))) else 0.0), tfz: s.tfz + 1.0 * (if (((b.px * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sx) * (b.px * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sx) + (b.py * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sy) * (b.py * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sy) + (b.pz * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sz) * (b.pz * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sz)) > 1.1754944e-38) (b.pz * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sz) * (1.0 / @sqrt(((b.px * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sx) * (b.px * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sx) + (b.py * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sy) * (b.py * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sy) + (b.pz * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sz) * (b.pz * @as(f32, @floatFromInt(cells[@mod(b.cell, 32768)].count)) - cells[@mod(b.cell, 32768)].sz)))) else 0.0) }
+        |> captured { tfx: s.tfx + 2.0 * (if ((((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0x else fr.t1x) - b.px) * ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0x else fr.t1x) - b.px) + ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0y else fr.t1y) - b.py) * ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0y else fr.t1y) - b.py) + ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0z else fr.t1z) - b.pz) * ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0z else fr.t1z) - b.pz)) > 1.1754944e-38) ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0x else fr.t1x) - b.px) * (1.0 / @sqrt((((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0x else fr.t1x) - b.px) * ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0x else fr.t1x) - b.px) + ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0y else fr.t1y) - b.py) * ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0y else fr.t1y) - b.py) + ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0z else fr.t1z) - b.pz) * ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0z else fr.t1z) - b.pz)))) else 0.0), tfy: s.tfy + 2.0 * (if ((((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0x else fr.t1x) - b.px) * ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0x else fr.t1x) - b.px) + ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0y else fr.t1y) - b.py) * ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0y else fr.t1y) - b.py) + ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0z else fr.t1z) - b.pz) * ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0z else fr.t1z) - b.pz)) > 1.1754944e-38) ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0y else fr.t1y) - b.py) * (1.0 / @sqrt((((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0x else fr.t1x) - b.px) * ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0x else fr.t1x) - b.px) + ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0y else fr.t1y) - b.py) * ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0y else fr.t1y) - b.py) + ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0z else fr.t1z) - b.pz) * ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0z else fr.t1z) - b.pz)))) else 0.0), tfz: s.tfz + 2.0 * (if ((((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0x else fr.t1x) - b.px) * ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0x else fr.t1x) - b.px) + ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0y else fr.t1y) - b.py) * ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0y else fr.t1y) - b.py) + ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0z else fr.t1z) - b.pz) * ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0z else fr.t1z) - b.pz)) > 1.1754944e-38) ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0z else fr.t1z) - b.pz) * (1.0 / @sqrt((((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0x else fr.t1x) - b.px) * ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0x else fr.t1x) - b.px) + ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0y else fr.t1y) - b.py) * ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0y else fr.t1y) - b.py) + ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0z else fr.t1z) - b.pz) * ((if (cells[@mod(b.cell, 32768)].ti == 0) fr.t0z else fr.t1z) - b.pz)))) else 0.0) }
+        |> captured { nhx: if ((cells[@mod(b.cell, 32768)].od - 30.0) < 0.0) ((fr.obx + (if (((b.px - fr.obx) * (b.px - fr.obx) + (b.py - fr.oby) * (b.py - fr.oby) + (b.pz - fr.obz) * (b.pz - fr.obz)) > 1.1754944e-38) (b.px - fr.obx) * (1.0 / @sqrt(((b.px - fr.obx) * (b.px - fr.obx) + (b.py - fr.oby) * (b.py - fr.oby) + (b.pz - fr.obz) * (b.pz - fr.obz)))) else 0.0) * 30.0) - b.px) else (if ((s.tfx * s.tfx + s.tfy * s.tfy + s.tfz * s.tfz) > 1.1754944e-38) s.tfx * (1.0 / @sqrt((s.tfx * s.tfx + s.tfy * s.tfy + s.tfz * s.tfz))) else 0.0), nhy: if ((cells[@mod(b.cell, 32768)].od - 30.0) < 0.0) ((fr.oby + (if (((b.px - fr.obx) * (b.px - fr.obx) + (b.py - fr.oby) * (b.py - fr.oby) + (b.pz - fr.obz) * (b.pz - fr.obz)) > 1.1754944e-38) (b.py - fr.oby) * (1.0 / @sqrt(((b.px - fr.obx) * (b.px - fr.obx) + (b.py - fr.oby) * (b.py - fr.oby) + (b.pz - fr.obz) * (b.pz - fr.obz)))) else 0.0) * 30.0) - b.py) else (if ((s.tfx * s.tfx + s.tfy * s.tfy + s.tfz * s.tfz) > 1.1754944e-38) s.tfy * (1.0 / @sqrt((s.tfx * s.tfx + s.tfy * s.tfy + s.tfz * s.tfz))) else 0.0), nhz: if ((cells[@mod(b.cell, 32768)].od - 30.0) < 0.0) ((fr.obz + (if (((b.px - fr.obx) * (b.px - fr.obx) + (b.py - fr.oby) * (b.py - fr.oby) + (b.pz - fr.obz) * (b.pz - fr.obz)) > 1.1754944e-38) (b.pz - fr.obz) * (1.0 / @sqrt(((b.px - fr.obx) * (b.px - fr.obx) + (b.py - fr.oby) * (b.py - fr.oby) + (b.pz - fr.obz) * (b.pz - fr.obz)))) else 0.0) * 30.0) - b.pz) else (if ((s.tfx * s.tfx + s.tfy * s.tfy + s.tfz * s.tfz) > 1.1754944e-38) s.tfz * (1.0 / @sqrt((s.tfx * s.tfx + s.tfy * s.tfy + s.tfz * s.tfz))) else 0.0) }
+        |> captured { tfx: (if (((b.fx + @as(f32, 1.0 / 60.0) * (s.nhx - b.fx)) * (b.fx + @as(f32, 1.0 / 60.0) * (s.nhx - b.fx)) + (b.fy + @as(f32, 1.0 / 60.0) * (s.nhy - b.fy)) * (b.fy + @as(f32, 1.0 / 60.0) * (s.nhy - b.fy)) + (b.fz + @as(f32, 1.0 / 60.0) * (s.nhz - b.fz)) * (b.fz + @as(f32, 1.0 / 60.0) * (s.nhz - b.fz))) > 1.1754944e-38) (b.fx + @as(f32, 1.0 / 60.0) * (s.nhx - b.fx)) * (1.0 / @sqrt(((b.fx + @as(f32, 1.0 / 60.0) * (s.nhx - b.fx)) * (b.fx + @as(f32, 1.0 / 60.0) * (s.nhx - b.fx)) + (b.fy + @as(f32, 1.0 / 60.0) * (s.nhy - b.fy)) * (b.fy + @as(f32, 1.0 / 60.0) * (s.nhy - b.fy)) + (b.fz + @as(f32, 1.0 / 60.0) * (s.nhz - b.fz)) * (b.fz + @as(f32, 1.0 / 60.0) * (s.nhz - b.fz))))) else 0.0), tfy: (if (((b.fx + @as(f32, 1.0 / 60.0) * (s.nhx - b.fx)) * (b.fx + @as(f32, 1.0 / 60.0) * (s.nhx - b.fx)) + (b.fy + @as(f32, 1.0 / 60.0) * (s.nhy - b.fy)) * (b.fy + @as(f32, 1.0 / 60.0) * (s.nhy - b.fy)) + (b.fz + @as(f32, 1.0 / 60.0) * (s.nhz - b.fz)) * (b.fz + @as(f32, 1.0 / 60.0) * (s.nhz - b.fz))) > 1.1754944e-38) (b.fy + @as(f32, 1.0 / 60.0) * (s.nhy - b.fy)) * (1.0 / @sqrt(((b.fx + @as(f32, 1.0 / 60.0) * (s.nhx - b.fx)) * (b.fx + @as(f32, 1.0 / 60.0) * (s.nhx - b.fx)) + (b.fy + @as(f32, 1.0 / 60.0) * (s.nhy - b.fy)) * (b.fy + @as(f32, 1.0 / 60.0) * (s.nhy - b.fy)) + (b.fz + @as(f32, 1.0 / 60.0) * (s.nhz - b.fz)) * (b.fz + @as(f32, 1.0 / 60.0) * (s.nhz - b.fz))))) else 0.0), tfz: (if (((b.fx + @as(f32, 1.0 / 60.0) * (s.nhx - b.fx)) * (b.fx + @as(f32, 1.0 / 60.0) * (s.nhx - b.fx)) + (b.fy + @as(f32, 1.0 / 60.0) * (s.nhy - b.fy)) * (b.fy + @as(f32, 1.0 / 60.0) * (s.nhy - b.fy)) + (b.fz + @as(f32, 1.0 / 60.0) * (s.nhz - b.fz)) * (b.fz + @as(f32, 1.0 / 60.0) * (s.nhz - b.fz))) > 1.1754944e-38) (b.fz + @as(f32, 1.0 / 60.0) * (s.nhz - b.fz)) * (1.0 / @sqrt(((b.fx + @as(f32, 1.0 / 60.0) * (s.nhx - b.fx)) * (b.fx + @as(f32, 1.0 / 60.0) * (s.nhx - b.fx)) + (b.fy + @as(f32, 1.0 / 60.0) * (s.nhy - b.fy)) * (b.fy + @as(f32, 1.0 / 60.0) * (s.nhy - b.fy)) + (b.fz + @as(f32, 1.0 / 60.0) * (s.nhz - b.fz)) * (b.fz + @as(f32, 1.0 / 60.0) * (s.nhz - b.fz))))) else 0.0) }
+    | captured r |> std/store:stored { b.fx: r.tfx, b.fy: r.tfy, b.fz: r.tfz, b.px: b.px + r.tfx * (25.0 * @as(f32, 1.0 / 60.0)), b.py: b.py + r.tfy * (25.0 * @as(f32, 1.0 / 60.0)), b.pz: b.pz + r.tfz * (25.0 * @as(f32, 1.0 / 60.0)) }
+        |> std/store:stored { b.px: @min(@max(b.px, 0.0), 255.999), b.py: @min(@max(b.py, 0.0), 255.999), b.pz: @min(@max(b.pz, 0.0), 255.999) }
+
+tor boid-frame-best {}
+boid-frame-best = frame-actors() |> grid-clear() |> hash-boids() |> scatter() |> cell-resolve()
+    |> steer-capture-best()
+
+tor tp-steer-best {}
+tp-steer-best = std/time:now(): t |> steer-capture-best() |> std/time:elapsed(start: t): d
+    |> std/store:stored { ph.pstg: ph.pstg + @as(i64, @intCast(d.ns)) }
+
+tor boid-frame-best-phase {}
+boid-frame-best-phase = tp-actors() |> tp-clear() |> tp-hash() |> tp-scatter() |> tp-resolve() |> tp-steer-best()
+
 // The checksum reads back outside the timed region, as `dense` does.
 tor read-flock {}
 read-flock = std/store:query(flock)
@@ -485,6 +602,34 @@ s-boids-f4 = for(0..@as(usize, @intCast(cfg.frames)))
 tor s-boids-split {}
 s-boids-split = for(0..@as(usize, @intCast(cfg.frames)))
     ! each _ |> boid-frame-split()
+
+tor s-boids-phase {}
+s-boids-phase = for(0..@as(usize, @intCast(cfg.frames)))
+    ! each _ |> boid-frame-phase()
+
+tor s-boids-mask {}
+s-boids-mask = for(0..@as(usize, @intCast(cfg.frames)))
+    ! each _ |> boid-frame-mask()
+
+tor s-boids-mask-phase {}
+s-boids-mask-phase = for(0..@as(usize, @intCast(cfg.frames)))
+    ! each _ |> boid-frame-mask-phase()
+
+tor s-boids-clamp {}
+s-boids-clamp = for(0..@as(usize, @intCast(cfg.frames)))
+    ! each _ |> boid-frame-clamp()
+
+tor s-boids-clamp-phase {}
+s-boids-clamp-phase = for(0..@as(usize, @intCast(cfg.frames)))
+    ! each _ |> boid-frame-clamp-phase()
+
+tor s-boids-best {}
+s-boids-best = for(0..@as(usize, @intCast(cfg.frames)))
+    ! each _ |> boid-frame-best()
+
+tor s-boids-best-phase {}
+s-boids-best-phase = for(0..@as(usize, @intCast(cfg.frames)))
+    ! each _ |> boid-frame-best-phase()
 
 tor s-bevy-strength {}
 s-bevy-strength = init-dyn() |> init-parts() |> init-orbs()
@@ -562,10 +707,45 @@ run-boids-split = if(cfg.scenario == 15)
 | then |> s-boids-split()
 | else |> _
 
+tor run-boids-phase {}
+run-boids-phase = if(cfg.scenario == 16)
+| then |> s-boids-phase()
+| else |> _
+
+tor run-boids-mask {}
+run-boids-mask = if(cfg.scenario == 17)
+| then |> s-boids-mask()
+| else |> _
+
+tor run-boids-mask-phase {}
+run-boids-mask-phase = if(cfg.scenario == 18)
+| then |> s-boids-mask-phase()
+| else |> _
+
+tor run-boids-clamp {}
+run-boids-clamp = if(cfg.scenario == 19)
+| then |> s-boids-clamp()
+| else |> _
+
+tor run-boids-clamp-phase {}
+run-boids-clamp-phase = if(cfg.scenario == 20)
+| then |> s-boids-clamp-phase()
+| else |> _
+
+tor run-boids-best {}
+run-boids-best = if(cfg.scenario == 21)
+| then |> s-boids-best()
+| else |> _
+
+tor run-boids-best-phase {}
+run-boids-best-phase = if(cfg.scenario == 22)
+| then |> s-boids-best-phase()
+| else |> _
+
 tor run {}
 run = run-dense() |> run-sparse() |> run-query-get() |> run-schedule-empty()
     |> run-spawn() |> run-spawn-batch() |> run-despawn() |> run-add-remove()
-    |> run-fanout() |> run-bevy-strength() |> run-boids() |> run-boids-fused() |> run-boids-f2() |> run-boids-f4() |> run-boids-split()
+    |> run-fanout() |> run-bevy-strength() |> run-boids() |> run-boids-fused() |> run-boids-f2() |> run-boids-f4() |> run-boids-split() |> run-boids-phase() |> run-boids-mask() |> run-boids-mask-phase() |> run-boids-clamp() |> run-boids-clamp-phase() |> run-boids-best() |> run-boids-best-phase()
 
 // -------------------------------------------------------------- the checksum
 //
@@ -576,7 +756,7 @@ run = run-dense() |> run-sparse() |> run-query-get() |> run-schedule-empty()
 // it; the older rows deliberately keep their construction inside the timed
 // region and the README says so.
 tor prep {}
-prep = if(cfg.scenario >= 11 and cfg.scenario <= 15)
+prep = if(cfg.scenario >= 11 and cfg.scenario <= 22)
 | then |> flock-init() |> flock-normalize()
 | else |> _
 
@@ -606,13 +786,23 @@ fin-add-remove = if(cfg.scenario == 8)
 | else |> _
 
 tor fin-boids {}
-fin-boids = if(cfg.scenario >= 11 and cfg.scenario <= 15)
+fin-boids = if(cfg.scenario >= 11 and cfg.scenario <= 22)
 | then |> read-flock()
+| else |> _
+
+tor report-phases {}
+report-phases = if(cfg.scenario == 16 or cfg.scenario == 18 or cfg.scenario == 20 or cfg.scenario == 22)
+| then |> std/io:eprint.ln("koru_store boids_phase actors: {{ ph.pact:d }} ns")
+    |> std/io:eprint.ln("koru_store boids_phase clear: {{ ph.pclr:d }} ns")
+    |> std/io:eprint.ln("koru_store boids_phase hash: {{ ph.phsh:d }} ns")
+    |> std/io:eprint.ln("koru_store boids_phase scatter: {{ ph.psct:d }} ns")
+    |> std/io:eprint.ln("koru_store boids_phase resolve: {{ ph.pres:d }} ns")
+    |> std/io:eprint.ln("koru_store boids_phase steer: {{ ph.pstg:d }} ns")
 | else |> _
 
 tor finish {}
 finish = fin-dense() |> fin-sparse() |> fin-spawn() |> fin-spawn-batch()
-    |> fin-despawn() |> fin-add-remove() |> fin-boids()
+    |> fin-despawn() |> fin-add-remove() |> fin-boids() |> report-phases()
 // `fanout` and `bevy_strength_world` accumulate their own sink as the
 // workload runs, exactly as the baseline does — no read-back arm.
 
@@ -684,11 +874,46 @@ name-boids-split = if(cfg.scenario == 15)
 | then |> std/io:print("boids_split")
 | else |> _
 
+tor name-boids-phase {}
+name-boids-phase = if(cfg.scenario == 16)
+| then |> std/io:print("boids_phase")
+| else |> _
+
+tor name-boids-mask {}
+name-boids-mask = if(cfg.scenario == 17)
+| then |> std/io:print("boids_mask")
+| else |> _
+
+tor name-boids-mask-phase {}
+name-boids-mask-phase = if(cfg.scenario == 18)
+| then |> std/io:print("boids_mask_phase")
+| else |> _
+
+tor name-boids-clamp {}
+name-boids-clamp = if(cfg.scenario == 19)
+| then |> std/io:print("boids_clamp")
+| else |> _
+
+tor name-boids-clamp-phase {}
+name-boids-clamp-phase = if(cfg.scenario == 20)
+| then |> std/io:print("boids_clamp_phase")
+| else |> _
+
+tor name-boids-best {}
+name-boids-best = if(cfg.scenario == 21)
+| then |> std/io:print("boids_best")
+| else |> _
+
+tor name-boids-best-phase {}
+name-boids-best-phase = if(cfg.scenario == 22)
+| then |> std/io:print("boids_best_phase")
+| else |> _
+
 tor emit { ns: i64 }
 emit = std/io:print("{\"impl\":\"koru_store\",\"scenario\":\"")
     |> name-dense() |> name-sparse() |> name-query-get() |> name-schedule-empty()
     |> name-spawn() |> name-spawn-batch() |> name-despawn() |> name-add-remove()
-    |> name-fanout() |> name-bevy-strength() |> name-boids() |> name-boids-fused() |> name-boids-f2() |> name-boids-f4() |> name-boids-split()
+    |> name-fanout() |> name-bevy-strength() |> name-boids() |> name-boids-fused() |> name-boids-f2() |> name-boids-f4() |> name-boids-split() |> name-boids-phase() |> name-boids-mask() |> name-boids-mask-phase() |> name-boids-clamp() |> name-boids-clamp-phase() |> name-boids-best() |> name-boids-best-phase()
     |> std/io:print.ln("\",\"entities\":{{ cfg.entities:d }},\"frames\":{{ cfg.frames:d }},\"observers\":{{ cfg.observers:d }},\"elapsed_ns\":{{ ns:d }},\"sink\":{{ acc.sink:d }}}")
 
 // -------------------------------------------------------------------- driver

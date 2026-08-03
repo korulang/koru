@@ -30,7 +30,8 @@ std/store:insert(mats) { t00: -3.0, t01: -3.0, t02: 2.0, t03: -3.0, t10: 2.0, t1
 
 std/store:query(mats)
 ! query e |> std/store:stored {
-        e.det: e.t00 * (e.t11 * e.t22 * e.t33 - e.t11 * e.t23 * e.t32 - e.t12 * e.t21 * e.t33 + e.t12 * e.t23 * e.t31 + e.t13 * e.t21 * e.t32 - e.t13 * e.t22 * e.t31) + e.t01 * (0.0 - e.t10 * e.t22 * e.t33 + e.t10 * e.t23 * e.t32 + e.t12 * e.t20 * e.t33 - e.t12 * e.t23 * e.t30 - e.t13 * e.t20 * e.t32 + e.t13 * e.t22 * e.t30) + e.t02 * (e.t10 * e.t21 * e.t33 - e.t10 * e.t23 * e.t31 - e.t11 * e.t20 * e.t33 + e.t11 * e.t23 * e.t30 + e.t13 * e.t20 * e.t31 - e.t13 * e.t21 * e.t30) + e.t03 * (0.0 - e.t10 * e.t21 * e.t32 + e.t10 * e.t22 * e.t31 + e.t11 * e.t20 * e.t32 - e.t11 * e.t22 * e.t30 - e.t12 * e.t20 * e.t31 + e.t12 * e.t21 * e.t30),
+        e.det: e.t00 * (e.t11 * e.t22 * e.t33 - e.t11 * e.t23 * e.t32 - e.t12 * e.t21 * e.t33 + e.t12 * e.t23 * e.t31 + e.t13 * e.t21 * e.t32 - e.t13 * e.t22 * e.t31) + e.t01 * (0.0 - e.t10 * e.t22 * e.t33 + e.t10 * e.t23 * e.t32 + e.t12 * e.t20 * e.t33 - e.t12 * e.t23 * e.t30 - e.t13 * e.t20 * e.t32 + e.t13 * e.t22 * e.t30) + e.t02 * (e.t10 * e.t21 * e.t33 - e.t10 * e.t23 * e.t31 - e.t11 * e.t20 * e.t33 + e.t11 * e.t23 * e.t30 + e.t13 * e.t20 * e.t31 - e.t13 * e.t21 * e.t30) + e.t03 * (0.0 - e.t10 * e.t21 * e.t32 + e.t10 * e.t22 * e.t31 + e.t11 * e.t20 * e.t32 - e.t11 * e.t22 * e.t30 - e.t12 * e.t20 * e.t31 + e.t12 * e.t21 * e.t30) }
+    |> std/store:stored {
         e.o00: (e.t11 * e.t22 * e.t33 - e.t11 * e.t23 * e.t32 - e.t12 * e.t21 * e.t33 + e.t12 * e.t23 * e.t31 + e.t13 * e.t21 * e.t32 - e.t13 * e.t22 * e.t31) / e.det,
         e.o01: (0.0 - e.t01 * e.t22 * e.t33 + e.t01 * e.t23 * e.t32 + e.t02 * e.t21 * e.t33 - e.t02 * e.t23 * e.t31 - e.t03 * e.t21 * e.t32 + e.t03 * e.t22 * e.t31) / e.det,
         e.o02: (e.t01 * e.t12 * e.t33 - e.t01 * e.t13 * e.t32 - e.t02 * e.t11 * e.t33 + e.t02 * e.t13 * e.t31 + e.t03 * e.t11 * e.t32 - e.t03 * e.t12 * e.t31) / e.det,
