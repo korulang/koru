@@ -7167,10 +7167,45 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
     if (!std.mem.eql(u8, std.mem.trim(u8, sc.branch, " "), "query")) {
         return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:query({s}): the row branch is spelled `! query <row>`", .{store_name}) } };
     }
-    if (sc.destructure.len > 0) {
-        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:query({s}): the query arm binds its row - write `! query <row> |> ... <row>.<field> ...`, not a projection block", .{store_name}) } };
+    // A destructure block on the query arm is a REQUEST. Each entry carries a
+    // PREFIX annotation naming what the visit should synthesize for it, and the
+    // transform provides exactly what is asked for and nothing more:
+    //
+    //     ! query { [row]e, [ordinal]n } |> … n … e.v …
+    //
+    // `! query e` stays the shorthand for `! query { [row]e }`; ~149 green
+    // sites write it and rule 1 of the 690_086 ruleset still governs the row.
+    //
+    // WHAT IS STILL REFUSED, and why it is not the same thing. An UNANNOTATED
+    // entry is the old projection block: a list of COLUMNS the body also
+    // references, which said the same thing twice and let the two halves
+    // disagree. Which columns a site touches stays DERIVED from
+    // `<row>.<field>`. Nothing in a request block is a column, so nothing is
+    // stated twice, and every entry is a binding, so nesting stays
+    // unambiguous the way `entity` never was.
+    //
+    // An annotation this transform does not implement is REFUSED, never
+    // ignored — the same law declared reductions carry.
+    var req_row: ?[]const u8 = null;
+    var req_ordinal: ?[]const u8 = null;
+    for (sc.destructure) |df| {
+        if (df.annotations.len == 0) {
+            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:query({s}): '{s}' is an unannotated entry — a request block names what the VISIT synthesizes (`[row]`, `[ordinal]`), never columns; read columns through the row binding as `<row>.{s}`", .{ store_name, df.name, df.name }) } };
+        }
+        for (df.annotations) |a| {
+            if (std.mem.eql(u8, a, "row")) {
+                req_row = df.name;
+            } else if (std.mem.eql(u8, a, "ordinal")) {
+                req_ordinal = df.name;
+            } else {
+                return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:query({s}): unknown request `[{s}]` on '{s}' — this arm understands [row] and [ordinal]", .{ store_name, a, df.name }) } };
+            }
+        }
     }
-    const row_bind = sc.binding orelse {
+    if (sc.destructure.len > 0 and req_row == null) {
+        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:query({s}): a request block must name the row — add `[row]<name>`", .{store_name}) } };
+    }
+    const row_bind = req_row orelse sc.binding orelse {
         return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:query({s}): the query arm needs a row binding: `! query <row> |> ...`", .{store_name}) } };
     };
 
@@ -7426,6 +7461,12 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
             type: []const u8,
             module_path: ?[]const u8 = null,
             phantom: ?[]const u8 = null,
+            /// Emit THIS expression at the call site instead of the bare name.
+            /// An ordinary capture passes `.n = n` — the name is already live
+            /// in the loop's scope. A SYNTHESIZED request (`[ordinal]`) has no
+            /// such local: its value is the loop cursor, so it rides the same
+            /// threading with the expression carried here.
+            value: ?[]const u8 = null,
         };
         // The column type of a `std.store:new(...)` seed field — the type an
         // interceptor destructure field binds (690_093). Reads the seed block
@@ -7802,6 +7843,22 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
         captures.append(allocator, b) catch unreachable;
     }
 
+    // `[ordinal]n` rides the capture threading. The cursor is already computed
+    // by the loop and already handed to the body as `srow_name`; asking for it
+    // by an author's name needs no new channel, only one more threaded value —
+    // which is why this request costs a line rather than a mechanism.
+    //
+    // Synthesized ONLY when asked for: an arm that never writes `[ordinal]`
+    // adds no field and threads nothing, the same demand-driven rule an unread
+    // aggregate materializes no column under.
+    if (req_ordinal) |on| {
+        captures.append(allocator, .{
+            .name = allocator.dupe(u8, on) catch unreachable,
+            .type = allocator.dupe(u8, "i64") catch unreachable,
+            .value = allocator.dupe(u8, "@as(i64, @intCast(__koru_si))") catch unreachable,
+        }) catch unreachable;
+    }
+
     // Keyed on the SWEEP ARM's own line, not the enclosing flow's. Sweep
     // inherited query's flow-line site key, and that key is only unique because
     // query is top-level-only — one query is one flow by construction. Sweep
@@ -7922,7 +7979,10 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
         loop.appendSlice(allocator, a) catch unreachable;
     }
     for (captures.items) |c| {
-        const a = std.fmt.allocPrint(allocator, " .{s} = {s},", .{ c.name, c.name }) catch unreachable;
+        // An ordinary capture is already a live local here, so it passes by
+        // name; a synthesized request carries its own expression.
+        const cv = c.value orelse c.name;
+        const a = std.fmt.allocPrint(allocator, " .{s} = {s},", .{ c.name, cv }) catch unreachable;
         loop.appendSlice(allocator, a) catch unreachable;
     }
     const srow_arg = std.fmt.allocPrint(allocator, " .{s} = @as(i64, @intCast(__koru_si))", .{srow_name}) catch unreachable;
@@ -7974,7 +8034,21 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
     // to splice into, because the flow item IS the site. Third road: the flow
     // becomes a PROC implementing the same event. A proc impl binds every
     // event input as a const, so the captures are in scope by construction.
-    if (is_head and captures.items.len > 0) {
+    // Only LEXICAL captures constrain WHERE this loop may live. A synthesized
+    // request (`[ordinal]`) computes its value inside the loop from the cursor,
+    // so it needs nothing from the enclosing scope and must not push a head
+    // site onto the proc road below or the inline road further down — the
+    // inline road at file scope is `expected type expression, found '{'`
+    // (690_081), which is exactly what asking for an ordinal at a top-level
+    // sweep produced before this distinction existed.
+    const lexical_captures = blk: {
+        var n: usize = 0;
+        for (captures.items) |c| {
+            if (c.value == null) n += 1;
+        }
+        break :blk n;
+    };
+    if (is_head and lexical_captures > 0) {
         if (flow.impl_of) |iof| {
             const pbody = std.fmt.allocPrint(allocator, "{s}return;", .{loop.items}) catch unreachable;
             return .{ .transformed = .{
@@ -7991,7 +8065,7 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
         }
     }
 
-    const is_head_site = is_head and captures.items.len == 0;
+    const is_head_site = is_head and lexical_captures == 0;
 
     if (!is_head_site) {
         return .{ .transformed = .{

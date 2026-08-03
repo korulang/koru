@@ -1062,6 +1062,16 @@ pub const AstSerializer = struct {
                 try self.write(", .type_text = ");
                 try self.writeString(t);
             }
+            // Must survive to the backend: std/store's query transform reads
+            // these to decide what the arm is REQUESTING, and it runs there.
+            if (f.annotations.len > 0) {
+                try self.write(", .annotations = &[_][]const u8{ ");
+                for (f.annotations, 0..) |a, ai| {
+                    if (ai > 0) try self.write(", ");
+                    try self.writeString(a);
+                }
+                try self.write(" }");
+            }
             if (f.sub.len > 0) {
                 try self.write(", .sub = ");
                 try self.serializeDestructure(f.sub);

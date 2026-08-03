@@ -6387,14 +6387,19 @@ pub const Parser = struct {
         }
 
         var depth: i32 = 0;
+        var brk: i32 = 0;
         var start: usize = 0;
         var idx: usize = 0;
         while (idx <= inner.len) : (idx += 1) {
             const at_end = idx == inner.len;
-            const split = at_end or (inner[idx] == ',' and depth == 0);
+            const split = at_end or (inner[idx] == ',' and depth == 0 and brk == 0);
             if (!at_end) {
                 if (inner[idx] == '{') depth += 1;
                 if (inner[idx] == '}') depth -= 1;
+                // Bracket depth keeps a comma INSIDE an annotation from
+                // splitting the entry — `[a(x, y)]n` is one field.
+                if (inner[idx] == '[') brk += 1;
+                if (inner[idx] == ']') brk -= 1;
             }
             if (!split) continue;
 
@@ -6402,13 +6407,41 @@ pub const Parser = struct {
             start = idx + 1;
             if (item.len == 0) continue;
 
-            var name: []const u8 = item;
+            // PREFIX annotations, the language's normal form: `{ [row]e }`.
+            // A destructure entry is a REQUEST and the annotation names what
+            // the producer should synthesize for it. Peeled here so every
+            // consumer sees a plain name plus a list; whether a given
+            // annotation MEANS anything is the consumer's call, and one it
+            // must refuse rather than ignore.
+            var anns = try std.ArrayList([]const u8).initCapacity(self.allocator, 1);
+            errdefer {
+                for (anns.items) |a| self.allocator.free(a);
+                anns.deinit(self.allocator);
+            }
+            var rest = item;
+            while (rest.len > 0 and rest[0] == '[') {
+                const close = std.mem.indexOfScalar(u8, rest, ']') orelse {
+                    try self.reporter.addError(
+                        .PARSE001,
+                        self.current,
+                        indent + 2,
+                        "Unterminated annotation on destructure field '{s}' - expected ']'.",
+                        .{item},
+                    );
+                    return error.InvalidBinding;
+                };
+                const ann = lexer.trim(rest[1..close]);
+                if (ann.len > 0) try anns.append(self.allocator, try self.allocator.dupe(u8, ann));
+                rest = lexer.trim(rest[close + 1 ..]);
+            }
+
+            var name: []const u8 = rest;
             var type_text: ?[]const u8 = null;
             var sub: []const ast.DestructureField = &.{};
 
-            if (std.mem.indexOfScalar(u8, item, ':')) |colon| {
-                name = lexer.trim(item[0..colon]);
-                const after = lexer.trim(item[colon + 1 ..]);
+            if (std.mem.indexOfScalar(u8, rest, ':')) |colon| {
+                name = lexer.trim(rest[0..colon]);
+                const after = lexer.trim(rest[colon + 1 ..]);
                 if (after.len >= 2 and after[0] == '{' and after[after.len - 1] == '}') {
                     sub = try self.parseDestructureFields(lexer.trim(after[1 .. after.len - 1]), indent);
                 } else if (after.len > 0) {
@@ -6440,6 +6473,7 @@ pub const Parser = struct {
                 .name = try self.allocator.dupe(u8, name),
                 .type_text = type_text,
                 .sub = sub,
+                .annotations = try anns.toOwnedSlice(self.allocator),
             });
         }
 

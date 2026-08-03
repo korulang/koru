@@ -105,3 +105,40 @@ shorter spelling of the same claim — it is an unexamined one.
 Each half is green alone: same-module capture runs, cross-module without
 capture runs. Only the combination fails, which is why neither half's tests
 ever had reason to look.
+
+## The third form: a MANUAL ENUMERATION of a set that just grew (2026-08-03)
+
+Adding one field to `ast.DestructureField` took four attempts to land, and the
+two misses were the same shape as everything above — code that must change,
+sitting somewhere nobody was looking.
+
+The reflective paths were free. `ast_json`'s reader walks `@typeInfo` fields,
+so it picked the new field up with no edit at all, and `program_ast.zig` is a
+bare `pub const DestructureField = ast.DestructureField` alias. Every path that
+DESCRIBES the type rather than enumerating it cost nothing.
+
+The two that bit both enumerate by hand:
+
+- `ast_serializer.zig`'s `serializeDestructure` writes `.name`, `.type_text`,
+  `.sub` — a new field is silently absent from the emitted literal.
+- `ast.copyDestructure` constructs the copy field-by-field. A clone that omits
+  a field does not fail; it produces a value that is correct everywhere except
+  the property you just added, and the loss surfaces arbitrarily far away. Here
+  the parser was demonstrably right (`--ast-canon` showed the annotations) and
+  the consumer saw an empty list, with a clone in between.
+
+**A manual field enumeration is a place new fields go to die**, and the tell is
+the same one this belief already gives for guards and discovery walks: it names
+a PLACE (these three fields) where the type names a SET. Reflection over
+`@typeInfo` is not merely less code — it cannot fall out of step, which is the
+entire failure mode.
+
+Practical consequence, cheap: when adding a field to an AST type, grep for an
+existing field's name rather than the type's. `grep '\.type_text'` finds every
+hand-written enumeration in one shot; `grep DestructureField` finds the
+declarations and misses all of them.
+
+It also caught a scope estimate. I told Lars four files, having checked the
+serializer and stopped; the deserializer and the clone were both still ahead.
+Reading one direction of a round-trip and calling it the scope is its own
+instance of this belief.

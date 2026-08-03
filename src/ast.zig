@@ -1360,10 +1360,22 @@ pub const DestructureField = struct {
     name: []const u8, // binding name, or "_" to discard the slot
     type_text: ?[]const u8 = null,
     sub: []const DestructureField = &.{},
+    /// PREFIX annotations on the entry: `{ [row]e, [ordinal]n }`. Prefix is the
+    /// language's annotation form (`[comptime]tor`, `[global(name)]`); the
+    /// postfix `r[mutable]` is postfix only because it hangs off a binding.
+    ///
+    /// A destructure entry is a REQUEST, and the annotation names what the
+    /// producer should synthesize for it. std/store's query arm is the first
+    /// consumer (`[row]` binds the visited row, `[ordinal]` its 0-based
+    /// cursor); the slot is general, but each consumer must REFUSE an
+    /// annotation it does not implement rather than ignore it.
+    annotations: []const []const u8 = &.{},
 
     pub fn deinit(self: *const DestructureField, allocator: std.mem.Allocator) void {
         allocator.free(self.name);
         if (self.type_text) |t| allocator.free(t);
+        for (self.annotations) |a| allocator.free(@constCast(a));
+        if (self.annotations.len > 0) allocator.free(@constCast(self.annotations));
         freeDestructure(allocator, self.sub);
     }
 };
@@ -1381,6 +1393,12 @@ pub fn copyDestructure(allocator: std.mem.Allocator, fields: []const Destructure
             .name = try allocator.dupe(u8, f.name),
             .type_text = if (f.type_text) |t| try allocator.dupe(u8, t) else null,
             .sub = try copyDestructure(allocator, f.sub),
+            .annotations = blk: {
+                if (f.annotations.len == 0) break :blk &.{};
+                const anns = try allocator.alloc([]const u8, f.annotations.len);
+                for (f.annotations, 0..) |a, ai| anns[ai] = try allocator.dupe(u8, a);
+                break :blk anns;
+            },
         };
     }
     return out;
