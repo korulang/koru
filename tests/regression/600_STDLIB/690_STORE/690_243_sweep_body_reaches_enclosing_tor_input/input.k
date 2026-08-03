@@ -1,43 +1,28 @@
-// PINS (RED, awaiting a ruling): a sweep body reaching the ENCLOSING TOR'S
-// INPUT. `pos += vel * dt` is the shape — the single most common thing an ECS
-// system does, and the reason this is not merely a curiosity.
+// The ECS spelling of param capture: `pos += vel * dt` across several rows.
 //
-// Measured 2026-08-03: `use of undeclared identifier 'dt'`, raw Zig, in
-// generated code. Not a Koru diagnostic. Whatever the ruling below, THAT is a
-// defect on its own: the refusal must name `dt` and the rule it broke.
+// 690_234 is the CANONICAL pin for this gap — it recorded it first, named the
+// branch-binding contrast that proved it mechanical, and carried its own flip
+// instruction. This test is the consumer layout of the same shape: two rows,
+// real arithmetic, a system tor taking `dt`. Kept deliberately alongside the
+// minimal spelling, because the green region around a behaviour is exactly as
+// wide as the test that pins it — a moved line break or a second row is a
+// different program to the compiler and the same program to its author.
 //
-// THE ASYMMETRY IS THE ARGUMENT. 690_073 is GREEN and captures a mid-chain
-// BIND into the very same body position:
+// WHAT WAS ACTUALLY WRONG. Not a scope rule and not a design boundary. A tor's
+// parameter materializes as `const dt = __koru_event_input.dt;` in the very
+// frame that calls the sweeprun, one line above the call. The capture collector
+// gathered mid-pipe binds, and gathered event INPUTS only when the host flow
+// was a synthesized `__store_sweepbody_` (the nested-sweep case), so a user tor
+// never took that branch. Everything else already worked: a sweep arm inside a
+// tor body captures a mid-chain bind today, through the same two hops.
 //
-//     make(): n |> for(0..1)
-//     ! each _ |> std/store:query(items)
-//         ! query e |> ... n ...          <-- n is captured, works today
+// The measurement that settled it: the SAME `dt`, the SAME body, reached the
+// arm when it arrived as `tick(): dt |> query …` and did not when declared as
+// a parameter. One origin, not one scope.
 //
-// An enclosing tor's INPUT is at least as enumerable as a mid-chain bind — it
-// is declared in the signature — yet it does not reach the body at all. The
-// capture machinery already exists and is already threaded: store.kz calls
-// Cap.collectEventInputs, but only when the holding flow is a SYNTHESIZED
-// `__store_sweepbody_` (a sweep nested in another sweep). A user-declared tor
-// never takes that branch, so its inputs never enter the capture set.
-//
-// WHY IT IS NOT OBVIOUSLY A BUG — the ruling Lars owns. 690_STORE/DESIGN.md T1
-// (transplant-purity) says a transplanted body's free names must be a subset of
-// {its query-block bindings} u {comptime-known names: module decls, qualified
-// calls, other stores}. An event input is NOT in that set, so today's refusal
-// is T1 working as written. But 690_073 already admits mid-chain binds, which
-// are not in that set either — they are threaded in as captures by value. So
-// the question is not "does T1 forbid this" but "is an enclosing tor's input
-// the same KIND of enumerable name as a mid-chain bind". If yes, T1's set
-// widens by one member and the existing mechanism carries it.
-//
-// This pin is the evidence, not a proposal. It is deliberately red, the way
-// 690_069 holds the row-ordinal requirement: the shape stays in the corpus so
-// the requirement does not leave with it.
-//
-// SCOPE NOTE: this is NOT a module-boundary defect. The entry-file twin above
-// is the whole test — no imports, one file — and it fails identically to the
-// multi-module spelling. Module resolution reaches the store by bare name
-// across files today (690_088, ruled and green).
+// NOT T1. T1 is transplant-purity for a WATCH body — spliced into the store's
+// write path and executed wherever a write happens, so it cannot close over its
+// declaring scope. A sweep body runs at the sweep site in the caller's frame.
 import std/io
 import std/store
 

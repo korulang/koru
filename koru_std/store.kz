@@ -7733,16 +7733,34 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
             if (hn.* == .invocation) {
                 if (Cap.findHostFlow(program.items, holding)) |host| {
                     _ = Cap.collectBindsOnPath(allocator, program.items, &host.body, &hn.invocation, &avail);
-                    // Nested sweep: this site's host flow is another sweep's
-                    // transplanted body, and that flow's event inputs — the
-                    // OUTER row's keyed projections and cursor — are in scope
-                    // for it. Scoped to sweepbody hosts: their inputs are all
-                    // arm-keyed mangles, so a name matches only when the text
-                    // really references the outer row.
+                    // The host flow's own event INPUTS are in scope for its
+                    // body, exactly like the mid-pipe binds collected above:
+                    // `integrate { dt }` materializes `const dt` in the very
+                    // frame that calls the sweeprun, one line above the call.
+                    // Two kinds of host, one rule:
+                    //
+                    //   - a synthesized `__store_sweepbody_`: its inputs are
+                    //     the OUTER row's arm-keyed projections and cursor
+                    //     (the nested-sweep case).
+                    //   - a user tor: its inputs are the parameters the author
+                    //     declared, and `pos += vel * dt` is why it matters —
+                    //     the most common thing an ECS system does.
+                    //
+                    // This was gated to sweepbody hosts on the theory that
+                    // ordinary names would over-capture. They cannot: the
+                    // filter below takes a name only when the body actually
+                    // REFERENCES it, after skipping the row binding (rule 5
+                    // shadowing) and the projections. An input that shadows a
+                    // store name is rule 4 working as ruled — bindings resolve
+                    // before module-local stores.
+                    //
+                    // Measured before widening: the SAME `dt` reached the same
+                    // body when it arrived as a mid-chain bind
+                    // (`tick(): dt |> query …`, green) and not when declared a
+                    // parameter. One origin, not one scope, was the whole
+                    // difference — the threading it needs already worked.
                     if (host.impl_of) |iof| {
-                        if (iof.segments.len > 0 and std.mem.startsWith(u8, iof.segments[iof.segments.len - 1], "__store_sweepbody_")) {
-                            Cap.collectEventInputs(allocator, program.items, iof, &avail);
-                        }
+                        Cap.collectEventInputs(allocator, program.items, iof, &avail);
                     }
                 }
             }

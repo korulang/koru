@@ -437,15 +437,32 @@ is called only when the holding flow is a synthesized `__store_sweepbody_`, so
 a sweep nested in another sweep sees inputs and a sweep in a user tor does not.
 A universal property installed at one of several exits, again.
 
-**The open question is a ruling, not a repair.** T1 (transplant-purity) lists
-the legal free names and an event input is not among them, so today's refusal
-is T1 working as written. But mid-chain binds are not in that set either and
-were admitted anyway, threaded in by value. So: is an enclosing tor's input the
-same KIND of enumerable name as a mid-chain bind? If yes, T1 widens by one
-member and nothing else moves. Lars owns that.
+**CLOSED the same day, and the "ruling" framing was wrong.** I wrote here that
+this was a question Lars owned — that T1 lists the legal free names of a
+transplanted body, an event input is not among them, so the refusal was T1
+working as written. **Repudiated.** T1 governs a WATCH body: spliced into the
+store's write path and executed wherever a write happens, which is why it
+cannot close over its declaring scope. A sweep body runs AT the sweep site, in
+the caller's own frame; its lift into a handler fn is codegen, not relocation
+to a foreign execution context. Conflating the two is what made a mechanical
+omission look like a design boundary.
 
-Independent of the ruling, the failure mode is a defect: a raw host error about
-generated code, where a Koru refusal should name `dt` and the rule it broke.
+The corpus already knew. `690_234_impl_param_not_captured_into_sweep_arm`
+recorded it as "a documented gap, red on purpose", named the same
+branch-binding contrast, and carried its own flip instruction — "when param
+capture lands, this flips to MUST_RUN with expected '7 5'". I did not find it
+because I grepped for the PROSE of the gap and it was in the test's NAME.
+Searching for a description finds authors who describe; the corpus indexes by
+what a thing IS.
+
+The fix was one gate: the collector called `Cap.collectEventInputs` only when
+the host flow was a synthesized `__store_sweepbody_`, so a user tor never took
+that branch. Both hops of threading already worked — a sweep arm inside a tor
+body captures a mid-chain bind today. The measurement that settled it: the same
+`dt`, the same body, reached the arm as `tick(): dt |> query …` and not as a
+declared parameter. One origin, not one scope. 690_234 flipped green, 690_243
+pins the ECS spelling, and the cost 690_234 named — a helper tor that writes a
+store having to be inlined at its call sites — is paid off.
 
 Also standing, and worth stating because it is easy to misread as progress:
 the 003_ecs_reactive harness has anchors for Bevy, Flecs, Unity DOTS and a Zig
