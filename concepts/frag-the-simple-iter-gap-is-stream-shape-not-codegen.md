@@ -49,3 +49,44 @@ equal-protocol, equal-draw, interleaved ceiling probe to show the gap lives in
 the workload's stream shape. Before chasing a codegen deficit, mirror the
 exact loop shape in the backend language and race it; if they tie, the gap is
 structural and the comparison itself is what needs examining.
+
+## "Dead even with hand-written Zig" was a claim about a SHAPE, not about Zig
+
+The sitting above raced the Koru binary against a hand-written Zig loop *of the
+identical shape* and got a tie, and the sentence that came out of it — there is
+nothing left to win inside this loop — quietly hardened into a ceiling: Koru's
+ambition is to MATCH straight-line Zig. The ECS benchmark's
+`bevy_strength_world` breaks that, in the direction nobody was watching.
+
+It is the workload the borrowed harness's own README says is *intended to
+favour Bevy ECS* — three entity kinds, bouncing dynamic bodies, dying particles,
+trigonometric orbiters, three passes a frame. The Koru port runs it **1.2x
+faster than the hand-written striped Zig baseline**, interleaved, and the
+checksum is bit-identical across Koru, Zig and bevy_ecs, so all three are
+provably doing the same arithmetic.
+
+The reconciliation is that the earlier probe controlled for shape *by
+construction*: it hand-wrote the loop Koru emits. A real hand-written program
+does not do that. It picks its own shape, and at any size a human reaches for
+the structure a human can maintain — here a struct of slices reached through
+`self`, where the generator emits module-level arrays at statically known
+addresses. That is a plausible reading of the 1.2x and NOT an established one;
+`probes/ab_codegen.py` is the instrument that would settle it and has not been
+pointed at this.
+
+What the belief becomes:
+
+- **A shape-matched race measures the emitter. It does not measure the
+  competitor.** Both are worth running and they answer different questions;
+  only the second one is what a user experiences, because a user compares
+  against the program someone would actually write.
+- **Hand-written host code is not an upper bound on generated code.** A
+  generator has no maintainability budget: it can emit the layout, the
+  indirection-free access and the aliasing-free globals that a person would
+  refuse to hand-maintain. Treating the baseline as a ceiling silently caps the
+  ambition at "as good as", and this workload says the ceiling was imaginary.
+- **The ambition-shaped question is now open.** If generated code can beat
+  hand-written host code on a realistic workload, the interesting comparison
+  stops being the straight-line baseline and starts being *which shapes the
+  planner is allowed to choose* — the same lever the fission and vector-cell
+  entries above already name, arriving from the other side.

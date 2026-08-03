@@ -1,0 +1,7 @@
+name: smear
+kind: inferred
+shape: categorical
+face: in
+membrane: true
+note: a finding was recorded and did not propagate — the knowledge existed somewhere in the tree, in prose an author had written on purpose, and still failed to reach the place it applied
+route: surface, wake
