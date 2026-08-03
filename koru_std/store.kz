@@ -7190,7 +7190,13 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
     var req_ordinal: ?[]const u8 = null;
     for (sc.destructure) |df| {
         if (df.annotations.len == 0) {
-            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:query({s}): '{s}' is an unannotated entry — a request block names what the VISIT synthesizes (`[row]`, `[ordinal]`), never columns; read columns through the row binding as `<row>.{s}`", .{ store_name, df.name, df.name }) } };
+            // Carries BOTH teachings deliberately. The entry may be the old
+            // `entity.v` projection (690_089's migration wall pins that this
+            // still refuses and still says "binds its row"), or a plain column
+            // name someone reached for now that braces parse again. One
+            // message covers both: what replaced the projection, and what a
+            // request block is actually for.
+            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:query({s}): '{s}' is an unannotated entry — the query arm binds its row (`! query <row> |> ... <row>.<field> ...`); a request block names what the VISIT synthesizes (`[row]`, `[ordinal]`), never columns", .{ store_name, df.name }) } };
         }
         for (df.annotations) |a| {
             if (std.mem.eql(u8, a, "row")) {
