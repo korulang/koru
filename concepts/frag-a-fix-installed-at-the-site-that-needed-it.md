@@ -64,3 +64,44 @@ finds both, and cannot tell them apart until each red is chased to its cause.
 is red for the reserved row ordinal. A mirror whose original is red says nothing
 about the boundary. That check is cheap and belongs before any diagnosis on this
 wall.
+
+## The sibling: correctness held by a PLACEMENT COINCIDENCE (2026-08-03, 115_043)
+
+The cases above are code installed one level too low. This is the inverse and it
+is quieter: code that was never installed anywhere, and worked because of where
+the surrounding thing happened to land.
+
+A store's variable is declared in its own module's namespace. A sweep over that
+store emits `__koru_store_items` BARE. That is wrong everywhere and correct
+nowhere — but with no capture the sweep's loop is lifted into a
+`__store_sweeprun_*` event that is PLACED IN THE STORE'S OWN NAMESPACE, so the
+bare name resolves. Add a capture and the loop must stay inline at the sweep
+site to keep the captured value in lexical scope; inline means the CALLER's
+namespace, and the same bare name stops resolving.
+
+The emitted statement indicts itself:
+
+    // inside koru_app.koru_lib.koru_systems
+    for (0..__koru_store_items.len) |__koru_si| {                        // BARE
+        koru_app.koru_lib.koru_world.__store_sweepbody_items_L8_event...  // QUALIFIED
+    }
+
+Two references, one statement, both naming things that live in `koru_world`,
+and only one qualified. The emitter already knew the home — it wrote the path
+for the body — so nothing was undiscoverable. One of the two spellings was
+simply never taught.
+
+What this adds to the tell above: the existing rule says to ask what else is in
+the universal when a fix sits in one exit. **Also ask what makes the CURRENT
+placement correct.** If the answer is "it happens to be emitted next to the
+thing it names", that is not correctness, it is a coincidence with a lifetime —
+and it ends at the first feature that moves the code. Here the feature was
+capture, which is orthogonal to naming and had no reason to be suspected.
+
+A bare symbol is a claim about the emitting namespace. When the same emitter
+qualifies its sibling reference three tokens later, the bare one is not a
+shorter spelling of the same claim — it is an unexamined one.
+
+Each half is green alone: same-module capture runs, cross-module without
+capture runs. Only the combination fails, which is why neither half's tests
+ever had reason to look.
