@@ -526,10 +526,10 @@ fn __printInterpolate(
     }
 
     const inline_code = if (function_call_expr) |fn_expr| kblk1: {
-        rep.addErrorAtLocation(.KORU168, flow.location, "std/io:" ++ label ++ ": '{{{{ {s} }}}}' contains a function call — function calls are not allowed in expressions. Use event chaining instead.", .{fn_expr}) catch {};
+        rep.addErrorAtLocation(.KORU168, flow.location, "std/io:" ++ label ++ ": '{{{{ {s} }}}}' contains a function call — function calls are not allowed in expressions. Use tor chaining instead.", .{fn_expr}) catch {};
         break :kblk1 std.fmt.allocPrint(
             allocator,
-            "@compileError(\"std/io:" ++ label ++ ": '{{{{ {s} }}}}' contains a function call — function calls are not allowed in expressions. Use event chaining instead.\");",
+            "@compileError(\"std/io:" ++ label ++ ": '{{{{ {s} }}}}' contains a function call — function calls are not allowed in expressions. Use tor chaining instead.\");",
             .{fn_expr}
         ) catch unreachable;
     }
@@ -1201,10 +1201,10 @@ fn __printInterpolateJs(
     }
 
     const inline_code = if (function_call_expr) |fn_expr| kblk3: {
-        reporter.addErrorAtLocation(.KORU168, flow.location, "std/io:print.blk: '{{{{ {s} }}}}' contains a function call — function calls are not allowed in expressions. Use event chaining instead.", .{fn_expr}) catch {};
+        reporter.addErrorAtLocation(.KORU168, flow.location, "std/io:print.blk: '{{{{ {s} }}}}' contains a function call — function calls are not allowed in expressions. Use tor chaining instead.", .{fn_expr}) catch {};
         break :kblk3 std.fmt.allocPrint(
             allocator,
-            "@compileError(\"std/io:print.blk: '{{{{ {s} }}}}' contains a function call — function calls are not allowed in expressions. Use event chaining instead.\");",
+            "@compileError(\"std/io:print.blk: '{{{{ {s} }}}}' contains a function call — function calls are not allowed in expressions. Use tor chaining instead.\");",
             .{fn_expr}
         ) catch unreachable;
     }

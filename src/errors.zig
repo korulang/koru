@@ -87,7 +87,7 @@ pub const ErrorCode = enum(u16) {
     KORU101, // Binding on a payload-less branch (nothing to bind or discard)
     KORU102, // `=>` (branch construction) used where the event produces a single payload (`-> T`) — use `->`
     KORU103, // `|>` (chain) used to introduce a bare value — `|>` chains steps; produce a value with `->`
-    KORU104, // Call inside an expression — calls are not expressions; use event chaining (bind the result first)
+    KORU104, // Call inside an expression — calls are not expressions; use tor chaining (bind the result first)
     KORU105, // Nested branches under a bodiless `|` branch — nothing picks a branch there; branches continue from an invocation
     KORU106, // A bind shadows one already in scope on the same path — Koru has no shadowing, and the pun machinery depends on it (210_173)
 

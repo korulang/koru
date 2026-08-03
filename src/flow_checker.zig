@@ -271,7 +271,7 @@ pub const FlowChecker = struct {
     // KORU104 — the expression-admission wall.
     //
     // An expression admits atoms, operators, and builtins — never a call.
-    // Composition lives in the flow via explicit binds (`event(args): x |>`),
+    // Composition lives in the flow via explicit binds (`tor(args): x |>`),
     // which is what keeps purity, obligation accounting, and lifetime proofs
     // sound: every analysis treats expressions as opaque effect-free
     // computation, so a call hiding inside one is invisible to all of them.
@@ -290,9 +290,9 @@ pub const FlowChecker = struct {
             .KORU104,
             location.line,
             location.column,
-            "nested call in {s} — calls are not expressions; use event chaining: bind the result first",
+            "nested call in {s} — calls are not expressions; use tor chaining: bind the result first",
             .{surface},
-            "rewrite as `event(args): x |> ...` and use `x` here",
+            "rewrite as `tor(args): x |> ...` and use `x` here",
             .{},
         );
     }

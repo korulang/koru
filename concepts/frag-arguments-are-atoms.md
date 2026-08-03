@@ -39,7 +39,7 @@ both parse as invocation args), `when` clauses, produce (`->`) bodies
 (including `immediate_impl` items, the bare-return impl kind), branch-
 constructor and captured fields, label-jump args, body-position
 expressions. Diagnostic: "nested call in <surface> — calls are not
-expressions; use event chaining: bind the result first."
+expressions; use tor chaining: bind the result first."
 
 The wall does not judge the QUOTING surfaces: Source-typed args (opaque
 code blocks) and declared-`Expression` params (comptime capture — the text
