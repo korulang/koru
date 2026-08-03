@@ -7456,6 +7456,31 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
             }
             return out.toOwnedSlice(alloc) catch unreachable;
         }
+        // A row-addressed lvalue is TWO different things spelled as one string.
+        // The head and the field are a write TARGET — Koru spelling, which the
+        // `stored` transform re-parses below by splitting on the brackets. But
+        // whatever sits BETWEEN the brackets is a READ, and it was getting the
+        // target form too: `stored { other[r.h].v: … }` inside a sweep lowered
+        // the index to `other[refs[cursor].h].v`, where the inner store name
+        // never received its `__koru_store_` prefix because nothing downstream
+        // re-lowers a target-form read. It failed as an undeclared identifier in
+        // the emitted Zig.
+        //
+        // Reads already compose to any depth; this is the write side catching up
+        // to one hop. The splitter below uses the FIRST `[` and the LAST `]`, so
+        // a lowered read nested inside the brackets survives the re-parse.
+        fn storedTarget(alloc: std.mem.Allocator, text: []const u8, bind: []const u8, store: []const u8, fields: []const []const u8, srf: []const u8, cursor: []const u8, used: []bool, unknown: *?[]const u8) []const u8 {
+            const lb = std.mem.indexOfScalar(u8, text, '[') orelse
+                return refs(alloc, text, bind, store, fields, srf, cursor, .target, used, unknown);
+            const rb = std.mem.lastIndexOfScalar(u8, text, ']') orelse
+                return refs(alloc, text, bind, store, fields, srf, cursor, .target, used, unknown);
+            if (rb <= lb + 1) return refs(alloc, text, bind, store, fields, srf, cursor, .target, used, unknown);
+            var out = std.ArrayList(u8).initCapacity(alloc, text.len + 64) catch unreachable;
+            out.appendSlice(alloc, refs(alloc, text[0 .. lb + 1], bind, store, fields, srf, cursor, .target, used, unknown)) catch unreachable;
+            out.appendSlice(alloc, refs(alloc, text[lb + 1 .. rb], bind, store, fields, srf, cursor, .live, used, unknown)) catch unreachable;
+            out.appendSlice(alloc, refs(alloc, text[rb..], bind, store, fields, srf, cursor, .target, used, unknown)) catch unreachable;
+            return out.toOwnedSlice(alloc) catch unreachable;
+        }
         // A stored block is `target: value` pairs — targets take the indexed
         // lvalue, values read the live column.
         fn storedBlock(alloc: std.mem.Allocator, text: []const u8, bind: []const u8, store: []const u8, fields: []const []const u8, srf: []const u8, cursor: []const u8, used: []bool, unknown: *?[]const u8) []const u8 {
@@ -7465,7 +7490,7 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
             var out = std.ArrayList(u8).initCapacity(alloc, text.len + 64) catch unreachable;
             for (pairs, 0..) |pr, i| {
                 if (i > 0) out.appendSlice(alloc, ", ") catch unreachable;
-                out.appendSlice(alloc, refs(alloc, pr.name, bind, store, fields, srf, cursor, .target, used, unknown)) catch unreachable;
+                out.appendSlice(alloc, storedTarget(alloc, pr.name, bind, store, fields, srf, cursor, used, unknown)) catch unreachable;
                 out.appendSlice(alloc, ": ") catch unreachable;
                 out.appendSlice(alloc, refs(alloc, pr.value, bind, store, fields, srf, cursor, .live, used, unknown)) catch unreachable;
             }
