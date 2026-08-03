@@ -145,3 +145,46 @@ as "untested", not "unsupported". It was read as the latter.
 - **Zero-of-N is the strongest available prompt to probe**, and it is cheap to
   compute. Where a construct is used N times and a neighbouring composition
   appears zero times, that is the experiment, not the conclusion.
+
+## One RED user is worse than zero users (fourth sitting)
+
+The third sitting closed on "zero-of-N is the strongest available prompt to
+probe". There is a weaker-looking signal that is strictly more dangerous, and
+it cost this belief a silent miscompile for twenty-one days: **ONE-of-N, where
+the one is red.**
+
+A `|>` chain in a subflow body written on the line after `=` kept only its
+FIRST step. Every tail step was discarded by the parser — no error, no warning.
+The same chain returns 12 written inline and 6 written across two lines
+(210_200 now pins both). The `=` subflow body was the single place that did not
+apply the rule the parser states about itself: "multi-line pipe chain parses
+EXACTLY like its inline spelling … ONE rule for `|>` chains everywhere."
+
+Exactly one file in the corpus wrote that spelling — 110_006's `helper.kz` —
+and it had been red since Jul 12. That is why nobody probed:
+
+- **Zero-of-N advertises itself as unexplored.** It offers no explanation, so
+  the honest reading is "untested", and this belief already says to probe it.
+- **One-red-of-N supplies a FALSE explanation.** The shape has a witness, the
+  witness has a verdict, and the verdict comes with a plausible cause attached
+  (`KORU100 unused binding 'd1'` — a binding error, in a language with a
+  binding checker). The red looks *accounted for*. A test that is already
+  failing for a stated reason is the best hiding place in the repo, because the
+  reason is load-bearing: it stops the search.
+
+The diagnostic was true of the tree the parser built and false of the program
+the author wrote. **A wrong tree makes an honest checker lie** — and the lie is
+well-formed, points at real source, and names a real rule. When a checker
+accuses source that plainly satisfies it, suspect the tree before the checker;
+the reflex is to argue with the rule.
+
+What follows, and it is cheap:
+
+- **A red test's stated cause is a claim, not a diagnosis** — the same status
+  this belief already assigns to a gap named in a report. Nothing re-derives it
+  after the first sitting, and it decays exactly the way a gap board does.
+- **Count users of a SPELLING, not a construct, and read the verdict column.**
+  One-of-N where the one is red should rank ABOVE zero-of-N on the probe list.
+- **Pin the value, never the diagnostic, when the tree is in question.** 210_200
+  asserts 12 and 8. Had it asserted "no KORU100", the fix that deleted the
+  false diagnostic without restoring the dropped call would have passed it.

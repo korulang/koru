@@ -5562,8 +5562,49 @@ pub const Parser = struct {
         }
 
         const invocation = try self.parseEventInvocation(inv_str);
+
+        // A `|>` chain written INLINE on the body line parses EXACTLY like its
+        // same-line spelling (`~go = a(): v |> b(x: v)`) — the ONE rule for
+        // `|>` chains this parser states at parseMultiLinePipeChain. This path
+        // was the single place that did not apply it: `parseEventInvocation`
+        // captures only the HEAD, so without the route below every tail step
+        // was silently discarded and the subflow produced the head's value.
+        // Nothing refused it — `go = bump(x: 3): d1 |> bump(x: d1): d2 -> d2`
+        // returned 12 on one line and 6 across two (210_200 pins both).
+        //
+        // The corpus had exactly ONE user (110_006's helper.kz), red for 21
+        // days as `KORU100 unused binding 'd1'` — true of the tree the parser
+        // built, false of the program written. Line-start `|>` lines are a
+        // different shape and already handled by parseContinuations below.
+        const body_has_inline_chain = blk: {
+            var i: usize = 0;
+            var paren_depth: i32 = 0;
+            var brace_depth: i32 = 0;
+            var in_string = false;
+            while (i + 1 < inv_str.len) : (i += 1) {
+                const c = inv_str[i];
+                if (c == '"' and (i == 0 or inv_str[i - 1] != '\\')) {
+                    in_string = !in_string;
+                    continue;
+                }
+                if (in_string) continue;
+                if (c == '(') paren_depth += 1;
+                if (c == ')') paren_depth -= 1;
+                if (c == '{') brace_depth += 1;
+                if (c == '}') brace_depth -= 1;
+                if (paren_depth == 0 and brace_depth == 0 and c == '|' and inv_str[i + 1] == '>') {
+                    break :blk true;
+                }
+            }
+            break :blk false;
+        };
+
+        const body_line_idx = self.current;
         self.current += 1; // Move past the invocation line
-        const continuations = try self.parseContinuations(lexer.getIndent(body_line));
+        const continuations = if (body_has_inline_chain)
+            try self.parseInlineContinuation(inv_str, lexer.getIndent(body_line), body_line_idx)
+        else
+            try self.parseContinuations(lexer.getIndent(body_line));
 
         return ast.Item{ .flow = .{
             .body = ast.rootSite(invocation, continuations, self.getCurrentLocation()),
