@@ -103,3 +103,34 @@ follows:
   of a real bug and it was structurally incapable of catching the third site.
   When a defect has a parity or counting character, the pin must carry both
   parities or it pins a coincidence.
+
+## The tell is ARITY, and it is cheap to read
+
+The original sitting found two lowerings by racing them for speed. There is a
+much cheaper signal, and it showed up on the same construct one write later:
+**a feature that works for one field and not for two.**
+
+`stored` has two lowerings — a single write, and a plural envelope. A
+handle-addressed READ in the value had been installed in the single one. So
+`stored { p.a: cells[h].v }` compiled and `stored { p.a: cells[h].v, p.b: … }`
+did not, and the failure named an undeclared host identifier rather than
+anything about arity.
+
+Arity is almost never a property of a *feature*. Nothing about reading a column
+through a handle cares how many fields are being written beside it. So when
+behaviour changes with the number of fields, the number of arms, or the number
+of branches, the thing that changed is **which code ran** — a dispatch, not a
+capability. That reading takes seconds and it points straight at the second
+lowering.
+
+It also explains why the corpus could not see it, and this is where this belief
+meets `frag-a-corpus-exercises-its-authors-idioms`: **every pin for the indexed
+read is single-field.** A pin exercises one lowering by construction, so a
+corpus of pins is structurally incapable of comparing two. The green board was
+honest about the feature and silent about its coverage.
+
+- **When a fix is arity-sensitive, stop and count the lowerings** before
+  believing anything about the feature.
+- **Converge rather than patch.** The fix here deleted the branch — both arms
+  now call the same lowering — because a second copy that merely agrees today
+  is the same bug waiting.

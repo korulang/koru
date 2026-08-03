@@ -5335,9 +5335,16 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
                             }
                         }
                         if (known and index.len > 0) {
+                            // The index is itself an expression and may hold
+                            // another indexed read — `cells[cells[h].next].v`,
+                            // one hop along an intrusive chain. The outer match
+                            // consumes the whole span, so without this the
+                            // inner one is never visited and reaches the host
+                            // verbatim (690_245).
+                            const inner = indexedFieldRefsAll(alloc, prog, index);
                             // Pointer-named base (`&`) — see colRead: a by-value
                             // base copies the whole column before the resolve.
-                            const piece = std.fmt.allocPrint(alloc, "(&__koru_store_{s}.{s})[__koru_store_{s}.__koru_resolve({s})]", .{ store, fname, store, index }) catch unreachable;
+                            const piece = std.fmt.allocPrint(alloc, "(&__koru_store_{s}.{s})[__koru_store_{s}.__koru_resolve({s})]", .{ store, fname, store, inner }) catch unreachable;
                             out.appendSlice(alloc, piece) catch unreachable;
                             i = fend;
                             continue;
@@ -5349,10 +5356,16 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
             }
             return out.toOwnedSlice(alloc) catch unreachable;
         }
-        fn lowerStoreExprs(alloc: std.mem.Allocator, prog: *const ast.Program, text: []const u8) []const u8 {
-            var t = storeRefsAll(alloc, prog, text);
+        // Every store's indexed reads, one pass each. Named so the recursive
+        // descent into an index expression can reach it too — an index may
+        // address a DIFFERENT store than the read it sits inside.
+        fn indexedFieldRefsAll(alloc: std.mem.Allocator, prog: *const ast.Program, text: []const u8) []const u8 {
+            var t = text;
             for (allStoreNames(alloc, prog)) |nm| t = indexedFieldRefs(alloc, prog, t, nm);
             return t;
+        }
+        fn lowerStoreExprs(alloc: std.mem.Allocator, prog: *const ast.Program, text: []const u8) []const u8 {
+            return indexedFieldRefsAll(alloc, prog, storeRefsAll(alloc, prog, text));
         }
         // The module a store was DECLARED in — where its generated accessors
         // live. A write site in another module must call them there, not in
@@ -5616,12 +5629,15 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
                 env_row = H.storeRefsAll(allocator, program, re);
             }
         }
+        // ONE lowering for a value, whether the envelope is row-addressed or
+        // not. The non-row-addressed arm used to rewrite only the envelope's
+        // OWN store, so a value reading any OTHER store — or reading one
+        // through a handle at all — reached the host verbatim. The single-write
+        // path (below, `rewritten_expr`) has always used the full lowering;
+        // this is the same construct's second lowering catching up (690_245).
         const env_values = allocator.alloc([]const u8, writes.len) catch unreachable;
         for (env_raw_values, 0..) |rv, wi| {
-            env_values[wi] = if (env_row != null)
-                H.lowerStoreExprs(allocator, program, rv)
-            else
-                H.storeRefs(allocator, rv, env_store, H.isIdentityStore(allocator, program, env_store));
+            env_values[wi] = H.lowerStoreExprs(allocator, program, rv);
         }
         // Build the chain: envwrite each, then announce each (write order).
         //
