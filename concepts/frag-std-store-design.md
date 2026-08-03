@@ -534,32 +534,57 @@ needs a visited row to write ITSELF as the new head, every other piece of that
 structure already worked, and `[id]` was the single remaining blocker. That is
 the shape of evidence this vocabulary should require of every future member.
 
-**Proposed gate, not yet ruled.** Fusibility's equivalent, and it fits all
-three members while correctly refusing the thing the block was built to refuse:
+**Proposed gate, not yet ruled.** Two clauses, and the second is the one that
+matters. The first draft had only the first, and an adversarial review holed it
+three ways in one pass — the corrections are folded in below rather than
+recorded as an afterthought, because the corrected gate is a different object
+from the one first written.
 
-> **A request names something the VISIT knows and the ROW does not.**
+> **1. ADMISSION — a request names something the SITE knows and the ROW does not.**
+>
+> **2. RETENTION — a request whose value may OUTLIVE the visit must be
+> generation-checked. One that cannot be generation-checked is visit-scoped and
+> may not be stored.**
 
-- `[row]` — which row this is. The visit knows; a row cannot name itself.
-- `[ordinal]` — where in the traversal. A property of the walk, not the data.
-- `[id]` — the row's identity AS A VALUE. Minted by the store, available at the
-  cursor, held in no column.
-- a **column** — refused, and the gate says why rather than merely that: a
-  column belongs to the ROW and is already derived from `<row>.<field>`, so
-  naming it says the same thing twice and lets the halves disagree. That is the
-  original argument, now falling out of the principle instead of standing
-  beside it.
-- a **store-wide fact** (row count, capacity) — refused: a property of the
-  store, not of the visit. Nothing has asked for one, and the gate predicts
-  nothing will through this door.
+- `[row]` — which row this is. The site knows; a row cannot name itself.
+- `[id]` — the row's identity as a value. Admissible by 1, and **retainable by
+  2**: a handle carries brand and generation, so a stale one traps loudly.
+- `[ordinal]` — where in the traversal. Admissible by 1, **visit-scoped by 2**:
+  a take swap-removes the last row into the freed slot, so a stored ordinal
+  silently names a different row one removal later.
+- `[slot]` — the handle's slot with the generation word dropped. **This is why
+  clause 2 exists.** It passes clause 1 as literally as `[id]` does — the store
+  reads exactly this value at the cursor and no column holds it — and it is the
+  single worst value this surface could hand out. A stale slot passes the brand
+  check and the bounds check; the generation compare is the only thing that
+  would catch a recycled slot, and `[slot]` is that value with the generation
+  removed. It reopens by construction the door brand-0 reservation was closed
+  to shut. A gate that admits it is a taxonomy, not an invariant.
+- a **column** — refused by clause 1: a column belongs to the ROW, so it fails
+  the test. That is a derivation and it is worth having. It is NOT the whole
+  argument: nothing in "the site knows and the row does not" says that
+  restating row knowledge is *harmful* rather than merely redundant. The
+  duplication argument still supplies the harm and still stands beside the
+  gate; claiming it had been absorbed was the second thing the review caught.
 
-Second clause, inherited rather than invented: **synthesized only when named.**
-An unrequested member threads nothing and costs nothing, which is what makes
-the vocabulary safe to grow at all — an unused member is not a tax, so the
-argument against a member is only ever "no workload wants it", never "it slows
-the others down".
+Second clause of the ORIGINAL kind, inherited rather than invented:
+**synthesized only when named.** An unrequested member threads nothing and
+costs nothing, so the argument against a member is only ever "no workload wants
+it", never "it slows the others down".
 
-What the gate does NOT settle, and should be tested against before ruling:
-`[first]`/`[last]` would pass it, since edge-of-traversal is visit knowledge. So
-would a request for the sweep's own length. Whether those are wanted is a
-separate question from whether they are admissible, and the gate deliberately
-only answers the second.
+WITHDRAWN: the first draft refused "a store-wide fact (row count, capacity)" as
+not-visit-knowledge, and twelve lines later admitted a request for the sweep's
+own length. Those are the same value — the sweep's extent IS the store's live
+row count, read once at loop entry — so the bullet was refusing and admitting
+one thing under two names. `[last]` smuggles it a second way, being definable
+as `ordinal == len - 1`. There may be a principled line between "how many rows
+exist" and "how far this walk goes", but it would have to be about intent
+rather than extent, and no workload has asked for either.
+
+ALSO OPEN, and a phrasing problem the review surfaced: the request block is
+parsed only on the sweep arm. A standing `rule` refuses any destructure with a
+diagnostic that misnames it as the retired projection block. A rule has a row
+and no traversal, so `[ordinal]` is genuinely meaningless there while `[id]` is
+exactly as meaningful as on a sweep — the handle does not depend on traversal.
+A gate phrased around "the VISIT" collapses *meaningless here* and *meaningful
+but unimplemented* into one answer, which is why clause 1 above says SITE.

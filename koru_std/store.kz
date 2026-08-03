@@ -7905,11 +7905,19 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
     // The unblocked shape is an intrusive chain: a sweep that reads a bucket
     // head, writes it to its own `next`, then writes ITSELF as the new head —
     // which needs to name itself, and until now could not (690_246).
+    //
+    // The cell reference carries the SAME qualifier every other reference in
+    // this loop does (see `cellq` below). `[ordinal]`'s value names no store,
+    // so the twin this mirrors was safe by accident — and a capture is exactly
+    // what pushes the loop off the `__store_sweeprun_*` road, where a bare name
+    // resolved only because the loop was emitted next to the cell it names. On
+    // the other two roads the loop lands in the CALLER's namespace and a bare
+    // `__koru_store_<s>` is undeclared (115_047, the cross-module mirror).
     if (req_id) |idn| {
         captures.append(allocator, .{
             .name = allocator.dupe(u8, idn) catch unreachable,
             .type = allocator.dupe(u8, "i64") catch unreachable,
-            .value = std.fmt.allocPrint(allocator, "__koru_store_{s}.__koru_handle_of(__koru_si)", .{store_name}) catch unreachable,
+            .value = std.fmt.allocPrint(allocator, "{s}__koru_store_{s}.__koru_handle_of(__koru_si)", .{ storeEmitQualifier(allocator, home_ns, program.main_module_name), store_name }) catch unreachable,
         }) catch unreachable;
     }
 
