@@ -15,6 +15,7 @@ enum Scenario {
     CombatWorld,
     BevyStrengthWorld,
     ArchetypeChurnWorld,
+    Boids,
 }
 
 struct Config {
@@ -109,6 +110,26 @@ struct Orbit {
     speed: f32,
 }
 
+#[derive(Component)]
+struct BoidPosition {
+    x: f32,
+    y: f32,
+    z: f32,
+}
+
+#[derive(Component)]
+struct BoidForward {
+    x: f32,
+    y: f32,
+    z: f32,
+}
+
+// The cell a boid hashed into in phase 2, reused verbatim in phase 4: the
+// position has not moved in between, so rehashing would only risk drifting
+// from the other arms.
+#[derive(Component)]
+struct CellIndex(usize);
+
 #[derive(Resource)]
 struct EntityList(Vec<Entity>);
 
@@ -159,6 +180,47 @@ struct ChurnStats {
 
 #[derive(Resource)]
 struct ChurnEntities(Vec<Entity>);
+
+// The boid grid is a DENSE bounded 32^3 grid, not per-entity data, so it is a
+// resource. Struct-of-arrays because every phase touches one field across many
+// cells. DOTS hashes into an unbounded NativeParallelMultiHashMap and
+// reallocates it per frame; we clamp into a fixed grid and clear it instead,
+// which is why phase 1 exists at all.
+#[derive(Resource)]
+struct BoidCells {
+    count: Vec<i64>,
+    ax: Vec<f32>,
+    ay: Vec<f32>,
+    az: Vec<f32>,
+    sx: Vec<f32>,
+    sy: Vec<f32>,
+    sz: Vec<f32>,
+    ti: Vec<i64>,
+    od: Vec<f32>,
+}
+
+impl Default for BoidCells {
+    fn default() -> Self {
+        Self {
+            count: vec![0; BOID_CELL_COUNT],
+            ax: vec![0.0; BOID_CELL_COUNT],
+            ay: vec![0.0; BOID_CELL_COUNT],
+            az: vec![0.0; BOID_CELL_COUNT],
+            sx: vec![0.0; BOID_CELL_COUNT],
+            sy: vec![0.0; BOID_CELL_COUNT],
+            sz: vec![0.0; BOID_CELL_COUNT],
+            ti: vec![0; BOID_CELL_COUNT],
+            od: vec![0.0; BOID_CELL_COUNT],
+        }
+    }
+}
+
+#[derive(Resource, Default)]
+struct BoidFlock {
+    frame: i64,
+    targets: [[f32; 3]; BOID_N_TARGETS],
+    obstacles: [[f32; 3]; BOID_N_OBSTACLES],
+}
 
 // Increments a counter, matching the zig baseline's `emptySystem(*u64)` and
 // koru's `tick()`. It used to be a genuinely empty body against their
@@ -474,6 +536,239 @@ fn churn_advance_frame(mut frame: ResMut<ChurnFrame>) {
     frame.0 += 1;
 }
 
+// ---- boids: a port of Unity DOTS BoidSystem.cs (EntitiesSamples). The three
+// arms of this scenario (zig baseline, bevy_ecs, koru) must produce a
+// BIT-IDENTICAL sink, which is the only evidence they do the same arithmetic.
+// That makes the ORDER of every float operation below part of the contract:
+// f32 throughout, no fast-math, no FMA, no rsqrt approximation, no trig.
+//
+// Constants are DOTS' own authoring defaults, unscaled.
+const BOID_CELL_RADIUS: f32 = 8.0;
+const BOID_CELL_COUNT: usize = 32768; // 32*32*32, world [0,256) at radius 8
+const BOID_SEP_W: f32 = 1.0;
+const BOID_ALIGN_W: f32 = 1.0;
+const BOID_TARGET_W: f32 = 2.0;
+const BOID_AVERSION: f32 = 30.0;
+const BOID_MOVE_SPEED: f32 = 25.0;
+const BOID_DT: f32 = 1.0 / 60.0; // DOTS uses min(0.05, dt); fixed here
+const BOID_MOVE_DIST: f32 = BOID_MOVE_SPEED * BOID_DT;
+const BOID_N_TARGETS: usize = 2;
+const BOID_N_OBSTACLES: usize = 1;
+
+fn boid_lengthsq(x: f32, y: f32, z: f32) -> f32 {
+    x * x + y * y + z * z
+}
+
+// `1.0 / sqrt(len)` and then multiply, NOT `x / sqrt(len)`: the two round
+// differently and the cross-arm checksum would diverge.
+fn boid_normalizesafe(x: f32, y: f32, z: f32) -> (f32, f32, f32) {
+    let len = boid_lengthsq(x, y, z);
+    if len > 1.1754944e-38 {
+        let inv = 1.0 / len.sqrt();
+        (x * inv, y * inv, z * inv)
+    } else {
+        (0.0, 0.0, 0.0)
+    }
+}
+
+// `as i64` truncates toward zero, which is the cast the spec asks for.
+fn boid_cell_axis(v: f32) -> i64 {
+    ((v / BOID_CELL_RADIUS) as i64).clamp(0, 31)
+}
+
+// Written as branches rather than f32::clamp so the NaN behaviour matches the
+// hand-written baseline arm instead of Rust's clamp contract.
+fn boid_clamp_axis(v: f32) -> f32 {
+    if v < 0.0 {
+        0.0
+    } else if v > 255.999 {
+        255.999
+    } else {
+        v
+    }
+}
+
+// Phase 1. Sawtooth target/obstacle motion plus the unconditional grid clear.
+// The motion is integer sawtooth on purpose: libm sin/cos differ in the last
+// ulp between toolchains, which would break the oracle.
+fn boid_frame_setup(mut flock: ResMut<BoidFlock>, mut cells: ResMut<BoidCells>) {
+    let f = flock.frame;
+    flock.targets[0] = [((f * 3) % 256) as f32, 128.0, ((f * 5) % 256) as f32];
+    flock.targets[1] = [((f * 7) % 256) as f32, 160.0, ((f * 11) % 256) as f32];
+    flock.obstacles[0] = [((f * 13) % 256) as f32, 128.0, ((f * 17) % 256) as f32];
+    flock.frame = f + 1;
+
+    cells.count.fill(0);
+    cells.ax.fill(0.0);
+    cells.ay.fill(0.0);
+    cells.az.fill(0.0);
+    cells.sx.fill(0.0);
+    cells.sy.fill(0.0);
+    cells.sz.fill(0.0);
+    cells.ti.fill(0);
+    cells.od.fill(0.0);
+}
+
+// Phase 2. Hash and scatter, IN BOID INSERTION ORDER: every boid carries the
+// same three components, so they live in one archetype and this query walks
+// the table in spawn order. Float addition is not associative, so a different
+// visit order is a different checksum.
+fn boid_hash_scatter(
+    mut boids: Query<(&BoidPosition, &BoidForward, &mut CellIndex)>,
+    mut cells: ResMut<BoidCells>,
+) {
+    for (pos, forward, mut cell) in &mut boids {
+        let cx = boid_cell_axis(pos.x);
+        let cy = boid_cell_axis(pos.y);
+        let cz = boid_cell_axis(pos.z);
+        let idx = ((cz * 32 + cy) * 32 + cx) as usize;
+        cell.0 = idx;
+        cells.count[idx] += 1;
+        cells.ax[idx] += forward.x;
+        cells.ay[idx] += forward.y;
+        cells.az[idx] += forward.z;
+        cells.sx[idx] += pos.x;
+        cells.sy[idx] += pos.y;
+        cells.sz[idx] += pos.z;
+    }
+}
+
+// Phase 3. DOTS' MergeCells: per CELL, not per boid, and only where count > 0.
+//
+// Deliberate correction to the sample: DOTS' MergeCells.ExecuteNext writes
+// `cellAlignment[i] += cellAlignment[i]`, doubling the accumulator instead of
+// adding the member (same for separation). That is a long-standing bug; we sum
+// the members, which is what its own surrounding comments say it intends.
+fn boid_merge_cells(mut cells: ResMut<BoidCells>, flock: Res<BoidFlock>) {
+    for i in 0..BOID_CELL_COUNT {
+        let count = cells.count[i];
+        if count == 0 {
+            continue;
+        }
+        let n = count as f32;
+        let avg = [cells.sx[i] / n, cells.sy[i] / n, cells.sz[i] / n];
+
+        // argmin with ties to the LOWER index: seed on 0 and take a later
+        // index only on strict `<`. This is DOTS' NearestPosition.
+        let mut nearest_target = 0_i64;
+        let mut best = boid_lengthsq(
+            flock.targets[0][0] - avg[0],
+            flock.targets[0][1] - avg[1],
+            flock.targets[0][2] - avg[2],
+        );
+        for t in 1..BOID_N_TARGETS {
+            let d = boid_lengthsq(
+                flock.targets[t][0] - avg[0],
+                flock.targets[t][1] - avg[1],
+                flock.targets[t][2] - avg[2],
+            );
+            if d < best {
+                best = d;
+                nearest_target = t as i64;
+            }
+        }
+
+        let mut nearest_obstacle = boid_lengthsq(
+            flock.obstacles[0][0] - avg[0],
+            flock.obstacles[0][1] - avg[1],
+            flock.obstacles[0][2] - avg[2],
+        );
+        for o in 1..BOID_N_OBSTACLES {
+            let d = boid_lengthsq(
+                flock.obstacles[o][0] - avg[0],
+                flock.obstacles[o][1] - avg[1],
+                flock.obstacles[o][2] - avg[2],
+            );
+            if d < nearest_obstacle {
+                nearest_obstacle = d;
+            }
+        }
+
+        cells.ti[i] = nearest_target;
+        cells.od[i] = nearest_obstacle.sqrt();
+    }
+}
+
+// Phase 4. Steer, again in boid insertion order.
+fn boid_steer(
+    mut boids: Query<(&mut BoidPosition, &mut BoidForward, &CellIndex)>,
+    cells: Res<BoidCells>,
+    flock: Res<BoidFlock>,
+) {
+    let obstacle = flock.obstacles[0];
+    for (mut pos, mut forward, cell) in &mut boids {
+        let i = cell.0;
+        let n = cells.count[i] as f32;
+
+        let (alignment_x, alignment_y, alignment_z) = boid_normalizesafe(
+            cells.ax[i] / n - forward.x,
+            cells.ay[i] / n - forward.y,
+            cells.az[i] / n - forward.z,
+        );
+        let alignment = [
+            BOID_ALIGN_W * alignment_x,
+            BOID_ALIGN_W * alignment_y,
+            BOID_ALIGN_W * alignment_z,
+        ];
+
+        let (separation_x, separation_y, separation_z) = boid_normalizesafe(
+            pos.x * n - cells.sx[i],
+            pos.y * n - cells.sy[i],
+            pos.z * n - cells.sz[i],
+        );
+        let separation = [
+            BOID_SEP_W * separation_x,
+            BOID_SEP_W * separation_y,
+            BOID_SEP_W * separation_z,
+        ];
+
+        let target = flock.targets[cells.ti[i] as usize];
+        let (target_x, target_y, target_z) =
+            boid_normalizesafe(target[0] - pos.x, target[1] - pos.y, target[2] - pos.z);
+        let target_heading = [
+            BOID_TARGET_W * target_x,
+            BOID_TARGET_W * target_y,
+            BOID_TARGET_W * target_z,
+        ];
+
+        let (away_x, away_y, away_z) = boid_normalizesafe(
+            pos.x - obstacle[0],
+            pos.y - obstacle[1],
+            pos.z - obstacle[2],
+        );
+        let avoid = [
+            (obstacle[0] + away_x * BOID_AVERSION) - pos.x,
+            (obstacle[1] + away_y * BOID_AVERSION) - pos.y,
+            (obstacle[2] + away_z * BOID_AVERSION) - pos.z,
+        ];
+
+        let (normal_x, normal_y, normal_z) = boid_normalizesafe(
+            alignment[0] + separation[0] + target_heading[0],
+            alignment[1] + separation[1] + target_heading[1],
+            alignment[2] + separation[2] + target_heading[2],
+        );
+
+        let target_forward = if (cells.od[i] - BOID_AVERSION) < 0.0 {
+            avoid
+        } else {
+            [normal_x, normal_y, normal_z]
+        };
+
+        let (heading_x, heading_y, heading_z) = boid_normalizesafe(
+            forward.x + BOID_DT * (target_forward[0] - forward.x),
+            forward.y + BOID_DT * (target_forward[1] - forward.y),
+            forward.z + BOID_DT * (target_forward[2] - forward.z),
+        );
+
+        forward.x = heading_x;
+        forward.y = heading_y;
+        forward.z = heading_z;
+        pos.x = boid_clamp_axis(pos.x + heading_x * BOID_MOVE_DIST);
+        pos.y = boid_clamp_axis(pos.y + heading_y * BOID_MOVE_DIST);
+        pos.z = boid_clamp_axis(pos.z + heading_z * BOID_MOVE_DIST);
+    }
+}
+
 // FULL-CORPUS sink. This used to sum only the first 16 rows in ITERATION
 // ORDER, which is not an equivalence oracle: it sampled 0.016% of the work,
 // and because bevy's archetype iteration order is not insertion order it did
@@ -534,6 +829,7 @@ fn parse_args() -> Config {
                     Some("combat_world") => Scenario::CombatWorld,
                     Some("bevy_strength_world") => Scenario::BevyStrengthWorld,
                     Some("archetype_churn_world") => Scenario::ArchetypeChurnWorld,
+                    Some("boids") => Scenario::Boids,
                     other => panic!("unknown scenario: {other:?}"),
                 };
             }
@@ -690,6 +986,33 @@ fn build_archetype_churn_world(config: &Config) -> World {
     world.insert_resource(ChurnFrame::default());
     world.insert_resource(ChurnStats::default());
     world.insert_resource(ChurnEntities(entities));
+    world
+}
+
+// Boid init is OUTSIDE the timed region in every arm, which is what fixes the
+// init-inside-timing asymmetry the README documents for the older rows.
+fn build_boid_world(config: &Config) -> World {
+    let mut world = World::new();
+
+    for i in 0..config.entities as i64 {
+        let (fx, fy, fz) = boid_normalizesafe(
+            (i % 13) as f32 - 6.0,
+            (i % 17) as f32 - 8.0,
+            (i % 7) as f32 - 3.0,
+        );
+        world.spawn((
+            BoidPosition {
+                x: (i % 256) as f32,
+                y: ((i / 256) % 256) as f32,
+                z: ((i / 65536) % 256) as f32,
+            },
+            BoidForward { x: fx, y: fy, z: fz },
+            CellIndex(0),
+        ));
+    }
+
+    world.insert_resource(BoidCells::default());
+    world.insert_resource(BoidFlock::default());
     world
 }
 
@@ -921,6 +1244,40 @@ fn run_archetype_churn_world(config: &Config) {
     );
 }
 
+fn run_boids(config: &Config) {
+    let mut world = build_boid_world(config);
+    // The four phases, chained so they run in the spec's order — built once
+    // here and re-run per frame, like the other multi-system scenarios. No
+    // par_iter anywhere: every arm of this scenario is single-threaded.
+    let mut schedule = Schedule::default();
+    schedule.add_systems((
+        boid_frame_setup,
+        boid_hash_scatter,
+        boid_merge_cells,
+        boid_steer,
+    ).chain());
+    // No warmup, and no init inside the timer — the frame loop is the whole
+    // timed region. See the note on the other scenarios.
+    let start = Instant::now();
+    for _ in 0..config.frames {
+        schedule.run(&mut world);
+    }
+    let elapsed = start.elapsed();
+
+    // The spec's sink, over boids in spawn order: one archetype, dense table
+    // storage, so this query is insertion-ordered. Accumulated in wrapping
+    // i64; positions are clamped to [0, 255.999] so it cannot go negative.
+    let mut sink = 0_i64;
+    let mut query = world.query::<&BoidPosition>();
+    for pos in query.iter(&world) {
+        let term = (pos.x.abs() as i64) * 31
+            + (pos.y.abs() as i64) * 17
+            + (pos.z.abs() as i64) * 13;
+        sink = sink.wrapping_add(term);
+    }
+    print_result("boids", config, elapsed.as_nanos(), sink as u64);
+}
+
 fn print_result(scenario_name: &str, config: &Config, elapsed_ns: u128, sink: u64) {
     println!(
         "{{\"impl\":\"bevy_ecs\",\"scenario\":\"{}\",\"entities\":{},\"frames\":{},\"observers\":{},\"elapsed_ns\":{},\"sink\":{}}}",
@@ -948,5 +1305,6 @@ fn main() {
         Scenario::CombatWorld => run_combat_world(&config),
         Scenario::BevyStrengthWorld => run_bevy_strength_world(&config),
         Scenario::ArchetypeChurnWorld => run_archetype_churn_world(&config),
+        Scenario::Boids => run_boids(&config),
     }
 }

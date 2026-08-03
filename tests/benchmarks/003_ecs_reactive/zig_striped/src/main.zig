@@ -12,6 +12,7 @@ const Scenario = enum {
     schedule_empty,
     combat_world,
     bevy_strength_world,
+    boids,
 };
 
 const Config = struct {
@@ -438,6 +439,267 @@ fn bevyStrengthWorld(allocator: std.mem.Allocator, entities: usize, frames: usiz
     return world.run(frames);
 }
 
+// Port of Unity DOTS `BoidSystem.cs`. The constants, the phase order and the
+// checksum are a contract shared bit-for-bit with the bevy and Koru arms, so
+// every expression below is written in the order the contract states: f32
+// addition is not associative and a reordering is a different sink.
+const Vec3 = struct { x: f32, y: f32, z: f32 };
+
+fn lengthsq(x: f32, y: f32, z: f32) f32 {
+    return x * x + y * y + z * z;
+}
+
+// `1.0 / sqrt(len)` and then multiply -- NOT `x / sqrt(len)`. The two round
+// differently and the cross-arm checksum would diverge.
+fn normalizesafe(x: f32, y: f32, z: f32) Vec3 {
+    const flt_min_normal: f32 = 1.1754944e-38;
+    const len = lengthsq(x, y, z);
+    if (len > flt_min_normal) {
+        const inv = 1.0 / @sqrt(len);
+        return .{ .x = x * inv, .y = y * inv, .z = z * inv };
+    }
+    return .{ .x = 0.0, .y = 0.0, .z = 0.0 };
+}
+
+const BoidWorld = struct {
+    pos_x: []f32,
+    pos_y: []f32,
+    pos_z: []f32,
+    fwd_x: []f32,
+    fwd_y: []f32,
+    fwd_z: []f32,
+    cell: []usize,
+    cell_count: []i64,
+    cell_a_x: []f32,
+    cell_a_y: []f32,
+    cell_a_z: []f32,
+    cell_s_x: []f32,
+    cell_s_y: []f32,
+    cell_s_z: []f32,
+    cell_target: []i64,
+    cell_obstacle_dist: []f32,
+
+    // DOTS' own authoring defaults, unscaled.
+    const cell_radius: f32 = 8.0;
+    const axis_cells = 32;
+    const cell_total = axis_cells * axis_cells * axis_cells;
+    const separation_weight: f32 = 1.0;
+    const alignment_weight: f32 = 1.0;
+    const target_weight: f32 = 2.0;
+    const aversion: f32 = 30.0;
+    const move_speed: f32 = 25.0;
+    const dt: f32 = 1.0 / 60.0;
+    const move_dist: f32 = move_speed * dt;
+    const n_targets = 2;
+    const n_obstacles = 1;
+    const pos_max: f32 = 255.999;
+
+    fn init(allocator: std.mem.Allocator, entities: usize) !BoidWorld {
+        var world = BoidWorld{
+            .pos_x = try allocator.alloc(f32, entities),
+            .pos_y = try allocator.alloc(f32, entities),
+            .pos_z = try allocator.alloc(f32, entities),
+            .fwd_x = try allocator.alloc(f32, entities),
+            .fwd_y = try allocator.alloc(f32, entities),
+            .fwd_z = try allocator.alloc(f32, entities),
+            .cell = try allocator.alloc(usize, entities),
+            .cell_count = try allocator.alloc(i64, cell_total),
+            .cell_a_x = try allocator.alloc(f32, cell_total),
+            .cell_a_y = try allocator.alloc(f32, cell_total),
+            .cell_a_z = try allocator.alloc(f32, cell_total),
+            .cell_s_x = try allocator.alloc(f32, cell_total),
+            .cell_s_y = try allocator.alloc(f32, cell_total),
+            .cell_s_z = try allocator.alloc(f32, cell_total),
+            .cell_target = try allocator.alloc(i64, cell_total),
+            .cell_obstacle_dist = try allocator.alloc(f32, cell_total),
+        };
+
+        for (0..entities) |i| {
+            world.pos_x[i] = @floatFromInt(i % 256);
+            world.pos_y[i] = @floatFromInt((i / 256) % 256);
+            world.pos_z[i] = @floatFromInt((i / 65536) % 256);
+            const forward = normalizesafe(
+                @as(f32, @floatFromInt(i % 13)) - 6.0,
+                @as(f32, @floatFromInt(i % 17)) - 8.0,
+                @as(f32, @floatFromInt(i % 7)) - 3.0,
+            );
+            world.fwd_x[i] = forward.x;
+            world.fwd_y[i] = forward.y;
+            world.fwd_z[i] = forward.z;
+            world.cell[i] = 0;
+        }
+        return world;
+    }
+
+    fn deinit(self: *BoidWorld, allocator: std.mem.Allocator) void {
+        allocator.free(self.pos_x);
+        allocator.free(self.pos_y);
+        allocator.free(self.pos_z);
+        allocator.free(self.fwd_x);
+        allocator.free(self.fwd_y);
+        allocator.free(self.fwd_z);
+        allocator.free(self.cell);
+        allocator.free(self.cell_count);
+        allocator.free(self.cell_a_x);
+        allocator.free(self.cell_a_y);
+        allocator.free(self.cell_a_z);
+        allocator.free(self.cell_s_x);
+        allocator.free(self.cell_s_y);
+        allocator.free(self.cell_s_z);
+        allocator.free(self.cell_target);
+        allocator.free(self.cell_obstacle_dist);
+    }
+
+    fn run(self: *BoidWorld, frames: usize) void {
+        for (0..frames) |frame| {
+            // Sawtooth target and obstacle motion -- no trigonometry, because
+            // libm sin/cos differ in the last ulp between toolchains.
+            const targets = [n_targets]Vec3{
+                .{ .x = @floatFromInt((frame * 3) % 256), .y = 128.0, .z = @floatFromInt((frame * 5) % 256) },
+                .{ .x = @floatFromInt((frame * 7) % 256), .y = 160.0, .z = @floatFromInt((frame * 11) % 256) },
+            };
+            const obstacles = [n_obstacles]Vec3{
+                .{ .x = @floatFromInt((frame * 13) % 256), .y = 128.0, .z = @floatFromInt((frame * 17) % 256) },
+            };
+
+            // Phase 1: clear. Every cell, unconditionally. DOTS reallocates a
+            // sparse hash map per frame instead; we hold a dense 32^3 grid.
+            for (0..cell_total) |c| {
+                self.cell_count[c] = 0;
+                self.cell_a_x[c] = 0;
+                self.cell_a_y[c] = 0;
+                self.cell_a_z[c] = 0;
+                self.cell_s_x[c] = 0;
+                self.cell_s_y[c] = 0;
+                self.cell_s_z[c] = 0;
+                self.cell_target[c] = 0;
+                self.cell_obstacle_dist[c] = 0;
+            }
+
+            // Phase 2: hash + scatter, in boid insertion order. Sequential
+            // accumulation -- a different order is a different checksum.
+            for (0..self.pos_x.len) |i| {
+                const cx = std.math.clamp(@as(i64, @intFromFloat(self.pos_x[i] / cell_radius)), 0, axis_cells - 1);
+                const cy = std.math.clamp(@as(i64, @intFromFloat(self.pos_y[i] / cell_radius)), 0, axis_cells - 1);
+                const cz = std.math.clamp(@as(i64, @intFromFloat(self.pos_z[i] / cell_radius)), 0, axis_cells - 1);
+                const idx: usize = @intCast((cz * axis_cells + cy) * axis_cells + cx);
+                self.cell[i] = idx;
+                self.cell_count[idx] += 1;
+                self.cell_a_x[idx] += self.fwd_x[i];
+                self.cell_a_y[idx] += self.fwd_y[i];
+                self.cell_a_z[idx] += self.fwd_z[i];
+                self.cell_s_x[idx] += self.pos_x[i];
+                self.cell_s_y[idx] += self.pos_y[i];
+                self.cell_s_z[idx] += self.pos_z[i];
+            }
+
+            // Phase 3: cell resolve (DOTS' MergeCells) -- per cell, not per
+            // boid. argmin ties go to the lower index.
+            for (0..cell_total) |c| {
+                const count = self.cell_count[c];
+                if (count <= 0) continue;
+                const n: f32 = @floatFromInt(count);
+                const avg_x = self.cell_s_x[c] / n;
+                const avg_y = self.cell_s_y[c] / n;
+                const avg_z = self.cell_s_z[c] / n;
+
+                var nearest_target: i64 = 0;
+                var nearest_target_dist = lengthsq(targets[0].x - avg_x, targets[0].y - avg_y, targets[0].z - avg_z);
+                for (1..n_targets) |t| {
+                    const dist = lengthsq(targets[t].x - avg_x, targets[t].y - avg_y, targets[t].z - avg_z);
+                    if (dist < nearest_target_dist) {
+                        nearest_target_dist = dist;
+                        nearest_target = @intCast(t);
+                    }
+                }
+
+                var nearest_obstacle_dist = lengthsq(obstacles[0].x - avg_x, obstacles[0].y - avg_y, obstacles[0].z - avg_z);
+                for (1..n_obstacles) |o| {
+                    const dist = lengthsq(obstacles[o].x - avg_x, obstacles[o].y - avg_y, obstacles[o].z - avg_z);
+                    if (dist < nearest_obstacle_dist) nearest_obstacle_dist = dist;
+                }
+
+                self.cell_target[c] = nearest_target;
+                self.cell_obstacle_dist[c] = @sqrt(nearest_obstacle_dist);
+            }
+
+            // Phase 4: steer, in boid insertion order. The cell index comes
+            // from phase 2 -- nothing has moved since.
+            for (0..self.pos_x.len) |i| {
+                const idx = self.cell[i];
+                const pos_x = self.pos_x[i];
+                const pos_y = self.pos_y[i];
+                const pos_z = self.pos_z[i];
+                const fwd_x = self.fwd_x[i];
+                const fwd_y = self.fwd_y[i];
+                const fwd_z = self.fwd_z[i];
+                const n: f32 = @floatFromInt(self.cell_count[idx]);
+
+                const alignment = normalizesafe(
+                    self.cell_a_x[idx] / n - fwd_x,
+                    self.cell_a_y[idx] / n - fwd_y,
+                    self.cell_a_z[idx] / n - fwd_z,
+                );
+                const separation = normalizesafe(
+                    pos_x * n - self.cell_s_x[idx],
+                    pos_y * n - self.cell_s_y[idx],
+                    pos_z * n - self.cell_s_z[idx],
+                );
+                const target = targets[@as(usize, @intCast(self.cell_target[idx]))];
+                const heading = normalizesafe(target.x - pos_x, target.y - pos_y, target.z - pos_z);
+
+                const obstacle = obstacles[0];
+                const obstacle_steering = normalizesafe(pos_x - obstacle.x, pos_y - obstacle.y, pos_z - obstacle.z);
+                const avoid_x = (obstacle.x + obstacle_steering.x * aversion) - pos_x;
+                const avoid_y = (obstacle.y + obstacle_steering.y * aversion) - pos_y;
+                const avoid_z = (obstacle.z + obstacle_steering.z * aversion) - pos_z;
+
+                const normal = normalizesafe(
+                    alignment_weight * alignment.x + separation_weight * separation.x + target_weight * heading.x,
+                    alignment_weight * alignment.y + separation_weight * separation.y + target_weight * heading.y,
+                    alignment_weight * alignment.z + separation_weight * separation.z + target_weight * heading.z,
+                );
+
+                const avoiding = (self.cell_obstacle_dist[idx] - aversion) < 0.0;
+                const forward_x = if (avoiding) avoid_x else normal.x;
+                const forward_y = if (avoiding) avoid_y else normal.y;
+                const forward_z = if (avoiding) avoid_z else normal.z;
+
+                const next = normalizesafe(
+                    fwd_x + dt * (forward_x - fwd_x),
+                    fwd_y + dt * (forward_y - fwd_y),
+                    fwd_z + dt * (forward_z - fwd_z),
+                );
+                self.fwd_x[i] = next.x;
+                self.fwd_y[i] = next.y;
+                self.fwd_z[i] = next.z;
+                self.pos_x[i] = std.math.clamp(pos_x + next.x * move_dist, 0.0, pos_max);
+                self.pos_y[i] = std.math.clamp(pos_y + next.y * move_dist, 0.0, pos_max);
+                self.pos_z[i] = std.math.clamp(pos_z + next.z * move_dist, 0.0, pos_max);
+            }
+        }
+    }
+
+    fn checksum(self: *const BoidWorld) u64 {
+        var sink: u64 = 0;
+        for (0..self.pos_x.len) |i| {
+            sink +%= @as(u64, @intFromFloat(@abs(self.pos_x[i]))) *% 31;
+            sink +%= @as(u64, @intFromFloat(@abs(self.pos_y[i]))) *% 17;
+            sink +%= @as(u64, @intFromFloat(@abs(self.pos_z[i]))) *% 13;
+        }
+        return sink;
+    }
+};
+
+fn boids(allocator: std.mem.Allocator, entities: usize, frames: usize, elapsed_ns: *u64) !u64 {
+    var world = try BoidWorld.init(allocator, entities);
+    defer world.deinit(allocator);
+    const start = std.time.nanoTimestamp();
+    world.run(frames);
+    elapsed_ns.* = @intCast(std.time.nanoTimestamp() - start);
+    return world.checksum();
+}
+
 fn parseArgs(allocator: std.mem.Allocator) !Config {
     var config = Config{};
     var args = try std.process.argsWithAllocator(allocator);
@@ -447,7 +709,7 @@ fn parseArgs(allocator: std.mem.Allocator) !Config {
     while (args.next()) |arg| {
         if (std.mem.eql(u8, arg, "--scenario")) {
             const value = args.next() orelse return error.MissingScenario;
-            if (std.mem.eql(u8, value, "dense")) config.scenario = .dense else if (std.mem.eql(u8, value, "sparse")) config.scenario = .sparse else if (std.mem.eql(u8, value, "fanout")) config.scenario = .fanout else if (std.mem.eql(u8, value, "spawn")) config.scenario = .spawn else if (std.mem.eql(u8, value, "spawn_batch")) config.scenario = .spawn_batch else if (std.mem.eql(u8, value, "despawn")) config.scenario = .despawn else if (std.mem.eql(u8, value, "add_remove")) config.scenario = .add_remove else if (std.mem.eql(u8, value, "query_get")) config.scenario = .query_get else if (std.mem.eql(u8, value, "schedule_empty")) config.scenario = .schedule_empty else if (std.mem.eql(u8, value, "combat_world")) config.scenario = .combat_world else if (std.mem.eql(u8, value, "bevy_strength_world")) config.scenario = .bevy_strength_world else return error.UnknownScenario;
+            if (std.mem.eql(u8, value, "dense")) config.scenario = .dense else if (std.mem.eql(u8, value, "sparse")) config.scenario = .sparse else if (std.mem.eql(u8, value, "fanout")) config.scenario = .fanout else if (std.mem.eql(u8, value, "spawn")) config.scenario = .spawn else if (std.mem.eql(u8, value, "spawn_batch")) config.scenario = .spawn_batch else if (std.mem.eql(u8, value, "despawn")) config.scenario = .despawn else if (std.mem.eql(u8, value, "add_remove")) config.scenario = .add_remove else if (std.mem.eql(u8, value, "query_get")) config.scenario = .query_get else if (std.mem.eql(u8, value, "schedule_empty")) config.scenario = .schedule_empty else if (std.mem.eql(u8, value, "combat_world")) config.scenario = .combat_world else if (std.mem.eql(u8, value, "bevy_strength_world")) config.scenario = .bevy_strength_world else if (std.mem.eql(u8, value, "boids")) config.scenario = .boids else return error.UnknownScenario;
         } else if (std.mem.eql(u8, arg, "--entities")) {
             config.entities = try std.fmt.parseInt(usize, args.next() orelse return error.MissingEntities, 10);
         } else if (std.mem.eql(u8, arg, "--frames")) {
@@ -466,6 +728,10 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
     const config = try parseArgs(allocator);
+    // `boids` times only its frame loop -- its init is outside the timed
+    // region by contract -- so it reports its own elapsed and main uses that
+    // in place of the whole-call span.
+    var boids_elapsed_ns: u64 = 0;
     const start = std.time.nanoTimestamp();
     const sink = switch (config.scenario) {
         .dense, .sparse, .fanout, .query_get => blk: {
@@ -486,8 +752,9 @@ pub fn main() !void {
         .schedule_empty => scheduleEmpty(config.frames),
         .combat_world => try combatWorld(allocator, config.entities, config.frames, config.observers),
         .bevy_strength_world => try bevyStrengthWorld(allocator, config.entities, config.frames),
+        .boids => try boids(allocator, config.entities, config.frames, &boids_elapsed_ns),
     };
-    const elapsed: u64 = @intCast(std.time.nanoTimestamp() - start);
+    const elapsed: u64 = if (config.scenario == .boids) boids_elapsed_ns else @intCast(std.time.nanoTimestamp() - start);
 
     const scenario_name = switch (config.scenario) {
         .dense => "dense",
@@ -501,6 +768,7 @@ pub fn main() !void {
         .schedule_empty => "schedule_empty",
         .combat_world => "combat_world",
         .bevy_strength_world => "bevy_strength_world",
+        .boids => "boids",
     };
     var stdout_buffer: [1024]u8 = undefined;
     var stdout_file = std.fs.File.stdout().writerStreaming(&stdout_buffer);

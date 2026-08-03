@@ -11,7 +11,7 @@ KORU_DIR="$ROOT/koru_store"
 
 zig build-exe "$ROOT/zig_striped/src/main.zig" -O ReleaseFast -femit-bin="$ZIG_BIN"
 
-SCENARIOS="spawn spawn_batch despawn add_remove query_get dense sparse schedule_empty fanout combat_world bevy_strength_world"
+SCENARIOS="spawn spawn_batch despawn add_remove query_get dense sparse schedule_empty fanout combat_world bevy_strength_world boids"
 
 for scenario in $SCENARIOS; do
   frames=100

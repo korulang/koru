@@ -29,6 +29,7 @@ import std/args
 import std/string
 import std/regex
 import std/time
+import std/grid
 
 // The world. Striped, so a column a scenario never touches costs its sweeps
 // nothing — `dense` reads px/py/vx/vy and never pays for hp or act.
@@ -45,6 +46,35 @@ std/store:new(marks, capacity: 100000) { on: i64 }
 std/store:new(dyn, capacity: 50000) { px: f32, py: f32, vx: f32, vy: f32, ax: f32, ay: f32 }
 std/store:new(parts, capacity: 25000) { px: f32, py: f32, vx: f32, vy: f32, life: i64, alive: i64 }
 std/store:new(orbs, capacity: 25000) { px: f32, py: f32, phase: f32, radius: f32, speed: f32 }
+
+// `boids` is the DOTS port, and it is the first scenario here that needs a
+// SPATIAL INDEX. The README's `combat_world` entry says a spatial index is the
+// first thing a borrowed ECS workload asked for that std/store has no answer
+// to — this is that answer: a static, positionally-addressed grid beside the
+// store, not a collection the world holds.
+//
+// 32x32x32 cells over a 256-unit cube at DOTS' own CellRadius of 8. The grid is
+// a flat run and the program linearises `(z*32 + y)*32 + x` itself, which is
+// what `size:` rather than `dimensions:` is for: a spatial hash's index is the
+// program's own business.
+std/grid:new(cells, size: 32768) { count: 0[i64], ax: 0.0[f32], ay: 0.0[f32], az: 0.0[f32], sx: 0.0[f32], sy: 0.0[f32], sz: 0.0[f32], ti: 0[i64], od: 0.0[f32] }
+
+// `tf*` and `nh*` are the steering accumulators. The store has no
+// expression-local binding, so an intermediate that Zig and Rust hold in a
+// register lives in a column here and the stages chain through it. The
+// arithmetic is identical, so the checksum still has to match bit-for-bit.
+std/store:new(flock, capacity: 100000) { px: f32, py: f32, pz: f32, fx: f32, fy: f32, fz: f32, cell: 0[i64], tfx: 0.0[f32], tfy: 0.0[f32], tfz: 0.0[f32], nhx: 0.0[f32], nhy: 0.0[f32], nhz: 0.0[f32] }
+
+// The two target fish and the one shark, moved on a sawtooth. DOTS key-frames
+// them; a benchmark needs them deterministic, and a sawtooth avoids libm
+// trigonometry, which differs in the last ulp between toolchains and would
+// break the cross-arm checksum before the algorithm got a chance to.
+// Two singletons, not one: a singleton store's columns must all share one
+// scalar type (a plural store may mix them, as `bodies` does), so the frame
+// counter cannot sit beside the f32 actor positions.
+std/store:new(fr) { t0x: 0.0[f32], t0y: 0.0[f32], t0z: 0.0[f32], t1x: 0.0[f32], t1y: 0.0[f32], t1z: 0.0[f32], obx: 0.0[f32], oby: 0.0[f32], obz: 0.0[f32] }
+std/store:new(frn) { n: 0[i64] }
+
 
 std/store:new(cfg) { which: 0[i64], scenario: 0[i64], entities: 100000[i64], frames: 100[i64], observers: 25[i64] }
 std/store:new(acc) { sink: 0[i64] }
@@ -72,6 +102,7 @@ set-scenario = std/regex:match(a)
 | `add_remove` _ |> std/store:stored { cfg.scenario: 8, cfg.which: 0 }
 | `fanout` _ |> std/store:stored { cfg.scenario: 9, cfg.which: 0 }
 | `bevy_strength_world` _ |> std/store:stored { cfg.scenario: 10, cfg.which: 0 }
+| `boids` _ |> std/store:stored { cfg.scenario: 11, cfg.which: 0 }
 | no-match |> std/store:stored { cfg.scenario: 0, cfg.which: 0 }
 
 tor take-value { a: string }
@@ -207,6 +238,125 @@ step-orbs = std/store:query(orbs)
     |> std/store:stored { o.px: o.radius * @cos(o.phase), o.py: o.radius * @sin(o.phase) }
     |> std/store:stored { acc.sink: acc.sink + @as(i64, @intFromFloat(@abs(o.px))) * 31 + @as(i64, @intFromFloat(@abs(o.py))) * 17 }
 
+// --- boids ------------------------------------------------------------------
+//
+// Unity DOTS `BoidSystem.cs`, ported. The algorithm is theirs and the constants
+// are theirs unscaled — CellRadius 8, weights 1/1/2, ObstacleAversionDistance
+// 30, MoveSpeed 25 — over a 256-unit cube, which makes the grid exactly 32^3.
+//
+// This is the scenario the harness had no answer to. `combat_world`'s entry in
+// the README says a spatial index is the first thing a borrowed ECS workload
+// asked for that std/store cannot express; boids asks for the same thing and
+// gets `std/grid`, a static positionally-addressed table declared beside the
+// store rather than a collection the world holds.
+//
+// FOUR PHASES per frame, DOTS' own decomposition:
+//   clear    — every cell, unconditionally (DOTS reallocates a hash map instead)
+//   scatter  — each boid folds its heading and position into its cell
+//   resolve  — each occupied cell averages, then finds its nearest target and
+//              obstacle. This is DOTS' MergeCells, and it is per CELL: it is
+//              the pass that needs a sweep to WRITE the cell it is visiting.
+//   steer    — each boid reads its cell's aggregate and turns
+//
+// TWO DELIBERATE DEVIATIONS from the sample, both stated rather than hidden:
+//   - a dense bounded grid instead of a sparse hash map, so positions clamp and
+//     the clear pass exists;
+//   - the accumulation here is CORRECT. DOTS' MergeCells.ExecuteNext reads
+//     `cellAlignment[cellIndex] += cellAlignment[cellIndex]`, doubling the
+//     accumulator instead of adding the member. That is a long-standing bug in
+//     the sample; the surrounding comments describe the sum this port does.
+//
+// THE STEERING IS ENORMOUS and that is the finding, not an accident of style.
+// The store has no expression-local binding, so every intermediate a register
+// would hold in Zig or Rust is either recomputed inline or spilled to a column.
+// This port does both: `tf*`/`nh*` carry the vectors across stages, and within
+// a stage a shared subexpression is written out per component and left to LLVM
+// to CSE. 12.7k characters of steering came out of ~40 lines of C#.
+//
+// The stages never read a column they write in another component, so the port
+// does not depend on whether a multi-field write block is simultaneous or
+// sequential — which is as well, because std/store and std/grid currently
+// disagree about that.
+
+tor flock-init {}
+flock-init = for(0..@as(usize, @intCast(cfg.entities)))
+    ! each i |> std/store:insert(flock) { px: @as(f32, @floatFromInt(i % 256)), py: @as(f32, @floatFromInt((i / 256) % 256)), pz: @as(f32, @floatFromInt((i / 65536) % 256)), fx: @as(f32, @floatFromInt(i % 13)) - 6.0, fy: @as(f32, @floatFromInt(i % 17)) - 8.0, fz: @as(f32, @floatFromInt(i % 7)) - 3.0, cell: 0, tfx: 0.0, tfy: 0.0, tfz: 0.0, nhx: 0.0, nhy: 0.0, nhz: 0.0 }
+
+// The seeded heading is normalized in its own pass rather than inside the
+// insert block, so the insert stays a statement of the data.
+tor flock-normalize {}
+flock-normalize = std/store:query(flock)
+! query b |> std/store:stored { b.nhx: (if ((b.fx * b.fx + b.fy * b.fy + b.fz * b.fz) > 1.1754944e-38) b.fx * (1.0 / @sqrt((b.fx * b.fx + b.fy * b.fy + b.fz * b.fz))) else 0.0), b.nhy: (if ((b.fx * b.fx + b.fy * b.fy + b.fz * b.fz) > 1.1754944e-38) b.fy * (1.0 / @sqrt((b.fx * b.fx + b.fy * b.fy + b.fz * b.fz))) else 0.0), b.nhz: (if ((b.fx * b.fx + b.fy * b.fy + b.fz * b.fz) > 1.1754944e-38) b.fz * (1.0 / @sqrt((b.fx * b.fx + b.fy * b.fy + b.fz * b.fz))) else 0.0) }
+    |> std/store:stored { b.fx: b.nhx, b.fy: b.nhy, b.fz: b.nhz }
+
+tor frame-actors {}
+frame-actors = std/store:stored { fr.t0x: @as(f32, @floatFromInt(@mod(frn.n * 3, 256))), fr.t0y: 128.0, fr.t0z: @as(f32, @floatFromInt(@mod(frn.n * 5, 256))), fr.t1x: @as(f32, @floatFromInt(@mod(frn.n * 7, 256))), fr.t1y: 160.0, fr.t1z: @as(f32, @floatFromInt(@mod(frn.n * 11, 256))), fr.obx: @as(f32, @floatFromInt(@mod(frn.n * 13, 256))), fr.oby: 128.0, fr.obz: @as(f32, @floatFromInt(@mod(frn.n * 17, 256))) }
+    |> std/store:stored { frn.n: frn.n + 1 }
+
+// Phase 1. Every cell, no guard: a cell that was occupied last frame and is
+// empty this one must be cleared, so the sweep cannot filter on count.
+tor grid-clear {}
+grid-clear = std/grid:sweep(cells)
+! sweep c |> std/grid:stored { c.count: 0, c.ax: 0.0, c.ay: 0.0, c.az: 0.0, c.sx: 0.0, c.sy: 0.0, c.sz: 0.0, c.ti: 0, c.od: 0.0 }
+
+// Phase 2a. DOTS keeps `cellIndices` for exactly this reason: the hash is
+// computed once and read again by the steer pass.
+tor hash-boids {}
+hash-boids = std/store:query(flock)
+! query b |> std/store:stored { b.cell: (@as(i64, @min(@max(@as(i64, @intFromFloat(b.pz / 8.0)), 0), 31)) * 32 + @as(i64, @min(@max(@as(i64, @intFromFloat(b.py / 8.0)), 0), 31))) * 32 + @as(i64, @min(@max(@as(i64, @intFromFloat(b.px / 8.0)), 0), 31)) }
+
+// Phase 2b. The scatter — a store sweep writing into a grid cell whose address
+// comes out of the row. Float addition is not associative, so the visit order
+// is part of the contract and all three arms fold in insertion order.
+tor scatter {}
+scatter = std/store:query(flock)
+! query b |> std/grid:stored { cells[b.cell].count: cells[b.cell].count + 1, cells[b.cell].ax: cells[b.cell].ax + b.fx, cells[b.cell].ay: cells[b.cell].ay + b.fy, cells[b.cell].az: cells[b.cell].az + b.fz, cells[b.cell].sx: cells[b.cell].sx + b.px, cells[b.cell].sy: cells[b.cell].sy + b.py, cells[b.cell].sz: cells[b.cell].sz + b.pz }
+
+// Phase 3. MergeCells: the sweep writes the cell it is standing on.
+tor cell-resolve {}
+cell-resolve = std/grid:sweep(cells)
+! sweep c when c.count > 0 |> std/grid:stored { c.ti: if (((fr.t1x - (c.sx / @as(f32, @floatFromInt(c.count)))) * (fr.t1x - (c.sx / @as(f32, @floatFromInt(c.count)))) + (fr.t1y - (c.sy / @as(f32, @floatFromInt(c.count)))) * (fr.t1y - (c.sy / @as(f32, @floatFromInt(c.count)))) + (fr.t1z - (c.sz / @as(f32, @floatFromInt(c.count)))) * (fr.t1z - (c.sz / @as(f32, @floatFromInt(c.count))))) < ((fr.t0x - (c.sx / @as(f32, @floatFromInt(c.count)))) * (fr.t0x - (c.sx / @as(f32, @floatFromInt(c.count)))) + (fr.t0y - (c.sy / @as(f32, @floatFromInt(c.count)))) * (fr.t0y - (c.sy / @as(f32, @floatFromInt(c.count)))) + (fr.t0z - (c.sz / @as(f32, @floatFromInt(c.count)))) * (fr.t0z - (c.sz / @as(f32, @floatFromInt(c.count)))))) 1 else 0, c.od: @sqrt(((fr.obx - (c.sx / @as(f32, @floatFromInt(c.count)))) * (fr.obx - (c.sx / @as(f32, @floatFromInt(c.count)))) + (fr.oby - (c.sy / @as(f32, @floatFromInt(c.count)))) * (fr.oby - (c.sy / @as(f32, @floatFromInt(c.count)))) + (fr.obz - (c.sz / @as(f32, @floatFromInt(c.count)))) * (fr.obz - (c.sz / @as(f32, @floatFromInt(c.count)))))) }
+
+// Phase 4, in stages, because the intermediates need somewhere to live.
+
+tor steer-align {}
+steer-align = std/store:query(flock)
+! query b |> std/store:stored { b.tfx: 1.0 * (if (((cells[b.cell].ax / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fx) * (cells[b.cell].ax / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fx) + (cells[b.cell].ay / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fy) * (cells[b.cell].ay / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fy) + (cells[b.cell].az / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fz) * (cells[b.cell].az / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fz)) > 1.1754944e-38) (cells[b.cell].ax / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fx) * (1.0 / @sqrt(((cells[b.cell].ax / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fx) * (cells[b.cell].ax / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fx) + (cells[b.cell].ay / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fy) * (cells[b.cell].ay / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fy) + (cells[b.cell].az / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fz) * (cells[b.cell].az / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fz)))) else 0.0), b.tfy: 1.0 * (if (((cells[b.cell].ax / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fx) * (cells[b.cell].ax / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fx) + (cells[b.cell].ay / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fy) * (cells[b.cell].ay / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fy) + (cells[b.cell].az / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fz) * (cells[b.cell].az / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fz)) > 1.1754944e-38) (cells[b.cell].ay / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fy) * (1.0 / @sqrt(((cells[b.cell].ax / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fx) * (cells[b.cell].ax / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fx) + (cells[b.cell].ay / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fy) * (cells[b.cell].ay / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fy) + (cells[b.cell].az / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fz) * (cells[b.cell].az / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fz)))) else 0.0), b.tfz: 1.0 * (if (((cells[b.cell].ax / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fx) * (cells[b.cell].ax / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fx) + (cells[b.cell].ay / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fy) * (cells[b.cell].ay / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fy) + (cells[b.cell].az / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fz) * (cells[b.cell].az / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fz)) > 1.1754944e-38) (cells[b.cell].az / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fz) * (1.0 / @sqrt(((cells[b.cell].ax / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fx) * (cells[b.cell].ax / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fx) + (cells[b.cell].ay / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fy) * (cells[b.cell].ay / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fy) + (cells[b.cell].az / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fz) * (cells[b.cell].az / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fz)))) else 0.0) }
+
+tor steer-separate {}
+steer-separate = std/store:query(flock)
+! query b |> std/store:stored { b.tfx: b.tfx + 1.0 * (if (((b.px * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sx) * (b.px * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sx) + (b.py * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sy) * (b.py * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sy) + (b.pz * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sz) * (b.pz * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sz)) > 1.1754944e-38) (b.px * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sx) * (1.0 / @sqrt(((b.px * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sx) * (b.px * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sx) + (b.py * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sy) * (b.py * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sy) + (b.pz * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sz) * (b.pz * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sz)))) else 0.0), b.tfy: b.tfy + 1.0 * (if (((b.px * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sx) * (b.px * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sx) + (b.py * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sy) * (b.py * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sy) + (b.pz * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sz) * (b.pz * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sz)) > 1.1754944e-38) (b.py * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sy) * (1.0 / @sqrt(((b.px * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sx) * (b.px * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sx) + (b.py * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sy) * (b.py * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sy) + (b.pz * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sz) * (b.pz * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sz)))) else 0.0), b.tfz: b.tfz + 1.0 * (if (((b.px * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sx) * (b.px * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sx) + (b.py * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sy) * (b.py * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sy) + (b.pz * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sz) * (b.pz * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sz)) > 1.1754944e-38) (b.pz * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sz) * (1.0 / @sqrt(((b.px * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sx) * (b.px * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sx) + (b.py * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sy) * (b.py * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sy) + (b.pz * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sz) * (b.pz * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sz)))) else 0.0) }
+
+tor steer-target {}
+steer-target = std/store:query(flock)
+! query b |> std/store:stored { b.tfx: b.tfx + 2.0 * (if ((((if (cells[b.cell].ti == 0) fr.t0x else fr.t1x) - b.px) * ((if (cells[b.cell].ti == 0) fr.t0x else fr.t1x) - b.px) + ((if (cells[b.cell].ti == 0) fr.t0y else fr.t1y) - b.py) * ((if (cells[b.cell].ti == 0) fr.t0y else fr.t1y) - b.py) + ((if (cells[b.cell].ti == 0) fr.t0z else fr.t1z) - b.pz) * ((if (cells[b.cell].ti == 0) fr.t0z else fr.t1z) - b.pz)) > 1.1754944e-38) ((if (cells[b.cell].ti == 0) fr.t0x else fr.t1x) - b.px) * (1.0 / @sqrt((((if (cells[b.cell].ti == 0) fr.t0x else fr.t1x) - b.px) * ((if (cells[b.cell].ti == 0) fr.t0x else fr.t1x) - b.px) + ((if (cells[b.cell].ti == 0) fr.t0y else fr.t1y) - b.py) * ((if (cells[b.cell].ti == 0) fr.t0y else fr.t1y) - b.py) + ((if (cells[b.cell].ti == 0) fr.t0z else fr.t1z) - b.pz) * ((if (cells[b.cell].ti == 0) fr.t0z else fr.t1z) - b.pz)))) else 0.0), b.tfy: b.tfy + 2.0 * (if ((((if (cells[b.cell].ti == 0) fr.t0x else fr.t1x) - b.px) * ((if (cells[b.cell].ti == 0) fr.t0x else fr.t1x) - b.px) + ((if (cells[b.cell].ti == 0) fr.t0y else fr.t1y) - b.py) * ((if (cells[b.cell].ti == 0) fr.t0y else fr.t1y) - b.py) + ((if (cells[b.cell].ti == 0) fr.t0z else fr.t1z) - b.pz) * ((if (cells[b.cell].ti == 0) fr.t0z else fr.t1z) - b.pz)) > 1.1754944e-38) ((if (cells[b.cell].ti == 0) fr.t0y else fr.t1y) - b.py) * (1.0 / @sqrt((((if (cells[b.cell].ti == 0) fr.t0x else fr.t1x) - b.px) * ((if (cells[b.cell].ti == 0) fr.t0x else fr.t1x) - b.px) + ((if (cells[b.cell].ti == 0) fr.t0y else fr.t1y) - b.py) * ((if (cells[b.cell].ti == 0) fr.t0y else fr.t1y) - b.py) + ((if (cells[b.cell].ti == 0) fr.t0z else fr.t1z) - b.pz) * ((if (cells[b.cell].ti == 0) fr.t0z else fr.t1z) - b.pz)))) else 0.0), b.tfz: b.tfz + 2.0 * (if ((((if (cells[b.cell].ti == 0) fr.t0x else fr.t1x) - b.px) * ((if (cells[b.cell].ti == 0) fr.t0x else fr.t1x) - b.px) + ((if (cells[b.cell].ti == 0) fr.t0y else fr.t1y) - b.py) * ((if (cells[b.cell].ti == 0) fr.t0y else fr.t1y) - b.py) + ((if (cells[b.cell].ti == 0) fr.t0z else fr.t1z) - b.pz) * ((if (cells[b.cell].ti == 0) fr.t0z else fr.t1z) - b.pz)) > 1.1754944e-38) ((if (cells[b.cell].ti == 0) fr.t0z else fr.t1z) - b.pz) * (1.0 / @sqrt((((if (cells[b.cell].ti == 0) fr.t0x else fr.t1x) - b.px) * ((if (cells[b.cell].ti == 0) fr.t0x else fr.t1x) - b.px) + ((if (cells[b.cell].ti == 0) fr.t0y else fr.t1y) - b.py) * ((if (cells[b.cell].ti == 0) fr.t0y else fr.t1y) - b.py) + ((if (cells[b.cell].ti == 0) fr.t0z else fr.t1z) - b.pz) * ((if (cells[b.cell].ti == 0) fr.t0z else fr.t1z) - b.pz)))) else 0.0) }
+
+tor steer-avoid {}
+steer-avoid = std/store:query(flock)
+! query b |> std/store:stored { b.nhx: if ((cells[b.cell].od - 30.0) < 0.0) ((fr.obx + (if (((b.px - fr.obx) * (b.px - fr.obx) + (b.py - fr.oby) * (b.py - fr.oby) + (b.pz - fr.obz) * (b.pz - fr.obz)) > 1.1754944e-38) (b.px - fr.obx) * (1.0 / @sqrt(((b.px - fr.obx) * (b.px - fr.obx) + (b.py - fr.oby) * (b.py - fr.oby) + (b.pz - fr.obz) * (b.pz - fr.obz)))) else 0.0) * 30.0) - b.px) else (if ((b.tfx * b.tfx + b.tfy * b.tfy + b.tfz * b.tfz) > 1.1754944e-38) b.tfx * (1.0 / @sqrt((b.tfx * b.tfx + b.tfy * b.tfy + b.tfz * b.tfz))) else 0.0), b.nhy: if ((cells[b.cell].od - 30.0) < 0.0) ((fr.oby + (if (((b.px - fr.obx) * (b.px - fr.obx) + (b.py - fr.oby) * (b.py - fr.oby) + (b.pz - fr.obz) * (b.pz - fr.obz)) > 1.1754944e-38) (b.py - fr.oby) * (1.0 / @sqrt(((b.px - fr.obx) * (b.px - fr.obx) + (b.py - fr.oby) * (b.py - fr.oby) + (b.pz - fr.obz) * (b.pz - fr.obz)))) else 0.0) * 30.0) - b.py) else (if ((b.tfx * b.tfx + b.tfy * b.tfy + b.tfz * b.tfz) > 1.1754944e-38) b.tfy * (1.0 / @sqrt((b.tfx * b.tfx + b.tfy * b.tfy + b.tfz * b.tfz))) else 0.0), b.nhz: if ((cells[b.cell].od - 30.0) < 0.0) ((fr.obz + (if (((b.px - fr.obx) * (b.px - fr.obx) + (b.py - fr.oby) * (b.py - fr.oby) + (b.pz - fr.obz) * (b.pz - fr.obz)) > 1.1754944e-38) (b.pz - fr.obz) * (1.0 / @sqrt(((b.px - fr.obx) * (b.px - fr.obx) + (b.py - fr.oby) * (b.py - fr.oby) + (b.pz - fr.obz) * (b.pz - fr.obz)))) else 0.0) * 30.0) - b.pz) else (if ((b.tfx * b.tfx + b.tfy * b.tfy + b.tfz * b.tfz) > 1.1754944e-38) b.tfz * (1.0 / @sqrt((b.tfx * b.tfx + b.tfy * b.tfy + b.tfz * b.tfz))) else 0.0) }
+
+tor steer-heading {}
+steer-heading = std/store:query(flock)
+! query b |> std/store:stored { b.tfx: (if (((b.fx + @as(f32, 1.0 / 60.0) * (b.nhx - b.fx)) * (b.fx + @as(f32, 1.0 / 60.0) * (b.nhx - b.fx)) + (b.fy + @as(f32, 1.0 / 60.0) * (b.nhy - b.fy)) * (b.fy + @as(f32, 1.0 / 60.0) * (b.nhy - b.fy)) + (b.fz + @as(f32, 1.0 / 60.0) * (b.nhz - b.fz)) * (b.fz + @as(f32, 1.0 / 60.0) * (b.nhz - b.fz))) > 1.1754944e-38) (b.fx + @as(f32, 1.0 / 60.0) * (b.nhx - b.fx)) * (1.0 / @sqrt(((b.fx + @as(f32, 1.0 / 60.0) * (b.nhx - b.fx)) * (b.fx + @as(f32, 1.0 / 60.0) * (b.nhx - b.fx)) + (b.fy + @as(f32, 1.0 / 60.0) * (b.nhy - b.fy)) * (b.fy + @as(f32, 1.0 / 60.0) * (b.nhy - b.fy)) + (b.fz + @as(f32, 1.0 / 60.0) * (b.nhz - b.fz)) * (b.fz + @as(f32, 1.0 / 60.0) * (b.nhz - b.fz))))) else 0.0), b.tfy: (if (((b.fx + @as(f32, 1.0 / 60.0) * (b.nhx - b.fx)) * (b.fx + @as(f32, 1.0 / 60.0) * (b.nhx - b.fx)) + (b.fy + @as(f32, 1.0 / 60.0) * (b.nhy - b.fy)) * (b.fy + @as(f32, 1.0 / 60.0) * (b.nhy - b.fy)) + (b.fz + @as(f32, 1.0 / 60.0) * (b.nhz - b.fz)) * (b.fz + @as(f32, 1.0 / 60.0) * (b.nhz - b.fz))) > 1.1754944e-38) (b.fy + @as(f32, 1.0 / 60.0) * (b.nhy - b.fy)) * (1.0 / @sqrt(((b.fx + @as(f32, 1.0 / 60.0) * (b.nhx - b.fx)) * (b.fx + @as(f32, 1.0 / 60.0) * (b.nhx - b.fx)) + (b.fy + @as(f32, 1.0 / 60.0) * (b.nhy - b.fy)) * (b.fy + @as(f32, 1.0 / 60.0) * (b.nhy - b.fy)) + (b.fz + @as(f32, 1.0 / 60.0) * (b.nhz - b.fz)) * (b.fz + @as(f32, 1.0 / 60.0) * (b.nhz - b.fz))))) else 0.0), b.tfz: (if (((b.fx + @as(f32, 1.0 / 60.0) * (b.nhx - b.fx)) * (b.fx + @as(f32, 1.0 / 60.0) * (b.nhx - b.fx)) + (b.fy + @as(f32, 1.0 / 60.0) * (b.nhy - b.fy)) * (b.fy + @as(f32, 1.0 / 60.0) * (b.nhy - b.fy)) + (b.fz + @as(f32, 1.0 / 60.0) * (b.nhz - b.fz)) * (b.fz + @as(f32, 1.0 / 60.0) * (b.nhz - b.fz))) > 1.1754944e-38) (b.fz + @as(f32, 1.0 / 60.0) * (b.nhz - b.fz)) * (1.0 / @sqrt(((b.fx + @as(f32, 1.0 / 60.0) * (b.nhx - b.fx)) * (b.fx + @as(f32, 1.0 / 60.0) * (b.nhx - b.fx)) + (b.fy + @as(f32, 1.0 / 60.0) * (b.nhy - b.fy)) * (b.fy + @as(f32, 1.0 / 60.0) * (b.nhy - b.fy)) + (b.fz + @as(f32, 1.0 / 60.0) * (b.nhz - b.fz)) * (b.fz + @as(f32, 1.0 / 60.0) * (b.nhz - b.fz))))) else 0.0) }
+
+tor steer-move {}
+steer-move = std/store:query(flock)
+! query b |> std/store:stored { b.fx: b.tfx, b.fy: b.tfy, b.fz: b.tfz, b.px: b.px + b.tfx * (25.0 * @as(f32, 1.0 / 60.0)), b.py: b.py + b.tfy * (25.0 * @as(f32, 1.0 / 60.0)), b.pz: b.pz + b.tfz * (25.0 * @as(f32, 1.0 / 60.0)) }
+
+tor steer-clamp {}
+steer-clamp = std/store:query(flock)
+! query b |> std/store:stored { b.px: if (b.px < 0.0) 0.0 else (if (b.px > 255.999) 255.999 else b.px), b.py: if (b.py < 0.0) 0.0 else (if (b.py > 255.999) 255.999 else b.py), b.pz: if (b.pz < 0.0) 0.0 else (if (b.pz > 255.999) 255.999 else b.pz) }
+
+tor boid-frame {}
+boid-frame = frame-actors() |> grid-clear() |> hash-boids() |> scatter() |> cell-resolve()
+    |> steer-align() |> steer-separate() |> steer-target() |> steer-avoid()
+    |> steer-heading() |> steer-move() |> steer-clamp()
+
+// The checksum reads back outside the timed region, as `dense` does.
+tor read-flock {}
+read-flock = std/store:query(flock)
+! query b |> std/store:stored { acc.sink: acc.sink + @as(i64, @intFromFloat(@abs(b.px))) * 31 + @as(i64, @intFromFloat(@abs(b.py))) * 17 + @as(i64, @intFromFloat(@abs(b.pz))) * 13 }
+
 // ----------------------------------------------------------------- scenarios
 
 tor s-dense {}
@@ -243,6 +393,13 @@ s-fanout = world-init() |> for(0..@as(usize, @intCast(cfg.frames)))
 
 tor strength-frame {}
 strength-frame = step-dyn() |> step-parts() |> step-orbs()
+
+// Init is OUTSIDE the timed region for this scenario, so `s-boids` is the
+// frame loop and nothing else. The older rows time their world construction;
+// boids does not, and the three arms agree on that.
+tor s-boids {}
+s-boids = for(0..@as(usize, @intCast(cfg.frames)))
+    ! each _ |> boid-frame()
 
 tor s-bevy-strength {}
 s-bevy-strength = init-dyn() |> init-parts() |> init-orbs()
@@ -295,15 +452,28 @@ run-bevy-strength = if(cfg.scenario == 10)
 | then |> s-bevy-strength()
 | else |> _
 
+tor run-boids {}
+run-boids = if(cfg.scenario == 11)
+| then |> s-boids()
+| else |> _
+
 tor run {}
 run = run-dense() |> run-sparse() |> run-query-get() |> run-schedule-empty()
     |> run-spawn() |> run-spawn-batch() |> run-despawn() |> run-add-remove()
-    |> run-fanout() |> run-bevy-strength()
+    |> run-fanout() |> run-bevy-strength() |> run-boids()
 
 // -------------------------------------------------------------- the checksum
 //
 // Untimed. `query_get` and `schedule_empty` already carry their own sink, so
 // their arms are silent.
+
+// Everything a scenario must build BEFORE the clock starts. Only boids uses
+// it; the older rows deliberately keep their construction inside the timed
+// region and the README says so.
+tor prep {}
+prep = if(cfg.scenario == 11)
+| then |> flock-init() |> flock-normalize()
+| else |> _
 
 tor fin-dense {}
 fin-dense = if(cfg.scenario == 1)
@@ -330,9 +500,14 @@ fin-add-remove = if(cfg.scenario == 8)
 | then |> count-marks()
 | else |> _
 
+tor fin-boids {}
+fin-boids = if(cfg.scenario == 11)
+| then |> read-flock()
+| else |> _
+
 tor finish {}
 finish = fin-dense() |> fin-sparse() |> fin-spawn() |> fin-spawn-batch()
-    |> fin-despawn() |> fin-add-remove()
+    |> fin-despawn() |> fin-add-remove() |> fin-boids()
 // `fanout` and `bevy_strength_world` accumulate their own sink as the
 // workload runs, exactly as the baseline does — no read-back arm.
 
@@ -379,11 +554,16 @@ name-bevy-strength = if(cfg.scenario == 10)
 | then |> std/io:print("bevy_strength_world")
 | else |> _
 
+tor name-boids {}
+name-boids = if(cfg.scenario == 11)
+| then |> std/io:print("boids")
+| else |> _
+
 tor emit { ns: i64 }
 emit = std/io:print("{\"impl\":\"koru_store\",\"scenario\":\"")
     |> name-dense() |> name-sparse() |> name-query-get() |> name-schedule-empty()
     |> name-spawn() |> name-spawn-batch() |> name-despawn() |> name-add-remove()
-    |> name-fanout() |> name-bevy-strength()
+    |> name-fanout() |> name-bevy-strength() |> name-boids()
     |> std/io:print.ln("\",\"entities\":{{ cfg.entities:d }},\"frames\":{{ cfg.frames:d }},\"observers\":{{ cfg.observers:d }},\"elapsed_ns\":{{ ns:d }},\"sink\":{{ acc.sink:d }}}")
 
 // -------------------------------------------------------------------- driver
@@ -395,5 +575,5 @@ std/args:count(): n |> for(1..n)
 
 if(cfg.scenario == 0)
 | then |> std/io:eprint.ln("koru_store: unknown or unimplemented --scenario")
-| else |> std/time:now(): t0 |> run() |> std/time:elapsed(start: t0): d |> finish()
+| else |> prep() |> std/time:now(): t0 |> run() |> std/time:elapsed(start: t0): d |> finish()
     |> emit(ns: @as(i64, @intCast(d.ns)))
