@@ -467,3 +467,62 @@ store having to be inlined at its call sites — is paid off.
 Also standing, and worth stating because it is easy to misread as progress:
 the 003_ecs_reactive harness has anchors for Bevy, Flecs, Unity DOTS and a Zig
 baseline, and NO Koru entry. The comparison is unmeasured, not unfavourable.
+
+## The query's destructure block is a REQUEST, and its entries take annotations (ruled 2026-08-03)
+
+Lars ruled this after the row-ordinal pin (690_069) sat unspellable for a week.
+The block is not a projection of columns; it is a list of things the VISIT can
+synthesize, each carrying a prefix annotation naming what is wanted:
+
+    ! query { [row]e, [ordinal]n } |> … n … e.v …
+
+Four parts to the ruling. The block synthesizes **only what is asked for** (an
+unrequested ordinal materializes no cursor — the same demand-driven rule TT3
+already applies to aggregates). Entries use the language's normal **prefix**
+annotation form; `r[mutable]` is postfix only because it hangs off a binding.
+It is **local to query/store** and explicitly does NOT generalize — `for` has
+the identical missing-counter hole and does not get this, because the store's
+query is the thing that already drives codegen. And every annotation is
+**honored or refused**, never silently ignored, under the same law as declared
+reductions.
+
+### Why the braces are legal again
+
+Three separate things had collapsed under one word, "retired", and only two of
+them ever had an argument:
+
+- `entity.v` — an unscoped magic token; killed because the rewrite matched a
+  literal word across a subtree with no scope (690_087). Never applied to
+  bindings, which are distinct tokens per nesting level.
+- a COLUMN LIST — killed because it "said the same thing twice and let the two
+  halves disagree"; the column set is DERIVED from `<row>.<field>` references.
+- the BRACES — no argument, ever. The wall is written `sc.destructure.len > 0`:
+  a syntactic ban on brackets standing in for an argument about column lists.
+
+An annotated request is untouched by all three. Nothing in it is a column, so
+nothing is stated twice and columns stay derived; every entry is a binding, so
+nesting stays unambiguous. **The lesson generalises past this feature: when a
+wall is implemented as a shape test but justified by a semantic argument, the
+two have different extents, and the gap is where good ideas get refused.** Same
+shape as the capture gate two sections above, found the same afternoon.
+
+### Why this surface and not another
+
+Layout is already the closure of the queries — projections become SoA columns,
+predicates become maintained views. The query is therefore the planner's
+existing input, and annotating it needs no new plumbing and is comptime-visible
+exactly where the store transform runs. It also lets things that are currently
+INFERRED be DECLARED: the dense cursor behind the row-tax result (four
+`fadd.2d` against twenty scalar instructions) is a codegen decision the author
+cannot presently express.
+
+It also gives the handle/position distinction a spelling. A cell names a row by
+HANDLE, never by position (ruled); `[id]` and `[ordinal]` make that visible in
+the source instead of implied by a comment, which is what the old bare `row`
+got wrong.
+
+OPEN, and named in 690_069 rather than settled: whether the block may also name
+columns (if it may, the two killed arguments return with them), and what the
+single gating principle for the vocabulary is — fusibility has one ("notification
+granularity matches data granularity"); this needs its equivalent before it
+grows past two members.
