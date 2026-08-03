@@ -786,6 +786,41 @@ pub fn expressionMask(alloc: std.mem.Allocator, text: []const u8) []bool {
     return mask;
 }
 
+/// Is a token that starts at `i` at a real boundary — i.e. is it its own
+/// identifier rather than the tail of a longer one?
+///
+/// The naive test is "the byte before is not an identifier character", and in
+/// Koru that test is WRONG, because kebab-case makes `-` an identifier
+/// character. In `-r.v` the `-` is a unary minus and `r` starts a token, but
+/// the naive test reads it as the interior of a kebab name like `foo-r` and
+/// declines to touch it. The store's row rewriter therefore emitted `-r.v`
+/// verbatim into the generated host source, where `r` does not exist — the
+/// only spelling of the negation that survived was `- r.v`, with a space
+/// (690_244).
+///
+/// The disambiguation is local and total: **a `-` belongs to an identifier
+/// only when it sits BETWEEN two identifier characters.** Leading a token, or
+/// after a space, an operator, `(` or `,`, it is arithmetic and joins nothing.
+///
+/// Shared here, beside `expressionMask`, for the reason that one is: every
+/// text rewriter in the compiler needs it and there are a dozen private
+/// `isIdentChar` helpers to get it wrong in a dozen ways.
+pub fn identBoundaryBefore(text: []const u8, i: usize) bool {
+    if (i == 0) return true;
+    const prev = text[i - 1];
+    if (!isKebabIdentChar(prev)) return true;
+    if (prev != '-') return false;
+    return i < 2 or !isKebabIdentChar(text[i - 2]);
+}
+
+/// An identifier byte in Koru's kebab-case surface. `-` is included: `set-x`
+/// is ONE name. See `identBoundaryBefore` for why that makes the left-hand
+/// boundary test subtler than a single predicate can express.
+pub fn isKebabIdentChar(ch: u8) bool {
+    return (ch >= 'a' and ch <= 'z') or (ch >= 'A' and ch <= 'Z') or
+        (ch >= '0' and ch <= '9') or ch == '_' or ch == '-';
+}
+
 /// The column name a one-column store's synthesized single column carries.
 ///
 /// A store declaring `{ 0[i64] }` names no field — the store's own name is the

@@ -330,7 +330,7 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
             var out = std.ArrayList(u8).initCapacity(alloc, text.len + 32) catch unreachable;
             var i: usize = 0;
             while (i < text.len) {
-                const at_boundary = i == 0 or !isIdentChar(text[i - 1]);
+                const at_boundary = ast.identBoundaryBefore(text, i);
                 const starts = at_boundary and std.mem.startsWith(u8, text[i..], name);
                 const after = i + name.len;
                 if (starts and after < text.len and text[after] == '.') {
@@ -1246,7 +1246,7 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
                 var i: usize = 0;
                 while (i + name.len <= text.len) : (i += 1) {
                     if (!std.mem.eql(u8, text[i .. i + name.len], name)) continue;
-                    const before_ok = i == 0 or !H.isIdentChar(text[i - 1]);
+                    const before_ok = ast.identBoundaryBefore(text, i);
                     const after_ok = i + name.len == text.len or !H.isIdentChar(text[i + name.len]);
                     if (before_ok and after_ok) return true;
                 }
@@ -1849,7 +1849,7 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
                 var out = std.ArrayList(u8).initCapacity(alloc, text.len + 32) catch unreachable;
                 var i: usize = 0;
                 while (i < text.len) {
-                    const at_boundary = i == 0 or !H.isIdentChar(text[i - 1]);
+                    const at_boundary = ast.identBoundaryBefore(text, i);
                     if (at_boundary and std.mem.startsWith(u8, text[i..], prefix)) {
                         const fstart = i + prefix.len;
                         var fend = fstart;
@@ -1940,7 +1940,7 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
                 var out = std.ArrayList(u8).initCapacity(alloc, text.len + 16) catch unreachable;
                 var i: usize = 0;
                 while (i < text.len) {
-                    const at_boundary = i == 0 or !H.isIdentChar(text[i - 1]);
+                    const at_boundary = ast.identBoundaryBefore(text, i);
                     if (at_boundary and expr_ctx[i] and std.mem.startsWith(u8, text[i..], prefix)) {
                         // The guard runs in the qrow scope, where a column is
                         // reachable only as a projected const — so stripping a
@@ -4338,7 +4338,7 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
             var out = std.ArrayList(u8).initCapacity(alloc, text.len + 32) catch unreachable;
             var i: usize = 0;
             while (i < text.len) {
-                const at_boundary = i == 0 or !isIdent(text[i - 1]);
+                const at_boundary = ast.identBoundaryBefore(text, i);
                 const starts = at_boundary and std.mem.startsWith(u8, text[i..], name);
                 const after = i + name.len;
                 if (starts and after < text.len and text[after] == '.') {
@@ -4376,7 +4376,7 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
             var out = std.ArrayList(u8).initCapacity(alloc, text.len + 32) catch unreachable;
             var i: usize = 0;
             while (i < text.len) {
-                const prev_ok = i == 0 or (!isIdent(text[i - 1]) and text[i - 1] != '.');
+                const prev_ok = ast.identBoundaryBefore(text, i) and (i == 0 or text[i - 1] != '.');
                 const next_i = i + name.len;
                 const next_ok = next_i >= text.len or !isIdent(text[next_i]);
                 if (prev_ok and next_ok and next_i <= text.len and std.mem.startsWith(u8, text[i..], name)) {
@@ -5239,7 +5239,7 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
             var out = std.ArrayList(u8).initCapacity(alloc, text.len + 32) catch unreachable;
             var i: usize = 0;
             while (i < text.len) {
-                const at_boundary = i == 0 or !isIdent(text[i - 1]);
+                const at_boundary = ast.identBoundaryBefore(text, i);
                 const starts = at_boundary and std.mem.startsWith(u8, text[i..], name);
                 const after = i + name.len;
                 if (starts and after < text.len and text[after] == '.') {
@@ -5307,7 +5307,7 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
             var out = std.ArrayList(u8).initCapacity(alloc, text.len + 64) catch unreachable;
             var i: usize = 0;
             while (i < text.len) {
-                const at_boundary = i == 0 or !isIdent(text[i - 1]);
+                const at_boundary = ast.identBoundaryBefore(text, i);
                 if (at_boundary and i + store.len < text.len and
                     std.mem.startsWith(u8, text[i..], store) and text[i + store.len] == '[')
                 {
@@ -6669,7 +6669,7 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
             var out = std.ArrayList(u8).initCapacity(alloc, text.len + 32) catch unreachable;
             var i: usize = 0;
             while (i < text.len) {
-                const at_boundary = i == 0 or !isIdent(text[i - 1]);
+                const at_boundary = ast.identBoundaryBefore(text, i);
                 const starts = at_boundary and std.mem.startsWith(u8, text[i..], name);
                 const after = i + name.len;
                 if (starts and after < text.len and text[after] == '.') {
@@ -7283,7 +7283,7 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
             var out = std.ArrayList(u8).initCapacity(alloc, text.len + 32) catch unreachable;
             var i: usize = 0;
             while (i < text.len) {
-                const at_boundary = i == 0 or !isIdentCh(text[i - 1]);
+                const at_boundary = ast.identBoundaryBefore(text, i);
                 if (at_boundary and std.mem.startsWith(u8, text[i..], prefix)) {
                     const fstart = i + prefix.len;
                     var fend = fstart;
@@ -8275,7 +8275,7 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
             var out = std.ArrayList(u8).initCapacity(alloc, text.len + 32) catch unreachable;
             var i: usize = 0;
             while (i < text.len) {
-                const at_boundary = i == 0 or !isIdent(text[i - 1]);
+                const at_boundary = ast.identBoundaryBefore(text, i);
                 if (at_boundary and i + name.len < text.len and
                     std.mem.startsWith(u8, text[i..], name) and text[i + name.len] == '.')
                 {
