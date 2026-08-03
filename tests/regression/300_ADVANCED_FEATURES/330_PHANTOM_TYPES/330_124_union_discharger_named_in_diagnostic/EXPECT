@@ -1,0 +1,6 @@
+# The obligation must still be REFUSED — that half already works and must not regress.
+CONTAINS error[KORU030]
+# The falsehood: a discharger for <!closing> is declared in this very file.
+NOT_CONTAINS No tor accepts
+# The message's own vocabulary for "candidates are known" (as used for <opened!>).
+CONTAINS Call one of:

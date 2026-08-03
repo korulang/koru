@@ -1,0 +1,51 @@
+// PINS (RED — a diagnostic that asserts a falsehood): when an obligation's only
+// discharger declares it inside a UNION (`<!opened|closing>`), KORU030 says
+// "No tor accepts <!closing>" — and that is not true. `finalize` accepts it,
+// three lines above the flow, in this same file.
+//
+// Measured 2026-08-03 against koruc 0.1.7, this exact file:
+//   koruc input.kz
+//     error[KORU030]: Resource 'h2' obligation <closing!> was not discharged.
+//                     No tor accepts <!closing>.
+//     Auto-discharge failed (multiple disposal options or no disposal event)
+// and the CONTROL — the same program with `|> finalize(h: h2)` appended —
+// compiles, runs, and prints `finalized n=1`. So the union discharger is valid
+// as a CALL while being invisible as a CANDIDATE. `330_051` is the green twin
+// that pins the call side for both states.
+//
+// What this pin asserts is only the message, deliberately. The candidate list in
+// the message is built by SIGNATURE and the auto-discharge inserter builds its
+// own by EFFECT (frag-a-red-pin-is-unfalsifiable-documentation), so "the
+// inserter should insert `finalize` here" is a SEPARATE claim about a separate
+// index, and pinning a remedy off a message is exactly how 330_118 pinned a
+// fault that did not exist. Whatever the right remedy for the PROGRAM is —
+// refuse it, or auto-discharge it (the open frontier in
+// frag-obligation-enforcement-keys-off-return-binding) — the diagnostic must not
+// deny that a discharger exists. Hence NOT_CONTAINS on the falsehood plus
+// CONTAINS on the vocabulary the message already uses when candidates are known
+// ("Call one of: …"), and no assertion about insertion.
+//
+// The obligation is BOUND (`: h2`) on purpose: that keeps this pin clear of the
+// unbound-tail frontier owned by 330_097/330_123, which is about enforcement
+// reachability rather than about what the message claims.
+const std = @import("std");
+const Handle = struct { n: i32 };
+
+~tor open {} -> *Handle<opened!>
+~proc open|zig {
+    const h = std.heap.page_allocator.create(Handle) catch unreachable;
+    h.* = .{ .n = 1 };
+    return h;
+}
+
+~tor start-close { h: *Handle<!opened> } -> *Handle<closing!>
+~proc start-close|zig { return h; }
+
+// Declares itself the discharger for BOTH states — the 330_051 union shape.
+~tor finalize { h: *Handle<!opened|closing> }
+~proc finalize|zig {
+    std.debug.print("finalized n={}\n", .{h.n});
+    std.heap.page_allocator.destroy(h);
+}
+
+~open(): h1 |> start-close(h: h1): h2
