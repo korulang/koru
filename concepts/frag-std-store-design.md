@@ -522,7 +522,44 @@ the source instead of implied by a comment, which is what the old bare `row`
 got wrong.
 
 OPEN, and named in 690_069 rather than settled: whether the block may also name
-columns (if it may, the two killed arguments return with them), and what the
-single gating principle for the vocabulary is — fusibility has one ("notification
-granularity matches data granularity"); this needs its equivalent before it
-grows past two members.
+columns (if it may, the two killed arguments return with them).
+
+### The third member arrived, and it arrived on evidence (2026-08-03)
+
+`[id]` is built (690_246). It was held back deliberately — the position was
+"the benchmark is the instrument that should answer this, and ruling early
+risks a vocabulary nobody asked for." A borrowed ECS workload then asked for
+it, and the demand was measured rather than imagined: an intrusive bucket chain
+needs a visited row to write ITSELF as the new head, every other piece of that
+structure already worked, and `[id]` was the single remaining blocker. That is
+the shape of evidence this vocabulary should require of every future member.
+
+**Proposed gate, not yet ruled.** Fusibility's equivalent, and it fits all
+three members while correctly refusing the thing the block was built to refuse:
+
+> **A request names something the VISIT knows and the ROW does not.**
+
+- `[row]` — which row this is. The visit knows; a row cannot name itself.
+- `[ordinal]` — where in the traversal. A property of the walk, not the data.
+- `[id]` — the row's identity AS A VALUE. Minted by the store, available at the
+  cursor, held in no column.
+- a **column** — refused, and the gate says why rather than merely that: a
+  column belongs to the ROW and is already derived from `<row>.<field>`, so
+  naming it says the same thing twice and lets the halves disagree. That is the
+  original argument, now falling out of the principle instead of standing
+  beside it.
+- a **store-wide fact** (row count, capacity) — refused: a property of the
+  store, not of the visit. Nothing has asked for one, and the gate predicts
+  nothing will through this door.
+
+Second clause, inherited rather than invented: **synthesized only when named.**
+An unrequested member threads nothing and costs nothing, which is what makes
+the vocabulary safe to grow at all — an unused member is not a tax, so the
+argument against a member is only ever "no workload wants it", never "it slows
+the others down".
+
+What the gate does NOT settle, and should be tested against before ruling:
+`[first]`/`[last]` would pass it, since edge-of-traversal is visit knowledge. So
+would a request for the sweep's own length. Whether those are wanted is a
+separate question from whether they are admissible, and the gate deliberately
+only answers the second.

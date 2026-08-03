@@ -7204,6 +7204,7 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
     // ignored — the same law declared reductions carry.
     var req_row: ?[]const u8 = null;
     var req_ordinal: ?[]const u8 = null;
+    var req_id: ?[]const u8 = null;
     for (sc.destructure) |df| {
         if (df.annotations.len == 0) {
             // Carries BOTH teachings deliberately. The entry may be the old
@@ -7219,8 +7220,10 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
                 req_row = df.name;
             } else if (std.mem.eql(u8, a, "ordinal")) {
                 req_ordinal = df.name;
+            } else if (std.mem.eql(u8, a, "id")) {
+                req_id = df.name;
             } else {
-                return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:query({s}): unknown request `[{s}]` on '{s}' — this arm understands [row] and [ordinal]", .{ store_name, a, df.name }) } };
+                return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:query({s}): unknown request `[{s}]` on '{s}' — this arm understands [row], [ordinal] and [id]", .{ store_name, a, df.name }) } };
             }
         }
     }
@@ -7878,6 +7881,35 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
             .name = allocator.dupe(u8, on) catch unreachable,
             .type = allocator.dupe(u8, "i64") catch unreachable,
             .value = allocator.dupe(u8, "@as(i64, @intCast(__koru_si))") catch unreachable,
+        }) catch unreachable;
+    }
+
+    // `[id]h` is `[ordinal]`'s twin and its opposite. The ordinal is WHERE the
+    // visit is; the id is WHICH ROW it is standing on — the handle, branded and
+    // generation-checked, the same value `| row` mints at insert.
+    //
+    // Both are needed and neither substitutes for the other, which is the whole
+    // reason they are two annotations. A cell that names a row names it by
+    // HANDLE, never by position (ruled): a take swap-removes the last row into
+    // the freed slot, so an ordinal stored anywhere outlives its meaning by one
+    // removal. Handing a body its ordinal and letting it be written to a column
+    // would reintroduce the positional address the ruling exists to forbid;
+    // `[id]` is what makes the correct value SPELLABLE instead of merely
+    // recommended.
+    //
+    // Costs a line for the same reason `[ordinal]` does — the loop already
+    // stands on the dense row, and `__koru_handle_of` is the resolve chain run
+    // backwards, so the request threads one more value rather than opening a
+    // channel. Synthesized ONLY when asked for.
+    //
+    // The unblocked shape is an intrusive chain: a sweep that reads a bucket
+    // head, writes it to its own `next`, then writes ITSELF as the new head —
+    // which needs to name itself, and until now could not (690_246).
+    if (req_id) |idn| {
+        captures.append(allocator, .{
+            .name = allocator.dupe(u8, idn) catch unreachable,
+            .type = allocator.dupe(u8, "i64") catch unreachable,
+            .value = std.fmt.allocPrint(allocator, "__koru_store_{s}.__koru_handle_of(__koru_si)", .{store_name}) catch unreachable,
         }) catch unreachable;
     }
 

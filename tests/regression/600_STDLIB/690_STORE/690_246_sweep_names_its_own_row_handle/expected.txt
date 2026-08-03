@@ -1,0 +1,1 @@
+chain 30 -> 20 -> 10 ordsum 3
