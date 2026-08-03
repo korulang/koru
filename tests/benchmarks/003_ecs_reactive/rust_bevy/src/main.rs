@@ -160,7 +160,13 @@ struct ChurnStats {
 #[derive(Resource)]
 struct ChurnEntities(Vec<Entity>);
 
-fn empty_system() {}
+// Increments a counter, matching the zig baseline's `emptySystem(*u64)` and
+// koru's `tick()`. It used to be a genuinely empty body against their
+// non-empty ones, so the three were not running the same system and the
+// hardcoded sink of 0 could never have revealed it.
+fn empty_system(mut sink: ResMut<Sink>) {
+    sink.0 = sink.0.wrapping_add(1);
+}
 
 fn dense_update(mut query: Query<(&mut Position, &Velocity)>) {
     for (mut pos, vel) in &mut query {
@@ -468,20 +474,41 @@ fn churn_advance_frame(mut frame: ResMut<ChurnFrame>) {
     frame.0 += 1;
 }
 
+// FULL-CORPUS sink. This used to sum only the first 16 rows in ITERATION
+// ORDER, which is not an equivalence oracle: it sampled 0.016% of the work,
+// and because bevy's archetype iteration order is not insertion order it did
+// not even agree with the zig baseline's first 16. Two references that cannot
+// agree with each other cannot arbitrate a third.
+//
+// Summing every row with a wrapping integer add is ORDER-INDEPENDENT, so it
+// holds across implementations that visit rows in different orders. The
+// truncation to u64 is deliberate: it tolerates last-bit f32 differences
+// between languages while still catching the errors that matter (a row
+// missed, the wrong row written, a wrong count).
 fn checksum_positions(world: &mut World, active_only: bool) -> u64 {
     let mut sum = 0_u64;
     if active_only {
         let mut query = world.query_filtered::<&Position, With<Active>>();
-        for pos in query.iter(world).take(16) {
+        for pos in query.iter(world) {
             sum = sum.wrapping_add(pos.x as u64);
         }
     } else {
         let mut query = world.query::<&Position>();
-        for pos in query.iter(world).take(16) {
+        for pos in query.iter(world) {
             sum = sum.wrapping_add(pos.x as u64);
         }
     }
     sum
+}
+
+// LIVE entity count. `world.entities().len()` is allocator CAPACITY, not the
+// number of live entities: it returned 131072 (2^17) for a 100k spawn, and
+// returned the SAME value after despawning every entity. A sink that cannot
+// tell a full world from an empty one validates nothing. Every entity these
+// scenarios spawn carries Position, so counting that query is the live count.
+fn live_count(world: &mut World) -> u64 {
+    let mut query = world.query::<&Position>();
+    query.iter(world).count() as u64
 }
 
 fn parse_args() -> Config {
@@ -670,8 +697,12 @@ fn run_dense(config: &Config) {
     let mut world = build_world(config);
     let mut schedule = Schedule::default();
     schedule.add_systems(dense_update);
-    schedule.run(&mut world);
-
+    // NO WARMUP. This used to run one full frame before the timer started,
+    // which (a) gave bevy a pre-faulted, cache-warm world the zig and koru
+    // ports never got, and (b) advanced the world one extra frame, so its
+    // sink disagreed with theirs by exactly one frame's worth of motion.
+    // The full-corpus checksum is what made (b) visible; the 16-row prefix
+    // hid it. All three implementations now run exactly `frames` frames.
     let start = Instant::now();
     for _ in 0..config.frames {
         schedule.run(&mut world);
@@ -685,8 +716,12 @@ fn run_sparse(config: &Config) {
     let mut world = build_world(config);
     let mut schedule = Schedule::default();
     schedule.add_systems(sparse_update);
-    schedule.run(&mut world);
-
+    // NO WARMUP. This used to run one full frame before the timer started,
+    // which (a) gave bevy a pre-faulted, cache-warm world the zig and koru
+    // ports never got, and (b) advanced the world one extra frame, so its
+    // sink disagreed with theirs by exactly one frame's worth of motion.
+    // The full-corpus checksum is what made (b) visible; the 16-row prefix
+    // hid it. All three implementations now run exactly `frames` frames.
     let start = Instant::now();
     for _ in 0..config.frames {
         schedule.run(&mut world);
@@ -700,8 +735,12 @@ fn run_fanout(config: &Config) {
     let mut world = build_world(config);
     let mut schedule = Schedule::default();
     schedule.add_systems((damage_system, fanout_system).chain());
-    schedule.run(&mut world);
-
+    // NO WARMUP. This used to run one full frame before the timer started,
+    // which (a) gave bevy a pre-faulted, cache-warm world the zig and koru
+    // ports never got, and (b) advanced the world one extra frame, so its
+    // sink disagreed with theirs by exactly one frame's worth of motion.
+    // The full-corpus checksum is what made (b) visible; the 16-row prefix
+    // hid it. All three implementations now run exactly `frames` frames.
     let start = Instant::now();
     for _ in 0..config.frames {
         schedule.run(&mut world);
@@ -718,7 +757,7 @@ fn run_spawn(config: &Config) {
         world.spawn((Position { x: i as f32, y: 0.0 }, Velocity { x: 1.0, y: -1.0 }, Health(1000)));
     }
     let elapsed = start.elapsed();
-    print_result("spawn", config, elapsed.as_nanos(), world.entities().len() as u64);
+    print_result("spawn", config, elapsed.as_nanos(), live_count(&mut world));
 }
 
 fn run_spawn_batch(config: &Config) {
@@ -733,7 +772,7 @@ fn run_spawn_batch(config: &Config) {
     let start = Instant::now();
     world.spawn_batch(bundles);
     let elapsed = start.elapsed();
-    print_result("spawn_batch", config, elapsed.as_nanos(), world.entities().len() as u64);
+    print_result("spawn_batch", config, elapsed.as_nanos(), live_count(&mut world));
 }
 
 fn run_despawn(config: &Config) {
@@ -744,7 +783,7 @@ fn run_despawn(config: &Config) {
         let _ = world.despawn(entity);
     }
     let elapsed = start.elapsed();
-    print_result("despawn", config, elapsed.as_nanos(), world.entities().len() as u64);
+    print_result("despawn", config, elapsed.as_nanos(), live_count(&mut world));
 }
 
 fn run_add_remove(config: &Config) {
@@ -780,15 +819,16 @@ fn run_query_get(config: &Config) {
 
 fn run_schedule_empty(config: &Config) {
     let mut world = World::new();
+    world.insert_resource(Sink(0));
     let mut schedule = Schedule::default();
     schedule.add_systems(empty_system);
-    schedule.run(&mut world);
+    // No warmup — see the note on the other scenarios.
     let start = Instant::now();
     for _ in 0..config.frames {
         schedule.run(&mut world);
     }
     let elapsed = start.elapsed();
-    print_result("schedule_empty", config, elapsed.as_nanos(), 0);
+    print_result("schedule_empty", config, elapsed.as_nanos(), world.resource::<Sink>().0);
 }
 
 fn run_combat_world(config: &Config) {
@@ -802,8 +842,12 @@ fn run_combat_world(config: &Config) {
         apply_damage,
         combat_fanout,
     ).chain());
-    schedule.run(&mut world);
-
+    // NO WARMUP. This used to run one full frame before the timer started,
+    // which (a) gave bevy a pre-faulted, cache-warm world the zig and koru
+    // ports never got, and (b) advanced the world one extra frame, so its
+    // sink disagreed with theirs by exactly one frame's worth of motion.
+    // The full-corpus checksum is what made (b) visible; the 16-row prefix
+    // hid it. All three implementations now run exactly `frames` frames.
     let start = Instant::now();
     for _ in 0..config.frames {
         schedule.run(&mut world);

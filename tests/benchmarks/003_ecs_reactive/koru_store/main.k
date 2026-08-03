@@ -114,6 +114,15 @@ tor read-all {}
 read-all = std/store:query(bodies)
 ! query e |> std/store:stored { acc.sink: acc.sink + @as(i64, @intFromFloat(e.px)) }
 
+// `sparse` integrates only the rows whose `act` flag is set, so its sink must
+// read the SAME subset — the zig baseline sums over its active index array and
+// bevy filters `With<Active>`. Summing every row here made koru's sparse sink
+// ~10x the other two: a real bug in this port, invisible until the anchors
+// stopped sampling sixteen rows and the three numbers could be compared at all.
+tor read-active {}
+read-active = std/store:query(bodies)
+! query e when e.act == 1 |> std/store:stored { acc.sink: acc.sink + @as(i64, @intFromFloat(e.px)) }
+
 tor tick {}
 tick = std/store:stored { acc.sink: acc.sink + 1 }
 
@@ -302,7 +311,7 @@ fin-dense = if(cfg.scenario == 1)
 | else |> _
 tor fin-sparse {}
 fin-sparse = if(cfg.scenario == 2)
-| then |> read-all()
+| then |> read-active()
 | else |> _
 tor fin-spawn {}
 fin-spawn = if(cfg.scenario == 5)

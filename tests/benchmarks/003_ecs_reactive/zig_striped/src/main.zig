@@ -73,7 +73,12 @@ fn dense(world: *World, frames: usize) u64 {
             world.pos_y[i] += world.vel_y[i];
         }
     }
-    for (0..@min(world.pos_x.len, 16)) |i| {
+    // FULL CORPUS. This summed only the first 16 rows, which sampled 0.016%
+    // of the work and did not even agree with the bevy anchor's first 16,
+    // because "the first 16" depends on iteration order. A wrapping integer
+    // add over every row is order-independent and holds across
+    // implementations that visit rows in different orders.
+    for (0..world.pos_x.len) |i| {
         sink +%= @as(u64, @intFromFloat(world.pos_x[i]));
     }
     return sink;
@@ -87,7 +92,8 @@ fn sparse(world: *World, frames: usize) u64 {
             world.pos_y[i] += world.vel_y[i];
         }
     }
-    for (0..@min(world.active.len, 16)) |i| {
+    // FULL CORPUS over the active set — see the note in `dense`.
+    for (0..world.active.len) |i| {
         sink +%= @as(u64, @intFromFloat(world.pos_x[world.active[i]]));
     }
     return sink;
