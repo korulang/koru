@@ -425,6 +425,53 @@ const grid_read = struct {
         }
     };
 
+    // `[unsafe(bounds)]std/grid:new(...)` — WAIVE THE BOUNDS FLOOR, by name.
+    //
+    // The check itself is nearly free: the optimizer commons every access in a
+    // loop down to one compare. What is NOT free is that the failure edge is
+    // `@panic`, which is `noreturn`, which gives the loop a side exit that
+    // LLVM's vectoriser refuses. Measured on the boids steer loop: 187ms with
+    // the trap, 99ms without, and the difference is entirely the EDGE — a
+    // branch that RETURNS is as fast as no check at all.
+    //
+    // So loud-and-fast is not available for free, and the escape hatch is
+    // explicit rather than a mode the compiler picks. Two properties earn the
+    // spelling:
+    //
+    //   - it is an ANNOTATION, not an argument. `size:` describes the table;
+    //     waiving a check describes how it is compiled, and the language
+    //     already has a form for that (`[comptime]tor`, `[pure]`,
+    //     `[depends_on(x)]`). It also makes the audit one grep for `[unsafe`.
+    //   - it NAMES THE FACET. A bare `[unsafe]` silently widens the day this
+    //     construct grows a second check, and nobody re-consents. `bounds` can
+    //     only ever waive bounds.
+    //
+    // A misspelled or unknown facet is REFUSED. The failure mode this prevents
+    // is the worst kind: `[unsafe(bonuds)]` would waive nothing, keep the trap,
+    // and read to every later reviewer as a place where safety was already
+    // given up.
+    var unchecked = false;
+    {
+        const annotation_parser = @import("annotation_parser");
+        for (flow.annotations) |ann| {
+            const trimmed = std.mem.trim(u8, ann, " \t");
+            if (!std.mem.startsWith(u8, trimmed, "unsafe")) continue;
+            const call = annotation_parser.parseCall(allocator, trimmed) catch {
+                return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/grid:new: malformed annotation '[{s}]' - the form is `[unsafe(bounds)]`", .{trimmed}) } };
+            } orelse {
+                return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/grid:new: `[unsafe]` must name what it waives - write `[unsafe(bounds)]`. A bare `[unsafe]` would widen silently the day this construct grows a second check", .{}) } };
+            };
+            if (call.args.len != 1) {
+                return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/grid:new: `[unsafe(...)]` waives exactly one facet at a time (got {d}) - a grid offers `bounds`", .{call.args.len}) } };
+            }
+            const facet = std.mem.trim(u8, call.args[0], " \t\"");
+            if (!std.mem.eql(u8, facet, "bounds")) {
+                return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/grid:new: a grid has no `{s}` check to waive - it offers `bounds` (the per-access index floor). A facet it does not implement is refused rather than ignored, because an annotation that waives nothing still reads as one that did", .{facet}) } };
+            }
+            unchecked = true;
+        }
+    }
+
     var grid_name: []const u8 = "";
     var seed_text: ?[]const u8 = null;
     var size_text: ?[]const u8 = null;
@@ -544,7 +591,20 @@ const grid_read = struct {
     // braces across the proc body and does not exempt multiline literals. The
     // struct's closing `}` therefore rides in a quoted string below, the way
     // store.kz does it, not at the end of this literal.
-    const at = std.fmt.allocPrint(allocator,
+    // `[unsafe(bounds)]` removes the trap and nothing else: the widening stays,
+    // because an index still arrives as whatever the program computed. Only the
+    // failure EDGE goes, and that edge is the whole cost.
+    const at = if (unchecked) std.fmt.allocPrint(allocator,
+        \\    const __koru_size: usize = {d};
+        \\    fn __koru_wide(v: anytype) i64 {{
+        \\        return if (@TypeOf(v) == comptime_int) v else @intCast(v);
+        \\    }}
+        \\    // [unsafe(bounds)] at the declaration: no index floor.
+        \\    fn __koru_at(i_raw: anytype) usize {{
+        \\        return @as(usize, @intCast(__koru_wide(i_raw)));
+        \\    }}
+        \\
+    , .{SIZE}) catch unreachable else std.fmt.allocPrint(allocator,
         \\    const __koru_size: usize = {d};
         \\    fn __koru_wide(v: anytype) i64 {{
         \\        return if (@TypeOf(v) == comptime_int) v else @intCast(v);
@@ -561,7 +621,14 @@ const grid_read = struct {
         // Row-major `y*C + x`, bounds-checked per AXIS so the diagnostic can say
         // WHICH axis escaped — `[x, y]` with a good x and a bad y is the common
         // slip and "index out of range" alone would not locate it.
-        const at2 = std.fmt.allocPrint(allocator,
+        const at2 = if (unchecked) std.fmt.allocPrint(allocator,
+            \\    const __koru_rows: usize = {d};
+            \\    const __koru_cols: usize = {d};
+            \\    fn __koru_at2(x_raw: anytype, y_raw: anytype) usize {{
+            \\        return @as(usize, @intCast(__koru_wide(y_raw))) * {d} + @as(usize, @intCast(__koru_wide(x_raw)));
+            \\    }}
+            \\
+        , .{ ROWS, COLS, COLS }) catch unreachable else std.fmt.allocPrint(allocator,
             \\    const __koru_rows: usize = {d};
             \\    const __koru_cols: usize = {d};
             \\    fn __koru_at2(x_raw: anytype, y_raw: anytype) usize {{

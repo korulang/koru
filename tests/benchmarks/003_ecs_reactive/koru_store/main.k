@@ -57,7 +57,7 @@ std/store:new(orbs, capacity: 25000) { px: f32, py: f32, phase: f32, radius: f32
 // a flat run and the program linearises `(z*32 + y)*32 + x` itself, which is
 // what `size:` rather than `dimensions:` is for: a spatial hash's index is the
 // program's own business.
-std/grid:new(cells, size: 32768) { count: 0[i64], ax: 0.0[f32], ay: 0.0[f32], az: 0.0[f32], sx: 0.0[f32], sy: 0.0[f32], sz: 0.0[f32], ti: 0[i64], od: 0.0[f32] }
+[unsafe(bounds)]std/grid:new(cells, size: 32768) { count: 0[i64], ax: 0.0[f32], ay: 0.0[f32], az: 0.0[f32], sx: 0.0[f32], sy: 0.0[f32], sz: 0.0[f32], ti: 0[i64], od: 0.0[f32] }
 
 // `tf*` and `nh*` are the steering accumulators. The store has no
 // expression-local binding, so an intermediate that Zig and Rust hold in a

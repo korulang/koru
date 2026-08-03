@@ -122,7 +122,7 @@ the multipliers below have equivalence evidence behind them everywhere except
 | fanout | 8543 | 25452 | 14260 | 1.8x | ✗ |
 | bevy_strength_world | 21076 | 65322 | 16627 | 3.9x | = |
 | combat_world | 3560 | 9832 | — | — | — |
-| boids | 220362 | 314533 | 190383 | 1.7x | = |
+| boids | 220409 | 318551 | 100857 | 3.2x | = |
 
 Three of these are worth naming.
 
@@ -145,9 +145,9 @@ only readable at all because `std/time` was moved onto a monotonic nanosecond
 clock while writing this entry — on the previous wall clock, which ticks in
 whole microseconds on darwin, it reported zero.
 
-**`boids` is the borrowed workload, and Koru is 1.60x FASTER than hand-written
-striped Zig** — 137 ms against the baseline's 220 ms, and 2.3x faster than
-bevy_ecs's 314 ms, with a `592303452` checksum bit-identical across all three
+**`boids` is the borrowed workload, and Koru is 2.19x FASTER than hand-written
+striped Zig** — 101 ms against the baseline's 220 ms, and 3.1x faster than
+bevy_ecs's 318 ms, with a `592303452` checksum bit-identical across all three
 arms in every run and across every variant below. It is a port of Unity DOTS `BoidSystem.cs` with DOTS' own
 constants unscaled (CellRadius 8, weights 1/1/2, ObstacleAversionDistance 30,
 MoveSpeed 25), so the arithmetic is somebody else's design and not one chosen
@@ -163,18 +163,23 @@ effect arm, and a store query arm is one.
 Every variant below computes identical arithmetic and produces the identical
 checksum, so the shape is the only variable:
 
-| steering shape | before the write-path fix | after | with a returning trap edge |
+| steering shape | start of day | write path fixed | `[unsafe(bounds)]` |
 |---|---:|---:|---:|
 | `boids` — capture slots, one pass | 243 ms | 190 ms | **101 ms** |
 | `boids_fused` — columns, one pass | 400 ms | 193 ms | 113 ms |
-| `boids_split` — columns, seven passes | 261 ms | 136 ms | 123 ms |
+| `boids_split` — columns, seven passes | 261 ms | 136 ms | 121 ms |
 | `boids_f4` — columns, four fused | 279 ms | 141 ms | 144 ms |
 
-(The third column also carries a fix to the benchmark's own Koru source: the
+(The middle column also carries a fix to the benchmark's own Koru source: the
 position clamp was written as nested `if`s where the baseline uses `@min/@max`,
 which was a defect in the port, not the language, and cost the capture variant
-48 ms. The fourth column is a MEASUREMENT ONLY — a patched emitted file, not a
-language change; see below.)
+48 ms.)
+
+**The scenario ships with `[unsafe(bounds)]` on the grid, and that is the
+apples-to-apples setting, not a thumb on the scale.** The Zig baseline indexes
+its arrays directly and bounds-checks nothing; the middle column is Koru doing
+strictly MORE work than the thing it is compared against. Both numbers are here
+because the difference is exactly what the safety costs: 89 ms, or 47%.
 
 THE SECOND COLUMN IS THE STORE'S WRITE-PATH FIX, and it is the whole story.
 A multi-field `stored` block used to emit one write call PER FIELD, in order,
@@ -206,12 +211,14 @@ edge. With both addressed the ordering is what intuition said at the start: one
 fat pass (101 ms) beats seven thin ones (123 ms), and Koru runs the workload at
 2.2x the speed of the hand-written striped baseline.
 
-The trap edge is NOT fixed here. Making it a returning edge means the grid stops
-trapping on an out-of-range index, and "fail loud, never silently address a
-neighbour" is the ruling that put the trap there. Deferring the panic to the end
-of the sweep, or clamping-and-flagging, would keep the loudness and the
-vectorisation both — that is a design question with a real tradeoff and it is
-open.
+LOUD-AND-FAST WAS TRIED AND DOES NOT EXIST, which is why the escape hatch is
+spelled rather than inferred. Clamping the index and recording the violation in
+a flag, panicking after the sweep, measured 190 ms — no better than the trap,
+because the flag is a memory write inside the loop and that is a loop-carried
+dependency of its own. A branch is fine; a `noreturn` target is not; a memory
+write is not. So the choice is real, and `[unsafe(bounds)]` makes it explicit,
+auditable by one grep, and named — a bare `[unsafe]` and an unknown facet are
+both refused (697_008, 697_009).
 
 The mechanism behind the cliff is visible in the emitted code: **a multi-field
 store write emits one write-path call per FIELD, and every call carries the
