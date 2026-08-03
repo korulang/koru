@@ -184,12 +184,13 @@ ruling ("capture may BE the app store").
   O3 via attach/backfill — though rung-one top-level born-empty stores have
   NO attach moment and NO backfill problem.
 - **O2 · Row addressing for writes — RULED 2026-07-04 (Lars, "we can
-  probably DO this"): ONE LVALUE PATH GRAMMAR, FOUR ADDRESSING HEADS.**
+  probably DO this"): ONE LVALUE PATH GRAMMAR, THREE ADDRESSING HEADS**
+  (four as first ruled; head (3) was KILLED 2026-08-03, see below).
   (1) insert returns the handle (`insert(game) { ... } | row r`) — primary
   identity, store-name-synthesized, NOT obligated by default; (2) handle
   addressing `game[r].hp` (indexed-lvalue precedent: `captured { g[a][b]:
-  v }`, 320_057 green); (3) declared keys — a field marked key at create →
-  `game[id: 7].hp`, key index = a DECLARED cost (lands on ruling (g));
+  v }`, 320_057 green); (3) ~~declared keys — a field marked key at create →
+  `game[id: 7].hp`, key index = a DECLARED cost~~ **KILLED 2026-08-03**;
   (4) query-row addressing — the bound row is a head: `stored {
   entity.hp: ... }` under a query branch = UPDATE WHERE,
   `take(game[entity])` = DELETE WHERE. Singleton `game.hp` = the grammar
@@ -205,6 +206,85 @@ ruling ("capture may BE the app store").
   declaration (`<game:item!>`-shaped) — the shipped qualified-phantom
   collections pattern (660_027), NO generics exposed. Disposal verb
   undesigned (`give-back` floated). (`take` name provisional.)
+- **O2 · head (3) DECLARED KEYS — KILLED 2026-08-03 (Lars). The store
+  never carries a key and never maintains an index as a user-facing
+  surface.** Heads (1), (2) and (4) stand, built and green.
+
+  **Two reasons, and the second is the one that settles it.**
+  (a) Lars, 2026-07-31, verbatim: *"I DON'T THINK THE STORE SHOULD HAVE
+  KEYS LIKE THAT… It would have to implement the indexing as PART OF THE
+  STORE and that makes no sense to me."* Re-stated 2026-08-03.
+  (b) **Its recorded motivation EXPIRED under a shipped build.**
+  `690_018`'s header argued the head was needed because "a stored position
+  loses its write silently across a removal (690_092)". O10.iii shipped
+  2026-07-31; `690_092` is GREEN; the identity that survives a removal is
+  the HANDLE, and it needs no key. The head was arguing for itself using a
+  defect that had already been fixed by a different mechanism.
+
+  **What the kill does NOT dispose of.** ADDRESSING BY VALUE is a real and
+  currently unserved need — reaching the row whose `idx` equals an
+  externally-supplied number, which no handle answers because the number
+  comes from outside the program. `koru-examples/downloads` does this today
+  with a guarded sweep (`! sweep x when x.idx == pr.index`).
+
+  **RETRACTED, same day, before anything was built on it.** An earlier
+  revision of this entry ruled that the guarded sweep IS the answer and that
+  scan-vs-index is a planner decision behind an unchanged spelling. That was
+  wrong twice over. It generalised from `downloads` (a TUI holding a handful
+  of rows, where a scan costs ~14ns and is genuinely fine) to a language-wide
+  ruling, when this cluster's own measurements are taken at **10k rows**,
+  where the same scan is ~1-2µs — more than an entire `add_remove_component`
+  iteration. And it justified the absence of a mechanism by appealing to a
+  planner that **does not exist**, which is the degraded-path-labelled-design
+  shape the no-fallbacks rule exists to refuse.
+
+  **The direction instead (Lars, 2026-08-03): AN INDEX IS A SEPARATE STORE.**
+
+      [indexes(entities.idx)]std/store:new(by_idx)
+
+  Both columns synthesized and invisible, exactly as `[tree]` synthesizes
+  `parent` — an index has no schema of its own. `[indexes(...)]` is the same
+  citizen as `[tree]`/`[entity(...)]`: a store-shape annotation. A `new-index`
+  verb was considered and rejected — it is a second declaration verb beside
+  `new` for no gain.
+
+  This RELOCATES head (3) rather than deleting it. `entities[by_idx: 7].hp`
+  names a **declared store**, so the cost is one visible line, the index is a
+  table you can sweep and reason about, and the store itself maintains
+  nothing — which is precisely the objection in (a). What was refused was a
+  hidden index the store keeps; not the addressing head.
+
+  **CORROBORATED against Bevy** (`bevy_ecs`, source-read 2026-08-03): there is
+  no `pub mod index`, no component-keyed reverse index, and no lookup-by-value
+  API. Bevy users maintain their own `HashMap<K, Entity>` off component
+  lifecycle hooks. So "the store never carries a key" is also where the
+  leading archetype ECS landed. Our handle matches their `Entity` on all four
+  points — index+generation, sparse resolve, generation bump on despawn,
+  silent swap-remove repair with no user-visible relocation event.
+
+  **THE ONE MISSING PRIMITIVE.** Bevy's hook receives `HookContext { entity,
+  … }`. Ours does not: `store.kz` builds the `inserted` payload from the arm's
+  destructured COLUMN names only, though `__koru_new_row` is in scope at that
+  point and the hslot is already wired. So `removed` and `updated` can already
+  maintain an index (they carry the key), and `inserted` cannot (it cannot name
+  the handle). **A lifecycle arm cannot name the handle of the row it is
+  announcing** — that is the whole gap, and it is the same threading `[id]`
+  received on sweep/rule arms.
+
+  **Where this beats Bevy rather than matching it:** their hook is a runtime
+  `fn` pointer invoked through `DeferredWorld`; ours splices into the write
+  path at comptime. Same feature, no dispatch.
+
+  **NOT a benchmark blocker, and do not schedule it as one.** No scenario in
+  the ECS suite performs a value lookup — `query_get` takes an `Entity`, which
+  is our `game[a].hp` and already O(1). Bevy ships no value index and is the
+  reference engine. This is a `downloads`-driven feature.
+
+  **Next move when it is taken up:** thread the handle into lifecycle arms,
+  then HAND-WRITE the index as an ordinary second store with ordinary
+  `inserted`/`updated`/`removed` arms — no new syntax. Benchmark that against
+  the guarded sweep. The annotation is sugar over a proven pattern, or it is
+  not built. AWAITING that number.
 - **O3 · Store extent** — module-top-level `~create` (program-long, like
   `~capture`) vs mid-flow creation with `*Store<store!>` obligation-carried
   extent. Likely both, same construct. Interceptors live for the extent.
@@ -228,18 +308,27 @@ ruling ("capture may BE the app store").
   delta machinery. If ever supported, it is a separate EXPLICIT verb
   (rescan → diff → synthesized enter/leave), never a silent capability.
   Candidate refusal: never support it; the store owns its data.
-- **O9 · Does the creation seed fire watches/interceptors?** Surfaced by
-  the pins (2026-07-04 QA): 690_001/003/004's expected.txt all embed the
-  answer NO. LEAN: birth-is-not-a-write — creation is birth, not change;
-  watches observe writes; also keeps top-level stores consistent with the
-  no-attach-moment story. REFINEMENT (adversary 2b, adopted): birth performs
-  the MEMORY store of the seed but suppresses the EVENT — else the first
-  delta's `old` reads garbage. PENDING Lars ratification.
-- **O9b · Does row INSERT fire per-field watches?** Surfaced writing
-  690_008: LEAN NO — a field watch observes CHANGE to an existing row's
-  field; a born row arrives whole and announces itself via `inserted` (and
-  query enter — NOTE: forward-references O1's still-open vocabulary).
-  Sibling of O9. PENDING ratification.
+- **O9 · Does the creation seed fire watches/interceptors? RULED NO
+  2026-08-03 (Lars).** Birth-is-not-a-write — creation is birth, not
+  change; watches observe writes. Keeps top-level stores consistent with
+  the no-attach-moment story. REFINEMENT (adversary 2b, adopted and
+  ratified with it): birth performs the MEMORY store of the seed but
+  suppresses the EVENT — else the first delta's `old` reads garbage.
+  The ratification is bookkeeping, not a change: `690_001/003/004`
+  embedded this answer in their expected.txt on 2026-07-04 and have been
+  green ever since. The behaviour was ruled by the corpus for a month
+  while the document said "pending"; the lesson is filed under O9b.
+- **O9b · Does row INSERT fire per-field watches? RULED NO 2026-08-03
+  (Lars).** A field watch observes CHANGE to an existing row's field; a
+  born row arrives whole and announces itself via `inserted` (and query
+  enter — forward-references O1's still-open vocabulary). Sibling of O9,
+  pinned by `690_008`, green since 2026-07-05.
+  **PROCESS NOTE, and the reason both of these are worth a paragraph:** a
+  LEAN whose answer is already embedded in a green expected.txt is not
+  pending — it is ruled by the corpus and unrecorded in the prose. Two
+  such sat here for a month. When a lean is written, check whether a test
+  already asserts it; if one does, the lean is a RULING and the only open
+  question is who writes it down.
 - **O10 · Allocation policy — RULED-LEAN 2026-07-04 (Lars: game-dev perf
   focus in everything).** (i) CAPACITY IS DECLARED at create — fixed
   static memory, SoA columns as fixed arrays, the MAX_ENTITIES pool
@@ -257,12 +346,16 @@ ruling ("capture may BE the app store").
   another row's removal — the write lands on the relocated row),
   `690_117` (the self-FK follow after a swap), `695_004` (tree parent
   handles across a take), `690_031` (swap-remove revisit mid-sweep).
-  (iv) HANDLE-SAFETY FLOOR — **BUILT: a stale handle access TRAPS**
-  (Lars 2026-07-31, explicitly provisional — "try with trap and see if
-  it holds"). Pinned by `690_115` (write half) and `690_116` (read
-  half); `take`'s not-a-live-row family instead answers its existing
-  `| empty` arm, `690_070`. That disposes of the old `| stale` vs
-  `?!`-panic spelling question unless the trap fails a test. STILL
+  (iv) HANDLE-SAFETY FLOOR — **BUILT and RATIFIED 2026-08-03: a stale
+  handle access TRAPS.** Provisional when first ruled (Lars 2026-07-31,
+  "try with trap and see if it holds"); it held. Pinned by `690_115`
+  (write half) and `690_116` (read half), green in every run since;
+  `take`'s not-a-live-row family instead answers its existing `| empty`
+  arm, `690_070`. The trap is a real wall, not a placeholder: brand
+  mismatch and generation mismatch panic separately with messages naming
+  the store and the pin (`store.kz:2251`, `:2253`), and brand 0 is
+  reserved so a bare integer cannot pass as an address. This closes the
+  old `| stale` vs `?!`-panic spelling question outright. STILL
   OPEN, and prose because no test can yet assert them: phantom-proven
   ELISION of the compare (the adversary-1b silent-wrong-answer risk
   lives exactly there — a wrong no-stale proof reads another row's

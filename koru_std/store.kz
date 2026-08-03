@@ -1558,6 +1558,14 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
             /// whether the pass is carrying a dense index or a handle.
             cursor: []const u8 = "__koru_qrow",
             cursor_dense: bool = false,
+            /// `[id]` on the arm's request block — the name the body gave the
+            /// row's HANDLE. Null when unrequested, and an unrequested member
+            /// threads nothing and costs nothing (the synthesized-only-when-
+            /// named clause). Admissible here by the gate's clause 1 because it
+            /// says SITE, not VISIT: a rule has a row and no traversal, so a
+            /// handle is exactly as meaningful here as on a sweep while
+            /// `[ordinal]` is meaningless and refused by name.
+            req_id: ?[]const u8 = null,
         };
         // Can ANY row of this store be removed while a rule pass is running?
         // Only a `take` can remove one, and a take reached through a CALLED
@@ -1567,35 +1575,56 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
         // and every one of its rule passes can use the query path's
         // `for (0..len)` instead of the removal-tolerant `while`.
         //
-        // Deliberately blunt: one mention of take anywhere keeps every rule in
-        // the program on the tolerant form. That is the safe direction, and a
-        // per-store reachability analysis is the refinement, not the rung.
+        // The question is whether a row of THIS store can be removed while one
+        // of its passes is running. The old predicate asked something far
+        // cruder — `std.mem.indexOf(text, "take") != null` over every
+        // condition, path segment and argument in the program.
+        //
+        // MEASURED 2026-08-03, and it is worth 6.1x: one match flips every
+        // standing rule in the program off the dense cursor onto the handle
+        // round-trip, and that round-trip's @panic sites forbid vectorization
+        // (0.77 -> 4.8 cycles/row, rf_stripe_1 at 10k rows, 2260 -> 13806
+        // ns/iter, checksum oracle identical). What tripped it:
+        //   - `taken`, the store's OWN obligation state, so any program with an
+        //     [entity(...)] discharger de-optimized itself;
+        //   - a take on a COMPLETELY UNRELATED store;
+        //   - the word `mistake` inside a string literal, measured directly.
+        // The grep itself is free; it is the wrong ANSWER that costs 6.1x.
+        //
+        // Now: an actual `std/store:take` invocation whose addressing head
+        // names THIS store, in either spelling (raw, or already lowered to
+        // `__store_take_<s>` if this scan runs after that rewrite). Still
+        // WHOLE-PROGRAM rather than per-pass: a take reached through a called
+        // flow is invisible to a scan of one arm, and every callee is itself a
+        // flow in `program.items`, so scanning them all is the cheap way to
+        // stay correct. Per-pass reachability is the next refinement, not this
+        // one. Anything unparseable answers YES and stays conservative.
         const TakeScan = struct {
-            fn textHas(t: []const u8) bool {
-                return std.mem.indexOf(u8, t, "take") != null;
-            }
-            fn cont(c: *const ast.Continuation) bool {
-                if (c.condition) |cd| {
-                    if (textHas(cd)) return true;
+            fn isTakeOn(inv: ast.Invocation, store: []const u8) bool {
+                if (inv.path.segments.len != 1) return false;
+                const seg = inv.path.segments[0];
+                if (std.mem.startsWith(u8, seg, "__store_take_")) {
+                    return std.mem.eql(u8, seg["__store_take_".len..], store);
                 }
+                if (!std.mem.eql(u8, seg, "take")) return false;
+                const mq = inv.path.module_qualifier orelse return true;
+                if (!std.mem.eql(u8, mq, "std.store")) return false;
+                for (inv.args) |a| {
+                    if (!std.mem.eql(u8, a.name, "expr")) continue;
+                    const v = if (a.value.len >= 2 and a.value[0] == '"') a.value[1 .. a.value.len - 1] else a.value;
+                    const lb = std.mem.indexOfScalar(u8, v, '[') orelse return true;
+                    return std.mem.eql(u8, std.mem.trim(u8, v[0..lb], " "), store);
+                }
+                return true;
+            }
+            fn cont(c: *const ast.Continuation, store: []const u8) bool {
                 if (c.node) |n| {
                     if (n == .invocation) {
-                        for (n.invocation.path.segments) |sg| {
-                            if (textHas(sg)) return true;
-                        }
-                        for (n.invocation.args) |a| {
-                            if (textHas(a.value)) return true;
-                            if (a.expression_value) |ev| {
-                                if (textHas(ev.text)) return true;
-                            }
-                            if (a.source_value) |sv| {
-                                if (textHas(sv.text)) return true;
-                            }
-                        }
+                        if (isTakeOn(n.invocation, store)) return true;
                     }
                 }
                 for (c.continuations) |*k| {
-                    if (cont(k)) return true;
+                    if (cont(k, store)) return true;
                 }
                 return false;
             }
@@ -1603,7 +1632,9 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
         const program_may_remove = blk_pmr: {
             for (flatItems(allocator, program.items)) |pi2| {
                 if (pi2.* != .flow) continue;
-                if (TakeScan.cont(&pi2.flow.body)) break :blk_pmr true;
+                // A take can be the flow's HEAD as well as a continuation.
+                if (TakeScan.isTakeOn(pi2.flow.inv().*, store_name)) break :blk_pmr true;
+                if (TakeScan.cont(&pi2.flow.body, store_name)) break :blk_pmr true;
             }
             break :blk_pmr false;
         };
@@ -1643,16 +1674,55 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
             if (qc.kind != .effect) {
                 return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, qf.location, qf.module, "std/store:{s}({s}): continuation marker `|` used where an effect branch is required — `{s}` fires the effect arm `! {s}`, not `| {s}`", .{ q_verb, store_name, q_verb, q_arm, q_arm }) } };
             }
-            // The projection block is RETIRED — a wall, not prose, for exactly
-            // the reason 690_089 gives for sweep: `{ entity.v }` bound `v` into
-            // the body's scope, so a program left un-migrated keeps compiling
-            // and silently means something else.
-            if (qc.destructure.len != 0) {
-                return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, qf.location, qf.module, "std/store:{s}({s}): the projection block is retired - bind the row instead: `! {s} <row> |> ... <row>.<field> ...` (rule 7 of 690_086: `entity` stops existing)", .{ q_verb, store_name, q_arm }) } };
+            // A destructure block on a rule/preorder arm is a REQUEST, exactly
+            // as it is on `! query` (the parse at the query transform is the
+            // mirror of this one). RULED 2026-08-03. Before this, ANY
+            // destructure here was refused as "the retired projection block" —
+            // a wrong error on a legal construct, and the review that caught it
+            // named the cost: a reactive chain update is the same workload that
+            // earned `[id]` on sweep in the first place.
+            //
+            //     std/store:rule(s) ! row { [row]e, [id]h } |> …
+            //
+            // `! row e` stays the shorthand for `! row { [row]e }`.
+            //
+            // The gate's clause 1 says SITE, not VISIT, and this site is why: a
+            // rule has a ROW and no TRAVERSAL. `[id]` is admissible because a
+            // handle does not depend on traversal; `[ordinal]` is genuinely
+            // meaningless and is refused BY NAME with its own reason, so that
+            // "meaningless here" never reads as "unimplemented here".
+            var q_req_row: ?[]const u8 = null;
+            var q_req_id: ?[]const u8 = null;
+            for (qc.destructure) |df| {
+                if (df.annotations.len == 0) {
+                    return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, qf.location, qf.module, "std/store:{s}({s}): '{s}' is an unannotated entry - the {s} arm binds its row (`! {s} <row> |> ... <row>.<field> ...`); a request block names what the SITE synthesizes (`[row]`, `[id]`), never columns (the retired projection block is 690_089)", .{ q_verb, store_name, df.name, q_arm, q_arm }) } };
+                }
+                for (df.annotations) |a| {
+                    if (std.mem.eql(u8, a, "row")) {
+                        q_req_row = df.name;
+                    } else if (std.mem.eql(u8, a, "id")) {
+                        q_req_id = df.name;
+                    } else if (std.mem.eql(u8, a, "ordinal")) {
+                        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, qf.location, qf.module, "std/store:{s}({s}): `[ordinal]` on '{s}' - a {s} arm has a row and no traversal, so there is no position in a walk to name (this is not unimplemented; it is meaningless here). `[ordinal]` is a sweep request: `! query {{ [row]r, [ordinal]n }}`", .{ q_verb, store_name, df.name, q_verb }) } };
+                    } else {
+                        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, qf.location, qf.module, "std/store:{s}({s}): unknown request `[{s}]` on '{s}' - a {s} arm understands [row] and [id]", .{ q_verb, store_name, a, df.name, q_verb }) } };
+                    }
+                }
             }
-            const q_row_bind = qc.binding orelse {
+            if (qc.destructure.len > 0 and q_req_row == null) {
+                return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, qf.location, qf.module, "std/store:{s}({s}): a request block must name the row - add `[row]<name>`", .{ q_verb, store_name }) } };
+            }
+            const q_row_bind = q_req_row orelse qc.binding orelse {
                 return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, qf.location, qf.module, "std/store:{s}({s}): the {s} arm needs a row binding: `! {s} <row> |> ...`", .{ q_verb, store_name, q_arm, q_arm }) } };
             };
+            // A request name that shadows the row binding would mint two event
+            // inputs of the same name and emit a duplicate struct field rather
+            // than a diagnostic. Refuse it here where the names are both known.
+            if (q_req_id) |idn| {
+                if (std.mem.eql(u8, std.mem.trim(u8, idn, " "), std.mem.trim(u8, q_row_bind, " "))) {
+                    return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, qf.location, qf.module, "std/store:{s}({s}): `[id]{s}` reuses the row's own name - the row and its handle are two values and need two names", .{ q_verb, store_name, idn }) } };
+                }
+            }
             // The projection is DERIVED from the body, not listed here. Every
             // reference to a column goes through the binding — `<row>.<field>`
             // — so the rewrite below is the only thing that knows which
@@ -1693,6 +1763,7 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
                 .rule_module = allocator.dupe(u8, qf.module) catch unreachable,
                 .is_preorder = q_is_preorder,
                 .may_remove = q_may_remove,
+                .req_id = if (q_req_id) |idn| allocator.dupe(u8, std.mem.trim(u8, idn, " ")) catch unreachable else null,
             }) catch unreachable;
         }
 
@@ -2244,6 +2315,18 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
             \\        if (@as(u32, @truncate(u >> 32)) != self.__koru_hslot_gen[slot]) return null;
             \\        return self.__koru_hslot_row[slot];
             \\    }}
+            \\    // MEASURED NEUTRAL 2026-08-03, left alone deliberately. This
+            \\    // checks brand and generation inline and then calls
+            \\    // `__koru_row_of`, which checks brand, bounds AND generation
+            \\    // again — two loads of `__koru_hslot_gen[slot]` for one answer.
+            \\    // Collapsing it to a single flat pass measured IDENTICAL (13533
+            \\    // vs 13526 ns/iter, rf_stripe_1 on the handle path), so LLVM
+            \\    // already folds the duplicate. Reading found waste the optimizer
+            \\    // had already removed.
+            \\    // A first attempt that nested the happy path three `if`s deep
+            \\    // measured 3.7x WORSE (50.7M vs 13.7M ns). SHAPE MATTERS FAR MORE
+            \\    // THAN BRANCH COUNT HERE — do not restructure this function
+            \\    // without an interleaved measurement.
             \\    fn __koru_resolve(self: *const @This(), h: i64) usize {{
             \\        if (h >= 0) {{
             \\            const u = @as(u64, @bitCast(h));
@@ -3308,6 +3391,14 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
                     std.fmt.allocPrint(allocator, "const {s} = __koru_store_{s}.{s}[__koru_r];\n_ = &{s};\n", .{ pname, store_name, field_names[pfidx], pname }) catch unreachable;
                 qr.appendSlice(allocator, ld) catch unreachable;
             }
+            // `[id]` — the visited row's HANDLE, bound before the guard so a
+            // guard may name it too. `__koru_handle_of` is the same call the
+            // taking-cursor path and the [tree] cycle guards already make at
+            // this site, so this adds no machinery, only a name.
+            if (qs.req_id) |idn| {
+                const idz = std.fmt.allocPrint(allocator, "const {s} = __koru_store_{s}.__koru_handle_of(__koru_r);\n_ = &{s};\n", .{ idn, store_name, idn }) catch unreachable;
+                qr.appendSlice(allocator, idz) catch unreachable;
+            }
             if (qs.guard) |g| {
                 const gz = std.fmt.allocPrint(allocator, "if (!({s})) return;\n", .{g}) catch unreachable;
                 qr.appendSlice(allocator, gz) catch unreachable;
@@ -3341,6 +3432,10 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
             else
                 std.fmt.allocPrint(allocator, ".{s} = __koru_store_{s}.__koru_handle_of(__koru_r) ", .{ qs.cursor, store_name }) catch unreachable;
             qr.appendSlice(allocator, qrow_cursor) catch unreachable;
+            if (qs.req_id) |idn| {
+                const idc = std.fmt.allocPrint(allocator, ", .{s} = {s} ", .{ idn, idn }) catch unreachable;
+                qr.appendSlice(allocator, idc) catch unreachable;
+            }
             qr.appendSlice(allocator, "});\nreturn;") catch unreachable;
             appended_items.append(allocator, ast.Item{ .proc_decl = ast.ProcDecl{
                 .path = H.mkPathH(allocator, home_ns, qrow_name),
@@ -3353,7 +3448,7 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
 
             // qbody: the transplanted body as an impl flow; inputs = the
             // projected names + the row cursor.
-            const qbody_in = allocator.alloc(ast.Field, qs.proj_names.len + 1) catch unreachable;
+            const qbody_in = allocator.alloc(ast.Field, qs.proj_names.len + 1 + @as(usize, if (qs.req_id != null) 1 else 0)) catch unreachable;
             for (qs.proj_names, qs.proj_fields, 0..) |pname, pfidx, i| {
                 // An owned column projects as a BARE borrow `*mod:Type<mod:state>`
                 // (no `!`): `read` accepts the bare state and consumes nothing, so
@@ -3372,6 +3467,9 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
                 } else ast.Field{ .name = allocator.dupe(u8, pname) catch unreachable, .type = allocator.dupe(u8, field_types[pfidx]) catch unreachable };
             }
             qbody_in[qs.proj_names.len] = ast.Field{ .name = allocator.dupe(u8, qs.cursor) catch unreachable, .type = allocator.dupe(u8, "i64") catch unreachable };
+            if (qs.req_id) |idn| {
+                qbody_in[qs.proj_names.len + 1] = ast.Field{ .name = allocator.dupe(u8, idn) catch unreachable, .type = allocator.dupe(u8, "i64") catch unreachable };
+            }
             appended_items.append(allocator, ast.Item{ .event_decl = ast.EventDecl{
                 .path = H.mkPathH(allocator, home_ns, qbody_name),
                 .input = ast.Shape{ .fields = qbody_in },

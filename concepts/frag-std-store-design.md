@@ -521,8 +521,8 @@ HANDLE, never by position (ruled); `[id]` and `[ordinal]` make that visible in
 the source instead of implied by a comment, which is what the old bare `row`
 got wrong.
 
-OPEN, and named in 690_069 rather than settled: whether the block may also name
-columns (if it may, the two killed arguments return with them).
+RULED 2026-08-03: the block may NOT name columns (see the refusal derivation
+below). `690_069`'s open note is closed with it.
 
 ### The third member arrived, and it arrived on evidence (2026-08-03)
 
@@ -534,17 +534,33 @@ needs a visited row to write ITSELF as the new head, every other piece of that
 structure already worked, and `[id]` was the single remaining blocker. That is
 the shape of evidence this vocabulary should require of every future member.
 
-**Proposed gate, not yet ruled.** Two clauses, and the second is the one that
-matters. The first draft had only the first, and an adversarial review holed it
-three ways in one pass — the corrections are folded in below rather than
+**RULED 2026-08-03 (Lars).** Two clauses — and they are not two tests of the
+same kind. The first draft had only clause 1, and an adversarial review holed
+it three ways in one pass; the corrections are folded in below rather than
 recorded as an afterthought, because the corrected gate is a different object
 from the one first written.
 
-> **1. ADMISSION — a request names something the SITE knows and the ROW does not.**
+> **1. ADMISSION (NECESSARY) — a request names something the SITE knows and
+> the ROW does not.**
 >
-> **2. RETENTION — a request whose value may OUTLIVE the visit must be
-> generation-checked. One that cannot be generation-checked is visit-scoped and
-> may not be stored.**
+> **2. RETENTION (SUFFICIENT) — a request whose value may OUTLIVE the visit
+> must be generation-checked. One that cannot be generation-checked is
+> visit-scoped and may not be stored.**
+
+**Clause 1 is NECESSARY, clause 2 is what makes the pair SUFFICIENT, and
+neither is the gate on its own.** That sentence is part of the ruling because
+the review's real finding was not any single hole — it was that clause 1 READS
+like a complete gate, and the draft's own author read it that way. `[slot]`
+below is the proof: it satisfies clause 1 as literally as `[id]` does and is
+the worst value this surface could hand out.
+
+Clause 2 is about ADDRESSES specifically. "Generation-checked" is meaningful
+only for a value that names a row; a request that is a plain FACT rather than
+an address (a count, an extent) has no generation to check, so clause 2 refuses
+to let it be stored. That is the right answer reached through slightly
+address-shaped language, and it is noted rather than fixed: no member of that
+kind has been asked for, and minting a third clause for a hypothetical is
+exactly the vocabulary inflation this gate exists to prevent.
 
 - `[row]` — which row this is. The site knows; a row cannot name itself.
 - `[id]` — the row's identity as a value. Admissible by 1, and **retainable by
@@ -560,12 +576,15 @@ from the one first written.
   would catch a recycled slot, and `[slot]` is that value with the generation
   removed. It reopens by construction the door brand-0 reservation was closed
   to shut. A gate that admits it is a taxonomy, not an invariant.
-- a **column** — refused by clause 1: a column belongs to the ROW, so it fails
-  the test. That is a derivation and it is worth having. It is NOT the whole
-  argument: nothing in "the site knows and the row does not" says that
-  restating row knowledge is *harmful* rather than merely redundant. The
-  duplication argument still supplies the harm and still stands beside the
-  gate; claiming it had been absorbed was the second thing the review caught.
+- a **column** — **REFUSED, ruled 2026-08-03**, and it rests on TWO arguments,
+  not one. Clause 1 derives it: a column belongs to the ROW, so it fails the
+  test. But that derivation does not supply the HARM — nothing in "the site
+  knows and the row does not" says restating row knowledge is harmful rather
+  than merely redundant, and claiming the gate had absorbed the older argument
+  was the second thing the review caught. The harm comes from DUPLICATION,
+  which stands beside the gate and is what killed the projection block: the
+  block said the same thing twice and let the two halves disagree. Both
+  arguments are load-bearing; the refusal needs both.
 
 Second clause of the ORIGINAL kind, inherited rather than invented:
 **synthesized only when named.** An unrequested member threads nothing and
@@ -581,10 +600,46 @@ as `ordinal == len - 1`. There may be a principled line between "how many rows
 exist" and "how far this walk goes", but it would have to be about intent
 rather than extent, and no workload has asked for either.
 
-ALSO OPEN, and a phrasing problem the review surfaced: the request block is
-parsed only on the sweep arm. A standing `rule` refuses any destructure with a
-diagnostic that misnames it as the retired projection block. A rule has a row
-and no traversal, so `[ordinal]` is genuinely meaningless there while `[id]` is
-exactly as meaningful as on a sweep — the handle does not depend on traversal.
-A gate phrased around "the VISIT" collapses *meaningless here* and *meaningful
-but unimplemented* into one answer, which is why clause 1 above says SITE.
+**RULED 2026-08-03: `[id]` is admissible on a standing `rule` and on
+`preorder`, and the refusal there was a phrasing bug, not a boundary.** The
+request block was parsed only on the sweep arm, so a `rule` destructure hit a
+diagnostic naming it "the retired projection block" — a wrong error on a legal
+construct. Clause 1 says SITE, not VISIT, precisely so this is answerable: a
+rule has a ROW and no TRAVERSAL, so `[id]` is exactly as meaningful there as on
+a sweep (a handle does not depend on traversal), while `[ordinal]` is genuinely
+meaningless there and must be refused BY NAME with its own reason. A gate
+phrased around "the VISIT" would have collapsed *meaningless here* and
+*meaningful but unimplemented* into one answer; that is the whole reason the
+word is SITE. The motivating workload is the one that earned `[id]`
+originally — a reactive chain update is the same shape as the sweep that
+needed it.
+
+**BUILT the same day, and the gate paid for itself in the diagnostics.**
+`690_247` is the rule half and it is a RETENTION proof, not just an admission
+one: the rule marks a row's handle into a sibling store, a `take` then
+swap-removes a *different* row so the marked row relocates, and the write that
+follows the stored handle still lands on it. A position would have addressed a
+dense slot past `len` and inside capacity — the exact silent corruption
+`690_092` measured before O10.iii shipped. `695_005` is the `preorder` half.
+`690_248` pins the `[ordinal]` refusal, and its diagnostic says "this is not
+unimplemented; it is meaningless here" in as many words — the sentence exists
+because the gate distinguishes those two and a reader could not otherwise tell
+which they had hit.
+
+Two things fell out of building it that the ruling did not anticipate:
+
+- **The row and its handle need two names.** `! row { [row]e, [id]e }` would
+  mint two event inputs spelled the same and emit a duplicate struct field
+  instead of a diagnostic — the collision the store review found and left
+  unfixed. It is refused here, where both names are known, which closes the
+  rule-arm instance but NOT the general one (a request name colliding with a
+  *lexical capture* still emits the duplicate field).
+- **The handle is bound before the guard**, so a guard may name it. Nothing
+  demanded that; it costs nothing, and refusing it would have been a second
+  boundary to explain.
+
+Also confirmed while building: `rule` is ENTER-ON-INSERT, not write-triggered.
+The write-triggered surface is the reference face (`std/store(s) ! <field> h
+when …`, 690_030). Two reactive surfaces with different trigger semantics and
+adjacent spellings; the distinction is nowhere in the prose and cost a probe to
+rediscover.
