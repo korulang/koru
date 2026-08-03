@@ -409,3 +409,44 @@ queue) lives in `tests/regression/600_STDLIB/690_STORE/DESIGN.md`, which
 deletes as pins absorb it. ECT/BLOOM (entity-component-taps) is
 superseded by this design; its rings pattern is salvaged as the async
 escape from the cascade.
+
+## The ECS story's blocker is the CAPTURE SET, not module resolution (2026-08-03)
+
+Measured rather than assumed, because the standing belief was that module
+resolution held the Bevy comparison back. It does not, and has not for a while:
+
+- A store declared in one module and swept-and-written by a system in ANOTHER
+  module works today. Stores are linkable from anywhere by bare name, ruled and
+  green (690_088). A three-file `world` / `movement` / `main` program with the
+  integrate system in its own module compiles and runs correctly.
+- The comptime module-mirror wall stands at 41/42, and its ONE red (115_020) is
+  not a module defect: it mirrors 690_069, which is deliberately red awaiting
+  the row-ordinal spelling ruling. A mirror of a red pin says nothing.
+
+What actually blocks a real workload is one gap, and it is orthogonal to
+modules: **a sweep body cannot reach the enclosing tor's INPUT.** `pos += vel *
+dt` — the single most common thing an ECS system does — fails with a raw Zig
+`use of undeclared identifier 'dt'`. The entry-file twin fails identically, so
+this is not a boundary effect (690_243 pins it, red).
+
+The asymmetry is the whole argument. 690_073 is green and captures a mid-chain
+BIND into that exact body position. An enclosing tor's input is declared in the
+signature — at least as enumerable as a mid-chain bind — and does not arrive.
+The machinery is already there and already threaded: `Cap.collectEventInputs`
+is called only when the holding flow is a synthesized `__store_sweepbody_`, so
+a sweep nested in another sweep sees inputs and a sweep in a user tor does not.
+A universal property installed at one of several exits, again.
+
+**The open question is a ruling, not a repair.** T1 (transplant-purity) lists
+the legal free names and an event input is not among them, so today's refusal
+is T1 working as written. But mid-chain binds are not in that set either and
+were admitted anyway, threaded in by value. So: is an enclosing tor's input the
+same KIND of enumerable name as a mid-chain bind? If yes, T1 widens by one
+member and nothing else moves. Lars owns that.
+
+Independent of the ruling, the failure mode is a defect: a raw host error about
+generated code, where a Koru refusal should name `dt` and the rule it broke.
+
+Also standing, and worth stating because it is easy to misread as progress:
+the 003_ecs_reactive harness has anchors for Bevy, Flecs, Unity DOTS and a Zig
+baseline, and NO Koru entry. The comparison is unmeasured, not unfavourable.
