@@ -1,3 +1,17 @@
+// DEPENDS ON A DEFECT, AND MUST MIGRATE WHEN IT IS FIXED (2026-08-03).
+//
+// The spelling below reads a column an EARLIER entry of the same block wrote.
+// That works today only because the implementation lands entries in written
+// order, which is a bug against the design: a `stored` block is ONE write, and
+// every rhs reads pre-state (`frag-std-store-design` — "Writes interleave,
+// never overlap"; 690_126 pins the correct behaviour red).
+//
+// This test is green for the wrong reason. When the write path is fixed it goes
+// red, and the migration is a CHAIN of two blocks — compute the staged column
+// in the first, consume it in the second — which is one traversal and should
+// cost nothing once the write path stops emitting an ordered call per field.
+// Do not add a third test in this shape.
+//
 // PINS: heavy_compute's ITERATION shape — a frame loop (for wrapping sweep,
 // 690_120's nesting) re-inverting the SAME matrix in place each pass:
 // sixteen inverse entries into staging columns, then sixteen copy-backs, all

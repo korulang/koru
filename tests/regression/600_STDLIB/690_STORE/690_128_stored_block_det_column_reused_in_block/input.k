@@ -1,7 +1,21 @@
+// DEPENDS ON A DEFECT, AND MUST MIGRATE WHEN IT IS FIXED (2026-08-03).
+//
+// The spelling below reads a column an EARLIER entry of the same block wrote.
+// That works today only because the implementation lands entries in written
+// order, which is a bug against the design: a `stored` block is ONE write, and
+// every rhs reads pre-state (`frag-std-store-design` — "Writes interleave,
+// never overlap"; 690_126 pins the correct behaviour red).
+//
+// This test is green for the wrong reason. When the write path is fixed it goes
+// red, and the migration is a CHAIN of two blocks — compute the staged column
+// in the first, consume it in the second — which is one traversal and should
+// cost nothing once the write path stops emitting an ordered call per field.
+// Do not add a third test in this shape.
+//
 // PINS: a column written by an EARLIER entry of a stored block feeding the
 // rhs of SIXTEEN later entries in the same block — the determinant computed
 // once into e.det, then every inverse entry dividing by the column instead of
-// re-expanding it. This is the factoring 690_126's write order makes legal,
+// re-expanding it. This is the factoring 690_126 used to pin as legal,
 // and it is the spelling that turns heavy_compute's per-row cost from
 // seventeen determinant expansions (690_127's naive form) into one.
 //
