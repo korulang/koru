@@ -1,8 +1,8 @@
 ---
 type: belief
 id: frag-the-simple-iter-gap-is-stream-shape-not-codegen
-provenance: simple_iter_f32 profiling session 2026-07-31 — disassembly of the koruc-built binary, sample under load, and an equal-draw interleaved pure-Zig ceiling probe in scratch
-ts: 2026-07-31
+provenance: simple_iter_f32 profiling session 2026-07-31 — disassembly of the koruc-built binary, sample under load, and an equal-draw interleaved pure-Zig ceiling probe in scratch. EVOLVED 2026-08-03 by the boids investigation, which closed the open question at the end of this file with a measurement in three languages and a named mechanism.
+ts: 2026-08-03
 ---
 
 # The remaining simple_iter gap to legion is stream shape, not codegen (belief)
@@ -90,3 +90,73 @@ What the belief becomes:
   stops being the straight-line baseline and starts being *which shapes the
   planner is allowed to choose* — the same lever the fission and vector-cell
   entries above already name, arriving from the other side.
+
+
+## The open question closed: layout is the compiler's call, and second-class-ness
+## is what licenses it
+
+The entry above left this open — *"which shapes the planner is allowed to
+choose"* — and named it ambition-shaped. Boids closed it, and the answer is
+narrower and better than ambition: **for a second-class container it is not an
+ambition at all, it is an unimplemented ruling.**
+
+The store design already says it, in one line predating this measurement:
+*"layout is the closure of the queries — projections become SoA columns,
+predicates become maintained views."* `std/grid` does not honour it. It emits
+nine parallel columns unconditionally, whatever the program does with them.
+
+What boids adds is the price, measured three ways on the same workload and the
+same checksum: packing a grid cell into one record instead of nine columns is
+worth **9.67 ms in C** (94.92 -> 85.25), **8.95 ms in Zig** (scatter 35.6 ->
+26.8), and **1.66x on the scatter phase** in a controlled Rust A/B. Roughly 10%
+of the frame, agreed across three independent implementations. It is the
+largest single item on the board and the only one that is not codegen.
+
+**Why Koru can decide this and C cannot**, which is the part worth keeping:
+
+- Columns are DECLARED, not allocated. The set is comptime-closed.
+- Every access site is comptime-visible — the store transform already walks
+  every reference in the program to compile subscriptions into the write path.
+  The planner's input is already collected, for another reason.
+- No pointer to a column escapes. Second-class-ness means the layout is
+  **unobservable to the source**, so changing it is not a semantic change.
+
+That third point is the load-bearing one and it is the same argument as
+`frag-second-class-is-what-makes-a-container-disappear`, arriving from the
+performance side: a container you cannot hold a reference to is a container the
+compiler may re-lay-out freely. A C or Zig programmer must pick by hand and
+live with the choice everywhere; Koru has the information and currently throws
+it away.
+
+**It is a clustering, not a toggle**, and this workload is the argument because
+it wants both answers at once. The scatter touches seven fields of ONE cell at
+a random index — seven cache lines where a record needs one, so it wants AoS.
+The resolve sweep reads one field across ALL cells, so it wants SoA, and Koru
+wins that phase today (1.83 ms against 2.3). A global switch would trade one
+for the other. Grouping co-accessed fields is what "the closure of the queries"
+already means, and it is exactly what the walk can already see.
+
+The falsifiable part: if a co-access clustering is implemented and boids does
+NOT land near 90 ms, then either the ruling does not mean what this entry reads
+it to mean, or the walk is not seeing every site — and the second would be a
+correctness bug in the store, not a performance disappointment.
+
+**And the analysis is not on the critical path, because the annotation already
+is** (ruled with Lars 2026-08-03). If co-access clustering turns out to be hard
+to infer — or the codegen to honour it is hard — the same mechanism that landed
+`[unsafe(bounds)]` carries it: a parameterised prefix annotation on the
+declaration, `std/grid:new` and `std/store:new` being flow sites that already
+accept `ast.Flow.annotations`, parsed by the compiler's own
+`annotation_parser`, with `310_031`/`310_033` as green precedent and zero
+grammar work. It should refuse an unknown facet the same way, for the same
+reason: a typo that silently waives nothing is worse than one that errors.
+
+That makes the inference OPTIONAL rather than blocking, which is the right
+shape for a decision this cheap to state and this expensive to derive. The
+store design anticipated exactly this — it wants the surface so that things
+"currently INFERRED" can be DECLARED, and names the dense cursor as a codegen
+decision the author cannot presently express. Layout is the second instance of
+that same gap.
+
+Not scheduled. The measurement is banked, the mechanism is named twice over,
+and nothing downstream is blocked on it.

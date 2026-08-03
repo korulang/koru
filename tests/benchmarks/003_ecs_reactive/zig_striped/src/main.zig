@@ -19,6 +19,13 @@ const Scenario = enum {
     // Same again, but with hash and scatter as two passes instead of one --
     // the shape the Koru arm is forced into. Same checksum.
     boids_split_hs,
+    // Columns as module-level fixed arrays rather than heap slices.
+    boids_static,
+    // ...and with normalizesafe written as selects instead of an early return.
+    boids_static_nsel,
+    // Baseline heap slices, but normalizesafe as selects: isolates the shape
+    // from the memory model.
+    boids_nsel,
 };
 
 const Config = struct {
@@ -467,6 +474,22 @@ fn normalizesafe(x: f32, y: f32, z: f32) Vec3 {
     return .{ .x = 0.0, .y = 0.0, .z = 0.0 };
 }
 
+// The SAME function with the early return replaced by three per-component
+// selects -- which is the shape koru's emitter produces, because it has no way
+// to name a shared subexpression and writes the guard out once per component.
+// Identical value for every input reachable here; the checksum is the oracle.
+fn normalizesafeSel(x: f32, y: f32, z: f32) Vec3 {
+    const flt_min_normal: f32 = 1.1754944e-38;
+    const len = lengthsq(x, y, z);
+    const ok = len > flt_min_normal;
+    const inv = 1.0 / @sqrt(len);
+    return .{
+        .x = if (ok) x * inv else 0.0,
+        .y = if (ok) y * inv else 0.0,
+        .z = if (ok) z * inv else 0.0,
+    };
+}
+
 const BoidWorld = struct {
     pos_x: []f32,
     pos_y: []f32,
@@ -572,7 +595,8 @@ const BoidWorld = struct {
         }
     };
 
-    fn run(self: *BoidWorld, frames: usize, comptime timed: bool, comptime split_hs: bool, pt: *PhaseTimer) void {
+    fn run(self: *BoidWorld, frames: usize, comptime timed: bool, comptime split_hs: bool, comptime nsel: bool, pt: *PhaseTimer) void {
+        const nsfn = if (nsel) normalizesafeSel else normalizesafe;
         for (0..frames) |frame| {
             pt.begin(timed);
             // Sawtooth target and obstacle motion -- no trigonometry, because
@@ -681,26 +705,26 @@ const BoidWorld = struct {
                 const fwd_z = self.fwd_z[i];
                 const n: f32 = @floatFromInt(self.cell_count[idx]);
 
-                const alignment = normalizesafe(
+                const alignment = nsfn(
                     self.cell_a_x[idx] / n - fwd_x,
                     self.cell_a_y[idx] / n - fwd_y,
                     self.cell_a_z[idx] / n - fwd_z,
                 );
-                const separation = normalizesafe(
+                const separation = nsfn(
                     pos_x * n - self.cell_s_x[idx],
                     pos_y * n - self.cell_s_y[idx],
                     pos_z * n - self.cell_s_z[idx],
                 );
                 const target = targets[@as(usize, @intCast(self.cell_target[idx]))];
-                const heading = normalizesafe(target.x - pos_x, target.y - pos_y, target.z - pos_z);
+                const heading = nsfn(target.x - pos_x, target.y - pos_y, target.z - pos_z);
 
                 const obstacle = obstacles[0];
-                const obstacle_steering = normalizesafe(pos_x - obstacle.x, pos_y - obstacle.y, pos_z - obstacle.z);
+                const obstacle_steering = nsfn(pos_x - obstacle.x, pos_y - obstacle.y, pos_z - obstacle.z);
                 const avoid_x = (obstacle.x + obstacle_steering.x * aversion) - pos_x;
                 const avoid_y = (obstacle.y + obstacle_steering.y * aversion) - pos_y;
                 const avoid_z = (obstacle.z + obstacle_steering.z * aversion) - pos_z;
 
-                const normal = normalizesafe(
+                const normal = nsfn(
                     alignment_weight * alignment.x + separation_weight * separation.x + target_weight * heading.x,
                     alignment_weight * alignment.y + separation_weight * separation.y + target_weight * heading.y,
                     alignment_weight * alignment.z + separation_weight * separation.z + target_weight * heading.z,
@@ -711,7 +735,7 @@ const BoidWorld = struct {
                 const forward_y = if (avoiding) avoid_y else normal.y;
                 const forward_z = if (avoiding) avoid_z else normal.z;
 
-                const next = normalizesafe(
+                const next = nsfn(
                     fwd_x + dt * (forward_x - fwd_x),
                     fwd_y + dt * (forward_y - fwd_y),
                     fwd_z + dt * (forward_z - fwd_z),
@@ -738,12 +762,235 @@ const BoidWorld = struct {
     }
 };
 
-fn boids(allocator: std.mem.Allocator, entities: usize, frames: usize, elapsed_ns: *u64, comptime timed: bool, comptime split_hs: bool) !u64 {
+
+// ----------------------------------------------------------------------------
+// `boids_static`: the SAME frame, byte-identical arithmetic, with every column
+// as a MODULE-LEVEL fixed-extent array instead of a slice on a heap struct.
+// This is the one property koru's emitted Zig has that no other arm does: the
+// columns live at LINK-TIME addresses with comptime extents, not behind a
+// runtime base pointer. Legion's test-3 transplant used a BOXED struct of fixed
+// arrays -- comptime extents but a runtime base -- so it did not cover this.
+// Same toolchain, same body, one variable. Not in run.sh.
+const static_cap: usize = 100_000;
+var g_pos_x: [static_cap]f32 = undefined;
+var g_pos_y: [static_cap]f32 = undefined;
+var g_pos_z: [static_cap]f32 = undefined;
+var g_fwd_x: [static_cap]f32 = undefined;
+var g_fwd_y: [static_cap]f32 = undefined;
+var g_fwd_z: [static_cap]f32 = undefined;
+var g_cell: [static_cap]usize = undefined;
+var g_cell_count: [BoidWorld.cell_total]i64 = undefined;
+var g_cell_a_x: [BoidWorld.cell_total]f32 = undefined;
+var g_cell_a_y: [BoidWorld.cell_total]f32 = undefined;
+var g_cell_a_z: [BoidWorld.cell_total]f32 = undefined;
+var g_cell_s_x: [BoidWorld.cell_total]f32 = undefined;
+var g_cell_s_y: [BoidWorld.cell_total]f32 = undefined;
+var g_cell_s_z: [BoidWorld.cell_total]f32 = undefined;
+var g_cell_target: [BoidWorld.cell_total]i64 = undefined;
+var g_cell_obstacle_dist: [BoidWorld.cell_total]f32 = undefined;
+
+const StaticBoids = struct {
+    const cell_radius = BoidWorld.cell_radius;
+    const axis_cells = BoidWorld.axis_cells;
+    const cell_total = BoidWorld.cell_total;
+    const separation_weight = BoidWorld.separation_weight;
+    const alignment_weight = BoidWorld.alignment_weight;
+    const target_weight = BoidWorld.target_weight;
+    const aversion = BoidWorld.aversion;
+    const move_speed = BoidWorld.move_speed;
+    const dt = BoidWorld.dt;
+    const move_dist = BoidWorld.move_dist;
+    const n_targets = BoidWorld.n_targets;
+    const n_obstacles = BoidWorld.n_obstacles;
+    const pos_max = BoidWorld.pos_max;
+    const PhaseTimer = BoidWorld.PhaseTimer;
+
+    fn init() void {
+        for (0..static_cap) |i| {
+            g_pos_x[i] = @floatFromInt(i % 256);
+            g_pos_y[i] = @floatFromInt((i / 256) % 256);
+            g_pos_z[i] = @floatFromInt((i / 65536) % 256);
+            const forward = normalizesafe(
+                @as(f32, @floatFromInt(i % 13)) - 6.0,
+                @as(f32, @floatFromInt(i % 17)) - 8.0,
+                @as(f32, @floatFromInt(i % 7)) - 3.0,
+            );
+            g_fwd_x[i] = forward.x;
+            g_fwd_y[i] = forward.y;
+            g_fwd_z[i] = forward.z;
+            g_cell[i] = 0;
+        }
+    }
+
+    fn checksum() u64 {
+        var sink: u64 = 0;
+        for (0..static_cap) |i| {
+            sink +%= @as(u64, @intFromFloat(@abs(g_pos_x[i]))) *% 31;
+            sink +%= @as(u64, @intFromFloat(@abs(g_pos_y[i]))) *% 17;
+            sink +%= @as(u64, @intFromFloat(@abs(g_pos_z[i]))) *% 13;
+        }
+        return sink;
+    }
+
+    fn runStatic(frames: usize, comptime timed: bool, comptime nsel: bool, pt: *PhaseTimer) void {
+        const nsfn = if (nsel) normalizesafeSel else normalizesafe;
+        for (0..frames) |frame| {
+            pt.begin(timed);
+            // Sawtooth target and obstacle motion -- no trigonometry, because
+            // libm sin/cos differ in the last ulp between toolchains.
+            const targets = [n_targets]Vec3{
+                .{ .x = @floatFromInt((frame * 3) % 256), .y = 128.0, .z = @floatFromInt((frame * 5) % 256) },
+                .{ .x = @floatFromInt((frame * 7) % 256), .y = 160.0, .z = @floatFromInt((frame * 11) % 256) },
+            };
+            const obstacles = [n_obstacles]Vec3{
+                .{ .x = @floatFromInt((frame * 13) % 256), .y = 128.0, .z = @floatFromInt((frame * 17) % 256) },
+            };
+            pt.mark(timed, 0);
+
+            // Phase 1: clear. Every cell, unconditionally. DOTS reallocates a
+            // sparse hash map per frame instead; we hold a dense 32^3 grid.
+            for (0..cell_total) |c| {
+                g_cell_count[c] = 0;
+                g_cell_a_x[c] = 0;
+                g_cell_a_y[c] = 0;
+                g_cell_a_z[c] = 0;
+                g_cell_s_x[c] = 0;
+                g_cell_s_y[c] = 0;
+                g_cell_s_z[c] = 0;
+                g_cell_target[c] = 0;
+                g_cell_obstacle_dist[c] = 0;
+            }
+            pt.mark(timed, 1);
+
+            // Phase 2: hash + scatter, in boid insertion order. Sequential
+            // accumulation -- a different order is a different checksum.
+            for (0..static_cap) |i| {
+                const cx = std.math.clamp(@as(i64, @intFromFloat(g_pos_x[i] / cell_radius)), 0, axis_cells - 1);
+                const cy = std.math.clamp(@as(i64, @intFromFloat(g_pos_y[i] / cell_radius)), 0, axis_cells - 1);
+                const cz = std.math.clamp(@as(i64, @intFromFloat(g_pos_z[i] / cell_radius)), 0, axis_cells - 1);
+                const idx: usize = @intCast((cz * axis_cells + cy) * axis_cells + cx);
+                g_cell[i] = idx;
+                g_cell_count[idx] += 1;
+                g_cell_a_x[idx] += g_fwd_x[i];
+                g_cell_a_y[idx] += g_fwd_y[i];
+                g_cell_a_z[idx] += g_fwd_z[i];
+                g_cell_s_x[idx] += g_pos_x[i];
+                g_cell_s_y[idx] += g_pos_y[i];
+                g_cell_s_z[idx] += g_pos_z[i];
+            }
+            pt.mark(timed, 2);
+
+            // Phase 3: cell resolve (DOTS' MergeCells) -- per cell, not per
+            // boid. argmin ties go to the lower index.
+            for (0..cell_total) |c| {
+                const count = g_cell_count[c];
+                if (count <= 0) continue;
+                const n: f32 = @floatFromInt(count);
+                const avg_x = g_cell_s_x[c] / n;
+                const avg_y = g_cell_s_y[c] / n;
+                const avg_z = g_cell_s_z[c] / n;
+
+                var nearest_target: i64 = 0;
+                var nearest_target_dist = lengthsq(targets[0].x - avg_x, targets[0].y - avg_y, targets[0].z - avg_z);
+                for (1..n_targets) |t| {
+                    const dist = lengthsq(targets[t].x - avg_x, targets[t].y - avg_y, targets[t].z - avg_z);
+                    if (dist < nearest_target_dist) {
+                        nearest_target_dist = dist;
+                        nearest_target = @intCast(t);
+                    }
+                }
+
+                var nearest_obstacle_dist = lengthsq(obstacles[0].x - avg_x, obstacles[0].y - avg_y, obstacles[0].z - avg_z);
+                for (1..n_obstacles) |o| {
+                    const dist = lengthsq(obstacles[o].x - avg_x, obstacles[o].y - avg_y, obstacles[o].z - avg_z);
+                    if (dist < nearest_obstacle_dist) nearest_obstacle_dist = dist;
+                }
+
+                g_cell_target[c] = nearest_target;
+                g_cell_obstacle_dist[c] = @sqrt(nearest_obstacle_dist);
+            }
+            pt.mark(timed, 3);
+
+            // Phase 4: steer, in boid insertion order. The cell index comes
+            // from phase 2 -- nothing has moved since.
+            for (0..static_cap) |i| {
+                const idx = g_cell[i];
+                const pos_x = g_pos_x[i];
+                const pos_y = g_pos_y[i];
+                const pos_z = g_pos_z[i];
+                const fwd_x = g_fwd_x[i];
+                const fwd_y = g_fwd_y[i];
+                const fwd_z = g_fwd_z[i];
+                const n: f32 = @floatFromInt(g_cell_count[idx]);
+
+                const alignment = nsfn(
+                    g_cell_a_x[idx] / n - fwd_x,
+                    g_cell_a_y[idx] / n - fwd_y,
+                    g_cell_a_z[idx] / n - fwd_z,
+                );
+                const separation = nsfn(
+                    pos_x * n - g_cell_s_x[idx],
+                    pos_y * n - g_cell_s_y[idx],
+                    pos_z * n - g_cell_s_z[idx],
+                );
+                const target = targets[@as(usize, @intCast(g_cell_target[idx]))];
+                const heading = nsfn(target.x - pos_x, target.y - pos_y, target.z - pos_z);
+
+                const obstacle = obstacles[0];
+                const obstacle_steering = nsfn(pos_x - obstacle.x, pos_y - obstacle.y, pos_z - obstacle.z);
+                const avoid_x = (obstacle.x + obstacle_steering.x * aversion) - pos_x;
+                const avoid_y = (obstacle.y + obstacle_steering.y * aversion) - pos_y;
+                const avoid_z = (obstacle.z + obstacle_steering.z * aversion) - pos_z;
+
+                const normal = nsfn(
+                    alignment_weight * alignment.x + separation_weight * separation.x + target_weight * heading.x,
+                    alignment_weight * alignment.y + separation_weight * separation.y + target_weight * heading.y,
+                    alignment_weight * alignment.z + separation_weight * separation.z + target_weight * heading.z,
+                );
+
+                const avoiding = (g_cell_obstacle_dist[idx] - aversion) < 0.0;
+                const forward_x = if (avoiding) avoid_x else normal.x;
+                const forward_y = if (avoiding) avoid_y else normal.y;
+                const forward_z = if (avoiding) avoid_z else normal.z;
+
+                const next = nsfn(
+                    fwd_x + dt * (forward_x - fwd_x),
+                    fwd_y + dt * (forward_y - fwd_y),
+                    fwd_z + dt * (forward_z - fwd_z),
+                );
+                g_fwd_x[i] = next.x;
+                g_fwd_y[i] = next.y;
+                g_fwd_z[i] = next.z;
+                g_pos_x[i] = std.math.clamp(pos_x + next.x * move_dist, 0.0, pos_max);
+                g_pos_y[i] = std.math.clamp(pos_y + next.y * move_dist, 0.0, pos_max);
+                g_pos_z[i] = std.math.clamp(pos_z + next.z * move_dist, 0.0, pos_max);
+            }
+            pt.mark(timed, 4);
+        }
+    }
+
+};
+
+fn boidsStatic(entities: usize, frames: usize, elapsed_ns: *u64, comptime nsel: bool) !u64 {
+    if (entities != static_cap) return error.UnknownArgument;
+    StaticBoids.init();
+    var pt = BoidWorld.PhaseTimer{};
+    const start = std.time.nanoTimestamp();
+    StaticBoids.runStatic(frames, true, nsel, &pt);
+    elapsed_ns.* = @intCast(std.time.nanoTimestamp() - start);
+    const names = [_][]const u8{ "actors", "clear", "hash+scatter", "resolve", "steer" };
+    for (names, pt.ph) |nm, v| {
+        std.debug.print("zig_striped {s} {s}: {d} ns ({d:.3} ms)\n", .{ if (nsel) "boids_static_nsel" else "boids_static", nm, v, @as(f64, @floatFromInt(v)) / 1_000_000.0 });
+    }
+    return StaticBoids.checksum();
+}
+
+fn boids(allocator: std.mem.Allocator, entities: usize, frames: usize, elapsed_ns: *u64, comptime timed: bool, comptime split_hs: bool, comptime nsel: bool) !u64 {
     var world = try BoidWorld.init(allocator, entities);
     defer world.deinit(allocator);
     var pt = BoidWorld.PhaseTimer{};
     const start = std.time.nanoTimestamp();
-    world.run(frames, timed, split_hs, &pt);
+    world.run(frames, timed, split_hs, nsel, &pt);
     elapsed_ns.* = @intCast(std.time.nanoTimestamp() - start);
     if (timed) {
         const names = [_][]const u8{ "actors", "clear", "hash+scatter", "resolve", "steer" };
@@ -773,6 +1020,18 @@ fn parseArgs(allocator: std.mem.Allocator) !Config {
             }
             if (std.mem.eql(u8, value, "boids_split_hs")) {
                 config.scenario = .boids_split_hs;
+                continue;
+            }
+            if (std.mem.eql(u8, value, "boids_nsel")) {
+                config.scenario = .boids_nsel;
+                continue;
+            }
+            if (std.mem.eql(u8, value, "boids_static_nsel")) {
+                config.scenario = .boids_static_nsel;
+                continue;
+            }
+            if (std.mem.eql(u8, value, "boids_static")) {
+                config.scenario = .boids_static;
                 continue;
             }
             if (std.mem.eql(u8, value, "dense")) config.scenario = .dense else if (std.mem.eql(u8, value, "sparse")) config.scenario = .sparse else if (std.mem.eql(u8, value, "fanout")) config.scenario = .fanout else if (std.mem.eql(u8, value, "spawn")) config.scenario = .spawn else if (std.mem.eql(u8, value, "spawn_batch")) config.scenario = .spawn_batch else if (std.mem.eql(u8, value, "despawn")) config.scenario = .despawn else if (std.mem.eql(u8, value, "add_remove")) config.scenario = .add_remove else if (std.mem.eql(u8, value, "query_get")) config.scenario = .query_get else if (std.mem.eql(u8, value, "schedule_empty")) config.scenario = .schedule_empty else if (std.mem.eql(u8, value, "combat_world")) config.scenario = .combat_world else if (std.mem.eql(u8, value, "bevy_strength_world")) config.scenario = .bevy_strength_world else if (std.mem.eql(u8, value, "boids")) config.scenario = .boids else return error.UnknownScenario;
@@ -818,12 +1077,15 @@ pub fn main() !void {
         .schedule_empty => scheduleEmpty(config.frames),
         .combat_world => try combatWorld(allocator, config.entities, config.frames, config.observers),
         .bevy_strength_world => try bevyStrengthWorld(allocator, config.entities, config.frames),
-        .boids => try boids(allocator, config.entities, config.frames, &boids_elapsed_ns, false, false),
-        .boids_phase => try boids(allocator, config.entities, config.frames, &boids_elapsed_ns, true, false),
-        .boids_split_hs => try boids(allocator, config.entities, config.frames, &boids_elapsed_ns, true, true),
+        .boids => try boids(allocator, config.entities, config.frames, &boids_elapsed_ns, false, false, false),
+        .boids_phase => try boids(allocator, config.entities, config.frames, &boids_elapsed_ns, true, false, false),
+        .boids_split_hs => try boids(allocator, config.entities, config.frames, &boids_elapsed_ns, true, true, false),
+        .boids_nsel => try boids(allocator, config.entities, config.frames, &boids_elapsed_ns, true, false, true),
+        .boids_static => try boidsStatic(config.entities, config.frames, &boids_elapsed_ns, false),
+        .boids_static_nsel => try boidsStatic(config.entities, config.frames, &boids_elapsed_ns, true),
     };
     const elapsed: u64 = switch (config.scenario) {
-        .boids, .boids_phase, .boids_split_hs => boids_elapsed_ns,
+        .boids, .boids_phase, .boids_split_hs, .boids_static, .boids_static_nsel, .boids_nsel => boids_elapsed_ns,
         else => @intCast(std.time.nanoTimestamp() - start),
     };
 
@@ -842,6 +1104,9 @@ pub fn main() !void {
         .boids => "boids",
         .boids_phase => "boids_phase",
         .boids_split_hs => "boids_split_hs",
+        .boids_static => "boids_static",
+        .boids_static_nsel => "boids_static_nsel",
+        .boids_nsel => "boids_nsel",
     };
     var stdout_buffer: [1024]u8 = undefined;
     var stdout_file = std.fs.File.stdout().writerStreaming(&stdout_buffer);

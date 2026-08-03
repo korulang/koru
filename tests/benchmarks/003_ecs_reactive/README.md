@@ -145,137 +145,213 @@ only readable at all because `std/time` was moved onto a monotonic nanosecond
 clock while writing this entry — on the previous wall clock, which ticks in
 whole microseconds on darwin, it reported zero.
 
-**`boids` is the borrowed workload, and Koru is 2.2x FASTER than hand-written
-striped Zig** — 98 ms against the baseline's 217 ms, 2.5x faster than legion's
-242 ms and 3.2x faster than bevy_ecs's 315 ms, with a `592303452` checksum bit-identical across all three
-arms in every run and across every variant below. It is a port of Unity DOTS `BoidSystem.cs` with DOTS' own
-constants unscaled (CellRadius 8, weights 1/1/2, ObstacleAversionDistance 30,
-MoveSpeed 25), so the arithmetic is somebody else's design and not one chosen
-here to flatter anything.
+**`boids` is the borrowed workload. Naive Koru is at parity with hand-tuned
+`-O3` C running the same data layout — and an expert still beats both.**
 
-**WHERE THE INTERMEDIATES LIVE IS THE WHOLE STORY, and this README got it wrong
-twice before getting it right.** The steering holds four intermediate vectors.
-In C#, Zig and Rust they sit in registers. In Koru they can sit in a `capture`
-block — which is an expression-local binding, and the thing two earlier drafts
-of this section asserted the language did not have. It does; it nests under an
-effect arm, and a store query arm is one.
+| arm | boids | what it is |
+|---|---:|---|
+| zig_steelman | **78.0 ms** | expert Zig, full optimisation ladder |
+| C, AoS grid cell | 85.3 ms | hand-tuned, better layout than Koru's |
+| C, SoA grid cell | 94.9 ms | hand-tuned, **Koru's own layout** |
+| **koru_store** | **100.1 ms** | **naive port** |
+| zig_striped | 217 ms | idiomatic hand-written Zig — a WEAK baseline, see below |
+| legion | 234 ms | safe indexing, default cost model |
+| bevy_ecs | 315 ms | |
 
-Every variant below computes identical arithmetic and produces the identical
-checksum, so the shape is the only variable:
+Checksum `592303452` in every cell, verified interleaved on one machine.
 
-| steering shape | start of day | write path fixed | `[unsafe(bounds)]` |
-|---|---:|---:|---:|
-| `boids` — capture slots, one pass | 243 ms | 190 ms | **101 ms** |
-| `boids_fused` — columns, one pass | 400 ms | 193 ms | 113 ms |
-| `boids_split` — columns, seven passes | 261 ms | 136 ms | 121 ms |
-| `boids_f4` — columns, four fused | 279 ms | 141 ms | 144 ms |
+**The comparison that means something is the middle pair.** Against C carrying
+Koru's exact grid layout, the residual is 3.6 ms — 3.7%, and smaller than the 9%
+spread C itself moves through across two loop shapes and two clangs (95.3 to
+104.0). Koru's emitted code is at parity with `-O3` C. Any single-toolchain C
+number is a point sample, not a reference.
 
-(The middle column also carries a fix to the benchmark's own Koru source: the
-position clamp was written as nested `if`s where the baseline uses `@min/@max`,
-which was a defect in the port, not the language, and cost the capture variant
-48 ms.)
+**Do not read the 217 ms row as a 2.2x win.** It is a real measurement of
+idiomatic hand-written Zig, and it is also a weak baseline: the same algorithm,
+written by an expert on the same toolchain and machine, runs at 78 ms. The
+defensible claim is the narrow one — **naive Koru performs like competent `-O3`
+C, and like Zig that nobody wrote.** Koru is not the fastest thing in this
+table; it is the fastest thing nobody had to try to write.
 
-**The scenario ships with `[unsafe(bounds)]` on the grid, and that is the
-apples-to-apples setting, not a thumb on the scale.** The Zig baseline indexes
-its arrays directly and bounds-checks nothing; the middle column is Koru doing
-strictly MORE work than the thing it is compared against. Both numbers are here
-because the difference is exactly what the safety costs: 89 ms, or 47%.
+"Hand-tuned C" means static arrays, no bounds checks, per-component ternaries:
+every vectoriser precondition cleared by someone who knew it was there.
 
-THE SECOND COLUMN IS THE STORE'S WRITE-PATH FIX, and it is the whole story.
-A multi-field `stored` block used to emit one write call PER FIELD, in order,
-each carrying the whole row's payload — which is why a later entry could read an
-earlier entry's result (690_126) and why column-routed steering was slow. The
-block is ONE write by design, so it is now one call: every rhs is an argument,
-arguments evaluate before the call, pre-state falls out, and N-1 calls per block
-disappear. Column-routed writes roughly halved.
+### Why the ECS arms are slow, and it is three bars not one
 
-The correctness bug and the performance bug were the same bug. Nothing in the
-benchmark changed between the two columns.
+A per-element loop vectorises only if it clears all three, and the 2x2x2
+ablation says globals are NECESSARY while either body rewrite is SUFFICIENT
+once they are present. Neither half does anything alone.
 
-THE FOURTH COLUMN IS THE SECOND DEFECT, and together they explain everything
-this scenario has done. `std/grid`'s bounds check traps with `@panic`, which is
-`noreturn`, which gives the loop a side-exit that LLVM's vectoriser refuses. The
-compare itself is nearly free — LLVM commons 198 of them down to one per boid —
-so the cost is the EDGE, not the test: replacing `@panic` with a returning
-branch that keeps the same compare is as fast as deleting the check entirely.
+1. **Legality.** A trapping bounds check is an early exit and LLVM refuses
+   outright — "Cannot vectorize early exit loop with more than one early exit".
+2. **Aliasing.** With heap-allocated columns LLVM will not widen the loop at any
+   body shape; the runtime alias checks make it unprofitable outright.
+3. **Cost model.** Legal and alias-free is still not enough — the vectoriser
+   prices the lane-insert gathers and can decline. With static globals the loop
+   sits exactly on the cost edge, and removing either remaining obstacle tips it
+   over. rustc declines until forced.
 
-Its cost is not uniform, and the shape of the non-uniformity is the finding: it
-lands on the FAT single-loop bodies (-46%, -41%) and barely touches the thin
-multi-pass ones (-9%, 0%). A fat body is exactly what a vectoriser wants, so the
-trap edge takes away precisely the loop that had the most to gain.
+**Koru clears all three without anyone deciding to.** Its trap edge is waived at
+the declaration (`[unsafe(bounds)]`), its columns are module-level arrays at
+static addresses, and its emitted per-component selects are the shape the cost
+model accepts. None of the three is a performance feature; each falls out of the
+design for an unrelated reason.
 
-That retires the last open question here. The "more passes is faster" inversion
-that this README recorded twice was never a property of Koru — it was two
-implementation defects stacked, the sequential write path and the noreturn trap
-edge. With both addressed the ordering is what intuition said at the start: one
-fat pass (101 ms) beats seven thin ones (123 ms), and Koru runs the workload at
-2.2x the speed of the hand-written striped baseline.
+Measured corollary: the Zig baseline reaches 113 ms from TWO source changes —
+columns as module-level fixed arrays, and replacing a runtime index into a
+`[2]Vec3` alloca inside the hot loop with a scalar select. Globals alone move it
+4 ms; the body fix alone on heap slices moves it nothing. **Nothing here is a
+ceiling on Zig or Rust** — the finding is what you must know, not what is
+reachable.
 
-**A LEGION ARM EXISTS FOR THIS SCENARIO ONLY, and it is here to answer one
-question.** On the separate `ecs_bench_suite` port (`koru-benchmarks/suites/
-ecs-store`) legion beats Koru by ~1.3x on `simple_iter`, and the reason is
-understood: legion's query touches two components as 12-byte vec3s — two
-contiguous streams — where the Koru port declares six scalar f32 columns, six
-streams. That is archetype PACKING paying off on a pure contiguous sweep.
+### The emitted steer loop is at codegen parity with clang
 
-boids is the workload where packing has little to work with: most of the traffic
-is scatter/gather into a side grid at a computed cell index, and the frame is
-dominated by the steering body rather than by iteration. Five interleaved
-rounds, every arm on checksum 592303452:
+Disassembled, innermost steer loop, per four boids:
 
-| arm | boids |
-|---|---:|
-| koru_store | 98 ms |
-| zig_striped | 217 ms |
-| legion | 242 ms |
-| bevy_ecs | 315 ms |
+| | instrs | NEON | `fsqrt.4s` | `fdiv.4s` | stores |
+|---|---:|---:|---:|---:|---:|
+| clang 22, C probe | 251 | 182 | 6 | 9 | 6 |
+| clang 20, C probe | 247 | 184 | 6 | 9 | 6 |
+| koru `boids` | 305 | 221 | 6 | 9 | 15 |
+| koru `steer_best` | 259 | 201 | 6 | 9 | 6 |
 
-**The advantage does not generalise.** legion is 1.3x ahead of Koru on
-`simple_iter` and 2.5x behind on boids, and it is behind the hand-written
-striped baseline here too. Two caveats stated rather than buried: legion is
-pinned at 0.3.1 because that is the version the reference suite uses and the
-version that wins `simple_iter`, so it is the right one for consistency but it
-is not current; and the arm carries a struct-of-arrays grid behind
-`--features soa_grid` as a layout control, which also matches the checksum and
-is slower (268 ms), so the array-of-structs default is legion's better showing,
-not a handicap. `./run_legion_anchor.sh` runs it.
+The divide/sqrt core — which dominates this loop — is **identical** across Koru
+and both clangs, at the same width, with no explicit SIMD anywhere in the
+emitted Zig (zero `@Vector`/`@splat`/`@reduce`). Steer phase: koru 58.8 ms,
+repaired Zig 58.2, forced Rust 63.1. There is no headroom in the arithmetic.
 
-LOUD-AND-FAST WAS TRIED AND DOES NOT EXIST, which is why the escape hatch is
-spelled rather than inferred. Clamping the index and recording the violation in
-a flag, panicking after the sweep, measured 190 ms — no better than the trap,
-because the flag is a memory write inside the loop and that is a loop-carried
-dependency of its own. A branch is fine; a `noreturn` target is not; a memory
-write is not. So the choice is real, and `[unsafe(bounds)]` makes it explicit,
-auditable by one grep, and named — a bare `[unsafe]` and an unknown facet are
-both refused (697_008, 697_009).
+The one live codegen item is the store count: `boids` stores 15 times per four
+boids where clang stores 6, materialising steering intermediates into store
+columns instead of registers. Worth ~1.5 ms, and **Koru already emits the better
+shape elsewhere** — `steer_capture_best` hits 6 stores at 259 instructions. The
+emitter is capable of it; the fused sweep does not do it.
 
-The mechanism behind the cliff is visible in the emitted code: **a multi-field
-store write emits one write-path call per FIELD, and every call carries the
-whole row's worth of value slots** — all thirteen columns, zeros in the ones it
-is not writing. That is free only while the call inlines and the field selector
-folds away; a body big enough to defeat that pays for all of them at once. WHY
-the fused body crosses the line is NOT established — inlining budget, register
-pressure, and lost auto-vectorization are all live candidates, and the ladder is
-the instrument that would tell them apart. The variants are Koru-only and are
-deliberately not in `run.sh`'s scenario list (the other arms would refuse them
-and `set -eu` would abort the run); run them by hand against `koru_store/a.out`.
+### Three claims this README used to make, all retired
 
-*The steering is still 12.7k characters of Koru from about 40 lines of C#.* A
-`capture` names the intermediates but nothing names a subexpression WITHIN one,
-so each shared term is written out once per component and left to LLVM to CSE.
-That is the verbosity finding, and unlike the performance claim it survived
-contact with the measurements.
+**"Our static data model is why we are fast."** Half right, and stated wrongly.
+Globals are necessary — but alone they moved the Zig baseline 222.8 -> 218.8 ms,
+4 ms. They only pay in conjunction with a body shape the vectoriser will take.
 
-Two deviations from the sample are recorded in `koru_store/main.k` and hold for
-all three arms: a dense bounded grid instead of DOTS' sparse hash map (so
-positions clamp and a clear pass exists), and CORRECT accumulation —
-`MergeCells.ExecuteNext` in the Unity sample reads `cellAlignment[cellIndex] +=
-cellAlignment[cellIndex]`, doubling the accumulator instead of adding the
-member, which is a long-standing bug in the sample.
+**"The verbosity is the optimisation."** The steering was 12,983 characters of
+per-component inlining, which this file first called a defect and then briefly
+called the mechanism. Both wrong. `boids_helpers` rewrites it with a `nsafe-c`
+subflow helper and capture slots — 3,497 characters, 4x smaller — and runs at
+the same speed, still vectorised. What IS load-bearing is the emitted SHAPE:
+per-component selects, priced at 1.7x against an integer-mask form inside
+already-vectorised code. The short source produces that shape too.
 
-`boids` also fixes a disclosure problem the older rows have: its init is
-OUTSIDE the timed region in all three arms, so it does not carry the
-construction-inside-timing asymmetry documented for the rest of the table.
+**"It is an LLVM version difference."** Refuted: the same C source vectorises
+under clang 20 and clang 22 alike. The surviving open question is narrower and
+real — LLVM 22 vectorises this loop from clang and declines it from rustc, so
+the frontends hand it different IR for the same source intent.
+
+### The steering ladder, and the cliff that was a costume
+
+Every variant computes identical arithmetic and prints `592303452`, so shape is
+the only variable. Medians of interleaved rounds:
+
+| steering shape | before the two fixes | now |
+|---|---:|---:|
+| `boids` — capture slots, one pass | 243 ms | **100 ms** |
+| `boids_helpers` — same, via a subflow helper | — | 100 ms |
+| `boids_fused` — columns, one pass | 400 ms | 106 ms |
+| `boids_f2` — columns, first two fused | 265 ms | 120 ms |
+| `boids_split` — columns, seven passes | 261 ms | 120 ms |
+| `boids_f4` — columns, four fused | 279 ms | 143 ms |
+
+This table used to carry a story about a cliff: column-routed intermediates were
+flat while the body stayed small, then collapsed, with the fused single-pass
+version worst by 1.6x. **The ordering has reshuffled, not merely the
+magnitudes** — `boids_fused` went from worst to second fastest, `boids_f4` is
+now last.
+
+The reading, stated as the hypothesis it is: the cliff was never about body size
+or register pressure. A fat body defeated inlining of the per-field write calls,
+which put the trap edge back inside the loop, which blocked vectorisation — the
+vectorisation boundary wearing a costume. Both fixes removed it. The residual
+100-to-143 spread is an ordinary cost of round-tripping intermediates through
+columns. Testable by rebuilding the ladder against the pre-`91c6219b` grid; not
+done.
+
+### Where the remaining 22 ms is, ranked
+
+Measured against `zig_steelman` at 78 ms. **These are available to any language,
+and C does not have them either** — the 95 ms C cell is 22% off the steelman on
+the identical layout.
+
+| | kind | worth | evidence |
+|---|---|---:|---|
+| AoS grid cell | LAYOUT | ~9.5 ms | 9.67 ms in C (94.92 -> 85.25), 8.95 ms in Zig (scatter 35.6 -> 26.8), 1.66x on scatter in a controlled Rust A/B |
+| 16-wide vectors | CODEGEN | ~10 ms | LLVM picks 4; 8 and 32 are worse, 12 is 2.3x worse (bad legalisation) |
+| hoist cell invariants | CODEGEN | 4.8 ms | `a/n`, `f32(count)`, target choice are per-CELL but recomputed per BOID; LICM cannot see through a gather |
+| skip dead select arm | — | 8.2 ms | needs ownership of the vector grouping; not reachable by an auto-vectorising emitter |
+| occupied-range resolve | LAYOUT | 1.4 ms | the sweep scans all 32768 cells; occupied span is ~1000 |
+| steering store count | CODEGEN | 1.5 ms | the 15-vs-6 item above; a fix already exists in `steer_capture_best` |
+
+One thing Koru cannot spell is currently an ADVANTAGE: it cannot fuse the hash
+pass with the grid scatter, and on its own toolchain the split shape is the
+faster one (39.4 ms split against 49.8 fused). Under Homebrew clang 22 the sign
+flips. Do not "fix" it.
+
+### The layout item is not a disadvantage — it is an unimplemented ruling
+
+The AoS cell is the largest item, and it is NOT what separates Koru from C: the
+C probe carries a struct-of-arrays grid too (`boids.c:25-33`, nine parallel cell
+arrays), so it has Koru's exact layout and still lands at 94.9 ms. An earlier
+draft of this file got that wrong.
+
+More importantly, **it is the one item on the list that is not a gap.** The
+store design already rules it: *"layout is the closure of the queries —
+projections become SoA columns, predicates become maintained views."* The grid
+does not honour that ruling; it emits nine parallel columns unconditionally,
+whatever the program does with them.
+
+Koru is the only arm in the table that could decide this automatically, and for
+a structural reason rather than an ambitious one: **every access site is
+comptime-visible and no pointer to a column escapes.** Columns are declared, not
+allocated; the store transform already walks every reference in the program to
+compile subscriptions into the write path; and second-class-ness means layout is
+unobservable to the source. A C or Zig programmer must pick by hand and live
+with it. Koru has the information to pick per access pattern and currently
+throws it away.
+
+This workload is the argument for doing it, because it wants BOTH answers at
+once: the scatter touches seven fields of ONE cell at a random index (seven
+cache lines where a record needs one — wants AoS), while the resolve sweep reads
+one field across ALL cells (wants SoA, and Koru wins that phase today, 1.83 ms
+against 2.3). The decision is therefore not a global toggle but a clustering of
+co-accessed fields, which is exactly what "the closure of the queries" means and
+exactly what the compiler can already see.
+
+### `[unsafe(bounds)]`, and the loud-and-fast path that does not exist
+
+The scenario declares its grid `[unsafe(bounds)]`. That is apples-to-apples
+rather than a thumb on the scale: every other arm indexes without bounds checks,
+so the checked build had Koru doing strictly more work than the things it is
+measured against. Both numbers are on record — the waiver is worth 89 ms, 47%.
+
+Loud-and-fast was tried first and is not available. Clamping the index and
+recording the violation in a flag, panicking after the sweep, measured 190 ms —
+no better than trapping, because the flag is a memory write inside the loop and
+that is a loop-carried dependency of its own. A branch is fine; a `noreturn`
+target is not; a memory write is not. The escape hatch is therefore explicit and
+named, and refuses both a bare `[unsafe]` and an unknown facet (697_008,
+697_009).
+
+### Deviations from the sample, and disclosure
+
+Two deviations, held by all arms and recorded in `koru_store/main.k`: a dense
+bounded grid instead of DOTS' sparse hash map (so positions clamp and a clear
+pass exists), and CORRECT accumulation — Unity's `MergeCells.ExecuteNext` reads
+`cellAlignment[cellIndex] += cellAlignment[cellIndex]`, doubling the accumulator
+instead of adding the member, a long-standing bug in the sample.
+
+There is no DOTS arm. Unity is not installed here, so `boids` is a port verified
+against DOTS' published source, not a measured head-to-head with DOTS.
+
+`boids` init is OUTSIDE the timed region in every arm, so this row does not
+carry the construction-inside-timing asymmetry the older rows disclose.
+
 
 ## Run
 
