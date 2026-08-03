@@ -1,87 +1,82 @@
 ---
 type: belief
 id: frag-naive-koru-lands-where-expert-zig-lands
-provenance: boids, 2026-08-03 — Koru ran a borrowed DOTS workload at 98ms against a hand-written striped Zig baseline's 217ms, and the root-cause investigation found the baseline is scalar for two reasons that must BOTH be fixed and that Koru satisfies without anyone deciding to
+provenance: boids, 2026-08-03. Written when Koru ran a borrowed DOTS workload at ~99ms against hand-written striped Zig's 217ms; CORRECTED the same evening after Lars asked what "no expression-local binding" meant if `capture` exists, and the short version measured identical
 ts: 2026-08-03
 ---
 
-# The claim was never "Koru beats Zig" — it is that naive Koru lands where EXPERT Zig lands, and the expertise is undiscoverable (belief)
+# Naive Koru landed where expert Zig lands — and every explanation I gave for WHY was wrong (belief)
 
-A borrowed workload — Unity DOTS' BoidSystem, their constants, our port, a
-bit-identical checksum across four implementations — ran 2.2x faster in Koru
-than in hand-written striped Zig. That number is real and it is the wrong thing
-to quote, because the baseline is not what a Zig expert would ship. Fixed, it
-comes within a small factor. **The interesting quantity is not the gap to the
-baseline; it is what a Zig programmer must KNOW to remove it.**
+A borrowed workload — Unity DOTS' BoidSystem, their constants, a bit-identical
+checksum across four implementations — ran ~99ms in Koru against 217ms for
+hand-written striped Zig. That measurement stands and is the durable part.
 
-## What the baseline had to know
+Three separate explanations for it were offered and each was refuted by a
+measurement:
 
-The Zig loop is scalar. Making it vectorise requires two independent conditions,
-and the shape of that requirement is the finding:
+- **"Our static data model is why."** Refuted: giving the Zig baseline Koru's
+  exact fixed-extent globals, alone, changed nothing (221ms → 221ms).
+- **"Koru has no expression-local binding, so it inlines per component, and that
+  is what produces the vectorisable shape — the verbosity IS the optimisation."**
+  Refuted twice over. Koru *has* expression-locals: `capture` slots, and pure
+  subflows with an arrow return (`tor f {…} -> f32`, then `f(…): c` binds `c`,
+  the shape 690_131 already used). And when the steering was rewritten with both
+  — 12,983 characters down to 3,497, a 4x reduction — it ran at the SAME speed
+  and stayed vectorised.
 
-- **A — no control flow in the per-element body.** `normalizesafe` branches on
-  the degenerate-length case and returns an aggregate from each arm. LLVM will
-  not if-convert that, so the loop keeps a branch and stays scalar.
-- **B — provable non-aliasing.** The columns arrive as heap slices, so the
-  compiler cannot prove the writes do not disturb the reads.
+  The distinction that survives, and it is not the same claim: the per-component
+  SELECT SHAPE does matter, priced independently at 1.7x inside already-vectorised
+  code (93.2ms selects against 155.8ms for an integer-mask formulation, all else
+  equal). But that shape is a property of the emitted code, not of how much source
+  you wrote — the 4x shorter version produces it too, because a helper returning
+  a scalar per component still yields three selects. Shape is load-bearing;
+  verbosity was incidental to it, and I conflated them.
+- **"rustc cannot vectorise this body."** Refuted: with panic edges removed and
+  the vector width forced, rustc produces a 4-wide loop that beats Koru.
 
-**Neither buys anything alone.** Fixing only the aliasing is noise. Fixing only
-the control flow is WORSE than doing nothing — it pays an unconditional square
-root and a divide for a vectorisation that does not arrive. Only the conjunction
-flips the loop to 4-wide, and then it flips hard.
+## What is actually true
 
-That is a brutal discoverability property. A programmer who suspects the branch,
-converts it, measures, and finds it slower will rationally revert — and having
-reverted, will never see what the second change would have bought. The road to
-the fast version passes through a state that measures worse than the start.
+Three bars, and a body must clear all of them:
 
-## Why Koru is on the other side of that cliff without trying
+1. **Legality.** Bounds-check panic edges are early exits; LLVM refuses outright
+   ("Cannot vectorize early exit loop with more than one early exit").
+2. **Aliasing.** With heap columns the runtime alias checks make widening
+   unprofitable — measured, nothing in the body helps while they are present.
+3. **Cost model.** Even legal and alias-free, the vectoriser weighs the
+   lane-insert gathers and can decline; on the Zig pipeline either body
+   flattening tips it, on rustc it declines until forced.
 
-Koru satisfies both conditions by construction, and neither is a performance
-feature:
+**Koru clears all three without anyone deciding to** — its trap edge is waived
+at the declaration, its columns are module-level arrays at static addresses, and
+its emitted per-component selects are the shape the cost model says yes to. That
+is the whole claim, and it is enough.
 
-- **A falls out of having no expression-local binding.** With nowhere to name an
-  intermediate, each vector component is written as its own scalar expression,
-  so the degenerate case becomes three independent scalar selects rather than
-  one branch returning an aggregate. Three selects if-convert; one branch does
-  not.
-- **B falls out of second-class-ness.** Columns are module-level arrays at
-  statically known addresses, so there is no aliasing question to prove.
+## The real language constraint, stated correctly
 
-The irony is worth keeping: **the verbosity is the optimisation.** The same
-missing binding that turned forty lines of C# into twelve thousand characters of
-Koru is what produced the if-convertible shape. Nobody designed that, and an
-"improvement" that added expression-locals could take the vectorisation away
-unless it preserves per-component independence. That is now a constraint on a
-feature we were about to want.
+Not "no expression-local binding". It is **KORU104: calls are not expressions.**
+`f(g(x))` is refused; a helper's result is bound in the chain and then spent.
+That is a real constraint on math-heavy code — it turns nested composition into
+a sequence of named steps — and it is a *shape* cost, not a speed cost. Measured:
+none.
 
-## What this licenses us to say, and what it does not
+## The pattern that produced four wrong claims in one day
 
-- NOT "Koru is 2.2x faster than hand-written Zig." That compares against a
-  baseline with a fixable defect, and someone will fix it in public.
-- NOT "our data model makes us fast." Measured directly: giving the Zig baseline
-  Koru's exact static-array model, alone, changed nothing in the hot phase. The
-  aliasing story is necessary and nowhere near sufficient, and stating it alone —
-  which this repo's own benchmark README did for a different scenario — is
-  wrong.
-- YES: **a naive Koru port matched a Zig program that required two non-obvious,
-  non-incremental, mutually-dependent expert interventions to reach.** The
-  performance is not in the emitter being clever; it is in the language making
-  the wrong shape unspellable.
+Every one of them has the same structure: **I authored a program, then reasoned
+about the language from the shape I had authored.** The inlined steering was my
+generator's output, not Koru's requirement; I read my own output back as
+evidence about the language and built a causal story on it. The corpus contained
+the counter-example each time — `capture` in a dozen nesting-sweep tests,
+arrow-return subflows in 690_131 — and I never looked, because the code in front
+of me really did have the property I was describing.
 
-That is a much better claim than the one the number invited, and it is the claim
-the project has actually been making all along.
+The check is one grep and I skipped it four times. Worth more than the
+performance finding: **before attributing a program's shape to the language,
+search the corpus for the construct you believe is missing.**
 
 ## Open
 
-- Whether the same conjunction explains the other scenario where Koru leads a
-  hand-written baseline (`bevy_strength_world`, 1.2x, cause recorded as
-  unestablished). The aliasing hypothesis parked there is now known to be
-  insufficient on its own, so that entry should be re-opened rather than
-  inherited.
-- What an expression-local binding must preserve to keep A. If it lets an author
-  compute one shared intermediate and branch once on it, it hands back exactly
-  the shape that does not vectorise.
-- Whether any of this survives a workload whose per-element body has genuinely
-  unavoidable control flow. Boids does not have one; something with early-out
-  per element would.
+- Whether the AoS-vs-SoA grid layout finding (measured 1.66x on the scatter
+  phase, cross-corroborated in two languages) is worth a std/grid cell record.
+  That is the largest unclaimed item on this workload.
+- Why rustc declines where Zig accepts, same LLVM, all three bars cleared.
+  Target-CPU was eliminated as the cause. A genuine open compiler question.

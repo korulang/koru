@@ -111,6 +111,7 @@ set-scenario = std/regex:match(a)
 | `boids_f2` _ |> std/store:stored { cfg.scenario: 13, cfg.which: 0 }
 | `boids_f4` _ |> std/store:stored { cfg.scenario: 14, cfg.which: 0 }
 | `boids_split` _ |> std/store:stored { cfg.scenario: 15, cfg.which: 0 }
+| `boids_helpers` _ |> std/store:stored { cfg.scenario: 23, cfg.which: 0 }
 | `boids_phase` _ |> std/store:stored { cfg.scenario: 16, cfg.which: 0 }
 | `boids_mask` _ |> std/store:stored { cfg.scenario: 17, cfg.which: 0 }
 | `boids_mask_phase` _ |> std/store:stored { cfg.scenario: 18, cfg.which: 0 }
@@ -420,6 +421,50 @@ tor boid-frame-capture {}
 boid-frame-capture = frame-actors() |> grid-clear() |> hash-boids() |> scatter() |> cell-resolve()
     |> steer-capture()
 
+// CALLS ARE NOT EXPRESSIONS (KORU104) — a helper's result is bound in the chain
+// and then spent, which is the same shape 690_131 uses for its swap. So the
+// short form is not "inline less", it is "bind more".
+tor nsafe-c { c: f32, x: f32, y: f32, z: f32 } -> f32
+nsafe-c -> if (x * x + y * y + z * z > 1.1754944e-38) c * (1.0 / @sqrt(x * x + y * y + z * z)) else 0.0
+
+tor steer-helpers {}
+steer-helpers = std/store:query(flock)
+! query b |> capture { tfx: 0.0[f32], tfy: 0.0[f32], tfz: 0.0[f32], nhx: 0.0[f32], nhy: 0.0[f32], nhz: 0.0[f32], wx: 0.0[f32], wy: 0.0[f32], wz: 0.0[f32] }
+    ! as s |> captured { wx: (cells[b.cell].ax / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fx), wy: (cells[b.cell].ay / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fy), wz: (cells[b.cell].az / @as(f32, @floatFromInt(cells[b.cell].count)) - b.fz) }
+        |> nsafe-c(c: s.wx, x: s.wx, y: s.wy, z: s.wz): ax
+        |> nsafe-c(c: s.wy, x: s.wx, y: s.wy, z: s.wz): ay
+        |> nsafe-c(c: s.wz, x: s.wx, y: s.wy, z: s.wz): az
+        |> captured { tfx: 1.0 * ax, tfy: 1.0 * ay, tfz: 1.0 * az }
+        |> captured { wx: (b.px * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sx), wy: (b.py * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sy), wz: (b.pz * @as(f32, @floatFromInt(cells[b.cell].count)) - cells[b.cell].sz) }
+        |> nsafe-c(c: s.wx, x: s.wx, y: s.wy, z: s.wz): px
+        |> nsafe-c(c: s.wy, x: s.wx, y: s.wy, z: s.wz): py
+        |> nsafe-c(c: s.wz, x: s.wx, y: s.wy, z: s.wz): pz
+        |> captured { tfx: s.tfx + 1.0 * px, tfy: s.tfy + 1.0 * py, tfz: s.tfz + 1.0 * pz }
+        |> captured { wx: ((if (cells[b.cell].ti == 0) fr.t0x else fr.t1x) - b.px), wy: ((if (cells[b.cell].ti == 0) fr.t0y else fr.t1y) - b.py), wz: ((if (cells[b.cell].ti == 0) fr.t0z else fr.t1z) - b.pz) }
+        |> nsafe-c(c: s.wx, x: s.wx, y: s.wy, z: s.wz): gx
+        |> nsafe-c(c: s.wy, x: s.wx, y: s.wy, z: s.wz): gy
+        |> nsafe-c(c: s.wz, x: s.wx, y: s.wy, z: s.wz): gz
+        |> captured { tfx: s.tfx + 2.0 * gx, tfy: s.tfy + 2.0 * gy, tfz: s.tfz + 2.0 * gz }
+        |> captured { wx: (b.px - fr.obx), wy: (b.py - fr.oby), wz: (b.pz - fr.obz) }
+        |> nsafe-c(c: s.wx, x: s.wx, y: s.wy, z: s.wz): ox
+        |> nsafe-c(c: s.wy, x: s.wx, y: s.wy, z: s.wz): oy
+        |> nsafe-c(c: s.wz, x: s.wx, y: s.wy, z: s.wz): oz
+        |> nsafe-c(c: s.tfx, x: s.tfx, y: s.tfy, z: s.tfz): tx
+        |> nsafe-c(c: s.tfy, x: s.tfx, y: s.tfy, z: s.tfz): ty
+        |> nsafe-c(c: s.tfz, x: s.tfx, y: s.tfy, z: s.tfz): tz
+        |> captured { nhx: if ((cells[b.cell].od - 30.0) < 0.0) ((fr.obx + ox * 30.0) - b.px) else tx, nhy: if ((cells[b.cell].od - 30.0) < 0.0) ((fr.oby + oy * 30.0) - b.py) else ty, nhz: if ((cells[b.cell].od - 30.0) < 0.0) ((fr.obz + oz * 30.0) - b.pz) else tz }
+        |> captured { wx: (b.fx + @as(f32, 1.0 / 60.0) * (s.nhx - b.fx)), wy: (b.fy + @as(f32, 1.0 / 60.0) * (s.nhy - b.fy)), wz: (b.fz + @as(f32, 1.0 / 60.0) * (s.nhz - b.fz)) }
+        |> nsafe-c(c: s.wx, x: s.wx, y: s.wy, z: s.wz): nx
+        |> nsafe-c(c: s.wy, x: s.wx, y: s.wy, z: s.wz): ny
+        |> nsafe-c(c: s.wz, x: s.wx, y: s.wy, z: s.wz): nz
+        |> captured { tfx: nx, tfy: ny, tfz: nz }
+    | captured r |> std/store:stored { b.fx: r.tfx, b.fy: r.tfy, b.fz: r.tfz, b.px: b.px + r.tfx * (25.0 * @as(f32, 1.0 / 60.0)), b.py: b.py + r.tfy * (25.0 * @as(f32, 1.0 / 60.0)), b.pz: b.pz + r.tfz * (25.0 * @as(f32, 1.0 / 60.0)) }
+        |> std/store:stored { b.px: @min(@max(b.px, 0.0), 255.999), b.py: @min(@max(b.py, 0.0), 255.999), b.pz: @min(@max(b.pz, 0.0), 255.999) }
+
+tor boid-frame-helpers {}
+boid-frame-helpers = frame-actors() |> grid-clear() |> hash-boids() |> scatter() |> cell-resolve()
+    |> steer-helpers()
+
 tor boid-frame {}
 boid-frame = frame-actors() |> grid-clear() |> hash-boids() |> scatter() |> cell-resolve()
     |> steer-capture()
@@ -631,6 +676,10 @@ tor s-boids-best-phase {}
 s-boids-best-phase = for(0..@as(usize, @intCast(cfg.frames)))
     ! each _ |> boid-frame-best-phase()
 
+tor s-boids-helpers {}
+s-boids-helpers = for(0..@as(usize, @intCast(cfg.frames)))
+    ! each _ |> boid-frame-helpers()
+
 tor s-bevy-strength {}
 s-bevy-strength = init-dyn() |> init-parts() |> init-orbs()
     |> for(0..@as(usize, @intCast(cfg.frames)))
@@ -742,10 +791,15 @@ run-boids-best-phase = if(cfg.scenario == 22)
 | then |> s-boids-best-phase()
 | else |> _
 
+tor run-boids-helpers {}
+run-boids-helpers = if(cfg.scenario == 23)
+| then |> s-boids-helpers()
+| else |> _
+
 tor run {}
 run = run-dense() |> run-sparse() |> run-query-get() |> run-schedule-empty()
     |> run-spawn() |> run-spawn-batch() |> run-despawn() |> run-add-remove()
-    |> run-fanout() |> run-bevy-strength() |> run-boids() |> run-boids-fused() |> run-boids-f2() |> run-boids-f4() |> run-boids-split() |> run-boids-phase() |> run-boids-mask() |> run-boids-mask-phase() |> run-boids-clamp() |> run-boids-clamp-phase() |> run-boids-best() |> run-boids-best-phase()
+    |> run-fanout() |> run-bevy-strength() |> run-boids() |> run-boids-fused() |> run-boids-f2() |> run-boids-f4() |> run-boids-split() |> run-boids-helpers() |> run-boids-phase() |> run-boids-mask() |> run-boids-mask-phase() |> run-boids-clamp() |> run-boids-clamp-phase() |> run-boids-best() |> run-boids-best-phase()
 
 // -------------------------------------------------------------- the checksum
 //
@@ -756,7 +810,7 @@ run = run-dense() |> run-sparse() |> run-query-get() |> run-schedule-empty()
 // it; the older rows deliberately keep their construction inside the timed
 // region and the README says so.
 tor prep {}
-prep = if(cfg.scenario >= 11 and cfg.scenario <= 22)
+prep = if(cfg.scenario >= 11 and cfg.scenario <= 23)
 | then |> flock-init() |> flock-normalize()
 | else |> _
 
@@ -786,7 +840,7 @@ fin-add-remove = if(cfg.scenario == 8)
 | else |> _
 
 tor fin-boids {}
-fin-boids = if(cfg.scenario >= 11 and cfg.scenario <= 22)
+fin-boids = if(cfg.scenario >= 11 and cfg.scenario <= 23)
 | then |> read-flock()
 | else |> _
 
@@ -874,6 +928,11 @@ name-boids-split = if(cfg.scenario == 15)
 | then |> std/io:print("boids_split")
 | else |> _
 
+tor name-boids-helpers {}
+name-boids-helpers = if(cfg.scenario == 23)
+| then |> std/io:print("boids_helpers")
+| else |> _
+
 tor name-boids-phase {}
 name-boids-phase = if(cfg.scenario == 16)
 | then |> std/io:print("boids_phase")
@@ -913,7 +972,7 @@ tor emit { ns: i64 }
 emit = std/io:print("{\"impl\":\"koru_store\",\"scenario\":\"")
     |> name-dense() |> name-sparse() |> name-query-get() |> name-schedule-empty()
     |> name-spawn() |> name-spawn-batch() |> name-despawn() |> name-add-remove()
-    |> name-fanout() |> name-bevy-strength() |> name-boids() |> name-boids-fused() |> name-boids-f2() |> name-boids-f4() |> name-boids-split() |> name-boids-phase() |> name-boids-mask() |> name-boids-mask-phase() |> name-boids-clamp() |> name-boids-clamp-phase() |> name-boids-best() |> name-boids-best-phase()
+    |> name-fanout() |> name-bevy-strength() |> name-boids() |> name-boids-fused() |> name-boids-f2() |> name-boids-f4() |> name-boids-split() |> name-boids-helpers() |> name-boids-phase() |> name-boids-mask() |> name-boids-mask-phase() |> name-boids-clamp() |> name-boids-clamp-phase() |> name-boids-best() |> name-boids-best-phase()
     |> std/io:print.ln("\",\"entities\":{{ cfg.entities:d }},\"frames\":{{ cfg.frames:d }},\"observers\":{{ cfg.observers:d }},\"elapsed_ns\":{{ ns:d }},\"sink\":{{ acc.sink:d }}}")
 
 // -------------------------------------------------------------------- driver
