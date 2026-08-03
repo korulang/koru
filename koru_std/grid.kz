@@ -318,6 +318,83 @@ const grid_read = struct {
         }
         return out.toOwnedSlice(alloc) catch unreachable;
     }
+    // LOWER EVERY READ IN A CONTINUATION TREE.
+    //
+    // Two callers, deliberately: the declaration's whole-program pass, and
+    // `sweep` over the body it has just rewritten. They need identical
+    // coverage — the same skip rule, the same inline_body trap, the same
+    // recursion — and the second caller exists because a sweep body is created
+    // AFTER the declaration's pass has run, so it is a subtree the program walk
+    // can never have seen.
+    //
+    // Sites belonging to std/grid are SKIPPED: `stored` lowers its own block,
+    // and skipping is what leaves a nested write's target in source form long
+    // enough for `stored` to parse it. That is not an optimisation — it is the
+    // mechanism that makes `stored { c.on: … }` addressable at all.
+    fn lowerCont(alloc: std.mem.Allocator, c: *ast_grid.Continuation, refs: []const GridRef) void {
+        if (c.condition) |cd| {
+            @constCast(c).condition = lower(alloc, cd, refs);
+        }
+        if (c.node) |*n| {
+            // Never `|*inv|` on `switch (n.*)` — that captures a TEMPORARY and
+            // the live AST stays raw (store's 690_074).
+            switch (@constCast(n).*) {
+                .invocation => {
+                    const inv = &@constCast(n).invocation;
+                    const ours = blk: {
+                        if (inv.path.module_qualifier) |mq| break :blk std.mem.eql(u8, mq, "std.grid");
+                        break :blk false;
+                    };
+                    if (!ours) {
+                        for (inv.args) |*a| {
+                            @constCast(a).value = lower(alloc, a.value, refs);
+                            if (a.expression_value) |ev| {
+                                const fresh = alloc.create(ast_grid.CapturedExpression) catch unreachable;
+                                fresh.* = ev.*;
+                                fresh.text = lower(alloc, ev.text, refs);
+                                @constCast(a).expression_value = fresh;
+                            }
+                            if (a.source_value) |sv| {
+                                const fresh = alloc.create(ast_grid.Source) catch unreachable;
+                                fresh.* = sv.*;
+                                fresh.text = lower(alloc, sv.text, refs);
+                                @constCast(a).source_value = fresh;
+                            }
+                        }
+                    }
+                    // TEMPLATE EXPANSION FREEZES ARGS EARLY. `if` and `for`
+                    // bake their Expression argument into
+                    // `Invocation.inline_body` before a declaration's pass ever
+                    // runs, so rewriting `inv.args` alone reaches a copy nobody
+                    // emits — the guard under a loop still says `cells[3].on`
+                    // and the host calls it undeclared. store.kz records the
+                    // same trap at 690_074.
+                    if (inv.inline_body) |ib| {
+                        inv.inline_body = lower(alloc, ib, refs);
+                    }
+                },
+                .inline_code => {
+                    @constCast(n).* = .{ .inline_code = lower(alloc, n.inline_code, refs) };
+                },
+                else => {},
+            }
+        }
+        for (c.continuations) |*k| lowerCont(alloc, @constCast(k), refs);
+    }
+    fn lowerItems(alloc: std.mem.Allocator, its: []ast_grid.Item, refs: []const GridRef) void {
+        for (its) |*pi| {
+            switch (pi.*) {
+                // `&pi.flow`, not `|*f|` on a switched copy — the same
+                // temporary-capture rule as above.
+                .flow => {
+                    lowerCont(alloc, &pi.flow.body, refs);
+                    if (pi.flow.inline_body) |ib| pi.flow.inline_body = lower(alloc, ib, refs);
+                },
+                .module_decl => lowerItems(alloc, @constCast(pi.module_decl.items), refs),
+                else => {},
+            }
+        }
+    }
 };
 
 // ============================================================================
@@ -526,77 +603,7 @@ const grid_read = struct {
     {
         var seen = std.ArrayList(grid_read.GridRef).initCapacity(allocator, 4) catch unreachable;
         grid_read.collect(allocator, program, &seen);
-        const Walk = struct {
-            fn cont(alloc: std.mem.Allocator, c: *ast.Continuation, names: []const grid_read.GridRef) void {
-                if (c.condition) |cd| {
-                    @constCast(c).condition = grid_read.lower(alloc, cd, names);
-                }
-                if (c.node) |*n| {
-                    // Never `|*inv|` on `switch (n.*)` — that captures a
-                    // TEMPORARY and the live AST stays raw (store's 690_074).
-                    switch (@constCast(n).*) {
-                        .invocation => {
-                            const inv = &@constCast(n).invocation;
-                            const ours = blk: {
-                                if (inv.path.module_qualifier) |mq| break :blk std.mem.eql(u8, mq, "std.grid");
-                                break :blk false;
-                            };
-                            if (!ours) {
-                                for (inv.args) |*a| {
-                                    @constCast(a).value = grid_read.lower(alloc, a.value, names);
-                                    if (a.expression_value) |ev| {
-                                        const fresh = alloc.create(ast.CapturedExpression) catch unreachable;
-                                        fresh.* = ev.*;
-                                        fresh.text = grid_read.lower(alloc, ev.text, names);
-                                        @constCast(a).expression_value = fresh;
-                                    }
-                                    if (a.source_value) |sv| {
-                                        const fresh = alloc.create(ast.Source) catch unreachable;
-                                        fresh.* = sv.*;
-                                        fresh.text = grid_read.lower(alloc, sv.text, names);
-                                        @constCast(a).source_value = fresh;
-                                    }
-                                }
-                            }
-                            // TEMPLATE EXPANSION FREEZES ARGS EARLY. `if` and
-                            // `for` bake their Expression argument into
-                            // `Invocation.inline_body` before a declaration's
-                            // pass ever runs, so rewriting `inv.args` alone
-                            // reaches a copy nobody emits — the guard under a
-                            // loop still says `cells[3].on` and the host calls
-                            // it undeclared. store.kz records the same trap at
-                            // 690_074; it cost an hour here before its comment
-                            // was found, which is an argument for the two
-                            // declarations sharing a walker rather than a
-                            // convention.
-                            if (inv.inline_body) |ib| {
-                                inv.inline_body = grid_read.lower(alloc, ib, names);
-                            }
-                        },
-                        .inline_code => {
-                            @constCast(n).* = .{ .inline_code = grid_read.lower(alloc, n.inline_code, names) };
-                        },
-                        else => {},
-                    }
-                }
-                for (c.continuations) |*k| cont(alloc, @constCast(k), names);
-            }
-            fn items(alloc: std.mem.Allocator, its: []ast.Item, names: []const grid_read.GridRef) void {
-                for (its) |*pi| {
-                    switch (pi.*) {
-                        // `&pi.flow`, not `|*f|` on a switched copy — the same
-                        // temporary-capture rule as above.
-                        .flow => {
-                            cont(alloc, &pi.flow.body, names);
-                            if (pi.flow.inline_body) |ib| pi.flow.inline_body = grid_read.lower(alloc, ib, names);
-                        },
-                        .module_decl => items(alloc, @constCast(pi.module_decl.items), names),
-                        else => {},
-                    }
-                }
-            }
-        };
-        Walk.items(allocator, @constCast(program.items), seen.items);
+        grid_read.lowerItems(allocator, @constCast(program.items), seen.items);
     }
 
     return .{ .transformed = .{ .replacement = ast.Item{ .host_line = ast.HostLine{
@@ -836,9 +843,31 @@ const grid_read = struct {
         fn isIdentCh(ch: u8) bool {
             return (ch >= 'a' and ch <= 'z') or (ch >= 'A' and ch <= 'Z') or (ch >= '0' and ch <= '9') or ch == '_' or ch == '-';
         }
-        // `c.field` -> a direct cell read at the loop index. Unchecked by
-        // construction; see the header.
+        // `c.field` -> `<grid>[<cursor>].field`, the SOURCE-LEVEL address.
+        //
+        // The first cut rewrote straight to host text — a direct indexed load
+        // at the loop cursor, no bounds check, which is what the arm wants and
+        // is unarguably the right emitted code. It also made the swept cell
+        // READ-ONLY, and that turned out to be the whole story: a write is
+        // addressed `<grid>[<index>].<field>`, so a body that had already been
+        // lowered to `(&__koru_grid_g.f)[i]` had nothing `stored` could parse,
+        // and there was no way to say "this cell" on the left of a write.
+        // std/store has never had that problem — `! query e |> stored { e.px:
+        // … }` writes through the row binding — so the grid was not missing a
+        // feature, it was ASYMMETRIC with the table it is the sibling of.
+        //
+        // Rewriting to the address instead of the load fixes it by deleting the
+        // special case: the cell binding becomes ordinary addressing, `stored`
+        // parses and threads it exactly as it does any other write, and reads
+        // lower through the one lowering every other read uses. Nothing here
+        // knows whether it produced an lvalue or an rvalue, which is the point.
+        //
+        // The bounds check this reintroduces is the one `__koru_at` performs
+        // against a comptime-known size, on an index the loop constructed from
+        // `0..size`. That is the case the declaration's header calls a floor
+        // rather than a tax — provable in range, and the optimizer deletes it.
         fn cells(alloc: std.mem.Allocator, text: []const u8, bind: []const u8, ns: []const u8, grid: []const u8, cur: []const u8) []const u8 {
+            _ = ns;
             const prefix = std.fmt.allocPrint(alloc, "{s}.", .{bind}) catch unreachable;
             var out = std.ArrayList(u8).initCapacity(alloc, text.len + 64) catch unreachable;
             var i: usize = 0;
@@ -848,7 +877,7 @@ const grid_read = struct {
                     var fe = i + prefix.len;
                     while (fe < text.len and isIdentCh(text[fe])) fe += 1;
                     const fname = text[i + prefix.len .. fe];
-                    const piece = std.fmt.allocPrint(alloc, "(&{s}__koru_grid_{s}.{s})[@as(usize, @intCast({s}))]", .{ ns, grid, fname, cur }) catch unreachable;
+                    const piece = std.fmt.allocPrint(alloc, "{s}[{s}].{s}", .{ grid, cur, fname }) catch unreachable;
                     out.appendSlice(alloc, piece) catch unreachable;
                     i = fe;
                 } else {
@@ -906,6 +935,21 @@ const grid_read = struct {
     if (!std.mem.eql(u8, std.mem.trim(u8, arm.branch, " "), "sweep")) {
         return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/grid:sweep({s}): the cell branch is spelled `! sweep <cell>`", .{grid_name}) } };
     }
+    // THE CELL BINDING IS AN ADDRESS, so it is a write target as well as a
+    // read. `! sweep c |> std/grid:stored { c.avg: c.sum / c.n }` updates the
+    // cell being visited, which is what `std/store`'s row binding has always
+    // done and what this arm could not do while it rewrote straight to a load.
+    //
+    // A REQUEST BLOCK (`! sweep { [cell]c, [id]i }`) exposing the cell's INDEX
+    // was built here and cut before it shipped. It works and it is three lines
+    // away, but it hands the program a raw position as a VALUE — storable in a
+    // column, passable, comparable against the wrong grid — which is the exact
+    // thing the store's handle discipline exists to forbid, and it would leave
+    // the language with two tables holding two different rules about what an
+    // address is. What it buys is addressing a cell OTHER than the one being
+    // visited: neighbour gathers, `cells[i+1]`. No workload here asks for that
+    // — DOTS' BoidSystem reads only a boid's own hash bucket — so the
+    // vocabulary waits for one that does. (Ruled with Lars 2026-08-03.)
     const bind = arm.binding orelse {
         return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/grid:sweep({s}): the sweep arm needs a cell binding: `! sweep <cell> |> ...`", .{grid_name}) } };
     };
@@ -931,6 +975,14 @@ const grid_read = struct {
     const body = ast_functional.cloneContinuation(allocator, arm) catch unreachable;
     var mutable_body = body;
     S.walk(allocator, &mutable_body, std.mem.trim(u8, bind, " "), grid_ns, grid_name, cur);
+
+    // NOW LOWER THE READS, through the same walker the declaration runs over
+    // the whole program. The body did not exist when that pass ran — it is a
+    // clone made here — so it is a subtree the program walk can never have
+    // visited, and without this its cell addresses reach the host verbatim.
+    // std/grid sites inside it are skipped by the walker, which is what leaves
+    // a nested `stored`'s target in source form for `stored` to parse.
+    grid_read.lowerCont(allocator, &mutable_body, swept.items);
 
     // The body becomes an EVENT with the loop index as its only input, and an
     // impl flow carrying the (already-rewritten) continuation. The loop is a
