@@ -1,1 +1,3 @@
-pushed
+pushed 10, len 1
+pushed 20, len 2
+pushed 30, len 3

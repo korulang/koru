@@ -1,50 +1,45 @@
-// RED ON PURPOSE. A phantom-typed BORROW minted outside a sweep cannot be used
-// INSIDE `std/store:query`'s arm, and the store's sweep is the only construct in
-// the language with that restriction.
+// PINS: a phantom-typed BORROW minted outside a sweep is usable INSIDE
+// `std/store:query`'s arm.
 //
-// Here `xs` is a `<list>` borrow from `| list xs`. Pushing to it from inside the
-// query arm is refused:
+// `xs` is a `<list!>` handle from `| list xs`. The arm pushes to it once per
+// row and reads its length back, so the output proves it is the SAME list
+// accumulating — 1, 2, 3 — and not a fresh one per iteration.
 //
-//     error[KORU030]: Phantom state mismatch: argument 'xs' has no tracked
-//     phantom state, but this event requires state '<list>'.
+// This was refused, and the store's sweep was the ONLY construct that refused
+// it. The same borrow threads into `for(0..N) ! each` and into
+// `std/fs:read-lines`' `! line` arm, where 810_242_day24_part2 has pushed regex
+// captures into a list for weeks.
 //
-// THE SAME BORROW, THE SAME PUSH, IN TWO OTHER SWEEPS, BOTH FINE:
+// THE CAUSE WAS NOT THE LOWERING, which is what made it worth chasing rather
+// than working around. A sweep body is transplanted into a separate event
+// (`__store_sweepbody_<s>_L<n>`) whose inputs carry the captures the body
+// references, and that threading ALREADY worked — a plain `i64` bound outside
+// the sweep arrives inside it correctly. What it dropped was the phantom:
+// `lookupBranchIn` read the branch payload's type and module and left its
+// `<state!>` behind, so the synthesized input declared a bare type and the
+// checker, correctly, saw a name with no tracked state.
 //
-//   - `std/fs:read-lines` / `! line` — 810_242_day24_part2 pushes regex
-//     captures into exactly this kind of list from inside the line arm, and it
-//     is GREEN. Nothing about a list borrow forbids this.
-//   - `for(0..N)` / `! each` — a counted loop over a grid, pushing each cell's
-//     value, compiles today.
+// Three things had to be right and each one produced its own diagnostic on the
+// way, which is worth recording because they read like unrelated bugs:
 //
-// So the restriction is not "phantom borrows cannot enter sweep bodies". It is
-// specific to `std/store:query`, which is the language's flagship data
-// operation and the one place a user is most likely to want a resource.
+//   phantom dropped      -> "argument 'xs' has no tracked phantom state"
+//   phantom kept as-is   -> KORU033, "Cannot issue obligation '<list!>' on
+//                           input parameter" — an input may BORROW a state but
+//                           never mint one
+//   phantom unqualified  -> "expected 'std.list:list' but got '<prog>:list'",
+//                           the state resolving against the consumer's module
 //
-// THE MECHANISM, as far as it has been traced: a `for` body is emitted as an
-// INLINE BLOCK — the frame/list binding is referenced straight out of the
-// enclosing scope. A store sweep body is lifted into a DETACHED EVENT HANDLER
-// and invoked per row, so an outer binding reaches it only as a declared input,
-// and a phantom-typed one has no way to be declared there. `std/fs:read-lines`
-// evidently keeps its arm inline; `std/store:query` does not.
+// So the capture now carries the payload's obligation, qualified with the
+// module that declared it, and the synthesized input demotes it to a bare
+// borrow — the same demotion an owned column's projection already made. The arm
+// may read and mutate the handle; it must not be asked to DISCHARGE it, because
+// the obligation belongs to the enclosing scope and the body runs once per row.
 //
-// THE DIAGNOSTIC ALSO MISDESCRIBES IT, which is the smaller half of this bug and
-// the cheaper one to fix. "has no tracked phantom state" says the value never
-// had one. It did — `std/list:len(xs)` at the same level as the query type-checks
-// fine. The state was LOST AT A BOUNDARY, and the message should say which
-// boundary. Its sibling branch in `phantom_semantic_checker.zig` was already
-// taught this lesson ("say so, don't blame it for a checker blind spot",
-// ~line 3190, the `<state!>` consumption case); the requirement case at ~3200
-// still emits the flat message.
-//
-// Found while trying to draw one rectangle per row with `libs/raylib` — the
-// frame borrow hits this identically, which is why that library's `bounce.k`
-// can clear the screen but cannot draw an entity. Its header blames the
-// ambient-context wall for standing RULES (690_006); this is a second, distinct
-// path to the same dead end, and the `for` and `read-lines` cases say it is not
-// a necessary one.
-//
-// Flip to green when a store sweep arm can use an outer phantom borrow. Expected
-// output is what the program plainly means: two rows pushed, length 2.
+// KNOWN REMAINING GAP: this uses `new-i64`, the concrete constructor. Going
+// through `std/list:new(i64)` — a `[comptime|transform]` that rewrites to it —
+// still fails, because the capture collector reads branches off the invocation
+// path and the transform event declares none. That is a transform-ordering
+// question, narrower than this one, and not fixed here.
 import std/io
 import std/store
 import std/list
@@ -53,14 +48,12 @@ std/store:new(items, capacity: 8) { v: i64 }
 
 std/store:insert(items) { v: 10 }
 | row _ |> _
-| full |> _
 std/store:insert(items) { v: 20 }
 | row _ |> _
-| full |> _
+std/store:insert(items) { v: 30 }
+| row _ |> _
 
-std/list:new(i64)
+std/list:new-i64()
 | list xs |> std/store:query(items)
-    ! query e |> std/list:push(xs, e.v)
+    ! query e |> std/list:push(xs, e.v) |> std/list:len(xs): n |> std/io:print.ln("pushed {{ e.v:d }}, len {{ n:d }}")
 | err _ |> std/io:print.ln("list failed")
-
-std/io:print.ln("pushed")

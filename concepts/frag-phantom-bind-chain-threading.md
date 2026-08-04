@@ -118,7 +118,7 @@ the cell's var decl, type name, write target, and after-read, so synthesizing
 "referenced ⇒ needs a real name" move, in a non-phantom site. The invariant is
 about `_` semantics generally, not any one pass.
 
-## The uniformity ruling has a live counterexample: `std/store:query`
+## The uniformity ruling had a live counterexample: `std/store:query` — FIXED
 
 2026-08-04. Lars's ruling above is about SAMENESS — an obligation must thread
 everywhere, and a new binding form is not permission to thread differently. A
@@ -167,3 +167,53 @@ events (which is `bounce.k`'s "parameterized stripe" design note arriving from
 the other side), or to stop detaching sweep bodies when the arm captures
 anything phantom-typed. The first is more general; the second is closer to what
 `for` already does.
+
+## Fixed the same day, and my mechanism guess above was WRONG
+
+The paragraph above says an outer binding "can only arrive as a declared input
+— and a phantom-typed one has nowhere to be declared", and calls it a lowering
+that cannot carry the borrow. **That is not what was happening.**
+
+The capture threading already worked. `__store_sweepbody_<s>_L<n>` takes the
+captures its body references as event inputs, and a plain `i64` bound outside
+the arm arrives inside it correctly — one probe settled that and it should have
+been the first one run. What the collector dropped was only the PHANTOM:
+`lookupBranchIn` read the branch payload's `.type` and `.module_path` and left
+`.phantom` behind, so the synthesized input declared a bare type. The checker
+then reported exactly what it saw — a name with no tracked state — and was
+right to.
+
+Three corrections were needed and each surfaced its own diagnostic, reading
+like three unrelated bugs rather than one omission:
+
+- **dropped** → "argument 'xs' has no tracked phantom state"
+- **kept verbatim** → KORU033, "Cannot issue obligation `<list!>` on input
+  parameter". An input may BORROW a state, never mint one, so the payload's
+  obligation has to be demoted — the same demotion an owned column's projection
+  already made just above it in the same function.
+- **unqualified** → "expected `std.list:list` but got `<prog>:list`". A bare
+  `state!` from the author's declaration resolves against the CONSUMER's module
+  unless qualified with the one that declared it.
+
+That third one is the reason two spellings of a phantom exist in this file at
+all: projections carry the prefixed `mod:!state`, branch payloads carry the
+author's bare `state!`, and `bareBorrow` was written for the first and silently
+returns the second untouched. A helper that no-ops on an input shape it was
+never given is indistinguishable from one that handled it.
+
+**What generalises past this bug:** the lowering was innocent and I spent the
+first pass believing it was guilty, because "a detached event cannot capture" is
+a satisfying story and I had just watched a detached event lose a chain tail in
+`grid.kz`. The cheap experiment that would have redirected me immediately —
+*does a NON-phantom outer binding reach the arm?* — takes one file and thirty
+seconds. **When a typed thing fails to cross a boundary, first check whether an
+untyped thing crosses it.** That separates "the boundary drops values" from "the
+boundary drops annotations", and they have nothing in common but the symptom.
+
+`690_252` is green and proves the accumulation, not just the type-check: the arm
+pushes and reads the length back, so the output is 1, 2, 3 on the same list.
+
+Still open, and narrower: going through `std/list:new(i64)` — a
+`[comptime|transform]` that rewrites to `new-i64` — still fails, because the
+collector reads branches off the invocation path and the transform event
+declares none. A transform-ordering question, not a phantom one.

@@ -7756,7 +7756,14 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
             }
             return null;
         }
-        const RetTy = struct { type: []const u8, module_path: ?[]const u8 };
+        // `phantom` carries the branch payload's obligation/state (`| list
+        // *List_i64<list!>` -> the `<list!>` marker). Dropping it here is what
+        // made a phantom-typed binding unusable inside a sweep arm: the capture
+        // threading below copies type and module and synthesized an input with
+        // NO state, so the checker saw an untracked name and refused the call
+        // (690_252). Defaulted null because `lookupReturn*` shares this record
+        // and a bare-return bind has no branch payload to read one from.
+        const RetTy = struct { type: []const u8, module_path: ?[]const u8, phantom: ?[]const u8 = null };
         fn lookupReturnIn(its: []const ast.Item, name: []const u8) ?RetTy {
             for (its) |pi| {
                 if (pi == .event_decl) {
@@ -7797,9 +7804,9 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
                             if (b.payload.fields.len != 1) return null;
                             const f = b.payload.fields[0];
                             if (!std.mem.eql(u8, f.name, "__type_ref")) return null;
-                            if (f.module_path) |mp| return .{ .type = f.type, .module_path = mp };
+                            if (f.module_path) |mp| return .{ .type = f.type, .module_path = mp, .phantom = f.phantom };
                             if (std.mem.indexOfScalar(u8, f.type, ':')) |colon| {
-                                return .{ .type = f.type[colon + 1 ..], .module_path = f.type[0..colon] };
+                                return .{ .type = f.type[colon + 1 ..], .module_path = f.type[0..colon], .phantom = f.phantom };
                             }
                             // A payload written bare (`! progress *Progress`)
                             // names a type in the DECLARING module's scope, and
@@ -7809,10 +7816,10 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
                             // `koru_vaxis.i64`.
                             if (std.mem.startsWith(u8, f.type, "*")) {
                                 if (ed.path.module_qualifier) |mq| {
-                                    if (mq.len > 0) return .{ .type = f.type, .module_path = mq };
+                                    if (mq.len > 0) return .{ .type = f.type, .module_path = mq, .phantom = f.phantom };
                                 }
                             }
-                            return .{ .type = f.type, .module_path = null };
+                            return .{ .type = f.type, .module_path = null, .phantom = f.phantom };
                         }
                     }
                 } else if (pi == .module_decl) {
@@ -7889,6 +7896,24 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
                                             .name = ab,
                                             .type = alloc.dupe(u8, bt.type) catch unreachable,
                                             .module_path = if (bt.module_path) |mp| alloc.dupe(u8, mp) catch unreachable else null,
+                                            // The payload's obligation rides along, QUALIFIED with the
+                                            // module that declared it. Without the phantom at all the
+                                            // synthesized sweep-body input declares a bare type and the
+                                            // checker sees an untracked name; without the qualifier the
+                                            // state resolves against the CONSUMER's module and the
+                                            // mismatch reads `expected 'std.list:list' but got
+                                            // 'myprog:list'` (690_252).
+                                            //
+                                            // Written in the prefixed `mod:!state` spelling that the
+                                            // rest of this file's phantom handling expects, from the
+                                            // author's bare trailing-bang `state!`.
+                                            .phantom = if (bt.phantom) |ph| blk_bph: {
+                                                if (std.mem.indexOfScalar(u8, ph, ':') != null) break :blk_bph alloc.dupe(u8, ph) catch unreachable;
+                                                const owed = ph.len > 1 and ph[ph.len - 1] == '!';
+                                                const base = if (owed) ph[0 .. ph.len - 1] else ph;
+                                                const mp = bt.module_path orelse break :blk_bph alloc.dupe(u8, ph) catch unreachable;
+                                                break :blk_bph std.fmt.allocPrint(alloc, "{s}:{s}{s}", .{ mp, if (owed) "!" else "", base }) catch unreachable;
+                                            } else null,
                                         }) catch unreachable;
                                     }
                                 }
@@ -8116,7 +8141,23 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
             .name = allocator.dupe(u8, c.name) catch unreachable,
             .type = c.type,
             .module_path = c.module_path,
-            .phantom = c.phantom,
+            // A BARE BORROW, never the obligation — the same demotion an owned
+            // column's projection makes just above. The arm may read and mutate
+            // the captured handle; it must not be asked to DISCHARGE it, because
+            // the obligation belongs to the enclosing scope and the body runs
+            // once per row. `<list!>` in, `<list>` here.
+            //
+            // TWO SPELLINGS reach here and only one of them is what `bareBorrow`
+            // was written for. A projected column's phantom is the prefixed
+            // `<qualifier>:!state`; a BRANCH PAYLOAD's is the bare trailing-bang
+            // `state!` that the author wrote in the declaration. Feeding the
+            // second to `bareBorrow` returns it untouched — it finds no colon —
+            // and the input then tries to ISSUE the obligation, which KORU033
+            // correctly refuses on a parameter.
+            .phantom = if (c.phantom) |ph| blk_ph: {
+                if (ph.len > 1 and ph[ph.len - 1] == '!') break :blk_ph allocator.dupe(u8, ph[0 .. ph.len - 1]) catch unreachable;
+                break :blk_ph H.bareBorrow(allocator, ph);
+            } else null,
         };
     }
     sbody_in[proj_names.len + captures.items.len] = ast.Field{
