@@ -132,6 +132,7 @@ set-scenario = std/regex:match(a)
 | `fanout` _ |> std/store:stored { cfg.scenario: 9, cfg.which: 0 }
 | `bevy_strength_world` _ |> std/store:stored { cfg.scenario: 10, cfg.which: 0 }
 | `archetype_churn_world` _ |> std/store:stored { cfg.scenario: 25, cfg.which: 0 }
+| `combat_world` _ |> std/store:stored { cfg.scenario: 26, cfg.which: 0 }
 | `boids` _ |> std/store:stored { cfg.scenario: 11, cfg.which: 0 }
 | `boids_fused` _ |> std/store:stored { cfg.scenario: 12, cfg.which: 0 }
 | `boids_f2` _ |> std/store:stored { cfg.scenario: 13, cfg.which: 0 }
@@ -708,6 +709,103 @@ churn-frame = churn-idle-to-seeking() |> churn-seeking-to-attacking()
     |> churn-attack() |> churn-stunned-to-idle() |> churn-mark-dead()
     |> churn-checksum() |> churn-advance()
 
+// --- combat_world -----------------------------------------------------------
+//
+// The scenario the harness had no answer to for the longest. It needs a SPATIAL
+// INDEX whose cells hold a VARIABLE-LENGTH LIST, and a walk over that list that
+// STOPS at the first hit. Every piece of that is now expressible:
+//
+//   bucket        -> an INTRUSIVE CHAIN. The grid cell holds the head handle,
+//                    the enemy row carries `enext`. No collection type needed.
+//   list order    -> the chain is built by sweeping enemies DESCENDING, so
+//                    head-insertion reads back ASCENDING. This is load-bearing,
+//                    not tidiness: the baseline appends enemies 0..n and BREAKS
+//                    on the first hit, so a reversed walk picks a different
+//                    victim and the sink diverges.
+//   walk + break  -> `for(..., keep: ...)`. Before that existed the walk had to
+//                    run its full bound with every iteration guarded into a
+//                    no-op, costing the BOUND instead of the LENGTH.
+//   row by index  -> a grid of handles (690_253).
+//
+// Oracle: zig_striped and bevy_ecs AGREE at 1838076, so unlike `fanout` this row
+// has a real arbiter.
+std/store:new(en, capacity: 10000) { ex: f32, ey: f32, ehp: i64, ealive: i64, enext: 0[i64] }
+std/store:new(pr, capacity: 10000) { ppx: f32, ppy: f32, pvx: f32, pvy: f32, palive: i64 }
+[unsafe(bounds)]std/grid:new(bkt, size: 4096) { head: 0[i64] }
+[unsafe(bounds)]std/grid:new(exr, size: 10000) { h: 0[i64] }
+std/store:new(cw) { cur: 0[i64], hit: 0[i64], now: 0[i64], lasthp: 0[i64], h: 0[i64], cell: 0[i64], alive: 0[i64] }
+
+tor combat-init {}
+combat-init = for(0..@as(usize, @intCast(@divTrunc(cfg.entities, 10))))
+    ! each i |> std/store:insert(en) { ex: @as(f32, @floatFromInt((i * 37) % 1024)) + 0.5, ey: @as(f32, @floatFromInt((i * 91) % 1024)) + 0.5, ehp: 100, ealive: 1, enext: 0 }
+        | row t |> std/grid:stored { exr[i].h: t }
+        | full |> _
+
+tor combat-init-pr {}
+combat-init-pr = for(0..@as(usize, @intCast(@divTrunc(cfg.entities, 10))))
+    ! each i |> std/store:insert(pr) { ppx: @as(f32, @floatFromInt((i * 37) % 1024)), ppy: @as(f32, @floatFromInt((i * 91) % 1024)), pvx: if (i % 2 == 0) 0.25 else -0.25, pvy: if (i % 3 == 0) 0.15 else -0.15, palive: 1 }
+        | row _ |> _
+        | full |> _
+
+tor combat-move {}
+combat-move = std/store:query(pr)
+! query p when p.palive == 1 |> std/store:stored { p.ppx: p.ppx + p.pvx, p.ppy: p.ppy + p.pvy }
+
+tor combat-clear {}
+combat-clear = for(0..4096)
+    ! each c |> std/grid:stored { bkt[c].head: 0 }
+
+// DESCENDING, so the head-inserted chain reads ascending. The head write is
+// guarded on `ealive` by an if-expression rather than a `when`, because the
+// sweep must still visit dead rows to reach the live ones below them.
+//
+// THE INTERMEDIATES ARE PARKED IN COLUMNS, and not for readability. An indexed
+// store read does not lower inside a GRID INDEX expression: written inline,
+// `bkt[... en[exr[i].h].ex ...]` reaches the host as the literal text `en[...]`
+// and the backend refuses with `use of undeclared identifier 'en'`. Same reach
+// gap as a call argument (690_254) and `print.ln`. So the handle lands in `cw.h`
+// and the cell index in `cw.cell` first, and every later rung addresses through
+// those. It reads better this way, which is a consolation and not the reason.
+tor combat-rebuild {}
+combat-rebuild = for(0..@as(usize, @intCast(@divTrunc(cfg.entities, 10))))
+    ! each k |> std/store:stored { cw.h: exr[@as(usize, @intCast(@divTrunc(cfg.entities, 10) - 1 - @as(i64, @intCast(k))))].h }
+        |> std/store:stored { cw.cell: @as(i64, @min(@max(@as(i64, @intFromFloat(@floor(en[cw.h].ex / 16.0))), 0), 63)) + @as(i64, @min(@max(@as(i64, @intFromFloat(@floor(en[cw.h].ey / 16.0))), 0), 63)) * 64 }
+        |> std/store:stored { cw.alive: en[cw.h].ealive }
+        |> std/store:stored { en[cw.h].enext: bkt[@as(usize, @intCast(cw.cell))].head }
+        |> std/grid:stored { bkt[@as(usize, @intCast(cw.cell))].head: if (cw.alive == 1) cw.h else bkt[@as(usize, @intCast(cw.cell))].head }
+
+// The observer fan-out, fired only on a real hit. `observe` cannot be called
+// conditionally from a chain, so the condition rides in as a parameter.
+tor combat-observe { value: i64, fire: i64 }
+combat-observe = for(0..@as(usize, @intCast(cfg.observers)))
+    ! each o |> if (fire == 1 and (((@as(u64, @bitCast(value)) ^ @as(u64, @intCast(o))) *% 0x9e3779b9) & 7) == 0)
+        | then |> std/store:stored { acc.sink: acc.sink + value + @as(i64, @intCast(o)) }
+        | else |> _
+
+// ONE STEP of the chain walk. `keep:` stops the loop at the first hit, so this
+// runs once per enemy actually inspected — the length, not the bound.
+tor combat-step { qx: f32, qy: f32 }
+combat-step = std/store:stored { cw.now: if (en[cw.cur].ealive == 1 and (qx - en[cw.cur].ex) * (qx - en[cw.cur].ex) + (qy - en[cw.cur].ey) * (qy - en[cw.cur].ey) <= 4.0) @as(i64, 1) else @as(i64, 0) }
+    |> std/store:stored { en[cw.cur].ehp: if (cw.now == 1) en[cw.cur].ehp - 10 else en[cw.cur].ehp }
+    |> std/store:stored { cw.lasthp: en[cw.cur].ehp }
+    |> combat-observe(value: cw.lasthp, fire: cw.now)
+    |> std/store:stored { en[cw.cur].ealive: if (cw.now == 1 and en[cw.cur].ehp <= 0) @as(i64, 0) else en[cw.cur].ealive }
+    |> std/store:stored { cw.hit: if (cw.now == 1) @as(i64, 1) else cw.hit }
+    |> std/store:stored { cw.cur: en[cw.cur].enext }
+
+tor combat-walk { qx: f32, qy: f32 }
+combat-walk = for(0..10000, keep: cw.cur != 0 and cw.hit == 0)
+    ! each _ |> combat-step(qx, qy)
+
+tor combat-collide {}
+combat-collide = std/store:query(pr)
+! query p when p.palive == 1 |> std/store:stored { cw.cur: bkt[@as(usize, @intCast(@as(i64, @min(@max(@as(i64, @intFromFloat(@floor(p.ppx / 16.0))), 0), 63)) + @as(i64, @min(@max(@as(i64, @intFromFloat(@floor(p.ppy / 16.0))), 0), 63)) * 64))].head, cw.hit: 0 }
+    |> combat-walk(qx: p.ppx, qy: p.ppy)
+    |> std/store:stored { p.palive: if (cw.hit == 1) @as(i64, 0) else p.palive }
+
+tor combat-frame {}
+combat-frame = combat-move() |> combat-clear() |> combat-rebuild() |> combat-collide()
+
 // ----------------------------------------------------------------- scenarios
 
 tor s-dense {}
@@ -794,6 +892,10 @@ s-bevy-strength = init-dyn() |> init-parts() |> init-orbs()
 tor s-churn {}
 s-churn = for(0..@as(usize, @intCast(cfg.frames)))
     ! each _ |> churn-frame()
+
+tor s-combat {}
+s-combat = for(0..@as(usize, @intCast(cfg.frames)))
+    ! each _ |> combat-frame()
 
 // ------------------------------------------------------------------ dispatch
 //
@@ -892,10 +994,15 @@ run-churn = if(cfg.scenario == 25)
 | then |> s-churn()
 | else |> _
 
+tor run-combat {}
+run-combat = if(cfg.scenario == 26)
+| then |> s-combat()
+| else |> _
+
 tor run {}
 run = run-dense() |> run-sparse() |> run-query-get() |> run-schedule-empty()
     |> run-spawn() |> run-spawn-batch() |> run-despawn() |> run-add-remove()
-    |> run-fanout() |> run-bevy-strength() |> run-boids() |> run-boids-fused() |> run-boids-f2() |> run-boids-f4() |> run-boids-split() |> run-boids-helpers() |> run-boids-fold() |> run-boids-phase() |> run-churn()
+    |> run-fanout() |> run-bevy-strength() |> run-boids() |> run-boids-fused() |> run-boids-f2() |> run-boids-f4() |> run-boids-split() |> run-boids-helpers() |> run-boids-fold() |> run-boids-phase() |> run-churn() |> run-combat()
 
 // -------------------------------------------------------------- the checksum
 //
@@ -906,7 +1013,7 @@ run = run-dense() |> run-sparse() |> run-query-get() |> run-schedule-empty()
 // it; the older rows deliberately keep their construction inside the timed
 // region and the README says so.
 tor prep {}
-prep = prep-boids() |> prep-churn()
+prep = prep-boids() |> prep-churn() |> prep-combat()
 
 tor prep-boids {}
 prep-boids = if(cfg.scenario >= 11 and cfg.scenario <= 24)
@@ -923,6 +1030,13 @@ tor prep-churn {}
 prep-churn = if(cfg.scenario == 25)
 | then |> churn-init() |> churn-frame()
     |> std/store:stored { ch.csum: 0, ch.trans: 0, ch.dmge: 0, ch.deaths: 0 }
+| else |> _
+
+// Enemy and projectile construction is untimed, matching boids and the churn
+// world; the frame loop is the measurement.
+tor prep-combat {}
+prep-combat = if(cfg.scenario == 26)
+| then |> combat-init() |> combat-init-pr()
 | else |> _
 
 tor fin-dense {}
@@ -1068,6 +1182,11 @@ name-churn = if(cfg.scenario == 25)
 | else |> _
 
 
+tor name-combat {}
+name-combat = if(cfg.scenario == 26)
+| then |> std/io:print("combat_world")
+| else |> _
+
 
 
 
@@ -1077,7 +1196,7 @@ tor emit { ns: i64 }
 emit = std/io:print("{\"impl\":\"koru_store\",\"scenario\":\"")
     |> name-dense() |> name-sparse() |> name-query-get() |> name-schedule-empty()
     |> name-spawn() |> name-spawn-batch() |> name-despawn() |> name-add-remove()
-    |> name-fanout() |> name-bevy-strength() |> name-boids() |> name-boids-fused() |> name-boids-f2() |> name-boids-f4() |> name-boids-split() |> name-boids-helpers() |> name-boids-fold() |> name-boids-phase() |> name-churn()
+    |> name-fanout() |> name-bevy-strength() |> name-boids() |> name-boids-fused() |> name-boids-f2() |> name-boids-f4() |> name-boids-split() |> name-boids-helpers() |> name-boids-fold() |> name-boids-phase() |> name-churn() |> name-combat()
     |> std/io:print.ln("\",\"entities\":{{ cfg.entities:d }},\"frames\":{{ cfg.frames:d }},\"observers\":{{ cfg.observers:d }},\"elapsed_ns\":{{ ns:d }},\"sink\":{{ acc.sink:d }}}")
 
 // -------------------------------------------------------------------- driver

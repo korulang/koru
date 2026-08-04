@@ -17,6 +17,23 @@ intentionally plain: each binary emits one JSON line per run.
 - `fanout`: damage events mutate health, then observer-style work fans out.
 - `combat_world`: a deterministic console simulation with enemies, projectiles,
   spatial buckets, movement, collision, damage, death, and fanout bookkeeping.
+  THREE ARMS, ALL AGREEING — `zig_striped`, `bevy_ecs` and `koru_store` at
+  `1838076` (100000x100), and agreeing at 1000x10, 1000x50 and 10000x20 too.
+
+  This entry used to say a spatial index was the first thing a borrowed ECS
+  workload asked for that `std/store` has no answer to. It has four answers now,
+  and the Koru port is where they compose: the bucket is an INTRUSIVE CHAIN (grid
+  cell holds the head handle, the enemy row carries `next`), the chain is built by
+  sweeping enemies DESCENDING so head-insertion reads back in the baseline's
+  ascending append order, the walk stops at the first hit via `for(…, keep: …)`,
+  and a row is reached by position through a grid of handles (`690_253`).
+
+  ASCENDING ORDER IS LOAD-BEARING, not tidiness: the baseline appends enemies
+  `0..n` and BREAKS on the first hit inside the radius, so a reversed walk damages
+  a different enemy and the sink diverges. The `keep:` early exit is what makes
+  the walk cost the chain's LENGTH rather than its bound — before it existed the
+  collision step had to run a fixed bound per projectile with every surplus
+  iteration guarded into a no-op.
 - `bevy_strength_world`: packed dense archetypes with dynamic bodies,
   particles, orbiters, modular systems, command cleanup, changed-component
   checksum, and math-heavy iteration. This is intended to favor Bevy ECS.
