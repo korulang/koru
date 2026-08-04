@@ -96,10 +96,18 @@ This is neither of the two above, and the distinction is the useful part:
 - Not the store's standing-rule wall. That one is top-level-only by
   construction and REFUSES. This one accepts and loses work.
 
-What is lost is the holding continuation's TAIL. The replacement installs the
-write and whatever followed the site in the chain does not come back with it.
-`spliceSiteResult` is where to look; the precise cause is untraced and this
-entry does not guess at it.
+What is lost is the holding continuation's TAIL, and the cause turned out to be
+one expression in the handler rather than anything in the pass machinery:
+
+    .body = ast.rootSite(call, &[_]ast.Continuation{}, flow.location)
+
+The replacement was built with an EMPTY continuation list. `spliceSiteResult`
+was never at fault — the handler threw the chain away before it got there.
+Every `rootSite` call in `store.kz` passes the real continuations; the two in
+`grid.kz` passed nothing, which is why only the grid had the defect. A write has
+no branches of its own, so `flow.body.continuations` is entirely chain steps and
+all of it belongs on the replacement. FIXED; `697_012` is green and covers both
+the tail and two chained writes in a loop arm.
 
 **Why it survived this long: every grid test writes in STATEMENTS, never in a
 chain.** `697_001` established that form the day the grid landed and nothing
@@ -114,16 +122,25 @@ field as an argument, so a chained store write is an ordinary repeated call to
 a shared event; `koru-libs`' `bounce.k` has chained two per entity for weeks. A
 grid's unit carries the assignment itself and is installed per site.
 
-**There is a decoy here, and it is worth naming because it was walked into.**
-Inside a `for` arm the same chain fails LOUDLY instead — `duplicate struct
-member name`, because the unit is keyed on the FLOW's line and every link
-shares it. That looks like the bug and is not; it is the drop, caught by
-accident. Making the key unique was tried and measured: the loop case then
-compiles and drops silently too, so the one loud shape goes quiet and the
-defect spreads. The collision is currently load-bearing, and `grid.kz` now says
-so at the site.
+**THE DECOY, AND THE ORDERING LESSON — the most transferable thing here.**
+Inside a `for` arm the same chain failed LOUDLY instead: `duplicate struct
+member name`, because the unit was keyed on the FLOW's line and every link of a
+chain shares it. That looks like the bug. It is not; it is the drop, caught by
+accident.
+
+The key was uniquified FIRST, on its own, and it made the system WORSE — with
+the tail still being discarded, the loop shape now compiled and silently printed
+the wrong answer. **The collision had been the only thing making the drop loud
+anywhere.** That change was reverted, the drop was fixed, and only then was the
+key made unique; both are green now and `grid.kz` records the order at both
+sites.
+
+Generalised: **a symptom can be load-bearing while its disease is untreated.**
+Fixing the noisy thing first is how a loud bug becomes a quiet one, and quiet is
+strictly worse. Before removing a diagnostic — even an ugly one leaking from the
+backend — establish what it is currently the only evidence of.
 
 Cost, concretely: `koru-libs`' boids renderer drew a black window, because its
 frame arm was `std/grid:stored {..} |> draw.rect(..)` and the draw was the
-swallowed step. Reordering so the write is last renders correctly. Needing to
-know that ordering rule is the bug.
+swallowed step. It needed no workaround in the end; the ordering rule that
+working around it produced was pure accident debt.

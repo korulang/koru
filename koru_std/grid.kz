@@ -919,22 +919,27 @@ const grid_read = struct {
     // the store's own unit shape, minus everything a grid does not need: no
     // inputs, no branches, no row argument, no envelope.
     //
-    // KEYED ON THE FLOW'S LINE, and that key is NOT unique: every chained write
+    // KEYED PER SITE, and the flow's line alone is not that: every chained write
     // in one flow shares it, so `a |> std/grid:stored {..} |> std/grid:stored
-    // {..}` mints the same name twice and the backend rejects the program with
-    // `duplicate struct member name`. That message is an internal leak and a bad
+    // {..}` minted one name twice and the backend rejected the program with
+    // `duplicate struct member name` — an internal leak with no Koru-level
     // diagnostic.
     //
-    // IT IS LEFT THAT WAY ON PURPOSE, because the collision is currently the
-    // only thing that makes a deeper bug LOUD: a chained grid write silently
-    // drops all but one link (690_253). Making this key unique — a text hash, a
-    // counter — compiles the program and prints the wrong answer instead, which
-    // was measured, not assumed. Fix the chain first, then the key.
+    // ORDER MATTERED HERE. Uniquifying this key was tried FIRST, while the chain
+    // tail was still being discarded (see the replacement below), and it made
+    // things worse: the loop shape then compiled and silently printed the wrong
+    // answer, because the collision had been the only thing making the drop
+    // loud anywhere. The drop is fixed now, so a unique key hides nothing.
+    //
+    // The block's TEXT is what distinguishes two links of a chain. Two
+    // byte-identical writes chained at one site still collide, and that is left
+    // alone deliberately: it is a redundant duplicate, and a blunt error is a
+    // fair report of it where a counter would silently accept the second.
     //
     // The store never had either problem: it mints ONE unit per store and passes
     // the field as an argument, so chained store writes are ordinary calls to a
     // shared event. A grid's unit carries the assignment itself.
-    const unit = std.fmt.allocPrint(allocator, "__grid_write_L{d}", .{flow.location.line}) catch unreachable;
+    const unit = std.fmt.allocPrint(allocator, "__grid_write_L{d}_{x}", .{ flow.location.line, std.hash.Wyhash.hash(0, btext) & 0xffff }) catch unreachable;
 
     // THE NAMESPACE IS IMPORT-DERIVED, NOT FILE-DERIVED. `flow.module` is the
     // file name (`lib`); every cross-module path in the program resolves through
@@ -994,7 +999,21 @@ const grid_read = struct {
     const call = ast.Invocation{ .path = mk.path(allocator, home_ns, unit), .args = args.toOwnedSlice(allocator) catch unreachable };
     return .{ .transformed = .{
         .replacement = ast.Item{ .flow = ast.Flow{
-            .body = ast.rootSite(call, &[_]ast.Continuation{}, flow.location),
+            // CARRY THE CHAIN. A write is one link, not the whole flow: in
+            // `std/grid:stored {..} |> next()` the `|> next()` lives in
+            // `flow.body.continuations`, and handing `rootSite` an empty slice
+            // here discarded it — the write landed and everything after it
+            // vanished, silently, with no diagnostic (697_012).
+            //
+            // A write has NO BRANCHES of its own, so every continuation on the
+            // original flow is a chain step and all of them belong on the
+            // replacement. That is the difference from `sweep` below, whose
+            // continuations include the `! sweep` arm it has already consumed
+            // into the emitted loop.
+            //
+            // Every rootSite call in store.kz passes real continuations; these
+            // two in grid.kz were the only ones passing nothing.
+            .body = ast.rootSite(call, flow.body.continuations, flow.location),
             .pre_label = null,
             .impl_of = flow.impl_of,
             .annotations = &[_][]const u8{},
