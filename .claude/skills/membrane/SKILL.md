@@ -174,8 +174,13 @@ Read the whole corpus only when you have a reason that names it. Reach past
 ## Querying through time
 
 - **Current belief** — read the working-tree file.
-- **A concept's whole trajectory** — `git log --grep="Concept: frag-<id>"
-  --format="%h %ad %s%n%b" --date=short`.
+- **A concept's whole trajectory** — `git log -E --grep="Concept:[[:space:]]+frag-<id>"
+  --format="%h %ad %s%n%b" --date=short`. The whitespace class is not
+  decoration: commits written before 2026-08-04 aligned their trailers into a
+  column, and a literal `"Concept: frag-<id>"` matches none of those and reports
+  the miss as *no trajectory* rather than as a bad query. The `commit-msg` hook
+  now normalises trailer spacing, so new commits match either form — the
+  tolerant spelling is what also reaches the history behind it.
 - **Belief at time T** — `git show <commit>:concepts/frag-<id>.md` (read-only;
   **never `checkout`** — it mutates the tree and can clobber untracked sidecar state).
 - **Lineage / parents / occlusions** — parse the `Parents:` / `Occludes:` / `Severs:`

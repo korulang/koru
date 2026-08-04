@@ -31,6 +31,24 @@ const { execFileSync } = require("child_process");
 
 let msg = fs.readFileSync(process.argv[2], "utf8");
 
+// --- TRAILER WHITESPACE IS PART OF THE GRAMMAR, so normalise it before anything
+// reads it. Authors align these fields into a column for readability, which
+// produces two spellings of one field (`Concept: x` and `Concept:    x`) and
+// silently breaks the corpus's primary time-travel query: the discipline
+// documents `git log --grep="Concept: frag-<id>"`, which matches ZERO aligned
+// commits and reports that as "no history" rather than as a bad query. Measured
+// 2026-08-04: 9 single-space against 4 aligned in twenty commits, so the log had
+// been answering "this belief has no trajectory" for a third of it.
+//
+// The log is a strictly-typed IR consumed by renderers, so one field must have
+// one spelling. Normalising here rather than rejecting keeps the alignment habit
+// harmless — the author writes the column, the log stores the grammar.
+msg = msg.replace(
+  /^(Action|Concept|Occludes|Parents|Severs|Reason|Provenance|Signal|Signals|Evolution):[ \t]+/gm,
+  "$1: ",
+);
+fs.writeFileSync(process.argv[2], msg);
+
 // Mechanical, git-generated commits are not authored belief-changes — exempt them.
 const firstLine = msg.split("\n").find((l) => l.trim()) || "";
 if (/^(Merge |Revert "|fixup!|squash!|amend!|Rebase )/.test(firstLine)) process.exit(0);
