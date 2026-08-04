@@ -917,8 +917,23 @@ const grid_read = struct {
     // The callable is an EVENT plus a same-named `|zig` proc that implements it;
     // a proc on its own is not invocable and resolves as an unknown tor. This is
     // the store's own unit shape, minus everything a grid does not need: no
-    // inputs, no branches, no row argument, no envelope. Keyed on the site LINE
-    // so two writes in one program never collide.
+    // inputs, no branches, no row argument, no envelope.
+    //
+    // KEYED ON THE FLOW'S LINE, and that key is NOT unique: every chained write
+    // in one flow shares it, so `a |> std/grid:stored {..} |> std/grid:stored
+    // {..}` mints the same name twice and the backend rejects the program with
+    // `duplicate struct member name`. That message is an internal leak and a bad
+    // diagnostic.
+    //
+    // IT IS LEFT THAT WAY ON PURPOSE, because the collision is currently the
+    // only thing that makes a deeper bug LOUD: a chained grid write silently
+    // drops all but one link (690_253). Making this key unique — a text hash, a
+    // counter — compiles the program and prints the wrong answer instead, which
+    // was measured, not assumed. Fix the chain first, then the key.
+    //
+    // The store never had either problem: it mints ONE unit per store and passes
+    // the field as an argument, so chained store writes are ordinary calls to a
+    // shared event. A grid's unit carries the assignment itself.
     const unit = std.fmt.allocPrint(allocator, "__grid_write_L{d}", .{flow.location.line}) catch unreachable;
 
     // THE NAMESPACE IS IMPORT-DERIVED, NOT FILE-DERIVED. `flow.module` is the

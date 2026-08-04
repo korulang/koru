@@ -82,3 +82,48 @@ CONSTRUCTION (ruled: [[frag-store-verb-placement]]), a message-quality pin
 (690_066), not a lowering bug. This frag is the transform-pass mechanism only.
 The shared surface is the SYMPTOM ("top-level-only") and the doctrine (teach it
 at the koru level), never one root.
+
+## A third member of the family: a site replacement that drops the chain TAIL
+
+2026-08-04. `std/grid:stored` executes and then **silently discards every step
+piped after it**. `697_012` pins it: the write lands, and the `|> print.ln`
+following it never runs. No diagnostic, exit 0.
+
+This is neither of the two above, and the distinction is the useful part:
+
+- Not the whole-program escape. The grid handler returns an ordinary
+  `.transformed.replacement`, the kind that is supposed to graft.
+- Not the store's standing-rule wall. That one is top-level-only by
+  construction and REFUSES. This one accepts and loses work.
+
+What is lost is the holding continuation's TAIL. The replacement installs the
+write and whatever followed the site in the chain does not come back with it.
+`spliceSiteResult` is where to look; the precise cause is untraced and this
+entry does not guess at it.
+
+**Why it survived this long: every grid test writes in STATEMENTS, never in a
+chain.** `697_001` established that form the day the grid landed and nothing
+since had cause to deviate, so the entire corpus stepped around the defect
+without anyone choosing to. A test suite can be uniformly idiomatic in a way
+that hides a whole shape — the same blind spot as
+[[frag-a-corpus-exercises-its-authors-idioms]], costing a correctness bug
+rather than a coverage gap.
+
+The store does not have it because it mints ONE unit per store and passes the
+field as an argument, so a chained store write is an ordinary repeated call to
+a shared event; `koru-libs`' `bounce.k` has chained two per entity for weeks. A
+grid's unit carries the assignment itself and is installed per site.
+
+**There is a decoy here, and it is worth naming because it was walked into.**
+Inside a `for` arm the same chain fails LOUDLY instead — `duplicate struct
+member name`, because the unit is keyed on the FLOW's line and every link
+shares it. That looks like the bug and is not; it is the drop, caught by
+accident. Making the key unique was tried and measured: the loop case then
+compiles and drops silently too, so the one loud shape goes quiet and the
+defect spreads. The collision is currently load-bearing, and `grid.kz` now says
+so at the site.
+
+Cost, concretely: `koru-libs`' boids renderer drew a black window, because its
+frame arm was `std/grid:stored {..} |> draw.rect(..)` and the draw was the
+swallowed step. Reordering so the write is last renders correctly. Needing to
+know that ordering rule is the bug.
