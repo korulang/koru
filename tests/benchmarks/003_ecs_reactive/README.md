@@ -20,13 +20,32 @@ intentionally plain: each binary emits one JSON line per run.
 - `bevy_strength_world`: packed dense archetypes with dynamic bodies,
   particles, orbiters, modular systems, command cleanup, changed-component
   checksum, and math-heavy iteration. This is intended to favor Bevy ECS.
-- `archetype_churn_world`: Bevy-only anchor that moves entities between
-  archetypes during the workload: `Idle`, `Seeking`, `Attacking`, `Stunned`,
-  and `Dead`. It uses `Commands` for component insert/remove, real queries over
-  changing marker/component sets, health changes, and a deterministic checksum.
+- `archetype_churn_world`: TWO ARMS — `bevy_ecs` and `koru_store`, with
+  AGREEING SINKS. Moves entities between archetypes during the workload:
+  `Idle`, `Seeking`, `Attacking`, `Stunned`, `Dead`. It uses `Commands` for
+  component insert/remove, real queries over changing marker/component sets,
+  health changes, and a deterministic checksum.
+
+  THIS IS THE ONE SCENARIO THAT TESTS A RULING RATHER THAN ADDING COVERAGE.
+  Koru has no archetypes; the claim is that it does not need them, because a
+  component is a PRESENCE COLUMN and a "query over a changing component set" is
+  a GUARDED SWEEP. That claim is now carried by an oracle instead of an
+  argument: identical `sink` at 1000x10, 1000x50, 10000x10, 10000x50 and
+  100000x100 (496_294_029_526), and identical `transitions`, `damage_events`
+  and `deaths` at every one — including the configs that kill agents, which the
+  smallest config does not reach. Run both arms with `./run_bevy_anchor.sh`.
+
   It is absent from `run.sh` on purpose: the Zig baseline exits 1 with
-  `error.UnknownScenario` for it, and `run.sh` is `set -eu`. A row here would
-  be two arms, not three.
+  `error.UnknownScenario` for it, and `run.sh` is `set -eu`.
+
+  The Koru port's cost is stated in `koru_store/main.k` rather than hidden. Its
+  five bevy markers collapse to one `st` column because they are mutually
+  exclusive. Its attack system reaches `entities[(target + id*13) % count]` —
+  a row by POSITION — through a grid whose cells hold handles, which is the
+  `Vec<Entity>` the store has no verb for; pinned as `690_253`. And the
+  victim's address is respelled TEN times in one arm, because the store has no
+  expression-local binding and a conditional effect has to become an `if`
+  inside every written value instead of an early `continue`.
 
   MEASURED 2026-08-04, four facts a port has to honour, because reading the
   source is not evidence and three of these are invisible from it:

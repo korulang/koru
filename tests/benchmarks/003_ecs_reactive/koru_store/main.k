@@ -83,6 +83,31 @@ std/store:new(acc) { sink: 0[i64] }
 // Nanoseconds, summed over frames. Written only by that scenario.
 std/store:new(ph) { pact: 0[i64], pclr: 0[i64], phsh: 0[i64], psct: 0[i64], pres: 0[i64], pstg: 0[i64] }
 
+// `archetype_churn_world` is the scenario that tests a RULING rather than
+// adding coverage: Koru has no archetypes, and the claim is that it does not
+// need them. A component is a PRESENCE COLUMN, and a "query over a changing
+// component set" is a GUARDED SWEEP. bevy's five markers — Idle, Seeking,
+// Attacking, Stunned, Dead — are mutually exclusive, since every transition
+// removes the old marker as it inserts the new, so they are ONE `st` column
+// rather than five presence flags.
+//
+// `dmg` is `Changed<Health>`. Nothing but the attack writes hp, so "changed
+// this frame" is "damaged this frame", and the checksum sweep clears the flag
+// the way a change tick ages out.
+std/store:new(agents, capacity: 100000) { aid: i64, hp: i64, st: i64, tgt: i64, cd: i64, stun: i64, dmg: i64 }
+std/store:new(ch) { frame: 0[i64], csum: 0[i64], trans: 0[i64], dmge: 0[i64], deaths: 0[i64] }
+
+// THE INDEX->HANDLE BRIDGE, and it is the interesting part of this port.
+//
+// bevy holds `ChurnEntities(Vec<Entity>)` and reaches its victim by POSITION:
+// `entities.0[(target + id*13) % count]`. The `fanout` note above says a row is
+// named by handle and never by position, so that access "is not spellable and
+// no amount of cleverness makes it so". THAT IS WRONG, and this is the
+// counterexample: a GRID is positionally addressed, so a grid whose cells hold
+// handles is exactly the missing `Vec<Entity>`. Position -> handle -> row, and
+// 690_249 already lowers a read nested inside a write's row address.
+std/grid:new(xref, size: 100000) { h: 0[i64] }
+
 // ---------------------------------------------------------------- flag parse
 
 tor store-num { v: i64 }
@@ -106,6 +131,7 @@ set-scenario = std/regex:match(a)
 | `add_remove` _ |> std/store:stored { cfg.scenario: 8, cfg.which: 0 }
 | `fanout` _ |> std/store:stored { cfg.scenario: 9, cfg.which: 0 }
 | `bevy_strength_world` _ |> std/store:stored { cfg.scenario: 10, cfg.which: 0 }
+| `archetype_churn_world` _ |> std/store:stored { cfg.scenario: 25, cfg.which: 0 }
 | `boids` _ |> std/store:stored { cfg.scenario: 11, cfg.which: 0 }
 | `boids_fused` _ |> std/store:stored { cfg.scenario: 12, cfg.which: 0 }
 | `boids_f2` _ |> std/store:stored { cfg.scenario: 13, cfg.which: 0 }
@@ -196,13 +222,18 @@ count-marks = std/store:query(marks)
 // --- fanout -----------------------------------------------------------------
 //
 // The baseline picks its victim by INDEX — `health[(frame*131 + i*17) % len]`.
-// A cell names a row by handle, never by position, so that access is not
-// spellable and no amount of cleverness makes it so. What the scenario is
-// actually measuring is the observer fan-out per damage event, so the port
-// keeps the event COUNT (entities/10 per frame) and the per-event observer
-// work identical, and damages the every-tenth rows instead of pseudo-random
-// ones. The sinks therefore differ across all three impls — bevy_ecs's
+// This port keeps the event COUNT (entities/10 per frame) and the per-event
+// observer work identical, and damages the every-tenth rows instead of
+// pseudo-random ones, so its sink differs from both anchors — bevy_ecs's
 // already differs from the Zig baseline's for the same reason.
+//
+// THIS COMMENT USED TO SAY THE INDEXED ACCESS WAS UNSPELLABLE — "a cell names a
+// row by handle, never by position, so that access is not spellable and no
+// amount of cleverness makes it so". THAT WAS WRONG, and `archetype_churn_world`
+// below is the counterexample: a grid of handles is a positionally-addressed
+// `Vec<Entity>`, and `agents[xref[i].h].hp` lowers. So the divergence here is
+// now a CHOICE not to rewrite a settled row, not a limit of the language, and
+// this port could be made to agree with the anchors if anyone wants the row.
 
 tor observe { value: i64 }
 observe = for(0..@as(usize, @intCast(cfg.observers)))
@@ -557,6 +588,82 @@ tor read-flock {}
 read-flock = std/store:query(flock)
 ! query b |> std/store:stored { acc.sink: acc.sink + @as(i64, @intFromFloat(@abs(b.px))) * 31 + @as(i64, @intFromFloat(@abs(b.py))) * 17 + @as(i64, @intFromFloat(@abs(b.pz))) * 13 }
 
+// --- archetype_churn_world --------------------------------------------------
+//
+// One sweep per bevy system, in bevy's chained order. Every sweep MUTATES THE
+// COLUMN ITS OWN GUARD READS — the hazard the scenario exists to probe — and a
+// sweep visits each row once, so a row transitions at most once per system.
+//
+// The systems are separate sweeps rather than one fused pass because bevy's
+// `.chain()` inserts a sync point between systems: a transition made by an
+// earlier system IS visible to a later one in the SAME frame. Measured, not
+// assumed — at frame 0 with 1000 agents bevy reports 122 transitions, which is
+// 91 idle->seeking plus the 31 of those that go on to seeking->attacking in the
+// same frame. Fusing the sweeps would lose that and the checksum would say so.
+
+tor churn-init {}
+churn-init = for(0..@as(usize, @intCast(cfg.entities)))
+    ! each i |> std/store:insert(agents) { aid: @as(i64, @intCast(i)), hp: 100 + @as(i64, @intCast(@mod(i, 200))), st: 0, tgt: 0, cd: 0, stun: 0, dmg: 0 }
+        | row t |> std/grid:stored { xref[i].h: t }
+        | full |> _
+
+tor churn-idle-to-seeking {}
+churn-idle-to-seeking = std/store:query(agents)
+! query a when a.st == 0 and @mod(a.aid + ch.frame, 11) == 0
+    |> std/store:stored { a.st: 1, a.tgt: @mod(a.aid * 17 + ch.frame, 100000) }
+    |> std/store:stored { ch.trans: ch.trans + 1 }
+
+tor churn-seeking-to-attacking {}
+churn-seeking-to-attacking = std/store:query(agents)
+! query a when a.st == 1 and @mod(a.aid + ch.frame, 3) == 0
+    |> std/store:stored { a.st: 2, a.cd: 3 + @mod(a.aid, 7) }
+    |> std/store:stored { ch.trans: ch.trans + 1 }
+
+// The big one, and its size IS the finding. bevy decrements the cooldown, bails
+// while it is still positive, and otherwise damages the row at
+// `(target + id*13) % count` — reached here through the xref grid.
+//
+// THE VICTIM'S ADDRESS IS RESPELLED TEN TIMES. The store has no
+// expression-local binding, so an intermediate Rust holds in a register has to
+// be written out at every use, and a conditional effect becomes an `if` inside
+// each written value rather than an early `continue`. This is the same cost the
+// boids steering pays; it is stated rather than hidden.
+tor churn-attack {}
+churn-attack = std/store:query(agents)
+! query a when a.st == 2 |> std/store:stored { a.cd: a.cd - 1 }
+    |> std/store:stored { agents[xref[@as(usize, @intCast(@mod(a.tgt + a.aid * 13, cfg.entities)))].h].hp: if (a.cd <= 0 and agents[xref[@as(usize, @intCast(@mod(a.tgt + a.aid * 13, cfg.entities)))].h].st != 4) agents[xref[@as(usize, @intCast(@mod(a.tgt + a.aid * 13, cfg.entities)))].h].hp - 35 else agents[xref[@as(usize, @intCast(@mod(a.tgt + a.aid * 13, cfg.entities)))].h].hp }
+    |> std/store:stored { agents[xref[@as(usize, @intCast(@mod(a.tgt + a.aid * 13, cfg.entities)))].h].dmg: if (a.cd <= 0 and agents[xref[@as(usize, @intCast(@mod(a.tgt + a.aid * 13, cfg.entities)))].h].st != 4) @as(i64, 1) else agents[xref[@as(usize, @intCast(@mod(a.tgt + a.aid * 13, cfg.entities)))].h].dmg }
+    |> std/store:stored { ch.dmge: ch.dmge + (if (a.cd <= 0 and agents[xref[@as(usize, @intCast(@mod(a.tgt + a.aid * 13, cfg.entities)))].h].st != 4) @as(i64, 1) else @as(i64, 0)) }
+    |> std/store:stored { ch.csum: ch.csum + (if (a.cd <= 0 and agents[xref[@as(usize, @intCast(@mod(a.tgt + a.aid * 13, cfg.entities)))].h].st != 4) agents[xref[@as(usize, @intCast(@mod(a.tgt + a.aid * 13, cfg.entities)))].h].hp * 31 + a.aid else @as(i64, 0)) }
+    |> std/store:stored { a.st: if (a.cd <= 0) (if (@mod(a.aid, 23) == 0) @as(i64, 3) else @as(i64, 0)) else a.st, a.stun: if (a.cd <= 0 and @mod(a.aid, 23) == 0) 2 + @mod(a.aid, 5) else a.stun }
+    |> std/store:stored { ch.trans: ch.trans + (if (a.cd <= 0) @as(i64, 1) else @as(i64, 0)) }
+
+tor churn-stunned-to-idle {}
+churn-stunned-to-idle = std/store:query(agents)
+! query a when a.st == 3 |> std/store:stored { a.stun: a.stun - 1 }
+    |> std/store:stored { a.st: if (a.stun <= 0) @as(i64, 0) else a.st }
+    |> std/store:stored { ch.trans: ch.trans + (if (a.stun <= 0) @as(i64, 1) else @as(i64, 0)) }
+
+tor churn-mark-dead {}
+churn-mark-dead = std/store:query(agents)
+! query a when a.st != 4 and a.hp <= 0 |> std/store:stored { a.st: 4 }
+    |> std/store:stored { ch.trans: ch.trans + 1, ch.deaths: ch.deaths + 1 }
+
+// No Dead filter, because bevy's `Changed<Health>` query has none: a row killed
+// this frame still contributes the health it died at.
+tor churn-checksum {}
+churn-checksum = std/store:query(agents)
+! query a when a.dmg == 1 |> std/store:stored { ch.csum: ch.csum + a.aid * 17 + a.hp }
+    |> std/store:stored { a.dmg: 0 }
+
+tor churn-advance {}
+churn-advance = std/store:stored { ch.frame: ch.frame + 1 }
+
+tor churn-frame {}
+churn-frame = churn-idle-to-seeking() |> churn-seeking-to-attacking()
+    |> churn-attack() |> churn-stunned-to-idle() |> churn-mark-dead()
+    |> churn-checksum() |> churn-advance()
+
 // ----------------------------------------------------------------- scenarios
 
 tor s-dense {}
@@ -639,6 +746,10 @@ tor s-bevy-strength {}
 s-bevy-strength = init-dyn() |> init-parts() |> init-orbs()
     |> for(0..@as(usize, @intCast(cfg.frames)))
         ! each _ |> strength-frame()
+
+tor s-churn {}
+s-churn = for(0..@as(usize, @intCast(cfg.frames)))
+    ! each _ |> churn-frame()
 
 // ------------------------------------------------------------------ dispatch
 //
@@ -732,10 +843,15 @@ run-boids-helpers = if(cfg.scenario == 23)
 | then |> s-boids-helpers()
 | else |> _
 
+tor run-churn {}
+run-churn = if(cfg.scenario == 25)
+| then |> s-churn()
+| else |> _
+
 tor run {}
 run = run-dense() |> run-sparse() |> run-query-get() |> run-schedule-empty()
     |> run-spawn() |> run-spawn-batch() |> run-despawn() |> run-add-remove()
-    |> run-fanout() |> run-bevy-strength() |> run-boids() |> run-boids-fused() |> run-boids-f2() |> run-boids-f4() |> run-boids-split() |> run-boids-helpers() |> run-boids-fold() |> run-boids-phase()
+    |> run-fanout() |> run-bevy-strength() |> run-boids() |> run-boids-fused() |> run-boids-f2() |> run-boids-f4() |> run-boids-split() |> run-boids-helpers() |> run-boids-fold() |> run-boids-phase() |> run-churn()
 
 // -------------------------------------------------------------- the checksum
 //
@@ -746,8 +862,23 @@ run = run-dense() |> run-sparse() |> run-query-get() |> run-schedule-empty()
 // it; the older rows deliberately keep their construction inside the timed
 // region and the README says so.
 tor prep {}
-prep = if(cfg.scenario >= 11 and cfg.scenario <= 24)
+prep = prep-boids() |> prep-churn()
+
+tor prep-boids {}
+prep-boids = if(cfg.scenario >= 11 and cfg.scenario <= 24)
 | then |> flock-init() |> flock-normalize()
+| else |> _
+
+// The churn world builds AND runs one untimed warmup frame here, then zeroes
+// all four counters. The warmup is load-bearing on bevy's side — a
+// freshly-inserted component reads as `Changed`, so its frame 0 would fold
+// every spawned health into the checksum — and this port has to discard the
+// same frame to agree. All four counters are zeroed, not just the checksum,
+// which is the asymmetry the bevy harness itself carried until it was fixed.
+tor prep-churn {}
+prep-churn = if(cfg.scenario == 25)
+| then |> churn-init() |> churn-frame()
+    |> std/store:stored { ch.csum: 0, ch.trans: 0, ch.dmge: 0, ch.deaths: 0 }
 | else |> _
 
 tor fin-dense {}
@@ -790,9 +921,17 @@ report-phases = if(cfg.scenario == 16)
     |> std/io:eprint.ln("koru_store boids_phase steer: {{ ph.pstg:d }} ns")
 | else |> _
 
+// bevy assembles its sink from all four counters, weighted; the archetype
+// counts it also prints are diagnostics and are deliberately absent here.
+tor fin-churn {}
+fin-churn = if(cfg.scenario == 25)
+| then |> std/store:stored { acc.sink: ch.csum + ch.trans * 3 + ch.dmge * 5 + ch.deaths * 7 }
+| else |> _
+
 tor finish {}
 finish = fin-dense() |> fin-sparse() |> fin-spawn() |> fin-spawn-batch()
     |> fin-despawn() |> fin-add-remove() |> fin-boids() |> report-phases()
+    |> fin-churn()
 // `fanout` and `bevy_strength_world` accumulate their own sink as the
 // workload runs, exactly as the baseline does — no read-back arm.
 
@@ -879,6 +1018,11 @@ name-boids-phase = if(cfg.scenario == 16)
 | then |> std/io:print("boids_phase")
 | else |> _
 
+tor name-churn {}
+name-churn = if(cfg.scenario == 25)
+| then |> std/io:print("archetype_churn_world")
+| else |> _
+
 
 
 
@@ -889,7 +1033,7 @@ tor emit { ns: i64 }
 emit = std/io:print("{\"impl\":\"koru_store\",\"scenario\":\"")
     |> name-dense() |> name-sparse() |> name-query-get() |> name-schedule-empty()
     |> name-spawn() |> name-spawn-batch() |> name-despawn() |> name-add-remove()
-    |> name-fanout() |> name-bevy-strength() |> name-boids() |> name-boids-fused() |> name-boids-f2() |> name-boids-f4() |> name-boids-split() |> name-boids-helpers() |> name-boids-fold() |> name-boids-phase()
+    |> name-fanout() |> name-bevy-strength() |> name-boids() |> name-boids-fused() |> name-boids-f2() |> name-boids-f4() |> name-boids-split() |> name-boids-helpers() |> name-boids-fold() |> name-boids-phase() |> name-churn()
     |> std/io:print.ln("\",\"entities\":{{ cfg.entities:d }},\"frames\":{{ cfg.frames:d }},\"observers\":{{ cfg.observers:d }},\"elapsed_ns\":{{ ns:d }},\"sink\":{{ acc.sink:d }}}")
 
 // -------------------------------------------------------------------- driver
