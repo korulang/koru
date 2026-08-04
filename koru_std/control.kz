@@ -154,6 +154,65 @@ const std = @import("std");
 }
 
 // ============================================================================
+// SCAN - Iteration that STOPS (ZERO OVERHEAD)
+// ============================================================================
+//
+// Syntax: ~scan(0..64, keep: cursor != 0)
+//         ! each i |> step(i)
+//         | done |> finish()          // optional: runs once after the loop
+//
+// `for` visits every element; `scan` stops as soon as `keep:` goes false. Same
+// engine, one line of difference in the emitted loop.
+//
+// WHY IT EXISTS. `for` was the only loop form in the language — 27 uses across
+// the regression corpus, no `while`, and `break` appears only as an arbitrary
+// BRANCH NAME. So a bounded traversal that wants to stop early had to run its
+// full bound with every iteration guarded into a no-op. That is not merely
+// slower: it makes a linked-structure walk cost the BOUND rather than the
+// length, which is the difference between a spatial index and a scan of the
+// world. Found porting `combat_world`, whose collision step walks a bucket
+// chain and stops at the first enemy inside the radius.
+//
+// WHY IT IS THIS SMALL. Nothing new was built. The arm bodies are SPLICED into
+// the enclosing Zig loop rather than called through a function, so a `break`
+// emitted beside one reaches the loop it is written in. That predates this
+// keyword; nobody had put it together with the fact that a template may emit
+// whatever loop header it likes.
+//
+// WHY `keep:` AND NOT A `when` GUARD ON THE ARM. That was the first design and
+// KORU050 refused it, correctly: a `when`-guarded arm with no unguarded sibling
+// is a fire where every guard can be false and nothing happens, silently. The
+// refusal is not an obstacle to route around — it is the wall pointing out that
+// the guard was being given a SECOND meaning. `when` filters which fires are
+// handled; it does not terminate iteration. One glyph, one meaning, and a
+// terminator that says what it is. An arm inside `scan` may still carry a
+// `when`, and it still means filter, with the coverage rule unchanged.
+~[keyword]pub tor scan { expr: Expression, keep: Expression }
+! each *
+| ?done
+
+~proc scan|template|zig {
+    for ({{ expr }}) |__koru_item| {
+        if (!({{ keep }})) break;
+        {% for h in effects["each"] %}{{ h.inlined_link[scope] }}(__koru_item);
+        {% endfor %}
+    }
+    {{ continuations["done"].continue }}
+}
+
+// JS variant, mirroring `for|template|js` — same `parse_range` classification of
+// the iterable, same break. Kept in lockstep deliberately: a keyword that exists
+// on one target and not the other is a gap found at the worst possible moment.
+~proc scan|template|js {
+    {% const __koru_range = parse_range(expr) %}{% if __koru_range.is_range %}for (let __koru_item = {{ __koru_range.lo }}; __koru_item < {{ __koru_range.hi }}; __koru_item++) {% else %}for (const __koru_item of {{ expr }}) {% endif %}{
+        if (!({{ keep }})) break;
+        {% for h in effects["each"] %}{{ h.inlined_link[scope] }}(__koru_item);
+        {% endfor %}
+    }
+    {{ continuations["done"].continue }}
+}
+
+// ============================================================================
 // CAPTURE - Accumulation with pure semantics (ZERO OVERHEAD)
 // ============================================================================
 //

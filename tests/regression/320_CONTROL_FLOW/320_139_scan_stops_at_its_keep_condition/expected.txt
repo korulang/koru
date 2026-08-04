@@ -1,0 +1,1 @@
+stopped seen 5 sum 10 full 20
