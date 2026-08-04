@@ -282,9 +282,19 @@ if (touchesOKF) {
       memFail(`${rel}: no prose body after the frontmatter — an OKF fragment is frontmatter + a belief body`);
   }
 
-  const need = { create: [], evolve: ["Occludes"], merge: ["Parents"], split: ["Parents"], correct: ["Severs", "Reason"] };
+  // `move` is CUSTODY, not content: where a belief is KEPT changes, what is
+  // believed does not. It is the sixth verb because it is the one act the other
+  // five cannot express — they all answer "what changed about what is believed"
+  // — and because it is the only candidate that is mechanically CHECKABLE. It is
+  // also the only legal way a concept file may leave a tree: doctrine forbids
+  // deleting a belief, and a move does not delete one, provided the content
+  // demonstrably continues. Both halves are verified below rather than trusted.
+  const need = {
+    create: [], evolve: ["Occludes"], merge: ["Parents"], split: ["Parents"],
+    correct: ["Severs", "Reason"], move: ["Custody"],
+  };
   const action = keyIn(mem, "Action");
-  if (!action) memFail("declare an Action: (create/evolve/merge/split/correct)");
+  if (!action) memFail(`declare an Action: (${Object.keys(need).join("/")})`);
   if (!need[action]) memFail(`unknown Action '${action}' — want: ${Object.keys(need).join("/")}`);
   if (!keyIn(mem, "Concept")) memFail("missing Concept:");
   for (const k of need[action]) if (!keyIn(mem, k)) memFail(`Action ${action} requires ${k}:`);
@@ -296,6 +306,60 @@ if (touchesOKF) {
   };
   const conceptExists = (id) =>
     fs.existsSync(`concepts/${id}.md`) || objExists(`:concepts/${id}.md`) || objExists(`HEAD:concepts/${id}.md`);
+
+  // --- COVERAGE WALL: the declaration must name EVERY staged concept ---------
+  //
+  // The gate used to check the declaration's SHAPE and never ask whether it
+  // COVERED the commit, so a commit could stage twenty-five concept files,
+  // declare one, and the other twenty-four rode along undeclared and unexamined.
+  // Measured here 2026-08-04: exactly that commit passed this hook.
+  //
+  // It is the same defect shape as a correction applied to one term of a
+  // four-term aggregate (frag-a-fix-lands-in-one-lowering-path) — the wall built
+  // to catch partial work was itself only checking one member of a set whose
+  // size it never counted. A gate that validates a declaration without checking
+  // its reach is a gate you can walk around while filling in its form.
+  const idsIn = (k) => {
+    const v = keyIn(mem, k);
+    if (!v) return [];
+    return v
+      .split(",")
+      .map((s) => s.trim().replace(/@.*$/, "").split(/\s+/)[0])
+      .filter((s) => /^frag-/.test(s));
+  };
+  const declaredIds = new Set([...idsIn("Concept"), ...idsIn("Parents"), ...idsIn("Severs")]);
+  const uncovered = fragStaged
+    .map((f) => f.replace(/^.*\//, "").replace(/\.md$/, ""))
+    .filter((id) => !declaredIds.has(id));
+  if (uncovered.length)
+    memFail(
+      `${uncovered.length} staged concept(s) named nowhere in the declaration:\n` +
+      uncovered.map((id) => `    ${id}`).join("\n") + "\n" +
+      `  Every staged concepts/frag-*.md must appear in Concept:, Parents: or\n` +
+      `  Severs:. Concept: takes a comma-separated list. A staged file you did not\n` +
+      `  name is a belief change nobody declared — which is the one thing this\n` +
+      `  gate exists to make impossible.`);
+
+  if (action === "move") {
+    for (const rel of fragStaged) {
+      const inHead = objExists(`HEAD:${rel}`);
+      const inIndex = objExists(`:${rel}`);
+      // custody OUT (in HEAD, gone from the index): legal — the content stays
+      // reachable in this repo's history, which is why a move is not a delete.
+      // custody IN (new in the index): arriving from another store. A hook cannot
+      // verify a destination it cannot read, so `Custody:` must SAY where, and a
+      // reader checks it; that limit is stated in the skill rather than hidden.
+      if (inHead && inIndex) {
+        const sha = (p) => execFileSync("git", ["rev-parse", p], { encoding: "utf8" }).trim();
+        if (sha(`HEAD:${rel}`) !== sha(`:${rel}`))
+          memFail(
+            `${rel}: Action move must PRESERVE content, and this file's blob changed.\n` +
+            `  A move that also edits is two acts: move it, then evolve it. Splitting\n` +
+            `  them is what keeps "custody changed" and "the belief changed"\n` +
+            `  separately answerable later.`);
+      }
+    }
+  }
 
   if (action === "evolve") {
     const blob = keyIn(mem, "Occludes").trim();

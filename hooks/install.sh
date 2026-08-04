@@ -25,13 +25,29 @@ mkdir -p "$HOOKS" "$STORE/concepts"
 for h in commit-msg commit-msg.cjs post-commit post-commit.cjs; do
   cp "$HERE/$h" "$HOOKS/$h"; chmod +x "$HOOKS/$h"
 done
-printf '%s\n' "$STORE" > "$TARGET/.membrane"
+# ONE POINTER MECHANISM, and only when it says something. This used to write a
+# bare `.membrane` file naming an absolute path, which is the third site of a
+# mechanism the skill, the gate and `snap.mjs` all read as
+# `.claude/membrane.json` — so installing anywhere re-created the drift that
+# split the koru corpus for nine days (fixed 2026-08-04).
+#
+# A self-contained repo gets NO pointer at all: absence IS the documented in-repo
+# default, and a config restating a default is the thing that goes stale against
+# it. A stale `.membrane` left by an older install is removed, since nothing
+# reads it any more and a file nobody reads is a file nobody corrects.
+rm -f "$TARGET/.membrane"
+if [ "$STORE" != "$TARGET" ]; then
+  REL="$(python3 -c 'import os,sys; print(os.path.relpath(sys.argv[1], sys.argv[2]))' "$STORE" "$TARGET")"
+  mkdir -p "$TARGET/.claude"
+  printf '{ "store": "%s" }\n' "$REL" > "$TARGET/.claude/membrane.json"
+fi
 
 echo "installed commit-msg + post-commit -> $HOOKS"
-echo "store pointer                       -> $TARGET/.membrane ($STORE)"
 if [ "$STORE" = "$TARGET" ]; then
+  echo "store pointer                       -> none (in-repo corpus, the default)"
   echo "topology: self-contained (this repo is its own corpus)"
 else
+  echo "store pointer                       -> $TARGET/.claude/membrane.json ($REL)"
   echo "topology: consumer → shared corpus ($STORE)"
 fi
 

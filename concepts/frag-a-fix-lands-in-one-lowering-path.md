@@ -206,3 +206,39 @@ able to report that it was partially corrected.
   required" from "this discard is a leftover"; only measuring what the discarded
   frame contributes can. So the reflex on finding an odd-looking correction is
   to *measure its contribution*, never to remove it for looking odd.
+
+## The enforcement layer is not exempt from the rule it enforces
+
+Every form above is about ordinary code. The sharpest instance is not: the
+`commit-msg` gate that exists to make partial belief-work impossible was itself
+doing partial belief-work, and had been since it was written.
+
+It validated a declaration's SHAPE — the verb is legal, the required fields are
+present, the referenced blobs resolve — and never asked whether the declaration
+COVERED the commit. So a commit could stage twenty-five concept files, declare
+one, and the other twenty-four rode through undeclared. The staged set is an
+aggregate whose size the gate never counted, which is this belief's third tell
+exactly, wearing the uniform of the thing that enforces it.
+
+Why this is worth its own section rather than a fourth bullet on the list:
+
+- **A gate you can satisfy without doing the work is worse than no gate**, because
+  it certifies. An absent check leaves you uncertain; a check that passes tells
+  you the thing was examined. The 25-concept commit is now on the record as
+  reviewed by a wall that looked at one file of it.
+- **The rule was known, written down, and being applied elsewhere that same day.**
+  This is the same shape as the loop form in the original instance: measured,
+  believed, shipped for one path, and the second path kept the old spelling
+  anyway. A lesson fully absorbed into doctrine does not propagate itself into the
+  doctrine's own enforcement.
+- **The tell generalises, and it is cheap to ask.** For any wall: does it check the
+  SHAPE of a claim, or the claim's REACH over what it is claiming about? Shape is
+  the easy half and the half that gets written, because it needs nothing but the
+  message. Reach requires knowing what the commit touched, which is one more
+  query nobody makes.
+
+What follows for building walls at all: **a wall's own first test should be the
+defect it was built to catch, aimed at the wall.** Both clauses added here were
+negative-tested — a multi-file declaration naming a subset, and a custody move
+that edits — before either was trusted, because a wall that has only ever been
+seen to pass is indistinguishable from one that always passes.

@@ -41,31 +41,35 @@ approximation; the correction is itself fallible. Three consequences, load-beari
 `<store>` is the path to the store repo. A project declares it in
 **`.claude/membrane.json`** at the repo root:
 
-    { "store": "../koru-membrane" }
+    { "store": "../koru" }
 
 - Resolved relative to the repo root — siblings under one parent are `../<name>`.
 - **No `membrane.json`** → the store is **in-repo**: `concepts/` in the project
   itself, hook in the project's own `.git/hooks`. The simple single-project default.
 - **Pointed** → a **shared** store: many repos name the same external store, so one
-  corpus serves a whole family. The koru family uses this — koru, koru-libs,
-  korulang_org all point at the `koru-membrane` sibling repo.
+  corpus serves a whole family. The koru family uses this — `koru-libs` and
+  `korulang_org` name `../koru`, and `koru` itself declares nothing because
+  in-repo is the default. (Until 2026-08-04 they all named a `koru-membrane`
+  sibling that had stopped moving nine days earlier; the corpus was split in half
+  and every pointer named the dead half. One store, one pointer mechanism.)
 
 The `commit-msg` hook lives in the **store** repo's hooks (it enforces *corpus*
 commits, which land in the store, not in the consumers). Install it once, there.
 
-## The five-verb lineage discipline
+## The six-verb lineage discipline
 
 Every commit to the corpus carries a trailer block. The verb is the judgment.
 
 ```
 <verb>(<id>): <one-line summary>
 
-Action:     create | evolve | merge | split | correct
-Concept:    frag-<id>                 # the resulting/affected concept
+Action:     create | evolve | merge | split | correct | move
+Concept:    frag-<id>[, frag-<id>...] # the resulting/affected concept(s)
 Occludes:   <blob-sha>                # evolve ONLY — the prior belief's blob (reachable)
 Parents:    frag-<id>[, frag-<id>...] # merge/split ONLY — the lineage DAG edge
 Severs:     frag-<id>@<blob-sha>      # correct ONLY — the repudiated lineage point
 Reason:     <why the prior line was wrong>   # correct ONLY
+Custody:    <from> -> <to>            # move ONLY — where the belief is now kept
 Provenance: <session / conversation / source of this update>
 Signal:     <type> [value=<n>] [<note>]     # zero or more — the WMFX faucet (see below)
 Signals:    none                            # REQUIRED if there are no Signal: lines
@@ -84,6 +88,18 @@ Choosing the verb:
   merge. Not superseded — **repudiated.** `Severs:` the bad lineage point +
   `Reason:`. Stays on the *same* file/id: a discontinuity *within* an identity,
   not a new identity.
+- **move** — **custody, not content.** Where a belief is KEPT changes; what is
+  believed does not. A corpus absorbing another store's concepts, or a repo that
+  stops being a store handing its concepts to the one that is. `Custody:` names
+  from and to. This is the ONLY legal way a concept file may leave a tree, and it
+  is legal precisely because it is not a deletion: the content stays reachable in
+  history, and the gate refuses a `move` whose blob changed — a move that also
+  edits is two acts, moved then evolved. Keeping them separate is what leaves
+  "custody changed" and "the belief changed" separately answerable later.
+
+  The limit is stated rather than hidden: a hook cannot read the destination
+  repo, so custody-IN cannot be verified mechanically. `Custody:` is a claim a
+  reader checks. What IS verified is that nothing is lost on the way out.
 
 **The one hard discernment is evolve vs. correct.** Evolve = "this *was* true, now
 it's different." Correct = "this was *never* right." Mislabel a correction as an
@@ -119,7 +135,7 @@ just how membrane carries and enforces it:
 
 1. **Survey** — what concept(s) does this update touch? Read/grep the store. (Later,
    optionally, embedding-match to find candidates.)
-2. **Decide the verb** — create / evolve / merge / split / correct.
+2. **Decide the verb** — create / evolve / merge / split / correct / move.
 3. **Edit** the file(s) — opaque-id filename, belief in the body.
 4. **Commit** with the trailer. The hook rejects a malformed one.
 
@@ -165,8 +181,9 @@ width is always visible even when its contents aren't.
 
 `snap` is **pure-read and fully derived** — git plus the working tree, no index,
 no cache, no state. It never writes and never demands work in return, so call it
-as freely as you like. Run it from a repo carrying a `.membrane` pointer and it
-finds the store on its own; otherwise pass `--store`.
+as freely as you like. Run it from a repo whose `.claude/membrane.json` names a
+store and it finds it on its own; with no pointer it reads the cwd, which is the
+in-repo case. Otherwise pass `--store`.
 
 Read the whole corpus only when you have a reason that names it. Reach past
 `snap` with the queries below.
@@ -214,6 +231,7 @@ Starter field → affordance map (the renderer's vocabulary):
 | `Action: merge` + `Parents:` | two nodes converge into one |
 | `Action: split` + `Parents:` | one node forks into two |
 | `Action: correct` + `Severs:` | a **visible cut** in the lineage — a scar, not a smooth step |
+| `Action: move` + `Custody:` | the node migrates between corpora — a translation, not a state change |
 | `Signal: <type>` | colour / glyph by type (surprise, smear, regime-change, correction) |
 | `Signal: … value=<n>` | intensity / size / glow by strength |
 | `claim_id` (commit SHA) | the node's stable handle; click-through to the exact change |
@@ -231,9 +249,20 @@ renderer; Cordial is the target.
 A `commit-msg` hook validates the trailer so the discipline can't silently drift —
 encode the discipline into something that fires on its own. It must:
 
-- require an `Action:` from the five verbs and a `Concept:`;
+- require an `Action:` from the six verbs and a `Concept:`;
 - require `Occludes:` on evolve; `Parents:` on merge/split; **`Severs:` AND
-  `Reason:` on correct**;
+  `Reason:` on correct**; `Custody:` on move;
+- **require the declaration to COVER the commit** — every staged
+  `concepts/frag-*.md` must be named in `Concept:`, `Parents:` or `Severs:`.
+  Without this the gate checks a declaration's shape and never its reach, so a
+  commit can stage twenty-five concepts, declare one, and the rest ride along
+  undeclared. That is not hypothetical: it passed here on 2026-08-04, and it is
+  the same defect shape as a correction applied to one term of a multi-term
+  aggregate. A gate you can fill in the form of and walk around is worse than no
+  gate, because it certifies.
+- **refuse a `move` that edits** — if a staged concept exists in both `HEAD` and
+  the index under `Action: move`, its blob must be unchanged. Custody and content
+  are separate claims and must stay separately answerable;
 - require a faucet-signal declaration on every membrane commit — a `Signal:` line
   **or** an explicit `Signals: none`; and **forbid `Signals: none` on a `correct`**;
 - reject the commit (non-zero exit) on any violation, printing what's missing.
@@ -244,7 +273,7 @@ Reference logic (Node; install at `<store>/.git/hooks/commit-msg`):
 const msg = require("fs").readFileSync(process.argv[2], "utf8");
 const f = (k) => (msg.match(new RegExp("^" + k + ":\\s*(.+)$", "m")) || [])[1];
 const action = f("Action");
-const need = { create:[], evolve:["Occludes"], merge:["Parents"], split:["Parents"], correct:["Severs","Reason"] };
+const need = { create:[], evolve:["Occludes"], merge:["Parents"], split:["Parents"], correct:["Severs","Reason"], move:["Custody"] };
 const fail = (m) => { console.error("membrane: rejected — " + m); process.exit(1); };
 if (!action) process.exit(0);                       // non-membrane commits pass
 if (!need[action]) fail(`unknown Action '${action}'`);
@@ -279,6 +308,8 @@ tail becomes the bottleneck — and back-fill the whole index then.
 
 - Rewrite history (rebase/amend/force) — corrections are forward commits.
 - Delete a concept to "remove" a wrong belief — `correct` + `Severs` it forward.
+  A concept file may only leave a tree under `move`, which is not a deletion: the
+  content stays reachable in history and provably continues elsewhere.
 - Skip the trailer, or hand-wave the verb — the hook will reject it, and a silent
   evolve-vs-correct mislabel corrupts the time-travel.
 - Reach for an LLM or embedding "evolver" — you are the evolver; that's the point.
