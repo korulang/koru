@@ -167,3 +167,42 @@ seen.
 - **Count the copies before believing a rewriter is the rewriter.** `grep` for
   the function name; if it appears in more than one scope, the feature is
   present in some of them.
+
+## The third tell is a COMPOSITE VALUE, where the sites are terms, not code
+
+Every form above has the duplicated sites in *code* — two lowerings, four
+`storeRefs` copies, N hand-rolled scanners. The count is at least in principle
+greppable. The nastier instance has no second site to find, because the site set
+is the **terms of a value**.
+
+A benchmark sink assembled from several counters is one number with several
+authors. When a correction has to be applied to the measurement — discard a
+warmup frame, exclude construction, scrub an artifact of setup — it is applied
+to whichever term the author had in mind, and the others go on measuring a
+different window. `archetype_churn_world`'s sink is this: the warmup discard
+covered the checksum and left the counts, so one published figure summed two
+incompatible windows.
+
+Why this is worse than the code forms, and it is the whole reason to write it
+down: **a composite value hides its own arity.** Two lowerings are two
+functions; a reader can see there are two. A sink is a single integer at the
+point of use, so nothing about reading it — or comparing it, or disagreeing
+with it — reveals that a correction reached a quarter of it. The instrument
+that exists precisely to catch partial work is structurally the thing least
+able to report that it was partially corrected.
+
+- **When a correction applies to a measurement, enumerate the measurement's
+  terms first.** "I reset the checksum" is the same sentence as "I fixed the
+  sweep loop", and it is wrong in the same way.
+- **Prefer scrubbing the whole accumulator to scrubbing a field.** The reset
+  here should have been "zero the stats", a statement about the record, rather
+  than "zero the checksum", a statement about one author's concern. Corrections
+  aimed at a *thing* survive the thing growing a fourth field; corrections aimed
+  at a *field* do not.
+- **A load-bearing correction and a gratuitous one look identical.** This
+  warmup frame had to stay — it burns off a change-detection artifact of
+  spawning, and three sibling scenarios in the same file had their warmups
+  deleted as unfairness. Reading the source cannot separate "this discard is
+  required" from "this discard is a leftover"; only measuring what the discarded
+  frame contributes can. So the reflex on finding an odd-looking correction is
+  to *measure its contribution*, never to remove it for looking odd.

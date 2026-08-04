@@ -1214,8 +1214,28 @@ fn run_archetype_churn_world(config: &Config) {
         churn_checksum,
         churn_advance_frame,
     ).chain());
+    // ONE UNTIMED WARMUP FRAME, THEN ZERO ALL FOUR COUNTERS. Unlike dense /
+    // sparse / fanout (see "NO WARMUP" above), the warmup here is
+    // load-bearing and must NOT be removed: bevy reports a freshly-inserted
+    // component as `Changed`, so on the very first frame `churn_checksum`
+    // sees every spawned `Health` at once. Measured at 1000 entities that
+    // storm is exactly 8_691_000 == sum(id*17 + health) over the corpus --
+    // spawn-time noise, not churn. The warmup burns it off.
+    //
+    // This reset used to clear `checksum` ONLY, which left the warmup
+    // frame's transitions/damage/deaths inside a sink built from all four
+    // (measured: 122 stray transitions == 366 of sink at 1000x10). The sink
+    // therefore mixed `frames + 1` frames of counts with `frames` frames of
+    // checksum, and any port that honestly ran `frames` frames could not
+    // agree with it. All four now measure the same window.
     schedule.run(&mut world);
-    world.resource_mut::<ChurnStats>().checksum = 0;
+    {
+        let mut stats = world.resource_mut::<ChurnStats>();
+        stats.checksum = 0;
+        stats.transitions = 0;
+        stats.damage_events = 0;
+        stats.deaths = 0;
+    }
 
     let start = Instant::now();
     for _ in 0..config.frames {

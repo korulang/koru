@@ -24,6 +24,31 @@ intentionally plain: each binary emits one JSON line per run.
   archetypes during the workload: `Idle`, `Seeking`, `Attacking`, `Stunned`,
   and `Dead`. It uses `Commands` for component insert/remove, real queries over
   changing marker/component sets, health changes, and a deterministic checksum.
+  It is absent from `run.sh` on purpose: the Zig baseline exits 1 with
+  `error.UnknownScenario` for it, and `run.sh` is `set -eu`. A row here would
+  be two arms, not three.
+
+  MEASURED 2026-08-04, four facts a port has to honour, because reading the
+  source is not evidence and three of these are invisible from it:
+  1. THE SINK IS VISIT-ORDER INDEPENDENT, so a port that does not iterate in
+     bevy's archetype order can still agree. Verified by reversing spawn order
+     (reversing table order) while holding the id-to-data mapping fixed:
+     identical `sink`, `transitions`, `damage_events`, `deaths` at 1000x10,
+     1000x50, 10000x10, 10000x50. It holds because every checksum term is
+     `+= f(id) + g(health)` with no id/health cross-product, every transition
+     predicate is a pure function of `id` and `frame`, and `health` is
+     unclamped -- so multi-attacker damage on one victim in one frame is a
+     commutative sum whatever order it lands in.
+  2. THE UNTIMED WARMUP FRAME IS LOAD-BEARING. Bevy reports a freshly-inserted
+     component as `Changed`, so frame 0's `churn_checksum` sees every spawned
+     `Health` at once: measured 8_691_000 at 1000 entities, exactly
+     `sum(id*17 + health)` over the corpus. That is spawn noise, not churn.
+     A port whose `Changed<Health>` means "health was written this frame" must
+     likewise discard one frame rather than model the storm.
+  3. `ChurnFrame` IS 1, NOT 0, when the timed loop starts, and every predicate
+     is `(id + frame) % k`. The frame offset is observable in the sink.
+  4. `initial_archetypes` / `final_archetypes` are DIAGNOSTICS and are not in
+     the sink. An archetype-free port is not disadvantaged by them.
 - `boids`: Unity DOTS `BoidSystem.cs`, ported. Four arms — the only scenario with a legion entry. 100_000 flocking boids over a
   32³ spatial grid: quantize, scatter heading and position into cells, resolve
   each occupied cell's nearest target and obstacle, then steer every boid from
