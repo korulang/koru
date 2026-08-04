@@ -77,6 +77,11 @@ const grid_read = struct {
     const GridRef = struct {
         name: []const u8,
         ns: []const u8,
+        // ROW LAYOUT (`[layout(row)]`): the cells are one array of a cell
+        // struct rather than one array per column. Carried on the ref because
+        // the ADDRESS FORMATTER is the only place that needs to know, and it
+        // is reached from every read and every write — see `lower`.
+        row: bool = false,
     };
     fn find(refs: []const GridRef, n: []const u8) ?GridRef {
         for (refs) |r| {
@@ -108,11 +113,22 @@ const grid_read = struct {
                     const inv = f.inv();
                     if (inv.path.module_qualifier) |mq| {
                         if (std.mem.eql(u8, mq, "std.grid") and inv.path.segments.len == 1 and std.mem.eql(u8, inv.path.segments[0], "new")) {
+                            // The declaration has not lowered yet, so the
+                            // layout is still on the annotation. `new` parses
+                            // this properly and REFUSES a bad facet; here we
+                            // only need the answer, and a malformed one is
+                            // left for `new` to reject with a diagnostic.
+                            var is_row = false;
+                            for (f.annotations) |ann| {
+                                const t = std.mem.trim(u8, ann, " \t");
+                                if (!std.mem.startsWith(u8, t, "layout")) continue;
+                                if (std.mem.indexOf(u8, t, "row") != null) is_row = true;
+                            }
                             for (inv.args) |a| {
                                 if (std.mem.eql(u8, a.name, "expr")) {
                                     var n = a.value;
                                     if (n.len >= 2 and n[0] == '"') n = n[1 .. n.len - 1];
-                                    out.append(alloc, GridRef{ .name = n, .ns = nsFor(alloc, prog, home) }) catch unreachable;
+                                    out.append(alloc, GridRef{ .name = n, .ns = nsFor(alloc, prog, home), .row = is_row }) catch unreachable;
                                 }
                             }
                         }
@@ -125,7 +141,13 @@ const grid_read = struct {
                         const s = at + needle.len;
                         var e = s;
                         while (e < hl.content.len and ast_grid.isKebabIdentChar(hl.content[e])) e += 1;
-                        out.append(alloc, GridRef{ .name = hl.content[s..e], .ns = nsFor(alloc, prog, home) }) catch unreachable;
+                        // Already lowered: the emitted text says which layout
+                        // it is. A row grid declares exactly one storage
+                        // member, `__koru_row`, so its presence between this
+                        // header and the next is the whole test.
+                        const stop = std.mem.indexOfPos(u8, hl.content, e, needle) orelse hl.content.len;
+                        const is_row = std.mem.indexOfPos(u8, hl.content[0..stop], e, "__koru_row: [") != null;
+                        out.append(alloc, GridRef{ .name = hl.content[s..e], .ns = nsFor(alloc, prog, home), .row = is_row }) catch unreachable;
                         i = e;
                     }
                 },
@@ -226,13 +248,26 @@ const grid_read = struct {
                 .host_line => |hl| {
                     const head = std.fmt.allocPrint(alloc, "const __KoruGridT_{s} = struct {{", .{grid}) catch unreachable;
                     const at = std.mem.indexOf(u8, hl.content, head) orelse continue;
+                    // COLUMN layout: `    field: [N]T = ...` — the type sits
+                    // after the extent. ROW layout: the field is a scalar
+                    // member of the nested cell struct, `        field: T = `,
+                    // so there is no extent to skip past. Both are read from
+                    // the emitted text rather than re-derived, because by this
+                    // point the declaration is the only record of the choice.
                     const needle = std.fmt.allocPrint(alloc, "\n    {s}: [", .{field}) catch unreachable;
-                    const fat = std.mem.indexOfPos(u8, hl.content, at, needle) orelse continue;
-                    const after = fat + needle.len;
-                    const close = std.mem.indexOfScalarPos(u8, hl.content, after, ']') orelse continue;
-                    var te = close + 1;
-                    while (te < hl.content.len and ast_grid.isKebabIdentChar(hl.content[te])) te += 1;
-                    return hl.content[close + 1 .. te];
+                    if (std.mem.indexOfPos(u8, hl.content, at, needle)) |fat| {
+                        const after = fat + needle.len;
+                        const close = std.mem.indexOfScalarPos(u8, hl.content, after, ']') orelse continue;
+                        var te = close + 1;
+                        while (te < hl.content.len and ast_grid.isKebabIdentChar(hl.content[te])) te += 1;
+                        return hl.content[close + 1 .. te];
+                    }
+                    const rneedle = std.fmt.allocPrint(alloc, "\n        {s}: ", .{field}) catch unreachable;
+                    const rat = std.mem.indexOfPos(u8, hl.content, at, rneedle) orelse continue;
+                    const rs = rat + rneedle.len;
+                    var re = rs;
+                    while (re < hl.content.len and ast_grid.isKebabIdentChar(hl.content[re])) re += 1;
+                    return hl.content[rs..re];
                 },
                 .module_decl => |m| {
                     if (columnType(alloc, m.items, grid, field)) |hit| return hit;
@@ -296,14 +331,29 @@ const grid_read = struct {
                                 break;
                             }
                         }
-                        const ns = (find(refs, gname) orelse unreachable).ns;
+                        const gref = find(refs, gname) orelse unreachable;
+                        const ns = gref.ns;
+                        // BOTH SPELLINGS TAKE THE POINTER BASE. For a column
+                        // grid `&G.field` is the array; for a row grid
+                        // `&G.__koru_row` is. Naming either by VALUE makes Zig
+                        // materialise the whole array ahead of a call-valued
+                        // index — measured at 1750x on the store's read path
+                        // (frag-a-call-valued-index-copies-the-whole-array),
+                        // and row layout re-opens exactly that hole because the
+                        // element is now bigger, not smaller.
                         const piece = if (comma) |cm| blk_two: {
                             const xs = lower(alloc, std.mem.trim(u8, idx_raw[0..cm], " "), refs);
                             const ys = lower(alloc, std.mem.trim(u8, idx_raw[cm + 1 ..], " "), refs);
-                            break :blk_two std.fmt.allocPrint(alloc, "(&{s}__koru_grid_{s}.{s})[{s}__KoruGridT_{s}.__koru_at2({s}, {s})]", .{ ns, gname, fname, ns, gname, xs, ys }) catch unreachable;
+                            break :blk_two if (gref.row)
+                                std.fmt.allocPrint(alloc, "(&{s}__koru_grid_{s}.__koru_row)[{s}__KoruGridT_{s}.__koru_at2({s}, {s})].{s}", .{ ns, gname, ns, gname, xs, ys, fname }) catch unreachable
+                            else
+                                std.fmt.allocPrint(alloc, "(&{s}__koru_grid_{s}.{s})[{s}__KoruGridT_{s}.__koru_at2({s}, {s})]", .{ ns, gname, fname, ns, gname, xs, ys }) catch unreachable;
                         } else blk_one: {
                             const idx = lower(alloc, idx_raw, refs);
-                            break :blk_one std.fmt.allocPrint(alloc, "(&{s}__koru_grid_{s}.{s})[{s}__KoruGridT_{s}.__koru_at({s})]", .{ ns, gname, fname, ns, gname, idx }) catch unreachable;
+                            break :blk_one if (gref.row)
+                                std.fmt.allocPrint(alloc, "(&{s}__koru_grid_{s}.__koru_row)[{s}__KoruGridT_{s}.__koru_at({s})].{s}", .{ ns, gname, ns, gname, idx, fname }) catch unreachable
+                            else
+                                std.fmt.allocPrint(alloc, "(&{s}__koru_grid_{s}.{s})[{s}__KoruGridT_{s}.__koru_at({s})]", .{ ns, gname, fname, ns, gname, idx }) catch unreachable;
                         };
                         out.appendSlice(alloc, piece) catch unreachable;
                         i = fe;
@@ -472,6 +522,49 @@ const grid_read = struct {
         }
     }
 
+    // `[layout(row)]std/grid:new(...)` — STORE THE CELL CONTIGUOUSLY.
+    //
+    // The default is `column`: one array per field, which is what a dense
+    // sweep over ONE field wants and what makes the grid vectorise. `row`
+    // packs every field of a cell into one record, which is what a SCATTER
+    // wants — many fields of one cell at a computed index, where column layout
+    // touches one cache line per field and a record touches one in total.
+    //
+    // This is a real trade with a measured sign in BOTH directions, which is
+    // why it is a declaration and not a default anyone can pick centrally:
+    // 697_010 pins the scatter win and 697_011 pins the sweep loss. The store
+    // design already rules that "layout is the closure of the queries", and
+    // this is the first rung of honouring that — the annotation exists so the
+    // choice is available and measurable BEFORE any inference is written, and
+    // it stays afterwards as the override.
+    //
+    // Same refusal discipline as `[unsafe]` above and for the same reason: a
+    // facet the construct does not implement is refused, never ignored.
+    var row_layout = false;
+    {
+        const annotation_parser = @import("annotation_parser");
+        for (flow.annotations) |ann| {
+            const trimmed = std.mem.trim(u8, ann, " \t");
+            if (!std.mem.startsWith(u8, trimmed, "layout")) continue;
+            const call = annotation_parser.parseCall(allocator, trimmed) catch {
+                return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/grid:new: malformed annotation '[{s}]' - the form is `[layout(row)]`", .{trimmed}) } };
+            } orelse {
+                return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/grid:new: `[layout]` must name the layout - write `[layout(row)]` or `[layout(column)]`. A bare `[layout]` says nothing about which one was wanted", .{}) } };
+            };
+            if (call.args.len != 1) {
+                return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/grid:new: `[layout(...)]` names exactly one layout (got {d}) - a grid offers `row` and `column`", .{call.args.len}) } };
+            }
+            const which = std.mem.trim(u8, call.args[0], " \t\"");
+            if (std.mem.eql(u8, which, "row")) {
+                row_layout = true;
+            } else if (std.mem.eql(u8, which, "column")) {
+                row_layout = false;
+            } else {
+                return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/grid:new: `{s}` is not a layout this grid offers - it has `row` (one record per cell, for scatter) and `column` (one array per field, the default, for sweeps). A layout it does not implement is refused rather than ignored, because a misspelling would silently keep the layout you were trying to change", .{which}) } };
+            }
+        }
+    }
+
     var grid_name: []const u8 = "";
     var seed_text: ?[]const u8 = null;
     var size_text: ?[]const u8 = null;
@@ -558,6 +651,12 @@ const grid_read = struct {
     const head = std.fmt.allocPrint(allocator, "const __KoruGridT_{s} = struct {{\n", .{grid_name}) catch unreachable;
     g.appendSlice(allocator, head) catch unreachable;
 
+    // ONE VALIDATION PASS, TWO EMISSIONS. The column parse (`0[i64]` — default
+    // then type) is identical for both layouts and its refusals must be too, so
+    // the fields are read once here and spelled differently below rather than
+    // duplicated into two loops that could drift apart.
+    const Field = struct { name: []const u8, ty: []const u8, dflt: []const u8 };
+    var fields = std.ArrayList(Field).initCapacity(allocator, cells.len) catch unreachable;
     for (cells) |c| {
         // `count: 0[i64]` — the default is the value, the type rides in the
         // brackets, exactly as a seeded store column spells it.
@@ -568,10 +667,30 @@ const grid_read = struct {
         if (v.len == 0 or v[v.len - 1] != ']') {
             return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/grid:new({s}): column '{s}' has a malformed type - `{s}: 0[i64]`", .{ grid_name, c.name, c.name }) } };
         }
-        const dflt = std.mem.trim(u8, v[0..lb], " ");
-        const ty = std.mem.trim(u8, v[lb + 1 .. v.len - 1], " ");
-        const col = std.fmt.allocPrint(allocator, "    {s}: [{d}]{s} = [_]{s}{{{s}}} ** {d},\n", .{ c.name, SIZE, ty, ty, dflt, SIZE }) catch unreachable;
-        g.appendSlice(allocator, col) catch unreachable;
+        fields.append(allocator, .{
+            .name = c.name,
+            .ty = std.mem.trim(u8, v[lb + 1 .. v.len - 1], " "),
+            .dflt = std.mem.trim(u8, v[0..lb], " "),
+        }) catch unreachable;
+    }
+
+    if (row_layout) {
+        // `[layout(row)]`: one record per cell, one array of records. The cell
+        // type is nested inside the grid type so it cannot collide with a
+        // user type and needs no name of its own in the program.
+        g.appendSlice(allocator, "    const __KoruCell = struct {\n") catch unreachable;
+        for (fields.items) |f| {
+            const m = std.fmt.allocPrint(allocator, "        {s}: {s} = {s},\n", .{ f.name, f.ty, f.dflt }) catch unreachable;
+            g.appendSlice(allocator, m) catch unreachable;
+        }
+        g.appendSlice(allocator, "    };\n") catch unreachable;
+        const storage = std.fmt.allocPrint(allocator, "    __koru_row: [{d}]__KoruCell = [_]__KoruCell{{.{{}}}} ** {d},\n", .{ SIZE, SIZE }) catch unreachable;
+        g.appendSlice(allocator, storage) catch unreachable;
+    } else {
+        for (fields.items) |f| {
+            const col = std.fmt.allocPrint(allocator, "    {s}: [{d}]{s} = [_]{s}{{{s}}} ** {d},\n", .{ f.name, SIZE, f.ty, f.ty, f.dflt, SIZE }) catch unreachable;
+            g.appendSlice(allocator, col) catch unreachable;
+        }
     }
 
     // The bounds floor. `size` is comptime-known, so an index the optimizer can

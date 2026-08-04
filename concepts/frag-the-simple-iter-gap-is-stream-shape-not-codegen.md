@@ -158,5 +158,35 @@ store design anticipated exactly this — it wants the surface so that things
 decision the author cannot presently express. Layout is the second instance of
 that same gap.
 
-Not scheduled. The measurement is banked, the mechanism is named twice over,
-and nothing downstream is blocked on it.
+## BUILT, 2026-08-04, and the prediction held
+
+`[layout(row)]` shipped on `std/grid:new` the morning after this was written,
+and the falsifiable clause above is now settled: **boids landed at 91.5 ms**
+against 98.7 column, interleaved, checksum unchanged. "Near 90 ms" was the bar
+and it cleared it. The walk does see every site.
+
+It cost THREE EDIT SITES in one file, and the reason is worth keeping because
+it is the payoff of an earlier repair rather than luck: `grid.kz` has exactly
+one address formatter, reached by every read AND every write, because that
+duplication was collapsed the day before
+(`frag-a-fix-lands-in-one-lowering-path`). A second lowering would have meant a
+second place to teach, and the two would have drifted. The cheapness of this
+feature was bought weeks earlier by someone deleting a copy.
+
+**The store is NOT the same job, and the count says so:** it spells
+`__koru_store_{s}.{s}[__koru_r]` in twenty-odd generators across 8,692 lines,
+none unified. It is also the wrong target — the store's premise is the dense
+vectorising sweep, which is precisely what row layout destroys. The grid is the
+thing that gets scattered into. Cheap and correct pointed the same way here,
+which will not always be true.
+
+**The losing direction is now on the board too** (`004_grid_layout`), and it is
+much larger than the win: a sweep reading one field of nine runs 0.04 s column
+against 0.45 s row, ~11x. So the honest shape of this trade is ASYMMETRIC —
+row buys single digits on a scatter and costs an order of magnitude on a sweep.
+Anything that ever infers this must weight it that way, and the default must
+stay `column`.
+
+That asymmetry also sharpens the clustering argument rather than softening it:
+a per-table flag on a table with both shapes is not a compromise, it is a
+coin-flip between a 7% win and an 11x loss.
