@@ -88,6 +88,46 @@ that computed it. Neighbour on the artifact side:
 artifact could not show the failure; here the artifact simply never carries
 it.
 
+## The fourth rung: a MARKER whose name claims a state it does not implement
+
+Every rung above is about a guard that was meant to run. This one is about a
+guard that was never going to, where the giveaway is a filename.
+
+A test directory holding a `TODO` file is reported as `📝 TODO`, counted in its
+own column beside passed and failed, and **returned from before the test is
+executed at all**. It is a skip wearing the vocabulary of a backlog. Sixty-seven
+test directories carried one when this was measured (2026-08-04), so the suite
+has a third column that reads as work-in-progress and contains no verdicts.
+
+The cost is specific and it is not the wasted coverage. The project's own
+contributor guidance describes aspirational tests as the right move — add one
+failing, *flip it to passing when the feature lands*. That promise needs the test
+to RUN and go green on its own. A `TODO` test cannot flip: it produces the same
+cheerful `📝` the day the feature ships as the day it was filed, and the only
+thing that ever changes it is a human remembering to delete the marker. So the
+mechanism that exists to track intended work is the one thing guaranteed not to
+notice the work being done.
+
+This extends the belief's existing line about comments — "'Blocking' in a comment
+is a claim about intent, never about reach" — one step, and the step matters:
+**a marker's NAME is that same unchecked claim, and it is more convincing than a
+comment**, because a file called `TODO` in a directory of markers reads as
+machinery rather than as prose. Nobody re-reads topology; nobody re-reads a
+filename's semantics either.
+
+- **Ask of every marker what state it asserts and what the runner does with
+  it.** `SKIP` and `TODO` differing only in which counter increments is a
+  distinction with no consequence, presented as two categories.
+- **An aspirational test's whole value is that it is RED.** Red is the state that
+  flips by itself, that shows up in a regression count, and that a reader can
+  act on. Choosing a label that suppresses execution to keep the board tidy trades
+  the one property the test was created to have for the appearance of not having a
+  problem.
+- **The falsifier, stated plainly:** if something does re-run TODO-marked tests
+  and reports the ones that have started passing, this rung is wrong and should be
+  `correct`ed rather than evolved. Nothing found does, which is why it is written
+  as a claim about reach and not about intent.
+
 ## Open
 
 Whether the other end-of-run steps that parallel mode skips matter as much. The
