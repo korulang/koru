@@ -106,3 +106,57 @@ naming it as one. Not tested.
 - The agent caught it. Whether that generalises is untested — a less careful
   reader would have gone looking for over-suppression, found something
   plausible, and "fixed" it.
+
+
+## The worse case is not a suspicion. It is a VERIFIED claim whose SUBJECT drifts
+
+Everything above is about confidence — a guess wearing the credibility of the
+facts beside it. There is a second failure in the same mechanism that the rule
+above does not catch, because the claim is *not* a guess and its confidence is
+*legitimately* earned.
+
+A claim about the grid was recopied through five consecutive handoffs and arrived
+as a claim about the **store**. Nothing else about it changed: the shape, the two
+positions, the word "silently", all intact and all originally observed. Only the
+noun moved.
+
+That single substitution made the claim unkillable for a day, and the mechanism
+is worth stating exactly, because it inverts what a failed retest means:
+
+- A verifier reads the claim and probes the subsystem it names. The claim is true
+  of neither position in that subsystem, so every probe comes back green.
+- Green does not read as *"you probed the wrong thing."* It reads as **"the claim
+  is stale"** — a conclusion about the world rather than about the aim. So the
+  verifier reports a soft negative, declines to pin anything, and the claim
+  survives with its status unchanged.
+- The next handoff records "unverified", which is true, and the noun rides along
+  untouched into the next attempt.
+
+So a drifted subject does not merely misdirect one reader's first hour, which is
+the cost the section above names. It builds a **loop that consumes verifiers
+without converging**, and each pass leaves the claim looking more robust for
+having survived another look.
+
+## What follows, and it is a different mitigation than the one above
+
+The rule above is about *labelling* — mark a suspicion as costing nothing to
+discard. Labelling cannot help here, because this claim deserved no such label
+when it was written. The mitigation is about *reference*:
+
+- **A carried claim names the artifact it was observed in, not a paraphrase of
+  it.** `koru-libs/raylib/tests/boids.k:27` outranks any restatement, and the
+  file said `std/grid` in every line of the program the note was describing. One
+  path would have ended this on the first retest instead of the fifth.
+- **Read the original before probing a carried claim.** Not the handoff, the
+  source. The handoff is a pointer that has been photocopied; the artifact has
+  not.
+- **When a retest of a carried claim comes back green, suspect the AIM before
+  reporting the claim stale.** Green is ambiguous between "fixed", "never true",
+  and "measured somewhere else", and only the third is silent about itself.
+- **A claim that has survived N handoffs without a pin is not N-times-confirmed;
+  it is N-times-uninspected.** Its survival is evidence about the corpus's
+  attention, not about the world.
+
+The code residue is the point of the whole exercise: the shape is now `697_013`,
+green, in all three positions the note called broken. A pin cannot drift, and a
+pin is what the five notes were each individually deciding not to write.
