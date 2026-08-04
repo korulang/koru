@@ -167,6 +167,27 @@ tor world-init {}
 world-init = for(0..@as(usize, @intCast(cfg.entities)))
     ! each i |> std/store:insert(bodies) { px: @as(f32, @floatFromInt(i)), py: 0.0, vx: 1.0, vy: -1.0, hp: 1000, act: @as(i64, @intFromBool(i % 10 == 0)) }
 
+// `world-init` with the handle table recorded beside it. Kept separate so the
+// scenarios that never index by position do not pay for the grid write.
+tor fanout-init {}
+fanout-init = for(0..@as(usize, @intCast(cfg.entities)))
+    ! each i |> std/store:insert(bodies) { px: @as(f32, @floatFromInt(i)), py: 0.0, vx: 1.0, vy: -1.0, hp: 1000, act: @as(i64, @intFromBool(i % 10 == 0)) }
+        | row t |> std/grid:stored { bxref[i].h: t }
+        | full |> _
+
+// THESE MUST SIT ABOVE `drain`, AND THAT IS A SEMANTIC, NOT A STYLE CHOICE.
+// `drain` is a `std/store:rule(bodies)` — a STANDING rule — and the emitted
+// insert fires it for every insert site whose line is AFTER the rule's
+// declaration (`if (__site_line > 214)`). `world-init` predates it and is
+// untouched; this init was written below it at first, so every row it inserted
+// was immediately `take`n. The handles it recorded were all stale: slot 0
+// recycled with the generation climbing, and the whole scenario died on the
+// 690_115 stale-handle trap. Declaration ORDER is part of the meaning here.
+// The positionally-addressed twin of `bodies` — the baseline's bare array index,
+// which a store row (named by handle, never by position) otherwise cannot offer.
+[unsafe(bounds)]std/grid:new(bxref, size: 100000) { h: 0[i64] }
+std/store:new(fw) { frame: 0[i64], last: 0[i64] }
+
 tor integrate {}
 integrate = std/store:query(bodies)
 ! query e |> std/store:stored { e.px: e.px + e.vx, e.py: e.py + e.vy }
@@ -221,19 +242,28 @@ count-marks = std/store:query(marks)
 
 // --- fanout -----------------------------------------------------------------
 //
-// The baseline picks its victim by INDEX — `health[(frame*131 + i*17) % len]`.
-// This port keeps the event COUNT (entities/10 per frame) and the per-event
-// observer work identical, and damages the every-tenth rows instead of
-// pseudo-random ones, so its sink differs from both anchors — bevy_ecs's
-// already differs from the Zig baseline's for the same reason.
+// The baseline picks its victim by INDEX — `health[(frame*131 + i*17) % len]` —
+// and folds the observer loop PER EVENT, at the post-decrement value. This port
+// now does exactly that, through a grid of handles: the index names a cell, the
+// cell holds the row's handle, and `bodies[bxref[i].h].hp` lowers.
 //
-// THIS COMMENT USED TO SAY THE INDEXED ACCESS WAS UNSPELLABLE — "a cell names a
-// row by handle, never by position, so that access is not spellable and no
-// amount of cleverness makes it so". THAT WAS WRONG, and `archetype_churn_world`
-// below is the counterexample: a grid of handles is a positionally-addressed
-// `Vec<Entity>`, and `agents[xref[i].h].hp` lowers. So the divergence here is
-// now a CHOICE not to rewrite a settled row, not a limit of the language, and
-// this port could be made to agree with the anchors if anyone wants the row.
+// IT USED TO DAMAGE THE EVERY-TENTH ROWS INSTEAD, on the stated grounds that "a
+// cell names a row by handle, never by position, so that access is not spellable
+// and no amount of cleverness makes it so". That was wrong — pinned false by
+// 690_253 — and the divergence it justified is now gone: this arm's sink agrees
+// with the Zig baseline's exactly.
+//
+// The index->handle table is built inside the timed region, with the world, and
+// that IS the honest cost of positional addressing here: the baseline indexes an
+// array directly and pays nothing for it. Disclosed rather than hidden by moving
+// it to `prep`.
+//
+// bevy_ecs still disagrees, and the reason recorded here for years was wrong. Its
+// `damage_system` uses the SAME victim formula; what differs is the FOLD —
+// `fanout_system` iterates `Changed<Health>`, a per-frame deduplicated SET, so an
+// entity damaged ten times in a frame contributes once at its final value where
+// zig and koru contribute ten times at ten values. Two anchors that disagree
+// cannot arbitrate a third; that one is the next thing to settle.
 
 tor observe { value: i64 }
 observe = for(0..@as(usize, @intCast(cfg.observers)))
@@ -241,10 +271,24 @@ observe = for(0..@as(usize, @intCast(cfg.observers)))
         | then |> std/store:stored { acc.sink: acc.sink + value + @as(i64, @intCast(o)) }
         | else |> _
 
+// One damage EVENT, `entities/10` of them per frame. The victim address is
+// respelled FOUR times for want of an expression-local binding.
+//
+// The third rung is not stylistic — it is a WALL. An indexed store read lowers
+// in a write block and inside a write's ROW ADDRESS, but NOT in a call
+// ARGUMENT: `observe(value: bodies[bxref[i].h].hp)` reaches the host as the
+// literal text `bodies[...]` and the backend refuses with `use of undeclared
+// identifier 'bodies'`. Same reach gap as `print.ln`, which does not run the
+// lowering at all. So the value is parked in a column and passed from there.
+// Pinned aspirationally as 690_254.
 tor damage {}
-damage = std/store:query(bodies)
-! query e when e.act == 1 |> std/store:stored { e.hp: e.hp - 1 }
-    |> observe(value: e.hp)
+damage = for(0..@as(usize, @intCast(@divTrunc(cfg.entities, 10))))
+    ! each i |> std/store:stored { bodies[bxref[@as(usize, @intCast(@mod(fw.frame * 131 + @as(i64, @intCast(i)) * 17, cfg.entities)))].h].hp: bodies[bxref[@as(usize, @intCast(@mod(fw.frame * 131 + @as(i64, @intCast(i)) * 17, cfg.entities)))].h].hp - 1 }
+        |> std/store:stored { fw.last: bodies[bxref[@as(usize, @intCast(@mod(fw.frame * 131 + @as(i64, @intCast(i)) * 17, cfg.entities)))].h].hp }
+        |> observe(value: fw.last)
+
+tor fanout-frame {}
+fanout-frame = damage() |> std/store:stored { fw.frame: fw.frame + 1 }
 
 // --- bevy_strength_world ----------------------------------------------------
 
@@ -695,8 +739,8 @@ tor s-add-remove {}
 s-add-remove = mark-init() |> mark-set() |> mark-clear()
 
 tor s-fanout {}
-s-fanout = world-init() |> for(0..@as(usize, @intCast(cfg.frames)))
-    ! each _ |> damage()
+s-fanout = fanout-init() |> for(0..@as(usize, @intCast(cfg.frames)))
+    ! each _ |> fanout-frame()
 
 tor strength-frame {}
 strength-frame = step-dyn() |> step-parts() |> step-orbs()
