@@ -88,3 +88,31 @@ tests silently matches zero and still prints `✅ ALL TESTS PASSED`. That is thi
 belief applied to the harness itself — the strongest possible instance, since it
 makes every other check unfalsifiable at once. Worth treating as higher priority
 than any single defect it might be hiding.
+
+## The corpus's own version of it
+
+Turned on this file's neighbours the question becomes an intake gate rather than a
+design rule, and it catches a failure the membrane's other rules let straight
+through. Intake bans *duplication* — a fragment restating code, a test, a count.
+It says nothing about *platitude*, and a belief hedged until no observation could
+contradict it satisfies every ban while carrying nothing.
+
+So ask it of a fragment before writing one: what future observation would
+`correct` this? No answer means it is not a belief, it is decoration. `correct` is
+the verb this corpus exists for — the ledger of where code-as-spec was wrong — so a
+fragment that can never be corrected is excluded from the corpus's own purpose
+while passing every rule at the door.
+
+The pressure runs one way, which is why this needs a gate and not merely a
+mention. Hedging a claim makes it likelier to survive contact with the world, and
+a claim that survives everything taught nothing by surviving. That is the trade
+[[frag-a-red-pin-is-unfalsifiable-documentation]] names one level down: there an
+explanation escapes checking because the test is red, here a belief escapes
+checking because it asserts too little to ever be caught out. Both are prose in
+something else's clothes, and the defence is procedural for the same reason — no
+assertion can check whether a belief is capable of being wrong.
+
+Surfaced 2026-08-04 from the opposite claim: a paper arguing the best hypothesis
+is the *weakest* one consistent with the evidence. That is right for predicting
+and inverted here, because a belief in this corpus is not kept in order to be
+right. It is kept in order to be caught out.

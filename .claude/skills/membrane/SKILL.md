@@ -159,6 +159,17 @@ the prose with it.
   reference stays true when the state flips; the restatement lies.
 - Detector at write time: if a sentence would need editing when the code
   changes *without the belief changing*, it is state, not belief — cut it.
+- Second detector, a different class: **could this belief ever be WRONG?** The
+  rule above catches *duplication*; it does not catch *platitude*, and a belief
+  hedged until nothing could contradict it clears it untouched. So ask outright —
+  *what future observation would `correct` this?* No answer means it is not a
+  belief, it is decoration. `correct`/`Severs` is this corpus's whole reason to
+  exist, so a fragment that can never be corrected is structurally excluded from
+  the membrane's own purpose while satisfying every other rule at intake. The
+  temptation runs one way and is worth naming: weakening a claim makes it likelier
+  to survive, and a claim that survives everything taught you nothing by
+  surviving. Write it sharp enough that being wrong about it would show.
+  (Encoded 2026-08-04.)
 
 ## Reading the corpus — `snap`, never the whole thing
 
