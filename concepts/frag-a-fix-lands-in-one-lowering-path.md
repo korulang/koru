@@ -312,3 +312,40 @@ steps, taken correctly, do not reach across a path boundary.
   describes the reader's own error in advance and does not prevent it is not
   weak — it is unenforced, and the gap between a written belief and a firing wall
   is where all nine instances live.
+
+## The fifth tell is POLARITY, and the twin is written in the wall's own comment
+
+The forms above all involve two sites doing the same job. This one has two sites
+doing MIRRORED jobs, where only one got the guard — and it is the cheapest of all
+of them to find, because the missing half is spelled out in the prose of the half
+that exists.
+
+The regression harness refuses a negative test that names no diagnostic, on the
+stated grounds that such a test passes on ANY failure and therefore keeps passing
+long after the diagnostic it meant to pin has been replaced. That reasoning is
+about *unconstrained agreement between a verdict and an expectation*, and it is
+polarity-neutral. The positive twin — a test that demands a clean run and names no
+expected output — passes on ANY output, for exactly the same reason, and there is
+no gate for it. Measured 2026-08-04: 72 of 1052 such tests name nothing.
+
+What makes this worth its own tell is the discovery method. Finding the earlier
+forms took a race, an arity probe, or a scope audit. Finding this one took
+**reading the existing wall's comment and negating the nouns.** The comment is a
+general argument that happens to be filed under one case; the other case is
+implied by it and absent.
+
+- **When a wall's justification does not mention the polarity it is written for,
+  the other polarity is missing and nobody noticed.** Ask it of every gate: is
+  this argument about *this* form, or about a property both forms have?
+- **A cheap green is worth less than a red, and looks like more.** Both halves of
+  this pair fail the same way — they convert "no expectation was stated" into
+  "expectation met" — and that is strictly worse than an untested program,
+  because it occupies a slot in a count someone publishes.
+- **A reporting tool over an unwalled corpus inherits the corpus's dishonesty.**
+  Written to find TODO-marked tests that had quietly started passing, the first
+  sweep found three passes and zero real ones: two were bare `MUST_RUN` tests
+  printing the very error their own note says they are parked on, and exiting 0.
+  Had the sweep trusted the verdict it would have reported three features shipped
+  and closed three notes describing live bugs. **A tool that reads verdicts must
+  ask what each verdict is allowed to mean**, and when it cannot, report the
+  weakness instead of the number.

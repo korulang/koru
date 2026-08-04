@@ -475,7 +475,19 @@ regression_run_one_test() {
     fi
 
     # Check for TODO file - feature not yet implemented (aspirational test)
-    if [ -f "$test_dir/TODO" ]; then
+    #
+    # `TODO` SKIPS the test — it returns before any compile or run happens, and
+    # counts in its own column. So a TODO-marked test cannot flip to green on its
+    # own when the feature lands: it prints the same 📝 the day it ships as the
+    # day it was filed, and only a human deleting the marker changes that. The
+    # documented aspirational workflow ("add it failing, it flips when
+    # implemented") therefore does not work through this marker.
+    #
+    # KORU_RUN_TODO=1 executes them anyway, which is what `--todo-sweep` uses to
+    # answer the one question the marker suppresses: has any of this become true
+    # while nobody was looking? A sweep NEVER contributes to the suite's verdict
+    # — see run_todo_sweep in run_regression.sh.
+    if [ -f "$test_dir/TODO" ] && [ "${KORU_RUN_TODO:-0}" != "1" ]; then
         echo -e "${YELLOW}📝 TODO${NC}"
         # Read first line of TODO file as the feature description
         TODO_FEATURE=$(head -1 "$test_dir/TODO" 2>/dev/null || echo "No description provided")
@@ -485,7 +497,7 @@ regression_run_one_test() {
     fi
 
     # Check for category-level TODO - mark all tests in this category as TODO
-    if [ "$TODO_CATEGORY" = true ]; then
+    if [ "$TODO_CATEGORY" = true ] && [ "${KORU_RUN_TODO:-0}" != "1" ]; then
         echo -e "${YELLOW}📝 TODO (category)${NC}"
         if [ -n "$TODO_REASON" ]; then
             echo "  Feature: $TODO_REASON"
