@@ -1,5 +1,11 @@
-// `scan` — iteration that STOPS. `for` visits every element; `scan` breaks the
-// moment its `keep:` expression goes false.
+// `for` with `keep:` — iteration that STOPS. Omit `keep:` and `for` is what it
+// always was; supply it and the loop breaks the moment it goes false.
+//
+// IT IS A PARAMETER ON `for`, NOT A SECOND KEYWORD. The first cut added a `scan`
+// keyword whose two templates differed from `for`'s by ONE line across two
+// targets — four procs where two do, which is the two-lowerings shape this repo
+// keeps paying for. An absent `keep:` renders no line, so every pre-existing
+// call site emits byte-identical code.
 //
 // WHY THE LANGUAGE NEEDED IT: `for` was the only loop form. No `while`, and
 // `break` exists only as an arbitrary BRANCH NAME. A bounded traversal that
@@ -28,13 +34,13 @@ std/store:new(u) { n: 0[i64] }
 // Stops once `seen` reaches 5 — iterations 5..19 never run, so the sum is
 // 0+1+2+3+4 and not 0..19.
 tor limited {}
-limited = scan(0..20, keep: w.seen < 5)
+limited = for(0..20, keep: w.seen < 5)
     ! each i |> std/store:stored { w.seen: w.seen + 1, w.sum: w.sum + @as(i64, @intCast(i)) }
 
 // An always-true `keep:` is exactly `for`: the keyword invents no stop it was
 // not given.
 tor full {}
-full = scan(0..20, keep: 1 == 1)
+full = for(0..20, keep: 1 == 1)
     ! each _ |> std/store:stored { u.n: u.n + 1 }
 
 limited()
