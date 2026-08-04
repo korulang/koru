@@ -242,3 +242,73 @@ defect it was built to catch, aimed at the wall.** Both clauses added here were
 negative-tested — a multi-file declaration naming a subset, and a custody move
 that edits — before either was trusted, because a wall that has only ever been
 seen to pass is indistinguishable from one that always passes.
+
+## The fourth tell is a DISCRIMINANT, and it defeats the "count the copies" grep
+
+Every form above assumes the duplicate sites are findable: two functions, four
+`storeRefs` copies, N scanners, the terms of a sum. All of them answer to this
+belief's own prescription — grep the name, count what comes back. The form found
+on the `=>`-target wall does not, and that is the whole reason it needs writing
+down.
+
+There the second site is not a second function. It is **the same function, the
+same block, three lines further down, behind a kind test.** One arm of a
+discriminant got the wall; the sibling arm fell through to a stub. Grep for the
+resolver's name and you find one call, in one place, looking correct — the count
+comes back *one* and the count is right. Nothing about counting copies reaches a
+rule that is present-but-gated, because the gate is not a copy.
+
+So the diagnostic question has to change shape. Not "how many places implement
+this?" but **"over what does this check quantify, and what does its guard
+exclude?"** A wall inside a conditional is a wall over that conditional's true
+branch only, and the else is invisible to every technique this belief has so far
+recommended.
+
+- **A guard is a scope, and a scope is a boundary this belief already knows to
+  distrust.** `if (kind == .effect)` is doing the same work as a private helper
+  struct inside a transform: silently narrowing who a fix reaches, while reading
+  as ordinary code organisation.
+- **Read the guard against the failure, not against the feature.** The stated
+  reason for that wall — an unknown name would otherwise reach the host as a
+  malformed union construction — is a property of *constructing a name at all*.
+  It has nothing to do with the branch's kind. When a guard is narrower than the
+  reason written directly above it, the guard is the bug.
+
+## Why this class outlives every instance: the immune system is single-path
+
+The instance above is the ninth. That number is the finding, not the instance,
+and this belief has not so far said why the count keeps climbing.
+
+**Every mechanism this project uses to hold a class is a test, and a test walks
+one path.** A pin states "this program behaves so". The class states "these two
+paths agree" — which is not a property of any single program, so no pin can carry
+it. The corpus can therefore be complete, green, and honest about every path it
+names, while saying nothing whatsoever about the invariant that matters. That is
+not a coverage gap to be closed by more pins; it is a category mismatch, and
+adding pins of the same shape cannot retire the class no matter how many are
+added.
+
+The evidence that this is structural rather than sloppy is that the wall, the
+doctrine, the marker vocabulary, and the pins all *already existed* for the
+enforced path — and the sibling had none of them. Nobody skipped a step. The
+steps, taken correctly, do not reach across a path boundary.
+
+- **A differential instrument is a different KIND of test, and it is the only
+  thing that holds this class.** Same program, both paths, results compared. The
+  project owns one, for one construct, and a near-miss: a mirror cluster built to
+  compare a program moved between MODULE and ENTRY-FILE placement. That is the
+  correct instrument aimed at the wrong axis — placement rather than path — and
+  it was the most productive instrument here by a wide margin, which is the
+  argument for aiming it at the other axis too.
+- **Suspect a memorial.** The most reliable signature of this class is a comment
+  or test header describing the failure in the past tense, on the path where it
+  was fixed, while the sibling path still produces it. A gravestone is evidence
+  that someone understood the defect completely — which is exactly the condition
+  under which the second path gets forgotten, because understanding it felt like
+  finishing it.
+- **The author of the report is inside the failure.** Meeting the ungated path
+  produced a confident write-up naming it a missing language capability, in the
+  words this belief predicted ("filed as a language limitation"). A belief that
+  describes the reader's own error in advance and does not prevent it is not
+  weak — it is unenforced, and the gap between a written belief and a firing wall
+  is where all nine instances live.

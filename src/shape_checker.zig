@@ -1275,6 +1275,27 @@ pub const ShapeChecker = struct {
         return null;
     }
 
+    /// Comma-joined declared branch names for a diagnostic hint, into a
+    /// caller-owned stack buffer (the refusal path must not allocate).
+    ///
+    /// KNOWINGLY a second copy of flow_checker.branchNameList — that one is
+    /// private to a module this one does not import, and branch_checker, the
+    /// only module both see, declares "No AST awareness: works on branch
+    /// names, not node types" (branch_checker.zig:11) so it cannot host an
+    /// `ast.Branch` helper. Converging the two wants a shared diagnostics
+    /// helper module, which is a separate change; recorded here rather than
+    /// left for a reader to discover.
+    fn declaredBranchNames(buf: []u8, branches: []const ast.Branch) []const u8 {
+        var fbs = std.io.fixedBufferStream(buf);
+        const w = fbs.writer();
+        for (branches, 0..) |b, i| {
+            if (i > 0) w.writeAll(", ") catch break;
+            w.writeAll(b.name) catch break;
+        }
+        if (fbs.getWritten().len == 0) return "(none)";
+        return fbs.getWritten();
+    }
+
     fn checkBranchCoverageWithTerminals(
         self: *ShapeChecker,
         event_name: []const u8,
@@ -1756,6 +1777,49 @@ pub const ShapeChecker = struct {
                                 // resume sum, not the event's branch set — skip
                                 // the event-branch constructor validation.
                                 continue;
+                            }
+                        }
+                    }
+                    // Ordinary OUTCOME branches: the constructed name must be
+                    // one the IMPLEMENTED tor declares — the same wall the
+                    // effect resume-arm sibling above has carried since it was
+                    // written, for the same stated reason ("without this wall,
+                    // an unknown arm would sail through to a raw Zig error in
+                    // the emitted union construction").
+                    //
+                    // It was missing here, and that is the whole defect: the
+                    // wall exists on the IMMEDIATE-IMPL path as
+                    // flow_checker.checkImplMatchesDecl, whose own comment
+                    // names this failure and cites 510_112/113/114 — and
+                    // 510_114's header memorialises the very Zig leak
+                    // (`no field named 'nope' … get_input_event.Output`) that
+                    // a flow-nested constructor still produced. `=>` vs `|>`
+                    // is decided by the delimiter alone (parser.zig:7696), so
+                    // a wrong name reaches here preserved verbatim as a branch
+                    // name and nothing downstream had an opinion about it.
+                    //
+                    // Resolves against `current_impl_event`, NOT the handled
+                    // event's `event_branches`: `| else => nosuchbranch` names
+                    // a branch of the tor being IMPLEMENTED, while
+                    // `event_branches` belongs to the tor being invoked (`if`).
+                    // Silent when the impl event is unknown, mirroring
+                    // checkImplMatchesDecl's "says nothing rather than
+                    // guessing" discipline.
+                    if (!self.prototype_mode and !self.vouched_flow) {
+                        if (self.current_impl_event) |impl_ev| {
+                            const bc_name = step.branch_constructor.branch_name;
+                            if (bc_name.len > 0 and impl_ev.branches.len > 0 and
+                                resolveDeclaredBranch(impl_ev.branches, bc_name) == null)
+                            {
+                                const impl_name = if (impl_ev.path.segments.len > 0)
+                                    impl_ev.path.segments[impl_ev.path.segments.len - 1]
+                                else
+                                    "?";
+                                var names_buf: [512]u8 = undefined;
+                                try self.reporter.addErrorAtLocation(.KORU021, cont.location,
+                                    "tor '{s}' has no branch '{s}' (declared branches are: {s})",
+                                    .{ impl_name, bc_name, declaredBranchNames(&names_buf, impl_ev.branches) });
+                                has_errors = true;
                             }
                         }
                     }
