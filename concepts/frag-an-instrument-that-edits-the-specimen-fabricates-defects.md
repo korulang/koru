@@ -83,3 +83,54 @@ because there is no output to look surprising.
   the harness reads the file rather than the cell. A pin that passes while
   asserting a bug is a contradiction the harness cannot report, and nothing in
   the tooling would have caught it.
+
+
+## It happened again the same day, and the belief being written down did not stop it
+
+The first Open bullet above asks whether anything else in the workflow rewrites
+`.k` source in transit. Partial answer, from the inside, roughly twelve hours
+later: **the same transformer, through a path the section above does not
+describe.**
+
+The original instance authored the probe *as* the cell — the `.k` text was the
+cell body. This one wrote files programmatically:
+`pathlib.Path(dst).write_text(SRC)`, with `SRC` a triple-quoted literal several
+statements above the write. Every `! each` line still arrived on disk as
+`__omp_shell("each _ |> ...")`.
+
+So the collision is not a property of *how the probe is invoked*. It fires on any
+Koru text that **transits** a python cell, including text being handled purely as
+data on its way to a file. There is no formulation of "author it carefully" that
+survives this, because at the moment of writing, the string is not being executed
+and does not feel like code at all.
+
+And the honest part: **this belief existed, in this corpus, when it happened.** It
+was authored that morning, from the identical mechanism, and it names the
+identical mitigation. It did not fire. That is the same structural claim
+`frag-a-suspicion-in-a-handoff-becomes-the-next-readers-starting-point` makes
+about itself — a belief recorded in the corpus does not self-apply at the moment
+it is needed — and two independent arrivals at it in one day is the argument for
+mechanical mitigations over written ones.
+
+## The check that actually worked was cheaper than the one recommended above
+
+The section above nominates the diagnostic's quoted source line as the cheapest
+instrument check. It was not what broke this one — the refusal came back as a
+bare `KORU022` with no quoted line, so that check was unavailable.
+
+Two things did the work, and both are cheaper:
+
+- **A green corpus artifact, compiled in the same scratch directory, in the same
+  minute.** Three known-green tests copied in and run before any verdict was
+  trusted. They passed, which localised the fault to the probe rather than the
+  tree or the compiler. This is the control the original instance *had* and
+  argued with; running it FIRST, as the opening move rather than as a rebuttal,
+  is what makes it decisive instead of ignorable.
+- **Printing the bytes back in the same breath as writing them.** Not as a
+  separate act of diligence — as part of the compile command, so it cannot be
+  skipped when hurried. `sed -n '/^import/,$p' probe.k` beside the diagnostic put
+  `__omp_shell(...)` on screen next to the error it caused.
+
+The general form: **a probe should emit its own input alongside its own verdict.**
+An instrument that reports only conclusions cannot be audited by the person
+reading it, and that person is always the one most invested in the conclusion.
