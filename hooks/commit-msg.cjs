@@ -90,15 +90,29 @@ const WM_HELP = `  Every commit answers one question: did a belief about the sys
     ## World Model
     Signals: acknowledged-none`;
 
+// THE VERB SET, DECLARED ONCE. It used to live twice — the validator's `need`
+// map and MEM_HELP's prose — and within two hours of `move` being added the two
+// disagreed: the validator refused `retire` while naming six verbs, and the help
+// block printed directly beneath it taught five and never mentioned `Custody`. A
+// message that contradicts itself in one output is worse than either half of it.
+// Converge rather than sync (frag-a-fix-lands-in-one-lowering-path): the help
+// text is now DERIVED, so a seventh verb cannot be added without teaching it.
+const VERBS = {
+  create: [], evolve: ["Occludes"], merge: ["Parents"], split: ["Parents"],
+  correct: ["Severs", "Reason"], move: ["Custody"],
+};
+const VERB_LIST = Object.keys(VERBS).join(" | ");
+
 const MEM_HELP = `  Every commit answers a second question: did a durable belief change here?
   If YES — stage the concept edit and declare the lineage:
     ## Membrane
-    Action: evolve                      # create | evolve | merge | split | correct
-    Concept: frag-<id>
+    Action: evolve                      # ${VERB_LIST}
+    Concept: frag-<id>[, frag-<id>...]  # EVERY staged concept must be named here
     Occludes: <prior-blob-sha>          # evolve   (auto-derived if you omit it)
     Parents: frag-<id>, frag-<id>       # merge | split
     Severs: frag-<id>@<blob-sha>        # correct  (auto-derived if you omit it)
     Reason: <why the prior belief was wrong>   # correct
+    Custody: <from> -> <to>             # move — custody changed, content did not
   If NO — acknowledge it on purpose (a conscious "nothing to garden"):
     ## Membrane
     Evolution: acknowledged-none
@@ -109,6 +123,8 @@ const MEM_HELP = `  Every commit answers a second question: did a durable belief
   reference them by name (they move; restated prose lies).
   Unsure evolve vs correct? It's evolve — correct means "was NEVER right".
   Blob shas by hand: git rev-parse HEAD:concepts/frag-<id>.md
+  Staged a concept you did not name? That is a belief change nobody declared —
+  Concept: takes a comma-separated list, and the gate checks it covers the commit.
   Full discipline: .claude/skills/membrane/SKILL.md`;
 
 // ---------------------------------------------------------------------------
@@ -289,10 +305,7 @@ if (touchesOKF) {
   // also the only legal way a concept file may leave a tree: doctrine forbids
   // deleting a belief, and a move does not delete one, provided the content
   // demonstrably continues. Both halves are verified below rather than trusted.
-  const need = {
-    create: [], evolve: ["Occludes"], merge: ["Parents"], split: ["Parents"],
-    correct: ["Severs", "Reason"], move: ["Custody"],
-  };
+  const need = VERBS;   // declared once, at the top, and taught from the same object
   const action = keyIn(mem, "Action");
   if (!action) memFail(`declare an Action: (${Object.keys(need).join("/")})`);
   if (!need[action]) memFail(`unknown Action '${action}' — want: ${Object.keys(need).join("/")}`);
