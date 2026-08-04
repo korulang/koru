@@ -1,0 +1,6 @@
+{
+  "reference": "../6digit-skills",
+  "reference_sha": "3696b25",
+  "reconciled": "2026-08-04",
+  "note": "2-way fallback: no prior base existed. Reconciled membrane (bidirectional). arbiters-worldmodel snapshotted but NOT reconciled \u2014 287 local vs 547 upstream, deferred."
+}

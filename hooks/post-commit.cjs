@@ -61,10 +61,28 @@ function surfaceSignals() {
     const vm = line.match(/value=(\S+)/);
     const value = vm ? (Number.isFinite(Number(vm[1])) ? Number(vm[1]) : vm[1]) : undefined;
     const note = line.replace(/^\S+\s*/, "").replace(/value=\S+/, "").replace(/\b(measured|stall)\b/g, "").replace(/^[—\-\s]+/, "").trim();
-    const body = { name, kind: meta.kind || (/\bmeasured\b/.test(line) ? "measured" : "inferred"), value, face: meta.face, note: note || undefined, source: repo };
+    // `repo` and `source` are DIFFERENT fields on the bus and the difference is
+    // load-bearing: source is "which instrument/faucet raised it" (a footer),
+    // repo is "which application the card is about" — the schema's own words are
+    // "the declared join ... instead of string-guessing from source". Stamping
+    // only source left every commit card un-joinable, so a consumer either
+    // guessed the repo from an instrument name or dropped the card into an
+    // unattributed bucket. Court does the latter, loudly, by design.
+    // source keeps carrying the repo name for now — existing footers read it —
+    // but the join is `repo`, and it is declared here rather than inferred there.
+    const body = { name, kind: meta.kind || (/\bmeasured\b/.test(line) ? "measured" : "inferred"), value, face: meta.face, note: note || undefined, source: repo, repo };
     try {
-      execFileSync("curl", ["-s", "-m", "2", "-X", "POST", "-H", "content-type: application/json", "-d", JSON.stringify(body), url], { stdio: "ignore" });
-    } catch { /* surface down — never block a commit */ }
+      execFileSync("curl", ["-fsS", "-m", "2", "-X", "POST", "-H", "content-type: application/json", "-d", JSON.stringify(body), url], { stdio: ["ignore", "ignore", "pipe"] });
+    } catch (e) {
+      // Do NOT swallow. A signal that never reached the bus is a DROPPED signal.
+      // A valid commit must not block on a down surface — but the loss is a fault,
+      // and this whole system exists to make faults SEEN, not hidden. Loud, named,
+      // non-blocking: the commit lands, the drop screams.
+      process.stderr.write(
+        `\n⚠ faucet: signal '${name}' did NOT reach the bus (${url}) — card DROPPED ` +
+          `(surface down?). ${String(e.stderr || e.message || "").trim()}\n`,
+      );
+    }
   }
 }
 surfaceSignals();
@@ -82,14 +100,28 @@ const signals = [...wm.matchAll(/^Signal:\s*(\S+)\s*(.*)$/gim)]
   .filter((s) => isMembrane(s.type));
 if (!signals.length) process.exit(0); // routine commit — nothing to route
 
+// THE STORE POINTER, resolved the one documented way. This used to read a bare
+// `.membrane` file and, failing to find one, print a note and exit 0 — so a
+// belief-class signal silently stopped reaching the inbox, and the advice it
+// printed named a store repo that has since been retired.
+//
+// `.membrane` was the FOURTH site of a mechanism the skill, `snap.mjs`,
+// `install.sh` and this file each read differently. The first three were
+// converged on 2026-08-04; this one would have been left resolving a file the
+// installer no longer writes. Absence is not an error — no pointer means the
+// corpus is IN-REPO, which is the documented default.
 const top = git(["rev-parse", "--show-toplevel"]);
-const ptr = path.join(top, ".membrane");
-if (!fs.existsSync(ptr)) {
-  console.error("\n● belief signal fired, but this repo has no .membrane store pointer.");
-  console.error("  wire it once:  koru-membrane/hooks/install.sh " + top + " /path/to/koru-membrane\n");
-  process.exit(0);
+const ptr = path.join(top, ".claude", "membrane.json");
+let store = top;
+if (fs.existsSync(ptr)) {
+  try {
+    const declared = JSON.parse(fs.readFileSync(ptr, "utf8")).store;
+    if (declared) store = path.resolve(top, declared);
+  } catch (e) {
+    console.error(`\n● ${ptr} is not valid JSON — routing this signal in-repo instead.`);
+    console.error(`  ${String(e.message).trim()}\n`);
+  }
 }
-const store = fs.readFileSync(ptr, "utf8").trim();
 const repo = path.basename(top);
 const inbox = path.join(store, "inbox");
 fs.mkdirSync(inbox, { recursive: true });

@@ -51,6 +51,61 @@ approximation; the correction is itself fallible. Three consequences, load-beari
 - **Correction is always a *forward* commit** that *marks* the past, never erases
   it. The corpus improves by accumulating forward corrections.
 
+## What goes in — the intake rule that keeps this from becoming an abstraction over code
+
+The single failure that would make the membrane worthless: **restating what the
+code already says.** A fragment that mirrors an API, a value, a data-flow, or a
+test's assertion is a second source of truth that drifts — the stale
+description-of-a-thing-that-describes-itself. The code IS the spec; a membrane that
+duplicates it is exactly the abstraction-over-code we reject. Duplication is not
+prevented by tooling — it is prevented *here, at intake*, by deciding what is even
+allowed to become a fragment.
+
+**The litmus, one line — apply it before every `create`/`evolve`:**
+
+> *If the code (and its tests) were the only artifact left, would this be LOST?*
+> If **no**, it does not belong in the membrane.
+
+Only what the code **structurally cannot hold** earns a fragment:
+
+- **Repudiation — the load-bearing case.** *"We believed X; X was wrong."* Code
+  provably cannot record this: when you fix it, the wrong design is simply *gone* —
+  the working tree never says it was ever believed. The `correct`/`Severs` verb is
+  the membrane's whole reason to exist: the ledger of where our code-as-spec was
+  wrong. This is the **anti-abstraction**, not an abstraction over code.
+- **Irreducible why.** The rationale, the constraint that forced a tradeoff, the
+  alternative rejected *and why* — decision context that lives in no file.
+- **Regime change.** A shift in how we work or understand the domain — a stance,
+  not a fact.
+
+**Banned at intake (these ARE the duplication):**
+
+- restating code — a signature, a value, "X calls Y", a data flow; anything a
+  reader would learn by reading the source;
+- restating a test — the pin *is* the record; do not mirror it as a "belief";
+- status / progress / counts — that's the world-model signals and the git log, not
+  a durable belief.
+
+**The second gate — a fragment must be able to be WRONG (encoded 2026-08-04).**
+The bans above catch *duplication*. They do not catch *platitude*, and a belief
+hedged until nothing could contradict it clears every one of them. So ask it
+directly, right after the litmus:
+
+> *What future observation would `correct` this?*
+
+If there is none, it is not a belief — it is decoration. `correct`/`Severs` is
+this corpus's whole reason to exist, so a fragment that can never be corrected is
+structurally excluded from the membrane's own purpose while satisfying every
+other rule at intake. The temptation runs one way and is worth naming: weakening
+a claim makes it likelier to survive, and a claim that survives everything taught
+you nothing by surviving. Write the belief sharp enough that being wrong about it
+would show.
+
+Because most commits change code without changing a belief, **`Evolution:
+acknowledged-none` is the common, correct answer** and the corpus stays small *by
+design*. A membrane that is growing fast is a membrane being abused as a code
+mirror — treat rapid growth as a smell, not success.
+
 ## The store
 
 - One concept = one OKF markdown file, keyed by a **stable opaque id**, not by its
@@ -66,17 +121,14 @@ approximation; the correction is itself fallible. Three consequences, load-beari
 `<store>` is the path to the store repo. A project declares it in
 **`.claude/membrane.json`** at the repo root:
 
-    { "store": "../koru" }
+    { "store": "../koru-membrane" }
 
 - Resolved relative to the repo root — siblings under one parent are `../<name>`.
 - **No `membrane.json`** → the store is **in-repo**: `concepts/` in the project
   itself, hook in the project's own `.git/hooks`. The simple single-project default.
 - **Pointed** → a **shared** store: many repos name the same external store, so one
-  corpus serves a whole family. The koru family uses this — `koru-libs` and
-  `korulang_org` name `../koru`, and `koru` itself declares nothing because
-  in-repo is the default. (Until 2026-08-04 they all named a `koru-membrane`
-  sibling that had stopped moving nine days earlier; the corpus was split in half
-  and every pointer named the dead half. One store, one pointer mechanism.)
+  corpus serves a whole family. The koru family uses this — koru, koru-libs,
+  korulang_org all point at the `koru-membrane` sibling repo.
 
 The `commit-msg` hook lives in the **store** repo's hooks (it enforces *corpus*
 commits, which land in the store, not in the consumers). Install it once, there.
@@ -156,132 +208,21 @@ just how membrane carries and enforces it:
 - **Interlock**: a `correct` is intrinsically attention-worthy, so it may **not**
   declare `Signals: none` — it must carry at least one `Signal:`. The hook enforces it.
 
-## What goes in — the intake rule that keeps this from becoming an abstraction over code
-
-The single failure that would make the membrane worthless: **restating what the
-code already says.** A fragment that mirrors an API, a value, a data-flow, or a
-test's assertion is a second source of truth that drifts — the stale
-description-of-a-thing-that-describes-itself. The code IS the spec; a membrane that
-duplicates it is exactly the abstraction-over-code we reject. Duplication is not
-prevented by tooling — it is prevented *here, at intake*, by deciding what is even
-allowed to become a fragment.
-
-**The litmus, one line — apply it before every `create`/`evolve`:**
-
-> *If the code (and its tests) were the only artifact left, would this be LOST?*
-> If **no**, it does not belong in the membrane.
-
-Only what the code **structurally cannot hold** earns a fragment:
-
-- **Repudiation — the load-bearing case.** *"We believed X; X was wrong."* Code
-  provably cannot record this: when you fix it, the wrong design is simply *gone* —
-  the working tree never says it was ever believed. The `correct`/`Severs` verb is
-  the membrane's whole reason to exist: the ledger of where our code-as-spec was
-  wrong. This is the **anti-abstraction**, not an abstraction over code.
-- **Irreducible why.** The rationale, the constraint that forced a tradeoff, the
-  alternative rejected *and why* — decision context that lives in no file.
-- **Regime change.** A shift in how we work or understand the domain — a stance,
-  not a fact.
-
-**Banned at intake (these ARE the duplication):**
-
-- restating code — a signature, a value, "X calls Y", a data flow; anything a
-  reader would learn by reading the source;
-- restating a test — the pin *is* the record; do not mirror it as a "belief";
-- status / progress / counts — that's the world-model signals and the git log, not
-  a durable belief.
-
-**The second gate — a fragment must be able to be WRONG (encoded 2026-08-04).**
-The bans above catch *duplication*. They do not catch *platitude*, and a belief
-hedged until nothing could contradict it clears every one of them. So ask it
-directly, right after the litmus:
-
-> *What future observation would `correct` this?*
-
-If there is none, it is not a belief — it is decoration. `correct`/`Severs` is
-this corpus's whole reason to exist, so a fragment that can never be corrected is
-structurally excluded from the membrane's own purpose while satisfying every
-other rule at intake. The temptation runs one way and is worth naming: weakening
-a claim makes it likelier to survive, and a claim that survives everything taught
-you nothing by surviving. Write the belief sharp enough that being wrong about it
-would show.
-
-Because most commits change code without changing a belief, **`Evolution:
-acknowledged-none` is the common, correct answer** and the corpus stays small *by
-design*. A membrane that is growing fast is a membrane being abused as a code
-mirror — treat rapid growth as a smell, not success.
-
-### At write time — the detector for the duplication ban
-
-*(This project's own statement of the ban above. The falsifiability gate that
-used to sit beside it as a second bullet now lives in the intake section it
-belongs to — one home, not two.)*
-
-**Never duplicate in prose what exists as runnable code.** (Lars-ruled
-2026-07-10, after a concept file restated probe findings, file:line
-citations, and implementation inventories that the code, tests, and commit
-message already held.) This is the membrane instance of the no-state-prose
-ruling for tests: prose that duplicates code-derivable state is context
-poison — stale the moment the code moves, and nothing in the workflow moves
-the prose with it.
-
-- A concept body carries what NO tool can derive: the ruling, the why, the
-  direction, the open questions, the judgment. That is belief.
-- What code/tests/pins/commits already encode — current behavior, line
-  numbers, which tests are red, what a probe showed — is **referenced by
-  name** (`the 310_104 pin`, `the import gate`), never restated. The
-  reference stays true when the state flips; the restatement lies.
-- Detector at write time: if a sentence would need editing when the code
-  changes *without the belief changing*, it is state, not belief — cut it.
-
 ## Write-time loop (this replaces the evolution engine)
 
 1. **Survey** — what concept(s) does this update touch? Read/grep the store. (Later,
    optionally, embedding-match to find candidates.)
-2. **Decide the verb** — create / evolve / merge / split / correct / move.
+2. **Decide the verb** — create / evolve / merge / split / correct.
 3. **Edit** the file(s) — opaque-id filename, belief in the body.
 4. **Commit** with the trailer. The hook rejects a malformed one.
 
 Spend the time this needs. You are the intelligence; there is nothing behind you.
 
-## Reading the corpus — `snap`, never the whole thing
-
-The corpus never deletes, so "read the membrane before you start" is an
-instruction whose cost grows without bound. **`snap` is the bounded read**, and
-it is the default way to arrive at the corpus:
-
-```sh
-node <store>/snap.mjs                      # bounded snapshot, ~6 KB
-node <store>/snap.mjs --bytes 16000        # wider — covers every concept
-node <store>/snap.mjs --concept frag-<id>  # drill: full belief + its lineage
-node <store>/snap.mjs --json               # structured, for a renderer
-```
-
-Detail decays with **heat** (git recency, then how often a concept has been
-revised). Hot beliefs arrive whole; below that a concept is its title plus its
-last change; below that the one-line commit subject alone; and the tail is named
-but not described. Every concept lands in exactly one tier, so the corpus's true
-width is always visible even when its contents aren't.
-
-`snap` is **pure-read and fully derived** — git plus the working tree, no index,
-no cache, no state. It never writes and never demands work in return, so call it
-as freely as you like. Run it from a repo whose `.claude/membrane.json` names a
-store and it finds it on its own; with no pointer it reads the cwd, which is the
-in-repo case. Otherwise pass `--store`.
-
-Read the whole corpus only when you have a reason that names it. Reach past
-`snap` with the queries below.
-
 ## Querying through time
 
 - **Current belief** — read the working-tree file.
 - **A concept's whole trajectory** — `git log -E --grep="Concept:[[:space:]]+frag-<id>"
-  --format="%h %ad %s%n%b" --date=short`. The whitespace class is not
-  decoration: commits written before 2026-08-04 aligned their trailers into a
-  column, and a literal `"Concept: frag-<id>"` matches none of those and reports
-  the miss as *no trajectory* rather than as a bad query. The `commit-msg` hook
-  now normalises trailer spacing, so new commits match either form — the
-  tolerant spelling is what also reaches the history behind it.
+  --format="%h %ad %s%n%b" --date=short`.
 - **Belief at time T** — `git show <commit>:concepts/frag-<id>.md` (read-only;
   **never `checkout`** — it mutates the tree and can clobber untracked sidecar state).
 - **Lineage / parents / occlusions** — parse the `Parents:` / `Occludes:` / `Severs:`
@@ -424,9 +365,8 @@ tail becomes the bottleneck — and back-fill the whole index then.
 
 ## Optional tooling (benefits split by who it serves)
 
-- **Traversal helper** (`membrane trace/at/suspect`) — encodes the `Parents:` /
-  `Severs:` walks above once. `snap --concept` already covers a single concept's
-  trajectory; what's left is forward smear-tracing. Not required.
+- **Traversal helper** (`membrane trace/at/suspect`) — encodes the query commands
+  above once. A convenience *for the agent* (consistency, fewer tokens). Not required.
 - **Lineage visualizer** — reads `git log`, renders evolutions as continuous lines
   and `correct`/`Severs` as explicit cuts. This is the *human's* transparency plane:
   how the corpus's history and health are seen **without poking**. High value for the
@@ -441,5 +381,3 @@ tail becomes the bottleneck — and back-fill the whole index then.
 - Skip the trailer, or hand-wave the verb — the hook will reject it, and a silent
   evolve-vs-correct mislabel corrupts the time-travel.
 - Reach for an LLM or embedding "evolver" — you are the evolver; that's the point.
-- Duplicate in prose what exists as runnable code — beliefs reference code and
-  tests by name; they never restate their contents (see the write-time loop).
