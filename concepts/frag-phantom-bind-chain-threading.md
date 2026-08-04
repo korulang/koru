@@ -117,3 +117,53 @@ the cell's var decl, type name, write target, and after-read, so synthesizing
 `__koru_cap_{line}` when it is `_` covers them all at once — the same
 "referenced ⇒ needs a real name" move, in a non-phantom site. The invariant is
 about `_` semantics generally, not any one pass.
+
+## The uniformity ruling has a live counterexample: `std/store:query`
+
+2026-08-04. Lars's ruling above is about SAMENESS — an obligation must thread
+everywhere, and a new binding form is not permission to thread differently. A
+borrow into a sweep arm turns out to break it, and only in one construct.
+
+Same `<list>` borrow, same push, three sweeps:
+
+- `for(0..N) ! each` — threads. Compiles.
+- `std/fs:read-lines ! line` — threads. `810_242_day24_part2` has pushed regex
+  captures into a list from inside the line arm for weeks, green.
+- `std/store:query ! query` — **does not thread.** KORU030.
+
+`690_252` pins it. The store's sweep is the language's flagship data operation
+and the one place a user most wants a resource in hand, so this is the worst
+possible construct to be the exception.
+
+**The mechanism is an emission difference, not a semantic one**, which is what
+makes it a defect rather than a rule. A `for` body is emitted as an inline
+block that references the outer binding directly. A store sweep body is lifted
+into a detached event handler invoked per row, so an outer binding can only
+arrive as a declared input — and a phantom-typed one has nowhere to be
+declared. Whatever `read-lines` does, it keeps its arm reachable from the
+enclosing scope. Nothing about the borrow forbids this; the store just chose a
+lowering that cannot carry it.
+
+**A second, cheaper defect rides along: the diagnostic misdescribes the cause.**
+"argument 'xs' has no tracked phantom state" says the value never had one. It
+did — `std/list:len(xs)` at the same level type-checks. The state was lost at a
+boundary and the message should name the boundary. The sibling branch in
+`phantom_semantic_checker.zig` was already taught precisely this ("say so,
+don't blame it for a checker blind spot", the `<state!>` consumption case);
+the requirement case beside it still emits the flat sentence. One branch of one
+switch learned the lesson and its neighbour did not.
+
+**What it costs downstream, concretely:** `koru-libs/raylib` cannot draw one
+rectangle per row. Its `bounce.k` clears the screen and moves entities in a
+standing rule, but never renders one, and its header attributes that to the
+ambient-context wall on RULES (690_006). That attribution is incomplete — a
+lexically nested query arm hits the same dead end by a different path, and the
+`for` case shows the dead end is not necessary. Per-entity drawing works TODAY
+if the state lives in a `std/grid` and the loop is a counted `for`, because
+that path never detaches.
+
+Open: whether the fix is to thread declared phantom inputs into sweep-body
+events (which is `bounce.k`'s "parameterized stripe" design note arriving from
+the other side), or to stop detaching sweep bodies when the arm captures
+anything phantom-typed. The first is more general; the second is closer to what
+`for` already does.
