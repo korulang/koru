@@ -7,17 +7,17 @@ ts: 2026-07-15
 
 # A tap observes a transition; a terminus is the degenerate case (belief)
 
-A tap is **an observation spliced at a production point** — the instant an event
+A tap is **an observation spliced at a production point** — the instant a tor
 produces a value. The whole mental model is a thing wedged *into* a flow: the
-event produces, the tap fires, and then the flow carries on past it. That model
+tor produces, the tap fires, and then the flow carries on past it. That model
 silently assumes there is an **"after"** to carry on into.
 
 There are exactly two shapes, and they are the same idea told at two positions:
 
-- **Mid-flow tap** — the tapped event has a downstream. `produce → observe →
+- **Mid-flow tap** — the tapped tor has a downstream. `produce → observe →
   continue`. The observation is inserted before the downstream and the flow
   proceeds. This is the case the weaver was built around.
-- **Terminal tap** — the tapped event is a bare-return (`f(x): r -> r`): the
+- **Terminal tap** — the tapped tor is a bare-return (`f(x): r -> r`): the
   produced value *immediately leaves the frame*. There is no downstream.
   `produce → observe → return`. The observation goes **before** the return, and
   the return stays the **sole tail** — nothing is grafted after it.

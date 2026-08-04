@@ -7,9 +7,9 @@ ts: 2026-07-10
 
 # A synthesized `.default` decl must inherit its abstract's phase annotation (belief)
 
-When an `[abstract]` event has a cross-module override that delegates to the
+When an `[abstract]` tor has a cross-module override that delegates to the
 original via `.default`, the resolution pass (`resolve_abstract_impl.zig:createDefaultEventDecl`)
-synthesizes an `<event>.default` event decl. The emitter renders that decl as
+synthesizes an `<event>.default` tor decl. The emitter renders that decl as
 the `<event>_default_event` member which the override's generated
 `_default_handler` calls into. **That synthesized decl must carry the
 abstract's own phase annotation (`comptime`), not merely `retain`** — otherwise

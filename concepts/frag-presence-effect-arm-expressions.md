@@ -7,7 +7,7 @@ ts: 2026-07-19
 
 # Presence expressions for optional effect arms (belief)
 
-Inside the declaring event's impl, an optional arm's bare name in condition
+Inside the declaring tor's impl, an optional arm's bare name in condition
 position is a COMPTIME presence test — "did this consumer install the
 handler". Two homes, one expression kind: `if(ask) | then | else` and
 `when ask` guards (ruled 2026-07-03; pinned 400_146–400_150).
@@ -29,7 +29,7 @@ fn-pointer alias (`if (ask) |f|`, 400_148).
 ## Presence has TWO lowerings, one per emission path (833)
 
 `@hasDecl(__H, "arm")` is the lowering only on the LEGACY Handlers-struct-fn
-path, where `__H` is a real comptime param. When a flow-bodied event is folded
+path, where `__H` is a real comptime param. When a flow-bodied tor is folded
 via the in-flow-scope INLINE SPLICE (832 — so the caller's mutable accumulator
 stays in scope), there is no `__H` — that boundary is exactly what the splice
 dissolves. There, presence resolves from the CALLER's installed continuations
@@ -38,7 +38,7 @@ comptime `true`/`false`. Same presence truth, two backends: a `__H` lookup
 where a handlers struct exists, a caller-conts lookup where it doesn't. Both AST
 `if`/`when` guards (`presenceConditionRewrite`) and template-baked `~if` →
 `@hasDecl(__H, ...)` (`rewriteInlineHasDeclPresence`) take the conts backend on
-the inline path. An event declaring an optional arm therefore no longer bails
+the inline path. A tor declaring an optional arm therefore no longer bails
 out of inline-splice eligibility (833: fold × optional arm).
 
 ## Why the two homes resolve at DIFFERENT layers
@@ -46,7 +46,7 @@ out of inline-splice eligibility (833: fold × optional arm).
 The `~if` template bakes its condition at render time (`{{ expr }}`),
 upstream of every emitter rewrite site — so the if-home substitutes in the
 template processor's per-call render, threaded with the enclosing flow's
-impl-event context. `when` guards are the opposite: templates never bake
+impl-tor context. `when` guards are the opposite: templates never bake
 them; the guard text is written when the emitter resolves splice markers —
 so the when-home rewrites at the splice guard sites. One expression kind,
 two resolution layers, dictated by where each condition's text is born.

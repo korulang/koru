@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Thin shim → runs the CommonJS faucet. The .cjs extension forces CommonJS so the
+# hook works regardless of the repo's package.json "type" (module vs commonjs).
+exec node "$(dirname "$0")/post-commit.cjs" "$@"

@@ -27,7 +27,7 @@ unaffected by this rule.
 
 ## Why decoupled-then-self-resolved, not writing-module-always
 
-The prior canonicalization resolved EVERY bare phantom to the writing (event's)
+The prior canonicalization resolved EVERY bare phantom to the writing (tor's)
 module. That is correct for primitives (they have no other home) but wrong for a
 typed base referenced cross-module: `*app/lib/db:Transaction<!active>` written in
 module `input` used to canonicalize to `input:active` — a state that can never

@@ -10,7 +10,7 @@ ts: 2026-07-12
 A tag union exists for MULTIPLE dispatch branches. A single returned value
 is the bare-return `-> T` form, and a lone `| value T` branch should fail
 to compile (pinned 210_131). Lars ruled the fork 2026-07-11: there is NO
-exemption for `[transform]`/`[keyword]`/`[norun]` site-transformer events —
+exemption for `[transform]`/`[keyword]`/`[norun]` site-transformer tors —
 "one of those hard rules that should make sense everywhere," compiler core
 included.
 
@@ -23,7 +23,7 @@ fiction the surface kept paying for.
 
 Two impl conventions, one decl form:
 
-- **Plain proc on a `[transform]` event** (the print family, types, kernel,
+- **Plain proc on a `[transform]` tor** (the print family, types, kernel,
   fmt, …): the generated Output IS the decl — bare-return decls make it
   SiteResult directly, and the proc returns it unwrapped. The stub returns
   the handler result verbatim.
@@ -83,7 +83,7 @@ ADT/value-match construct; `match` is also already taken by std/parser).
 The pit-of-success wrinkle is CLOSED (2026-07-16): the single-field-brace check
 used to fire per-branch during parse, before the branch count was known, so a
 SOLE `| ok { c: i32 }` was routed to `| ok i32` — itself illegal for a lone
-branch, a two-hop path. It moved to post-parse (event-decl validation), where
+branch, a two-hop path. It moved to post-parse (tor-decl validation), where
 count is known: a sole braced-single-field falls through to the one-variant
 bare-return check; a multi-branch one gets the identity advice. The two forms
 are told apart post-parse by the field name — identity carries the `__type_ref`

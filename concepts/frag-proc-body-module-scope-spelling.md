@@ -7,7 +7,7 @@ ts: 2026-07-17
 
 # `$mod.` is the one spelling for a |zig proc body's own module scope — bare words collide, root-paths rot (belief)
 
-Cut-1 effect inlining (Lars-ratified 2026-06-12) splices an effect event's
+Cut-1 effect inlining (Lars-ratified 2026-06-12) splices an effect tor's
 proc body into the CONSUMER's frame: one frame, no Handlers struct, no
 namespace boundary. Its scope-portability contract covered params, effect
 names, and `std.` (rewritten to `@import("std").`) — but said nothing about

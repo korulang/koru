@@ -41,6 +41,6 @@ deterministic positions over 4 frames.
 - Multi-field stored-through-cursor is red (690_038): the stored transform
   mis-parses the indexed head with >1 field. Chained single-field writes
   are the legal form (chain-envelope: one atomic unit).
-- Event-driven firing of plural query rules (the write-mode of O13's two
+- Tor-driven firing of plural query rules (the write-mode of O13's two
   modes) is deliberately unbuilt this rung; its entry ticket is closing
   the T2 reactive-edge cycle graph over ALL edges.

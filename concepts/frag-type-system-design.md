@@ -9,7 +9,7 @@ ts: 2026-07-07
 
 Koru's type system is grown, not decreed: a **dumb, metadata-loaded
 registry** in the gray zone (a koru_std module the compiler relies on —
-list.kz style: Koru surface events over a Zig storage core, threaded
+list.kz style: Koru surface tors over a Zig storage core, threaded
 through CompilerContext because *the compiler itself reads it* — the
 criterion that distinguishes it from the tap-registry anti-pattern),
 fed by **plural, opinionated, userspace generation libraries** of which

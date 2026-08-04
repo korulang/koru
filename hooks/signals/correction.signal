@@ -1,0 +1,6 @@
+name: correction
+kind: inferred
+shape: categorical
+face: in
+membrane: true
+note: a prior belief was wrong and is being repudiated

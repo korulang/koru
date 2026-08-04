@@ -12,7 +12,7 @@ ways depending on **where** it appears. Position decides meaning; the shape of
 the braces does not. This is the rule to get right first, because a formal spec
 is built on it.
 
-## Position 1 — event DECLARATION: `{ … }` is a PAYLOAD SHAPE
+## Position 1 — tor DECLARATION: `{ … }` is a PAYLOAD SHAPE
 
 `~event E {…} | ok { a: i32, b: u8 }` — the `{ … }` after `ok` declares the
 branch's payload. It is a **shape declaration**:
@@ -22,7 +22,7 @@ branch's payload. It is a **shape declaration**:
   (PARSE003, 210_063). `| ok { c: i32 }` must be `| ok i32`.
 - Empty braces `{}` are illegal (210_062).
 - A **single continuation branch carrying a payload** is illegal → bare return
-  `-> T` (210_131) — **unless the event also has effect branches (`!`)**, which
+  `-> T` (210_131) — **unless the tor also has effect branches (`!`)**, which
   make a single continuation branch legal (a `!` arm is a 0..N yield point, so
   the one-variant collapse doesn't apply). All of this is the single-return
   family: [[frag-single-return-form-is-universal]].

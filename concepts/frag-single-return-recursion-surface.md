@@ -7,7 +7,7 @@ ts: 2026-07-04
 
 # Single-return recursion surface — tree recursion is already expressible (belief)
 
-The single-return form (`-> T` bare-return events with `:` call-site binds)
+The single-return form (`-> T` bare-return tors with `:` call-site binds)
 composes through **every naive recursion shape** in the Osprey compute-kernel
 corpus, with zero compiler changes. Proven 2026-07-04 by the koru-benchmarks
 port frontier going 6/22 → 12/22 in one session, every port green on its
@@ -17,7 +17,7 @@ first grounded attempt:
   320_121/320_122 parallel-assignment staging.
 - **Non-tail single recursion** where the produce transforms the result after
   the call (digitsum, collatz).
-- **Three-way branches** inside a single-return event, spelled as nested
+- **Three-way branches** inside a single-return tor, spelled as nested
   `| else |> if(...)` with `->` produces from the NESTED arms (collatz,
   primes) — pinned 320_125.
 - **Non-tail TREE recursion**: a produce reading TWO chained binds
@@ -32,8 +32,8 @@ value-event calls?" — projected fib/hanoi/tak as probable feature gaps.
 They are not. **Expressiveness of naive recursion is closed.** Performance
 parity is a separate, per-kernel, measured question — and its first concrete
 resolution landed here: the non-flattening paths (tak's inner tree-recursion,
-any value event reached through real `.handler(.{…})` dispatch) were slow not
-from dispatch cost per se but from an **argument-ABI hole**. A value event
+any value tor reached through real `.handler(.{…})` dispatch) were slow not
+from dispatch cost per se but from an **argument-ABI hole**. A value tor
 whose Input exceeds the AArch64 16-byte register threshold (tak's 3×i64) was
 lowered as `handler(Input)` and passed BY POINTER, so every call marshalled
 args through the stack where C passes them in registers; the gap scaled with

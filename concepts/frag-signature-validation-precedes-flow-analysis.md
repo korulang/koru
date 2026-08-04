@@ -7,7 +7,7 @@ ts: 2026-07-20
 
 # Declaration-shape validation precedes obligation-flow analysis (belief)
 
-A wall on an event's OWN SIGNATURE — illegal obligation polarity like issuing
+A wall on a tor's OWN SIGNATURE — illegal obligation polarity like issuing
 `<owned!>` on an input parameter, or an unknown phantom module — is a
 **declaration-shape** error: it is true of the declaration alone, before any
 program flow is considered. Obligation-FLOW passes (auto-discharge insertion,

@@ -12,7 +12,7 @@ a branch payload is: `~locate(): { pos: { x, y }, label } |> …`. Lars ruled it
 in 2026-07-12 for parity — branch-payload destructure (`| found { name, age } |>`,
 020_016) is a green, established feature, so its bind-position twin should exist.
 It is the natural consumer of a `-> { record }` bare return, and the migration
-target for the old `| at { … } |>` branch form on a now-bare-return event
+target for the old `| at { … } |>` branch form on a now-bare-return tor
 (020_017).
 
 Semantics mirror the branch form field-for-field, including the KORU100 rule

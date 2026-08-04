@@ -18,7 +18,7 @@ and the correct behaviour is NOT the same for both:
   SEPARATE child continuation. `x` must NOT pun into `producer` itself, so it
   enters scope AFTER the node's own fill. Reference: 210_154 (green).
 - **Branch / effect payload** (`! emit x |> consumer(...)`, `| ok x |> consumer`)
-  — `x` is produced UPSTREAM (the emitting event, or a prior branch). Here the
+  — `x` is produced UPSTREAM (the emitting tor, or a prior branch). Here the
   payload binding and its consumer sit on the SAME continuation
   (`| emit x => INVOKE consumer`), so `cont.node` is the CONSUMER, which may
   legitimately pun the upstream payload into its own args. The payload must be in

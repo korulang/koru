@@ -38,7 +38,7 @@ Corollaries held with it:
   reroutes the call to a `.impl` stub for shape-checking); the emitter must
   splice that inline_body **wherever the invocation appears** — a nested `~if`/
   `~for` branch or effect-handler body, not only a top-level flow — or the
-  nested site lowers to a dead call on the stub. A comptime|transform event is
+  nested site lowers to a dead call on the stub. A comptime|transform tor is
   therefore NOT target-agnostic: a target with no variant, or an emitter that
   splices only at top level, silently breaks that target (JS printing was fully
   broken this way until both halves landed). Pins: 010_008, 140_014, 630_001,

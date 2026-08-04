@@ -7,14 +7,14 @@ ts: 2026-07-17
 
 # `string` is the surface text type; `[]const u8` is only its lowering
 
-Ruled 2026-07-17 (Lars). Text in a Koru **event declaration** is spelled
+Ruled 2026-07-17 (Lars). Text in a Koru **tor declaration** is spelled
 `string`. The Zig slice `[]const u8` is not a surface type — it is the internal
 lowering `string` compiles to on the native backend, nothing a program author
 writes. The old wall pointed the wrong way: `[]const u8` was the canonical
 payload spelling and `string` was rejected as a foreign-language habit
 (PARSE003 "Unknown type 'string'... use '[]const u8'"). That is repudiated. The
 wall reverses: `string` accepted, `[]const u8` rejected, in BOTH `.k` and `.kz`
-(a `.kz` file is still Koru surface at its event declarations; host-adjacency
+(a `.kz` file is still Koru surface at its tor declarations; host-adjacency
 does not license the ziggy spelling there), and in **every surface type
 position** — payload fields (braced + braceless identity + `!` effect payloads),
 **and return/resume positions** (`-> string`). There is no half-canonical
@@ -57,7 +57,7 @@ cannot themselves say:
   representation, same performance. 020_060 is 020_016 with one word changed and
   identical output. The difference is entirely at the surface/AST level.
 - **Obligations forced the return-position canonicalization.** An `acquire ->
-  string<held!>` produces a `<held!>` obligation whose discharge event
+  string<held!>` produces a `<held!>` obligation whose discharge tor
   `release { name: string<!held> }` must match by *type*. When payloads were
   migrated to `string` but returns left as `[]const u8`, the produced type
   (`[]const u8`) no longer matched the consumed type (`string`) and auto-discharge
