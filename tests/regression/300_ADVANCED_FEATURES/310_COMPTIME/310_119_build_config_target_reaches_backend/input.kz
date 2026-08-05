@@ -1,0 +1,49 @@
+// Pins that `std/build:config { "target": ... }` ACTUALLY cross-compiles, not
+// merely that the block parses.
+//
+// The two existing build:config tests (310_057, 310_058) are COMPILE_ONLY and
+// assert only that the annotation survives quote-escaping. Nothing in the corpus
+// read the architecture of the produced binary — so when target threading
+// stopped working, no marker moved:
+//
+//   2026-02-13  blog "A 14KB Docker Image That Serves HTTP" ships a real
+//               x86_64-linux-musl binary cross-compiled from macOS.
+//   2026-05-04  tests/.../embedded_blinky/results.md records the koru row as
+//               `native`, "no cross-compile threading for that toolchain yet".
+//   2026-06-01  koru-os/FINDINGS.md reproduces it in 9 lines and calls it a
+//               toolchain gap.
+//
+// The gap was not real — those probes wrote `std.build:config` with the retired
+// dot namespace. But the corpus could not tell the difference between "cross
+// -compiles" and "silently builds native", and that is what this test closes.
+//
+// No `~[build(...)]` annotation, so the config always matches (build.kz:57) and
+// no CLI flag is needed. The assertion is a comptime one INSIDE a fired tor: an
+// unfired `~pub tor main` emits a main() holding only the flow prologue and
+// epilogue, so its body would never be analysed and the wall would not exist.
+//
+// COMPILE_ONLY because the artifact is an x86_64 Linux binary that cannot run on
+// a macOS/arm64 host. Compiling IS the assertion.
+
+const std = @import("std");
+
+~std/build:config {
+    "target": "x86_64-linux-musl"
+}
+
+~pub tor assert-target { }
+
+~proc assert-target|zig {
+    const builtin = @import("builtin");
+    if (builtin.cpu.arch != .x86_64)
+        @compileError("std/build:config target did not reach the backend: emitted code compiled for " ++ @tagName(builtin.cpu.arch) ++ ", expected x86_64");
+    if (builtin.os.tag != .linux)
+        @compileError("std/build:config target did not reach the backend: emitted code compiled for " ++ @tagName(builtin.os.tag) ++ ", expected linux");
+    std.debug.print("target reached the backend\n", .{});
+}
+
+const fire = true;
+
+~if(fire)
+| then |> assert-target()
+| else |> _
