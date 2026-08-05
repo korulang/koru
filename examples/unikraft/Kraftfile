@@ -1,0 +1,17 @@
+spec: v0.6
+name: koru
+
+unikraft:
+  version: stable
+  kconfig:
+    CONFIG_STACK_SIZE_PAGE_ORDER: '6'
+    CONFIG_OPTIMIZE_SIZE: 'y'
+    CONFIG_OPTIMIZE_DEADELIM: 'y'
+    CONFIG_OPTIMIZE_NOOMITFP: 'n'
+    CONFIG_DEBUG_SYMBOLS_LVL1: 'y'
+    CONFIG_LIBVGACONS: 'n'
+    CONFIG_LIBUKBOOT_BANNER_NONE: 'y'
+    CONFIG_LIBUKDEBUG_ENABLE_ASSERT: 'n'
+
+targets:
+  - qemu/x86_64

@@ -1,0 +1,4 @@
+$(eval $(call addlib,appkoru))
+
+APPKORU_SRCS-y += $(APPKORU_BASE)/main.c
+APPKORU_ALIBS-y += $(APPKORU_BASE)/libkoruapp.a

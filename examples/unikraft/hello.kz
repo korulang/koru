@@ -1,0 +1,13 @@
+// The real join: Koru's OWN std/io:print.ln, running in a Unikraft unikernel.
+// No hand-written extern printf this time — the emitted write comes from
+// __printInterpolate's freestanding arm.
+//
+// Flow shape grounded on 250_007 (MUST_RUN + SUCCESS).
+
+~import std/io
+
+const go = true;
+
+~if(go)
+| then |> std/io:print.ln("print.ln, from koru, inside a unikernel")
+| else |> _
