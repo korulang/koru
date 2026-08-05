@@ -349,3 +349,45 @@ implied by it and absent.
   and closed three notes describing live bugs. **A tool that reads verdicts must
   ask what each verdict is allowed to mean**, and when it cannot, report the
   weakness instead of the number.
+## The untouched lowering is the one on the front page (2026-08-05)
+
+Fresh instance, and it moves the belief on two axes at once: the count can be
+**four**, and *which* lowering goes untouched is not random.
+
+`std/io`'s print surface was made freestanding-capable so Koru could print
+inside a Unikraft unikernel. The fix went into `__printInterpolate`, which is
+shared by `print`, `print.ln`, `eprint`, and `eprint.ln` — four user-facing tors,
+one implementation. That reads like the general fix, and it was reported as one.
+
+It was a quarter of the change. `print.blk` is a **separate** implementation with
+two lowerings of its own — `|zig` and `|raw_posix` — each carrying a `:f`/`:any`
+fallback, and the raw path a hand-rolled `__kz_w` besides. Four write sites
+total; one was fixed.
+
+The bias is the part worth keeping. The author's own probe was a `.kz` file
+calling `print.ln`, so the fix was verified against exactly the lowering the
+author reached for. **`print.blk` is the surface on the korulang.org front page**
+— it is what `010_000_hello_world_koru` uses, it is what pure `.k` looks like,
+and it is the one a first-time reader meets. The untouched lowering was not an
+obscure sibling; it was the canonical one. "Which lowering was I looking at" is
+not a coin flip, it is *whichever one the author's habits use*, and an author's
+habits are systematically not a newcomer's.
+
+What surfaced it was not a count and not discipline. It was a request to run the
+same thing through the *other* front door — "test it with pure Koru too, a `.k`
+file" — which found the gap in one move, before any of the four sites had been
+enumerated.
+
+- **Ask for the other front door, not just the other lowering.** Counting
+  lowerings is an implementation-side question and it is easy to answer wrong
+  when two surfaces share a name. "Run the same program through the surface I do
+  NOT habitually write" is cheaper, needs no map of the emitter, and lands on the
+  user-visible ones first.
+- **Weight the count by who meets each path.** If one lowering is the front-page
+  example, it is not one of N — it is the one that must work, and a fix that
+  skipped it has not shipped regardless of how many sites it covered.
+- **Converge the text, not the discipline.** The mitigation here was not a rule
+  to remember: the four sites now splice one `KORU_OUT_UNESCAPED` const, with the
+  brace-escaped variant *derived at comptime* rather than hand-maintained beside
+  it. Two hand-kept copies of one string is the same defect one level down, and
+  the earlier sections of this belief are a list of times that bill came due.

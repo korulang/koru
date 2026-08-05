@@ -296,6 +296,57 @@ fn __appendFmtLiteralByte(buf: *std.ArrayList(u8), allocator: std.mem.Allocator,
     buf.append(allocator, byte) catch unreachable;
 }
 
+// ONE writer, four call sites. `print`/`print.ln`/`eprint`/`eprint.ln` share
+// __printInterpolate; `print.blk` has two more lowerings of its own (|zig and
+// |raw_posix), each with a :f/:any fallback. Every one of them has to reach the
+// OS, and pasting the host branch into each is precisely how two lowerings of one
+// construct drift apart — a shape this file has already produced four times.
+//
+// The branch itself is a NECESSITY, not a preference: `std.posix.write` does not
+// exist on a freestanding target, so without it every print in the stdlib is a
+// compile error there, which is what kept Koru off unikernels. ISO C `fputs` and
+// not POSIX `write`, because freestanding has no guaranteed fd table — measured
+// on Unikraft 0.21.0, `write` links only after four more Kconfig libraries, costs
+// 12,544 image bytes, and still traps at boot because nothing opened fd 1.
+//
+// Chunked through its OWN 4 KB buffer rather than NUL-terminating the caller's:
+// the callers' buffer is 65,536 bytes, which is Unikraft's ENTIRE default boot
+// stack (order 4 = 16 pages, exactly 64 KB), and a writer needing a second copy
+// of that would double a requirement that is already the whole stack.
+//
+// KORU_OUT_UNESCAPED is the source of truth. KORU_OUT_FN is the same text with
+// braces doubled, derived at comptime, because four of the five call sites splice
+// it into an allocPrint FORMAT string where a bare `{` is a format specifier and
+// the fifth (raw_io_prefix) is a plain concatenation. Deriving rather than
+// keeping two hand-maintained copies is the whole point of this const existing.
+const KORU_OUT_UNESCAPED: []const u8 =
+    "fn __kout(__fd: i32, __b: []const u8) void { " ++
+    "if (@import(\"builtin\").os.tag == .freestanding) { " ++
+    "const __kc = struct { extern var stdout: ?*anyopaque; extern var stderr: ?*anyopaque; " ++
+    "extern fn fputs(__s: [*:0]const u8, __st: ?*anyopaque) c_int; }; " ++
+    "var __kt: [4096]u8 = undefined; var __ki: usize = 0; " ++
+    "while (__ki < __b.len) { const __kn = @min(__kt.len - 1, __b.len - __ki); " ++
+    "@memcpy(__kt[0..__kn], __b[__ki..][0..__kn]); __kt[__kn] = 0; " ++
+    "@import(\"std\").mem.doNotOptimizeAway(__kc.fputs(@as([*:0]const u8, @ptrCast(&__kt)), " ++
+    "if (__fd == 2) __kc.stderr else __kc.stdout)); __ki += __kn; } " ++
+    "} else { @import(\"std\").mem.doNotOptimizeAway(@import(\"std\").posix.write(__fd, __b) catch @as(usize, 0)); } } ";
+
+fn __doubleBraces(comptime s: []const u8) []const u8 {
+    comptime {
+        var out: []const u8 = "";
+        for (s) |c| {
+            out = out ++ switch (c) {
+                '{' => "{{",
+                '}' => "}}",
+                else => &[_]u8{c},
+            };
+        }
+        return out;
+    }
+}
+
+const KORU_OUT_FN: []const u8 = __doubleBraces(KORU_OUT_UNESCAPED);
+
 fn __printInterpolate(
     expr: []const u8,
     item: anytype,
@@ -563,35 +614,12 @@ fn __printInterpolate(
         // `_` token: the flow/tap emitter rewrites a bare `_` to the binding
         // name, so the discard goes through doNotOptimizeAway.
         // (64K cap per call; longer output is dropped — rare, the suite catches it.)
-        //
-        // The os.tag branch is a NECESSITY, not a preference: `std.posix.write`
-        // does not exist on a freestanding target, so without it every print in
-        // the stdlib is a compile error there — which is what kept Koru out of
-        // unikernels.
-        //
-        // The freestanding arm goes through ISO C `fputs`, NOT POSIX `write`, and
-        // the difference is load-bearing. A freestanding target has no guaranteed
-        // fd table — measured on Unikraft 0.21.0: `write` links only once
-        // LIBPOSIX_FDIO + LIBPOSIX_FD + LIBPOSIX_TTY + LIBUKFS_DEVFS are
-        // configured in, costs 12,544 image bytes, and STILL traps at boot
-        // because nothing has opened fd 1. `fputs`/`stdout`/`stderr` come
-        // straight from nolibc with no fd machinery at all.
-        //
-        // `fputs` and not `fwrite`, though both are in nolibc's exportsyms.uk:
-        // `fwrite` is not emitted into the built stdio.o at all (verified with
-        // nm on libnolibc.o — `T fputs`, `T puts`, `D stdout`, no fwrite), so the
-        // allowlist is not the authority on what actually links. Hence the NUL
-        // terminator below: fputs needs one, and the 64K buffer has the room.
-        //
-        // Both arms are real: the hosted arm keeps the raw syscall that earns the
-        // ~1,728 B ELF measured for print.blk|raw_posix, and the freestanding arm
-        // never drags libc into a hosted build because the externs are declared
-        // INSIDE the taken branch. The condition is comptime-known, so the
-        // untaken arm is never analysed and costs nothing.
+        // Reaches the OS through the shared KORU_OUT_FN writer — see its
+        // definition for why the freestanding branch exists and why it is fputs.
         std.fmt.allocPrint(
             allocator,
-            "(struct {{ fn __kw(comptime __f: []const u8, __a: anytype) void {{ var __kb: [65536]u8 = undefined; const __ks = @import(\"std\").fmt.bufPrint(__kb[0 .. __kb.len - 1], __f, __a) catch __kb[0..0]; if (@import(\"builtin\").os.tag == .freestanding) {{ const __kc = struct {{ extern var stdout: ?*anyopaque; extern var stderr: ?*anyopaque; extern fn fputs(__s: [*:0]const u8, __st: ?*anyopaque) c_int; }}; __kb[__ks.len] = 0; @import(\"std\").mem.doNotOptimizeAway(__kc.fputs(@as([*:0]const u8, @ptrCast(&__kb)), if ({d} == 2) __kc.stderr else __kc.stdout)); }} else {{ @import(\"std\").mem.doNotOptimizeAway(@import(\"std\").posix.write({d}, __ks) catch @as(usize, 0)); }} }} }}).__kw(\"{s}\", .{{{s}}});",
-            .{ to_fd, to_fd, format_buf.items, args_buf.items }
+            "(struct {{ " ++ KORU_OUT_FN ++ "fn __kw(comptime __f: []const u8, __a: anytype) void {{ var __kb: [65536]u8 = undefined; const __ks = @import(\"std\").fmt.bufPrint(&__kb, __f, __a) catch __kb[0..0]; __kout({d}, __ks); }} }}).__kw(\"{s}\", .{{{s}}});",
+            .{ to_fd, format_buf.items, args_buf.items }
         ) catch unreachable;
 
     // Position-agnostic: the runner lifts nested sites into a synthetic
@@ -1261,7 +1289,7 @@ fn __printInterpolateJs(
         // terminator doesn't double up.
         std.fmt.allocPrint(
             allocator,
-            "(struct {{ fn __kw(comptime __f: []const u8, __a: anytype) void {{ var __kb: [65536]u8 = undefined; const __ks = @import(\"std\").fmt.bufPrint(&__kb, __f, __a) catch __kb[0..0]; @import(\"std\").mem.doNotOptimizeAway(@import(\"std\").posix.write(1, __ks) catch @as(usize, 0)); }} }}).__kw(\"{s}\", .{{{s}}});",
+            "(struct {{ " ++ KORU_OUT_FN ++ "fn __kw(comptime __f: []const u8, __a: anytype) void {{ var __kb: [65536]u8 = undefined; const __ks = @import(\"std\").fmt.bufPrint(&__kb, __f, __a) catch __kb[0..0]; __kout(1, __ks); }} }}).__kw(\"{s}\", .{{{s}}});",
             .{ format_buf.items, args_buf.items }
         ) catch unreachable;
 
@@ -1399,7 +1427,8 @@ fn __printInterpolateJs(
     // fd=2 (stderr) matches std.debug.print's destination so semantics align.
     const raw_io_prefix =
         "//@koru:inline_stmt\n{ const __kio = struct { " ++
-        "fn __kz_w(__kz_b: []const u8) void { _ = @import(\"std\").posix.write(1, __kz_b) catch {}; } " ++
+        KORU_OUT_UNESCAPED ++
+        "fn __kz_w(__kz_b: []const u8) void { __kout(1, __kz_b); } " ++
         "fn __kz_wd(__kz_v: i64) void { " ++
         "var _buf: [20]u8 = undefined; var _n: usize = 0; var _v: u64 = undefined; " ++
         "if (__kz_v < 0) { __kz_w(\"-\"); _v = @intCast(-(__kz_v + 1)); _v += 1; " ++
@@ -1641,7 +1670,7 @@ fn __printInterpolateJs(
         // print.blk -> stdout (fd 1), :f/:any fallback. See the |zig site above.
         std.fmt.allocPrint(
             allocator,
-            "(struct {{ fn __kw(comptime __f: []const u8, __a: anytype) void {{ var __kb: [65536]u8 = undefined; const __ks = @import(\"std\").fmt.bufPrint(&__kb, __f, __a) catch __kb[0..0]; @import(\"std\").mem.doNotOptimizeAway(@import(\"std\").posix.write(1, __ks) catch @as(usize, 0)); }} }}).__kw(\"{s}\", .{{{s}}});",
+            "(struct {{ " ++ KORU_OUT_FN ++ "fn __kw(comptime __f: []const u8, __a: anytype) void {{ var __kb: [65536]u8 = undefined; const __ks = @import(\"std\").fmt.bufPrint(&__kb, __f, __a) catch __kb[0..0]; __kout(1, __ks); }} }}).__kw(\"{s}\", .{{{s}}});",
             .{ format_buf.items, args_buf.items }
         ) catch unreachable
     else blk: {
