@@ -69,7 +69,9 @@ const std = @import("std");
         return .{};
     };
 
-    // Escape the rendered output for use in a Zig string literal
+    // Escape the rendered output for use in a host string literal. The five
+    // escapes below mean the same thing in Zig and in JavaScript, so this half is
+    // target-neutral.
     var escaped = std.ArrayList(u8).initCapacity(allocator, rendered.len * 2) catch unreachable;
     for (rendered) |c| {
         switch (c) {
@@ -82,12 +84,24 @@ const std = @import("std");
         }
     }
 
-    // Generate inline print code
-    const inline_code = std.fmt.allocPrint(
-        allocator,
-        "@import(\"std\").debug.print(\"{s}\\n\", .{{}});",
-        .{escaped.items}
-    ) catch unreachable;
+    // Generate the inline print statement, IN THE BUILD LANGUAGE. This is the
+    // whole target-dependent surface of the transform: one statement, two
+    // spellings, chosen the way `~capture`'s cell preamble is chosen
+    // (koru_std/control.kz) and `cond`'s `{{ binds }}` before it. Emitting the Zig
+    // call unconditionally put `@import("std").debug.print(…)` into the JS output,
+    // which the emitter correctly refused (380_001, 380_002).
+    const inline_code = if (std.mem.eql(u8, @import("root").CompilerEnv.lang, "js"))
+        std.fmt.allocPrint(
+            allocator,
+            "process.stdout.write(\"{s}\\n\");",
+            .{escaped.items},
+        ) catch unreachable
+    else
+        std.fmt.allocPrint(
+            allocator,
+            "@import(\"std\").debug.print(\"{s}\\n\", .{{}});",
+            .{escaped.items},
+        ) catch unreachable;
 
     // Create impl path for shape checking
     const impl_segments = allocator.alloc([]const u8, 2) catch unreachable;
