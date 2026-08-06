@@ -103,19 +103,38 @@ The worked precedent is `koru_std/declarations.kz:49-58`, which has
 of one template, diverging only where the hosts genuinely differ (`f.zig`
 pre-lowered vs `f.value` verbatim). Both live in the `.kz`.
 
-So the path, in order:
+So the path, in order — **revised after the fs / fmt / string+list wave measured
+two of its assumptions and found one wrong:**
 
-1. **Extract `store.k`** — the contract. Not for facet mechanics (transforms need
-   no `.kjs`) but because contract and host are currently tangled, which is what
-   let `.target = "zig"` get hardcoded at 23 synthesis sites.
-2. **Convert the `allocPrint` assembly into templates**, Zig side only. This is
-   the bulk, and it has a **total oracle**: behaviour must not change, so the
-   board holding at its current number is a complete and ungameable check. No
-   design decisions, no JS involved, fully incremental — one generator at a time.
-3. **Add the `|template|js` renderings.** Additive, with a worked example.
+1. **Do NOT extract `store.k` first.** The original plan opened with it. Three
+   independent ports then landed with a bare `.kjs` sibling and a **byte-for-byte
+   untouched `.kz`** — `fs`, `string`, `list`. Koru declarations in a `.kz` are
+   host-agnostic and already visible to a sibling facet; only host LINES route by
+   extension. `koru_std/args`' three-file shape is one legal layout, not the entry
+   fee. This matters because extraction is the **expensive and dangerous half**:
+   moving a `pub tor` out of a live module edits the file the Zig target compiles,
+   which is exactly the edit that can regress a green board. A `.kjs` sibling is
+   purely additive. See `frag-a-kz-is-already-the-contract-facet`.
+2. **Convert the `allocPrint` assembly into templates**, Zig side only. Still the
+   bulk, still a **total oracle**: behaviour must not change, so the board holding
+   is a complete and ungameable check. No design decisions, no JS, fully
+   incremental — one generator at a time.
+3. **Add the `|template|js` renderings — and budget more than a translation.**
+   The `declarations.kz` pattern transfers, but `fmt:ln` (0/7 → 6/7) found the
+   non-obvious cost: *a second rendering is not a translation of the first,
+   because the two emitters accept different SHAPES of product.* Two structural
+   differences it hit, both of which store will hit: `break :__KORU_INLINE__
+   <value>` has no JS spelling, so an inline body cannot be an EXPRESSION the
+   emitter binds — it must be STATEMENTS declaring the value under the name the
+   site reads; and the JS emitter splices an arm's body WITHOUT its bind, so the
+   arm must declare its own name and hand off via a `__koru_continue_N` marker.
+   Its warning, worth quoting: **"expect every result-PRODUCING transform to need
+   this split; a purely streaming one like `print.blk|js` does not, which is why
+   `print.blk|js` was easy and looked like the whole pattern."** Store's
+   transforms are result-producing.
 
-A rewrite becomes a refactor with a perfect gate. Phase 2 is also parallel-safe
-per generator and does not contend with the cheap runtime ports.
+A rewrite is still a refactor with a perfect gate, and phase 1 just disappeared.
+Phase 2 is parallel-safe per generator and does not contend with runtime ports.
 
 ## How to run a wave, from what worked
 
