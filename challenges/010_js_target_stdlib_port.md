@@ -74,18 +74,35 @@ source inside emitted JavaScript.
    `koru_std/` hardcode `.target = "zig"`. No `.kjs` can host them and no
    template renders them today.
 
-## The ranking, and the two traps
+## The ranking, and the one real trap
 
 `fs:read-lines` is one proc in an 87-line file reached by 66 tests. `store:new`
 is one of eight procs in 8,734 lines reached by 160. Sort by tests-per-line-read,
 not by tests.
 
-- **NEVER port `kernel`.** It is the MLIR/GPU backend, Zig by construction, and
-  the Elm-shaped JS thesis in `JS_TARGET_SPIKE.md` never targeted it. The map
-  mis-ranked it once; do not let it back on the list.
+- **`kernel` IS portable — an earlier version of this file said "NEVER port" and
+  was wrong.** Measured, after the claim was challenged: all 30 kernel-blocked
+  tests call it **plain**, with no variant tag; `|mlir` appears in six files
+  corpus-wide. The MLIR/GPU lowering is an **opt-in call-site variant**
+  (`std/kernel:self|mlir { … }`, `|mlir[gpu]`, kernel.kz:355, 757-783) and the
+  compiler already refuses unsupported variants loudly by name (KORU122,
+  KORU123). The DEFAULT lowering generates struct layouts and loop code from a
+  shape declaration, and nothing about that is Zig-specific. Kernel is a
+  transform family exactly like store: it wants `|js` renderings, no `.kjs`, and
+  `|mlir[gpu]` stays correctly refused as the one genuinely Zig-only surface.
+  Worth ~29 tests behind `kernel:init` alone.
+
+  *How the error happened, because the shape recurs:* a scout inferred "Zig-only"
+  from the module's MLIR/GPU vocabulary and cited the Elm-shaped thesis in
+  `JS_TARGET_SPIKE.md`. I propagated it into this file without opening
+  `kernel.kz`. That is the second time in one day that document was treated as
+  current state and was stale or misapplied — **grep density is not evidence of
+  what a transform emits, and a design doc is a claim about the tree with a date
+  on it.** Nobody caught it until the human asked "why is kernel on that list?".
 - **`interpreter` and `runtime` are a whole interpreter** — 4257 lines, 30 `|zig`
-  procs, 340 uses of `std.`/allocators. 19 tests sit behind it. Out of scope
-  until someone rules otherwise.
+  procs, 340 uses of `std.`/allocators. 19 tests sit behind it. Genuinely out of
+  scope until someone rules otherwise — and unlike kernel, that judgement is
+  about size and substance, not about vocabulary.
 
 ## Store — the prize, and it is a refactor with a total oracle
 
