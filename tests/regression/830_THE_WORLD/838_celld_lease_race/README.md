@@ -1,8 +1,8 @@
-# celld's lease and output gate, as Koru obligations
+# celld's lease, output gate and self-fence, as Koru obligations
 
-Two slices of celld's decision core, eight entries, one claim: **celld enforces
-its two central invariants with runtime discipline; Koru can make violating
-them fail to compile.**
+Three slices of celld's decision core, eleven entries, one claim: **celld
+enforces its central invariants with runtime discipline; Koru can make
+violating them fail to compile.**
 
 **Slice one — ownership.** *One writer per cell.*
 
@@ -22,6 +22,14 @@ them fail to compile.**
 | `844_celld_unanswered_request` | `MUST_ERROR` | `KORU030` was not discharged, *"Call one of: gate.ack, gate.fail"* — a request cannot be dropped |
 | `845_celld_answered_twice` | `MUST_ERROR` | `KORU030` Use-after-discharge — one write, one outcome |
 
+**Slice three — authority.** *No write is acknowledged after authority is lost.*
+
+| entry | marker | what it pins |
+|---|---|---|
+| `846_celld_fence_forces_failure` | `MUST_RUN` | renewal *borrows* the lease so the ack is legal; the fence *consumes* it, and the pending response has exactly one way out left |
+| `847_celld_ack_after_fence` | `MUST_ERROR` | `KORU030` Use-after-discharge — **a genuine durability proof is not enough** once authority is gone |
+| `848_celld_lease_end_unstated` | `MUST_ERROR` | `KORU030` multiple discharge options — the cost of slice three, not a benefit (below) |
+
 A Frontier fell out of slice two and is pinned separately at
 `600_STDLIB/690_STORE/690_256_branch_payload_reads_a_store_column`: a store
 column read in a branch-resolution payload is dropped at emission and surfaces
@@ -30,22 +38,48 @@ subflow's guard threads fine. The port did not need that shape — celld's
 `await_durable(cell, epoch, position)` takes the position as an argument, so
 passing it as a tor input is the faithful spelling and it works.
 
-## The arity of discharge is the whole design
+## The arity of discharge is the whole design — and its own cost
 
-The two slices use one mechanism and get opposite, correct behaviour from it,
-decided by *how many ways there are to discharge*:
+One mechanism, opposite and correct behaviour in each slice, decided entirely by
+*how many ways there are to discharge*:
 
-- A lease has **one** consumer (`cas.release`). Auto-discharge inserts it at
-  scope exit, so a lease cannot be leaked even by forgetting. celld buys the
-  same property with a 10s TTL, a renewal timer at ttl/3, a fence timer at
-  ttl+1ms, and a process-halting self-fence (`logic/lib.rs:1838-1888`).
+- A lease in slice one has **one** consumer (`cas.release`). Auto-discharge
+  inserts it at scope exit, so a lease cannot be leaked even by forgetting.
 - A response has **two** (`gate.ack`, `gate.fail`). Auto-discharge refuses to
   choose, so every request's fate must be written down. celld reaches the same
   place by hand: its fence walks every gated write and completes it as *failed*
   (`logic/lib.rs:3838-3843`), because silently dropping and silently acking are
   both lies.
 
-Neither behaviour was designed in. Both fall out of counting the dischargers.
+Neither behaviour was designed in; both fall out of counting the dischargers.
+
+**Then slice three charged for it.** Adding `node.fence` gives `<!lease>` a
+second consumer, which retires auto-discharge for leases *everywhere in that
+program* — so `848` is an arm that used to be fine and now must state how
+authority ended. This was not constructed to make the point; it was walked into
+while writing `846`, one commit after
+`concepts/frag-discharger-count-chooses-the-safe-default.md` predicted exactly
+it: *"a second discharger is not merely a second API; it removes the safety of
+forgetting."*
+
+celld pays the same bill under a different name. Its shell has one function for
+ending a node's authority and calls it `release_or_fence_node_lease` — the name
+is the choice, made explicit because there is no longer a default.
+
+## What slice three actually buys
+
+celld's fence comment states the invariant plainly: *"Any write still waiting on
+the output gate loses its cell here, so it must fail rather than be
+acknowledged — the fence and the fail are atomic."* It holds because `fence()`
+loops over `gated_writes` and fails each one, and because nothing else ever
+builds an `Ok` response.
+
+Here `gate.ack` borrows `<lease>` and `gate.fail` does not. Surrender the lease
+and the ack is simply unreachable, so a pending response has one way out. The
+fence and the fail are atomic because no other shape of program exists — not
+because a loop was written correctly. `847` is the sharp end: the durability
+proof is real, minted by `replica.sync`, covering the position — and the ack is
+still refused.
 
 ## Where this came from
 

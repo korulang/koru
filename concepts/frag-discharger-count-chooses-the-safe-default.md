@@ -48,6 +48,29 @@ forget-and-let-the-compiler-handle-it into a compile error across the corpus.
 That blast radius should be a known cost of the design move, not a surprise the
 next author discovers.
 
+**OBSERVED 2026-08-06, one commit later, by accident.** The blast radius above
+was written as a hypothetical about `fs:abandon`. Porting celld's node
+self-fence then added `node.fence` beside `cas.release` — a second consumer of
+`<!lease>` — and auto-discharge for leases went away across that whole program.
+A control-flow arm that had been fine in `838`, where a forgotten release was
+inserted for it, became `KORU030 multiple discharge options` and had to state
+how authority ended. It is pinned as `830_THE_WORLD/848`.
+
+Two things make this stronger than a worked example. It was **predicted before
+it was seen**, in this file, one commit earlier. And it was **not constructed to
+demonstrate the claim** — the fence port was after a different result entirely
+and walked into this on the way. A hypothetical that fires unbidden on the next
+piece of real work is the cheapest confirmation available, and this one cost
+nothing to collect because the compiler reported it.
+
+What the episode adds beyond confirmation: the cost lands on **existing, already
+correct code**, not on the new API. Nothing about `cas.release` changed. The
+call sites that broke had no relationship to fencing at all. So the design move
+to be careful about is not "adding a discharger" in the abstract — it is that
+the second discharger's cost is paid by *sites that predate it and do not
+mention it*, which is exactly the kind of coupling that is invisible at review
+time.
+
 ## Where this could be wrong
 
 - **One discharger may not always be a safe default.** The claim assumes the

@@ -1,0 +1,4 @@
+  renew node-a
+  ack  msg-1 — durable through 1
+  SELF-FENCE node-a — lease not renewed within TTL
+  fail msg-2 — node fenced
