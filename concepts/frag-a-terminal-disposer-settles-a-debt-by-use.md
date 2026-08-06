@@ -18,13 +18,24 @@ IS the implementation of the discharge**. A pure body cannot destroy a
 resource; purity means it can only route, and at the bottom there is nowhere
 left to route.
 
-So the enforceable wall is against the **silent drop**: an impl body that never
-references the consuming binding at all — not as an argument, not in a
-condition, not through an interpolation (330_125's `drop-it = note(n: 1)`).
-Reference-based is weaker than the linear proof — a body that only borrows the
-binding and returns still leaks past it — but it is the strongest wall that
-does not refuse the corpus's canonical disposer idiom, and the test errs toward
-"referenced" so a coincidental mention only suppresses the wall, never fires it.
+So the enforceable wall is against the **silent drop of a pointer**: a `*T`
+debt the impl body never references at all — not as an argument, not in a
+condition, not through an interpolation (330_125's `drop-it = note(n: 1)`). A
+pointer nobody mentions is heap a pure body can never free: a guaranteed leak.
+Both restrictions earned their place by refusing green corpus:
+
+- Reference alone is not enough of a discriminator, because a terminal
+  disposer may legitimately reference NOTHING: `despawn-quietly =
+  print.ln("quietly despawned")` over a store row (690_035) drops its `Enemy`
+  binding entirely, and that is fine — the debt is value-typed bookkeeping
+  whose storage the store owns; the declaration ends it.
+- Type alone is not enough either: a pointer flowing onward (`pass-through =
+  sink(h)`) or used at the bottom must pass.
+
+Pointer-and-unreferenced is weaker than the linear proof — a body that only
+borrows the pointer and returns still leaks past it — but it is the strongest
+wall that does not refuse the corpus, and both tests err permissive: a
+coincidental mention or a non-`*` spelling only suppresses the wall.
 
 Two load-bearing facts underneath, both measured 2026-08-06:
 

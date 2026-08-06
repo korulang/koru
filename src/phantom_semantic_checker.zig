@@ -1235,6 +1235,15 @@ pub const PhantomSemanticChecker = struct {
                         const held = try std.fmt.allocPrint(self.allocator, "{s}!", .{canonical_phantom});
                         defer self.allocator.free(held);
                         try root_context.setWithType(field.name, held, canonical_base_type);
+                        // The marker exists so CONSUME SITES can tell "I was
+                        // given this" from "I was only shown this" (the
+                        // debt-exists wall reads the binding's recorded state).
+                        // It must NOT feed the leak audit: a terminal disposer
+                        // settles the debt invisibly (its proc/use IS the
+                        // implementation — measured on the store's generated
+                        // impls, 690_053 et al., 20 reds when this obligation
+                        // stood). The silent-drop wall is the inserter's.
+                        root_context.clearCleanupObligation(field.name);
                     } else {
                         try root_context.setWithType(field.name, canonical_phantom, canonical_base_type);
                     }

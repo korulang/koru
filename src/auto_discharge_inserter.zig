@@ -1329,16 +1329,18 @@ pub const AutoDischargeInserter = struct {
 
         // A subflow impl's CONSUMING params (`h: *Handle<!owned>`) enter the body
         // OWED: the caller handed the debt over (linear transfer, 2026-07-02).
-        // The wall guards the SILENT drop — a body that never mentions the
-        // binding at all (330_125's `drop-it = note(n: 1)`). A body that uses
-        // it is left alone: delegation consumes it onward, and a terminal
-        // disposer (`release = print.ln("release {{ name:s }}")`, 335_050/051)
-        // is the bottom of the chain — there is nothing lower to route to, its
-        // use IS the implementation. Seeded not_auto_dischargeable: inserting a
-        // disposal would legalize the drop, and the only candidate disposer may
-        // be the impl event itself. The markers are read off the RAW spelling —
-        // canonicalizePhantom re-renders `module:state(!)` and a consume prefix
-        // does not survive it.
+        // The wall guards the SILENT drop of a POINTER — a `*T` debt a body
+        // never mentions at all (330_125's `drop-it = note(n: 1)`) is heap the
+        // pure body can never free: a guaranteed leak. Everything else is left
+        // alone: delegation consumes onward; a terminal disposer settles by use
+        // (`release = print.ln("release {{ name:s }}")`, 335_050/051) or by
+        // declaration alone when the debt is value-typed bookkeeping whose
+        // storage lives elsewhere (`despawn-quietly` over a store row, 690_035
+        // — its body references nothing and that is legitimate). Seeded
+        // not_auto_dischargeable: inserting a disposal would legalize the drop,
+        // and the only candidate disposer may be the impl event itself. The
+        // markers are read off the RAW spelling — canonicalizePhantom
+        // re-renders `module:state(!)` and a consume prefix does not survive it.
         const impl_qualified: ?[]const u8 = if (flow.impl_of) |impl_path| blk: {
             const impl_name = try self.pathToString(impl_path);
             defer self.allocator.free(impl_name);
@@ -1358,6 +1360,7 @@ pub const AutoDischargeInserter = struct {
                         else => continue,
                     };
                     if (concrete.requires_cleanup or !concrete.consumes_obligation) continue;
+                    if (!std.mem.startsWith(u8, std.mem.trimLeft(u8, field.type, " "), "*")) continue;
                     if (bodyReferencesBinding(flow, field.name)) continue;
                     const canonical = try self.canonicalizePhantom(phantom_str, impl_info.decl.module);
                     defer self.allocator.free(canonical);
