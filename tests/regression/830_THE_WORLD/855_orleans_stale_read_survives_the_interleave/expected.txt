@@ -1,0 +1,4 @@
+  await other-grain — REENTRANT; another turn bumped to 1
+  count := 0
+  turn resumed ends
+the other turn's bump is gone; count is 0
