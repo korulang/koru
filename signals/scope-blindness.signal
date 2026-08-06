@@ -1,0 +1,9 @@
+name: scope-blindness
+kind: inferred
+shape: categorical
+face: in
+membrane: false
+note: a property was verified at the cheapest scope (entry file, single-module
+  program) and then asserted at every scope, including the one the system
+  actually runs on (imports). Fires when the counterexample is found by
+  exercising the uncommon scope, not by re-reading the code.

@@ -1,0 +1,148 @@
+// std/string — JavaScript implementation facet.
+//
+// Events are declared in the `string.kz` companion (merged at import, because
+// same-stem facets are one module). This file holds only the `|js` proc bodies
+// and the one host line they need.
+//
+// THE REPRESENTATION, and why it is not a port of the Zig struct:
+//
+//   Zig                          JavaScript
+//   ---------------------------  --------------------------------
+//   *String                      { data: <js string> }
+//   []const u8 / []u8            a js string (NOT {ptr,len})
+//   allocator                    absent — GC is the implementation
+//
+// `String` in `string.kz` is a Zig `struct { data, allocator }`; the JS side
+// keeps only `data`, as a PRIMITIVE js string. That is forced, not chosen: the
+// two read events are declarative Koru (`~read -> s.data`, `~len -> s.data.len`),
+// host-agnostic, so the JS emitter writes `s.data` verbatim. A handle must
+// therefore be an object with a `data` field, and `data` must be the string
+// itself so that `read`'s value prints and concatenates like any other string.
+//
+// Mutation is mutation of the FIELD, not of the string — js strings are
+// immutable, so append/clear/pop-char reassign `s.data`. Handle identity is
+// preserved across all of them, which is what `take`/`release` (declarative
+// `-> s`) rely on.
+//
+// The allocator is gone and so is every error arm that reported its failure:
+// `| err "allocation failed"` is unreachable here. The arm stays in the
+// contract because the Zig facet needs it; the JS bodies simply never take it.
+
+// `~len -> s.data.len` is declarative Koru, emitted verbatim as `s.data.len`.
+// Koru spells slice length `.len`; JS spells it `.length`. The emitter has no
+// translation for either (grepped: js_emitter.zig has no `.len` case), so the
+// length surface has to exist on the value itself. Non-enumerable getter, so
+// no `for...in` or `Object.keys` observes it.
+const __koru_string_len = Object.defineProperty(String.prototype, "len", { get() { return this.length; }, configurable: true });
+
+// ============================================
+// Creation
+// ============================================
+
+// The `allocator` parameter is part of the contract for the Zig facet's sake
+// and is ignored here.
+~proc new|js {
+    return { tag: "ok", ok: { data: text } };
+}
+
+~proc from-page|js {
+    return { tag: "ok", ok: { data: text } };
+}
+
+// ============================================
+// Cleanup
+// ============================================
+
+~proc free|js {
+    // GC is the implementation. There is no allocator to hand the bytes back
+    // to, so the honest body is empty — this is a port, not a stub.
+}
+
+// ============================================
+// Query / transform
+// ============================================
+
+// Zig's `std.fmt.parseInt(i64, _, 10)` is strict: optional sign, then base-10
+// digits, nothing else. `Number()` is not (it takes "", " 42", "0x2a", "1e3"),
+// so the shape is pinned by the regex before the conversion runs.
+~proc parse-int|js {
+    if (!/^[+-]?[0-9]+$/.test(s.data)) {
+        return { tag: "err", err: "not an integer" };
+    }
+    return { tag: "ok", ok: Number(s.data) };
+}
+
+~proc from-int|js {
+    return { tag: "ok", ok: { data: String(n) } };
+}
+
+~proc contains|js {
+    if (s.data.includes(needle)) {
+        return { tag: "yes" };
+    }
+    return { tag: "no" };
+}
+
+~proc index-of|js {
+    const idx = s.data.indexOf(needle);
+    if (idx >= 0) {
+        return { tag: "found", found: idx };
+    }
+    return { tag: "not_found" };
+}
+
+// A fresh handle, not a view into `s` — `slice` copies, matching the Zig
+// facet's `alloc` + `@memcpy`.
+~proc substring|js {
+    if (start > end || end > s.data.length) {
+        return { tag: "err", err: "range out of bounds" };
+    }
+    return { tag: "ok", ok: { data: s.data.slice(start, end) } };
+}
+
+// ============================================
+// Split — effect-stream over separated pieces
+// ============================================
+
+// `String.prototype.split` on a non-empty separator matches
+// `std.mem.splitSequence` piece for piece, including the empty pieces at the
+// ends ("a,,b" -> three, ",a" -> two). The empty-separator guard mirrors the
+// Zig facet's: one piece, the whole slice — JS would otherwise split into
+// individual characters where Zig would hang.
+~proc split|js {
+    if (sep.length === 0) {
+        piece(s);
+        return { tag: "done", done: 1 };
+    }
+    const parts = s.split(sep);
+    for (const p of parts) {
+        piece(p);
+    }
+    return { tag: "done", done: parts.length };
+}
+
+// ============================================
+// Write operations
+// ============================================
+
+~proc append|js {
+    s.data = s.data + text;
+    return { tag: "ok" };
+}
+
+// `ch` is a byte, not a one-character string — 610_022 calls `append-char(s,
+// ch: 99)`. The Zig facet stores the byte; the JS facet stores the character
+// that byte denotes.
+~proc append-char|js {
+    s.data = s.data + String.fromCharCode(ch);
+    return { tag: "ok" };
+}
+
+~proc pop-char|js {
+    if (s.data.length === 0) return;
+    s.data = s.data.slice(0, -1);
+}
+
+~proc clear|js {
+    s.data = "";
+}
