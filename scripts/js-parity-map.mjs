@@ -29,7 +29,7 @@
  *   ./scripts/js-parity-map.mjs json      machine-readable
  */
 
-import { readdirSync, readFileSync, existsSync } from 'node:fs'
+import { readdirSync, readFileSync, existsSync, writeFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -137,6 +137,22 @@ function analyze() {
     const imports = new Set([...src.matchAll(IMPORT)].map((m) => m[1]))
     const calls = new Set([...src.matchAll(CALL)].map((c) => `${c[1]}:${c[2]}`))
 
+    // A test's OWN host bodies. The stdlib is not the only place `|zig` lives:
+    // an `input.kz` fixture carries its own procs, and the JS emitter aborts
+    // with NoJsProcBody on the first one lacking a `|js` sibling. Omitting this
+    // is what let the first scan classify 346 tests as emitter-testable when
+    // they cannot compile to JS at all until the fixture is split .k/.kz/.kjs —
+    // the same facet split the stdlib needs, applied to the corpus.
+    const localProcs = new Map()
+    for (const [, ann, proc, lang] of src.matchAll(PROC_DECL)) {
+      if (isTransform(ann)) continue // a fixture transform emits, it is not emitted
+      if (!localProcs.has(proc)) localProcs.set(proc, new Set())
+      localProcs.get(proc).add(lang)
+    }
+    const localZigOnly = [...localProcs.entries()]
+      .filter(([, langs]) => langs.has('zig') && !langs.has('js'))
+      .map(([p]) => p)
+
     const covered = [], blocked = [], unknown = []
     let touchesRuntime = false
     let needsTransformPort = 0, needsRuntimePort = 0
@@ -169,15 +185,20 @@ function analyze() {
 
     for (const u of unknown) unresolved.set(u, (unresolved.get(u) || 0) + 1)
 
+    // Order matters. A fixture carrying its own unported `|zig` proc cannot
+    // reach the JS emitter's later stages at all, so that verdict outranks any
+    // stdlib finding: reporting such a test as "blocked on std/list" would send
+    // someone to port list and change nothing.
     const bucket =
-      calls.size === 0 ? 'no-stdlib-calls'
+      localZigOnly.length ? 'blocked-on-test-host'
+      : calls.size === 0 ? 'no-stdlib-calls'
       : !touchesRuntime ? 'compile-time-only'
       : unknown.length ? 'unresolved'
       : blocked.length ? 'blocked-on-stdlib'
       : 'ready'
 
     rows.push({ test: rel, bucket, imports: [...imports], covered, blocked, unknown,
-                needsTransformPort, needsRuntimePort })
+                needsTransformPort, needsRuntimePort, localZigOnly })
   }
   return { std, rows, unresolved, blockerHits }
 }
@@ -247,11 +268,17 @@ function moduleRanking() {
 const mode = process.argv[2] || 'report'
 
 if (mode === 'json') {
-  console.log(JSON.stringify({
+  // writeFileSync to fd 1, not console.log + process.exit. On a pipe,
+  // console.log is asynchronous and process.exit() discards whatever has not
+  // flushed — this payload truncated at exactly 64 KB when js-scan first read
+  // it, producing a JSON parse error rather than a short read anyone would
+  // recognise as truncation. Synchronous write, natural exit.
+  writeFileSync(1, JSON.stringify({
     generated: new Date().toISOString(), buckets: counts, coverage: coverage(),
     unlock: unlockRanking(), modules: moduleRanking().map((m) => ({ ...m, procs: [...m.procs] })),
     unresolved: [...unresolved].sort((a, b) => b[1] - a[1]), tests: rows,
   }, null, 2))
+  // Safe here: the write above already completed synchronously.
   process.exit(0)
 }
 
