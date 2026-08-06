@@ -56,13 +56,16 @@ that refuses to compile.
   disciplined; the split may be a house style rather than a property of the
   domain. What would widen it is finding the same core/shell seam in systems
   that did not advertise it.
-- **The seam may not hold for the next slice.** celld's RPO=0 comes from an
-  output gate that withholds a response until a replica proves durability. That
-  is still pure — it is a comparison against a position — but the *timer* paths
-  around it (10s lease TTL, renewal at ttl/3, a fence at ttl+1ms) are not
-  obviously expressible without a clock. If the timers turn out to be load-bearing
-  *inside* the core rather than events fed to it, this belief is too strong and
-  wants correcting.
+- ~~**The seam may not hold for the next slice.**~~ **TESTED 2026-08-06 — it
+  held.** The prediction was that celld's timer paths (10s lease TTL, renewal at
+  ttl/3, a fence at ttl+1ms) might be load-bearing *inside* the core, which
+  would have made this belief too strong. Porting the output gate
+  (`830_THE_WORLD/842`) needed no clock at all. The reason is sharper than the
+  original guess: a timer is not a decision, it is an **event source**. The core
+  receives `Timer::NodeLeaseFence` the same way it receives a CAS outcome or a
+  durability completion, and decides against it. Nothing inside the function
+  asks what time it is. So a clock is shell, like a socket is shell — and the
+  belief now covers the case that was flagged as most likely to break it.
 - **It says nothing about deployment.** A protocol core that cannot be run
   against a real bucket is a proof, not a product. Conflating the two would be
   the obvious way to misuse this.
