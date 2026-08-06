@@ -49,7 +49,6 @@ modules() {
 skip_rationale() {
     case "$1" in
         ccp_aspirational)  echo "aspirational by name — a design sketch, not a shipping module" ;;
-        build_defaults)    echo "imported by build.kz (its own header) — every compile loads it; a direct import double-registers the default steps (MultipleDefaults)" ;;
         compiler_context)  echo "metacircular pipeline internal — compiled by every koruc invocation (stage B); standalone import is not a supported surface" ;;
         compiler_types)    echo "metacircular pipeline internal — compiled by every koruc invocation (stage B); standalone import is not a supported surface" ;;
         compiler_visitor)  echo "metacircular pipeline internal — compiled by every koruc invocation (stage B); standalone import is not a supported surface" ;;

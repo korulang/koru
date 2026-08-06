@@ -76,5 +76,39 @@ the second keeps its old cost silently. This is the degenerate case — the seco
 copy is not merely unfixed but unreachable, so no measurement can ever surface
 the divergence.
 
-Open: whether this file should exist at all is not mine to settle; its contents
-are corrected so it cannot mislead, and the deletion question is flagged.
+## The fifth cost, found an hour later: the lie recruits the enforcement
+
+A false header does not merely sit in the file waiting to be believed by a
+reader. It gets **cited**, and what cites it can be a wall.
+
+`scripts/std_compiles.sh` — the stdlib rot lint — carried a classified skip for
+this exact module, and its stated rationale was the ghost's own false sentence:
+*"imported by build.kz (its own header) — every compile loads it."* So the one
+check positioned to compile this file every time had been taught, in writing, not
+to. The ghost's claim about itself became the enforcement's reason to exempt it,
+and the exemption then read as a deliberate engineering judgment rather than as a
+quotation of an unverified header.
+
+That closes the loop on why deadness preserved the defects so effectively. It was
+not only that no test reached the file; it is that a wall had been *pointed away
+from it, using its own words as the justification.* An exemption is a claim like
+any other, and it inherits the credibility of the list it sits in — nobody
+re-derives a rationale that is already written down next to four sober ones.
+
+- **An exemption's rationale is a claim, and it decays like any other.** A skip
+  list is where unverified sentences go to become permanent, because the reason
+  is read once at authoring time and thereafter only the *name* is consulted.
+- **When a file claims something about its own role, the claim needs a witness
+  outside the file.** Both the header and the lint's rationale asserted an
+  importer; one grep contradicted both, and the empirical proof was better still
+  — `310_120` overrides only `run` and successfully runs the *default* `build`
+  step, which is impossible if a second `~[default]` copy were also loaded
+  (`MultipleDefaults`). A passing test settled a question two prose claims got
+  wrong.
+- **Deleting the ghost means deleting what points at it.** The file and its
+  exemption were one artifact in two places; removing only the file would have
+  left a skip entry naming nothing, which is the same disease one level up.
+
+Settled 2026-08-06: Lars ruled deletion. Both the module and its `std_compiles.sh`
+exemption are gone, so "which copy of the default build steps is real" has one
+answer by construction — the same resolution the interpreter reckoning reached.
