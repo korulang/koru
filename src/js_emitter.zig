@@ -604,6 +604,12 @@ const Emitter = struct {
     fn writeLowered(self: *Emitter, text: []const u8, mode: LowerMode) JsEmitError!void {
         var i: usize = 0;
         var quote: ?u8 = null;
+        // One entry per open `{` we are inside, saying whether its closer must be
+        // written as `]`. A Zig ARRAY literal opens with a brace and closes with
+        // one; JavaScript's opens and closes with brackets, so the decision made
+        // at the opener has to survive to the matching closer.
+        var brace_is_bracket: [64]bool = undefined;
+        var brace_depth: usize = 0;
         while (i < text.len) {
             const c = text[i];
             if (quote) |q| {
@@ -647,6 +653,61 @@ const Emitter = struct {
             if (c == '@') {
                 if (try self.writeHostBuiltin(text, i)) |after| {
                     i = after;
+                    continue;
+                }
+            }
+            // ZIG-SHAPED EXPRESSION TEXT, lowered in BOTH modes — unlike `++` and
+            // `and`/`or`, which are real JavaScript and must stay `.koru_expr`-only.
+            // Neither shape below has ANY valid JavaScript reading, so neither can
+            // misfire on genuine host text. It has to be both modes: a `~for(&items)`
+            // argument reaches the emitter as `.koru_expr`, but the SAME text also
+            // arrives baked into the `for|template|js` body as rendered host text.
+            //
+            // Zig ADDRESS-OF in prefix position. A JS array or object IS a
+            // reference, so taking its address is the identity. An INFIX `&` is
+            // bitwise-and in both languages and is left alone — position is the
+            // whole discriminator.
+            {
+                if (c == '&' and isPrefixPosition(text, i)) {
+                    i += 1;
+                    continue;
+                }
+                // Zig ARRAY literal: `[_]i32{1, 2, 3}`, `[3]i32{0, 0, 0}`,
+                // `[2][2]i32{ … }`. The type prefix has no JS counterpart and the
+                // braces become brackets.
+                if (c == '[') {
+                    if (zigArrayLiteralOpen(text, i)) |after_brace| {
+                        if (brace_depth < brace_is_bracket.len) {
+                            brace_is_bracket[brace_depth] = true;
+                            brace_depth += 1;
+                            try self.write("[");
+                            i = after_brace;
+                            continue;
+                        }
+                    }
+                }
+                // Anonymous POSITIONAL tuple: `.{ 0, 0 }`, a row of the 2-D literal
+                // above. Only the positional form — `.{ .ok = v }` is a BRANCH
+                // constructor whose JS shape is `{ tag: "ok", ok: v }`, and quietly
+                // lowering it to a plain object would produce a wrong answer rather
+                // than a syntax error. That one stays refused.
+                if (c == '.' and i + 1 < text.len and text[i + 1] == '{' and isPositionalTuple(text, i + 1)) {
+                    if (brace_depth < brace_is_bracket.len) {
+                        brace_is_bracket[brace_depth] = true;
+                        brace_depth += 1;
+                        try self.write("[");
+                        i += 2;
+                        continue;
+                    }
+                }
+                if (c == '{' and brace_depth < brace_is_bracket.len) {
+                    brace_is_bracket[brace_depth] = false;
+                    brace_depth += 1;
+                }
+                if (c == '}' and brace_depth > 0) {
+                    brace_depth -= 1;
+                    try self.write(if (brace_is_bracket[brace_depth]) "]" else "}");
+                    i += 1;
                     continue;
                 }
             }
@@ -2609,6 +2670,83 @@ fn findOpCall(body: []const u8, from: usize, op: []const u8) ?OpCallMatch {
 fn isIdentChar(c: u8) bool {
     return (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or
         (c >= '0' and c <= '9') or c == '_';
+}
+
+/// Is `text[at]` (a `&`) in PREFIX position — Zig address-of — rather than infix
+/// bitwise-and? Prefix means nothing that could END an operand precedes it: start
+/// of text, an opener, a comma, or an operator. `a & b` is infix and means the
+/// same thing in both languages; `&items` is an address JS does not have.
+///
+/// The one case a character test alone gets wrong is a preceding KEYWORD. In
+/// `for (const x of &items)` the char before is `f`, which looks exactly like the
+/// end of an identifier — but `of` cannot END an operand, it demands one. That is
+/// not a corner: it is the shape the `for|template|js` body renders for every
+/// `~for(&xs)` in the corpus. So the scan reads back a whole WORD and asks what
+/// the word is, not what its last letter is.
+fn isPrefixPosition(text: []const u8, at: usize) bool {
+    var j = at;
+    while (j > 0 and (text[j - 1] == ' ' or text[j - 1] == '\t')) j -= 1;
+    if (j == 0) return true;
+    const p = text[j - 1];
+    if (!(isIdentChar(p) or p == ')' or p == ']' or p == '}' or p == '"' or p == '\'')) return true;
+    if (!isIdentChar(p)) return false;
+    var w = j;
+    while (w > 0 and isIdentChar(text[w - 1])) w -= 1;
+    const operand_expecting = [_][]const u8{
+        "of",   "in",    "return", "typeof", "case",  "new",
+        "delete", "void", "yield",  "await",  "instanceof",
+    };
+    for (operand_expecting) |kw| {
+        if (std.mem.eql(u8, text[w..j], kw)) return true;
+    }
+    return false;
+}
+
+/// At `text[at] == '['`, is this the opening of a Zig ARRAY LITERAL type prefix
+/// (`[_]i32{`, `[3]i32{`, `[2][2]i32{`, `[_]const u8{`)? Returns the index just
+/// past the `{` when so. An ordinary INDEX (`arr[i]`) has no brace after the
+/// type slot and returns null, as does a plain slice type with no literal body.
+fn zigArrayLiteralOpen(text: []const u8, at: usize) ?usize {
+    var j = at;
+    // One or more `[…]` dimension groups.
+    var dims: usize = 0;
+    while (j < text.len and text[j] == '[') {
+        const close = std.mem.indexOfScalarPos(u8, text, j, ']') orelse return null;
+        // A dimension is `_` or a constant expression; a `[` inside it means this
+        // is not the simple literal shape this lowering models.
+        if (std.mem.indexOfScalarPos(u8, text[0..close], j + 1, '[') != null) return null;
+        j = close + 1;
+        dims += 1;
+    }
+    if (dims == 0) return null;
+    // The element type: identifier chars, `.`, and any `const`/`*` qualifiers.
+    while (j < text.len and (isIdentChar(text[j]) or text[j] == '.' or text[j] == '*' or text[j] == ' ')) j += 1;
+    if (j >= text.len or text[j] != '{') return null;
+    return j + 1;
+}
+
+/// At `text[at] == '{'` opening a `.{ … }`, are its top-level entries POSITIONAL
+/// (`.{ 0, 0 }` — a tuple, i.e. a JS array) rather than NAMED (`.{ .ok = v }` — a
+/// branch constructor or struct, whose JS shape this lowering deliberately does
+/// not guess)? An empty `.{}` counts as positional: it is the void payload.
+fn isPositionalTuple(text: []const u8, at: usize) bool {
+    var j = at + 1;
+    var depth: usize = 0;
+    while (j < text.len) : (j += 1) {
+        switch (text[j]) {
+            '(', '[', '{' => depth += 1,
+            ')', ']' => depth -= 1,
+            '}' => {
+                if (depth == 0) return true;
+                depth -= 1;
+            },
+            // A top-level `.name` is the named form. `.{` nested inside is a row
+            // of its own and is decided when the scan reaches it.
+            '.' => if (depth == 0 and j + 1 < text.len and isIdentChar(text[j + 1])) return false,
+            else => {},
+        }
+    }
+    return true;
 }
 
 fn pathsEqual(a: *const ast.DottedPath, b: *const ast.DottedPath) bool {
