@@ -61,14 +61,22 @@ pub const Bridge = struct {
     }
 
     /// Invoke the real discharge event for every handle still held, through the
-    /// session's scope. Returns how many are STILL held afterwards — zero means
-    /// the session released everything it was holding.
+    /// session's scope.
     ///
     /// This used to print a line, set `discharged = true`, and call nothing: the
     /// counter went to zero while every file stayed open. It now runs the same
     /// loop the interpreter's end-of-run auto-discharge runs, because releasing a
     /// resource is one act, not two implementations.
-    pub fn dischargeAll(self: *Bridge) u32 {
+    ///
+    /// A session that CANNOT release what it holds panics rather than returning
+    /// a number. It briefly returned the still-held count, which read as honest
+    /// and was not: nothing obliges a caller to look at a return value, so the
+    /// unread count is the same shape as the boolean it replaced — satisfied
+    /// bookkeeping over a live resource. It also cost more than it looked:
+    /// auto-discharge can only insert a disposer with NOTHING TO BIND
+    /// (`auto_discharge_inserter.zig:2742`), so a `-> u32` close disqualified
+    /// itself and every failure arm of every conversation had to hang up by hand.
+    pub fn dischargeAll(self: *Bridge) void {
         const rt = @import("root").koru_std.koru_runtime;
         const interp = @import("root").koru_std.koru_interpreter;
 
@@ -80,12 +88,17 @@ pub const Bridge = struct {
                 s.dispatcher,
                 self.allocator,
             ),
-            .not_found => std.debug.print(
-                "[BRIDGE] session '{s}': scope '{s}' is not registered, {d} handle(s) cannot be released\n",
-                .{ self.session_id, self.scope, self.getHandleCount() },
+            .not_found => std.debug.panic(
+                "std/bridge:close: session '{s}' holds {d} handle(s) and its scope '{s}' is not registered, so nothing can release them",
+                .{ self.session_id, self.getHandleCount(), self.scope },
             ),
         }
-        return self.getHandleCount();
+
+        const stranded = self.getHandleCount();
+        if (stranded != 0) std.debug.panic(
+            "std/bridge:close: session '{s}' still holds {d} handle(s) after hang-up — a discharge event failed (see the [BRIDGE] lines above)",
+            .{ self.session_id, stranded },
+        );
     }
 
     pub fn deinit(self: *Bridge) void {
@@ -177,16 +190,20 @@ pub const Bridge = struct {
 // CLOSE - Hang up: release everything the session still holds
 // ============================================================================
 //
-// Returns the number of handles STILL HELD after the attempt. Zero is a clean
-// hang-up. Non-zero means the bridge could not release them — an unregistered
-// scope, or a discharge event that itself failed — and the caller is told rather
-// than handed a satisfied counter over a leaked resource.
+// VOID, and that is load-bearing rather than minimal. Auto-discharge can only
+// insert a disposer with nothing to bind — `auto_discharge_inserter.zig:2742`
+// refuses any event carrying a branch or a bare return, because the inserter
+// appends a bare call and cannot invent a binding for its output. A `close`
+// that returned the still-held count disqualified itself, which meant every
+// failure arm of every conversation had to spell the hang-up by hand.
+//
+// Failing to release is not a value a caller may drop; it panics. `get-handles`
+// is there for anyone who wants the count on either side of the call.
 
-~pub tor close { br: *Bridge<!session> } -> u32
+~pub tor close { br: *Bridge<!session> }
 
 ~proc close|zig {
-    const still_held = br.dischargeAll();
+    br.dischargeAll();
     br.deinit();
     koru_allocator().destroy(br);
-    return still_held;
 }

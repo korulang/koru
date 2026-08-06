@@ -4,8 +4,13 @@
 // This is the first program that compiles `std/bridge` at all. The module has
 // existed since 2026-07-24, is imported by nothing, and its `dischargeAll`
 // printed a line and set a boolean while calling no discharger — the counter
-// went to zero over a file that stayed open. `close` here reports how many
-// handles are STILL held after the attempt, so the lie has nowhere to hide.
+// went to zero over a file that stayed open. `close` now PANICS if the session
+// still holds anything when it returns, so the lie has nowhere to hide: the
+// [BRIDGE] line below is the real discharger firing, and reaching the print at
+// all is the assertion that nothing was stranded.
+//
+// The hang-up here is spelled out because this test is about `close` itself.
+// 440_006 writes none: `close` is void, so auto-discharge inserts it.
 
 ~import std/bridge
 ~import std/runtime
@@ -35,7 +40,7 @@ const std = @import("std");
 
 // create mints <session!>; only close discharges it. Drop the chain before
 // close and the program does not compile.
-~std/bridge:create(id: "session-1", scope: "files"): br |> turn-one(br): held |> std/bridge:close(br): still_held |> std/io:print.ln("held before hang-up: {{ held:d }}, still held after: {{ still_held:d }}")
+~std/bridge:create(id: "session-1", scope: "files"): br |> turn-one(br): held |> std/bridge:close(br) |> std/io:print.ln("held before hang-up: {{ held:d }}")
 
 // Turn one opens a file on the bridge and walks away from it. auto_discharge is
 // off: a bridge-managed pool outlives the run by design, so nothing is released

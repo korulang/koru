@@ -1,13 +1,18 @@
-// TEST: you cannot forget to hang up.
+// TEST: the dropped session is VISIBLE to enforcement even when nobody will
+// insert the hang-up for you.
 //
-// `std/bridge:create` mints `*Bridge<session!>` and only `close`, which takes
-// `<!session>`, discharges it. This flow opens a session, asks it a question,
-// and walks away — which is the one thing a resource bridge must make
-// unspellable, because a forgotten session is every resource it holds forgotten
-// with it.
+// `create` mints `*Bridge<session!>`; only `close`, taking `<!session>`,
+// discharges it. This flow opens a session, asks it a question, and walks away.
 //
-// The positive half is `440_004`: the same chain WITH the close compiles, runs,
-// and releases what the session was still holding.
+// In the DEFAULT mode that program compiles, because `close` is void and
+// auto-discharge appends it — which is the guarantee working, not a hole, and
+// `440_006` is the positive half. `--auto-discharge=disable` opts out of
+// INSERTING a discharger; it never opts out of the obligation being SEEN. So
+// the same program under the flag must still be refused by name.
+//
+// That distinction is the whole reason this test carries a flag: without it,
+// making a disposer auto-insertable would silently retire the wall along with
+// the chore.
 import std/bridge
 import std/io
 

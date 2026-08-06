@@ -1,47 +1,72 @@
 ---
 type: belief
 id: frag-obligation-cost-multiplies-with-outcome-arity
-provenance: 440_006, 2026-08-06 — a two-turn bridge conversation over an 8-branch run verb carries sixteen `close` calls, and the compiler refuses any arm that omits one (KORU030)
+provenance: corrected 2026-08-06 hours after it was written — the sixteen hang-ups were not the guarantee's price, they were a `-> u32` on the disposer. A/B measured: void inserts on every arm, `-> u32` gives KORU030.
 ts: 2026-08-06
 ---
 
-# An obligation's ergonomic cost is the product of its lifetime and the outcome arity it spans (belief)
+# An obligation's ergonomic cost is the number of exits it spans — but the author pays it only where the disposer disqualified itself (belief)
 
-`std/bridge:create` mints `<session!>`; only `close` discharges it. `std/bridge:run`
-mirrors `std/runtime:run`'s eight outcomes, because forwarding an existing
-vocabulary invents nothing. Those two reasonable decisions multiply: a two-turn
-conversation is sixteen arms, and **every one of them must hang up** or the
-program does not compile.
+**The arity half stands. The cost half was wrong, and it was wrong the same day
+it was written.**
 
-That is the guarantee working exactly as designed, seen from the inside for the
-first time. It is also the first measurement anyone has on the standing question
-of what the **unit of obligation** should be — the one flagged as deciding
-"whether an accept loop is ergonomic or agony." The answer this instance offers:
-the pain is not in the obligation's lifetime, it is in how many exits cross it.
-A long-lived handle threaded through a single happy path is free; the same
-handle spanning an eight-way branch costs eight discharges per turn.
+What survives: the pain of an obligation is not its lifetime. A long-lived handle
+threaded through a single happy path is free; the same handle spanning an
+eight-way branch touches eight exits. That is the axis, and it is the one that
+will decide whether an accept loop — many short-lived handles, many exits — is
+ergonomic or agony.
 
-## Why the obvious relief is a trap
+What was repudiated: the claim that each of those exits costs the *author* a
+written discharge. `440_006` carried sixteen hand-written `close(br): _ |>`
+prefixes and I recorded that as "the guarantee seen from the inside." It was the
+guarantee seen from behind a signature I had written that morning.
 
-The pressure this creates points straight at a catch-all arm that skips the
-hang-up, or a discharge that fires implicitly at some scope end. Both are the
-same move: making the common case cheap by making the guarantee optional, which
-is the fallback pattern wearing an ergonomics justification. The failure arms are
-exactly where a session most needs hanging up — a turn that errored is the turn
-most likely to be abandoned.
+## The mechanism, because the shape of this mistake matters more than the fix
 
-The legitimate reliefs do not weaken the refusal. Narrow the outcome set so fewer
-arms exist (a bridge verb need not mirror eight outcomes just because the tor
-beneath it has them). Or let one arm *route* to a shared discharge rather than
-each writing its own — a shape question, not a strength question.
+Auto-discharge inserts a disposer only when there is **nothing to bind**
+(`auto_discharge_inserter.zig:2742`): the inserter appends a bare call, so a
+branch or a bare return needs a binding it cannot invent. `std/bridge:close`
+returned the still-held count, which disqualified it — silently, because the
+refusal reads *"multiple disposal options or no disposal event"* and I had read
+that as "the bridge is unusual", not as "your disposer is not a candidate."
 
-## What would correct this
+A/B, same three-arm program, one line different: void inserts `close()` on every
+arm; `-> u32` produces `KORU030 ... Call: close`. Sixteen author-written hang-ups
+became zero, and the emitted output carries fifteen inserted calls — one per
+exit, including every failure arm.
 
-A spelling that collapses N arms to one hang-up without making any arm able to
-skip it. If that exists, the cost was never the arity — it was the absence of a
-way to say "all of these, then close", and this belief is measuring a missing
-construct rather than a structural price.
+## Why the return value was never the honesty it looked like
 
-Related: [[frag-a-handle-count-is-not-a-capability-check]] — same subsystem, and
-the reason the guarantee is worth this price: the compile-time refusal is the
-part that was always real.
+The count existed to kill an earlier lie — a `dischargeAll` that printed a line,
+set a boolean, and released nothing. But **nothing obliges a caller to read a
+return value.** `close(br): _` drops it. So the unread count is the same shape as
+the boolean it replaced: satisfied bookkeeping over a live resource, one level
+further out. Failing to release is not a value; it is a refusal, and it panics
+now.
+
+The generalisation, and it is the reusable part: **a disposer that reports is a
+disposer that cannot be inserted.** Every diagnostic you add to a cleanup verb's
+return trades an automatic guarantee for an advisory one, and the trade is
+invisible at the call site — you only see it as a chore you now have to write
+everywhere, which reads like the language being strict rather than like a
+signature you chose.
+
+## What remains open, and it is not this
+
+The arm COUNT is untouched: sixteen outcomes are still sixteen arms, because
+branch coverage is exhaustive and that is separate from who writes the discharge.
+Whether a verb should mirror an eight-outcome vocabulary at all is the live
+question — narrowing the outcome set is legitimate, and a catch-all arm that
+skips the hang-up still is not.
+
+Also open: a disposer cannot currently say "I failed" in a way that keeps it
+insertable. A panic branch (`| ?!name`) ought to qualify — unhandled it
+synthesizes a `@panic`, so there is no binding to invent — but two things block
+it, both measured: a terminal-only panic branch has no way to express success
+(`Output = union { could_not_release }`, non-optional), and a panic EFFECT arm
+(`! ?!name`) reaches the inserter, which then synthesizes a terminal `|` handler
+for it and trips KORU025. So "void, or report nothing" is the real current choice.
+
+Related: [[frag-a-handle-count-is-not-a-capability-check]] — the same subsystem
+and nearly the same error one layer down: there a count was mistaken for
+enforcement, here a count was mistaken for honesty.

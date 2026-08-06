@@ -13,12 +13,12 @@
 // flow, so `run` and `close` are bare. The opening is UNRESOLVED-ONLY: a name the
 // entry already owns is never shadowed (641_011).
 //
-// EVERY arm hangs up, including the failures, and that is not tidiness — it is
-// forced. `create` mints `<session!>`; an arm that reports a failed turn and
-// walks away leaves the session undischarged and the program does not compile
-// (KORU030, "Call: close"). A turn can fail eight ways, so a two-turn
-// conversation carries sixteen hang-ups. That cost is the guarantee, seen from
-// the inside.
+// NO arm hangs up by hand, and every arm hangs up. `close` is VOID, so it is a
+// legal auto-discharge candidate, and the compiler appends it to each of the
+// sixteen exits — including the failure arms, which are exactly where a session
+// is most likely to be abandoned. Written out by hand this file carried sixteen
+// `close(br): _ |>` prefixes; 440_005 pins what happens when the compiler cannot
+// find the disposer for itself.
 
 import std/bridge
 import std/io
@@ -26,18 +26,18 @@ import app/session
 
 [with]std/bridge:create(id: "session-1", scope: "files"): br |> run(br, source: "open(path: \"a.txt\")")
 | result r1 |> run(br, source: "close-file(handle: \"file_1\")")
-    | result r2 |> close(br): still |> std/io:print.ln("turn 1: {{ r1.handles:d }} held, turn 2: {{ r2.handles:d }} held, hung up still: {{ still:d }}")
-    | exhausted _ |> close(br): _ |> std/io:print.ln("FAIL: turn 2 exhausted")
-    | parse-error _ |> close(br): _ |> std/io:print.ln("FAIL: turn 2 parse error")
-    | validation-error _ |> close(br): _ |> std/io:print.ln("FAIL: turn 2 validation error")
-    | shape-error _ |> close(br): _ |> std/io:print.ln("FAIL: turn 2 shape error")
-    | event-denied _ |> close(br): _ |> std/io:print.ln("FAIL: turn 2 event denied")
-    | dispatch-error e2 |> close(br): _ |> std/io:print.ln("FAIL: turn 2 {{ e2.message:s }}")
-    | scope-not-found _ |> close(br): _ |> std/io:print.ln("FAIL: turn 2 scope not found")
-| exhausted _ |> close(br): _ |> std/io:print.ln("FAIL: turn 1 exhausted")
-| parse-error _ |> close(br): _ |> std/io:print.ln("FAIL: turn 1 parse error")
-| validation-error _ |> close(br): _ |> std/io:print.ln("FAIL: turn 1 validation error")
-| shape-error _ |> close(br): _ |> std/io:print.ln("FAIL: turn 1 shape error")
-| event-denied _ |> close(br): _ |> std/io:print.ln("FAIL: turn 1 event denied")
-| dispatch-error e1 |> close(br): _ |> std/io:print.ln("FAIL: turn 1 {{ e1.message:s }}")
-| scope-not-found _ |> close(br): _ |> std/io:print.ln("FAIL: turn 1 scope not found")
+    | result r2 |> std/io:print.ln("turn 1: {{ r1.handles:d }} held, turn 2: {{ r2.handles:d }} held")
+    | exhausted _ |> std/io:print.ln("FAIL: turn 2 exhausted")
+    | parse-error _ |> std/io:print.ln("FAIL: turn 2 parse error")
+    | validation-error _ |> std/io:print.ln("FAIL: turn 2 validation error")
+    | shape-error _ |> std/io:print.ln("FAIL: turn 2 shape error")
+    | event-denied _ |> std/io:print.ln("FAIL: turn 2 event denied")
+    | dispatch-error e2 |> std/io:print.ln("FAIL: turn 2 {{ e2.message:s }}")
+    | scope-not-found _ |> std/io:print.ln("FAIL: turn 2 scope not found")
+| exhausted _ |> std/io:print.ln("FAIL: turn 1 exhausted")
+| parse-error _ |> std/io:print.ln("FAIL: turn 1 parse error")
+| validation-error _ |> std/io:print.ln("FAIL: turn 1 validation error")
+| shape-error _ |> std/io:print.ln("FAIL: turn 1 shape error")
+| event-denied _ |> std/io:print.ln("FAIL: turn 1 event denied")
+| dispatch-error e1 |> std/io:print.ln("FAIL: turn 1 {{ e1.message:s }}")
+| scope-not-found _ |> std/io:print.ln("FAIL: turn 1 scope not found")
