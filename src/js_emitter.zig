@@ -446,8 +446,10 @@ const Emitter = struct {
         defer self.impl_event = saved;
 
         if (flow.inline_body) |raw| {
-            try self.emitInlineBodyResolvingContinuations(stripInlineStmtMarker(raw), flow.body.continuations, indent);
+            var consumed: u64 = 0;
+            try self.emitInlineBodyResolvingContinuations(stripInlineStmtMarker(raw), flow.body.continuations, indent, &consumed);
             try self.write("\n");
+            try self.emitUnconsumedContinuations(flow.body.continuations, consumed, indent);
             return;
         }
         try self.emitInvocationWithContinuations(flow.inv(), flow.body.continuations, indent);
@@ -691,8 +693,10 @@ const Emitter = struct {
             // Zig emitter's emitInlineCodeResolvingSplices (emitter_helpers.zig
             // :3186). Lines with no marker are emitted verbatim, so non-template
             // inline bodies (comptime |js transforms) lower exactly as before.
-            try self.emitInlineBodyResolvingContinuations(stripped, flow.body.continuations, "    ");
+            var consumed: u64 = 0;
+            try self.emitInlineBodyResolvingContinuations(stripped, flow.body.continuations, "    ", &consumed);
             try self.write("\n");
+            try self.emitUnconsumedContinuations(flow.body.continuations, consumed, "    ");
         } else {
             try self.emitInvocationWithContinuations(flow.inv(), flow.body.continuations, "    ");
         }
@@ -715,12 +719,22 @@ const Emitter = struct {
     /// (preserving the template's own `if`/`for` scaffolding), resolve it, repeat.
     /// Text with no markers passes through unchanged, so non-template inline
     /// bodies (comptime `|js` transforms) lower exactly as before.
+    ///
+    /// `consumed`, when given, receives a bit per continuation index the body
+    /// actually resolved. An arm the body never names is NOT dead — see
+    /// `emitUnconsumedContinuations`.
     fn emitInlineBodyResolvingContinuations(
         self: *Emitter,
         body: []const u8,
         continuations: []const ast.Continuation,
         indent: []const u8,
+        consumed: ?*u64,
     ) JsEmitError!void {
+        // The mask is one bit per arm. Past 64 arms it cannot speak, so it claims
+        // everything — the old behaviour, which drops rather than duplicates.
+        if (consumed) |c| {
+            if (continuations.len > 64) c.* = ~@as(u64, 0);
+        }
         const body_indent = try std.fmt.allocPrint(self.allocator, "{s}  ", .{indent});
         defer self.allocator.free(body_indent);
 
@@ -774,6 +788,9 @@ const Emitter = struct {
                 if (idx >= continuations.len) {
                     log.debug("[js_emitter] __koru_continue_{d} has no matching continuation (have {d})\n", .{ idx, continuations.len });
                     return JsEmitError.UnsupportedConstruct;
+                }
+                if (consumed) |c| {
+                    if (idx < 64) c.* |= @as(u64, 1) << @intCast(idx);
                 }
                 const cont = &continuations[idx];
                 const guarded = cont.condition != null;
@@ -830,6 +847,9 @@ const Emitter = struct {
                 log.debug("[js_emitter] __koru_inline_{d} has no matching continuation (have {d})\n", .{ idx, continuations.len });
                 return JsEmitError.UnsupportedConstruct;
             }
+            if (consumed) |c| {
+                if (idx < 64) c.* |= @as(u64, 1) << @intCast(idx);
+            }
             const cont = &continuations[idx];
             const binding = cont.binding orelse "_";
             try self.write("{ ");
@@ -846,6 +866,40 @@ const Emitter = struct {
             pos = i;
         }
         try self.writeHostText(trimmed[pos..]);
+    }
+
+    /// Emit the continuations of an inline body that resolved NO splice marker.
+    ///
+    /// The two kinds of inline body pull apart cleanly on this one test. A TEMPLATE
+    /// body (`~if`, `~for`) names its arms with `__koru_continue_N` /
+    /// `__koru_inline_N`; it is a dispatcher, it knows its own arms, and an arm it
+    /// did not name it meant not to run. A RENDERED-STATEMENT body names nothing:
+    /// `std/io:print.ln` becomes a bare `process.stdout.write(…)`, and everything
+    /// hung off that call — a `-> r` produce arm the tap transformer pushed down a
+    /// level, an auto-discharge `unlock(…)` the obligation pass appended — has no
+    /// marker to arrive through. Splicing the statement and stopping there DROPPED
+    /// those silently, which is a wrong answer rather than an error.
+    ///
+    /// So: drain only when the body consumed nothing. A body that resolved even one
+    /// marker is a dispatcher and is trusted with the rest — draining its leftovers
+    /// too would run arms it deliberately skipped (measured: a nested `~for` inside
+    /// a subflow impl, 115_009/115_011).
+    ///
+    /// The drained arms run AFTER the spliced statement, in source order. A rendered
+    /// statement produces no tagged value, so they are unguarded and bind nothing.
+    fn emitUnconsumedContinuations(
+        self: *Emitter,
+        continuations: []const ast.Continuation,
+        consumed: u64,
+        indent: []const u8,
+    ) JsEmitError!void {
+        if (consumed != 0) return;
+        for (continuations) |*cont| {
+            // An EFFECT arm with no marker was never installed by the body; there
+            // is nothing to fire it, so running it here would invent a firing.
+            if (cont.kind != .terminal) continue;
+            try self.emitTerminalContinuation(cont, null, indent, false, false, null);
+        }
     }
 
     /// Emit the body of a terminal continuation spliced inline by a template
@@ -901,8 +955,10 @@ const Emitter = struct {
         // top-level flows use.
         if (inv.inline_body) |inline_body_raw| {
             const stripped = stripInlineStmtMarker(inline_body_raw);
-            try self.emitInlineBodyResolvingContinuations(stripped, continuations, indent);
+            var consumed: u64 = 0;
+            try self.emitInlineBodyResolvingContinuations(stripped, continuations, indent, &consumed);
             try self.write("\n");
+            try self.emitUnconsumedContinuations(continuations, consumed, indent);
             return;
         }
         // SUBFLOW-IMPLEMENTED EFFECT FIRE. Inside the impl of an effect-bearing
