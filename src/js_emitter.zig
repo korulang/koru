@@ -2044,7 +2044,7 @@ const Emitter = struct {
             // leftmost match. Op names are assumed to appear only as the effect
             // call in these controlled procs (fine for the spike).
             var best_call_start: ?usize = null;
-            var best_op_branch: ?*const ast.Continuation = null;
+            var best_branch: ?*const ast.Branch = null;
             var best_arg: []const u8 = "";
             var best_after: usize = 0;
 
@@ -2060,15 +2060,14 @@ const Emitter = struct {
                     // producer-side no-op, so the inline rewriter DROPS the call.
                     // A required arm with no handler is a different animal and
                     // still refuses loudly.
-                    const cont = continuationForBranch(continuations, b.name);
-                    if (cont == null and !b.is_optional) {
+                    if (continuationForBranch(continuations, b.name) == null and !b.is_optional) {
                         log.err("[js_emitter] void effect op '{s}' has no matching continuation\n", .{b.name});
                         return JsEmitError.UnsupportedConstruct;
                     }
                     best_call_start = found.call_start;
                     best_after = found.after;
                     best_arg = found.arg;
-                    best_op_branch = cont;
+                    best_branch = b;
                 }
             }
 
@@ -2081,58 +2080,132 @@ const Emitter = struct {
             // Emit body text before the call verbatim (re-indented).
             try self.emitReindentedSlice(trimmed[pos..call_start], indent);
 
-            // Omitted optional arm: the call and its trailing `;` are simply gone.
-            const cont = best_op_branch orelse {
-                pos = best_after;
-                continue;
-            };
-
-            // Splice the handler body in-scope:
-            //   { const <binding> = <arg>; <handler sub-flow> }
-            try self.write("\n");
-            try self.writeFmt("{s}{{\n", .{indent});
-            const block_indent = try std.fmt.allocPrint(self.allocator, "{s}  ", .{indent});
-            defer self.allocator.free(block_indent);
-
-            const binding = cont.binding orelse "_";
-            if (std.mem.eql(u8, binding, "_")) {
-                // Throwaway binding — give it a unique name so nested splices at
-                // the same depth never collide (`_auto_<id>`), matching the
-                // closure path's `_auto_N` naming.
-                const tid = self.nextId();
-                try self.writeFmt("{s}const _auto_{d} = {s};\n", .{ block_indent, tid, best_arg });
-            } else if (std.mem.eql(u8, binding, best_arg)) {
-                // Bare-identifier-collision case: the proc body has a local with
-                // the same name as the dispatch binding and passes it directly
-                // (`const c = ...; key(c)` paired with `! key c |> ...`). Emitting
-                // `const c = c;` self-references the inner const before init →
-                // ReferenceError (TDZ). The outer `c` is already in scope and IS
-                // the value the handler needs, so skip the redundant rebind.
-                // Pinned by 140_012_js_dispatch_binding_shadow.
-            } else {
-                try self.writeFmt("{s}const {s} = {s};\n", .{ block_indent, binding, best_arg });
-            }
-
-            // Recurse: emit the handler's sub-flow. The continuation's node is
-            // the next invocation; its own continuations drive the next level.
-            const node = cont.node orelse {
-                log.err("[js_emitter] void effect handler '{s}' has no body\n", .{cont.branch});
-                return JsEmitError.UnsupportedConstruct;
-            };
-            switch (node) {
-                .invocation => |*sub_inv| {
-                    try self.emitInvocationWithContinuations(sub_inv, cont.continuations, block_indent);
-                },
-                .terminal => {}, // `_` — nothing further.
-                else => {
-                    log.err("[js_emitter] void effect handler body is not an invocation\n", .{});
-                    return JsEmitError.UnsupportedConstruct;
-                },
-            }
-
-            try self.writeFmt("{s}}}\n", .{indent});
+            try self.emitSplicedFireArms(best_branch.?.name, continuations, best_arg, indent);
             pos = best_after;
         }
+    }
+
+    /// Emit ONE spliced effect fire: every consumer arm written for this branch,
+    /// FIRST MATCH WINS, unmatched fires silently dropped.
+    ///
+    /// A branch may carry SIBLING arms that differ only by a `when` guard
+    /// (`! tick i when i % 2 == 0 |> …` beside `! tick _ |> _`, 400_087/089), so
+    /// "the continuation for this op" is a list, not a value. Taking the first
+    /// and ignoring its guard ran every arm unconditionally — 400_087 printed all
+    /// five ticks instead of the three even ones.
+    ///
+    /// One arm, unguarded — the pump shape — keeps its original spelling exactly:
+    ///   `{ const <binding> = <arg>; <handler sub-flow> }`
+    /// Anything more hoists the fired value into `_fire_<id>` FIRST, at the
+    /// enclosing indent, because the chain reads it once per arm and the arm
+    /// bindings shadow it. The hoist has to sit outside the block for the same
+    /// TDZ reason the single-arm form skips a self-referential rebind: a proc-local
+    /// `const c` fired as `key(c)` would otherwise be read inside the very block
+    /// that redeclares `c`.
+    fn emitSplicedFireArms(
+        self: *Emitter,
+        op: []const u8,
+        continuations: []const ast.Continuation,
+        arg: []const u8,
+        indent: []const u8,
+    ) JsEmitError!void {
+        var arms = std.ArrayList(*const ast.Continuation).empty;
+        defer arms.deinit(self.allocator);
+        for (continuations) |*cont| {
+            if (cont.kind == .effect and std.mem.eql(u8, cont.branch, op)) {
+                try arms.append(self.allocator, cont);
+            }
+        }
+        // Omitted optional arm: the call and its trailing `;` are simply gone.
+        if (arms.items.len == 0) return;
+
+        try self.write("\n");
+        if (arms.items.len == 1 and arms.items[0].condition == null) {
+            try self.emitSplicedArmBlock(arms.items[0], arg, indent, &.{});
+            return;
+        }
+
+        const fid = self.nextId();
+        const temp = try std.fmt.allocPrint(self.allocator, "_fire_{d}", .{fid});
+        defer self.allocator.free(temp);
+        try self.writeFmt("{s}const {s} = {s};\n", .{ indent, temp, arg });
+        try self.emitSplicedArmBlock(arms.items[0], temp, indent, arms.items[1..]);
+    }
+
+    /// One link of the arm chain: bind the payload, apply the arm's `when` guard,
+    /// emit its body, and hand the false branch to the next arm. An UNGUARDED arm
+    /// is total, so it ends the chain; running out of arms ends it too, which is
+    /// exactly the "unmatched fires are silently dropped" rule 400_088 pins.
+    fn emitSplicedArmBlock(
+        self: *Emitter,
+        cont: *const ast.Continuation,
+        arg: []const u8,
+        indent: []const u8,
+        rest: []const *const ast.Continuation,
+    ) JsEmitError!void {
+        try self.writeFmt("{s}{{\n", .{indent});
+        const block_indent = try std.fmt.allocPrint(self.allocator, "{s}  ", .{indent});
+        defer self.allocator.free(block_indent);
+
+        const binding = cont.binding orelse "_";
+        if (std.mem.eql(u8, binding, "_")) {
+            // Throwaway binding — give it a unique name so nested splices at
+            // the same depth never collide (`_auto_<id>`), matching the
+            // closure path's `_auto_N` naming.
+            const tid = self.nextId();
+            try self.writeFmt("{s}const _auto_{d} = {s};\n", .{ block_indent, tid, arg });
+        } else if (std.mem.eql(u8, binding, arg)) {
+            // Bare-identifier-collision case: the proc body has a local with
+            // the same name as the dispatch binding and passes it directly
+            // (`const c = ...; key(c)` paired with `! key c |> ...`). Emitting
+            // `const c = c;` self-references the inner const before init →
+            // ReferenceError (TDZ). The outer `c` is already in scope and IS
+            // the value the handler needs, so skip the redundant rebind.
+            // Pinned by 140_012_js_dispatch_binding_shadow.
+        } else {
+            try self.writeFmt("{s}const {s} = {s};\n", .{ block_indent, binding, arg });
+        }
+
+        const guarded = cont.condition != null;
+        var body_indent = block_indent;
+        var deeper: ?[]u8 = null;
+        defer if (deeper) |d| self.allocator.free(d);
+        if (guarded) {
+            try self.writeFmt("{s}if (", .{block_indent});
+            try self.writeJsExpr(cont.condition.?);
+            try self.write(") {\n");
+            deeper = try std.fmt.allocPrint(self.allocator, "{s}  ", .{block_indent});
+            body_indent = deeper.?;
+        }
+
+        // Recurse: emit the handler's sub-flow. The continuation's node is
+        // the next invocation; its own continuations drive the next level.
+        const node = cont.node orelse {
+            log.err("[js_emitter] void effect handler '{s}' has no body\n", .{cont.branch});
+            return JsEmitError.UnsupportedConstruct;
+        };
+        switch (node) {
+            .invocation => |*sub_inv| {
+                try self.emitInvocationWithContinuations(sub_inv, cont.continuations, body_indent);
+            },
+            .terminal => {}, // `_` — nothing further.
+            else => {
+                log.err("[js_emitter] void effect handler body is not an invocation\n", .{});
+                return JsEmitError.UnsupportedConstruct;
+            },
+        }
+
+        if (guarded) {
+            if (rest.len > 0) {
+                try self.writeFmt("{s}}} else {{\n", .{block_indent});
+                try self.emitSplicedArmBlock(rest[0], arg, body_indent, rest[1..]);
+                try self.writeFmt("{s}}}\n", .{block_indent});
+            } else {
+                try self.writeFmt("{s}}}\n", .{block_indent});
+            }
+        }
+
+        try self.writeFmt("{s}}}\n", .{indent});
     }
 
     /// Re-indent a slice of opaque body text to `indent`, one line at a time.
