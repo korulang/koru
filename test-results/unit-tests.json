@@ -1,12 +1,12 @@
 {
-  "timestamp": "2026-08-06T11:04:16.086Z",
+  "timestamp": "2026-08-06T11:56:58.145Z",
   "summary": {
-    "passed": 317,
+    "passed": 321,
     "failed": 0,
     "skipped": 12,
     "leaked": 0,
     "compileErrors": 0,
-    "total": 329,
+    "total": 333,
     "suiteCount": 41,
     "status": "success"
   },
@@ -285,10 +285,10 @@
     },
     {
       "name": "template_processor_tests",
-      "passed": 2,
+      "passed": 6,
       "failed": 0,
       "skipped": 0,
-      "total": 2,
+      "total": 6,
       "status": "success"
     },
     {

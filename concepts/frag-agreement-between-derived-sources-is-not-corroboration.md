@@ -67,3 +67,50 @@ reached the origin yet.
   same instinct one level up — read the ruling rather than the account of it — and
   the two together suggest a single rule: *go to the thing that is executed or
   decided, never to the thing that describes it.*
+
+## The same error against a PIPELINE, 2026-08-06 — and the closing rule caught it
+
+The rule at the end of the Open section — *go to the thing that is executed,
+never to the thing that describes it* — was written about documents. It applies
+unchanged to code, and I broke it the same day I quoted it.
+
+Two regression tests were parked with `TODO` markers, which moves them out of the
+pass column. The question was whether the public board needed a full re-run to
+reflect that. The ceremony notes say, accurately, that the site's `status.json` is
+regenerated from the **live test markers on disk**, so tests changed since the
+snapshot are picked up at publish time. I read that, concluded the published board
+would self-correct, published without re-measuring, and told Lars so.
+
+It was half true, which is the dangerous amount. `status.json` IS marker-derived
+and did update. But the number a reader actually sees — the `Passing Features`
+headline — is **snapshot**-derived, tied to `test-results/latest.json` and its git
+SHA. So the per-test list said one thing and the headline said another, and the
+headline is the artifact. The site published `1357` while the markers said `1355`.
+
+Every signal reported success: both pushes landed, the deployment showed Ready,
+the edge returned `x-vercel-cache: MISS` with `age: 0`, and the regenerated
+`status.json` on `origin/main` genuinely contained the new count. Nothing in the
+pipeline was broken. The stale number was correct output from a stage I had not
+realised was in the path.
+
+What generalises, and it is sharper than the document version:
+
+- **One artifact can have two provenances, and a true statement about one does not
+  constrain the other.** "Regenerated from markers" was a fact about a file, and I
+  spent it as a fact about a page. When a surface has a summary and a detail view,
+  assume they are fed differently until you have read the generator, because the
+  summary is the part that gets quoted and the detail is the part the docs
+  describe.
+- **The prose was not wrong — my inference from it was.** That makes this worse
+  than a stale document, because there is nothing to correct upstream. The defect
+  was reading a description where the generator was one grep away.
+- **A count check is ambiguous in BOTH directions.** The ceremony notes already
+  warn that polling a pass count cannot detect a failed deploy when the count did
+  not move. The mirror bit me: the count DID move in my data and not on the page,
+  so ten minutes of polling read as a broken deploy when the deploy was perfect.
+  Poll the thing that is unique per publish — the SHA — even when a count looks
+  like it would discriminate.
+
+Residue: the board was re-measured and the headline now matches the markers. The
+durable part is that "derived from X" is a claim about one file, and the honest
+follow-up question is always *which file does the reader see?*
