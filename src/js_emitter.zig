@@ -491,9 +491,8 @@ const Emitter = struct {
 
     /// A produce value is either an expression or a Koru STRUCT LITERAL written in
     /// braces (`-> { final.sum, final.max }` satisfying `-> { sum: i32, max: i32 }`).
-    /// The braced form is read by the ONE projector, `struct_literal.parseFields`,
-    /// under the pun law — a bare path names the field by its last segment — and
-    /// re-emitted as a JS object literal.
+    /// The braced form is re-emitted as a JS object literal under the pun law — a
+    /// bare path names the field by its last segment.
     ///
     /// Without this the braces passed through verbatim, so a punned literal reached
     /// `node` as `return { final.sum, final.max };` — not a diagnostic, not a wrong
@@ -502,18 +501,31 @@ const Emitter = struct {
     /// its names (`-> { a: 1 }`) parses to the same text it started as, which is why
     /// this was invisible until a pun turned up.
     ///
-    /// A value that is not a struct literal at all — an arithmetic expression, a
-    /// string, a call — fails the projector's own test and passes through as before.
+    /// WHICH braced values are records is decided by `struct_literal`'s predicates
+    /// — the same pair `parser.zig:7009` reads to classify a produce and
+    /// `emitter_helpers.emitValue:7965` reads to emit one for Zig. Everything else
+    /// in braces is PLAIN-VALUE BRACES: `{ r }`, `{ a + b }` — punctuation around
+    /// an expression, unwrapped, never an object.
+    ///
+    /// Deciding that here instead, off `parseFields`' own singleton-pun rule, was
+    /// a second definition of the same law, and it drifted: `-> { r }` on a
+    /// `-> i32` tor emitted `{ r: r }` against Zig's `r`, so 100_085 ran and
+    /// printed `[object Object]`. A wrong answer, not a crash.
+    ///
+    /// A value that is not braced at all — an arithmetic expression, a string, a
+    /// call — passes through as before.
     fn writeProduceValue(self: *Emitter, value: []const u8) JsEmitError!void {
         const trimmed = std.mem.trim(u8, value, " \t\r\n");
         if (trimmed.len < 2 or trimmed[0] != '{' or trimmed[trimmed.len - 1] != '}') {
             return self.writeJsExpr(value);
         }
+        const inner = std.mem.trim(u8, trimmed[1 .. trimmed.len - 1], " \t\r\n");
+        if (inner.len > 0 and struct_literal.isBracedPlainExpression(trimmed)) {
+            return self.writeJsExpr(inner);
+        }
         const fields = struct_literal.parseFields(self.allocator, trimmed) catch
             return self.writeJsExpr(value);
-        // The singleton-expression carve-out yields one unnamed field; that is a
-        // bare value in braces, not an object, so leave it to the expression path.
-        if (fields.len == 0 or fields[0].name.len == 0) return self.writeJsExpr(value);
+        if (fields.len == 0) return self.writeJsExpr(value);
         try self.write("{ ");
         for (fields, 0..) |f, i| {
             if (i > 0) try self.write(", ");
@@ -1708,20 +1720,27 @@ const Emitter = struct {
         // nodes the closure path already lowers correctly. Gate on the proc rather
         // than discovering its absence one frame deeper.
         //
-        // The splice inlines the proc body INCLUDING its `return .{ .done = … }`,
-        // which returns from the ENCLOSING function — so any terminal
-        // continuation waiting on that outcome (`| done |> print.ln("done")`)
-        // would be dropped without a trace. A producer that ends a flow has
-        // nothing to drop and keeps the fast path; one whose terminal branch is
-        // actually handled falls through to the closure form, where the result
-        // is a value the dispatch below can read.
-        var terminal_has_body = false;
-        for (continuations) |*c| {
-            if (c.kind != .terminal) continue;
-            const n = c.node orelse continue;
-            if (n != .terminal) terminal_has_body = true;
-        }
-        if (event_has_effect and all_effects_void and !terminal_has_body and
+        // A producer that ALSO declares terminal branches is not this shape. It
+        // returns a value, its proc body says so with `return`, and this path
+        // splices that body into a plain block — where `return` exits the whole
+        // flow function and the terminal arms, emitted nowhere, simply vanish.
+        // `sink { ! ?pulse i64 | done | err }` printed its three pulses and then
+        // silently dropped `done`: correct output followed by a missing line, the
+        // hardest kind of divergence to read. The closure path below already
+        // handles the mixed shape — Handlers_<id> for the effect arms, a real
+        // handler call, then a `.tag` dispatch — so route there and keep the
+        // splice for what it was built for: pure void producers (140_011, the
+        // pipe_dN depth benchmarks), which declare no terminal branch at all.
+        //
+        // Two contestants found this independently and gated it differently:
+        // `!terminal_has_body` (keep the fast path when a declared terminal arm
+        // carries no body) versus `terminal_branches == 0` below. The stricter
+        // one wins, because the permissive one is unsound for a reason neither
+        // spelled out: the spliced `return` exits the flow function even when no
+        // continuation body would have run, so any flow STEP after the
+        // invocation is dropped too. The check was looking at continuations; the
+        // hazard is the return.
+        if (event_has_effect and all_effects_void and terminal_branches == 0 and
             self.findJsProcIn(self.items, &event.path) != null)
         {
             try self.emitInlineVoidProducer(event, inv, continuations, indent);
@@ -2131,6 +2150,7 @@ const Emitter = struct {
 
             // Splice the handler body in-scope:
             //   { const <binding> = <arg>; <handler sub-flow> }
+
             try self.write("\n");
             try self.writeFmt("{s}{{\n", .{indent});
             const block_indent = try std.fmt.allocPrint(self.allocator, "{s}  ", .{indent});

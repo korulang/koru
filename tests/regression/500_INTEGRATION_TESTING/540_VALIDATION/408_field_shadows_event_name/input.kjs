@@ -1,0 +1,7 @@
+// JavaScript implementation facet. The event is declared in input.kz (merged
+// at import); this file holds the |js proc body.
+
+~proc window|js {
+    console.log(`Window size: ${window}`);
+    return window * 2;
+}

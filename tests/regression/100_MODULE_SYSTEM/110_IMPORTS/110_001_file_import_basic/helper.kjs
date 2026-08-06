@@ -1,0 +1,6 @@
+// JavaScript implementation facet. The event is declared in helper.kz (merged
+// at import); this file holds the |js proc body.
+
+~proc greet|js {
+    return "Hello!";
+}

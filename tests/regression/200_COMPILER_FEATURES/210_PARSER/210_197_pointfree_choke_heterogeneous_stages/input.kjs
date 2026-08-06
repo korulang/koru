@@ -1,0 +1,10 @@
+// JavaScript implementation facet. Events are declared in input.kz (merged at
+// import); this file holds the |js proc bodies.
+
+~proc obj.get|js { return { tag: "found", found: v + 1 }; }
+
+~proc arr.get|js { return { tag: "found", found: v + 1 }; }
+
+~proc as.string|js {
+    return { tag: "ok", ok: v === 5 ? "deep 5" : "wrong depth" };
+}

@@ -1,0 +1,7 @@
+// JavaScript implementation facet. The event is declared in input.kz (merged
+// at import); this file holds the |js proc body.
+
+~proc grant-access|js {
+    console.log(`Granting access: ${user_data.email} as ${user_data.role} (perms: ${user_data.permissions})`);
+    return true;
+}
