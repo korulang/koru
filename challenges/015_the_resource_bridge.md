@@ -54,9 +54,17 @@ the hash question is now urgent rather than aesthetic — today a handle name is
 `"file_1"`, guessable, and the vocabulary-query half (`542fab` → "you may call
 `std/io:file.read`") does not exist.
 
-**The Zig leak the frame named is NOT closed.** A user still cannot spell "give
-me a bridge and run this on it" in Koru: `440_004` reaches into Zig for
-`&br.pool`, because `std/bridge` has no `run` verb. That needs a spelling.
+**The Zig leak the frame named is CLOSED.** `std/bridge:run` forwards the
+session's pool and scope to `std/runtime:run` and mirrors its outcomes, so a
+whole conversation is spellable in Koru — `440_006` opens on turn 1, discharges
+on turn 2 and hangs up, with nothing crossing the library boundary. (`440_004`
+keeps the Zig form deliberately: it is the pin on the raw seam underneath.)
+
+What that surfaced, and it is the live ergonomics question: **every failure arm
+must hang up or the program does not compile**, so a two-turn conversation over
+an eight-outcome verb carries sixteen `close` calls. That is the first
+measurement on the standing "unit of obligation" question, and the relief it
+invites — a catch-all arm that skips the discharge — is a fallback in disguise.
 
 ## ⛔ It does not work. Measured 2026-07-31, before you start.
 
