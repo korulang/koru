@@ -1,0 +1,7 @@
+// JavaScript implementation facet. The Koru declarations live in the
+// `lib_b.kz` companion (merged at import); this file holds the `|js`
+// proc bodies mirroring its `|zig` ones.
+
+~proc process|js {
+    console.log(`Process from lib_b`);
+}

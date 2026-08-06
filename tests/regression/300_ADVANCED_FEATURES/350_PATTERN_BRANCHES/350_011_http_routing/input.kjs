@@ -1,0 +1,26 @@
+// JavaScript implementation facet. The Koru declarations live in the
+// `input.kz` companion (merged at import); this file holds the `|js`
+// proc bodies mirroring its `|zig` ones.
+
+~proc handle|js {
+    if ((method === "GET")) {
+        // Check /users/:id pattern
+        if (path.startsWith("/users/")) {
+            const id = path.slice(7);
+            if (id.length > 0) {
+                return { status: 200, body: id };
+            }
+        }
+        // Check /health pattern
+        if ((path === "/health")) {
+            return { status: 200, body: "ok" };
+        }
+    }
+    if ((method === "POST")) {
+        if ((path === "/users")) {
+            return { status: 201, body: "created" };
+        }
+    }
+    // No match
+    return { status: 404, body: "not found" };
+}

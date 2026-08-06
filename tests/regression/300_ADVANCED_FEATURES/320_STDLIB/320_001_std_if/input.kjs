@@ -1,0 +1,11 @@
+// JavaScript implementation facet. The Koru declarations live in the
+// `input.kz` companion (merged at import); this file holds the `|js`
+// proc bodies mirroring its `|zig` ones.
+
+~proc my-if-impl|js {
+    if (condition) {
+        return { tag: "then" };
+    } else {
+        return { tag: "else" };
+    }
+}
