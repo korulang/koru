@@ -62,6 +62,27 @@ pub fn emit(allocator: std.mem.Allocator, program: *const ast.Program) JsEmitErr
 
     var em = Emitter{ .allocator = allocator, .buf = &buf, .items = program.items, .main_module_name = program.main_module_name };
 
+    // Prelude: Koru's slice-length surface, `.len`.
+    //
+    // A declarative Koru body is host-agnostic and is emitted VERBATIM — so
+    // `~len -> s.data.len` (koru_std/string.kz) and `{{ r.len:d }}`
+    // (240_020_args_basic) reach the JavaScript output still spelled `.len`,
+    // while JS spells it `.length`. Translating the access instead would be a
+    // guess: `.len` is also a legal field name on a user record, and the
+    // emitter cannot tell the two apart.
+    //
+    // So the length surface is put on the VALUES, as a non-enumerable getter
+    // that an own `len` property shadows. `[]const u8` is a js string and
+    // `[]T` is a js array (the whole point of not modelling a slice as
+    // `{ptr,len}`), so those are the two prototypes that owe it. Without this
+    // the read is not an error — it is `undefined`, printed as the answer.
+    try em.write(
+        \\const __koru_len = { get() { return this.length; }, configurable: true };
+        \\Object.defineProperty(String.prototype, "len", __koru_len);
+        \\Object.defineProperty(Array.prototype, "len", __koru_len);
+        \\
+    );
+
     // Phase 0: emit host lines whose host language is JS, verbatim, at the TOP
     // of the output (before main_module). This carries module-level JS state
     // (`const`/`let` declarations) that the flows and proc bodies reference.
@@ -75,13 +96,13 @@ pub fn emit(allocator: std.mem.Allocator, program: *const ast.Program) JsEmitErr
     // Synthesized lines (`location.file == "generated"`) resolve to null and
     // are skipped — they're host-agnostic compiler infrastructure the JS
     // target doesn't need.
-    for (program.items) |*item| {
-        if (item.* != .host_line) continue;
-        const host = file_types.hostLangOfFile(item.host_line.location.file) orelse continue;
-        if (!std.mem.eql(u8, host, JS_TARGET)) continue;
-        try em.write(item.host_line.content);
-        try em.write("\n");
-    }
+    //
+    // IMPORTED modules count. An import lands as a `module_decl` whose items
+    // hold the merged facets, so a top-level-only scan saw the ENTRY's `.kjs`
+    // host lines and none of `koru_std/*.kjs`'s — state a stdlib facet declares
+    // would silently vanish and its procs would read `undefined` three frames
+    // away. Descend, exactly as `emitModuleEventDecls` does for events.
+    try emitJsHostLines(&em, program.items);
 
     // Phase 0.5: module-scope `[declaration]` flows (Koru-native `const {}`).
     // A declaration introduces names into the ENCLOSING scope, not a statement
@@ -174,6 +195,24 @@ pub fn emit(allocator: std.mem.Allocator, program: *const ast.Program) JsEmitErr
     }
 
     return buf.toOwnedSlice(allocator);
+}
+
+/// Phase 0's walker: every `.kjs`-sourced host line in `items`, in order,
+/// descending through `module_decl` so an imported facet's module-level JS
+/// state reaches the output alongside the entry file's.
+fn emitJsHostLines(em: *Emitter, items: []const ast.Item) JsEmitError!void {
+    for (items) |*item| {
+        switch (item.*) {
+            .host_line => |*line| {
+                const host = file_types.hostLangOfFile(line.location.file) orelse continue;
+                if (!std.mem.eql(u8, host, JS_TARGET)) continue;
+                try em.write(line.content);
+                try em.write("\n");
+            },
+            .module_decl => |*m| try emitJsHostLines(em, m.items),
+            else => {},
+        }
+    }
 }
 
 /// Event decls the emitted program reaches, by POINTER identity — two modules may

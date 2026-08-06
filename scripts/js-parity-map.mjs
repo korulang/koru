@@ -326,7 +326,7 @@ for (const [k, v] of Object.entries(counts).sort((a, b) => b[1] - a[1])) {
 }
 console.log('\n  STDLIB PROC SURFACE  (compile-time pipeline modules excluded)')
 console.log('    kind         |zig    |js   unported   what a port means')
-console.log(`    runtime   ${String(cov.zig.runtime).padStart(7)} ${String(cov.js.runtime).padStart(6)} ${String(cov.zig.runtime - cov.both.runtime).padStart(10)}   a JS body in a .kjs facet (needs .k contract first)`)
+console.log(`    runtime   ${String(cov.zig.runtime).padStart(7)} ${String(cov.js.runtime).padStart(6)} ${String(cov.zig.runtime - cov.both.runtime).padStart(10)}   a JS body in a .kjs sibling; no .k extraction needed`)
 console.log(`    transform ${String(cov.zig.transform).padStart(7)} ${String(cov.js.transform).padStart(6)} ${String(cov.zig.transform - cov.both.transform).padStart(10)}   a |js variant emitting JS, stays in .kz`)
 console.log('\n  TOP BLOCKING MODULES')
 for (const m of moduleRanking().slice(0, 10)) {
