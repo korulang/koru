@@ -151,6 +151,11 @@ const Emitter = struct {
     /// Monotonic counter for unique `Handlers_<id>` / `result_<id>` names so
     /// nested dispatch frames never collide.
     id_counter: usize = 0,
+    /// The event whose SUBFLOW impl body is currently being emitted, or null
+    /// outside one. A call to one of that event's own effect arms is a FIRING,
+    /// not an event invocation, and only this context can tell them apart —
+    /// the twin of EmissionContext.impl_event_decl (emitter_helpers.zig:6902).
+    impl_event: ?*const ast.EventDecl = null,
 
     fn nextId(self: *Emitter) usize {
         const id = self.id_counter;
@@ -244,13 +249,73 @@ const Emitter = struct {
         return null;
     }
 
+    /// How an event's behaviour is supplied. Koru has FOUR spellings for it and
+    /// the Zig emitter honours all four off the same item list — a `|js`/`|zig`
+    /// proc (visitor_emitter.zig:2682), an immediate/arrow impl (:2817), a subflow
+    /// flow whose `impl_of` names the event (:2918), and a `|template|` proc whose
+    /// body has already been spliced into every call site (:3730). The JS target
+    /// reads the same four; treating "no proc" as "no body" mistook one spelling
+    /// for the whole grammar.
+    const EventImpl = union(enum) {
+        /// `~proc name|js { … }` — opaque host JavaScript, spliced verbatim.
+        proc: *const ast.ProcDecl,
+        /// `~proc name|template|js { … }` — a PER-CALL template. template_processor
+        /// already rendered it into every call site, so the decl-site handler is
+        /// dead and its body is template text, not JavaScript.
+        template_stub: *const ast.ProcDecl,
+        /// `name -> expr` (bare return) or `name => branch { … }` (constructor).
+        immediate: *const ast.ImmediateImpl,
+        /// `name = other(…) | b => outcome` — a flow implementing this event.
+        subflow: *const ast.Flow,
+    };
+
+    /// Resolve an event's implementation WITHIN a given item scope, in this order:
+    /// `|js` proc first (a target-specific host body wins over the portable one),
+    /// then an immediate/arrow impl, then a subflow, and LAST a `|template|` proc.
+    ///
+    /// Template is last on purpose: it is not a body, it is the absence of one at
+    /// the decl site. Any real implementation standing beside it must win, so the
+    /// stub is only ever reached when nothing else supplies behaviour.
+    ///
+    /// Only when all four are absent does the event genuinely have no body here.
+    fn findImplIn(self: *Emitter, scope: []const ast.Item, event_path: *const ast.DottedPath) ?EventImpl {
+        if (self.findJsProcIn(scope, event_path)) |proc| return .{ .proc = proc };
+
+        for (scope) |*item| {
+            if (item.* != .immediate_impl) continue;
+            if (pathsEqual(&item.immediate_impl.event_path, event_path)) {
+                return .{ .immediate = &item.immediate_impl };
+            }
+        }
+
+        for (scope) |*item| {
+            if (item.* != .flow) continue;
+            const flow = &item.flow;
+            const impl_of = flow.impl_of orelse continue;
+            // A `|variant` arm is a call-site SELECTION, not the default body.
+            // The Zig emitter skips it at this same spot (visitor_emitter.zig:2924).
+            if (flow.impl_variant != null) continue;
+            if (pathsEqual(&impl_of, event_path)) return .{ .subflow = flow };
+        }
+
+        for (scope) |*item| {
+            if (item.* != .proc_decl) continue;
+            const proc = &item.proc_decl;
+            if (!pathsEqual(&proc.path, event_path)) continue;
+            const target = proc.target orelse continue;
+            if (templateProcTargetsJs(target)) return .{ .template_stub = proc };
+        }
+
+        return null;
+    }
+
     /// Emit one event decl as `<name>_event: { handler(input, H?) { ... } }`.
-    /// `scope` is the item list to resolve the `|js` proc within (the program
+    /// `scope` is the item list to resolve the implementation within (the program
     /// for top-level events, the module's items for a module event).
     fn emitEventDecl(self: *Emitter, event: *const ast.EventDecl, scope: []const ast.Item) JsEmitError!void {
-        const proc = self.findJsProcIn(scope, &event.path) orelse {
-            // An event with no |js proc body is incoherent for the JS target.
-            log.debug("[js_emitter] event '{s}' has no |js proc body\n", .{event.path.segments[event.path.segments.len - 1]});
+        const impl = self.findImplIn(scope, &event.path) orelse {
+            // No proc, no arrow, no subflow — the event has no body on any target.
+            log.debug("[js_emitter] event '{s}' has no |js proc, immediate, or subflow body\n", .{event.path.segments[event.path.segments.len - 1]});
             return JsEmitError.NoJsProcBody;
         };
 
@@ -281,21 +346,308 @@ const Emitter = struct {
             try self.write("    handler(input) {\n");
         }
 
-        // Bind input fields as locals: `const n = input.n;`
+        // Bind input fields as locals: `const n = input.n;`. Every impl kind
+        // reads its inputs by bare name, so this precedes all three bodies —
+        // the same reason the Zig emitter re-emits the bindings per arm.
         for (event.input.fields) |field| {
             try self.writeFmt("      const {s} = input.{s};\n", .{ field.name, field.name });
         }
 
-        // Splice the |js proc body verbatim (opaque host code), re-indented.
-        try self.emitReindented(proc.body.text, "      ");
-        try self.write("\n    },\n  },\n");
+        switch (impl) {
+            // Opaque host code — splice verbatim, re-indented.
+            .proc => |proc| {
+                try self.emitReindented(proc.body.text, "      ");
+                try self.write("\n");
+            },
+            // A per-call `|template|` proc was rendered into every call site by
+            // template_processor before the emitter ran, so the decl-site handler
+            // is dead code and its body is template text. Emit a stub that NAMES
+            // itself: reaching it means a call site was missed, and a stub that
+            // throws says so, where a silent skip would surface three frames away
+            // as `.handler` on `undefined`. Zig writes `unreachable` here
+            // (visitor_emitter.zig:3730).
+            .template_stub => try self.writeFmt(
+                "      throw new Error(\"{s}: |template| proc is inlined at call sites and must never be called\");\n",
+                .{name},
+            ),
+            .immediate => |ii| try self.emitBranchConstructorReturn(&ii.value, "      "),
+            .subflow => |flow| try self.emitSubflowImplBody(event, flow, "      "),
+        }
+        try self.write("    },\n  },\n");
+    }
+
+    /// Emit `return <value>;` for a BranchConstructor — the shared shape behind
+    /// an immediate impl (`greet -> "hi"`, `step => continue`) and a subflow arm
+    /// that produces an outcome (`| break => stopped`). Mirrors
+    /// visitor_emitter.zig:2861-2912 retargeted:
+    ///
+    ///   `-> expr`          → `return <expr>;`                     (no tag)
+    ///   `=> b`             → `return { tag: "b" };`
+    ///   `=> b v`           → `return { tag: "b", b: v };`
+    ///   `=> b { f: v, … }` → `return { tag: "b", b: { f: v, … } };`
+    ///
+    /// The tagged shape is exactly what the consuming side already reads
+    /// (`result.tag` / `result.<branch>` in emitTerminalContinuation) and what a
+    /// hand-written `|js` proc returns (pinned by 140_013). Branch names are
+    /// written RAW on both key and tag so producer and reader cannot drift.
+    fn emitBranchConstructorReturn(self: *Emitter, bc: *const ast.BranchConstructor, indent: []const u8) JsEmitError!void {
+        if (bc.is_bare_return) {
+            try self.writeFmt("{s}return ", .{indent});
+            if (bc.plain_value) |pv| {
+                try self.writeJsExpr(pv);
+            } else {
+                try self.write("undefined");
+            }
+            try self.write(";\n");
+            return;
+        }
+
+        try self.writeFmt("{s}return {{ tag: \"{s}\"", .{ indent, bc.branch_name });
+        if (bc.plain_value) |pv| {
+            try self.writeFmt(", {s}: ", .{bc.branch_name});
+            try self.writeJsExpr(pv);
+        } else if (bc.fields.len > 0) {
+            try self.writeFmt(", {s}: {{ ", .{bc.branch_name});
+            for (bc.fields, 0..) |field, k| {
+                if (k > 0) try self.write(", ");
+                try self.writeFmt("{s}: ", .{field.name});
+                // A field carries either a written expression or, in the
+                // punned/positional form, the value in the `type` slot — the
+                // same either/or the Zig emitter reads at :2898.
+                try self.writeJsExpr(if (field.expression_str) |e| e else field.type);
+            }
+            try self.write(" }");
+        }
+        try self.write(" };\n");
+    }
+
+    /// Emit the body of a SUBFLOW implementation — a flow whose `impl_of` names
+    /// the event being emitted (`run = step() | continue => iterated`). The body
+    /// IS an ordinary dispatch, so it reuses the same recursive emitter the
+    /// top-level flows use; the only difference is that it sits inside a handler
+    /// function, which is what turns a branch-constructor arm into a `return`.
+    ///
+    /// `event` is published on the emitter for the duration: inside its own impl,
+    /// the event's effect arms are CALLABLE, and firing one is not an invocation.
+    fn emitSubflowImplBody(self: *Emitter, event: *const ast.EventDecl, flow: *const ast.Flow, indent: []const u8) JsEmitError!void {
+        const saved = self.impl_event;
+        self.impl_event = event;
+        defer self.impl_event = saved;
+
+        if (flow.inline_body) |raw| {
+            try self.emitInlineBodyResolvingContinuations(stripInlineStmtMarker(raw), flow.body.continuations, indent);
+            try self.write("\n");
+            return;
+        }
+        try self.emitInvocationWithContinuations(flow.inv(), flow.body.continuations, indent);
+    }
+
+    /// Write a KORU expression as JavaScript. Two rewrites, both mechanical:
+    ///
+    ///  - `++` → `+`. Koru spells string concatenation Zig's way, which the Zig
+    ///    target passes straight through. In JavaScript `++` is the increment
+    ///    operator, so an unlowered `a ++ b` is a SYNTAX error, not a wrong answer.
+    ///  - Zig host builtins → their JS twins (see `writeHostBuiltin`).
+    ///
+    /// Everything else passes through verbatim, exactly as
+    /// emitter_helpers.emitValue passes a value through for Zig.
+    fn writeJsExpr(self: *Emitter, expr: []const u8) JsEmitError!void {
+        try self.writeLowered(expr, .koru_expr);
+    }
+
+    /// Write HOST text (a rendered template body) with only the host-builtin
+    /// rewrite applied. `++` is left alone: this text is JavaScript already, so a
+    /// `++` in it is a genuine increment, not a Koru concatenation.
+    fn writeHostText(self: *Emitter, text: []const u8) JsEmitError!void {
+        try self.writeLowered(text, .host_text);
+    }
+
+    const LowerMode = enum { koru_expr, host_text };
+
+    /// The shared scanner behind `writeJsExpr` / `writeHostText`. Walks the text
+    /// once, leaving string and char literals untouched, and rewrites the
+    /// constructs JavaScript cannot parse.
+    fn writeLowered(self: *Emitter, text: []const u8, mode: LowerMode) JsEmitError!void {
+        var i: usize = 0;
+        var quote: ?u8 = null;
+        while (i < text.len) {
+            const c = text[i];
+            if (quote) |q| {
+                if (c == '\\' and i + 1 < text.len) {
+                    try self.buf.appendSlice(self.allocator, text[i .. i + 2]);
+                    i += 2;
+                    continue;
+                }
+                if (c == q) quote = null;
+                try self.buf.append(self.allocator, c);
+                i += 1;
+                continue;
+            }
+            if (c == '"' or c == '\'' or c == '`') {
+                quote = c;
+                try self.buf.append(self.allocator, c);
+                i += 1;
+                continue;
+            }
+            if (mode == .koru_expr and c == '+' and i + 1 < text.len and text[i + 1] == '+') {
+                try self.write("+");
+                i += 2;
+                continue;
+            }
+            if (c == '@') {
+                if (try self.writeHostBuiltin(text, i)) |after| {
+                    i = after;
+                    continue;
+                }
+            }
+            try self.buf.append(self.allocator, c);
+            i += 1;
+        }
+    }
+
+    /// Lower a Zig HOST builtin call starting at `text[at] == '@'` to its
+    /// JavaScript equivalent, returning the index just past it. Returns null when
+    /// what follows `@` is not a builtin CALL at all (no name, no open paren), so
+    /// the caller emits the character verbatim.
+    ///
+    /// WHY this exists: Koru `.k` body expressions currently reach the backend as
+    /// raw HOST text — that is the gap 010_063 pins as red ("give .k
+    /// body-expressions a parse-and-lower layer"). Until that layer exists the
+    /// integer arithmetic a `.k` author writes is Zig, so a JS target either
+    /// translates these builtins or emits text no JavaScript engine can parse.
+    /// The mapping is mechanical and semantics-preserving:
+    ///
+    ///   @as(T, x) @intCast(x) @truncate(x) @floatFromInt(x) @enumFromInt(x)
+    ///   @intFromEnum(x) @bitCast(x)                → the value, unchanged
+    ///   @intFromFloat(x)                           → Math.trunc(x)
+    ///   @divTrunc(a, b)                            → Math.trunc((a) / (b))
+    ///   @divFloor(a, b)                            → Math.floor((a) / (b))
+    ///   @divExact(a, b)                            → ((a) / (b))
+    ///   @rem(a, b)                                 → ((a) % (b))          truncated, C's %
+    ///   @mod(a, b)                                 → (((a) % (b) + (b)) % (b))  euclidean
+    ///   @min @max @abs @sqrt                       → Math.min max abs sqrt
+    ///
+    /// An `@`-builtin this does not model is refused rather than passed through:
+    /// `@` is not an expression character in JavaScript, so emitting it produces
+    /// a syntax error at `node` instead of a diagnostic here.
+    fn writeHostBuiltin(self: *Emitter, text: []const u8, at: usize) JsEmitError!?usize {
+        var p = at + 1;
+        while (p < text.len and isIdentChar(text[p])) p += 1;
+        const name = text[at + 1 .. p];
+        if (name.len == 0) return null;
+        if (p >= text.len or text[p] != '(') return null;
+
+        // Balanced-paren scan for the argument list, then split it at TOP-LEVEL
+        // commas only — `@as(i64, @intCast(i))` nests.
+        const args_start = p + 1;
+        var depth: usize = 1;
+        var j = args_start;
+        var split: ?usize = null;
+        while (j < text.len and depth > 0) : (j += 1) {
+            switch (text[j]) {
+                '(', '[', '{' => depth += 1,
+                ')', ']', '}' => depth -= 1,
+                ',' => if (depth == 1 and split == null) {
+                    split = j;
+                },
+                else => {},
+            }
+        }
+        if (depth != 0) return null; // unbalanced — not a call we can read
+        const args_end = j - 1; // index of the closing ')'
+        const first = std.mem.trim(u8, text[args_start .. split orelse args_end], " \t");
+        const second = if (split) |s| std.mem.trim(u8, text[s + 1 .. args_end], " \t") else "";
+
+        const eql = std.mem.eql;
+        // Representation casts: JavaScript has ONE number type, so the cast is
+        // the value. `@as`/`@enumFromInt` carry the type first, the value second.
+        if (eql(u8, name, "as") or eql(u8, name, "enumFromInt") or eql(u8, name, "bitCast")) {
+            try self.write("(");
+            try self.writeLowered(if (split != null) second else first, .koru_expr);
+            try self.write(")");
+            return j;
+        }
+        if (eql(u8, name, "intCast") or eql(u8, name, "truncate") or
+            eql(u8, name, "floatFromInt") or eql(u8, name, "intFromEnum") or
+            eql(u8, name, "floatCast"))
+        {
+            try self.write("(");
+            try self.writeLowered(first, .koru_expr);
+            try self.write(")");
+            return j;
+        }
+        if (eql(u8, name, "intFromFloat")) {
+            try self.write("Math.trunc(");
+            try self.writeLowered(first, .koru_expr);
+            try self.write(")");
+            return j;
+        }
+        if (eql(u8, name, "divTrunc") or eql(u8, name, "divFloor") or eql(u8, name, "divExact")) {
+            try self.write(if (eql(u8, name, "divTrunc")) "Math.trunc((" else if (eql(u8, name, "divFloor")) "Math.floor((" else "((");
+            try self.writeLowered(first, .koru_expr);
+            try self.write(") / (");
+            try self.writeLowered(second, .koru_expr);
+            try self.write("))");
+            return j;
+        }
+        if (eql(u8, name, "rem")) {
+            try self.write("((");
+            try self.writeLowered(first, .koru_expr);
+            try self.write(") % (");
+            try self.writeLowered(second, .koru_expr);
+            try self.write("))");
+            return j;
+        }
+        if (eql(u8, name, "mod")) {
+            // Euclidean: Zig's @mod is non-negative for a positive divisor,
+            // JavaScript's `%` keeps the dividend's sign.
+            try self.write("((((");
+            try self.writeLowered(first, .koru_expr);
+            try self.write(") % (");
+            try self.writeLowered(second, .koru_expr);
+            try self.write(")) + (");
+            try self.writeLowered(second, .koru_expr);
+            try self.write(")) % (");
+            try self.writeLowered(second, .koru_expr);
+            try self.write("))");
+            return j;
+        }
+        if (eql(u8, name, "min") or eql(u8, name, "max") or eql(u8, name, "abs") or eql(u8, name, "sqrt")) {
+            try self.writeFmt("Math.{s}(", .{name});
+            try self.writeLowered(first, .koru_expr);
+            if (split != null) {
+                try self.write(", ");
+                try self.writeLowered(second, .koru_expr);
+            }
+            try self.write(")");
+            return j;
+        }
+
+        log.debug("[js_emitter] host builtin '@{s}' has no JS lowering\n", .{name});
+        return JsEmitError.UnsupportedConstruct;
     }
 
     /// Emit the JS-implemented events of an imported module. An event is emitted
     /// only if it has a `|js` proc in this module's own scope; events with only
     /// `|zig`/`[comptime]` variants (the compiler/stdlib infrastructure) are
-    /// silently skipped — they have no JS implementation, so they're simply
-    /// absent on this target. Recurses into nested modules.
+    /// silently skipped — they have no JS implementation, so they're simply absent
+    /// on this target. Recurses into nested modules.
+    ///
+    /// WHY THIS GATE IS NARROWER THAN `findImplIn`, deliberately: an event whose
+    /// body is an arrow or a subflow IS portable in principle, so widening the
+    /// gate to the full resolver looks like the obvious correctness fix. Measured
+    /// 2026-08-06: it also drags in every subflow-implemented event of `std.compiler`
+    /// — `elaborate`, `analysis`, `emission`, `optimize` — as dead handlers calling
+    /// handlers that were never emitted. Hello-world went 290 → 4790 bytes and not
+    /// one test changed verdict.
+    ///
+    /// The rule the gate actually wants is "is this implementation TRANSITIVELY
+    /// JS-implementable", i.e. does every leaf it reaches have a JS body. A `|js`
+    /// proc answers that in one hop, which is why the narrow gate works at all.
+    /// Answering it for an arrow or a subflow is a reachability walk, not a
+    /// predicate — so a module event implemented in pure Koru is still absent here,
+    /// and its call site still fails at RUNTIME on `undefined.handler` rather than
+    /// at emission. That is a known frontier, not an oversight.
     fn emitModuleEventDecls(self: *Emitter, module: *const ast.ModuleDecl) JsEmitError!void {
         for (module.items) |*item| {
             switch (item.*) {
@@ -387,7 +739,11 @@ const Emitter = struct {
                 break; // no more markers
             }
 
-            try self.write(trimmed[pos..m]);
+            // The scaffolding between markers is rendered HOST text, but it
+            // carries the Koru condition / bound expressions the author wrote —
+            // and those are raw Zig (`if (@rem(n, 2) == 0)`). Lower the builtins;
+            // leave everything else, `++` included, exactly as the template wrote it.
+            try self.writeHostText(trimmed[pos..m]);
 
             if (is_continue) {
                 // CONTINUATION hand-off — splice the terminal body once, here,
@@ -478,7 +834,7 @@ const Emitter = struct {
             try self.write(" }");
             pos = i;
         }
-        try self.write(trimmed[pos..]);
+        try self.writeHostText(trimmed[pos..]);
     }
 
     /// Emit the body of a terminal continuation spliced inline by a template
@@ -493,8 +849,18 @@ const Emitter = struct {
                 try self.emitInvocationWithContinuations(inv, cont.continuations, indent);
             },
             .terminal => {}, // `_` — the arm does nothing.
+            // A PRODUCE arm under a template head (`config = if(strict) | then ->
+            // { a: 1 }`): the arm satisfies the ENCLOSING event's output, so it
+            // returns. Same node, same lowering as the non-template arm — the
+            // template only decides WHICH arm runs.
+            .branch_constructor => |*bc| try self.emitBranchConstructorReturn(bc, indent),
+            .expression => |expr| {
+                try self.writeFmt("{s}return ", .{indent});
+                try self.writeJsExpr(expr);
+                try self.write(";\n");
+            },
             else => {
-                log.debug("[js_emitter] inline continuation body is neither invocation nor terminal\n", .{});
+                log.debug("[js_emitter] inline continuation body is not an invocation, produce, or expression\n", .{});
                 return JsEmitError.UnsupportedConstruct;
             },
         }
@@ -528,6 +894,17 @@ const Emitter = struct {
             try self.write("\n");
             return;
         }
+        // SUBFLOW-IMPLEMENTED EFFECT FIRE. Inside the impl of an effect-bearing
+        // event, a call to one of THAT event's own effect arms is the FIRING, not
+        // an event invocation — `each(i)` hands `i` to whoever installed `each`.
+        // Checked before event resolution because an arm name is not an event and
+        // never resolves to one. Twin of emitter_helpers.zig:6902.
+        if (self.impl_event) |impl_ev| {
+            if (findEffectArm(impl_ev, &inv.path)) |arm| {
+                try self.emitEffectArmFire(arm, inv, continuations, indent);
+                return;
+            }
+        }
 
         const event = self.findEventDecl(&inv.path) orelse {
             log.debug("[js_emitter] flow invokes unresolved event\n", .{});
@@ -536,24 +913,37 @@ const Emitter = struct {
 
         var event_has_effect = false;
         var all_effects_void = true;
+        var terminal_branches: usize = 0;
         for (event.branches) |b| {
             if (b.kind == .effect) {
                 event_has_effect = true;
                 if (b.resume_type != null) all_effects_void = false;
+            } else {
+                terminal_branches += 1;
             }
         }
+        // A BARE-RETURN event (`-> T` with no `|` arms) hands back the value
+        // itself: no `.tag`, no per-branch field. A call site may still write an
+        // arm (`| value v -> v` — `value` is the implicit name of the one
+        // outcome), and that arm binds the WHOLE result.
+        const callee_bare_return = terminal_branches == 0 and event.return_type != null;
 
         // VOID-EFFECT FAST PATH: when the invoked event is a producer whose
-        // effect branches are ALL void (no `-> T` resume value), do NOT build a
-        // `Handlers_<id>` closure tower. Instead splice the producer's |js body
-        // inline, textually replacing each `<op>(<arg>)` effect call with the
-        // recursively-emitted handler body in a block:
+        // effect branches are ALL void (no `-> T` resume value) AND its body is a
+        // `|js` proc, do NOT build a `Handlers_<id>` closure tower. Instead splice
+        // the proc body inline, textually replacing each `<op>(<arg>)` effect call
+        // with the recursively-emitted handler body in a block:
         //   `{ const <binding> = <arg>; <handler sub-flow> }`
-        // This collapses an arbitrarily deep void chain into straight-line
-        // nested blocks (no closures) so V8 keeps it on the fast path at any
-        // depth. Resume-value effects keep the closure form below — splicing a
-        // statement block where an expression value is expected would break them.
-        if (event_has_effect and all_effects_void) {
+        // This collapses an arbitrarily deep void chain into straight-line nested
+        // blocks (no closures) so V8 keeps it on the fast path at any depth.
+        // Resume-value effects keep the closure form below — splicing a statement
+        // block where an expression value is expected would break them.
+        //
+        // The splice is TEXTUAL, so it needs host text to splice into: a producer
+        // implemented by a subflow has no proc body, and its firing sites are AST
+        // nodes the closure path already lowers correctly. Gate on the proc rather
+        // than discovering its absence one frame deeper.
+        if (event_has_effect and all_effects_void and self.findJsProcIn(self.items, &event.path) != null) {
             try self.emitInlineVoidProducer(event, inv, continuations, indent);
             return;
         }
@@ -570,7 +960,7 @@ const Emitter = struct {
         // from). Plain-event handlers in the void/side-effecting style 140_011
         // exercises don't return; if they do, fall through to the handler-call
         // path which preserves return semantics.
-        if (!event_has_effect and continuations.len == 0) {
+        if (!event_has_effect and continuations.len == 0 and inv.return_binding == null) {
             if (self.findJsProcIn(self.items, &event.path)) |proc| {
                 if (std.mem.indexOf(u8, proc.body.text, "return ") == null and
                     std.mem.indexOf(u8, proc.body.text, "return;") == null and
@@ -597,7 +987,15 @@ const Emitter = struct {
         }
         // With 2+ terminal branches we must dispatch on the returned `.tag`,
         // which requires the result value even when no branch binds a payload.
-        if (terminal_count >= 2) needs_result = true;
+        // A bare return carries no tag, and by construction has exactly one
+        // outcome, so it never dispatches.
+        if (terminal_count >= 2 and !callee_bare_return) needs_result = true;
+        // A call-site `: name` bind (`double(a: 21): d |> …`) NAMES the produced
+        // value and the continuations after it reference that name, so the result
+        // must be materialised even when no branch arm binds a payload. Mirrors
+        // the Zig emitter's `inv.return_binding orelse result_var`
+        // (emitter_helpers.zig:7290).
+        if (inv.return_binding != null) needs_result = true;
 
         // Build Handlers_<id> from the effect continuations. The id is monotonic
         // so nested frames get distinct names.
@@ -621,10 +1019,14 @@ const Emitter = struct {
 
         var ev_name_buf: [256]u8 = undefined;
         const ev_name = lowerIdentBuf(&ev_name_buf, event.path.segments[event.path.segments.len - 1]);
-        const result_name: ?[]const u8 = if (needs_result) blk: {
+        // The call-site bind, when present, IS the result's name — the following
+        // pipeline spells it, so a synthetic `result_<id>` would leave it unbound.
+        const result_name: ?[]const u8 = if (!needs_result) null else if (inv.return_binding) |rb|
+            try self.allocator.dupe(u8, rb)
+        else blk: {
             const rid = self.nextId();
             break :blk try std.fmt.allocPrint(self.allocator, "result_{d}", .{rid});
-        } else null;
+        };
         defer if (result_name) |rn| self.allocator.free(rn);
 
         if (result_name) |rn| {
@@ -640,11 +1042,99 @@ const Emitter = struct {
 
         // Drive terminal continuations. With 2+ branches we dispatch on the
         // returned `.tag`; a lone branch always fires, so no guard is needed.
-        const needs_dispatch = terminal_count >= 2;
+        const needs_dispatch = terminal_count >= 2 and !callee_bare_return;
         for (continuations) |*cont| {
             if (cont.kind != .terminal) continue;
-            try self.emitTerminalContinuation(cont, result_name, indent, needs_dispatch);
+            try self.emitTerminalContinuation(cont, result_name, indent, needs_dispatch, callee_bare_return);
         }
+    }
+
+    /// Emit a FIRE of one of the enclosing event's own effect arms. The Zig
+    /// emitter routes this through the comptime `__H` handlers param
+    /// (emitter_helpers.zig:6876 `writeArmFireCallExpr`); the JS handler has
+    /// already aliased every arm to a local (`const each = H.each;`), so the fire
+    /// is a plain call on that alias.
+    ///
+    /// A VOID arm produces nothing — bare statement. A RESUMING arm produces the
+    /// resume value, bound to the call-site `:` name or, for a multi-arm resume
+    /// sum, dispatched on `.tag` through the ordinary terminal-continuation path.
+    fn emitEffectArmFire(
+        self: *Emitter,
+        arm: *const ast.Branch,
+        inv: *const ast.Invocation,
+        continuations: []const ast.Continuation,
+        indent: []const u8,
+    ) JsEmitError!void {
+        const has_resume = arm.resume_type != null or arm.resume_arms != null;
+
+        var terminal_count: usize = 0;
+        var needs_result = false;
+        for (continuations) |*cont| {
+            if (cont.kind != .terminal) continue;
+            terminal_count += 1;
+            if (cont.binding != null and !std.mem.eql(u8, cont.binding.?, "_")) needs_result = true;
+        }
+        if (terminal_count >= 2) needs_result = true;
+        if (inv.return_binding != null) needs_result = true;
+        // A void arm hands back nothing, so there is no value to name however
+        // many arms the site writes.
+        if (!has_resume) needs_result = false;
+
+        const result_name: ?[]const u8 = if (!needs_result) null else if (inv.return_binding) |rb|
+            try self.allocator.dupe(u8, rb)
+        else blk: {
+            const rid = self.nextId();
+            break :blk try std.fmt.allocPrint(self.allocator, "result_{d}", .{rid});
+        };
+        defer if (result_name) |rn| self.allocator.free(rn);
+
+        try self.write(indent);
+        // An OPTIONAL void arm may simply not be installed. Zig folds the fire
+        // away with `@hasDecl(__H, …)`; the JS twin of "not installed" is an
+        // absent method, so the alias is undefined and the guard reads it.
+        if (arm.is_optional and !has_resume) {
+            try self.write("if (");
+            try self.writeIdent(arm.name);
+            try self.write(") ");
+        }
+        if (result_name) |rn| try self.writeFmt("const {s} = ", .{rn});
+        try self.writeIdent(arm.name);
+        try self.write("(");
+        try self.emitArmFirePayload(arm, inv);
+        try self.write(");\n");
+
+        // A single `-> T` resume hands back the value untagged; only a multi-arm
+        // resume sum (`! ask i64 | halved i64 | timeout`) carries a `.tag`.
+        const plain_resume = arm.resume_type != null and arm.resume_arms == null;
+        const needs_dispatch = terminal_count >= 2 and !plain_resume;
+        for (continuations) |*cont| {
+            if (cont.kind != .terminal) continue;
+            try self.emitTerminalContinuation(cont, result_name, indent, needs_dispatch, plain_resume);
+        }
+    }
+
+    /// The payload passed to an arm fire. Mirrors emitter_helpers.zig:6848
+    /// `writeArmFirePayload` shape-for-shape, in JS spelling:
+    ///   payloadless arm → nothing (`ask()`)
+    ///   identity / wildcard payload → the single arg's value (`each(i * i)`)
+    ///   named-field payload → an object literal (`ask({ a: 1, b: 2 })`)
+    fn emitArmFirePayload(self: *Emitter, arm: *const ast.Branch, inv: *const ast.Invocation) JsEmitError!void {
+        if (arm.payload.fields.len == 0 and !arm.payload.is_wildcard) return;
+
+        const is_identity = arm.payload.fields.len == 1 and
+            std.mem.eql(u8, arm.payload.fields[0].name, "__type_ref");
+        if (is_identity or arm.payload.is_wildcard) {
+            if (inv.args.len > 0) try self.writeJsExpr(inv.args[0].value);
+            return;
+        }
+
+        try self.write("{ ");
+        for (inv.args, 0..) |arg, i| {
+            if (i > 0) try self.write(", ");
+            try self.writeFmt("{s}: ", .{arg.name});
+            try self.writeJsExpr(arg.value);
+        }
+        try self.write(" }");
     }
 
     /// PLAIN-EVENT INLINE. The invoked `event` has no effect branches and the
@@ -897,7 +1387,9 @@ const Emitter = struct {
         };
         switch (node) {
             .expression => |expr| {
-                try self.writeFmt("{s}{s}({s}) {{ return {s}; }},\n", .{ indent, method_ident, param, expr });
+                try self.writeFmt("{s}{s}({s}) {{ return ", .{ indent, method_ident, param });
+                try self.writeJsExpr(expr);
+                try self.write("; },\n");
             },
             .invocation => |*inv| {
                 // VOID effect handler whose body is the nested sub-flow. No
@@ -908,11 +1400,21 @@ const Emitter = struct {
                 try self.emitInvocationWithContinuations(inv, cont.continuations, inner_indent);
                 try self.writeFmt("{s}}},\n", .{indent});
             },
+            // A RESUME-ARM produce (`! ask n => halved n - 10`): a multi-arm
+            // resume sum is consumed as `|` branches at the firing site, so the
+            // handler hands back the tagged arm the producer then dispatches on.
+            .branch_constructor => |*bc| {
+                try self.writeFmt("{s}{s}({s}) {{\n", .{ indent, method_ident, param });
+                const inner_indent = try std.fmt.allocPrint(self.allocator, "{s}  ", .{indent});
+                defer self.allocator.free(inner_indent);
+                try self.emitBranchConstructorReturn(bc, inner_indent);
+                try self.writeFmt("{s}}},\n", .{indent});
+            },
             .terminal => {
                 try self.writeFmt("{s}{s}({s}) {{}},\n", .{ indent, method_ident, param });
             },
             else => {
-                log.debug("[js_emitter] effect handler body is neither expression nor invocation\n", .{});
+                log.debug("[js_emitter] effect handler body is not an expression, invocation, or produce\n", .{});
                 return JsEmitError.UnsupportedConstruct;
             },
         }
@@ -920,7 +1422,18 @@ const Emitter = struct {
 
     /// Emit a terminal continuation: `| done r |> BODY`.
     /// `const r = <result>.done;` then emit BODY.
-    fn emitTerminalContinuation(self: *Emitter, cont: *const ast.Continuation, result_name: ?[]const u8, indent: []const u8, dispatch: bool) JsEmitError!void {
+    ///
+    /// `bare_return` says the producer hands back the value ITSELF — no `.tag`,
+    /// no per-branch field — so any arm here binds the whole result whatever it
+    /// calls itself (`| value v`, the implicit one-outcome name).
+    fn emitTerminalContinuation(
+        self: *Emitter,
+        cont: *const ast.Continuation,
+        result_name: ?[]const u8,
+        indent: []const u8,
+        dispatch: bool,
+        bare_return: bool,
+    ) JsEmitError!void {
         // With 2+ sibling branches, guard the body on the returned tag so only
         // the branch the event actually produced runs. A lone branch always
         // fires and is emitted unguarded.
@@ -943,7 +1456,15 @@ const Emitter = struct {
                     log.debug("[js_emitter] terminal continuation binds a result but no result binding was emitted\n", .{});
                     return JsEmitError.UnsupportedConstruct;
                 };
-                try self.writeFmt("{s}const {s} = {s}.{s};\n", .{ body_indent, binding, rn, cont.branch });
+                // A BARE-RETURN event (`-> T`) has no tag and no branch, so the
+                // result IS the payload; a named branch reads its own field off
+                // the tagged object. Same split the Zig emitter makes between
+                // `enclosing_bare_return` and `result.<branch>`.
+                if (bare_return or cont.branch.len == 0) {
+                    try self.writeFmt("{s}const {s} = {s};\n", .{ body_indent, binding, rn });
+                } else {
+                    try self.writeFmt("{s}const {s} = {s}.{s};\n", .{ body_indent, binding, rn, cont.branch });
+                }
             }
         }
 
@@ -955,8 +1476,19 @@ const Emitter = struct {
                     try self.emitInvocationWithContinuations(inv, cont.continuations, body_indent);
                 },
                 .terminal => {}, // `_` — flow ends, nothing to emit.
+                // A PRODUCE arm (`| break => stopped`). Inside a subflow impl's
+                // handler this is the event's outcome, so it returns; the same
+                // node at top level ends the flow, which `return` also does.
+                .branch_constructor => |*bc| try self.emitBranchConstructorReturn(bc, body_indent),
+                // A bare expression arm (`| ok o |> o * 2`) produces a value the
+                // enclosing handler returns.
+                .expression => |expr| {
+                    try self.writeFmt("{s}return ", .{body_indent});
+                    try self.writeJsExpr(expr);
+                    try self.write(";\n");
+                },
                 else => {
-                    log.debug("[js_emitter] terminal continuation body is not an invocation\n", .{});
+                    log.debug("[js_emitter] terminal continuation body is not an invocation, produce, or expression\n", .{});
                     return JsEmitError.UnsupportedConstruct;
                 },
             }
@@ -966,7 +1498,8 @@ const Emitter = struct {
     }
 
     /// Emit the args as a JS object literal: `{ name: value, ... }`. Arg values
-    /// are opaque host expression strings (e.g. "10", "r").
+    /// are Koru expression strings (e.g. "10", "r", `a ++ b`), so they go through
+    /// the same `++`-to-`+` lowering as any other Koru expression.
     fn emitArgsObject(self: *Emitter, args: []const ast.Arg) JsEmitError!void {
         if (args.len == 0) {
             try self.write("{}");
@@ -975,7 +1508,8 @@ const Emitter = struct {
         try self.write("{ ");
         for (args, 0..) |arg, idx| {
             if (idx > 0) try self.write(", ");
-            try self.writeFmt("{s}: {s}", .{ arg.name, arg.value });
+            try self.writeFmt("{s}: ", .{arg.name});
+            try self.writeJsExpr(arg.value);
         }
         try self.write(" }");
     }
@@ -1000,6 +1534,30 @@ const Emitter = struct {
     }
 };
 
+/// Does this proc target string name a `|template|` proc that applies to the JS
+/// build? The first `|`-segment names the mechanism (`template`, or
+/// `template(<arg>)`); a later segment, when present, names the HOST. So:
+///
+///   `template`         → target-agnostic, applies everywhere
+///   `template|js`      → ours
+///   `template|zig`     → the other target's; NOT ours, so a JS build with only
+///                        this variant still has no body and says so
+///
+/// The mechanism-name test mirrors visitor_emitter.zig:3730.
+fn templateProcTargetsJs(target: []const u8) bool {
+    var it = std.mem.splitScalar(u8, target, '|');
+    const mechanism = it.next() orelse return false;
+    if (!std.mem.eql(u8, mechanism, "template") and
+        !std.mem.startsWith(u8, mechanism, "template(")) return false;
+
+    var saw_host = false;
+    while (it.next()) |seg| {
+        saw_host = true;
+        if (std.mem.eql(u8, seg, JS_TARGET)) return true;
+    }
+    return !saw_host;
+}
+
 /// Strip the leading `//@koru:inline_stmt\n` marker that template_processor
 /// prepends to indicate a statement-shaped (rather than expression-shaped)
 /// rendered body. For host-language splicing the marker isn't needed.
@@ -1007,6 +1565,28 @@ fn stripInlineStmtMarker(text: []const u8) []const u8 {
     const marker = "//@koru:inline_stmt\n";
     if (std.mem.startsWith(u8, text, marker)) return text[marker.len..];
     return text;
+}
+
+/// Is `path` a bare reference to one of `event`'s own EFFECT arms? A single
+/// unqualified segment matching an `!` branch is a FIRE, not an invocation.
+///
+/// The Zig target's copy is `emitter_helpers.findEffectArm` (:6782) and this is
+/// deliberately a second one: `emitter_helpers` is the Zig CodeEmitter's module
+/// (type_registry, tap_registry, struct_literal, compiler_config), and importing
+/// it here to reach a six-line AST predicate would put the whole Zig backend in
+/// the JS emitter's module graph. The predicate is the branch-kind rule itself,
+/// which lives in ast.Branch — if that rule ever changes, both read it.
+fn findEffectArm(event: *const ast.EventDecl, path: *const ast.DottedPath) ?*const ast.Branch {
+    if (path.segments.len != 1) return null;
+    if (path.module_qualifier) |mq| {
+        if (event.path.module_qualifier) |emq| {
+            if (!std.mem.eql(u8, mq, emq)) return null;
+        }
+    }
+    for (event.branches) |*b| {
+        if (b.kind == .effect and std.mem.eql(u8, b.name, path.segments[0])) return b;
+    }
+    return null;
 }
 
 /// Look up an invocation arg's value string by field name.
