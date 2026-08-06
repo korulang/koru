@@ -107,22 +107,40 @@ pub fn emit(allocator: std.mem.Allocator, program: *const ast.Program) JsEmitErr
 
     try em.write("const main_module = {\n");
 
-    // Phase 1: emit each event decl (matched to its |js proc) as an object member.
+    // Which module events the emitted program actually REACHES. Computed before
+    // anything is written, because Phase 1b needs it to tell an event nobody
+    // wants (skip in silence) from one a call site is about to dispatch to
+    // (must account for itself). See collectReachedEvents.
+    var reached = ReachedEvents.init(allocator);
+    defer reached.deinit();
+    try em.collectReachedEvents(&reached);
+
+    // Every `<name>_event` key written into main_module so far. JS object keys
+    // are a FLAT namespace while Koru event paths are not, so two modules'
+    // same-named events lower to one key and the later write silently wins.
+    // Phase 1b consults this before writing a refusal stub: a stub must never
+    // be the thing that clobbers a working handler.
+    var emitted_keys = EmittedKeys.init(allocator);
+    defer {
+        var it = emitted_keys.keyIterator();
+        while (it.next()) |k| allocator.free(k.*);
+        emitted_keys.deinit();
+    }
+
+    // Phase 1: emit each top-level event decl as an object member.
     for (program.items) |*item| {
         if (item.* == .event_decl) {
             try em.emitEventDecl(&item.event_decl, program.items);
+            try em.claimEventKey(&emitted_keys, &item.event_decl);
         }
     }
 
-    // Phase 1b: emit event decls living in IMPORTED MODULES (e.g. `std.io`,
-    // a `$app/contract` companion). A module's event is emitted iff it has a
-    // `|js` proc in that same module — which naturally filters out compiler /
-    // stdlib infrastructure modules (their procs are `|zig`/`[comptime]`, never
-    // `|js`). The proc is resolved within the module's own scope so a same-named
-    // proc in a sibling module can't be picked up by mistake.
+    // Phase 1b: emit event decls living in IMPORTED MODULES (e.g. `std.io`, a
+    // `$app/contract` companion). Gated on transitive JS-implementability, with
+    // a self-naming refusal for anything reached but unlowerable.
     for (program.items) |*item| {
         if (item.* != .module_decl) continue;
-        try em.emitModuleEventDecls(&item.module_decl);
+        try em.emitModuleEventDecls(&item.module_decl, &reached, &emitted_keys);
     }
 
     // Phase 2: emit each top-level flow as a flowN() method.
@@ -157,6 +175,14 @@ pub fn emit(allocator: std.mem.Allocator, program: *const ast.Program) JsEmitErr
 
     return buf.toOwnedSlice(allocator);
 }
+
+/// Event decls the emitted program reaches, by POINTER identity — two modules may
+/// declare the same path, and only the pointer distinguishes them.
+const ReachedEvents = std.AutoHashMap(*const ast.EventDecl, void);
+
+/// The `<name>_event` keys already written into `main_module`. JS object keys are
+/// one flat namespace; Koru event paths are not.
+const EmittedKeys = std.StringHashMap(void);
 
 const Emitter = struct {
     allocator: std.mem.Allocator,
@@ -751,37 +777,258 @@ const Emitter = struct {
         return JsEmitError.UnsupportedConstruct;
     }
 
-    /// Emit the JS-implemented events of an imported module. An event is emitted
-    /// only if it has a `|js` proc in this module's own scope; events with only
-    /// `|zig`/`[comptime]` variants (the compiler/stdlib infrastructure) are
-    /// silently skipped — they have no JS implementation, so they're simply absent
-    /// on this target. Recurses into nested modules.
+    /// Where an event declaration was found, paired with the item list its
+    /// implementation must be resolved against. The scope is half the answer: a
+    /// module's event resolves to the proc in that same module, never to a
+    /// same-named proc in a sibling, so a decl pointer alone cannot be followed.
+    const DeclSite = struct {
+        decl: *const ast.EventDecl,
+        scope: []const ast.Item,
+    };
+
+    /// Bound for the implementability walk. The event graph is genuinely cyclic —
+    /// `std.optimizer:optimize` invokes `optimize` — so the walk needs a stop, and
+    /// a depth cap is the cheap one: it needs no allocation and no visited set,
+    /// and a chain deeper than this is not something the JS target emits today.
+    /// Hitting the cap answers "not implementable", which is the safe direction.
+    const IMPL_WALK_DEPTH: u8 = 32;
+
+    /// Resolve an event path to its declaration AND the scope that declaration
+    /// lives in. Same descent and same module reconciliation as `findEventDeclIn`;
+    /// the difference is that this one keeps the scope, which is what makes the
+    /// implementability walk possible.
+    fn findDeclSiteIn(self: *Emitter, scope: []const ast.Item, path: *const ast.DottedPath, current_module: ?[]const u8) ?DeclSite {
+        for (scope) |*item| {
+            switch (item.*) {
+                .event_decl => |*e| {
+                    if (pathsEqualWithModule(&e.path, path, current_module, self.main_module_name)) {
+                        return .{ .decl = e, .scope = scope };
+                    }
+                },
+                .module_decl => |*m| {
+                    if (self.findDeclSiteIn(m.items, path, m.logical_name)) |found| return found;
+                },
+                else => {},
+            }
+        }
+        return null;
+    }
+
+    /// Is this event's behaviour reachable ON THE JS TARGET — not "does it have a
+    /// body here" but "does every leaf its body reaches have a JS body".
     ///
-    /// WHY THIS GATE IS NARROWER THAN `findImplIn`, deliberately: an event whose
-    /// body is an arrow or a subflow IS portable in principle, so widening the
-    /// gate to the full resolver looks like the obvious correctness fix. Measured
-    /// 2026-08-06: it also drags in every subflow-implemented event of `std.compiler`
-    /// — `elaborate`, `analysis`, `emission`, `optimize` — as dead handlers calling
-    /// handlers that were never emitted. Hello-world went 290 → 4790 bytes and not
-    /// one test changed verdict.
+    /// This is the predicate the module gate always wanted. `findImplIn` answers
+    /// the LOCAL question, and answering only that is what made widening the gate
+    /// look bad: every subflow-implemented pass of `std.compiler` — `elaborate`,
+    /// `analysis`, `emission`, `optimize` — resolves locally, then emits a handler
+    /// calling eighteen handlers that were never emitted. Dead code that reads
+    /// `undefined` if anything ever calls it, and worse than dead: measured
+    /// 2026-08-06, `115_024_capture_in_module` PANICKED the whole compile on an
+    /// UnsupportedConstruct reached only from inside one of those dead bodies.
     ///
-    /// The rule the gate actually wants is "is this implementation TRANSITIVELY
-    /// JS-implementable", i.e. does every leaf it reaches have a JS body. A `|js`
-    /// proc answers that in one hop, which is why the narrow gate works at all.
-    /// Answering it for an arrow or a subflow is a reachability walk, not a
-    /// predicate — so a module event implemented in pure Koru is still absent here,
-    /// and its call site still fails at RUNTIME on `undefined.handler` rather than
-    /// at emission. That is a known frontier, not an oversight.
-    fn emitModuleEventDecls(self: *Emitter, module: *const ast.ModuleDecl) JsEmitError!void {
+    /// A `|js` proc answers the transitive question in one hop, which is exactly
+    /// why the old one-hop gate worked at all. This walk answers it for the other
+    /// three spellings too, so a module event implemented in pure Koru is emitted
+    /// when its callees bottom out in JS and skipped when they bottom out in Zig.
+    fn eventIsJsImplementable(self: *Emitter, site: DeclSite, depth: u8) bool {
+        if (depth == 0) return false;
+        const impl = self.findImplIn(site.scope, &site.decl.path) orelse return false;
+        return switch (impl) {
+            // Host JS, and a `|template|` stub that throws — both are leaves.
+            .proc, .template_stub => true,
+            // An arrow impl is an expression over its own inputs. No callees.
+            .immediate => true,
+            .subflow => |flow| self.subflowIsJsImplementable(site.decl, flow, depth - 1),
+        };
+    }
+
+    /// A subflow body is implementable when every invocation it performs is.
+    /// A body already rendered to host JS by a comptime transform is a leaf —
+    /// there is nothing left to resolve, which is how `std/io:print.ln` inside an
+    /// imported module (115_001) comes out implementable.
+    fn subflowIsJsImplementable(self: *Emitter, event: *const ast.EventDecl, flow: *const ast.Flow, depth: u8) bool {
+        if (flow.inline_body != null) return true;
+        if (!self.invocationIsJsImplementable(event, flow.inv(), depth)) return false;
+        return self.continuationsAreJsImplementable(event, flow.body.continuations, depth);
+    }
+
+    fn continuationsAreJsImplementable(self: *Emitter, event: *const ast.EventDecl, conts: []const ast.Continuation, depth: u8) bool {
+        for (conts) |*cont| {
+            if (cont.node) |*node| {
+                switch (node.*) {
+                    .invocation => |*inv| {
+                        if (!self.invocationIsJsImplementable(event, inv, depth)) return false;
+                    },
+                    .label_with_invocation => |*lwi| {
+                        if (!self.invocationIsJsImplementable(event, &lwi.invocation, depth)) return false;
+                    },
+                    // `_` and an inline branch constructor call nothing.
+                    .terminal, .branch_constructor => {},
+                    // Any other node kind: refuse to vouch. Emitting a body the
+                    // walk cannot account for is how a DEAD handler panics a live
+                    // compile, and the cost of being wrong in this direction is
+                    // only that a module event stays absent — the same place the
+                    // narrow gate left it.
+                    else => return false,
+                }
+            }
+            if (!self.continuationsAreJsImplementable(event, cont.continuations, depth)) return false;
+        }
+        return true;
+    }
+
+    fn invocationIsJsImplementable(self: *Emitter, impl_event: *const ast.EventDecl, inv: *const ast.Invocation, depth: u8) bool {
+        // Already lowered to host JS at the call site by a comptime transform.
+        if (inv.inline_body != null) return true;
+        // Firing one of the enclosing event's OWN effect arms hands control back
+        // to whoever installed the arm; it is not a callee to resolve. Same check,
+        // same order, as emitInvocationWithContinuations.
+        if (findEffectArm(impl_event, &inv.path) != null) return true;
+        const site = self.findDeclSiteIn(self.items, &inv.path, null) orelse return false;
+        return self.eventIsJsImplementable(site, depth);
+    }
+
+    /// Record `event`'s lowered JS key as taken. Cheap by design: keys are
+    /// duped so the set outlives the stack buffer the lowering wrote into.
+    fn claimEventKey(self: *Emitter, keys: *EmittedKeys, event: *const ast.EventDecl) JsEmitError!void {
+        var buf: [256]u8 = undefined;
+        const name = event.path.segments[event.path.segments.len - 1];
+        if (name.len > buf.len) return;
+        const key = lowerIdentBuf(&buf, name);
+        if (keys.contains(key)) return;
+        try keys.put(try self.allocator.dupe(u8, key), {});
+    }
+
+    /// Emit the events of an imported module. Three outcomes, and the third is
+    /// the point:
+    ///
+    ///  - implementable → an ordinary handler, body resolved the same four ways
+    ///    `emitEventDecl` accepts.
+    ///  - not implementable, not reached → absent, in silence. This is most of
+    ///    the stdlib: `std.compiler` alone declares twenty passes no JS program
+    ///    ever calls, and emitting them is pure weight (measured 2026-08-06:
+    ///    204 bytes of hello-world became 4790).
+    ///  - not implementable but REACHED → a handler that throws, naming itself.
+    ///
+    /// The third case is why this function takes a reached set. Skipping a
+    /// reached event is the silent failure this whole path used to have: the call
+    /// site emits `main_module.push_event.handler(...)`, `push_event` is absent,
+    /// and node says `TypeError: Cannot read properties of undefined (reading
+    /// 'handler')` — a message that names neither the event, nor the module, nor
+    /// the reason. A throwing handler is present, so the error arrives AT the
+    /// call frame and says which event and why. Same trick, same file, as the
+    /// `|template|` stub in emitEventDecl.
+    ///
+    /// A refusal must never CLOBBER: `<name>_event` is a flat JS key while Koru
+    /// event paths are not, so a stub for `app.lib.ring:push` would overwrite a
+    /// working top-level `push` handler written in Phase 1. `emitted_keys` is
+    /// consulted for exactly that, and a taken key means stay absent — the old
+    /// behaviour, which is wrong but is not a regression.
+    fn emitModuleEventDecls(
+        self: *Emitter,
+        module: *const ast.ModuleDecl,
+        reached: *const ReachedEvents,
+        emitted_keys: *EmittedKeys,
+    ) JsEmitError!void {
         for (module.items) |*item| {
             switch (item.*) {
                 .event_decl => |*event| {
-                    if (self.findJsProcIn(module.items, &event.path) == null) continue;
-                    try self.emitEventDecl(event, module.items);
+                    const site = DeclSite{ .decl = event, .scope = module.items };
+                    if (self.eventIsJsImplementable(site, IMPL_WALK_DEPTH)) {
+                        try self.emitEventDecl(event, module.items);
+                        try self.claimEventKey(emitted_keys, event);
+                        continue;
+                    }
+                    if (!reached.contains(event)) continue;
+                    var name_buf: [256]u8 = undefined;
+                    const name = event.path.segments[event.path.segments.len - 1];
+                    if (name.len > name_buf.len) continue;
+                    const key = lowerIdentBuf(&name_buf, name);
+                    if (emitted_keys.contains(key)) continue;
+                    try self.emitUnlowerableEventRefusal(event, module);
+                    try self.claimEventKey(emitted_keys, event);
                 },
-                .module_decl => |*nested| try self.emitModuleEventDecls(nested),
+                .module_decl => |*nested| try self.emitModuleEventDecls(nested, reached, emitted_keys),
                 else => {},
             }
+        }
+    }
+
+    /// A handler for an event this target cannot lower, whose whole body is the
+    /// diagnostic. It replaces `undefined.handler` with a sentence that names the
+    /// event, its module, and the reason — at the frame that wanted it.
+    fn emitUnlowerableEventRefusal(self: *Emitter, event: *const ast.EventDecl, module: *const ast.ModuleDecl) JsEmitError!void {
+        var name_buf: [256]u8 = undefined;
+        const name = event.path.segments[event.path.segments.len - 1];
+        try self.writeFmt("  {s}_event: {{\n", .{lowerIdentBuf(&name_buf, name)});
+        try self.write("    handler() {\n");
+        try self.writeFmt(
+            "      throw new Error(\"{s}:{s} has no JavaScript implementation — its body resolves only to a non-JS target (|zig / [comptime]), directly or through a callee\");\n",
+            .{ module.logical_name, name },
+        );
+        try self.write("    },\n  },\n");
+    }
+
+    /// The event decls the emitted program actually reaches, by pointer identity.
+    /// Seeded from the flows Phase 2 will emit — the same filter, so the two
+    /// cannot disagree about what runs — then closed transitively through each
+    /// reached event's own implementation.
+    fn collectReachedEvents(self: *Emitter, reached: *ReachedEvents) JsEmitError!void {
+        for (self.items) |*item| {
+            if (item.* != .flow) continue;
+            const flow = &item.flow;
+            if (flow.impl_of != null) continue;
+            if (self.isDeclarationFlow(flow)) continue;
+            if (flow.inv().path.module_qualifier) |mq| {
+                if (std.mem.eql(u8, mq, "koru")) continue;
+            }
+            try self.reachFlow(null, flow, reached, IMPL_WALK_DEPTH);
+        }
+    }
+
+    fn reachFlow(self: *Emitter, impl_event: ?*const ast.EventDecl, flow: *const ast.Flow, reached: *ReachedEvents, depth: u8) JsEmitError!void {
+        if (depth == 0) return;
+        try self.reachInvocation(impl_event, flow.inv(), reached, depth);
+        try self.reachContinuations(impl_event, flow.body.continuations, reached, depth);
+    }
+
+    fn reachContinuations(self: *Emitter, impl_event: ?*const ast.EventDecl, conts: []const ast.Continuation, reached: *ReachedEvents, depth: u8) JsEmitError!void {
+        if (depth == 0) return;
+        for (conts) |*cont| {
+            if (cont.node) |*node| switch (node.*) {
+                .invocation => |*inv| try self.reachInvocation(impl_event, inv, reached, depth),
+                .label_with_invocation => |*lwi| try self.reachInvocation(impl_event, &lwi.invocation, reached, depth),
+                else => {},
+            };
+            try self.reachContinuations(impl_event, cont.continuations, reached, depth);
+        }
+    }
+
+    fn reachInvocation(self: *Emitter, impl_event: ?*const ast.EventDecl, inv: *const ast.Invocation, reached: *ReachedEvents, depth: u8) JsEmitError!void {
+        if (depth == 0) return;
+        // An arm fire is a callback into the caller, not a callee. Same check and
+        // same order as emitInvocationWithContinuations.
+        if (impl_event) |ie| {
+            if (findEffectArm(ie, &inv.path) != null) return;
+        }
+        // A call site a comptime transform already rendered to host JS is spliced,
+        // not dispatched — `main_module.<ev>_event.handler(...)` is never written,
+        // so the callee is NOT reached. Checked before the set is touched: marking
+        // it would mint a refusal stub for an event nothing can call (measured:
+        // `std.io:impl`, the `print.blk` impl stub, in 400_179).
+        if (inv.inline_body != null) return;
+        const site = self.findDeclSiteIn(self.items, &inv.path, null) orelse return;
+        // Already reached: its subtree is accounted for, and the graph is cyclic.
+        if ((try reached.getOrPut(site.decl)).found_existing) return;
+        // An event's own implementation is emitted with it, so whatever that body
+        // calls is reached too.
+        const impl = self.findImplIn(site.scope, &site.decl.path) orelse return;
+        switch (impl) {
+            .subflow => |flow| {
+                if (flow.inline_body != null) return;
+                try self.reachFlow(site.decl, flow, reached, depth - 1);
+            },
+            else => {},
         }
     }
 
