@@ -22,9 +22,16 @@
     return process.argv.length - 1;
 }
 
+// The branch tag is the Koru branch name VERBATIM, hyphens and all. The arm
+// the emitter writes is `result.tag === "out-of-bounds"` (js_emitter.zig:2759
+// interpolates `cont.branch` unlowered), and payload access brackets a
+// non-identifier key rather than lowering it (`writeMember`, :273). Spelling
+// it `out_of_bounds` here made the arm unreachable — silently, because the
+// flow just ran no branch at all. Caught by std/list:get, whose oob arm the
+// corpus does exercise; this one's does not.
 ~proc get|js {
     if (index + 1 >= process.argv.length) {
-        return { tag: "out_of_bounds" };
+        return { tag: "out-of-bounds" };
     }
     return { tag: "arg", arg: process.argv[index + 1] };
 }

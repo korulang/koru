@@ -1,0 +1,85 @@
+// std/list — JavaScript implementation facet.
+//
+// Events are declared in the `list.kz` companion (merged at import, because
+// same-stem facets are one module). This file holds only the `|js` proc bodies.
+//
+// THE REPRESENTATION:
+//
+//   Zig                          JavaScript
+//   ---------------------------  --------------------------------
+//   *List_i64                    a js array
+//   std.ArrayList(i64).items     the same array — there is no inner handle
+//   allocator                    absent — GC is the implementation
+//
+// `List_i64` in `list.kz` is `struct { items: ArrayList(i64), allocator }`.
+// Both fields exist to make a growable buffer out of a fixed one; JS arrays
+// are already growable, so the whole struct collapses to the array. Nothing
+// reads the handle's fields from Koru — every access in the module goes
+// through a proc — so there is no `data`-style field the representation is
+// forced to carry (contrast the `.kjs` for std/string, where two declarative
+// events pin the shape).
+//
+// `new` is NOT here, and must not be. It is
+// `~[comptime|transform]pub tor new` (list.kz:33): a compile-time call-site
+// rewrite from `new(i64)` to `new-i64`, whose body manipulates the compiler's
+// own `ast.Invocation` and `ast.Item` in the compiler's own address space.
+// A transform's body is Zig on EVERY target — porting one means a `|js`
+// variant that EMITS JavaScript, written in Zig, staying in the `.kz`. This
+// transform emits no host code at all; it only renames a call, so the single
+// `|zig` body is already correct for the JS target and there is nothing to
+// port. The annotation sits on the `tor`, not on the `~proc new|zig` line
+// below it — reading the proc line alone would have classified it a runtime
+// port and produced a JavaScript body for a compiler pass.
+
+// ============================================
+// Construction
+// ============================================
+
+// The Zig facet's `| err "allocation failed"` arm is unreachable here; it
+// stays in the contract because that facet needs it.
+~proc new-i64|js {
+    return { tag: "list", list: [] };
+}
+
+// ============================================
+// Mutation (borrow)
+// ============================================
+
+~proc push|js {
+    xs.push(v);
+}
+
+// ============================================
+// Read (borrow)
+// ============================================
+
+~proc len|js {
+    return xs.length;
+}
+
+~proc get|js {
+    if (i < xs.length) {
+        return { tag: "item", item: xs[i] };
+    }
+    return { tag: "out-of-bounds" };
+}
+
+// `Array.prototype.pop` returns `undefined` on empty, which is also a legal
+// element value in JS but never a legal i64 — so the length is what decides
+// the arm, mirroring the Zig facet keying off `ArrayList.pop`'s optional.
+~proc pop|js {
+    if (xs.length === 0) {
+        return { tag: "empty" };
+    }
+    return { tag: "item", item: xs.pop() };
+}
+
+// ============================================
+// Teardown (consume)
+// ============================================
+
+~proc free|js {
+    // GC is the implementation. `List_i64.deinit` releases the ArrayList's
+    // buffer and destroys the handle; neither exists here, so the honest body
+    // is empty — this is a port, not a stub.
+}
