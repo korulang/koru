@@ -1,0 +1,10 @@
+// JavaScript implementation facet. Events are declared in input.k (merged at
+// import); this file holds the |js proc bodies.
+//
+// The Zig facet uses std.ascii.upperString into a static buffer, so only ASCII
+// letters change case. toUpperCase() is Unicode-aware and would diverge on
+// non-ASCII input, so the case map is restricted to [a-z] to match.
+
+~proc upper-stub|js {
+    return s.replace(/[a-z]/g, (c) => c.toUpperCase());
+}

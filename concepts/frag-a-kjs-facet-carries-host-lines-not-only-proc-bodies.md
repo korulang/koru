@@ -48,9 +48,23 @@ it, and its provenance decays exactly like the code it describes. A
 constraint expensive enough to distort six agents' output is worth the sixty
 seconds of compiling one fixture and grepping the result.
 
-Open question: whether the three-file layout (`input.k` contract + `.kz` +
-`.kjs`) and the two-file layout used here (`input.kz` as both contract and
-Zig facet, `.kjs` as companion) should both stay legal. The two-file form is
-what makes an untouched `input.kz` possible, and an untouched `input.kz` is
-the cleanest available evidence that a port left the Zig board alone — so it
-earns its place for migration work, whatever the eventual resting shape.
+## The open question, answered from the stdlib side
+
+The two-file layout is not a fixture-only affordance. `koru_std/fs` — a real
+stdlib module whose `fs.kz` holds the `pub tor read-lines` contract, an
+`~[comptime|runtime]` annotation, a `const std = @import("std")` host line and
+a `|zig` body — took a JavaScript implementation as a bare `fs.kjs` sibling
+holding one `~proc read-lines|js` block. No `fs.k` extraction, no line moved in
+`fs.kz`. The declarations in a `.kz` are host-agnostic and are read by every
+target; only its host LINES are routed away. So `koru_std/args`' three-file
+shape (`args.k` + `args.kz` + `args.kjs`) is one legal layout among two, not
+the price of admission — and the migration plan that priced the stdlib port as
+"extract every contract first" was pricing work the tree does not require.
+
+That matters beyond bookkeeping, because the extraction is the expensive and
+dangerous half: moving a `pub tor` out of a live module edits the file the Zig
+target already compiles, which is exactly the edit that can regress a green
+board. The `.kjs` sibling is purely additive. **Prefer the additive layout for
+migration and reserve the three-file split for modules that genuinely want a
+contract readable on its own** — and note that "the contract is unreachable
+from a sibling facet" was never tested before it was designed around.
