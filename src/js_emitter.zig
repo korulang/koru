@@ -1708,20 +1708,27 @@ const Emitter = struct {
         // nodes the closure path already lowers correctly. Gate on the proc rather
         // than discovering its absence one frame deeper.
         //
-        // The splice inlines the proc body INCLUDING its `return .{ .done = … }`,
-        // which returns from the ENCLOSING function — so any terminal
-        // continuation waiting on that outcome (`| done |> print.ln("done")`)
-        // would be dropped without a trace. A producer that ends a flow has
-        // nothing to drop and keeps the fast path; one whose terminal branch is
-        // actually handled falls through to the closure form, where the result
-        // is a value the dispatch below can read.
-        var terminal_has_body = false;
-        for (continuations) |*c| {
-            if (c.kind != .terminal) continue;
-            const n = c.node orelse continue;
-            if (n != .terminal) terminal_has_body = true;
-        }
-        if (event_has_effect and all_effects_void and !terminal_has_body and
+        // A producer that ALSO declares terminal branches is not this shape. It
+        // returns a value, its proc body says so with `return`, and this path
+        // splices that body into a plain block — where `return` exits the whole
+        // flow function and the terminal arms, emitted nowhere, simply vanish.
+        // `sink { ! ?pulse i64 | done | err }` printed its three pulses and then
+        // silently dropped `done`: correct output followed by a missing line, the
+        // hardest kind of divergence to read. The closure path below already
+        // handles the mixed shape — Handlers_<id> for the effect arms, a real
+        // handler call, then a `.tag` dispatch — so route there and keep the
+        // splice for what it was built for: pure void producers (140_011, the
+        // pipe_dN depth benchmarks), which declare no terminal branch at all.
+        //
+        // Two contestants found this independently and gated it differently:
+        // `!terminal_has_body` (keep the fast path when a declared terminal arm
+        // carries no body) versus `terminal_branches == 0` below. The stricter
+        // one wins, because the permissive one is unsound for a reason neither
+        // spelled out: the spliced `return` exits the flow function even when no
+        // continuation body would have run, so any flow STEP after the
+        // invocation is dropped too. The check was looking at continuations; the
+        // hazard is the return.
+        if (event_has_effect and all_effects_void and terminal_branches == 0 and
             self.findJsProcIn(self.items, &event.path) != null)
         {
             try self.emitInlineVoidProducer(event, inv, continuations, indent);
