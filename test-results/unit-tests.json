@@ -1,22 +1,22 @@
 {
-  "timestamp": "2026-08-06T08:31:52.656Z",
+  "timestamp": "2026-08-06T09:44:55.228Z",
   "summary": {
-    "passed": 308,
+    "passed": 317,
     "failed": 0,
     "skipped": 12,
     "leaked": 0,
     "compileErrors": 0,
-    "total": 320,
+    "total": 329,
     "suiteCount": 41,
     "status": "success"
   },
   "suites": [
     {
       "name": "annotation_parser_tests",
-      "passed": 19,
+      "passed": 28,
       "failed": 0,
       "skipped": 0,
-      "total": 19,
+      "total": 28,
       "status": "success"
     },
     {
