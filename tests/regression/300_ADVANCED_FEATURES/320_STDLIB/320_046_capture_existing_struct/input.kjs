@@ -1,6 +1,13 @@
 // JavaScript implementation facet. The Koru declarations live in the
 // `input.kz` companion (merged at import); this file holds the `|js`
 // proc bodies mirroring its `|zig` ones.
+//
+// `entity` is the EXISTING value `~capture { entity }` binds to — the whole
+// point of the test. A `.kz` host line is Zig-only, so the JS facet declares
+// its own; `const Entity = struct { … }` needs no JS counterpart, since a JS
+// object literal is the type.
+
+const entity = { id: 42, health: 100, pos_x: 10 };
 
 ~proc print-health|js {
     console.log(`${value}`);

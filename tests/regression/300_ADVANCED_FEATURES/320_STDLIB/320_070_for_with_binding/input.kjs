@@ -1,9 +1,17 @@
 // JavaScript implementation facet. The Koru declarations live in the
 // `input.kz` companion (merged at import); this file holds the `|js`
 // proc bodies mirroring its `|zig` ones.
+//
+// `my_items` is the array `get-items` hands back and `sum` is the accumulator;
+// both are `.kz` host lines, which are Zig-only, so the JS facet declares its
+// own. The Zig body returns `&my_items` because the branch is typed
+// `*const [3]i32`; a JS array already IS a reference.
+
+const my_items = [1, 2, 3];
+let sum = 0;
 
 ~proc get-items|js {
-    return { tag: "items", items: &my_items };
+    return { tag: "items", items: my_items };
 }
 
 ~proc add-item|js {
