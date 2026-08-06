@@ -463,11 +463,12 @@ const Emitter = struct {
         try self.emitInvocationWithContinuations(flow.inv(), flow.body.continuations, indent);
     }
 
-    /// Write a KORU expression as JavaScript. Two rewrites, both mechanical:
+    /// Write a KORU expression as JavaScript. Three rewrites, all mechanical:
     ///
     ///  - `++` → `+`. Koru spells string concatenation Zig's way, which the Zig
     ///    target passes straight through. In JavaScript `++` is the increment
     ///    operator, so an unlowered `a ++ b` is a SYNTAX error, not a wrong answer.
+    ///  - `and` / `or` → `&&` / `||` (see `writeLowered`).
     ///  - Zig host builtins → their JS twins (see `writeHostBuiltin`).
     ///
     /// Everything else passes through verbatim, exactly as
@@ -488,6 +489,14 @@ const Emitter = struct {
     /// The shared scanner behind `writeJsExpr` / `writeHostText`. Walks the text
     /// once, leaving string and char literals untouched, and rewrites the
     /// constructs JavaScript cannot parse.
+    ///
+    /// `and` / `or` are rewritten in BOTH modes, not just `.koru_expr`. A `when`
+    /// guard and an `~if(…)` condition are the same Koru-authored boolean text,
+    /// but they reach the emitter through different doors: the guard arrives as
+    /// `cont.condition`, while the condition is baked into the template's rendered
+    /// body by template_processor and arrives as host text. Lowering only one door
+    /// would leave the other emitting `a and b`, which is a JS syntax error. The
+    /// rewrite is word-boundary anchored, so `android` and `.or_else` are untouched.
     fn writeLowered(self: *Emitter, text: []const u8, mode: LowerMode) JsEmitError!void {
         var i: usize = 0;
         var quote: ?u8 = null;
@@ -514,6 +523,22 @@ const Emitter = struct {
                 try self.write("+");
                 i += 2;
                 continue;
+            }
+            if ((c == 'a' or c == 'o') and (i == 0 or (!isIdentChar(text[i - 1]) and text[i - 1] != '.'))) {
+                const word: ?[]const u8 = if (std.mem.startsWith(u8, text[i..], "and"))
+                    "&&"
+                else if (std.mem.startsWith(u8, text[i..], "or"))
+                    "||"
+                else
+                    null;
+                if (word) |js_op| {
+                    const len: usize = if (js_op[0] == '&') 3 else 2;
+                    if (i + len >= text.len or !isIdentChar(text[i + len])) {
+                        try self.write(js_op);
+                        i += len;
+                        continue;
+                    }
+                }
             }
             if (c == '@') {
                 if (try self.writeHostBuiltin(text, i)) |after| {
@@ -749,6 +774,14 @@ const Emitter = struct {
         const SPLICE_PREFIX = "__koru_inline_";
         const CONTINUE_PREFIX = "__koru_continue_";
         const SCOPED_INFIX = "scoped_";
+        // `{{ arm.continue[unguarded] }}` mints `__koru_continue_bare_N`: the same
+        // hand-off with the arm's `when` guard LEFT OFF, because the template has
+        // already placed it. `cond`'s `if / else if` cascade is the only consumer
+        // (control.kz `~proc cond|template|js`); re-testing the guard inside the arm
+        // the cascade already selected would evaluate it twice, and the second read
+        // would see the arm's own binding rather than the hoisted `{{ binds }}` one.
+        // Third marker kind of the Zig reference (emitter_helpers.zig:4252).
+        const BARE_INFIX = "bare_";
 
         const trimmed = std.mem.trim(u8, body, " \t\r\n");
         var pos: usize = 0;
@@ -782,6 +815,8 @@ const Emitter = struct {
                 // CONTINUATION hand-off — splice the terminal body once, here,
                 // wrapped in a block so any `const` it introduces is scoped.
                 var i = m + CONTINUE_PREFIX.len;
+                const is_bare = std.mem.startsWith(u8, trimmed[i..], BARE_INFIX);
+                if (is_bare) i += BARE_INFIX.len;
                 var idx: usize = 0;
                 var saw_digit = false;
                 while (i < trimmed.len and trimmed[i] >= '0' and trimmed[i] <= '9') : (i += 1) {
@@ -801,10 +836,12 @@ const Emitter = struct {
                     if (idx < 64) c.* |= @as(u64, 1) << @intCast(idx);
                 }
                 const cont = &continuations[idx];
-                const guarded = cont.condition != null;
+                const guarded = !is_bare and cont.condition != null;
                 try self.write("{ ");
                 if (guarded) {
-                    try self.writeFmt("if ({s}) {{ ", .{cont.condition.?});
+                    try self.write("if (");
+                    try self.writeJsExpr(cont.condition.?);
+                    try self.write(") { ");
                 }
                 try self.emitInlineContinuationBody(cont, body_indent);
                 if (guarded) try self.write(" }");
@@ -866,7 +903,9 @@ const Emitter = struct {
             }
             const guarded = cont.condition != null;
             if (guarded) {
-                try self.writeFmt("if ({s}) {{ ", .{cont.condition.?});
+                try self.write("if (");
+                try self.writeJsExpr(cont.condition.?);
+                try self.write(") { ");
             }
             try self.emitInlineContinuationBody(cont, body_indent);
             if (guarded) try self.write(" }");
