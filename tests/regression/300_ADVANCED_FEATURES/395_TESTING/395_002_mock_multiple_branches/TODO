@@ -1,0 +1,67 @@
+Mock-forces-branch is UNVERIFIED — this test's generated test bodies are empty, so it was passing vacuously
+=========================================================================
+
+PARKED 2026-08-06. Not a feature gap and not a known bug — an open question
+about whose spelling is wrong. Marked TODO so it stops reporting green while
+asserting nothing; deleting this marker is a human decision.
+
+WHAT WAS MEASURED
+
+`post.sh` runs `zig test output_emitted.zig` and reported "All 3 tests passed",
+which is what made this look green. The generated blocks it was passing are
+these, verbatim from `output_emitted.zig`:
+
+    test "Withdrawal succeeds when mocked" {
+    }
+    test "Withdrawal fails when funds insufficient" {
+    }
+
+Empty. The whole artifact contains ZERO `assert` calls, so nothing in this test
+constrains mocking, branch pruning, or the mocked value 50. The test names are
+correct and the block count is correct, which is exactly why the vacuity
+survived: the only thing wrong is that the bodies are missing.
+
+THE MECHANISM
+
+A `test(...)` body is re-parsed under the synthetic filename `__test__.kz`
+(koru_std/testing.kz:280, src/compiler.zig's Parser.init call at
+koru_std/compiler.kz:1460). Under a `.kz` filename a Koru construct must open
+with `~` — that is the host→Koru switch. This file is a `.k`, where everything is
+Koru and nothing carries `~`, so every line of the body parses as a Zig host line
+instead: zero mocks collected, zero flows collected, empty block emitted.
+
+Cross-check that pins it down rather than guessing: 395_008_complex_flow_test is
+a `.kz` whose body IS `~`-prefixed, and it emits a real body. So a working
+spelling exists; what is unresolved is whether THIS spelling should also work.
+
+THE QUESTION, WHICH IS NOT MINE
+
+Two readings, and they lead to opposite fixes:
+
+  (a) The TEST is wrong. A test body is a nested Koru context spelled the `.kz`
+      way, so this file should either become a `.kz` with `~`-prefixed body, or
+      keep `.k` and add the prefixes. Cheap, local, and makes the test assert
+      what its name claims.
+
+  (b) The PARSER is wrong. In a `.k` file every construct is Koru by definition;
+      requiring `~` inside a test body — because the body is handed to the parser
+      under a synthetic `.kz` name — leaks an implementation detail of test
+      re-parsing into the user's syntax. Under this reading the synthetic
+      filename should inherit the entry file's dialect, and both of these tests
+      are spelled correctly today.
+
+Reading (b) is the one that would change the language, so it needs a ruling, and
+the ruling has not been made. Lars looked at these on 2026-08-06 and read them as
+"fine as written", which is consistent with (b) and is not yet a decision.
+
+WHEN RESOLVED
+
+Under (a): fix the spelling, delete this marker, and the test starts asserting
+its own name. Under (b): fix the dialect inheritance, delete this marker, and
+this test becomes the regression that proves it. Either way the acceptance
+criterion is the same and is worth stating so nobody settles for less: the
+emitted `test` blocks must be NON-EMPTY and the artifact must contain the
+`assert` calls this file writes.
+
+Related: 395_009_cross_module_mock is parked for the identical reason.
+`--todo-sweep` will run both anyway, which is how a silent fix gets noticed.
