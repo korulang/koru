@@ -1612,6 +1612,22 @@ const Emitter = struct {
         }
     }
 
+    /// The call-site `: name` bind, or null when there is nothing to NAME.
+    ///
+    /// `_` is a discard, not an identifier. Zig spells it `_ = expr;` and may
+    /// repeat that in one scope; JS has no such form, so `const _ = …` twice in
+    /// a flow is a hard `SyntaxError: Identifier '_' has already been declared`.
+    /// Every other binding site in this emitter already knows that — the
+    /// terminal-continuation bind skips `_`, the inline splice skips it, the
+    /// auto-discharge splice renames it `_auto_<id>`. The call-site bind is the
+    /// one that did not, which is why a chain of discarded discharges
+    /// (`dispose(x: s.h): _ |> dispose(x: s.g): _`) emitted uncompilable JS.
+    fn namedReturnBinding(inv: *const ast.Invocation) ?[]const u8 {
+        const rb = inv.return_binding orelse return null;
+        if (std.mem.eql(u8, rb, "_")) return null;
+        return rb;
+    }
+
     /// Recursively emit a dispatch: resolve `inv`'s event, build a `Handlers_<id>`
     /// from the EFFECT continuations (each an effect-handler method), call the
     /// event handler (passing `Handlers_<id>` iff the event has effect branches),
@@ -1746,7 +1762,7 @@ const Emitter = struct {
         // must be materialised even when no branch arm binds a payload. Mirrors
         // the Zig emitter's `inv.return_binding orelse result_var`
         // (emitter_helpers.zig:7290).
-        if (inv.return_binding != null) needs_result = true;
+        if (namedReturnBinding(inv) != null) needs_result = true;
 
         // Build Handlers_<id> from the effect continuations. The id is monotonic
         // so nested frames get distinct names.
@@ -1772,7 +1788,7 @@ const Emitter = struct {
         const ev_name = lowerIdentBuf(&ev_name_buf, event.path.segments[event.path.segments.len - 1]);
         // The call-site bind, when present, IS the result's name — the following
         // pipeline spells it, so a synthetic `result_<id>` would leave it unbound.
-        const result_name: ?[]const u8 = if (!needs_result) null else if (inv.return_binding) |rb|
+        const result_name: ?[]const u8 = if (!needs_result) null else if (namedReturnBinding(inv)) |rb|
             try self.allocator.dupe(u8, rb)
         else blk: {
             const rid = self.nextId();
@@ -1823,12 +1839,12 @@ const Emitter = struct {
             if (cont.binding != null and !std.mem.eql(u8, cont.binding.?, "_")) needs_result = true;
         }
         if (terminal_count >= 2) needs_result = true;
-        if (inv.return_binding != null) needs_result = true;
+        if (namedReturnBinding(inv) != null) needs_result = true;
         // A void arm hands back nothing, so there is no value to name however
         // many arms the site writes.
         if (!has_resume) needs_result = false;
 
-        const result_name: ?[]const u8 = if (!needs_result) null else if (inv.return_binding) |rb|
+        const result_name: ?[]const u8 = if (!needs_result) null else if (namedReturnBinding(inv)) |rb|
             try self.allocator.dupe(u8, rb)
         else blk: {
             const rid = self.nextId();
