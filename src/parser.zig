@@ -1190,6 +1190,7 @@ pub const Parser = struct {
                         const after_close = lexer.trim(after_tilde[1 + close_idx + 1 ..]);
                         if (std.mem.startsWith(u8, after_close, "import ")) {
                             const ann_str = after_tilde[1 .. 1 + close_idx];
+                            try self.rejectInvalidAnnotationSeparator(ann_str, self.current);
                             const entries = try annotation_parser.splitEntries(self.allocator, ann_str);
                             defer self.allocator.free(entries);
 
@@ -1329,6 +1330,50 @@ pub const Parser = struct {
         return c == '-' or c == '*' or c == '+';
     }
 
+    /// PARSE007 — refuse a `,` where annotations delimit on `|`.
+    ///
+    /// `~[default, depends_on(x)]` is not two annotations; it is one entry
+    /// spelled `"default, depends_on(x)"` that matches nothing, so the block
+    /// silently means less than it reads. That shape shipped in the stdlib's own
+    /// default build steps and dropped a real dependency, which is the whole
+    /// argument for failing loud here: the cost of the silence was two defects
+    /// hidden for as long as they existed.
+    ///
+    /// `content` is the text BETWEEN the block's brackets. Every caller derives
+    /// it by slicing `self.lines[line_idx]`, so the offending column is
+    /// recoverable by offset — but some lines are synthesized (a vertical block
+    /// is re-fed as `~[a|b]construct`), and a synthetic slice is not a subslice
+    /// of the line it is reported against. The containment check is what keeps a
+    /// caret from pointing at a column that does not exist; column 0 when it
+    /// cannot be derived is honest, a fabricated offset is not.
+    fn rejectInvalidAnnotationSeparator(self: *Parser, content: []const u8, line_idx: usize) !void {
+        const bad = annotation_parser.findInvalidSeparator(content) orelse return;
+
+        var column: usize = 0;
+        if (line_idx < self.lines.len) {
+            const line = self.lines[line_idx];
+            const line_base = @intFromPtr(line.ptr);
+            const content_base = @intFromPtr(content.ptr);
+            if (content_base >= line_base and content_base + content.len <= line_base + line.len) {
+                column = (content_base - line_base) + bad;
+            }
+        }
+
+        const suggestion = try annotation_parser.suggestPipeSeparators(self.allocator, content);
+        defer self.allocator.free(suggestion);
+
+        try self.reporter.addErrorWithHint(
+            .PARSE007,
+            line_idx + 1,
+            column,
+            "invalid annotation separator ',' in '[{s}]' — annotations separate on '|'",
+            .{content},
+            "write '[{s}]'; a comma inside a call's argument list (depends_on(a, b)) is a different thing and stays legal",
+            .{suggestion},
+        );
+        return error.InvalidAnnotationSeparator;
+    }
+
     /// Parse annotation block supporting both inline and vertical syntax:
     /// - Inline: [a|b|c] on same line
     /// - Vertical: [\n-a\n-b\n-c\n] across multiple lines
@@ -1360,6 +1405,7 @@ pub const Parser = struct {
             // Inline syntax: [a|b|c]
             const close_bracket = rel_close + 1;
             const ann_str = content_with_bracket[1..close_bracket];
+            try self.rejectInvalidAnnotationSeparator(ann_str, opening_line_idx);
             const entries = try annotation_parser.splitEntries(self.allocator, ann_str);
             defer self.allocator.free(entries);
             for (entries) |entry| {
@@ -1396,6 +1442,7 @@ pub const Parser = struct {
                 if (trimmed.len > 0 and isBulletMarker(trimmed[0])) {
                     const bullet_content = lexer.trim(trimmed[1..bracket_idx]); // Skip the - and content after ]
                     if (bullet_content.len > 0) {
+                        try self.rejectInvalidAnnotationSeparator(bullet_content, self.current);
                         const entries = try annotation_parser.splitEntries(self.allocator, bullet_content);
                         defer self.allocator.free(entries);
                         for (entries) |entry| {
@@ -1423,6 +1470,7 @@ pub const Parser = struct {
             if (trimmed.len > 1 and isBulletMarker(trimmed[0]) and (trimmed[1] == ' ' or trimmed[1] == '\t')) {
                 const bullet_content = lexer.trim(trimmed[1..]); // Skip the bullet marker
                 if (bullet_content.len > 0) {
+                    try self.rejectInvalidAnnotationSeparator(bullet_content, self.current);
                     const entries = try annotation_parser.splitEntries(self.allocator, bullet_content);
                     defer self.allocator.free(entries);
                     for (entries) |entry| {

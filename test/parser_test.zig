@@ -366,7 +366,7 @@ test "multi-line annotation syntax for flow calls" {
         \\    zig build
         \\}
         \\
-        \\~[default, depends_on("compile")]
+        \\~[default|depends_on("compile")]
         \\std/build:step(name: "run") {
         \\    ./zig-out/bin/main
         \\}
@@ -459,7 +459,7 @@ test "multi-line annotation syntax for proc definitions" {
         \\    return result;
         \\}
         \\
-        \\~[pure, inline]
+        \\~[pure|inline]
         \\proc calculate.sum {
         \\    return a + b;
         \\}

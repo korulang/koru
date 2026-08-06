@@ -327,6 +327,107 @@ pub fn splitEntries(allocator: std.mem.Allocator, content: []const u8) ![][]cons
     return entries.toOwnedSlice(allocator);
 }
 
+/// Scan annotation-block content for a character that LOOKS like a separator but
+/// is not one, and return its offset into `content`.
+///
+/// Annotations delimit on `|`. A `,` at depth 0 is therefore never a separator
+/// and never part of a well-formed entry either — `~[default, depends_on(x)]`
+/// parses as ONE entry spelled `"default, depends_on(x)"`, which matches no
+/// annotation, so the block silently means nothing it appears to mean. That
+/// exact shape shipped in `koru_std/build.kz` and dropped a real `depends_on`
+/// dependency with no diagnostic; it is the reason this predicate exists.
+///
+/// Depth and strings are tracked with the same rules as `splitEntries`, because
+/// the comma that IS legal must keep being legal: `depends_on(a, b)` is one
+/// entry's argument list (depth 1) and `doc("a, b")` is inside a string. Only a
+/// top-level comma is a mistake.
+pub fn findInvalidSeparator(content: []const u8) ?usize {
+    var depth: usize = 0;
+    var in_string = false;
+    var i: usize = 0;
+    while (i < content.len) : (i += 1) {
+        const c = content[i];
+        if (in_string) {
+            if (c == '\\') {
+                i += 1;
+                continue;
+            }
+            if (c == '"') in_string = false;
+            continue;
+        }
+        switch (c) {
+            '"' => in_string = true,
+            '[', '(', '{' => depth += 1,
+            ']', ')', '}' => {
+                if (depth > 0) depth -= 1;
+            },
+            ',' => {
+                if (depth == 0) return i;
+            },
+            else => {},
+        }
+    }
+    return null;
+}
+
+/// Rewrite `content`'s top-level `,` separators as `|`, leaving every nested and
+/// in-string comma untouched — the corrected spelling to show the author.
+///
+/// A diagnostic that echoes the broken text back teaches nothing; the whole
+/// value of refusing this shape is handing over the form that works. Depth and
+/// string rules are shared with `findInvalidSeparator` and `splitEntries`, so
+/// the suggestion can never differ from what the parser would then accept.
+/// A `, ` collapses to a single `|` rather than `| ` so the result matches the
+/// canonical spelling used everywhere in the tree (`~[comptime|transform]`).
+/// Caller owns the returned buffer.
+pub fn suggestPipeSeparators(allocator: std.mem.Allocator, content: []const u8) ![]u8 {
+    var out = try std.ArrayList(u8).initCapacity(allocator, content.len);
+    errdefer out.deinit(allocator);
+
+    var depth: usize = 0;
+    var in_string = false;
+    var i: usize = 0;
+    while (i < content.len) : (i += 1) {
+        const c = content[i];
+        if (in_string) {
+            try out.append(allocator, c);
+            if (c == '\\' and i + 1 < content.len) {
+                i += 1;
+                try out.append(allocator, content[i]);
+                continue;
+            }
+            if (c == '"') in_string = false;
+            continue;
+        }
+        switch (c) {
+            '"' => {
+                in_string = true;
+                try out.append(allocator, c);
+            },
+            '[', '(', '{' => {
+                depth += 1;
+                try out.append(allocator, c);
+            },
+            ']', ')', '}' => {
+                if (depth > 0) depth -= 1;
+                try out.append(allocator, c);
+            },
+            ',' => {
+                if (depth == 0) {
+                    try out.append(allocator, '|');
+                    // Swallow the run of spaces/tabs that followed the comma so
+                    // `a, b` becomes `a|b` and not `a| b`.
+                    while (i + 1 < content.len and (content[i + 1] == ' ' or content[i + 1] == '\t')) i += 1;
+                } else {
+                    try out.append(allocator, c);
+                }
+            },
+            else => try out.append(allocator, c),
+        }
+    }
+    return out.toOwnedSlice(allocator);
+}
+
 // ============================================================================
 // Tests
 // ============================================================================
@@ -388,6 +489,70 @@ test "splitEntries - empty entries dropped" {
     try std.testing.expectEqual(@as(usize, 2), entries.len);
     try std.testing.expectEqualStrings("a", entries[0]);
     try std.testing.expectEqualStrings("b", entries[1]);
+}
+
+test "findInvalidSeparator - top-level comma is the real-world defect" {
+    // The exact shape that shipped in koru_std/build.kz and silently dropped a
+    // depends_on dependency.
+    try std.testing.expectEqual(@as(?usize, 7), findInvalidSeparator("default, depends_on(compile_backend)"));
+}
+
+test "findInvalidSeparator - argument-list commas stay legal" {
+    // depth 1: one entry's own argument list, which is correct syntax.
+    try std.testing.expectEqual(@as(?usize, null), findInvalidSeparator("depends_on(a, b)"));
+    try std.testing.expectEqual(@as(?usize, null), findInvalidSeparator("build(\"debug\", \"trace\")"));
+    try std.testing.expectEqual(@as(?usize, null), findInvalidSeparator("other[x, y]"));
+}
+
+test "findInvalidSeparator - commas inside strings stay legal" {
+    try std.testing.expectEqual(@as(?usize, null), findInvalidSeparator("doc(\"a, b\")"));
+    try std.testing.expectEqual(@as(?usize, null), findInvalidSeparator("doc(\"esc \\\" , still inside\")"));
+}
+
+test "findInvalidSeparator - well-formed pipe blocks are clean" {
+    try std.testing.expectEqual(@as(?usize, null), findInvalidSeparator("comptime|transform"));
+    try std.testing.expectEqual(@as(?usize, null), findInvalidSeparator("default|depends_on(compile_backend)"));
+}
+
+test "findInvalidSeparator - a comma after a closed call is still top level" {
+    // Regression guard on the depth bookkeeping: the `(` ... `)` must return to
+    // depth 0 so the following comma is caught rather than swallowed.
+    try std.testing.expectEqual(@as(?usize, 16), findInvalidSeparator("depends_on(a, b), default"));
+}
+
+test "suggestPipeSeparators - the real-world defect gets its fix spelled out" {
+    const allocator = std.testing.allocator;
+    const fixed = try suggestPipeSeparators(allocator, "default, depends_on(compile_backend)");
+    defer allocator.free(fixed);
+    try std.testing.expectEqualStrings("default|depends_on(compile_backend)", fixed);
+}
+
+test "suggestPipeSeparators - nested and quoted commas survive untouched" {
+    const allocator = std.testing.allocator;
+    const fixed = try suggestPipeSeparators(allocator, "build(\"a, b\"), other[x, y]");
+    defer allocator.free(fixed);
+    try std.testing.expectEqualStrings("build(\"a, b\")|other[x, y]", fixed);
+}
+
+test "suggestPipeSeparators - already-correct content round-trips" {
+    const allocator = std.testing.allocator;
+    const fixed = try suggestPipeSeparators(allocator, "comptime|transform");
+    defer allocator.free(fixed);
+    try std.testing.expectEqualStrings("comptime|transform", fixed);
+}
+
+test "suggestPipeSeparators - the suggestion is what splitEntries then accepts" {
+    // The two functions must never disagree: whatever the hint tells the author
+    // to write has to split into the entries they were trying to express.
+    const allocator = std.testing.allocator;
+    const fixed = try suggestPipeSeparators(allocator, "default, depends_on(a, b)");
+    defer allocator.free(fixed);
+    const entries = try splitEntries(allocator, fixed);
+    defer allocator.free(entries);
+    try std.testing.expectEqual(@as(usize, 2), entries.len);
+    try std.testing.expectEqualStrings("default", entries[0]);
+    try std.testing.expectEqualStrings("depends_on(a, b)", entries[1]);
+    try std.testing.expectEqual(@as(?usize, null), findInvalidSeparator(fixed));
 }
 
 test "parseCall - simple annotation returns null" {

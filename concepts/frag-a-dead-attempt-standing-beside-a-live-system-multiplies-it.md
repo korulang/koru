@@ -33,3 +33,48 @@ interpreter do we have" has one answer by construction.
 Related: a failure that looks like success is unfalsifiable — a header that
 narrates consumers is the same disease as a comment that narrates correctness;
 grep, don't believe.
+
+## The fourth cost, found 2026-08-06: the ghost keeps the defects the fix removed
+
+The three costs above — orientation, compile, decision — all assume the ghost is
+*inert*. It is worse than inert. A dead copy is unreachable by the fix that
+repairs the live one, and unreachable by every test, so it does not merely sit
+there: **it preserves, indefinitely, the exact defects that were corrected next
+door.**
+
+`koru_std/build_defaults.kz` is the same disease as the caller-less interpreter
+core, down to the same tell: its header claimed `build.kz` imports it, and grep
+across `koru_std/`, `src/` and `tests/` found nothing that names it. But where
+the interpreter ghosts merely inflated a count, this one still carried both
+defects that had been fixed in the live defaults — the comma separator and the
+wrong backend binary — because nothing could reach it to fix them and nothing
+could fail to reveal them.
+
+That converts the ghost from an orientation cost into a **teaching** cost, which
+is strictly worse because it is *load-bearing on a future reader*. Someone greps
+for the construct, finds the dead spelling, and copies it. The ghost is not a
+stale answer to "which one is real"; it is a confident wrong answer to "how is
+this written", and grep ranks it exactly as highly as the truth.
+
+What follows, beyond the existing "inventory the callers" move:
+
+- **A dead copy's content is not neutral — audit it or remove it.** Deadness is
+  what protects a defect, not what makes it harmless. The reflex "it's not
+  running, so it doesn't matter" is the error; running is not how a copy does
+  damage.
+- **When a fix lands in one of two copies, the second copy's deadness is the
+  reason to check it, not the reason to skip it.** The live one had a test; the
+  dead one had nothing, so it is the copy more likely to still be wrong.
+- **A wall beats an audit here.** The comma this ghost carried is now refused by
+  PARSE007, so that particular wrong spelling cannot survive anywhere the parser
+  reaches — but it survived in this file precisely because the parser never
+  reaches it. A wall does not cover dead code, which is the argument for not
+  keeping any.
+
+Related: `frag-a-fix-lands-in-one-lowering-path` covers two *live* copies, where
+the second keeps its old cost silently. This is the degenerate case — the second
+copy is not merely unfixed but unreachable, so no measurement can ever surface
+the divergence.
+
+Open: whether this file should exist at all is not mine to settle; its contents
+are corrected so it cannot mislead, and the deletion question is flagged.

@@ -74,6 +74,7 @@ pub const ErrorCode = enum(u16) {
     PARSE004, // Unbalanced braces
     PARSE005, // Redundant explicit label where punning would produce the same name
     PARSE006, // Bare argument does not name a parameter — explicit `name: value` label required
+    PARSE007, // Invalid annotation separator — annotations delimit on `|`, not `,`
 
     // Type inference errors
     TYPE001, // Branch not found in expected union

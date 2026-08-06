@@ -1,9 +1,15 @@
-// Default Build Steps - Standard 2-Phase Metaprogramming Compilation
-// This file is NOT marked ~[comptime], so these steps are only collected
-// in the frontend and NOT emitted to backend_output_emitted.zig
+// Default Build Steps — ORPHANED COPY, REFERENCED BY NOTHING.
 //
-// NOTE: This file is imported BY build.kz, so we don't need to import it back.
-// The std/build:step event is available through transitive imports.
+// The live defaults are in `build.kz` (`compile_backend` / `build` / `run`,
+// same three names). This file's header used to claim "imported BY build.kz";
+// that was false — nothing under `koru_std/`, `src/`, or `tests/` names
+// `build_defaults`, so these declarations are never parsed and never collected.
+//
+// It survived long enough to carry BOTH defects `6230e06e` fixed in the live
+// copy — the `,` separator and `./zig-out/bin/main` — which is exactly how a
+// forgotten second copy hurts: a reader greps for `depends_on(compile_backend)`,
+// finds this file, and copies the broken form. Corrected here so it cannot
+// teach the wrong thing. It should probably be DELETED; that is Lars's call.
 
 // ============================================================================
 // DEFAULT BUILD STEPS - Standard Compilation Pipeline
@@ -29,11 +35,11 @@
 
 // Phase 2: Run backend to generate & compile final program
 // The backend applies optimizations and generates the runtime code
-~[default, depends_on(compile_backend)] std/build:step(name: "build") {
-    ./zig-out/bin/main backend_tmp
+~[default|depends_on(compile_backend)] std/build:step(name: "build") {
+    ./zig-out/bin/backend backend_tmp
 }
 
 // Phase 3: Run the final program
-~[default, depends_on(build)] std/build:step(name: "run") {
+~[default|depends_on(build)] std/build:step(name: "run") {
     ./backend_tmp
 }
