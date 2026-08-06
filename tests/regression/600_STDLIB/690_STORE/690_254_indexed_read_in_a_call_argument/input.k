@@ -1,23 +1,25 @@
-// ASPIRATIONAL — RED ON PURPOSE. This is a GAP, not a rule.
+// An indexed store read lowers in a CALL ARGUMENT: `show(value: rows[ix[1].h].v)`
+// passes the column value, two hops deep, to an ordinary tor.
 //
-// An indexed store read lowers in a write block (690_245), and inside a WRITE'S
-// ROW ADDRESS (690_249, 690_253). It does NOT lower in a CALL ARGUMENT: the text
-// `rows[ix[0].h].v` reaches the host verbatim and the backend refuses with
-// `use of undeclared identifier 'rows'`.
+// This was the third position known to lack the rewriter, after the
+// write-adjacent ones (690_245, 690_249, 690_253) and `print.ln` interpolation
+// (690_250). All three were one absence: `indexedFieldRefs` lived inside the
+// `stored` transform's private helper struct, and the whole-program walk that
+// `std/store:new` runs could not see it. The rewriter is now file scope and
+// both walks call it, so the reach question is settled for every text slot the
+// walk visits rather than one position at a time.
 //
-// This is a REACH gap in the rewriter, not a decision about the language. Do not
-// convert it to MUST_ERROR — that would record a limitation as a wall, which is
-// the inverted-closed failure the corpus already names. When the lowering is
-// widened to argument position, this test goes green as written.
+// The header this file carried while it was red said "when the lowering is
+// widened to argument position, this test goes green as written" — and it did,
+// with no change to the program below. That is the strongest evidence the pin
+// was recording a REACH gap and not a language decision, which is what its
+// original author refused to convert to a MUST_ERROR. Keeping an aspirational
+// test honest costs one red row on the board and buys exactly this.
 //
-// Third position known to lack the rewriter, after write-adjacent positions and
-// `print.ln` (which does not run indexed-read lowering at all, so
-// `{{ rows[h].v:d }}` also reaches the host verbatim).
-//
-// Found porting `fanout` in tests/benchmarks/003_ecs_reactive: the baseline folds
-// its observer loop over the post-decrement value, and passing that value to the
-// observer tor is exactly this shape. The port works around it by parking the
-// value in a column first.
+// Found porting `fanout` in tests/benchmarks/003_ecs_reactive: the baseline
+// folds its observer loop over the post-decrement value, and passing that value
+// to the observer tor is exactly this shape. That port parks the value in a
+// column to work around it; the workaround is now unnecessary.
 import std/io
 import std/store
 import std/grid
