@@ -533,3 +533,205 @@ pub const FormattedText = struct {
     const new_item = ast.Item{ .flow = transformed_flow };
     return .{ .replacement = new_item };
 }
+
+// ============================================================================
+// LN|JS - JavaScript-target rendering of the SAME transform
+// ============================================================================
+// SECOND RENDERING, not a JS body. `ln` is `[comptime|transform]`: the body runs
+// inside koruc, so it is Zig on every target — io.kz:1721 states that rule and
+// `print.blk|js` is the worked example. What diverges is the OUTPUT written onto
+// `inline_body`: |zig's labeled block around `std.fmt.bufPrint` becomes a JS
+// `const` holding a `+`-concat. That is why the diagnosis was `@import` has no
+// JS lowering — the |zig rendering's product is Zig source, and on --lang=js the
+// JS emitter was being handed it to splice.
+//
+// TWO structural differences from |zig, both forced by the JS emitter:
+//
+//  1. NO LABELED BLOCK. `break :__KORU_INLINE__ <value>` has no JavaScript
+//     spelling, and js_emitter never substitutes the label — the placeholder is
+//     a Zig-only construct, unknown to that emitter. So the inline body cannot
+//     be an EXPRESSION the emitter binds; it must be STATEMENTS that DECLARE the
+//     formatted value under the name the site reads it through.
+//
+//  2. THE ARM BINDING IS OURS TO DECLARE. `emitInlineContinuationBody`
+//     (js_emitter.zig:1792) splices an arm's body WITHOUT its `| line l` bind —
+//     the `~if`/`~for` template renderings hoist their own binds for the same
+//     reason. So the `| line l` shape declares `l` here and hands off with a
+//     `__koru_continue_N` marker; the call-site-bind shape (`: l |> …`) declares
+//     `l` and leaves the arms to `emitUnconsumedContinuations`.
+//
+// `:s` / `:d` / `:f` / `:any` all collapse to nothing: JS `+` stringifies a
+// Number on concat, so there is no per-spec formatting left to carry.
+~proc ln|js {
+    const ast = @import("ast");
+
+    const flow = if (item.* == .flow)
+        &item.flow
+    else
+        return .{};
+
+    // Already transformed — don't re-run.
+    if (invocation.inline_body != null) {
+        return .{};
+    }
+
+    const expr = if (invocation.args.len > 0) invocation.args[0].value else "";
+
+    const openLit = struct {
+        fn call(b: *std.ArrayList(u8), a: std.mem.Allocator, f: *bool, il: *bool) void {
+            if (!il.*) {
+                if (!f.*) b.appendSlice(a, " + ") catch unreachable;
+                b.append(a, '"') catch unreachable;
+                il.* = true;
+                f.* = false;
+            }
+        }
+    }.call;
+
+    const closeLit = struct {
+        fn call(b: *std.ArrayList(u8), a: std.mem.Allocator, il: *bool) void {
+            if (il.*) {
+                b.append(a, '"') catch unreachable;
+                il.* = false;
+            }
+        }
+    }.call;
+
+    var buf = std.ArrayList(u8).initCapacity(allocator, 128) catch unreachable;
+    var first = true;
+    var in_literal = false;
+
+    // Strip the source quotes — same slice |zig takes.
+    const start_pos: usize = if (expr.len > 0 and expr[0] == '"') 1 else 0;
+    const end_pos: usize = if (expr.len > 0 and expr[expr.len - 1] == '"') expr.len - 1 else expr.len;
+    const content = expr[start_pos..end_pos];
+
+    var i: usize = 0;
+    while (i < content.len) {
+        if (i + 1 < content.len and content[i] == '{' and content[i + 1] == '{') {
+            const placeholder_start = i + 2;
+            var ws_start = placeholder_start;
+            while (ws_start < content.len and (content[ws_start] == ' ' or content[ws_start] == '\t')) : (ws_start += 1) {}
+
+            var j = ws_start;
+            while (j + 1 < content.len and !(content[j] == '}' and content[j + 1] == '}')) : (j += 1) {}
+
+            if (j + 1 < content.len) {
+                var ws_end = j;
+                while (ws_end > ws_start and (content[ws_end - 1] == ' ' or content[ws_end - 1] == '\t')) : (ws_end -= 1) {}
+
+                const placeholder = content[ws_start..ws_end];
+                var var_name: []const u8 = placeholder;
+                if (std.mem.indexOf(u8, placeholder, ":")) |colon_pos| {
+                    var_name = placeholder[0..colon_pos];
+                }
+
+                // A dotted path (`req.text`) is a JS member read verbatim, and a
+                // segment that collides with a JS keyword is still a legal
+                // property name — so unlike |zig there is nothing to escape.
+                closeLit(&buf, allocator, &in_literal);
+                if (!first) buf.appendSlice(allocator, " + ") catch unreachable;
+                first = false;
+                buf.appendSlice(allocator, var_name) catch unreachable;
+
+                i = j + 2;
+            } else {
+                openLit(&buf, allocator, &first, &in_literal);
+                buf.append(allocator, content[i]) catch unreachable;
+                i += 1;
+            }
+        } else {
+            openLit(&buf, allocator, &first, &in_literal);
+            switch (content[i]) {
+                '"' => buf.appendSlice(allocator, "\\\"") catch unreachable,
+                '\\' => {
+                    // The arg is a SOURCE string literal, so `\n` here is the
+                    // two-char escape, not a newline. JS double quotes read the
+                    // same escapes Koru writes, so pass the pair through — do NOT
+                    // double the backslash (that would print a literal `\n`).
+                    buf.append(allocator, '\\') catch unreachable;
+                    if (i + 1 < content.len) {
+                        i += 1;
+                        buf.append(allocator, content[i]) catch unreachable;
+                    }
+                },
+                '\n' => buf.appendSlice(allocator, "\\n") catch unreachable,
+                '\r' => buf.appendSlice(allocator, "\\r") catch unreachable,
+                '\t' => buf.appendSlice(allocator, "\\t") catch unreachable,
+                else => buf.append(allocator, content[i]) catch unreachable,
+            }
+            i += 1;
+        }
+    }
+    closeLit(&buf, allocator, &in_literal);
+    if (first) buf.appendSlice(allocator, "\"\"") catch unreachable;
+
+    // WHICH NAME does the site read the formatted text through, and who runs the
+    // arms? `: l |> …` binds at the CALL SITE and the emitter runs the arms after
+    // the splice. `| line l -> …` binds in the ARM, whose body only the marker
+    // reaches — so that shape declares the name AND hands off explicitly.
+    var bind_name: []const u8 = "";
+    var arm_index: ?usize = null;
+    if (invocation.return_binding) |rb| {
+        if (!std.mem.eql(u8, rb, "_")) bind_name = rb;
+    }
+    if (bind_name.len == 0) {
+        for (flow.body.continuations, 0..) |cont, idx| {
+            if (cont.kind != .terminal) continue;
+            arm_index = idx;
+            if (cont.binding) |b| {
+                if (!std.mem.eql(u8, b, "_")) bind_name = b;
+            }
+            break;
+        }
+    }
+
+    var code = std.ArrayList(u8).initCapacity(allocator, 192) catch unreachable;
+    if (bind_name.len > 0) {
+        code.appendSlice(allocator, "const ") catch unreachable;
+        code.appendSlice(allocator, bind_name) catch unreachable;
+        code.appendSlice(allocator, " = { text: ") catch unreachable;
+        code.appendSlice(allocator, buf.items) catch unreachable;
+        code.appendSlice(allocator, " };") catch unreachable;
+    }
+    if (arm_index) |idx| {
+        if (code.items.len > 0) code.append(allocator, '\n') catch unreachable;
+        const marker = std.fmt.allocPrint(allocator, "__koru_continue_{d}", .{idx}) catch unreachable;
+        code.appendSlice(allocator, marker) catch unreachable;
+    }
+    const inline_code = code.items;
+
+    // AST surgery is identical to |zig — only the spliced text differs. Reroute
+    // to `ln.impl` so the JS emitter never has to resolve a comptime event, and
+    // keep the site's `: l` bind on the invocation for the machinery that reads
+    // it; the JS splice above has already declared the name itself.
+    const impl_segments = allocator.alloc([]const u8, 1) catch unreachable;
+    impl_segments[0] = allocator.dupe(u8, "ln.impl") catch unreachable;
+    const impl_path = ast.DottedPath{
+        .module_qualifier = invocation.path.module_qualifier,
+        .segments = impl_segments,
+    };
+
+    const new_inv_annotations = allocator.alloc([]const u8, invocation.annotations.len + 1) catch unreachable;
+    for (invocation.annotations, 0..) |ann, idx| {
+        new_inv_annotations[idx] = ann;
+    }
+    new_inv_annotations[invocation.annotations.len] = allocator.dupe(u8, "@pass_ran(\"transform\")") catch unreachable;
+
+    const new_invocation = ast.Invocation{
+        .path = impl_path,
+        .args = invocation.args,
+        .annotations = new_inv_annotations,
+        .inserted_by_tap = invocation.inserted_by_tap,
+        .from_opaque_tap = invocation.from_opaque_tap,
+        .inline_body = allocator.dupe(u8, inline_code) catch unreachable,
+        .return_binding = invocation.return_binding,
+    };
+
+    var transformed_flow = flow.*;
+    transformed_flow.body = ast.rootSite(new_invocation, flow.body.continuations, flow.location);
+    transformed_flow.inline_body = inline_code;
+
+    const new_item = ast.Item{ .flow = transformed_flow };
+    return .{ .replacement = new_item };
+}
