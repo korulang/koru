@@ -553,6 +553,20 @@ fn processPerCallInvocations(
 ///                   `@hasDecl(__H, "arm")`; JS asks the handler object
 ///                   `H.arm !== undefined`.
 ///
+/// "Two" is a claim, put here to be falsified cheaply. Falsify it by finding a
+/// render that emits host syntax without consulting a HostLang.
+///
+/// CAVEAT on that falsification, reported by the cluster-A worktree and NOT
+/// verified here (the code is unmerged at the time of writing): js_emitter is
+/// growing a host-BUILTIN translation on the way out — `@mod`, `@rem`,
+/// `@divTrunc`, `@as`, `@intCast` and friends rewritten to JS twins as rendered
+/// template text is emitted. That is the emitter cleaning up after a
+/// target-blind path, not a third site here, so the count survives. But it
+/// means a template CAN ship raw Zig integer builtins in its condition text and
+/// still run correctly on JS — so a genuine third site may produce no visible
+/// symptom. Do not read "the JS tests are green" as evidence the count is still
+/// two; read the renders.
+///
 /// A third target reaching here is walled upstream: a render only happens after
 /// selectPerCallTemplateProc found a `<name>|template|<build_lang>` proc, and
 /// only `zig` and `js` declare any — KORU121 refuses every other lang first.

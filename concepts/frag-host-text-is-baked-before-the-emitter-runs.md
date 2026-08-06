@@ -55,6 +55,21 @@ baseline would have surfaced them. Cf. the same shape one level up in
 [[frag-per-call-template-variants-are-the-declarers-obligation]]: clustering on
 the symptom conflates causes that recommend opposite plans.
 
+**The falsification signal is quieter than it looks (added same day).** The
+cluster-A worktree reports that js_emitter is growing a host-BUILTIN translation
+on the way out — `@mod`, `@rem`, `@divTrunc`, `@as`, `@intCast` rewritten to JS
+twins as rendered template text is emitted. That is the emitter cleaning up after
+a target-blind path rather than a third render site, so the count of two stands.
+But it changes what a green JS test proves: a per-call template can ship raw Zig
+integer builtins in its condition text and still run correctly, so a genuine
+third host-text site may produce **no visible symptom at all**. The `HostLang`
+doc comment now says this out loud, because a falsifiable claim whose
+falsification is silently absorbed downstream has stopped being falsifiable, and
+a reader who takes "the JS tests are green" as evidence the count is still two
+would be reasoning from a repaired symptom. (Reported by GapASubflowImpl; the
+code was unmerged when this was written, so it is an inbound claim, not something
+verified in this tree.)
+
 **Debt, declared as debt.** The check this wants is "every pre-emitter pass that
 emits host syntax consults the build language", and it is not written, because it
 is not obviously mechanisable — host syntax in a string literal is not
