@@ -44,14 +44,15 @@ the thesis below is demonstrated on **real emitter output** (not hand-modeled JS
   lines (`location.file == "generated"`) resolve to null and are skipped. Unit-tested in
   `file_types.zig`; verified end-to-end (pump.kz drops `@import("std")`, chain.kjs keeps
   `let counter`).
-  STILL ASYMMETRIC (next decision): only the JS emitter routes by host. The Zig emitter emits
-  ALL host lines of any selected module unconditionally (visitor_emitter.zig:3143), so a
-  mixed-host AST emitted to ZIG would leak `.kjs` host lines. Latent (the spike skips modules,
-  so no mixed-host program reaches Zig emission today). The "full contract-file path" — split
-  one program into `.k` + `.kz` + `.kjs` and emit cleanly to BOTH targets — needs (a) the JS
-  emitter to walk imported-module host lines, and (b) the Zig emitter to route via the same
-  `hostLangOfFile` (with the `"generated"`/synthesized-line carve-out). Both are on the shared
-  main path → joint design call.
+  SYMMETRIC SINCE (corrected 2026-08-06; this paragraph read "STILL ASYMMETRIC" and was stale
+  for two months, long enough to be copied into a wave brief as a live constraint and cost six
+  agents a workaround they did not need). The Zig emitter routes by host too:
+  `hostLineRoutesToZig` (`visitor_emitter.zig:35`) applies `hostLangOfFile` with the
+  `"generated"`/synthesized carve-out, and is called at BOTH emission sites — the module-level
+  item walk (`:1072`) and the "emit ALL its contents" loop (`:3972`) this note named as the
+  danger. Pinned by `140_010_cross_target_host_line_routing`. So a mixed-host AST emitted to
+  ZIG drops `.kjs` host lines, and the "full contract-file path" — one program split into
+  `.k` + `.kz` + `.kjs`, emitted cleanly to BOTH targets — is built, not a pending design call.
 - **CONTRACT-FILE SPLIT — the stem is the compilation unit (2026-05-30).** `koruc pump`,
   `koruc pump.k`, and `koruc pump.kz` all compile the WHOLE `pump` module: the entry now merges
   its same-stem sibling facets (`.k` contract + `.kz` + `.kjs`) into one AST, the way imports
