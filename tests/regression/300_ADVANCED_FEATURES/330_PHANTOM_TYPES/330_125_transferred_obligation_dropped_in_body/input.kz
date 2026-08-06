@@ -1,0 +1,56 @@
+// PIN (RED): a tor RECEIVES an obligation through a consuming parameter, drops
+// it, and nothing objects.
+//
+// `drop-it` takes `h: *Handle<!owned>`. That means the caller hands the debt
+// over: from here on, discharging it is `drop-it`'s job. Its body calls `note`
+// and returns. The handle is never released and the program compiles clean —
+// no KORU030, no auto-discharge insertion, no leak reported. Verified from the
+// emitted Zig: `drop_it_event.handler` calls `note_event.handler` and nothing
+// else. The allocation is on `koru_allocator()` on purpose, so the produced
+// program's own leak counter reports it at exit — which is the ONLY thing in
+// the toolchain that notices. The compiler says nothing.
+//
+// This is the SEEDING half of the linear-transfer ruling (2026-07-02, recorded
+// in 330_076's header): "a pure impl is CHECKED: the obligation enters the body
+// live, and the checker proves it is discharged exactly once — a drop leaks
+// loudly." The entering half is written — the impl-param block builds `owned!`
+// and calls setWithType, which registers a cleanup obligation — but by the time
+// the body's consume sites read `h`, it carries bare `owned`. The `!` does not
+// arrive, so the body holds nothing to leak and nothing to spend.
+//
+// WHY IT MATTERS BEYOND THE LEAK, and why this pin was written before its fix:
+// the same absence blocks a wall Lars ruled on 2026-08-06 — refusing `<!state>`
+// on a value that carries no obligation (335_054, 335_055). That check is four
+// lines and is already in the tree behind `enforce_debt_exists` in
+// phantom_semantic_checker.zig. Flipping it to true refuses BOTH bad programs
+// AND this file's legitimate sibling (a body that DOES delegate its transferred
+// obligation), because the check cannot tell "I was given this" from "I was
+// only shown this". Fix the seeding and the flag can be flipped.
+//
+// NOT the same bug as 330_076, which was mistaken for it once. 330_076 is red
+// in the EMITTER: the subflow emitter, after writing the impl's own `return r`,
+// keeps walking and writes the CALL SITE's continuation into the callee, so the
+// produced Zig has unreachable code and an identifier from the caller's scope
+// (`result_1`). Its phantom checking passes. Two independent defects that both
+// mention consuming parameters.
+const std = @import("std");
+const Handle = struct { n: i32 };
+
+~tor make {} -> *Handle<owned!>
+
+~proc make|zig {
+    const h = koru_allocator().create(Handle) catch unreachable;
+    h.* = .{ .n = 0 };
+    return h;
+}
+
+~tor note { n: i32 }
+
+~proc note|zig { std.debug.print("n={}\n", .{n}); }
+
+// The caller's obligation is handed over here and never settled.
+~tor drop-it { h: *Handle<!owned> }
+
+~drop-it = note(n: 1)
+
+~make(): h0 |> drop-it(h: h0)
