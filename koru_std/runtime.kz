@@ -1098,15 +1098,31 @@ const koru_parser = @import("koru_parser");
     code.appendSlice(allocator, I ++ "    return &[_][]const u8{};\n") catch unreachable;
     code.appendSlice(allocator, I ++ "}\n\n") catch unreachable;
 
-    // Generate discharge event lookup (for auto-discharge) - returns first event that discharges this obligation
+    // Generate discharge event lookup (for auto-discharge). An event that
+    // RE-ISSUES the obligation it consumes is NOT a discharger: `append`
+    // (`<!open> -> <open!>`) hands back another obligation exactly like
+    // `tx.exec` does, so calling it releases nothing. The compiled path has
+    // excluded that shape since `eventReIssuesObligation`
+    // (auto_discharge_inserter.zig); this lookup returned the FIRST match and
+    // so handed a bridge a "discharger" that reopened the resource it was asked
+    // to let go of — measured in kopium-headless, where the session's hang-up
+    // invoked `append` and the file descriptor survived it.
     code.appendSlice(allocator, I ++ "pub fn get_discharge_event_") catch unreachable;
     code.appendSlice(allocator, scope_ident) catch unreachable;
     code.appendSlice(allocator, "(obligation: []const u8) ?[]const u8 {\n") catch unreachable;
     code.appendSlice(allocator, I ++ "    inline for (scope_events_") catch unreachable;
     code.appendSlice(allocator, scope_ident) catch unreachable;
     code.appendSlice(allocator, ") |ev| {\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "        var discharges_it = false;\n") catch unreachable;
     code.appendSlice(allocator, I ++ "        for (ev.discharges_obligations) |dis| {\n") catch unreachable;
-    code.appendSlice(allocator, I ++ "            if (dispatcher_std.mem.eql(u8, obligation, dis)) return ev.name;\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "            if (dispatcher_std.mem.eql(u8, obligation, dis)) { discharges_it = true; break; }\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "        }\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "        if (discharges_it) {\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "            var reissues = false;\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "            for (ev.creates_obligations) |cre| {\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "                if (dispatcher_std.mem.eql(u8, obligation, cre)) { reissues = true; break; }\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "            }\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "            if (!reissues) return ev.name;\n") catch unreachable;
     code.appendSlice(allocator, I ++ "        }\n") catch unreachable;
     code.appendSlice(allocator, I ++ "    }\n") catch unreachable;
     code.appendSlice(allocator, I ++ "    return null;\n") catch unreachable;
