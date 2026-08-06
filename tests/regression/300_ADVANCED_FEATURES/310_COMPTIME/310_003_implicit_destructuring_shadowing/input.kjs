@@ -1,6 +1,13 @@
 // JavaScript implementation facet. The Koru declarations live in the
 // `input.kz` companion (merged at import); this file holds the `|js`
 // proc bodies mirroring its `|zig` ones.
+//
+// The module-level `name` is the whole point of the test — the shorthand
+// invocation `~greet(name)` reads it, and the destructured handler parameter
+// must not shadow it. It is a host line, so the `.kz` copy is Zig-only and
+// this facet needs its own.
+
+const name = "World";
 
 ~proc greet|js {
     console.log(`Hello, ${name}!`);

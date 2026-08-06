@@ -1,0 +1,8 @@
+// JavaScript implementation facet of the entry module. The Koru declarations
+// live in the `input.kz` companion (merged at import).
+//
+// No procs here — `open`/`close` live in `app/fs` — only the module-level
+// condition the flow's `if(condition)` reads. A `.kz` host line is Zig-only,
+// so the JS facet must carry its own.
+
+const condition = true;
