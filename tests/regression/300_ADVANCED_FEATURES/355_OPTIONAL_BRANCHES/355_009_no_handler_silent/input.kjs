@@ -1,0 +1,10 @@
+// JavaScript implementation facet. The Koru declarations live in the
+// `input.kz` companion (merged at import); this file holds the `|js`
+// proc bodies mirroring its `|zig` ones.
+
+~proc process|js {
+    if (value > 100) {
+        return { tag: "warning", warning: "Value too large" };
+    }
+    return { tag: "success", success: value * 2 };
+}

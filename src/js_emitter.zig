@@ -204,7 +204,14 @@ const Emitter = struct {
     /// frame that opened the loop knows their names — the twin of
     /// EmissionContext.label_handler_invocation / .label_result_var
     /// (emitter_helpers.zig:5203).
-    label_frame: ?LabelFrame = null,
+    ///
+    /// A POINTER into the emitting stack, not a value: folds nest, and a jump
+    /// names a label rather than a depth. Each `emitLabelFoldAt` links its frame
+    /// to the one it is nested inside, so resolving `@outer(…)` from an inner fold
+    /// is a walk out through the chain. That chain IS the label map the Zig
+    /// emitter keeps explicitly (emitter_helpers.zig:5157); here the emitting
+    /// recursion already has the right shape, so it costs no allocation.
+    label_frame: ?*const LabelFrame = null,
 
     const LabelFrame = struct {
         label: []const u8,
@@ -212,6 +219,8 @@ const Emitter = struct {
         result_name: []const u8,
         /// The head invocation to re-run. Its arg NAMES are the fold's parameters.
         inv: *const ast.Invocation,
+        /// The fold this one sits inside, or null at the outermost.
+        outer: ?*const LabelFrame = null,
     };
 
     fn nextId(self: *Emitter) usize {
@@ -235,6 +244,24 @@ const Emitter = struct {
         for (name) |c| {
             try self.buf.append(self.allocator, if (c == '-') '_' else c);
         }
+    }
+    /// Read a property whose KEY is written raw. A BRANCH name is kebab-canonical
+    /// and stays that way on both the tag and the payload key
+    /// (`emitBranchConstructorReturn`, so producer and reader cannot drift) — but
+    /// `result.next-outer` parses as `result.next - outer`, a subtraction against
+    /// an undeclared name. Bracket notation is the only spelling that reads a key
+    /// JS cannot say as an identifier, so the dot form is used exactly when it is
+    /// legal.
+    fn writeMember(self: *Emitter, base: []const u8, key: []const u8) JsEmitError!void {
+        try self.write(base);
+        if (isJsIdentifier(key)) {
+            try self.write(".");
+            try self.write(key);
+            return;
+        }
+        try self.write("[\"");
+        try self.write(key);
+        try self.write("\"]");
     }
 
     /// Buffer variant of the same boundary, for sites that need the lowered
@@ -411,14 +438,20 @@ const Emitter = struct {
         // declaration, not at each call site: the default belongs to the event, and
         // one place cannot disagree with itself. Zig gets this free from a struct
         // field default; JS has no such thing, so the handler supplies it.
+        // Both sides lower: a kebab field (`outer-val`) is not a JS identifier, and
+        // the call site writes the same lowered key (`emitArgsObject`), so producer
+        // and reader agree on `outer_val` — which is also what a `|js` proc body
+        // can spell.
         for (event.input.fields) |field| {
+            try self.write("      const ");
+            try self.writeIdent(field.name);
+            try self.writeFmt(" = {s}.", .{INPUT_PARAM});
+            try self.writeIdent(field.name);
             if (field.default) |dflt| {
-                try self.writeFmt("      const {s} = {s}.{s} ?? ", .{ field.name, INPUT_PARAM, field.name });
+                try self.write(" ?? ");
                 try self.writeJsExpr(dflt);
-                try self.write(";\n");
-            } else {
-                try self.writeFmt("      const {s} = {s}.{s};\n", .{ field.name, INPUT_PARAM, field.name });
             }
+            try self.write(";\n");
         }
 
         switch (impl) {
@@ -616,6 +649,12 @@ const Emitter = struct {
     fn writeLowered(self: *Emitter, text: []const u8, mode: LowerMode) JsEmitError!void {
         var i: usize = 0;
         var quote: ?u8 = null;
+        // One entry per open `{` we are inside, saying whether its closer must be
+        // written as `]`. A Zig ARRAY literal opens with a brace and closes with
+        // one; JavaScript's opens and closes with brackets, so the decision made
+        // at the opener has to survive to the matching closer.
+        var brace_is_bracket: [64]bool = undefined;
+        var brace_depth: usize = 0;
         while (i < text.len) {
             const c = text[i];
             if (quote) |q| {
@@ -659,6 +698,61 @@ const Emitter = struct {
             if (c == '@') {
                 if (try self.writeHostBuiltin(text, i)) |after| {
                     i = after;
+                    continue;
+                }
+            }
+            // ZIG-SHAPED EXPRESSION TEXT, lowered in BOTH modes — unlike `++` and
+            // `and`/`or`, which are real JavaScript and must stay `.koru_expr`-only.
+            // Neither shape below has ANY valid JavaScript reading, so neither can
+            // misfire on genuine host text. It has to be both modes: a `~for(&items)`
+            // argument reaches the emitter as `.koru_expr`, but the SAME text also
+            // arrives baked into the `for|template|js` body as rendered host text.
+            //
+            // Zig ADDRESS-OF in prefix position. A JS array or object IS a
+            // reference, so taking its address is the identity. An INFIX `&` is
+            // bitwise-and in both languages and is left alone — position is the
+            // whole discriminator.
+            {
+                if (c == '&' and isPrefixPosition(text, i)) {
+                    i += 1;
+                    continue;
+                }
+                // Zig ARRAY literal: `[_]i32{1, 2, 3}`, `[3]i32{0, 0, 0}`,
+                // `[2][2]i32{ … }`. The type prefix has no JS counterpart and the
+                // braces become brackets.
+                if (c == '[') {
+                    if (zigArrayLiteralOpen(text, i)) |after_brace| {
+                        if (brace_depth < brace_is_bracket.len) {
+                            brace_is_bracket[brace_depth] = true;
+                            brace_depth += 1;
+                            try self.write("[");
+                            i = after_brace;
+                            continue;
+                        }
+                    }
+                }
+                // Anonymous POSITIONAL tuple: `.{ 0, 0 }`, a row of the 2-D literal
+                // above. Only the positional form — `.{ .ok = v }` is a BRANCH
+                // constructor whose JS shape is `{ tag: "ok", ok: v }`, and quietly
+                // lowering it to a plain object would produce a wrong answer rather
+                // than a syntax error. That one stays refused.
+                if (c == '.' and i + 1 < text.len and text[i + 1] == '{' and isPositionalTuple(text, i + 1)) {
+                    if (brace_depth < brace_is_bracket.len) {
+                        brace_is_bracket[brace_depth] = true;
+                        brace_depth += 1;
+                        try self.write("[");
+                        i += 2;
+                        continue;
+                    }
+                }
+                if (c == '{' and brace_depth < brace_is_bracket.len) {
+                    brace_is_bracket[brace_depth] = false;
+                    brace_depth += 1;
+                }
+                if (c == '}' and brace_depth > 0) {
+                    brace_depth -= 1;
+                    try self.write(if (brace_is_bracket[brace_depth]) "]" else "}");
+                    i += 1;
                     continue;
                 }
             }
@@ -1118,9 +1212,21 @@ const Emitter = struct {
         label: []const u8,
         indent: []const u8,
     ) JsEmitError!void {
-        const inv = flow.inv();
-        const conts = flow.body.continuations;
+        try self.emitLabelFoldAt(flow.inv(), flow.body.continuations, label, indent);
+    }
 
+    /// The fold itself, taking its head invocation and arms DIRECTLY rather than
+    /// through a flow. `#loop` is not only a flow head: `~start() |> #loop
+    /// counter(n: 1) | next v |> @loop(n: v)` anchors the same fixpoint one step
+    /// in, and reading it off `flow.pre_label` made the construct work in one
+    /// position and refuse in the other. The fold does not care what preceded it.
+    fn emitLabelFoldAt(
+        self: *Emitter,
+        inv: *const ast.Invocation,
+        conts: []const ast.Continuation,
+        label: []const u8,
+        indent: []const u8,
+    ) JsEmitError!void {
         const event = self.findEventDecl(&inv.path) orelse {
             log.err("[js_emitter] #{s} fold head invokes an unresolved event\n", .{label});
             return JsEmitError.UnresolvedEvent;
@@ -1170,7 +1276,16 @@ const Emitter = struct {
         defer self.allocator.free(inner);
 
         if (looping > 0) {
-            try self.writeFmt("{s}while (", .{indent});
+            // The `while` carries a JS LABEL, and the label is the fold's own name.
+            // A same-level jump could fall off the end of the body instead, but a
+            // CROSS-LEVEL one cannot: `@outer(…)` fired from inside an inner fold
+            // has to leave the inner loop, and `continue outer;` is the only thing
+            // that says so. Labelling every fold keeps one spelling for both, and
+            // JS labels live in their own namespace, so `loop:` cannot collide with
+            // the `loop_n` state variables beside it.
+            try self.writeFmt("{s}", .{indent});
+            try self.writeIdent(label);
+            try self.write(": while (");
             var written: usize = 0;
             for (conts) |*cont| {
                 if (cont.kind != .terminal or !contLoopsTo(cont, label)) continue;
@@ -1181,7 +1296,13 @@ const Emitter = struct {
             try self.write(") {\n");
 
             const saved = self.label_frame;
-            self.label_frame = .{ .label = label, .result_name = result_name, .inv = inv };
+            const frame = LabelFrame{
+                .label = label,
+                .result_name = result_name,
+                .inv = inv,
+                .outer = saved,
+            };
+            self.label_frame = &frame;
             defer self.label_frame = saved;
 
             // Inside the loop the condition has already selected the arm when there
@@ -1215,22 +1336,28 @@ const Emitter = struct {
         try self.write(" }");
     }
 
-    /// Emit a `@label(…)` jump: re-seed the fold's state variables from the jump's
-    /// arguments, then re-run the head into the fold's result variable. The `while`
-    /// header re-tests it, so there is nothing else to say — the Zig target's
-    /// trailing `continue :label` has no work to do in a JS loop body.
+    /// Emit a `@label(…)` jump: re-seed the target fold's state variables from the
+    /// jump's arguments, re-run its head into its result variable, then
+    /// `continue <label>`.
+    ///
+    /// The target is found by walking OUT through the enclosing folds, so an inner
+    /// fold may jump to an outer label. That is the whole reason the `continue` is
+    /// written rather than falling off the end of the body: a cross-level jump has
+    /// to leave the inner loop, and only a labelled continue does. It is also what
+    /// makes two looping arms safe — the turn ends at the jump instead of running
+    /// the next arm's test against a result the jump just replaced.
     fn emitLabelJump(self: *Emitter, label: []const u8, args: []const ast.Arg, indent: []const u8) JsEmitError!void {
-        const frame = self.label_frame orelse {
-            log.err("[js_emitter] @{s}(…) jump outside any #{s} fold\n", .{ label, label });
+        var walk = self.label_frame;
+        const frame = while (walk) |f| : (walk = f.outer) {
+            if (std.mem.eql(u8, f.label, label)) break f;
+        } else {
+            if (self.label_frame) |inner| {
+                log.err("[js_emitter] @{s}(…) names no enclosing fold; innermost is #{s}\n", .{ label, inner.label });
+            } else {
+                log.err("[js_emitter] @{s}(…) jump outside any #{s} fold\n", .{ label, label });
+            }
             return JsEmitError.UnsupportedConstruct;
         };
-        if (!std.mem.eql(u8, frame.label, label)) {
-            // A cross-level jump (an inner fold jumping to an outer label) needs the
-            // label MAP the Zig emitter keeps (emitter_helpers.zig:5157); this frame
-            // holds one fold. Refuse by name rather than jump to the wrong loop.
-            log.err("[js_emitter] @{s}(…) jumps past the enclosing #{s} fold\n", .{ label, frame.label });
-            return JsEmitError.UnsupportedConstruct;
-        }
         for (args) |arg| {
             try self.writeFmt("{s}{s}_", .{ indent, label });
             try self.writeIdent(arg.name);
@@ -1244,6 +1371,9 @@ const Emitter = struct {
         try self.writeFmt("{s}{s} = main_module.{s}_event.handler(", .{ indent, frame.result_name, ev_name });
         try self.emitLabelStateArgs(frame.inv.args, label);
         try self.write(");\n");
+        try self.writeFmt("{s}continue ", .{indent});
+        try self.writeIdent(frame.label);
+        try self.write(";\n");
     }
 
     /// Emit a rendered template body (e.g. `~if`'s `if (cond) { … } else { … }`
@@ -1521,6 +1651,8 @@ const Emitter = struct {
     ///   `.inline_code` — host declaration text: the `| captured r` after-read
     ///                    (`const r = <cell>;`), or a NESTED capture's whole cell
     ///                    preamble, which arrives as a node instead of on the flow.
+    ///   `.metatype_binding` — a `~tap` arm's observation record, grafted onto the
+    ///                    tapped invocation by the tap transformer.
     ///
     /// Returns false for anything else, so each caller's node switch keeps its own
     /// loud refusal for the constructs this target genuinely does not model.
@@ -1549,6 +1681,64 @@ const Emitter = struct {
             },
             .label_apply => |l| {
                 try self.emitLabelJump(l, &.{}, indent);
+                return true;
+            },
+            // `#loop counter(n: 1)` sitting mid-chain — the fold ANCHOR in
+            // continuation position rather than at the flow head. It owns its own
+            // arms (`| next v |> @loop(n: v)`), which is why the sequel below is
+            // not driven: `emitLabelFoldAt` consumes `continuations` itself.
+            //
+            // A `@loop(…)` JUMP also parses to this node with `is_declaration`
+            // false, and it is NOT the same thing. Refuse it by name rather than
+            // fold on it — a jump reaching here means it escaped its `#loop`, and
+            // treating it as an anchor would emit a plausible second loop instead
+            // of saying so.
+            .label_with_invocation => |*lwi| {
+                if (!lwi.is_declaration) {
+                    log.err("[js_emitter] @{s}(…) reached as a fold ANCHOR; a jump must sit inside its own #{s}\n", .{ lwi.label, lwi.label });
+                    return false;
+                }
+                try self.emitLabelFoldAt(&lwi.invocation, continuations, lwi.label, indent);
+                return true;
+            },
+            // A `~tap(hello -> *) | Profile p |> log(msg: p.source)` arm. The tap
+            // transformer grafts a metatype_binding step onto the tapped
+            // invocation; it constructs the OBSERVATION RECORD the arm's body
+            // reads, produces no dispatchable value, and its continuations run
+            // inside the record's scope. Two observers on one event bind the same
+            // name, so the block is what keeps them apart — the same reason the
+            // Zig reference opens one (emitter_helpers.zig:3351).
+            //
+            // Zig spells Transition's `source`/`branch` as generated enum literals
+            // and Profile/Audit's as strings. JavaScript has no enums, so all three
+            // are strings here — the representation the emitter already gives a
+            // branch tag (`result.tag === "found"`). One vocabulary, not two.
+            .metatype_binding => |mb| {
+                try self.writeFmt("{s}{{\n", .{indent});
+                const inner = try std.fmt.allocPrint(self.allocator, "{s}  ", .{indent});
+                defer self.allocator.free(inner);
+                try self.writeFmt("{s}const {s} = {{ source: \"{s}\", destination: ", .{ inner, mb.binding, mb.source_event });
+                if (mb.dest_event) |dest| {
+                    try self.writeFmt("\"{s}\"", .{dest});
+                } else {
+                    try self.write("null");
+                }
+                // A void event's completion carries no branch name. The Zig
+                // reference spells that `__void` (emitter_helpers.zig:3400) and the
+                // JS record must agree, or an arm reading `.branch` sees a different
+                // string on each target.
+                try self.writeFmt(", branch: \"{s}\"", .{if (mb.branch.len == 0) "__void" else mb.branch});
+                // Transition is the cheap metatype: transition metadata only, no
+                // clock read. Profile adds the timestamp, Audit adds the payload
+                // slot — the same three shapes, field for field, as the Zig taps
+                // namespace (emitter_helpers.zig:3424).
+                if (!std.mem.eql(u8, mb.metatype, "Transition")) {
+                    try self.write(", timestamp_ns: Number(process.hrtime.bigint())");
+                    if (std.mem.eql(u8, mb.metatype, "Audit")) try self.write(", payload: null");
+                }
+                try self.write(" };\n");
+                try self.emitPreambleContinuations(continuations, inner);
+                try self.writeFmt("{s}}}\n", .{indent});
                 return true;
             },
             else => return false,
@@ -1720,27 +1910,31 @@ const Emitter = struct {
         // nodes the closure path already lowers correctly. Gate on the proc rather
         // than discovering its absence one frame deeper.
         //
-        // A producer that ALSO declares terminal branches is not this shape. It
-        // returns a value, its proc body says so with `return`, and this path
-        // splices that body into a plain block — where `return` exits the whole
-        // flow function and the terminal arms, emitted nowhere, simply vanish.
-        // `sink { ! ?pulse i64 | done | err }` printed its three pulses and then
-        // silently dropped `done`: correct output followed by a missing line, the
-        // hardest kind of divergence to read. The closure path below already
-        // handles the mixed shape — Handlers_<id> for the effect arms, a real
-        // handler call, then a `.tag` dispatch — so route there and keep the
-        // splice for what it was built for: pure void producers (140_011, the
-        // pipe_dN depth benchmarks), which declare no terminal branch at all.
+        // The splice inlines the proc body INCLUDING its `return .{ .done = … }`,
+        // and that `return` exits the ENCLOSING flow function — so terminal arms,
+        // emitted nowhere, simply vanish. `sink { ! ?pulse i64 | done | err }`
+        // printed its three pulses and then silently dropped `done`: correct
+        // output followed by a missing line, the hardest kind of divergence to
+        // read. The closure path below already handles the mixed shape —
+        // Handlers_<id> for the effect arms, a real handler call, then a `.tag`
+        // dispatch — so route there and keep the splice for what it was built
+        // for: pure void producers (140_011, the pipe_dN depth benchmarks).
         //
-        // Two contestants found this independently and gated it differently:
-        // `!terminal_has_body` (keep the fast path when a declared terminal arm
-        // carries no body) versus `terminal_branches == 0` below. The stricter
-        // one wins, because the permissive one is unsound for a reason neither
-        // spelled out: the spliced `return` exits the flow function even when no
-        // continuation body would have run, so any flow STEP after the
-        // invocation is dropped too. The check was looking at continuations; the
-        // hazard is the return.
-        if (event_has_effect and all_effects_void and terminal_branches == 0 and
+        // TWO PREDICATES, deliberately, and they were found independently: W3 and
+        // W2 gated on the event DECLARING no terminal branch, W4 on no terminal
+        // continuation having a BODY. The first implies the second, so the
+        // conjunction is the first — but both are written out because they are
+        // different questions (what the event promises vs what this call site
+        // does with it) and a later relaxation of one must not silently take the
+        // other with it. This guard's failure mode is a dropped line and exit 0;
+        // it earns the belt and the braces.
+        var terminal_has_body = false;
+        for (continuations) |*c| {
+            if (c.kind != .terminal) continue;
+            const n = c.node orelse continue;
+            if (n != .terminal) terminal_has_body = true;
+        }
+        if (event_has_effect and all_effects_void and terminal_branches == 0 and !terminal_has_body and
             self.findJsProcIn(self.items, &event.path) != null)
         {
             try self.emitInlineVoidProducer(event, inv, continuations, indent);
@@ -2562,9 +2756,15 @@ const Emitter = struct {
                 // the tagged object. Same split the Zig emitter makes between
                 // `enclosing_bare_return` and `result.<branch>`.
                 if (bare_return or cont.branch.len == 0) {
-                    try self.writeFmt("{s}const {s} = {s};\n", .{ body_indent, binding, rn });
+                    try self.writeFmt("{s}const ", .{body_indent});
+                    try self.writeIdent(binding);
+                    try self.writeFmt(" = {s};\n", .{rn});
                 } else {
-                    try self.writeFmt("{s}const {s} = {s}.{s};\n", .{ body_indent, binding, rn, cont.branch });
+                    try self.writeFmt("{s}const ", .{body_indent});
+                    try self.writeIdent(binding);
+                    try self.write(" = ");
+                    try self.writeMember(rn, cont.branch);
+                    try self.write(";\n");
                 }
             }
         }
@@ -2578,8 +2778,10 @@ const Emitter = struct {
             };
             const base = if (bare_return or cont.branch.len == 0)
                 try self.allocator.dupe(u8, rn)
+            else if (isJsIdentifier(cont.branch))
+                try std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ rn, cont.branch })
             else
-                try std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ rn, cont.branch });
+                try std.fmt.allocPrint(self.allocator, "{s}[\"{s}\"]", .{ rn, cont.branch });
             defer self.allocator.free(base);
             try self.emitDestructureBindings(cont.destructure, base, body_indent);
         }
@@ -2652,7 +2854,11 @@ const Emitter = struct {
                 try self.emitDestructureBindings(field.sub, path, indent);
                 continue;
             }
-            try self.writeFmt("{s}const {s} = {s}.{s};\n", .{ indent, field.name, base, field.name });
+            try self.writeFmt("{s}const ", .{indent});
+            try self.writeIdent(field.name);
+            try self.write(" = ");
+            try self.writeMember(base, field.name);
+            try self.write(";\n");
         }
     }
 
@@ -2667,7 +2873,11 @@ const Emitter = struct {
         try self.write("{ ");
         for (args, 0..) |arg, idx| {
             if (idx > 0) try self.write(", ");
-            try self.writeFmt("{s}: ", .{arg.name});
+            // The key is a PARAMETER name — an identifier, so it lowers. The
+            // handler destructures it back out under the same lowering, which is
+            // what keeps `outer-val` spelled `outer_val` on both sides of the call.
+            try self.writeIdent(arg.name);
+            try self.write(": ");
             try self.writeJsExpr(arg.value);
         }
         try self.write(" }");
@@ -2833,6 +3043,95 @@ fn findOpCall(body: []const u8, from: usize, op: []const u8) ?OpCallMatch {
 fn isIdentChar(c: u8) bool {
     return (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or
         (c >= '0' and c <= '9') or c == '_';
+}
+/// Can `name` be written after a `.`? Letters, digits, `_` and `$`, not starting
+/// with a digit. A reserved word IS legal as a property name in ES5+, so
+/// `result.default` needs no special case — only a name JS cannot spell at all,
+/// which in this pipeline means a kebab branch or field name, needs brackets.
+fn isJsIdentifier(name: []const u8) bool {
+    if (name.len == 0) return false;
+    if (name[0] >= '0' and name[0] <= '9') return false;
+    for (name) |c| {
+        if (!(isIdentChar(c) or c == '$')) return false;
+    }
+    return true;
+}
+
+/// Is `text[at]` (a `&`) in PREFIX position — Zig address-of — rather than infix
+/// bitwise-and? Prefix means nothing that could END an operand precedes it: start
+/// of text, an opener, a comma, or an operator. `a & b` is infix and means the
+/// same thing in both languages; `&items` is an address JS does not have.
+///
+/// The one case a character test alone gets wrong is a preceding KEYWORD. In
+/// `for (const x of &items)` the char before is `f`, which looks exactly like the
+/// end of an identifier — but `of` cannot END an operand, it demands one. That is
+/// not a corner: it is the shape the `for|template|js` body renders for every
+/// `~for(&xs)` in the corpus. So the scan reads back a whole WORD and asks what
+/// the word is, not what its last letter is.
+fn isPrefixPosition(text: []const u8, at: usize) bool {
+    var j = at;
+    while (j > 0 and (text[j - 1] == ' ' or text[j - 1] == '\t')) j -= 1;
+    if (j == 0) return true;
+    const p = text[j - 1];
+    if (!(isIdentChar(p) or p == ')' or p == ']' or p == '}' or p == '"' or p == '\'')) return true;
+    if (!isIdentChar(p)) return false;
+    var w = j;
+    while (w > 0 and isIdentChar(text[w - 1])) w -= 1;
+    const operand_expecting = [_][]const u8{
+        "of",   "in",    "return", "typeof", "case",  "new",
+        "delete", "void", "yield",  "await",  "instanceof",
+    };
+    for (operand_expecting) |kw| {
+        if (std.mem.eql(u8, text[w..j], kw)) return true;
+    }
+    return false;
+}
+
+/// At `text[at] == '['`, is this the opening of a Zig ARRAY LITERAL type prefix
+/// (`[_]i32{`, `[3]i32{`, `[2][2]i32{`, `[_]const u8{`)? Returns the index just
+/// past the `{` when so. An ordinary INDEX (`arr[i]`) has no brace after the
+/// type slot and returns null, as does a plain slice type with no literal body.
+fn zigArrayLiteralOpen(text: []const u8, at: usize) ?usize {
+    var j = at;
+    // One or more `[…]` dimension groups.
+    var dims: usize = 0;
+    while (j < text.len and text[j] == '[') {
+        const close = std.mem.indexOfScalarPos(u8, text, j, ']') orelse return null;
+        // A dimension is `_` or a constant expression; a `[` inside it means this
+        // is not the simple literal shape this lowering models.
+        if (std.mem.indexOfScalarPos(u8, text[0..close], j + 1, '[') != null) return null;
+        j = close + 1;
+        dims += 1;
+    }
+    if (dims == 0) return null;
+    // The element type: identifier chars, `.`, and any `const`/`*` qualifiers.
+    while (j < text.len and (isIdentChar(text[j]) or text[j] == '.' or text[j] == '*' or text[j] == ' ')) j += 1;
+    if (j >= text.len or text[j] != '{') return null;
+    return j + 1;
+}
+
+/// At `text[at] == '{'` opening a `.{ … }`, are its top-level entries POSITIONAL
+/// (`.{ 0, 0 }` — a tuple, i.e. a JS array) rather than NAMED (`.{ .ok = v }` — a
+/// branch constructor or struct, whose JS shape this lowering deliberately does
+/// not guess)? An empty `.{}` counts as positional: it is the void payload.
+fn isPositionalTuple(text: []const u8, at: usize) bool {
+    var j = at + 1;
+    var depth: usize = 0;
+    while (j < text.len) : (j += 1) {
+        switch (text[j]) {
+            '(', '[', '{' => depth += 1,
+            ')', ']' => depth -= 1,
+            '}' => {
+                if (depth == 0) return true;
+                depth -= 1;
+            },
+            // A top-level `.name` is the named form. `.{` nested inside is a row
+            // of its own and is decided when the scan reaches it.
+            '.' => if (depth == 0 and j + 1 < text.len and isIdentChar(text[j + 1])) return false,
+            else => {},
+        }
+    }
+    return true;
 }
 
 fn pathsEqual(a: *const ast.DottedPath, b: *const ast.DottedPath) bool {

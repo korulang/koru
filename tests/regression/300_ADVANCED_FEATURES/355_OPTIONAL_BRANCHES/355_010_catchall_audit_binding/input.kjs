@@ -1,0 +1,19 @@
+// JavaScript implementation facet. The Koru declarations live in the
+// `input.kz` companion (merged at import); this file holds the `|js`
+// proc bodies mirroring its `|zig` ones.
+
+~proc process|js {
+    if (value > 100) {
+        return { tag: "warning", warning: "Value too large" };
+    }
+    if (value % 2 == 1) {
+        return { tag: "debug", debug: "Value is odd" };
+    }
+    return { tag: "success", success: value * 2 };
+}
+
+// The Zig facet writes straight to fd 1 to keep the audit line on stdout
+// alongside std/io:print.ln; console.log is the same stream in node.
+~proc print-str|js {
+    console.log(text);
+}

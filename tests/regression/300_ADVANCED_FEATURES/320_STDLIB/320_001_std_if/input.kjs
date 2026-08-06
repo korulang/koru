@@ -1,0 +1,21 @@
+// JavaScript implementation facet. The Koru declarations live in the
+// `input.kz` companion (merged at import); this file holds the `|js`
+// proc bodies mirroring its `|zig` ones.
+//
+// `my-if` is deliberately absent. It is a `[comptime|transform]`, and a
+// transform's body runs INSIDE the compiler — it is Zig on every target,
+// including this one. Only the runtime impl it rewrites to has a JS body.
+//
+// `value` and `small` are the module-level constants the two `~my-if(...)`
+// call sites test; a `.kz` host line is Zig-only, so the JS facet needs its own.
+
+const value = 42;
+const small = 5;
+
+~proc my-if-impl|js {
+    if (condition) {
+        return { tag: "then" };
+    } else {
+        return { tag: "else" };
+    }
+}

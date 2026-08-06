@@ -1,0 +1,34 @@
+// JavaScript implementation facet. The Koru declarations live in the
+// `db.kz` companion (merged at import); this file holds the `|js`
+// proc bodies mirroring its `|zig` ones.
+//
+// The Zig facet allocates because a `*Connection` needs an address; the
+// phantom `connected!` / `active!` states are compile-time obligations, so
+// the JS facet returns the objects directly and drops the explicit destroys.
+
+~proc open|js {
+    return { tag: "connected", connected: { handle: 42 } };
+}
+
+~proc tx.begin|js {
+    return { conn_handle: conn.handle };
+}
+
+~proc tx.exec|js {
+    console.log(`Executing: ${sql}`);
+    return tx;
+}
+
+~proc tx.commit|js {
+    console.log(`COMMIT`);
+    return { handle: tx.conn_handle };
+}
+
+~proc tx.rollback|js {
+    console.log(`ROLLBACK`);
+    return { rolled_back: { handle: tx.conn_handle } };
+}
+
+~proc close|js {
+    console.log(`Connection closed`);
+}

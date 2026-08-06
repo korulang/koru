@@ -1,0 +1,20 @@
+// JavaScript implementation facet. The Koru declarations live in the
+// `input.kz` companion (merged at import); this file holds the `|js`
+// proc bodies mirroring its `|zig` ones.
+//
+// `items` is what `~for` iterates; a `.kz` host line is Zig-only, so the JS
+// facet declares its own.
+
+const items = [1, 2, 3];
+
+~proc double|js {
+    return x * 2;
+}
+
+~proc print-num|js {
+    console.log(`${y}`);
+}
+
+~proc finalize|js {
+    console.log(`done`);
+}
