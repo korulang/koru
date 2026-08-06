@@ -1,0 +1,14 @@
+// JavaScript implementation facet of module `fs`.
+// Events and types are declared in fs.kz (merged at import); this file holds
+// the |js proc bodies. The obligation lifecycle is what the test pins — the
+// Zig facet's page_allocator.create(File) is incidental, so the handle is a
+// plain object here.
+
+~proc open|js {
+    console.log("Opening file");
+    return { handle: 42 };
+}
+
+~proc close|js {
+    console.log("Closing file (auto-discharged)");
+}

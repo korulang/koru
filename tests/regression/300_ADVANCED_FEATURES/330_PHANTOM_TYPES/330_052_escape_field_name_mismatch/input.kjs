@@ -1,0 +1,13 @@
+// JavaScript implementation facet. Events are declared in input.kz (merged at
+// import); this file holds the |js proc bodies. What the fixture pins is the
+// obligation lifecycle, so the Zig facet's page_allocator.create/destroy is
+// modelled by a plain object and a no-op release.
+
+~proc open|js {
+    console.log(`opened: ${path}`);
+    return { handle: 42 };
+}
+
+~proc close|js {
+    console.log("closed");
+}
