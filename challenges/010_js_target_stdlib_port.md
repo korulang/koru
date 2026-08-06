@@ -74,6 +74,48 @@ source inside emitted JavaScript.
    `koru_std/` hardcode `.target = "zig"`. No `.kjs` can host them and no
    template renders them today.
 
+## READ THIS BEFORE ESTIMATING ANY TRANSFORM PORT (2026-08-06, regex)
+
+`regex` shipped: **0/28 → 20/28**, zig-green 4/4, every `640_*` and `115_*` test
+green. But almost none of that work was in `regex.kz`. **Three compiler walls
+stood between a `|js` transform rendering and a backend that compiles**, and all
+three block `store` and `kernel` exactly as they blocked regex:
+
+1. **A `[transform]proc`-shaped event emitted no variant handlers at all.**
+   `visitor_emitter.zig` short-circuits to a dedicated override for events
+   implemented by `~[transform]proc` and returned before the variant loop, while
+   `main.zig`'s dispatcher wrote `handler__js` branches anyway. The backend
+   referenced a member nobody generated.
+2. **The JS emitter spliced the transform's ZIG body as a runtime body**, putting
+   `@import("ast")` into the output. `findJsProcIn` keyed on the tag alone.
+3. **Top-level `.inline_code` was dropped in silence** — the declarations a
+   transform appends beside the site it rewrites (regex's compiled matchers)
+   never reached the JS file, while the dispatch calling them did.
+
+Plus one that is not transform-specific and will hit any destructuring branch:
+the effect-splice path bound `cont.binding` and skipped `emitDestructureBindings`,
+so `| pat { l, w, h } |>` arrived with every field undefined.
+
+All four are fixed. The load-bearing lesson for planning: **`print.blk|js`
+working was not evidence that transform `|js` variants worked** — it is a plain
+`~proc`, so it misses the override that broke everything else. The one existing
+precedent was the one example that could not have caught the bug. Any store or
+kernel estimate made before this landed was measuring the `.kz` half only.
+Gardened as `frag-a-transform-proc-had-no-js-variant-machinery`.
+
+The engine side is also further along than the module list suggests:
+`compileToJs`, `compileSearchToJs` and `compileCapturesToJs` now exist in
+`src/regex_engine.zig` beside their Zig kin, verified against the Zig engine as
+oracle. Watch the word size — the Pike VM's `[4]u64` class mask transliterates
+cleanly to JavaScript and is silently wrong there, because JS bitwise operators
+are 32-bit; it is rendered `[8]u32`. See
+`frag-a-host-word-size-is-part-of-the-rendering-contract`.
+
+**What regex did NOT close**, and neither is regex's to fix: 3 AoC tests fail on
+`PARSE003` (the one-variant-tag-union rule — `810_071` is red on the ZIG target
+too, and was already red in the board at `fcd83850`), and 5 fail on `js_emitter`
+`UnsupportedConstruct`. Those 8 are the honest residue of the 28.
+
 ## The ranking, and the one real trap
 
 `fs:read-lines` is one proc in an 87-line file reached by 66 tests. `store:new`
