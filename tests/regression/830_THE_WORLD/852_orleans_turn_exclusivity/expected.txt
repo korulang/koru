@@ -1,0 +1,8 @@
+  bump -> 1
+  await other-grain — non-reentrant, turn held
+  bump -> 2
+  turn t1 ends
+  bump -> 3
+  await other-grain — REENTRANT; another turn bumped to 4
+  bump -> 5
+  turn resumed ends
