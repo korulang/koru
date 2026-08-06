@@ -4910,8 +4910,17 @@ fn topologicalSortSteps(allocator: std.mem.Allocator, steps: []const BuildStep) 
     return try result.toOwnedSlice(allocator);
 }
 
-/// Execute build steps in dependency order
-fn executeBuildSteps(allocator: std.mem.Allocator, steps: []const BuildStep) !void {
+/// Execute build steps in dependency order.
+///
+/// `output_dir` is each step's working directory, and that is the contract: a
+/// build step acts on the EMITTED artifacts, which is where they live. Every
+/// deliberate site in the tree already assumed it — `koru_std/build.kz`'s three
+/// defaults are all output-dir-relative, and the package-install steps a few
+/// hundred lines below pass `.cwd = output_dir` too. Before this parameter
+/// existed the steps silently inherited koruc's INVOCATION directory, so the
+/// stdlib's own defaults only worked when you happened to invoke koruc from the
+/// output directory (`310_120`, pinned red for exactly this).
+fn executeBuildSteps(allocator: std.mem.Allocator, steps: []const BuildStep, output_dir: []const u8) !void {
     if (steps.len == 0) return;
 
     // Build a set of steps that should actually execute:
@@ -4976,6 +4985,7 @@ fn executeBuildSteps(allocator: std.mem.Allocator, steps: []const BuildStep) !vo
         const result = try std.process.Child.run(.{
             .allocator = allocator,
             .argv = &[_][]const u8{ "sh", "-c", step.script },
+            .cwd = output_dir,
         });
         defer {
             allocator.free(result.stdout);
@@ -7659,7 +7669,7 @@ pub fn main() !void {
     // If there are user-defined build steps, execute them (including any defaults they depend on)
     // Default-only steps don't auto-execute - they're just available for override
     if (build_steps.len > 0 and collection.has_user_defined) {
-        try executeBuildSteps(allocator, build_steps);
+        try executeBuildSteps(allocator, build_steps, output_dir);
         // Build steps handled everything, we're done!
         return;
     }
