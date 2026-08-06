@@ -599,8 +599,24 @@ const std = @import("std");
     // STEP 5: Transform source to Zig struct initialization
     // ========================================================================
     // Helper: transform "x: 42, y: 0" -> ".x = 42, .y = 0"
+    // THE TARGET LANGUAGE, READ ONCE. `~capture` settled this shape
+    // (control.kz:427): a transform whose two renderings differ in a handful of
+    // spellings branches on the build language here rather than growing a `|js`
+    // twin of its whole body. init is 1391 lines and ~60 emission sites, of which
+    // eight actually differ — a variant would be 1391 lines of copy waiting to
+    // drift, which is the two-lowerings-of-one-construct shape that comment
+    // rejects. The `|js` VARIANT mechanism is right when the two renderings are
+    // genuinely different programs; here they are one program with eight seams.
+    //
+    // What differs, and nothing else: the array literal, the loop headers, the
+    // pointer binding, the synthesized proc's target, and how the static
+    // declaration reaches the file. The op BODIES are already host-agnostic —
+    // `ptr[i].mass *= 2.0` is the same text in both languages, which is why this
+    // port is cheap at all.
+    const host_is_js = std.mem.eql(u8, CompilerEnv.lang, "js");
+
     const transformFields = struct {
-        fn call(alloc: std.mem.Allocator, block_text: []const u8) []const u8 {
+        fn call(alloc: std.mem.Allocator, block_text: []const u8, is_js: bool) []const u8 {
             var resArr = std.ArrayList(u8).initCapacity(alloc, block_text.len * 2) catch unreachable;
             var iter_fields = std.mem.splitSequence(u8, block_text, ",");
             var first = true;
@@ -615,9 +631,11 @@ const std = @import("std");
                     if (!first) resArr.appendSlice(alloc, ", ") catch unreachable;
                     first = false;
 
-                    resArr.append(alloc, '.') catch unreachable;
+                    // `.x = 1.5` is a Zig struct-field initializer; JS spells the
+                    // same thing `x: 1.5` in an object literal.
+                    if (!is_js) resArr.append(alloc, '.') catch unreachable;
                     resArr.appendSlice(alloc, name) catch unreachable;
-                    resArr.appendSlice(alloc, " = ") catch unreachable;
+                    resArr.appendSlice(alloc, if (is_js) ": " else " = ") catch unreachable;
                     resArr.appendSlice(alloc, value) catch unreachable;
                 }
             }
@@ -684,20 +702,38 @@ const std = @import("std");
             static_name_ref: []const u8,
             elem_count: usize,
             shape_fields: []const ast.Field,
+            is_js: bool,
         ) []const u8 {
             if (ops.len == 0) return "";
 
             var code = std.ArrayList(u8).initCapacity(alloc, 512) catch unreachable;
             const ptr_name = "__koru_fused_ptr";
 
-            code.appendSlice(alloc, std.fmt.allocPrint(alloc,
-                \\const {s} = {s}[0..].ptr;
-                ,
-                .{ ptr_name, static_name_ref }
-            ) catch unreachable) catch unreachable;
+            // A JS array already indexes like the Zig many-pointer does, so the
+            // binding is the array itself — there is nothing to decay.
+            //
+            // Each branch spells its own allocPrint: a format string is comptime
+            // in Zig, so it cannot be selected by a runtime flag.
+            const ptr_line = if (is_js)
+                std.fmt.allocPrint(alloc, "const {s} = {s};", .{ ptr_name, static_name_ref }) catch unreachable
+            else
+                std.fmt.allocPrint(alloc, "const {s} = {s}[0..].ptr;", .{ ptr_name, static_name_ref }) catch unreachable;
+            code.appendSlice(alloc, ptr_line) catch unreachable;
 
             if (step_range) |range| {
-                const step_open = std.fmt.allocPrint(alloc, "\nfor ({s}) |_step_i| {{\n    _ = &_step_i;", .{range}) catch unreachable;
+                // `0..3` is a Zig range expression; JS has no such value, so the
+                // bounds are split and spelled as a counted `for`. A range that
+                // is not the literal `a..b` shape has no JS lowering, and saying
+                // so beats emitting a loop that silently never runs.
+                const step_open = if (is_js) blk: {
+                    const dots = std.mem.indexOf(u8, range, "..") orelse {
+                        std.debug.print("error[KORU122]: std/kernel:step on the JavaScript target needs a literal `a..b` range (got `{s}`)\n", .{range});
+                        std.process.exit(1);
+                    };
+                    const lo = std.mem.trim(u8, range[0..dots], " \t");
+                    const hi = std.mem.trim(u8, range[dots + 2 ..], " \t");
+                    break :blk std.fmt.allocPrint(alloc, "\nfor (let _step_i = {s}; _step_i < {s}; _step_i++) {{", .{ lo, hi }) catch unreachable;
+                } else std.fmt.allocPrint(alloc, "\nfor ({s}) |_step_i| {{\n    _ = &_step_i;", .{range}) catch unreachable;
                 code.appendSlice(alloc, step_open) catch unreachable;
             }
 
@@ -741,18 +777,42 @@ const std = @import("std");
                         body.append(alloc, ';') catch unreachable;
                     }
 
-                    code.appendSlice(alloc, std.fmt.allocPrint(alloc,
-                        \\
-                        \\for (0..{d}) |i| {{
-                        \\    for (i + 1..{d}) |j| {{
-                        \\        {s}
-                        \\    }}
-                        \\}}
-                        ,
-                        .{ elem_count, elem_count, body.items }
-                    ) catch unreachable) catch unreachable;
+                    const pair_loop = if (is_js)
+                        std.fmt.allocPrint(alloc,
+                            \\
+                            \\for (let i = 0; i < {d}; i++) {{
+                            \\    for (let j = i + 1; j < {d}; j++) {{
+                            \\        {s}
+                            \\    }}
+                            \\}}
+                            ,
+                            .{ elem_count, elem_count, body.items }
+                        ) catch unreachable
+                    else
+                        std.fmt.allocPrint(alloc,
+                            \\
+                            \\for (0..{d}) |i| {{
+                            \\    for (i + 1..{d}) |j| {{
+                            \\        {s}
+                            \\    }}
+                            \\}}
+                            ,
+                            .{ elem_count, elem_count, body.items }
+                        ) catch unreachable;
+                    code.appendSlice(alloc, pair_loop) catch unreachable;
                 } else if (std.mem.eql(u8, op.op_type, "self")) {
                     if (op.variant) |vt| {
+                        // NO `|mlir` ON JAVASCRIPT, and it refuses by name rather
+                        // than falling back to the ordinary loop. The MLIR/GPU
+                        // lowering is deferred (ruled 2026-08-06: dubious on Zig
+                        // too, a WebGPU analogue is an open question) — and a
+                        // silent fallback would run the kernel on the CPU while the
+                        // source says `|mlir[gpu]`, which is a lying green, not a
+                        // degraded one.
+                        if (is_js) {
+                            std.debug.print("error[KORU122]: std/kernel:self|{s} has no JavaScript lowering — the MLIR/GPU path is Zig-only and a WebGPU analogue is deferred\n  the DEFAULT lowering (`std/kernel:self {{ ... }}`, no variant tag) does run on this target\n", .{vt});
+                            std.process.exit(1);
+                        }
                         // Split `base[param]` — the bracket parameter selects the
                         // LOWERING TARGET of the same representation (|mlir[gpu]),
                         // never a different implementation. RESIDUAL: the call-site
@@ -1208,14 +1268,25 @@ const std = @import("std");
                         body.append(alloc, ';') catch unreachable;
                     }
 
-                    code.appendSlice(alloc, std.fmt.allocPrint(alloc,
-                        \\
-                        \\for (0..{d}) |i| {{
-                        \\    {s}
-                        \\}}
-                        ,
-                        .{ elem_count, body.items }
-                    ) catch unreachable) catch unreachable;
+                    const self_loop = if (is_js)
+                        std.fmt.allocPrint(alloc,
+                            \\
+                            \\for (let i = 0; i < {d}; i++) {{
+                            \\    {s}
+                            \\}}
+                            ,
+                            .{ elem_count, body.items }
+                        ) catch unreachable
+                    else
+                        std.fmt.allocPrint(alloc,
+                            \\
+                            \\for (0..{d}) |i| {{
+                            \\    {s}
+                            \\}}
+                            ,
+                            .{ elem_count, body.items }
+                        ) catch unreachable;
+                    code.appendSlice(alloc, self_loop) catch unreachable;
                 }
             }
 
@@ -1239,11 +1310,13 @@ const std = @import("std");
         while (block_iter.next()) |block_raw| {
             if (__koru_std.mem.indexOf(u8, block_raw, "{")) |brace_idx| {
                 const block_content = block_raw[brace_idx + 1 ..];
-                const fields = transformFields(allocator, block_content);
+                const fields = transformFields(allocator, block_content, host_is_js);
 
                 if (fields.len > 0) {
                     if (count > 0) elements.appendSlice(allocator, ", ") catch unreachable;
-                    elements.appendSlice(allocator, type_name) catch unreachable;
+                    // `Body{ .x = 1 }` names its type; a JS object literal cannot
+                    // and does not need to.
+                    if (!host_is_js) elements.appendSlice(allocator, type_name) catch unreachable;
                     elements.appendSlice(allocator, "{ ") catch unreachable;
                     elements.appendSlice(allocator, fields) catch unreachable;
                     elements.appendSlice(allocator, " }") catch unreachable;
@@ -1252,42 +1325,34 @@ const std = @import("std");
             }
         }
 
-        static_decl = std.fmt.allocPrint(
-            allocator,
-            \\var {s} = [_]{s}{{ {s} }};
-            ,
-            .{ static_name, type_name, elements.items }
-        ) catch unreachable;
+        static_decl = if (host_is_js)
+            std.fmt.allocPrint(allocator, "let {s} = [{s}];", .{ static_name, elements.items }) catch unreachable
+        else
+            std.fmt.allocPrint(allocator, "var {s} = [_]{s}{{ {s} }};", .{ static_name, type_name, elements.items }) catch unreachable;
 
         // Generate static-backed initialization (proof-of-concept)
-        const fused_code = generateKernelOpsCode(allocator, kernel_plan.ops, kernel_plan.step_range, kernel_binding_name, static_name, count, type_fields);
+        const fused_code = generateKernelOpsCode(allocator, kernel_plan.ops, kernel_plan.step_range, kernel_binding_name, static_name, count, type_fields, host_is_js);
         const return_branch = if (has_computed_continuation) "computed" else "kernel";
-        proc_body = std.fmt.allocPrint(
-            allocator,
-            \\{s}
-            \\return .{{ .{s} = {s}[0..] }};
-            ,
-            .{ fused_code, return_branch, static_name }
-        ) catch unreachable;
+        // A branch return is a tagged union on Zig and the emitter's
+        // `{ tag, <branch> }` object on JS; the slice `[0..]` is just the array.
+        proc_body = if (host_is_js)
+            std.fmt.allocPrint(allocator, "{s}\nreturn {{ tag: \"{s}\", {s}: {s} }};", .{ fused_code, return_branch, return_branch, static_name }) catch unreachable
+        else
+            std.fmt.allocPrint(allocator, "{s}\nreturn .{{ .{s} = {s}[0..] }};", .{ fused_code, return_branch, static_name }) catch unreachable;
     } else {
         // Single mode: just one struct instance
-        const fields = transformFields(allocator, source.text);
-        const single_init = std.fmt.allocPrint(allocator, "{s}{{ {s} }}", .{ type_name, fields }) catch unreachable;
-        static_decl = std.fmt.allocPrint(
-            allocator,
-            \\var {s} = [_]{s}{{ {s} }};
-            ,
-            .{ static_name, type_name, single_init }
-        ) catch unreachable;
-        const fused_code = generateKernelOpsCode(allocator, kernel_plan.ops, kernel_plan.step_range, kernel_binding_name, static_name, 1, type_fields);
+        const fields = transformFields(allocator, source.text, host_is_js);
+        const single_init = std.fmt.allocPrint(allocator, "{s}{{ {s} }}", .{ if (host_is_js) "" else type_name, fields }) catch unreachable;
+        static_decl = if (host_is_js)
+            std.fmt.allocPrint(allocator, "let {s} = [{s}];", .{ static_name, single_init }) catch unreachable
+        else
+            std.fmt.allocPrint(allocator, "var {s} = [_]{s}{{ {s} }};", .{ static_name, type_name, single_init }) catch unreachable;
+        const fused_code = generateKernelOpsCode(allocator, kernel_plan.ops, kernel_plan.step_range, kernel_binding_name, static_name, 1, type_fields, host_is_js);
         const return_branch = if (has_computed_continuation) "computed" else "kernel";
-        proc_body = std.fmt.allocPrint(
-            allocator,
-            \\{s}
-            \\return .{{ .{s} = {s}[0..] }};
-            ,
-            .{ fused_code, return_branch, static_name }
-        ) catch unreachable;
+        proc_body = if (host_is_js)
+            std.fmt.allocPrint(allocator, "{s}\nreturn {{ tag: \"{s}\", {s}: {s} }};", .{ fused_code, return_branch, return_branch, static_name }) catch unreachable
+        else
+            std.fmt.allocPrint(allocator, "{s}\nreturn .{{ .{s} = {s}[0..] }};", .{ fused_code, return_branch, static_name }) catch unreachable;
     }
 
     // ========================================================================
@@ -1416,13 +1481,31 @@ const std = @import("std");
                 .path = ast.DottedPath{ .module_qualifier = proc_module, .segments = proc_segments },
                 .body = ast.Source{ .text = proc_body, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
                 .annotations = &[_][]const u8{},
-                .target = allocator.dupe(u8, "zig") catch unreachable,
+                // The SYNTHESIZED proc carries the build language, not a constant.
+                // Hardcoded "zig" here is what made kernel unreachable on JS: the
+                // body was JavaScript-shaped but tagged zig, so the emitter found
+                // no `|js` proc and refused the whole program with NoJsProcBody.
+                .target = allocator.dupe(u8, if (host_is_js) "js" else "zig") catch unreachable,
                 .location = flow.location,
                 .module = allocator.dupe(u8, flow.module) catch unreachable,
             },
         };
         
-        const static_item = ast.Item{
+        // HOW THE STATIC DECLARATION REACHES THE FILE DIFFERS BY TARGET, and not
+        // by choice. The JS emitter's host-line walk keys on the FILE EXTENSION
+        // that carries the line (`.kjs` → js, file_types.zig:45); a line
+        // synthesized here is located in the user's `.k`, which is "pure contract,
+        // no host bytes" and returns null — so a host_line would be silently
+        // dropped and the generated proc would reference an array that was never
+        // declared. `.inline_code` is emitted at top level on both targets and has
+        // no such gate, which is exactly what a transform-minted declaration needs.
+        const static_item = if (host_is_js) ast.Item{
+            .inline_code = ast.InlineCode{
+                .code = allocator.dupe(u8, static_decl) catch unreachable,
+                .location = flow.location,
+                .module = allocator.dupe(u8, home_module) catch unreachable,
+            },
+        } else ast.Item{
             .host_line = ast.HostLine{
                 .content = allocator.dupe(u8, static_decl) catch unreachable,
                 .location = flow.location,
