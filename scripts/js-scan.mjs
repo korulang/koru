@@ -166,7 +166,15 @@ async function scanOne(row) {
   const args = readLines(join(dir, 'ARGS'))
   let stdout
   try {
-    const r = await execFileAsync('node', [jsOut, ...args], { cwd: dir, timeout: TIMEOUT, maxBuffer: 1 << 26 })
+    // cwd is the REPO ROOT, matching the closer exactly (regression_lib.sh:347
+    // runs `node "$js_out"` with no cd, and :1462 runs the Zig binary the same
+    // way). Every ARGS entry and hard-coded path in the corpus is
+    // repo-root-relative, so running from the test directory made every fs and
+    // args test read ENOENT and report a mismatch no matter how correct the
+    // emitter was: 1/26 here against 16/26 under closer semantics, on identical
+    // code. Found by StdFsReadLines, which mirrored scanOne into /tmp to
+    // measure the difference rather than editing the instrument.
+    const r = await execFileAsync('node', [jsOut, ...args], { cwd: ROOT, timeout: TIMEOUT, maxBuffer: 1 << 26 })
     stdout = r.stdout + r.stderr
   } catch (e) {
     return res('js-runtime', firstError(e.stderr || e.message))

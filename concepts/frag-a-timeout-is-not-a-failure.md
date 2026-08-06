@@ -44,6 +44,24 @@ this file is phrased generally rather than about timeouts:
   (`regression_lib.sh:277`); this one runs regardless, so the guarantee was
   false for 23 of 222 tests. A comment promising fidelity is not fidelity, and
   it is more dangerous than no comment, because it discourages the check.
+  That guarantee turned out to be false a SECOND time, and worse. The closer
+  runs the emitted program from the repo root (`regression_lib.sh:347`, and the
+  Zig binary likewise at `:1462`); the harness ran it from the test directory.
+  Every `ARGS` entry and hard-coded path in the corpus is repo-root-relative, so
+  every filesystem and args test read `ENOENT` and reported a mismatch no matter
+  how correct the emitter was — 1/26 measured against 16/26 under closer
+  semantics, identical code, one word of difference. A contestant doing correct
+  work would have reported an honest Frontier at a wall that did not exist, and
+  it would have been believed, because a Frontier is exactly the outcome we
+  reward for intellectual honesty.
+
+  That is the sharp form of this failure: **a harness that diverges from what it
+  claims to mirror does not produce noise, it produces credible false negatives
+  in the one report shape designed to be trusted.** Two divergences found in one
+  header; the difference is that the zig-red one is now declared and split in the
+  report, while this one was simply wrong. Both were found by someone measuring
+  rather than reading — the second by a contestant who mirrored the harness into
+  `/tmp` to compare, rather than editing the instrument it was being scored by.
 
 Splitting that last one made the honest figure *better* — 147/198 zig-green
 instead of a blended 152/222 — worth recording because the reflex is to expect
