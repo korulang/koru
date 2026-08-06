@@ -1,0 +1,5 @@
+// JavaScript host-line facet. The flow branches on a host constant declared in
+// input.kz; that line is Zig, so the JS target needs its own. Events, imports
+// and the flow all stay in input.kz.
+
+const condition = true;

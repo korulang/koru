@@ -37,10 +37,34 @@ false for every `.kz` fixture. Cross-target parity work must count fixture
 host code in its denominator from the start, or its first honest
 measurement will arrive after the budget is spent.
 
-Open question: whether the 361 want per-test `.kjs` facets at all. Some are
-surely Zig-semantics tests whose Koru-side meaning is "the Zig backend
-rejects this" (the deferred-rejection rulings in
-`OUTSTANDING_DESIGN_DECISIONS.md`), and porting them to JavaScript would be
-asserting something nobody has designed. That triage — port versus
-legitimately exclude — is unmade, and it is the difference between a 361-item
-mountain and a much smaller one.
+The triage that question asks for is now made for 51 of the 361 — the
+`330_PHANTOM_TYPES` slice — and it came back **51 for 51: every one wanted
+the facet, and not one was a legitimate Zig-only exclusion.** That slice was
+not a soft sample. It was picked precisely because it is the most
+Zig-idiomatic corner of the corpus: nearly every fixture opens with
+`std.heap.page_allocator.create(File)` followed by `f.* = File{...}`, which
+reads like host-semantics testing and was flagged in advance as the likely
+home of the Zig-only exclusions. It contains none. What those tests pin is
+the **obligation lifecycle** — that a debt is issued once and discharged
+exactly once, and in what order the trace prints. The allocator is the
+cheapest way to get a distinguishable resource in Zig, not the thing under
+test, and a plain object literal is a faithful model of it. `destroy` ports
+to nothing at all, because nothing observable depended on it.
+
+So the sharpened belief: **"this test is written in Zig" and "this test is
+about Zig" are independent, and host idiom is near-worthless evidence for
+the second.** The exclusion set is real but it is characterised by what a
+fixture *observes* — a raw pointer value, integer wraparound, a thread
+identity, a child-process exit code — never by what it *allocates*. Triaging
+on idiom would have written off this entire slice unexamined.
+
+The 361 are correspondingly less of a mountain than the count suggests, but
+the reason the number moves is not that the ports are easy. It is that the
+residue after a complete port is **not fixture work at all**. Four of the 51
+stayed red, and every one names a JS-emitter construct gap — a metatype
+binding, a call-site destructure bind, a label-fold that only lowers when
+`#loop` is the flow head. No `.kjs` can close any of them. The facet is
+necessary and not sufficient, and once the necessary part is done the
+leftover is a clean readout of emitter gaps. That makes this population a
+better instrument than it looks: porting a slice is also a survey of what
+the target cannot yet say.

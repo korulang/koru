@@ -1,0 +1,31 @@
+name: boundary-correction
+kind: inferred
+shape: categorical
+face: in
+membrane: false
+note: |
+  Fires when work reaches the edge of the brief that dispatched it and finds
+  the edge in the wrong place — the boundary drawn around the task admits work
+  the task cannot do, or excludes work it must.
+
+  Distinct from gap-found, which names an obstacle INSIDE a correctly-drawn
+  scope. Boundary-correction says the scope line itself is misplaced, so the
+  residue after doing the assigned work is not a measure of how hard the work
+  was; it is a measure of how wrong the line was.
+
+  First fired on the js-parity host-fixture wave. The brief framed the
+  population as fixture-only ("a test needs ONE new file"). For 9 of one
+  51-test slice that is false and unfixably so: no `.kjs` facet can supply a
+  construct the JS emitter refuses to model or miscompiles. The fixture work
+  was necessary and not sufficient, and the four tests still red after a
+  complete port name emitter gaps, not hard fixtures.
+
+  Value, where countable: the number of assigned units that cannot be closed
+  by the assigned means.
+
+  Detector: after finishing the assigned work completely, ask what the
+  remaining failures are ABOUT. If they are systematically about a different
+  artifact than the one the brief scoped, the boundary was misplaced — route
+  the residue to whoever owns that artifact rather than absorbing it as
+  personal shortfall.
+route: surface, wake

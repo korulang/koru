@@ -1,0 +1,26 @@
+// JavaScript implementation facet of module `fs`.
+// Events and types are declared in fs.kz (merged at import); this file holds
+// the |js proc bodies. What the fixture pins is the obligation lifecycle, so
+// the Zig facet's page_allocator.create/destroy is modelled by a plain object
+// and a no-op release.
+
+~proc open|js {
+    return { handle: 42 };
+}
+
+~proc lock|js {
+    return file;
+}
+
+~proc write|js {
+    console.log(`Writing: ${data}`);
+    return { tag: "written" };
+}
+
+~proc unlock|js {
+    console.log("Unlocking");
+}
+
+~proc force-close|js {
+    console.log("Force closing");
+}
