@@ -1,0 +1,8 @@
+node-a  cas guard=0
+  node-a  write e1 room-42 <- hello from a
+  node-a  release
+node-b  cas guard=0 (stale)
+  node-b  rejected — etag moved
+node-b  cas guard=1 (takeover)
+  node-b  write e2 room-42 <- hello from b
+  node-b  release
