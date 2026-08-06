@@ -29,6 +29,10 @@ const ast = @import("ast");
 const log = @import("log");
 const file_types = @import("file_types");
 const annotation_parser = @import("annotation_parser");
+/// The ONE Koru struct-literal projector, shared with the parser, the Zig emitter
+/// and the template engine. Reading a `{ … }` literal with a second brace-splitter
+/// is how two hosts' answers drift.
+const struct_literal = @import("struct_literal");
 
 pub const JsEmitError = error{
     OutOfMemory,
@@ -92,7 +96,12 @@ pub fn emit(allocator: std.mem.Allocator, program: *const ast.Program) JsEmitErr
         if (item.* != .flow) continue;
         if (!em.isDeclarationFlow(&item.flow)) continue;
         const body = stripInlineStmtMarker(item.flow.inline_body.?);
-        try em.write(std.mem.trim(u8, body, " \t\r\n"));
+        // Through the host-text lowering, like every other spliced fragment. This
+        // was the one splice site that wrote raw, so a value the `const` template
+        // rendered as a Zig cast (`const threshold = @as(i32, 5);`) reached the JS
+        // file with the `@` intact — a syntax error at `node`, three passes away
+        // from the site that wrote it.
+        try em.writeHostText(std.mem.trim(u8, body, " \t\r\n"));
         try em.write("\n");
     }
 
@@ -164,6 +173,20 @@ const Emitter = struct {
     /// not an event invocation, and only this context can tell them apart —
     /// the twin of EmissionContext.impl_event_decl (emitter_helpers.zig:6902).
     impl_event: ?*const ast.EventDecl = null,
+    /// The `#label` fold currently being emitted, or null outside one. A `@label(…)`
+    /// jump re-seeds the fold's state variables and re-runs its head, and only the
+    /// frame that opened the loop knows their names — the twin of
+    /// EmissionContext.label_handler_invocation / .label_result_var
+    /// (emitter_helpers.zig:5203).
+    label_frame: ?LabelFrame = null,
+
+    const LabelFrame = struct {
+        label: []const u8,
+        /// The `let result_<id>` the fold reassigns on every turn.
+        result_name: []const u8,
+        /// The head invocation to re-run. Its arg NAMES are the fold's parameters.
+        inv: *const ast.Invocation,
+    };
 
     fn nextId(self: *Emitter) usize {
         const id = self.id_counter;
@@ -323,7 +346,7 @@ const Emitter = struct {
     fn emitEventDecl(self: *Emitter, event: *const ast.EventDecl, scope: []const ast.Item) JsEmitError!void {
         const impl = self.findImplIn(scope, &event.path) orelse {
             // No proc, no arrow, no subflow — the event has no body on any target.
-            log.debug("[js_emitter] event '{s}' has no |js proc, immediate, or subflow body\n", .{event.path.segments[event.path.segments.len - 1]});
+            log.err("[js_emitter] event '{s}' has no |js proc, immediate, or subflow body\n", .{event.path.segments[event.path.segments.len - 1]});
             return JsEmitError.NoJsProcBody;
         };
 
@@ -413,7 +436,7 @@ const Emitter = struct {
         if (bc.is_bare_return) {
             try self.writeFmt("{s}return ", .{indent});
             if (bc.plain_value) |pv| {
-                try self.writeJsExpr(pv);
+                try self.writeProduceValue(pv);
             } else {
                 try self.write("undefined");
             }
@@ -424,7 +447,7 @@ const Emitter = struct {
         try self.writeFmt("{s}return {{ tag: \"{s}\"", .{ indent, bc.branch_name });
         if (bc.plain_value) |pv| {
             try self.writeFmt(", {s}: ", .{bc.branch_name});
-            try self.writeJsExpr(pv);
+            try self.writeProduceValue(pv);
         } else if (bc.fields.len > 0) {
             try self.writeFmt(", {s}: {{ ", .{bc.branch_name});
             for (bc.fields, 0..) |field, k| {
@@ -440,6 +463,41 @@ const Emitter = struct {
         try self.write(" };\n");
     }
 
+    /// A produce value is either an expression or a Koru STRUCT LITERAL written in
+    /// braces (`-> { final.sum, final.max }` satisfying `-> { sum: i32, max: i32 }`).
+    /// The braced form is read by the ONE projector, `struct_literal.parseFields`,
+    /// under the pun law — a bare path names the field by its last segment — and
+    /// re-emitted as a JS object literal.
+    ///
+    /// Without this the braces passed through verbatim, so a punned literal reached
+    /// `node` as `return { final.sum, final.max };` — not a diagnostic, not a wrong
+    /// answer, a SYNTAX error, from the one emitter whose stated contract is to
+    /// refuse rather than emit code it does not model. A literal that already spells
+    /// its names (`-> { a: 1 }`) parses to the same text it started as, which is why
+    /// this was invisible until a pun turned up.
+    ///
+    /// A value that is not a struct literal at all — an arithmetic expression, a
+    /// string, a call — fails the projector's own test and passes through as before.
+    fn writeProduceValue(self: *Emitter, value: []const u8) JsEmitError!void {
+        const trimmed = std.mem.trim(u8, value, " \t\r\n");
+        if (trimmed.len < 2 or trimmed[0] != '{' or trimmed[trimmed.len - 1] != '}') {
+            return self.writeJsExpr(value);
+        }
+        const fields = struct_literal.parseFields(self.allocator, trimmed) catch
+            return self.writeJsExpr(value);
+        // The singleton-expression carve-out yields one unnamed field; that is a
+        // bare value in braces, not an object, so leave it to the expression path.
+        if (fields.len == 0 or fields[0].name.len == 0) return self.writeJsExpr(value);
+        try self.write("{ ");
+        for (fields, 0..) |f, i| {
+            if (i > 0) try self.write(", ");
+            try self.writeIdent(f.name);
+            try self.write(": ");
+            try self.writeJsExpr(f.value);
+        }
+        try self.write(" }");
+    }
+
     /// Emit the body of a SUBFLOW implementation — a flow whose `impl_of` names
     /// the event being emitted (`run = step() | continue => iterated`). The body
     /// IS an ordinary dispatch, so it reuses the same recursive emitter the
@@ -453,6 +511,19 @@ const Emitter = struct {
         self.impl_event = event;
         defer self.impl_event = saved;
 
+        // A subflow impl is a flow, so a dissolving transform can hang a preamble
+        // on it exactly as it does at top level — `compute-stats = capture { … }`
+        // (320_028) is the same `~capture` with the same cell, just implementing an
+        // event instead of running standalone. Reading the preamble only in
+        // `emitFlow` would have made the construct work at one depth and silently
+        // emit a `capture_event.handler(…)` call at the other.
+        if (flow.preamble_code != null and !preambleThenCall(flow.inv())) {
+            try self.emitPreamble(flow.preamble_code, indent);
+            try self.emitPreambleContinuations(flow.body.continuations, indent);
+            return;
+        }
+        try self.emitPreamble(flow.preamble_code, indent);
+
         if (flow.inline_body) |raw| {
             var consumed: u64 = 0;
             try self.emitInlineBodyResolvingContinuations(stripInlineStmtMarker(raw), flow.body.continuations, indent, &consumed);
@@ -460,14 +531,22 @@ const Emitter = struct {
             try self.emitUnconsumedContinuations(flow.body.continuations, consumed, indent);
             return;
         }
+        // `run = #L step(…) | more s |> @L(…) | done e -> e` — a fold implementing
+        // an event. Same construct as a top-level fold; the exit arm's `-> e` just
+        // lands on the enclosing handler's `return` (020_028).
+        if (flow.pre_label) |label| {
+            try self.emitLabelFold(flow, label, indent);
+            return;
+        }
         try self.emitInvocationWithContinuations(flow.inv(), flow.body.continuations, indent);
     }
 
-    /// Write a KORU expression as JavaScript. Two rewrites, both mechanical:
+    /// Write a KORU expression as JavaScript. Three rewrites, all mechanical:
     ///
     ///  - `++` → `+`. Koru spells string concatenation Zig's way, which the Zig
     ///    target passes straight through. In JavaScript `++` is the increment
     ///    operator, so an unlowered `a ++ b` is a SYNTAX error, not a wrong answer.
+    ///  - `and` / `or` → `&&` / `||` (see `writeLowered`).
     ///  - Zig host builtins → their JS twins (see `writeHostBuiltin`).
     ///
     /// Everything else passes through verbatim, exactly as
@@ -488,6 +567,14 @@ const Emitter = struct {
     /// The shared scanner behind `writeJsExpr` / `writeHostText`. Walks the text
     /// once, leaving string and char literals untouched, and rewrites the
     /// constructs JavaScript cannot parse.
+    ///
+    /// `and` / `or` are rewritten in BOTH modes, not just `.koru_expr`. A `when`
+    /// guard and an `~if(…)` condition are the same Koru-authored boolean text,
+    /// but they reach the emitter through different doors: the guard arrives as
+    /// `cont.condition`, while the condition is baked into the template's rendered
+    /// body by template_processor and arrives as host text. Lowering only one door
+    /// would leave the other emitting `a and b`, which is a JS syntax error. The
+    /// rewrite is word-boundary anchored, so `android` and `.or_else` are untouched.
     fn writeLowered(self: *Emitter, text: []const u8, mode: LowerMode) JsEmitError!void {
         var i: usize = 0;
         var quote: ?u8 = null;
@@ -514,6 +601,22 @@ const Emitter = struct {
                 try self.write("+");
                 i += 2;
                 continue;
+            }
+            if ((c == 'a' or c == 'o') and (i == 0 or (!isIdentChar(text[i - 1]) and text[i - 1] != '.'))) {
+                const word: ?[]const u8 = if (std.mem.startsWith(u8, text[i..], "and"))
+                    "&&"
+                else if (std.mem.startsWith(u8, text[i..], "or"))
+                    "||"
+                else
+                    null;
+                if (word) |js_op| {
+                    const len: usize = if (js_op[0] == '&') 3 else 2;
+                    if (i + len >= text.len or !isIdentChar(text[i + len])) {
+                        try self.write(js_op);
+                        i += len;
+                        continue;
+                    }
+                }
             }
             if (c == '@') {
                 if (try self.writeHostBuiltin(text, i)) |after| {
@@ -644,7 +747,7 @@ const Emitter = struct {
             return j;
         }
 
-        log.debug("[js_emitter] host builtin '@{s}' has no JS lowering\n", .{name});
+        log.err("[js_emitter] host builtin '@{s}' has no JS lowering\n", .{name});
         return JsEmitError.UnsupportedConstruct;
     }
 
@@ -688,6 +791,20 @@ const Emitter = struct {
     /// shapes uniformly.
     fn emitFlow(self: *Emitter, flow: *const ast.Flow, flow_num: usize) JsEmitError!void {
         try self.writeFmt("  flow{d}() {{\n", .{flow_num});
+        // PREAMBLE REPLACES THE CALL. A dissolving transform (`~capture`, `~const`,
+        // `~for`, `~if`) leaves the invocation standing as a spent marker and hangs
+        // the real declaration on `preamble_code`; emitting the handler call as well
+        // would call a comptime event that has no runtime body. `@preamble_then_call`
+        // is the one invocation that wants both. Same rule, same annotation, as
+        // emitter_helpers.zig:4911 — a second reading of it would be a second
+        // definition of when a transform's preamble stands in for its call.
+        if (flow.preamble_code != null and !preambleThenCall(flow.inv())) {
+            try self.emitPreamble(flow.preamble_code, "    ");
+            try self.emitPreambleContinuations(flow.body.continuations, "    ");
+            try self.write("  },\n");
+            return;
+        }
+        try self.emitPreamble(flow.preamble_code, "    ");
         // If a comptime|transform pass (e.g. std.io:print.blk|js) already produced
         // inline output for this flow, splice it directly — the invocation path
         // has been rewritten to an impl-stub (`print.blk.impl`) that the JS
@@ -705,10 +822,169 @@ const Emitter = struct {
             try self.emitInlineBodyResolvingContinuations(stripped, flow.body.continuations, "    ", &consumed);
             try self.write("\n");
             try self.emitUnconsumedContinuations(flow.body.continuations, consumed, "    ");
+        } else if (flow.pre_label) |label| {
+            try self.emitLabelFold(flow, label, "    ");
         } else {
             try self.emitInvocationWithContinuations(flow.inv(), flow.body.continuations, "    ");
         }
         try self.write("  },\n");
+    }
+
+    /// LABEL FOLD — `run = #L step(n: start, acc: 0) | more s |> @L(s.n, s.acc)
+    ///                                               | done e  -> e`
+    ///
+    /// `#L` anchors a FIXPOINT. The head runs once; every arm that jumps back to
+    /// `L` re-seeds the head's parameters and runs it again; the first arm that
+    /// does NOT jump wins and runs after the loop. The loop's whole state is one
+    /// `let <label>_<param>` per head argument — exactly the head's parameter list,
+    /// which is why the jump can be spelled as N assignments plus one re-call.
+    ///
+    ///     let L_n = start;  let L_acc = 0;
+    ///     let result_0 = main_module.step_event.handler({ n: L_n, acc: L_acc });
+    ///     while (result_0.tag === "more") { … re-seed … re-call … }
+    ///     { const e = result_0.done; return e; }
+    ///
+    /// A `while` is right and a `for` is wrong here, and CLAUDE.md's loop rule
+    /// names this exact exception: the trip count of a fixpoint is not knowable up
+    /// front, so there is no range to hand the optimizer.
+    ///
+    /// TWO PLACES THIS IS CLEANER THAN THE ZIG REFERENCE (emitter_helpers.zig
+    /// :5121), both because the JS target has nothing to preserve: no `continue
+    /// :label` as the loop body's last statement — falling off the end of a `while`
+    /// body already does that — and no type annotations on the state variables,
+    /// which Zig needs only because a mutable `var` may not hold a comptime_int.
+    fn emitLabelFold(
+        self: *Emitter,
+        flow: *const ast.Flow,
+        label: []const u8,
+        indent: []const u8,
+    ) JsEmitError!void {
+        const inv = flow.inv();
+        const conts = flow.body.continuations;
+
+        const event = self.findEventDecl(&inv.path) orelse {
+            log.err("[js_emitter] #{s} fold head invokes an unresolved event\n", .{label});
+            return JsEmitError.UnresolvedEvent;
+        };
+
+        var terminal_branches: usize = 0;
+        for (event.branches) |b| {
+            if (b.kind == .effect) {
+                // An effect-bearing fold head would need its `Handlers_<id>` rebuilt
+                // and re-passed on every turn (emitter_helpers.zig:5150 does exactly
+                // that). Nothing in the corpus writes one, so refuse by name rather
+                // than emit a shape no test has ever run.
+                log.err("[js_emitter] #{s} fold head '{s}' declares effect branches, which this target does not model\n", .{ label, event.path.segments[event.path.segments.len - 1] });
+                return JsEmitError.UnsupportedConstruct;
+            }
+            terminal_branches += 1;
+        }
+        const bare_return = terminal_branches == 0 and event.return_type != null;
+
+        // One state variable per head parameter, seeded from the head's own args.
+        for (inv.args) |arg| {
+            try self.writeFmt("{s}let {s}_", .{ indent, label });
+            try self.writeIdent(arg.name);
+            try self.write(" = ");
+            try self.writeJsExpr(arg.value);
+            try self.write(";\n");
+        }
+
+        var ev_name_buf: [256]u8 = undefined;
+        const ev_name = lowerIdentBuf(&ev_name_buf, event.path.segments[event.path.segments.len - 1]);
+        const result_name = try std.fmt.allocPrint(self.allocator, "result_{d}", .{self.nextId()});
+        defer self.allocator.free(result_name);
+
+        // `let`, not `const`: the loop reassigns it every turn.
+        try self.writeFmt("{s}let {s} = main_module.{s}_event.handler(", .{ indent, result_name, ev_name });
+        try self.emitLabelStateArgs(inv.args, label);
+        try self.write(");\n");
+
+        var looping: usize = 0;
+        var exiting: usize = 0;
+        for (conts) |*cont| {
+            if (cont.kind != .terminal) continue;
+            if (contLoopsTo(cont, label)) looping += 1 else exiting += 1;
+        }
+
+        const inner = try std.fmt.allocPrint(self.allocator, "{s}  ", .{indent});
+        defer self.allocator.free(inner);
+
+        if (looping > 0) {
+            try self.writeFmt("{s}while (", .{indent});
+            var written: usize = 0;
+            for (conts) |*cont| {
+                if (cont.kind != .terminal or !contLoopsTo(cont, label)) continue;
+                if (written > 0) try self.write(" || ");
+                try self.writeFmt("{s}.tag === \"{s}\"", .{ result_name, cont.branch });
+                written += 1;
+            }
+            try self.write(") {\n");
+
+            const saved = self.label_frame;
+            self.label_frame = .{ .label = label, .result_name = result_name, .inv = inv };
+            defer self.label_frame = saved;
+
+            // Inside the loop the condition has already selected the arm when there
+            // is only one, so it is emitted unguarded; with two or more, each still
+            // needs its own tag test.
+            for (conts) |*cont| {
+                if (cont.kind != .terminal or !contLoopsTo(cont, label)) continue;
+                try self.emitTerminalContinuation(cont, result_name, inner, looping >= 2, bare_return, null);
+            }
+            try self.writeFmt("{s}}}\n", .{indent});
+        }
+
+        // The exit arms run AFTER the loop, where every looping tag is impossible.
+        for (conts) |*cont| {
+            if (cont.kind != .terminal or contLoopsTo(cont, label)) continue;
+            try self.emitTerminalContinuation(cont, result_name, indent, exiting >= 2, bare_return, null);
+        }
+    }
+
+    /// `{ <param>: <label>_<param>, … }` — the fold's head args, read out of the
+    /// state variables. Written at the seed call and again at every jump, so the
+    /// two cannot disagree about which names the head takes.
+    fn emitLabelStateArgs(self: *Emitter, args: []const ast.Arg, label: []const u8) JsEmitError!void {
+        try self.write("{ ");
+        for (args, 0..) |arg, i| {
+            if (i > 0) try self.write(", ");
+            try self.writeIdent(arg.name);
+            try self.writeFmt(": {s}_", .{label});
+            try self.writeIdent(arg.name);
+        }
+        try self.write(" }");
+    }
+
+    /// Emit a `@label(…)` jump: re-seed the fold's state variables from the jump's
+    /// arguments, then re-run the head into the fold's result variable. The `while`
+    /// header re-tests it, so there is nothing else to say — the Zig target's
+    /// trailing `continue :label` has no work to do in a JS loop body.
+    fn emitLabelJump(self: *Emitter, label: []const u8, args: []const ast.Arg, indent: []const u8) JsEmitError!void {
+        const frame = self.label_frame orelse {
+            log.err("[js_emitter] @{s}(…) jump outside any #{s} fold\n", .{ label, label });
+            return JsEmitError.UnsupportedConstruct;
+        };
+        if (!std.mem.eql(u8, frame.label, label)) {
+            // A cross-level jump (an inner fold jumping to an outer label) needs the
+            // label MAP the Zig emitter keeps (emitter_helpers.zig:5157); this frame
+            // holds one fold. Refuse by name rather than jump to the wrong loop.
+            log.err("[js_emitter] @{s}(…) jumps past the enclosing #{s} fold\n", .{ label, frame.label });
+            return JsEmitError.UnsupportedConstruct;
+        }
+        for (args) |arg| {
+            try self.writeFmt("{s}{s}_", .{ indent, label });
+            try self.writeIdent(arg.name);
+            try self.write(" = ");
+            try self.writeJsExpr(arg.value);
+            try self.write(";\n");
+        }
+        var ev_name_buf: [256]u8 = undefined;
+        const seg = frame.inv.path.segments;
+        const ev_name = lowerIdentBuf(&ev_name_buf, seg[seg.len - 1]);
+        try self.writeFmt("{s}{s} = main_module.{s}_event.handler(", .{ indent, frame.result_name, ev_name });
+        try self.emitLabelStateArgs(frame.inv.args, label);
+        try self.write(");\n");
     }
 
     /// Emit a rendered template body (e.g. `~if`'s `if (cond) { … } else { … }`
@@ -749,6 +1025,14 @@ const Emitter = struct {
         const SPLICE_PREFIX = "__koru_inline_";
         const CONTINUE_PREFIX = "__koru_continue_";
         const SCOPED_INFIX = "scoped_";
+        // `{{ arm.continue[unguarded] }}` mints `__koru_continue_bare_N`: the same
+        // hand-off with the arm's `when` guard LEFT OFF, because the template has
+        // already placed it. `cond`'s `if / else if` cascade is the only consumer
+        // (control.kz `~proc cond|template|js`); re-testing the guard inside the arm
+        // the cascade already selected would evaluate it twice, and the second read
+        // would see the arm's own binding rather than the hoisted `{{ binds }}` one.
+        // Third marker kind of the Zig reference (emitter_helpers.zig:4252).
+        const BARE_INFIX = "bare_";
 
         const trimmed = std.mem.trim(u8, body, " \t\r\n");
         var pos: usize = 0;
@@ -782,6 +1066,8 @@ const Emitter = struct {
                 // CONTINUATION hand-off — splice the terminal body once, here,
                 // wrapped in a block so any `const` it introduces is scoped.
                 var i = m + CONTINUE_PREFIX.len;
+                const is_bare = std.mem.startsWith(u8, trimmed[i..], BARE_INFIX);
+                if (is_bare) i += BARE_INFIX.len;
                 var idx: usize = 0;
                 var saw_digit = false;
                 while (i < trimmed.len and trimmed[i] >= '0' and trimmed[i] <= '9') : (i += 1) {
@@ -790,21 +1076,23 @@ const Emitter = struct {
                 }
                 if (!saw_digit) {
                     // Malformed marker — fail loudly rather than leak it into JS.
-                    log.debug("[js_emitter] malformed __koru_continue marker\n", .{});
+                    log.err("[js_emitter] malformed __koru_continue marker\n", .{});
                     return JsEmitError.UnsupportedConstruct;
                 }
                 if (idx >= continuations.len) {
-                    log.debug("[js_emitter] __koru_continue_{d} has no matching continuation (have {d})\n", .{ idx, continuations.len });
+                    log.err("[js_emitter] __koru_continue_{d} has no matching continuation (have {d})\n", .{ idx, continuations.len });
                     return JsEmitError.UnsupportedConstruct;
                 }
                 if (consumed) |c| {
                     if (idx < 64) c.* |= @as(u64, 1) << @intCast(idx);
                 }
                 const cont = &continuations[idx];
-                const guarded = cont.condition != null;
+                const guarded = !is_bare and cont.condition != null;
                 try self.write("{ ");
                 if (guarded) {
-                    try self.writeFmt("if ({s}) {{ ", .{cont.condition.?});
+                    try self.write("if (");
+                    try self.writeJsExpr(cont.condition.?);
+                    try self.write(") { ");
                 }
                 try self.emitInlineContinuationBody(cont, body_indent);
                 if (guarded) try self.write(" }");
@@ -848,11 +1136,11 @@ const Emitter = struct {
             }
 
             if (!saw_digit) {
-                log.debug("[js_emitter] malformed __koru_inline marker\n", .{});
+                log.err("[js_emitter] malformed __koru_inline marker\n", .{});
                 return JsEmitError.UnsupportedConstruct;
             }
             if (idx >= continuations.len) {
-                log.debug("[js_emitter] __koru_inline_{d} has no matching continuation (have {d})\n", .{ idx, continuations.len });
+                log.err("[js_emitter] __koru_inline_{d} has no matching continuation (have {d})\n", .{ idx, continuations.len });
                 return JsEmitError.UnsupportedConstruct;
             }
             if (consumed) |c| {
@@ -866,7 +1154,9 @@ const Emitter = struct {
             }
             const guarded = cont.condition != null;
             if (guarded) {
-                try self.writeFmt("if ({s}) {{ ", .{cont.condition.?});
+                try self.write("if (");
+                try self.writeJsExpr(cont.condition.?);
+                try self.write(") { ");
             }
             try self.emitInlineContinuationBody(cont, body_indent);
             if (guarded) try self.write(" }");
@@ -910,6 +1200,141 @@ const Emitter = struct {
         }
     }
 
+    /// Emit a flow's `preamble_code` — host DECLARATION text a comptime transform
+    /// hung on the flow to run AHEAD of its dispatch. `~capture` is the one this
+    /// target exercises: `let <cell> = { … };`, the accumulator every `.assignment`
+    /// in the body writes into and every `| captured` read binds.
+    ///
+    /// The text is authored in the BUILD language by the transform itself
+    /// (control.kz reads `CompilerEnv.lang`), so there is nothing to translate
+    /// here — it goes through `writeHostText` for the same reason every other host
+    /// fragment does: the VALUES inside it are the user's own expressions and may
+    /// still spell a Zig builtin (`@as(i32, 0)`, written by hand in 320_027).
+    fn emitPreamble(self: *Emitter, preamble: ?[]const u8, indent: []const u8) JsEmitError!void {
+        const text = preamble orelse return;
+        const trimmed = std.mem.trim(u8, text, " \t\r\n");
+        var it = std.mem.splitScalar(u8, trimmed, '\n');
+        while (it.next()) |line| {
+            const line_trimmed = std.mem.trim(u8, line, " \t\r");
+            if (line_trimmed.len == 0) continue;
+            try self.write(indent);
+            try self.writeHostText(line_trimmed);
+            try self.write("\n");
+        }
+    }
+
+    /// Emit the continuations of a flow whose `preamble_code` REPLACED its
+    /// invocation. `~capture` (and `~const`/`~for`/`~if`) dissolve into a preamble
+    /// plus a chain of bodies; there is no handler call, so there is no result
+    /// value, no `.tag` to dispatch on, and no payload for an arm to bind. Each
+    /// continuation is therefore emitted BODY-ONLY, in source order — the same
+    /// helper a template marker uses for the same reason, and the twin of the Zig
+    /// reference's `emitContinuationBody` loop (emitter_helpers.zig:4922).
+    fn emitPreambleContinuations(
+        self: *Emitter,
+        continuations: []const ast.Continuation,
+        indent: []const u8,
+    ) JsEmitError!void {
+        for (continuations) |*cont| {
+            try self.emitInlineContinuationBody(cont, indent);
+        }
+    }
+
+    /// True when the invocation asks for its preamble AND its handler call — the
+    /// `field:new.on-stack` routing (koru_std/field.kz:308), whose preamble
+    /// declares caller-frame storage the call then takes a pointer into. Every
+    /// other preamble REPLACES the call. Same annotation, same meaning, as
+    /// emitter_helpers.zig:4911.
+    fn preambleThenCall(inv: *const ast.Invocation) bool {
+        for (inv.annotations) |ann| {
+            if (std.mem.eql(u8, ann, "@preamble_then_call")) return true;
+        }
+        return false;
+    }
+
+    /// Emit a node that is a STATEMENT rather than a dispatch — it produces no
+    /// value, so nothing downstream can bind it and there is no tag to switch on.
+    /// The Zig reference names the same set (`is_void_step`,
+    /// emitter_helpers.zig:9212) and both members come from the `~capture`
+    /// dissolution:
+    ///
+    ///   `.assignment` — a `captured { … }` write into the cell.
+    ///   `.inline_code` — host declaration text: the `| captured r` after-read
+    ///                    (`const r = <cell>;`), or a NESTED capture's whole cell
+    ///                    preamble, which arrives as a node instead of on the flow.
+    ///
+    /// Returns false for anything else, so each caller's node switch keeps its own
+    /// loud refusal for the constructs this target genuinely does not model.
+    ///
+    /// A statement node's `cont.continuations` are its SEQUEL, not its arms: the
+    /// after-read declares `r` and its child prints it. They are driven here, at
+    /// the same indent, unguarded and binding nothing — there is no result value
+    /// for them to read.
+    fn emitVoidStatementNode(
+        self: *Emitter,
+        node: ast.Node,
+        continuations: []const ast.Continuation,
+        indent: []const u8,
+    ) JsEmitError!bool {
+        switch (node) {
+            .assignment => |asgn| try self.emitAssignment(&asgn, indent),
+            .inline_code => |text| try self.emitPreamble(text, indent),
+            // A `@L(…)` jump ENDS its arm: it re-seeds the fold and the `while`
+            // header decides what happens next. The Zig lowering makes that literal
+            // with a trailing `continue :L`, which is why anything hung off a jump
+            // is unreachable there; here it would merely RUN, so the sequel below
+            // is deliberately not driven.
+            .label_jump => |lj| {
+                try self.emitLabelJump(lj.label, lj.args, indent);
+                return true;
+            },
+            .label_apply => |l| {
+                try self.emitLabelJump(l, &.{}, indent);
+                return true;
+            },
+            else => return false,
+        }
+        try self.emitPreambleContinuations(continuations, indent);
+        return true;
+    }
+
+    /// Emit a `captured { … }` write as field stores into the cell.
+    ///
+    /// SNAPSHOT SEMANTICS (ruled 2026-07-02, pinned 320_102): every field
+    /// expression reads the INCOMING cell state, then all stores land — so the
+    /// meaning of a `captured { }` literal cannot depend on its field order. With
+    /// two or more fields the right-hand sides hoist into block-scoped temps
+    /// before any store; a lone field cannot observe itself, so it stores
+    /// directly. Same decision, same reasoning, same output shape as the Zig
+    /// reference (emitter_helpers.zig:10432) — only the `let`/`const` spelling
+    /// differs.
+    ///
+    /// Temps are index-named inside their own block: a field NAME can be an
+    /// element write (`arr[i]`), which is not an identifier, and the block keeps
+    /// two assignment nodes at the same depth from colliding.
+    fn emitAssignment(self: *Emitter, asgn: anytype, indent: []const u8) JsEmitError!void {
+        if (asgn.fields.len > 1) {
+            try self.writeFmt("{s}{{\n", .{indent});
+            const inner = try std.fmt.allocPrint(self.allocator, "{s}  ", .{indent});
+            defer self.allocator.free(inner);
+            for (asgn.fields, 0..) |field, i| {
+                try self.writeFmt("{s}const __koru_asgn_{d} = ", .{ inner, i });
+                try self.writeJsExpr(if (field.expression_str) |e| e else field.type);
+                try self.write(";\n");
+            }
+            for (asgn.fields, 0..) |field, i| {
+                try self.writeFmt("{s}{s}.{s} = __koru_asgn_{d};\n", .{ inner, asgn.target, field.name, i });
+            }
+            try self.writeFmt("{s}}}\n", .{indent});
+            return;
+        }
+        for (asgn.fields) |field| {
+            try self.writeFmt("{s}{s}.{s} = ", .{ indent, asgn.target, field.name });
+            try self.writeJsExpr(if (field.expression_str) |e| e else field.type);
+            try self.write(";\n");
+        }
+    }
+
     /// Emit the body of a terminal continuation spliced inline by a template
     /// marker. Unlike `emitTerminalContinuation`, there is NO tag-dispatch guard
     /// and NO `const binding = result.branch;` — the template's own conditional
@@ -933,7 +1358,8 @@ const Emitter = struct {
                 try self.write(";\n");
             },
             else => {
-                log.debug("[js_emitter] inline continuation body is not an invocation, produce, or expression\n", .{});
+                if (try self.emitVoidStatementNode(node, cont.continuations, indent)) return;
+                log.err("[js_emitter] inline continuation body is a {s}, which this target does not model\n", .{@tagName(node)});
                 return JsEmitError.UnsupportedConstruct;
             },
         }
@@ -982,7 +1408,7 @@ const Emitter = struct {
         }
 
         const event = self.findEventDecl(&inv.path) orelse {
-            log.debug("[js_emitter] flow invokes unresolved event\n", .{});
+            log.err("[js_emitter] flow invokes unresolved event\n", .{});
             return JsEmitError.UnresolvedEvent;
         };
 
@@ -1232,7 +1658,7 @@ const Emitter = struct {
 
         for (event.input.fields) |field| {
             const arg_val = argValueByName(inv.args, field.name) orelse {
-                log.debug("[js_emitter] plain-event inline '{s}' missing arg for field '{s}'\n", .{ event.path.segments[event.path.segments.len - 1], field.name });
+                log.err("[js_emitter] plain-event inline '{s}' missing arg for field '{s}'\n", .{ event.path.segments[event.path.segments.len - 1], field.name });
                 return JsEmitError.UnsupportedConstruct;
             };
             // Skip self-referential `const x = x;` — outer is already in scope.
@@ -1269,7 +1695,7 @@ const Emitter = struct {
         indent: []const u8,
     ) JsEmitError!void {
         const proc = self.findJsProcIn(self.items, &event.path) orelse {
-            log.debug("[js_emitter] void producer '{s}' has no |js proc body\n", .{event.path.segments[event.path.segments.len - 1]});
+            log.err("[js_emitter] void producer '{s}' has no |js proc body\n", .{event.path.segments[event.path.segments.len - 1]});
             return JsEmitError.NoJsProcBody;
         };
 
@@ -1288,7 +1714,7 @@ const Emitter = struct {
         }
         for (event.input.fields) |field| {
             const arg_val = argValueByName(inv.args, field.name) orelse {
-                log.debug("[js_emitter] void producer '{s}' missing arg for field '{s}'\n", .{ event.path.segments[event.path.segments.len - 1], field.name });
+                log.err("[js_emitter] void producer '{s}' missing arg for field '{s}'\n", .{ event.path.segments[event.path.segments.len - 1], field.name });
                 return JsEmitError.UnsupportedConstruct;
             };
             const tid = self.nextId();
@@ -1352,7 +1778,7 @@ const Emitter = struct {
                 const found = findOpCall(trimmed, pos, op_ident) orelse continue;
                 if (best_call_start == null or found.call_start < best_call_start.?) {
                     const cont = continuationForBranch(continuations, b.name) orelse {
-                        log.debug("[js_emitter] void effect op '{s}' has no matching continuation\n", .{b.name});
+                        log.err("[js_emitter] void effect op '{s}' has no matching continuation\n", .{b.name});
                         return JsEmitError.UnsupportedConstruct;
                     };
                     best_call_start = found.call_start;
@@ -1401,7 +1827,7 @@ const Emitter = struct {
             // Recurse: emit the handler's sub-flow. The continuation's node is
             // the next invocation; its own continuations drive the next level.
             const node = cont.node orelse {
-                log.debug("[js_emitter] void effect handler '{s}' has no body\n", .{cont.branch});
+                log.err("[js_emitter] void effect handler '{s}' has no body\n", .{cont.branch});
                 return JsEmitError.UnsupportedConstruct;
             };
             switch (node) {
@@ -1410,7 +1836,7 @@ const Emitter = struct {
                 },
                 .terminal => {}, // `_` — nothing further.
                 else => {
-                    log.debug("[js_emitter] void effect handler body is not an invocation\n", .{});
+                    log.err("[js_emitter] void effect handler body is not an invocation\n", .{});
                     return JsEmitError.UnsupportedConstruct;
                 },
             }
@@ -1486,8 +1912,17 @@ const Emitter = struct {
                 try self.writeFmt("{s}{s}({s}) {{}},\n", .{ indent, method_ident, param });
             },
             else => {
-                log.debug("[js_emitter] effect handler body is not an expression, invocation, or produce\n", .{});
-                return JsEmitError.UnsupportedConstruct;
+                // A STATEMENT body (`! each _ |> captured { … }` — a capture write
+                // as the loop's whole handler, 832/833). It produces nothing, so
+                // the method wraps it and returns nothing.
+                const inner_indent = try std.fmt.allocPrint(self.allocator, "{s}  ", .{indent});
+                defer self.allocator.free(inner_indent);
+                try self.writeFmt("{s}{s}({s}) {{\n", .{ indent, method_ident, param });
+                if (!try self.emitVoidStatementNode(node, cont.continuations, inner_indent)) {
+                    log.err("[js_emitter] effect handler body is a {s}, which this target does not model\n", .{@tagName(node)});
+                    return JsEmitError.UnsupportedConstruct;
+                }
+                try self.writeFmt("{s}}},\n", .{indent});
             },
         }
     }
@@ -1578,7 +2013,7 @@ const Emitter = struct {
             try self.writeFmt("{s}if (!{s}", .{ indent, mv });
             if (dispatch and !cont.is_catchall and cont.branch.len > 0) {
                 const rn = result_name orelse {
-                    log.debug("[js_emitter] guarded terminal chain needs a result value but none was emitted\n", .{});
+                    log.err("[js_emitter] guarded terminal chain needs a result value but none was emitted\n", .{});
                     return JsEmitError.UnsupportedConstruct;
                 };
                 try self.writeFmt(" && {s}.tag === \"{s}\"", .{ rn, cont.branch });
@@ -1593,7 +2028,7 @@ const Emitter = struct {
             // tag so only the branch the event actually produced runs. A lone
             // branch always fires and is emitted unguarded.
             const rn = result_name orelse {
-                log.debug("[js_emitter] terminal dispatch needs a result value but none was emitted\n", .{});
+                log.err("[js_emitter] terminal dispatch needs a result value but none was emitted\n", .{});
                 return JsEmitError.UnsupportedConstruct;
             };
             try self.writeFmt("{s}if ({s}.tag === \"{s}\") {{\n", .{ indent, rn, cont.branch });
@@ -1606,7 +2041,7 @@ const Emitter = struct {
         if (cont.binding) |binding| {
             if (!std.mem.eql(u8, binding, "_")) {
                 const rn = result_name orelse {
-                    log.debug("[js_emitter] terminal continuation binds a result but no result binding was emitted\n", .{});
+                    log.err("[js_emitter] terminal continuation binds a result but no result binding was emitted\n", .{});
                     return JsEmitError.UnsupportedConstruct;
                 };
                 // A BARE-RETURN event (`-> T`) has no tag and no branch, so the
@@ -1625,7 +2060,7 @@ const Emitter = struct {
         // binds each payload field BY NAME. Mutually exclusive with `binding`.
         if (cont.destructure.len > 0) {
             const rn = result_name orelse {
-                log.debug("[js_emitter] terminal continuation destructures a payload but no result binding was emitted\n", .{});
+                log.err("[js_emitter] terminal continuation destructures a payload but no result binding was emitted\n", .{});
                 return JsEmitError.UnsupportedConstruct;
             };
             const base = if (bare_return or cont.branch.len == 0)
@@ -1670,8 +2105,10 @@ const Emitter = struct {
                     try self.write(";\n");
                 },
                 else => {
-                    log.debug("[js_emitter] terminal continuation body is not an invocation, produce, or expression\n", .{});
-                    return JsEmitError.UnsupportedConstruct;
+                    if (!try self.emitVoidStatementNode(node, cont.continuations, body_indent)) {
+                        log.err("[js_emitter] terminal continuation body is a {s}, which this target does not model\n", .{@tagName(node)});
+                        return JsEmitError.UnsupportedConstruct;
+                    }
                 },
             }
         }
@@ -1812,6 +2249,24 @@ fn continuationForBranch(continuations: []const ast.Continuation, op: []const u8
         if (cont.kind == .effect and std.mem.eql(u8, cont.branch, op)) return cont;
     }
     return null;
+}
+
+/// Does this arm (or anything nested under it) jump back to `label`? That is what
+/// separates a fold's LOOPING arms — which belong inside the `while` and in its
+/// condition — from its EXIT arms, which run after it. Recursive because the jump
+/// may sit under a nested dispatch (`| more s |> check(s) | ok |> @L(…)`).
+/// Predicate twin of emitter_helpers.findLoopingBranches (:9062), which allocates
+/// the branch-name list it only ever asks membership questions of.
+fn contLoopsTo(cont: *const ast.Continuation, label: []const u8) bool {
+    if (cont.node) |node| switch (node) {
+        .label_jump => |lj| if (std.mem.eql(u8, lj.label, label)) return true,
+        .label_apply => |l| if (std.mem.eql(u8, l, label)) return true,
+        else => {},
+    };
+    for (cont.continuations) |*nested| {
+        if (contLoopsTo(nested, label)) return true;
+    }
+    return false;
 }
 
 const OpCallMatch = struct {
