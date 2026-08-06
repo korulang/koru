@@ -1847,6 +1847,97 @@ pub fn compilePrefixToJs(out: std.mem.Allocator, pattern: []const u8, name: []co
     return buf.toOwnedSlice(out);
 }
 
+/// JS sibling of `emitMatcher` — `function <name>(input) { … } → bool`, the
+/// FULL-match predicate `std/regex:match` dispatches on.
+///
+/// `input` is a BYTE VIEW (Buffer / Uint8Array), never a js string, so the walk
+/// consumes exactly the bytes the Zig matcher consumes and the two targets agree
+/// on every non-ASCII pattern. `koru_std/parser.kz:1051` established that view
+/// (`Buffer.from(s, "utf8")`) for the JS parser terminals; regex uses the same
+/// one. Indexing a js string here would feed the table UTF-16 code units and
+/// silently diverge from Zig on the first multi-byte character.
+pub fn emitMatcherJs(w: anytype, dfa: *const Dfa, name: []const u8) !void {
+    try w.print("function {s}(input) {{\n", .{name});
+    try w.writeAll("    const T = [");
+    for (dfa.trans, 0..) |t, i| {
+        if (i != 0) try w.writeAll(",");
+        try w.print("{d}", .{t});
+    }
+    try w.writeAll("];\n");
+    try w.writeAll("    const A = [");
+    for (dfa.accept, 0..) |acc, i| {
+        if (i != 0) try w.writeAll(",");
+        try w.writeAll(if (acc) "true" else "false");
+    }
+    try w.writeAll("];\n");
+    try w.print("    let s = {d};\n", .{dfa.start});
+    try w.writeAll("    for (let i = 0; i < input.length; i++) s = T[s * 256 + input[i]];\n");
+    try w.writeAll("    return A[s];\n");
+    try w.writeAll("}\n");
+}
+
+/// JS sibling of `compileToZig`.
+pub fn compileToJs(out: std.mem.Allocator, pattern: []const u8, name: []const u8) ![]const u8 {
+    var arena = std.heap.ArenaAllocator.init(out);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var p = Parser.init(a, pattern);
+    const ast = try p.parse();
+    var nfa = try buildNfa(a, ast);
+    var dfa = try buildDfa(a, &nfa);
+    var buf = std.ArrayList(u8){};
+    try emitMatcherJs(buf.writer(out), &dfa, name);
+    return buf.toOwnedSlice(out);
+}
+
+/// JS sibling of `emitSearchMatcher` — `function <name>(input, from)` returning
+/// `[start, end]` for the leftmost-longest match at-or-after `from`, or `null`.
+///
+/// Zig's `?usize` accumulator becomes a `-1` sentinel: offsets are non-negative,
+/// so the sentinel cannot collide with a real end. The RETURN stays `null` rather
+/// than a sentinel pair, because `scan`'s loop tests it directly and a nullable
+/// object reads the same on both targets.
+pub fn emitSearchMatcherJs(w: anytype, dfa: *const Dfa, name: []const u8) !void {
+    try w.print("function {s}(input, from) {{\n", .{name});
+    try w.writeAll("    const T = [");
+    for (dfa.trans, 0..) |t, i| {
+        if (i != 0) try w.writeAll(",");
+        try w.print("{d}", .{t});
+    }
+    try w.writeAll("];\n");
+    try w.writeAll("    const A = [");
+    for (dfa.accept, 0..) |acc, i| {
+        if (i != 0) try w.writeAll(",");
+        try w.writeAll(if (acc) "true" else "false");
+    }
+    try w.writeAll("];\n");
+    try w.writeAll("    for (let start = from; start <= input.length; start++) {\n");
+    try w.print("        let s = {d};\n", .{dfa.start});
+    try w.writeAll("        let last_end = A[s] ? start : -1;\n");
+    try w.writeAll("        for (let i = start; i < input.length; i++) {\n");
+    try w.writeAll("            s = T[s * 256 + input[i]];\n");
+    try w.writeAll("            if (A[s]) last_end = i + 1;\n");
+    try w.writeAll("        }\n");
+    try w.writeAll("        if (last_end !== -1) return [start, last_end];\n");
+    try w.writeAll("    }\n");
+    try w.writeAll("    return null;\n");
+    try w.writeAll("}\n");
+}
+
+/// JS sibling of `compileSearchToZig`.
+pub fn compileSearchToJs(out: std.mem.Allocator, pattern: []const u8, name: []const u8) ![]const u8 {
+    var arena = std.heap.ArenaAllocator.init(out);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var p = Parser.init(a, pattern);
+    const ast = try p.parse();
+    var nfa = try buildNfa(a, ast);
+    var dfa = try buildDfa(a, &nfa);
+    var buf = std.ArrayList(u8){};
+    try emitSearchMatcherJs(buf.writer(out), &dfa, name);
+    return buf.toOwnedSlice(out);
+}
+
 /// The admissible FIRST-BYTE set of an anchored-prefix matcher: for each byte,
 /// can a (non-empty) match begin with it? Derived from the prefix DFA's start
 /// state — a byte is admissible iff consuming it lands in a LIVE state (one
@@ -2097,6 +2188,252 @@ pub fn emitCapturesMatcher(w: anytype, nfa: *const Nfa, name: []const u8) !void 
         \\
     );
     try w.print("fn {s}(input: []const u8) ?[{d}]u32 {{\n    return {s}_vm.run(input);\n}}\n", .{ name, nt, name });
+}
+
+/// JS sibling of `compileCapturesToZig` — same two-path choice, same tag layout,
+/// so `match`/`scan` read the result identically on both targets.
+pub fn compileCapturesToJs(out: std.mem.Allocator, pattern: []const u8, name: []const u8) ![]const u8 {
+    var arena = std.heap.ArenaAllocator.init(out);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const analysis = try analyze(a, pattern);
+    var nfa = try buildNfa(a, analysis.root);
+    std.debug.assert(nfa.n_tags > 0); // groupless patterns take the DFA path
+    var buf = std.ArrayList(u8){};
+    if (buildTaggedDfa(a, &nfa)) |tdfa| {
+        var td = tdfa;
+        try emitTaggedCapturesMatcherJs(buf.writer(out), &td, name);
+    } else |err| switch (err) {
+        error.NotOnePass, error.DfaTooLarge => try emitCapturesMatcherJs(buf.writer(out), &nfa, name),
+        error.OutOfMemory => return error.OutOfMemory,
+    }
+    return buf.toOwnedSlice(out);
+}
+
+/// JS sibling of `emitTaggedCapturesMatcher` — `function <name>(input)` returning
+/// the tag array, or `null` when the input does not fully match.
+///
+/// The empty-table workaround its Zig kin carries is absent on purpose: Zig
+/// rejects `[_]T{}`, JavaScript accepts `[]`, so the honest empty array is
+/// emitted rather than a dummy element sitting in a dead index range.
+pub fn emitTaggedCapturesMatcherJs(w: anytype, tdfa: *const TaggedDfa, name: []const u8) !void {
+    const nt = tdfa.n_tags;
+    try w.print("function {s}(input) {{\n", .{name});
+
+    try w.writeAll("    const T = [");
+    for (tdfa.trans, 0..) |t, i| {
+        if (i != 0) try w.writeAll(",");
+        try w.print("{d}", .{t});
+    }
+    try w.writeAll("];\n");
+
+    try w.writeAll("    const A = [");
+    for (tdfa.accept, 0..) |acc, i| {
+        if (i != 0) try w.writeAll(",");
+        try w.writeAll(if (acc) "true" else "false");
+    }
+    try w.writeAll("];\n");
+
+    try w.writeAll("    const TAG_OFF = [");
+    for (tdfa.tag_off, 0..) |o, i| {
+        if (i != 0) try w.writeAll(",");
+        try w.print("{d}", .{o});
+    }
+    try w.writeAll("];\n");
+
+    try w.writeAll("    const TAG_ID = [");
+    for (tdfa.tag_ids, 0..) |id, i| {
+        if (i != 0) try w.writeAll(",");
+        try w.print("{d}", .{id});
+    }
+    try w.writeAll("];\n");
+
+    try w.print("    const tags = new Uint32Array({d}).fill(0xFFFFFFFF);\n", .{nt});
+    for (tdfa.start_tags) |t| try w.print("    tags[{d}] = 0;\n", .{t});
+    try w.print("    let s = {d};\n", .{tdfa.start});
+    try w.writeAll("    for (let ip = 0; ip < input.length; ip++) {\n");
+    try w.writeAll("        const base = s * 256 + input[ip];\n");
+    try w.writeAll("        for (let k = TAG_OFF[base]; k < TAG_OFF[base + 1]; k++) tags[TAG_ID[k]] = ip + 1;\n");
+    try w.writeAll("        s = T[base];\n");
+    try w.writeAll("    }\n");
+    try w.writeAll("    if (!A[s]) return null;\n");
+    try w.writeAll("    return tags;\n}\n");
+}
+
+/// JS sibling of `emitCapturesMatcher` — the specialized Pike VM, for the
+/// patterns that are not one-pass.
+///
+/// ONE STRUCTURAL DIVERGENCE, and it is forced rather than stylistic: the Zig
+/// emitter packs class membership as `[4]u64` and tests it with a 64-bit shift.
+/// JavaScript's bitwise operators coerce to 32 bits, so a `u64` mask would be
+/// silently truncated — every class above byte 31 would stop matching. The JS
+/// rendering therefore packs the same 256 bits as `[8]u32` and indexes with
+/// `c >> 5` / `c & 31`. Identical information, a word size the host can actually
+/// test, and the reason this is a rendering rather than a transliteration.
+pub fn emitCapturesMatcherJs(w: anytype, nfa: *const Nfa, name: []const u8) !void {
+    const ns = nfa.states.items.len;
+    const nt = nfa.n_tags;
+
+    try w.print("function {s}(input) {{\n", .{name});
+    try w.print("    const NS = {d}, NT = {d};\n", .{ ns, nt });
+    try w.writeAll("    const UNSET = 0xFFFFFFFF;\n");
+
+    try w.writeAll("    const OUT = [");
+    for (nfa.states.items, 0..) |st, i| {
+        if (i != 0) try w.writeAll(",");
+        if (st.sym != null) try w.print("{d}", .{st.out}) else try w.writeAll("0xFFFFFFFF");
+    }
+    try w.writeAll("];\n");
+
+    // 256 bits per state as [8]u32 — see the divergence note above.
+    try w.writeAll("    const MASK = [");
+    for (nfa.states.items, 0..) |st, si| {
+        var mask = [_]u32{0} ** 8;
+        if (st.sym) |cls| {
+            var b: usize = 0;
+            while (b < 256) : (b += 1) {
+                if (cls.contains(@intCast(b))) mask[b >> 5] |= @as(u32, 1) << @intCast(b & 31);
+            }
+        }
+        if (si != 0) try w.writeAll(",");
+        try w.print("[{d},{d},{d},{d},{d},{d},{d},{d}]", .{ mask[0], mask[1], mask[2], mask[3], mask[4], mask[5], mask[6], mask[7] });
+    }
+    try w.writeAll("];\n");
+
+    try w.writeAll("    const EPS_OFF = [0");
+    {
+        var off: usize = 0;
+        for (nfa.states.items) |st| {
+            off += st.eps.items.len;
+            try w.print(",{d}", .{off});
+        }
+    }
+    try w.writeAll("];\n");
+
+    try w.writeAll("    const EPS_TO = [");
+    {
+        var first = true;
+        for (nfa.states.items) |st| {
+            for (st.eps.items) |e| {
+                if (!first) try w.writeAll(",");
+                first = false;
+                try w.print("{d}", .{e.to});
+            }
+        }
+    }
+    try w.writeAll("];\n");
+
+    try w.writeAll("    const EPS_TAG = [");
+    {
+        var first = true;
+        for (nfa.states.items) |st| {
+            for (st.eps.items) |e| {
+                if (!first) try w.writeAll(",");
+                first = false;
+                if (e.tag) |t| try w.print("{d}", .{t}) else try w.writeAll("-1");
+            }
+        }
+    }
+    try w.writeAll("];\n");
+
+    try w.print("    const START = {d}, ACCEPT = {d};\n", .{ nfa.start, nfa.accept });
+
+    try w.writeAll(
+        \\    function add(on, order, st, tags, s, t, pos) {
+        \\        if (on[s]) return;
+        \\        on[s] = true;
+        \\        tags[s] = t.slice();
+        \\        order[st.count++] = s;
+        \\        for (let i = EPS_OFF[s]; i < EPS_OFF[s + 1]; i++) {
+        \\            const t2 = t.slice();
+        \\            if (EPS_TAG[i] >= 0) t2[EPS_TAG[i]] = pos;
+        \\            add(on, order, st, tags, EPS_TO[i], t2, pos);
+        \\        }
+        \\    }
+        \\    let on = new Array(NS).fill(false);
+        \\    let order = new Array(NS);
+        \\    let tags = new Array(NS);
+        \\    let st = { count: 0 };
+        \\    add(on, order, st, tags, START, new Array(NT).fill(UNSET), 0);
+        \\    for (let ip = 0; ip < input.length; ip++) {
+        \\        const c = input[ip];
+        \\        const on2 = new Array(NS).fill(false);
+        \\        const order2 = new Array(NS);
+        \\        const tags2 = new Array(NS);
+        \\        const st2 = { count: 0 };
+        \\        for (let k = 0; k < st.count; k++) {
+        \\            const s = order[k];
+        \\            if (OUT[s] !== UNSET && ((MASK[s][c >> 5] >>> (c & 31)) & 1) === 1) {
+        \\                add(on2, order2, st2, tags2, OUT[s], tags[s], ip + 1);
+        \\            }
+        \\        }
+        \\        on = on2; order = order2; tags = tags2; st = st2;
+        \\        if (st.count === 0) return null;
+        \\    }
+        \\    if (!on[ACCEPT]) return null;
+        \\    return tags[ACCEPT];
+        \\}
+        \\
+    );
+}
+
+test "emit js: full-match matcher carries the same table as its Zig kin" {
+    const js = try compileToJs(testing.allocator, "[a-z]+@[a-z]+", "m0");
+    defer testing.allocator.free(js);
+    try testing.expect(std.mem.indexOf(u8, js, "function m0(input) {") != null);
+    try testing.expect(std.mem.indexOf(u8, js, "return A[s];") != null);
+    // No Zig type syntax may survive into JavaScript — the exact leak that made
+    // every regex test fail with "Missing initializer in const declaration".
+    try testing.expect(std.mem.indexOf(u8, js, "[]const u8") == null);
+    try testing.expect(std.mem.indexOf(u8, js, "[_]u32") == null);
+
+    var dfa = try dfaFor(testing.allocator, "[a-z]+@[a-z]+");
+    defer dfa.deinit();
+    var commas: usize = 0;
+    const t_start = std.mem.indexOf(u8, js, "const T = [").?;
+    const t_end = std.mem.indexOfPos(u8, js, t_start, "];").?;
+    for (js[t_start..t_end]) |c| {
+        if (c == ',') commas += 1;
+    }
+    try testing.expectEqual(dfa.n_states * 256, commas + 1);
+}
+
+test "emit js: search finder returns a span pair, null when nothing matches" {
+    const js = try compileSearchToJs(testing.allocator, "[0-9]+", "f0");
+    defer testing.allocator.free(js);
+    try testing.expect(std.mem.indexOf(u8, js, "function f0(input, from) {") != null);
+    try testing.expect(std.mem.indexOf(u8, js, "return [start, last_end];") != null);
+    try testing.expect(std.mem.indexOf(u8, js, "return null;") != null);
+    try testing.expect(std.mem.indexOf(u8, js, "?[2]usize") == null);
+}
+
+test "emit js: captures matcher packs class masks as u32, never u64" {
+    // `(?<a>[0-9]+)x(?<b>[0-9]+)` is one-pass, so this takes the tagged-DFA path.
+    const js = try compileCapturesToJs(testing.allocator, "(?<a>[0-9]+)x(?<b>[0-9]+)", "c0");
+    defer testing.allocator.free(js);
+    try testing.expect(std.mem.indexOf(u8, js, "function c0(input) {") != null);
+    try testing.expect(std.mem.indexOf(u8, js, "new Uint32Array(") != null);
+    try testing.expect(std.mem.indexOf(u8, js, "return tags;") != null);
+    try testing.expect(std.mem.indexOf(u8, js, "[_]u32") == null);
+}
+
+test "emit js: the Pike VM fallback shifts within 32 bits" {
+    // A back-to-back optional group defeats the one-pass check, forcing the VM.
+    const js = try compileCapturesToJs(testing.allocator, "(?<a>[a-z]*)(?<b>[a-z]*)", "v0");
+    defer testing.allocator.free(js);
+    try testing.expect(std.mem.indexOf(u8, js, "function v0(input) {") != null);
+    // The whole point of the divergence: 32-bit indexing, never `c >> 6`.
+    try testing.expect(std.mem.indexOf(u8, js, "MASK[s][c >> 5] >>> (c & 31)") != null);
+    try testing.expect(std.mem.indexOf(u8, js, "c >> 6") == null);
+    // Eight words of 32 bits cover the same 256 bytes as four of 64.
+    const m_start = std.mem.indexOf(u8, js, "const MASK = [[").?;
+    const m_end = std.mem.indexOfPos(u8, js, m_start, "]];").?;
+    var commas: usize = 0;
+    for (js[m_start + "const MASK = [[".len .. m_end]) |c| {
+        if (c == ',') commas += 1;
+    }
+    // n_states groups of 8 words: (8*n - 1) inner commas + (n - 1) separators.
+    try testing.expect(commas > 0 and (commas + 1) % 8 == 0);
 }
 
 test "emit: produces a well-formed matcher fn that encodes the DFA" {
