@@ -1,7 +1,7 @@
 ---
 challenge: resource-bridge
 kind: frame
-status: held
+status: resolved
 yields: an honest account of what cross-session resource safety already does, and the smallest real thing built on top of it
 family: runtime
 ---
@@ -17,6 +17,46 @@ subsystem, at 147 lines, sits `koru_std/bridge.kz`. Its header calls the idea
 the AI opens something on turn 3, the human closes it on turn 9, and the compiler
 still knows. `440_002` claims exactly that — open in session 1, discharge in
 session 2.*
+
+## ✅ RESOLVED 2026-08-06 — read this before the 07-31 account below
+
+Lars lifted the hold and the seam was taken apart directly, not commissioned.
+The 07-31 account that follows is accurate as history and stale as status.
+
+**Everything the frame asked "ground yourself first" is answered:**
+
+- **`dispatch_error` was `NoBranchMatch`.** Both tests asked the interpreter for
+  a branch named `opened` from a tor declared `-> string<opened!>` — a bare
+  return, which binds and reports the EMPTY branch. The programs were written
+  against semantics that never existed.
+- **Did it ever work? No, not once.** `d7e2eae9` recorded a marker flip, nothing
+  more.
+- **`dischargeAll` is built.** There is now ONE discharge loop; `std/bridge:close`
+  and end-of-run auto-discharge both call it, and `close` returns handles STILL
+  HELD so zero means released.
+- **`std/bridge` compiles.** First time since 2026-07-24; it had gone
+  non-exhaustive against the run-result union. `*Bridge<session!>` is real:
+  `440_004` hangs up and releases, `440_005` pins that dropping the close is
+  KORU030.
+- **Question 3 — can a session discharge what it never opened? IT COULD.**
+  `close(handle: "file_99")` against a pool holding only `"file_1"` ran the real
+  proc and the run succeeded; the count stayed correct while the resource was
+  released, because the pool sat AFTER the dispatcher. The check now runs BEFORE
+  dispatch (`error.HandleNotHeld`). Pinned by `440_003`. Questions 1 and 2 fall
+  out of it: the runtime enforcement was a ledger, not a check — the phantom
+  checker's guarantee is real and lives entirely at compile time.
+- **The harness gap is walled.** `expected_output.txt` is now a `config-error`
+  (`anchor:cfg-dead-expectation-filename`); all 25 live carriers triaged.
+
+**Still open, and still Lars's:** bridge-minted versus type-minted hash;
+system-shell versus Koru-native shell. Both untouched. The forgery finding argues
+the hash question is now urgent rather than aesthetic — today a handle name is
+`"file_1"`, guessable, and the vocabulary-query half (`542fab` → "you may call
+`std/io:file.read`") does not exist.
+
+**The Zig leak the frame named is NOT closed.** A user still cannot spell "give
+me a bridge and run this on it" in Koru: `440_004` reaches into Zig for
+`&br.pool`, because `std/bridge` has no `run` verb. That needs a spelling.
 
 ## ⛔ It does not work. Measured 2026-07-31, before you start.
 
