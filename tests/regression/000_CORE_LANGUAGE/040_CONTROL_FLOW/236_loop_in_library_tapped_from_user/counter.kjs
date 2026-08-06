@@ -1,0 +1,9 @@
+// JavaScript implementation facet. Events are declared in counter.kz (merged at
+// import); this file holds the |js proc bodies.
+
+~proc tick|js {
+    if (n < 5) {
+        return { tag: "next", next: n + 1 };
+    }
+    return { tag: "done" };
+}

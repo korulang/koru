@@ -1,0 +1,16 @@
+// JavaScript implementation facet. Events are declared in input.kz (merged at
+// import); this file holds the |js proc bodies.
+
+let numbers = [5, 2, 8, 1, 9, 3];
+
+~proc verify|js {
+    let prev = numbers[0];
+    for (const n of numbers.slice(1)) {
+        if (n < prev) {
+            console.log(`FAIL: ${n} < ${prev}`);
+            return;
+        }
+        prev = n;
+    }
+    console.log("PASS: array sorted correctly");
+}
