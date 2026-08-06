@@ -1,7 +1,0 @@
-Aspirational: a handle-addressed store read (`pool[h].f`) lowers only inside a
-write block. The declaration's whole-program pass rewrites SINGLETON cell paths
-(`ui.sel`) and not indexed ones, so a guard or an interpolation reaches the host
-verbatim. std/grid closed the same gap for cells on 2026-08-03; this is the
-store half, and it is the second-lowering problem rather than a missing feature
-— `indexedFieldRefs` already exists, in a helper struct the `new` walk cannot
-see.

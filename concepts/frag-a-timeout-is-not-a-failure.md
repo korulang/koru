@@ -23,16 +23,35 @@ The tell was in the data the harness already had and was not using: the 46
 failures had a duration `min 30005ms, median 30016ms, max 30117ms`. Nothing
 that fails for a *reason* clusters inside 112 milliseconds of a round number.
 
-The belief this leaves us with: **a harness must report the reason it stopped
-watching as a distinct outcome from the reason a thing failed.** `killed` /
-`SIGTERM` is available on the error object; collapsing it into the failure
-bucket destroys the one signal that separates "your change broke this" from
-"our budget was too small today." The cost of that conflation is not a wrong
-number — it is a bisect through innocent commits looking for a bug that was
-never committed.
+The belief this leaves us with, in its general form: **a harness must never
+report a state it has not established.** A timeout is not a failure — `killed` /
+`SIGTERM` is right there on the error object, and collapsing it into the failure
+bucket destroys the one signal separating "your change broke this" from "our
+budget was too small today." The cost is not a wrong number; it is a bisect
+through innocent commits hunting a bug nobody committed.
+
+The same rule caught two more instances immediately afterwards, which is why
+this file is phrased generally rather than about timeouts:
+
+- **Absent is not red.** `SUCCESS`/`FAILURE` markers are run *output*, not
+  tracked files. Reading their absence in a fresh worktree as "the Zig baseline
+  failed" reported 152 zig-red tests that had simply never been measured. Three
+  states, not two — green, red, and *unknown* — and a tree with no markers gets
+  told to run the suite rather than handed a fiction.
+- **A documented guarantee is a claim, and can be false.** This harness's header
+  asserted its results "predict what the runner would say". The real closer runs
+  the JS check only when the Zig baseline already passed
+  (`regression_lib.sh:277`); this one runs regardless, so the guarantee was
+  false for 23 of 222 tests. A comment promising fidelity is not fidelity, and
+  it is more dangerous than no comment, because it discourages the check.
+
+Splitting that last one made the honest figure *better* — 147/198 zig-green
+instead of a blended 152/222 — worth recording because the reflex is to expect
+honesty to cost something. Here the blend was hiding a real result behind 23
+tests that were padding the denominator.
 
 The wider pattern, and the reason this is worth a file: **this is the fourth
-time this instrument produced a confident wrong answer before producing a right
+time — of seven so far — that this instrument produced a confident wrong answer
 one.** Annotation-prefixed declarations were invisible to its regex and hid
 `std/store` entirely; type references parsed as calls; fixture host code went
 uncounted, overstating the testable population by 2.5×; and now a timeout wore
