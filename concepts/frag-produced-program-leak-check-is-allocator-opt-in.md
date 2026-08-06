@@ -104,47 +104,52 @@ by being the first caller to wire the tracked allocator through. Nothing counts
 which `koru_std` types are reachable only on uninstrumented allocators, and that
 census is the actual instrument this belief has been asking for since July.
 
-## 2026-08-06, later — the open double-free question has a witness, and the
-## comment that closed it was wrong
+## 2026-08-06, later — CORRECTED WITHIN THE HOUR. The witness was a lying proc.
 
-The section above lists a double-free as "Open, and NOT covered by that", and
-ends by insisting it is **an open question, not a settled cost**, because an
-earlier draft had inferred acceptance from "procs are unsafe" and attributed
-that inference to Lars, who never ruled it.
+An earlier version of this section claimed the compiler's own comment —
+*"double-free is a COMPILE-TIME error for well-typed programs"* — was **false**,
+on the strength of a six-line program that aborted with `exit 134`.
 
-It is worse than open. It was **already answered in the negative, in the
-compiler's own source, as the justification for the allocator move**:
+**That was wrong, and it was wrong against a ruling recorded two sections above
+in this same file.** The falsifying tor was:
 
-> *"What this trades away: DebugAllocator's double-free/invalid-free detection
-> at the allocator layer — Koru's primary defense there is already the phantom
-> obligation system (double-free is a COMPILE-TIME error for well-typed
-> programs), so this is a backstop loss, not a loss of the language's actual
-> safety guarantee."* — `src/emitter_helpers.zig`
+    ~pub tor relend { h: *H<issue> } -> *H<issue!>
+    ~proc relend|zig { return h; }
 
-That sentence is false, and the program that falsifies it is six lines: a tor
-takes a subject as a bare `<issue>` — a borrow, which does not consume — and
-returns the very same pointer carrying `<issue!>`. One object, two obligations,
-both paid, `exit 134`. Pinned `335_053`. The corpus held **zero** double-free
-tests, so the guarantee that bought the trade had never been checked even once.
+The declaration promises a NEW `*H` carrying a fresh obligation. An honest body
+allocates one. Mine returned the borrowed pointer. **The proc lied**, and a
+`|zig` body that contradicts its declaration is the unsafe escape hatch working
+as designed — catching it would mean analysing the Zig, which Lars ruled out of
+scope on 2026-07-24, in the ruling this fragment exists to record. The pin was
+withdrawn the same session.
 
-## The shape, which is not what any of us guessed
+The failure mode is worth more than the finding was: **I re-derived a conclusion
+this fragment already warned about, in the opposite direction.** Its own text
+notes that an earlier draft inferred *from* "procs are unsafe" that double-free
+is acceptable, and flags that as an inference Lars never made. I then inferred
+*past* "procs are unsafe" that a lying body indicts the language. Same boundary,
+both sides, both by not reading the ruling already in front of me.
 
-The phantom system is affine over BINDINGS. It has no notion that two bindings
-can name one VALUE. Everything downstream follows from that single absence:
+## What actually survives, and it needs no proc body at all
 
-- return the borrowed subject with a fresh obligation → two debts, one object
-- return it bare → an alias owing nothing, which `<!state>` accepts anyway
-- return a field of it as a plain `string` → an alias with no phantom at all,
-  which is `610_007` and reads freed memory
+One declaration-level defect remains, pinned `335_054`:
 
-Three faces, one cause. **The mechanism is real and it is doing exactly what it
-says; the claim built on top of it over-read its reach.** A system that tracks
-"this binding must be used once" was described as if it tracked "this object is
-freed once", and those coincide only while no two bindings alias.
+    ~pub tor lend {}                  -> *H<issue>     # bare state: mints nothing
+    ~pub tor drop { h: *H<!issue> }                    # consumes the obligation
 
-The methodological residue is the part worth keeping: **a safety claim written
-into a comment as the justification for removing a check is the highest-value
-thing in a repo to test, and the least likely to be tested** — because the
-comment reads as a citation of a guarantee rather than as a claim making one.
-Nothing in the corpus was addressed to it. The comment was persuasive, correct
-about the mechanism it named, and load-bearing for a decision.
+`drop` accepts a binding that never owed. Both declarations are honest and
+neither body is involved. So `<!state>` today means *"the state matches"* rather
+than *"a debt is settled"* — and only the second reading can carry a safety
+property, because a value can sit in a state while owing nothing.
+
+`335_055` is that defect's consequence: a tor returns the subject it borrowed as
+a bare `<issue>`, the alias owes nothing, and it is freed anyway. Refuse the
+never-owed discharge and that program frees once. Both pins are RED and both
+carry a provisional EXPECT, because the spelling of the refusal is unruled.
+
+**The honest scope of the compiler's comment, restated:** the phantom system is
+affine over BINDINGS, and it guarantees what it says for programs whose procs
+tell the truth. It does not know that two bindings can name one value — which is
+a real gap, visible at `335_054`/`335_055` without reading a single line of Zig,
+and `610_007` is its third face. That is a narrower claim than "the guarantee is
+false", and it is the one the evidence supports.

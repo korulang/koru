@@ -5,6 +5,14 @@
 // object is freed twice — through a binding that never owed (335_054) and
 // through the one that did.
 //
+// THE BODY DOES NOT LIE, and that is why this pin stands where a first draft of
+// its sibling did not. `-> *H<issue>` promises a `*H` in state `issue` owing
+// nothing; returning the borrowed pointer satisfies that reading exactly. The
+// ambiguity is in the DECLARATION FORM, not the implementation — which is what
+// makes it the language's problem. Refuse `drop` on a binding that owes nothing
+// (335_054) and this program frees once instead of twice, with no analysis of
+// any Zig.
+//
 // This is the realistic shape rather than a contrived one: it is the fluent
 // builder, and `koru_std/json.kz` uses it today at `object.set` and
 // `array.push`. Those are the only two bare-state returns in the whole of
