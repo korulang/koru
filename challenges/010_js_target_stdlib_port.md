@@ -122,10 +122,34 @@ too, and was already red in the board at `fcd83850`), and 5 fail on `js_emitter`
 is one of eight procs in 8,734 lines reached by 160. Sort by tests-per-line-read,
 not by tests.
 
-- **`kernel` IS portable — an earlier version of this file said "NEVER port" and
-  was wrong.** Measured, after the claim was challenged: all 30 kernel-blocked
-  tests call it **plain**, with no variant tag; `|mlir` appears in six files
-  corpus-wide. The MLIR/GPU lowering is an **opt-in call-site variant**
+- **`kernel` SHIPPED (2026-08-06): 1/26 → 19/26.** Read the entry above on what
+  actually blocks a transform port, then this:
+
+  **It needed NO `|js` variant**, and that is the reusable finding. `init` is
+  1391 lines with ~60 emission sites, of which **eight** differ between targets;
+  the rest is AST analysis that is target-agnostic by construction. It branches
+  on `CompilerEnv.lang` in one body, the shape `~capture` already settled
+  (`control.kz:427`). **Ask what fraction of the OUTPUT differs, not how big the
+  transform is** — mostly-different wants a variant, mostly-shared wants one
+  body. `frag-a-transform-renders-two-languages-from-one-body`.
+
+  Two non-spelling walls, both of which `store` will meet: the synthesized proc
+  hardcoded `.target = "zig"` (that one string caused every non-mlir failure,
+  as `NoJsProcBody`), and a transform-minted `host_line` is DROPPED on JS
+  because that walk keys on the file extension carrying the line and a
+  synthesized line lives in the user's `.k` — use `.inline_code`, which is
+  emitted at top level on both targets.
+
+  Residue, none of it kernel's lowering: 5 `|mlir` tests (refusing correctly by
+  name), 1 fixture writing `@sqrt` into an op body, 1 trellis `KORU040`.
+
+- **CORRECTION: this file said "all 30 kernel-blocked tests call it plain, no
+  variant tag." Five do not.** `390_100/101/102/103/105` carry `|mlir` or
+  `|mlir[gpu]` at the call site, so the portable population was 21, not 26. The
+  claim was written while correcting the opposite error (the "never port"
+  ruling) and overshot. The conclusion it supported still holds — kernel is
+  portable, the GPU path is opt-in — but the count did not. `|mlir` appears in
+  six files corpus-wide. The MLIR/GPU lowering is an **opt-in call-site variant**
   (`std/kernel:self|mlir { … }`, `|mlir[gpu]`, kernel.kz:355, 757-783) and the
   compiler already refuses unsupported variants loudly by name (KORU122,
   KORU123). The DEFAULT lowering generates struct layouts and loop code from a
