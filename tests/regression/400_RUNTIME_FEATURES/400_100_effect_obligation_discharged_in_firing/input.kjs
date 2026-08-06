@@ -1,0 +1,15 @@
+// JavaScript implementation facet. Events are declared in input.kz (merged at
+// import); this file holds the |js proc bodies.
+
+~proc create|js {
+    return { id: id };
+}
+
+~proc destroy|js {
+    console.log(`freeing ${r.id}`);
+}
+
+~proc gen|js {
+    for (let i = 0; i < n; i++) { each(i); }
+    return { tag: "done", done: n };
+}
