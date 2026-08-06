@@ -18,4 +18,15 @@
     {% if missing != "" %}@import("std").debug.print("ne-missing-bound\n", .{});{% else %}@import("std").debug.print("ne-missing-empty\n", .{});{% endif %}
 }
 
+// JS sibling — all four comparison cells, pinned on the JS target. Which cells
+// fire is decided entirely by the engine (bound vs missing key, `==` vs `!=`),
+// so the two variants MUST select the same four; the host text is only what the
+// selected cells print. `console.log` supplies the trailing newline.
+~proc probe-cmp|template|js {
+    {% if n == "3" %}console.log("eq-match");{% endif %}
+    {% if n == "4" %}console.log("eq-nonmatch");{% endif %}
+    {% if n != "" %}console.log("ne-bound");{% endif %}
+    {% if missing != "" %}console.log("ne-missing-bound");{% else %}console.log("ne-missing-empty");{% endif %}
+}
+
 ~probe-cmp(n: 3)

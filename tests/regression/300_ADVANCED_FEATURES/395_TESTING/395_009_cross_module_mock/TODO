@@ -1,0 +1,52 @@
+Cross-module mocking is UNVERIFIED — this test's generated test bodies are empty, so it was passing vacuously
+=========================================================================
+
+PARKED 2026-08-06, same root cause as 395_002_mock_multiple_branches. Read that
+marker for the full mechanism and the open question; this file records only what
+is specific to this test.
+
+WHAT WAS MEASURED
+
+`post.sh` runs `zig test output_emitted.zig` and reported "All 3 tests passed".
+The blocks it passed, verbatim:
+
+    test "Cross-module mock with failed branch" {
+    }
+    test "Cross-module mock should return 3 lines" {
+    }
+
+Empty, and the artifact contains ZERO `assert` calls — so neither
+`assert(result.len > 0)` nor `assert(result == 3)` nor either `assert.fail()`
+guard exists in the emitted program. The `test(...)` body is re-parsed under the
+synthetic filename `__test__.kz`, where a Koru construct must open with `~`; this
+is a `.k` with no prefixes, so the body parses as Zig host lines and nothing is
+collected.
+
+WHY THIS ONE MATTERS MORE THAN ITS SIBLING
+
+The header claims a specific frontier was CLOSED: "Cross-module mocking × EFFECT
+BRANCHES (FRONTIERS gap 5 — CLOSED 2026-06-12)", and describes a real fix —
+`emitContinuationList` dropping effect (`!`) continuations so a result-dispatch
+switch is over terminals only, where previously the mock path "leaked `.line =>`
+against an Output union with no such tag and Zig rejected it".
+
+That fix may well be real; 650_001 is cited as green end-to-end for the effect
+path. But THIS test cannot be the evidence for it. Its emitted bodies are empty,
+so the mock path it claims to exercise is never built, and the Zig rejection it
+says it prevents could not occur either way. A closed-frontier claim resting on a
+vacuous test is the thing to fix here, independently of which spelling turns out
+to be correct — so when this is resolved, check whether gap 5 still has a
+witness anywhere else, and if not, that frontier is open again.
+
+Note the artifact does mention `read-lines` (5 occurrences) — the flow
+`process-config` and its `std/fs:read-lines` call ARE emitted, because those sit
+at file scope where `.k` parsing is fine. Only the `test(...)` BODIES are lost.
+So this is narrowly a test-body dialect problem, not a module-resolution or
+effect-lowering problem, and the surrounding program is not evidence that the
+test ran.
+
+ACCEPTANCE WHEN RESOLVED
+
+The emitted `test` blocks must be non-empty, the artifact must contain this
+file's four assertions, and the `failed`/`done` mocks must be visible in the
+emitted mock substitution. Then delete this marker.

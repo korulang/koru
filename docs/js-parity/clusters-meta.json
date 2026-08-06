@@ -1,0 +1,43 @@
+{
+  "generated": "2026-08-06T12:13:55.606Z",
+  "scanned": 222,
+  "passing": 121,
+  "families": [
+    {
+      "name": "A_js_emitter_emit_failed_unsupportedconstruct",
+      "status": "js-compile",
+      "cause": "js_emitter.emit failed: UnsupportedConstruct",
+      "count": 29
+    },
+    {
+      "name": "B_typeerror_cannot_read_properties_of_undefine",
+      "status": "js-runtime",
+      "cause": "TypeError: Cannot read properties of undefined (reading 'handler')",
+      "count": 27
+    },
+    {
+      "name": "C_js_emitter_emit_failed_nojsprocbody",
+      "status": "js-compile",
+      "cause": "js_emitter.emit failed: NoJsProcBody",
+      "count": 9
+    },
+    {
+      "name": "D_syntaxerror_missing_initializer_in_const_dec",
+      "status": "js-runtime",
+      "cause": "SyntaxError: Missing initializer in const declaration",
+      "count": 4
+    },
+    {
+      "name": "E_error_koru010_stray_continuation_line_withou",
+      "status": "js-compile",
+      "cause": "error[KORU010]: stray continuation line without Koru construct",
+      "count": 3
+    },
+    {
+      "name": "F_referenceerror_name_is_not_defined",
+      "status": "js-runtime",
+      "cause": "ReferenceError: name is not defined",
+      "count": 3
+    }
+  ]
+}

@@ -1,32 +1,43 @@
-// FRONTIER: a store column read in a BRANCH-RESOLUTION PAYLOAD is dropped at
-// emission, while the identical read in the subflow's GUARD is threaded fine.
+// A store column read in a BRANCH-RESOLUTION PAYLOAD lowers to the cell, the
+// same as the identical read in the subflow's GUARD one line above it.
 //
-// The two reads below are the same expression, `s.n`, in one subflow:
+//   pick = if(s.n > 0)      <- always threaded
+//   | then => got s.n       <- used to reach Zig as a bare, undeclared `s`
 //
-//   pick = if(s.n > 0)      <- threaded correctly
-//   | then => got s.n       <- emitted as a bare `s`, undeclared in Zig
+// WHAT WAS ACTUALLY MISSING. Not a feature and not a decision about the
+// language: `std/store:new` owns a whole-program walk that rewrites every
+// `<store>.<field>` it can reach, and that walk enumerates the text positions
+// an expression may stand in ONE BY ONE — a guard's `condition`, an
+// invocation's args, an `Expression` arg's captured text, a template's frozen
+// `inline_body`, an `inline_code` node, a produce arm's `.expression`, a
+// bare-return subflow's BranchConstructor. The branch-constructor NODE was the
+// one member of that list nobody had written down. Every position added to it
+// so far arrived the same way: valid Koru, a raw identifier in the emitted Zig,
+// and a diagnostic naming no Koru construct. `.expression` came in at 110_022;
+// `inline_body` at 690_074; this one is 690_256.
 //
-// Replacing only the payload with a literal (`=> got 7`) compiles and prints 7,
-// so the guard is not what breaks and the store is genuinely in scope for the
-// subflow. What is dropped is specifically the capture for a value used to
-// RESOLVE A BRANCH.
+// So the honest reading of this test is not "branch payloads now work" but
+// "the enumeration is one entry longer". A walk that must be told each place an
+// expression can appear will keep being short one place, and the next gap will
+// look exactly like this one did.
 //
-// Actual: output_emitted.zig ... error: use of undeclared identifier 's'
-// Expected: prints 7 — or, if reading a store from a branch payload is meant to
-// be refused, a Koru diagnostic saying so rather than a raw Zig identifier
-// error leaking out of the backend.
+// TWO WALKS, BOTH FIXED. store.kz carries a singleton copy of the walk and a
+// plural copy, in different scopes, and only the singleton one is exercised
+// here. 690_257 is the same program with a plural store declared first, which
+// puts the plural walk in front and pins its copy of the rule — measured by
+// disabling each arm in turn: with the singleton arm inert 690_257 still
+// compiles, with only the plural arm 690_256 still fails.
 //
 // Found while porting celld's durability gate (830_THE_WORLD/842). That port
 // does not need this shape — celld's own `await_durable(cell, epoch, position)`
 // takes the position as an argument, so passing it as a tor input is the
-// faithful spelling and it works. This is pinned because the break is data, not
-// because the port is blocked.
+// faithful spelling and it worked all along. This was pinned because the break
+// was data, not because the port was blocked.
 //
 // Neighbour: 690_252 fixed the sibling case — a phantom-typed capture crossing
 // into a `std/store:query` arm, where `lookupBranchIn` read the branch payload's
-// type and left its `<state!>` behind. Same collector, same branch-payload
-// position, a different thing dropped: there the obligation, here the store
-// binding itself.
+// type and left its `<state!>` behind. Same branch-payload position, a
+// different thing dropped: there the obligation, here the store binding itself.
 import std/io
 import std/store
 

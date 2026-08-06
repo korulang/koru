@@ -391,3 +391,83 @@ enumerated.
   brace-escaped variant *derived at comptime* rather than hand-maintained beside
   it. Two hand-kept copies of one string is the same defect one level down, and
   the earlier sections of this belief are a list of times that bill came due.
+
+## The sixth tell is an ENUMERATED MEMBER LIST, and it defeats every technique above (2026-08-06)
+
+Every form so far has a *thing* to find. Two lowerings are two functions. Four
+`storeRefs` copies answer to a grep. A discriminant's other arm is three lines
+down. A composite value has terms. All of this belief's prescriptions —
+count the copies, read the guard, race the paths, try the other front door —
+presuppose that the missing work exists somewhere as text you can locate.
+
+`std/store:new`'s whole-program cell-path rewrite has no such text. It is a
+`switch` over AST node kinds, and it is complete exactly over the prongs someone
+wrote down: a guard's `condition`, an invocation's args, an `Expression` arg's
+captured text, a template's frozen `inline_body`, an `inline_code` node, a
+produce arm's `.expression`. The branch-constructor node — `| then => got s.n` —
+was not in the list. Nothing was duplicated, narrowed, or gated. **The defect is
+an absent prong, and absence has no name to grep for.**
+
+That is why every prong in that list arrived the same way, one per incident, over
+months: valid Koru, a raw identifier in the emitted Zig, a diagnostic naming no
+Koru construct. `.expression` came in at 110_022. `inline_body` at 690_074. The
+branch payload at 690_256. Each was reported as "this expression position is
+unsupported" — the language-limitation misreading this belief already predicts —
+and each fix widened the enumeration by one without anyone asking what the
+enumeration was supposed to be closed over.
+
+So the diagnostic question changes shape again. Not "how many places implement
+this?" but **"what is the closed set this switch must cover, and who guarantees
+it stays covered?"** Zig will not: the `else => {}` that makes the switch
+exhaustive is the same `else` that swallows every future node kind. An
+enumeration with a silent default is a wall with no reach clause, and this
+belief's own enforcement-layer section says what that is worth.
+
+### The memorial fired twenty lines away
+
+This belief's "suspect a memorial" bullet was written as a heuristic for
+searching. Here it was not even a search: `rewriteImmediateImpl` sits
+*immediately below* `rewriteNode` in the same anonymous struct, and its
+doc-comment is a past-tense gravestone for this exact defect —
+
+> A bare-return subflow (`peek -> s.v`) is not a Flow at all — it lands as an
+> `immediate_impl` whose BranchConstructor carries the produced expression.
+> Reading a cell there is as ordinary as reading one in an arg, but the walk used
+> to visit only `.flow`, so the reference went to the host verbatim and Zig
+> reported an undeclared `s` (110_022).
+
+Same payload type, `BranchConstructor`, in two carriers. One carrier got a
+handler and a memorial; the other kept emitting `use of undeclared identifier
+'s'`. The author of the 110_022 fix understood the defect completely — the
+comment proves it — and that understanding is precisely what made the sibling
+carrier feel handled.
+
+**A gravestone naming a TYPE is a search key.** When a memorial says "reading a
+cell in a BranchConstructor", the next question is "how many node kinds carry a
+BranchConstructor?", and it is answerable from `ast.zig` in one read. Nobody
+asked, twice.
+
+### The differential instrument is two builds, not a project
+
+This belief has asked five times for the thing that holds the class — same
+program, both paths, results compared — and has each time described it as an
+ambition. On this fix it cost two builds, and the recipe generalises:
+
+> **Make the arm you just added inert, then go find a program that still needs
+> it.** No such program exists → you added dead code. One does → that program is
+> the second test, and you have just proved both copies are load-bearing.
+
+Applied here: the singleton and plural walks each got the missing prong. Making
+the singleton arm inert and re-running found that a program declaring a PLURAL
+store above the singleton still compiles — because both walks rewrite *every*
+store name in the program, so whichever `new` transform runs first does all the
+work and the later one no-ops. Declaration order is the discriminant, and it is
+not a variable anyone would have thought to vary. That program is 690_257;
+690_256 is its singleton-first twin, and with only the plural arm it still
+fails. Two tests, two arms, each measured rather than assumed.
+
+The general point is that the differential instrument does not require racing,
+benchmarking, or a mirror cluster. **It requires being willing to break your own
+fix on purpose before you believe it was needed.** That is cheap, it is available
+at the exact moment the knowledge is freshest, and it converts "I widened both
+copies for symmetry" — an unfalsifiable good intention — into two pins.

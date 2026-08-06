@@ -116,3 +116,52 @@ Surfaced 2026-08-04 from the opposite claim: a paper arguing the best hypothesis
 is the *weakest* one consistent with the evidence. That is right for predicting
 and inverted here, because a belief in this corpus is not kept in order to be
 right. It is kept in order to be caught out.
+
+
+## The nastiest instance yet: the artifact under test also SUPPLIES the assertions
+
+Every case above has a fixed checker reading a variable subject. There is a worse
+arrangement, found 2026-08-06 in the mock-testing corpus: the thing being tested
+is the thing that *generates the assertions*, so a total failure of the subject
+produces a checker with nothing to check — and a checker with nothing to check
+reports success.
+
+`395_002_mock_multiple_branches` and `395_009_cross_module_mock` each declare
+several `assert(...)` calls inside `test(...)` bodies, and each validates by
+running `zig test` over the emitted program. Both printed *"All 3 tests
+passed"* for months. The blocks being passed were:
+
+    test "Withdrawal succeeds when mocked" {
+    }
+
+Empty, both of them, in both tests — and the emitted artifacts contain **zero**
+`assert` calls. The bodies were lost because a `test(...)` body is re-parsed
+under a synthetic `.kz` filename where constructs need a `~`, and these are `.k`
+files without one, so every line parsed as a host line and nothing was collected.
+
+Note how completely the surface lied. The test COUNT was right. The test NAMES
+were right, quoted from the source. The exit status was right. `zig test` was
+telling the exact truth: it ran the tests it was given and none of them failed.
+Every signal available to the harness was green, and the one thing that was wrong
+— the bodies — is the one thing none of those signals mentions.
+
+**The rule the earlier sections already imply, sharpened into something
+checkable:** "assert content rather than exit status" is not enough when the
+content is generated. Where a test's assertions are produced by the machinery
+under test, the harness must also assert that assertions EXIST. Count them. An
+emitted test block with an empty body is not a passing test, it is an absent one,
+and the two are distinguishable by exactly one cheap grep that nobody was
+running.
+
+**Generalisation worth carrying, because this arrangement is more common than it
+looks:** any generator whose output is then validated by a generic runner has
+this hole — codegen validated by compiling the result, a migration validated by
+running the schema, a config synthesiser validated by booting the service. In
+every case "the runner was happy" is compatible with "the generator emitted
+nothing". The invariant to add is always a floor on the output, never a check on
+the runner's verdict: N blocks, N non-empty, M assertions present.
+
+Both tests are now parked with `TODO` markers rather than fixed, because which
+spelling is wrong — the tests' or the parser's dialect inheritance — is an
+unmade ruling. The vacuous green is gone either way, which was the part that
+could not be allowed to stand while the question waits.

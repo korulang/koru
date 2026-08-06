@@ -9,4 +9,14 @@
     @import("std").debug.print("n={{ n }}\n", .{});
 }
 
+// JS sibling — same pin (`{{ arg }}` reaches the Liquid engine and interpolates
+// the captured invocation arg), lowered to the JS host. The body is JS because a
+// per-call template is spliced at the call site BEFORE the emitter picks a
+// target, so the variant is chosen by build language and each variant emits its
+// own host text. Divergence: `console.log` appends the newline the Zig format
+// string carries explicitly, so `\n` is dropped here rather than escaped.
+~proc show|template|js {
+    console.log("n={{ n }}");
+}
+
 ~show(n: 42)
