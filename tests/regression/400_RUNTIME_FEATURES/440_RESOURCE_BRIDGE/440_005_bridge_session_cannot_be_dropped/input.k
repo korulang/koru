@@ -8,7 +8,7 @@
 //
 // The positive half is `440_004`: the same chain WITH the close compiles, runs,
 // and releases what the session was still holding.
-~import std/bridge
-~import std/io
+import std/bridge
+import std/io
 
-~std/bridge:create(id: "s1", scope: "files"): br |> std/bridge:get-handles(br): n |> std/io:print.ln("holding {{ n:d }}")
+[with]std/bridge:create(id: "s1", scope: "files"): br |> get-handles(br): n |> std/io:print.ln("holding {{ n:d }}")
