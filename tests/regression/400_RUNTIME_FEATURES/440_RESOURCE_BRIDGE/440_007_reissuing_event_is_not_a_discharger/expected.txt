@@ -1,0 +1,4 @@
+use() ran — obligation re-issued, nothing released
+held 1 then 1
+shut() ran — released 'res_1'
+[BRIDGE] Invoked 'shut' for handle 'res_1' [app.session:open]

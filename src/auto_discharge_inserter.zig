@@ -156,6 +156,110 @@ pub const AutoDischargeInserter = struct {
         return false;
     }
 
+    fn isIdentChar(c: u8) bool {
+        return (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or (c >= '0' and c <= '9') or c == '_' or c == '-';
+    }
+
+    /// Does `text` mention `ident` as a whole identifier (not as a substring of
+    /// a longer name)? Catches direct args (`sink(h)`), field paths (`h.n`) and
+    /// interpolation reads (`"{{ name:s }}"`) alike, because all of them carry
+    /// the identifier with non-identifier characters on both sides.
+    fn textReferencesIdent(text: []const u8, ident: []const u8) bool {
+        if (ident.len == 0) return false;
+        var i: usize = 0;
+        while (std.mem.indexOfPos(u8, text, i, ident)) |pos| {
+            const before_ok = pos == 0 or !isIdentChar(text[pos - 1]);
+            const after = pos + ident.len;
+            const after_ok = after >= text.len or !isIdentChar(text[after]);
+            if (before_ok and after_ok) return true;
+            i = pos + 1;
+        }
+        return false;
+    }
+
+    fn argsReferenceBinding(args: []const ast.Arg, binding: []const u8) bool {
+        for (args) |arg| {
+            if (textReferencesIdent(arg.value, binding)) return true;
+        }
+        return false;
+    }
+
+    fn namedBranchesReferenceBinding(branches: []const ast.NamedBranch, binding: []const u8) bool {
+        for (branches) |b| {
+            for (b.body) |*cont| {
+                if (continuationReferencesBinding(cont, binding)) return true;
+            }
+        }
+        return false;
+    }
+
+    fn nodeReferencesBinding(node: *const ast.Node, binding: []const u8) bool {
+        switch (node.*) {
+            .invocation => |*inv| return argsReferenceBinding(inv.args, binding),
+            .label_with_invocation => |*lwi| return argsReferenceBinding(lwi.invocation.args, binding),
+            .label_jump => |*lj| return argsReferenceBinding(lj.args, binding),
+            .branch_constructor => |*bc| {
+                if (bc.plain_value) |plain| {
+                    if (textReferencesIdent(plain, binding)) return true;
+                }
+                for (bc.fields) |field| {
+                    const value = field.expression_str orelse continue;
+                    if (textReferencesIdent(value, binding)) return true;
+                }
+                return false;
+            },
+            .conditional_block => |*cb| {
+                if (cb.condition) |cond| {
+                    if (textReferencesIdent(cond, binding)) return true;
+                }
+                for (cb.nodes) |*n| {
+                    if (nodeReferencesBinding(n, binding)) return true;
+                }
+                return false;
+            },
+            .inline_code => |code| return textReferencesIdent(code, binding),
+            .expression => |expr| return textReferencesIdent(expr, binding),
+            .foreach => |*fe| {
+                if (textReferencesIdent(fe.iterable, binding)) return true;
+                return namedBranchesReferenceBinding(fe.branches, binding);
+            },
+            .conditional => |*c| {
+                if (textReferencesIdent(c.condition, binding)) return true;
+                return namedBranchesReferenceBinding(c.branches, binding);
+            },
+            .switch_result => |*sr| {
+                if (textReferencesIdent(sr.expression, binding)) return true;
+                return namedBranchesReferenceBinding(sr.branches, binding);
+            },
+            else => return false,
+        }
+    }
+
+    fn continuationReferencesBinding(cont: *const ast.Continuation, binding: []const u8) bool {
+        if (cont.condition) |cond| {
+            if (textReferencesIdent(cond, binding)) return true;
+        }
+        if (cont.node) |*node| {
+            if (nodeReferencesBinding(node, binding)) return true;
+        }
+        for (cont.continuations) |*nested| {
+            if (continuationReferencesBinding(nested, binding)) return true;
+        }
+        return false;
+    }
+
+    /// Does the flow's body mention `binding` anywhere — head args, any step's
+    /// args, a condition, a branch constructor, an interpolation? The test is
+    /// textual and identifier-bounded, and deliberately errs toward "yes": a
+    /// mention only suppresses the silent-drop wall, never triggers it.
+    fn bodyReferencesBinding(flow: *const ast.Flow, binding: []const u8) bool {
+        if (argsReferenceBinding(flow.inv().args, binding)) return true;
+        for (flow.body.continuations) |*cont| {
+            if (continuationReferencesBinding(cont, binding)) return true;
+        }
+        return false;
+    }
+
     /// Check if a binding escapes via a branch constructor field
     /// Returns true if the binding (or binding.field) appears in any field value
     fn bindingEscapesViaBranchConstructor(bc: *const ast.BranchConstructor, binding_name: []const u8) bool {
@@ -1223,6 +1327,52 @@ pub const AutoDischargeInserter = struct {
             }
         }
 
+        // A subflow impl's CONSUMING params (`h: *Handle<!owned>`) enter the body
+        // OWED: the caller handed the debt over (linear transfer, 2026-07-02).
+        // The wall guards the SILENT drop of a POINTER — a `*T` debt a body
+        // never mentions at all (330_125's `drop-it = note(n: 1)`) is heap the
+        // pure body can never free: a guaranteed leak. Everything else is left
+        // alone: delegation consumes onward; a terminal disposer settles by use
+        // (`release = print.ln("release {{ name:s }}")`, 335_050/051) or by
+        // declaration alone when the debt is value-typed bookkeeping whose
+        // storage lives elsewhere (`despawn-quietly` over a store row, 690_035
+        // — its body references nothing and that is legitimate). Seeded
+        // not_auto_dischargeable: inserting a disposal would legalize the drop,
+        // and the only candidate disposer may be the impl event itself. The
+        // markers are read off the RAW spelling — canonicalizePhantom
+        // re-renders `module:state(!)` and a consume prefix does not survive it.
+        const impl_qualified: ?[]const u8 = if (flow.impl_of) |impl_path| blk: {
+            const impl_name = try self.pathToString(impl_path);
+            defer self.allocator.free(impl_name);
+            break :blk try std.fmt.allocPrint(self.allocator, "{s}:{s}", .{ flow.module, impl_name });
+        } else null;
+        defer if (impl_qualified) |iq| self.allocator.free(iq);
+        var transferred_drops: std.ArrayListUnmanaged([]const u8) = .{};
+        defer transferred_drops.deinit(self.allocator);
+        if (impl_qualified) |iq| {
+            if (self.event_map.get(iq)) |impl_info| {
+                for (impl_info.decl.input.fields) |field| {
+                    const phantom_str = field.phantom orelse continue;
+                    var parsed = phantom_parser.PhantomState.parse(self.allocator, phantom_str) catch continue;
+                    defer parsed.deinit(self.allocator);
+                    const concrete = switch (parsed) {
+                        .concrete => |c| c,
+                        else => continue,
+                    };
+                    if (concrete.requires_cleanup or !concrete.consumes_obligation) continue;
+                    if (!std.mem.startsWith(u8, std.mem.trimLeft(u8, field.type, " "), "*")) continue;
+                    if (bodyReferencesBinding(flow, field.name)) continue;
+                    const canonical = try self.canonicalizePhantom(phantom_str, impl_info.decl.module);
+                    defer self.allocator.free(canonical);
+                    const held = try std.fmt.allocPrint(self.allocator, "{s}!", .{canonical});
+                    defer self.allocator.free(held);
+                    try context.addBinding(field.name, held, field.name, field.type, self.nextAcqSeq());
+                    if (context.cleanup_obligations.getPtr(field.name)) |info| info.not_auto_dischargeable = true;
+                    try transferred_drops.append(self.allocator, field.name);
+                }
+            }
+        }
+
         for (flow.body.continuations, 0..) |*cont, cont_idx| {
             // Normalization never walks into continuations — no insertion, no
             // terminator validation. The head materialization above is the whole
@@ -1361,6 +1511,56 @@ pub const AutoDischargeInserter = struct {
             const result_ptr = try self.allocator.create(ast.Program);
             result_ptr.* = new_program;
             return .{ .transformed = true, .program = result_ptr };
+        }
+
+        // Silent drops audited at the flow level, not at terminals: a dropped
+        // binding is by construction absent from the whole body, so no walk can
+        // credit it and a void-chain body has no terminal to catch it at. The
+        // impl event itself is excluded from the suggestions: calling it from
+        // its own body is recursion, not a discharge.
+        if (mode == .full and transferred_drops.items.len > 0) {
+            for (transferred_drops.items) |dropped| {
+                const info = context.cleanup_obligations.get(dropped) orelse continue;
+                const display_name = formatBindingForError(dropped, info.field_name, info.base_type);
+                const display_state = formatStateForError(info.phantom_state);
+                const all_disposals = try self.findAllDisposalEvents(info.phantom_state, info.base_type);
+                defer self.allocator.free(all_disposals);
+                var options_buf: [512]u8 = undefined;
+                var fbs = std.io.fixedBufferStream(&options_buf);
+                var n_options: usize = 0;
+                for (all_disposals) |d| {
+                    if (std.mem.eql(u8, d.qualified_name, impl_qualified.?)) continue;
+                    if (n_options > 0) fbs.writer().writeAll(", ") catch {};
+                    fbs.writer().writeAll(displayDischargerName(d.qualified_name)) catch {};
+                    n_options += 1;
+                }
+                if (n_options == 1) {
+                    try self.reporter.addError(
+                        .KORU030,
+                        flow.location.line,
+                        flow.location.column,
+                        "Resource '{s}' obligation <{s}> was not discharged. Call: {s}",
+                        .{ display_name, display_state, fbs.getWritten() },
+                    );
+                } else if (n_options > 1) {
+                    try self.reporter.addError(
+                        .KORU030,
+                        flow.location.line,
+                        flow.location.column,
+                        "Resource '{s}' obligation <{s}> was not discharged. Call one of: {s}",
+                        .{ display_name, display_state, fbs.getWritten() },
+                    );
+                } else {
+                    try self.reporter.addError(
+                        .KORU030,
+                        flow.location.line,
+                        flow.location.column,
+                        "Resource '{s}' obligation <{s}> was not discharged at scope exit.",
+                        .{ display_name, display_state },
+                    );
+                }
+            }
+            return error.ValidationFailed;
         }
 
         return .{ .transformed = false, .program = program };
@@ -2739,7 +2939,36 @@ pub const AutoDischargeInserter = struct {
             // auto-inserted as a disposer. The error-suggestion path
             // (include_multi_branch) still lists branched dischargers so the user can
             // call one explicitly.
-            if (!include_multi_branch and (event_decl.branches.len > 0 or event_decl.return_type != null)) continue;
+            //
+            // ⚠️ MEASURED AND GATED OFF, 2026-08-06 — do not delete, read this.
+            // A PANIC branch (`| ?!name`) arguably should NOT disqualify: its
+            // unhandled form is a synthesized @panic (210_127), so there is no
+            // binding to invent, which is exactly what a bare inserted call
+            // needs. Lars raised it ("we even have panic-branches now"). The
+            // widening below admits it. It is off because admitting it is not
+            // sufficient, and both blockers were measured:
+            //   1. a TERMINAL-only panic branch has no way to express success —
+            //      `Output = union(enum) { could_not_release: []const u8 }`,
+            //      non-optional, and `return null` is rejected. There is no
+            //      "fine" value for the proc to return.
+            //   2. a panic EFFECT arm (`! ?!name`) gets past this filter and
+            //      then trips KORU025 — the inserter synthesizes a TERMINAL `|`
+            //      handler for a branch declared `!`.
+            // An OPTIONAL branch (`| ?`) must stay disqualified either way:
+            // unhandled it synthesizes a silent no-op, so a disposer could
+            // report "I did not release" into nothing.
+            const admit_panic_only_branches = false;
+            if (!include_multi_branch) {
+                if (event_decl.return_type != null) continue;
+                var has_bindable_output = false;
+                for (event_decl.branches) |b| {
+                    if (!b.is_panic or !admit_panic_only_branches) {
+                        has_bindable_output = true;
+                        break;
+                    }
+                }
+                if (has_bindable_output) continue;
+            }
 
             // Self-loop suggestion filter: an event that consumes <state!> on
             // base_type but ALSO re-issues <state!> on the same base_type through

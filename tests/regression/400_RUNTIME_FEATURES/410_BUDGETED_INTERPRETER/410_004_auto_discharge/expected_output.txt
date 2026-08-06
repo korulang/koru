@@ -1,3 +1,0 @@
-close() was called by auto-discharge
-[AUTO-DISCHARGE] Invoked 'close' for handle 'file_1' [main:opened]
-PASS: auto-discharge ran

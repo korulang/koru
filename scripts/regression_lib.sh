@@ -606,6 +606,23 @@ regression_run_one_test() {
         FAILED_TESTS="$FAILED_TESTS $TEST_NAME(config-error)"
         return 0
     fi
+    # The mirror of the rule above, and the one that actually bit: a test can
+    # carry a file that LOOKS like an expectation and is never opened.
+    # `expected_output.txt` is read nowhere in this harness. A MUST_RUN test
+    # holding one asserts only "exited 0", so a program printing `FAIL:` on every
+    # line passes — which is how both `440_RESOURCE_BRIDGE` tests reported green
+    # for six days over a seam that had never once worked.
+    # Rename it to expected.txt (exact match) or expected_patterns.txt (regex per
+    # line) to make it assert, or delete it and let the test honestly pin only
+    # that the program runs clean.
+    if [ -f "$test_dir/expected_output.txt" ]; then
+        echo -e "${RED}❌ Test carries expected_output.txt — a filename the harness never reads${NC}"
+        echo "  Rename it to expected.txt or expected_patterns.txt, or delete it."
+        rm -f "$test_dir/SUCCESS" "$test_dir/FAILURE"
+        echo "config-error" > "$test_dir/FAILURE"
+        FAILED_TESTS="$FAILED_TESTS $TEST_NAME(config-error)"
+        return 0
+    fi
     # The comptime channel's copy of the same rule: expected_comptime.txt is
     # only ever read inside the MUST_RUN branch (the folded residue must still
     # build and run — see check_expected_comptime). Without MUST_RUN the file is

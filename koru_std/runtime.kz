@@ -586,6 +586,25 @@ const koru_parser = @import("koru_parser");
         }
     }.parse;
 
+    // Helper: the bare resource type a handle is minted for — pointer syntax,
+    // bracket phantom and module qualifier stripped. Shared by both places a
+    // create-phantom can ride: a branch payload field and a bare return.
+    const bareResourceType = struct {
+        fn strip(declared: []const u8) []const u8 {
+            var res_type = declared;
+            if (std.mem.startsWith(u8, res_type, "*")) {
+                res_type = res_type[1..];
+            }
+            if (std.mem.indexOf(u8, res_type, "[")) |idx| {
+                res_type = std.mem.trim(u8, res_type[0..idx], " ");
+            }
+            if (std.mem.lastIndexOf(u8, res_type, ":")) |colon_idx| {
+                res_type = res_type[colon_idx + 1 ..];
+            }
+            return res_type;
+        }
+    }.strip;
+
     // Helper: Extract obligations from EventDecl with full field/arg info
     const extractObligations = struct {
         fn extract(alloc: std.mem.Allocator, ed: *const ast_reg.EventDecl, module_name: ?[]const u8) struct {
@@ -630,19 +649,7 @@ const koru_parser = @import("koru_parser");
                                 // Prefer phantom qualifier, fall back to event module
                                 const obl_module = result.module orelse alloc.dupe(u8, default_module) catch default_module;
                                 creates.append(alloc, name) catch continue;
-                                // Extract resource type from field type (strip pointer syntax, keep bare type)
-                                var res_type: []const u8 = field.type;
-                                if (std.mem.startsWith(u8, res_type, "*")) {
-                                    res_type = res_type[1..];
-                                }
-                                // Strip phantom annotation if present
-                                if (std.mem.indexOf(u8, res_type, "[")) |idx| {
-                                    res_type = std.mem.trim(u8, res_type[0..idx], " ");
-                                }
-                                // Strip module qualifier from type (keep bare type name)
-                                if (std.mem.lastIndexOf(u8, res_type, ":")) |colon_idx| {
-                                    res_type = res_type[colon_idx + 1 ..];
-                                }
+                                const res_type = bareResourceType(field.type);
                                 creates_specs.append(alloc, .{
                                     .obligation_module = obl_module,
                                     .obligation_name = name,
@@ -651,6 +658,33 @@ const koru_parser = @import("koru_parser");
                                 }) catch continue;
                             }
                         }
+                    }
+                }
+            }
+
+            // A bare return carries its phantom on the DECLARATION, not on a
+            // branch payload field: `-> *R<active!>` has no branches at all, and
+            // the parser forces a lone handle into exactly that shape (PARSE003
+            // rejects `| opened { h: T<opened!> }`). Reading only `ed.branches`
+            // meant the canonical way to spell "this call mints a resource" was
+            // invisible to the registry, so no handle was ever minted for it.
+            //
+            // The dispatcher reports a bare return on `__type_ref` — the same
+            // channel an identity branch uses — so the spec is identical to the
+            // branch case; only where the phantom is READ from differs.
+            if (ed.return_phantom) |phantom_str| {
+                const result = parsePhantom(alloc, phantom_str);
+                if (result.creates) {
+                    if (result.name) |name| {
+                        const obl_module = result.module orelse alloc.dupe(u8, default_module) catch default_module;
+                        creates.append(alloc, name) catch {};
+                        const res_type = bareResourceType(ed.return_type orelse "unknown");
+                        creates_specs.append(alloc, .{
+                            .obligation_module = obl_module,
+                            .obligation_name = name,
+                            .field_name = alloc.dupe(u8, "__type_ref") catch "__type_ref",
+                            .resource_type = alloc.dupe(u8, res_type) catch res_type,
+                        }) catch {};
                     }
                 }
             }
@@ -1064,15 +1098,31 @@ const koru_parser = @import("koru_parser");
     code.appendSlice(allocator, I ++ "    return &[_][]const u8{};\n") catch unreachable;
     code.appendSlice(allocator, I ++ "}\n\n") catch unreachable;
 
-    // Generate discharge event lookup (for auto-discharge) - returns first event that discharges this obligation
+    // Generate discharge event lookup (for auto-discharge). An event that
+    // RE-ISSUES the obligation it consumes is NOT a discharger: `append`
+    // (`<!open> -> <open!>`) hands back another obligation exactly like
+    // `tx.exec` does, so calling it releases nothing. The compiled path has
+    // excluded that shape since `eventReIssuesObligation`
+    // (auto_discharge_inserter.zig); this lookup returned the FIRST match and
+    // so handed a bridge a "discharger" that reopened the resource it was asked
+    // to let go of — measured in kopium-headless, where the session's hang-up
+    // invoked `append` and the file descriptor survived it.
     code.appendSlice(allocator, I ++ "pub fn get_discharge_event_") catch unreachable;
     code.appendSlice(allocator, scope_ident) catch unreachable;
     code.appendSlice(allocator, "(obligation: []const u8) ?[]const u8 {\n") catch unreachable;
     code.appendSlice(allocator, I ++ "    inline for (scope_events_") catch unreachable;
     code.appendSlice(allocator, scope_ident) catch unreachable;
     code.appendSlice(allocator, ") |ev| {\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "        var discharges_it = false;\n") catch unreachable;
     code.appendSlice(allocator, I ++ "        for (ev.discharges_obligations) |dis| {\n") catch unreachable;
-    code.appendSlice(allocator, I ++ "            if (dispatcher_std.mem.eql(u8, obligation, dis)) return ev.name;\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "            if (dispatcher_std.mem.eql(u8, obligation, dis)) { discharges_it = true; break; }\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "        }\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "        if (discharges_it) {\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "            var reissues = false;\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "            for (ev.creates_obligations) |cre| {\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "                if (dispatcher_std.mem.eql(u8, obligation, cre)) { reissues = true; break; }\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "            }\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "            if (!reissues) return ev.name;\n") catch unreachable;
     code.appendSlice(allocator, I ++ "        }\n") catch unreachable;
     code.appendSlice(allocator, I ++ "    }\n") catch unreachable;
     code.appendSlice(allocator, I ++ "    return null;\n") catch unreachable;

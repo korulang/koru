@@ -1,0 +1,3 @@
+close-file() ran for 'file_1'
+[BRIDGE] Invoked 'close-file' for handle 'file_1' [main:opened]
+held before hang-up: 1

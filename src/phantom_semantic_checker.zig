@@ -968,6 +968,18 @@ pub const PhantomSemanticChecker = struct {
             return list;
         }
 
+        /// Does this binding hold a live obligation that `<!state>` could settle?
+        ///
+        /// The alternative predicate for the debt-exists check at the consume
+        /// site (see `enforce_debt_exists`). Measured identical to parsing the
+        /// provided phantom: both close 335_054 / 335_055 and both refuse
+        /// delegation while 330_076 is red. Kept because it reads the authority
+        /// directly rather than re-deriving it from a string.
+        fn owesObligation(self: *BindingContext, name: []const u8) bool {
+            return self.cleanup_obligations.contains(name) or
+                self.outer_scope_obligations.contains(name);
+        }
+
         /// Check if there are any outer-scope uncleaned resources
         /// These are obligations from outside a @scope boundary that cannot be satisfied inside
         fn hasOuterScopeObligations(self: *BindingContext) bool {
@@ -1204,7 +1216,13 @@ pub const PhantomSemanticChecker = struct {
                     // rejected by directionality (validatePhantom is_input).
                     const canonical_phantom = try self.canonicalizePhantomState(phantom_str, impl_ev.module);
                     defer self.allocator.free(canonical_phantom);
-                    var parsed = try phantom_parser.PhantomState.parse(self.allocator, canonical_phantom);
+                    // Markers must be read off the RAW spelling: the concrete arm of
+                    // canonicalizePhantomStateWithBase re-renders `module:state` and
+                    // keeps only the issue suffix (`state!`) — a consume prefix
+                    // (`!state`) does not survive it (the union arm preserves it;
+                    // the concrete arm never did). Parsing the canonical string here
+                    // is what silently turned every transferred debt into a borrow.
+                    var parsed = try phantom_parser.PhantomState.parse(self.allocator, phantom_str);
                     defer parsed.deinit(self.allocator);
                     const concrete = switch (parsed) {
                         .concrete => |c| c,
@@ -1214,12 +1232,18 @@ pub const PhantomSemanticChecker = struct {
                     const canonical_base_type = try self.canonicalizeBaseType(field.type, field.module_path, impl_ev.module);
                     defer self.allocator.free(canonical_base_type);
                     if (concrete.consumes_obligation) {
-                        const held = if (concrete.module_path) |mp|
-                            try std.fmt.allocPrint(self.allocator, "{s}:{s}!", .{ mp, concrete.name })
-                        else
-                            try std.fmt.allocPrint(self.allocator, "{s}!", .{concrete.name});
+                        const held = try std.fmt.allocPrint(self.allocator, "{s}!", .{canonical_phantom});
                         defer self.allocator.free(held);
                         try root_context.setWithType(field.name, held, canonical_base_type);
+                        // The marker exists so CONSUME SITES can tell "I was
+                        // given this" from "I was only shown this" (the
+                        // debt-exists wall reads the binding's recorded state).
+                        // It must NOT feed the leak audit: a terminal disposer
+                        // settles the debt invisibly (its proc/use IS the
+                        // implementation — measured on the store's generated
+                        // impls, 690_053 et al., 20 reds when this obligation
+                        // stood). The silent-drop wall is the inserter's.
+                        root_context.clearCleanupObligation(field.name);
                     } else {
                         try root_context.setWithType(field.name, canonical_phantom, canonical_base_type);
                     }
@@ -2913,8 +2937,9 @@ pub const PhantomSemanticChecker = struct {
     /// `{{ … }}` interpolation slot of a string literal
     /// (`print.ln("got {{response:s}}")`). The second is the one that mattered —
     /// the argument's own text is a literal, so a name comparison on it sees
-    /// nothing. Only the HEAD of a dotted path counts (`{{ r.sum:d }}` reads
-    /// `r`); a trailing `.field` names a field, not a binding.
+    /// nothing. A slot's HEAD names a binding (`{{ r.sum:d }}` reads `r`), and
+    /// so can the whole dotted PATH: an obligation carried on a record field is
+    /// disposed under the composite key `r.k`, so both are tested (335_052).
     fn reportStaleReads(
         self: *PhantomSemanticChecker,
         arg: ast.Arg,
@@ -2953,19 +2978,37 @@ pub const PhantomSemanticChecker = struct {
                     }
                     const start = i;
                     while (i < expr.len and isIdentChar(expr[i])) i += 1;
-                    // `.field` reads a field of the head binding, not a binding.
+                    // Only a HEAD starts a path; a segment reached through `.`
+                    // was already consumed by the loop below.
                     if (start > 0 and expr[start - 1] == '.') continue;
-                    const name = expr[start..i];
-                    if (context.isDisposed(name)) {
-                        try self.reporter.addError(
-                            .KORU030,
-                            location.line,
-                            location.column,
-                            "Use-after-discharge: binding '{s}' was already discharged and cannot be used",
-                            .{name},
-                        );
-                        found = true;
+
+                    // The head names a binding, and so may the DOTTED PATH.
+                    // An obligation carried on a record field is disposed under
+                    // the composite key `r.k` — that is the name the argument
+                    // path reports — so a scan that stopped at the head could
+                    // never see one, and `{{ r.k:s }}` read a discharged field
+                    // in silence while `show(h: r.k)` was refused.
+                    // Test the head, then each dotted extension of it.
+                    var end = i;
+                    while (true) {
+                        const name = expr[start..end];
+                        if (context.isDisposed(name)) {
+                            try self.reporter.addError(
+                                .KORU030,
+                                location.line,
+                                location.column,
+                                "Use-after-discharge: binding '{s}' was already discharged and cannot be used",
+                                .{name},
+                            );
+                            found = true;
+                        }
+                        if (end >= expr.len or expr[end] != '.') break;
+                        var seg = end + 1;
+                        while (seg < expr.len and isIdentChar(expr[seg])) seg += 1;
+                        if (seg == end + 1) break;
+                        end = seg;
                     }
+                    i = end;
                 }
             }
         }
@@ -3306,6 +3349,50 @@ pub const PhantomSemanticChecker = struct {
             .concrete => |concrete| {
                 if (concrete.consumes_obligation) {
                     log.debug("[CLEANUP] Event parameter has [!{s}] - consumes obligation\n", .{concrete.name});
+                    // A DEBT MUST EXIST BEFORE IT CAN BE SETTLED. The state
+                    // already matched above, and that is weaker than it looks:
+                    // `<!owned>` accepts `<owned!>` (the debt) AND bare
+                    // `<owned>` (no debt), because compatibility asks only
+                    // whether the STATE lines up. A bare `<state>` return mints
+                    // nothing, so `<!state>` frees what the program does not
+                    // own — and POISONS the binding on the way through, which is
+                    // how one object reaches two live names and is released
+                    // twice with no lying proc body (335_054 / 335_055).
+                    //
+                    // Ruled by Lars 2026-08-06. A `<!state>` PARAMETER means the
+                    // caller handed the debt in, so the body may settle it once —
+                    // the impl-param seeding threads the marker in as `state!`
+                    // (reading it off the RAW spelling; canonicalization drops a
+                    // consume prefix), which is what lets this predicate tell
+                    // "I was given this" from "I was only shown this".
+                    //
+                    // Both predicates were measured and both behave identically
+                    // on the corpus: `context.owesObligation(arg.value)` (the
+                    // cleanup set) and the parse of `canonical_provided` below.
+                    // The latter is kept because it needs no side table.
+                    const enforce_debt_exists = true;
+                    if (enforce_debt_exists) {
+                        var provided_parsed = try phantom_parser.PhantomState.parse(self.allocator, canonical_provided);
+                        defer provided_parsed.deinit(self.allocator);
+                        const provided_owes = switch (provided_parsed) {
+                            .concrete => |c| c.requires_cleanup,
+                            .state_union => |u| blk: {
+                                for (u.members) |m| if (m.requires_cleanup) break :blk true;
+                                break :blk false;
+                            },
+                            .variable => true, // polymorphic: the caller's state decides
+                        };
+                        if (!provided_owes) {
+                            try self.reporter.addError(
+                                .KORU030,
+                                location.line,
+                                location.column,
+                                "Phantom state mismatch: '{s}' (parameter '{s}') holds state '{s}' with no obligation attached — '<!{s}>' settles a debt, and this value never incurred one.",
+                                .{ arg.value, arg.name, canonical_provided, concrete.name },
+                            );
+                            return false;
+                        }
+                    }
                     // This event disposes the resource - clear the cleanup obligation
                     context.clearCleanupObligation(arg.value);
                     // Mark the binding as disposed (poisoned - cannot be used anymore)

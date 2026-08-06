@@ -1,0 +1,35 @@
+// Two events consume `<!open>`. Only one of them RELEASES anything.
+//
+// `use` is the transaction shape (`tx.exec`): it consumes the obligation and
+// hands back another, so calling it lets go of nothing. `shut` consumes and
+// creates nothing, so it is the only real discharger.
+
+~import std/runtime
+
+const std = @import("std");
+
+~pub tor open { path: string } -> string<open!>
+
+~proc open|zig {
+    _ = path;
+    return "res_1";
+}
+
+~pub tor use { handle: string<!open> } -> string<open!>
+
+~proc use|zig {
+    std.debug.print("use() ran — obligation re-issued, nothing released\n", .{});
+    return handle;
+}
+
+~pub tor shut { handle: string<!open> }
+
+~proc shut|zig {
+    std.debug.print("shut() ran — released '{s}'\n", .{handle});
+}
+
+~std/runtime:register(scope: "res") {
+    open(10)
+    use(1)
+    shut(1)
+}

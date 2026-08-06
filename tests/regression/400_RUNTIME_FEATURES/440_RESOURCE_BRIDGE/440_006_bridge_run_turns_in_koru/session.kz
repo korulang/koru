@@ -1,0 +1,28 @@
+// The resources a bridge session holds, and the scope that names them.
+//
+// A scope is the bridge's VOCABULARY: the events that may act on what it holds,
+// and — through each obligation's discharge event — how to let go of them. It is
+// declared here rather than in the entry file because a registered scope survives
+// the module boundary (115_036).
+
+~import std/runtime
+
+const std = @import("std");
+
+~pub tor open { path: string } -> string<opened!>
+
+~proc open|zig {
+    _ = path;
+    return "file_1";
+}
+
+~pub tor close-file { handle: string<!opened> }
+
+~proc close-file|zig {
+    std.debug.print("close-file() ran for '{s}'\n", .{handle});
+}
+
+~std/runtime:register(scope: "files") {
+    open(10)
+    close-file(1)
+}
