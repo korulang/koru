@@ -537,21 +537,46 @@ fn processPerCallInvocations(
     }
 }
 
-/// Lower a Koru scrutinee expression to a Zig value. A struct literal
-/// (`{ value: n }`) becomes a Zig anonymous struct (`.{ .value = n, }`) via the
-/// single struct-literal parser; anything else (a bare identifier `k`, an
-/// arithmetic expr) is already Zig-shaped and passes through verbatim. Used to
-/// materialize a `cond` scrutinee before an arm destructures/binds it.
-fn lowerScrutineeToZig(allocator: std.mem.Allocator, text: []const u8) ![]const u8 {
+/// Host syntax for the `cond` binder preamble. The dispatch CASCADE is
+/// target-agnostic (`if / else if / else` reads the same in both languages) —
+/// only the binder declarations `{{ binds }}` emits are host text, so this enum
+/// is the whole surface on which the two `cond|template|<lang>` variants differ.
+///
+/// A third target reaching here is walled upstream: the binder preamble is only
+/// built after selectPerCallTemplateProc found a `cond|template|<build_lang>`
+/// proc, and only `zig` and `js` declare one — KORU121 refuses every other lang
+/// before this point.
+const BinderHost = enum {
+    zig,
+    js,
+
+    fn of(build_lang: []const u8) BinderHost {
+        return if (std.mem.eql(u8, build_lang, "js")) .js else .zig;
+    }
+};
+
+/// Lower a Koru scrutinee expression to a host value. A struct literal
+/// (`{ value: n }`) becomes a Zig anonymous struct (`.{ .value = n, }`) or a JS
+/// object literal (`{ value: n, }`) via the single struct-literal parser;
+/// anything else (a bare identifier `k`, an arithmetic expr) is already shaped
+/// for either host and passes through verbatim. Used to materialize a `cond`
+/// scrutinee before an arm destructures/binds it.
+fn lowerScrutinee(allocator: std.mem.Allocator, text: []const u8, host: BinderHost) ![]const u8 {
     const trimmed = std.mem.trim(u8, text, " \t\n\r");
     if (trimmed.len < 2 or trimmed[0] != '{' or trimmed[trimmed.len - 1] != '}') return text;
     const fields = struct_literal.parseFields(allocator, trimmed) catch return text;
     var buf: std.ArrayList(u8) = .empty;
-    try buf.appendSlice(allocator, ".{ ");
+    try buf.appendSlice(allocator, switch (host) {
+        .zig => ".{ ",
+        .js => "{ ",
+    });
     for (fields) |f| {
-        try buf.appendSlice(allocator, ".");
+        if (host == .zig) try buf.appendSlice(allocator, ".");
         try buf.appendSlice(allocator, f.name);
-        try buf.appendSlice(allocator, " = ");
+        try buf.appendSlice(allocator, switch (host) {
+            .zig => " = ",
+            .js => ": ",
+        });
         try buf.appendSlice(allocator, f.value);
         try buf.appendSlice(allocator, ", ");
     }
@@ -559,26 +584,32 @@ fn lowerScrutineeToZig(allocator: std.mem.Allocator, text: []const u8) ![]const 
     return buf.toOwnedSlice(allocator);
 }
 
-/// Append `const <name>[: <type>] = <prefix>.<name>; _ = &<name>; ` per named
-/// destructure leaf (recursing into nested sub-shapes), skipping `_` slots.
-/// String-building twin of emitter_helpers.emitDestructureConsts.
+/// Append `const <name>[: <type>] = <prefix>.<name>;` per named destructure leaf
+/// (recursing into nested sub-shapes), skipping `_` slots. String-building twin
+/// of emitter_helpers.emitDestructureConsts.
 ///
 /// `seen`, when given, is a name set shared across the arms of one dispatch:
 /// the binders are hoisted into ONE scope (see `buildCondBinds`), so a name two
 /// arms both bind must be declared once. Both bind the same field of the same
 /// scrutinee, so the single declaration is the same value either arm would see.
+///
+/// Two pieces are Zig-only and dropped on the JS host: the `: <type>`
+/// representation annotation (JS consts carry no type), and the `_ = &<name>;`
+/// unused-suppression (Zig refuses an unused const; JS does not, and `_ = &x;`
+/// is not even parseable there).
 fn appendDestructureConsts(
     allocator: std.mem.Allocator,
     buf: *std.ArrayList(u8),
     fields: []const ast.DestructureField,
     prefix: []const u8,
     seen: ?*std.StringHashMap(void),
+    host: BinderHost,
 ) !void {
     for (fields) |f| {
         if (std.mem.eql(u8, f.name, "_")) continue;
         if (f.sub.len > 0) {
             const sub_prefix = try std.fmt.allocPrint(allocator, "{s}.{s}", .{ prefix, f.name });
-            try appendDestructureConsts(allocator, buf, f.sub, sub_prefix, seen);
+            try appendDestructureConsts(allocator, buf, f.sub, sub_prefix, seen, host);
             continue;
         }
         if (seen) |s| {
@@ -587,21 +618,27 @@ fn appendDestructureConsts(
         }
         try buf.appendSlice(allocator, "const ");
         try buf.appendSlice(allocator, f.name);
-        if (f.type_text) |t| {
-            try buf.appendSlice(allocator, ": ");
-            try buf.appendSlice(allocator, t);
+        if (host == .zig) {
+            if (f.type_text) |t| {
+                try buf.appendSlice(allocator, ": ");
+                try buf.appendSlice(allocator, t);
+            }
         }
         try buf.appendSlice(allocator, " = ");
         try buf.appendSlice(allocator, prefix);
         try buf.appendSlice(allocator, ".");
         try buf.appendSlice(allocator, f.name);
-        try buf.appendSlice(allocator, "; _ = &");
-        try buf.appendSlice(allocator, f.name);
-        try buf.appendSlice(allocator, "; ");
+        try buf.appendSlice(allocator, ";");
+        if (host == .zig) {
+            try buf.appendSlice(allocator, " _ = &");
+            try buf.appendSlice(allocator, f.name);
+            try buf.appendSlice(allocator, ";");
+        }
+        try buf.appendSlice(allocator, " ");
     }
 }
 
-/// Build the Zig binder preamble for a whole `cond`: one `const` per distinct
+/// Build the host binder preamble for a whole `cond`: one `const` per distinct
 /// arm binder (`c <name>` scalar, `c { field }` destructure), bound to the
 /// scrutinee, emitted ONCE ahead of the dispatch as `{{ binds }}`.
 ///
@@ -621,6 +658,7 @@ fn buildCondBinds(
     allocator: std.mem.Allocator,
     conts: []const ast.Continuation,
     scrutinee: []const u8,
+    host: BinderHost,
 ) ![]const u8 {
     if (scrutinee.len == 0) return "";
     var buf: std.ArrayList(u8) = .empty;
@@ -632,30 +670,41 @@ fn buildCondBinds(
         // Destructure binder (`c { field, ... }`): materialize the scrutinee once
         // to a site-unique temp, then one `const <field> = <tmp>.<field>;` per leaf.
         if (cont.destructure.len > 0) {
-            const s_zig = try lowerScrutineeToZig(allocator, scrutinee);
+            const s_host = try lowerScrutinee(allocator, scrutinee, host);
             const tmp = try std.fmt.allocPrint(allocator, "__koru_cond_s_{d}_{d}", .{ cont.location.line, cont.location.column });
             try buf.appendSlice(allocator, "const ");
             try buf.appendSlice(allocator, tmp);
             try buf.appendSlice(allocator, " = ");
-            try buf.appendSlice(allocator, s_zig);
-            try buf.appendSlice(allocator, "; _ = &");
-            try buf.appendSlice(allocator, tmp);
-            try buf.appendSlice(allocator, "; ");
-            try appendDestructureConsts(allocator, &buf, cont.destructure, tmp, &seen);
+            try buf.appendSlice(allocator, s_host);
+            try buf.appendSlice(allocator, ";");
+            // Zig-only: the temp is read only by the per-leaf consts below, and
+            // Zig refuses an unused const. JS has no such rule, and `_ = &x;`
+            // does not parse there.
+            if (host == .zig) {
+                try buf.appendSlice(allocator, " _ = &");
+                try buf.appendSlice(allocator, tmp);
+                try buf.appendSlice(allocator, ";");
+            }
+            try buf.appendSlice(allocator, " ");
+            try appendDestructureConsts(allocator, &buf, cont.destructure, tmp, &seen, host);
             continue;
         }
         // Scalar binder (`c v`): bind the whole scrutinee. `_`/empty = no binder.
         const b = cont.binding orelse continue;
         if (b.len == 0 or std.mem.eql(u8, b, "_")) continue;
         // The scrutinee expression IS the binder name (`cond(k) | c k …`): the
-        // name is already in scope, so `const k = k;` would self-shadow (Zig
-        // rejects it). Use it as-is — the binder is a no-op. Mirrors the effect
-        // splice's same guard in emitter_helpers.
+        // name is already in scope, so `const k = k;` would self-shadow. Use it
+        // as-is — the binder is a no-op. Mirrors the effect splice's same guard
+        // in emitter_helpers. BOTH hosts need this: Zig rejects the shadow at
+        // compile time, JS throws a TDZ ReferenceError at run time.
         if (std.mem.eql(u8, std.mem.trim(u8, scrutinee, " \t\n\r"), b)) continue;
         if (seen.contains(b)) continue;
         try seen.put(b, {});
-        const s_zig = try lowerScrutineeToZig(allocator, scrutinee);
-        try buf.appendSlice(allocator, try std.fmt.allocPrint(allocator, "const {s} = {s}; _ = &{s}; ", .{ b, s_zig, b }));
+        const s_host = try lowerScrutinee(allocator, scrutinee, host);
+        try buf.appendSlice(allocator, switch (host) {
+            .zig => try std.fmt.allocPrint(allocator, "const {s} = {s}; _ = &{s}; ", .{ b, s_host, b }),
+            .js => try std.fmt.allocPrint(allocator, "const {s} = {s}; ", .{ b, s_host }),
+        });
     }
     return buf.toOwnedSlice(allocator);
 }
@@ -723,7 +772,15 @@ fn renderTemplateInvocation(
     // arms so every arm's `when` guard can be read in condition position. Empty
     // for a template whose arms bind nothing (`~if`, `~for`); `cond` is its
     // consumer. See buildCondBinds for why this is hoisted and deduped.
-    try ctx.put("binds", .{ .string = try buildCondBinds(allocator, continuations, scrutinee_text) });
+    //
+    // ONE key, rendered in the BUILD language — not a `binds`/`binds_js` pair.
+    // The two `cond|template|<lang>` variants share every structural decision
+    // (which arms bind, dedup by name, hoisting ahead of the cascade); only the
+    // declaration syntax differs, and that is what BinderHost selects. A second
+    // context key would have let the next person improve one host's binder and
+    // silently leave the other behind — the two-lowerings-of-one-construct shape
+    // `~for`/`scan` was converged to avoid (control.kz, `~for` prose).
+    try ctx.put("binds", .{ .string = try buildCondBinds(allocator, continuations, scrutinee_text, BinderHost.of(build_lang)) });
 
     // Expose the invoking handlers to the template, SPLIT BY KIND. Effect
     // handlers (`! each`, fire 0-to-N during) land under `effects["<branch>"]`;
