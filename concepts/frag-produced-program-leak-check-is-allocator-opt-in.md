@@ -1,7 +1,7 @@
 ---
 type: belief
 id: frag-produced-program-leak-check-is-allocator-opt-in
-provenance: measured 2026-07-24; reframed by Lars's ruling the same night — a proc may name its own allocator. 2026-08-06: the predicted class landed, in koru_std itself.
+provenance: measured 2026-07-24; reframed by Lars's ruling the same night — a proc may name its own allocator. 2026-08-06: the predicted class landed in koru_std, and the double-free the fragment left open turned out to be reachable in six lines of ordinary Koru.
 ts: 2026-08-06
 ---
 
@@ -103,3 +103,48 @@ What this leaves: the `HandlePool` case is fixed, but it was found by accident,
 by being the first caller to wire the tracked allocator through. Nothing counts
 which `koru_std` types are reachable only on uninstrumented allocators, and that
 census is the actual instrument this belief has been asking for since July.
+
+## 2026-08-06, later — the open double-free question has a witness, and the
+## comment that closed it was wrong
+
+The section above lists a double-free as "Open, and NOT covered by that", and
+ends by insisting it is **an open question, not a settled cost**, because an
+earlier draft had inferred acceptance from "procs are unsafe" and attributed
+that inference to Lars, who never ruled it.
+
+It is worse than open. It was **already answered in the negative, in the
+compiler's own source, as the justification for the allocator move**:
+
+> *"What this trades away: DebugAllocator's double-free/invalid-free detection
+> at the allocator layer — Koru's primary defense there is already the phantom
+> obligation system (double-free is a COMPILE-TIME error for well-typed
+> programs), so this is a backstop loss, not a loss of the language's actual
+> safety guarantee."* — `src/emitter_helpers.zig`
+
+That sentence is false, and the program that falsifies it is six lines: a tor
+takes a subject as a bare `<issue>` — a borrow, which does not consume — and
+returns the very same pointer carrying `<issue!>`. One object, two obligations,
+both paid, `exit 134`. Pinned `335_053`. The corpus held **zero** double-free
+tests, so the guarantee that bought the trade had never been checked even once.
+
+## The shape, which is not what any of us guessed
+
+The phantom system is affine over BINDINGS. It has no notion that two bindings
+can name one VALUE. Everything downstream follows from that single absence:
+
+- return the borrowed subject with a fresh obligation → two debts, one object
+- return it bare → an alias owing nothing, which `<!state>` accepts anyway
+- return a field of it as a plain `string` → an alias with no phantom at all,
+  which is `610_007` and reads freed memory
+
+Three faces, one cause. **The mechanism is real and it is doing exactly what it
+says; the claim built on top of it over-read its reach.** A system that tracks
+"this binding must be used once" was described as if it tracked "this object is
+freed once", and those coincide only while no two bindings alias.
+
+The methodological residue is the part worth keeping: **a safety claim written
+into a comment as the justification for removing a check is the highest-value
+thing in a repo to test, and the least likely to be tested** — because the
+comment reads as a citation of a guarantee rather than as a claim making one.
+Nothing in the corpus was addressed to it. The comment was persuasive, correct
+about the mechanism it named, and load-bearing for a decision.

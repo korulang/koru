@@ -1,0 +1,17 @@
+const std = @import("std");
+pub const H = struct { n: i32 };
+
+// A BARE `<issue>` return: the value comes back in the state, owing nothing.
+// This is the only way to spell "an alias that carries a state but no debt",
+// and it is what makes 335_055 reachable.
+~pub tor lend {} -> *H<issue>
+
+~proc lend|zig {
+    const h = koru_allocator().create(H) catch unreachable;
+    h.* = .{ .n = 1 };
+    return h;
+}
+
+~pub tor drop { h: *H<!issue> }
+
+~proc drop|zig { koru_allocator().destroy(h); }

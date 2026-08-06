@@ -1,0 +1,19 @@
+const std = @import("std");
+pub const H = struct { n: i32 };
+
+~pub tor make {} -> *H<issue!>
+
+~proc make|zig {
+    const h = koru_allocator().create(H) catch unreachable;
+    h.* = .{ .n = 1 };
+    return h;
+}
+
+// Returns the pointer it merely BORROWED, minting a SECOND obligation on it.
+~pub tor relend { h: *H<issue> } -> *H<issue!>
+
+~proc relend|zig { return h; }
+
+~pub tor drop { h: *H<!issue> }
+
+~proc drop|zig { koru_allocator().destroy(h); }

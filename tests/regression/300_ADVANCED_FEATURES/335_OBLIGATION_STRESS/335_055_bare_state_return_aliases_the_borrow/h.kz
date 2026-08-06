@@ -1,0 +1,21 @@
+const std = @import("std");
+pub const H = struct { n: i32 };
+
+~pub tor make {} -> *H<issue!>
+
+~proc make|zig {
+    const h = koru_allocator().create(H) catch unreachable;
+    h.* = .{ .n = 1 };
+    return h;
+}
+
+// The fluent-builder shape: borrow the subject, hand it straight back so the
+// caller can keep chaining. `koru_std/json.kz` writes exactly this at
+// `object.set` and `array.push` (`*JsonObject<building>` in and out).
+~pub tor touch { h: *H<issue> } -> *H<issue>
+
+~proc touch|zig { h.n += 1; return h; }
+
+~pub tor drop { h: *H<!issue> }
+
+~proc drop|zig { koru_allocator().destroy(h); }
