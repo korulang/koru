@@ -1,0 +1,6 @@
+// JavaScript implementation facet. Events are declared in input.kz (merged at
+// import); this file holds the |js proc bodies.
+
+~proc get-msg|js { return "punned!"; }
+
+~proc render-at|js { console.log(`${x}:${text}`); }

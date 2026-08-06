@@ -1,0 +1,9 @@
+// JavaScript implementation facet. Events are declared in input.k (merged at
+// import); this file holds the |js proc bodies.
+
+~proc seed|js { return 7; }
+
+~proc pick|js {
+    if (n < 10) return { tag: "lo", lo: n };
+    return { tag: "hi", hi: n };
+}
