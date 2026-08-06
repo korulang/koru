@@ -1,0 +1,29 @@
+// JavaScript implementation facet. Events are declared in input.kz (merged at
+// import); this file holds the |js proc bodies and the module state they need.
+
+let setup_count = 0;
+let cleanup_count = 0;
+let process_count = 0;
+
+~proc setup|js {
+    setup_count += 1;
+    console.log(`Setup: count=${setup_count}`);
+}
+
+~proc cleanup|js {
+    cleanup_count += 1;
+    console.log(`Cleanup: count=${cleanup_count}`);
+}
+
+~proc process|js {
+    process_count += 1;
+    console.log(`Process: count=${process_count}`);
+}
+
+~proc verify|js {
+    if (setup_count === 1 && process_count === 3 && cleanup_count === 1) {
+        console.log("Void events work correctly");
+    } else {
+        console.log(`FAILED: setup=${setup_count}, process=${process_count}, cleanup=${cleanup_count}`);
+    }
+}

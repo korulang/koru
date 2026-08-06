@@ -1,0 +1,22 @@
+// JavaScript implementation facet. Events are declared in input.kz (merged at
+// import); this file holds the |js proc bodies.
+
+~proc outer|js {
+    return x;
+}
+
+~proc middle|js {
+    return y * 2;
+}
+
+~proc inner|js {
+    return z * 3;
+}
+
+~proc nested-data|js {
+    return info.profile.name.length;
+}
+
+~proc show-values|js {
+    console.log(`Values from scope chain: ${a} ${b} ${c}`);
+}

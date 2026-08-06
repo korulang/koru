@@ -1,0 +1,6 @@
+// JavaScript implementation facet. Events are declared in input.kz (merged at
+// import); this file holds the |js proc bodies.
+
+~proc dims|js {
+    return { w: 4, h: 3 };
+}

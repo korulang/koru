@@ -1,0 +1,20 @@
+// JavaScript implementation facet. Events are declared in input.kz (merged at
+// import); this file holds the |js proc bodies.
+
+~proc check|js {
+    if (value > 0) return { tag: "positive", positive: value };
+    if (value < 0) return { tag: "negative", negative: value };
+    return { tag: "zero" };
+}
+
+~proc handle-positive|js {
+    console.log(`Positive branch works: ${n}`);
+}
+
+~proc handle-zero|js {
+    console.log("Zero branch works");
+}
+
+~proc handle-negative|js {
+    console.log(`Negative branch works: ${n}`);
+}
