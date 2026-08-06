@@ -47,6 +47,32 @@ does not examine the thing you changed is not weak evidence, it is *no*
 evidence, and it is more dangerous than no check at all because it consumes the
 suspicion that would otherwise have gone looking.
 
+## The same defect seen from the brief-writer's side
+
+This belief was reached twice on the same day, independently, from opposite
+ends — by a contestant hitting the dangling name mid-merge, and by the arbiter
+who had written `zig build` succeeds into the acceptance criteria of **eight**
+contestant briefs. Every contestant satisfied that criterion honestly. The
+criterion was decoration, and it was decoration in the one place designed to
+catch exactly this.
+
+So the rule generalises past this repo: **an acceptance criterion must exercise
+the artifact it claims to cover.** A build system with per-consumer compilation
+units has as many "does it compile" questions as it has units, and the top-level
+command answers only its own. When a brief says "it builds", the question to ask
+is *which unit*, and if the changed artifact is not in it the check is worse
+than absent — it spends the suspicion that would otherwise have gone looking.
+
+There is a sharper edge that procedure could not have closed. A slice reading
+`0/35, all js-compile` is **indistinguishable** from a genuinely hard slice whose
+constructs the emitter refuses; it would have been reported as an honest
+Frontier and believed. What separates the two is a KNOWN-GREEN CONTROL in the
+same run — and a run with any passing test is self-certifying, since a dead
+backend cannot produce one. That is a property of the harness, not of eight
+agents remembering, so it now lives in `scripts/js-scan.mjs`: one named fixture
+is driven before anything is measured, and a failure aborts saying in as many
+words that this is not your slice being hard.
+
 Open question: whether the three belong in `build.zig` as a compile-only check.
 Nothing in the top-level binary links them, so adding them is not free — it
 would be a deliberate "compile this for the diagnostics, discard the artifact",
