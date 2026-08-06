@@ -2913,8 +2913,9 @@ pub const PhantomSemanticChecker = struct {
     /// `{{ … }}` interpolation slot of a string literal
     /// (`print.ln("got {{response:s}}")`). The second is the one that mattered —
     /// the argument's own text is a literal, so a name comparison on it sees
-    /// nothing. Only the HEAD of a dotted path counts (`{{ r.sum:d }}` reads
-    /// `r`); a trailing `.field` names a field, not a binding.
+    /// nothing. A slot's HEAD names a binding (`{{ r.sum:d }}` reads `r`), and
+    /// so can the whole dotted PATH: an obligation carried on a record field is
+    /// disposed under the composite key `r.k`, so both are tested (335_052).
     fn reportStaleReads(
         self: *PhantomSemanticChecker,
         arg: ast.Arg,
@@ -2953,19 +2954,37 @@ pub const PhantomSemanticChecker = struct {
                     }
                     const start = i;
                     while (i < expr.len and isIdentChar(expr[i])) i += 1;
-                    // `.field` reads a field of the head binding, not a binding.
+                    // Only a HEAD starts a path; a segment reached through `.`
+                    // was already consumed by the loop below.
                     if (start > 0 and expr[start - 1] == '.') continue;
-                    const name = expr[start..i];
-                    if (context.isDisposed(name)) {
-                        try self.reporter.addError(
-                            .KORU030,
-                            location.line,
-                            location.column,
-                            "Use-after-discharge: binding '{s}' was already discharged and cannot be used",
-                            .{name},
-                        );
-                        found = true;
+
+                    // The head names a binding, and so may the DOTTED PATH.
+                    // An obligation carried on a record field is disposed under
+                    // the composite key `r.k` — that is the name the argument
+                    // path reports — so a scan that stopped at the head could
+                    // never see one, and `{{ r.k:s }}` read a discharged field
+                    // in silence while `show(h: r.k)` was refused.
+                    // Test the head, then each dotted extension of it.
+                    var end = i;
+                    while (true) {
+                        const name = expr[start..end];
+                        if (context.isDisposed(name)) {
+                            try self.reporter.addError(
+                                .KORU030,
+                                location.line,
+                                location.column,
+                                "Use-after-discharge: binding '{s}' was already discharged and cannot be used",
+                                .{name},
+                            );
+                            found = true;
+                        }
+                        if (end >= expr.len or expr[end] != '.') break;
+                        var seg = end + 1;
+                        while (seg < expr.len and isIdentChar(expr[seg])) seg += 1;
+                        if (seg == end + 1) break;
+                        end = seg;
                     }
+                    i = end;
                 }
             }
         }
