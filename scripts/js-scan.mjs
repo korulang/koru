@@ -54,6 +54,22 @@ const EMITTER_BUCKETS = new Set(['ready', 'no-stdlib-calls'])
 let tests = mapJson.tests.filter((t) =>
   BUCKET === 'all' ? true : BUCKET === 'emitter' ? EMITTER_BUCKETS.has(t.bucket) : t.bucket === BUCKET)
 
+// --cluster narrows to one named failure family from docs/js-parity/clusters.json.
+// A contestant fixing one gap needs a seconds-long feedback loop, not the 5-minute
+// full sweep; the full sweep is the arbiter's breadth check, run once on the merged
+// tree. Same code path either way, so a cluster number and a full-scan number can
+// never disagree about the same test.
+const CLUSTER = flag('--cluster', null)
+if (CLUSTER) {
+  const clusters = JSON.parse(readFileSync(join(ROOT, 'docs/js-parity/clusters.json'), 'utf8'))
+  const want = clusters[CLUSTER]
+  if (!want) {
+    console.error(`unknown cluster '${CLUSTER}'. known: ${Object.keys(clusters).join(', ')}`)
+    process.exit(2)
+  }
+  const set = new Set(want)
+  tests = mapJson.tests.filter((t) => set.has(t.test))
+}
 if (SAMPLE > 0) {
   // Deterministic stride, not a random draw: a sample must be reproducible or
   // it cannot be compared against the next one.
