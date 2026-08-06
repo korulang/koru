@@ -94,6 +94,33 @@ const std = @import("std");
     }{% endif %}{% endfor %}
 }
 
+// JS variant of ~cond. The CASCADE is byte-identical to the Zig one and that is
+// the point: `if (g) { … } else if (g2) { … } else { … }` is one construct in
+// both languages, so every structural decision `cond` makes — first-match
+// exclusivity, the guardless arm as the trailing `else`, `{{ binds }}` hoisted
+// ahead so a guard in condition position sees the name its arm binds — is
+// shared, not re-derived. `arm.continue[unguarded]` mints the same
+// `__koru_continue_bare_N` marker the Zig path uses; js_emitter resolves it via
+// emitInlineBodyResolvingContinuations (mirroring the Zig
+// emitInlineCodeResolvingSplices), exactly as ~if|template|js does.
+//
+// The ONE divergence is `{{ binds }}`, and it is not in this file: the binder
+// preamble is host DECLARATION syntax (`const v = <scrutinee>;`), so
+// template_processor renders that single context key in the build language
+// (BinderHost). Zig gets `.{ .value = n, }` plus `_ = &v;` unused-suppression
+// and `: T` representation annotations; JS gets `{ value: n, }` and neither —
+// an unused const is legal there and `_ = &v;` does not parse. Keeping it one
+// key means a future improvement to which arms bind lands on both targets at
+// once.
+~proc cond|template|js {
+    {{ binds }}
+    {% for arm in continuations["c"] %}{% if arm.guard != "" %}if ({{ arm.guard }}) {
+        {{ arm.continue[unguarded] }}
+    } else {% else %}{
+        {{ arm.continue }}
+    }{% endif %}{% endfor %}
+}
+
 // ============================================================================
 // FOR - Iteration as a template over the effect-branch engine (ZERO OVERHEAD)
 // ============================================================================

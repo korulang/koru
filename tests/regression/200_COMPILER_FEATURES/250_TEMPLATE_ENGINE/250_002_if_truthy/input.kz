@@ -12,4 +12,15 @@
     {% endif %}
 }
 
+// JS sibling — the pin is the ENGINE (`{% if %}` over a provided arg's captured
+// text), and the engine is target-blind: the same liquid render decides the same
+// way for both variants. Only the guarded/unguarded statements are host text.
+// `console.log` supplies the trailing newline.
+~proc maybe|template|js {
+    console.log("always");
+    {% if flag %}
+    console.log("flag-set");
+    {% endif %}
+}
+
 ~maybe(flag: 1)
