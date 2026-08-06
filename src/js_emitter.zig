@@ -1509,6 +1509,8 @@ const Emitter = struct {
     ///   `.inline_code` — host declaration text: the `| captured r` after-read
     ///                    (`const r = <cell>;`), or a NESTED capture's whole cell
     ///                    preamble, which arrives as a node instead of on the flow.
+    ///   `.metatype_binding` — a `~tap` arm's observation record, grafted onto the
+    ///                    tapped invocation by the tap transformer.
     ///
     /// Returns false for anything else, so each caller's node switch keeps its own
     /// loud refusal for the constructs this target genuinely does not model.
@@ -1537,6 +1539,46 @@ const Emitter = struct {
             },
             .label_apply => |l| {
                 try self.emitLabelJump(l, &.{}, indent);
+                return true;
+            },
+            // A `~tap(hello -> *) | Profile p |> log(msg: p.source)` arm. The tap
+            // transformer grafts a metatype_binding step onto the tapped
+            // invocation; it constructs the OBSERVATION RECORD the arm's body
+            // reads, produces no dispatchable value, and its continuations run
+            // inside the record's scope. Two observers on one event bind the same
+            // name, so the block is what keeps them apart — the same reason the
+            // Zig reference opens one (emitter_helpers.zig:3351).
+            //
+            // Zig spells Transition's `source`/`branch` as generated enum literals
+            // and Profile/Audit's as strings. JavaScript has no enums, so all three
+            // are strings here — the representation the emitter already gives a
+            // branch tag (`result.tag === "found"`). One vocabulary, not two.
+            .metatype_binding => |mb| {
+                try self.writeFmt("{s}{{\n", .{indent});
+                const inner = try std.fmt.allocPrint(self.allocator, "{s}  ", .{indent});
+                defer self.allocator.free(inner);
+                try self.writeFmt("{s}const {s} = {{ source: \"{s}\", destination: ", .{ inner, mb.binding, mb.source_event });
+                if (mb.dest_event) |dest| {
+                    try self.writeFmt("\"{s}\"", .{dest});
+                } else {
+                    try self.write("null");
+                }
+                // A void event's completion carries no branch name. The Zig
+                // reference spells that `__void` (emitter_helpers.zig:3400) and the
+                // JS record must agree, or an arm reading `.branch` sees a different
+                // string on each target.
+                try self.writeFmt(", branch: \"{s}\"", .{if (mb.branch.len == 0) "__void" else mb.branch});
+                // Transition is the cheap metatype: transition metadata only, no
+                // clock read. Profile adds the timestamp, Audit adds the payload
+                // slot — the same three shapes, field for field, as the Zig taps
+                // namespace (emitter_helpers.zig:3424).
+                if (!std.mem.eql(u8, mb.metatype, "Transition")) {
+                    try self.write(", timestamp_ns: Number(process.hrtime.bigint())");
+                    if (std.mem.eql(u8, mb.metatype, "Audit")) try self.write(", payload: null");
+                }
+                try self.write(" };\n");
+                try self.emitPreambleContinuations(continuations, inner);
+                try self.writeFmt("{s}}}\n", .{indent});
                 return true;
             },
             else => return false,
