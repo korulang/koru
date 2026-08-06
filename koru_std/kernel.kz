@@ -1572,8 +1572,15 @@ const std = @import("std");
         }
     }.searchItems;
 
+    // Same contract as the `self` twin below: a standalone `pairwise` only runs
+    // outside a `kernel:init` subtree, so a failed search is the user's mistake
+    // and not an internal one. Reported, not panicked.
     const search_result = findInvocationRecursive(program.items, invocation) orelse {
-        @panic("kernel.pairwise: could not find invocation in AST");
+        std.debug.print(
+            "error[KORU170]: `std/kernel:pairwise` outside a `std/kernel:init` subtree — a kernel op needs a kernel view to operate on\n  --> {s}:{d}:{d}\n  hint: wrap it, e.g. `std/kernel:init(bodies) | kernel k |> std/kernel:pairwise {{ ... }}`\n",
+            .{ flow.location.file, flow.location.line, flow.location.column },
+        );
+        std.process.exit(1);
     };
 
     const binding_name = search_result.binding_name;
@@ -1890,8 +1897,21 @@ const std = @import("std");
         std.process.exit(1);
     }
 
+    // A standalone `self` only ever runs OUTSIDE a `kernel:init` subtree — inside
+    // one, `init` is `claims_descendants` and collects the ops itself. So this
+    // search failing is not an internal inconsistency, it is the ordinary user
+    // mistake of writing a kernel op with no kernel view to operate on, and it
+    // must be REPORTED rather than panicked. Until 2026-08-06 it was
+    // `@panic("... could not find invocation in AST")`, which koruc's SIGABRT
+    // handler then rendered as "the machine ran out of memory ... there is no
+    // compiler diagnostic to fix here" — an ordinary mistake reported as a
+    // hardware fault. Pinned by 390_056.
     const search_result = findInvocationRecursive(program.items, invocation) orelse {
-        @panic("kernel.self: could not find invocation in AST");
+        std.debug.print(
+            "error[KORU170]: `std/kernel:self` outside a `std/kernel:init` subtree — a kernel op needs a kernel view to operate on\n  --> {s}:{d}:{d}\n  hint: wrap it, e.g. `std/kernel:init(bodies) | kernel k |> std/kernel:self {{ ... }}`\n",
+            .{ flow.location.file, flow.location.line, flow.location.column },
+        );
+        std.process.exit(1);
     };
 
     const binding_name = search_result.binding_name;

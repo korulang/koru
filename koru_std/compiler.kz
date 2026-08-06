@@ -1319,71 +1319,61 @@ pub const CompilerContext = struct {
     // Import needed modules
     const ast_mod = @import("ast");
 
-    // Storage for test items we'll generate
-    var test_inline_codes = std.ArrayList(ast_mod.Item).initCapacity(mutable_ctx.allocator, 8) catch unreachable;
-    var test_flows_to_remove = std.ArrayList(*const ast_mod.Flow).initCapacity(mutable_ctx.allocator, 8) catch unreachable;
+    // Storage for the tests we will generate, keyed by INDEX rather than by
+    // pointer.
+    //
+    // WHY NOT POINTERS (fixed 2026-08-06): `for (slice) |item|` binds `item` BY
+    // VALUE, so `&item.flow` is the address of a loop-local copy that dies at the
+    // end of the iteration. This pass collected such addresses in one loop and
+    // compared them against freshly-taken addresses in a SECOND loop below, so the
+    // comparison could never be true. `should_replace` was structurally always
+    // false: every generated test block was built and then silently discarded, and
+    // the pass looked like it was doing nothing at all. A top-level item's index
+    // into `ast.items` is its stable identity — nothing can copy it out from under
+    // us — and pairing the index with its generated code makes the substitution
+    // order impossible to desynchronise.
+    const PendingTest = struct { idx: usize, code: ast_mod.Item };
+    var pending = std.ArrayList(PendingTest).initCapacity(mutable_ctx.allocator, 8) catch unreachable;
 
     // Scan AST for test invocations
     // A test invocation is a flow that calls the "test" event from std.testing
-    for (mutable_ctx.ast.items) |item| {
-        if (item == .flow) {
+    for (mutable_ctx.ast.items, 0..) |*item, idx| {
+        if (item.* == .flow) {
             const flow = &item.flow;
             // Check if this is a test invocation
             if (isTestInvocation(flow.inv())) {
                 // Found a test! Process it
                 const inline_code = processTestFlow(flow, mutable_ctx.ast, mutable_ctx.allocator);
                 if (inline_code) |code| {
-                    test_inline_codes.append(mutable_ctx.allocator, code) catch {};
-                    test_flows_to_remove.append(mutable_ctx.allocator, flow) catch {};
+                    pending.append(mutable_ctx.allocator, .{ .idx = idx, .code = code }) catch {};
                 }
             }
         }
-        // Also check inside modules
-        if (item == .module_decl) {
-            const mod = item.module_decl;
-            for (mod.items) |mod_item| {
-                if (mod_item == .flow) {
-                    const flow = &mod_item.flow;
-                    if (isTestInvocation(flow.inv())) {
-                        const inline_code = processTestFlow(flow, mutable_ctx.ast, mutable_ctx.allocator);
-                        if (inline_code) |code| {
-                            test_inline_codes.append(mutable_ctx.allocator, code) catch {};
-                            test_flows_to_remove.append(mutable_ctx.allocator, flow) catch {};
-                        }
-                    }
-                }
-            }
-        }
+        // Tests nested inside a `module_decl` are deliberately NOT handled here.
+        // The replacement below rebuilds only the TOP-LEVEL item list, so a
+        // module-nested flow has no slot to be substituted into. Generating code
+        // for one and dropping it is what previously let the inline-code cursor
+        // drift out of step with the replacement order — the next top-level test
+        // would then be replaced with a *different* test's block. Named as a gap
+        // rather than left half-done.
     }
 
     // If we found tests, build new AST with them replaced
-    if (test_flows_to_remove.items.len > 0) {
-        log.verbose("[TEST-GEN] Found {} test(s) to generate\n", .{test_flows_to_remove.items.len});
+    if (pending.items.len > 0) {
+        log.verbose("[TEST-GEN] Found {} test(s) to generate\n", .{pending.items.len});
 
-        // Build new items array with test flows replaced by inline_codes
+        // Build new items array with test flows replaced by inline_codes.
+        // `pending` is populated in ascending index order by the scan above, so a
+        // single cursor walks it in step with the item list — no search, no pointer
+        // comparison, and the code that lands at an index is by construction the
+        // code generated FOR that index.
         var new_items = std.ArrayList(ast_mod.Item).initCapacity(mutable_ctx.allocator, mutable_ctx.ast.items.len) catch unreachable;
-        var test_idx: usize = 0;
+        var next: usize = 0;
 
-        for (mutable_ctx.ast.items) |item| {
-            if (item == .flow) {
-                const flow = &item.flow;
-                // Check if this flow should be replaced
-                var should_replace = false;
-                for (test_flows_to_remove.items) |test_flow| {
-                    if (test_flow == flow) {
-                        should_replace = true;
-                        break;
-                    }
-                }
-                if (should_replace) {
-                    // Add the generated inline_code instead
-                    if (test_idx < test_inline_codes.items.len) {
-                        new_items.append(mutable_ctx.allocator, test_inline_codes.items[test_idx]) catch {};
-                        test_idx += 1;
-                    }
-                } else {
-                    new_items.append(mutable_ctx.allocator, item) catch {};
-                }
+        for (mutable_ctx.ast.items, 0..) |item, idx| {
+            if (next < pending.items.len and pending.items[next].idx == idx) {
+                new_items.append(mutable_ctx.allocator, pending.items[next].code) catch {};
+                next += 1;
             } else {
                 new_items.append(mutable_ctx.allocator, item) catch {};
             }

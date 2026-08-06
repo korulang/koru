@@ -1,15 +1,36 @@
-// TEST (aspirational): `std/kernel:self` outside a `std/kernel:init` subtree
-// must be REFUSED with a located koru-level diagnostic — never with a raw host
-// panic. Pins the refusal contract, not the crash.
+// TEST: `std/kernel:self` outside a `std/kernel:init` subtree must be REFUSED
+// with a located koru-level diagnostic — never with a raw host panic. Pins the
+// refusal contract, not the crash.
 //
-// WHAT HAPPENS TODAY (verbatim, from backend.err):
+// FIXED 2026-08-06 — this was aspirational and RED; it is now green. What it used
+// to get, verbatim from backend.err:
 //
 //   thread 215437003 panic: kernel.self: could not find invocation in AST
 //
-// A SIGABRT, no diagnostic, no source location — for an ordinary user mistake.
-// The EXPECT here asserts a KORU diagnostic and asserts the ABSENCE of that
-// panic text, so this pin flips green the moment the panic is replaced by a
-// real refusal. It is RED on purpose until then.
+// What it gets now:
+//
+//   error[KORU170]: `std/kernel:self` outside a `std/kernel:init` subtree —
+//                   a kernel op needs a kernel view to operate on
+//     --> input.k:8:0
+//     hint: wrap it, e.g. `std/kernel:init(bodies) | kernel k |> ...`
+//
+// THE FIX, and it is not the one the root-cause section below predicted. That
+// section reads the failed pointer search as a bug to repair so the search would
+// SUCCEED. It is not: a standalone `self`/`pairwise` only ever runs OUTSIDE a
+// `kernel:init` subtree, because inside one `init` is `claims_descendants` and
+// collects the ops itself. So the search failing is CORRECT — it is the ordinary
+// user mistake of writing a kernel op with no kernel view — and the defect was
+// only that an unconditional `@panic` reported it. `koru_std/kernel.kz` now emits
+// KORU170 and exits, at both the `self` and `pairwise` sites.
+//
+// WHAT THIS LEAVES OPEN, and it is a design ruling rather than a bug: if the
+// standalone path is always illegal, the several hundred lines of emit code below
+// that refusal are unreachable — which is why `__koru_kernel_ptr_{}` still has no
+// witness on the variant-coverage board. Either standalone kernel ops are meant to
+// be supported (then the search must learn to find flow-root and nested sites, and
+// the emit becomes reachable) or they are not (then the dead emit should go). The
+// symbol is deliberately left UNCOVERED rather than exempted, so the wall keeps
+// asking until that is decided.
 //
 // THE CONTRADICTED INTENT. 680_002_trellis_pairwise_outside_init pins the same
 // shape guarded by a trellis, and its note states the design: the trellis check
