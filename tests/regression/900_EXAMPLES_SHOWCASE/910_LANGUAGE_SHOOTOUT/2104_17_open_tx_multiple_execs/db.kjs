@@ -1,0 +1,29 @@
+// JavaScript implementation facet of the db module. The events are declared in
+// db.kz (merged at import); this file holds the |js proc bodies.
+
+~proc open|js {
+    return { tag: "connected", connected: { handle: 42 } };
+}
+
+~proc tx.begin|js {
+    return { conn_handle: conn.handle };
+}
+
+~proc tx.exec|js {
+    console.log(`Executing: ${sql}`);
+    return tx;
+}
+
+~proc tx.commit|js {
+    console.log("COMMIT");
+    return { handle: tx.conn_handle };
+}
+
+~proc tx.rollback|js {
+    console.log("ROLLBACK");
+    return { handle: tx.conn_handle };
+}
+
+~proc close|js {
+    console.log("Connection closed");
+}

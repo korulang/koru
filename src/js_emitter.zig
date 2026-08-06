@@ -491,9 +491,8 @@ const Emitter = struct {
 
     /// A produce value is either an expression or a Koru STRUCT LITERAL written in
     /// braces (`-> { final.sum, final.max }` satisfying `-> { sum: i32, max: i32 }`).
-    /// The braced form is read by the ONE projector, `struct_literal.parseFields`,
-    /// under the pun law — a bare path names the field by its last segment — and
-    /// re-emitted as a JS object literal.
+    /// The braced form is re-emitted as a JS object literal under the pun law — a
+    /// bare path names the field by its last segment.
     ///
     /// Without this the braces passed through verbatim, so a punned literal reached
     /// `node` as `return { final.sum, final.max };` — not a diagnostic, not a wrong
@@ -502,18 +501,31 @@ const Emitter = struct {
     /// its names (`-> { a: 1 }`) parses to the same text it started as, which is why
     /// this was invisible until a pun turned up.
     ///
-    /// A value that is not a struct literal at all — an arithmetic expression, a
-    /// string, a call — fails the projector's own test and passes through as before.
+    /// WHICH braced values are records is decided by `struct_literal`'s predicates
+    /// — the same pair `parser.zig:7009` reads to classify a produce and
+    /// `emitter_helpers.emitValue:7965` reads to emit one for Zig. Everything else
+    /// in braces is PLAIN-VALUE BRACES: `{ r }`, `{ a + b }` — punctuation around
+    /// an expression, unwrapped, never an object.
+    ///
+    /// Deciding that here instead, off `parseFields`' own singleton-pun rule, was
+    /// a second definition of the same law, and it drifted: `-> { r }` on a
+    /// `-> i32` tor emitted `{ r: r }` against Zig's `r`, so 100_085 ran and
+    /// printed `[object Object]`. A wrong answer, not a crash.
+    ///
+    /// A value that is not braced at all — an arithmetic expression, a string, a
+    /// call — passes through as before.
     fn writeProduceValue(self: *Emitter, value: []const u8) JsEmitError!void {
         const trimmed = std.mem.trim(u8, value, " \t\r\n");
         if (trimmed.len < 2 or trimmed[0] != '{' or trimmed[trimmed.len - 1] != '}') {
             return self.writeJsExpr(value);
         }
+        const inner = std.mem.trim(u8, trimmed[1 .. trimmed.len - 1], " \t\r\n");
+        if (inner.len > 0 and struct_literal.isBracedPlainExpression(trimmed)) {
+            return self.writeJsExpr(inner);
+        }
         const fields = struct_literal.parseFields(self.allocator, trimmed) catch
             return self.writeJsExpr(value);
-        // The singleton-expression carve-out yields one unnamed field; that is a
-        // bare value in braces, not an object, so leave it to the expression path.
-        if (fields.len == 0 or fields[0].name.len == 0) return self.writeJsExpr(value);
+        if (fields.len == 0) return self.writeJsExpr(value);
         try self.write("{ ");
         for (fields, 0..) |f, i| {
             if (i > 0) try self.write(", ");

@@ -1,0 +1,7 @@
+// JavaScript implementation facet. The events are declared in input.kz
+// (merged at import); this file holds the |js proc bodies.
+
+~proc beats|js {
+    for (let i = 0; i < k; i++) beat(i);
+    return { tag: "done", done: {} };
+}

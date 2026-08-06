@@ -1,0 +1,7 @@
+name: defect-class
+kind: inferred
+shape: categorical
+face: in
+membrane: false
+note: a defect whose shape predicts siblings — the class matters more than the instance
+route: surface, wake
