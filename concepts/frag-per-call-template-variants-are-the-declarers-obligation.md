@@ -58,13 +58,51 @@ that `~for`/`scan` was deliberately converged to kill — kin to
 [[frag-a-fix-lands-in-one-lowering-path]] and
 [[frag-two-lowerings-share-one-contract]].
 
-Open question: whether the corpus WANTS eleven per-test JS variants. Each one
-makes its test genuinely cross-target — the template engine's own features
-(`{{ arg }}`, `{% if %}` comparison, `{% for %}` over `effects[…]`, `.continue`
-hand-off) get exercised on both emitters, which is strictly more coverage than
-today. But it also doubles every future edit to those bodies, and a test whose
-point is the *engine* may not want to pin two host languages to do it. The
-alternative — a `|template|any` tag for a body that is provably host-neutral —
-does not exist and may not be expressible, since these bodies are exactly the
-ones that are NOT neutral. Unresolved at the time of writing — the `~cond` half
-is landed, the eleven are not yet attempted.
+## What writing the eleven actually taught (2026-08-06, same day)
+
+Nine of the eleven were written and verified end to end — emitted JS run under
+node, diffed against the untouched `expected.txt`. Two were **refused**, and the
+refusal is the finding.
+
+**A template-facing context key is itself a per-target surface.** The engine's
+context is not one vocabulary that every target can read; some keys have a
+lowering on only one target. `{{ h.inlined_link[scope] }}` mints a marker both
+emitters resolve. `{{ h.link }}` — the isolated-Handlers-**fn**-call flavour —
+has a Zig lowering (the emitter emits the Handlers struct plus an in-scope alias
+at the splice site) and **no JS lowering at all**: js_emitter binds
+`const each = H.each` inside the handler and never into the SPLICED flow scope,
+so a JS variant using it renders a bare `each(__i)` and dies `ReferenceError`.
+
+The corroborating count: `h.link` has **zero consumers in koru_std.** Every
+shipping stdlib template — `~for`, `types:fields-of` — uses
+`inlined_link[scope]`. Its only consumers are the three template-engine tests
+that exist to demonstrate the engine (250_004/005/006). So `h.link` is not a
+neglected surface with users waiting; it is a surface the library never adopted,
+which is exactly why nobody noticed it is single-target.
+
+**The ruling that follows: do not port a variant onto a target whose mechanism
+it cannot express.** 250_004 and 250_006 state `{{ h.link }}` as their pin in
+prose. Writing them a JS sibling in the *other* flavour would have made one
+construct's two variants pin two different mechanisms and quietly redefined a
+deliberate pin; writing them a JS sibling in `h.link` would have committed a
+lowering that is guaranteed to throw. Both are worse than the honest KORU121,
+which at least says truthfully "this construct has no variant for this target."
+A degraded lowering shipped as a lowering is the failure mode; the missing one
+is only a gap. Where the mechanism divergence is *incidental* rather than the
+pin — 400_101, whose stated point is the templated iterable and whose handler
+call is machinery around it — porting to the target's own mechanism is right,
+and that one is green.
+
+So the original open question is answered, with a boundary: a test SHOULD carry
+per-target variants when what it pins is target-neutral (engine behaviour: `{{
+arg }}` substitution, `{% if %}` comparison, presence, `{% else %}`), and MUST
+NOT when what it pins is the target-specific mechanism itself. The `|template|any`
+idea stays unbuilt and now looks wrong: these bodies are precisely the
+non-neutral ones, and the two refusals show the engine surface is not uniformly
+available either.
+
+Still open, and it is a measurement question: whether `h.link` should get a JS
+lowering or be **retired** in favour of `inlined_link[scope]`. Zero library
+consumers argues for retiring it and rewriting the three engine tests. Nobody has
+asked what the isolated-fn flavour buys that the splice flavour does not, which
+is the question that decides it.

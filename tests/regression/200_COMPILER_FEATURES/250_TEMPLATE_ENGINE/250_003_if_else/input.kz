@@ -14,4 +14,16 @@
     {% endif %}
 }
 
+// JS sibling — pins `{% else %}` on the JS target too. The absent-variable
+// reading that selects the else arm is the engine's, not the host's, so a
+// divergence between these two variants could only be a host-text bug.
+// `console.log` supplies the trailing newline.
+~proc pick|template|js {
+    {% if missing %}
+    console.log("has-missing");
+    {% else %}
+    console.log("no-missing");
+    {% endif %}
+}
+
 ~pick()
