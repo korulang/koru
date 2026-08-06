@@ -1612,6 +1612,22 @@ const Emitter = struct {
         }
     }
 
+    /// The call-site `: name` bind, or null when there is nothing to NAME.
+    ///
+    /// `_` is a discard, not an identifier. Zig spells it `_ = expr;` and may
+    /// repeat that in one scope; JS has no such form, so `const _ = …` twice in
+    /// a flow is a hard `SyntaxError: Identifier '_' has already been declared`.
+    /// Every other binding site in this emitter already knows that — the
+    /// terminal-continuation bind skips `_`, the inline splice skips it, the
+    /// auto-discharge splice renames it `_auto_<id>`. The call-site bind is the
+    /// one that did not, which is why a chain of discarded discharges
+    /// (`dispose(x: s.h): _ |> dispose(x: s.g): _`) emitted uncompilable JS.
+    fn namedReturnBinding(inv: *const ast.Invocation) ?[]const u8 {
+        const rb = inv.return_binding orelse return null;
+        if (std.mem.eql(u8, rb, "_")) return null;
+        return rb;
+    }
+
     /// Recursively emit a dispatch: resolve `inv`'s event, build a `Handlers_<id>`
     /// from the EFFECT continuations (each an effect-handler method), call the
     /// event handler (passing `Handlers_<id>` iff the event has effect branches),
@@ -1691,7 +1707,23 @@ const Emitter = struct {
         // implemented by a subflow has no proc body, and its firing sites are AST
         // nodes the closure path already lowers correctly. Gate on the proc rather
         // than discovering its absence one frame deeper.
-        if (event_has_effect and all_effects_void and self.findJsProcIn(self.items, &event.path) != null) {
+        //
+        // The splice inlines the proc body INCLUDING its `return .{ .done = … }`,
+        // which returns from the ENCLOSING function — so any terminal
+        // continuation waiting on that outcome (`| done |> print.ln("done")`)
+        // would be dropped without a trace. A producer that ends a flow has
+        // nothing to drop and keeps the fast path; one whose terminal branch is
+        // actually handled falls through to the closure form, where the result
+        // is a value the dispatch below can read.
+        var terminal_has_body = false;
+        for (continuations) |*c| {
+            if (c.kind != .terminal) continue;
+            const n = c.node orelse continue;
+            if (n != .terminal) terminal_has_body = true;
+        }
+        if (event_has_effect and all_effects_void and !terminal_has_body and
+            self.findJsProcIn(self.items, &event.path) != null)
+        {
             try self.emitInlineVoidProducer(event, inv, continuations, indent);
             return;
         }
@@ -1746,7 +1778,7 @@ const Emitter = struct {
         // must be materialised even when no branch arm binds a payload. Mirrors
         // the Zig emitter's `inv.return_binding orelse result_var`
         // (emitter_helpers.zig:7290).
-        if (inv.return_binding != null) needs_result = true;
+        if (namedReturnBinding(inv) != null) needs_result = true;
 
         // Build Handlers_<id> from the effect continuations. The id is monotonic
         // so nested frames get distinct names.
@@ -1761,9 +1793,21 @@ const Emitter = struct {
             try self.writeFmt("{s}const {s} = {{\n", .{ indent, handlers_name.? });
             const inner_indent = try std.fmt.allocPrint(self.allocator, "{s}  ", .{indent});
             defer self.allocator.free(inner_indent);
-            for (continuations) |*cont| {
+            // ONE method per ARM, not per continuation. Two `! pair` handlers
+            // that differ only by a `when` guard are two continuations naming
+            // the same fire; emitting a method each would put duplicate keys in
+            // this object literal and silently keep only the last.
+            for (continuations, 0..) |*cont, ci| {
                 if (cont.kind != .effect) continue;
-                try self.emitEffectHandlerMethod(cont, inner_indent);
+                var already = false;
+                for (continuations[0..ci]) |*prev| {
+                    if (prev.kind == .effect and std.mem.eql(u8, prev.branch, cont.branch)) {
+                        already = true;
+                        break;
+                    }
+                }
+                if (already) continue;
+                try self.emitEffectHandlerMethod(continuations, cont.branch, inner_indent);
             }
             try self.writeFmt("{s}}};\n", .{indent});
         }
@@ -1772,7 +1816,7 @@ const Emitter = struct {
         const ev_name = lowerIdentBuf(&ev_name_buf, event.path.segments[event.path.segments.len - 1]);
         // The call-site bind, when present, IS the result's name — the following
         // pipeline spells it, so a synthetic `result_<id>` would leave it unbound.
-        const result_name: ?[]const u8 = if (!needs_result) null else if (inv.return_binding) |rb|
+        const result_name: ?[]const u8 = if (!needs_result) null else if (namedReturnBinding(inv)) |rb|
             try self.allocator.dupe(u8, rb)
         else blk: {
             const rid = self.nextId();
@@ -1790,6 +1834,17 @@ const Emitter = struct {
             try self.writeFmt(", {s}", .{handlers_name.?});
         }
         try self.write(");\n");
+
+        // A BIND-POSITION destructure (`~locate(): { pos: { x, y }, label } |> …`).
+        // The parser binds the whole result to a synthetic `__ret_destr_N` and
+        // parks the shape on `inv.return_destructure`; the pipeline downstream
+        // spells the FIELD names, so without these consts every one of them is
+        // an unbound identifier. Zig twin: emitter_helpers.zig:7372.
+        if (inv.return_destructure.len > 0) {
+            if (result_name) |rn| {
+                try self.emitDestructureBindings(inv.return_destructure, rn, indent);
+            }
+        }
 
         // Drive terminal continuations. With 2+ branches we dispatch on the
         // returned `.tag`; a lone branch always fires, so no guard is needed.
@@ -1823,12 +1878,12 @@ const Emitter = struct {
             if (cont.binding != null and !std.mem.eql(u8, cont.binding.?, "_")) needs_result = true;
         }
         if (terminal_count >= 2) needs_result = true;
-        if (inv.return_binding != null) needs_result = true;
+        if (namedReturnBinding(inv) != null) needs_result = true;
         // A void arm hands back nothing, so there is no value to name however
         // many arms the site writes.
         if (!has_resume) needs_result = false;
 
-        const result_name: ?[]const u8 = if (!needs_result) null else if (inv.return_binding) |rb|
+        const result_name: ?[]const u8 = if (!needs_result) null else if (namedReturnBinding(inv)) |rb|
             try self.allocator.dupe(u8, rb)
         else blk: {
             const rid = self.nextId();
@@ -2052,44 +2107,111 @@ const Emitter = struct {
             const block_indent = try std.fmt.allocPrint(self.allocator, "{s}  ", .{indent});
             defer self.allocator.free(block_indent);
 
-            const binding = cont.binding orelse "_";
-            if (std.mem.eql(u8, binding, "_")) {
-                // Throwaway binding — give it a unique name so nested splices at
-                // the same depth never collide (`_auto_<id>`), matching the
-                // closure path's `_auto_N` naming.
-                const tid = self.nextId();
-                try self.writeFmt("{s}const _auto_{d} = {s};\n", .{ block_indent, tid, best_arg });
-            } else if (std.mem.eql(u8, binding, best_arg)) {
-                // Bare-identifier-collision case: the proc body has a local with
-                // the same name as the dispatch binding and passes it directly
-                // (`const c = ...; key(c)` paired with `! key c |> ...`). Emitting
-                // `const c = c;` self-references the inner const before init →
-                // ReferenceError (TDZ). The outer `c` is already in scope and IS
-                // the value the handler needs, so skip the redundant rebind.
-                // Pinned by 140_012_js_dispatch_binding_shadow.
-            } else {
-                try self.writeFmt("{s}const {s} = {s};\n", .{ block_indent, binding, best_arg });
+            // How many arms handle THIS fire, and does any of them select?
+            // `! pair { a, b } when a > 2` and its unguarded sibling are two
+            // continuations on one branch: the fire has to try them in order.
+            var arm_count: usize = 0;
+            var any_selective = false;
+            for (continuations) |*c| {
+                if (c.kind != .effect or !std.mem.eql(u8, c.branch, cont.branch)) continue;
+                arm_count += 1;
+                if (c.condition != null or c.destructure.len > 0) any_selective = true;
             }
 
-            // Recurse: emit the handler's sub-flow. The continuation's node is
-            // the next invocation; its own continuations drive the next level.
-            const node = cont.node orelse {
-                log.err("[js_emitter] void effect handler '{s}' has no body\n", .{cont.branch});
-                return JsEmitError.UnsupportedConstruct;
-            };
-            switch (node) {
-                .invocation => |*sub_inv| {
-                    try self.emitInvocationWithContinuations(sub_inv, cont.continuations, block_indent);
-                },
-                .terminal => {}, // `_` — nothing further.
-                else => {
-                    log.err("[js_emitter] void effect handler body is not an invocation\n", .{});
-                    return JsEmitError.UnsupportedConstruct;
-                },
+            if (arm_count == 1 and !any_selective) {
+                const binding = cont.binding orelse "_";
+                if (std.mem.eql(u8, binding, "_")) {
+                    // Throwaway binding — give it a unique name so nested splices at
+                    // the same depth never collide (`_auto_<id>`), matching the
+                    // closure path's `_auto_N` naming.
+                    const tid = self.nextId();
+                    try self.writeFmt("{s}const _auto_{d} = {s};\n", .{ block_indent, tid, best_arg });
+                } else if (std.mem.eql(u8, binding, best_arg)) {
+                    // Bare-identifier-collision case: the proc body has a local with
+                    // the same name as the dispatch binding and passes it directly
+                    // (`const c = ...; key(c)` paired with `! key c |> ...`). Emitting
+                    // `const c = c;` self-references the inner const before init →
+                    // ReferenceError (TDZ). The outer `c` is already in scope and IS
+                    // the value the handler needs, so skip the redundant rebind.
+                    // Pinned by 140_012_js_dispatch_binding_shadow.
+                } else {
+                    try self.writeFmt("{s}const {s} = {s};\n", .{ block_indent, binding, best_arg });
+                }
+                try self.emitSplicedArmBody(cont, block_indent);
+            } else {
+                // The fired payload is read by several arms, so it is named once
+                // and each arm opens its own scope to bind off it — two arms may
+                // both spell `a`. FIRST MATCH WINS, and a guard reads names its
+                // own arm binds, so the test cannot be hoisted above them. This
+                // is inside the PRODUCER's body, so a matched arm cannot `return`
+                // its way out; the sentinel is the terminal side's `__matched_N`
+                // by another name.
+                const fid = self.nextId();
+                const fire = try std.fmt.allocPrint(self.allocator, "__fire_{d}", .{fid});
+                defer self.allocator.free(fire);
+                try self.writeFmt("{s}const {s} = {s};\n", .{ block_indent, fire, best_arg });
+                const sentinel = arm_count > 1;
+                if (sentinel) try self.writeFmt("{s}let __fired_{d} = false;\n", .{ block_indent, fid });
+
+                const arm_indent = try std.fmt.allocPrint(self.allocator, "{s}  ", .{block_indent});
+                defer self.allocator.free(arm_indent);
+                const body_indent = try std.fmt.allocPrint(self.allocator, "{s}  ", .{arm_indent});
+                defer self.allocator.free(body_indent);
+
+                for (continuations) |*arm| {
+                    if (arm.kind != .effect or !std.mem.eql(u8, arm.branch, cont.branch)) continue;
+                    try self.writeFmt("{s}{{\n", .{block_indent});
+                    if (arm.destructure.len > 0) {
+                        try self.emitDestructureBindings(arm.destructure, fire, arm_indent);
+                    } else if (arm.binding) |b| {
+                        if (!std.mem.eql(u8, b, "_")) {
+                            try self.writeFmt("{s}const {s} = {s};\n", .{ arm_indent, b, fire });
+                        }
+                    }
+                    if (sentinel or arm.condition != null) {
+                        try self.writeFmt("{s}if (", .{arm_indent});
+                        if (sentinel) try self.writeFmt("!__fired_{d}", .{fid});
+                        if (arm.condition) |condition| {
+                            if (sentinel) try self.write(" && ");
+                            try self.writeJsExpr(condition);
+                        }
+                        try self.write(") {\n");
+                        if (sentinel) try self.writeFmt("{s}__fired_{d} = true;\n", .{ body_indent, fid });
+                        try self.emitSplicedArmBody(arm, body_indent);
+                        try self.writeFmt("{s}}}\n", .{arm_indent});
+                    } else {
+                        try self.emitSplicedArmBody(arm, arm_indent);
+                    }
+                    try self.writeFmt("{s}}}\n", .{block_indent});
+                }
             }
 
             try self.writeFmt("{s}}}\n", .{indent});
             pos = best_after;
+        }
+    }
+
+    /// The body of ONE arm of a spliced effect fire, with its payload already
+    /// named. The continuation's node is the next invocation; its own
+    /// continuations drive the next level.
+    fn emitSplicedArmBody(
+        self: *Emitter,
+        cont: *const ast.Continuation,
+        indent: []const u8,
+    ) JsEmitError!void {
+        const node = cont.node orelse {
+            log.err("[js_emitter] void effect handler '{s}' has no body\n", .{cont.branch});
+            return JsEmitError.UnsupportedConstruct;
+        };
+        switch (node) {
+            .invocation => |*sub_inv| {
+                try self.emitInvocationWithContinuations(sub_inv, cont.continuations, indent);
+            },
+            .terminal => {}, // `_` — nothing further.
+            else => {
+                log.err("[js_emitter] void effect handler body is not an invocation\n", .{});
+                return JsEmitError.UnsupportedConstruct;
+            },
         }
     }
 
@@ -2110,8 +2232,12 @@ const Emitter = struct {
         }
     }
 
-    /// Emit one effect-handler method inside a `Handlers_<id>` object literal.
-    /// Body shape depends on the continuation's node:
+    /// Emit ONE effect-handler method — the method for `branch` — gathering
+    /// every continuation in `all` that handles that arm.
+    ///
+    /// SIMPLE SHAPE (one continuation, no `when` guard, no destructure): the
+    /// payload binds straight to the method parameter and the body is emitted
+    /// bare. Body shape follows the continuation's node:
     ///   - `.expression` (resume value, e.g. `! tick t |> t.acc + t.i`) →
     ///     `tick(t) { return <expr>; }`.
     ///   - `.invocation` (void effect whose body invokes the next event, e.g.
@@ -2119,12 +2245,88 @@ const Emitter = struct {
     ///     handler's nested `Handlers_<id>` from the continuation's own
     ///     continuations.
     ///   - null / `.terminal` → empty body.
-    fn emitEffectHandlerMethod(self: *Emitter, cont: *const ast.Continuation, indent: []const u8) JsEmitError!void {
-        const param = cont.binding orelse "_";
+    ///
+    /// CHAIN SHAPE (2+ continuations, or a guard, or a destructure): the arms
+    /// stop being one body. The payload binds to a synthetic parameter and each
+    /// arm becomes a scoped block that names what it needs off it — `binding`,
+    /// or the per-field consts of a `! pair { a, b }` destructure — then tests
+    /// its own guard. A guard reads names the arm itself binds, so it cannot be
+    /// hoisted above them; FIRST MATCH WINS, so a matching arm returns rather
+    /// than falling into its siblings. Same rule the terminal side follows with
+    /// its `__matched_N` sentinel, expressed here as early return because a
+    /// handler method is a function and can simply leave.
+    fn emitEffectHandlerMethod(
+        self: *Emitter,
+        all: []const ast.Continuation,
+        branch: []const u8,
+        indent: []const u8,
+    ) JsEmitError!void {
         // Method KEY is a JS identifier (`H.<name>` after the alias) — lower.
         var method_buf: [256]u8 = undefined;
-        const method_ident = lowerIdentBuf(&method_buf, cont.branch);
+        const method_ident = lowerIdentBuf(&method_buf, branch);
 
+        var arm_count: usize = 0;
+        var first_arm: ?*const ast.Continuation = null;
+        for (all) |*c| {
+            if (c.kind != .effect or !std.mem.eql(u8, c.branch, branch)) continue;
+            arm_count += 1;
+            if (first_arm == null) first_arm = c;
+        }
+        const cont = first_arm orelse return;
+
+        if (arm_count == 1 and cont.condition == null and cont.destructure.len == 0) {
+            try self.emitEffectHandlerSimple(cont, method_ident, indent);
+            return;
+        }
+
+        const param = try std.fmt.allocPrint(self.allocator, "__arm_{d}", .{self.nextId()});
+        defer self.allocator.free(param);
+        try self.writeFmt("{s}{s}({s}) {{\n", .{ indent, method_ident, param });
+        const arm_indent = try std.fmt.allocPrint(self.allocator, "{s}  ", .{indent});
+        defer self.allocator.free(arm_indent);
+        const body_indent = try std.fmt.allocPrint(self.allocator, "{s}  ", .{arm_indent});
+        defer self.allocator.free(body_indent);
+
+        for (all) |*arm| {
+            if (arm.kind != .effect or !std.mem.eql(u8, arm.branch, branch)) continue;
+
+            // A block per arm, so two arms may both name `a` off the same fire.
+            try self.writeFmt("{s}{{\n", .{arm_indent});
+            if (arm.destructure.len > 0) {
+                try self.emitDestructureBindings(arm.destructure, param, body_indent);
+            } else if (arm.binding) |b| {
+                if (!std.mem.eql(u8, b, "_")) {
+                    try self.writeFmt("{s}const {s} = {s};\n", .{ body_indent, b, param });
+                }
+            }
+
+            const guard_indent = if (arm.condition != null) body_indent else arm_indent;
+            if (arm.condition) |condition| {
+                try self.writeFmt("{s}if (", .{body_indent});
+                try self.writeJsExpr(condition);
+                try self.write(") {\n");
+            }
+            const inner_indent = try std.fmt.allocPrint(self.allocator, "{s}  ", .{guard_indent});
+            defer self.allocator.free(inner_indent);
+
+            try self.emitEffectArmBody(arm, inner_indent);
+            try self.writeFmt("{s}return;\n", .{inner_indent});
+
+            if (arm.condition != null) try self.writeFmt("{s}}}\n", .{body_indent});
+            try self.writeFmt("{s}}}\n", .{arm_indent});
+        }
+        try self.writeFmt("{s}}},\n", .{indent});
+    }
+
+    /// The one-continuation, unguarded, undestructured effect handler: payload
+    /// straight onto the parameter, body emitted bare.
+    fn emitEffectHandlerSimple(
+        self: *Emitter,
+        cont: *const ast.Continuation,
+        method_ident: []const u8,
+        indent: []const u8,
+    ) JsEmitError!void {
+        const param = cont.binding orelse "_";
         const node = cont.node orelse {
             // No body — emit an empty method.
             try self.writeFmt("{s}{s}({s}) {{}},\n", .{ indent, method_ident, param });
@@ -2136,40 +2338,54 @@ const Emitter = struct {
                 try self.writeJsExpr(expr);
                 try self.write("; },\n");
             },
-            .invocation => |*inv| {
-                // VOID effect handler whose body is the nested sub-flow. No
-                // `return` — recurse to emit the nested dispatch.
+            .terminal => {
+                try self.writeFmt("{s}{s}({s}) {{}},\n", .{ indent, method_ident, param });
+            },
+            else => {
                 try self.writeFmt("{s}{s}({s}) {{\n", .{ indent, method_ident, param });
                 const inner_indent = try std.fmt.allocPrint(self.allocator, "{s}  ", .{indent});
                 defer self.allocator.free(inner_indent);
-                try self.emitInvocationWithContinuations(inv, cont.continuations, inner_indent);
+                try self.emitEffectArmBody(cont, inner_indent);
                 try self.writeFmt("{s}}},\n", .{indent});
+            },
+        }
+    }
+
+    /// The BODY of one effect arm, with the payload already named. Shared by the
+    /// simple and chained shapes so an arm lowers the same way either side of
+    /// the guard question.
+    fn emitEffectArmBody(
+        self: *Emitter,
+        cont: *const ast.Continuation,
+        indent: []const u8,
+    ) JsEmitError!void {
+        const node = cont.node orelse return;
+        switch (node) {
+            .terminal => {},
+            .expression => |expr| {
+                try self.writeFmt("{s}return ", .{indent});
+                try self.writeJsExpr(expr);
+                try self.write(";\n");
+            },
+            // VOID effect handler whose body is the nested sub-flow. No
+            // `return` — recurse to emit the nested dispatch.
+            .invocation => |*inv| {
+                try self.emitInvocationWithContinuations(inv, cont.continuations, indent);
             },
             // A RESUME-ARM produce (`! ask n => halved n - 10`): a multi-arm
             // resume sum is consumed as `|` branches at the firing site, so the
             // handler hands back the tagged arm the producer then dispatches on.
             .branch_constructor => |*bc| {
-                try self.writeFmt("{s}{s}({s}) {{\n", .{ indent, method_ident, param });
-                const inner_indent = try std.fmt.allocPrint(self.allocator, "{s}  ", .{indent});
-                defer self.allocator.free(inner_indent);
-                try self.emitBranchConstructorReturn(bc, inner_indent);
-                try self.writeFmt("{s}}},\n", .{indent});
-            },
-            .terminal => {
-                try self.writeFmt("{s}{s}({s}) {{}},\n", .{ indent, method_ident, param });
+                try self.emitBranchConstructorReturn(bc, indent);
             },
             else => {
                 // A STATEMENT body (`! each _ |> captured { … }` — a capture write
                 // as the loop's whole handler, 832/833). It produces nothing, so
                 // the method wraps it and returns nothing.
-                const inner_indent = try std.fmt.allocPrint(self.allocator, "{s}  ", .{indent});
-                defer self.allocator.free(inner_indent);
-                try self.writeFmt("{s}{s}({s}) {{\n", .{ indent, method_ident, param });
-                if (!try self.emitVoidStatementNode(node, cont.continuations, inner_indent)) {
+                if (!try self.emitVoidStatementNode(node, cont.continuations, indent)) {
                     log.err("[js_emitter] effect handler body is a {s}, which this target does not model\n", .{@tagName(node)});
                     return JsEmitError.UnsupportedConstruct;
                 }
-                try self.writeFmt("{s}}},\n", .{indent});
             },
         }
     }
@@ -2621,3 +2837,4 @@ fn pathsEqualWithModule(
     }
     return true;
 }
+

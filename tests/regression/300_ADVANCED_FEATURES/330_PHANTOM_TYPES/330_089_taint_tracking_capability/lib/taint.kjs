@@ -1,0 +1,11 @@
+// JavaScript implementation facet of module `taint`. Events are declared in
+// taint.kz (merged at import); this file holds the |js proc bodies. Taint is a
+// compile-time phantom tag, so both bodies are identity at runtime.
+
+~proc tag-tainted|js {
+    return payload;
+}
+
+~proc sanitize|js {
+    return s;
+}
