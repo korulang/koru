@@ -1,0 +1,23 @@
+A `test(...)` body is re-parsed under the synthetic filename `__test__.kz` — is that the harness being wrong, or is the language's `.k`/`.kz` mode switch wrong here?
+
+Measured 2026-08-06: this test reported "All 3 tests passed" while the generated blocks
+in output_emitted.zig were EMPTY — zero `assert` calls in the whole artifact. The names
+and the block count were right, which is exactly why the vacuity survived.
+
+The mechanism: `test(...)` bodies are re-parsed under `__test__.kz`
+(koru_std/testing.kz:280, via the Parser.init call at koru_std/compiler.kz:1460). Under
+a `.kz` filename a Koru construct must open with `~`, because that is the host→Koru
+switch. This file is a `.k`, where everything is Koru and nothing carries `~`, so every
+line of the body parses as a host line and nothing is collected.
+
+Two readings, and they lead to different fixes:
+  - the synthetic filename is the defect: re-parse a `.k` test body as `.k`, and the
+    bodies collect as written;
+  - the spelling is the defect: a test body is a distinct parse context and should
+    declare its mode rather than inherit a filename's.
+
+Blocks: this test and 395_009 (same root). Marked TODO so it stops reporting green while
+asserting nothing — deleting that marker is the same human decision as this one.
+
+Noted at the time as "fine as written", which is an opinion about the surface, not a
+ruling about which layer is wrong.

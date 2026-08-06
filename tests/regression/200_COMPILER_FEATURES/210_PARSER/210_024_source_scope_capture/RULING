@@ -1,0 +1,21 @@
+How is a source block's type tag spelled — `Source<HTML>`, `Source[HTML]`, or not at all?
+
+`HTML` here is a compiler ANNOTATION (which source kind), not a phantom type. By the
+`[state]`→`<state>` migration, `[ ]` is the annotation bracket, so this arguably wants
+`Source[HTML]`. The parser does the opposite: it REJECTS `Source[HTML]` with KORU033
+(invalid phantom-state syntax) and accepts only `Source<HTML>`. Your note from
+2026-06-03 goes further than picking a bracket — "we are not sure we even want this
+syntax".
+
+Why it was parked rather than fixed: three layers fail behind it, and each fix is only
+worth building once the surface is settled.
+  - Parser: continuation-body source-block invocations were dropped; a scoped fix made
+    this parse and flow-check clean and was REVERTED, because no green test exercised it.
+  - Emitter: the next wall — it panics on a source-block invocation in continuation
+    position.
+  - Transform: this test's own ~470-line hand-rolled transform walks `flow.continuations`
+    assuming a shape that a nested continuation body breaks, mis-attaching `| rendered`.
+
+Blocks: this test — the only one in the corpus using a source block in continuation
+position (`| data u |> renderHTML [HTML]{ ... }`); every other source-block test invokes
+at top level, which works.

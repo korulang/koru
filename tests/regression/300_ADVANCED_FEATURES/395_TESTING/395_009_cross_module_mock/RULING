@@ -1,0 +1,14 @@
+Same question as 395_002 — the `__test__.kz` re-parse — with one extra thing riding on it: this test's header claims a frontier was CLOSED.
+
+The vacuity is identical: "All 3 tests passed" over empty generated blocks, zero
+`assert` calls in the artifact, because the `test(...)` body is re-parsed under
+`__test__.kz` where Koru constructs need `~` and this `.k` file has none.
+
+What makes this one heavier than its sibling: the header states "Cross-module mocking ×
+EFFECT BRANCHES (FRONTIERS gap 5 — CLOSED 2026-06-12)" and describes a real fix —
+`emitContinuationList` dropping effect (`!`) continuations so a result-dispatch switch is
+over terminals only. That fix may well be real; this test is not evidence of it either
+way, because it never asserted anything. So the ruling on 395_002 also decides whether a
+closed-frontier claim in this corpus has a witness.
+
+Blocks: this test, and the standing of the gap-5 claim.

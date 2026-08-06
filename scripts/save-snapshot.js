@@ -117,6 +117,11 @@ async function findAllTestDirs(basePath, categoryPath = null, categorySkipped = 
 		const skip = await fileExists(join(fullPath, 'SKIP'));
 		const broken = await fileExists(join(fullPath, 'BROKEN'));
 		const benchmark = await fileExists(join(fullPath, 'BENCHMARK'));
+		// RULING: this test's verdict is blocked on a DECISION nobody has made,
+		// not on work nobody has done. Deliberately NOT a status — the test still
+		// runs and still counts as failed, so parking a question can never
+		// flatter the board. It rides alongside as a queue.
+		const ruling = await fileExists(join(fullPath, 'RULING'));
 
 		// A TEST has input.kz (or, for stub tests, only TODO/SKIP/BROKEN/BENCHMARK
 		// markers next to no input.kz). A CATEGORY has no input.kz and may carry a
@@ -153,6 +158,7 @@ async function findAllTestDirs(basePath, categoryPath = null, categorySkipped = 
 			const benchmarkReason = benchmark
 				? await readFirstLine(join(fullPath, 'BENCHMARK'))
 				: (effectiveCategoryBenchmark ? effectiveCategoryBenchmarkDesc : '');
+			const rulingQuestion = ruling ? await readFirstLine(join(fullPath, 'RULING')) : '';
 
 			// Determine status with proper precedence. BENCHMARK sits above
 			// TODO/SKIP/BROKEN because that's the harness's own precedence
@@ -198,7 +204,9 @@ async function findAllTestDirs(basePath, categoryPath = null, categorySkipped = 
 				// the category summary below actually needs to know.
 				categoryLevelSkip: effectiveCategorySkipped && !skip,
 				brokenReason,
-				benchmarkReason
+				benchmarkReason,
+				ruling,
+				rulingQuestion
 			});
 		}
 
@@ -290,6 +298,12 @@ async function saveSnapshot() {
 		const brokenTests = allTests.filter(t => t.status === 'broken').length;
 		const benchmarkTests = allTests.filter(t => t.status === 'benchmark').length;
 		const untestedTests = allTests.filter(t => t.status === 'untested').length;
+		// A count, not a bucket: these tests are already inside passed/failed.
+		// `awaitingRuling` says how much of the red is waiting on a decision
+		// rather than on work — and `rulingSettled` is the smell, a ruling-marked
+		// test that now passes (prose-check E fails the run on it).
+		const awaitingRuling = allTests.filter(t => t.ruling && t.status === 'failure').length;
+		const rulingSettled = allTests.filter(t => t.ruling && t.status === 'success').length;
 		const totalTests = allTests.length;
 		// inScope: tests that should be executed and contribute to pass rate.
 		// Excludes TODO/SKIP/BROKEN/BENCHMARK (explicitly sidelined — a benchmark
@@ -314,6 +328,8 @@ async function saveSnapshot() {
 				broken: brokenTests,
 				benchmark: benchmarkTests,
 				untested: untestedTests,
+				awaitingRuling,
+				rulingSettled,
 				passRate: inScopeTests > 0 ? ((passedTests / inScopeTests) * 100).toFixed(1) : '0.0'
 			},
 			categories,
@@ -341,6 +357,12 @@ async function saveSnapshot() {
 		console.log(`✓ Saved test snapshot: ${filename}`);
 		console.log(`  Regression: ${passedTests}/${inScopeTests} in-scope passed (${snapshot.summary.passRate}%)  [${totalTests} total on disk]`);
 		console.log(`  Failed: ${failedTests}, TODO: ${todoTests}, Skipped: ${skippedTests}, Broken: ${brokenTests}, Benchmark: ${benchmarkTests}`);
+		if (awaitingRuling > 0 || rulingSettled > 0) {
+			const settledPart = rulingSettled > 0
+				? `, ${rulingSettled} RULING marker(s) on a PASSING test — retire them (prose-check E)`
+				: '';
+			console.log(`  Awaiting a ruling: ${awaitingRuling} of the ${failedTests} failures${settledPart}`);
+		}
 		if (unitTests) {
 			const us = unitTests.summary;
 			const skipPart = us.skipped > 0 ? `, ${us.skipped} skipped` : '';

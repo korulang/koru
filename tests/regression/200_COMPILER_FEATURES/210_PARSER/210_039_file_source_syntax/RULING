@@ -1,0 +1,19 @@
+Do compiler annotations on TYPE positions live or die — build `[]`-annotation extraction into its own AST field, or drop the surface and allow bare types only?
+
+Compiler annotations are a different system from phantom types: phantoms (`<>`) are
+value-level, flow at runtime and trigger discharge; annotations (`[]`) are
+declaration-level metadata for the compiler and transforms (`[!]`, `[T:u32;N:1024]`,
+`[comptime|transform]`, `Source[text]`). See docs/COMPILER_ANNOTATIONS.md for the catalog.
+
+Why this is red rather than merely unbuilt: the phantom cutover (2026-05-29) removed the
+only parser path extracting `[...]` from type strings — a path doing double duty for
+phantoms and annotations, which is precisely the conflation the two-system split was
+meant to end. Removing it for phantoms also removed the only thing stripping annotations
+before Zig emission, so `Source[text]` now reaches Zig, which reads it as array indexing
+into a type and rejects it.
+
+You were recorded as on the fence and the call was deferred. It resolves together with
+310_040 (`| number u64[\d+]` literate annotations) — same decision, two witnesses.
+
+Blocks: this test, 310_040, and whether `Source[text]`-style hints exist as a surface at
+all.

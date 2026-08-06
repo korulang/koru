@@ -1,0 +1,16 @@
+Does a batch insert fire per-row watches N times after the fused apply, or once with a plural payload?
+
+The pin's own lean, recorded in residue.md: a plural arm (`! inserted rows` — spelling
+provisional), with per-row as the degenerate case, because that is the shape that keeps
+the fused fast path honest. residue.md calls it "Genuine semantics call, Lars's", which
+is why it sits here rather than in a design doc.
+
+The batch-insert SURFACE spelling is uninvented and stays that way — do not write it into
+a test before the semantics are ruled.
+
+Adjacent and separable: the delta-algebra soundness question the adversary round flagged
+for MIN/MAX-under-removal applies verbatim to a fold edge under vectorization. That is a
+correctness question about the planner's edge classification, not this ruling.
+
+Blocks: this pin (residue-tier, no spelling yet), and the fused-cascade path it stands
+for. Sibling question, same shape, different subject: 690_017 asks it about DI arms.

@@ -1,0 +1,17 @@
+What does a `vec3` column's watch observe — one whole-vector event, or one event per lane?
+
+A scalar column's watch fires on a value change with `{old, new}` scalars. A compound
+column has no such obvious answer, and residue.md marks this "Genuine ruling, Lars's".
+
+The pin's own lean: whole-vector. A field is the unit of write
+(`stored { game[r].pos: ... }`), so it is the unit of observation; per-lane granularity is
+a query/projection concern, not an event-vocabulary concern.
+
+Spelling — DO NOT INVENT. The grounded shapes to extend from, when the walk happens, are
+seeded scalar (`entities: 0[i64]`, 690_001) and bare type (`hp: i64`, matching kernel
+shape fields in 390_001).
+
+Blocks: this pin, and every one-to-one ecs-store benchmark entry downstream of compound
+columns. Worth knowing before ruling: kernel:shape's green f64 fields (390_001) show the
+transform substrate already handles float columns, so rung one's non-i64 wall is scoping,
+not architecture — the ruling is about event vocabulary, not feasibility.

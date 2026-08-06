@@ -1,0 +1,17 @@
+T8 firing granularity: does an installed `! ?persist` arm fire per write, or once per batch — and may its handler hold a live connection?
+
+Two questions, one pin, because the store-side semantics need both answered before the
+surface can be written. The optional-arm machinery already exists (400_144, arms ruled
+2026-07-03 @7c37406a); what is open is what the store does with it.
+
+  - Granularity: per-write keeps deltas coherent at the sole-write-path boundary; batch
+    is what a fused apply wants (see 690_019, which asks the sibling of this question for
+    watches).
+  - Connection purity: a handler holding a live connection collides with transplant
+    purity — the ORM-showcase collision. Unresolved.
+
+Also provisional, and not the ruling itself: the install SURFACE (arms on `watch`? on
+`link`?). Do not invent it in a test.
+
+Blocks: this pin, and every DI story downstream of it. Marked DESIGN-GATED in the
+2026-07-05 sweep and still parked — it is not machinery-cheap, it needs the walk.

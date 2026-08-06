@@ -1,0 +1,19 @@
+Does Koru own the `:d:N` width semantic, or does the spec keep passing verbatim into Zig's format string?
+
+The interpolation spec currently reaches Zig unchanged, and Zig 0.15 prints an explicit
+`+` on width-formatted positive signed integers. So `{{ v:d:8 }}` on a positive runtime
+i64 renders `+  14683` where every external oracle (CLBG, PLB nsieve) expects
+`   14683` — space-padded digits, sign only when negative.
+
+Options:
+  - Koru owns the width semantic: lower `:d:N` to a Koru-defined padding rule and this
+    test goes green as written;
+  - keep raw-Zig passthrough: then the oracle shape needs a different spelling and this
+    pin moves with it.
+
+Blocks: this pin holds the SURFACE and will keep failing on `output` until the mechanism
+is chosen. Every benchmark port that formats a signed integer to a fixed width is
+downstream of the answer.
+
+The two halves are separable on purpose — the mechanism ruling decides where padding
+lives, this test only asserts what a positive signed integer looks like when it lands.

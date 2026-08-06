@@ -82,6 +82,7 @@ stopping on any unexplained flip.
 | prose-check:B | scripts/prose_check.sh | the by-example config carries no prose fields | |
 | prose-check:C | scripts/prose_check.sh | no duplicate `NNN_NNN` test id | an orphan dir with no source at all — the commoner outcome of the same half-finished `git mv` — has no twin and is invisible |
 | prose-check:D | scripts/prose_check.sh | every koru_std comptime transform has a mirror row (manifest: 115_COMPTIME_MIRROR/COVERAGE.md) | koru_std only; the koru-libs sibling repo is exempt by design |
+| prose-check:E | scripts/prose_check.sh | a `RULING` marker (verdict blocked on an unmade decision) still describes its test — refuses one on a RUNNING test that passes, an empty one, and one next to no test at all | only fires where markers are live: a TODO-parked test's markers are exempt from cleanup, so a fossil SUCCESS there is not judged, and nothing here catches a question that was never written down or one whose stated question is the wrong question |
 | registry:ORPHAN_EMIT | scripts/registry_check.zig | no diagnostic code is emitted without being declared | |
 | registry:DEAD | scripts/registry_check.zig | no declared code goes unemitted without a reserved-list entry | |
 | registry:ROTTEN_PIN | scripts/registry_check.zig | no test pins a code that cannot resolve | PINNED reads `expected*` and `EXPECT` files only — a pin expressed inside a `post.sh` is invisible to the registry |

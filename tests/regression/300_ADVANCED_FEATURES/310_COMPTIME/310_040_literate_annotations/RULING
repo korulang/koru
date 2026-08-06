@@ -1,0 +1,15 @@
+The same deferred call as 210_039 — annotations on type positions — asked here by regex-in-brackets on branch types.
+
+This test embeds patterns in `[]` on branch types (`| number u64[\d+]`,
+`| string []const u8["[^"]*"]`) as a literate-annotations experiment. Not phantom state.
+
+Its previous green was accidental and worth knowing before ruling: the `token` event is
+declared but never emitted (`main` is empty), so the bogus `[regex]` type strings were
+swallowed and never reached Zig. KORU033 now catches `u64[\d+]` at parse and offers the
+nonsensical-here hint "write u64<\d+>". So nothing here ever exercised working behaviour
+— only that the parser tolerated aspirational syntax.
+
+Answer 210_039 and this resolves with it: annotations on type positions either get proper
+`[]` extraction into a separate AST field, or the surface goes and types stay bare.
+
+Blocks: this test only. It is the second witness, not a second question.

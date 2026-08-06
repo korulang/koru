@@ -1,0 +1,21 @@
+Signed runtime `/` and `%`: lower them to `@divTrunc`/`@rem`, or refuse them with a Koru diagnostic that names the operand's signedness?
+
+Both beat what happens today, which is Zig's own error reaching the user verbatim —
+"signed integers must use @divTrunc, @divFloor, or @divExact" — a raw host error with
+Zig's builtin list in it.
+
+The asymmetry that makes this a decision and not a bug report: koru's COMPTIME evaluator
+already answers it one way. src/comptime_eval.zig uses `@divTrunc`/`@rem` and its own
+comment calls that "the C-parity choice". The runtime emitter has no matching lowering,
+so comptime and runtime disagree about the same operator. Characterised 2026-07-25:
+signed `/` fails, signed `%` fails, unsigned `/` works, signed `*` works.
+
+Options:
+  - lower it, matching comptime_eval's C-parity choice — this test goes green as written;
+  - refuse it in Koru, naming the signedness — this pin flips to MUST_ERROR with that
+    diagnostic as its expectation.
+
+Blocks: this test, and the class it stands for. The corpus has zero other tests dividing
+a signed runtime value — everything divides literals (const-folded) or divides usize —
+which is how it survived. Found from outside, in a koru-examples ledger app where
+`cents / 100` compiled until a second module passed the value at runtime.

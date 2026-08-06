@@ -1,0 +1,24 @@
+How is a borrow spelled, so `std/string:read` can say "this value lives as long as `s`"?
+
+Today `read` is `{ s: *String<view|instance> } -> string` with body `~read -> s.data`
+(koru_std/string.kz:100-101). The returned `string` borrows `s`'s buffer and nothing
+ties the two lifetimes, so freeing `s` and then reading the borrow compiles. This is
+NOT use-after-discharge: `free(s)` discharges `s`, the print reads `text`, and `text`
+was never tracked at all. That is why the 335_047/048 fix deliberately does not reach
+it.
+
+Options, all seen in the corpus and none ruled:
+  - a phantom on the returned `string` tied to `s`'s identity;
+  - a read-scope construct that bounds where the borrow may travel;
+  - make `read` allocate, the way `substring` already does, and drop borrows entirely
+    (string.kz:106-113 writes that rule down for the query/transform family and says
+    "cheap views wait on the borrow-obligation surface").
+
+Blocks: this test (EXPECT `CONTAINS borrow` is a provisional pin), and the same
+question reaches kopium's hole 3 — `yyjson:as.string` hands back a borrow into a doc
+the caller closes — and the borrow-only-drop gap the debt-exists wall leaves open. One
+answer settles three symptoms.
+
+Not blocked on work: the ratified borrow model (2026-06-11) already says a terminal
+payload must own what it carries or carry an obligation. What is missing is the
+spelling, and inventing one is the failure this pin was written to prevent.

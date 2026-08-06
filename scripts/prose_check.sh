@@ -3,13 +3,15 @@
 #
 # Prose drifts and contaminates; the tests are the only source of truth. The
 # by-example pipeline once manufactured drifting prose at scale (a stale claim in
-# 5 places). This watcher makes that structurally impossible — three pure-FACT
+# 5 places). This watcher makes that structurally impossible — five pure-FACT
 # checks, no judge:
 #
 #   A (blocking) generated artifacts == regeneration  — catches hand-edits to a generated file
 #   B (blocking) the config carries no prose fields    — catches re-contamination at the source
 #   C (blocking) no duplicate NNN_NNN test ID          — the pointer-as-truth precondition
 #                (the 55 historical dupes were drained; a duplicate id now fails the run)
+#   D (blocking) every koru_std comptime transform has a mirror row
+#   E (blocking) every RULING marker still sits on a running, still-red test
 #
 # Run from anywhere: bash scripts/prose_check.sh   (CANNOT lie — it regenerates and diffs.)
 set -o pipefail
@@ -235,9 +237,71 @@ else
   fail=1
 fi
 
+# --- E: every RULING marker still describes its test -------------------------
+# A `RULING` file says: this test's verdict is blocked on a decision nobody has
+# made. That is prose attached to a red test, and prose attached to a red test is
+# checked by nothing (concepts/frag-a-red-pin-is-unfalsifiable-documentation.md).
+# One direction of it IS mechanical, and this is that direction: the moment the
+# test passes, the claim is false — either the question was answered and the
+# marker outlived it, or the pin was measuring something else all along. Both
+# want a human, so the run stops.
+#
+# The lever only exists where markers are LIVE. Two shapes it deliberately does
+# not judge, because judging them would be inventing a signal:
+#   - a RULING test that is also TODO. TODO short-circuits before koruc runs, so
+#     the test has no current verdict at all — and run_regression.sh:937 exempts
+#     TODO dirs from marker cleanup, so any SUCCESS sitting there is a fossil of
+#     an old `--todo-sweep`, not a live pass. Parked-and-unruled is a legitimate
+#     and common state (the spelling is what the ruling decides), so it is
+#     allowed and listed by `node scripts/rulings.js` as parked. The sweep is its
+#     falsification lever, not this check.
+#   - a stub test — TODO/SKIP/BENCHMARK marker and no input file. The harness
+#     itself counts those as tests (save-snapshot.js's isValidTest), so this
+#     check follows that definition rather than a stricter one of its own.
+#
+# The first line is the QUESTION and must exist. A marker with nothing written in
+# it is a file nothing reads — the class this suite already walls for
+# expectations (anchor:cfg-dead-expectation-filename).
+E=$(python3 - <<'PY'
+import pathlib
+
+root = pathlib.Path('tests/regression')
+STUB_MARKERS = ('TODO', 'SKIP', 'BENCHMARK', 'BROKEN')
+for marker in sorted(root.rglob('RULING')):
+    if '_archive' in marker.parts:
+        continue
+    d = marker.parent
+    rel = d.relative_to(root)
+    has_input = (d / 'input.kz').exists() or (d / 'input.k').exists()
+    parked = any((d / m).exists() for m in STUB_MARKERS)
+    if not has_input and not parked:
+        print(f"RULING-ORPHAN\t{rel}")
+        continue
+    if not marker.read_text(encoding='utf-8', errors='replace').strip():
+        print(f"RULING-EMPTY\t{rel}")
+    if not parked and (d / 'SUCCESS').exists():
+        print(f"RULING-ON-PASSING\t{rel}")
+PY
+)
+if [ -z "$E" ]; then
+  nE=$(find tests/regression -name RULING -not -path '*/_archive/*' | wc -l | tr -d ' ')
+  echo -e "  ${GREEN}✓ E${NC} every RULING marker still describes its test (${nE} awaiting a ruling)"
+else
+  echo -e "  ${RED}✗ E${NC} a RULING marker no longer describes its test:"
+  printf '%s\n' "$E" | sed 's/^/      /'
+  echo "      RULING-ON-PASSING — the test runs and PASSES. The question was settled, or"
+  echo "                          the pin rotted. Delete RULING and write the answer into"
+  echo "                          the test header (and a concept, if a belief moved)."
+  echo "      RULING-EMPTY      — no question written. State it or delete the file."
+  echo "      RULING-ORPHAN     — no input file and no TODO/SKIP/BENCHMARK/BROKEN, so"
+  echo "                          this directory is not a test at all."
+  echo "      The queue: node scripts/rulings.js"
+  fail=1
+fi
+
 echo ""
 if [ "$fail" -ne 0 ]; then
   echo -e "${RED}prose-check FAILED${NC}"
   exit 1
 fi
-echo -e "${GREEN}prose-check OK${NC} (A/B/C/D all green — generated==regen, no prose fields, unique test ids, mirror wall current)"
+echo -e "${GREEN}prose-check OK${NC} (A/B/C/D/E all green — generated==regen, no prose fields, unique test ids, mirror wall current, ruling markers live)"
