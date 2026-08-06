@@ -1,0 +1,9 @@
+// JavaScript implementation facet. Events are declared in input.kz (merged at
+// import); this file holds the |js proc bodies.
+
+const TEST_FLOW = "produce()\n| value v |> consume(n: v)";
+
+~proc consume|js {
+    console.log(`[consume] received n = '${n}'`);
+    return { tag: "echoed", echoed: n };
+}

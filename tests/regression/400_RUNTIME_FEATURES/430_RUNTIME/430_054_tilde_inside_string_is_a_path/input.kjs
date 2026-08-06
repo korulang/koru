@@ -1,0 +1,8 @@
+// JavaScript implementation facet. Events are declared in input.kz (merged at
+// import); this file holds the |js proc bodies.
+
+const TEST_SOURCE = "open(path: \"~/notes.txt\")";
+
+~proc open|js {
+    return path;
+}

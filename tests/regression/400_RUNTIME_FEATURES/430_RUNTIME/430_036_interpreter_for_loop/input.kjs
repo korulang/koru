@@ -1,0 +1,8 @@
+// JavaScript implementation facet. Events are declared in input.kz (merged at
+// import); this file holds the |js proc bodies.
+
+const TEST_FLOW = "for(0..3)\n| each i |> print-num(n: i)\n| done |> result { status: \"complete\" }";
+
+~proc print-num|js {
+    console.log(`[print_num] n = ${n}`);
+}
