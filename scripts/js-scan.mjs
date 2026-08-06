@@ -109,9 +109,17 @@ async function scanOne(row) {
 
   const flags = readLines(join(dir, 'COMPILER_FLAGS')).flatMap((l) => l.trim().split(/\s+/)).filter(Boolean)
 
+  // A timeout is NOT a compile failure, and reporting it as one is how a cold
+  // cache reads as a code regression. Merging main invalidated the backend
+  // cache; every test then did a full metacircular rebuild, 46 tests hit the
+  // 30s wall, and the run showed 121 -> 92 as if a commit had broken something.
+  // `killed` distinguishes "we stopped it" from "it failed", so say so.
   try {
     await execFileAsync(KORUC, [entryOf(dir), '--lang=js', ...flags], { cwd: ROOT, timeout: TIMEOUT, maxBuffer: 1 << 26 })
   } catch (e) {
+    if (e.killed || e.signal === 'SIGTERM') {
+      return res('js-timeout', `koruc exceeded ${TIMEOUT / 1000}s (cold cache? raise REGRESSION_TEST_TIMEOUT)`)
+    }
     return res('js-compile', firstError(e.stderr || e.message))
   }
 
