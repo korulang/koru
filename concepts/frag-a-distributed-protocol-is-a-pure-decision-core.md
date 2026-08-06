@@ -1,77 +1,90 @@
 ---
 type: belief
 id: frag-a-distributed-protocol-is-a-pure-decision-core
-provenance: reading denoland/celld (self-hosted Durable Objects) at 553ae73f while asking what Koru could take from it; the finding was in a Cargo.toml comment, not in any of the 4,116 lines it guards
+provenance: created 2026-08-06 from denoland/celld; CORRECTED the same day after surveying hashicorp/raft, Apache ZooKeeper and TigerBeetle, which refuted the architectural half of it
 ts: 2026-08-06
 ---
 
-# A distributed protocol is a pure decision core; the sockets are the boring half — so Koru is not blocked from distributed systems (belief)
+# The correctness-bearing computations of a distributed protocol are pure — but the protocol is NOT a pure decision core, and I had no business saying it was (belief)
 
-The standing assumption, never written down but acted on constantly, is that
-distributed-systems work is **gated on runtime capability**. Koru has no working
-threads (`420_010` fails), no sockets (`koru_std/net.kz` prints "would listen"),
-no file writes, no clock. So that whole class of program reads as out of reach
-until those land, and the roadmap question is "when do we get sockets."
+**CORRECTED 2026-08-06.** The first version of this fragment was titled *"A
+distributed protocol is a pure decision core; the sockets are the boring half."*
+That sentence is false, it was never true, and I asserted it about a **domain**
+on evidence from **one system's packaging**. What follows keeps the part that
+survived four witnesses and repudiates the part that did not.
 
-celld is the counter-evidence. It runs Cloudflare Durable Objects on your own
-machines — leases, fencing, replication, failover — and it keeps the entire
-distributed protocol in one crate whose `Cargo.toml` says:
+## The claim that survives
 
-```
-# Pure decision core: no async, I/O, clocks, randomness, locks, or dependencies.
-```
+Koru has no working threads, no sockets, no file writes, no clock. That reads
+like a disqualification from distributed-systems work, and it is not one,
+because the correctness-bearing *computations* of these protocols are pure —
+in every system surveyed, without exception:
 
-4,116 lines, zero dependencies, no V8 anywhere in it. The lease state machine,
-the epoch fence, the durability gate, and the node self-fence are all a
-deterministic function from event to effects. Everything Koru lacks is in the
-*shell* that feeds that function. Nothing Koru lacks is in the function.
+- **celld** — the whole protocol in one crate declaring *"no async, I/O, clocks,
+  randomness, locks, or dependencies."*
+- **hashicorp/raft** — `commitment.recalculate()` (`commitment.go:88-105`), the
+  median-of-matchIndexes that decides the committed prefix: no I/O, no clock,
+  no randomness.
+- **ZooKeeper** — `QuorumMaj.containsQuorum` is literally
+  `return (ackSet.size() > half);` (`QuorumMaj.java:140`); `isMoreRecentThan`,
+  `totalOrderPredicate` and `makeZxid` are equally pure.
+- **TigerBeetle** — `src/state_machine.zig` imports no io, no clock, no rand;
+  the timestamp arrives as data in the replicated header.
 
-**The durable claim: the hard, interesting, correctness-bearing half of a
-distributed system is exactly the half that needs no I/O — so an I/O-poor
-language is not disqualified from it, it is disqualified only from the
-deployment.** The gating question is not when sockets arrive. It is which
-decision core we choose to compile.
+Four out of four. **The convergence-critical decision is always a pure function
+of data the protocol already has.** That is the operative fact for Koru, and it
+is stronger now than when it rested on celld alone.
 
-## Why this is worth more than the one port it came from
+## The claim that was wrong
 
-Two things compound, and neither is about celld.
+That the *protocol* is a pure core, and the shell a replaceable box around it.
+Only celld is built that way, and celld is the one system that **advertised** it
+— the exact selection effect this fragment's original "where this is weak"
+section warned about, then fell into anyway.
 
-The first is that a pure decision core is **deterministically testable**, which
-is why celld tests theirs under fault injection rather than against a cluster.
-That is the same property the regression harness already requires of every test
-here. A protocol core is therefore not merely expressible in Koru — it is
-expressible in the shape this repo already knows how to hold.
+| system | seam | advertised? |
+|---|---|---|
+| celld | ENFORCED — separate crate, zero dependencies | **yes** |
+| TigerBeetle | CONVENTIONAL — pure state machine, but determinism comes from *injectable I/O*, and consensus in `replica.zig` is fused with Storage/Journal | no |
+| hashicorp/raft | NOT ENFORCED — one pure cell inside a channel-driven event loop with inline disk reads | no |
+| ZooKeeper | ABSENT — commit and epoch decisions execute inside socket-owning threads | no |
 
-The second is that the pure core is where a type system can still reach. Once
-the protocol is a function, its invariants are *arguments and return types*, not
-runtime state spread across sockets — and that is the seam where an obligation
-can replace a runtime check. See `838_celld_lease_race` and its three negative
-twins for the worked instance: celld fences a stale owner by making its writes
-land under a dead object prefix, and the same invariant becomes a phantom borrow
-that refuses to compile.
+ZooKeeper settles it. It is mature, correct, in production everywhere, and it
+**never needed a decision core to be right**. A property the domain does not
+require is not a property of the domain.
 
-## Where the claim is weak, stated plainly
+TigerBeetle sharpens it differently: it reaches determinism by making I/O and
+time *injectable* rather than by separating a core. That is a second viable
+architecture for the same goal, so even "separate it if you want determinism" is
+too strong.
 
-- **It rests on one system read closely, not a survey.** celld may be unusually
-  disciplined; the split may be a house style rather than a property of the
-  domain. What would widen it is finding the same core/shell seam in systems
-  that did not advertise it.
-- ~~**The seam may not hold for the next slice.**~~ **TESTED 2026-08-06 — it
-  held.** The prediction was that celld's timer paths (10s lease TTL, renewal at
-  ttl/3, a fence at ttl+1ms) might be load-bearing *inside* the core, which
-  would have made this belief too strong. Porting the output gate
-  (`830_THE_WORLD/842`) needed no clock at all. The reason is sharper than the
-  original guess: a timer is not a decision, it is an **event source**. The core
-  receives `Timer::NodeLeaseFence` the same way it receives a CAS outcome or a
-  durability completion, and decides against it. Nothing inside the function
-  asks what time it is. So a clock is shell, like a socket is shell — and the
-  belief now covers the case that was flagged as most likely to break it.
-- **It says nothing about deployment.** A protocol core that cannot be run
-  against a real bucket is a proof, not a product. Conflating the two would be
-  the obvious way to misuse this.
+## What this cost me, and the transferable lesson
 
-## What it changes about what we attempt
+The original said *"a clock is shell, like a socket is shell"* and *"nothing
+inside the function asks what time it is."* TigerBeetle's
+`expire_pending_transfers` asks what time it is and decides against the answer
+(`state_machine.zig:446`, driven from `replica.zig:3936`). It stays correct only
+because the wall-clock reading is committed into the replicated log **before**
+it may decide. So the honest rule is not *"a timer is never a decision"* but
+**"a timer's reading must become replicated data before it may decide."**
 
-Distributed-systems ports stop being blocked work and become **available** work,
-today, at the same maturity as everything else in the corpus. The unblocking was
-never a runtime feature; it was noticing which half we needed.
+The lesson under all of it: **I generalized an architecture from a system that
+told me about its architecture.** A project that advertises a property has
+selected itself for that property, and is therefore the weakest possible witness
+for it. The three unadvertised systems were worth more than the one that
+volunteered — and two of them contradicted me.
+
+## Where this could still be wrong
+
+- All four are consensus-or-lease systems. The purity of the deciding
+  computation may be a property of *replication* protocols specifically rather
+  than of distributed systems at large. A gossip, CRDT, or scheduling system
+  might not have a single deciding function at all.
+- "Pure computation exists inside it" is a much weaker claim than the one it
+  replaces, and weaker claims are easier to survive. The sharp, falsifiable form
+  worth holding is: *for any replication protocol, the decision that determines
+  convergence can be written as a function of already-received data.* A
+  counter-example — a protocol whose convergence decision genuinely requires
+  reading a clock or a socket mid-decision — would correct this again.
+- It says nothing about deployment. A protocol core that cannot be run against a
+  real bucket is a proof, not a product.
