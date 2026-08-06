@@ -673,7 +673,7 @@ const Emitter = struct {
         for (module.items) |*item| {
             switch (item.*) {
                 .event_decl => |*event| {
-                    if (self.findJsProcIn(module.items, &event.path) == null) continue;
+                    if (self.findImplIn(module.items, &event.path) == null) continue;
                     try self.emitEventDecl(event, module.items);
                 },
                 .module_decl => |*nested| try self.emitModuleEventDecls(nested),
