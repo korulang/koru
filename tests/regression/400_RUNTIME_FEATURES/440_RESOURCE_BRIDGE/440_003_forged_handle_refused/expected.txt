@@ -1,0 +1,3 @@
+forged close refused: HandleNotHeld
+close() ran for 'file_1'
+held after open: 1, after honest close: 0

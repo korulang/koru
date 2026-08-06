@@ -1,0 +1,14 @@
+// TEST: you cannot forget to hang up.
+//
+// `std/bridge:create` mints `*Bridge<session!>` and only `close`, which takes
+// `<!session>`, discharges it. This flow opens a session, asks it a question,
+// and walks away — which is the one thing a resource bridge must make
+// unspellable, because a forgotten session is every resource it holds forgotten
+// with it.
+//
+// The positive half is `440_004`: the same chain WITH the close compiles, runs,
+// and releases what the session was still holding.
+~import std/bridge
+~import std/io
+
+~std/bridge:create(id: "s1", scope: "files"): br |> std/bridge:get-handles(br): n |> std/io:print.ln("holding {{ n:d }}")

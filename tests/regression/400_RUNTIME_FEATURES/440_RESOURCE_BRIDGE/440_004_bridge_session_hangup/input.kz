@@ -1,0 +1,55 @@
+// Test: `*Bridge<session!>` — the session is itself an obligation, and hanging
+// up actually RELEASES what the session still holds.
+//
+// This is the first program that compiles `std/bridge` at all. The module has
+// existed since 2026-07-24, is imported by nothing, and its `dischargeAll`
+// printed a line and set a boolean while calling no discharger — the counter
+// went to zero over a file that stayed open. `close` here reports how many
+// handles are STILL held after the attempt, so the lie has nowhere to hide.
+
+~import std/bridge
+~import std/runtime
+~import std/io
+
+const std = @import("std");
+
+~pub tor open { path: string } -> string<opened!>
+
+~proc open|zig {
+    _ = path;
+    return "file_1";
+}
+
+~pub tor close-file { handle: string<!opened> }
+
+~proc close-file|zig {
+    std.debug.print("close-file() ran for '{s}'\n", .{handle});
+}
+
+// The bridge's scope IS its vocabulary: the events that may act on what it
+// holds, and — through each obligation's discharge event — how to let go.
+~std/runtime:register(scope: "files") {
+    open(10)
+    close-file(1)
+}
+
+// create mints <session!>; only close discharges it. Drop the chain before
+// close and the program does not compile.
+~std/bridge:create(id: "session-1", scope: "files"): br |> turn-one(br): held |> std/bridge:close(br): still_held |> std/io:print.ln("held before hang-up: {{ held:d }}, still held after: {{ still_held:d }}")
+
+// Turn one opens a file on the bridge and walks away from it. auto_discharge is
+// off: a bridge-managed pool outlives the run by design, so nothing is released
+// here — that is the session's job.
+~tor turn-one { br: *std/bridge:Bridge } -> u32
+
+~proc turn-one|zig {
+    const rt = @import("root").koru_std.koru_runtime;
+    _ = rt.run_event.handler(.{
+        .source = "open(path: \"a.txt\")",
+        .scope = "files",
+        .budget = 100,
+        .handle_pool = &br.pool,
+        .auto_discharge = false,
+    });
+    return br.getHandleCount();
+}
