@@ -556,16 +556,22 @@ fn processPerCallInvocations(
 /// "Two" is a claim, put here to be falsified cheaply. Falsify it by finding a
 /// render that emits host syntax without consulting a HostLang.
 ///
-/// CAVEAT on that falsification, reported by the cluster-A worktree and NOT
-/// verified here (the code is unmerged at the time of writing): js_emitter is
-/// growing a host-BUILTIN translation on the way out — `@mod`, `@rem`,
-/// `@divTrunc`, `@as`, `@intCast` and friends rewritten to JS twins as rendered
-/// template text is emitted. That is the emitter cleaning up after a
-/// target-blind path, not a third site here, so the count survives. But it
-/// means a template CAN ship raw Zig integer builtins in its condition text and
-/// still run correctly on JS — so a genuine third site may produce no visible
-/// symptom. Do not read "the JS tests are green" as evidence the count is still
-/// two; read the renders.
+/// One BOUNDED blind spot in that falsification, in js_emitter (js-gap-a
+/// 31f3aa2a; unmerged at the time of writing, so the spelling is theirs to
+/// correct, not mine to assert): `Emitter.writeHostText` translates Zig host
+/// BUILTINS out of rendered template text on the way to JS —
+/// `writeHostBuiltin` holds the exhaustive set (`@as`/`@intCast`/`@truncate`
+/// and the other identity casts, `@divTrunc`/`@divFloor`/`@rem`/`@mod`,
+/// `@min`/`@max`/`@abs`/`@sqrt`). That is the emitter cleaning up after a
+/// target-blind path, not a third site here, so the count survives.
+///
+/// What it costs: a third site emitting one of THOSE builtins runs correctly on
+/// JS and shows no symptom, so a green JS test is weak evidence over exactly
+/// that list. It is not weak evidence in general — any other `@name(` reaching
+/// the JS emitter is REFUSED with UnsupportedConstruct rather than passed
+/// through, so an unmodelled builtin from a third site fails loudly at compile
+/// time. Read the renders when the suspect is in the list above; trust the
+/// compiler otherwise.
 ///
 /// A third target reaching here is walled upstream: a render only happens after
 /// selectPerCallTemplateProc found a `<name>|template|<build_lang>` proc, and

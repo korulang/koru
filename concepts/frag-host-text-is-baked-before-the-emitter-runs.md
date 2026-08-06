@@ -55,20 +55,30 @@ baseline would have surfaced them. Cf. the same shape one level up in
 [[frag-per-call-template-variants-are-the-declarers-obligation]]: clustering on
 the symptom conflates causes that recommend opposite plans.
 
-**The falsification signal is quieter than it looks (added same day).** The
-cluster-A worktree reports that js_emitter is growing a host-BUILTIN translation
-on the way out — `@mod`, `@rem`, `@divTrunc`, `@as`, `@intCast` rewritten to JS
-twins as rendered template text is emitted. That is the emitter cleaning up after
-a target-blind path rather than a third render site, so the count of two stands.
-But it changes what a green JS test proves: a per-call template can ship raw Zig
-integer builtins in its condition text and still run correctly, so a genuine
-third host-text site may produce **no visible symptom at all**. The `HostLang`
-doc comment now says this out loud, because a falsifiable claim whose
-falsification is silently absorbed downstream has stopped being falsifiable, and
-a reader who takes "the JS tests are green" as evidence the count is still two
-would be reasoning from a repaired symptom. (Reported by GapASubflowImpl; the
-code was unmerged when this was written, so it is an inbound claim, not something
-verified in this tree.)
+**The falsification signal has one bounded blind spot — and knowing the bound is
+the whole difference (added same day, then corrected the same hour).** js_emitter
+translates Zig host BUILTINS out of rendered template text on the way to JS
+(`Emitter.writeHostText` -> `writeHostBuiltin`, js-gap-a 31f3aa2a, unmerged when
+this was written). That is the emitter cleaning up after a target-blind path
+rather than a third render site, so the count of two stands.
+
+My first reading of that was too pessimistic, and the correction is the part
+worth keeping. I wrote that a green JS test had stopped being evidence at all —
+that the falsification was "silently absorbed downstream". It is absorbed over an
+**exhaustive, committed list** (the identity casts, the four division/modulo
+forms, `@min`/`@max`/`@abs`/`@sqrt`) and **nowhere else**: any other `@name(`
+reaching the JS emitter is REFUSED with `UnsupportedConstruct`, not passed
+through. So a third host-text site emitting an unmodelled builtin fails LOUDLY at
+compile time. Green is weak evidence over exactly that list and sound everywhere
+else.
+
+"The signal is muffled" and "the signal is muffled over sixteen named builtins
+and loud otherwise" recommend different amounts of paranoia, and only the second
+is actionable. A caveat stated at the wrong scope is its own kind of drift: it
+reads as rigour while making the claim it guards unusable, and it survives longer
+than a plain error because it sounds careful. I had the first version committed
+before the peer sent the spelling; the lesson is that a limit on a claim needs the
+same grounding as the claim.
 
 **Debt, declared as debt.** The check this wants is "every pre-emitter pass that
 emits host syntax consults the build language", and it is not written, because it
