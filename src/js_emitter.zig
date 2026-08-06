@@ -92,7 +92,12 @@ pub fn emit(allocator: std.mem.Allocator, program: *const ast.Program) JsEmitErr
         if (item.* != .flow) continue;
         if (!em.isDeclarationFlow(&item.flow)) continue;
         const body = stripInlineStmtMarker(item.flow.inline_body.?);
-        try em.write(std.mem.trim(u8, body, " \t\r\n"));
+        // Through the host-text lowering, like every other spliced fragment. This
+        // was the one splice site that wrote raw, so a value the `const` template
+        // rendered as a Zig cast (`const threshold = @as(i32, 5);`) reached the JS
+        // file with the `@` intact — a syntax error at `node`, three passes away
+        // from the site that wrote it.
+        try em.writeHostText(std.mem.trim(u8, body, " \t\r\n"));
         try em.write("\n");
     }
 
@@ -164,6 +169,20 @@ const Emitter = struct {
     /// not an event invocation, and only this context can tell them apart —
     /// the twin of EmissionContext.impl_event_decl (emitter_helpers.zig:6902).
     impl_event: ?*const ast.EventDecl = null,
+    /// The `#label` fold currently being emitted, or null outside one. A `@label(…)`
+    /// jump re-seeds the fold's state variables and re-runs its head, and only the
+    /// frame that opened the loop knows their names — the twin of
+    /// EmissionContext.label_handler_invocation / .label_result_var
+    /// (emitter_helpers.zig:5203).
+    label_frame: ?LabelFrame = null,
+
+    const LabelFrame = struct {
+        label: []const u8,
+        /// The `let result_<id>` the fold reassigns on every turn.
+        result_name: []const u8,
+        /// The head invocation to re-run. Its arg NAMES are the fold's parameters.
+        inv: *const ast.Invocation,
+    };
 
     fn nextId(self: *Emitter) usize {
         const id = self.id_counter;
@@ -453,11 +472,31 @@ const Emitter = struct {
         self.impl_event = event;
         defer self.impl_event = saved;
 
+        // A subflow impl is a flow, so a dissolving transform can hang a preamble
+        // on it exactly as it does at top level — `compute-stats = capture { … }`
+        // (320_028) is the same `~capture` with the same cell, just implementing an
+        // event instead of running standalone. Reading the preamble only in
+        // `emitFlow` would have made the construct work at one depth and silently
+        // emit a `capture_event.handler(…)` call at the other.
+        if (flow.preamble_code != null and !preambleThenCall(flow.inv())) {
+            try self.emitPreamble(flow.preamble_code, indent);
+            try self.emitPreambleContinuations(flow.body.continuations, indent);
+            return;
+        }
+        try self.emitPreamble(flow.preamble_code, indent);
+
         if (flow.inline_body) |raw| {
             var consumed: u64 = 0;
             try self.emitInlineBodyResolvingContinuations(stripInlineStmtMarker(raw), flow.body.continuations, indent, &consumed);
             try self.write("\n");
             try self.emitUnconsumedContinuations(flow.body.continuations, consumed, indent);
+            return;
+        }
+        // `run = #L step(…) | more s |> @L(…) | done e -> e` — a fold implementing
+        // an event. Same construct as a top-level fold; the exit arm's `-> e` just
+        // lands on the enclosing handler's `return` (020_028).
+        if (flow.pre_label) |label| {
+            try self.emitLabelFold(flow, label, indent);
             return;
         }
         try self.emitInvocationWithContinuations(flow.inv(), flow.body.continuations, indent);
@@ -744,10 +783,169 @@ const Emitter = struct {
             try self.emitInlineBodyResolvingContinuations(stripped, flow.body.continuations, "    ", &consumed);
             try self.write("\n");
             try self.emitUnconsumedContinuations(flow.body.continuations, consumed, "    ");
+        } else if (flow.pre_label) |label| {
+            try self.emitLabelFold(flow, label, "    ");
         } else {
             try self.emitInvocationWithContinuations(flow.inv(), flow.body.continuations, "    ");
         }
         try self.write("  },\n");
+    }
+
+    /// LABEL FOLD — `run = #L step(n: start, acc: 0) | more s |> @L(s.n, s.acc)
+    ///                                               | done e  -> e`
+    ///
+    /// `#L` anchors a FIXPOINT. The head runs once; every arm that jumps back to
+    /// `L` re-seeds the head's parameters and runs it again; the first arm that
+    /// does NOT jump wins and runs after the loop. The loop's whole state is one
+    /// `let <label>_<param>` per head argument — exactly the head's parameter list,
+    /// which is why the jump can be spelled as N assignments plus one re-call.
+    ///
+    ///     let L_n = start;  let L_acc = 0;
+    ///     let result_0 = main_module.step_event.handler({ n: L_n, acc: L_acc });
+    ///     while (result_0.tag === "more") { … re-seed … re-call … }
+    ///     { const e = result_0.done; return e; }
+    ///
+    /// A `while` is right and a `for` is wrong here, and CLAUDE.md's loop rule
+    /// names this exact exception: the trip count of a fixpoint is not knowable up
+    /// front, so there is no range to hand the optimizer.
+    ///
+    /// TWO PLACES THIS IS CLEANER THAN THE ZIG REFERENCE (emitter_helpers.zig
+    /// :5121), both because the JS target has nothing to preserve: no `continue
+    /// :label` as the loop body's last statement — falling off the end of a `while`
+    /// body already does that — and no type annotations on the state variables,
+    /// which Zig needs only because a mutable `var` may not hold a comptime_int.
+    fn emitLabelFold(
+        self: *Emitter,
+        flow: *const ast.Flow,
+        label: []const u8,
+        indent: []const u8,
+    ) JsEmitError!void {
+        const inv = flow.inv();
+        const conts = flow.body.continuations;
+
+        const event = self.findEventDecl(&inv.path) orelse {
+            log.err("[js_emitter] #{s} fold head invokes an unresolved event\n", .{label});
+            return JsEmitError.UnresolvedEvent;
+        };
+
+        var terminal_branches: usize = 0;
+        for (event.branches) |b| {
+            if (b.kind == .effect) {
+                // An effect-bearing fold head would need its `Handlers_<id>` rebuilt
+                // and re-passed on every turn (emitter_helpers.zig:5150 does exactly
+                // that). Nothing in the corpus writes one, so refuse by name rather
+                // than emit a shape no test has ever run.
+                log.err("[js_emitter] #{s} fold head '{s}' declares effect branches, which this target does not model\n", .{ label, event.path.segments[event.path.segments.len - 1] });
+                return JsEmitError.UnsupportedConstruct;
+            }
+            terminal_branches += 1;
+        }
+        const bare_return = terminal_branches == 0 and event.return_type != null;
+
+        // One state variable per head parameter, seeded from the head's own args.
+        for (inv.args) |arg| {
+            try self.writeFmt("{s}let {s}_", .{ indent, label });
+            try self.writeIdent(arg.name);
+            try self.write(" = ");
+            try self.writeJsExpr(arg.value);
+            try self.write(";\n");
+        }
+
+        var ev_name_buf: [256]u8 = undefined;
+        const ev_name = lowerIdentBuf(&ev_name_buf, event.path.segments[event.path.segments.len - 1]);
+        const result_name = try std.fmt.allocPrint(self.allocator, "result_{d}", .{self.nextId()});
+        defer self.allocator.free(result_name);
+
+        // `let`, not `const`: the loop reassigns it every turn.
+        try self.writeFmt("{s}let {s} = main_module.{s}_event.handler(", .{ indent, result_name, ev_name });
+        try self.emitLabelStateArgs(inv.args, label);
+        try self.write(");\n");
+
+        var looping: usize = 0;
+        var exiting: usize = 0;
+        for (conts) |*cont| {
+            if (cont.kind != .terminal) continue;
+            if (contLoopsTo(cont, label)) looping += 1 else exiting += 1;
+        }
+
+        const inner = try std.fmt.allocPrint(self.allocator, "{s}  ", .{indent});
+        defer self.allocator.free(inner);
+
+        if (looping > 0) {
+            try self.writeFmt("{s}while (", .{indent});
+            var written: usize = 0;
+            for (conts) |*cont| {
+                if (cont.kind != .terminal or !contLoopsTo(cont, label)) continue;
+                if (written > 0) try self.write(" || ");
+                try self.writeFmt("{s}.tag === \"{s}\"", .{ result_name, cont.branch });
+                written += 1;
+            }
+            try self.write(") {\n");
+
+            const saved = self.label_frame;
+            self.label_frame = .{ .label = label, .result_name = result_name, .inv = inv };
+            defer self.label_frame = saved;
+
+            // Inside the loop the condition has already selected the arm when there
+            // is only one, so it is emitted unguarded; with two or more, each still
+            // needs its own tag test.
+            for (conts) |*cont| {
+                if (cont.kind != .terminal or !contLoopsTo(cont, label)) continue;
+                try self.emitTerminalContinuation(cont, result_name, inner, looping >= 2, bare_return, null);
+            }
+            try self.writeFmt("{s}}}\n", .{indent});
+        }
+
+        // The exit arms run AFTER the loop, where every looping tag is impossible.
+        for (conts) |*cont| {
+            if (cont.kind != .terminal or contLoopsTo(cont, label)) continue;
+            try self.emitTerminalContinuation(cont, result_name, indent, exiting >= 2, bare_return, null);
+        }
+    }
+
+    /// `{ <param>: <label>_<param>, … }` — the fold's head args, read out of the
+    /// state variables. Written at the seed call and again at every jump, so the
+    /// two cannot disagree about which names the head takes.
+    fn emitLabelStateArgs(self: *Emitter, args: []const ast.Arg, label: []const u8) JsEmitError!void {
+        try self.write("{ ");
+        for (args, 0..) |arg, i| {
+            if (i > 0) try self.write(", ");
+            try self.writeIdent(arg.name);
+            try self.writeFmt(": {s}_", .{label});
+            try self.writeIdent(arg.name);
+        }
+        try self.write(" }");
+    }
+
+    /// Emit a `@label(…)` jump: re-seed the fold's state variables from the jump's
+    /// arguments, then re-run the head into the fold's result variable. The `while`
+    /// header re-tests it, so there is nothing else to say — the Zig target's
+    /// trailing `continue :label` has no work to do in a JS loop body.
+    fn emitLabelJump(self: *Emitter, label: []const u8, args: []const ast.Arg, indent: []const u8) JsEmitError!void {
+        const frame = self.label_frame orelse {
+            log.err("[js_emitter] @{s}(…) jump outside any #{s} fold\n", .{ label, label });
+            return JsEmitError.UnsupportedConstruct;
+        };
+        if (!std.mem.eql(u8, frame.label, label)) {
+            // A cross-level jump (an inner fold jumping to an outer label) needs the
+            // label MAP the Zig emitter keeps (emitter_helpers.zig:5157); this frame
+            // holds one fold. Refuse by name rather than jump to the wrong loop.
+            log.err("[js_emitter] @{s}(…) jumps past the enclosing #{s} fold\n", .{ label, frame.label });
+            return JsEmitError.UnsupportedConstruct;
+        }
+        for (args) |arg| {
+            try self.writeFmt("{s}{s}_", .{ indent, label });
+            try self.writeIdent(arg.name);
+            try self.write(" = ");
+            try self.writeJsExpr(arg.value);
+            try self.write(";\n");
+        }
+        var ev_name_buf: [256]u8 = undefined;
+        const seg = frame.inv.path.segments;
+        const ev_name = lowerIdentBuf(&ev_name_buf, seg[seg.len - 1]);
+        try self.writeFmt("{s}{s} = main_module.{s}_event.handler(", .{ indent, frame.result_name, ev_name });
+        try self.emitLabelStateArgs(frame.inv.args, label);
+        try self.write(");\n");
     }
 
     /// Emit a rendered template body (e.g. `~if`'s `if (cond) { … } else { … }`
@@ -1042,6 +1240,19 @@ const Emitter = struct {
         switch (node) {
             .assignment => |asgn| try self.emitAssignment(&asgn, indent),
             .inline_code => |text| try self.emitPreamble(text, indent),
+            // A `@L(…)` jump ENDS its arm: it re-seeds the fold and the `while`
+            // header decides what happens next. The Zig lowering makes that literal
+            // with a trailing `continue :L`, which is why anything hung off a jump
+            // is unreachable there; here it would merely RUN, so the sequel below
+            // is deliberately not driven.
+            .label_jump => |lj| {
+                try self.emitLabelJump(lj.label, lj.args, indent);
+                return true;
+            },
+            .label_apply => |l| {
+                try self.emitLabelJump(l, &.{}, indent);
+                return true;
+            },
             else => return false,
         }
         try self.emitPreambleContinuations(continuations, indent);
@@ -1999,6 +2210,24 @@ fn continuationForBranch(continuations: []const ast.Continuation, op: []const u8
         if (cont.kind == .effect and std.mem.eql(u8, cont.branch, op)) return cont;
     }
     return null;
+}
+
+/// Does this arm (or anything nested under it) jump back to `label`? That is what
+/// separates a fold's LOOPING arms — which belong inside the `while` and in its
+/// condition — from its EXIT arms, which run after it. Recursive because the jump
+/// may sit under a nested dispatch (`| more s |> check(s) | ok |> @L(…)`).
+/// Predicate twin of emitter_helpers.findLoopingBranches (:9062), which allocates
+/// the branch-name list it only ever asks membership questions of.
+fn contLoopsTo(cont: *const ast.Continuation, label: []const u8) bool {
+    if (cont.node) |node| switch (node) {
+        .label_jump => |lj| if (std.mem.eql(u8, lj.label, label)) return true,
+        .label_apply => |l| if (std.mem.eql(u8, l, label)) return true,
+        else => {},
+    };
+    for (cont.continuations) |*nested| {
+        if (contLoopsTo(nested, label)) return true;
+    }
+    return false;
 }
 
 const OpCallMatch = struct {
