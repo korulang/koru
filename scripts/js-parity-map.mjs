@@ -77,7 +77,7 @@ const isTransform = (ann) => !!ann && /transform|comptime|keyword/.test(ann)
 function loadStdlib() {
   const mods = new Map()
   const get = (n) => {
-    if (!mods.has(n)) mods.set(n, { name: n, procs: new Map(), tors: new Set(), facets: new Set(), lines: 0 })
+    if (!mods.has(n)) mods.set(n, { name: n, procs: new Map(), tors: new Map(), facets: new Set(), lines: 0 })
     return mods.get(n)
   }
   for (const f of readdirSync(STD)) {
@@ -88,13 +88,20 @@ function loadStdlib() {
     const mod = get(name)
     mod.facets.add(ext)
     if (ext === 'kz') mod.lines = src.split('\n').length
-    for (const t of src.matchAll(TOR_DECL)) mod.tors.add(t[2])
+    // Keep the event's OWN annotation. A proc inherits transform-ness from the
+    // event it implements, and the annotation is frequently written there
+    // rather than on the proc line: kernel.kz:80 declares
+    // `~[comptime|transform|claims_descendants]pub tor init`, and kernel.kz:90
+    // then writes a bare `~proc init|zig`. Reading only the proc line tagged
+    // kernel:init a portable runtime port worth 27 tests, when it is the
+    // Zig-only MLIR/GPU backend that must never be ported at all.
+    for (const t of src.matchAll(TOR_DECL)) mod.tors.set(t[2], t[1] || '')
     for (const [, ann, proc, lang] of src.matchAll(PROC_DECL)) {
       if (!mod.procs.has(proc)) mod.procs.set(proc, { langs: new Set(), facets: new Set(), transform: false })
       const p = mod.procs.get(proc)
       p.langs.add(lang)
       p.facets.add(ext)
-      if (isTransform(ann)) p.transform = true
+      if (isTransform(ann) || isTransform(mod.tors.get(proc))) p.transform = true
     }
   }
   return mods
