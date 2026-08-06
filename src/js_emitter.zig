@@ -62,6 +62,27 @@ pub fn emit(allocator: std.mem.Allocator, program: *const ast.Program) JsEmitErr
 
     var em = Emitter{ .allocator = allocator, .buf = &buf, .items = program.items, .main_module_name = program.main_module_name };
 
+    // Prelude: Koru's slice-length surface, `.len`.
+    //
+    // A declarative Koru body is host-agnostic and is emitted VERBATIM — so
+    // `~len -> s.data.len` (koru_std/string.kz) and `{{ r.len:d }}`
+    // (240_020_args_basic) reach the JavaScript output still spelled `.len`,
+    // while JS spells it `.length`. Translating the access instead would be a
+    // guess: `.len` is also a legal field name on a user record, and the
+    // emitter cannot tell the two apart.
+    //
+    // So the length surface is put on the VALUES, as a non-enumerable getter
+    // that an own `len` property shadows. `[]const u8` is a js string and
+    // `[]T` is a js array (the whole point of not modelling a slice as
+    // `{ptr,len}`), so those are the two prototypes that owe it. Without this
+    // the read is not an error — it is `undefined`, printed as the answer.
+    try em.write(
+        \\const __koru_len = { get() { return this.length; }, configurable: true };
+        \\Object.defineProperty(String.prototype, "len", __koru_len);
+        \\Object.defineProperty(Array.prototype, "len", __koru_len);
+        \\
+    );
+
     // Phase 0: emit host lines whose host language is JS, verbatim, at the TOP
     // of the output (before main_module). This carries module-level JS state
     // (`const`/`let` declarations) that the flows and proc bodies reference.

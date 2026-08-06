@@ -28,12 +28,11 @@
 // `| err "allocation failed"` is unreachable here. The arm stays in the
 // contract because the Zig facet needs it; the JS bodies simply never take it.
 
-// `~len -> s.data.len` is declarative Koru, emitted verbatim as `s.data.len`.
-// Koru spells slice length `.len`; JS spells it `.length`. The emitter has no
-// translation for either (grepped: js_emitter.zig has no `.len` case), so the
-// length surface has to exist on the value itself. Non-enumerable getter, so
-// no `for...in` or `Object.keys` observes it.
-const __koru_string_len = Object.defineProperty(String.prototype, "len", { get() { return this.length; }, configurable: true });
+// `~len -> s.data.len` is declarative Koru, emitted verbatim as `s.data.len`,
+// and JS spells slice length `.length`. That surface is NOT this module's to
+// provide — the emitter's prelude puts a `.len` getter on String.prototype and
+// Array.prototype, because the same gap hits any `[]const u8` or `[]T` the
+// target ever prints (240_020_args_basic reads `r.len` off a plain array).
 
 // ============================================
 // Creation
@@ -88,7 +87,7 @@ const __koru_string_len = Object.defineProperty(String.prototype, "len", { get()
     if (idx >= 0) {
         return { tag: "found", found: idx };
     }
-    return { tag: "not_found" };
+    return { tag: "not-found" };
 }
 
 // A fresh handle, not a view into `s` — `slice` copies, matching the Zig
