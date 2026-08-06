@@ -1,7 +1,7 @@
 ---
 type: belief
 id: frag-the-facet-split-is-corpus-wide-not-a-stdlib-concern
-provenance: first js-scan sample — 14 of 20 "emitter-testable" tests died on js_emitter NoJsProcBody, from the fixtures' OWN |zig procs rather than any stdlib gap
+provenance: js-parity wave W3 — the whole of 200_COMPILER_FEATURES triaged fixture by fixture, port versus exclude, against the open question this fragment left standing
 ts: 2026-08-06
 ---
 
@@ -68,3 +68,51 @@ necessary and not sufficient, and once the necessary part is done the
 leftover is a clean readout of emitter gaps. That makes this population a
 better instrument than it looks: porting a slice is also a survey of what
 the target cannot yet say.
+
+## A second triage, from the cluster where the fear should have bitten hardest
+
+
+This fragment left an open question: whether the 361 want per-test `.kjs`
+facets at all, or whether a large share are Zig-semantics tests whose
+Koru-side meaning is "the Zig backend rejects this". The whole of
+`200_COMPILER_FEATURES` — the cluster where that fear should bite hardest,
+because its subject genuinely is the compiler — has now been triaged fixture
+by fixture. **The fear was wrong, and wrong by an order of magnitude.**
+
+Thirty-seven fixtures. Three are Zig-by-construction. The rest are ordinary
+programs.
+
+The discriminator is not the cluster, the directory, or what the test's
+comment claims to pin. It is one property of the `|zig` body itself:
+
+> **A proc body that imports the compiler's own Zig modules (`@import("ast")`,
+> `@import("ast_functional")`) or receives a compiler-owned pointer
+> (`*const Program`, `*std/compiler:CompilerContext`,
+> `*std/compiler:ErrorReporter`) is compiler-host code. Everything else is
+> program code, and program code ports.**
+
+That line is mechanical, so it can be applied without reading the prose at
+the top of a fixture — which matters, because the prose is systematically
+misleading here. A test named `template_interpolation` sitting in
+`210_PARSER` reads like a parser probe and is in fact a `[comptime|transform]`
+event that builds `ast.EventDecl` and `ast.ProcDecl` values by hand. A test
+named `void_chaining_codegen` reads like a backend probe and is three
+four-line procs that print `Work`. **What a compiler-features fixture is
+*about* says nothing about what host language it needs.** It is about the
+compiler; it is written as a program; the program runs anywhere.
+
+The three exclusions are not a deferral or a shortfall. They are the
+`[comptime|transform]` surface, and that surface is Zig by ruling, not by
+accident: `OUTSTANDING_DESIGN_DECISIONS.md` records Lars, 2026-06-17 —
+*"allowing the Zig backend to catch real mistakes is completely fine. It's
+not the way it's going to be forever, but for now I think it's great"* — the
+"rejection deferred to Zig" model the compiler-facing surface is built on. A
+transform manipulates the Zig compiler's own AST types in the Zig compiler's
+own address space. There is no JavaScript equivalent because there is no
+JavaScript compiler, and inventing one to make a fixture green would be
+asserting a design nobody has made.
+
+What generalises to the remaining slices: **estimate the exclusion set from
+the `|zig` bodies, never from the cluster name.** The prior that
+`200_COMPILER_FEATURES` would port poorly came from its name, and the name
+was the least informative thing about it.

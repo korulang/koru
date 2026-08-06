@@ -1,1 +1,57 @@
-{}
+{
+  "A_js_emitter_emit_failed_nojsprocbody": [
+    "200_COMPILER_FEATURES/210_PARSER/210_060_proc_abstract_override",
+    "300_ADVANCED_FEATURES/310_COMPTIME/310_100_aspire_comptime_pgo_route_order",
+    "300_ADVANCED_FEATURES/310_COMPTIME/310_101_aspire_comptime_data_to_liquid",
+    "300_ADVANCED_FEATURES/350_SUBFLOWS/350_009_cross_module_impl_inline_body",
+    "300_ADVANCED_FEATURES/350_SUBFLOWS/350_007_subflow_inline_body",
+    "300_ADVANCED_FEATURES/370_VARIANTS/8213_subflow_variant_parser_accepts",
+    "320_CONTROL_FLOW/320_051_expand_stdlib_wrap",
+    "320_CONTROL_FLOW/320_056_expand_basic",
+    "300_ADVANCED_FEATURES/370_VARIANTS/8214_subflow_variant_picks_no",
+    "320_CONTROL_FLOW/320_095_recursive_value_event",
+    "400_RUNTIME_FEATURES/400_090_template_variant_passthrough",
+    "400_RUNTIME_FEATURES/400_091_template_variant_interpolation",
+    "400_RUNTIME_FEATURES/400_092_template_variant_conditional",
+    "500_INTEGRATION_TESTING/510_NEGATIVE_TESTS/510_071_module_wildcard_concrete",
+    "500_INTEGRATION_TESTING/510_NEGATIVE_TESTS/510_073_universal_wildcard_concrete"
+  ],
+  "B_js_emitter_emit_failed_unsupportedconstruct": [
+    "300_ADVANCED_FEATURES/320_STDLIB/320_100_print_blk_raw_posix_variant",
+    "320_CONTROL_FLOW/320_101_loopvar_in_complex_capture_array_write",
+    "320_CONTROL_FLOW/320_102_captured_cross_field_snapshot",
+    "400_RUNTIME_FEATURES/400_081_effect_branch_labeled_loop",
+    "400_RUNTIME_FEATURES/400_121_bench_filter_map_reduce",
+    "400_RUNTIME_FEATURES/400_160_prototype_mode_incomplete_program_runs",
+    "400_RUNTIME_FEATURES/400_188_array_sort_lowers",
+    "810_AOC_2015/810_111_day11_part1",
+    "810_AOC_2015/810_181_day18_part1",
+    "810_AOC_2015/810_122_day12_part2",
+    "810_AOC_2015/810_182_day18_part2",
+    "810_AOC_2015/810_201_day20_part1",
+    "810_AOC_2015/810_202_day20_part2"
+  ],
+  "C_syntaxerror_missing_initializer_in_const_dec": [
+    "100_MODULE_SYSTEM/115_COMPTIME_MIRROR/115_012_parser_grammar_in_module",
+    "100_MODULE_SYSTEM/115_COMPTIME_MIRROR/115_041_parser_grammar_in_entry_tor",
+    "300_ADVANCED_FEATURES/320_STDLIB/320_036_capture_nested_qualified",
+    "600_STDLIB/641_PARSER/641_004_json_full_recognizer",
+    "600_STDLIB/641_PARSER/641_005_ordered_choice_same_head",
+    "600_STDLIB/641_PARSER/641_031_nested_tree"
+  ],
+  "D_syntaxerror_invalid_or_unexpected_token": [
+    "100_MODULE_SYSTEM/140_FILE_LAYOUT/140_001_kjs_extension_import",
+    "100_MODULE_SYSTEM/140_FILE_LAYOUT/140_004_index_kjs_directory_source",
+    "100_MODULE_SYSTEM/140_FILE_LAYOUT/140_003_directory_mixed_extensions"
+  ],
+  "E_error_koru010_stray_continuation_line_withou": [
+    "300_ADVANCED_FEATURES/310_COMPTIME/310_013_tap_chains",
+    "300_ADVANCED_FEATURES/310_COMPTIME/310_015_when_clauses",
+    "400_RUNTIME_FEATURES/420_PERFORMANCE/915_when_at_callsite"
+  ],
+  "F_referenceerror_name_is_not_defined": [
+    "300_ADVANCED_FEATURES/320_STDLIB/320_030_println_basic",
+    "300_ADVANCED_FEATURES/320_STDLIB/320_032_println_blk_basic",
+    "300_ADVANCED_FEATURES/320_STDLIB/320_053_println_blk_conditionals"
+  ]
+}

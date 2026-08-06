@@ -1,0 +1,6 @@
+// JavaScript implementation facet. The events are declared in lib.kz (merged
+// at import); this file holds the |js proc bodies.
+
+~proc report-temp|js {
+    console.log(`Temperature: ${temp.toFixed(1)}`);
+}

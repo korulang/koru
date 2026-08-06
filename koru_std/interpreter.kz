@@ -421,7 +421,23 @@ pub const HandlePool = struct {
         };
     }
 
+    /// Free every handle's duped strings, then the list itself.
+    ///
+    /// `acquire` dupes seven strings per handle; this used to drop the list and
+    /// leak all of them. Invisible for as long as it lived, because every caller
+    /// handed the pool a `page_allocator` that nobody was counting. The first
+    /// pool built on the tracked allocator — a `std/bridge` session — failed the
+    /// produced program's leak check immediately.
     pub fn deinit(self: *HandlePool) void {
+        for (self.handles.items) |h| {
+            self.allocator.free(h.handle_id);
+            self.allocator.free(h.obligation_module);
+            self.allocator.free(h.obligation_name);
+            self.allocator.free(h.discharge_event);
+            self.allocator.free(h.created_by_event);
+            self.allocator.free(h.resource_type);
+            self.allocator.free(h.scope_name);
+        }
         self.handles.deinit(self.allocator);
     }
 
@@ -1206,20 +1222,7 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
             }};
         }
         // Build event name for error reporting
-        const inv = flow.inv();
-        var name_buf: [256]u8 = undefined;
-        var name_len: usize = 0;
-        if (inv.path.module_qualifier) |mq| {
-            @memcpy(name_buf[name_len..][0..mq.len], mq);
-            name_len += mq.len;
-            name_buf[name_len] = ':';
-            name_len += 1;
-        }
-        for (inv.path.segments, 0..) |seg, i| {
-            if (i > 0) { name_buf[name_len] = '.'; name_len += 1; }
-            @memcpy(name_buf[name_len..][0..seg.len], seg);
-            name_len += seg.len;
-        }
+        const stable_event_name = persistentEventName(flow.inv());
 
         autoDischargeHandles(
             auto_discharge,
@@ -1231,7 +1234,7 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
         );
 
         return .{ .dispatch_error = .{
-            .event_name = name_buf[0..name_len],
+            .event_name = stable_event_name,
             .message = @errorName(err),
         }};
     };
@@ -1354,25 +1357,8 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
                 .handles = @intCast(active_pool.countUndischarged()),
             }};
         }
-        const inv = cached_flow.inv();
-        var name_buf: [256]u8 = undefined;
-        var name_len: usize = 0;
-        if (inv.path.module_qualifier) |mq| {
-            @memcpy(name_buf[name_len..][0..mq.len], mq);
-            name_len += mq.len;
-            name_buf[name_len] = ':';
-            name_len += 1;
-        }
-        for (inv.path.segments, 0..) |seg, i| {
-            if (i > 0) {
-                name_buf[name_len] = '.';
-                name_len += 1;
-            }
-            @memcpy(name_buf[name_len..][0..seg.len], seg);
-            name_len += seg.len;
-        }
         return .{ .dispatch_error = .{
-            .event_name = name_buf[0..name_len],
+            .event_name = persistentEventName(cached_flow.inv()),
             .message = @errorName(err),
         }};
     };
@@ -1389,6 +1375,63 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
 // FLOW EXECUTION - The core interpreter loop
 // ============================================================================
 
+/// Refuse a discharge event that names a handle the pool does not hold.
+///
+/// The handle name IS the capability: a run may act on what it was handed and
+/// on nothing else. Called BEFORE the dispatcher, because the discharge proc is
+/// the irreversible half — releasing a resource you were never given cannot be
+/// walked back by observing afterwards that no obligation was retired.
+///
+/// `error.HandleNotHeld` surfaces as `dispatch-error` carrying that name, the
+/// same channel `EventDenied` uses for a verb the scope refuses.
+fn assertHandlesHeld(
+    ctx: *const InterpreterContext,
+    pool: *HandlePool,
+    event_name: []const u8,
+    args: []const ast.Arg,
+) !void {
+    if (ctx.discharges_spec_fn) |spec_fn| {
+        for (spec_fn(event_name)) |spec| {
+            for (args) |arg| {
+                if (!std.mem.eql(u8, arg.name, spec.arg_name)) continue;
+                if (pool.findByHandleId(arg.value, ctx.scope_name) == null) {
+                    return error.HandleNotHeld;
+                }
+                break;
+            }
+        }
+        return;
+    }
+    if (ctx.discharges_obligations_fn) |discharges_fn| {
+        if (discharges_fn(event_name).len == 0) return;
+        if (args.len == 0) return;
+        if (pool.findByHandleIdAnyScope(args[0].value) == null) {
+            return error.HandleNotHeld;
+        }
+    }
+}
+
+/// The invocation's fully qualified event name, on memory that OUTLIVES the run.
+///
+/// Every dispatch-error site used to build this into a `[256]u8` stack local and
+/// return a slice of it, so the name a caller read was a dead frame. It printed
+/// as garbage, which is why `dispatch-error` has been unreadable for as long as
+/// it has been firing — the failure that hid the resource bridge for six days
+/// reported itself as four replacement characters.
+fn persistentEventName(inv: *const ast.Invocation) []const u8 {
+    const alloc = std.heap.page_allocator;
+    var name = std.ArrayList(u8){ .items = &.{}, .capacity = 0 };
+    if (inv.path.module_qualifier) |mq| {
+        name.appendSlice(alloc, mq) catch return "unknown";
+        name.append(alloc, ':') catch return "unknown";
+    }
+    for (inv.path.segments, 0..) |seg, i| {
+        if (i > 0) name.append(alloc, '.') catch return "unknown";
+        name.appendSlice(alloc, seg) catch return "unknown";
+    }
+    return name.toOwnedSlice(alloc) catch "unknown";
+}
+
 fn autoDischargeHandles(
     auto_discharge: bool,
     using_external_pool: bool,
@@ -1399,59 +1442,88 @@ fn autoDischargeHandles(
 ) void {
     if (!auto_discharge) return;
 
-    // Auto-discharge only for LOCAL pools (not bridge-managed ones)
-    // Bridges manage their own lifecycle and discharge at session end
+    // Auto-discharge only for LOCAL pools. A bridge-managed pool outlives the
+    // run by design, so its handles are released when the SESSION ends — see
+    // `std/bridge:close`, which calls the same loop below.
     if (using_external_pool) return;
 
-    const undischarged_count = active_pool.countUndischarged();
-    if (undischarged_count == 0) return;
+    dischargeAllHandles("AUTO-DISCHARGE", active_pool, discharges_spec_fn, dispatcher, allocator);
+}
 
-    const undischarged = active_pool.getUndischarged();
-    for (undischarged) |handle| {
-        if (!handle.discharged) {
-            // Find the arg_name for this discharge event by looking up DischargeSpec
-            var arg_name: ?[]const u8 = null;
-            if (discharges_spec_fn) |spec_fn| {
-                const specs = spec_fn(handle.discharge_event);
-                // Match on obligation_module/name (don't assume first item)
-                for (specs) |spec| {
-                    if (std.mem.eql(u8, spec.obligation_module, handle.obligation_module) and
-                        std.mem.eql(u8, spec.obligation_name, handle.obligation_name)) {
-                        arg_name = spec.arg_name;
-                        break;
-                    }
+/// Release every handle still held on `pool` by invoking its recorded discharge
+/// event through `dispatcher`.
+///
+/// The ONE implementation of "release what is still held". A run ending and a
+/// session hanging up are the same act at two lifetime scales, and they were
+/// written twice — once here, honestly, and once in `std/bridge.dischargeAll`
+/// as a print and a boolean that released nothing while satisfying the counter.
+///
+/// `label` names the caller in the trace, so a bridge hang-up does not report
+/// itself as an auto-discharge.
+///
+/// The synthesized discharge invocations are SCRATCH — nothing here escapes the
+/// loop — so this owns an arena over the caller's allocator rather than leaving
+/// litter in it. A run's arena is reset anyway; a bridge's allocator is the
+/// produced program's leak-checked one, and it noticed.
+pub fn dischargeAllHandles(
+    label: []const u8,
+    pool: *HandlePool,
+    discharges_spec_fn: ?DischargesSpecFn,
+    dispatcher: DispatchFn,
+    allocator: std.mem.Allocator,
+) void {
+    if (pool.countUndischarged() == 0) return;
+
+    var scratch = std.heap.ArenaAllocator.init(allocator);
+    defer scratch.deinit();
+    const scratch_alloc = scratch.allocator();
+
+
+    // Iterate the pool itself: `getUndischarged` allocates a copy and no caller
+    // has ever freed it. A discharge dispatch cannot append to the pool (pool
+    // bookkeeping lives in executeFlow, not in the raw dispatcher), so the slice
+    // is stable for the length of this loop.
+    for (pool.handles.items) |handle| {
+        if (handle.discharged) continue;
+
+        // Find the arg_name for this discharge event by looking up DischargeSpec
+        var arg_name: ?[]const u8 = null;
+        if (discharges_spec_fn) |spec_fn| {
+            const specs = spec_fn(handle.discharge_event);
+            // Match on obligation_module/name (don't assume first item)
+            for (specs) |spec| {
+                if (std.mem.eql(u8, spec.obligation_module, handle.obligation_module) and
+                    std.mem.eql(u8, spec.obligation_name, handle.obligation_name)) {
+                    arg_name = spec.arg_name;
+                    break;
                 }
             }
-
-            if (arg_name == null) {
-                // No spec match - skip and log
-                std.debug.print("[AUTO-DISCHARGE] No spec for '{s}' [{s}:{s}], skipping\n",
-                    .{handle.handle_id, handle.obligation_module, handle.obligation_name});
-                continue;
-            }
-
-            // Build discharge invocation
-            var discharge_inv = buildDischargeInvocation(
-                handle.discharge_event,
-                handle.handle_id,
-                arg_name.?,
-                allocator,
-            );
-
-            // Invoke the discharge event
-            var discharge_result: DispatchResult = undefined;
-            dispatcher(&discharge_inv, &discharge_result) catch |err| {
-                std.debug.print("[AUTO-DISCHARGE] Failed '{s}': {s}\n",
-                    .{handle.discharge_event, @errorName(err)});
-                continue;  // Don't mark as discharged if dispatch failed
-            };
-            std.debug.print("[AUTO-DISCHARGE] Invoked '{s}' for handle '{s}' [{s}:{s}]\n",
-                .{handle.discharge_event, handle.handle_id, handle.obligation_module, handle.obligation_name});
-
-            // Mark discharged after successful dispatch
-            active_pool.dischargeById(handle.id);
-
         }
+
+        if (arg_name == null) {
+            std.debug.print("[{s}] No spec for '{s}' [{s}:{s}], skipping\n",
+                .{label, handle.handle_id, handle.obligation_module, handle.obligation_name});
+            continue;
+        }
+
+        var discharge_inv = buildDischargeInvocation(
+            handle.discharge_event,
+            handle.handle_id,
+            arg_name.?,
+            scratch_alloc,
+        );
+
+        var discharge_result: DispatchResult = undefined;
+        dispatcher(&discharge_inv, &discharge_result) catch |err| {
+            std.debug.print("[{s}] Failed '{s}': {s}\n",
+                .{label, handle.discharge_event, @errorName(err)});
+            continue;  // Don't mark as discharged if dispatch failed
+        };
+        std.debug.print("[{s}] Invoked '{s}' for handle '{s}' [{s}:{s}]\n",
+            .{label, handle.discharge_event, handle.handle_id, handle.obligation_module, handle.obligation_name});
+
+        // Mark discharged after successful dispatch
+        pool.dischargeById(handle.id);
     }
 }
 
@@ -2072,6 +2144,15 @@ fn executeFlow(
             var evaluated_inv = inv.*;
             evaluated_inv.args = evaluated_args;
 
+            // POSSESSION IS THE AUTHORITY. A discharge event may only name a
+            // handle this pool actually holds, and the check runs BEFORE the
+            // proc, because the proc is the irreversible half — close(fd) on an
+            // fd you were never handed cannot be undone by noticing afterwards
+            // that the counter did not move.
+            if (ctx.handle_pool) |pool| {
+                try assertHandlesHeld(ctx, pool, event_name, evaluated_inv.args);
+            }
+
             try dispatcher(&evaluated_inv, &dispatch_result);
 
             // Track obligations for handle pool using full specs (with field/arg names)
@@ -2397,20 +2478,7 @@ fn executeFlow(
             }};
         }
         // Build event name for error reporting
-        const inv = flow.inv();
-        var name_buf: [256]u8 = undefined;
-        var name_len: usize = 0;
-        if (inv.path.module_qualifier) |mq| {
-            @memcpy(name_buf[name_len..][0..mq.len], mq);
-            name_len += mq.len;
-            name_buf[name_len] = ':';
-            name_len += 1;
-        }
-        for (inv.path.segments, 0..) |seg, i| {
-            if (i > 0) { name_buf[name_len] = '.'; name_len += 1; }
-            @memcpy(name_buf[name_len..][0..seg.len], seg);
-            name_len += seg.len;
-        }
+        const stable_event_name = persistentEventName(flow.inv());
 
         autoDischargeHandles(
             auto_discharge,
@@ -2422,7 +2490,7 @@ fn executeFlow(
         );
 
         return .{ .dispatch_error = .{
-            .event_name = name_buf[0..name_len],
+            .event_name = stable_event_name,
             .message = @errorName(err),
         }};
     };

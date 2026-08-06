@@ -1,0 +1,7 @@
+// JavaScript implementation facet. The events are declared in lib.kz (merged
+// at import); this file holds the |js proc bodies.
+
+~proc emit-vec|js {
+    const p = { v0: 1.0, v1: 2.0, v2: 3.0 };
+    console.log(`(${p.v0.toFixed(1)}, ${p.v1.toFixed(1)}, ${p.v2.toFixed(1)})`);
+}

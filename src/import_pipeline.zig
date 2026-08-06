@@ -269,75 +269,69 @@ fn processImport(allocator: std.mem.Allocator, parse_allocator: std.mem.Allocato
                 submodules.deinit(alloc);
             }
 
-            for (files) |file_path| {
-                // Skip the entry file - it's already compiled as main_module
-                // This prevents duplication when a file imports its own directory
-                if (std.mem.eql(u8, file_path, entry_file_to_exclude)) {
-                    log.debug("SUBMODULE: Skipping entry file '{s}' (already main_module)\n", .{file_path});
-                    continue;
+            // ONE submodule per STEM, not per file. `user.kz` and `user.kjs` are
+            // two FACETS of one module, and enumerating dirents made them two
+            // ImportedModules both called `user`: the event decls landed in one,
+            // the `|js` proc bodies that implement them in the other. The JS
+            // emitter looks for a proc among the event's OWN module items, found
+            // none, and emitted a throwing stub — `has no JavaScript
+            // implementation` for a module whose implementation was sitting one
+            // dirent away. The FILE-import path has merged facets since Phase 2.1
+            // (`loadFileWithCompanions`); only the directory path did not, and
+            // 140_003 missed it by giving its two files different stems.
+            var seen_stems = std.StringHashMap(void).init(alloc);
+            defer {
+                var stem_it = seen_stems.keyIterator();
+                while (stem_it.next()) |k| alloc.free(k.*);
+                seen_stems.deinit();
+            }
+
+            const stemOf = struct {
+                fn f(path: []const u8) []const u8 {
+                    const base = std.fs.path.basename(path);
+                    const ext = file_types.koruExtensionOf(base) orelse return base;
+                    return base[0 .. base.len - ext.len];
                 }
+            }.f;
+
+            // The entry file is already the main module and `mergeEntryCompanions`
+            // folded its own facets in there, so claim its whole stem rather than
+            // just its path — otherwise a directory that contains the entry gets
+            // the entry's `.kjs` sibling back as a submodule. Claimed only when
+            // the entry is genuinely one of THESE dirents, so an unrelated
+            // `test_lib/input.kz` under an entry also named `input.kz` still loads.
+            for (files) |file_path| {
+                if (!std.mem.eql(u8, file_path, entry_file_to_exclude)) continue;
+                log.debug("SUBMODULE: Skipping entry file '{s}' (already main_module)\n", .{file_path});
+                try seen_stems.put(try alloc.dupe(u8, stemOf(file_path)), {});
+                break;
+            }
+
+            for (files) |file_path| {
+                const submod_name = stemOf(file_path);
 
                 // Skip index.<ext> - it represents the directory itself, not a submodule.
                 // The directory's source_file is populated from the index file separately.
-                const submod_basename = std.fs.path.basename(file_path);
-                const is_index = if (file_types.koruExtensionOf(submod_basename)) |ext|
-                    std.mem.eql(u8, submod_basename[0 .. submod_basename.len - ext.len], "index")
-                else
-                    false;
-                if (is_index) {
+                if (std.mem.eql(u8, submod_name, "index")) {
                     log.debug("SUBMODULE: Skipping index file '{s}' (loaded as directory source)\n", .{file_path});
                     continue;
                 }
 
-                const file = try std.fs.cwd().openFile(file_path, .{});
-                defer file.close();
+                if (seen_stems.contains(submod_name)) continue;
+                try seen_stems.put(try alloc.dupe(u8, submod_name), {});
 
-                // Dupe the path into the arena: the parser stores it on
-                // reporter.file_name (and thus on every SourceLocation.file it
-                // produces — EventDecl, HostLine, …), so it must survive for the
-                // lifetime of the AST. The `files` slice this `file_path` belongs
-                // to is freed by the defer above when loadSubmodules returns, so
-                // passing it raw leaves every submodule item's location.file
-                // dangling — invisible until the AST is serialized to JSON, where
-                // the freed (0xAA-filled) bytes become invalid UTF-8. Same fix as
-                // loadFileWithCompanions.
-                const file_path_owned = try parse_alloc.dupe(u8, file_path);
-
-                const source = try file.readToEndAlloc(parse_alloc, 1024 * 1024);
-                var parser = try Parser.init(parse_alloc, source, file_path_owned, &[_][]const u8{}, null);
-                parser.fail_fast = false; // Don't validate event refs during import - allows transitive imports with circular deps
-                defer parser.deinit();
-
-                const parse_result = try parser.parse();
-
-                // Abort on parse errors in imported files
-                if (parser.reporter.hasErrors() or parse_result.source_file.hasParseErrors()) {
-                    const stderr_writer = FileWriter{ .file = std.fs.File.stderr() };
-                    try parser.reporter.printErrors(stderr_writer);
-                    if (!parser.reporter.hasErrors()) {
-                        try printAstParseErrors(&parse_result.source_file, stderr_writer);
-                    }
-                    std.process.exit(1);
-                }
-
-                var public_events = std.ArrayListAligned(ast.EventDecl, null){ .items = &.{}, .capacity = 0 };
-                for (parse_result.source_file.items) |item| {
-                    if (item == .event_decl and item.event_decl.is_public) {
-                        try public_events.append(alloc, item.event_decl);
-                    }
-                }
-
-                const basename = std.fs.path.basename(file_path);
-                const submod_name = if (file_types.koruExtensionOf(basename)) |ext|
-                    basename[0 .. basename.len - ext.len]
-                else
-                    basename;
+                // Loads this dirent AND its facet siblings, merging their items,
+                // module annotations and public events into one program — the same
+                // call the file-import path makes. It also owns the arena dupe of
+                // the path the parser hangs every SourceLocation.file off, which
+                // matters because the `files` slice is freed when this returns.
+                const loaded = try loadFileWithCompanions(alloc, parse_alloc, file_path);
 
                 try submodules.append(alloc, ImportedModule{
                     .logical_name = try alloc.dupe(u8, submod_name),
                     .canonical_path = try alloc.dupe(u8, file_path),
-                    .public_events = try public_events.toOwnedSlice(alloc),
-                    .source_file = parse_result.source_file,
+                    .public_events = loaded.public_events,
+                    .source_file = loaded.source_file,
                     .is_directory = false,
                     .submodules = &.{},
                 });

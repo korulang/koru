@@ -1,0 +1,17 @@
+// JavaScript implementation facet. Events are declared in input.kz (merged at
+// import); this file holds the |js proc bodies.
+
+let input_n = 0;
+
+~proc read-n|js {
+    const arg = process.argv[2];
+    input_n = arg === undefined ? 1000000 : parseInt(arg, 10);
+}
+
+~proc fmr|js {
+    let acc = 0;
+    for (let i = 0; i < n; i++) {
+        acc = v({ item: i, acc: acc });
+    }
+    return { tag: "done", done: acc };
+}

@@ -71,6 +71,48 @@ scheduled, joins a stripe, and carries a cursor the query path does not need.
 Until someone establishes that the obligations coincide, the differential pin is
 the mitigation and convergence is the ambition, not the plan.
 
+## 2026-08-06 — the same drift in a CHECK, which is worse
+
+Everything above is about cost, and it leans on *"nothing in a green test suite
+has an opinion about how fast either one is."* That framing is too narrow.
+**Reach drifts the same way, and reach is the worse case, because the suite does
+have an opinion — it just holds it on one side.**
+
+`phantom_semantic_checker`'s use-after-discharge wall reads a binding two ways:
+as an argument (`show(h: r.k)`) and inside a `{{ }}` interpolation
+(`print.ln("{{ r.k:s }}")`). Both were built deliberately; the doc comment says
+the interpolation half "is the one that mattered." Yet a discharged RECORD FIELD
+is caught in argument position and sails through interpolation, and the
+four-cell table is what shows why:
+
+    plain binding + argument       caught
+    plain binding + interpolation  caught
+    record field  + argument       caught
+    record field  + interpolation  MISSED
+
+Each half is right about the case its author had. The argument path keys on
+composite names, because that is what a disposal set holds for a record field —
+`r.k`, printed verbatim in its own diagnostic. The interpolation path tokenizes
+identifiers and skips any segment after a `.`, on the stated and *generally
+true* ground that "a trailing `.field` names a field, not a binding." **Two
+halves of one checker had grown different notions of what a name is**, and
+neither is wrong in isolation.
+
+### Why a reach divergence hides better than a cost one
+
+A cost divergence is invisible because no test compares two paths. A reach
+divergence is invisible for a nastier reason: **three green pins say the wall
+works.** `335_024`, `335_025` and `335_047` all pin use-after-discharge and all
+pass — and every one reads its stale binding in argument position. The corpus
+does not merely fail to cover the fourth cell; it reports that the wall is
+tested, because it is, on the axis somebody happened to write.
+
+So the rule generalises past lowerings: **when one guarantee is enforced at two
+sites, coverage is the CROSS PRODUCT of sites and shapes, not the union.** A pin
+per site reads like coverage and is not. Writing the table and looking for the
+empty cell cost one probe here, and had gone unasked for as long as both halves
+existed.
+
 ## The same shape without lowerings: N hand-rolled scanners for one rule
 
 "Two lowerings" turned out to be the narrow case. The general one is **a rule

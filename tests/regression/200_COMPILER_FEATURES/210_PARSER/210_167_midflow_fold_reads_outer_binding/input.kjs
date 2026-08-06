@@ -1,0 +1,9 @@
+// JavaScript implementation facet. Events are declared in input.kz (merged at
+// import); this file holds the |js proc bodies.
+
+~proc base|js { return 10; }
+
+~proc step|js {
+    if (n < 30) return { tag: "next", next: n };
+    return { tag: "done", done: n };
+}

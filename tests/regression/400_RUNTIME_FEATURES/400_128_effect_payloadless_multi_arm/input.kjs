@@ -1,0 +1,10 @@
+// JavaScript implementation facet. Events are declared in input.kz (merged at
+// import); this file holds the |js proc bodies.
+
+~proc request|js {
+    const r = ask();
+    if (r.tag === "halved") {
+        return { tag: "done", done: r.halved };
+    }
+    return { tag: "done", done: -1 };
+}

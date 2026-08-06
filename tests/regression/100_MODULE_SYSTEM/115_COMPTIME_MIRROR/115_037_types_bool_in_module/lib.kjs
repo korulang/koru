@@ -1,0 +1,12 @@
+// JavaScript implementation facet. The events are declared in lib.kz (merged
+// at import); this file holds the |js proc bodies.
+
+~proc check-status|js {
+    if (active) {
+        console.log("User is active");
+        return { tag: "active", active: {} };
+    } else {
+        console.log("User is inactive");
+        return { tag: "inactive", inactive: {} };
+    }
+}

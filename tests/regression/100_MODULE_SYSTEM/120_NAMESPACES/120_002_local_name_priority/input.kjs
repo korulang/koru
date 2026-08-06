@@ -1,0 +1,6 @@
+// JavaScript implementation facet. The local `print` event is declared in
+// input.kz (merged at import); this file holds the |js proc body.
+
+~proc print|js {
+    console.log("Local print called");
+}

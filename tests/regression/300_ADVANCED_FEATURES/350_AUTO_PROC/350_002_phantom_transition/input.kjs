@@ -1,0 +1,14 @@
+// JavaScript implementation facet. The Koru declarations live in the
+// `input.kz` companion (merged at import); this file holds the `|js`
+// proc bodies mirroring its `|zig` ones.
+//
+// The Zig facet allocates so it can hand back a `*Resource`; the phantom
+// state transition is checked at compile time, so JS returns the object.
+
+~proc create|js {
+    return { value: value };
+}
+
+~proc cleanup|js {
+    console.log(`cleaned up resource with value ${r.value}`);
+}

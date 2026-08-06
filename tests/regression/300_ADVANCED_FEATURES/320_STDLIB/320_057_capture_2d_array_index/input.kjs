@@ -1,0 +1,8 @@
+// JavaScript implementation facet. The Koru declarations live in the
+// `input.kz` companion (merged at import); this file holds the `|js`
+// proc bodies mirroring its `|zig` ones.
+
+~proc print-sum|js {
+    const sum = g[0][0] + g[0][1] + g[1][0] + g[1][1];
+    console.log(`${sum}`);
+}

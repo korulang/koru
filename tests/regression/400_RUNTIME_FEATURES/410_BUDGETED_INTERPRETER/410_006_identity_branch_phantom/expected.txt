@@ -1,1 +1,3 @@
+destroyed: resource_1
+[AUTO-DISCHARGE] Invoked 'destroy' for handle 'resource_1' [main:active]
 PASS: got handle

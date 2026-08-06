@@ -1,0 +1,9 @@
+name: convention-by-copy
+kind: inferred
+shape: categorical
+face: in
+membrane: false
+note: a single pre-existing example was treated as the convention and copied,
+  when the authority it had to agree with (the emitter, the schema, the caller)
+  was right there and cheaper to read. Fires when the copied example turns out
+  to be wrong and unpinned — nothing exercised it, so it looked settled.

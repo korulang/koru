@@ -1,7 +1,7 @@
 ---
 type: belief
 id: frag-a-kjs-facet-carries-host-lines-not-only-proc-bodies
-provenance: W4 host-fixture porting — the wave brief prohibited host lines in a .kjs on the grounds that the Zig emitter emits them unconditionally; the guard that makes that false is `hostLineRoutesToZig`, and 140_010 is the test that pins it
+provenance: W4 host-fixture porting — the wave brief prohibited host lines in a .kjs on the grounds that the Zig emitter emits them unconditionally; the guard that makes that false is `hostLineRoutesToZig`, and 140_010 is the test that pins it. Evolved during the std/string port, where the same completeness claim turned out to hold only at the scope it had been checked at.
 ts: 2026-08-06
 ---
 
@@ -48,9 +48,55 @@ it, and its provenance decays exactly like the code it describes. A
 constraint expensive enough to distort six agents' output is worth the sixty
 seconds of compiling one fixture and grepping the result.
 
+## The open question, answered from the stdlib side
+
+The two-file layout is not a fixture-only affordance. `koru_std/fs` — a real
+stdlib module whose `fs.kz` holds the `pub tor read-lines` contract, an
+`~[comptime|runtime]` annotation, a `const std = @import("std")` host line and
+a `|zig` body — took a JavaScript implementation as a bare `fs.kjs` sibling
+holding one `~proc read-lines|js` block. No `fs.k` extraction, no line moved in
+`fs.kz`. The declarations in a `.kz` are host-agnostic and are read by every
+target; only its host LINES are routed away. So `koru_std/args`' three-file
+shape (`args.k` + `args.kz` + `args.kjs`) is one legal layout among two, not
+the price of admission — and the migration plan that priced the stdlib port as
+"extract every contract first" was pricing work the tree does not require.
+
+That matters beyond bookkeeping, because the extraction is the expensive and
+dangerous half: moving a `pub tor` out of a live module edits the file the Zig
+target already compiles, which is exactly the edit that can regress a green
+board. The `.kjs` sibling is purely additive. **Prefer the additive layout for
+migration and reserve the three-file split for modules that genuinely want a
+contract readable on its own** — and note that "the contract is unreachable
+from a sibling facet" was never tested before it was designed around.
+
 Open question: whether the three-file layout (`input.k` contract + `.kz` +
 `.kjs`) and the two-file layout used here (`input.kz` as both contract and
 Zig facet, `.kjs` as companion) should both stay legal. The two-file form is
 what makes an untouched `input.kz` possible, and an untouched `input.kz` is
 the cleanest available evidence that a port left the Zig board alone — so it
 earns its place for migration work, whatever the eventual resting shape.
+
+## The claim was checked at one scope and asserted at both
+
+Porting `koru_std/string` found the completeness above true for the ENTRY
+file and **silently false for an IMPORT**. A `.kjs` host line in the file you
+hand `koruc` reached the output; the identical line in a stdlib module the
+program imported did not, because an import arrives as a `module_decl` and
+the JS emitter's host-line phase only ever scanned the top level. Nothing
+failed. The declaration simply was not there, and the first thing to read it
+got `undefined` several frames away — the failure shape this corpus already
+has a name for.
+
+The correction is one recursion and is now in the emitter, so it is not the
+durable part. The durable part is the *shape of the mistake*: a facet's
+completeness was verified on the cheapest available instance — a single-file
+fixture, where "the facet" and "the program" are the same items array — and
+then stated as a property of facets. **Entry and import are different scopes
+for every phase the emitter has**, and a claim about what a facet may contain
+is a claim about both. Neither the prohibition this fragment repudiated nor
+the repudiation itself distinguished them.
+
+That generalises past host lines: any "a facet may carry X" ruling wants
+checking through an import before it is written down, because the entry path
+is the one every author exercises by accident and the import path is the one
+the stdlib lives on.

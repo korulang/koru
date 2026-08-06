@@ -77,7 +77,7 @@ const isTransform = (ann) => !!ann && /transform|comptime|keyword/.test(ann)
 function loadStdlib() {
   const mods = new Map()
   const get = (n) => {
-    if (!mods.has(n)) mods.set(n, { name: n, procs: new Map(), tors: new Set(), facets: new Set(), lines: 0 })
+    if (!mods.has(n)) mods.set(n, { name: n, procs: new Map(), tors: new Map(), facets: new Set(), lines: 0 })
     return mods.get(n)
   }
   for (const f of readdirSync(STD)) {
@@ -88,13 +88,20 @@ function loadStdlib() {
     const mod = get(name)
     mod.facets.add(ext)
     if (ext === 'kz') mod.lines = src.split('\n').length
-    for (const t of src.matchAll(TOR_DECL)) mod.tors.add(t[2])
+    // Keep the event's OWN annotation. A proc inherits transform-ness from the
+    // event it implements, and the annotation is frequently written there
+    // rather than on the proc line: kernel.kz:80 declares
+    // `~[comptime|transform|claims_descendants]pub tor init`, and kernel.kz:90
+    // then writes a bare `~proc init|zig`. Reading only the proc line tagged
+    // kernel:init a portable runtime port worth 27 tests, when it is the
+    // Zig-only MLIR/GPU backend that must never be ported at all.
+    for (const t of src.matchAll(TOR_DECL)) mod.tors.set(t[2], t[1] || '')
     for (const [, ann, proc, lang] of src.matchAll(PROC_DECL)) {
       if (!mod.procs.has(proc)) mod.procs.set(proc, { langs: new Set(), facets: new Set(), transform: false })
       const p = mod.procs.get(proc)
       p.langs.add(lang)
       p.facets.add(ext)
-      if (isTransform(ann)) p.transform = true
+      if (isTransform(ann) || isTransform(mod.tors.get(proc))) p.transform = true
     }
   }
   return mods
@@ -319,7 +326,7 @@ for (const [k, v] of Object.entries(counts).sort((a, b) => b[1] - a[1])) {
 }
 console.log('\n  STDLIB PROC SURFACE  (compile-time pipeline modules excluded)')
 console.log('    kind         |zig    |js   unported   what a port means')
-console.log(`    runtime   ${String(cov.zig.runtime).padStart(7)} ${String(cov.js.runtime).padStart(6)} ${String(cov.zig.runtime - cov.both.runtime).padStart(10)}   a JS body in a .kjs facet (needs .k contract first)`)
+console.log(`    runtime   ${String(cov.zig.runtime).padStart(7)} ${String(cov.js.runtime).padStart(6)} ${String(cov.zig.runtime - cov.both.runtime).padStart(10)}   a JS body in a .kjs sibling; no .k extraction needed`)
 console.log(`    transform ${String(cov.zig.transform).padStart(7)} ${String(cov.js.transform).padStart(6)} ${String(cov.zig.transform - cov.both.transform).padStart(10)}   a |js variant emitting JS, stays in .kz`)
 console.log('\n  TOP BLOCKING MODULES')
 for (const m of moduleRanking().slice(0, 10)) {

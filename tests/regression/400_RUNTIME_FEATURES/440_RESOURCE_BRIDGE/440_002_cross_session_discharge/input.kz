@@ -29,11 +29,14 @@ var bridge_pool = HandlePool.init(std.heap.page_allocator);
     close(1)
 }
 
-// Session 1: Open a file (creates obligation)
-const SESSION_1 = "open(path: \"test.txt\")\n| opened h |> result { handle: h }";
+// Session 1: Open a file (creates obligation). `open` is a bare return, so the
+// value binds — there is no `| opened` branch to ask for, and asking for one
+// was what killed this test from the day it was written.
+const SESSION_1 = "open(path: \"test.txt\")";
 
-// Session 2: Close the file (discharges obligation)
-const SESSION_2 = "close(handle: \"file_1\")\n| closed |> result {}";
+// Session 2: Close the file (discharges obligation). `close` returns nothing,
+// so there is no branch here either.
+const SESSION_2 = "close(handle: \"file_1\")";
 
 // Run session 1 - creates handle on bridge
 ~std/runtime:run(source: SESSION_1, scope: "files", budget: 100, handle_pool: &bridge_pool, auto_discharge: false)

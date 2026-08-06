@@ -1,0 +1,98 @@
+// Test: a run may only discharge a handle the pool actually HOLDS.
+//
+// Possession of the handle name is the authority. A run that names a handle it
+// never received must be refused BEFORE the discharge proc runs, because the
+// proc is the irreversible half — `close(fd)` on someone else's fd cannot be
+// taken back by noticing afterwards that the counter did not move.
+//
+// Measured 2026-08-06, before the wall existed: `close(handle: "file_99")` on a
+// pool holding only "file_1" ran the real close() and the run SUCCEEDED. The
+// handle count stayed honest (nothing was discharged) while the side effect
+// fired anyway.
+
+~import std/runtime
+~import std/io
+
+const std = @import("std");
+const HandlePool = @import("root").koru_std.koru_interpreter.HandlePool;
+
+// The bridge: a pool that outlives any single run.
+var bridge_pool = HandlePool.init(std.heap.page_allocator);
+
+// Identity branch, not `-> string<opened!>`: the bare-return form's obligation
+// is invisible to the registry's obligation extraction (see 410_004).
+~pub tor open { path: string }
+| opened string<opened!>
+| missing
+
+~proc open|zig {
+    _ = path;
+    return .{ .opened = "file_1" };
+}
+
+~pub tor close { handle: string<!opened> }
+
+~proc close|zig {
+    std.debug.print("close() ran for '{s}'\n", .{handle});
+}
+
+~std/runtime:register(scope: "files") {
+    open(10)
+    close(1)
+}
+
+const SESSION_1 = "open(path: \"test.txt\")";
+const FORGED = "close(handle: \"file_99\")";
+const HONEST = "close(handle: \"file_1\")";
+
+~std/runtime:run(source: SESSION_1, scope: "files", budget: 100, handle_pool: &bridge_pool, auto_discharge: false)
+| result r |> probe(after_open: r.handles)
+    | done d |> std/io:print.ln("held after open: {{ d.after_open:d }}, after honest close: {{ d.after_honest:d }}")
+    | fail f |> std/io:print.ln("FAIL: {{ f:s }}")
+| exhausted _ |> std/io:print.ln("FAIL: session 1 exhausted")
+| parse-error _ |> std/io:print.ln("FAIL: session 1 parse error")
+| validation-error _ |> std/io:print.ln("FAIL: session 1 validation error")
+| shape-error _ |> std/io:print.ln("FAIL: session 1 shape error")
+| event-denied _ |> std/io:print.ln("FAIL: session 1 event denied")
+| dispatch-error _ |> std/io:print.ln("FAIL: session 1 dispatch error")
+| scope-not-found _ |> std/io:print.ln("FAIL: session 1 scope not found")
+
+~tor probe { after_open: u32 }
+| done { after_open: u32, after_honest: u32 }
+| fail string
+
+~proc probe|zig {
+    const rt = @import("root").koru_std.koru_runtime;
+
+    // Run 2: forge a handle the pool has never held.
+    const forged = rt.run_event.handler(.{
+        .source = FORGED,
+        .scope = "files",
+        .budget = 100,
+        .handle_pool = &bridge_pool,
+        .auto_discharge = false,
+    });
+    switch (forged) {
+        .result => std.debug.print("FAIL: forged close was accepted\n", .{}),
+        .dispatch_error => |e| std.debug.print("forged close refused: {s}\n", .{e.message}),
+        else => |tag| std.debug.print("forged close refused: {s}\n", .{@tagName(tag)}),
+    }
+
+    // Run 3: the handle the pool does hold. This must still work.
+    const honest = rt.run_event.handler(.{
+        .source = HONEST,
+        .scope = "files",
+        .budget = 100,
+        .handle_pool = &bridge_pool,
+        .auto_discharge = false,
+    });
+    const after_honest: u32 = switch (honest) {
+        .result => |r| r.handles,
+        else => |tag| blk: {
+            std.debug.print("FAIL: honest close rejected: {s}\n", .{@tagName(tag)});
+            break :blk after_open;
+        },
+    };
+
+    return .{ .done = .{ .after_open = after_open, .after_honest = after_honest } };
+}

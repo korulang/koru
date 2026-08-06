@@ -1,0 +1,11 @@
+// JavaScript implementation facet. The Koru declarations live in the
+// `input.kz` companion (merged at import); this file holds the `|js`
+// proc body mirroring the `|zig` one, plus the module-level `Player` value
+// the flow passes in. `~struct(Player)` is declared in Koru and needs no JS
+// counterpart — a JS object literal IS the type.
+
+const p = { name: "Alice", health: 100 };
+
+~proc greet|js {
+    return player.name;
+}

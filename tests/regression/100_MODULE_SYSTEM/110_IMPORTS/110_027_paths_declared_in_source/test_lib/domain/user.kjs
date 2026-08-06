@@ -1,0 +1,6 @@
+// JavaScript implementation facet. The event and the DomainUser type are
+// declared in user.kz (merged at import); this file holds the |js proc body.
+
+~proc create|js {
+    return { email: email, role: role, permissions: permissions };
+}

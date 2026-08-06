@@ -1,0 +1,14 @@
+// JavaScript implementation facet. Events are declared in input.kz (merged at
+// import); this file holds the |js proc bodies.
+
+~proc ramp|js {
+    let i = start;
+    while (i < start + 2) {
+        step(i);
+        i += 1;
+    }
+    if (start < 4) {
+        return { tag: "restart", restart: start + 2 };
+    }
+    return { tag: "done", done: i };
+}

@@ -1,6 +1,43 @@
 {
-  "generated": "2026-08-06T13:52:39.567Z",
-  "scanned": 1,
-  "passing": 1,
-  "families": []
+  "generated": "2026-08-06T17:25:39.269Z",
+  "scanned": 564,
+  "passing": 463,
+  "families": [
+    {
+      "name": "A_js_emitter_emit_failed_nojsprocbody",
+      "status": "js-compile",
+      "cause": "js_emitter.emit failed: NoJsProcBody",
+      "count": 15
+    },
+    {
+      "name": "B_js_emitter_emit_failed_unsupportedconstruct",
+      "status": "js-compile",
+      "cause": "js_emitter.emit failed: UnsupportedConstruct",
+      "count": 13
+    },
+    {
+      "name": "C_syntaxerror_missing_initializer_in_const_dec",
+      "status": "js-runtime",
+      "cause": "SyntaxError: Missing initializer in const declaration",
+      "count": 6
+    },
+    {
+      "name": "D_syntaxerror_invalid_or_unexpected_token",
+      "status": "js-runtime",
+      "cause": "SyntaxError: Invalid or unexpected token",
+      "count": 3
+    },
+    {
+      "name": "E_error_koru010_stray_continuation_line_withou",
+      "status": "js-compile",
+      "cause": "error[KORU010]: stray continuation line without Koru construct",
+      "count": 3
+    },
+    {
+      "name": "F_referenceerror_name_is_not_defined",
+      "status": "js-runtime",
+      "cause": "ReferenceError: name is not defined",
+      "count": 3
+    }
+  ]
 }

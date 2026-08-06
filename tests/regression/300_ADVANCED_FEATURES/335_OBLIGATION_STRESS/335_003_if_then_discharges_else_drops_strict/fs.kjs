@@ -1,0 +1,17 @@
+// JavaScript implementation facet. The Koru declarations live in the
+// `fs.kz` companion (merged at import); this file holds the `|js`
+// proc bodies mirroring its `|zig` ones.
+//
+// The Zig facet heap-allocates its `File` because Zig needs an address for a
+// `*File`; the phantom `opened!` state is a compile-time obligation, not a
+// runtime one. JS hands back the object itself and the same obligations are
+// tracked by the same pass.
+
+~proc open|js {
+    console.log(`Opening file: ${path}`);
+    return { handle: 42 };
+}
+
+~proc close|js {
+    console.log(`Closing file`);
+}

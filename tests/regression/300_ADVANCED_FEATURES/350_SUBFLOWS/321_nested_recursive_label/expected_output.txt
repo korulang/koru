@@ -1,1 +1,0 @@
-// Expected output placeholder - test currently fails at codegen stage

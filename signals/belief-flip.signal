@@ -1,0 +1,6 @@
+name: belief-flip
+kind: inferred
+shape: categorical
+face: in
+membrane: false
+note: a prior belief was measured and came back inverted, not merely refined. Synonym of belief-change, which is the preferred spelling — this one was auto-registered by a commit that reached for the sharper word. Fold into belief-change when the signal vocabulary is next gardened.

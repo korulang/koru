@@ -1,0 +1,7 @@
+name: correctness
+kind: inferred
+shape: categorical
+face: in
+membrane: true
+note: a path produced a WRONG answer where it was believed to refuse or to be right
+route: surface, wake

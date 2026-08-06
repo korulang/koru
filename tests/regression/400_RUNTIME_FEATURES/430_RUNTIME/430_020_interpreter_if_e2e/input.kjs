@@ -1,0 +1,15 @@
+// JavaScript implementation facet. Events are declared in input.kz (merged at
+// import); this file holds the |js proc bodies.
+
+const TEST_SOURCE = "if(true)\n| then |> yes(result: \"passed\")\n| else |> no(result: \"failed\")";
+const TEST_SOURCE_ELSE = "if(false)\n| then |> yes(result: \"failed\")\n| else |> no(result: \"passed\")";
+
+~proc yes|js {
+    console.log(`YES: ${result}`);
+    return 1;
+}
+
+~proc no|js {
+    console.log(`NO: ${result}`);
+    return 0;
+}

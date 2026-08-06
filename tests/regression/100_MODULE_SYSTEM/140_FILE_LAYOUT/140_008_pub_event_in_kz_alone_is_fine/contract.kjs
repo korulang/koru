@@ -1,0 +1,6 @@
+// JavaScript implementation facet. The event is declared in contract.kz
+// (merged at import); this file holds the |js proc body.
+
+~proc compute|js {
+    return x + 100;
+}

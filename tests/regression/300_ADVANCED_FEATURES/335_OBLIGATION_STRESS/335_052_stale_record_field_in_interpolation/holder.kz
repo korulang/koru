@@ -1,0 +1,19 @@
+// An obligation that arrives as a RECORD FIELD, so the discharge is tracked
+// under the composite key `r.k` rather than a plain binding name.
+const std = @import("std");
+
+var buf: [16]u8 = undefined;
+
+~pub tor grab { name: string } -> { k: string<held!>, n: u32 }
+
+~proc grab|zig {
+    _ = name;
+    @memcpy($mod.buf[0..3], "abc");
+    return .{ .k = $mod.buf[0..3], .n = 7 };
+}
+
+~pub tor drop { h: string<!held> }
+
+~proc drop|zig {
+    _ = h;
+}

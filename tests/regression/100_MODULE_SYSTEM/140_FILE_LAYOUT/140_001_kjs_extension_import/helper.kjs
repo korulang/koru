@@ -9,3 +9,7 @@ const std = @import("std");
 ~proc greet|zig {
     return "Hello!";
 }
+
+~proc greet|js {
+    return "Hello!";
+}
