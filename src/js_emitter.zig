@@ -6,11 +6,11 @@
 // (visitor_emitter.zig + emitter_helpers.zig) but rewrites every output site as
 // JS. It handles EXACTLY the constructs pump.kz uses:
 //
-//   - event decls → `<name>_event: { handler(input, H?) { ... } }`
+//   - event decls → `<name>_event: { handler(__koru_input, H?) { ... } }`
 //   - effect-bearing events take an `H` param and bind `const op = H.op;` for
-//     each effect branch op; plain events take only `input`.
+//     each effect branch op; plain events take only the payload.
 //   - `|js` proc bodies, spliced verbatim (opaque host code) after binding
-//     input fields as `const field = input.field;`.
+//     input fields as `const field = __koru_input.field;`.
 //   - top-level flows → `flowN()` methods: synthesize a `Handlers_N` struct from
 //     the `!`-effect continuations, call the event handler, then drive terminal
 //     `|`-continuations (read `.branch` off the result, emit the body).
@@ -41,6 +41,14 @@ pub const JsEmitError = error{
 /// `--lang` / `proc.target` / `file_types.hostLangOfFile`, so it selects both
 /// a `|js` proc body and a `.kjs` host line. One vocabulary, two surfaces.
 const JS_TARGET = "js";
+
+/// The handler's payload parameter. RESERVED, not `input`: an event may declare a
+/// field literally named `input` (`sanitize { input: string }`, 330_068), and
+/// `handler(input) { const input = input.input; }` is a redeclaration JavaScript
+/// refuses outright. Every field is bound as a local off this parameter, so host
+/// code never spells it — the same reason the Zig emitter reserves
+/// `__koru_event_input`.
+const INPUT_PARAM = "__koru_input";
 
 /// Emit JS for the given program. Returns a heap-allocated string owned by the
 /// caller's allocator.
@@ -332,7 +340,7 @@ const Emitter = struct {
         var name_buf: [256]u8 = undefined;
         try self.writeFmt("  {s}_event: {{\n", .{lowerIdentBuf(&name_buf, name)});
         if (has_effect) {
-            try self.write("    handler(input, H) {\n");
+            try self.writeFmt("    handler({s}, H) {{\n", .{INPUT_PARAM});
             // Bind each effect-branch op as a local: `const tick = H.tick;`
             for (event.branches) |b| {
                 if (b.kind != .effect) continue;
@@ -343,10 +351,10 @@ const Emitter = struct {
                 try self.write(";\n");
             }
         } else {
-            try self.write("    handler(input) {\n");
+            try self.writeFmt("    handler({s}) {{\n", .{INPUT_PARAM});
         }
 
-        // Bind input fields as locals: `const n = input.n;`. Every impl kind
+        // Bind input fields as locals: `const n = __koru_input.n;`. Every impl kind
         // reads its inputs by bare name, so this precedes all four bodies —
         // the same reason the Zig emitter re-emits the bindings per arm.
         //
@@ -356,11 +364,11 @@ const Emitter = struct {
         // field default; JS has no such thing, so the handler supplies it.
         for (event.input.fields) |field| {
             if (field.default) |dflt| {
-                try self.writeFmt("      const {s} = input.{s} ?? ", .{ field.name, field.name });
+                try self.writeFmt("      const {s} = {s}.{s} ?? ", .{ field.name, INPUT_PARAM, field.name });
                 try self.writeJsExpr(dflt);
                 try self.write(";\n");
             } else {
-                try self.writeFmt("      const {s} = input.{s};\n", .{ field.name, field.name });
+                try self.writeFmt("      const {s} = {s}.{s};\n", .{ field.name, INPUT_PARAM, field.name });
             }
         }
 
