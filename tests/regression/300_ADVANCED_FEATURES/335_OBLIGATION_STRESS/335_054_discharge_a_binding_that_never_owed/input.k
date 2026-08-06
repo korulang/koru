@@ -27,8 +27,37 @@
 // BODY lied, and Lars ruled that class out on 2026-07-24. That pin was
 // withdrawn. What remains here needs no body at all.
 //
-// EXPECT is provisional — no such diagnostic exists yet, and the spelling of
-// the refusal is unruled.
+// ⛔ RULED BY LARS 2026-08-06: "it shouldn't allow DISCHARGING a handle without
+// an obligation. That should be stopped in its tracks in the obligation
+// checker." So the refusal is WANTED. It is not built, and the attempt is
+// recorded here because it failed for a reason worth knowing.
+//
+// THE OBVIOUS FIX DOES NOT WORK YET, AND 330_076 IS WHY.
+// The consume site (`phantom_semantic_checker`, where a `<!state>` parameter
+// clears the obligation and poisons the binding) never asks whether a debt
+// exists. Adding that question is four lines. Both predicates were tried:
+//
+//   (a) "is the binding in cleanup_obligations?"  — false-fires
+//   (b) "does the binding's own recorded state carry `!`?" — false-fires
+//
+// Both refuse this, which is legitimate and common:
+//
+//   ~tor pass-through { h: *Handle<!owned> }
+//   ~pass-through = sink(h)          # delegate the transferred obligation
+//
+// A `<!state>` PARAMETER means the caller handed the debt in, so the body may
+// settle it once. The seeding for that is written (the impl-param block builds
+// `owned!` and calls setWithType, which does register the cleanup obligation) —
+// but by the time the consume site reads it, `h` carries `input:owned`, bare.
+// The `!` is not arriving.
+//
+// That is 330_076's subject verbatim — "an owned obligation CAN enter a pure
+// impl through a CONSUMING parameter" — and 330_076 is RED today, on main and
+// everywhere else. So this wall is BLOCKED ON 330_076, not on the predicate or
+// on a ruling. Fix the seeding first; then either predicate above closes this
+// pin, and 335_055 with it.
+//
+// EXPECT is provisional — the wanted diagnostic does not exist yet.
 //
 // Related: 335_055 is this defect's consequence — an aliased binding that owes
 // nothing is what makes the alias freeable.
