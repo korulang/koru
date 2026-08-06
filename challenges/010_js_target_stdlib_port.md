@@ -190,6 +190,44 @@ not by tests.
   scope until someone rules otherwise — and unlike kernel, that judgement is
   about size and substance, not about vocabulary.
 
+## Store — RECONNAISSANCE, 2026-08-06 (measured, nothing built yet)
+
+Baseline **0/149**, measured: 136 `js-compile`, 9 `js-runtime`, 4 `js-timeout`.
+`store:new` alone gates **148 of the 149**, so unlike regex there is no
+incremental first green — nothing passes until `new` produces a working JS store.
+
+**Store wants the VARIANT route, and kernel did not.** Apply the test kernel
+produced — what fraction of the OUTPUT differs — and the two modules answer
+oppositely, which is why they need opposite architectures:
+
+| | emitted-text lines | Zig-bearing | verdict |
+|---|---|---|---|
+| `kernel` | ~60 sites | 8 differ | one body, `CompilerEnv.lang` |
+| `store` | 111 | **40** | a second rendering |
+
+Store's generated artifact is not a few seams — it is **a data-structure
+implementation**: SoA row arrays, a handle table with generations, a free list,
+brands, row↔slot maps, cycle-detection stacks, `@bitCast`/`@truncate`/`@intCast`
+handle packing, and methods on `@This()`. So the commission's phase-2/phase-3
+plan (templates, then `|template|js`) is the RIGHT one here. Do not carry
+kernel's shortcut across; measure first, as kernel did.
+
+It also hits both walls kernel hit, harder: **19 synthesized procs hardcode
+`.target = "zig"`** (kernel had one, and that one string caused every failure),
+and it mints **5 `host_line`s**, which are dropped on JS because that walk keys
+on the file extension carrying the line — use `.inline_code`.
+
+**THE HANDLE QUESTION IS SETTLED, and it is the good answer.** A handle packs
+`slot | (brand << 24)` in the low 32 bits and the generation in the HIGH 32
+(`store.kz:2626`). That has NO JavaScript transliteration — JS bitwise operators
+are 32-bit and `x << 32` is a no-op, so the encoding cannot survive a literal
+port (the `frag-a-host-word-size-is-part-of-the-rendering-contract` trap, in the
+biggest module). But **no `expected.txt` in the corpus contains a raw handle
+value** — handles are internal, the oracle cannot observe their encoding. So the
+JS rendering is free to re-encode (a 53-bit-safe packing, or a slot/gen pair) and
+does NOT need BigInt, which would have poisoned every arithmetic path a handle
+touches. Verified by grep over the store fixtures' expected outputs, not assumed.
+
 ## Store — the prize, and it is a refactor with a total oracle
 
 Store blocks 161 tests, 130 of them solely: comfortably the largest single item
