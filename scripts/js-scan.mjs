@@ -167,6 +167,46 @@ async function run(items, jobs) {
   return out
 }
 
+// Failure families, DERIVED from this run rather than hand-maintained.
+//
+// The first clusters.json was written by hand off the 45/220 baseline. Two
+// contestants later the failure distribution had changed completely and that
+// file described a population that no longer existed — a stale fan-out map is
+// worse than none, because it dispatches confident work at a gap someone
+// already closed. So a full emitter-bucket scan rewrites it, every time, and
+// the map can only ever describe the run that produced it.
+//
+// Grouped on a normalised cause: panics lose their thread id, numbers collapse,
+// so `NoJsProcBody` from two tests lands in one family while two genuinely
+// different KORU errors stay apart. Families under `minSize` are left out — a
+// cluster of one is a bug report, not a work unit.
+function deriveClusters(results, minSize = 3) {
+  const norm = (d) => (d || '')
+    .replace(/thread \d+ panic: /, '')
+    .replace(/\/[^\s'"]+\//g, '')          // absolute paths differ per worktree
+    .replace(/\b\d+\b/g, 'N')
+    .slice(0, 90)
+  const groups = new Map()
+  for (const r of results) {
+    if (r.status === 'js-ok') continue
+    const key = `${r.status} | ${norm(r.detail)}`
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key).push(r.test)
+  }
+  const slug = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 44)
+  const out = {}
+  const meta = []
+  let i = 0
+  for (const [key, tests] of [...groups].sort((a, b) => b[1].length - a[1].length)) {
+    if (tests.length < minSize) continue
+    const [status, cause] = key.split(' | ')
+    const name = `${String.fromCharCode(65 + i++)}_${slug(cause) || status}`
+    out[name] = tests
+    meta.push({ name, status, cause, count: tests.length })
+  }
+  return { clusters: out, meta }
+}
+
 console.error(`\n  js-scan — ${tests.length} tests, ${JOBS} jobs, measure-only (SUCCESS/FAILURE untouched)\n`)
 const t0 = Date.now()
 const results = await run(tests, JOBS)
@@ -190,6 +230,30 @@ writeFileSync(OUT, JSON.stringify({
   generated: new Date().toISOString(), bucket: BUCKET, sample: SAMPLE || null,
   wallSeconds: Number(wall), byStatus, byCluster, results,
 }, null, 2))
+
+// Only a FULL emitter-bucket run may rewrite the families. A --cluster run sees
+// one family by construction and a --sample run sees a slice; letting either
+// rewrite the map would shrink it to whatever was last looked at.
+let derived = null
+if (BUCKET === 'emitter' && !SAMPLE && !CLUSTER) {
+  derived = deriveClusters(results)
+  writeFileSync(join(ROOT, 'docs/js-parity/clusters.json'), JSON.stringify(derived.clusters, null, 2))
+  writeFileSync(join(ROOT, 'docs/js-parity/clusters-meta.json'), JSON.stringify({
+    generated: new Date().toISOString(), scanned: results.length,
+    passing: results.filter((r) => r.status === 'js-ok').length, families: derived.meta,
+  }, null, 2))
+}
+
+if (derived) {
+  console.log('\n  DERIVED FAMILIES  (docs/js-parity/clusters.json rewritten)')
+  for (const f of derived.meta) {
+    console.log(`    ${String(f.count).padStart(4)}  ${f.name}`)
+    console.log(`          ${f.cause.slice(0, 88)}`)
+  }
+  const covered = derived.meta.reduce((a, f) => a + f.count, 0)
+  const failures = results.length - (byStatus['js-ok'] || 0)
+  console.log(`\n    ${covered} of ${failures} failures fall in a family of 3+; ${failures - covered} are singletons`)
+}
 
 const ok = byStatus['js-ok'] || 0
 console.log(`\n  RESULT  ${ok}/${results.length} pass JS equivalence   (${((ok / results.length) * 100).toFixed(1)}%)   ${wall}s wall\n`)
