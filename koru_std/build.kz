@@ -427,13 +427,32 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
     zig build --build-file build_backend.zig
 }
 
-// Phase 2: Run backend to generate & compile final program
-~[default, depends_on(compile_backend)] step(name: "build") {
-    ./zig-out/bin/main backend_tmp
+// Phase 2: Run backend to generate & compile final program.
+//
+// TWO defects lived in these six lines, independently, and both were latent
+// because the declarative step pipeline only engages once a program declares a
+// step of its own — and the one test that covers the chain (310_033) overrides
+// compile_backend, build AND run with echoes, so it proves ordering while
+// executing none of these scripts.
+//
+// 1. The separator was `,`. Annotations separate on `|` (`~[comptime|transform]`,
+//    `~[abstract|retain]`). `~[default, depends_on(compile_backend)]` parsed as
+//    something that is not two annotations, and the depends_on was DROPPED
+//    SILENTLY — no diagnostic, just a dependency that never fires. The comma
+//    inside `depends_on(a, b)` is a different thing: that is one annotation's
+//    argument list, and it is correct.
+// 2. The binary is `backend`, not `main` — phase 1 emits `zig-out/bin/backend`.
+//
+// Together they meant anyone attaching `[depends_on(build)]` to the real default
+// got `sh: ./zig-out/bin/main: No such file or directory` / `BuildStepFailed`,
+// and fixing only the name moved it to `./zig-out/bin/backend: No such file`,
+// because compile_backend still never ran.
+~[default|depends_on(compile_backend)] step(name: "build") {
+    ./zig-out/bin/backend backend_tmp
 }
 
 // Phase 3: Run the final program
-~[default, depends_on(build)] step(name: "run") {
+~[default|depends_on(build)] step(name: "run") {
     ./backend_tmp
 }
 
