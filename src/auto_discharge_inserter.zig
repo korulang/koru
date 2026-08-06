@@ -2739,7 +2739,36 @@ pub const AutoDischargeInserter = struct {
             // auto-inserted as a disposer. The error-suggestion path
             // (include_multi_branch) still lists branched dischargers so the user can
             // call one explicitly.
-            if (!include_multi_branch and (event_decl.branches.len > 0 or event_decl.return_type != null)) continue;
+            //
+            // ⚠️ MEASURED AND GATED OFF, 2026-08-06 — do not delete, read this.
+            // A PANIC branch (`| ?!name`) arguably should NOT disqualify: its
+            // unhandled form is a synthesized @panic (210_127), so there is no
+            // binding to invent, which is exactly what a bare inserted call
+            // needs. Lars raised it ("we even have panic-branches now"). The
+            // widening below admits it. It is off because admitting it is not
+            // sufficient, and both blockers were measured:
+            //   1. a TERMINAL-only panic branch has no way to express success —
+            //      `Output = union(enum) { could_not_release: []const u8 }`,
+            //      non-optional, and `return null` is rejected. There is no
+            //      "fine" value for the proc to return.
+            //   2. a panic EFFECT arm (`! ?!name`) gets past this filter and
+            //      then trips KORU025 — the inserter synthesizes a TERMINAL `|`
+            //      handler for a branch declared `!`.
+            // An OPTIONAL branch (`| ?`) must stay disqualified either way:
+            // unhandled it synthesizes a silent no-op, so a disposer could
+            // report "I did not release" into nothing.
+            const admit_panic_only_branches = false;
+            if (!include_multi_branch) {
+                if (event_decl.return_type != null) continue;
+                var has_bindable_output = false;
+                for (event_decl.branches) |b| {
+                    if (!b.is_panic or !admit_panic_only_branches) {
+                        has_bindable_output = true;
+                        break;
+                    }
+                }
+                if (has_bindable_output) continue;
+            }
 
             // Self-loop suggestion filter: an event that consumes <state!> on
             // base_type but ALSO re-issues <state!> on the same base_type through

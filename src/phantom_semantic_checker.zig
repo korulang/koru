@@ -968,6 +968,18 @@ pub const PhantomSemanticChecker = struct {
             return list;
         }
 
+        /// Does this binding hold a live obligation that `<!state>` could settle?
+        ///
+        /// The alternative predicate for the debt-exists check at the consume
+        /// site (see `enforce_debt_exists`). Measured identical to parsing the
+        /// provided phantom: both close 335_054 / 335_055 and both refuse
+        /// delegation while 330_076 is red. Kept because it reads the authority
+        /// directly rather than re-deriving it from a string.
+        fn owesObligation(self: *BindingContext, name: []const u8) bool {
+            return self.cleanup_obligations.contains(name) or
+                self.outer_scope_obligations.contains(name);
+        }
+
         /// Check if there are any outer-scope uncleaned resources
         /// These are obligations from outside a @scope boundary that cannot be satisfied inside
         fn hasOuterScopeObligations(self: *BindingContext) bool {
@@ -3325,6 +3337,59 @@ pub const PhantomSemanticChecker = struct {
             .concrete => |concrete| {
                 if (concrete.consumes_obligation) {
                     log.debug("[CLEANUP] Event parameter has [!{s}] - consumes obligation\n", .{concrete.name});
+                    // A DEBT MUST EXIST BEFORE IT CAN BE SETTLED. The state
+                    // already matched above, and that is weaker than it looks:
+                    // `<!owned>` accepts `<owned!>` (the debt) AND bare
+                    // `<owned>` (no debt), because compatibility asks only
+                    // whether the STATE lines up. A bare `<state>` return mints
+                    // nothing, so `<!state>` frees what the program does not
+                    // own — and POISONS the binding on the way through, which is
+                    // how one object reaches two live names and is released
+                    // twice with no lying proc body (335_054 / 335_055).
+                    //
+                    // ⚠️ INCOMPLETE — DO NOT ENABLE WITHOUT READING THIS.
+                    // Ruled wanted by Lars 2026-08-06. Gated OFF because it
+                    // also refuses legitimate delegation:
+                    //
+                    //     ~tor pass-through { h: *Handle<!owned> }
+                    //     ~pass-through = sink(h)
+                    //
+                    // A `<!state>` PARAMETER means the caller handed the debt
+                    // in, so the body may settle it once. The impl-param block
+                    // builds `owned!` for exactly that and calls setWithType,
+                    // which does register the obligation — but by the time this
+                    // site reads it, `h` carries `input:owned`, bare. The `!`
+                    // never arrives. That is 330_076's subject verbatim, and
+                    // 330_076 is RED. Fix the seeding, flip this to `true`, and
+                    // 335_054 + 335_055 both close.
+                    //
+                    // Both predicates were measured and both behave identically
+                    // on the corpus: `context.owesObligation(arg.value)` (the
+                    // cleanup set) and the parse of `canonical_provided` below.
+                    // The latter is kept because it needs no side table.
+                    const enforce_debt_exists = false;
+                    if (enforce_debt_exists) {
+                        var provided_parsed = try phantom_parser.PhantomState.parse(self.allocator, canonical_provided);
+                        defer provided_parsed.deinit(self.allocator);
+                        const provided_owes = switch (provided_parsed) {
+                            .concrete => |c| c.requires_cleanup,
+                            .state_union => |u| blk: {
+                                for (u.members) |m| if (m.requires_cleanup) break :blk true;
+                                break :blk false;
+                            },
+                            .variable => true, // polymorphic: the caller's state decides
+                        };
+                        if (!provided_owes) {
+                            try self.reporter.addError(
+                                .KORU030,
+                                location.line,
+                                location.column,
+                                "Phantom state mismatch: '{s}' (parameter '{s}') holds state '{s}' with no obligation attached — '<!{s}>' settles a debt, and this value never incurred one.",
+                                .{ arg.value, arg.name, canonical_provided, concrete.name },
+                            );
+                            return false;
+                        }
+                    }
                     // This event disposes the resource - clear the cleanup obligation
                     context.clearCleanupObligation(arg.value);
                     // Mark the binding as disposed (poisoned - cannot be used anymore)
