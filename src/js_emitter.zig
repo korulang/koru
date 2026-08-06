@@ -648,32 +648,129 @@ const Emitter = struct {
         return JsEmitError.UnsupportedConstruct;
     }
 
-    /// Emit the JS-implemented events of an imported module. An event is emitted
-    /// only if it has a `|js` proc in this module's own scope; events with only
-    /// `|zig`/`[comptime]` variants (the compiler/stdlib infrastructure) are
-    /// silently skipped — they have no JS implementation, so they're simply absent
-    /// on this target. Recurses into nested modules.
+    /// Where an event declaration was found, paired with the item list its
+    /// implementation must be resolved against. The scope is half the answer: a
+    /// module's event resolves to the proc in that same module, never to a
+    /// same-named proc in a sibling, so a decl pointer alone cannot be followed.
+    const DeclSite = struct {
+        decl: *const ast.EventDecl,
+        scope: []const ast.Item,
+    };
+
+    /// Bound for the implementability walk. The event graph is genuinely cyclic —
+    /// `std.optimizer:optimize` invokes `optimize` — so the walk needs a stop, and
+    /// a depth cap is the cheap one: it needs no allocation and no visited set,
+    /// and a chain deeper than this is not something the JS target emits today.
+    /// Hitting the cap answers "not implementable", which is the safe direction.
+    const IMPL_WALK_DEPTH: u8 = 32;
+
+    /// Resolve an event path to its declaration AND the scope that declaration
+    /// lives in. Same descent and same module reconciliation as `findEventDeclIn`;
+    /// the difference is that this one keeps the scope, which is what makes the
+    /// implementability walk possible.
+    fn findDeclSiteIn(self: *Emitter, scope: []const ast.Item, path: *const ast.DottedPath, current_module: ?[]const u8) ?DeclSite {
+        for (scope) |*item| {
+            switch (item.*) {
+                .event_decl => |*e| {
+                    if (pathsEqualWithModule(&e.path, path, current_module, self.main_module_name)) {
+                        return .{ .decl = e, .scope = scope };
+                    }
+                },
+                .module_decl => |*m| {
+                    if (self.findDeclSiteIn(m.items, path, m.logical_name)) |found| return found;
+                },
+                else => {},
+            }
+        }
+        return null;
+    }
+
+    /// Is this event's behaviour reachable ON THE JS TARGET — not "does it have a
+    /// body here" but "does every leaf its body reaches have a JS body".
     ///
-    /// WHY THIS GATE IS NARROWER THAN `findImplIn`, deliberately: an event whose
-    /// body is an arrow or a subflow IS portable in principle, so widening the
-    /// gate to the full resolver looks like the obvious correctness fix. Measured
-    /// 2026-08-06: it also drags in every subflow-implemented event of `std.compiler`
-    /// — `elaborate`, `analysis`, `emission`, `optimize` — as dead handlers calling
-    /// handlers that were never emitted. Hello-world went 290 → 4790 bytes and not
-    /// one test changed verdict.
+    /// This is the predicate the module gate always wanted. `findImplIn` answers
+    /// the LOCAL question, and answering only that is what made widening the gate
+    /// look bad: every subflow-implemented pass of `std.compiler` — `elaborate`,
+    /// `analysis`, `emission`, `optimize` — resolves locally, then emits a handler
+    /// calling eighteen handlers that were never emitted. Dead code that reads
+    /// `undefined` if anything ever calls it, and worse than dead: measured
+    /// 2026-08-06, `115_024_capture_in_module` PANICKED the whole compile on an
+    /// UnsupportedConstruct reached only from inside one of those dead bodies.
     ///
-    /// The rule the gate actually wants is "is this implementation TRANSITIVELY
-    /// JS-implementable", i.e. does every leaf it reaches have a JS body. A `|js`
-    /// proc answers that in one hop, which is why the narrow gate works at all.
-    /// Answering it for an arrow or a subflow is a reachability walk, not a
-    /// predicate — so a module event implemented in pure Koru is still absent here,
-    /// and its call site still fails at RUNTIME on `undefined.handler` rather than
-    /// at emission. That is a known frontier, not an oversight.
+    /// A `|js` proc answers the transitive question in one hop, which is exactly
+    /// why the old one-hop gate worked at all. This walk answers it for the other
+    /// three spellings too, so a module event implemented in pure Koru is emitted
+    /// when its callees bottom out in JS and skipped when they bottom out in Zig.
+    fn eventIsJsImplementable(self: *Emitter, site: DeclSite, depth: u8) bool {
+        if (depth == 0) return false;
+        const impl = self.findImplIn(site.scope, &site.decl.path) orelse return false;
+        return switch (impl) {
+            // Host JS, and a `|template|` stub that throws — both are leaves.
+            .proc, .template_stub => true,
+            // An arrow impl is an expression over its own inputs. No callees.
+            .immediate => true,
+            .subflow => |flow| self.subflowIsJsImplementable(site.decl, flow, depth - 1),
+        };
+    }
+
+    /// A subflow body is implementable when every invocation it performs is.
+    /// A body already rendered to host JS by a comptime transform is a leaf —
+    /// there is nothing left to resolve, which is how `std/io:print.ln` inside an
+    /// imported module (115_001) comes out implementable.
+    fn subflowIsJsImplementable(self: *Emitter, event: *const ast.EventDecl, flow: *const ast.Flow, depth: u8) bool {
+        if (flow.inline_body != null) return true;
+        if (!self.invocationIsJsImplementable(event, flow.inv(), depth)) return false;
+        return self.continuationsAreJsImplementable(event, flow.body.continuations, depth);
+    }
+
+    fn continuationsAreJsImplementable(self: *Emitter, event: *const ast.EventDecl, conts: []const ast.Continuation, depth: u8) bool {
+        for (conts) |*cont| {
+            if (cont.node) |*node| {
+                switch (node.*) {
+                    .invocation => |*inv| {
+                        if (!self.invocationIsJsImplementable(event, inv, depth)) return false;
+                    },
+                    .label_with_invocation => |*lwi| {
+                        if (!self.invocationIsJsImplementable(event, &lwi.invocation, depth)) return false;
+                    },
+                    // `_` and an inline branch constructor call nothing.
+                    .terminal, .branch_constructor => {},
+                    // Any other node kind: refuse to vouch. Emitting a body the
+                    // walk cannot account for is how a DEAD handler panics a live
+                    // compile, and the cost of being wrong in this direction is
+                    // only that a module event stays absent — the same place the
+                    // narrow gate left it.
+                    else => return false,
+                }
+            }
+            if (!self.continuationsAreJsImplementable(event, cont.continuations, depth)) return false;
+        }
+        return true;
+    }
+
+    fn invocationIsJsImplementable(self: *Emitter, impl_event: *const ast.EventDecl, inv: *const ast.Invocation, depth: u8) bool {
+        // Already lowered to host JS at the call site by a comptime transform.
+        if (inv.inline_body != null) return true;
+        // Firing one of the enclosing event's OWN effect arms hands control back
+        // to whoever installed the arm; it is not a callee to resolve. Same check,
+        // same order, as emitInvocationWithContinuations.
+        if (findEffectArm(impl_event, &inv.path) != null) return true;
+        const site = self.findDeclSiteIn(self.items, &inv.path, null) orelse return false;
+        return self.eventIsJsImplementable(site, depth);
+    }
+
+    /// Emit the JS-implementable events of an imported module, resolving each
+    /// body the same four ways `emitEventDecl` accepts and gating on whether that
+    /// body bottoms out in JavaScript. Events whose implementation reaches a
+    /// `|zig`/`[comptime]` leaf — the compiler and stdlib infrastructure — are
+    /// absent on this target rather than emitted as handlers that cannot run.
+    /// Recurses into nested modules.
     fn emitModuleEventDecls(self: *Emitter, module: *const ast.ModuleDecl) JsEmitError!void {
         for (module.items) |*item| {
             switch (item.*) {
                 .event_decl => |*event| {
-                    if (self.findImplIn(module.items, &event.path) == null) continue;
+                    const site = DeclSite{ .decl = event, .scope = module.items };
+                    if (!self.eventIsJsImplementable(site, IMPL_WALK_DEPTH)) continue;
                     try self.emitEventDecl(event, module.items);
                 },
                 .module_decl => |*nested| try self.emitModuleEventDecls(nested),
