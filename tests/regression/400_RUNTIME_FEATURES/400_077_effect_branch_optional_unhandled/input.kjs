@@ -1,0 +1,9 @@
+// JavaScript implementation facet. Events are declared in input.kz (merged at
+// import); this file holds the |js proc bodies.
+
+~proc maybe|js {
+    for (let i = 0; i < count; i++) {
+        warn("ignored");
+    }
+    return { tag: "done", done: count };
+}

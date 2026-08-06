@@ -1,0 +1,8 @@
+// JavaScript implementation facet. Events are declared in input.kz (merged at
+// import); this file holds the |js proc bodies.
+
+const TEST_SOURCE = "~ping()";
+
+~proc ping|js {
+    return 1;
+}

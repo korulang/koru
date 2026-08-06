@@ -1,0 +1,14 @@
+// JavaScript implementation facet. Events are declared in input.kz (merged at
+// import); this file holds the |js proc bodies.
+
+let global_r = { id: 99 };
+
+~proc borrow|js {
+    const r = lend(n);
+    if (r.tag === "granted") {
+        console.log(`got ${r.granted.id}`);
+    } else {
+        console.log("denied");
+    }
+    return { tag: "done", done: n };
+}

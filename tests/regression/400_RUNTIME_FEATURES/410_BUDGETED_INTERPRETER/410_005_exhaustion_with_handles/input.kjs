@@ -1,0 +1,17 @@
+// JavaScript implementation facet. Events are declared in input.kz (merged at
+// import); this file holds the |js proc bodies.
+
+const TEST_SOURCE = "open(path: \"x.txt\")\n| opened f |> expensive-read(handle: f.handle)";
+
+~proc open|js {
+    console.log(`opened ${path}`);
+    return { tag: "opened", opened: "file_1" };
+}
+
+~proc close|js {
+    console.log("auto-closing file");
+}
+
+~proc expensive-read|js {
+    return "file contents";
+}

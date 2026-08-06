@@ -1,0 +1,7 @@
+name: scope
+kind: inferred
+shape: categorical
+face: in
+membrane: false
+note: work turned out to belong to a different population than the one it was filed under
+route: surface

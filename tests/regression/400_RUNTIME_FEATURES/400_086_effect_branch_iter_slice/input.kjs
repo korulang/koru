@@ -1,0 +1,6 @@
+// JavaScript implementation facet. Events are declared in input.kz (merged at
+// import); this file holds the |js proc bodies.
+
+~proc each-i32|js {
+    for (const it of items) item(it);
+}

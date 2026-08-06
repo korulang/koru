@@ -1,0 +1,9 @@
+// JavaScript implementation facet. Events are declared in input.kz (merged at
+// import); this file holds the |js proc bodies.
+
+~proc keystream|js {
+    const chars = [0x61, 0x62, 0x71, 0x63];
+    for (let i = 0; i < count && i < chars.length; i++) {
+        key({ ch: chars[i], code: chars[i] });
+    }
+}

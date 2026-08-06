@@ -1828,6 +1828,24 @@ const Emitter = struct {
                 if (already) continue;
                 try self.emitEffectHandlerMethod(continuations, cont.branch, inner_indent);
             }
+            // OMITTED OPTIONAL ARM → a producer-side no-op (Option B, ruled
+            // 2026-07-19, pinned by 400_168/400_170). A yielding arm is invoked by
+            // DIRECT CALL from the proc body, so leaving it off the Handlers object
+            // makes the alias `const warn = H.warn;` undefined and the fire throws
+            // `warn is not a function` at runtime — a silent no-op turned into a
+            // crash. Install an empty method instead; V8 inlines it away.
+            //
+            // A RESUMING arm (`-> T`) is deliberately NOT filled in: 400_148 gives
+            // the proc the presence truth as a nullable callable and lets it choose
+            // its own fallback (`if (ask) …`), which an empty method returning
+            // undefined would silently defeat.
+            for (event.branches) |*b| {
+                if (b.kind != .effect) continue;
+                if (b.resume_type != null or b.resume_arms != null) continue;
+                if (continuationForBranch(continuations, b.name) != null) continue;
+                var noop_buf: [256]u8 = undefined;
+                try self.writeFmt("{s}{s}(_) {{}},\n", .{ inner_indent, lowerIdentBuf(&noop_buf, b.name) });
+            }
             try self.writeFmt("{s}}};\n", .{indent});
         }
 
@@ -2087,7 +2105,7 @@ const Emitter = struct {
             // leftmost match. Op names are assumed to appear only as the effect
             // call in these controlled procs (fine for the spike).
             var best_call_start: ?usize = null;
-            var best_op_branch: ?*const ast.Continuation = null;
+            var best_branch: ?*const ast.Branch = null;
             var best_arg: []const u8 = "";
             var best_after: usize = 0;
 
@@ -2098,14 +2116,19 @@ const Emitter = struct {
                 const op_ident = lowerIdentBuf(&op_ident_buf, b.name);
                 const found = findOpCall(trimmed, pos, op_ident) orelse continue;
                 if (best_call_start == null or found.call_start < best_call_start.?) {
-                    const cont = continuationForBranch(continuations, b.name) orelse {
+                    // An OMITTED OPTIONAL arm is not an error — Option B (ruled
+                    // 2026-07-19, pinned by 400_170) says the fire is a
+                    // producer-side no-op, so the inline rewriter DROPS the call.
+                    // A required arm with no handler is a different animal and
+                    // still refuses loudly.
+                    if (continuationForBranch(continuations, b.name) == null and !b.is_optional) {
                         log.err("[js_emitter] void effect op '{s}' has no matching continuation\n", .{b.name});
                         return JsEmitError.UnsupportedConstruct;
-                    };
+                    }
                     best_call_start = found.call_start;
                     best_after = found.after;
                     best_arg = found.arg;
-                    best_op_branch = cont;
+                    best_branch = b;
                 }
             }
 
@@ -2232,6 +2255,7 @@ const Emitter = struct {
                 return JsEmitError.UnsupportedConstruct;
             },
         }
+
     }
 
     /// Re-indent a slice of opaque body text to `indent`, one line at a time.
