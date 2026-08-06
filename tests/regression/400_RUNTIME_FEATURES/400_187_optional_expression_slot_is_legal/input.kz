@@ -27,5 +27,14 @@ const std = @import("std");
 {% if expr %}std.debug.print("{s}\n", .{ {{ expr }} });{% else %}std.debug.print("silent\n", .{});{% endif %}
 }
 
+// JS sibling — pins the same thing on the JS target: `expr: ?Expression` is
+// callable BOTH ways, and `{% if expr %}` is the presence test that tells them
+// apart. Presence is decided by the engine, so both variants take the same arm;
+// `{{ expr }}` splices the captured text, which here is a quoted string literal
+// and needs no per-host translation.
+~proc shout|template|js {
+{% if expr %}console.log({{ expr }});{% else %}console.log("silent");{% endif %}
+}
+
 ~shout("\"loud\"")
 ~shout()

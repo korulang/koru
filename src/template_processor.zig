@@ -537,21 +537,76 @@ fn processPerCallInvocations(
     }
 }
 
-/// Lower a Koru scrutinee expression to a Zig value. A struct literal
-/// (`{ value: n }`) becomes a Zig anonymous struct (`.{ .value = n, }`) via the
-/// single struct-literal parser; anything else (a bare identifier `k`, an
-/// arithmetic expr) is already Zig-shaped and passes through verbatim. Used to
-/// materialize a `cond` scrutinee before an arm destructures/binds it.
-fn lowerScrutineeToZig(allocator: std.mem.Allocator, text: []const u8) ![]const u8 {
+/// The build language, for the few places a per-call template render produces
+/// HOST text rather than target-agnostic structure.
+///
+/// Most of what a template renders is shared: a dispatch cascade, a loop body, a
+/// substituted arg. What is NOT shared is anything that has to be *spelled* in
+/// the host — declarations and host builtins. Two renders qualify today, and
+/// both are keyed on this one enum rather than growing per-target siblings:
+///
+///   `{{ binds }}` — `cond`'s binder preamble (buildCondBinds). Zig needs
+///                   `.{ .f = v }` anon-struct syntax, `: T` annotations and
+///                   `_ = &v;` unused-suppression; JS needs none of the three.
+///   `~if(<arm>)`  — the optional-arm PRESENCE test
+///                   (presenceRewriteTemplateArg). Zig asks the handler type
+///                   `@hasDecl(__H, "arm")`; JS asks the handler object
+///                   `H.arm !== undefined`.
+///
+/// "Two" is a claim, put here to be falsified cheaply. Falsify it by finding a
+/// render that emits host syntax without consulting a HostLang.
+///
+/// One BOUNDED blind spot in that falsification, in js_emitter (js-gap-a
+/// 31f3aa2a; unmerged at the time of writing, so the spelling is theirs to
+/// correct, not mine to assert): `Emitter.writeHostText` translates Zig host
+/// BUILTINS out of rendered template text on the way to JS —
+/// `writeHostBuiltin` holds the exhaustive set (`@as`/`@intCast`/`@truncate`
+/// and the other identity casts, `@divTrunc`/`@divFloor`/`@rem`/`@mod`,
+/// `@min`/`@max`/`@abs`/`@sqrt`). That is the emitter cleaning up after a
+/// target-blind path, not a third site here, so the count survives.
+///
+/// What it costs: a third site emitting one of THOSE builtins runs correctly on
+/// JS and shows no symptom, so a green JS test is weak evidence over exactly
+/// that list. It is not weak evidence in general — any other `@name(` reaching
+/// the JS emitter is REFUSED with UnsupportedConstruct rather than passed
+/// through, so an unmodelled builtin from a third site fails loudly at compile
+/// time. Read the renders when the suspect is in the list above; trust the
+/// compiler otherwise.
+///
+/// A third target reaching here is walled upstream: a render only happens after
+/// selectPerCallTemplateProc found a `<name>|template|<build_lang>` proc, and
+/// only `zig` and `js` declare any — KORU121 refuses every other lang first.
+const HostLang = enum {
+    zig,
+    js,
+
+    fn of(build_lang: []const u8) HostLang {
+        return if (std.mem.eql(u8, build_lang, "js")) .js else .zig;
+    }
+};
+
+/// Lower a Koru scrutinee expression to a host value. A struct literal
+/// (`{ value: n }`) becomes a Zig anonymous struct (`.{ .value = n, }`) or a JS
+/// object literal (`{ value: n, }`) via the single struct-literal parser;
+/// anything else (a bare identifier `k`, an arithmetic expr) is already shaped
+/// for either host and passes through verbatim. Used to materialize a `cond`
+/// scrutinee before an arm destructures/binds it.
+fn lowerScrutinee(allocator: std.mem.Allocator, text: []const u8, host: HostLang) ![]const u8 {
     const trimmed = std.mem.trim(u8, text, " \t\n\r");
     if (trimmed.len < 2 or trimmed[0] != '{' or trimmed[trimmed.len - 1] != '}') return text;
     const fields = struct_literal.parseFields(allocator, trimmed) catch return text;
     var buf: std.ArrayList(u8) = .empty;
-    try buf.appendSlice(allocator, ".{ ");
+    try buf.appendSlice(allocator, switch (host) {
+        .zig => ".{ ",
+        .js => "{ ",
+    });
     for (fields) |f| {
-        try buf.appendSlice(allocator, ".");
+        if (host == .zig) try buf.appendSlice(allocator, ".");
         try buf.appendSlice(allocator, f.name);
-        try buf.appendSlice(allocator, " = ");
+        try buf.appendSlice(allocator, switch (host) {
+            .zig => " = ",
+            .js => ": ",
+        });
         try buf.appendSlice(allocator, f.value);
         try buf.appendSlice(allocator, ", ");
     }
@@ -559,26 +614,32 @@ fn lowerScrutineeToZig(allocator: std.mem.Allocator, text: []const u8) ![]const 
     return buf.toOwnedSlice(allocator);
 }
 
-/// Append `const <name>[: <type>] = <prefix>.<name>; _ = &<name>; ` per named
-/// destructure leaf (recursing into nested sub-shapes), skipping `_` slots.
-/// String-building twin of emitter_helpers.emitDestructureConsts.
+/// Append `const <name>[: <type>] = <prefix>.<name>;` per named destructure leaf
+/// (recursing into nested sub-shapes), skipping `_` slots. String-building twin
+/// of emitter_helpers.emitDestructureConsts.
 ///
 /// `seen`, when given, is a name set shared across the arms of one dispatch:
 /// the binders are hoisted into ONE scope (see `buildCondBinds`), so a name two
 /// arms both bind must be declared once. Both bind the same field of the same
 /// scrutinee, so the single declaration is the same value either arm would see.
+///
+/// Two pieces are Zig-only and dropped on the JS host: the `: <type>`
+/// representation annotation (JS consts carry no type), and the `_ = &<name>;`
+/// unused-suppression (Zig refuses an unused const; JS does not, and `_ = &x;`
+/// is not even parseable there).
 fn appendDestructureConsts(
     allocator: std.mem.Allocator,
     buf: *std.ArrayList(u8),
     fields: []const ast.DestructureField,
     prefix: []const u8,
     seen: ?*std.StringHashMap(void),
+    host: HostLang,
 ) !void {
     for (fields) |f| {
         if (std.mem.eql(u8, f.name, "_")) continue;
         if (f.sub.len > 0) {
             const sub_prefix = try std.fmt.allocPrint(allocator, "{s}.{s}", .{ prefix, f.name });
-            try appendDestructureConsts(allocator, buf, f.sub, sub_prefix, seen);
+            try appendDestructureConsts(allocator, buf, f.sub, sub_prefix, seen, host);
             continue;
         }
         if (seen) |s| {
@@ -587,21 +648,27 @@ fn appendDestructureConsts(
         }
         try buf.appendSlice(allocator, "const ");
         try buf.appendSlice(allocator, f.name);
-        if (f.type_text) |t| {
-            try buf.appendSlice(allocator, ": ");
-            try buf.appendSlice(allocator, t);
+        if (host == .zig) {
+            if (f.type_text) |t| {
+                try buf.appendSlice(allocator, ": ");
+                try buf.appendSlice(allocator, t);
+            }
         }
         try buf.appendSlice(allocator, " = ");
         try buf.appendSlice(allocator, prefix);
         try buf.appendSlice(allocator, ".");
         try buf.appendSlice(allocator, f.name);
-        try buf.appendSlice(allocator, "; _ = &");
-        try buf.appendSlice(allocator, f.name);
-        try buf.appendSlice(allocator, "; ");
+        try buf.appendSlice(allocator, ";");
+        if (host == .zig) {
+            try buf.appendSlice(allocator, " _ = &");
+            try buf.appendSlice(allocator, f.name);
+            try buf.appendSlice(allocator, ";");
+        }
+        try buf.appendSlice(allocator, " ");
     }
 }
 
-/// Build the Zig binder preamble for a whole `cond`: one `const` per distinct
+/// Build the host binder preamble for a whole `cond`: one `const` per distinct
 /// arm binder (`c <name>` scalar, `c { field }` destructure), bound to the
 /// scrutinee, emitted ONCE ahead of the dispatch as `{{ binds }}`.
 ///
@@ -621,6 +688,7 @@ fn buildCondBinds(
     allocator: std.mem.Allocator,
     conts: []const ast.Continuation,
     scrutinee: []const u8,
+    host: HostLang,
 ) ![]const u8 {
     if (scrutinee.len == 0) return "";
     var buf: std.ArrayList(u8) = .empty;
@@ -632,30 +700,41 @@ fn buildCondBinds(
         // Destructure binder (`c { field, ... }`): materialize the scrutinee once
         // to a site-unique temp, then one `const <field> = <tmp>.<field>;` per leaf.
         if (cont.destructure.len > 0) {
-            const s_zig = try lowerScrutineeToZig(allocator, scrutinee);
+            const s_host = try lowerScrutinee(allocator, scrutinee, host);
             const tmp = try std.fmt.allocPrint(allocator, "__koru_cond_s_{d}_{d}", .{ cont.location.line, cont.location.column });
             try buf.appendSlice(allocator, "const ");
             try buf.appendSlice(allocator, tmp);
             try buf.appendSlice(allocator, " = ");
-            try buf.appendSlice(allocator, s_zig);
-            try buf.appendSlice(allocator, "; _ = &");
-            try buf.appendSlice(allocator, tmp);
-            try buf.appendSlice(allocator, "; ");
-            try appendDestructureConsts(allocator, &buf, cont.destructure, tmp, &seen);
+            try buf.appendSlice(allocator, s_host);
+            try buf.appendSlice(allocator, ";");
+            // Zig-only: the temp is read only by the per-leaf consts below, and
+            // Zig refuses an unused const. JS has no such rule, and `_ = &x;`
+            // does not parse there.
+            if (host == .zig) {
+                try buf.appendSlice(allocator, " _ = &");
+                try buf.appendSlice(allocator, tmp);
+                try buf.appendSlice(allocator, ";");
+            }
+            try buf.appendSlice(allocator, " ");
+            try appendDestructureConsts(allocator, &buf, cont.destructure, tmp, &seen, host);
             continue;
         }
         // Scalar binder (`c v`): bind the whole scrutinee. `_`/empty = no binder.
         const b = cont.binding orelse continue;
         if (b.len == 0 or std.mem.eql(u8, b, "_")) continue;
         // The scrutinee expression IS the binder name (`cond(k) | c k …`): the
-        // name is already in scope, so `const k = k;` would self-shadow (Zig
-        // rejects it). Use it as-is — the binder is a no-op. Mirrors the effect
-        // splice's same guard in emitter_helpers.
+        // name is already in scope, so `const k = k;` would self-shadow. Use it
+        // as-is — the binder is a no-op. Mirrors the effect splice's same guard
+        // in emitter_helpers. BOTH hosts need this: Zig rejects the shadow at
+        // compile time, JS throws a TDZ ReferenceError at run time.
         if (std.mem.eql(u8, std.mem.trim(u8, scrutinee, " \t\n\r"), b)) continue;
         if (seen.contains(b)) continue;
         try seen.put(b, {});
-        const s_zig = try lowerScrutineeToZig(allocator, scrutinee);
-        try buf.appendSlice(allocator, try std.fmt.allocPrint(allocator, "const {s} = {s}; _ = &{s}; ", .{ b, s_zig, b }));
+        const s_host = try lowerScrutinee(allocator, scrutinee, host);
+        try buf.appendSlice(allocator, switch (host) {
+            .zig => try std.fmt.allocPrint(allocator, "const {s} = {s}; _ = &{s}; ", .{ b, s_host, b }),
+            .js => try std.fmt.allocPrint(allocator, "const {s} = {s}; ", .{ b, s_host }),
+        });
     }
     return buf.toOwnedSlice(allocator);
 }
@@ -700,15 +779,15 @@ fn renderTemplateInvocation(
     for (invocation.args, 0..) |arg, i| {
         const raw_text = if (arg.expression_value) |expr_val| expr_val.text else arg.value;
         // PRESENCE (400_146, ruled 2026-07-03): inside the declaring event's
-        // impl, an optional arm's bare name as `if`'s condition is a COMPTIME
-        // presence test. The `~if` template bakes its condition right here
-        // ({{ expr }}), upstream of every emitter rewrite site, so the
-        // substitution must happen BEFORE the render. Optional arm →
-        // `@hasDecl(__H, "arm")` (a real comptime bool — Zig analyzes only
-        // the taken branch, so the absent case never sees `__H.arm`).
-        // A required arm is left verbatim: the shape checker walls it
-        // (KORU131) before emission is reached.
-        const text = try presenceRewriteTemplateArg(allocator, invocation, impl_event, raw_text);
+        // impl, an optional arm's bare name as `if`'s condition is a presence
+        // test. The `~if` template bakes its condition right here ({{ expr }}),
+        // upstream of every emitter rewrite site, so the substitution must happen
+        // BEFORE the render — which is also why the BUILD LANGUAGE has to be
+        // known here: the test is host text (`@hasDecl(__H, …)` vs
+        // `H.… !== undefined`), and no later pass gets a chance to retarget it.
+        // A required arm is left verbatim: the shape checker walls it (KORU131)
+        // before emission is reached.
+        const text = try presenceRewriteTemplateArg(allocator, invocation, impl_event, raw_text, HostLang.of(build_lang));
         if (i == 0) scrutinee_text = text;
         const is_positional = std.mem.eql(u8, arg.name, arg.value);
         const key = if (!is_positional)
@@ -723,7 +802,15 @@ fn renderTemplateInvocation(
     // arms so every arm's `when` guard can be read in condition position. Empty
     // for a template whose arms bind nothing (`~if`, `~for`); `cond` is its
     // consumer. See buildCondBinds for why this is hoisted and deduped.
-    try ctx.put("binds", .{ .string = try buildCondBinds(allocator, continuations, scrutinee_text) });
+    //
+    // ONE key, rendered in the BUILD language — not a `binds`/`binds_js` pair.
+    // The two `cond|template|<lang>` variants share every structural decision
+    // (which arms bind, dedup by name, hoisting ahead of the cascade); only the
+    // declaration syntax differs, and that is what HostLang selects. A second
+    // context key would have let the next person improve one host's binder and
+    // silently leave the other behind — the two-lowerings-of-one-construct shape
+    // `~for`/`scan` was converged to avoid (control.kz, `~for` prose).
+    try ctx.put("binds", .{ .string = try buildCondBinds(allocator, continuations, scrutinee_text, HostLang.of(build_lang)) });
 
     // Expose the invoking handlers to the template, SPLIT BY KIND. Effect
     // handlers (`! each`, fire 0-to-N during) land under `effects["<branch>"]`;
@@ -966,16 +1053,36 @@ fn renderNestedTemplates(
 }
 
 /// PRESENCE substitution for a template-invocation arg: `if(<optional arm>)`
-/// inside the arm's declaring event's impl becomes `@hasDecl(__H, "<arm>")`.
+/// inside the arm's declaring event's impl becomes a host presence test.
 /// Only the `if` keyword event's condition is a presence home (ruled
 /// 2026-07-03 — the other home, `when` guards, is emitter-resolved because
 /// guards are not baked by templates). Anything that isn't a bare optional-arm
 /// name of the enclosing impl event passes through verbatim.
+///
+/// The test is HOST text, so it is keyed on the build language — this render sits
+/// upstream of every emitter rewrite site (the `~if` template bakes its condition
+/// right here), which is exactly why the language has to be known at this point.
+///
+///   zig   `@hasDecl(__H, "arm")`   the handler TYPE param; a comptime bool, so
+///                                  Zig analyzes only the taken branch and the
+///                                  absent case never names `__H.arm`.
+///   js    `H.arm !== undefined`    `H` is the JS twin of `__H` (js_emitter.zig
+///                                  :270-279 takes it on every effect-bearing
+///                                  event and binds `const arm = H.arm;` for
+///                                  each DECLARED branch, optional included, so
+///                                  an absent arm reads `undefined` rather than
+///                                  throwing). Asked of the handler bundle, not
+///                                  of the derived local, so it stays true to
+///                                  `@hasDecl`'s question and does not depend on
+///                                  the alias line. JS has no comptime, so both
+///                                  arms are emitted and the guard keeps the
+///                                  absent one from ever being called.
 fn presenceRewriteTemplateArg(
     allocator: std.mem.Allocator,
     invocation: *const ast.Invocation,
     impl_event: ?*const ast.EventDecl,
     text: []const u8,
+    host: HostLang,
 ) ![]const u8 {
     const ev = impl_event orelse return text;
     if (invocation.path.segments.len == 0) return text;
@@ -985,7 +1092,10 @@ fn presenceRewriteTemplateArg(
         if (b.kind != .effect) continue;
         if (!b.is_optional) continue;
         if (!std.mem.eql(u8, b.name, trimmed)) continue;
-        return try std.fmt.allocPrint(allocator, "@hasDecl(__H, \"{s}\")", .{b.name});
+        return switch (host) {
+            .zig => try std.fmt.allocPrint(allocator, "@hasDecl(__H, \"{s}\")", .{b.name}),
+            .js => try std.fmt.allocPrint(allocator, "H.{s} !== undefined", .{b.name}),
+        };
     }
     return text;
 }
@@ -1287,5 +1397,134 @@ test "parse_fields: empty / malformed inputs yield an empty field list" {
         const v = try parseFieldsFilter(a, &.{.{ .string = s }});
         try std.testing.expect(v == .array);
         try std.testing.expectEqual(@as(usize, 0), v.array.len);
+    }
+}
+
+// The two host-keyed renders (see `HostLang`) are the only places a per-call
+// template emits text that must be SPELLED in the build language. Both are
+// reachable end-to-end only through positions the JS emitter cannot yet emit
+// (a `cond` dispatch and an optional-arm presence test both live in a SUBFLOW
+// impl, which js_emitter refuses with NoJsProcBody), so the regression corpus
+// cannot judge the JS side of either one yet. These pin the rendered text
+// directly, which is the part that is mine to get right.
+
+test "cond binds: the scalar binder is declared in the build language" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    // `cond(k) | c v when …` — one guarded arm binding the scrutinee to `v`.
+    const conts = [_]ast.Continuation{.{
+        .branch = "c",
+        .binding = "v",
+        .condition = "v > 2",
+        .node = null,
+        .indent = 0,
+        .continuations = &.{},
+        .location = .{ .file = "t", .line = 3, .column = 1 },
+    }};
+
+    // Zig carries the `_ = &v;` unused-suppression it needs; JS must not, because
+    // `_ = &v;` is not parseable there and an unused const is legal anyway.
+    try std.testing.expectEqualStrings(
+        "const v = k; _ = &v; ",
+        try buildCondBinds(a, &conts, "k", .zig),
+    );
+    try std.testing.expectEqualStrings(
+        "const v = k; ",
+        try buildCondBinds(a, &conts, "k", .js),
+    );
+}
+
+test "cond binds: a struct scrutinee lowers to each host's literal syntax" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    // `cond({ value: n }) | c { value } when …` — destructure binder. The
+    // scrutinee is materialized to a site-unique temp, then one const per leaf.
+    const fields = [_]ast.DestructureField{.{ .name = "value" }};
+    const conts = [_]ast.Continuation{.{
+        .branch = "c",
+        .binding = null,
+        .destructure = &fields,
+        .condition = "value == 4",
+        .node = null,
+        .indent = 0,
+        .continuations = &.{},
+        .location = .{ .file = "t", .line = 9, .column = 3 },
+    }};
+
+    // Zig: anon-struct `.{ .value = n, }`. JS: object literal `{ value: n, }`.
+    try std.testing.expectEqualStrings(
+        "const __koru_cond_s_9_3 = .{ .value = n, }; _ = &__koru_cond_s_9_3; " ++
+            "const value = __koru_cond_s_9_3.value; _ = &value; ",
+        try buildCondBinds(a, &conts, "{ value: n }", .zig),
+    );
+    try std.testing.expectEqualStrings(
+        "const __koru_cond_s_9_3 = { value: n, }; " ++
+            "const value = __koru_cond_s_9_3.value; ",
+        try buildCondBinds(a, &conts, "{ value: n }", .js),
+    );
+}
+
+test "cond binds: the binder that IS the scrutinee is never redeclared" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    // `cond(k) | c k when …` (320_133's shape). `const k = k;` would self-shadow
+    // on BOTH hosts — Zig rejects it, JS throws a TDZ ReferenceError — so the
+    // binder is a no-op and the preamble stays empty either way.
+    const conts = [_]ast.Continuation{.{
+        .branch = "c",
+        .binding = "k",
+        .condition = "k == 1",
+        .node = null,
+        .indent = 0,
+        .continuations = &.{},
+        .location = .{ .file = "t", .line = 1, .column = 1 },
+    }};
+    try std.testing.expectEqualStrings("", try buildCondBinds(a, &conts, "k", .zig));
+    try std.testing.expectEqualStrings("", try buildCondBinds(a, &conts, "k", .js));
+}
+
+test "presence: an optional arm's name becomes each host's presence test" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    // `query = if(ask)` where query declares `! ?ask` (400_146's shape).
+    const empty_shape = ast.Shape{ .fields = &.{} };
+    const branches = [_]ast.Branch{
+        .{ .name = "ask", .payload = empty_shape, .kind = .effect, .is_optional = true },
+        .{ .name = "done", .payload = empty_shape, .kind = .terminal },
+    };
+    const ev = ast.EventDecl{
+        .path = .{ .segments = &.{"query"} },
+        .input = empty_shape,
+        .branches = &branches,
+    };
+    const inv = ast.Invocation{ .path = .{ .segments = &.{"if"} }, .args = &.{} };
+
+    // Zig asks the handler TYPE param; JS asks the handler OBJECT (js_emitter
+    // :270 takes it as `H` on every effect-bearing event).
+    try std.testing.expectEqualStrings(
+        "@hasDecl(__H, \"ask\")",
+        try presenceRewriteTemplateArg(a, &inv, &ev, "ask", .zig),
+    );
+    try std.testing.expectEqualStrings(
+        "H.ask !== undefined",
+        try presenceRewriteTemplateArg(a, &inv, &ev, "ask", .js),
+    );
+
+    // A REQUIRED arm is not a presence home — the shape checker walls it
+    // (KORU131) — so it passes through verbatim on both hosts. Same for a name
+    // that is no arm at all, and for any construct other than `if`.
+    const other = ast.Invocation{ .path = .{ .segments = &.{"cond"} }, .args = &.{} };
+    for ([_]HostLang{ .zig, .js }) |h| {
+        try std.testing.expectEqualStrings("done", try presenceRewriteTemplateArg(a, &inv, &ev, "done", h));
+        try std.testing.expectEqualStrings("nope", try presenceRewriteTemplateArg(a, &inv, &ev, "nope", h));
+        try std.testing.expectEqualStrings("ask", try presenceRewriteTemplateArg(a, &other, &ev, "ask", h));
     }
 }

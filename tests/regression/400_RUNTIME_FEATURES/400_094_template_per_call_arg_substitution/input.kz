@@ -15,4 +15,14 @@ const std = @import("std");
     }
 }
 
+// JS sibling — same pin: the call site's captured `n` is interpolated into the
+// loop bound, which is what makes macro-shaped events possible. The Zig half
+// spells the loop `while (i < n) : (i += 1)`; the JS half is a counting `for`,
+// the form that hands the engine a known trip count.
+~proc count-to|template|js {
+    for (let i = 0; i < {{ n }}; i++) {
+        console.log(i);
+    }
+}
+
 ~count-to(n: 3)
