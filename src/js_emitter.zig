@@ -1626,7 +1626,25 @@ const Emitter = struct {
             const cont = &continuations[idx];
             const binding = cont.binding orelse "_";
             try self.write("{ ");
-            if (!std.mem.eql(u8, binding, "_")) {
+            if (cont.destructure.len > 0) {
+                // A SHAPE-DESTRUCTURE AT THE BINDING POSITION (`| pat { l, w, h } |> …`).
+                // Every other arm path in this emitter calls emitDestructureBindings;
+                // this one bound only `cont.binding` and dropped the fields, so a
+                // destructured branch reached its body with `l`, `w`, `h` undefined
+                // and node threw `ReferenceError: l is not defined` — pointing at the
+                // handler body, not at the splice that failed to bind it.
+                //
+                // The payload lands in a temp first because `arg` is an expression
+                // (regex hands over an object literal of spans) and each field must
+                // read it once, not re-evaluate it per field.
+                const tmp = try std.fmt.allocPrint(self.allocator, "__koru_payload_{d}", .{self.nextId()});
+                defer self.allocator.free(tmp);
+                try self.writeFmt("const {s} = {s}; ", .{ tmp, arg });
+                if (!std.mem.eql(u8, binding, "_")) {
+                    try self.writeFmt("const {s} = {s}; ", .{ binding, tmp });
+                }
+                try self.emitDestructureBindings(cont.destructure, tmp, "");
+            } else if (!std.mem.eql(u8, binding, "_")) {
                 try self.writeFmt("const {s} = {s}; ", .{ binding, arg });
             }
             const guarded = cont.condition != null;
